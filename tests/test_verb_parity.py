@@ -32,9 +32,32 @@ from refmatrix.cli import main as cli_main
 
 # ---- defaults parity -------------------------------------------------------
 
-EFFECTIVE_DEFAULTS = {
+# Verbs whose None default resolves to a fixed value the CLI shows.
+_MANUAL_EFFECTIVE_DEFAULTS = {
     "rmx_context": {"max_entities": 20, "max_tokens": 4000},
 }
+# The action a required-`action` dispatcher's CLI_MAP twin runs (a dispatcher with a
+# default action uses that default).
+_TWIN_ACTION = {"rmx_memory": "get", "rmx_curate": "protect"}
+
+
+def _effective_defaults() -> dict:
+    """Task 3.7 C6 (r2 M2): a dispatcher param whose default differs by action is
+    `X | None = None`, resolved through `verbs.ACTION_DEFAULTS[(verb, action)]`. The
+    CLI_MAP twin compares against the resolution for ITS action — so
+    `rmx_focus.top: int | None = None` still equals `focus context`'s 20."""
+    import inspect
+    eff = {k: dict(v) for k, v in _MANUAL_EFFECTIVE_DEFAULTS.items()}
+    for vname, path in verbs.CLI_MAP.items():
+        if path is None or vname not in verbs.VERBS:
+            continue
+        p = inspect.signature(verbs.VERBS[vname].fn).parameters.get("action")
+        if p is None:
+            continue
+        act = p.default if p.default is not inspect.Parameter.empty else _TWIN_ACTION.get(vname)
+        if act is not None:
+            eff.setdefault(vname, {}).update(verbs.ACTION_DEFAULTS.get((vname, act), {}))
+    return eff
 # verb -> (click path, {verb_param: click_param}, verb params with no CLI twin)
 PAIRING = {
     "rmx_context": (("context",), {"ref": "symbol"}, {"linkage"}),
@@ -44,7 +67,11 @@ PAIRING = {
     "rmx_memory_recall": (("memory", "recall"), {}, {"since_seconds", "kinds", "exclude_mtype", "partition"}),
     "rmx_ingest": (("ingest",), {}, {"path", "mode", "kinds", "limit", "rebuild", "partition"}),
     "rmx_save_state": (("save-state",), {}, {"lint", "sync"}),
-    "rmx_focus": (("focus", "context"), {}, set()),
+    # task 3.7: the other actions' params are not options of `focus context`; each
+    # action's own command is compared by test_cli_action_click_defaults_*.
+    "rmx_focus": (("focus", "context"), {}, {"action", "n", "line", "context", "label",
+                                            "selector", "k", "max_tokens", "no_expand",
+                                            "no_autoscale", "timeout"}),
     "rmx_focus_note": (("focus", "note"), {}, {"session"}),
     "rmx_change_subject": (("focus", "change-subject"), {}, set()),
     "rmx_projects": (("projects",), {}, set()),
@@ -66,6 +93,12 @@ PAIRING = {
     "rmx_bus_unarchive": (("bus", "unarchive"), {"id": "msg_id"}, set()),
     "rmx_bus_purge": (("bus", "purge"), {"before_ts": "before"}, set()),
     "rmx_bus_stats": (("bus", "stats"), {}, set()),
+    # task 3.7 batch A. `partition`: the CLI carries it on the `rmx` group (`-p`).
+    "rmx_curate": (("protect",), {}, {"action", "dry_run", "broad", "partition", "timeout"}),
+    "rmx_taxonomy": (("taxonomy", "list"), {}, {"action", "category", "tag", "desc", "color"}),
+    # `max_entries` pairs with the new `--max-entries`; the click `--limit` (sample
+    # paths in the hook line) is a CLI-only render option (r6 S1).
+    "rmx_curator": (("curator", "status"), {}, {"action", "token"}),
 }
 # A no_twin param that DOES have a same-named click option must be one of
 # these declared shape differences (a click `multiple=True` option defaults
@@ -162,7 +195,7 @@ def test_click_defaults_match_verb_defaults():
             continue
         v = verbs.VERBS[vname]
         cdefs = _click_defaults(_click_cmd(path))
-        eff = EFFECTIVE_DEFAULTS.get(vname, {})
+        eff = _effective_defaults().get(vname, {})
         for param, vdefault in v.defaults.items():
             if param in no_twin:
                 continue
@@ -257,6 +290,21 @@ CLI_INVOKE = {
     "rmx_bus_stats": (["bus", "stats"],
                       {"totals": {"active": 1}, "unread": {}, "channels": [{"channel": "CANARY-stat", "messages": 1}]},
                       {}, "CANARY-stat"),
+    # task 3.7 batch A
+    "rmx_curate": (["protect", "a", "b", "--like", "x%"],
+                   {"count": 4242, "names": ["CANARY-ent"]},
+                   {"action": "protect", "names": ["a", "b"], "like": "x%"}, "4242"),
+    "rmx_taxonomy": (["taxonomy", "list"],
+                     {"categories": {"cat": {"description": "d", "tags": {
+                         "CANARY-tag": {"description": "x", "color": "#000000"}}}},
+                      "path": "/t/taxonomy.json", "warnings": []},
+                     {"action": "list"}, "CANARY-tag"),
+    "rmx_curator": (["curator", "status", "--json", "--max-entries", "7"],
+                    {"entries": [{"ts": 1.0, "path": "/x/CANARY-cur.md", "reason": "fs-change"}],
+                     "token": ["00000000000000000001-a.jsonl"],
+                     "spool": {"files": 1, "bytes": 10, "remaining_files": 0},
+                     "warnings": [], "missing": []},
+                    {"action": "status", "max_entries": 7}, "CANARY-cur"),
 }
 # payload-class twins: argv + the daemon op the click command must issue with
 # a payload built by the verb's helper (recorded by wrapping the helper).
@@ -422,6 +470,27 @@ _ACTIONS_SEED = {
     ("task", "pop"): ("rmx_task", "pop"),
     ("task", "current"): ("rmx_task", "current"),
     ("task", "swap"): ("rmx_task", "swap"),
+    # task 3.7 batch A (#fam-focus incl. `export`, #fam-curation, #fam-taxonomy,
+    # #fam-refine-drain)
+    ("focus", "tail"): ("rmx_focus", "tail"),
+    ("focus", "topics"): ("rmx_focus", "topics"),
+    ("focus", "show"): ("rmx_focus", "show"),
+    ("focus", "subject"): ("rmx_focus", "subject"),
+    ("focus", "subjects"): ("rmx_focus", "subjects"),
+    ("focus", "clear-subject"): ("rmx_focus", "clear_subject"),
+    ("focus", "composite"): ("rmx_focus", "composite"),
+    ("focus", "export"): ("rmx_focus", "export"),
+    ("focus", "detour"): ("rmx_focus", "detour"),
+    ("focus", "detours"): ("rmx_focus", "detours"),
+    ("focus", "return"): ("rmx_focus", "return"),
+    ("focus", "clear"): ("rmx_focus", "clear"),
+    ("unprotect",): ("rmx_curate", "unprotect"),
+    ("noise",): ("rmx_curate", "noise"),
+    ("unnoise",): ("rmx_curate", "unnoise"),
+    ("forget",): ("rmx_curate", "forget"),
+    ("taxonomy", "add"): ("rmx_taxonomy", "add"),
+    ("taxonomy", "remove"): ("rmx_taxonomy", "remove"),
+    ("curator", "drain"): ("rmx_curator", "drain"),
 }
 _HIDDEN_SEED = {
     ("add-concept",): ("add", "concept"),
@@ -436,8 +505,8 @@ _HIDDEN_SEED = {
 # against this: a path leaves by gaining a verb or an INTERNAL_CLI reason. Do
 # NOT add to this set to make a new command pass — that is the growth the gate
 # exists to stop.
-LEGACY_BASELINE_SIZE = 140
-LEGACY_BASELINE = frozenset({
+_BASELINE_3_4_SIZE = 140
+_BASELINE_3_4 = frozenset({
     ('audit-same-as',), ('cctree',), ('checkpoint',), ('cli-log',), ('co-occur',), ('compact',),
     ('compact-log',), ('describe',), ('dump-log',), ('embed',), ('export',), ('fingerprint',),
     ('forget',), ('graphify-warm',), ('grep',), ('import',), ('info',), ('ingest-gmd',),
@@ -481,6 +550,20 @@ LEGACY_BASELINE = frozenset({
     ('session', 'list'), ('session', 'recall'), ('session', 'show'), ('session', 'stats'),
     ('taxonomy', 'add'), ('taxonomy', 'list'), ('taxonomy', 'remove'),
 })
+# Task 3.7 batch A (#schedule): the paths that gained twins — focus (11 + `export`),
+# curation (5), taxonomy (3), curator `status` + `drain`. LEGACY_BASELINE shrinks by
+# EXACTLY these (C6); later batches subtract their own.
+_TASK_3_7_BATCH_A = frozenset({
+    ('focus', 'tail'), ('focus', 'topics'), ('focus', 'show'), ('focus', 'subject'),
+    ('focus', 'subjects'), ('focus', 'clear-subject'), ('focus', 'composite'),
+    ('focus', 'detour'), ('focus', 'detours'), ('focus', 'return'), ('focus', 'clear'),
+    ('focus', 'export'),
+    ('protect',), ('unprotect',), ('noise',), ('unnoise',), ('forget',),
+    ('taxonomy', 'list'), ('taxonomy', 'add'), ('taxonomy', 'remove'),
+    ('curator', 'status'), ('curator', 'drain'),
+})
+LEGACY_BASELINE = _BASELINE_3_4 - _TASK_3_7_BATCH_A
+LEGACY_BASELINE_SIZE = 118
 _USER_QUOTE = "internal harness/testing cli only commands"
 
 
@@ -607,8 +690,10 @@ def test_a_stale_key_in_any_map_fails_hygiene(which, monkeypatch):
     assert any("'zz-stale'" in m for m in bad), bad
 
 
-def test_cli_actions_are_the_fifteen_dispatcher_twins():
-    """AC-5: r8 #s-4 item 1 — these 15 would otherwise land in LEGACY."""
+def test_cli_actions_are_the_seeded_dispatcher_twins():
+    """AC-5: r8 #s-4 item 1 — these 15 would otherwise land in LEGACY. Task 3.7
+    batch A adds 19 (focus 12, curation 4, taxonomy 2, curator drain)."""
+    assert len(_ACTIONS_SEED) == 34
     import typing
     assert dict(verbs.CLI_ACTIONS) == _ACTIONS_SEED, sorted(
         set(verbs.CLI_ACTIONS.items()) ^ set(_ACTIONS_SEED.items()))
@@ -633,6 +718,8 @@ def test_hidden_aliases_are_the_six_alias_copies():
 def test_legacy_unpaired_carries_a_category_and_can_only_shrink():
     """AC-8: r8 #s-4 item 6 — 140 paths with no rule against growth. Pinned:
     the set is a subset of the frozen baseline and never larger than it."""
+    assert len(_BASELINE_3_4) == _BASELINE_3_4_SIZE
+    assert _TASK_3_7_BATCH_A <= _BASELINE_3_4 and len(_TASK_3_7_BATCH_A) == 22
     assert len(LEGACY_BASELINE) == LEGACY_BASELINE_SIZE
     legacy = set(verbs.LEGACY_UNPAIRED)
     grown = sorted(legacy - LEGACY_BASELINE)
@@ -700,6 +787,85 @@ CLI_ACTION_INVOKE = {
                           {"action": "current"}, "CANARY-curr"),
     ("task", "swap"): (["task", "swap"], {"swapped": True, "current": "CANARY-swap"},
                        {"action": "swap"}, "CANARY-swap"),
+    # ---- task 3.7 batch A: the focus actions ----
+    ("focus", "tail"): (["focus", "tail", "-n", "5", "-s", "S1"],
+                        {"session": "S1", "session_source": "explicit",
+                         "events": [{"ts": "t", "kind": "input", "terse": "CANARY-tail"}]},
+                        {"action": "tail", "n": 5, "session": "S1"}, "CANARY-tail"),
+    ("focus", "topics"): (["focus", "topics", "--top", "7", "-s", "S1"],
+                          {"session": "S1", "session_source": "explicit", "events_total": 3,
+                           "topics": [{"lead": "CANARY-topic", "members": ["a", "b"],
+                                       "first_line": 1, "last_line": 2}], "anomalies": []},
+                          {"action": "topics", "top": 7, "session": "S1"}, "CANARY-topic"),
+    ("focus", "show"): (["focus", "show", "3", "-C", "1", "-s", "S1"],
+                        {"session": "S1", "session_source": "explicit", "line": 3, "total": 5,
+                         "events": [{"line": 3, "ts": "t", "kind": "say",
+                                     "terse": "CANARY-show", "refs": []}]},
+                        {"action": "show", "line": 3, "context": 1, "session": "S1"},
+                        "CANARY-show"),
+    ("focus", "subject"): (["focus", "subject", "-s", "S1"],
+                           {"session": "S1", "session_source": "explicit",
+                            "subject": {"subject": "slug", "label": "CANARY-subj", "ts": "t"}},
+                           {"action": "subject", "session": "S1"}, "CANARY-subj"),
+    ("focus", "subjects"): (["focus", "subjects"],
+                            {"rows": [{"id": 1, "name": "n", "label": "CANARY-subjects",
+                                       "leaves": 2, "updated_at": "t"}]},
+                            {"action": "subjects"}, "CANARY-subjects"),
+    ("focus", "clear-subject"): (["focus", "clear-subject", "-s", "S1"],
+                                 {"cleared": True, "session": "S1", "session_source": "explicit"},
+                                 {"action": "clear_subject", "session": "S1"}, "cleared"),
+    ("focus", "composite"): (["focus", "composite", "--k", "2", "--max-tokens", "900",
+                              "--no-expand", "--session", "S1"],
+                             {"composite": "CANARY-gmd", "session": "S1",
+                              "session_source": "explicit", "source": "in-process"},
+                             {"action": "composite", "k": 2, "max_tokens": 900,
+                              "no_expand": True, "session": "S1"}, "CANARY-gmd"),
+    ("focus", "export"): (["focus", "export", "-s", "S1"],
+                          {"session": "S1", "session_source": "explicit", "total": 1,
+                           "events": [{"line": 1, "ts": "t", "kind": "input",
+                                       "terse": "CANARY-export"}]},
+                          {"action": "export", "session": "S1"}, "CANARY-export"),
+    ("focus", "detour"): (["focus", "detour", "lbl"],
+                          {"label": "CANARY-detour", "line": 4, "ts": "t", "session": "S1",
+                           "session_source": "pointer"},
+                          {"action": "detour", "label": "lbl"}, "CANARY-detour"),
+    ("focus", "detours"): (["focus", "detours", "-s", "S1"],
+                           {"session": "S1", "session_source": "explicit",
+                            "detours": [{"index": 1, "label": "CANARY-detours", "line": 2,
+                                         "ts": "t"}]},
+                           {"action": "detours", "session": "S1"}, "CANARY-detours"),
+    ("focus", "return"): (["focus", "return", "2"],
+                          {"returned": "CANARY-ret", "line": 3, "remaining": 0, "focus": [],
+                           "session": "S1", "session_source": "pointer"},
+                          {"action": "return", "selector": "2"}, "CANARY-ret"),
+    ("focus", "clear"): (["focus", "clear"],
+                         {"cleared": True, "session": "CANARY-clr", "session_source": "env"},
+                         {"action": "clear"}, "CANARY-clr"),
+    # ---- curation (the CLI_MAP twin is `protect`) ----
+    ("unprotect",): (["unprotect", "a"], {"count": 4242, "names": ["a"]},
+                     {"action": "unprotect", "names": ["a"]}, "4242"),
+    ("noise",): (["noise", "--namespace", "query"], {"count": 4242, "names": ["q/x"]},
+                 {"action": "noise", "namespace": "query"}, "4242"),
+    ("unnoise",): (["unnoise", "--kind", "concept", "--like", "q%"],
+                   {"count": 4242, "names": ["q1"]},
+                   {"action": "unnoise", "kind": "concept", "like": "q%"}, "4242"),
+    # preview (dry_run=True) then, after -y, the destructive call: the LAST call
+    # carries dry_run=False + broad=True (#fam-curation-forget)
+    ("forget",): (["forget", "--kind", "code", "-y"],
+                  {"count": 1, "names": ["CANARY-f"], "forgotten": 4242, "dry_run": False},
+                  {"action": "forget", "kind": "code", "dry_run": False, "broad": True}, "4242"),
+    # ---- taxonomy ----
+    ("taxonomy", "add"): (["taxonomy", "add", "cat", "tg", "--desc", "dd", "--color", "#111111"],
+                          {"added": True, "tag": "CANARY-add", "category": "cat"},
+                          {"action": "add", "category": "cat", "tag": "tg", "desc": "dd",
+                           "color": "#111111"}, "CANARY-add"),
+    ("taxonomy", "remove"): (["taxonomy", "remove", "tg"], {"removed": True, "tag": "CANARY-rm"},
+                             {"action": "remove", "tag": "tg"}, "CANARY-rm"),
+    # ---- curator ----
+    ("curator", "drain"): (["curator", "drain", "--token", "n1.jsonl", "--token", "n2.jsonl"],
+                           {"drained": ["n1.jsonl"], "missing": ["CANARY-miss.jsonl"]},
+                           {"action": "drain", "token": ["n1.jsonl", "n2.jsonl"]},
+                           "CANARY-miss"),
 }
 
 
@@ -739,3 +905,101 @@ def test_cli_action_twin_calls_its_dispatcher_verb(path, _cli_env, monkeypatch):
             got = list(got)
         assert got == val, f"{' '.join(path)}.{k}: argv gave {got!r}, expected {val!r}"
     assert canary in r.output, f"{' '.join(path)}: CLI did not render the verb's result ({canary!r})"
+
+
+# ---- task 3.7 C6 (r1 S1): EVERY CLI_ACTIONS twin's click defaults ---------------
+#
+# The CLI_MAP-twin test above sees one command per verb, and a dispatcher's shared
+# params conflict across actions (focus `top` 20 vs 60). Each action twin is compared
+# against `verbs.ACTION_DEFAULTS[(verb, action)]` over the verb's own defaults, and
+# every click option must BE a verb param (C9) unless it is a declared CLI-only
+# render option (r3 M1 `--out`, r6 S1 `--limit`). No "ALL" escape for a new verb.
+#
+# path -> ({verb_param: click_param}, {CLI-only click params})
+ACTION_PAIRING = {
+    ("task", "push"): ({}, set()),
+    ("task", "pop"): ({}, set()),
+    ("task", "current"): ({}, set()),
+    ("task", "swap"): ({}, set()),
+    ("focus", "tail"): ({}, set()),
+    ("focus", "topics"): ({}, set()),
+    ("focus", "show"): ({"context": "ctx"}, set()),
+    ("focus", "subject"): ({}, set()),
+    ("focus", "subjects"): ({}, set()),
+    ("focus", "clear-subject"): ({}, set()),
+    ("focus", "composite"): ({}, set()),
+    ("focus", "export"): ({}, {"out", "as_json"}),
+    ("focus", "detour"): ({}, set()),
+    ("focus", "detours"): ({}, set()),
+    ("focus", "return"): ({}, set()),
+    ("focus", "clear"): ({}, set()),
+    ("unprotect",): ({}, set()),
+    ("noise",): ({}, set()),
+    ("unnoise",): ({}, set()),
+    ("forget",): ({}, {"yes"}),
+    ("taxonomy", "add"): ({}, set()),
+    ("taxonomy", "remove"): ({}, set()),
+    ("curator", "drain"): ({}, set()),
+}
+# (path, verb param) -> why the click default may differ from the resolved one.
+ACTION_SHAPE_DIFFERENCES = {
+    (("forget",), "dry_run"): "the verb previews by default over MCP (#fam-curation-forget); "
+                              "the CLI keeps its confirm / -y gate and passes dry_run=False",
+    (("curator", "drain"), "token"): "click multiple=True () vs verb None",
+}
+# Pre-3.7 dispatcher whose per-action parity is its dedicated verbs' job (PAIRING
+# "ALL"). Closed: no other verb may be escaped.
+_ACTION_ESCAPE = {"rmx_memory": "per-action parity is rmx_memory_add / rmx_memory_recall's"}
+
+
+def test_every_cli_action_twin_has_an_action_pairing_row():
+    walked = {p for p, (v, _a) in verbs.CLI_ACTIONS.items() if v not in _ACTION_ESCAPE}
+    assert set(ACTION_PAIRING) == walked, sorted(set(ACTION_PAIRING) ^ walked)
+    assert set(_ACTION_ESCAPE) == {"rmx_memory"}
+
+
+@pytest.mark.parametrize("path", sorted(ACTION_PAIRING), ids=lambda p: "-".join(p))
+def test_cli_action_click_defaults_equal_the_resolved_verb_default(path):
+    import inspect
+    vname, action = verbs.CLI_ACTIONS[path]
+    renames, cli_only = ACTION_PAIRING[path]
+    v = verbs.VERBS[vname]
+    params = set(inspect.signature(v.fn).parameters) - {"root"}
+    resolved = {**v.defaults, **verbs.ACTION_DEFAULTS.get((vname, action), {})}
+    cdefs = _click_defaults(_click_cmd(path))
+    rev = {c: vp for vp, c in renames.items()}
+    bad = []
+    for name in cli_only:
+        if name not in cdefs:
+            bad.append(f"CLI-only {name!r} is not an option of {' '.join(path)}")
+        elif rev.get(name, name) in params:
+            bad.append(f"CLI-only {name!r} IS a verb param — compare it instead")
+    for cname, cdefault in cdefs.items():
+        if cname in cli_only:
+            continue
+        vp = rev.get(cname, cname)
+        if vp not in params:
+            bad.append(f"{' '.join(path)} --{cname}: no {vname} param {vp!r} (C9)")
+            continue
+        if (path, vp) in ACTION_SHAPE_DIFFERENCES:
+            continue
+        vdefault = resolved.get(vp)
+        vdefault = list(vdefault) if isinstance(vdefault, tuple) else vdefault
+        cdefault = list(cdefault) if isinstance(cdefault, tuple) else cdefault
+        if cdefault != vdefault:
+            bad.append(f"{vname}.{action}.{vp}: resolved verb default {vdefault!r} != "
+                       f"CLI default {cdefault!r}")
+    assert not bad, "\n" + "\n".join(bad)
+
+
+def test_action_shape_differences_name_real_click_options():
+    for (path, vp), why in ACTION_SHAPE_DIFFERENCES.items():
+        renames, _cli_only = ACTION_PAIRING[path]
+        assert renames.get(vp, vp) in _click_defaults(_click_cmd(path)), (path, vp)
+        assert why.strip()
+
+
+def test_legacy_shrinks_by_exactly_the_batch_a_paths():
+    """C6 / AC-G5 at the batch-A boundary: 140 - 22 = 118, nothing else moved."""
+    assert set(verbs.LEGACY_UNPAIRED) == set(LEGACY_BASELINE), sorted(
+        set(verbs.LEGACY_UNPAIRED) ^ set(LEGACY_BASELINE))

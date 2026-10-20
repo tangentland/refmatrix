@@ -318,6 +318,42 @@ def f(root):
         raise RuntimeError(f"no answer from the store ({e})")
 """,
 })
+# Task 3.7 #folded-r52 (ch-bsd plan-3 r12 #m-1). `two_level_wrapper` defines its
+# INNER wrapper first, so mutant Q5 (drop `changed = True`: the fixed point becomes
+# one pass in source order) still flags it and survived all 53 tests. The live
+# layout that hid r11 #s-1 is OUTER-first (`_subject_upsert` above
+# `_memory_daemon_call`). Plus the two r12 evasions most likely in real code.
+_PLANTS_FLAGGED.update({
+    "two_level_outer_first_Q5": _HDR + """
+def f():
+    try:
+        _subject_upsert("x")
+    except OSError as e:
+        raise RuntimeError(f"subject filing not confirmed ({e}); the daemon may still complete it")
+
+def _subject_upsert(label):
+    return _memory_daemon_call("subject_upsert", {"label": label})
+
+def _memory_daemon_call(op, args):
+    return daemon_mod.call("/r", op, args)
+""",
+    "message_prepared_before_try": _HDR + """
+def f(root):
+    msg = f"the daemon for {root} did not answer"
+    try:
+        daemon_mod.call(root, "x", {})
+    except Exception as e:
+        raise RuntimeError(msg)
+""",
+    "local_alias_dial": _HDR + """
+def f(root):
+    dial = daemon_mod.call
+    try:
+        dial(root, "x", {})
+    except Exception as e:
+        raise RuntimeError(f"daemon busy ({e})")
+""",
+})
 _PLANTS_CLEAN = {
     "raises_the_classifier": _HDR + """
 def f(root):
@@ -689,6 +725,32 @@ def test_every_verb_it_path_names_its_task_3_7_family():
             bad.append(f"{' '.join(path)}: verb-it but in no task-3.7 family")
         elif f"task-3.7#{fam}" not in reason:
             bad.append(f"{' '.join(path)}: reason does not name task-3.7#{fam}")
+    assert not bad, "\n" + "\n".join(bad)
+
+
+# Task 3.7 batch A (#schedule): these families left `verb-it` by gaining verbs.
+# Each path is now a twin (CLI_MAP or CLI_ACTIONS) of the verb #decisions names;
+# `curator status` (was `hook`) and `focus export` (was `harness`) join them.
+_BATCH_A_TWINS = {
+    "rmx_focus": VERB_IT_FAMILIES["fam-focus"] | {("focus", "export")},
+    "rmx_curate": VERB_IT_FAMILIES["fam-curation"],
+    "rmx_taxonomy": VERB_IT_FAMILIES["fam-taxonomy"],
+    "rmx_curator": {("curator", "drain"), ("curator", "status")},
+}
+
+
+def test_batch_a_paths_are_twins_of_their_decided_verb_and_left_legacy():
+    bad = []
+    for vname, paths in _BATCH_A_TWINS.items():
+        for path in sorted(paths):
+            if path in verbs.LEGACY_UNPAIRED:
+                bad.append(f"{' '.join(path)}: still LEGACY_UNPAIRED "
+                           f"{verbs.LEGACY_UNPAIRED[path][0]}")
+                continue
+            twin = vname if verbs.CLI_MAP.get(vname) == path else (
+                verbs.CLI_ACTIONS.get(path, (None, None))[0])
+            if twin != vname:
+                bad.append(f"{' '.join(path)}: twin of {twin!r}, expected {vname}")
     assert not bad, "\n" + "\n".join(bad)
 
 
