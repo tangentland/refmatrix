@@ -21,8 +21,10 @@ rel: supersedes -> [[handoff-017-wave1-releases-0801-ac6]]
   probes); not merged to master, not pushed. Untracked: `tests/fixtures/` (the RAW AC-6 cut, 24 MB —
   never `git add -A`; move it off the tree once AC-6 merges) and `eval/spike_hypertree/` (the M1-M7
   spike, in flight).
-- **Background work still running at save time** (results land in the trees named):
-  task 3.7 remedy-r1 full suite (clone), hypertree M1-M7 spike (dev tree), nothing for plan-24 (r7 fold done).
+- **Background work at save time:** all agents finished. Only the hypertree M6 timing run for
+  viascope then refmatrix is still running as a plain process (`m6_placement_write.py`); it writes
+  `eval/spike_hypertree/results/m6_{viascope,refmatrix}.json` — commit those two files when they
+  appear and fill the doc's NOT FINISHED rows.
 
 ## Task 3.7 — verb-it backlog {#t37}
 
@@ -36,9 +38,15 @@ Clone `/Volumes/littlebig/refmatrix-task-3.7`, branch `task-3.7-verb-it-backlog`
   `rmx_curator`, `rmx_taxonomy`) + `rmx_focus` actions; LEGACY_UNPAIRED 140 → 92; `verb-it`
   category gone. Final batch suite: 3666 passed / 3 failed, all three identical at base `591a2fb`.
 - Post-build ch-bsd (2B/2S/2M, mutations 16/18) + code review (1H/8M) → **remedy r1** decided in the
-  spec `#remedy-r1`, RED `56a5815` (28 failing), GREEN commits `68df326`..`364a90e` (incl. the
-  user's OBJC fork-safety fix in `HOOK_ENV`). **Next:** read the implementer's suite result; then
-  ch-bsd re-audit; then merge `--no-ff` to master, release, deploy.
+  spec `#remedy-r1`, RED `56a5815` (28 failing), GREEN `68df326`..`364a90e`, summary `4c98e3c`
+  (incl. the user's OBJC fork-safety fix in `HOOK_ENV`). Clone clean at `4c98e3c`.
+  Remedy suite: 3694 passed / 6 failed — 3 known base failures (bug-155 GMD gate, bug-156 AC-6,
+  bug-091 test_watch), 2 load/cold-start flakes (plan4 graceful_stop; 21.1 ac11a), and 1 TEST
+  conflict. **Next, in order:** (1) test engineer: `test_write_spool_is_tmp_fsync_rename` must allow
+  the directory fsync after the rename (R-L), and point `tests/test_concept_timeline.py` at
+  `graphread` so the kept `_concept_files` alias in cli.py can be deleted (R-RM7); (2) ch-bsd
+  re-audit of `6fd9b7c..HEAD`; (3) spec status → completed; merge `--no-ff` to master, release,
+  deploy.
 - **Deploy steps for 3.7:** `rmx install-hooks --apply` (curator hook lines + OBJC env), restart
   daemons (spool writer), `/mcp` reconnect (8 new tools).
 - Bugs: fixed bug-139..150 + 155-160 range per the summary; OPEN bug-151..154 (refine
@@ -59,9 +67,13 @@ wipes `$.state`. Memory: [[reference_claude_code_mod_probe_facts]].
 ## Hypertree — associative power {#hypertree}
 
 `docs/architecture/explorations/hypertree.md`. The user: the goal is maximum associative power,
-not endorsing an implementation. Recommends Option B (placements + facet bitmaps as an index over
-the graph). **M1-M7 spike running** → `docs/measurements/hypertree-spike-2026-10-20.md` +
-`eval/spike_hypertree/`; then answer the exploration's open questions with the user.
+not endorsing an implementation. **M1-M7 spike done** (`5518a87`,
+`docs/measurements/hypertree-spike-2026-10-20.md`): the cross-cutting incidence graph carries the
+association (concepts are not tree-coherent; tree-scoped recall loses hits; tree render saves only
+3.4%); bands imply **Option B scoped** — `gmd` section + `code` def placements written in the
+entity transaction for in-file addressing; no LCA band, tree render, subject tree (except viascope
+in principle) or Dewey ids. Open: whether same-file proximity helps as a RANKING feature (the spike
+measured it only as a scope). Next: walk the exploration's open questions with the user.
 
 ## Other explorations this session {#explorations}
 
