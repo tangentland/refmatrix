@@ -2467,15 +2467,11 @@ def canon(root: Path, action: typing.Literal["find", "siblings", "link"], *,
     if action == "link":
         name = canon_name or concept
         t = float(action_default("rmx_canon", action, "timeout", timeout))
-        try:
-            require_daemon(root, retries=0)
-        except VerbAbsentError:
-            return local_write(root, lambda s: {"canon_id": s.link_canon(
-                _local_id(s), canon_partition, name)}, partition=part)
-        cid = snapshot_read(root, lambda s: {"id": _local_id(s)}, partition=part)["id"]
-        return _write_or_local(
-            root, "link_canon", {"local_concept_id": cid, "canon_partition": canon_partition,
-                                 "canon_concept_name": name}, timeout=t, partition=part,
+        # Remedy r1 R-S1 / R-RM4: the concept travels as a NAME, resolved by the op under
+        # the writer, through the one matrix write path.
+        return _matrix_write(
+            root, "link_canon", {"concept": concept, "canon_partition": canon_partition,
+                                 "canon_concept_name": name}, partition=part, timeout=t,
             local=lambda s: {"canon_id": s.link_canon(_local_id(s), canon_partition, name)})
     raise VerbArgsError(f"unknown canon action {action!r}")
 
@@ -2504,18 +2500,14 @@ def _resolve_entity_id(s, ref: str) -> int:
 
 
 def _matrix_write(root: Path, op: str, payload: dict, *, partition: str, timeout: float,
-                  local: "Callable[[Any], dict]", resolve: "Callable[[Any], dict] | None" = None
-                  ) -> dict:
+                  local: "Callable[[Any], dict]") -> dict:
     """One matrix WRITE (C4/C5): an ABSENT daemon runs `local` (which resolves its own
-    ends) in ONE `local_write` handle (C4a); otherwise `resolve` (the ends' ids) reads the
-    snapshot first — an unknown end sends nothing — and the op is one classified attempt."""
+    names) in ONE `local_write` handle (C4a); otherwise the op is one classified attempt
+    and resolves any names itself, under the writer (remedy r1 R-S1)."""
     try:
         require_daemon(root, retries=0)
     except VerbAbsentError:
         return local_write(root, local, partition=partition)
-    if resolve is not None:
-        payload = {**payload, **snapshot_read(root, resolve, partition=partition)}
-        payload.pop("source", None)
     return _write_or_local(root, op, payload, timeout=timeout, partition=partition,
                            local=local)
 
@@ -2575,24 +2567,26 @@ def matrix(root: Path, action: typing.Literal[
                 name=name, directed=directed, description=description)})
     if action in ("link", "unlink"):
         need(concept=concept, entity=entity)
+        # Remedy r1 R-S1: the verb sends NAMES and the op resolves them under the
+        # writer — ids resolved on the snapshot lagged the writer, so `add concept`
+        # followed at once by `link` failed "no concept named".
 
-        def _ends(s) -> dict:
-            return {"concept_id": _resolve_concept_id(s, concept),
-                    "entity_id": _resolve_entity_id(s, entity)}
+        def _ends(s) -> "tuple[int, int]":
+            return _resolve_concept_id(s, concept), _resolve_entity_id(s, entity)
         if action == "link":
             def _local(s) -> dict:
-                ends = _ends(s)
-                return {"created": bool(s.link(linkage, ends["concept_id"], ends["entity_id"],
-                                               protect=not no_protect))}
-            res = _matrix_write(root, "link", {"linkage": linkage, "protect": not no_protect},
-                                partition=part, timeout=t, local=_local, resolve=_ends)
+                cid, eid = _ends(s)
+                return {"created": bool(s.link(linkage, cid, eid, protect=not no_protect))}
+            res = _matrix_write(root, "link", {"linkage": linkage, "concept": concept,
+                                               "entity": entity, "protect": not no_protect},
+                                partition=part, timeout=t, local=_local)
         else:
             def _local(s) -> dict:
-                ends = _ends(s)
-                return {"unlinked": bool(s.unlink(linkage, ends["concept_id"],
-                                                  ends["entity_id"]))}
-            res = _matrix_write(root, "unlink", {"linkage": linkage}, partition=part,
-                                timeout=t, local=_local, resolve=_ends)
+                cid, eid = _ends(s)
+                return {"unlinked": bool(s.unlink(linkage, cid, eid))}
+            res = _matrix_write(root, "unlink", {"linkage": linkage, "concept": concept,
+                                                 "entity": entity},
+                                partition=part, timeout=t, local=_local)
         return {**res, "concept": concept, "entity": entity, "linkage": linkage}
     if action == "save_query":
         need(name=name, body=body)

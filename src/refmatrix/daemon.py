@@ -6112,7 +6112,9 @@ def _op_ann_search(d: Daemon, args: dict) -> dict:
             return _apply_rerank_safe(d, q, docs, k, warnings=warnings)
     # ONE algorithm (task 3.7 #fam-graph-read-recall): `recall.ann_search` is also
     # what the `rmx_graph` dense action runs in-process when no daemon exists.
-    return ann_search(d._st(), emb, query=query, vector=args.get("vector"),
+    # The store is resolved INSIDE `_store_lock` (remedy r1 R-RM1): `d._st()` read
+    # before the lock could see a store mid-swap.
+    return ann_search(d._st, emb, query=query, vector=args.get("vector"),
                       k=int(args.get("k") or 20), kinds=args.get("kinds"),
                       partition=args.get("partition"), rerank=rerank,
                       lock=d._store_lock, log=d._log)
@@ -6134,7 +6136,7 @@ def _op_graph_recall(d: Daemon, args: dict) -> dict:
     READ store bound to the requested partition (`_read_with_fallback`, the bug-098
     pattern: mirror → snapshot file → the writer only under `_store_lock`). An unknown
     partition raises rather than answering from another one."""
-    from refmatrix import recall as recall_mod
+    from refmatrix import discovery, recall as recall_mod
     query = args.get("query")
     no_dense = bool(args.get("no_dense"))
     try:
@@ -6143,7 +6145,10 @@ def _op_graph_recall(d: Daemon, args: dict) -> dict:
     except ImportError as exc:
         return {"ok": False, "error": f"dense extra not installed: {exc}"}
     symbolic = args.get("symbolic")
-    partition = args.get("partition") or d._st()._partition_name
+    # The daemon's bound partition from its own attribute, never an unlocked store
+    # read (remedy r1 R-RM2); the Store's default when the daemon was started unbound.
+    partition = (args.get("partition") or d.partition or os.environ.get("RMX_PARTITION")
+                 or discovery.store_name(d.root))
     return _read_with_fallback(
         d, partition,
         lambda s: recall_mod.graph_recall(
@@ -6252,12 +6257,37 @@ def _op_part_ctx(d: "Daemon", args: dict):
     return d._st().with_partition(p) if p else contextlib.nullcontext()
 
 
+def _edge_ends(st: "Store", args: dict) -> "tuple[int, int]":
+    """`(concept_id, entity_id)` for a link op: ids when the caller sent them
+    (`_DaemonWriter.link`), else the NAMES `concept` / `entity` resolved on the writer,
+    under the caller's lock (task 3.7 remedy r1 R-S1: the verbs used to resolve names on
+    the lagging snapshot, so add-then-link failed). An unknown name raises ValueError."""
+    if args.get("concept_id") is not None and args.get("entity_id") is not None:
+        return int(args["concept_id"]), int(args["entity_id"])
+    return _concept_id_by_name(st, args.get("concept")), _entity_id_by_name(st, args.get("entity"))
+
+
+def _concept_id_by_name(st: "Store", name: "str | None") -> int:
+    e = st.resolve_entity(str(name)) if name else None
+    if e is None or e.kind != "concept":
+        raise ValueError(f"no concept named {name!r} in partition {st._partition_name!r}")
+    return int(e.id)
+
+
+def _entity_id_by_name(st: "Store", name: "str | None") -> int:
+    e = st.resolve_entity(str(name)) if name else None
+    if e is None:
+        raise ValueError(f"no entity named {name!r} in partition {st._partition_name!r}")
+    return int(e.id)
+
+
 def _op_link(d: Daemon, args: dict) -> dict:
     """Create a typed concept->entity edge. Routes `rmx link` through the
-    daemon so the catalog write-lock stays single-owner."""
+    daemon so the catalog write-lock stays single-owner. Takes ids or names."""
     with d._store_lock, _op_part_ctx(d, args):
+        cid, eid = _edge_ends(d._st(), args)
         created = d._st().link(
-            args["linkage"], int(args["concept_id"]), int(args["entity_id"]),
+            args["linkage"], cid, eid,
             weight=args.get("weight"), protect=bool(args.get("protect", False)),
         )
     d._request_snapshot()
@@ -6267,9 +6297,8 @@ def _op_link(d: Daemon, args: dict) -> dict:
 def _op_unlink(d: Daemon, args: dict) -> dict:
     """Remove a typed concept->entity edge (`rmx unlink`)."""
     with d._store_lock, _op_part_ctx(d, args):
-        removed = d._st().unlink(
-            args["linkage"], int(args["concept_id"]), int(args["entity_id"]),
-        )
+        cid, eid = _edge_ends(d._st(), args)
+        removed = d._st().unlink(args["linkage"], cid, eid)
     d._request_snapshot()
     return {"unlinked": bool(removed)}
 
@@ -6280,9 +6309,12 @@ def _op_link_canon(d: Daemon, args: dict) -> dict:
     is same-process as the daemon, so DuckDB permits the second connection
     (the lock conflict is only cross-process)."""
     with d._store_lock, _op_part_ctx(d, args):
+        # The local concept by id or by NAME, resolved under the writer (task 3.7
+        # remedy r1 R-S1).
+        local = (int(args["local_concept_id"]) if args.get("local_concept_id") is not None
+                 else _concept_id_by_name(d._st(), args.get("concept")))
         canon_id = d._st().link_canon(
-            int(args["local_concept_id"]),
-            args["canon_partition"], args["canon_concept_name"],
+            local, args["canon_partition"], args["canon_concept_name"],
         )
     d._request_snapshot()
     return {"canon_id": canon_id}

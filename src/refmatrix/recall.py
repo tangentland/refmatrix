@@ -21,6 +21,7 @@ Phase A7 surface; Phase B's `rmx memory recall` is the CLI consumer.
 from __future__ import annotations
 
 import re
+import threading
 from typing import Callable, Sequence
 
 from refmatrix.query import fuse_rrf
@@ -335,6 +336,24 @@ def remote_embedder(model_client):
     return e
 
 
+_EMBED_CLIENT: "object | None" = None
+_EMBED_CLIENT_LOCK = threading.Lock()
+
+
+def _process_embed_client(log: "Callable[[str], None]"):
+    """The ONE embed-worker client of a daemonless process (task 3.7 remedy r1 R-H1): the
+    long-lived `rmx mcp` used to spawn a new, never-reaped worker on every no-daemon
+    recall / dense call. Created once under a lock, closed once at exit."""
+    import atexit
+    global _EMBED_CLIENT
+    with _EMBED_CLIENT_LOCK:
+        if _EMBED_CLIENT is None:
+            client = new_model_client("embed", log=log)
+            atexit.register(client.close)
+            _EMBED_CLIENT = client
+        return _EMBED_CLIENT
+
+
 def shared_embedder(root, *, remote: "Callable[[], object] | None" = None,
                     log: "Callable[[str], None] | None" = None,
                     on_fallback: "Callable[[], None] | None" = None):
@@ -346,7 +365,6 @@ def shared_embedder(root, *, remote: "Callable[[], object] | None" = None,
     `log` and `on_fallback` (which drops its private worker); a daemonless caller — the
     verb's C4a branch — passes none and gets a worker client of its own, closed at exit.
     Raises ImportError when the [dense] extra is missing; callers surface that cleanly."""
-    import atexit
     import logging
 
     from refmatrix.subproc import subproc_embed_enabled
@@ -356,9 +374,7 @@ def shared_embedder(root, *, remote: "Callable[[], object] | None" = None,
             if remote is not None:
                 e = remote()
             else:
-                client = new_model_client("embed", log=say)
-                atexit.register(client.close)
-                e = remote_embedder(client)
+                e = remote_embedder(_process_embed_client(say))
             say(f"embedder loaded (subprocess) model={e.model_name} dim={e.dim}")
             return e
         except ImportError:
@@ -482,7 +498,8 @@ def graph_recall(store: Store, embedder, *, query: "str | None", k: int = 10,
     return {"hits": hits, "warnings": warnings}
 
 
-def ann_search(store: Store, emb, *, query: "str | None" = None, vector=None, k: int = 20,
+def ann_search(store: "Store | Callable[[], Store]", emb, *, query: "str | None" = None,
+               vector=None, k: int = 20,
                kinds: "Sequence[str] | None" = None, partition: "str | None" = None,
                rerank: "Callable[[str, object, int, list], object] | None" = None,
                lock=None, log: "Callable[[str], None] | None" = None) -> dict:
@@ -508,11 +525,14 @@ def ann_search(store: Store, emb, *, query: "str | None" = None, vector=None, k:
     ann_k = min(max(k, k * DEFAULT_POOL_MULT), MAX_POOL) if want_rerank else k
     docs = None
     with (lock if lock is not None else contextlib.nullcontext()):
-        hits = store.ann_search(v, k=ann_k, dim=emb.dim, kinds=kinds, partition=partition)
+        # `store` may be a getter, resolved HERE, inside `lock` (task 3.7 remedy r1
+        # R-RM1): the daemon's store resolved before the lock could be mid-swap.
+        st = store() if callable(store) else store
+        hits = st.ann_search(v, k=ann_k, dim=emb.dim, kinds=kinds, partition=partition)
         if want_rerank:
             from refmatrix.reranker import collect_rerank_docs
             try:
-                docs = collect_rerank_docs(store, hits, k=k)
+                docs = collect_rerank_docs(st, hits, k=k)
             except Exception as exc:  # noqa: BLE001 — logged; retrieval order stands
                 if log is not None:
                     log(f"rerank doc collect failed: {exc!r}")
