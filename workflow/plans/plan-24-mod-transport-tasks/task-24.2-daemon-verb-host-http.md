@@ -65,7 +65,7 @@ execution path of its own, not a socket. {#why-lead}
 | d13 | Every SUBMITTED write (R13) carries an `idempotency_key`; a submit of a `writes` (verb, action) without one is 400 `VerbArgsError` | a job lives in memory, so after a fast-exit only the key can say whether the write happened (r4, ch-bsd r3 s2) |
 | d14 | Four job lanes / waits, each bounded and separate: `verb_read_pool` / `verb_write_pool` (synchronous), `verb_job_read_pool` / `verb_job_write_pool` (submitted jobs, default 2 each), and `verb_wait_pool` (default 16) for `rmx_job` polls, which answers 503 at once when full | a 20 s poll must never hold a read worker (24.3 d8's reason), and a 180 s graph read must never queue a save-state behind it (r4, ch-bsd r3 s1) |
 | d15 | Every `writes` (verb, action) declares how it is made idempotent, on `@verb(idempotent_by=…)` (per action): `"transaction"` (catalog writes; each daemon op it reaches records the key through ONE helper, `Store.record_idempotency(key, verb, result)`, inside its write transaction), a field name (`"row_uuid"`, `"tool_use_id"`, `"idempotency_key"`: ring / JSONL writes that store it and skip a duplicate), `"natural"` (set semantics: taxonomy add / remove, flags, sync enqueue / flush), or `None` = NOT CONFIRMABLE. At 3.7 + 24.2a the not-confirmable writes are those whose effect leaves the store's catalog and rings: `rmx_save_state` (memory-dir file, bridge ingest, promote), and any write that reaches ANOTHER store or the hub (`global_write` paths, `rmx_bus_*` writes); a parity test fails on an undeclared `writes` action and lists the `None` ones | one declaration per write, read by the host and checked by a test, instead of one ledger that cannot see the store's commit (r5) |
-| d16 | The `idempotency_keys` table is a CATALOG fact like every other: its DDL is in `duckdb_catalog.CATALOG_DDL` (and the SQLite mirror in `store.py`'s `CATALOG_DDL`, whose shapes must match); every key write is ALSO a `facts.log` event of kind `idempotency` appended in the same transaction as the effect, so `rebuild_index_from_log` replays keys alongside effects; `dump_catalog_to_log` emits the keys younger than the 7-day retention; `replica_merge` merges the table by key (union, the earlier `ts` wins, never a duplicate). The check-and-insert happens INSIDE the op's own transaction (`INSERT … ON CONFLICT (key) DO NOTHING RETURNING`; no row returned ⇒ the effect is skipped and the recorded result answered), never as a host pre-check on the read path. A verb that makes several write ops keys each one `<key>#<op-index>`, so after a crash between them the first answers `replayed` and the second RUNS | facts.log is the store's authority: a key kept only in the catalog vanishes on a rebuild while its effect returns, making "absent ⇒ safe to re-run" false; the mirror and snapshot lag the writer; one key per verb would mark a half-done verb complete (r6, ch-bsd r5 s1) |
+| d16 | The `idempotency_keys` table is a CATALOG fact like every other: its DDL is in `duckdb_catalog.CATALOG_DDL` (and the SQLite mirror in `store.py`'s `CATALOG_DDL`, whose shapes must match); every key write is ALSO a `facts.log` event of kind `idempotency`, carried in the EFFECT'S OWN post-commit `_log_events` batch (facts.log is appended after the DuckDB commit, as a plain file write, `Store._log_events`), so after a crash the key and the effect are in the log together or absent together, and `rebuild_index_from_log` replays keys alongside effects; the event carries the key's own `key_ts`, which dump and replay preserve (never the dump or replay time); `dump_catalog_to_log` emits the keys whose `key_ts` is younger than the 7-day retention; `replica_merge` merges the table by key (union, the earlier `ts` wins, never a duplicate). The check-and-insert happens INSIDE the op's own transaction (`INSERT … ON CONFLICT (key) DO NOTHING RETURNING`; no row returned ⇒ the effect is skipped and the recorded result answered), never as a host pre-check on the read path. A verb that makes several write ops keys each one `<key>#<op-index>`, so after a crash between them the first answers `replayed` and the second RUNS | facts.log is the store's authority: a key kept only in the catalog vanishes on a rebuild while its effect returns, making "absent ⇒ safe to re-run" false; the mirror and snapshot lag the writer; one key per verb would mark a half-done verb complete (r6, ch-bsd r5 s1) |
 
 ## Requirements {#requirements}
 
@@ -132,8 +132,9 @@ execution path of its own, not a socket. {#why-lead}
 8. **R8 — idempotency (d10, d15).** Keys up to 128 chars. The host reads the verb's
    `idempotent_by` for the request's action and passes the key down: `"transaction"` → into every
    daemon op payload the verb makes, as `<key>#<op-index>` (d16), where `Store.record_idempotency`
-   does the check-and-insert of `(key, verb, ts, result_json)` inside the op's own transaction and
-   appends the matching `idempotency` facts.log event (a conflict skips the effect and returns the
+   does the check-and-insert of `(key, verb, key_ts, result_json)` inside the op's own transaction
+   and RETURNS the key's `idempotency` facts.log record, which the op adds to its own post-commit
+   `_log_events` batch (never written by a separate `_log_event` call) (a conflict skips the effect and returns the
    recorded result; when every op of the request answered from a recorded key, the response is
    `200` with `"replayed": true`; a verb whose response
    differs from its op's result updates the row with its final result after the op, best-effort,
@@ -250,7 +251,12 @@ execution path of its own, not a socket. {#why-lead}
 17. **AC-17 (d16 — rebuild).** A keyed `rmx_memory_add` lands; `rebuild_index_from_log` runs (the
     daemon op); a re-submit with the same key answers `replayed` and the store holds ONE memory
     row; `dump_catalog_to_log` of a store with a 6-day-old and an 8-day-old key emits only the
-    first; a replica merge of two slots holding the same key keeps one row. {#ac-17}
+    first; a replica merge of two slots holding the same key keeps one row. The 6-day / 8-day case
+    runs through a `dump_catalog_to_log` AND a `rebuild_index_from_log`: both keys keep their
+    original `key_ts` (the 6-day key still answers `replayed`, the 8-day key is gone). A crash
+    injected between the op's DuckDB commit and its `_log_events` append (a fixture that kills
+    the daemon there), followed by a rebuild: neither the effect nor the key is in the rebuilt
+    catalog, and the re-submit runs the write exactly once. {#ac-17}
 18. **AC-18 (d16 — multi-op).** A fixture verb making two keyed write ops is SIGKILLed between
     them; the re-submit answers the first op from its key (`<key>#0`, not re-applied) and RUNS the
     second (`<key>#1`); the store holds exactly one effect of each; a second re-submit answers
@@ -261,7 +267,10 @@ execution path of its own, not a socket. {#why-lead}
 
 New `tests/test_task24_2_verb_host.py`; an HTTP-over-AF_UNIX client in
 `tests/http_unix_support.py` (stdlib `http.client.HTTPConnection` with a connected unix socket),
-never the live store (short `mkdtemp(dir="/tmp")` roots; 23.0's sandbox). The blocking fixture verb
+never the live store (short `mkdtemp(dir="/tmp")` roots; 23.0's sandbox). Environment: the
+idempotency ACs (AC-14, AC-17, AC-18) are pinned to DuckDB 1.5.3, the deploy venv's version; the
+dev venv runs 1.5.2 (pre-existing skew), so the RED / GREEN logs record `duckdb.__version__` and
+those ACs run under 1.5.3. The blocking fixture verb
 of AC-6 is registered into a copied `VERBS` for the test only and listed in
 `workflow/test_mock_registry.md`. RED run logged to `workflow/review-output/task24_2-red.log`.
 {#test-strategy-body}
@@ -324,4 +333,12 @@ of AC-6 is registered into a copied `VERBS` for the test only and listed in
 | s1(b) a rebuild dropped keys but kept effects | d16: each key is also an `idempotency` facts.log event in the same transaction; rebuild replays it; dump keeps 7 days; `replica_merge` rule; AC-17 |
 | s1(c) a read-path pre-check could read stale data | d16 / R8: check-and-insert inside the op's transaction (`ON CONFLICT … RETURNING`); AC-18 |
 | s1(d) a two-op verb looked complete after one op | d16: one key per op, `<key>#<op-index>`; AC-18 |
+
+## Revision r7 (2026-10-20, ch-bsd r6 34fedb1) {#rev-r7}
+
+| finding | change |
+|---|---|
+| s1 facts.log is appended after the commit, not inside the transaction | d16 / R8: the key's event rides in the effect's own post-commit `_log_events` batch; `record_idempotency` returns the record instead of appending it; AC-17 adds a crash between commit and append, then rebuild, then exactly-once re-submit |
+| m1 dump / replay re-dated keys | d16: `key_ts` preserved by dump and replay; AC-17's 6-day / 8-day case runs through a dump and a rebuild |
+| (note) DuckDB 1.5.2 dev vs 1.5.3 deploy | test strategy pins the idempotency ACs to 1.5.3 |
 
