@@ -510,6 +510,10 @@ rel: amends -> [[#t10-waves]]
     unpinned), #b-3 (`brief.parse_gmd` no production caller), #s-4 (`brief --compile` only in the
     CLI, not the verb), #s-9/#m-10 (unregistered doubles). Closes plan-8's build; its two
     deferrals move to Wave 3.
+  - **W2-d plan-3 verb-it backlog (task 3.7):** the 49 `verb-it` CLI paths, by family
+    (graph-read, canon, matrix-edit, curation, focus, session, refine, taxonomy): each family is
+    verbed (verb + MCP tool + parity twin) or re-decided with a code-checked reason. Plan-3 closes
+    only with 3.7 done or explicitly carried past closure by the user.
   - **W2-c plan-7 dense/fused re-run:** task 7.4's dense and fused rows (bug-030 fixed 2026-09-16,
     never re-run); REPORT.md completed. Closes plan-7's build.
 - **Wave 3**
