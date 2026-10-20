@@ -172,3 +172,12 @@ three fail with `AttributeError: module 'refmatrix.cli' has no attribute
 - `tests/test_memory.py::test_memory_partition_default_resolves_to_project_scoped`: it fails
   on line 291, `hasattr(cli_mod._legacy_memory_partition_exists, "_cache")`. The behaviour it
   asserts still holds.
+
+r10 runs:
+
+- 3.6 file, plus the plan-2 and memory files: `workflow/review-output/task3.6-r10-green-target.log`.
+- Plan-3, `test_memory*` (including `test_memory_recall*`), plan-2 and embed-routing files: 595
+  passed, 3 failed — the three detector-pinning tests above (`task3.6-r10-green-plan3.log`).
+- Full suite: 3037 passed, 23 failed, 19 skipped (`task3.6-r10-green-full.log`). The failures
+  are the 19 clone-only DEV TREE refusals, the gmd repo-scope gate, and the same three
+  detector-pinning tests.
