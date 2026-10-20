@@ -14,7 +14,7 @@ metadata:
 
 **Date:** 2026-10-20.
 **Status:** Drafting. The transition is DECIDED (user, 2026-10-20); task 24.0 (a baseline, not a
-gate) is specified, and 24.1-24.8 are written next ([[#tasks]]).
+gate) is specified, and 24.1-24.8 (with 24.2a) are specified ([[#tasks]]).
 **Origin:** [[exploration-claude-code-mod-transport]]; the wave change is
 [[plan-review-2026-10-14#t13-mod-gate]].
 
@@ -72,20 +72,22 @@ Spawn cost is a secondary benefit, measured as a before/after baseline (24.0), n
 | task | what | goal | status |
 |------|------|------|--------|
 | [[task-24.0-hook-cost-baseline]] | spawn + import cost per hook process, before AND after the mod; a baseline, not a gate | secondary | spec written |
-| 24.1 | the store records its runtime identity (rmx binary, version, verb-schema hash) on daemon start — D4 / D5's hub-down source | G4, D4, D5 | spec next |
-| 24.2 | in-daemon verb host + the per-store HTTP socket (`rmxd-http.sock`), verbs only (D3) | G4 | spec next |
-| 24.3 | hub HTTP: discovery (cwd → store socket + identity), global, federated, bus (D2) | G4, G5 | spec next |
-| 24.4 | verb-schema export; the mod's tools and routes GENERATED from `VERBS`; a TS transport-error classifier twin with cross-language parity | G4 | spec next |
-| 24.5 | the mod: `session.start` handshake, real session identity end to end, tool registration, status line + toasts | G1, G4, G5, G6 | spec next |
-| 24.6 | context and observation move in: `prompt.compose` / `prompt.submit` (scan-prompt, recall, primer), `tool.call` (focus pre/post, grep guard); shell hooks stay as the fallback | G1, G2, G3 | spec next |
-| 24.7 | distribution: marketplace file, deploy `--plugin-dir`, the double-load stand-down (D5) | — | spec next |
-| 24.8 | retire `rmx mcp` on the Claude Code path; the held items re-specified against the mod (D1) | G4 | spec next |
+| [[task-24.1-store-runtime-identity]] | the store records its runtime identity (rmx binary, version, verb-schema hash per verb, sockets) in `.refmatrix/identity.json` on daemon start — D4 / D5's hub-down source | G4, D4, D5 | spec written |
+| [[task-24.2a-hook-verbs-explicit-session]] | the hook paths the mod takes over become verbs; every session-dependent verb takes an explicit `session`; a caller context replaces the pid ladder in-host (ch-bsd b1) | G1, G3 | spec written |
+| [[task-24.2-daemon-verb-host-http]] | in-daemon verb host + the per-store HTTP socket (`rmxd-http.sock`), verbs only (D3) | G4 | spec written |
+| [[task-24.3-hub-http-discovery]] | hub HTTP on `hub-http.sock`: discovery (cwd → store socket + identity), global, federated, bus + long-poll wake (D2) | G4, G5 | spec written |
+| [[task-24.4-generated-mod-surface]] | verb-schema export; the mod's tools and routes GENERATED from `VERBS`; a TS transport-error classifier twin with cross-language parity | G4 | spec written |
+| [[task-24.5-mod-core]] | the mod: `session.start` handshake, real session identity end to end, tool registration, status line + toasts, pane, bus wake, outbox, `userConfig` | G1, G4, G5, G6 | spec written |
+| [[task-24.6-context-and-observation]] | context and observation move in: `prompt.compose` / `prompt.section` / `prompt.context` / `prompt.submit`, `tool.call`, `tool.check`, `session.append`, `session.compact`, `turn.complete`; shell hooks stay as a fallback that stands down while the mod is live | G1, G2, G3, G6 | spec written |
+| [[task-24.7-distribution]] | distribution: marketplace file, deploy `CLAUDE_CODE_PLUGIN_DIRS`, the double-load stand-down (D5), one version | — | spec written |
+| [[task-24.8-retire-mcp-and-retarget]] | retire `rmx mcp` on the Claude Code path; the held items re-specified against the mod (D1); follow-up candidates listed | G4 | spec written |
 
 ## Phasing {#phasing}
 
 - **24.0 and 24.1** start now, in parallel with Wave 1's engine work: 24.0 needs a week of
   pre-mod data, so its "before" window has to open before the mod exists. {#phase-now}
-- **24.2 → 24.3 → 24.4 → 24.5 → 24.6 → 24.7 → 24.8** follow; 24.4 needs 3.7 merged. {#phase-build}
+- **24.2a → 24.2 → 24.3 → 24.4 → 24.5 → 24.6 → 24.7 → 24.8** follow; 24.2a, 24.2 and 24.4 need
+  3.7 merged. {#phase-build}
 - **The held items** (D1) are re-specified once 24.5 and 24.6 define the mod's events and
   surfaces they build on; their current hook-based specs are kept as records, not built. {#phase-held}
 
