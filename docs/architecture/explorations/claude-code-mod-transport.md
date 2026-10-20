@@ -110,7 +110,9 @@ recurring families. Kept as plan-24's first build step, not as the whole answer.
 
 Bands written BEFORE the data, per [[feedback_go_no_go_ranges_not_predrop]]. {#gate-lead}
 
-**Instrument.** For every hook event of one working week (≥5 sessions, ≥2 projects), record: the
+**Instrument.** For every hook event of one working week (≥5 sessions, refmatrix only — the
+user, 2026-10-20: "right now refmatrix is the only active project"; the gate measures the
+workload that exists, and a second project re-runs it if one becomes active), record: the
 event, wall time from Claude Code dispatch to hook exit (a wrapper timestamp, NOT `latency_ms`,
 which starts after imports), the in-process `latency_ms`, and whether the event blocks the turn.
 Spawn share = (wall − in-process) / wall. Per prompt: blocking spawn seconds = Σ (wall −
@@ -236,7 +238,8 @@ written; `status: drafting` when it is)
 
 ### Open Questions Requiring User Decisions {#open-questions-requiring-user-decisions}
 
-- Q1: Which projects carry the gate week (refmatrix + one of viascope / cliquedb / atldb)?
+- Q1 — decided (user, 2026-10-20): refmatrix alone carries the gate week; it is the only
+  active project ([[#gate-instrument]]).
 - Q2 — decided (user, 2026-10-20): the per-store HTTP surface serves **verbs only**
   ([[#http-verbs-only]]). The no-daemon fallback is decided too: spawn the project's `rmx`
   ([[#verb-host-absent]]).
