@@ -405,6 +405,25 @@ def test_the_guard_flags_every_evasion_shape(shape):
         f"the guard does not see the {shape!r} evasion")
 
 
+def test_the_outer_first_plant_kills_mutant_q5():
+    """Task 3.7 R52 (ch-bsd plan-3 r12 #m-1): Q5 drops `changed = True` inside the
+    fixed-point loop, so it runs one pass in source order. The inner-first plant
+    still passed under Q5; the outer-first plant must not."""
+    import importlib.util
+    import types
+    src = Path(_tg.__file__).read_text()
+    needle = "                    self.wrappers.add(fname)\n                    changed = True\n"
+    assert src.count(needle) == 1, "the fixed-point loop moved; re-aim the mutant"
+    mutant = types.ModuleType("transport_guard_q5")
+    exec(compile(src.replace(needle, "                    self.wrappers.add(fname)\n"),
+                 "transport_guard_q5", "exec"), mutant.__dict__)
+    plant = {"p.py": _PLANTS_FLAGGED["two_level_outer_first_Q5"]}
+    assert _second_classifiers(plant), "the real guard misses the outer-first plant"
+    assert not mutant.second_classifiers(plant), "Q5 survives: the plant does not pin the loop"
+    assert mutant.second_classifiers({"p.py": _PLANTS_FLAGGED["two_level_wrapper"]}), (
+        "control: the inner-first plant is the one Q5 still flags")
+
+
 @pytest.mark.parametrize("shape", sorted(_PLANTS_CLEAN))
 def test_the_guard_passes_a_handler_that_delegates(shape):
     assert _second_classifiers({f"{shape}.py": _PLANTS_CLEAN[shape]}) == [], shape
