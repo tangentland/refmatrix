@@ -12,8 +12,9 @@ metadata:
 # Exploration: refmatrix as a Claude Code mod {#root}
 
 **Date:** 2026-10-20
-**Status:** Research Complete. Option A chosen by the user (2026-10-20: "write up the mod
-exploration doc with option A"); the measurement gate ([[#gate]]) decides whether plan-24 builds.
+**Status:** Transitioned to Proposal: [[plan-24-mod-transport]]. The transition is DECIDED
+(user, 2026-10-20), for tighter integration ([[#reason]]); the measurement in [[#gate]] became a
+non-gating baseline.
 **Motivation:** The user asked what refmatrix would gain by becoming a Claude Code mod, and what
 that does to the development plan. A mod is a TypeScript module the Claude Code engine loads in
 process: it hooks events (`tool.call`, `prompt.submit`, `prompt.compose`, `session.start` /
@@ -30,6 +31,16 @@ rel: related-to -> [[task-19.0-stm-cluster-hygiene]]
 rel: depends-on -> [[task-3.7-verb-it-backlog]]
 rel: related-to -> [[feedback_mcp_server_reload_and_orphans]]
 rel: related-to -> [[feedback_go_no_go_ranges_not_predrop]]
+
+## The reason: tighter integration (user, 2026-10-20) {#reason}
+
+The user, 2026-10-20: "the spawn cost is not the primary reason to make the transition. The main
+reason is tighter integration." This document first framed the move as gated on spawn cost; that
+framing is superseded. The reason is what the integration can DO from inside the engine: real
+session identity on every event, context injected where the model reads it, tool calls observed
+with their results, tools served in the engine, live status surfaces, visible failures
+([[plan-24-mod-transport#goals]]). Spawn cost is a secondary benefit, measured before and after
+by [[task-24.0-hook-cost-baseline]]. {#reason-body}
 
 ## Background: what the integration is today {#background}
 
@@ -106,9 +117,11 @@ is built twice. Rejected for that reason.
 Status line, toasts, a pane; hooks and `rmx mcp` stay. Cheap; fixes none of [[#defects]]'s
 recurring families. Kept as plan-24's first build step, not as the whole answer.
 
-## The measurement gate (plan-24 task 24.0) {#gate}
+## The measurement (plan-24 task 24.0) — a baseline since D0 {#gate}
 
-Bands written BEFORE the data, per [[feedback_go_no_go_ranges_not_predrop]]. {#gate-lead}
+Written as a gate with bands; [[#reason]] removed the gate, so [[task-24.0-hook-cost-baseline]]
+keeps the instrument and reports before / after with no bands. The table below is the
+superseded draft, kept as the record of what was proposed. {#gate-lead}
 
 **Instrument.** For every hook event of one working week (≥5 sessions, refmatrix only — the
 user, 2026-10-20: "right now refmatrix is the only active project"; the gate measures the
@@ -217,7 +230,7 @@ The user, 2026-10-20: "distribution should allow for both". {#distribution-lead}
 
 **Date:** 2026-10-20
 **Proposed Plan:** [[plan-24-mod-transport]] (`status: drafting`, 2026-10-20); its gate task is
-[[task-24.0-spawn-cost-gate]].
+[[task-24.0-hook-cost-baseline]].
 
 ### What Survived Analysis {#what-survived-analysis}
 
