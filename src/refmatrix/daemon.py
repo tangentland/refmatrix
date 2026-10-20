@@ -6758,6 +6758,13 @@ def spawn_daemon_subprocess(
     import sys as _sys
 
     root = Path(root).resolve()
+    # ONE deadline for the whole spawn, set at entry (task 3.6 #3, ch-bsd
+    # plan-3 r9 #s-2, 2026-10-19). The launcher used to get `W + 5` s and the
+    # readiness poll then a FRESH `W`: worst case `2W + 5`, measured 25.2 s
+    # for promote's 10 s budget with a stalled launcher. Both now spend the
+    # same window, so the worst case is `W`.
+    t_start = time.monotonic()
+    deadline = t_start + float(wait_for_ready)
     if ping(root):
         return read_pid(root) or -1
 
@@ -6793,10 +6800,10 @@ def spawn_daemon_subprocess(
     with tempfile.TemporaryFile() as err:
         try:
             proc = subprocess.run(
-                argv, env=env, timeout=wait_for_ready + 5.0,
+                argv, env=env, timeout=max(0.1, deadline - time.monotonic()),
                 stdout=subprocess.DEVNULL, stderr=err, check=False)
         except subprocess.TimeoutExpired:
-            proc = None
+            proc = None   # killed at the deadline; the poll below says so
         if proc is not None and proc.returncode != 0 and not ping(root):
             err.seek(0)
             tail = err.read()[-2000:].decode("utf-8", "replace").strip()
@@ -6807,14 +6814,17 @@ def spawn_daemon_subprocess(
     # Poll after a launcher that exited 0 (or timed out): under load the inner
     # `daemon start` can return before its child has bound the socket. A
     # non-zero exit already waited the whole window and raised above.
-    deadline = time.time() + wait_for_ready
-    while time.time() < deadline:
+    while time.monotonic() < deadline:
         if ping(root):
             return read_pid(root) or -1
         time.sleep(0.1)
+    if ping(root):
+        return read_pid(root) or -1
+    how = ("the launcher was still running at the deadline and was killed"
+           if proc is None else "the daemon never answered ping")
     raise RuntimeError(
-        f"subprocess daemon did not start for {root} "
-        f"within {wait_for_ready:.0f}s")
+        f"subprocess daemon did not start for {root} within "
+        f"{time.monotonic() - t_start:.1f}s of a {wait_for_ready:g}s window ({how})")
 
 
 def graceful_stop(root: Path, *, grace: float,

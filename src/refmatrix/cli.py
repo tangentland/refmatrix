@@ -414,6 +414,18 @@ class _DaemonWriter:
 
 
 
+def _say_degraded_read(exc: BaseException, *, op: str, root: Path) -> None:
+    """Name WHY a read degrades to the lock-free replica, in the transport
+    classifier's words (task 3.6 #2, ch-bsd plan-3 r9 #s-1, 2026-10-19).
+
+    `derive log` / `derive status` said "daemon did not answer" for a refused
+    socket too — a dead daemon described as a busy one. The read still
+    degrades either way; only the note was wrong."""
+    from refmatrix import verbs as _verbs
+    c = _verbs.classify_transport_error(exc, op=op, root=root, timeout=5.0)
+    click.echo(f"# rmx: {c}; reading the lock-free replica", err=True)
+
+
 def _say_vector_delete_failures(result, what: str) -> None:
     """Put a failed vector delete on the CALLER's terminal (ch-bsd r8 #s-1).
 
@@ -7061,8 +7073,7 @@ def _derive_history_rows(pass_name, limit):
             # crashed with a traceback against the live store while every test
             # passed, because the tests stub `ping` to False
             # (feedback_green_tests_are_not_a_working_command).
-            click.echo(f"# rmx: daemon did not answer ({type(exc).__name__}); "
-                       f"reading the lock-free replica", err=True)
+            _say_degraded_read(exc, op="derive_history", root=root)
     s = _reader_store() or _store()
     return s.derive_history(pass_name=pass_name, limit=limit)
 
@@ -7224,8 +7235,7 @@ def derive_status_cmd(as_json):
             if resp.get("ok"):
                 st = resp["result"]
         except Exception as exc:    # noqa: BLE001 — named, then degraded
-            click.echo(f"# rmx: daemon did not answer ({type(exc).__name__}); "
-                       f"reading the lock-free replica", err=True)
+            _say_degraded_read(exc, op="derive_status", root=root)
     if st is None:
         s = _reader_store() or _store()
         st = s.derive_status()
@@ -10064,13 +10074,20 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
                     timeout=_detach_left(_detach_budget), retries=0,
                 )
             except (TimeoutError, _socket.timeout, OSError) as e:
+                # Typed and worded by THE classifier (task 3.6 #2, ch-bsd plan-3
+                # r9 #s-1): every OSError here used to read "daemon busy",
+                # including a refused or missing socket. The budget detail
+                # and the pid stay — they are what the operator acts on.
                 pid = daemon_mod.read_pid(root)
                 waited = _time2.monotonic() - t0
+                from refmatrix import verbs as _verbs
+                c = _verbs.classify_transport_error(
+                    e, op="ingest_gmd_start", root=root,
+                    timeout=_detach_left(_detach_budget))
                 raise click.ClickException(
-                    f"daemon busy pid={pid or '?'} for {root} (answers ping but "
-                    f"did not accept the ingest job; waited {waited:.1f}s of a "
-                    f"{_detach_budget:g}s budget: {e}) — catch-up skipped; retry "
-                    f"shortly or run without --detach") from e
+                    f"{c} (pid={pid or '?'}; the ingest job was not accepted; waited "
+                    f"{waited:.1f}s of a {_detach_budget:g}s budget) — catch-up "
+                    f"skipped; retry shortly or run without --detach") from e
             if not resp.get("ok"):
                 raise click.ClickException(
                     resp.get("error", "daemon error")

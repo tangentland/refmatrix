@@ -369,13 +369,15 @@ def memory_partition(root: Path, *, timeout: "float | None" = None) -> str:
         # One attempt: a held writer does not free in 10 s, and a retried
         # probe multiplied every caller's wait by three (bsd-plan3-r4 #b-2).
         r = daemon_mod.call(root, "partition_list", {}, timeout=op_timeout, retries=0)
-    except Exception as e:  # noqa: BLE001 — transport-level: the op did not answer
+    except Exception as e:  # noqa: BLE001 — transport-level; typed by THE classifier
         # Op-level busy is BUSY (bsd-plan3-r4 #s-4): guessing here let the
         # write that follows land on the guessed partition once the lock
         # freed — the split-brain family this function exists to prevent.
-        raise VerbBusyError(
-            f"daemon busy pid={daemon_mod.read_pid(root)} for {root}: partition_list "
-            f"did not answer within {op_timeout:g}s ({e}); retry shortly") from e
+        # A refused / missing socket is ABSENT, not busy (task 3.6 #2, ch-bsd
+        # plan-3 r9 #s-1): raised as the classifier types it, and never
+        # guessed past — the caller decides what absent means.
+        raise classify_transport_error(e, op="partition_list", root=root,
+                                       timeout=op_timeout) from e
     if r.get("ok"):
         if any(row.get("name") == legacy for row in r["result"].get("rows", [])):
             return legacy
@@ -1611,47 +1613,51 @@ def _legacy(category: str, reason: str, *paths: "tuple[str, ...]") -> dict:
 
 LEGACY_UNPAIRED: dict[tuple[str, ...], tuple[str, str]] = {
     # -- verb-it: agent-facing reads and curation an agent calls today through
-    #    Bash. Each owes a verb; MCP agents cannot reach them.
-    **_legacy("verb-it", "graph read an agent runs to navigate the matrix; owes a verb "
-              "beside rmx_context / rmx_query",
+    #    Bash; MCP agents cannot reach them. Each owes a verb, and each reason
+    #    names the task-3.7 family that owes it (ch-bsd plan-3 r9 #b-1: "owes a
+    #    verb" with no task behind it was a parking lot).
+    **_legacy("verb-it", "graph read an agent runs to navigate the matrix; owes the "
+              "graph verb — task-3.7#fam-graph-read",
               ("neighbors",), ("co-occur",), ("top",), ("describe",), ("recall",),
               ("search-dense",), ("concept", "timeline"), ("pairs", "show")),
-    **_legacy("verb-it", "cross-project canon view an agent consults; owes a verb beside "
-              "rmx_where",
+    **_legacy("verb-it", "cross-project canon view an agent consults; owes the canon verb "
+              "— task-3.7#fam-canon",
               ("canon", "find"), ("canon", "siblings"), ("canon", "link")),
     **_legacy("verb-it", "low-level matrix edit / saved-query surface agents script; owes "
-              "verbs so MCP agents are not Bash-only",
+              "the matrix verb — task-3.7#fam-matrix-edit",
               ("add", "concept"), ("add", "entity"), ("add", "linkage-type"),
               ("link",), ("unlink",), ("list", "entities"), ("list", "linkages"),
               ("list", "queries"), ("run",), ("save-query",)),
     **_legacy("verb-it", "entity curation the primer tells agents to use (protect / noise / "
-              "forget); owes a curation verb",
+              "forget); owes the curate verb — task-3.7#fam-curation",
               ("protect",), ("unprotect",), ("noise",), ("unnoise",), ("forget",)),
     **_legacy("verb-it", "STM focus read or navigation an agent uses mid-session; owes "
-              "actions on rmx_focus",
+              "actions on rmx_focus — task-3.7#fam-focus",
               ("focus", "tail"), ("focus", "topics"), ("focus", "show"),
               ("focus", "subject"), ("focus", "subjects"), ("focus", "clear-subject"),
               ("focus", "composite"), ("focus", "detour"), ("focus", "detours"),
               ("focus", "return"), ("focus", "clear")),
-    **_legacy("verb-it", "session-history lookup an agent uses for recall; owes a session verb",
+    **_legacy("verb-it", "session-history lookup an agent uses for recall; owes the session "
+              "verb — task-3.7#fam-session",
               ("session", "list"), ("session", "recall"), ("session", "show"),
               ("session", "stats")),
-    **_legacy("verb-it", "refinement-queue review the gmd-curator agent drives; owes a "
-              "refine verb",
+    **_legacy("verb-it", "refinement-queue review the gmd-curator agent drives; owes the "
+              "refine verb — task-3.7#fam-refine",
               ("refine", "list"), ("refine", "show"), ("refine", "accept"),
-              ("refine", "reject"), ("curator", "scan"), ("curator", "drain")),
+              ("refine", "reject"), ("curator", "drain")),
     **_legacy("verb-it", "shared tag vocabulary agents validate memory tags against; owes "
-              "a taxonomy verb",
+              "the taxonomy verb — task-3.7#fam-taxonomy",
               ("taxonomy", "list"), ("taxonomy", "add"), ("taxonomy", "remove")),
     # -- hook: called by the generated Claude Code hooks (hooks.py /
-    #    search_hooks.py) or the SessionStart/save-state bridge, not by agents.
+    #    search_hooks.py), not by agents. Every focus hook runs `focus hook
+    #    --event …`; `focus record` is not among them (r9 #m-1).
     **_legacy("hook", "invoked by a generated Claude Code hook (hooks.py / search_hooks.py)",
-              ("focus", "hook"), ("focus", "record"), ("focus", "summarize"),
-              ("scan-prompt",), ("primer",), ("grep",), ("sync",),
-              ("curator", "status"), ("install-hooks",)),
-    **_legacy("hook", "the memory bridge, run by SessionStart and save-state",
-              ("ingest-gmd",), ("memory", "sync-disk")),
+              ("focus", "hook"), ("focus", "summarize"), ("scan-prompt",), ("primer",),
+              ("grep",), ("sync",), ("curator", "status"), ("ingest-gmd",)),
     # -- operator: process supervision and store administration.
+    **_legacy("operator", "the operator's hook installer: renders, applies and checks the "
+              "generated hook config (`rmx install-hooks --check` is a pre-commit gate)",
+              ("install-hooks",)),
     **_legacy("operator", "per-store daemon lifecycle",
               ("daemon", "start"), ("daemon", "stop"), ("daemon", "restart"),
               ("daemon", "status")),
@@ -1683,6 +1689,13 @@ LEGACY_UNPAIRED: dict[tuple[str, ...], tuple[str, str]] = {
               ("graphify-warm",), ("tldr-warm",), ("session", "ingest"),
               ("memory", "compile"), ("pairs", "compile"), ("focus", "rebuild"),
               ("focus", "promote-edges"), ("coref", "link")),
+    **_legacy("maintenance", "a by-hand run of the memory bridge (an alias of `ingest-gmd "
+              "--as-memory <dir>`, kept for the guardrail compiler's callers); the automatic "
+              "bridge runs as `ingest-gmd` and in-process from save-state",
+              ("memory", "sync-disk")),
+    **_legacy("maintenance", "curator queue lint, driven by the scheduler (scheduler.py "
+              "op `curator-scan`), not by an agent",
+              ("curator", "scan")),
     **_legacy("maintenance", "store repair, compaction and cleanup",
               ("checkpoint",), ("compact",), ("compact-log",), ("repair-index",),
               ("vacuum",), ("prune-noise",), ("untrack",), ("merge-verb-aliases",),
@@ -1694,4 +1707,7 @@ LEGACY_UNPAIRED: dict[tuple[str, ...], tuple[str, str]] = {
               ("telemetry",), ("cli-log",), ("log",), ("cctree",), ("stats",),
               ("fingerprint",), ("tools-primer",), ("focus", "size"),
               ("focus", "export")),
+    **_legacy("harness", "a manual STM event append for tests and debugging; no generated "
+              "hook runs it (every focus hook runs `focus hook --event …`)",
+              ("focus", "record")),
 }
