@@ -171,6 +171,31 @@ def _sandbox_store_root(monkeypatch):
     rmx_sandbox.remove_tree(root.parent)
 
 
+def _sandbox_pointer_dir() -> Path:
+    """`stm.pointer_dir()`'s location, computed the way it is (21.1 D3: `<hub.global_store_root()>
+    /by-pid/`) without calling it -- `pointer_dir()` creates the dir, and a fixture must not."""
+    from refmatrix import hub
+    return Path(hub.global_store_root()) / "by-pid"
+
+
+@pytest.fixture(autouse=True)
+def _fresh_pointer_dir():
+    """21.1 D3 moved the session pointers and their `_errors.jsonl` to USER-level state
+    (`<global store root>/by-pid/`): ONE dir for the whole sandbox, shared by every test and
+    every child process. Left alone it carried state from test to test (bug-132: a corrupt-sink
+    test wrote non-UTF-8 bytes into `_errors.jsonl` and six later AC-4 tests raised
+    UnicodeDecodeError; bug-133: an in-process input-hook test left a pointer for the runner's
+    real Claude pid that `test_mcp_focus_tool` then resolved). Every test starts with NO pointer
+    dir -- the state the sandbox's freshly initialised global store has at session start -- and
+    `pointer_dir()` recreates it on first use; children see the same reset because they resolve
+    it from the same `$RMX_HOME`. Removing (not symlinking a tmp dir in) keeps the production
+    layout. A test that sets its own `RMX_HOME` has its own pointer dir and is untouched."""
+    d = _sandbox_pointer_dir()       # captured: teardown must not follow a test's own RMX_HOME
+    rmx_sandbox.remove_tree(d)
+    yield
+    rmx_sandbox.remove_tree(d)
+
+
 # R6 (ch-bsd r1 b2, 2026-10-15): every skip is NAMED here, or the session fails
 # (`rmx_sandbox.SkipGate`). The main-tree baseline run (pytest-baseline-23ad703.log) skips
 # none; the entries are CLONE-ONLY: a littlebig clone has no `.venv-eval/` of its own (the

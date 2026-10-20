@@ -78,6 +78,15 @@
         ]
       },
       {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook; rmx focus hook --event session-start"
+          }
+        ]
+      },
+      {
         "matcher": "startup|resume|clear",
         "hooks": [
           {

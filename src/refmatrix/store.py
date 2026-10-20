@@ -2540,10 +2540,16 @@ class Store:
             "FROM memory_content WHERE entity_id=?",
             (ent_row["id"],),
         ).fetchone()
+        prow = self._read().execute(
+            "SELECT name FROM partitions WHERE id=?", (ent_row["partition_id"],),
+        ).fetchone()
         return {
             "id": ent_row["id"],
             "name": ent_row["name"],
             "partition_id": ent_row["partition_id"],
+            # The partition NAME of the row read (task 21.1 R10/R11): recall events and
+            # `find_memory_any_partition`'s attached body carry it, never the bound one.
+            "partition": prow["name"] if prow else None,
             "content": mc_row["content"] if mc_row else None,
             "mtype": mc_row["mtype"] if mc_row else None,
             "tags": json.loads(mc_row["tags"]) if mc_row and mc_row["tags"] else [],
@@ -2553,6 +2559,27 @@ class Store:
             "created_at": mc_row["created_at"] if mc_row else None,
             "updated_at": mc_row["updated_at"] if mc_row else None,
         }
+
+    def item_meta(self, ids: "list[int]") -> "dict[int, dict]":
+        """`{entity_id: {"kind", "name", "partition", "mtype"}}` for catalog rows, in ONE query —
+        the partition NAME each row lives in (not the bound partition) and, for memory
+        rows, the sidecar `mtype` (task 21.1 R10/R10a: recall events map kinds through it).
+        Ids that are not catalog rows are absent. Read-only."""
+        out: dict[int, dict] = {}
+        ids = [int(i) for i in ids]
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            marks = ",".join("?" for _ in chunk)
+            rows = self._read().execute(
+                "SELECT e.id AS id, e.kind AS kind, e.name AS name, p.name AS partition, "
+                "mc.mtype AS mtype "
+                "FROM entities e JOIN partitions p ON p.id = e.partition_id "
+                "LEFT JOIN memory_content mc ON mc.entity_id = e.id "
+                f"WHERE e.id IN ({marks})", chunk).fetchall()
+            for r in rows:
+                out[int(r["id"])] = {"kind": r["kind"], "name": r["name"],
+                                     "partition": r["partition"], "mtype": r["mtype"]}
+        return out
 
     def find_memory_any_partition(self, name: str) -> dict | None:
         """Resolve a memory by NAME across ALL partitions (not just the active
@@ -2565,7 +2592,10 @@ class Store:
         A name can exist as a content-less stub in one partition and the full
         card in another (cross-partition mirrors of session/memory ids), so we
         pick the row with the LONGEST content — the real body — rather than
-        the lowest partition_id, which can land on an empty mirror."""
+        the lowest partition_id, which can land on an empty mirror.
+
+        The returned dict carries the chosen row's partition NAME (`partition`, task 21.1
+        R11), so an attached body's event never takes the bound partition (bug-098)."""
         row = self._read().execute(
             "SELECT e.id FROM entities e "
             "LEFT JOIN memory_content mc ON mc.entity_id = e.id "
@@ -2658,6 +2688,8 @@ class Store:
         ).fetchall():
             rows.append({
                 "id": r["id"], "name": r["name"],
+                # the partition the WHERE above read (task 21.1 R10)
+                "partition": self._partition_name,
                 "content": r["content"], "mtype": r["mtype"],
                 "tags": json.loads(r["tags"]) if r["tags"] else [],
                 "metadata":
@@ -2792,6 +2824,8 @@ class Store:
         for r in self._read().execute(sql, params).fetchall():
             rows.append({
                 "id": r["id"], "name": r["name"],
+                # the partition the WHERE above read (task 21.1 R10)
+                "partition": self._partition_name,
                 "content": r["content"], "mtype": r["mtype"],
                 "tags": json.loads(r["tags"]) if r["tags"] else [],
                 "metadata":

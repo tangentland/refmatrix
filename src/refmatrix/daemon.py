@@ -3921,6 +3921,10 @@ def _op_sync_since(d: Daemon, args: dict) -> dict:
 def _op_stats(d: Daemon, args: dict) -> dict:
     with d._store_lock:
         out = d._st().stats()
+        # Task 21.1 R7: reads this daemon dropped at their caller's deadline (bug-116's
+        # counter), so the R7 usage report (R7) can reconcile them with the client-side
+        # `skipped_budget` rows.
+        out["expired_reads"] = int(getattr(d, "_expired_reads", 0) or 0)
         # `--stale` needs the writer's tracked_files (mtime > last_synced),
         # which the replica/snapshot never refreshes — so serve it from the
         # daemon (the writer) instead of forcing the user to stop the daemon.
@@ -4820,7 +4824,8 @@ def _op_context(d: Daemon, args: dict) -> dict:
     """Build a context bundle and return its rendered form. Read-side
     operations have to route through the daemon too because DuckDB blocks
     cross-process reads while another process holds the write lock."""
-    from refmatrix.context import build_context, render_json, render_text
+    from refmatrix.context import (annotate_items, build_context, render_json_spans,
+                                   render_text_spans)
     ref = args["ref"]
     fmt = args.get("format", "text")
     linkages = args.get("linkages") or None
@@ -4894,7 +4899,7 @@ def _op_context(d: Daemon, args: dict) -> dict:
                             "(created moments ago, or the snapshot is missing or "
                             "unreadable), so the answer came from the writer and "
                             "is unreranked")
-        return build_context(
+        bundle = build_context(
             rs, ref,
             linkages=linkages,
             max_entities=max_entities,
@@ -4910,10 +4915,16 @@ def _op_context(d: Daemon, args: dict) -> dict:
             _entities_explicit=entities_explicit,
             _tokens_explicit=tokens_explicit,
         )
+        # Task 21.1 R11: the renderer RETURNS the byte spans of the items it names, and the
+        # item rows' partition names are read here, on the store that served the bundle;
+        # the CALLER emits the recall events (never this op, never under the writer lock).
+        body, items = (render_json_spans(bundle) if fmt == "json"
+                       else render_text_spans(bundle))
+        return bundle, body, annotate_items(rs, items)
     # private: the build can spend up to the rerank budget inside `fn`, which
     # on the shared mirror would hold its single reader lock (ch-bsd r9 #b-2).
-    bundle = _read_with_fallback(d, _ctx_part, _build, private=True, missing="raise")
-    body = render_json(bundle) if fmt == "json" else render_text(bundle)
+    bundle, body, items = _read_with_fallback(d, _ctx_part, _build, private=True,
+                                              missing="raise")
     # bundle.warnings are IN the body (JSON `warnings`, text `# warning:`);
     # the op's own `warnings` carry only what the body cannot show (a
     # reranker that failed to construct). Merging both printed a score-time
@@ -4940,8 +4951,8 @@ def _op_context(d: Daemon, args: dict) -> dict:
             except Exception as exc:  # learning is best-effort; never fail a read
                 d._log(f"context grep-learn skipped: {exc}")
     if warnings:
-        return {"body": body, "warnings": warnings}
-    return {"body": body}
+        return {"body": body, "warnings": warnings, "items": items}
+    return {"body": body, "items": items}
 
 
 def _op_describe(d: Daemon, args: dict) -> dict:
@@ -6295,21 +6306,31 @@ def _op_memory_recall(d: Daemon, args: dict) -> dict:
             except Exception as exc:
                 d._log(f"rerank doc collect failed: {exc!r}")
                 docs = None
+        # Task 21.1 R10/R11: each hit carries its row's name, catalog kind, partition NAME
+        # and mtype, so the caller's ONE emission site can log a `retrieved` event for every
+        # hit (the hook's payload drops session/* rows, the retrieval does not) without a
+        # per-hit round trip. One read query, the partition read from the row itself.
+        meta = d._st().item_meta([int(eid) for eid, _ in hits])
+
+    from refmatrix.context import apply_item_meta
+
+    def _m(hits_out: list) -> list:
+        # THE item-meta merge, shared with the CLI's replica path and `annotate_items`
+        # (21.1 ch-bsd r1 #s5, 2026-10-19: three hand-rolled copies became one).
+        return apply_item_meta(hits_out, meta)
 
     rr_warnings: list[str] = []
     if want_rerank and docs is not None:
         reranked = _apply_rerank_safe(d, query, docs, k, warnings=rr_warnings)
         if reranked is not None:
-            return {"hits": [{"id": eid, "score": sc, "fused": bool(fuse),
-                              "reranked": True}
-                             for eid, sc in reranked]}
+            return {"hits": _m([{"id": eid, "score": sc, "fused": bool(fuse),
+                                 "reranked": True} for eid, sc in reranked])}
 
     hits = hits[:k]
     if fuse:
-        out = {"hits": [{"id": eid, "score": sc, "fused": True}
-                        for eid, sc in hits]}
+        out = {"hits": _m([{"id": eid, "score": sc, "fused": True} for eid, sc in hits])}
     else:
-        out = {"hits": [{"id": eid, "distance": dist} for eid, dist in hits]}
+        out = {"hits": _m([{"id": eid, "distance": dist} for eid, dist in hits])}
     if rr_warnings:
         out["warnings"] = rr_warnings
     return out

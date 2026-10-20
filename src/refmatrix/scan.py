@@ -12,13 +12,13 @@ import json
 import math
 import os
 import re
-import sys
 
 from refmatrix.terms import STOPWORDS as _STOPWORDS
 from pathlib import Path
 
 from refmatrix.context import (
-    build_context, content_only_bundle, render_json, render_text,
+    build_context, bundle_items, content_only_bundle, name_spans, render_json,
+    render_text, render_text_spans,
 )
 from refmatrix.store import Store
 
@@ -873,8 +873,14 @@ def scan_prompt(
     content_tokens: int = 600,
     degree: int = 0,
     rerank_timeout: float = 5.0,
+    trace: "dict | None" = None,
 ) -> str:
-    """Emit context bundles for a prompt's symbols. When `composite` is set (and
+    """Emit context bundles for a prompt's symbols.
+
+    `trace` (task 21.1 R11), when given, receives `retrieved` — every item the bundles
+    retrieved, before the cross-section dedup and the budget cut — and `delivered` — every
+    item the returned text NAMES, with byte spans into it. This function only returns the
+    spans; the caller emits. When `composite` is set (and
     `composite_root` names the project `.refmatrix` dir), ALSO append a GMD
     topic-composite subgraph of the session's current focus — a running
     aggregate of every prompt+result — budgeted SEPARATELY by
@@ -967,17 +973,67 @@ def scan_prompt(
         if cb.groups:
             cbundle = cb
 
+    retrieved: list[dict] = []
+    marks: list[tuple[int, list[dict]]] = []
+
+    def _retrieve(b) -> None:
+        retrieved.extend(bundle_items(b))
+
+    def _set_retrieved() -> "list[dict]":
+        """trace["retrieved"]: every item retrieved, once, ranked in retrieval order."""
+        seen: set = set()
+        uniq = []
+        for it in retrieved:
+            k = (it.get("entity_id"), it.get("name"), it.get("catalog_kind"))
+            if k not in seen:
+                seen.add(k)
+                uniq.append(it)
+        for rank, it in enumerate(uniq, 1):
+            it["rank"] = rank
+        trace["retrieved"] = uniq
+        return uniq
+
+    def _set_delivered(delivered: "list[dict]") -> None:
+        for rank, it in enumerate(delivered, 1):
+            it["rank"] = rank
+        trace["delivered"] = delivered
+
+    def _finish(text: str) -> str:
+        """Resolve each rendered section's spans to offsets in the joined text."""
+        if trace is None:
+            return text
+        _set_retrieved()
+        offs, pos = [], 0
+        for p in parts:
+            offs.append(pos)
+            pos += len(p.encode("utf-8")) + 1
+        delivered = []
+        for idx, items in marks:
+            for it in items:
+                it = dict(it)
+                it["offset_bytes"] += offs[idx]
+                if it.get("body_offset_bytes") is not None:
+                    it["body_offset_bytes"] += offs[idx]
+                delivered.append(it)
+        _set_delivered(delivered)
+        return text
+
     if fmt == "json":
         out = []
-        if cbundle is not None:
-            out.append(json.loads(render_json(cbundle)))
-        out.extend(
-            json.loads(render_json(
-                build_context(s, name, max_tokens=per_concept_tokens,
-                              max_entities=10, degree=degree)))
-            for name in matches
-        )
-        return json.dumps(out, indent=2)
+        blist = ([cbundle] if cbundle is not None else []) + [
+            build_context(s, name, max_tokens=per_concept_tokens, max_entities=10,
+                          degree=degree) for name in matches]
+        for b in blist:
+            _retrieve(b)
+            out.append(json.loads(render_json(b)))
+        text = json.dumps(out, indent=2)
+        if trace is not None:
+            # 21.1 ch-bsd r1 #m2 (2026-10-19): `delivered` is only an item the payload names
+            # (a found span); GREEN kept unfound items with null offsets, computed the text
+            # spans and then overwrote them, and left an unused `items`.
+            _set_delivered([it for it in name_spans(text, _set_retrieved())
+                            if it.get("offset_bytes") is not None])
+        return text
 
     parts: list[str] = []
     used = 0
@@ -990,16 +1046,18 @@ def scan_prompt(
     if cbundle is not None:
         header = (f"# refmatrix content matches for prompt: "
                   f"{', '.join(cands[:8])}")
-        rendered = render_text(cbundle)
+        _retrieve(cbundle)
+        rendered, ritems = render_text_spans(cbundle)
         parts.append(header)
         parts.append("")
         parts.append(rendered)
+        marks.append((len(parts) - 1, ritems))
         used += (len(header) + len(rendered)) // 4
         for entries in cbundle.groups.values():
             for e in entries:
                 shown.add(_render_key(e.entity.name))
     if not matches:
-        return _compose("\n".join(parts))
+        return _compose(_finish("\n".join(parts)))
     parts.append("")
     parts.append(
         f"# refmatrix context for prompt-mentioned symbols: {', '.join(matches)}")
@@ -1009,6 +1067,7 @@ def scan_prompt(
                           degree=degree)
         if b.anchor is None or not b.groups:
             continue
+        _retrieve(b)
         if shown:
             for ln in list(b.groups):
                 kept = [e for e in b.groups[ln]
@@ -1019,36 +1078,16 @@ def scan_prompt(
                     del b.groups[ln]
             if not b.groups:
                 continue
-        rendered = render_text(b)
+        rendered, ritems = render_text_spans(b)
         cost = len(rendered) // 4
         if used + cost > max_tokens:
             parts.append("# [truncated by --max-tokens]")
             break
         parts.append("")
         parts.append(rendered)
+        marks.append((len(parts) - 1, ritems))
         used += cost
         for entries in b.groups.values():
             for e in entries:
                 shown.add(_render_key(e.entity.name))
-    return _compose("\n".join(parts))
-
-
-def read_stdin_prompt() -> str:
-    """Read the user prompt from stdin.
-
-    Claude Code's UserPromptSubmit hook receives a JSON envelope on stdin
-    with a `prompt` field. We accept either the envelope or raw text and
-    do the right thing.
-    """
-    raw = sys.stdin.read()
-    if not raw.strip():
-        return ""
-    try:
-        data = json.loads(raw)
-        if isinstance(data, dict):
-            for key in ("prompt", "user_prompt", "text", "message"):
-                if key in data and isinstance(data[key], str):
-                    return data[key]
-    except json.JSONDecodeError:
-        pass
-    return raw
+    return _compose(_finish("\n".join(parts)))

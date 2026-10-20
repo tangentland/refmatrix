@@ -121,6 +121,11 @@ def quiet(monkeypatch):
     Store(root).init()
     monkeypatch.setattr(cli_mod, "_root", lambda: root)
     monkeypatch.delenv("RMX_PARTITION", raising=False)
+    # Task 21.1 D2: save-state is a WRITE, and an unresolved write is refused with
+    # SessionUnresolved. These tests are about the embed outcome, not session resolution, so
+    # the session is named explicitly. (Before bug-133's per-test pointer dir they resolved
+    # through a pointer an EARLIER test leaked for the runner's Claude pid, and failed alone.)
+    monkeypatch.setenv("RMX_SESSION", "sess-embed-quiet")
     yield base, root
     shutil.rmtree(base, ignore_errors=True)
 

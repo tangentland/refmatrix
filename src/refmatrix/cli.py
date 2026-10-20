@@ -21,6 +21,9 @@ from pathlib import Path
 #
 #   RMX_TIME_PHASES=1 rmx context "<q>"
 _PROC_T0 = time.monotonic()
+# Wall clock at process entry: R9's `t0`, which a prompt-time reader matches against the input
+# hook's pre-prompt snapshot `wall` (task 21.1).
+_PROC_WALL_T0 = time.time()
 _PHASE_MARKS: "list[tuple[str, float]]" = []
 
 
@@ -1059,17 +1062,16 @@ def focus():
     co-occurrence graph. Works with the daemon/hub stopped."""
 
 
-def _resolve_stm_session(explicit: str | None = None, *, prefer_latest: bool = False) -> str:
-    """Pick the STM session: an explicit --session wins, else $RMX_SESSION,
-    else (for read surfaces) the most-recently-written session ring, else the
-    bare "default". `prefer_latest` lets `focus tail/context/size` and the
-    task read commands show the active Claude session a plain shell can't name."""
+def _resolve_stm_session(explicit: str | None = None, *, prefer_latest: bool = False,
+                         purpose: str = "read") -> str:
+    """Pick the STM session. `prefer_latest` routes through THE resolver
+    (`verbs.resolve_session_source`, task 21.1 D1) with `purpose`: a `read` falls back to
+    the newest ring (labelled), a `write` that does not resolve exits 2 with ONE stderr line
+    naming the sources tried (D2) — never the newest ring. Without `prefer_latest`: an
+    explicit --session, else $RMX_SESSION, else the bare "default"."""
     from refmatrix import stm as stm_mod
     if prefer_latest:
-        # ONE resolver with the verbs (explicit → $RMX_SESSION → latest ring
-        # → default) so a CLI write and an MCP read land in the same ring.
-        from refmatrix.verbs import resolve_session
-        return resolve_session(_root(), explicit)
+        return _resolve_stm_session_source(explicit, purpose=purpose)[0]
     if explicit:
         return explicit
     env = os.environ.get("RMX_SESSION")
@@ -1078,9 +1080,27 @@ def _resolve_stm_session(explicit: str | None = None, *, prefer_latest: bool = F
     return stm_mod.session_id()
 
 
-def _stm(session: str | None = None, *, prefer_latest: bool = False):
+def _resolve_stm_session_source(explicit: str | None = None, *,
+                                purpose: str = "read") -> "tuple[str, str]":
+    """`(session, source)` through the ONE resolver; a refused write exits 2 with one
+    stderr line (task 21.1 AC-4 (a))."""
+    from refmatrix import verbs as _verbs
+    try:
+        return tuple(_verbs.resolve_session_source(_root(), explicit, purpose=purpose))
+    except _verbs.SessionUnresolved as e:
+        click.echo(f"rmx: {e}", err=True)
+        raise SystemExit(2)
+
+
+# The label a read surface prints when its ring is the newest one on disk, not a resolved
+# session (task 21.1 R9: the `read` tail).
+_NEWEST_RING_LABEL = "(newest ring; not resolved)"
+
+
+def _stm(session: str | None = None, *, prefer_latest: bool = False, purpose: str = "read"):
     from refmatrix import stm as stm_mod
-    return stm_mod.Stm(_root(), _resolve_stm_session(session, prefer_latest=prefer_latest))
+    return stm_mod.Stm(_root(), _resolve_stm_session(session, prefer_latest=prefer_latest,
+                                                     purpose=purpose))
 
 
 @focus.command("record")
@@ -1100,12 +1120,15 @@ def focus_record(kind, terse, refs):
               help="Session id to read. Default: active Claude session.")
 def focus_tail(n, session):
     """Show recent short-term events (defaults to the active session)."""
-    s = _stm(session, prefer_latest=True)
+    from refmatrix import stm as stm_mod
+    sess, source = _resolve_stm_session_source(session, purpose="read")
+    s = stm_mod.Stm(_root(), sess)
+    label = f" {_NEWEST_RING_LABEL}" if source == "latest" else ""
     rows = s.tail(n)
     if not rows:
-        console.print(f"[yellow]no focus events[/] [dim](session {s.session})[/]")
+        click.echo(f"no focus events (session {s.session}){label}")
         return
-    console.print(f"[dim]session {s.session}[/]")
+    click.echo(f"session {s.session}{label}")
     for ev in rows:
         task = f" [dim]({ev['task']})[/]" if ev.get("task") else ""
         console.print(f"[dim]{ev['ts']}[/] [cyan]{ev['kind']}[/]{task}: {ev['terse']}")
@@ -1251,6 +1274,7 @@ def focus_topics(top, session):
     clusters = stm_mod.cluster_focus(clean)
     if not clusters:
         console.print("[yellow]no topics yet[/]")
+        _echo_pointer_clauses()
         return
     events = s.all_events()
     first_line: dict[str, int] = {}
@@ -1272,6 +1296,18 @@ def focus_topics(top, session):
         rng = f"L{min(lines)}–L{max(lines)}" if lines else ""
         console.print(f"[bold]● {members[0]}[/] [dim]{rng}[/]")
         console.print(f"    [dim]{', '.join(members[:8])}[/]")
+    _echo_pointer_clauses()
+
+
+def _echo_pointer_clauses() -> None:
+    """`rmx focus topics`' LAST line: the scoped pointer-error clauses of this root (task 21.1
+    D6, round-7 #m-4 (b)) — also when there are no topics, since a session whose pointer
+    never resolved is exactly the one with an empty or wrong ring. Raw `click.echo`: the
+    clauses carry a path and backticks that rich markup would mangle."""
+    from refmatrix import handoff
+    clauses = handoff.session_pointer_anomalies(_root())
+    if clauses:
+        click.echo("pointer errors: " + " | ".join(clauses))
 
 
 @focus.command("summarize")
@@ -1417,8 +1453,14 @@ def focus_note(text):
     session (see the briefing's 'Capture your reasoning' rule). Refs in the
     note enter the focus graph."""
     from refmatrix import verbs as _verbs
-    # bug-109 r2 #s-2: let the verb resolve, so a guessed session is labelled, not "explicit"
-    ev = _verbs.focus_note(_root(), text, session=None)
+    # bug-109 r2 #s-2: let the verb resolve, so a guessed session is labelled, not "explicit".
+    # Task 21.1 D2: an unresolved write is refused — exit 2, ONE stderr line naming the
+    # sources tried, nothing written to any ring.
+    try:
+        ev = _verbs.focus_note(_root(), text, session=None)
+    except _verbs.SessionUnresolved as e:
+        click.echo(f"rmx: {e}", err=True)
+        raise SystemExit(2)
     console.print(f"[blue]✎ noted[/]  [dim]{', '.join(ev['refs'][:6]) or '—'}[/]")
 
 
@@ -1553,7 +1595,7 @@ def focus_rebuild(all_rings, session, root_override, dry_run,
     elif session:
         stems = [session]
     else:
-        stems = [_resolve_stm_session(None, prefer_latest=True)]
+        stems = [_resolve_stm_session(None, prefer_latest=True, purpose="write")]
     if not stems:
         console.print("[dim]no rings to rebuild[/]")
         return
@@ -1586,7 +1628,7 @@ def focus_detour(label):
     """Soft branch detour — bookmark the current focus before chasing a
     related-but-off-task tangent, so you can rewind to it with `focus return`.
     No git, no stash; just a focus return-point on the L-ref'd log."""
-    m = _stm(prefer_latest=True).focus_mark(label or "")
+    m = _stm(prefer_latest=True, purpose="write").focus_mark(label or "")
     console.print(f"[magenta]⤴ detour[/] [bold]{m['label']}[/]  "
                   f"[dim]return-point at L{m['line']} · /return to rewind[/]")
 
@@ -1611,7 +1653,7 @@ def focus_return(selector):
     """Return from a soft detour — rewind focus to the bookmark. Default = most
     recent; SELECTOR (index from `focus detours` or label substring) returns
     from a specific detour. The tangent stays in the full log."""
-    r = _stm(prefer_latest=True).focus_return(selector)
+    r = _stm(prefer_latest=True, purpose="write").focus_return(selector)
     if r["returned"] is None:
         console.print(f"[yellow]{r.get('error') or 'no open detours'}[/]")
         return
@@ -1721,7 +1763,7 @@ def focus_subjects():
 def focus_clear_subject(session):
     """Unset the active subject (revert to the bare session ring). The durable
     subject node + its filed leaves are untouched."""
-    s = _stm(session, prefer_latest=True)
+    s = _stm(session, prefer_latest=True, purpose="write")
     had = s.clear_subject()
     console.print("[green]subject cleared[/]" if had
                   else "[yellow]no active subject[/]")
@@ -1942,66 +1984,103 @@ def _tool_event_fields(d: dict) -> tuple[str, list[str], str | None]:
     return terse, refs, detail
 
 
+def _hook_write_pointer(stm_mod, root: Path, session: str, *, hook: str) -> "int | None":
+    """bug-109 / task 21.1 D3-D4: name `session` for the Claude process that owns this hook,
+    so the long-lived MCP server (spawned before any /clear) and Bash-tool CLI runs resolve
+    the CURRENT session. Every focus hook ends in `2>/dev/null || true`, so a failure is
+    recorded in the user-level pointer-error log, never only printed (r1 #b-1). Returns the
+    owner pid (None when none was found)."""
+    owner = None
+    try:
+        owner, status = stm_mod.owner_lookup()
+        if owner:
+            stm_mod.write_pid_pointer(owner, session, root=root, hook=hook)
+        else:
+            reason = "owner-lookup-failed" if status == "failed" else "no-owner"
+            if not stm_mod.record_pointer_error(reason, root=root, owner=None,
+                                                session=session, hook=hook):
+                stm_mod.say_unrecorded(reason, who="rmx focus hook")
+    except OSError as e:
+        click.echo(f"rmx focus hook: session pointer not written: {e}", err=True)
+        # D8, 21.1 r1 #s2: every site consumes the False and says it, in one wording.
+        if not stm_mod.record_pointer_error("write-failed", root=root, owner=owner,
+                                            error=str(e), session=session, hook=hook):
+            stm_mod.say_unrecorded("write-failed", who="rmx focus hook")
+    return owner
+
+
 @focus.command("hook")
 @click.option("--event",
-              type=click.Choice(["input", "tool", "tool-pre", "say"]),
+              type=click.Choice(["input", "tool", "tool-pre", "say", "session-start"]),
               required=True, help="Which Claude Code hook is firing.")
 def focus_hook(event):
     """Record a short-term event from a Claude Code hook envelope on stdin.
 
     UserPromptSubmit → --event input; PreToolUse → --event tool-pre;
     PostToolUse → --event tool; Stop → --event say (records my last assistant
-    message so STM holds the full dialogue, not just the user's half).
+    message so STM holds the full dialogue, not just the user's half);
+    SessionStart → --event session-start (task 21.1 D4: re-points this Claude
+    process's session pointer on startup/resume/clear/compact, BEFORE the first
+    prompt, migrates this root's bug-109 files once, surfaces the pointer-error
+    rows of this owner and of this root's ended sessions on stdout, and prunes
+    dead processes' files).
 
     `tool-pre` parks the call in a sidecar instead of appending to the ring —
     the matching `tool` clears it, and anything still parked at the next
     `input` is folded in as an `abandoned` event. That is the only way a tool
     call which hung, was denied, or killed the session reaches the timeline. The session id from the envelope
-    groups STM per Claude session. Silent + best-effort: a malformed/empty
-    envelope is a no-op exit 0 so the hook never blocks."""
+    groups STM per Claude session. The envelope is read by `stm.read_hook_envelope`
+    (D9): an unreadable envelope or one with no session id is ONE stderr line plus a
+    recorded row (the generated entries end `2>/dev/null || true`, so the row is the
+    durable channel), then exit 0 so the hook never blocks."""
     from refmatrix import stm as stm_mod
-    try:
-        d = json.load(sys.stdin)
-    except Exception:
+    root = _root()
+    env = stm_mod.read_hook_envelope(sys.stdin.read(), root=root, hook=f"focus hook {event}",
+                                     require_session=True, prose_ok=False)
+    d = env.envelope
+    if d is None:
         return
-    session = d.get("session_id") or stm_mod.session_id()
-    s = stm_mod.Stm(_root(), session)
+    session = str(d["session_id"])
+    if event == "session-start":
+        owner = _hook_write_pointer(stm_mod, root, session,
+                                    hook=f"session-start:{d.get('source') or 'unknown'}")
+        out, err = stm_mod.session_start_surfacing(root, owner)
+        for line in out:
+            click.echo(line)
+        for line in err:
+            click.echo(line, err=True)
+        return
+    s = stm_mod.Stm(root, session)
     if event == "tool-pre":
         terse, refs, detail = _tool_event_fields(d)
         s.inflight_begin(_tool_call_key(d), terse=terse, refs=refs,
                          detail=detail)
         return
     if event == "input":
-        # bug-109: name this turn's session for the Claude process that owns it, so the
-        # long-lived MCP server (spawned before any /clear) and Bash-tool CLI runs resolve the
-        # CURRENT session. Every hook ends in `2>/dev/null || true`, so a failure is recorded in
-        # stm/by-pid/_errors.jsonl, never only printed (r1 #b-1).
-        if d.get("session_id"):
-            try:
-                owner, status = stm_mod.owner_lookup()
-                if owner:
-                    stm_mod.write_pid_pointer(_root(), owner, d["session_id"])
-                else:
-                    stm_mod.record_pointer_error(
-                        _root(), "owner-lookup-failed" if status == "failed" else "no-owner",
-                        session=d["session_id"])
-            except OSError as e:
-                click.echo(f"rmx focus hook: session pointer not written: {e}", err=True)
-                try:
-                    stm_mod.record_pointer_error(_root(), "write-failed", error=str(e),
-                                                 session=d["session_id"])
-                except OSError:
-                    pass  # the stderr line above is the last channel left
+        # Task 21.1 R9, in THIS order: (1) bug-109's pointer write, (2) the pre-prompt
+        # snapshot — the FIRST state change, for every non-empty prompt, ambient included,
+        # because the parallel recall / scan hooks read the ring and the graph this hook
+        # changes; (3) the sweep of parked calls; (4) the input record (non-ambient only).
+        _hook_write_pointer(stm_mod, root, session, hook="input")
+        prompt = env.prompt
+        if prompt:
+            s.snapshot_pre_prompt(prompt)
         # Top of a turn: anything still parked from the previous one never
         # completed. Fold it in before recording the new prompt so the
-        # abandoned call sits in front of it on the timeline.
+        # abandoned call sits in front of it on the timeline. A failure is said and
+        # recorded (`sweep-failed`), never swallowed.
         try:
             s.inflight_sweep()
-        except Exception:
-            pass
-        prompt = (d.get("prompt") or "").strip()
+        except Exception as e:  # noqa: BLE001 — reported and recorded below
+            click.echo(f"rmx focus hook: in-flight sweep failed: {type(e).__name__}: {e}",
+                       err=True)
+            owner, _ = stm_mod.owner_lookup()
+            if not stm_mod.record_pointer_error("sweep-failed", root=root, owner=owner,
+                                                error=f"{type(e).__name__}: {e}",
+                                                session=session):
+                stm_mod.say_unrecorded("sweep-failed", who="rmx focus hook")
         if prompt and not _is_ambient_prompt(prompt):
-            s.record("input", prompt[:300])
+            s.record("input", prompt[:300], extra={"prompt_sha": stm_mod.prompt_sha(prompt)})
     elif event == "say":
         # Stop hook: capture my reply from the transcript. refs=[] keeps it
         # text-only (visible in the intent thread) without admitting prose
@@ -2065,7 +2144,7 @@ def task():
 
 def _task_verb(action: str, *, session: "str | None" = None, **kw) -> dict:
     """Every `rmx task` subcommand is a render over verbs.task — the same
-    ring (`prefer_latest` → verbs.resolve_session) reads and writes."""
+    ring (`verbs.resolve_session_source`, purpose by action) reads and writes."""
     from refmatrix import verbs as _verbs
     try:
         return _verbs.task(_root(), action=action,
@@ -5057,14 +5136,19 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
             grep_backstop, text, stdin_json):
     """Token-budgeted context bundle: anchor + neighbors + their tldr blobs."""
     phase_mark("click-parse")
-    from refmatrix.context import build_context, render_json, render_text
-    from refmatrix import daemon as daemon_mod
+    from refmatrix.context import (annotate_items, build_context, render_json,
+                                   render_json_spans, render_text, render_text_spans)
+    from refmatrix import daemon as daemon_mod, telemetry as _tel
     phase_mark("context-import")
     # Uniform query resolution: positional SYMBOL > --text > --stdin-json
     # envelope. Shared with scan-prompt / memory recall. read_stdin=False so a
     # bare `rmx context` in a pipeline doesn't silently consume stdin.
-    symbol = _resolve_query(symbol, text, stdin_json=stdin_json,
-                            read_stdin=False)
+    symbol, _envelope = _resolve_query_env(symbol, text, stdin_json=stdin_json,
+                                           read_stdin=False)
+    # Task 21.1 R3/R4: every route writes ONE `kind=context` row carrying the session,
+    # resolved ONCE here for the row and the call's recall events.
+    _ctx_session = (_tel.resolve_event_session(_root(), _envelope) if symbol and not since
+                    else _tel.SESSION_UNRESOLVED)
     phase_mark("dispatch")
     # Detect whether the user actually passed --max-entities / --max-tokens
     # so the auto-scale (degree>0) knows whether to multiply or not. An
@@ -5095,7 +5179,7 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
             raise click.ClickException("--via-replica requires a symbol")
         def _run(s):
             with log_query(s, kind="context", body=symbol,
-                           source="context-replica") as t:
+                           source="context-replica", session=_ctx_session) as t:
                 b = build_context(
                     s, symbol,
                     linkages=list(linkage) or None,
@@ -5112,13 +5196,15 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
                     _tokens_explicit=tokens_explicit,
                 )
                 t.cardinality = b.total_entities() if b.anchor else 0
-            return b
-        bundle = _replica_read(_run)
+            # The renderer returns the spans; the item rows' partitions are read on the
+            # store that served the bundle, while it is open (task 21.1 R11).
+            out, items = render_json_spans(b) if fmt == "json" else render_text_spans(b)
+            return b, out, annotate_items(s, items), t.query_id
+        bundle, _out, _items, _qid = _replica_read(_run)
         phase_mark("replica-build_context")
-        if fmt == "json":
-            click.echo(render_json(bundle))
-        else:
-            click.echo(render_text(bundle))
+        click.echo(_out)
+        _context_emit(_root(), ref=symbol, text=_out, items=_items, query_id=_qid,
+                      session=_ctx_session)
         # The replica read is read-only, so the grep backstop can only DISPLAY
         # the floor here. Fold its hits into a protected `query/<ref>` concept
         # via the daemon writer so the next lookup is indexed (and survives
@@ -5146,19 +5232,28 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
             payload["linkages"] = list(linkage) or None
             payload["entities_explicit"] = entities_explicit
             payload["tokens_explicit"] = tokens_explicit
-            resp = daemon_mod.call(root, "context", payload, timeout=120.0)
-            # The daemon-routed branch is the DEFAULT on a live machine and had
-            # no marks at all, so ~1.5 s of RPC landed in `exit` — the one path
-            # the instrument was never pointed at (ch-bsd plan-12 r2).
-            phase_mark("daemon-rpc")
-            if not resp.get("ok"):
-                raise click.ClickException(
-                    f"daemon context failed: {resp.get('error')}"
-                )
-            click.echo(resp["result"]["body"])
-            for w in resp["result"].get("warnings") or []:
-                click.echo(f"rmx context: {w}", err=True)
+            # Task 21.1 R3: the daemon route's row (`context-daemon`) was missing — the
+            # exploration counted only replica/direct calls. Written HERE, on the caller
+            # side, never inside the op or under the daemon's writer lock.
+            with log_query(None, kind="context", body=symbol, source="context-daemon",
+                           root=root, session=_ctx_session) as t:
+                resp = daemon_mod.call(root, "context", payload, timeout=120.0)
+                # The daemon-routed branch is the DEFAULT on a live machine and had
+                # no marks at all, so ~1.5 s of RPC landed in `exit` — the one path
+                # the instrument was never pointed at (ch-bsd plan-12 r2).
+                phase_mark("daemon-rpc")
+                if not resp.get("ok"):
+                    raise click.ClickException(
+                        f"daemon context failed: {resp.get('error')}"
+                    )
+                _out = resp["result"]["body"]
+                click.echo(_out)
+                for w in resp["result"].get("warnings") or []:
+                    click.echo(f"rmx context: {w}", err=True)
             phase_mark("render")
+            _context_emit(root, ref=symbol, text=_out,
+                          items=resp["result"].get("items") or [], query_id=t.query_id,
+                          session=_ctx_session)
             return
 
     # `--since` path + symbol fallback are read-only — entity / link
@@ -5225,7 +5320,8 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
 
     if not symbol:
         raise click.ClickException("provide a symbol or use --since <git-ref>")
-    with log_query(s, kind="context", body=symbol, source="context") as t:
+    with log_query(s, kind="context", body=symbol, source="context",
+                   session=_ctx_session) as t:
         bundle = build_context(
             s, symbol,
             linkages=list(linkage) or None,
@@ -5243,10 +5339,21 @@ def context(symbol, linkage, max_entities, max_tokens, fmt, since, fuse, strict,
         )
         t.cardinality = bundle.total_entities() if bundle.anchor else 0
     phase_mark("build_context")
-    if fmt == "json":
-        click.echo(render_json(bundle))
-    else:
-        click.echo(render_text(bundle))
+    _out, _items = render_json_spans(bundle) if fmt == "json" else render_text_spans(bundle)
+    click.echo(_out)
+    _context_emit(s.root, ref=symbol, text=_out, items=annotate_items(s, _items),
+                  query_id=t.query_id, session=_ctx_session)
+
+
+def _context_emit(root: Path, *, ref: str, text: str, items: list, query_id: str,
+                  session: "str | None") -> None:
+    """The CLI context routes' ONE emission of `context` events (task 21.1 R11) over the
+    payload `click.echo` wrote (the text plus its newline)."""
+    from refmatrix import stm as stm_mod, telemetry as _tel
+    _tel.emit_context_call(root, ref=ref, items=items,
+                           payload=(text + "\n").encode("utf-8"), query_id=query_id,
+                           session=session, invocation=_tel.invocation_source(),
+                           turn=stm_mod.live_turn(root, session))
 
 
 def _render_describe(d: dict) -> None:
@@ -5877,7 +5984,8 @@ _STDIN_MACHINE_KEYS = ("quiet", "count", "files_only", "files_without_match",
                        "only_matching")
 
 
-def _grep_stdin(pattern: str, regex: bool, gf: dict, limit: int | None) -> None:
+def _grep_stdin(pattern: str, regex: bool, gf: dict, limit: int | None,
+                tlog: "log_query | None" = None) -> None:
     """Pipe-mode grep: search lines from sys.stdin, ignore the index.
 
     Output is byte-compatible with `grep` reading stdin — plain matching
@@ -5963,19 +6071,28 @@ def _grep_stdin(pattern: str, regex: bool, gf: dict, limit: int | None) -> None:
                 ctx_before.append((n, line))
 
     # --- grep-expected output first, verbatim -------------------------------
+    emitted = 0
     if gf["quiet"]:
         pass
     elif gf["count"]:
         click.echo(str(total))
+        emitted = 1
     elif gf["files_only"]:
         if total:
             click.echo(_STDIN_LABEL)
+            emitted = 1
     elif gf["files_without_match"]:
         if not total:
             click.echo(_STDIN_LABEL)
+            emitted = 1
     else:
         for line in out:
             click.echo(line)
+        emitted = len(out)
+    # Task 21.1 R6: `cardinality` was null on every one of the 3,521 grep-stdin rows of
+    # the exploration window (2026-09-23..10-07); it is the number of lines emitted.
+    if tlog is not None:
+        tlog.cardinality = emitted
 
     # --- rmx-specific output strictly AFTER the grep output -----------------
     if truncated:
@@ -6199,7 +6316,7 @@ def grep(ctx, argv, regex, linkage, kind, limit, fallback,
                        source="grep-stdin", root=_root) as _tlog:
             _tlog.answered_by = "stdin"
             _tlog.learn = False   # a filter teaches nothing, by contract
-            _grep_stdin(pattern, regex, gf, cap)
+            _grep_stdin(pattern, regex, gf, cap, tlog=_tlog)
         return
 
     # -x / --line-regexp: whole-line match. Forces regex and anchors the
@@ -7514,13 +7631,41 @@ def stats(stale, via_replica):
 @click.option("--window", type=int, default=5, show_default=True,
               help="With --context: seconds of hook rows treated as one "
                    "prompt's fan-out.")
+@click.option("--agent-usage", "agent_usage", is_flag=True,
+              help="How the agent used rmx: context (per route), grep (per source / "
+                   "answered_by) and recall (per channel, with each outcome) counts and "
+                   "p50/p95 latency per invocation, from this store's query.log, cli.log "
+                   "and recall-events.jsonl. Rows are classified by "
+                   "telemetry.row_provenance: test-artifact and legacy-fixture rows are "
+                   "excluded and every exclusion count is printed.")
+@click.option("--until", default=None,
+              help="With --agent-usage: exclusive ISO-timestamp-prefix upper bound "
+                   "(--since is the inclusive lower bound).")
+@click.option("--by-session", is_flag=True,
+              help="With --agent-usage: also print calls per session.")
+@click.option("--include-internal", is_flag=True,
+              help="With --agent-usage: keep invocation=internal rows (eval harnesses), "
+                   "excluded by default.")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text")
-def telemetry(since, top_queried, zero_results, as_context, window, fmt):
+def telemetry(since, top_queried, zero_results, as_context, window, agent_usage, until,
+              by_session, include_internal, fmt):
     """Summarize the query telemetry log."""
     from refmatrix.telemetry import (
         summarize, summarize_context, top_queried_concepts,
         zero_result_queries,
     )
+
+    if agent_usage:
+        # Task 21.1 R7. The report lives in telemetry (it classifies every row through
+        # telemetry.row_provenance, the ONE classifier); this command only fetches the
+        # daemon's dropped-read count and prints.
+        from refmatrix import telemetry as _tel
+        root = _root()
+        for line in _tel.agent_usage_report(
+                root, since=since, until=until, include_internal=include_internal,
+                by_session=by_session, expired_reads=_expired_reads(root)):
+            click.echo(line)
+        return
 
     if as_context:
         # cli.log lives on the root, not in the catalog — no replica read.
@@ -7620,6 +7765,22 @@ def telemetry(since, top_queried, zero_results, as_context, window, fmt):
         console.print("\n[bold]recent zero-result queries:[/]")
         for body in out["zero_result_examples"]:
             console.print(f"  {body}")
+
+
+def _expired_reads(root: Path) -> str:
+    """The daemon's dropped-read count (`_op_stats`' `expired_reads`, bug-116), or why it
+    is unavailable — a daemon that did not answer is never reported as 0 (task 21.1 R7)."""
+    from refmatrix import daemon as daemon_mod
+    if not daemon_mod.socket_path(root).exists():
+        return "unavailable (daemon down)"
+    try:
+        resp = daemon_mod.call(root, "stats", {}, timeout=10.0, retries=0)
+    except (OSError, ValueError) as e:
+        return f"unavailable (daemon did not answer: {type(e).__name__}: {e})"
+    if not resp.get("ok"):
+        return f"unavailable (stats refused: {resp.get('error')})"
+    n = (resp.get("result") or {}).get("expired_reads")
+    return str(int(n)) if isinstance(n, int) else "unavailable (daemon predates the counter)"
 
 
 @main.command()
@@ -8974,43 +9135,51 @@ def _resolve_query(
     stdin_json: bool = False,
     read_stdin: bool = True,
 ) -> str:
+    """The query only; see `_resolve_query_env`."""
+    return _resolve_query_env(positional, text, prompt, stdin_json=stdin_json,
+                              read_stdin=read_stdin)[0]
+
+
+def _resolve_query_env(
+    positional: "str | None",
+    text: "str | None" = None,
+    prompt: "str | None" = None,
+    *,
+    stdin_json: bool = False,
+    read_stdin: bool = True,
+) -> "tuple[str, dict | None]":
     """Uniform query resolution for the read surfaces — `context`,
     `scan-prompt`, and `memory recall` — so they stop disagreeing on how a
-    query is passed.
+    query is passed. Returns `(query, envelope)`; the envelope (or None) carries
+    the hook's `session_id` to the telemetry row and the recall events.
 
-    Precedence: positional arg > --text > --prompt > stdin. For stdin, an
-    explicit --stdin-json (or a payload that merely looks like a JSON object)
-    is parsed as the UserPromptSubmit envelope and its `.prompt` is used;
-    anything else is taken as raw prose. Auto-detecting the JSON object closes
-    the scan-prompt footgun where a hook piping `{"prompt": "..."}` got the
-    braces indexed as the query.
+    Precedence: positional arg > --text > --prompt > stdin. Stdin goes through
+    the ONE hook-envelope reader (`stm.read_hook_envelope`, task 21.1 D9): with
+    --stdin-json a non-object is an error (one stderr line, an
+    `envelope-unreadable` row, then the `--stdin-json: invalid JSON on stdin`
+    exit); without it, a JSON object is the envelope and anything else is raw
+    prose (`fix the {braces` is a prompt, not an error). The prompt is the first
+    of `stm.HOOK_PROMPT_KEYS` the envelope carries.
 
     `read_stdin=False` suppresses the implicit non-tty stdin read (so
     `context` / `memory recall` don't consume a pipe unless --stdin-json is
-    explicit); an explicit --stdin-json still reads. Returns the resolved
-    query (stripped); '' when nothing resolves."""
-    import json
+    explicit); an explicit --stdin-json still reads. The query is stripped;
+    '' when nothing resolves."""
+    from refmatrix import stm as stm_mod
     for cand in (positional, text, prompt):
         if cand and cand.strip():
-            return cand.strip()
+            return cand.strip(), None
     if not (stdin_json or (read_stdin and not sys.stdin.isatty())):
-        return ""
+        return "", None
     raw = _read_stdin_text()
     if not raw.strip():
-        return ""
-    if stdin_json or raw.lstrip().startswith("{"):
-        try:
-            env = json.loads(raw)
-        except Exception:
-            if stdin_json:
-                raise click.ClickException(
-                    "--stdin-json: invalid JSON on stdin"
-                )
-            return raw.strip()   # looked like JSON but isn't — treat as prose
-        if isinstance(env, dict):
-            return (env.get("prompt") or "").strip()
-        return raw.strip()
-    return raw.strip()
+        return "", None
+    env = stm_mod.read_hook_envelope(raw, root=_root(), hook="stdin-json" if stdin_json
+                                     else "stdin", require_session=False,
+                                     prose_ok=not stdin_json)
+    if stdin_json and env.envelope is None:
+        raise click.ClickException("--stdin-json: invalid JSON on stdin")
+    return env.prompt.strip(), env.envelope
 
 
 @main.command("scan-prompt")
@@ -9111,15 +9280,23 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
     autoscaling token budget, so it never robs the prompt-symbol context.
     """
     from refmatrix.scan import scan_prompt
+    from refmatrix import stm as stm_mod, telemetry as _tel
+    from refmatrix.context import annotate_items
 
     # Positional QUERY > --text > stdin (JSON envelope auto-detected).
-    prompt = _resolve_query(query, text, stdin_json=stdin_json, read_stdin=True)
+    prompt, envelope = _resolve_query_env(query, text, stdin_json=stdin_json,
+                                          read_stdin=True)
     if not prompt.strip():
         return
     composite_root = _root() if composite else None
+    # Task 21.1 R4/R9: the row's and the events' session, resolved ONCE (the hook's
+    # envelope first; null when nothing resolves — never the newest ring).
+    session = _tel.resolve_event_session(_root(), envelope)
 
     def _run(s):
-        with log_query(s, kind="scan", body=prompt[:200], source="scan-prompt") as tlog:
+        trace: dict = {}
+        with log_query(s, kind="scan", body=prompt[:200], source="scan-prompt",
+                       session=session) as tlog:
             result = scan_prompt(
                 s, prompt,
                 max_tokens=max_tokens,
@@ -9140,13 +9317,29 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
                 composite_every=composite_every,
                 composite_intra_edges=composite_intra_edges,
                 rerank_timeout=timeout,
+                trace=trace,
             )
             tlog.cardinality = result.count("=== context for") if result else 0
-        return result
+        # The item rows' partitions, read on the store that served them (R10).
+        annotate_items(s, trace.get("retrieved") or [])
+        annotate_items(s, trace.get("delivered") or [])
+        return result, trace, tlog.query_id
 
-    out = _replica_read(_run)
+    out, trace, qid = _replica_read(_run)
+    payload = None
     if out:
         click.echo(out)
+        payload = (out + "\n").encode("utf-8")
+    # R11: the scan_prompt channel's ONE emission, after the payload is written; the phase
+    # inputs come from ONE pre-prompt state read (R9), never a second read of live files.
+    root = _root()
+    _tel.emit_call(root, channel="scan_prompt", invocation=_tel.invocation_source(),
+                   session=session, query_id=qid,
+                   retrieved=trace.get("retrieved") or [],
+                   delivered=(trace.get("delivered") or []) if payload else [],
+                   payload=payload, block_id=_tel.RECALL_BLOCK_IDS["scan_prompt"],
+                   phase=stm_mod.phase_fields(root, session, prompt, t0=_PROC_WALL_T0,
+                                              prompt_time=True))
 
 
 @main.command("top")
@@ -11396,6 +11589,10 @@ def memory_get(name_or_id, degree):
         click.echo(f"# rmx: {e}; reading the replica", err=True)
         m = s.get_memory(target)
         served_by_replica = True
+        if m is not None and not isinstance(target, int):
+            # R12 `memory_get_by_name` on the replica fall-through too (the verb path
+            # emits inside `verbs.memory`): the same helper, so the rule is one rule.
+            _verbs.emit_memory_get_used(root, target)
     except _verbs.VerbError as e:
         raise click.ClickException(str(e))
     if m is None:
@@ -11716,6 +11913,12 @@ def _merge_scope(project_rows, global_rows, k, scope):
 def _render_memory_gmd(rows, *, query: str | None = None,
                        mode: str | None = None,
                        partition: str | None = None) -> str:
+    return _render_memory_gmd_spans(rows, query=query, mode=mode, partition=partition)[0]
+
+
+def _render_memory_gmd_spans(rows, *, query: str | None = None,
+                             mode: str | None = None, partition: str | None = None
+                             ) -> "tuple[str, list[tuple[int, int] | None]]":
     """Render memory recall hits as a single GMD document.
 
     Each row becomes an H2 node with `{#id}` anchor; the whole doc gets
@@ -11723,6 +11926,10 @@ def _render_memory_gmd(rows, *, query: str | None = None,
     `rel:` edges are derived from row tags (session-id) and the
     partition. Content is rendered as a markdown blockquote so newlines
     inside the body don't break the GMD shape.
+
+    Also returns, per row, the byte span of its name in its own `## <name>` heading (None
+    for a nameless row): the recall channel's delivered spans come from where the renderer
+    put each name, never from searching the text (21.1 ch-bsd r2 #m1, 2026-10-19).
     """
     import hashlib as _h
     import time as _t
@@ -11757,6 +11964,7 @@ def _render_memory_gmd(rows, *, query: str | None = None,
     lines.append("# recall {#root}")
     lines.append("")
 
+    marks: "list[int | None]" = []
     for m in rows:
         anchor = m.get("name") or f"memory-{m.get('id')}"
         score = m.get("score")
@@ -11775,6 +11983,7 @@ def _render_memory_gmd(rows, *, query: str | None = None,
         else:
             score_str = ""
 
+        marks.append(len(lines) if m.get("name") else None)
         lines.append(f"## {anchor} {{#{anchor}}}")
         lines.append(f"mtype: {mtype}{score_str}{when}")
 
@@ -11812,7 +12021,14 @@ def _render_memory_gmd(rows, *, query: str | None = None,
         lines.append("rel: part-of -> [[#root]]")
         lines.append("")
 
-    return "\n".join(lines).rstrip() + "\n"
+    text = "\n".join(lines).rstrip() + "\n"
+    starts, pos = [], 0
+    for ln in lines:
+        starts.append(pos)
+        pos += len(ln.encode("utf-8")) + 1
+    spans = [(starts[li] + len("## "), len(str(rows[i]["name"]).encode("utf-8")))
+             if li is not None else None for i, li in enumerate(marks)]
+    return text, spans
 
 
 def _parse_duration(text: str) -> float:
@@ -11941,6 +12157,31 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
 
     Session-start (--session-start): shorthand for `--recent --since 7d`,
     the SessionStart hook's preferred mode per ADR-0001 Phase C."""
+    # Task 21.1 R3/R4/R11: ONE `kind=recall` query.log row per call on every exit — a hook
+    # that degrades past its budget writes its row too (outcome `skipped_budget` / `error`),
+    # so a skipped prompt is never read as "recall ran and delivered 0" — and ONE emission
+    # of the call's recall events, after its payload is written.
+    rec = _RecallCall(stdin_json=bool(stdin_json), session_start=bool(session_start),
+                      recent=bool(recent or session_start))
+    with log_query(None, kind="recall", body="", source="memory-recall", root=_root,
+                   budget_s=float(timeout)) as tlog:
+        rec.tlog = tlog
+        try:
+            _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
+                                session_start, as_json, as_gmd, kinds, exclude_mtype,
+                                include_session, degree, fuse, scope, subject, rerank,
+                                timeout, rec=rec)
+        finally:
+            rec.close_row()
+    rec.emit()
+
+
+def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
+                        session_start, as_json, as_gmd, kinds, exclude_mtype,
+                        include_session, degree, fuse, scope, subject, rerank, timeout,
+                        *, rec: "_RecallCall"):
+    """The body of `rmx memory recall`; `rec` records the query, the payload, the retrieved
+    and delivered items and a degrade for the wrapper's row and events."""
     # The budget clock starts HERE, before the partition probe: the probe
     # used to spend its own 5 s and the recall then started at zero
     # (bsd-plan2-r6 #b-1: wall = 2× budget on a held writer).
@@ -11957,12 +12198,14 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
     # Uniform resolution: positional query > --text > --prompt > --stdin-json
     # envelope. read_stdin=False so --recent doesn't consume an unrelated pipe;
     # an explicit --stdin-json still reads + parses (raising on bad JSON).
-    q = _resolve_query(query, text, prompt_query, stdin_json=stdin_json,
-                       read_stdin=False)
+    q, _envelope = _resolve_query_env(query, text, prompt_query, stdin_json=stdin_json,
+                                      read_stdin=False)
+    rec.set_query(q, _envelope)
     if stdin_json and not q:
         # UserPromptSubmit hook fired with an empty prompt (slash command,
         # /clear, /resume etc): non-fatal — emit a parseable empty artifact so
         # the hook can detect "no recall" deterministically, and exit 0.
+        rec.nothing_asked = True
         if as_json:
             click.echo("[]")
         elif as_gmd:
@@ -12015,6 +12258,9 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                else f"daemon busy (recall not confirmed within {budget:g}s: {e})")
         if not hook_mode:
             raise click.ClickException(msg)
+        # R4: classified by exception TYPE under the hook's budget (a refused or reset
+        # connection degrades too, and is an `error`, not a budget skip).
+        rec.degraded(e)
         click.echo(f"# rmx: warning: recall skipped: {msg}", err=True)
         if as_json:
             click.echo("[]")
@@ -12101,8 +12347,9 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             # that spent the budget degrades like every other busy leg
             _verb_timeout = (_left(budget) if _replica is None
                              else min(_left(budget), RECALL_DAEMON_SLICE_S))
+            _recall_trace: list = []
             res = _verbs.memory_recall(
-                _root(), k=k, scope=scope, since=since,
+                _root(), k=k, scope=scope, since=since, trace=_recall_trace,
                 recent=bool(recent), session_start=bool(session_start),
                 exclude_mtype=verb_exclude, include_session=verb_include_session,
                 # the REMAINING budget: the verb starts its own clock, and the
@@ -12111,6 +12358,7 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                 # resolved once above, under this budget (bsd-plan3-r5 #m-4)
                 partition=_resolve_partition())
             rows = res["memories"]
+            rec.retrieved = list(_recall_trace) or list(rows)
             widened = bool(res.get("widened"))
             for w in res.get("warnings") or []:
                 _warn(w)
@@ -12142,6 +12390,7 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                     widen_if_empty=bool(session_start and since is None))
                 if widened:
                     since_s = None
+            rec.retrieved = list(rows)
             if scope != "project":
                 rows = _merge_scope(rows, _global_rows(None, recent_flag=True, since=since_s),
                                     k, scope)
@@ -12150,34 +12399,30 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             raise click.ClickException(str(e))
         if widened:
             click.echo("# rmx: nothing in the 7d window; widened to newest", err=True)
+        rec.delivered = rows
         if as_json:
             import json as _json
-            click.echo(_json.dumps(rows, indent=2))
+            rec.echo(_json.dumps(rows, indent=2), json_mode=True)
             return
         if as_gmd:
             mode_tag = ("subject" if subject else
                         "session-start" if session_start else "recent")
-            click.echo(_render_memory_gmd(
-                rows, query=None, mode=mode_tag,
-                partition=_resolve_partition(),
-            ))
+            text, spans = _render_memory_gmd_spans(rows, query=None, mode=mode_tag,
+                                                   partition=_resolve_partition())
+            rec.echo(text, spans=spans)
             return
         if not rows:
             console.print(f"[yellow]no memories filed under subject[/] {subject!r}"
                           if subject else "[yellow]no memories in window[/]")
             return
-        t = Table("rank", "id", "name", "mtype", "content")
-        for i, m in enumerate(rows, 1):
-            t.add_row(str(i), str(m["id"]), m["name"], m.get("mtype") or "",
-                      (m.get("content") or "")[:80])
-        console.print(t)
-        if degree > 0:
-            for i, m in enumerate(rows, 1):
-                ctx = m.get("context")
-                if ctx:
-                    console.print()
-                    console.print(f"[bold]#{i} {m['name']} — context[/]")
-                    click.echo(ctx)
+        # 21.1 ch-bsd r2 #b1 (2026-10-19): this table printed through `console.print`, so
+        # its payload was never captured and every delivered event was dropped as
+        # unspanned. It goes through THE recall table path, like the query table.
+        _echo_recall_table(
+            rec, ("rank", "id", "name", "mtype", "content"),
+            [([str(i), str(m["id"]), m["name"], m.get("mtype") or "",
+               (m.get("content") or "")[:80]], m) for i, m in enumerate(rows, 1)],
+            name_col=2, ctx_rows=rows if degree > 0 else [])
         return
 
     # Hybrid path. _memory_daemon_call injects the active partition so
@@ -12239,7 +12484,11 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
         try:
             resp = _memory_daemon_call("memory_recall", {**args, "partition": _dense_partition},
                                        timeout=_left(180.0), retries=0 if hook_mode else 2)
-        except (_verbs.VerbBusyError, TimeoutError, _socket.timeout, OSError) as e:
+        except (_verbs.VerbBusyError, TimeoutError, _socket.timeout, OSError,
+                json.JSONDecodeError) as e:
+            # json.JSONDecodeError (task 21.1 round-10 #s10-2): a peer that closes
+            # mid-answer makes `daemon.call` parse an empty line — a ValueError this
+            # tuple missed, so the hook died with a traceback instead of degrading.
             _degrade_or_raise(e)
             return
         if not resp.get("ok"):
@@ -12259,6 +12508,7 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             else -(h.get("score") or 0.0)
         ),
     )
+    rec.retrieved = _hits_with_meta(hits)
     if not hits:
         if as_gmd:
             click.echo(_render_memory_gmd(
@@ -12353,20 +12603,20 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                 # the same annotation MCP rows carry (verbs.annotate_hit).
                 rows.append(_verbs.annotate_hit(m, h))
         if scope != "project":
-            rows = _merge_scope(
-                rows, _global_rows(q, recent_flag=False, since=None),
-                k, scope)
+            _grows = _global_rows(q, recent_flag=False, since=None)
+            rec.retrieved = list(rec.retrieved) + list(_grows)
+            rows = _merge_scope(rows, _grows, k, scope)
         rows = _attach_context(rows)
+        rec.delivered = rows
         if as_gmd:
-            click.echo(_render_memory_gmd(
-                rows, query=q, mode="hybrid",
-                partition=_resolve_partition(),
-            ))
+            text, spans = _render_memory_gmd_spans(rows, query=q, mode="hybrid",
+                                                   partition=_resolve_partition())
+            rec.echo(text, spans=spans)
         else:
             import json as _json
-            click.echo(_json.dumps(rows, indent=2))
+            rec.echo(_json.dumps(rows, indent=2), json_mode=True)
         return
-    t = Table("rank", "score", "id", "name")
+    cells: "list[tuple[list[str], dict | None]]" = []
     table_rows: list[dict] = []
     shown = 0
     for h in hits:
@@ -12381,11 +12631,8 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             continue
         name = m["name"] if m else "?"
         shown += 1
-        t.add_row(
-            str(shown),
-            f"{score:.4f}" if isinstance(score, float) else str(score),
-            str(eid), name,
-        )
+        cells.append(([str(shown), f"{score:.4f}" if isinstance(score, float) else str(score),
+                       str(eid), name], m))
         if m is not None:
             table_rows.append(m)
     if scope != "project":
@@ -12396,20 +12643,216 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             if gr.get("name") in seen_names:
                 continue
             shown += 1
-            t.add_row(str(shown), "—", str(gr.get("id")),
-                      f"{gr['name']} [global]")
+            cells.append(([str(shown), "—", str(gr.get("id")), gr["name"]], gr))
             table_rows.append(gr)
-    console.print(t)
-    if degree > 0 and table_rows:
-        # Mirror the recent-mode behavior: render per-hit context blocks
-        # under the ranked table for table mode.
-        ctx_rows = _attach_context(table_rows)
-        for i, m in enumerate(ctx_rows, 1):
-            ctx = m.get("context")
-            if ctx:
-                console.print()
-                console.print(f"[bold]#{i} {m['name']} — context[/]")
-                click.echo(ctx)
+    # 21.1 ch-bsd r1 #b3 (spec rev round 13, 2026-10-19): the table is the agent's default
+    # `recall` channel, so it goes through THE recall table path (`_echo_recall_table`).
+    _echo_recall_table(rec, ("rank", "score", "id", "name"), cells, name_col=3,
+                       ctx_rows=(_attach_context(table_rows)
+                                 if degree > 0 and table_rows else []))
+
+
+def _one_line(text: str) -> str:
+    """A table cell on ONE line: a newline in a memory's content made rich print a row over
+    several lines, so a row's line could no longer be found by its index."""
+    return " ".join(str(text).splitlines())
+
+
+def _echo_recall_table(rec: "_RecallCall", columns: "tuple[str, ...]",
+                       cells: "list[tuple[list[str], dict | None]]", *, name_col: int,
+                       ctx_rows: "list[dict]") -> None:
+    """THE text-table output of `rmx memory recall` (the query table and the `--recent` /
+    `--subject` table both): render, record where each delivered row's NAME lands, write the
+    payload through `rec.echo` with those spans, and set `rec.delivered`.
+
+    One path so no table can print around the capture: r1 #b3 fixed the query table and the
+    recent table kept `console.print`, logging 0 delivered for every agent `--recent` call
+    (21.1 ch-bsd r2 #b1, 2026-10-19). Spans come from the RENDERER's layout (row i is body
+    line i, the name is the start of cell `name_col`), never from searching the text: a
+    search found a memory named `name` / `rank` / `1` in the header or the rank cell
+    (r2 #m1). `cells` pairs each displayed row with the row it delivers (None for a hit whose
+    memory could not be fetched, shown as `?`, delivered nowhere). `ctx_rows` (degree > 0)
+    adds each row's context block below the table, in the same payload.
+
+    Cells are rich `Text`, never markup: no tag, escape or emoji is interpreted, so a name
+    prints VERBATIM. Markup + `rich_escape` printed `fix:smile:now` as `fix😄now` and
+    `trail\\` with a doubled backslash, and the span check (`startswith`) still claimed it
+    (21.1 ch-bsd r3 #m1, 2026-10-19). A span now requires the name to be followed by the
+    cell's padding or the ` [global]` label. The label is THIS function's: a delivered row
+    whose `scope` is `global` is labelled here, for every route -- the `--recent` /
+    `--subject --scope both` table printed global rows unlabelled while the query caller
+    added the suffix itself (r3 #m2)."""
+    from rich.text import Text
+    t = Table(*columns)
+    labels: "list[str]" = []
+    for row_cells, row in cells:
+        label = " [global]" if row is not None and row.get("scope") == "global" else ""
+        labels.append(label)
+        shown_cells = [_one_line(c) for c in row_cells]
+        shown_cells[name_col] += label
+        t.add_row(*[Text(c) for c in shown_cells])
+    table_text = _render_table_text(t)
+    lines = table_text.split("\n")
+    rule = next((i for i, ln in enumerate(lines) if ln.startswith("┡")), None)
+    body = lines[rule + 1: rule + 1 + len(cells)] if rule is not None else []
+    starts, pos = [], 0
+    for ln in lines:
+        starts.append(pos)
+        pos += len(ln.encode("utf-8")) + 1
+    delivered: list[dict] = []
+    spans: "list[tuple[int, int] | None]" = []
+    for i, (row_cells, row) in enumerate(cells):
+        if row is None:
+            continue
+        delivered.append(row)
+        span = None
+        name = str(row.get("name") or "")
+        if name and len(body) == len(cells):
+            line = body[i]
+            parts = line.split("│")
+            if len(parts) > name_col + 1:
+                prefix = "│".join(parts[: name_col + 1]) + "│ "      # border, cells, pad
+                after = line[len(prefix):]
+                tail = after[len(name) + len(labels[i]):]
+                if after.startswith(name + labels[i]) and tail.startswith(" "):
+                    span = (starts[rule + 1 + i] + len(prefix.encode("utf-8")),
+                            len(name.encode("utf-8")))
+        spans.append(span)
+    payload_parts = [table_text]
+    for i, m in enumerate(ctx_rows, 1):
+        ctx = m.get("context")
+        if ctx:
+            payload_parts += ["", f"#{i} {m['name']} — context", ctx]
+    rec.delivered = delivered
+    rec.echo("\n".join(payload_parts), spans=spans)
+
+
+def _render_table_text(t: "Table") -> str:
+    """A rich Table as the plain text a terminal would show, at its NATURAL width (never cut
+    to the terminal's), without a trailing newline -- the bytes `rmx memory recall`'s table
+    mode writes and spans (21.1 r1 #b3)."""
+    import io as _io
+    rec_console = Console(record=True, file=_io.StringIO(), width=10_000,
+                          color_system=None, soft_wrap=False, markup=False, emoji=False,
+                          highlight=False)
+    rec_console.print(t)
+    return rec_console.export_text(styles=False).rstrip("\n")
+
+
+class _RecallCall:
+    """What one `rmx memory recall` call did, for its ONE query.log row and its ONE emission
+    of recall events (task 21.1 R3/R4/R11). The command body records the resolved query and
+    envelope, the retrieved hits/rows, the delivered rows, the payload it wrote, and a
+    degrade; the wrapper writes the row and calls `emit` once after the payload is out."""
+
+    def __init__(self, *, stdin_json: bool, session_start: bool, recent: bool):
+        from refmatrix import telemetry as _tel
+        self.stdin_json, self.session_start, self.recent = stdin_json, session_start, recent
+        self.invocation = _tel.invocation_source()
+        self.tlog = None
+        self.query = ""
+        self.envelope: "dict | None" = None
+        self.retrieved: list = []
+        self.delivered: list = []
+        self.payload: "bytes | None" = None
+        self.json_mode = False
+        self.spans: "list[tuple[int, int] | None] | None" = None
+        self.skipped = False
+        self.nothing_asked = False
+        self.session: "str | None" = None
+
+    def set_query(self, q: str, envelope: "dict | None") -> None:
+        self.query, self.envelope = q or "", envelope
+
+    def degraded(self, e: BaseException) -> None:
+        """The hook's degrade path (exit 0, `[]`): the row's outcome is classified by the
+        exception TYPE under the budget (R4), and the call writes no recall events."""
+        from refmatrix import telemetry as _tel
+        self.skipped = True
+        if self.tlog is not None:
+            self.tlog.outcome, self.tlog.error = _tel.classify_outcome(type(e), e,
+                                                                       budgeted=True)
+
+    def echo(self, text: str, *, json_mode: bool = False,
+             spans: "list[tuple[int, int] | None] | None" = None) -> None:
+        """Write the payload and keep its exact bytes (R10's one unit). A JSON payload is
+        spanned by its `"name"` members (`context.name_spans`); a text payload (the table,
+        GMD) brings `spans`, one per delivered row, recorded by its renderer (21.1 r2 #m1:
+        text is never searched)."""
+        click.echo(text)
+        self.payload = (text + "\n").encode("utf-8")
+        self.json_mode = json_mode
+        self.spans = spans
+
+    def close_row(self) -> None:
+        from refmatrix import telemetry as _tel
+        if self.tlog is None:
+            return
+        self.tlog.body = self.query[:200]
+        self.tlog.extra.update(session_start=self.session_start, stdin_json=self.stdin_json,
+                               recent=self.recent)
+        # Resolved ONCE for the row and the events (one resolver miss per call, not two).
+        self.session = _tel.resolve_event_session(_root(), self.envelope)
+        self.tlog.session = self.session
+
+    def emit(self) -> None:
+        from refmatrix import stm as stm_mod, telemetry as _tel
+        if self.skipped or self.nothing_asked or not (self.retrieved or self.delivered):
+            return
+        root = _root()
+        channel = _tel.recall_channel(session_start=self.session_start,
+                                      stdin_json=self.stdin_json, recent=self.recent,
+                                      invocation=self.invocation)
+        phase = None
+        if channel == "prompt_recall":
+            phase = stm_mod.phase_fields(root, self.session, self.query, t0=_PROC_WALL_T0,
+                                         prompt_time=True)
+        elif channel in ("session_start", "precompact"):
+            phase = stm_mod.phase_fields(root, self.session, None, t0=_PROC_WALL_T0,
+                                         prompt_time=False)
+        retrieved = [_tel.recall_item(r, rank=i) for i, r in enumerate(self.retrieved, 1)]
+        delivered = [_tel.recall_item(r, rank=i) for i, r in enumerate(self.delivered, 1)]
+        if self.payload is not None and self.json_mode:
+            from refmatrix.context import name_spans
+            delivered = name_spans(self.payload, delivered)
+        else:
+            # A text payload's spans are its renderer's; a text payload without them (or a
+            # count that disagrees) spans nothing, and `call_events` counts every row as
+            # `delivered_unspanned` -- never a guess.
+            spans = self.spans if self.spans is not None and \
+                len(self.spans) == len(delivered) else [None] * len(delivered)
+            for it, sp in zip(delivered, spans):
+                it["offset_bytes"], it["bytes"] = sp if sp else (None, None)
+                it["body_offset_bytes"] = it["body_bytes"] = None
+        _tel.emit_call(root, channel=channel, invocation=self.invocation,
+                       session=self.session, query_id=self.tlog.query_id,
+                       retrieved=retrieved, delivered=delivered, payload=self.payload,
+                       block_id=_tel.RECALL_BLOCK_IDS[channel], phase=phase)
+
+
+def _hits_with_meta(hits: list) -> list:
+    """Recall hits carry their row's name / kind / partition / mtype when the daemon served
+    them (`_op_memory_recall`); replica-served hits get them here from the same lock-free
+    reader that answered, in one query (task 21.1 R10), merged by THE item-meta merge
+    `context.apply_item_meta` (21.1 r1 #s5: one merge, not three)."""
+    from refmatrix.context import apply_item_meta
+    out = [dict(h) for h in hits]
+    missing = [int(h.get("id") or h.get("entity_id")) for h in out
+               if h.get("name") is None and (h.get("id") or h.get("entity_id")) is not None]
+    if not missing:
+        return out
+    try:
+        rs = _reader_store()
+        if rs is None:
+            click.echo("# rmx: warning: recall hit metadata unavailable (no replica reader); "
+                       f"{len(missing)} retrieved event(s) not logged", err=True)
+            return out
+        meta = rs.item_meta(missing)
+    except Exception as e:  # noqa: BLE001 — said; the events for these hits are skipped
+        click.echo(f"# rmx: warning: recall hit metadata unavailable ({e}); their "
+                   f"retrieved events are not logged", err=True)
+        return out
+    return apply_item_meta(out, meta)
 
 
 @memory_grp.command("link")
@@ -13257,10 +13700,14 @@ def recall_state(session, memory_dir, as_json):
     work on its own.
     """
     root = _root()
-    sess = _resolve_stm_session(session, prefer_latest=True)
     from refmatrix import verbs as _verbs
-    rep = _verbs.recall_state(root, session=sess,
+    # The verb resolves (bug-109 r2 #s-2: a CLI-resolved session reached it as `explicit`),
+    # after it has read the pointer-error clauses (task 21.1 D6).
+    rep = _verbs.recall_state(root, session=session,
                               memory_dir=str(memory_dir) if memory_dir else None)
+    sess = rep.get("session") or session
+    if rep.get("session_source") == "latest":
+        sess = f"{sess} {_NEWEST_RING_LABEL}"
 
     if as_json:
         import json as _json

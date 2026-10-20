@@ -99,12 +99,30 @@ expensive kind of false rigor, and a field named `_est` cannot be quoted as exac
 plausible regression — but "not plausible" is how the Stop-promote "0.13 s" claim got made when
 the live number was 55 s ([[impression_bsd_cost_measured_idle]]). Measured, or not claimed.
 
+**Measured** {#q2-measured} (recorded 2026-10-19 in task 21.1's close-out, from the plan-9 r5
+audit, which took it 2026-10-01 because no summary carried it). `cli_entry` with the real
+`CountingStream` vs a pass-through subclass with no byte accounting, on the representative hook
+command `scan-prompt --max-tokens 2000 --composite-every 1`, deployed interpreter, live store, 28
+runs alternating, under load average 3.69 (not a quiet window):
+
+| arm | n | median ms | mean | min | max |
+|---|---|---|---|---|---|
+| proxy ON | 7 | 1308.3 | 1329.7 | 1297.9 | 1387.1 |
+| proxy OFF | 7 | 1350.0 | 1351.8 | 1285.7 | 1440.7 |
+| proxy ON | 7 | 1341.4 | 1363.7 | 1314.3 | 1465.5 |
+| proxy OFF | 7 | 1357.1 | 1361.5 | 1334.4 | 1412.4 |
+
+The ON medians are lower than the OFF medians: the overhead is below run-to-run noise on a 1.3 s
+command, |Δ| < 50 ms, sign indeterminate. Q2's answer is "not measurable at this resolution".
+
+rel: evidence-for -> [[bsd-plan8-9-10-r5-e0b7df6#s-5-r5]]
+
 ## Decisions Log {#decisions-log}
 
 | # | Question | Decision | Date |
 |---|----------|----------|------|
 | Q1 | Token estimate | `bytes / 4`, named `out_tokens_est`, documented as approximate. | 2026-09-15 |
-| Q2 | Proxy overhead | Ship it, then measure it; no unmeasured "negligible" claim. | 2026-09-15 |
+| Q2 | Proxy overhead | Ship it, then measure it; no unmeasured "negligible" claim. Measured: below noise, \|Δ\| < 50 ms on a 1.3 s hook ([[#q2-measured]]). | 2026-09-15 |
 
 ## Task Breakdown {#task-breakdown}
 
