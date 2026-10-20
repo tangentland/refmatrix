@@ -148,7 +148,19 @@ name) and must be believed. {#why-lead}
     `timeout` rows move into `timeouts`. The values join `verb_schema()` (24.1 R1), so the schema
     hash changes when a bound does. A parity test parses every verb body (`ast`) and fails on a
     numeric literal passed as `timeout=`, to `_left(...)`, or as the `else` of a `timeout`
-    conditional. {#r13}
+    conditional. HELPERS (r5, ch-bsd r4 m3): every helper a verb reaches that bounds a wait —
+    at 3.7's tree `_call` (60), `session_memories` (60), `global_recall_rows` (30),
+    `attach_context` (120), `_memory_recall_rows` (30) and `session_memory_get` (60) — loses its default
+    `timeout` (the parameter becomes keyword-only and REQUIRED), and every verb passes its declared
+    timeout to it explicitly; a CLI path that calls a helper directly passes the same declared
+    value. The gate extends to them: an AST walk over `verbs.py` fails on any function reached from
+    a `@verb` (by name, transitively within the module) whose signature gives `timeout` a numeric
+    default. {#r13}
+14. **R14 — `idempotent_by` (r5, for 24.2 d15).** `@verb` gains `idempotent_by: dict[str, str |
+    None]` keyed by action (`"*"` for a verb without actions), required for every `writes` action:
+    `"transaction"`, a stored natural-key field name, `"natural"`, or `None` (not confirmable). The
+    verb bodies for field-keyed writes skip a record whose key is already present and answer
+    `{"recorded": false, "replayed": true}`; the value joins `verb_schema()`. {#r14}
 
 ## Acceptance criteria {#acceptance}
 
@@ -178,8 +190,9 @@ name) and must be believed. {#why-lead}
 7. **AC-7 (R11, R12).** The three structural gates of R12 fail on a deliberately broken copy
    (a verb copy that calls the resolver without a `session` param; a write verb left
    `writes=False`) and pass on the tree. {#ac-7}
-8. **AC-8 (R13).** The AST gate fails on a copied verb body containing `timeout=60.0` and passes on
-   the tree; `verb_schema()` carries `timeouts` for every verb; changing `rmx_graph`'s recall
+8. **AC-8 (R13, R14).** The AST gate fails on a copied verb body containing `timeout=60.0`, and on a
+   copied helper reached from a verb whose signature has `timeout: float = 60.0`, and passes on the
+   tree; every `writes` action has an `idempotent_by` entry; `verb_schema()` carries `timeouts` for every verb; changing `rmx_graph`'s recall
    timeout changes that verb's hash; `verb_timeout("rmx_curate", "forget")` is 600.0. {#ac-8}
 
 ## Test strategy {#test-strategy}
@@ -215,4 +228,11 @@ the existing `_pingonlydaemon` / `_silentdaemon` fixture. {#test-strategy-body}
 | finding | change |
 |---|---|
 | s3 the mode rule could not be computed: timeouts are literals in verb bodies | R13: `@verb(timeouts=…)` per action, bodies read them, they join the schema hash, an AST parity gate forbids literals; stated as 24.2a's change to 3.7's merged verbs; AC-8 |
+
+## Revision r5 (2026-10-20, ch-bsd r4 08b1518) {#rev-r5}
+
+| finding | change |
+|---|---|
+| m3 the timeout gate missed helper defaults | R13: helpers reached from verbs take a REQUIRED keyword `timeout`, verbs pass the declared value explicitly, and the AST gate flags any helper default reachable from a verb; AC-8 |
+| s1 (for 24.2 d15) | R14: `@verb(idempotent_by=…)` per write action; AC-8 |
 

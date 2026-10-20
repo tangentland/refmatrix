@@ -58,12 +58,13 @@ execution path of its own, not a socket. {#why-lead}
 | d7 | A request naming another store (`root` / `project` resolving elsewhere) is refused 400 `VerbArgsError` ("use that store's socket") | a host serving other stores would open their writer in-process on absent (C4a) inside this daemon; the mod routes by discovery (24.5) |
 | d8 | `snapshot_read` in-host goes THROUGH `dispatch`: `dispatch_fn(name, fn, partition, deadline_s)` submits `_read_with_fallback(d, partition, fn, private=True, writer_wait_s=<deadline left>)` to `cli_pool` with the same in-flight entry, deadline drop, heartbeat and fast-exit check as an op | one execution path for everything that touches the store in-process (d2); the writer wait is bounded (r2 s6 d) |
 | d9 | `local_write` in-host raises `VerbError("in-host local_write")` | absent cannot happen for the host's own root; reaching it is a bug, said loudly |
-| d10 | A write carrying `idempotency_key` is applied once: the key is RESERVED before the verb starts, and the reservation is appended to the ledger `.refmatrix/idempotency.jsonl` as `pending` (fsynced) BEFORE the write runs; a repeat while pending is answered 425 `InFlight` (the mod backs off and retries); on success `done` + result is appended and a repeat gets the recorded result (`replayed`); on a failure the reservation is released (`released` appended). A key found `pending` with no `done` / `released` after a restart is answered `NotConfirmed` ("the write was in flight when the daemon stopped; not confirmed — it may have completed"), never run again | the mod's outbox (24.5) replays writes that may still be queued in the daemon; recording only after success let such a replay run twice (r2 s6 c) |
+| d10 | A write carrying `idempotency_key` is applied at most once, and the key is SETTLED ATOMICALLY WITH THE EFFECT, by the write's class (d15): a CATALOG write records the key (and its result) in an `idempotency_keys` table inside the SAME DuckDB transaction as the write, so after a crash "key present" means landed and "key absent" means safe to re-run; a RING / JSONL write stores its natural key (`row_uuid`, `tool_use_id`, or the idempotency key itself) in the record it appends and skips when that key is already there; a NATURAL write (set semantics) is harmless to repeat. While a keyed request runs, an in-memory reservation answers a repeat 425 `InFlight`. `NotConfirmed` is left only for the writes that can do none of these (d15's list) | the r2 design fsynced a separate `pending` marker before the write, so after a crash it could not tell a lost update from a landed one and refused both forever (r5, ch-bsd r4 s1) |
 | d11 | The CLI gets one generic twin `rmx verb run <name> [--session S] [--json]` reading args JSON on stdin, sharing the host's request handler | D4's absent path spawns the PROJECT's rmx with exactly the host's semantics; one dispatcher for both |
-| d12 | An ADR records the two-tier verb host (`docs/adr/0005-verb-host-http.md`), authored by ch-architect before GREEN | the daemon gains a second public surface and a third pool; that is an architectural decision, not a task detail |
+| d12 | An ADR records the two-tier verb host (`docs/adr/0005-verb-host-http.md`), authored by ch-architect before GREEN | the daemon gains a second public surface and five new bounded lanes (d3, d14); that is an architectural decision, not a task detail |
 | d12b | `CALLER` is set INSIDE the lane thread, by the submitted callable (`with verbs.caller(...)`), never in the accept thread: `ThreadPoolExecutor.submit` does not copy `contextvars`; ops submitted onward to `cli_pool` / `bg_pool` do not read `CALLER` (they resolve no session) | r2 s6 e: a context set in the submitting thread is invisible in the pool thread |
 | d13 | Every SUBMITTED write (R13) carries an `idempotency_key`; a submit of a `writes` (verb, action) without one is 400 `VerbArgsError` | a job lives in memory, so after a fast-exit only the key can say whether the write happened (r4, ch-bsd r3 s2) |
 | d14 | Four job lanes / waits, each bounded and separate: `verb_read_pool` / `verb_write_pool` (synchronous), `verb_job_read_pool` / `verb_job_write_pool` (submitted jobs, default 2 each), and `verb_wait_pool` (default 16) for `rmx_job` polls, which answers 503 at once when full | a 20 s poll must never hold a read worker (24.3 d8's reason), and a 180 s graph read must never queue a save-state behind it (r4, ch-bsd r3 s1) |
+| d15 | Every `writes` (verb, action) declares how it is made idempotent, on `@verb(idempotent_by=…)` (per action): `"transaction"` (catalog writes; each daemon op it reaches records the key through ONE helper, `Store.record_idempotency(key, verb, result)`, inside its write transaction), a field name (`"row_uuid"`, `"tool_use_id"`, `"idempotency_key"`: ring / JSONL writes that store it and skip a duplicate), `"natural"` (set semantics: taxonomy add / remove, flags, sync enqueue / flush), or `None` = NOT CONFIRMABLE. At 3.7 + 24.2a the not-confirmable writes are those whose effect leaves the store's catalog and rings: `rmx_save_state` (memory-dir file, bridge ingest, promote), and any write that reaches ANOTHER store or the hub (`global_write` paths, `rmx_bus_*` writes); a parity test fails on an undeclared `writes` action and lists the `None` ones | one declaration per write, read by the host and checked by a test, instead of one ledger that cannot see the store's commit (r5) |
 
 ## Requirements {#requirements}
 
@@ -97,7 +98,9 @@ execution path of its own, not a socket. {#why-lead}
    line; no lane thread is involved until the request is complete. {#r5}
 6. **R6 — the response and the error map.** Success `200 {"ok": true, "result": ...}` (JSON via
    `default=str`, the MCP server's encoding). Errors `{"ok": false, "error": {"type", "message",
-   "subject"?}}`: {#r6}
+   "subject"?}}`. CLIENTS MAP AN ERROR BY `error.type`, NEVER BY STATUS: several types share a
+   status (503 carries `VerbBusyError`, `NotConfirmed` and the full wait lane's busy), and the
+   status is for HTTP-level tooling only (r5, ch-bsd r4 m2): {#r6}
 
    | raised | status | notes |
    |---|---|---|
@@ -106,7 +109,7 @@ execution path of its own, not a socket. {#why-lead}
    | unknown verb / wrong method | 404 / 405 | |
    | `X-Rmx-Schema` ≠ the verb's hash | 409 | `SchemaMismatch`; body carries both hashes; the verb does not run |
    | idempotency key pending (d10) | 425 | `InFlight` (Too Early); `Retry-After: 2`; nothing runs |
-   | idempotency key pending from before a restart (d10), or a write job past its deadline (R13) | 503 | `NotConfirmed`, with the "not confirmed … may still complete / may have completed" wording |
+   | a NOT-CONFIRMABLE write's key pending from before a restart (d10, d15), or a write job past its deadline (R13) | 503 | `NotConfirmed`, with the "not confirmed … may still complete / may have completed" wording |
    | `rmx_job` for an unknown or expired id | 410 | `UnknownJob` |
    | `verb_wait_pool` full | 503 | `VerbBusyError`, answered at once |
    | `VerbBusyError` | 503 | `Retry-After: 1` |
@@ -125,13 +128,21 @@ execution path of its own, not a socket. {#why-lead}
    … may still complete") while the op runs on, its reservation (d10) still pending until it ends.
    The mod has no fetch timeout of its own (`HttpInit` carries none), so this server-side bound is
    the one that holds. {#r7}
-8. **R8 — idempotency (d10).** Keys up to 128 chars; an in-memory table holds `pending`
-   reservations (taken before the lane runs the verb) and `done` entries; `done` is appended to the
-   ledger under the writer lock after the verb returns ok, and the ledger is read into the table
-   (10,000 keys, 7 days) at start; a `done` hit returns `200` with the recorded result and
-   `"replayed": true`; a `pending` hit returns 425 `InFlight`; a key `pending` in the ledger from
-   before a restart returns `NotConfirmed` (d10). A ledger write failure is a
-   `rmxd.log` line and the response carries `warnings: ["idempotency not recorded"]`. {#r8}
+8. **R8 — idempotency (d10, d15).** Keys up to 128 chars. The host reads the verb's
+   `idempotent_by` for the request's action and passes the key down: `"transaction"` → into every
+   daemon op payload the verb makes, where `Store.record_idempotency` writes `(key, verb, ts,
+   result_json)` in the op's own transaction, and the host checks the table BEFORE running (a
+   present key answers `200` with the recorded result and `"replayed": true`; a verb whose response
+   differs from its op's result updates the row with its final result after the op, best-effort,
+   and a replay whose row lacks it answers `{replayed: true, result: null, note: "applied; result
+   not recorded"}`); a field name → into the verb, which skips a record whose field matches and
+   answers `replayed`; `"natural"` → the verb simply runs; `None` → a durable `pending` marker
+   (`.refmatrix/idempotency-pending.jsonl`, fsynced before the write, `done` / `released` after),
+   and a key still `pending` after a restart answers `NotConfirmed` (d10), never re-run. The
+   in-memory reservation answers 425 `InFlight` while a keyed request is running. Rows and markers
+   are kept 7 days (pruned by the existing maintenance tick); the mod's outbox caps entry age at 3
+   days (24.5 d10), below that retention. A failure to record is a `rmxd.log` line and the response
+   carries `warnings: ["idempotency not recorded"]`. {#r8}
 9. **R9 — one telemetry row per call (ch-bsd s4; r2 s7).** Each request appends a `cli.log` row in
    24.0 R2's field set, written by the same `telemetry` helper the shell rows use: `invocation:
    "mod"`, `cmd: "verb <name>"`, `hook_event` (24.0 R2's vocabulary, from `caller.hook_event`; a
@@ -165,8 +176,9 @@ execution path of its own, not a socket. {#why-lead}
     `error` `NotConfirmed` with the "not confirmed within Ns … may still complete" wording, while
     the write runs on and its key settles in the ledger. Jobs are kept in memory for 10 min after
     they end; an unknown id (expired, or lost to a daemon restart) is `UnknownJob` (R6), never a
-    silent empty answer: the client re-submits a keyed write with the same key (the ledger then
-    answers `replayed` or `NotConfirmed`, d10) and reports a read as lost. The registry reuses the ingest-job shape (`_register_ingest_job`). Which (verb,
+    silent empty answer: the client re-submits a keyed write with the same key (by d15 it then answers `replayed`, runs
+    once because the key was never committed, or answers `NotConfirmed` for a not-confirmable
+    write) and reports a read as lost. The registry reuses the ingest-job shape (`_register_ingest_job`). Which (verb,
     action) pairs the mod submits is 24.5 d16's rule, computed by `modgen`. {#r13}
 
 ## Acceptance criteria {#acceptance}
@@ -189,8 +201,10 @@ execution path of its own, not a socket. {#why-lead}
    blocks on an event) past `deadline_s` answers 504 and never runs; a write verb whose op is held
    past its deadline answers 503 "not confirmed" and its effect lands after release; with
    `verb_write_pool` saturated by held writes, a read still answers 200 (lanes are separate). {#ac-6}
-7. **AC-7 (R8, d10).** Two requests with one key and a `rmx_focus_note` body leave one note and two
-   200s, the second `replayed: true`; the key survives a daemon restart; a repeat sent while the
+7. **AC-7 (R8, d10, d15).** Two requests with one key and a `rmx_focus_note` body (a ring write,
+   `idempotent_by="idempotency_key"`) leave one note and two 200s, the second `replayed: true`; the
+   key survives a daemon restart (it is in the ring); the same with a `rmx_memory_add` body (a
+   catalog write, `"transaction"`) leaves one memory row and one `idempotency_keys` row; a repeat sent while the
    first is still held in its op answers 425 `InFlight` and, after release, a third repeat answers
    `replayed`. {#ac-7}
 8. **AC-8 (R9).** Each request of AC-2 leaves one `cli.log` row with `invocation: "mod"`, the
@@ -212,17 +226,24 @@ execution path of its own, not a socket. {#why-lead}
     shows it); a fixture verb that sleeps 40 s submitted with `mode: "submit"` answers 202 within
     1 s, `rmx_job` answers `running` with each call returning within `wait_s`, then `done` with the
     result; after a daemon restart the same id answers the `unknown job` error. {#ac-13}
-14. **AC-14 (R13, d13, d10 — kill mid-job).** A keyed write job held in its op is SIGKILLed with
-    the daemon (the fast-exit fixture); after respawn `rmx_job` answers 410 `UnknownJob`; a
-    re-submit with the same key answers `NotConfirmed` and does not run the write again. A second
-    job killed after `done` was appended: re-submit answers `replayed` with the result. A write
-    submit without a key answers 400. {#ac-14}
+14. **AC-14 (R13, d13, d10 — kill mid-job).** For a CATALOG write job (`rmx_memory` promote): (a)
+    SIGKILL with the daemon while the op is held AFTER the reservation and BEFORE its transaction
+    commits (the old fsync point): after respawn `rmx_job` answers 410 `UnknownJob`, a re-submit
+    with the same key RUNS the write, and the store holds exactly one effect; (b) SIGKILL after the
+    commit, before the response: the re-submit answers `replayed` and the store still holds exactly
+    one effect. For a RING write (`rmx_focus_observe` with a `row_uuid`) killed after its append:
+    the re-run records nothing new. For a NOT-CONFIRMABLE write (`rmx_save_state`) killed mid-run:
+    the re-submit answers `NotConfirmed` and does not run. A write submit without a key answers
+    400. {#ac-14}
 15. **AC-15 (d14, R13).** With `verb_read_pool` at 1 worker, three `rmx_job` polls waiting 20 s
     and a 180 s read job running leave a synchronous `rmx_context` answering 200; a save-state
-    job queued while two 180 s read jobs hold the job-read lane starts at once on the write lane;
+    job queued while two 180 s read jobs hold the job-read lane starts at once on the job-write lane (`verb_job_write_pool`);
     a write job submitted with `deadline_s: 30` whose op is held answers `NotConfirmed` at 30 s
     and its effect lands after release; a read job past its deadline answers `DeadlineExceeded`.
     {#ac-15}
+16. **AC-16 (d15, R6).** The parity test fails on a copied registry with a `writes` action lacking
+    `idempotent_by`, and lists exactly the declared `None` actions; three 503 responses
+    (`VerbBusyError`, `NotConfirmed`, a full wait lane) carry three distinct `error.type`s. {#ac-16}
 
 ## Test strategy {#test-strategy}
 
@@ -238,12 +259,13 @@ of AC-6 is registered into a copied `VERBS` for the test only and listed in
 | file | change |
 |---|---|
 | `src/refmatrix/httpsock.py` | new: the unix-socket HTTP server, request parsing, the R6 error map, the R9 row (shared with 24.3) |
-| `src/refmatrix/daemon.py` | `dispatch` + `dispatch_fn` (R1, d8), the two verb lanes, `http_socket_path`, bind + sun_path check (R3, R4), shutdown wiring (R10), identity `http_*` fields, idempotency ledger (R8) |
+| `src/refmatrix/store.py` | `idempotency_keys` table, `Store.record_idempotency` (d15) |
+| `src/refmatrix/daemon.py` | `dispatch` + `dispatch_fn` (R1, d8), the verb lanes, `http_socket_path`, bind + sun_path check (R3, R4), shutdown wiring (R10), identity `http_*` fields, idempotency ledger (R8) |
 | `src/refmatrix/verbs.py` | `rmx_job` (R13); in-host short-circuit in `_call` / `require_daemon` / `snapshot_read` / `local_write` (R2); `run_request()` used by the host and `rmx verb run` |
 | `src/refmatrix/cli.py` | `rmx verb run` (R11) |
 | `src/refmatrix/telemetry.py` | the mod row fields (R9) |
 | `docs/adr/0005-verb-host-http.md`, `docs/adr/0000-adr-overview.md`, `docs/INDEX.md` | R12 |
-| `tests/test_task24_2_verb_host.py`, `tests/http_unix_support.py`, `tests/test_verb_parity.py` (`TRANSPORT_CLI`) | AC-1..AC-15 |
+| `tests/test_task24_2_verb_host.py`, `tests/http_unix_support.py`, `tests/test_verb_parity.py` (`TRANSPORT_CLI`) | AC-1..AC-16 |
 
 ## Revision r2 (2026-10-20, ch-bsd r2 03c2d1f) {#rev-r2}
 
@@ -271,4 +293,12 @@ of AC-6 is registered into a copied `VERBS` for the test only and listed in
 | s2 a submitted write lost to a restart could run twice | d13: every submitted write is keyed; d10: `pending` is durable, a pre-restart pending key answers `NotConfirmed` and never re-runs; R13: `UnknownJob` → re-submit with the same key; AC-14 kills mid-job |
 | s5 409 meant two things | `InFlight` is 425; R6 rows for `InFlight`, `NotConfirmed`, `UnknownJob`, the wait-lane 503 |
 | m1 leftovers | d1 and the files table drop `global_write`; R10 counts the lanes; files table AC-1..AC-15 |
+
+## Revision r5 (2026-10-20, ch-bsd r4 08b1518) {#rev-r5}
+
+| finding | change |
+|---|---|
+| s1 a pending key could not tell a lost update from a landed one | d10 / d15 / R8: catalog writes record the key in the same DuckDB transaction; ring / JSONL writes dedupe on a stored natural key (`@verb(idempotent_by=…)`); `NotConfirmed` only for the listed not-confirmable writes; retention 7 days above the outbox's 3-day cap; AC-14 crashes before and after the commit; AC-16 |
+| m2 three meanings shared 503 | R6: clients map by `error.type`, never status; AC-16 |
+| m4 stale wording | d12 "five new bounded lanes"; AC-15 "job-write lane" |
 

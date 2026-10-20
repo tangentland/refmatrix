@@ -55,7 +55,7 @@ guessing the session, and without ever spawning over a busy daemon. {#why-lead}
 | d7 | NEITHER `$.state` NOR `$.store` is a system of record for memory or STM: the daemon's store and the GMD memory files stay authoritative | a crash or a worker loss drops `$.state`; the CLI, subagents, the shell fallback and save-state all read the ring from the store |
 | d8 | `$.store` keys: `discovery:<cwd>` (a CACHE of discovery: socket, identity hash, version, last-seen; invalidated on any mismatch with the live answer), `settings`, `outbox` | cross-session, per plugin, JSON, 4 MiB total: fit for a cache and a small queue, not for data |
 | d9 | The outbox holds ENGINE-surface writes only (24.6's observe events, focus records) that failed twice (absent AND the spawn failed); model tool writes return the error to the model instead | the model must know a write did not land; queuing it silently would change the tool's meaning |
-| d10 | Outbox entries carry an idempotency key (`sha256(verb, args, session, first-attempt ts)`), replay FIFO at `session.start` and on the health tick that sees the daemon up, stop at the first busy; cap 1 MiB of JSON or 2,000 entries | 24.2 R8 makes replay exactly-once; the cap leaves the 4 MiB store room for the cache; FIFO keeps an STM ring's order |
+| d10 | Outbox entries carry an idempotency key (`sha256(verb, args, session, first-attempt ts)`) and replay FIFO at `session.start` and on the health tick that sees the daemon up. A replay answered busy or 425 `InFlight` stops the pass and is retried next tick; a replay answered `NotConfirmed` is TERMINAL: the entry is dropped with a toast and a transcript line naming the verb and its age, never retried, and the pass CONTINUES with the next entry (it never blocks the entries behind it). An entry older than 3 days is dropped the same way (below the daemon's 7-day idempotency retention, 24.2 R8, so a replay can always be recognised). Cap 1 MiB of JSON or 2,000 entries | 24.2 d10 / d15 settle every confirmable key atomically, so a replay is exactly-once or explicitly not confirmed; a not-confirmed head that blocked the queue would hold every later STM event hostage (r5, ch-bsd r4 s1) |
 | d11 | Outbox overflow drops the OLDEST entry and raises a toast, a transcript line and a status count every time; nothing is dropped silently | "decay may demote, never lose" cannot hold for a client queue with a hard cap, so the loss is made loud instead |
 | d12 | Pane and bus wake live here (ch-bsd s5): `/rmx` opens the pane; a long-poll loop on `rmx_bus_wait` turns a wake message into `$.prompt.submit` | G5 had no home; both are core surfaces, not context injection |
 | d13 | Collision with a `refmatrix` MCP server: every `$.tool.register` is wrapped in `try`, so its throw ("the session already has an MCP server named …") never skips the rest of `session.start`; a collision registers nothing further and says so once; every `mcp__refmatrix__*` `tool.call` handler calls `next(e)` for a tool the mod did not register in THIS session, so the MCP server keeps serving its own tools | batch 2 #p7: the register throws and skips the hook, and a plugin's `tool.call` hook intercepts `mcp__<name>__*` calls even for tools it never registered; 24.8 removes the server (r3) |
@@ -254,6 +254,10 @@ guessing the session, and without ever spawning over a busy daemon. {#why-lead}
     `done` answer and returns its result as the tool's string; a mocked fetch rejected with the
     probe's `aborted: no complete answer within 30000ms` is reported busy (write: "not confirmed").
     `modgen`'s computed modes equal R3's table for 3.7's registry. {#ac-14}
+15. **AC-15 (d10 — r5).** An outbox of three entries whose head replays `NotConfirmed`: the head is
+    dropped with one toast and one transcript line, and entries two and three replay in the SAME
+    pass; an entry stamped 3 days + 1 minute old is dropped unsent with the same notices; a 503
+    typed `VerbBusyError` stops the pass and the entry is retried next tick. {#ac-15}
 
 ## Test strategy {#test-strategy}
 
@@ -309,4 +313,10 @@ nothing, logged to `workflow/review-output/task24_5-red.log`. {#test-strategy-bo
 | s5 `InFlight` vs 409 | AC-6: an outbox replay meeting 425 `InFlight` is retried after backoff, never dropped |
 | s6 the re-seed could empty the registered-tool set and re-attribute queued writes | R16: the registered set is process-scoped and untouched; queued outbox entries keep their session; AC-12 |
 | m2 `promptSeq` missing from the contract | R5: `refmatrix.focus.promptSeq` |
+
+## Revision r5 (2026-10-20, ch-bsd r4 08b1518) {#rev-r5}
+
+| finding | change |
+|---|---|
+| s1 `NotConfirmed` in the outbox; entry age vs ledger retention | d10: `NotConfirmed` is terminal (dropped loudly, never blocks later entries); entries older than 3 days dropped (retention is 7); AC-15 |
 

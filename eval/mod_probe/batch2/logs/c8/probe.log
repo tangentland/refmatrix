@@ -49,7 +49,7 @@
 2026-10-20T18:54:03.983Z prompt.section name=memory len=2185
 2026-10-20T18:54:03.989Z prompt.compose model=claude-haiku-5-5 sections=lean_body,communication,pronouns,action_caution,session_guidance,memory,env_info_simple,context_management,act_dont_rederive,heron_brook,total_tokens
 2026-10-20T18:54:04.007Z turn.step agentId=MAIN idx=0 msgs=14 turnId=a6af770c-a103-4332-ba4b-bfa6f90c5604
-2026-10-20T18:54:05.398Z turn.complete agentId=MAIN reason=answer answer="hi"
+2026-10-20T18:54:05.398Z turn.complete agentId=MAIN reason=answer answer_sha256=8f434346648f6b96
 2026-10-20T18:54:06.904Z tick 19 sid=0c02acfd-dbf1-4e18-81f6-0fa2f9ae63e9
 2026-10-20T18:54:09.905Z tick 20 sid=0c02acfd-dbf1-4e18-81f6-0fa2f9ae63e9
 2026-10-20T18:54:12.908Z tick 21 sid=0c02acfd-dbf1-4e18-81f6-0fa2f9ae63e9
@@ -103,7 +103,7 @@
 2026-10-20T18:54:40.035Z agent.offer agent=Plan source=built-in
 2026-10-20T18:54:40.036Z agent.offer agent=statusline-setup source=built-in
 2026-10-20T18:54:40.046Z turn.step agentId=MAIN idx=1 msgs=21 turnId=727dce0d-01ba-454d-a15e-76f62ba43ed8
-2026-10-20T18:54:40.909Z turn.complete agentId=MAIN reason=answer answer="Done."
+2026-10-20T18:54:40.909Z turn.complete agentId=MAIN reason=answer answer_sha256=ed251864987c367e
 2026-10-20T18:54:42.958Z tick 31 sid=62d27609-c809-43ad-9d20-189e95bbe12d
 2026-10-20T18:54:45.962Z tick 32 sid=62d27609-c809-43ad-9d20-189e95bbe12d
 2026-10-20T18:54:48.963Z tick 33 sid=62d27609-c809-43ad-9d20-189e95bbe12d
@@ -152,7 +152,7 @@
 2026-10-20T18:55:02.244Z agent.offer agent=Plan source=built-in
 2026-10-20T18:55:02.244Z agent.offer agent=statusline-setup source=built-in
 2026-10-20T18:55:02.252Z turn.step agentId=MAIN idx=1 msgs=21 turnId=a0910f5e-7ffc-4d5b-93c0-68f2e0a1b43f
-2026-10-20T18:55:03.596Z turn.complete agentId=MAIN reason=answer answer="The `rp_get` call returned:\n\n```\nvalue=undefined version=0 sid=27b4c1b4-36a3-4ad6-998f-913b241247a6\n```\n\nThe mod 
+2026-10-20T18:55:03.596Z turn.complete agentId=MAIN reason=answer answer_sha256=0562d7a4006eb84e (unterminated in source)
 2026-10-20T18:55:03.990Z tick 38 sid=27b4c1b4-36a3-4ad6-998f-913b241247a6
 2026-10-20T18:55:06.991Z tick 39 sid=27b4c1b4-36a3-4ad6-998f-913b241247a6
 2026-10-20T18:55:09.993Z tick 40 sid=27b4c1b4-36a3-4ad6-998f-913b241247a6
