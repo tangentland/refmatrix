@@ -13,7 +13,7 @@ metadata:
 # Exploration: a hypertree for refmatrix {#root}
 
 **Date:** 2026-10-20
-**Status:** In Progress. The research is done; nothing is measured yet. The deciding measurements
+**Status:** In Progress. The research is done; the M1-M7 spike was ordered by the user on 2026-10-20 ("run the m1-7 spike"). The deciding measurements
 and their go/no-go bands are written below, before any data.
 **Motivation:** Earlier this session the user asked whether refmatrix builds a graph or a tree, and
 whether a tree would be better. The answer was "a graph, with trees as views and indexes". The
@@ -21,6 +21,13 @@ user then pointed at thiquet's "deconstructed faceted relational hypertree", whi
 memory subject (`subject_explore_thiquet_s_deconstructed_facetted_relatio`, id 100845). That
 subject has a label and no body. The user asked: "write up a hypertree exploration with a
 comparison to the existing. Feel free to read thiquet, cliquedb, and cliquet's docs."
+
+**The goal, restated by the user (2026-10-20):** "the primary motivation for the hypertree
+conversation is to insure rmx's internal structures maximize associative power and is not meant as
+an endorsement of any particular implementation." So the question is which internal structures let
+refmatrix surface the most relevant ASSOCIATIONS (what else bears on this?), not whether to adopt
+thiquet's, cliquedb's or cliquet's design. Every option and measurement below is read through that
+lens: does it change what can be associated, and how well? {#goal}
 
 rel: related-to -> [[refmatrix/adr-0004-unified-location-space-index]]
 rel: derives-from -> [[refmatrix/adr-0004-unified-location-space-index#amend-shape]]
