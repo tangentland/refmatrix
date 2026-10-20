@@ -152,7 +152,7 @@
 2026-10-20T18:55:02.244Z agent.offer agent=Plan source=built-in
 2026-10-20T18:55:02.244Z agent.offer agent=statusline-setup source=built-in
 2026-10-20T18:55:02.252Z turn.step agentId=MAIN idx=1 msgs=21 turnId=a0910f5e-7ffc-4d5b-93c0-68f2e0a1b43f
-2026-10-20T18:55:03.596Z turn.complete agentId=MAIN reason=answer answer_sha256=0562d7a4006eb84e (unterminated in source)
+2026-10-20T18:55:03.596Z turn.complete agentId=MAIN reason=answer answer_sha256=a336970987b37b66
 2026-10-20T18:55:03.990Z tick 38 sid=27b4c1b4-36a3-4ad6-998f-913b241247a6
 2026-10-20T18:55:06.991Z tick 39 sid=27b4c1b4-36a3-4ad6-998f-913b241247a6
 2026-10-20T18:55:09.993Z tick 40 sid=27b4c1b4-36a3-4ad6-998f-913b241247a6

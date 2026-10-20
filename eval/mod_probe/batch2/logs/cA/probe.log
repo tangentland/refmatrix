@@ -65,5 +65,5 @@
 2026-10-20T18:50:19.724Z agent.offer agent=statusline-setup source=built-in
 2026-10-20T18:50:19.730Z turn.step agentId=a4c396546e64ce27e idx=1 msgs=20 turnId=d6a4e807-72d6-4acf-8cbd-47b6723105a0
 2026-10-20T18:50:21.342Z tick 4 sid=64f3f96f-af32-4ea1-b479-ca5007beb6b8
-2026-10-20T18:50:21.899Z turn.complete agentId=a4c396546e64ce27e reason=answer answer_sha256=30c83c8e9f45029a1. **`rp_set`** returned `set ok version=1`.\n\n2. **Bash** (`printenv RMX_MOD_PROBE ; echo done`) output:\n```\n1\ndon
+2026-10-20T18:50:21.899Z turn.complete agentId=a4c396546e64ce27e reason=answer answer_sha256=a59a584a9e4845d0
 2026-10-20T18:50:26.601Z session.end reason=other e.sessionId=64f3f96f-af32-4ea1-b479-ca5007beb6b8 $.session.id=64f3f96f-af32-4ea1-b479-ca5007beb6b8
