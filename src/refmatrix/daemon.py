@@ -6824,7 +6824,7 @@ def spawn_daemon_subprocess(
            if proc is None else "the daemon never answered ping")
     raise RuntimeError(
         f"subprocess daemon did not start for {root} within "
-        f"{time.monotonic() - t_start:.1f}s of a {wait_for_ready:g}s window ({how})")
+        f"{time.monotonic() - t_start:.1f}s of a {wait_for_ready:.1f}s window ({how})")
 
 
 def graceful_stop(root: Path, *, grace: float,

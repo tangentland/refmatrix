@@ -91,8 +91,17 @@ GREEN tree, run, and then reverted with `git checkout -- src` and a `__pycache__
 rel: implements -> [[task-3.5-r8-remedy#req-amend]]
 
 This is the follow-up GREEN for the RED group the test engineer committed at `917ddc5`.
-`verbs.classify_transport_error(e, *, op, root, timeout) -> VerbError` is now the ONLY place
-that turns a `daemon.call` transport exception into a message and an error type:
+`verbs.classify_transport_error(e, *, op, root, timeout) -> VerbError` was presented here as
+the ONLY place that turns a `daemon.call` transport exception into a message and an error type.
+
+**Correction (2026-10-19, task 3.6, ch-bsd plan-3 r9 #s-1):** at `1acadd2` that claim was false.
+The classifier had three callers, and six other store-daemon handlers still produced their own
+wording ("did not answer", "daemon busy"). Those six were `search._where_one_project`'s memory
+leg, `search.federated_query`, `verbs.memory_partition`, `derive log`, `derive status` and the
+`ingest-gmd --detach/--progress` start op. Task 3.6 #2 routed all six through the classifier,
+and an `ast` guard (`tests/test_task3_6_r9_remedy.py::test_no_site_words_a_daemon_transport_error_itself`)
+now enforces it, so the claim is true from `1919764`. See [[impl-task-3.6-r9-remedy#req-2]].
+The classifier's rules:
 
 - **missing or refused socket** (`FileNotFoundError` / `ConnectionRefusedError`):
   `VerbAbsentError`, "daemon not running for <root> …".
@@ -104,7 +113,7 @@ that turns a `daemon.call` transport exception into a message and an error type:
 - **anything else** (reset, broken pipe, empty reply): `VerbBusyError` naming the type and
   message. That is the classification `_call` always gave these errors.
 
-Three callers use it. Each raises or renders what the classifier returns:
+At `1acadd2` three callers used it (task 3.6 added six more). Each raises or renders what the classifier returns:
 
 - `verbs._call` raises its result.
 - `verbs.global_write` re-raises the same type with a "global store:" prefix. Its own
