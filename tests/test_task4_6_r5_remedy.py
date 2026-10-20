@@ -229,6 +229,27 @@ def test_upgrade_restart_reports_a_failed_launchd_probe_and_never_stops(root, mo
     assert any("probe exploded" in m for m in logs), logs
 
 
+def test_daemon_restart_reports_a_failed_launchd_probe_and_never_restarts(root, monkeypatch):
+    """AC-6's CLI twin (B1.4 defect class, found in GREEN 9851562): `rmx daemon restart` read a
+    raising `launchctl.is_loaded` as `loaded = False`, then stopped a possibly supervised
+    daemon and spawned one beside the label. The probe failure is an error naming the deliberate
+    override `--standalone`; nothing is stopped or spawned."""
+    def boom(r):
+        raise OSError("launchctl: probe exploded")
+    monkeypatch.setattr(lc, "is_loaded", boom)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    stops: list = []
+    spawned: list = []
+    monkeypatch.setattr(dm, "stop_daemon", lambda r, **kw: stops.append(kw) or True)
+    monkeypatch.setattr(dm, "graceful_stop", lambda r, **kw: stops.append(kw) or True)
+    monkeypatch.setattr(dm, "spawn_daemon", lambda *a, **kw: spawned.append(1) or 4242)
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    r = CliRunner().invoke(cli_mod.main, ["daemon", "restart"])
+    assert stops == [] and spawned == [], (stops, spawned, r.output)
+    assert r.exit_code != 0, r.output
+    assert "probe exploded" in r.output and "--standalone" in r.output, r.output
+
+
 def _ff_pair(tmp_path: Path) -> "tuple[Path, Path]":
     deploy = tmp_path / "deploy"
     _init_repo(deploy, "0.1.0")

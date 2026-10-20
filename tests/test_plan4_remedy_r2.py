@@ -163,6 +163,7 @@ def test_relaunch_fleet_reinstalls_a_drifted_plist_before_restarting(monkeypatch
     assert "reinstalled" in r.output and "RMX_SUPERVISED" in r.output
 
 
+@pytest.mark.usefixtures("deployed_rmx")   # task 4.6 M2: rendered via the removed `which rmx`
 def test_reinstall_verifies_the_label_is_loaded_afterwards(tmp_path, monkeypatch):
     """`install --force` has left a label unloaded (thiquet, 2026-09-14);
     `reinstall` re-runs a plain install when the forced one did not load."""

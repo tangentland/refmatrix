@@ -311,6 +311,9 @@ All tests are in `tests/test_task4_6_r5_remedy.py` unless a migrated file is nam
 - **AC-6 (B1.4)** {#ac-6}
   - `launchctl.status` raises during `_default_restart`.
   - Result: False, the exception is logged, and `stop_daemon` is never called.
+  - CLI twin (added after GREEN `9851562`): `launchctl.is_loaded` raises during `rmx daemon
+    restart`. Result: exit != 0, naming the error and `--standalone`; nothing is stopped or
+    spawned (it used to read the failure as `loaded = False`).
 - **AC-7 (B1-root)** {#ac-7}
   - `upgrade.upgrade(..., store_root=S)` hands `S` to `restart_fn`.
   - `rmx upgrade` passes `store_root=_root()`.

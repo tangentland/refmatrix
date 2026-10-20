@@ -62,7 +62,10 @@ def test_from_dev_promote_fast_forwards_and_installs(tmp_path):
     def inst(root, *, log=print): calls["installed"] = True
     def rest(root, *, log=print): calls["restarted"] = True; return True
 
-    res = up.upgrade(root=deploy, from_dev=dev, install_fn=inst, restart_fn=rest)
+    # The restart is of a STORE, handed in; without one nothing is restarted (task 4.6 AC-7).
+    store = tmp_path / "proj" / ".refmatrix"; store.mkdir(parents=True)
+    res = up.upgrade(root=deploy, from_dev=dev, install_fn=inst, restart_fn=rest,
+                     store_root=store)
     assert res.changed
     assert res.old_version == "0.1.0" and res.new_version == "0.2.0"
     assert calls == {"installed": True, "restarted": True}
