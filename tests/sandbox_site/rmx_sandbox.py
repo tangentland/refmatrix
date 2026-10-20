@@ -70,6 +70,11 @@ PRELOAD_EXIT = 87    # the $RMX_SANDBOX_PRELOAD script raised (or is not an abso
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "0.0.0.0", "::",
                             "::ffff:127.0.0.1", "ip6-localhost"})
 TOUCHES_REL = Path("workflow") / "review-output" / "live-socket-touches.log"
+# Live-log GROWTH seen by a per-test guard (21.1 r2 #s2, bug-134): the test process only
+# stats a live log -- it may never open one (the audit hook refuses it) -- so each growth is
+# recorded here as `{path, ino, start, end, nodeid, markers}` and attributed ONCE, by the
+# end-of-run content check (`check_logs`), outside any sandboxed process.
+GROWTH_REL = Path("workflow") / "review-output" / "live-log-growth.jsonl"
 # A DELIBERATE refusal (a test marked `sandbox_probe`, or code inside
 # `expect_sandbox_violation()`) runs with this variable set to the OWNER's test id; every
 # touches-log line written then -- in-process or by a child, which inherits it -- carries that
@@ -995,8 +1000,69 @@ def delta_lines(path: str, before) -> list:
         return fh.read().decode(errors="replace").splitlines()
 
 
-def check_logs(snap: dict, tag: str, touches: str, touches_size: int) -> int:
-    """Print one report line per log; return the number of offending rows (logs + touches)."""
+def growth_ledger_path() -> Path:
+    """Where per-test guards record live-log growth: `$RMX_LIVE_GROWTH_LEDGER`, else the repo's
+    `workflow/review-output/live-log-growth.jsonl` (beside the touches log)."""
+    env = os.environ.get("RMX_LIVE_GROWTH_LEDGER")
+    return Path(env) if env else Path(__file__).resolve().parents[2] / GROWTH_REL
+
+
+def record_growth(entry: dict, ledger: "Path | None" = None) -> None:
+    """Append one growth record (one `write()` of one line, O_APPEND). The test process never
+    opens the live log itself; the bytes are judged later by `growth_leaks`."""
+    p = Path(ledger) if ledger is not None else growth_ledger_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(p), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    try:
+        os.write(fd, (json.dumps(entry) + "\n").encode("utf-8"))
+    finally:
+        os.close(fd)
+
+
+def growth_leaks(ledger: str, since: int) -> list:
+    """The ONE attribution of recorded live-log growth (21.1 r2 #s2, bug-134): for each ledger
+    record past byte `since`, read the live log's bytes `[start, end)` and return each
+    COMPLETE row that carries one of the record's markers (a sandbox path, a token its test
+    minted) as `(nodeid, path, row)`. A row with no marker is concurrent live use; an
+    incomplete trailing line is not judged. An unreadable ledger line is itself returned (a
+    record that cannot be judged is never dropped)."""
+    out: list = []
+    try:
+        with open(ledger, "rb") as fh:
+            fh.seek(since)
+            lines = fh.read().decode("utf-8", "replace").splitlines()
+    except FileNotFoundError:
+        return out
+    for ln in lines:
+        if not ln.strip():
+            continue
+        try:
+            e = json.loads(ln)
+            path, start, end = e["path"], int(e["start"]), int(e["end"])
+            marks = [m for m in e.get("markers") or [] if m]
+        except (ValueError, KeyError, TypeError):
+            out.append(("?", ledger, f"unreadable growth record: {ln[:200]}"))
+            continue
+        try:
+            with open(path, "rb") as fh:
+                fh.seek(start)
+                data = fh.read(max(0, end - start))
+        except OSError as exc:
+            out.append((e.get("nodeid", "?"), path, f"growth not readable: {exc}"))
+            continue
+        rows = data.split(b"\n")
+        complete = rows if data.endswith(b"\n") else rows[:-1]
+        for r in complete:
+            t = r.decode("utf-8", "replace")
+            if t.strip() and any(m in t for m in marks):
+                out.append((e.get("nodeid", "?"), path, t[:300]))
+    return out
+
+
+def check_logs(snap: dict, tag: str, touches: str, touches_size: int,
+               growth: "str | None" = None, growth_size: int = 0) -> int:
+    """Print one report line per log; return the number of offending rows (logs + touches +
+    attributed growth recorded by per-test guards)."""
     bad_total = 0
     for path, before in snap.items():
         lines = delta_lines(path, before)
@@ -1015,7 +1081,12 @@ def check_logs(snap: dict, tag: str, touches: str, touches_size: int) -> int:
     print(f"{touches}: unexpected_new_lines={len(unexpected)}")
     for ln in unexpected[:5]:
         print(f"  TOUCH {ln}")
-    return bad_total + len(unexpected)
+    leaks = growth_leaks(growth, growth_size) if growth else []
+    if growth:
+        print(f"{growth}: attributed_growth_rows={len(leaks)}")
+    for nodeid, path, row in leaks[:5]:
+        print(f"  GROWTH-LEAK {nodeid} in {path}: {row}")
+    return bad_total + len(unexpected) + len(leaks)
 
 
 # ---- R6: no silent scope shrink ---------------------------------------------------------
@@ -1103,13 +1174,14 @@ def _main(argv) -> int:
     if len(argv) >= 3 and argv[0] == "snapshot":
         Path(argv[1]).write_text(json.dumps(snapshot(argv[2:])))
         return 0
-    if len(argv) == 5 and argv[0] == "check":
+    if len(argv) in (5, 7) and argv[0] == "check":
         snap = json.loads(Path(argv[1]).read_text())
-        n = check_logs(snap, argv[2], argv[3], int(argv[4]))
+        growth = (argv[5], int(argv[6])) if len(argv) == 7 else (None, 0)
+        n = check_logs(snap, argv[2], argv[3], int(argv[4]), *growth)
         print(f"sandbox-proof: {n} offending row(s)")
         return 1 if n else 0
     sys.stderr.write("usage: rmx_sandbox.py snapshot OUT LOG... | "
-                     "check SNAP TAG TOUCHES TOUCHES_SIZE\n")
+                     "check SNAP TAG TOUCHES TOUCHES_SIZE [GROWTH GROWTH_SIZE]\n")
     return 2
 
 

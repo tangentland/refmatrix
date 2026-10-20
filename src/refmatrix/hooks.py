@@ -210,7 +210,19 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                 {
                     "matcher": "startup|resume",
                     "hooks": [{"type": "command", "command": sess_cmd}],
-                }
+                },
+                # Task 21.1 D4: re-point this Claude process's session pointer on every
+                # session start, BEFORE the first prompt (after /clear the input hook was the
+                # only writer, so the MCP server resolved the dead session until the user
+                # typed). It also migrates this root's bug-109 files once, surfaces this
+                # owner's and this root's ended-session pointer-error rows on STDOUT (where
+                # SessionStart output reaches the agent) and prunes dead processes' files.
+                # A memory path: stderr is NOT discarded.
+                {
+                    "matcher": "startup|resume|clear|compact",
+                    "hooks": [{"type": "command",
+                               "command": HOOK_ENV + "rmx focus hook --event session-start"}],
+                },
             ],
         }
     }

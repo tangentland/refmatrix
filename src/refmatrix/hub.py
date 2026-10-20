@@ -351,7 +351,11 @@ class Watchdog:
         if age >= daemon_mod.SHUTDOWN_BUDGET_S:
             return
         remaining = daemon_mod.SHUTDOWN_BUDGET_S - age
-        _log(f"watchdog: pid={pid} still alive after the grace and shutting down "
+        # The root is named like every sibling watchdog line: at plan-4 r4
+        # (#s-4) all 8 of these lines in the live hub.log came from tests and
+        # nothing in them said which store they were about (task 4.5 R5b,
+        # 2026-10-19).
+        _log(f"watchdog {root}: pid={pid} still alive after the grace and shutting down "
              f"(shutdown.started {age:.0f}s ago); waiting up to {remaining:.0f}s "
              f"for its drain before kickstart -k")
         deadline = time.monotonic() + remaining
@@ -1435,7 +1439,8 @@ def _hub_identity() -> dict:
         ident = _up.runtime_identity()
         _HUB_IDENTITY = {"version": ident.get("version"),
                          "code_path": str(ident["import_path"]),
-                         "dev_tree": bool(ident["dev_tree"])}
+                         "dev_tree": bool(ident["dev_tree"]),
+                         "dev_reason": ident.get("dev_reason")}
     except Exception as e:  # noqa: BLE001 — identity must never take the hub down
         import refmatrix
         _HUB_IDENTITY = {"version": getattr(refmatrix, "__version__", None),

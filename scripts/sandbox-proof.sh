@@ -47,6 +47,11 @@ SNAP="$(mktemp "${TMPDIR:-/tmp}/rmx-proof-snap.XXXXXX")"
 TOUCHES="$OUT/live-socket-touches.log"
 TOUCHES_SIZE=0
 [ -f "$TOUCHES" ] && TOUCHES_SIZE="$(wc -c < "$TOUCHES" | tr -d ' ')"
+# Per-test live-log guards (21.1) only STAT live logs and record growth here; this run's
+# records are attributed by the same content check below (bug-134).
+GROWTH="$OUT/live-log-growth.jsonl"
+GROWTH_SIZE=0
+[ -f "$GROWTH" ] && GROWTH_SIZE="$(wc -c < "$GROWTH" | tr -d ' ')"
 "$PY" "$HELPER" snapshot "$SNAP" "${LOGS[@]}"
 
 echo "sandbox-proof: tag=$TAG, ${#LOGS[@]} live logs, suite: ${ARGS[*]}"
@@ -54,7 +59,7 @@ set +e
 RMX_SANDBOX_TAG="$TAG" PYTHONPATH="$REPO/src${PYTHONPATH:+:$PYTHONPATH}" \
   "$PY" -m pytest "${ARGS[@]}" 2>&1 | tee "$OUT/pytest-sandbox.log"
 SUITE_RC=${PIPESTATUS[0]}
-"$PY" "$HELPER" check "$SNAP" "$TAG" "$TOUCHES" "$TOUCHES_SIZE"
+"$PY" "$HELPER" check "$SNAP" "$TAG" "$TOUCHES" "$TOUCHES_SIZE" "$GROWTH" "$GROWTH_SIZE"
 CHECK_RC=$?
 set -e
 rm -f "$SNAP"

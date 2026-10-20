@@ -23,7 +23,9 @@ One record per query, fields:
                   exit and a closed consumer are conventions, not failures,
                   and live in `outcome` (bug-052)
 
-Disable by setting `REFMATRIX_NO_TELEMETRY=1` in the env.
+Disable by setting `REFMATRIX_NO_TELEMETRY=1` in the env. That gates the log
+WRITES only: `cli_entry` installs the `CountingStream` stdout proxy regardless
+(plan-9 r5 #m-11, recorded 2026-10-19 in task 21.1's close-out).
 
 Use the `log_query` context manager:
 
@@ -33,13 +35,17 @@ Use the `log_query` context manager:
 """
 from __future__ import annotations
 
+import functools
 import io
 import json
 import os
+import re
 import sys
 import time
+import uuid
 from collections import Counter
 from pathlib import Path
+import typing
 from typing import Any
 
 from refmatrix.store import Store
@@ -52,9 +58,14 @@ CLI_LOG_NAME = "cli.log"
 # `hook`        — fired by a Claude Code / git hook (set RMX_INVOCATION_SOURCE=hook)
 # `interactive` — a human typed it at a tty
 # `mcp`         — issued through the hub MCP server
-# `internal`    — daemon/subprocess fan-out
+# `internal`    — daemon/subprocess fan-out, eval harnesses
+# `agent`       — run under Claude Code (`CLAUDECODE` set) with no explicit
+#                 source: an agent's Bash call. Task 21.1 R2 (2026-10-14): the
+#                 exploration found `invocation` = `unknown` on all 1,119 agent
+#                 greps of its window, because an agent's Bash call has no tty
+#                 and no hint, so agent adoption could not be counted at all.
 # `unknown`     — pre-source-field logs, or no tty + no hint
-INVOCATION_SOURCES = ("hook", "interactive", "mcp", "internal", "unknown")
+INVOCATION_SOURCES = ("hook", "interactive", "mcp", "internal", "agent", "unknown")
 
 
 # What actually happened on a logged call. `error` is reserved for the LAST
@@ -67,6 +78,19 @@ INVOCATION_SOURCES = ("hook", "interactive", "mcp", "internal", "unknown")
 # `error_rate` counted every nonzero exit. The reader who found bug-049 had to
 # dismiss 272 rows by hand before the signal was visible.
 OUTCOMES = ("ok", "empty", "consumer-closed", "error")
+
+# THE outcome vocabulary of a `query.log` row (task 21.1 R4, round-9 #m9-5):
+# the four bug-052 values plus `skipped_budget` — a call whose budget expired
+# before an answer (the per-prompt recall hook degrades to `[]` and exit 0
+# under load; since bug-116 the daemon drops the queued read too). Without it a
+# skipped prompt read as "recall ran and delivered 0".
+CALL_OUTCOMES = ("ok", "empty", "consumer-closed", "error", "skipped_budget")
+
+# Per-kind outcome vocabularies (round-10 #m10-4). Empty here on purpose: every
+# kind validates against CALL_OUTCOMES until a kind needs its own (21.3 R3 adds
+# `nudge`). `log_query` validates the final outcome against
+# `OUTCOMES_BY_KIND.get(kind, CALL_OUTCOMES)` at WRITE time.
+OUTCOMES_BY_KIND: "dict[str, tuple[str, ...]]" = {}
 
 
 # WHAT answered a grep. Five-valued, and the reason it is not a boolean is the
@@ -93,14 +117,47 @@ ANSWERED_BY = ("index", "floor", "dropin", "stdin", "none")
 ANSWERED_BY_UNSET = "unset"
 
 
-def classify_outcome(exc_type, exc_val) -> "tuple[str, str | None]":
+def _budget_exception_types() -> tuple:
+    """The exception types a BUDGETED call classifies as `skipped_budget`:
+    `VerbBusyError` (every source of it reaches the recall hook's degrade path:
+    `_left`'s deadline, the replica leg, `require_daemon`'s busy daemon) and the
+    two timeouts. Imported lazily: verbs imports telemetry."""
+    import socket
+    from refmatrix.verbs import VerbBusyError
+    return (VerbBusyError, TimeoutError, socket.timeout)
+
+
+def _error_text(exc_type, exc_val) -> str:
+    return f"{getattr(exc_type, '__name__', exc_type)}: {exc_val}"
+
+
+def classify_outcome(exc_type, exc_val, *, budgeted: bool = False
+                     ) -> "tuple[str, str | None]":
     """Map how a logged call ended onto (outcome, error).
 
     `error` is non-None only for the `error` outcome, so a reader counting
     `error` rows counts failures and nothing else. The other two exits keep
-    their evidence in `outcome` — they are not dropped, they are named."""
+    their evidence in `outcome` — they are not dropped, they are named.
+
+    `budgeted=True` is the recall hook's degrade path (task 21.1 R4, rounds
+    9-12): the path catches `(VerbBusyError, TimeoutError, socket.timeout,
+    OSError, json.JSONDecodeError)`, so "it degraded" is not "its budget ran
+    out" — a refused or reset connection degrades too. Classified by TYPE: a
+    busy daemon or a timeout is `skipped_budget`; any other `OSError` (tested
+    BEFORE the BrokenPipeError mapping, so a daemon-socket broken pipe is an
+    `error`, never `consumer-closed`) and anything else is `error`. The verb
+    (MCP) route classifies unbudgeted by design: `verbs._call` wraps every
+    transport exception as `VerbBusyError`, and an MCP call carries no hook
+    budget (round-11 #m11-6)."""
     if exc_type is None:
         return ("ok", None)
+    if budgeted and isinstance(exc_type, type):
+        # Timeouts first: TimeoutError and socket.timeout ARE OSErrors, so the
+        # generic OSError test below would swallow them (round-12 #m12-2).
+        if issubclass(exc_type, _budget_exception_types()):
+            return ("skipped_budget", None)
+        if issubclass(exc_type, OSError):
+            return ("error", _error_text(exc_type, exc_val))
     if isinstance(exc_type, type) and issubclass(exc_type, SystemExit):
         code = getattr(exc_val, "code", None)
         if code is None or code == 0:
@@ -115,7 +172,7 @@ def classify_outcome(exc_type, exc_val) -> "tuple[str, str | None]":
         # `rmx grep ... | head -5`: head exits, the pipe closes, we raise. We
         # did the work; the reader stopped reading.
         return ("consumer-closed", None)
-    return ("error", f"{getattr(exc_type, '__name__', exc_type)}: {exc_val}")
+    return ("error", _error_text(exc_type, exc_val))
 
 
 def _outcome_of(row: dict) -> str:
@@ -123,7 +180,7 @@ def _outcome_of(row: dict) -> str:
     the field existed. Rewriting the logs is not on the table — re-reading
     them by the same rules is what makes the historical rate honest."""
     known = row.get("outcome")
-    if known in OUTCOMES:
+    if known in CALL_OUTCOMES:
         return known
     err = row.get("error")
     if err:
@@ -151,13 +208,24 @@ def _disabled() -> bool:
 def invocation_source() -> str:
     """Classify *how* this `rmx` call was invoked — the telemetry "form" axis.
 
-    Explicit `RMX_INVOCATION_SOURCE` wins (hook templates / the MCP server set
-    it). Absent that, a tty means a human typed it (`interactive`); no tty means
-    we can't tell (`unknown`). Always returns a member of INVOCATION_SOURCES."""
+    Precedence (task 21.1 R2, decision-log #m-2), first match wins:
+      1. explicit `RMX_INVOCATION_SOURCE` (hooks: `hook`; MCP: `mcp`;
+         harnesses: `internal`);
+      2. `CLAUDECODE` set → `agent` (an agent's Bash call has no tty and no
+         hint; before 2026-10-14 every one of them logged `unknown`);
+      3. stdin is a tty → `interactive`;
+      4. otherwise `unknown`.
+    Stated consequences: a `!`-typed human command inside Claude Code logs
+    `agent`, and a bare grep the grep-rewrite-guard rewrote to `rmx grep` logs
+    `agent` although the agent never chose rmx — adoption reads separate
+    chosen calls by `source`, never by `invocation` alone. Always returns a
+    member of INVOCATION_SOURCES."""
     src = os.environ.get("RMX_INVOCATION_SOURCE")
     if src:
         src = src.strip().lower()
         return src if src in INVOCATION_SOURCES else "unknown"
+    if os.environ.get("CLAUDECODE"):
+        return "agent"
     try:
         if sys.stdin is not None and sys.stdin.isatty():
             return "interactive"
@@ -222,6 +290,23 @@ class CountingStream(io.TextIOBase):
 
     def flush(self):
         return self._inner.flush()
+
+    def close(self):
+        """Close the PROXY only; never flush or close the stream it wraps.
+
+        The proxy does not own `sys.__stdout__`. `cli_entry` restores `sys.stdout` in its
+        `finally`, the last reference drops, and `io.IOBase`'s finalizer called `close()`,
+        whose default `flush()`es the inner stream: on a consumer that had closed the pipe
+        (`rmx ... | head`) that printed a SECOND "Exception ignored ... BrokenPipeError"
+        traceback naming `telemetry.py`, on top of the interpreter's own one for stdout
+        (plan-9 ch-bsd r5 #m-11, reproduced 2026-10-01; fixed in 21.1's close-out,
+        2026-10-19). Nothing is swallowed: the closed consumer is already the row's
+        `consumer-closed` outcome, and the interpreter still reports its own stdout once."""
+        self._proxy_closed = True
+
+    @property
+    def closed(self):
+        return getattr(self, "_proxy_closed", False)
 
     def isatty(self):
         try:
@@ -341,6 +426,41 @@ def log_cli_intent(
         pass
 
 
+class _Unresolved:
+    def __repr__(self) -> str:
+        return "SESSION_UNRESOLVED"
+
+
+# Sentinel: "resolve the row's session at __exit__". Distinct from None, which
+# is a RESOLVED answer ("nothing resolves") the row must carry as null.
+SESSION_UNRESOLVED = _Unresolved()
+
+
+def resolve_event_session(root: "Path | None", envelope: "dict | None" = None
+                          ) -> "str | None":
+    """The session a telemetry row or recall event carries: R9's ONE resolver
+    with `purpose="event"` (null when nothing resolves — never the newest
+    ring). Telemetry never fails the command it describes, so a resolver that
+    raises is said on stderr and the row carries null.
+
+    A miss is recorded exactly as for every other purpose and invocation (R9):
+    the resolver itself decides, and a plain terminal (no owner, no
+    `$CLAUDE_PID`) records nothing anyway. GREEN gated the record on the
+    invocation class, which only ever changed the `$CLAUDE_PID`-set,
+    no-hint shape one test ran in (21.1 ch-bsd r1 #b2, rev round 13,
+    2026-10-19)."""
+    if root is None:
+        return None
+    try:
+        from refmatrix import verbs
+        return verbs.resolve_session_source(
+            Path(root), None, envelope=envelope, purpose="event").session
+    except Exception as e:  # noqa: BLE001 — telemetry must not fail the command
+        print(f"rmx: telemetry session not resolved: {type(e).__name__}: {e}",
+              file=sys.stderr)
+        return None
+
+
 class log_query:
     """Context manager that times its body and appends a JSONL telemetry record."""
 
@@ -352,11 +472,33 @@ class log_query:
         body: str,
         source: str = "cli",
         root: "Path | None" = None,
+        session: "str | None | object" = SESSION_UNRESOLVED,
+        query_id: "str | None" = None,
+        budget_s: "float | None" = None,
     ):
         self.store = store
         self.kind = kind
         self.body = body
         self.source = source
+        # Task 21.1 R4 (2026-10-14): a row carried no session, no query id and
+        # no cwd, so no per-session count could be computed and no recall event
+        # could be joined to its query. `session=SESSION_UNRESOLVED` (the
+        # default) resolves it at __exit__ through R9's ONE resolver with
+        # `purpose="event"`; a caller that already resolved it for the same
+        # call (the recall and scan emitters, whose events share the row's
+        # session) passes it, so one call records at most one resolver miss.
+        self.session = session
+        # Minted ONCE per call; the recall events of the call carry the same id.
+        self.query_id = query_id or uuid.uuid4().hex
+        self.budget_s = budget_s
+        # A path that ends the call without an exception (the recall hook's
+        # degrade path returns `[]` and exit 0) sets these; __exit__ then uses
+        # them in place of its own classification (R4).
+        self.outcome: "str | None" = None
+        self.error: "str | None" = None
+        # Kind-specific fields the caller wants on the row (recall flags, the
+        # used-lookup counters), merged last.
+        self.extra: dict = {}
         # Telemetry needs a DIRECTORY, not a database. `root` lets the paths
         # that legitimately hold no Store still be recorded: the stdin filter
         # (which returns before any store resolution, by design — a filter must
@@ -420,7 +562,21 @@ class log_query:
         # `outcome` says WHICH of the four things happened; `error` is reserved
         # for the failure. Before bug-052 every exception landed in `error`, so
         # grep's no-match exit and a closed pipe read as failures.
-        outcome, error = classify_outcome(exc_type, exc_val)
+        if self.outcome is not None:
+            outcome, error = self.outcome, self.error
+        else:
+            outcome, error = classify_outcome(exc_type, exc_val)
+        # Validated where it is written (task 21.1 R4, round-9 #m9-5): a value
+        # outside the vocabulary is never silently kept or dropped.
+        if outcome not in OUTCOMES_BY_KIND.get(self.kind, CALL_OUTCOMES):
+            outcome, error = "error", f"outcome-invalid: {outcome}"
+        session = self.session
+        if session is SESSION_UNRESOLVED:
+            session = resolve_event_session(log_dir)
+        try:
+            cwd = os.getcwd()
+        except OSError:
+            cwd = None
         record: dict[str, Any] = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "kind": self.kind,
@@ -431,7 +587,16 @@ class log_query:
             "latency_ms": latency_ms,
             "outcome": outcome,
             "error": error,
+            # R4: joinable per session and per call, and attributable (R5).
+            "session": session,
+            "query_id": self.query_id,
+            "cwd": cwd,
+            "root": str(log_dir),
         }
+        if self.kind in ("recall", "context"):
+            # The call's budget (`--timeout`), or null when it has none, so a
+            # `skipped_budget` row says what it was skipped against.
+            record["budget_s"] = self.budget_s
         if self.kind == "grep":
             # Always present on a grep row, even when no branch set it: see
             # ANSWERED_BY_UNSET. The field is what makes "did the index answer
@@ -444,6 +609,7 @@ class log_query:
             record["learn"] = self.learn
         elif self.answered_by is not None:
             record["answered_by"] = self.answered_by
+        record.update(self.extra)
         try:
             with (log_dir / LOG_NAME).open("a") as f:
                 f.write(json.dumps(record) + "\n")
@@ -985,3 +1151,777 @@ def _ts_epoch(ts: "str | None") -> "float | None":
         return time.mktime(time.strptime(str(ts)[:19], "%Y-%m-%dT%H:%M:%S"))
     except (ValueError, TypeError):
         return None
+
+
+# ---- task 21.1: the ONE recall-event schema (C7) ----------------------------
+#
+# Why (2026-10-07 exploration, plan-21): 3 CLI `context` calls were counted
+# against 1,119 agent greps and no MCP call could be counted at all, and no
+# instrument said which recalled item reached the payload or was later used.
+# Plan-19's 19.2 / 19.5 / 19.6 have no measurement without it. Everything below
+# is the single writer, the single row classifier and the single report.
+
+EVENTS_NAME = "recall-events.jsonl"
+
+# R10's closed SURFACE enum, the ONE channel enum of C7. `cli` / `mcp` are
+# invocations (R2), never channels.
+RECALL_CHANNELS = ("session_start", "prompt_recall", "scan_prompt", "precompact",
+                   "context", "recall", "nudge")
+
+EVENT_STAGES = ("retrieved", "delivered", "used")
+
+# R10: every emitter writes every field (null where the table allows null);
+# 19.2's fold imports this tuple.
+RECALL_EVENT_FIELDS_V1 = (
+    "v", "ts", "session", "turn", "query_id",
+    "channel", "invocation",
+    "name", "entity_id", "kind", "scope", "partition",
+    "cwd", "root",
+    "rank", "stage",
+    "offset_bytes", "bytes", "payload_bytes",
+    "body_offset_bytes", "body_bytes",
+    "arm", "policy",
+    "stm_session", "stm_source", "stm_events_n", "focus_topics_n", "overlap",
+    "phase", "restored_cluster_id",
+    "block_id", "block_sha", "rev", "unchanged",
+    "evidence", "ref_query_id", "lag_turns",
+)
+
+# R5 class 0: an event lacking any of these is `malformed`.
+_EVENT_REQUIRED = ("v", "stage", "name", "channel", "cwd", "root", "ts")
+_EVENT_TS_RE = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$")
+
+# Until 19.6 chooses an arm per prompt (d5b), every emitter writes these.
+FIXED_ARM = "fixed"
+FIXED_POLICY = "fixed-v0"
+
+# R12's backward read of the delivered set.
+_DELIVERED_BLOCK = 64 * 1024
+DELIVERED_CAP_BYTES = 4 * 1024 * 1024
+
+
+def event_ts(t: "float | None" = None) -> str:
+    """R10's UTC stamp, fixed width (`YYYY-MM-DDTHH:MM:SS.mmmZ`), so lexical
+    order is time order and no reader depends on its own TZ or a DST change
+    (round-4 #s-2). Every other writer stamps local naive time; query.log rows
+    keep that form and are joined to events by `query_id`, never by `ts`."""
+    t = time.time() if t is None else float(t)
+    ms = int(round((t - int(t)) * 1000))
+    sec = int(t)
+    if ms >= 1000:
+        sec, ms = sec + 1, ms - 1000
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(sec)) + f".{ms:03d}Z"
+
+
+def event_kind(entity_kind: "str | None", mtype: "str | None") -> "str | None":
+    """R10a, the ONLY place the catalog-kind → event-kind map lives. `function`
+    / `class` are `is_a` concepts, not entity kinds, and session cards and
+    subjects are memory rows told apart by `mtype`. Anything else is None: the
+    emitter writes no event for it and counts it (`unmapped_kind=<n>`), so a
+    new catalog kind surfaces instead of being copied raw."""
+    if entity_kind in ("code", "doc", "concept"):
+        return entity_kind
+    if entity_kind == "memory":
+        if mtype == "subject":
+            return "subject"
+        if mtype == "session":
+            return "session"
+        return "memory"
+    return None
+
+
+def recall_channel(*, session_start: bool, stdin_json: bool, recent: bool,
+                   invocation: str) -> str:
+    """R11: which channel a `memory recall` call is, first match wins. The only
+    generated hook that runs `--recent` is PreCompact's, so `--recent` is
+    `precompact` only under `invocation == "hook"`; an agent's or a human's
+    `--recent` is `recall`."""
+    if session_start:
+        return "session_start"
+    if stdin_json:
+        return "prompt_recall"
+    if recent and invocation == "hook":
+        return "precompact"
+    return "recall"
+
+
+def _recall_flags_of(row: dict) -> "tuple[bool, bool, bool] | None":
+    """The `recall_channel` inputs of a `kind=recall` query.log row, or None
+    when the row carries none of `session_start` / `stdin_json` / `recent`.
+
+    Both writers (`cli._RecallCall.close_row`, `verbs.memory_recall`) set the
+    three flags on every row, and no `kind=recall` row predates this task, so a
+    flagless row is a WRITER DEFECT. It is counted by the report
+    (`recall_unflagged=<n>`), never classified: GREEN guessed the channel from
+    `invocation` + body, and the guess filed a query-less SessionStart-shaped
+    row as `precompact` (21.1 ch-bsd r1 #b1, spec rev round 13, 2026-10-19)."""
+    if any(k in row for k in ("session_start", "stdin_json", "recent")):
+        return (bool(row.get("session_start")), bool(row.get("stdin_json")),
+                bool(row.get("recent")))
+    return None
+
+
+def channel_of_row(row: dict) -> "str | None":
+    """The R11 channel of a query.log `recall` / `context` row, recomputed from
+    the row by `recall_channel` (R7). None for a recall row without its flags
+    (a writer defect the caller counts; see `_recall_flags_of`)."""
+    if row.get("kind") == "context":
+        return "context"
+    flags = _recall_flags_of(row)
+    if flags is None:
+        return None
+    ss, sj, rc = flags
+    return recall_channel(session_start=ss, stdin_json=sj, recent=rc,
+                          invocation=row.get("invocation") or "unknown")
+
+
+def _global_root_default() -> Path:
+    from refmatrix import hub
+    return Path(hub.global_store_root())
+
+
+def emit_recall_events(events: "list[dict]", *, root: Path,
+                       global_root: "Path | None" = None) -> int:
+    """The ONLY writer of recall events (R8, R11). Each surface calls it
+    EXACTLY ONCE per call, after its payload is written. Fills every field of
+    `RECALL_EVENT_FIELDS_V1` (null where allowed), stamps one UTC `ts` and the
+    caller's `cwd` / `root`, drops (and counts on stderr) an item whose kind is
+    unmapped or whose partition is unknown, and splits the list by `scope`: a
+    `global` event goes to the GLOBAL root's file (d8e), every other to
+    `root`'s. Lock-free like query.log: one `write()` of one complete line per
+    event, `O_APPEND`, never under the daemon's writer lock. A failed append is
+    said on stderr and the command continues (telemetry never fails the command
+    it describes). Returns the number of events written."""
+    if _disabled() or not events:
+        return 0
+    ts = event_ts()
+    try:
+        cwd = os.getcwd()
+    except OSError as e:
+        print(f"rmx: recall-event append failed: cwd unreadable ({e})", file=sys.stderr)
+        return 0
+    groot = Path(global_root) if global_root is not None else None
+    by_file: dict[Path, list[bytes]] = {}
+    unmapped = no_partition = 0
+    for ev in events:
+        rec = {f: ev.get(f) for f in RECALL_EVENT_FIELDS_V1}
+        rec["v"] = 1
+        rec["ts"] = ts
+        rec["cwd"] = cwd
+        rec["root"] = str(root)
+        if rec["kind"] is None:
+            unmapped += 1
+            continue
+        if not rec["name"]:
+            no_partition += 1               # an item with no name cannot be keyed (19.2 R1)
+            continue
+        if not rec["partition"]:
+            no_partition += 1
+            continue
+        if rec["scope"] == "global":
+            if groot is None:
+                groot = _global_root_default()
+            dest = groot / EVENTS_NAME
+        else:
+            rec["scope"] = rec["scope"] or "project"
+            dest = Path(root) / EVENTS_NAME
+        by_file.setdefault(dest, []).append(
+            (json.dumps(rec, default=str) + "\n").encode("utf-8"))
+    if unmapped:
+        print(f"rmx: recall events: unmapped_kind={unmapped} item(s) not logged",
+              file=sys.stderr)
+    if no_partition:
+        print(f"rmx: recall events: partition_unresolved={no_partition} item(s) "
+              f"(no partition or no name) not logged", file=sys.stderr)
+    written = 0
+    for dest, lines in by_file.items():
+        if not dest.parent.is_dir():
+            print(f"rmx: recall-event append failed: no store at {dest.parent}",
+                  file=sys.stderr)
+            continue
+        try:
+            fd = os.open(str(dest), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+        except OSError as e:
+            print(f"rmx: recall-event append failed: {e}", file=sys.stderr)
+            continue
+        try:
+            for line in lines:
+                os.write(fd, line)
+                written += 1
+        except OSError as e:
+            print(f"rmx: recall-event append failed: {e}", file=sys.stderr)
+        finally:
+            os.close(fd)
+    return written
+
+
+# R10 `block_id` per surface (the emitted block's stable id).
+RECALL_BLOCK_IDS = {"session_start": "session-start", "prompt_recall": "prompt-recall",
+                    "scan_prompt": "scan-prompt", "precompact": "precompact",
+                    "context": "context", "recall": "recall", "nudge": "nudge"}
+
+
+def recall_item(row: dict, *, rank: int) -> dict:
+    """An emitter item from a recall hit or row: its name, id, catalog kind and mtype (R10a
+    maps them), scope and the partition NAME the row was read from — never the bound one."""
+    return {"name": row.get("name"), "entity_id": row.get("id") or row.get("entity_id"),
+            "catalog_kind": row.get("kind") or "memory", "mtype": row.get("mtype"),
+            "partition": row.get("partition"), "scope": row.get("scope") or "project",
+            "rank": rank}
+
+
+def _item_fields(it: dict) -> dict:
+    return {"name": it.get("name"), "entity_id": it.get("entity_id"),
+            "kind": event_kind(it.get("catalog_kind"), it.get("mtype")),
+            "scope": it.get("scope") or "project", "partition": it.get("partition"),
+            "rank": it.get("rank")}
+
+
+def call_events(*, channel: str, invocation: str, session: "str | None",
+                query_id: str, retrieved: "list[dict]", delivered: "list[dict]",
+                payload: "bytes | None", block_id: "str | None",
+                phase: "dict | None" = None, turn: "int | None" = None) -> "list[dict]":
+    """One call's `retrieved` and `delivered` events, NOT yet written: `emit_call` writes
+    them alone, `emit_context_call` together with its `used` events, so either way the call
+    reaches the ONE writer once (R11; 21.1 r1 #s1). `phase` is `stm.phase_fields(...)` on the
+    prompt-time channels (it carries `turn`); other channels pass `turn`. `block_sha` is the
+    sha256 of the exact payload bytes the command wrote."""
+    import hashlib
+    common = {"session": session, "turn": turn, "query_id": query_id, "channel": channel,
+              "invocation": invocation, "arm": FIXED_ARM, "policy": FIXED_POLICY,
+              "block_id": block_id,
+              "block_sha": hashlib.sha256(payload).hexdigest() if payload is not None else None}
+    if phase:
+        common.update(phase)
+    events: list[dict] = []
+    for it in retrieved:
+        events.append({**common, **_item_fields(it), "stage": "retrieved"})
+    # R10: a `delivered` event IS a span in the payload. An item whose span was not found is
+    # not delivered; it is counted on stderr, never written with null offsets (21.1 r1 #b3/
+    # #m2, 2026-10-19: the table recall and scan-prompt's JSON wrote such events).
+    unspanned = sum(1 for it in delivered if it.get("offset_bytes") is None)
+    if unspanned:
+        print(f"rmx: {channel}: delivered_unspanned={unspanned} (not logged as delivered)",
+              file=sys.stderr)
+    for it in (it for it in delivered if it.get("offset_bytes") is not None):
+        ev = {**common, **_item_fields(it), "stage": "delivered",
+              "offset_bytes": it.get("offset_bytes"), "bytes": it.get("bytes"),
+              "payload_bytes": len(payload) if payload is not None else None,
+              "body_offset_bytes": it.get("body_offset_bytes"),
+              "body_bytes": it.get("body_bytes")}
+        events.append(ev)
+    return events
+
+
+def emit_call(root: Path, *, channel: str, invocation: str, session: "str | None",
+              query_id: str, retrieved: "list[dict]", delivered: "list[dict]",
+              payload: "bytes | None", block_id: "str | None",
+              phase: "dict | None" = None, turn: "int | None" = None,
+              global_root: "Path | None" = None) -> int:
+    """`call_events` handed to the ONE writer in ONE `emit_recall_events` call (R11)."""
+    events = call_events(channel=channel, invocation=invocation, session=session,
+                         query_id=query_id, retrieved=retrieved, delivered=delivered,
+                         payload=payload, block_id=block_id, phase=phase, turn=turn)
+    return emit_recall_events(events, root=root, global_root=global_root)
+
+
+def emit_context_call(root: Path, *, ref: str, items: "list[dict]",
+                      payload: "bytes | None", query_id: str, session: "str | None",
+                      invocation: str, turn: "int | None" = None) -> int:
+    """The `context` channel's ONE emission (R11) for any of R3's four routes: `retrieved`
+    for every item the bundle names, `delivered` for those with a span in the payload, and
+    R12's `context_by_name` `used` events, all in ONE `emit_recall_events` call. The `used`
+    lookup runs FIRST and excludes this call's own `query_id`, so a key is used when any
+    OTHER call of the session delivered it -- an earlier context call included -- and the
+    event points to that key's newest such delivery.
+
+    GREEN emitted the delivered events, then looked up and wrote the `used` ones in a second
+    writer call; to keep the call from finding its own delivery it dropped every `context`
+    channel delivery, so `rmx context A` attaching memory M followed by `rmx context M` was
+    no use, and the call reached the writer twice (21.1 ch-bsd r1 #s1, spec rev round 13,
+    2026-10-19)."""
+    delivered = [it for it in items if it.get("offset_bytes") is not None]
+    used = used_events(root, session=session, invocation=invocation,
+                       evidence="context_by_name",
+                       match=lambda d: context_used_keys(ref, delivered, d),
+                       body=ref, turn=turn, query_id=query_id, channel="context",
+                       exclude_query_id=query_id)
+    events = call_events(channel="context", invocation=invocation, session=session,
+                         query_id=query_id, retrieved=items, delivered=delivered,
+                         payload=payload, block_id=RECALL_BLOCK_IDS["context"], turn=turn)
+    return emit_recall_events(events + used, root=root)
+
+
+# ---- R12: `used` events -------------------------------------------------------------------
+
+# A name in a note is matched on whole tokens: a token boundary is any character outside
+# [A-Za-z0-9_.-] (so a sentence-final `name.` is the token `name.` and does NOT match — an
+# under-count, the safe direction for a never-decaying counter).
+_NOTE_TOKEN_RE = re.compile(r"[A-Za-z0-9_.\-]+")
+_WIKILINK_RE = re.compile(r"\[\[([^\]#|]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]")
+
+
+def _matchable(name: str) -> bool:
+    """Only names of length >= 6 or containing one of `_ . -` can fire, so a short
+    delivered name (`run`, `rank`) cannot match prose."""
+    return bool(name) and (len(name) >= 6 or any(c in name for c in "_.-"))
+
+
+def note_used_keys(text: str, delivered: "dict") -> "list[tuple]":
+    """R12 `focus_note` matcher: every delivered key whose `name` is a whole token of the
+    note, or the `<doc>` of a `[[<doc>]]` / `[[<doc>#<anchor>]]` wikilink — one key per
+    `(name, kind, scope)`, however often the name occurs."""
+    names = set(_NOTE_TOKEN_RE.findall(text or ""))
+    names |= {m.strip() for m in _WIKILINK_RE.findall(text or "")}
+    return [key for key in delivered if key[0] in names and _matchable(key[0])]
+
+
+def _log_used_lookup(root: Path, *, evidence: str, body: str, session: "str | None",
+                     cap_hits: int = 0, used_no_session: bool = False) -> None:
+    """A `used-lookup` query.log row, written ONLY when the lookup was cut at its cap or
+    could not run for want of a session — the two under-counts R12 says are counted."""
+    with log_query(None, kind="used-lookup", body=body[:200], source=f"used-{evidence}",
+                   root=root, session=session) as t:
+        t.outcome = "empty" if used_no_session else "ok"
+        t.extra.update(cap_hits=cap_hits, used_no_session=used_no_session)
+
+
+def used_events(root: Path, *, session: "str | None", invocation: str, evidence: str,
+                match, body: str = "", turn: "int | None" = None,
+                query_id: "str | None" = None, channel: "str | None" = None,
+                global_root: "Path | None" = None,
+                exclude_query_id: "str | None" = None) -> "list[dict]":
+    """R12's `used` events for one EXPLICIT call (the caller hands them to the ONE writer
+    with its own events, in its one `emit_recall_events` call). A `hook` call never emits (the helix
+    confound cannot recur); with no resolved session nothing is emitted and the miss is
+    counted (`used_no_session`) for agent/MCP calls — the newest ring is never used. `match`
+    maps the session's delivered set (`delivered_in_session`) to the keys this call used;
+    each key emits ONE event pointing back (`ref_query_id`) to its delivered event, to the
+    file of that event's scope (a global memory's use goes to the global file, d8e). A call
+    that has its own query.log row and events (a context call) passes its `query_id` and
+    `channel`, so every event of the call shares them (R4); a call with neither (`memory
+    get`, `focus note`) mints an id, and the event carries the delivered event's channel.
+    `exclude_query_id` leaves that call's own deliveries out of the lookup (#s1)."""
+    if invocation == "hook":
+        return []
+    if not session:
+        if invocation in ("agent", "mcp"):
+            _log_used_lookup(root, evidence=evidence, body=body, session=None,
+                             used_no_session=True)
+        return []
+    delivered = delivered_in_session(session, root=root, global_root=global_root,
+                                     exclude_query_id=exclude_query_id)
+    if delivered.cap_hits:
+        _log_used_lookup(root, evidence=evidence, body=body, session=session,
+                         cap_hits=delivered.cap_hits)
+    keys = match(delivered)
+    if not keys:
+        return []
+    qid = query_id or uuid.uuid4().hex
+    events = []
+    for key in dict.fromkeys(keys):
+        d = delivered[key]
+        lag = (turn - d["turn"]) if isinstance(turn, int) and isinstance(d.get("turn"), int) \
+            else None
+        events.append({"session": session, "turn": turn, "query_id": qid,
+                       "channel": channel or d.get("channel"), "invocation": invocation,
+                       "name": d.get("name"), "entity_id": d.get("entity_id"),
+                       "kind": d.get("kind"), "scope": d.get("scope") or "project",
+                       "partition": d.get("partition"), "stage": "used",
+                       "arm": FIXED_ARM, "policy": FIXED_POLICY,
+                       "evidence": evidence, "ref_query_id": d.get("query_id"),
+                       "lag_turns": lag})
+    return events
+
+
+def context_used_keys(ref: str, delivered_here: "list[dict]", delivered: "dict"
+                      ) -> "list[tuple]":
+    """R12 `context_by_name`: the call's `ref`, stripped, equals a delivered name exactly
+    (case-sensitive) AND this context call delivered an item of that name and kind — its
+    anchor, or (for `kind=memory`) the memory body it attached to a concept/doc/code anchor.
+    `delivered` is the session's set WITHOUT this call's own `query_id` (spec rev round 13,
+    21.1 r1 #s1): any other call's delivery counts, an earlier context call's included."""
+    ref = (ref or "").strip()
+    here = {(it.get("name"), event_kind(it.get("catalog_kind"), it.get("mtype")))
+            for it in delivered_here}
+    return [key for key in delivered
+            if key[0] == ref and (key[0], key[1]) in here and key[2] == "project"]
+
+
+class DeliveredSet(dict):
+    """`delivered_in_session`'s answer: `(name, kind, scope) -> event`, plus
+    what the bounded read cost (`bytes_read`) and whether a file was cut at the
+    cap (`cap_hits`), so the caller can count the under-count."""
+    bytes_read: int = 0
+    cap_hits: int = 0
+
+
+def _lines_backwards(path: Path, cap: int) -> "tuple[list[bytes], int, bool]":
+    """Complete lines of `path`, NEWEST first, read backwards in 64 KB blocks
+    and stopping at `cap` bytes. Returns (lines, bytes_read, capped)."""
+    out: list[bytes] = []
+    read = 0
+    with open(path, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        pos = f.tell()
+        carry = b""
+        while pos > 0 and read < cap:
+            n = min(_DELIVERED_BLOCK, pos, cap - read)
+            pos -= n
+            f.seek(pos)
+            chunk = f.read(n)
+            read += n
+            buf = chunk + carry
+            parts = buf.split(b"\n")
+            carry = parts[0]                 # possibly partial: completed next round
+            for ln in reversed(parts[1:]):
+                if ln.strip():
+                    out.append(ln)
+        capped = pos > 0
+        if not capped and carry.strip():
+            out.append(carry)                # the file's first line, complete
+    return out, read, capped
+
+
+def delivered_in_session(session: "str | None", *, root: Path,
+                         global_root: "Path | None" = None,
+                         exclude_query_id: "str | None" = None) -> DeliveredSet:
+    """R12's lookup: the `delivered` events of `session`, newest per
+    `(name, kind, scope)`, from `root`'s and the global root's
+    `recall-events.jsonl`, read BACKWARDS from the end and capped at 4 MB per
+    file. A delivery older than the cap is not found — an under-count, the safe
+    direction for a never-decaying counter — and the cut is counted
+    (`cap_hits`). Events with a null session are in no set; `precompact`
+    deliveries are excluded until 19.5 R1 decides whether PreCompact stdout
+    reaches the agent (d5d). Runs only on the explicit `used` calls."""
+    found = DeliveredSet()
+    if not session:
+        return found
+    groot = Path(global_root) if global_root is not None else _global_root_default()
+    seen_paths = set()
+    for base in (Path(root), groot):
+        p = base / EVENTS_NAME
+        try:
+            key_path = p.resolve()
+        except OSError:
+            key_path = p
+        if key_path in seen_paths or not p.is_file():
+            continue
+        seen_paths.add(key_path)
+        try:
+            lines, nread, capped = _lines_backwards(p, DELIVERED_CAP_BYTES)
+        except OSError as e:
+            print(f"rmx: delivered-set read failed for {p}: {e}", file=sys.stderr)
+            continue
+        found.bytes_read += nread
+        found.cap_hits += int(capped)
+        for ln in lines:
+            try:
+                ev = json.loads(ln)
+            except ValueError:
+                continue                     # counted by the report, not here
+            if not isinstance(ev, dict) or ev.get("stage") != "delivered":
+                continue
+            if ev.get("session") != session or ev.get("channel") == "precompact":
+                continue
+            if exclude_query_id is not None and ev.get("query_id") == exclude_query_id:
+                continue                     # the asking call's own delivery (r1 #s1)
+            key = (ev.get("name"), ev.get("kind"), ev.get("scope") or "project")
+            if key not in found:             # newest first: keep the first seen
+                found[key] = ev
+    return found
+
+
+# ---- R5: the ONE row classifier ----------------------------------------------
+
+@functools.lru_cache(maxsize=4096)
+def _realpath_of_absolute(p: str) -> str:
+    return os.path.realpath(p)
+
+
+def norm_path(p: "str | Path | None") -> "str | None":
+    """THE spelling of a filesystem place for every log that keys on a path: `realpath`, so
+    macOS's `/tmp` -> `/private/tmp` (and `/var` -> `/private/var`) symlinks, and any other,
+    collapse to one string whichever spelling the writer or the reader was handed. The
+    query.log / event classifier (`_test_base`) and the pointer-error log's scope
+    (`stm.scope_key`) both call it.
+
+    Converged 21.1 ch-bsd r1 #s3 (2026-10-19): the classifier had its own `_norm_tmp` fold
+    and the pointer-error log stamped `os.path.abspath`, so one store had two scopes there
+    (`/tmp/x` vs `/private/tmp/x`, probe1). Cached: a report classifies every row of a log
+    whose paths repeat, and `realpath` costs an lstat per component.
+
+    An empty or null path is NO place: None, never the cwd (`abspath("")` is the cwd, and the
+    cache then pinned the first caller's cwd for the life of the process -- a `root: null`
+    pointer-error row was attributed to whichever store read it, 21.1 ch-bsd r2 #m3,
+    2026-10-19). Only ABSOLUTE spellings are cached; a relative one is made absolute against
+    the caller's cwd first, every call."""
+    if p is None or not str(p).strip():
+        return None
+    return _realpath_of_absolute(os.path.abspath(str(p)))
+
+
+def _tmp_root() -> str:
+    return norm_path("/tmp")
+
+
+def _test_base(p: "str | Path | None") -> "str | None":
+    """R5's test base of a path: up to and including the `pytest-<N>` component
+    that follows a `pytest-of-<user>` component; else, under `/tmp` (either
+    spelling: the path is `norm_path`-ed), the first component below it when it
+    starts with `rmx-` (23.0's sandbox root); else None (a live tree)."""
+    if not p:
+        return None
+    s = norm_path(p)
+    if s is None:
+        return None
+    parts = Path(s).parts
+    for i, comp in enumerate(parts[:-1]):
+        if comp.startswith("pytest-of-") and parts[i + 1].startswith("pytest-"):
+            return str(Path(*parts[: i + 2]))
+    tmp = Path(_tmp_root()).parts
+    n = len(tmp)
+    if len(parts) > n and parts[:n] == tmp and parts[n].startswith("rmx-"):
+        return str(Path(*parts[: n + 1]))
+    return None
+
+
+ROW_CLASSES = ("attributed", "test_artifact", "legacy_fixture", "legacy_unattributed",
+               "malformed")
+
+
+def row_provenance(row: dict, *, reader_root: "Path | None" = None,
+                   source: "typing.Literal['query_log', 'events']" = "query_log") -> str:
+    """Classify one `query.log` row or `recall-events.jsonl` event (task 21.1
+    R5, d8d, d9g). EVERY reader of those two logs calls this; no reader keeps
+    its own copy, and no reader decides `malformed` itself. First match wins:
+
+    0. `malformed` (`source="events"` only): a required field missing, `v`
+       not 1, a channel outside the enum, or a `ts` not in R10's UTC form;
+    1. `test_artifact`: the row's KEY PATH (`root`, else `cwd`) has a test
+       base that differs from the reader's. Keyed on `root` (round-3 #s-3): one
+       test run has two test bases — the sandbox store roots under
+       `/tmp/rmx-*` and pytest's `tmp_path` — and the root is the store the row
+       was written for. A row with NO test base is never a test artifact;
+    2. `legacy_fixture`: no `cwd`/`root`, `kind == "grep"` and `body` exactly
+       `alpha|beta` (the 235 fixture rows in the global store, 2026-10-14);
+    3. `legacy_unattributed`: any other row with neither `cwd` nor `root`;
+    4. `attributed`.
+    `reader_root=None` is a LIVE reader (no test base)."""
+    if source == "events":
+        if not isinstance(row, dict) or any(row.get(k) is None for k in _EVENT_REQUIRED):
+            return "malformed"
+        if row.get("v") != 1 or row.get("channel") not in RECALL_CHANNELS:
+            return "malformed"
+        if not isinstance(row.get("ts"), str) or not _EVENT_TS_RE.match(row["ts"]):
+            return "malformed"
+    key = row.get("root") or row.get("cwd")
+    if key:
+        base = _test_base(key)
+        if base is not None and base != _test_base(reader_root):
+            return "test_artifact"
+    if not row.get("cwd") and not row.get("root"):
+        if row.get("kind") == "grep" and row.get("body") == "alpha|beta":
+            return "legacy_fixture"
+        return "legacy_unattributed"
+    return "attributed"
+
+
+def is_test_artifact_row(row: dict, *, reader_root: "Path | None" = None,
+                         source: "typing.Literal['query_log', 'events']" = "query_log"
+                         ) -> bool:
+    """`row_provenance(...) == "test_artifact"` and nothing else (23.0 AC-4
+    calls it as `is_test_artifact_row(row)` on live rows)."""
+    return row_provenance(row, reader_root=reader_root, source=source) == "test_artifact"
+
+
+# ---- R7: `rmx telemetry --agent-usage` ------------------------------------------
+
+def _read_jsonl_counted(path: Path) -> "tuple[list[dict], int]":
+    """Every parseable object row of a JSONL file, plus the count of lines that
+    did not parse — counted and printed by the report, never skipped silently."""
+    rows: list[dict] = []
+    bad = 0
+    if not path.exists():
+        return rows, 0
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line.strip():
+            continue
+        try:
+            r = json.loads(line)
+        except ValueError:
+            bad += 1
+            continue
+        if isinstance(r, dict):
+            rows.append(r)
+        else:
+            bad += 1
+    return rows, bad
+
+
+def _in_window(ts: "str | None", since: "str | None", until: "str | None") -> bool:
+    """ISO-prefix window: `since` inclusive, `until` exclusive."""
+    t = str(ts or "")
+    if since and t < since:
+        return False
+    if until and t >= until:
+        return False
+    return True
+
+
+def _pcts(vals: "list[int]") -> "tuple[int, int]":
+    if not vals:
+        return 0, 0
+    s = sorted(vals)
+    return (s[min(len(s) - 1, int(0.50 * len(s)))],
+            s[min(len(s) - 1, int(0.95 * len(s)))])
+
+
+def _lat(rows: "list[dict]") -> str:
+    p50, p95 = _pcts([r["latency_ms"] for r in rows
+                      if isinstance(r.get("latency_ms"), int)])
+    return f"p50={p50}ms p95={p95}ms"
+
+
+def agent_usage_report(root: Path, *, since: "str | None" = None,
+                       until: "str | None" = None, include_internal: bool = False,
+                       by_session: bool = False,
+                       expired_reads: "int | str | None" = None) -> "list[str]":
+    """How the agent used rmx context / grep / recall, from ONE store's
+    `query.log`, `cli.log` and `recall-events.jsonl` (task 21.1 R7).
+
+    Every row is classified by `row_provenance` with `reader_root` = this root:
+    `attributed` and `legacy_unattributed` rows are counted, `test_artifact`
+    and `legacy_fixture` rows are not, and all three non-attributed counts are
+    printed (R5's totals rule), so nothing is silently included or dropped.
+    `invocation=internal` rows (eval harnesses) are excluded unless
+    `include_internal`. A `cli.log` command is counted once (its `phase=start`
+    intent row is not a call). `expired_reads` is the daemon's dropped-read
+    count from `_op_stats`, or the reason it is unavailable — never a 0 for a
+    daemon that did not answer."""
+    root = Path(root)
+    out: list[str] = [f"agent usage · window {since or '-'} .. {until or '-'} "
+                      f"(since inclusive, until exclusive)"]
+    qrows, q_bad = _read_jsonl_counted(root / LOG_NAME)
+    counts = Counter()
+    kept: list[dict] = []
+    internal = 0
+    for r in qrows:
+        if not _in_window(r.get("ts"), since, until):
+            continue
+        cls = row_provenance(r, reader_root=root)
+        counts[cls] += 1
+        if cls not in ("attributed", "legacy_unattributed"):
+            continue
+        if not include_internal and (r.get("invocation") or "unknown") == "internal":
+            internal += 1
+            continue
+        kept.append(r)
+    out.append(f"excluded_test_rows={counts['test_artifact']} "
+               f"legacy_fixture_rows={counts['legacy_fixture']} "
+               f"legacy_unattributed={counts['legacy_unattributed']}")
+    out.append(f"query.log: counted={len(kept)} unparseable={q_bad} "
+               f"internal_excluded={internal}")
+
+    def _route(r: dict) -> str:
+        return r.get("source") or "?"
+
+    ctx = [r for r in kept if r.get("kind") == "context"]
+    grp = [r for r in kept if r.get("kind") == "grep"]
+    rec_all = [r for r in kept if r.get("kind") == "recall"]
+    # 21.1 r1 #b1: a recall row without its channel flags is a writer defect --
+    # counted on its own line and left out of every channel group, never guessed.
+    rec = [r for r in rec_all if channel_of_row(r) is not None]
+    unflagged = len(rec_all) - len(rec)
+
+    out.append("totals:")
+    for name, rows in sorted(Counter(_route(r) for r in ctx).items()):
+        out.append(f"  context {name}: {rows}")
+    for name, rows in sorted(Counter(_route(r) for r in grp).items()):
+        out.append(f"  grep {name}: {rows}")
+    out.append(f"  memory_recall rows: {len(rec_all)}")
+    out.append(f"  recall_unflagged={unflagged}")
+
+    out.append("by invocation:")
+    invs = sorted({r.get("invocation") or "unknown" for r in ctx + grp + rec})
+    for inv in invs:
+        out.append(f"  invocation={inv}")
+        mine = [r for r in ctx + grp + rec if (r.get("invocation") or "unknown") == inv]
+        groups: dict[str, list[dict]] = {}
+        for r in mine:
+            if r.get("kind") == "context":
+                groups.setdefault(f"context {_route(r)}", []).append(r)
+            elif r.get("kind") == "grep":
+                groups.setdefault(f"grep {_route(r)}", []).append(r)
+                ab = r.get("answered_by") or "unknown"
+                groups.setdefault(f"grep {_route(r)} answered_by={ab}", []).append(r)
+            else:
+                groups.setdefault(f"memory_recall {channel_of_row(r)}", []).append(r)
+        for label in sorted(groups):
+            out.append(f"    {label}: {len(groups[label])} {_lat(groups[label])}")
+
+    # R7 / round-8 #nm-5: per recall channel and for context, the count of each
+    # outcome, so a skipped prompt never reads as "recall ran and delivered 0".
+    out.append("outcomes:")
+    by_channel: dict[str, Counter] = {}
+    for r in rec + ctx:
+        by_channel.setdefault(channel_of_row(r), Counter())[_outcome_of(r)] += 1
+    for ch in sorted(by_channel):
+        c = by_channel[ch]
+        extra = "".join(f" {k}={c[k]}" for k in ("empty", "consumer-closed") if c.get(k))
+        out.append(f"  {ch}: ok={c['ok']} skipped_budget={c['skipped_budget']} "
+                   f"error={c['error']}{extra}")
+    invalid = sum(1 for r in kept if str(r.get("error") or "").startswith("outcome-invalid:"))
+    if invalid:
+        out.append(f"outcome-invalid={invalid}")
+    if expired_reads is None:
+        out.append("expired_reads: unavailable (not queried)")
+    else:
+        out.append(f"expired_reads: {expired_reads}")
+
+    # R12's lookup counters, from the `used-lookup` rows the used emitters write.
+    lookups = [r for r in kept if r.get("kind") == "used-lookup"]
+    out.append(f"used_lookup_cap_hits={sum(int(r.get('cap_hits') or 0) for r in lookups)} "
+               f"used_no_session={sum(1 for r in lookups if r.get('used_no_session'))}")
+
+    # cli.log: one count per command (phase=start intent rows excluded).
+    crows, c_bad = _read_jsonl_counted(root / CLI_LOG_NAME)
+    c_test = 0
+    recalls = 0
+    for r in crows:
+        if r.get("phase") == "start" or not _in_window(r.get("ts"), since, until):
+            continue
+        if row_provenance(r, reader_root=root) == "test_artifact":
+            c_test += 1
+            continue
+        if not include_internal and (r.get("source") or "unknown") == "internal":
+            continue
+        argv = [str(a) for a in (r.get("argv") or [])]
+        if argv[:2] == ["memory", "recall"]:
+            recalls += 1
+    out.append(f"cli.log: memory recall commands={recalls} "
+               f"excluded_test_rows={c_test} unparseable={c_bad}")
+
+    # recall-events.jsonl, classified by the same function (source="events").
+    erows, e_bad = _read_jsonl_counted(root / EVENTS_NAME)
+    ecount = Counter()
+    folded = Counter()
+    for ev in erows:
+        cls = row_provenance(ev, reader_root=root, source="events")
+        ecount[cls] += 1
+        if cls == "attributed" and _in_window(ev.get("ts"), since, until):
+            folded[(ev.get("channel"), ev.get("stage"))] += 1
+    out.append(f"recall-events.jsonl: folded={sum(folded.values())} "
+               f"malformed={ecount['malformed']} unparseable={e_bad} "
+               f"excluded_test_rows={ecount['test_artifact']}")
+    for (ch, st), n in sorted(folded.items(), key=lambda kv: (str(kv[0][0]), str(kv[0][1]))):
+        out.append(f"  events {ch} {st}: {n}")
+
+    if by_session:
+        out.append("by session:")
+        sc = Counter(r.get("session") or "(null)" for r in kept)
+        for sess, n in sorted(sc.items(), key=lambda kv: (-kv[1], kv[0])):
+            out.append(f"  {sess}: {n} calls")
+    out.append("note: stm_events_n counts every ring line until 19.0 R2 stamps "
+               "an origin on subagent events.")
+    return out

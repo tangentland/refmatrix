@@ -10,7 +10,6 @@ import hashlib
 import os
 import plistlib
 import re
-import shutil
 import subprocess
 import sys
 import time
@@ -134,27 +133,161 @@ def binary_identity(rmx: str) -> dict:
     return ident
 
 
-def _refuse_dev_tree(rmx: str) -> None:
+def _identity_objection(rmx: str) -> "str | None":
+    """Why a plist must NOT be rendered against `rmx`, or None when the
+    binary itself said `dev_tree: false`. The ONE reading of
+    `binary_identity` for every guard (`_refuse_dev_tree`, `check`,
+    `check_hub`).
+
+    Fail closed: anything but an explicit `False` objects. The three guards
+    used to read `if ident.get("dev_tree"):` each, and `None` — the answer
+    for a binary that is not readable (a pre-0.69 binary printing a version
+    line, a venv mid-rebuild exiting non-zero, a mistyped path) — is falsy,
+    so "unknown" passed as "not a dev tree" at all three sites at once
+    (ch-bsd plan-4 r4 #s-2; task 4.5 R1, 2026-10-19). The identity `error`,
+    which nobody read, is named here."""
     ident = binary_identity(rmx)
-    if ident.get("dev_tree"):
+    dev = ident.get("dev_tree")
+    if dev is False:
+        return None
+    if dev is True:
+        return (f"{rmx} is a dev tree: it imports {ident.get('import_path')} "
+                f"(a venv that belongs to another tree)")
+    return (f"{rmx} identity unknown: `{rmx} version -v --json` did not answer "
+            f"the identity JSON ({ident.get('error') or f'dev_tree={dev!r}'}); "
+            f"an unreadable binary is never assumed to be the deployed one")
+
+
+def _refuse_dev_tree(rmx: str) -> None:
+    """Raise unless `rmx` says it is not a dev tree. The message names the
+    CLI flag `--allow-dev` (`rmx daemon|hub launchctl install --allow-dev`),
+    not the Python parameter no operator can type (r4 #m-5, task 4.5 R3)."""
+    why = _identity_objection(rmx)
+    if why is not None:
         raise RuntimeError(
-            f"refusing to render a plist against a dev tree: {rmx} imports "
-            f"{ident.get('import_path')} (a venv that belongs to another tree). "
-            f"Run this with the deployed rmx, or pass allow_dev to install")
+            f"refusing to render a plist: {why}. Run this with the deployed rmx, "
+            f"or pass --allow-dev to `rmx daemon launchctl install` / "
+            f"`rmx hub launchctl install` / `rmx session launchctl install` to "
+            f"install against it anyway")
 
 
 def _rmx_path() -> str:
+    """THE binary every plist-writing command renders: the one the operator
+    actually ran.
+
+    1. `$RMX_BIN` when set (the explicit operator override).
+    2. Else `sys.argv[0]` made absolute with `os.path.abspath` — symlinks
+       NOT resolved, because the plist bakes `~/bin/rmx` as written — when
+       its basename is `rmx` / `refmatrix` and it is an executable file.
+    3. Else FileNotFoundError naming `sys.argv[0]` and `RMX_BIN`.
+
+    There is no `which rmx` fallback any more. From a dev shell `which rmx`
+    is a binary nobody ran: the daemon plist commands resolved it while the
+    hub resolved `sys.argv[0]`, so `rmx daemon launchctl install` refused
+    the deployed binary the operator typed because the PATH found a dev one
+    (ch-bsd plan-4 r5 #s-1, probe P1; task 4.6, 2026-10-19). bug-028 gave the
+    hub the argv[0] semantics; this makes them the ONE resolver."""
     override = os.environ.get("RMX_BIN")
     if override:
         return override
-    p = shutil.which("rmx")
-    if p:
-        return p
+    argv0 = sys.argv[0] if sys.argv else ""
+    if argv0:
+        cand = os.path.abspath(argv0)
+        if (os.path.basename(cand) in ("rmx", "refmatrix") and os.path.isfile(cand)
+                and os.access(cand, os.X_OK)):
+            return cand
     raise FileNotFoundError(
-        "`rmx` not found on PATH. Install refmatrix system-wide "
-        "(e.g. `pipx install refmatrix`) before generating a launchd "
-        "plist, or set $RMX_BIN to the absolute path."
+        f"cannot tell which rmx to render into a plist: this process was started "
+        f"as {argv0!r} (sys.argv[0]), which is not an `rmx`/`refmatrix` executable, "
+        f"and RMX_BIN is not set. Run the command with the rmx binary the plist "
+        f"should run (e.g. ~/bin/rmx), or set RMX_BIN to its absolute path."
     )
+
+
+def export_service_binary(*, log=None) -> "str | None":
+    """Export the binary THIS service runs as `RMX_BIN`, so every child it
+    spawns resolves the same one. Returns it, or None when it cannot be told.
+
+    `_rmx_path()` resolves `$RMX_BIN`, else `sys.argv[0]`. The hub UI's
+    "supervise (launchd)" step runs `python -m refmatrix.cli daemon launchctl
+    install`, whose argv[0] is `cli.py`, so the resolver refused it and the
+    project was never supervised (ch-bsd plan-4 r6 #b-1; task 4.6 R6-1,
+    2026-10-19). `rmx hub start` / `rmx daemon start` — the launchd
+    ProgramArguments and the parents of every spawned child — call this first.
+
+    An `RMX_BIN` already set (the operator's override, or inherited from the
+    parent service) is kept. A failure never raises — the service must start
+    anyway — and is SAID: through `log` when given, else on stderr. A child's
+    plist command then fails loudly at the resolver, as it should."""
+    cur = os.environ.get("RMX_BIN")
+    if cur:
+        return cur
+    try:
+        rmx = _rmx_path()
+    except FileNotFoundError as e:
+        msg = f"RMX_BIN not exported for this service's children: {e}"
+        if log is not None:
+            log(msg)
+        else:
+            sys.stderr.write(msg + "\n")
+        return None
+    os.environ["RMX_BIN"] = rmx
+    return rmx
+
+
+class CheckReason(str):
+    """Why a plist check failed, with what KIND of failure it is (ch-bsd
+    plan-4 r5 #m-1; task 4.6 M1, 2026-10-19).
+
+    `kind` is one of `identity` (the binary is not verified — never "fix" it
+    by reinstalling), `drift` (the installed plist or the loaded job differs
+    from the render), `missing` (no plist installed) or `unloaded` (current
+    plist, label not loaded). The CLI used to print every failure as `plist
+    DRIFT` and prescribe `install --force` / `relaunch-fleet` — both of which
+    refuse an unverified binary. A `str` subclass so callers and fakes that
+    return plain strings keep working; a plain string reads as drift
+    (`reason_kind`)."""
+
+    KINDS = ("identity", "drift", "missing", "unloaded")
+
+    def __new__(cls, text: str = "", kind: str = "drift") -> "CheckReason":
+        if kind not in cls.KINDS:
+            raise ValueError(f"CheckReason kind {kind!r} not in {cls.KINDS}")
+        obj = super().__new__(cls, text)
+        obj.kind = kind
+        return obj
+
+
+def reason_kind(why: str) -> str:
+    """`why.kind`, or `drift` for a plain string (a fake, an older caller)."""
+    return getattr(why, "kind", "drift")
+
+
+def plist_diff(have: dict, want: dict) -> "list[str]":
+    """Every key on which an installed plist differs from its render, as
+    `K: installed X != rendered Y` lines — the ONE diff for the daemon, hub
+    and session-indexer checks (three copies of this loop existed or were
+    about to; task 4.6 S3). A key missing from the installed plist reads
+    `installed None`, so a label rendered before `ExitTimeOut` existed names
+    it (r5 #s-3)."""
+    why: list[str] = []
+    he, we = have.get("EnvironmentVariables") or {}, want.get("EnvironmentVariables") or {}
+    for k in sorted(set(he) | set(we)):
+        if k not in he:
+            why.append(f"env {k} missing")
+        elif k not in we:
+            why.append(f"env {k} extra")
+        elif he[k] != we[k]:
+            why.append(f"env {k}: installed {he[k]!r} != rendered {we[k]!r}")
+    if have.get("ProgramArguments") != want.get("ProgramArguments"):
+        why.append(f"ProgramArguments: installed {have.get('ProgramArguments')} "
+                   f"!= rendered {want.get('ProgramArguments')}")
+    for k in sorted(set(have) | set(want)):
+        if k in ("EnvironmentVariables", "ProgramArguments"):
+            continue
+        if have.get(k) != want.get(k):
+            why.append(f"{k}: installed {have.get(k)!r} != rendered {want.get(k)!r}")
+    return why
 
 
 # The tool dirs a supervised daemon/hub needs, in lookup order: the user's own
@@ -198,7 +331,8 @@ def render_plist(root: Path, *, partition: str | None = None,
     (the project root). Pass an explicit list to watch additional paths
     such as the auto-memory dir alongside the project tree.
     `rmx` — the binary the job runs; the caller's resolved one, else
-    `$RMX_BIN` / `which rmx` (ch-bsd plan-4 r3 #s-4).
+    `_rmx_path()` (`$RMX_BIN`, else the binary this process ran — never
+    `which rmx`; r5 #s-1).
     """
     root = Path(root).resolve()
     label = label_for_root(root)
@@ -566,45 +700,32 @@ def check_hub(*, rmx: "str | None" = None, port: int = 7777,
     This did not exist. A drifted DAEMON plist is caught on every
     `relaunch-fleet`; nothing ever compared the hub's, so a hub plist aimed at
     a dev tree — or rendered before a key existed — survived every deploy
-    silently (bug-028). A dev-tree binary is named as drift that must NOT be
-    "fixed", exactly as `check` does: from a dev shell the render would
-    otherwise point the hub at the dev venv."""
+    silently (bug-028). A dev-tree or unknown binary is NOT drift: it is a
+    `CheckReason(kind="identity")`, which the CLI reports as "binary not
+    verified" and never prescribes a reinstall for (r5 #m-1, task 4.6)."""
     import plistlib
     rmx = rmx or _rmx_path()
-    ident = binary_identity(rmx)
-    if ident.get("dev_tree"):
-        return False, (f"{rmx} is a dev tree ({ident.get('import_path')}); the hub "
-                       f"plist is not rendered against it — run with the deployed rmx")
+    objection = _identity_objection(rmx)
+    if objection is not None:
+        # Not drift: `relaunch-fleet` "fixes" drift by reinstalling, and an
+        # unknown or dev binary must never be the one it reinstalls (r4 #s-2).
+        return False, CheckReason(
+            f"{objection}; the hub plist is not rendered against it — "
+            f"run with the deployed rmx", kind="identity")
     p = hub_plist_path()
     if not p.exists():
-        return False, f"{p} does not exist — `rmx hub launchctl install`"
+        return False, CheckReason(f"{p} does not exist — `rmx hub launchctl install`",
+                                  kind="missing")
     installed = p.read_bytes()
     rendered = render_hub_plist(port=port, host=host, rmx=rmx)
     if installed == rendered:
         if not hub_is_loaded():
-            return False, (f"{p} is current but {HUB_LABEL} is not loaded — "
-                           f"`rmx hub launchctl install`")
+            return False, CheckReason(f"{p} is current but {HUB_LABEL} is not loaded — "
+                                      f"`rmx hub launchctl install`", kind="unloaded")
         return True, ""
-    have = plistlib.loads(installed)
-    want = plistlib.loads(rendered)
-    why: list[str] = []
-    he, we = have.get("EnvironmentVariables") or {}, want.get("EnvironmentVariables") or {}
-    for k in sorted(set(he) | set(we)):
-        if k not in he:
-            why.append(f"env {k} missing")
-        elif k not in we:
-            why.append(f"env {k} extra")
-        elif he[k] != we[k]:
-            why.append(f"env {k}: installed {he[k]!r} != rendered {we[k]!r}")
-    if have.get("ProgramArguments") != want.get("ProgramArguments"):
-        why.append(f"ProgramArguments: installed {have.get('ProgramArguments')} "
-                   f"!= rendered {want.get('ProgramArguments')}")
-    for k in sorted(set(have) | set(want)):
-        if k in ("EnvironmentVariables", "ProgramArguments"):
-            continue
-        if have.get(k) != want.get(k):
-            why.append(f"{k}: installed {have.get(k)!r} != rendered {want.get(k)!r}")
-    return False, f"{p} drifted from its render: " + "; ".join(why or ["bytes differ"])
+    why = plist_diff(plistlib.loads(installed), plistlib.loads(rendered))
+    return False, CheckReason(f"{p} drifted from its render: "
+                              + "; ".join(why or ["bytes differ"]), kind="drift")
 
 
 def install(root: Path, *, partition: str | None = None,
@@ -645,8 +766,11 @@ def install(root: Path, *, partition: str | None = None,
         # with the grace: a clean stop exits 0, which KeepAlive
         # (SuccessfulExit: false) does not respawn, so the bootout then
         # unloads an idle job. Lazy import: daemon imports this module.
+        # The grace is `stop_grace_s()`, not the constant: reading
+        # EXIT_TIMEOUT_S here bypassed the operator's RMX_STOP_GRACE_S, the
+        # one override every other stop path honours (r4 #s-3, task 4.5 R2).
         from refmatrix import daemon as _daemon
-        _daemon.graceful_stop(root, grace=EXIT_TIMEOUT_S)
+        _daemon.graceful_stop(root, grace=_daemon.stop_grace_s())
         subprocess.run(_bootout_cmd(label), capture_output=True)
         if not _wait_loaded(root, expected=False, timeout=BOOTOUT_WAIT_S):
             raise RuntimeError(
@@ -730,56 +854,44 @@ def check(root: Path, *, rmx: "str | None" = None) -> "tuple[bool, str]":
     plists). Until 2026-09-14 nothing compared the two: `relaunch-fleet`
     restarted two stores on plists rendered before `RMX_SUPERVISED` existed
     and the supervised start on them exited 1 into the KeepAlive loop
-    (ch-bsd plan-4 r2 #b-1). Returns (True, "") or (False, why). The render
-    bakes `rmx` — the caller's binary — and a dev-tree binary is named as
-    drift that must NOT be "fixed" (r3 #s-4): from a dev shell every plist
-    read as drifted and `reinstall` would have pointed all eight at the
+    (ch-bsd plan-4 r2 #b-1). Returns (True, "") or (False, CheckReason). The
+    render bakes `rmx` — the caller's binary. A dev-tree or unknown binary is
+    `kind="identity"`, not drift (r3 #s-4, r5 #m-1): from a dev shell every
+    plist read as drifted and `reinstall` would have pointed all eight at the
     dev venv."""
     import plistlib
     rmx = rmx or _rmx_path()
-    ident = binary_identity(rmx)
-    if ident.get("dev_tree"):
-        return False, (f"{rmx} is a dev tree ({ident.get('import_path')}); the plists "
-                       f"are not rendered against it — run with the deployed rmx")
+    objection = _identity_objection(rmx)
+    if objection is not None:
+        # Not drift: `relaunch-fleet` -> `reinstall` would "fix" it by
+        # rewriting the plist to this binary (r4 #s-2).
+        return False, CheckReason(f"{objection}; the plists are not rendered against it — "
+                                  f"run with the deployed rmx", kind="identity")
     p = plist_path(root)
     try:
         flags = installed_flags(root)
     except FileNotFoundError as e:
-        return False, str(e)
+        return False, CheckReason(str(e), kind="missing")
     installed = p.read_bytes()
     rendered = render_plist(root, rmx=rmx, **flags)
     if installed == rendered:
         # The file is current; is the JOB? An installed-but-unloaded label
         # (bug-013) or a loaded job from an older definition is drift too.
         if not is_loaded(root):
-            return False, (f"{p} is current but its label {label_for_root(root)} is "
-                           f"not loaded — `rmx daemon launchctl install`")
+            return False, CheckReason(
+                f"{p} is current but its label {label_for_root(root)} is "
+                f"not loaded — `rmx daemon launchctl install`", kind="unloaded")
         drift = _loaded_env_drift(root, rendered)
         if drift:
-            return False, (f"{p} is current but the loaded job runs an older "
-                           f"definition: " + "; ".join(drift)
-                           + " — bootout/bootstrap needed (`rmx daemon launchctl install --force`)")
+            return False, CheckReason(
+                f"{p} is current but the loaded job runs an older definition: "
+                + "; ".join(drift)
+                + " — bootout/bootstrap needed (`rmx daemon launchctl install --force`)",
+                kind="drift")
         return True, ""
-    have = plistlib.loads(installed)
-    want = plistlib.loads(rendered)
-    why: list[str] = []
-    he, we = have.get("EnvironmentVariables") or {}, want.get("EnvironmentVariables") or {}
-    for k in sorted(set(he) | set(we)):
-        if k not in he:
-            why.append(f"env {k} missing")
-        elif k not in we:
-            why.append(f"env {k} extra")
-        elif he[k] != we[k]:
-            why.append(f"env {k}: installed {he[k]!r} != rendered {we[k]!r}")
-    if have.get("ProgramArguments") != want.get("ProgramArguments"):
-        why.append(f"ProgramArguments: installed {have.get('ProgramArguments')} "
-                   f"!= rendered {want.get('ProgramArguments')}")
-    for k in sorted(set(have) | set(want)):
-        if k in ("EnvironmentVariables", "ProgramArguments"):
-            continue
-        if have.get(k) != want.get(k):
-            why.append(f"{k}: installed {have.get(k)!r} != rendered {want.get(k)!r}")
-    return False, f"{p} drifted from its render: " + "; ".join(why or ["bytes differ"])
+    why = plist_diff(plistlib.loads(installed), plistlib.loads(rendered))
+    return False, CheckReason(f"{p} drifted from its render: "
+                              + "; ".join(why or ["bytes differ"]), kind="drift")
 
 
 def reinstall(root: Path, *, rmx: "str | None" = None) -> Path:
@@ -851,6 +963,67 @@ def kickstart(root: Path, *, restart: bool = False) -> str:
             f"{r.stderr.strip() or r.stdout.strip() or '(silent)'}"
         )
     return label
+
+
+def _watchdog_pause(root: Path, seconds: float, log) -> None:
+    """Tell the hub an operator is restarting `root` (a restart is not a
+    wedge): the hub's no-process branch kicked five relaunching daemons
+    inside launchd's ThrottleInterval on 2026-09-15 (ch-bsd plan-4 r3 #s-3).
+    `refmatrix.hub.rpc` is looked up at call time. A hub that is down is
+    said and the restart proceeds — never fatal, never silent."""
+    from refmatrix import hub as _hub
+    try:
+        _hub.rpc("pause", {"root": str(root), "seconds": float(seconds)}, timeout=3.0)
+    except Exception as e:  # noqa: BLE001 — said, then the restart proceeds
+        log(f"hub watchdog not paused ({type(e).__name__}: {e}); restarting anyway")
+
+
+def _watchdog_resume(root: Path, log) -> None:
+    from refmatrix import hub as _hub
+    try:
+        _hub.rpc("resume", {"root": str(root)}, timeout=3.0)
+    except Exception as e:  # noqa: BLE001 — said; the pause expires on its own
+        log(f"hub watchdog not resumed ({type(e).__name__}: {e}); "
+            f"the pause expires on its own")
+
+
+def supervised_restart(root: Path, *, log=print,
+                       after_kick=None) -> "tuple[str, bool]":
+    """Restart a launchd-supervised daemon the ONE way: pause the hub
+    watchdog for `root` (grace * 2 + 60 s), `daemon.graceful_stop` with
+    `stop_grace_s()`, `kickstart` WITHOUT -k when it stopped (a clean stop
+    exits 0, which KeepAlive SuccessfulExit:false does not respawn — the kick
+    starts it) and -k only when it ignored the stop — said, because that -k
+    is launchd's SIGTERM + SIGKILL at ExitTimeOut — then resume the watchdog
+    in a `finally`. Returns `(label, stopped)`.
+
+    Lifted unchanged out of `rmx daemon restart` (r3 #b-1) so `rmx upgrade`
+    stops hand-rolling a bare `kickstart -k` that SIGKILLed draining daemons
+    (ch-bsd plan-4 r5 #b-1; task 4.6, 2026-10-19). A `kickstart` failure
+    PROPAGATES: both callers report it, and neither falls through to a
+    standalone stop of a supervised daemon (bug-013's state).
+
+    `after_kick()`, when given, runs INSIDE the paused section, after the
+    kick and before the resume: `rmx daemon restart --relaunch` passes its
+    verify (and the verify's own clinging-predecessor `kickstart -k`), the
+    window r3 #s-3 paused the watchdog for. Run after the resume, the relaunch
+    was unpaused again (ch-bsd plan-4 r6 #s-1; task 4.6 R6-2). Its exception
+    propagates after the resume."""
+    from refmatrix import daemon as _daemon
+    grace = _daemon.stop_grace_s()
+    _watchdog_pause(root, grace * 2 + 60.0, log)
+    try:
+        stopped = _daemon.graceful_stop(root, grace=grace)
+        if not stopped:
+            log(f"predecessor still alive after the {grace:g}s grace; launchd "
+                f"kickstart -k will SIGTERM it and SIGKILL it at ExitTimeOut "
+                f"({EXIT_TIMEOUT_S:g}s)")
+        label = kickstart(root, restart=not stopped)
+        if after_kick is not None:
+            after_kick()
+    finally:
+        _watchdog_resume(root, log)
+    return label, bool(stopped)
 
 
 def status(root: Path) -> dict:

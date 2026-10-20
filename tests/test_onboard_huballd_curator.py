@@ -22,12 +22,14 @@ def home(monkeypatch):
 # ---- hub launchd plist ----
 
 
-def test_hub_plist_renders_valid():
+def test_hub_plist_renders_valid(deployed_rmx):
+    """On `deployed_rmx` (task 4.6 M2): it rendered against whatever `rmx` was on PATH, and
+    the assertion's `or "hub" in ...` let any binary through."""
     raw = launchctl.render_hub_plist(port=7799, host="127.0.0.1")
     data = plistlib.loads(raw)
     assert data["Label"] == "com.refmatrix.hub"
-    assert data["ProgramArguments"][:3] == [
-        launchctl._rmx_path(), "hub", "start"] or "hub" in data["ProgramArguments"]
+    assert data["ProgramArguments"][:3] == [str(deployed_rmx), "hub", "start"], \
+        data["ProgramArguments"]
     assert "--no-detach" in data["ProgramArguments"]
     assert "7799" in data["ProgramArguments"]
     assert data["RunAtLoad"] is True

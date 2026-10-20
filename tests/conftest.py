@@ -83,6 +83,45 @@ def pytest_sessionstart(session):
     _pyc_guard().enforce(_REPO / "src" / "refmatrix")
 
 
+@pytest.fixture
+def deployed_rmx(tmp_path, monkeypatch):
+    """The deployed environment, pinned (task 4.5; widened by task 4.6 M2).
+
+    Three inputs a plist / upgrade / relaunch test would otherwise take from whichever tree runs
+    it — the ambient `rmx` on PATH, `sys.argv[0]`, and the test interpreter's own identity, which
+    is "deployed" in the dev tree and "dev tree" in every clone (ch-bsd plan-4 r5 #m-2, #s-2):
+
+    - `RMX_BIN` -> a real script answering the identity JSON with `dev_tree: false` and an
+      `import_path` inside a tmp deploy-shaped tree. Its identity is asked for and cached HERE,
+      before a test fakes `subprocess.run` (the `_hub_install_fakes` state machine replaces the
+      process-wide function `binary_identity` execs through).
+    - `RMX_DEPLOY_ROOT` -> that tree (S2's deploy root).
+    - `upgrade.runtime_identity` -> the REAL classifier with its DEFAULT `prefix`/`import_file`
+      pointed at that tree's `.venv` and `src/refmatrix/__init__.py`. Explicit arguments pass
+      through untouched, so identity-under-test calls are unaffected."""
+    import functools
+    from refmatrix import launchctl
+    from refmatrix import upgrade as _up
+    from tests.fake_rmx import deploy_tree, identity_binary
+    tree = deploy_tree(tmp_path / "deployed-rmx")
+    init = tree / "src" / "refmatrix" / "__init__.py"
+    b = identity_binary(tmp_path / "deployed-rmx", dev_tree=False, import_path=str(init))
+    monkeypatch.setattr(launchctl, "_IDENTITY_CACHE", {})
+    ident = launchctl.binary_identity(str(b))
+    assert ident.get("dev_tree") is False, ident
+    monkeypatch.setenv("RMX_BIN", str(b))
+    monkeypatch.setenv("RMX_DEPLOY_ROOT", str(tree))
+    real = _up.runtime_identity
+
+    @functools.wraps(real)
+    def _deployed_identity(*, prefix=None, import_file=None):
+        return real(prefix=prefix if prefix is not None else tree / ".venv",
+                    import_file=import_file if import_file is not None else init)
+    monkeypatch.setattr(_up, "runtime_identity", _deployed_identity)
+    assert _up.runtime_identity()["dev_tree"] is False
+    return b
+
+
 @pytest.fixture(autouse=True)
 def _isolate_agent_bashrc(tmp_path, monkeypatch):
     """Keep install() from touching the real ~/.claude/agent-bashrc.sh."""
@@ -169,6 +208,31 @@ def _sandbox_store_root(monkeypatch):
     monkeypatch.setenv("REFMATRIX_ROOT", str(root))
     yield
     rmx_sandbox.remove_tree(root.parent)
+
+
+def _sandbox_pointer_dir() -> Path:
+    """`stm.pointer_dir()`'s location, computed the way it is (21.1 D3: `<hub.global_store_root()>
+    /by-pid/`) without calling it -- `pointer_dir()` creates the dir, and a fixture must not."""
+    from refmatrix import hub
+    return Path(hub.global_store_root()) / "by-pid"
+
+
+@pytest.fixture(autouse=True)
+def _fresh_pointer_dir():
+    """21.1 D3 moved the session pointers and their `_errors.jsonl` to USER-level state
+    (`<global store root>/by-pid/`): ONE dir for the whole sandbox, shared by every test and
+    every child process. Left alone it carried state from test to test (bug-132: a corrupt-sink
+    test wrote non-UTF-8 bytes into `_errors.jsonl` and six later AC-4 tests raised
+    UnicodeDecodeError; bug-133: an in-process input-hook test left a pointer for the runner's
+    real Claude pid that `test_mcp_focus_tool` then resolved). Every test starts with NO pointer
+    dir -- the state the sandbox's freshly initialised global store has at session start -- and
+    `pointer_dir()` recreates it on first use; children see the same reset because they resolve
+    it from the same `$RMX_HOME`. Removing (not symlinking a tmp dir in) keeps the production
+    layout. A test that sets its own `RMX_HOME` has its own pointer dir and is untouched."""
+    d = _sandbox_pointer_dir()       # captured: teardown must not follow a test's own RMX_HOME
+    rmx_sandbox.remove_tree(d)
+    yield
+    rmx_sandbox.remove_tree(d)
 
 
 # R6 (ch-bsd r1 b2, 2026-10-15): every skip is NAMED here, or the session fails

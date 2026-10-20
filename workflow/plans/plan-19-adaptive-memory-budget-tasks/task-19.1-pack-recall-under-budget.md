@@ -266,3 +266,19 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r8-23ad703]]
 | finding / decision | answered at |
 |---|---|
 | round-8 #nm-7 (`store.py:2618`) | [[#why]] (`Store.upsert_subject`, `store.py:2692`) |
+
+## Folded riders: plan-2 r9 #s-2 and #m-4 (2026-10-19) {#w1c-riders}
+
+Folded in by [[plan-review-2026-10-14#t11-folded-waves]] (W1-c). Both concern the recall budget
+this task owns.
+
+rel: derives-from -> [[bsd-plan2-hooks-reproducible-r9-ffed3df]]
+
+- **#s-2.** Rerank can consume the global leg's share of the budget, after which recall only
+  warns "global rows omitted" (`cli.py` `_warn(...)`). Under 19.1's packer the global leg has a
+  reserved share that rerank cannot spend; an omitted global leg is counted in the recall row,
+  not only warned. AC: with a reranker stub that takes the whole budget, the global leg still
+  answers within its share (or its omission is recorded with a reason). {#w1c-s2}
+- **#m-4.** The degrade line names the 1.5 s `RECALL_DAEMON_SLICE_S` slice as "the budget". The
+  line names the slice and the total budget separately. AC: the rendered degrade line contains
+  both numbers, each labelled. {#w1c-m4}
