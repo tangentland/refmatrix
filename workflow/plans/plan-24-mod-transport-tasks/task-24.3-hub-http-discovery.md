@@ -55,6 +55,7 @@ installed. Neither is the mod's surface as it stands. {#why-lead}
 | d11 | Discovery answers the 24.1 record VERBATIM plus live state (up / busy / absent by `discovery.daemon_status`) and never spawns anything | busy ≠ absent; spawning is the mod's D4 decision with the project's rmx, not the hub's |
 | d12 | Discovery of a store with no daemon and no identity file answers `state: "absent", identity: null` and names `rmx_bin` from the hub's own registry row when one exists, else null | the mod must refuse visibly rather than guess a binary |
 | d13 | The global store's daemon does not bind `rmxd-http.sock` | its verbs are served here (d6); two doors to the global store would be two ways to do X |
+| d14 | The hub has NO job lane in plan-24. A `tier="both"` verb served on the hub (`scope="global"`) runs SYNCHRONOUSLY with its budget clamped to 25 s, through `global_write`'s budgeted path (status probe, spawn and the one write all inside the budget, a timeout worded "not confirmed"); a (verb, action) whose declared timeout (24.2a R13) is over 25 s or unbounded is REFUSED on the hub with 422 `HubJobUnsupported` naming the limit and the CLI command that runs it. A hub job lane is a 24.8 follow-up candidate | `global_write(timeout=…)` already bounds the whole global write, so the writes the mod sends (add, promote, forget, retag, link) fit in 25 s; adding a job lane, a durable ledger and polling to the hub is a second copy of 24.2 R13 for actions nobody calls from a session today (r4, ch-bsd r3 s4) |
 
 ## Requirements {#requirements}
 
@@ -96,6 +97,11 @@ installed. Neither is the mod's surface as it stands. {#why-lead}
    (the mod backs off), never queues a long-poll behind long-polls. {#r7}
 8. **R8 — telemetry.** One row per request, 24.2 R9's shape, into the hub home's `cli.log`
    (global store root). {#r8}
+9. **R9 — global writes within 25 s (d14).** On the hub, a `tier="both"` verb gets `timeout =
+   min(caller deadline_s, 25)`; its global path uses `global_write(..., timeout=…)`. A request for a
+   (verb, action) whose declared timeout exceeds 25 or is None answers 422 `HubJobUnsupported`
+   (`message` names the action, the 25 s limit and the `rmx memory … --global` command), and
+   `mode: "submit"` on the hub answers the same. {#r9}
 
 ## Acceptance criteria {#acceptance}
 
@@ -119,6 +125,10 @@ installed. Neither is the mod's surface as it stands. {#why-lead}
    `wake: false`; with no message it returns empty at its `timeout_s` (set to 1 s in the test);
    17 concurrent waits leave the 17th answered 503. {#ac-5}
 6. **AC-6 (d13).** The global store's daemon has no `rmxd-http.sock`. {#ac-6}
+7. **AC-7 (R9, d14).** On the hub: `rmx_memory(action="promote", scope="global")` with a held
+   global daemon answers 503 "not confirmed within 25s" at ~25 s; `rmx_memory(action="dedup",
+   scope="global")` (declared 120 s) answers 422 `HubJobUnsupported` without running; a
+   `mode: "submit"` request answers 422 too. {#ac-7}
 
 ## Test strategy {#test-strategy}
 
@@ -144,4 +154,10 @@ hub: the suite's isolation from live sockets ([[project_suite_reaches_live_socke
 | finding | change |
 |---|---|
 | m5 the cursor / ack wording contradicted itself | R6: the wait is a pure read that never advances the cursor; acknowledgement is `rmx_bus_mark_read` after acting; unacknowledged messages are returned again |
+
+## Revision r4 (2026-10-20, ch-bsd r3 6d3575b) {#rev-r4}
+
+| finding | change |
+|---|---|
+| s4 the hub had no job lane for `scope=global` long writes | d14 / R9: synchronous within 25 s through `global_write`'s budget, longer actions refused with `HubJobUnsupported`; hub job lane listed as a 24.8 candidate; AC-7 |
 

@@ -135,6 +135,20 @@ name) and must be believed. {#why-lead}
     reaches is asserted by recording `_call` ops during each verb's existing test, write ops being
     those not in `daemon.CLI_OPS` or in `CLI_WRITE_OPS`); (c) `set(mcp.TOOLS) == {model verbs}`.
     {#r12}
+13. **R13 — timeouts are declared, not buried (r4, ch-bsd r3 s3).** `@verb` gains `timeouts:
+    dict[str, float | None]`, keyed by action (`"*"` for a verb without actions; `None` =
+    deliberately unbounded), holding every default bound the verb's body applies today. This
+    CHANGES 3.7's verbs after it merges and is this task's requirement, not a 3.7 amendment. At
+    3.7's tree the declared values are at least: `rmx_graph` recall / dense 180, timeline 60,
+    describe / stats 10; `rmx_canon` link 60; `rmx_curate` forget 600 (preview and purge, 3.7
+    R-RM5); `rmx_memory` read actions 10, write actions 120; `rmx_memory_recall` 30 (its legs' 60 /
+    180 / 30 / 120 caps become `timeouts` keys `leg:*` the body reads); `rmx_context` 60;
+    `rmx_query` 30; `rmx_save_state` None; `rmx_session` list 60. Bodies read
+    `verbs.verb_timeout(name, action, key="*")` instead of a literal, and `ACTION_DEFAULTS`'
+    `timeout` rows move into `timeouts`. The values join `verb_schema()` (24.1 R1), so the schema
+    hash changes when a bound does. A parity test parses every verb body (`ast`) and fails on a
+    numeric literal passed as `timeout=`, to `_left(...)`, or as the `else` of a `timeout`
+    conditional. {#r13}
 
 ## Acceptance criteria {#acceptance}
 
@@ -164,6 +178,9 @@ name) and must be believed. {#why-lead}
 7. **AC-7 (R11, R12).** The three structural gates of R12 fail on a deliberately broken copy
    (a verb copy that calls the resolver without a `session` param; a write verb left
    `writes=False`) and pass on the tree. {#ac-7}
+8. **AC-8 (R13).** The AST gate fails on a copied verb body containing `timeout=60.0` and passes on
+   the tree; `verb_schema()` carries `timeouts` for every verb; changing `rmx_graph`'s recall
+   timeout changes that verb's hash; `verb_timeout("rmx_curate", "forget")` is 600.0. {#ac-8}
 
 ## Test strategy {#test-strategy}
 
@@ -192,4 +209,10 @@ the existing `_pingonlydaemon` / `_silentdaemon` fixture. {#test-strategy-body}
 | s9 `rmx_shell_rewrite` / `rmx_grep_teach` built here, wired in 24.6, retired in 24.8 | R8 removed; AC-5 replaced; `search_hooks.py` row dropped; listed in 24.8's candidates |
 | s3 reason / say double-record | R3 `row_uuid` with a restart-proof duplicate drop; new AC-5 |
 | s5 curator drain per prompt | no change here: `rmx_curator(action="status")` is 3.7's verb; 24.6 d15 calls status only |
+
+## Revision r4 (2026-10-20, ch-bsd r3 6d3575b) {#rev-r4}
+
+| finding | change |
+|---|---|
+| s3 the mode rule could not be computed: timeouts are literals in verb bodies | R13: `@verb(timeouts=…)` per action, bodies read them, they join the schema hash, an AST parity gate forbids literals; stated as 24.2a's change to 3.7's merged verbs; AC-8 |
 

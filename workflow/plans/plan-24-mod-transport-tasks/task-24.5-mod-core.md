@@ -59,7 +59,7 @@ guessing the session, and without ever spawning over a busy daemon. {#why-lead}
 | d11 | Outbox overflow drops the OLDEST entry and raises a toast, a transcript line and a status count every time; nothing is dropped silently | "decay may demote, never lose" cannot hold for a client queue with a hard cap, so the loss is made loud instead |
 | d12 | Pane and bus wake live here (ch-bsd s5): `/rmx` opens the pane; a long-poll loop on `rmx_bus_wait` turns a wake message into `$.prompt.submit` | G5 had no home; both are core surfaces, not context injection |
 | d13 | Collision with a `refmatrix` MCP server: every `$.tool.register` is wrapped in `try`, so its throw ("the session already has an MCP server named …") never skips the rest of `session.start`; a collision registers nothing further and says so once; every `mcp__refmatrix__*` `tool.call` handler calls `next(e)` for a tool the mod did not register in THIS session, so the MCP server keeps serving its own tools | batch 2 #p7: the register throws and skips the hook, and a plugin's `tool.call` hook intercepts `mcp__<name>__*` calls even for tools it never registered; 24.8 removes the server (r3) |
-| d16 | Every mod verb call carries `deadline_s ≤ 25`. A (verb, action) whose effective default timeout is over 25 s, or unbounded, runs SUBMIT-THEN-POLL through 24.2 R13 (`mode: "submit"` → a job id; `rmx_job(job_id, wait_s ≤ 20)` until done), each fetch under 25 s; the rule is computed by `modgen` into `ROUTES[name].modes` per action from the verb's defaults and `ACTION_DEFAULTS`, so a new long action cannot be served synchronously by accident | the engine aborts every `$.http.fetch` at 30 s (batch 2 #p5); a synchronous 60-180 s verb would always fail (r3) |
+| d16 | Every mod verb call carries `deadline_s ≤ 25`. A (verb, action) whose effective default timeout is over 25 s, or unbounded, runs SUBMIT-THEN-POLL through 24.2 R13 (`mode: "submit"` → a job id; `rmx_job(job_id, wait_s ≤ 20)` until done), each fetch under 25 s; the rule is computed by `modgen` into `ROUTES[name].modes` per action from the verb's DECLARED `@verb(timeouts=…)` (24.2a R13; an AST gate forbids literal timeouts in bodies), so a new long action cannot be served synchronously by accident. Every submitted write carries an idempotency key, and a write job lost to a restart is re-submitted once with the same key (24.4 `client.ts`) | the engine aborts every `$.http.fetch` at 30 s (batch 2 #p5); a synchronous 60-180 s verb would always fail (r3) |
 | d17 | After `/clear` (no `session.start`, `$.state` wiped, timers alive: batch 2 #p8) the mod detects the new session by a `$.session.id()` change on the next tick or hook and RE-SEEDS `refmatrix.focus` / `refmatrix.health` from the store (`rmx_store_identity`, `rmx_focus(context)`) | the state is a projection; the store holds the truth, so re-seeding loses nothing (r3) |
 | d14 | Tunables are `userConfig` fields in `plugin.json` (rows in `/config`, read as `register`'s `options`; a change reloads the module with new options); no env-var-only knobs on the mod path | the engine's own settings surface, stored per plugin under `pluginConfigs`; a picker for enumerations |
 
@@ -97,7 +97,7 @@ guessing the session, and without ever spawning over a busy daemon. {#why-lead}
    | `rmx_session` list | 60 s | submit-then-poll |
    | `rmx_canon` link | 60 s | submit-then-poll |
    | `rmx_curate` forget (preview, purge) | 600 s (3.7 R-RM5) | submit-then-poll |
-   | `rmx_memory` write actions (promote, dedup, bulk_forget, score, link, …) | 120 s | submit-then-poll |
+   | `rmx_memory` write actions (promote, dedup, bulk_forget, score, link, …) | 120 s | submit-then-poll on the STORE; with `scope="global"` (served by the hub, which has no job lane) synchronous within 25 s through `global_write`'s budget, or refused `HubJobUnsupported` for an action declared over 25 s (24.3 d14) |
    | `rmx_save_state` | unbounded | submit-then-poll |
    | `rmx_context` | 60 s op bound, rerank budgeted inside | sync at 25 s (an unreranked answer comes back with its warning before then) |
    | `rmx_query`, `rmx_memory_recall` | 30 s | sync at 25 s (recall's legs scale by `_left`, degraded legs are warnings) |
@@ -110,7 +110,8 @@ guessing the session, and without ever spawning over a busy daemon. {#why-lead}
    busy, 4 → absent dependency, 5 → error, other → `HostError` with stderr's first line. The
    spawn's own `cli.log` row carries 24.0's spawn split (interp / reexec / import), so 24.0's after
    window counts it. A spawn timeout is busy. {#r4}
-5. **R5 — `$.state` (d6, d7).** `refmatrix.focus = { session, subject, top: string[], updated }`
+5. **R5 — `$.state` (d6, d7).** `refmatrix.focus = { session, subject, top: string[], updated,
+   promptSeq: number }` (`promptSeq`: 24.6 d16's per-session prompt counter, reset on a new session)
    (written from `rmx_focus` after each turn by 24.6 and at the handshake here);
    `refmatrix.health = { store, state, pid, version, modVersion, skew, schemaSkipped: string[],
    queueDepth, outbox, lastFastExit, crashes5m, hub: "up" | "down", httpError }`. Writes use
@@ -183,7 +184,12 @@ guessing the session, and without ever spawning over a busy daemon. {#why-lead}
 16. **R16 — re-seed after `/clear` (d17).** Every hook and the tick compare `$.session.id()` with
     the last seen id; on a change: reset per-session module state, re-seed `refmatrix.focus` and
     `refmatrix.health` from the store, restart the per-session prompt counter (24.6 d16), and
-    re-key the bus loop and outbox (d1). {#r16}
+    re-key the bus loop (d1). Two things are NOT per-session and are never reset or rewritten here:
+    the set of tools registered in the engine (PROCESS-scoped: registration happened once at
+    `session.start` and the tools stay registered across `/clear`; only R11's collision path leaves
+    it empty), and queued outbox entries, which keep the session they were recorded under (only
+    NEW entries take the new id), so an old session's STM events are never attributed to the new
+    one. {#r16}
 
 ## Acceptance criteria {#acceptance}
 
@@ -206,7 +212,10 @@ guessing the session, and without ever spawning over a busy daemon. {#why-lead}
 6. **AC-6 (R8, d9-d11).** An engine write that fails absent + spawn-failed is enqueued with a key;
    the next tick with the daemon up replays it once with that key; a model tool write in the same
    state returns an error result and enqueues nothing; filling past 2,000 entries drops the oldest
-   with a toast and a transcript line each time; the status shows `outbox:N`. {#ac-6}
+   with a toast and a transcript line each time; the status shows `outbox:N`. An outbox replay
+   answered 425 `InFlight` (24.2 d10) stays queued, is retried after `Retry-After` / the backoff,
+   and is neither dropped nor counted as a schema mismatch; when the retry answers `replayed`, the
+   entry leaves the outbox. {#ac-6}
 7. **AC-7 (R9, R10).** `/rmx` opens the pane and it draws focus / bus unread from `$.state`; a
    `wake` message from a mocked `rmx_bus_wait` causes exactly one `$.prompt.submit` and a second
    within 60 s none (coalesced into the next); a non-wake causes a toast and no submit. {#ac-7}
@@ -228,10 +237,12 @@ guessing the session, and without ever spawning over a busy daemon. {#why-lead}
 12. **AC-12 (R1, R10, d1 — r2 b1).** Simulated `/clear`: `session.end` reason `clear`, then
     `$.session.id()` answers a new id. The mocked clock still fires the health tick, the next
     `rmx_store_identity` and `rmx_bus_wait` requests carry the NEW session / agent, 24.6's
-    `RMX_MOD_LIVE` was set within the last 15 s, and the outbox and `$.state` `health` / `focus`
-    are keyed to the new id. Because `/clear` WIPES `$.state` (batch 2 #p8), the simulation also
+    `RMX_MOD_LIVE` was set within the last 15 s, and `$.state` `health` / `focus` and NEW outbox
+    entries are keyed to the new id. Because `/clear` WIPES `$.state` (batch 2 #p8), the simulation also
     resets every `refmatrix.*` value to version 0; after the next tick they are re-seeded from the
-    store (R16). {#ac-12}
+    store (R16). After the simulated clear, a model call to a tool registered before it is still
+    answered by the mod (not passed to `next(e)`), and an outbox entry queued before the clear is
+    replayed with its ORIGINAL session while one queued after carries the new id. {#ac-12}
 13. **AC-13 (d4 — r2 b2).** Through `$.tool.call({ tool: "mcp__refmatrix__rmx_context", ref:
     "x" })` under `claude plugin test`, with `http.fetch` answered by a recorded 24.2 body holding a
     real verb dict: the call resolves with `text` equal to `JSON.stringify(dict)` and no engine
@@ -287,4 +298,15 @@ nothing, logged to `workflow/review-output/task24_5-red.log`. {#test-strategy-bo
 | a same-named MCP server makes `$.tool.register` throw and skip `session.start`; the plugin's `tool.call` hook intercepts its tools | d13 / R11: register in `try`, handlers pass `next(e)` for unregistered tools; AC-8 with a real `.mcp.json` server |
 | `/clear` wipes `$.state`, fires no `session.start`, changes the id | d17 / R16: re-seed on an id change; AC-12 wipes state in the simulation |
 | `$.state` / `$.session.id()` shared with subagents; interactive `/clear` parity | R12: P-sub-state and P-interactive answered ([[plan-24-mod-transport#probes-batch2]]) |
+
+## Revision r4 (2026-10-20, ch-bsd r3 6d3575b) {#rev-r4}
+
+| finding | change |
+|---|---|
+| s3 modes could not be computed from `ACTION_DEFAULTS` | d16: modes come from `@verb(timeouts=…)` (24.2a R13) via `modgen` |
+| s2 submitted writes had no key | d16: every submitted write is keyed; re-submit once with the same key on `UnknownJob` (24.4 client) |
+| s4 global long writes had no hub job lane | R3 table: `scope="global"` writes are synchronous within 25 s or refused `HubJobUnsupported` (24.3 d14) |
+| s5 `InFlight` vs 409 | AC-6: an outbox replay meeting 425 `InFlight` is retried after backoff, never dropped |
+| s6 the re-seed could empty the registered-tool set and re-attribute queued writes | R16: the registered set is process-scoped and untouched; queued outbox entries keep their session; AC-12 |
+| m2 `promptSeq` missing from the contract | R5: `refmatrix.focus.promptSeq` |
 

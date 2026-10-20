@@ -1,0 +1,5 @@
+2026-10-20T18:51:39.825Z [DEBUG] hooks module dup@inline not loaded: another plugin of that name loads first (a managed one, or an earlier source)
+2026-10-20T18:51:39.947Z [DEBUG] hooks module dup@inline loaded (worker, environment 1, tier user); events: session.start,tool.call
+2026-10-20T18:51:39.950Z [DEBUG] plugin.register: dup (user, dup@inline), judged by core alone: admitted
+2026-10-20T18:51:41.140Z [DEBUG] hooks module dup@inline session.start settled in 37.5ms (worker hop, next() included)
+2026-10-20T18:51:44.688Z [DEBUG] hooks module dup@inline tool.call settled in 0.9ms (worker hop, next() included)

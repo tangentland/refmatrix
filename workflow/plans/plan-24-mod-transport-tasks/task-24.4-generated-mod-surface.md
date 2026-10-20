@@ -63,15 +63,26 @@ the busy / absent rule (busy never spawns, D4) needs a twin held to the original
    - `mod/src/generated/verbs.ts` — `SCHEMA_HASH`, `VERB_HASHES: Record<string, string>`,
      `TOOLS: readonly ToolSpec[]` (`name`, `description`, `inputSchema` = the verb's schema,
      `isDeferred` = `deferred`), `ROUTES: Record<string, { tier: "store" | "hub" | "both";
-     surface: "model" | "engine"; writes: boolean | readonly string[]; hash: string }>`;
+     surface: "model" | "engine"; writes: boolean | readonly string[]; hash: string; timeouts:
+     Record<string, number | null>; modes: Record<string, "sync" | "submit"> }>`. `timeouts` is
+     the verb's declared `@verb(timeouts=…)` (24.2a R13); `modes` is computed from it per action
+     (`"*"` for a verb without actions): `submit` when the timeout is over 25 or null, else
+     `sync` — the one place 24.5 d16's rule is evaluated;
    - `mod/src/generated/client.ts` — `callVerb($, target, name, args, opts)` where `target` is
      `{ socketPath }`, `opts` = `{ session, caller?, deadlineS?, idempotencyKey? }` (`deadlineS` capped at 25);
      POSTs 24.2 R5's body to `http://rmx/v1/verbs/<name>` with `X-Rmx-Schema`, awaits the fetch
      (no race, d7), parses 24.2 R6's body, and returns `{ ok: true, result }` or throws
-     a typed error from `errors.ts`;
+     a typed error from `errors.ts`. For a `submit` (verb, action) it sends `mode: "submit"` (with
+     `idempotencyKey`, REQUIRED for a write: the client generates one when the caller gave none),
+     expects `202 { job_id }`, then polls `rmx_job(job_id, wait_s: 20)` until `done` / `error`
+     (each fetch under 25 s), up to the action's timeout; on `UnknownJob` it re-submits a keyed
+     write ONCE with the same key (24.2 R13) and reports a read as lost; a 425 `InFlight` waits
+     `Retry-After` and retries;
    - `mod/src/generated/errors.ts` — `VerbArgsError`, `SessionRequired`, `SessionUnresolved`,
-     `SchemaMismatch` (with both hashes), `VerbBusyError`, `VerbAbsentError` (a dependency, with
-     `subject`), `VerbError`, `HostError` (500), and `TransportAbsent` / `TransportBusy` /
+     `SchemaMismatch` (409, with both hashes), `InFlight` (425), `NotConfirmed` (503, the "may still
+     complete / may have completed" wording), `UnknownJob` (410), `HubJobUnsupported` (422, 24.3
+     d14), `VerbBusyError`, `VerbAbsentError` (a dependency, with `subject`), `VerbError`,
+     `HostError` (500), and `TransportAbsent` / `TransportBusy` /
      `TransportUndialable` (from the twin), each with `status`, `type`, `message`;
    - `mod/src/generated/transport_cases.ts` and `discovery_cases.ts` — the case tables (R4, and
      24.3 R3's cwd table).
@@ -135,7 +146,14 @@ the busy / absent rule (busy never spawns, D4) needs a twin held to the original
    `verb-schema.json`, `verbs.ts` (a new tool for a model verb, none for an engine verb) and the
    hash header. RED at base (no generator). {#ac-1}
 2. **AC-2 (R1).** `TOOLS` holds exactly the model verbs; every description ≤ 2,048; `ROUTES` has
-   every verb, `rmx_focus_observe` as engine / store / writes, `rmx_where` as model / hub. {#ac-2}
+   every verb, `rmx_focus_observe` as engine / store / writes, `rmx_where` as model / hub;
+   `ROUTES.rmx_graph.modes.recall == "submit"` and `.describe == "sync"`, `rmx_save_state` is
+   `submit` (null timeout), matching 24.5 R3's table. `client.ts` under `claude plugin test`, with
+   `http.fetch` answered beneath: a `submit` call sends `mode: "submit"` and a generated key, gets
+   202, polls `rmx_job` until `done` and returns the result; a 410 `UnknownJob` on a write leads to
+   exactly one re-submit with the SAME key; a 425 is retried after `Retry-After`; each status of
+   24.2 R6 maps to its `errors.ts` class (409 → `SchemaMismatch`, 425 → `InFlight`, never the
+   other). {#ac-2}
 3. **AC-3 (R3, R4, R5).** pytest's Python half and `claude plugin test`'s TS half both pass over
    the same case table; `eval/mod_probe/fetch_rejections.json` exists with the engine version, and
    every `ts.rejection` in the table equals a probe record. A table row whose TS class differs from
@@ -185,4 +203,11 @@ AC-1 / AC-4 is a fixture, listed in `workflow/test_mock_registry.md`. RED first,
 | fetch failures are a `HooksError` with the errno only in the message | R3 parses the message; R4 uses the probe's exact strings |
 | the engine aborts any fetch at 30 s; a race does not cancel it | d7: no race; the abort is a fifth shape, busy / not confirmed; client `deadlineS` capped at 25 |
 | P-fetch answered in part | R5: answered cases recorded; regular file, reset, 101 / 104 bytes still to run |
+
+## Revision r4 (2026-10-20, ch-bsd r3 6d3575b) {#rev-r4}
+
+| finding | change |
+|---|---|
+| s3 `ROUTES` had no `modes`; `client.ts` could not submit or poll | R1: `timeouts` and computed `modes` in `ROUTES`; `client.ts` submit / 202 / poll, keyed re-submit on `UnknownJob`, 425 retry; AC-2 |
+| s5 `InFlight` collided with 409 | R1 `errors.ts`: `InFlight` 425, plus `NotConfirmed`, `UnknownJob`, `HubJobUnsupported`; AC-2 maps each status to one class |
 

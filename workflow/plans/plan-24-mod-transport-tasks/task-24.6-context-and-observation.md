@@ -167,9 +167,13 @@ never fired (unprobed). {#event-map-lead}
     deploys, 24.0's after window opens; the deploy sha is recorded in the implementation summary
     for the report's `--since`. {#r10}
 11. **R11 — compaction (d12).** `session.compact` matched on trigger `manual` and `auto`, main
-    loop: the two verbs in order, each bounded (30 s), then `return next(e)` with the event
-    received; a failure is a transcript line and compaction proceeds (never `{ skip }`). The two
-    moved PreCompact entries take the guard class `compact`. {#r11}
+    loop: `rmx_focus(summarize, promote=True)` (synchronous, `deadline_s` 25), then
+    `rmx_save_state(...)`, which is a SUBMITTED write (24.5 R3: its timeout is unbounded) sent with
+    a JOB deadline of 30 s and an idempotency key (24.2 R13, d13); the hook polls `rmx_job` until
+    `done`, or until the job answers `NotConfirmed` at 30 s, which becomes one transcript line
+    ("pre-compact save-state not confirmed within 30s; it may still complete") while compaction
+    proceeds. Then `return next(e)` with the event received; never `{ skip }`. The two moved
+    PreCompact entries take the guard class `compact`. {#r11}
 12. **R12 — the subagent route (d17).** `mod/src/subagent.ts`: the `agent.spawn` hook appends the
     brief and returns `next(...)`'s answer unchanged; a failure passes `next(e)` with a debug line.
     Subagent STM events (24.2a observe) carry `agent_id` from `tool.call` / `turn.complete`. {#r12}
@@ -191,8 +195,8 @@ never fired (unprobed). {#event-map-lead}
    `prompt.section` for core's `memory` passes through untouched. {#ac-4}
 5. **AC-5 (R6, d8, d9).** The marker is set before `session.start`'s first `$.http.fetch` (op
    order), and with `health_interval_s = 600` it is still refreshed every 10 s. Rendering the hook
-   block: every moved, probed entry starts with its class guard, SubagentStop's does not, unmoved
-   ones do not; under `bash -c` with `RMX_MOD_LIVE=$(date +%s)` and the class listed, a guarded
+   block: every moved, probed entry starts with its class guard, SubagentStop's included (d9: batch 2
+   showed `turn.complete` fires with `agentId`), unmoved ones do not; under `bash -c` with `RMX_MOD_LIVE=$(date +%s)` and the class listed, a guarded
    entry exits 0 without running `rmx` (a recording `rmx` on `PATH` shows no call); with the marker
    60 s old it runs. `rmx install-hooks --check` is clean after `--apply` on a fixture project.
    {#ac-5}
@@ -212,9 +216,10 @@ never fired (unprobed). {#event-map-lead}
     note, compaction, notice), `next` is called with the same object; and through the engine, a
     Read of a fixture file containing secret-shaped strings followed by an Edit of an unrelated
     line leaves every other byte of the file unchanged. {#ac-10}
-11. **AC-11 (R11).** A mocked `session.compact` (`auto`) issues the summarize then the save-state
-    request, then calls `next` with an event deep-equal to its input; `precompute` issues neither;
-    a failed save-state still calls `next`. {#ac-11}
+11. **AC-11 (R11).** A mocked `session.compact` (`auto`) issues the summarize request, then a
+    save-state request with `mode: "submit"`, `deadline_s: 30` and an idempotency key, polls
+    `rmx_job`, then calls `next` with an event deep-equal to its input; a job answering
+    `NotConfirmed` writes the transcript line and still calls `next`; `precompute` issues neither. {#ac-11}
 12. **AC-12 (R10, d16).** Requests from AC-1, AC-3, AC-9 and AC-11 carry `hook_event`
     `UserPromptSubmit`, `PreToolUse` / `PostToolUse`, `SessionAppend` / `Stop`, `PreCompact`, and
     a `prompt_id` `<session>:<n>` that increments once per `prompt.submit` and restarts at 1 after
@@ -277,4 +282,11 @@ RED first, logged to `workflow/review-output/task24_6-red.log`. {#test-strategy-
 | `skill.prompt` never fired | event map and R7: unprobed |
 | `$.env.set` reaches settings hooks under `-p` | R7 P-env answered for `-p`; d10's env mechanism generated; SessionStart and interactive still open |
 | `prompt.section` re-runs every prompt interactively | R7 P-section: the answer must stay the same text between `classic.SessionStart`s |
+
+## Revision r4 (2026-10-20, ch-bsd r3 6d3575b) {#rev-r4}
+
+| finding | change |
+|---|---|
+| s1 how R11's 30 s applies to a submitted save-state | R11: a write job with a 30 s job deadline and a key; `NotConfirmed` at expiry is a transcript line and compaction proceeds; AC-11 |
+| s7 AC-5 still said SubagentStop is unguarded | AC-5 aligned with d9: SubagentStop's entry carries the guard |
 

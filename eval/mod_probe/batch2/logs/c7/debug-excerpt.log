@@ -1,0 +1,17 @@
+2026-10-20T18:52:44.262Z [DEBUG] Checking plugin pc: skillsPath=none, skillsPaths=0 paths
+2026-10-20T18:52:44.363Z [DEBUG] MCP server "pc": Starting connection with timeout of 30000ms
+2026-10-20T18:52:44.414Z [DEBUG] hooks module pc@inline loaded (worker, environment 1, tier user); events: session.start,tool.call
+2026-10-20T18:52:44.417Z [DEBUG] plugin.register: pc (user, pc@inline), judged by core alone: admitted
+2026-10-20T18:52:44.465Z [DEBUG] MCP server "pc": Successfully connected (transport: stdio) in 127ms
+2026-10-20T18:52:44.465Z [DEBUG] MCP server "pc": Connection established with capabilities: {"hasTools":true,"hasPrompts":false,"hasResources":false,"hasResourceSubscribe":false,"serverVersion":{"name":"pc","version":"0.1"},"protocolEra":"legacy","negotiatedProtocolVersion":"2025-11-25"}
+2026-10-20T18:52:44.465Z [DEBUG] [MCP] Server "pc" connected with subscribe=false
+2026-10-20T18:52:44.671Z [ERROR] hook failed: pc: errorKind=HooksError errorChars=117 (session.start; skipped; what is below it ran in its place)
+2026-10-20T18:52:44.671Z [ERROR] pc: session.start hook skipped: threw pc: $.tool.register: the session already has an MCP server named "pc" in its MCP config; registering would replace it
+2026-10-20T18:52:44.689Z [DEBUG] hooks module pc@inline session.start settled in 26.6ms (worker hop, next() included)
+2026-10-20T18:52:48.646Z [DEBUG] hooks module pc@inline tool.call settled in 0.9ms (worker hop, next() included)
+2026-10-20T18:52:48.663Z [DEBUG] MCP server "pc": Calling MCP tool: only_mcp
+2026-10-20T18:52:48.665Z [DEBUG] MCP server "pc": Tool 'only_mcp' completed successfully in 2ms
+2026-10-20T18:52:50.265Z [DEBUG] MCP server "pc": Sending SIGINT to MCP server process
+2026-10-20T18:52:50.286Z [DEBUG] MCP server "pc": STDIO connection closed after 5s (cleanly)
+2026-10-20T18:52:50.287Z [DEBUG] MCP server "pc": Cleared connection cache for reconnection
+2026-10-20T18:52:50.316Z [DEBUG] MCP server "pc": MCP server process exited cleanly
