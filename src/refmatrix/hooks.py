@@ -23,7 +23,13 @@ from pathlib import Path
 # Prefix for every Claude-hook command so cli.log tags the invocation form as
 # `hook` (telemetry "by form" axis). Exported so it reaches every rmx in a
 # compound command.
-HOOK_ENV = "export RMX_INVOCATION_SOURCE=hook; "
+# Every generated hook command starts with this. The two fork-safety variables are exactly
+# what `cli._reexec_for_fork_safety` sets before re-exec'ing on macOS; exporting them here
+# means a hook-run `rmx` skips that re-exec — one interpreter start per hook, not two
+# (task 3.7 remedy r1 R-OBJC, user decision 2026-10-20).
+HOOK_ENV = ("export RMX_INVOCATION_SOURCE=hook; "
+            "export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; "
+            "export TOKENIZERS_PARALLELISM=false; ")
 
 GIT_HOOK_SCRIPTS: dict[str, str] = {
     "post-commit": r"""#!/usr/bin/env bash
@@ -178,10 +184,10 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
     sess_cmd = (
         HOOK_ENV
         + "( " + " ; ".join(bg_parts) + " ) & disown ; "
-        # stderr is NOT discarded (task 3.7, CLAUDE.md#no-silent-failures): a curator
-        # spool warning or failure reaches the agent; `|| true` keeps the hook from
-        # failing the session.
-        "rmx curator status --drain || true"
+        # stderr is NOT discarded (task 3.7, CLAUDE.md#no-silent-failures), and the hook
+        # does NOT drain (remedy r1 R-B1): the line is the reminder until the gmd-curator
+        # drains by token. `|| true` keeps the hook from failing the session.
+        "rmx curator status || true"
     )
 
     block = {
@@ -241,8 +247,9 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
         scan_cmd = (
             HOOK_ENV
             + f"rmx scan-prompt{composite} --max-tokens 2000 --timeout 5 2>/dev/null || true ; "
-            # stderr kept (task 3.7): curator failures reach the agent; `|| true` stays.
-            "rmx curator status --drain || true"
+            # stderr kept, no drain (task 3.7 remedy r1 R-B1): the count shows until the
+            # gmd-curator drains by token; `|| true` stays.
+            "rmx curator status || true"
         )
         block["hooks"]["UserPromptSubmit"] = [
             {

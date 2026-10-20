@@ -66,6 +66,13 @@ def write_spool(root: Path, paths: "list[str]", *, reason: str = "fs-change") ->
         fh.flush()
         os.fsync(fh.fileno())
     os.rename(tmp, d / name)
+    # The rename is durable only once the DIRECTORY entry is (remedy r1 R-L): a crash
+    # after an un-synced rename can lose the new name.
+    dfd = os.open(d, os.O_RDONLY)
+    try:
+        os.fsync(dfd)
+    finally:
+        os.close(dfd)
     return name
 
 
@@ -119,7 +126,14 @@ def _parse_spool_bytes(raw: bytes) -> "tuple[list[dict], int]":
         try:
             row = json.loads(ln)
         except json.JSONDecodeError:
-            bad += 1
+            # A pre-spool `curator.queue` line may be a bare PATH (the format the old
+            # fixtures and some writers used); adopted into the spool it is a legacy
+            # entry, not noise (task 3.7 remedy r1 R-M2). Broken JSON stays bad.
+            text = ln.strip()
+            if text[:1] in ("{", "[", '"'):
+                bad += 1
+                continue
+            entries.append({"ts": None, "path": text, "reason": "legacy"})
             continue
         if not isinstance(row, dict) or not isinstance(row.get("path"), str) or not row["path"]:
             bad += 1
@@ -159,7 +173,9 @@ def read_spool(root: Path, *, max_entries: "int | None" = 500) -> dict:
             full = True
             break
         token.append(name)
-        entries.extend(rows)
+        # Each entry names the spool file it came from, so a caller that shows only
+        # part of a read can drain exactly the files it showed in full (remedy r1 R-B1).
+        entries.extend({**r, "file": name} for r in rows)
         if bad:
             warnings.append(f"{bad} unparseable line(s) in spool file {name} skipped "
                             f"(expected one {{ts, path, reason}} JSON object per line)")

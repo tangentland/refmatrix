@@ -9006,9 +9006,9 @@ def _curator_verb(**kw) -> dict:
 
 @curator.command("status")
 @click.option("--drain", is_flag=True,
-              help="Drain exactly the spool files this status read (status, then "
-                   "drain(token)). Use from hooks that only need to fire once per "
-                   "pending change.")
+              help="Operator form: read at most --limit entries and drain only the "
+                   "spool files whose every entry this call printed. The generated "
+                   "hooks do NOT drain — the gmd-curator's `drain --token` does.")
 @click.option("--quiet-when-empty", is_flag=True, default=True,
               help="Print nothing if the queue is empty (default on). "
                    "Useful from SessionStart so the hook is silent on "
@@ -9030,39 +9030,49 @@ def curator_status(drain: bool, quiet_when_empty: bool, limit: int, as_json: boo
     files this status read: a flush that lands after it waits for the next one
     (task 3.7 #fam-refine-drain — the old drain deleted entries nobody read).
     """
-    out = _curator_verb(action="status", max_entries=max_entries)
+    # `--drain` reads at most `--limit` entries (whole files) and drains only the files
+    # whose every entry this call PRINTED (task 3.7 remedy r1 R-B1: the hook form drained
+    # 15 entries after showing 10, so the curator's `status --json → drain --token`
+    # flow never saw the 5).
+    out = _curator_verb(action="status",
+                        max_entries=min(limit, max_entries) if drain else max_entries)
     for w in out.get("warnings") or []:
         click.echo(f"rmx curator: {w}", err=True)
+    root = _root()
+
+    def _rel(p: str) -> str:
+        try:
+            return str(Path(p).resolve().relative_to(root.parent))
+        except ValueError:
+            return p
+    rels = sorted({_rel(e["path"]) for e in out.get("entries") or [] if e.get("path")})
+    shown = set(rels[:limit])
     if as_json:
         click.echo(json.dumps(out))
+    elif not rels:
+        if not quiet_when_empty:
+            console.print("curator queue: empty")
     else:
-        root = _root()
-        paths = sorted({e.get("path", "") for e in out.get("entries") or [] if e.get("path")})
-        if not paths:
-            if not quiet_when_empty:
-                console.print("curator queue: empty")
-        else:
-            project_root = root.parent
-            rels: list[str] = []
-            for p in paths:
-                try:
-                    rels.append(str(Path(p).resolve().relative_to(project_root)))
-                except ValueError:
-                    rels.append(p)
-            sample = rels[:limit]
-            overflow = max(0, len(rels) - limit)
-            left = (out.get("spool") or {}).get("remaining_files") or 0
-            # Plain stdout — hook surfaces this as additional Claude context.
-            click.echo(
-                f"curator-queue: {len(rels)} curator-relevant file change(s) since "
-                f"last drain. Spawn `gmd-curator` (ingest mode) to cross-link, "
-                f"surface drift, and crystallize. Paths: "
-                + ", ".join(sample)
-                + (f", +{overflow} more" if overflow else "")
-                + (f" ({left} more spool file(s) not read yet)" if left else "")
-            )
+        overflow = max(0, len(rels) - limit)
+        left = (out.get("spool") or {}).get("remaining_files") or 0
+        # Plain stdout — hook surfaces this as additional Claude context.
+        click.echo(
+            f"curator-queue: {len(rels)} curator-relevant file change(s) since "
+            f"last drain. Spawn `gmd-curator` (ingest mode) to cross-link, "
+            f"surface drift, and crystallize. Paths: "
+            + ", ".join(rels[:limit])
+            + (f", +{overflow} more" if overflow else "")
+            + (f" ({left} more spool file(s) not read yet)" if left else "")
+        )
     if drain and out.get("token"):
-        _curator_verb(action="drain", token=out["token"])
+        if as_json:
+            done = list(out["token"])
+        else:
+            unshown = {e.get("file") for e in out.get("entries") or []
+                       if e.get("path") and _rel(e["path"]) not in shown}
+            done = [f for f in out["token"] if f not in unshown]
+        if done:
+            _curator_verb(action="drain", token=done)
 
 
 def _expand_drain_token(values) -> "list[str]":
