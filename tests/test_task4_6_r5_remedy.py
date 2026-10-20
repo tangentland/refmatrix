@@ -749,3 +749,256 @@ def test_relaunch_fleet_refuses_an_unverified_binary_once_and_touches_no_store(
     assert r.exit_code == 1, r.output
     assert "not verified" in r.output, r.output
     assert "--allow-dev" not in r.output and "drift" not in r.output.lower(), r.output
+
+
+# ==== r6 amendment (ch-bsd plan-4 r6, a710e48): spec #r6-amend, AC-28..AC-35 ===============
+
+def _clear_rmx_bin(monkeypatch) -> None:
+    """Unset RMX_BIN in a way monkeypatch UNDOES: `export_service_binary` writes os.environ
+    directly, and a bare `delenv` of an absent var records nothing to restore."""
+    monkeypatch.setenv("RMX_BIN", "placeholder")
+    monkeypatch.delenv("RMX_BIN")
+
+
+def _service_binary(tmp_path: Path, monkeypatch) -> Path:
+    """A deployed-identity `rmx` this process 'was started as' (argv[0]), RMX_BIN unset."""
+    b = identity_binary(tmp_path, dev_tree=False, name="svc")
+    lc.binary_identity(str(b))
+    _clear_rmx_bin(monkeypatch)
+    monkeypatch.setattr(sys, "argv", [str(b), "hub", "start", "--no-detach"])
+    return b
+
+
+def test_export_service_binary_exports_the_binary_the_service_runs(tmp_path, monkeypatch):
+    """AC-28. At HEAD: no such function."""
+    b = _service_binary(tmp_path, monkeypatch)
+    assert lc.export_service_binary() == str(b)
+    assert os.environ.get("RMX_BIN") == str(b)
+    monkeypatch.setenv("RMX_BIN", "/explicit/bin/rmx")
+    assert lc.export_service_binary() == "/explicit/bin/rmx"
+    assert os.environ["RMX_BIN"] == "/explicit/bin/rmx", "an operator's RMX_BIN was overwritten"
+
+
+def test_export_service_binary_never_raises_for_a_module_run_process(tmp_path, monkeypatch):
+    """AC-28. A service started as `python -m refmatrix.cli` cannot name its binary: it says
+    so (log) and starts anyway. At HEAD: no such function."""
+    _clear_rmx_bin(monkeypatch)
+    monkeypatch.setattr(sys, "argv", [str(Path(cli_mod.__file__)), "hub", "start"])
+    logs: list = []
+    assert lc.export_service_binary(log=logs.append) is None
+    assert "RMX_BIN" not in os.environ
+    assert logs and "RMX_BIN" in logs[0], logs
+
+
+def test_hub_and_daemon_start_export_their_binary_before_serving(root, tmp_path, monkeypatch):
+    """AC-29. The launchd ProgramArguments are `~/bin/rmx hub|daemon start --no-detach`; by the
+    time the service runs, every child it spawns would inherit RMX_BIN. At HEAD: None."""
+    from refmatrix import hub as hub_mod
+    b = _service_binary(tmp_path, monkeypatch)
+    seen: dict = {}
+    monkeypatch.setattr(hub_mod.Hub, "run",
+                        lambda self, **kw: seen.__setitem__("hub", os.environ.get("RMX_BIN")))
+    r = CliRunner().invoke(cli_mod.main, ["hub", "start", "--no-detach", "--no-http"])
+    assert r.exit_code == 0, r.output
+    _clear_rmx_bin(monkeypatch)
+    monkeypatch.setattr(sys, "argv", [str(b), "daemon", "start", "--no-detach"])
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    monkeypatch.setattr(dm, "serve_foreground",
+                        lambda r, **kw: seen.__setitem__("daemon", os.environ.get("RMX_BIN")))
+    r = CliRunner().invoke(cli_mod.main, ["daemon", "start", "--no-detach"])
+    assert r.exit_code == 0, r.output
+    assert seen == {"hub": str(b), "daemon": str(b)}, seen
+
+
+@pytest.mark.timeout(180)
+def test_hub_ui_supervise_installs_a_plist_naming_the_hubs_binary(tmp_path, monkeypatch):
+    """AC-30, the r6 #b-1 path: the Projects tab's "supervise (launchd)" runs
+    `python -m refmatrix.cli daemon launchctl install`, whose argv[0] is cli.py. At HEAD the
+    child env carries no RMX_BIN and the resolver refuses (`cannot tell which rmx`)."""
+    from fastapi.testclient import TestClient
+    from refmatrix import hub as hub_mod
+    from refmatrix.ui import server as srv
+    b = _service_binary(tmp_path, monkeypatch)
+    # the hub process starts as the binary (export happens at `rmx hub start`)
+    monkeypatch.setattr(hub_mod.Hub, "run", lambda self, **kw: None)
+    assert CliRunner().invoke(cli_mod.main, ["hub", "start", "--no-detach", "--no-http"]).exit_code == 0
+    proj = Path(tempfile.mkdtemp(prefix="rmx46ui-", dir="/tmp"))
+    try:
+        children: list = []
+
+        def fake_run(argv, *a, **kw):
+            argv = [str(x) for x in argv]
+            if argv[:3] == [sys.executable, "-m", "refmatrix.cli"]:
+                children.append((argv, dict(kw.get("env") or os.environ), kw.get("cwd")))
+                return subprocess.CompletedProcess(argv, 0, "ok", "")
+            return _real_run(argv, *a, **kw)
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(sys, "platform", "darwin")
+        monkeypatch.setattr(discovery, "discover_roots", lambda: [])
+        monkeypatch.setattr(discovery, "all_projects", lambda with_footprint=True: [])
+        monkeypatch.setattr(discovery, "register_root", lambda r: None)
+        resp = TestClient(srv.create_app(hub_mod.Hub(port=0))).post(
+            "/api/projects/init", json={"path": str(proj), "hooks": False, "launchd": True})
+        assert resp.status_code == 200, resp.text
+        sup = [c for c in children if c[0][3:] == ["daemon", "launchctl", "install"]]
+        assert sup, children
+        argv, env, cwd = sup[0]
+        assert env.get("RMX_BIN") == str(b), f"the supervise child gets no binary: {env.get('RMX_BIN')}"
+        monkeypatch.setattr(subprocess, "run", _real_run)
+
+        # Replay that child in-process, as it runs: argv[0] = cli.py, the env it was handed.
+        store = proj / ".refmatrix"; store.mkdir(exist_ok=True)
+        monkeypatch.setattr(sys, "argv", [str(Path(cli_mod.__file__)), *argv[3:]])
+        for k in ("RMX_BIN",):
+            monkeypatch.setenv(k, env[k])
+        monkeypatch.setattr(cli_mod, "_root", lambda: store)
+        ld = _Launchd(monkeypatch, tmp_path)
+        r = CliRunner().invoke(cli_mod.main, argv[3:])
+        assert r.exit_code == 0, r.output
+        written = plistlib.loads(lc.plist_path(store).read_bytes())
+        assert written["ProgramArguments"][0] == str(b), written["ProgramArguments"]
+        assert "bootstrap" in ld.verbs(), ld.calls
+        monkeypatch.setattr(subprocess, "run", _real_run)
+
+        # A REAL `-m refmatrix.cli` child with that env resolves the binary (read-only --check).
+        real = _real_run([sys.executable, "-m", "refmatrix.cli", "daemon", "launchctl",
+                          "install", "--check"], cwd=str(proj), env={**env},
+                         capture_output=True, text=True, timeout=120)
+        out = real.stdout + real.stderr
+        assert "cannot tell which rmx" not in out, out
+    finally:
+        shutil.rmtree(proj, ignore_errors=True)
+
+
+def test_supervised_restart_runs_the_verify_inside_the_pause(root, monkeypatch):
+    """AC-31. At HEAD: TypeError — no `after_kick`; the verify ran after the resume."""
+    calls = _launchd_fakes(monkeypatch, stopped=True)
+    lc.supervised_restart(root, log=lambda m: None,
+                          after_kick=lambda: calls.append(("verify", None)))
+    ops = [c[0] for c in calls]
+    assert ops.index("pause") < ops.index("graceful_stop") < ops.index("kickstart") \
+        < ops.index("verify") < ops.index("resume"), calls
+
+
+def test_supervised_restart_resumes_when_the_verify_raises(root, monkeypatch):
+    """AC-31. At HEAD: TypeError — no `after_kick`."""
+    calls = _launchd_fakes(monkeypatch, stopped=True)
+
+    class _VerifyFailed(Exception):
+        pass
+
+    def verify():
+        calls.append(("verify", None))
+        raise _VerifyFailed("relaunch did not converge")
+    with pytest.raises(_VerifyFailed):
+        lc.supervised_restart(root, log=lambda m: None, after_kick=verify)
+    ops = [c[0] for c in calls]
+    assert ops.index("verify") < ops.index("resume"), calls
+
+
+def test_daemon_restart_relaunch_verifies_before_the_watchdog_resumes(root, monkeypatch,
+                                                                     deployed_rmx):
+    """AC-31, the r6 probe: at HEAD the order is pause, graceful_stop, kickstart, RESUME,
+    verify — the relaunch window r3 #s-3 paused the watchdog for is unpaused."""
+    from refmatrix import __version__
+    calls = _launchd_fakes(monkeypatch, stopped=True)
+    mine = str(upgrade.runtime_identity()["import_path"])
+
+    def served(r, timeout=2.0):
+        calls.append(("verify", None))
+        return (777, __version__) if any(c[0] == "kickstart" for c in calls) else None
+    monkeypatch.setattr(dm, "served_identity", served)
+    monkeypatch.setattr(dm, "call", lambda r, op, args=None, *, timeout=60.0, retries=2:
+                        {"ok": True, "result": {"code_path": mine, "dev_tree": False, "pid": 777}})
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    r = CliRunner().invoke(cli_mod.main, ["daemon", "restart", "--relaunch"])
+    assert r.exit_code == 0, r.output
+    ops = [c[0] for c in calls]
+    last_verify = len(ops) - 1 - ops[::-1].index("verify")
+    assert ops.index("kickstart") < last_verify < ops.index("resume"), calls
+
+
+@pytest.mark.parametrize("fails", ["kickstart", "graceful_stop"])
+def test_upgrade_restart_resumes_the_watchdog_on_every_failure(fails, root, monkeypatch):
+    """AC-32, kills mutant M4 (resume moved out of the `finally`). GREEN at HEAD by design."""
+    calls = _supervised(monkeypatch, stopped=True)
+    if fails == "kickstart":
+        monkeypatch.setattr(lc, "kickstart", _boom_kickstart)
+    else:
+        def boom(r, *, grace, report=None):
+            calls.append(("graceful_stop", grace))
+            raise OSError("stop op exploded")
+        monkeypatch.setattr(dm, "graceful_stop", boom)
+    assert upgrade._default_restart(root, log=lambda m: None) is False
+    assert "resume" in [c[0] for c in calls], f"watchdog left paused after a {fails} failure: {calls}"
+
+
+def test_session_force_install_raises_when_the_bootout_does_not_unload(root, tmp_path, monkeypatch,
+                                                                      deployed_rmx):
+    """AC-33, kills mutant M10 (the unload wait dropped). GREEN at HEAD by design."""
+    ld = _Launchd(monkeypatch, tmp_path)
+    p = _session_plist(root, exit_timeout=False)
+    before = p.read_bytes()
+    label = slc.label_for_root(root)
+    ld.loaded.add(label)
+    real = ld.run
+
+    def sticky(argv, *a, **kw):
+        out = real(argv, *a, **kw)
+        if [str(x) for x in argv][:2] == ["launchctl", "bootout"]:
+            ld.loaded.add(label)            # the old job is still draining: still loaded
+        return out
+    monkeypatch.setattr(subprocess, "run", sticky)
+    with pytest.raises(RuntimeError, match="did not unload"):
+        slc.install(root, force=True)
+    assert p.read_bytes() == before, "the plist was rewritten under a still-loaded label"
+    assert "bootstrap" not in ld.verbs(), ld.calls
+
+
+def _dev_ident() -> dict:
+    return {"version": "9.9.9", "import_path": Path("/dev/src/refmatrix/__init__.py"),
+            "code_root": Path("/dev"), "venv_tree": Path("/dev"),
+            "editable_target": Path("/dev/src"), "dev_tree": True,
+            "deploy_root": Path("/deploy"), "dev_reason": "not-deploy-tree"}
+
+
+def test_version_verbose_words_the_dev_tree_through_the_one_message(monkeypatch):
+    """AC-34. At HEAD `_print_code_identity` says "this venv belongs to another tree" — rule
+    (a)'s words for a venv whose editable install is correct."""
+    monkeypatch.setattr(upgrade, "runtime_identity", lambda **kw: _dev_ident())
+    monkeypatch.setattr(upgrade, "dev_tree_message", lambda ident: "SENTINEL-DEV-TREE-MESSAGE")
+    out = CliRunner().invoke(cli_mod.main, ["version", "-v"]).output
+    assert "SENTINEL-DEV-TREE-MESSAGE" in out, out
+    assert "this venv belongs to another tree" not in out, out
+
+
+def test_relaunch_dev_tree_refusal_words_it_through_the_one_message(root, monkeypatch):
+    """AC-34. At HEAD: "a venv that belongs to … is running another tree; fix the editable
+    install first"."""
+    from refmatrix import __version__
+    calls = _launchd_fakes(monkeypatch, stopped=True)
+    monkeypatch.setattr(upgrade, "runtime_identity", lambda **kw: _dev_ident())
+    monkeypatch.setattr(upgrade, "dev_tree_message", lambda ident: "SENTINEL-DEV-TREE-MESSAGE")
+    monkeypatch.setattr(dm, "served_identity", lambda r, timeout=2.0: (
+        (777, __version__) if any(c[0] == "kickstart" for c in calls) else None))
+    monkeypatch.setattr(dm, "call", lambda r, op, args=None, *, timeout=60.0, retries=2: {
+        "ok": True, "result": {"code_path": "/dev/src/refmatrix/__init__.py",
+                               "dev_tree": True, "dev_reason": "not-deploy-tree", "pid": 777}})
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    r = CliRunner().invoke(cli_mod.main, ["daemon", "restart", "--relaunch"])
+    assert r.exit_code != 0, r.output
+    assert "SENTINEL-DEV-TREE-MESSAGE" in r.output, r.output
+    assert "fix the editable install first" not in r.output, r.output
+
+
+def test_daemon_ping_carries_the_dev_reason(tmp_path, monkeypatch):
+    """AC-35. At HEAD the ping carries `dev_tree` and no reason."""
+    monkeypatch.setattr(dm, "_PROCESS_IDENTITY", None)
+    monkeypatch.setattr(upgrade, "runtime_identity", lambda **kw: _dev_ident())
+
+    class D:
+        root = tmp_path
+        store = None
+    res = dm._op_ping(D(), {})
+    assert res["dev_tree"] is True
+    assert res.get("dev_reason") == "not-deploy-tree", res

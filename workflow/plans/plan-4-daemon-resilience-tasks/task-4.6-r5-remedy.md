@@ -492,3 +492,116 @@ RED evidence: `workflow/review-output/task4.6-red.log`. Every new test is proven
 `419ef6e` for the reason named in its docstring.
 
 rel: depends-on -> [[test_mock_registry]]
+
+## r6 amendment {#r6-amend}
+
+The ch-bsd r6 audit of `a710e48` came back DIRTY with 5 findings: 1 BULLSHIT, 1 SKETCHY and
+3 MEH. The orchestrator's decisions below are final. RED tests are in
+`tests/test_task4_6_r5_remedy.py` under the `r6` banner. Evidence is in
+`workflow/review-output/task4.6-r6-red.log` and `task4.6-r6-mutants.log`. The r6 #m-3
+bookkeeping (the summary's `## Suite` and the registry's `internal-pending` row) belongs to the
+implementer and is not a test.
+
+rel: derives-from -> [[bsd-plan4-daemon-resilience-r6-a710e48]]
+rel: derives-from -> [[bsd-plan4-daemon-resilience-r6-a710e48#b-1]]
+rel: derives-from -> [[bsd-plan4-daemon-resilience-r6-a710e48#s-1]]
+rel: derives-from -> [[bsd-plan4-daemon-resilience-r6-a710e48#m-1]]
+rel: derives-from -> [[bsd-plan4-daemon-resilience-r6-a710e48#m-2]]
+rel: amends -> [[#s1]]
+rel: amends -> [[#b1]]
+
+### R6-1 — a service exports the binary it runs; its children inherit it (r6 #b-1) {#r6-1}
+
+The hub UI's "supervise (launchd)" step (`ui/server.py:189-202`) runs `python -m refmatrix.cli
+daemon launchctl install`. That child's `sys.argv[0]` is `cli.py`, so `_rmx_path()` refuses it
+and the project is never supervised. This worked at `419ef6e` through `which rmx`.
+
+Decision (converge): **`launchctl.export_service_binary(*, log=None) -> str | None`.**
+
+- When `RMX_BIN` is already set, it returns that value unchanged.
+- Otherwise it resolves `_rmx_path()`. On success it sets `os.environ["RMX_BIN"]` and returns
+  the value.
+- If resolution fails it never raises, because a service must start anyway. It returns None,
+  leaves `RMX_BIN` unset, and passes the resolver's reason to `log` when one is given. Any plist
+  command a child runs then fails loudly at the resolver, as it does today.
+
+`rmx hub start` and `rmx daemon start` call it first thing, before branching. These are the
+launchd `ProgramArguments` (`~/bin/rmx hub start --no-detach`, `~/bin/rmx daemon start
+--no-detach`), and they are also the parents of the detached `spawn_hub` fork and the
+`spawn_daemon` launcher. Every child the service spawns therefore inherits the service's binary.
+
+Sweep of `src/` child spawns at `a710e48`. Each child inherits `os.environ`, so each resolves to
+the service binary once the parent has exported it.
+
+| Site | Child | Reaches the resolver? |
+|------|-------|-----------------------|
+| `ui/server.py:191` `project_init.run` | `sys.executable -m refmatrix.cli init / install-hooks --apply / daemon launchctl install` | **yes**: `daemon launchctl install` (the r6 #b-1 path) |
+| `ui/server.py:578` ws op runner | `sys.executable -m refmatrix.cli {ingest,embed,sync,vacuum,checkpoint,reingest}` | no (allow-list); inherits anyway |
+| `scheduler.py:131` `Scheduler._run` | `sys.executable -m refmatrix.cli {curator scan, ingest ., <op>}` | no; inherits anyway |
+| `daemon.py:6764` `spawn_daemon_subprocess` | `sys.executable -m refmatrix.cli [-p P] daemon start …` | no, but its child is `daemon start`, which itself exports (a no-op when inherited) |
+| `subproc.py:262` | `python -m refmatrix.embed_worker` | no (not the CLI) |
+| `cli.py:14565` fork-safety re-exec | `os.execv(sys.executable, [sys.executable, *sys.argv])` | keeps the original `argv[0]` |
+| `gmd_curator.py:66` | `sys.executable <lint.py>` | no (not refmatrix) |
+| `hub.spawn_hub` | `os.fork()` → `Hub.run` | inherits `os.environ` |
+
+### R6-2 — the relaunch verify runs inside the watchdog pause (r6 #s-1) {#r6-2}
+
+`supervised_restart(root, *, log=print, after_kick=None)`. When `after_kick` is given, it is
+called inside the paused section. The order is pause → `graceful_stop` → `kickstart` →
+`after_kick()` → resume, with resume in the `finally`. An exception from `after_kick` propagates
+after the resume. `rmx daemon restart --relaunch` passes its `_verify_relaunch(...)`, and with
+it verify's own clinging-predecessor `kickstart -k`. That restores the `419ef6e` coverage that r3
+#s-3 added.
+
+### R6-3 — the two surviving mutants get tests (r6 #m-1) {#r6-3}
+
+- **M4:** move the resume out of the `finally`. A `kickstart` that raises and a `graceful_stop`
+  that raises, both through `upgrade._default_restart`, each still resume the watchdog.
+- **M10:** drop the session bootout-unload wait. A bootout that leaves the session label loaded
+  makes `session_launchctl.install(force=True)` raise `did not unload`, and the plist is unchanged.
+
+### R6-4 — one message for the dev-tree rule; the ping carries the reason (r6 #m-2) {#r6-4}
+
+- `_print_code_identity` (`rmx version -v`, `rmx daemon status`, `rmx hub status`) words its
+  `[DEV TREE]` explanation with `upgrade.dev_tree_message(ident)`, given the identity it has.
+- So does `_verify_relaunch`'s `[DEV TREE]` refusal. It no longer says "this venv belongs to
+  another tree" or "fix the editable install first" on its own account.
+- The daemon ping (`_op_ping`, via `_process_identity`) carries `dev_reason`. `_verify_relaunch`
+  can then name the daemon's reason too.
+
+### Acceptance criteria (r6) {#r6-acceptance}
+
+- **AC-28 (R6-1)** {#ac-28} `export_service_binary`:
+  - with `argv[0]` an executable `rmx` and `RMX_BIN` unset, it sets and returns `RMX_BIN`;
+  - an existing `RMX_BIN` is kept;
+  - an `argv[0]` of `cli.py` returns None, raises nothing, and leaves `RMX_BIN` unset.
+- **AC-29 (R6-1)** {#ac-29} `rmx hub start --no-detach` and `rmx daemon start --no-detach`, run
+  with `argv[0]` = the binary and `RMX_BIN` unset, have exported it by the time `Hub.run` /
+  `serve_foreground` runs.
+- **AC-30 (R6-1)** {#ac-30} A hub-UI supervise call (`POST /api/projects/init {"launchd":
+  true}`), made from a hub started as the binary:
+  - hands its `-m refmatrix.cli daemon launchctl install` child an env whose `RMX_BIN` is that
+    binary;
+  - replaying that child's argv and env (`argv[0]` = `cli.py`) against a faked launchd writes a
+    plist whose `ProgramArguments[0]` is the binary;
+  - a REAL `-m refmatrix.cli … install --check` child with that env resolves the binary, not
+    `cannot tell which rmx`.
+- **AC-31 (R6-2)** {#ac-31} `supervised_restart(after_kick=)`:
+  - runs pause → `graceful_stop` → `kickstart` → `after_kick` → resume;
+  - a raising `after_kick` still resumes, and the exception propagates;
+  - `rmx daemon restart --relaunch`'s last verify (`served_identity`) happens before the resume.
+- **AC-32 (R6-3, kills M4)** {#ac-32} When `kickstart` raises, and separately when
+  `graceful_stop` raises, `upgrade._default_restart` returns False and the watchdog is resumed.
+  This is GREEN at HEAD by design. It is proven to fail against mutant M4.
+- **AC-33 (R6-3, kills M10)** {#ac-33} When a bootout leaves the session label loaded,
+  `session_launchctl.install(force=True)` raises `did not unload` and the plist is unchanged.
+  This is GREEN at HEAD by design. It is proven to fail against mutant M10.
+- **AC-34 (R6-4)** {#ac-34}
+  - With `upgrade.dev_tree_message` replaced by a sentinel, `rmx version -v` on a dev identity
+    prints the sentinel and not "this venv belongs to another tree".
+  - `rmx daemon restart --relaunch` with a dev CLI identity fails with the sentinel in its
+    message.
+  - The wording's source is pinned, not its literal text.
+- **AC-35 (R6-4)** {#ac-35} `daemon._op_ping` carries `dev_reason` from `runtime_identity`.
+
+rel: depends-on -> [[test_mock_registry]]
