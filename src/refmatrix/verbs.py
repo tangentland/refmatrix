@@ -2842,6 +2842,9 @@ CLI_MAP: dict[str, "tuple[str, ...] | None"] = {
     "rmx_curator": ("curator", "status"),
     "rmx_graph": ("neighbors",),
     "rmx_canon": ("canon", "find"),
+    "rmx_matrix": ("add", "concept"),
+    "rmx_session": ("session", "list"),
+    "rmx_refine": ("refine", "list"),
 }
 # How each twin is WIRED to its verb (asserted by test_verb_parity.py by
 # recording the call while the click command runs — ch-bsd plan-3 r1 #bs-1
@@ -2928,6 +2931,19 @@ CLI_ACTIONS: dict[tuple[str, ...], tuple[str, str]] = {
     ("concept", "timeline"): ("rmx_graph", "timeline"),
     ("canon", "siblings"): ("rmx_canon", "siblings"),
     ("canon", "link"): ("rmx_canon", "link"),
+    # Task 3.7 batch C (#fam-matrix-edit, #fam-session, #fam-refine).
+    ("add", "entity"): ("rmx_matrix", "add_entity"),
+    ("add", "linkage-type"): ("rmx_matrix", "add_linkage_type"),
+    ("link",): ("rmx_matrix", "link"),
+    ("unlink",): ("rmx_matrix", "unlink"),
+    ("list", "entities"): ("rmx_matrix", "list_entities"),
+    ("list", "linkages"): ("rmx_matrix", "list_linkages"),
+    ("list", "queries"): ("rmx_matrix", "list_queries"),
+    ("run",): ("rmx_matrix", "run"),
+    ("save-query",): ("rmx_matrix", "save_query"),
+    ("session", "recall"): ("rmx_session", "recall"),
+    ("session", "show"): ("rmx_session", "show"),
+    ("refine", "show"): ("rmx_refine", "show"),
 }
 
 # CLI-only BY DECISION. On 2026-10-06 the user accepted CLI-only commands for
@@ -2964,8 +2980,9 @@ HIDDEN_ALIASES: dict[tuple[str, ...], tuple[str, ...]] = {
 # (then it is a CLI_MAP twin) or an INTERNAL_CLI reason; a new command may not
 # land here. The decision table is in
 # workflow/implementation_summaries/task-3.4-internal-cli-allowlist.md.
+# `verb-it` ("agent-facing; owes a verb") was removed by task 3.7 AC-G1 once its last path
+# gained a verb or a re-decision; `_legacy` refuses it at import, so it cannot return.
 LEGACY_CATEGORIES: dict[str, str] = {
-    "verb-it": "agent-facing; owes a verb (the decision is \"verb it\")",
     "operator": "daemon / hub / launchctl / replica / partition / schedule administration",
     "maintenance": "store maintenance, repair, migration, derive passes",
     "hook": "invoked by a generated Claude Code hook, not by an agent",
@@ -2982,23 +2999,6 @@ def _legacy(category: str, reason: str, *paths: "tuple[str, ...]") -> dict:
 
 
 LEGACY_UNPAIRED: dict[tuple[str, ...], tuple[str, str]] = {
-    # -- verb-it: agent-facing reads and curation an agent calls today through
-    #    Bash; MCP agents cannot reach them. Each owes a verb, and each reason
-    #    names the task-3.7 family that owes it (ch-bsd plan-3 r9 #b-1: "owes a
-    #    verb" with no task behind it was a parking lot).
-    **_legacy("verb-it", "low-level matrix edit / saved-query surface agents script; owes "
-              "the matrix verb — task-3.7#fam-matrix-edit",
-              ("add", "concept"), ("add", "entity"), ("add", "linkage-type"),
-              ("link",), ("unlink",), ("list", "entities"), ("list", "linkages"),
-              ("list", "queries"), ("run",), ("save-query",)),
-    **_legacy("verb-it", "session-history lookup an agent uses for recall; owes the session "
-              "verb — task-3.7#fam-session",
-              ("session", "list"), ("session", "recall"), ("session", "show"),
-              ("session", "stats")),
-    **_legacy("verb-it", "refinement-queue review the gmd-curator agent drives; owes the "
-              "refine verb — task-3.7#fam-refine",
-              ("refine", "list"), ("refine", "show"), ("refine", "accept"),
-              ("refine", "reject")),
     # -- hook: called by the generated Claude Code hooks (hooks.py /
     #    search_hooks.py), not by agents. Every focus hook runs `focus hook
     #    --event …`; `focus record` is not among them (r9 #m-1).
@@ -3006,6 +3006,11 @@ LEGACY_UNPAIRED: dict[tuple[str, ...], tuple[str, str]] = {
               ("focus", "hook"), ("focus", "summarize"), ("scan-prompt",), ("primer",),
               ("grep",), ("sync",), ("ingest-gmd",)),
     # -- operator: process supervision and store administration.
+    **_legacy("operator", "the human approval gate of the \"no silent writes\" refinement "
+              "queue (accept writes a memory, reject drops it); the hub UI is the other "
+              "surface for the same gate, and no template or agent calls `rmx refine` "
+              "(task 3.7 #fam-refine-gate, re-decided)",
+              ("refine", "accept"), ("refine", "reject")),
     **_legacy("operator", "the operator's hook installer: renders, applies and checks the "
               "generated hook config (`rmx install-hooks --check` is a pre-commit gate)",
               ("install-hooks",)),
@@ -3061,6 +3066,11 @@ LEGACY_UNPAIRED: dict[tuple[str, ...], tuple[str, str]] = {
               "builds; no template, primer or hook teaches it and 0 of 12 cli.logs call it "
               "(task 3.7 #fam-graph-read-pairs, re-decided)",
               ("pairs", "show")),
+    **_legacy("harness", "counter aggregation over every session card (turns, prompts, top "
+              "branches / models / files) — an analytics view with no agent evidence; it "
+              "reads through the rmx_session list action (task 3.7 #fam-session-stats, "
+              "re-decided)",
+              ("session", "stats")),
     **_legacy("harness", "a manual STM event append for tests and debugging; no generated "
               "hook runs it (every focus hook runs `focus hook --event …`)",
               ("focus", "record")),
