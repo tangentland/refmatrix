@@ -588,6 +588,12 @@ def test_ac8c_context_channel_through_mcp_and_cli(store):
 LONG_NAME = "feedback_" + "very_long_memory_name_segment_" * 3 + "end"      # > 80 columns
 TABLE_NAMES = ("name", "id", "rank", "score", "1", LONG_NAME)            # r2 #m1 + #s1 (M3c)
 SUBJECT = "subject_zebra_rules"
+# r3 #s1: one memory whose CONTENT spans several lines -- a table cell that is not made one
+# line prints its row over several lines, so later rows can no longer be found by index.
+MULTILINE = "multiline_zebra_note"
+MULTILINE_BODY = "zebrafish ledger multi-line rule\nsecond line of the body\nthird line"
+# r3 #m1: names rich would rewrite (emoji code, trailing backslash, markup-like brackets).
+ODD_NAMES = ("fix:smile:now", "trail\\", "[bold]loud")
 
 
 @pytest.fixture(scope="module")
@@ -609,6 +615,8 @@ def table_store():
                 leaf = s.add_memory(name=nm, content=f"zebrafish ledger rule {i}: tally",
                                     mtype="feedback")
                 s.link_part_of(leaf, subj)
+            leaf = s.add_memory(name=MULTILINE, content=MULTILINE_BODY, mtype="feedback")
+            s.link_part_of(leaf, subj)
     finally:
         s.close()
     d = h.SandboxDaemon(root)
@@ -706,8 +714,116 @@ def test_r2_table_spans_land_on_each_items_own_name_cell(table_store, argv):
     r = _agent_table(root, argv)
     evs = _check_table_delivery(root, r, before, " ".join(argv[2:]))
     got = {e["name"] for e in evs if e["stage"] == "delivered"}
-    assert set(TABLE_NAMES) <= got, f"not delivered: {set(TABLE_NAMES) - got}"
+    want = set(TABLE_NAMES) | {MULTILINE}
+    assert want <= got, f"not delivered: {want - got}"
     assert LONG_NAME.encode() in r.stdout, "M3c: the long name was cut (natural width lost)"
+
+
+_GMD_HEADING = re.compile(rb"^## (.+) \{#.+\}$", re.M)
+
+
+@pytest.mark.parametrize("argv", [["memory", "recall", "zebrafish ledger", "--k", "20", "--gmd"],
+                                  ["memory", "recall", "--recent", "--k", "20", "--gmd"],
+                                  ["memory", "recall", "--subject", SUBJECT, "--k", "20",
+                                   "--gmd"]],
+                         ids=["query", "recent", "subject"])
+def test_r3_gmd_recall_spans_each_name_on_its_own_heading(table_store, argv):
+    """ch-bsd r3 #s1: `rmx memory recall --gmd` (query, --recent, --subject) delivers every
+    memory with a span that is EXACTLY its name on its OWN `## <name> {#<name>}` heading --
+    starting right after `## `, followed by ` {#` -- with payload_bytes = len(stdout) and
+    block_sha its sha256; every heading the document prints is delivered, nothing is
+    `delivered_unspanned`. Kills: GMD spans None (0 delivered), GMD spans 1 byte off."""
+    root = table_store
+    before = h.line_count(_ev_path(root))
+    r = _agent_table(root, argv)
+    out, err = r.stdout, r.stderr.decode("utf-8", "replace")
+    assert r.returncode == 0 and out.startswith(b"---"), (out[:200], err[-600:])
+    assert "delivered_unspanned" not in err, f"--gmd: items printed but not delivered: {err}"
+    evs = _require_events(_new_events(_ev_path(root), before), "recall", "r3 --gmd")
+    _one_call(evs)
+    delivered = [e for e in evs if e["stage"] == "delivered"]
+    for e in delivered:
+        assert e["payload_bytes"] == len(out), (e["payload_bytes"], len(out))
+        assert e["block_sha"] in (_sha(out), _sha(out.rstrip(b"\n"))), e["block_sha"]
+        off, n = e["offset_bytes"], e["bytes"]
+        name = e["name"].encode()
+        assert isinstance(off, int) and out[off:off + n] == name, (
+            f"--gmd: span [{off},{off + n}) is {out[off:off + n]!r}, not {name!r}")
+        line_start = out.rfind(b"\n", 0, off) + 1
+        assert out[line_start:off] == b"## " and out[off + n:off + n + 3] == b" {#", (
+            f"--gmd: {e['name']!r} not spanned on its own heading: "
+            f"{_row_line(out, off)!r}")
+    headings = {m.decode() for m in _GMD_HEADING.findall(out)}
+    got = {e["name"] for e in delivered}
+    assert headings and headings <= got, f"--gmd: headings not delivered: {headings - got}"
+    assert set(TABLE_NAMES) | {MULTILINE} <= got, set(TABLE_NAMES) | {MULTILINE} - got
+
+
+@pytest.fixture(scope="module")
+def odd_store():
+    """r3 #m1: memories whose NAMES rich would rewrite as markup or emoji, embedded, served."""
+    import rmx_sandbox
+    from refmatrix import daemon as dm
+    from refmatrix.store import Store
+    root = rmx_sandbox.new_store_root(Path(os.environ["RMX_SANDBOX_ROOT"]))
+    s = Store(root)
+    s.init()
+    try:
+        with s.with_partition("intuition"):
+            for i, nm in enumerate(ODD_NAMES):
+                s.add_memory(name=nm, content=f"walrus ledger rule {i}: tally", mtype="feedback")
+    finally:
+        s.close()
+    d = h.SandboxDaemon(root)
+    try:
+        res = dm.call(root, "embed", {"kinds": ["memory"], "partition": "intuition"},
+                      timeout=600)
+        assert res.get("ok"), res
+        yield root
+    finally:
+        d.stop()
+        rmx_sandbox.remove_tree(root.parent)
+
+
+@pytest.mark.parametrize("argv", [["memory", "recall", "walrus ledger", "--k", "10"],
+                                  ["memory", "recall", "--recent", "--k", "10"]],
+                         ids=["query", "recent"])
+def test_r3_table_prints_names_verbatim_and_spans_them_exactly(odd_store, argv):
+    """ch-bsd r3 #m1: a memory named `fix:smile:now`, `trail\\` or `[bold]loud` prints in the
+    table VERBATIM (no emoji, no doubled backslash, no markup) and its span is exactly the
+    name, ending at the cell's padding (a prefix match is not a span). RED at HEAD:
+    `fix:smile:now` prints as an emoji (unspanned), `trail\\` prints `trail\\\\`."""
+    root = odd_store
+    before = h.line_count(_ev_path(root))
+    r = _agent_table(root, argv)
+    for nm in ODD_NAMES:
+        assert f"│ {nm} ".encode() in r.stdout, (
+            f"r3 #m1: {nm!r} not printed verbatim in its cell:\n{r.stdout.decode()[:1500]}")
+    evs = _check_table_delivery(root, r, before, " ".join(argv[2:]))
+    got = {e["name"] for e in evs if e["stage"] == "delivered"}
+    assert set(ODD_NAMES) <= got, set(ODD_NAMES) - got
+
+
+def test_r3_recent_table_labels_global_rows(store, global_daemon):
+    """ch-bsd r3 #m2: `--recent --scope both` prints a GLOBAL row with its `[global]` label
+    (the one table path owns the label, not the query caller), and its delivered event
+    (global file) spans exactly its name on that row. RED at HEAD: the recent cells carry the
+    bare name. (`--subject … --scope both` is not a leg: `verbs.memory_recall` asks the global
+    store with no query and `recent=False` in subject mode, so it returns no global rows --
+    read at HEAD a6c5634+; the label lives in the one table path either way.)"""
+    root, groot = store, global_daemon
+    before_g = h.line_count(_ev_path(groot))
+    r = _agent_table(root, ["memory", "recall", "--recent", "--k", "20", "--scope", "both"])
+    out = r.stdout.decode("utf-8")
+    lines = [ln for ln in out.splitlines() if "reference_quasar_global" in ln]
+    assert lines, f"fixture: no global row in the table: {out[:800]} {r.stderr[-400:]!r}"
+    assert all("reference_quasar_global [global]" in ln for ln in lines), (
+        f"r3 #m2: the global row has no [global] label: {lines}")
+    gev = [e for e in _new_events(_ev_path(groot), before_g)
+           if e.get("stage") == "delivered" and e.get("name") == "reference_quasar_global"]
+    assert len(gev) == 1 and gev[0]["scope"] == "global", gev
+    off, n = gev[0]["offset_bytes"], gev[0]["bytes"]
+    assert r.stdout[off:off + n] == b"reference_quasar_global", r.stdout[off:off + n]
 
 
 def test_r2_global_table_row_is_labelled_global(store, global_daemon):
