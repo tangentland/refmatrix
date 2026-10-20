@@ -946,11 +946,17 @@ def upgrade(from_dev, ref, check, no_restart):
     promotes a local dev tree instead — the dev->deploy ritual, no GitHub
     round-trip. `--check` previews the change read-only. Merges are
     fast-forward only, so a divergent local tree is refused rather than
-    rewritten."""
+    rewritten.
+
+    The restart targets the ACTIVE STORE (`_root()`), not the git tree being
+    upgraded: handing the repo root to the restart reported `restarted=True`
+    having restarted nothing (task 4.6 #b1-root, 2026-10-19)."""
     from refmatrix import upgrade as _up
+    store = _root()
     try:
         _up.upgrade(from_dev=from_dev, ref=ref, check=check,
-                    restart=not no_restart, log=console.print)
+                    restart=not no_restart, log=console.print,
+                    store_root=store if store.is_dir() else None)
     except _up.UpgradeError as e:
         raise click.ClickException(str(e))
 
@@ -2624,6 +2630,11 @@ def hub():
 def hub_start(port, host, no_detach, no_http):
     """Start the hub (idempotent)."""
     from refmatrix import hub as hub_mod
+    from refmatrix import launchctl as _lc
+    # FIRST: every child this hub spawns (the UI's `-m refmatrix.cli daemon
+    # launchctl install`, the scheduler, the detached fork) inherits the
+    # binary the hub runs (ch-bsd plan-4 r6 #b-1; task 4.6 R6-1).
+    _lc.export_service_binary(log=lambda m: click.echo(m, err=True))
     port = port or hub_mod.DEFAULT_PORT
     if no_detach:
         hub_mod.Hub(port=port).run(host=host, serve_http=not no_http)
@@ -2733,17 +2744,18 @@ def hub_launchctl():
                    "and change nothing.")
 def hub_launchctl_install(port, host, force, allow_dev, do_check):
     """Install + load the hub LaunchAgent."""
-    import sys as _sys
     from refmatrix import launchctl
-    # `sys.argv[0]` is THIS invocation's binary, the same thing the daemon
-    # plists are rendered against. `_rmx_path()` would resolve `which rmx`,
-    # which from a dev shell is the dev venv (bug-028).
-    rmx = _sys.argv[0]
+    # THE resolver (`$RMX_BIN`, else the binary this invocation ran — never
+    # `which rmx`), the same one every plist command uses (bug-028; r5 #s-1).
+    rmx = _plist_rmx()
     if do_check:
         ok, why = launchctl.check_hub(rmx=rmx, port=port, host=host)
         if ok:
             console.print("[green]hub plist in sync[/]")
             return
+        if launchctl.reason_kind(why) == "identity":
+            console.print(f"[red]binary not verified[/] — {why}")
+            raise SystemExit(1)
         raise click.ClickException(why)
     try:
         p = launchctl.install_hub(port=port, host=host, force=force,
@@ -2767,7 +2779,6 @@ def hub_launchctl_uninstall():
 def hub_launchctl_status():
     """Show hub LaunchAgent status."""
     from refmatrix import launchctl
-    import sys as _sys
     st = launchctl.hub_status()
     dot = "[green]●[/]" if st["loaded"] else "[red]●[/]"
     console.print(f"{dot} {st['label']}  installed={st['installed']} "
@@ -2776,10 +2787,19 @@ def hub_launchctl_status():
     # A check nobody runs is a check that does not exist: the daemon plists
     # are compared on every relaunch-fleet and the hub's was compared by
     # nothing at all (bug-028). Drift is LOUD here, never a silent pass.
+    # An identity objection is NOT drift (r5 #m-1): the binary cannot be
+    # verified, so the plist was not compared at all.
     if st["installed"]:
-        ok, why = launchctl.check_hub(rmx=_sys.argv[0])
+        try:
+            rmx = launchctl._rmx_path()
+        except FileNotFoundError as e:
+            console.print(f"[yellow]plist not checked[/] — {e}")
+            return
+        ok, why = launchctl.check_hub(rmx=rmx)
         if ok:
             console.print("[green]plist in sync with its render[/]")
+        elif launchctl.reason_kind(why) == "identity":
+            console.print(f"[yellow]binary not verified[/] — {why}")
         else:
             console.print(f"[yellow]plist drift[/] — {why}")
 
@@ -2801,7 +2821,7 @@ def hub_status():
             f"code: {st.get('code_path')}  [yellow][UNVERIFIED][/] — hub could "
             f"not compute its identity: {st['identity_error']}")
     elif st.get("code_path"):
-        _print_code_identity(st["code_path"], bool(st.get("dev_tree")))
+        _print_code_identity(st["code_path"], bool(st.get("dev_tree")), st)
     resp = hub_mod.rpc("health")
     if resp.get("ok"):
         health = resp["result"]["health"]
@@ -2843,14 +2863,36 @@ def hub_relaunch_fleet(rmx_bin):
     code (`rmx daemon restart --relaunch` per root, each verified: new pid,
     installed version, deploy code path). The deploy step that was missing
     (ch-bsd plan-4 r1 #b-6): a plain relaunch restarts one store and the
-    hub's version handshake does not restart the rest."""
+    hub's version handshake does not restart the rest.
+
+    The binary is asked ONCE, before any store is touched: an unverified
+    (dev or unreadable) binary read as per-store "drift", was handed to
+    `reinstall` (which refused it, relaying an `--allow-dev` this command does
+    not have) and then restarted every daemon on it (r5 #m-1). Session-
+    indexer plists are re-rendered on drift too, supervised daemon or not —
+    nothing else ever did (r5 #s-3; task 4.6, 2026-10-19)."""
     import subprocess
-    import sys as _sys
     from refmatrix import discovery, launchctl as lc
-    rmx = rmx_bin or _sys.argv[0]
+    from refmatrix import session_launchctl as slc
+    rmx = rmx_bin or _plist_rmx()
+    objection = lc._identity_objection(rmx)
+    if objection is not None:
+        console.print(f"[red]binary not verified[/] — {objection}")
+        console.print("fix: rerun with `--rmx <the deployed rmx>` (e.g. `--rmx ~/bin/rmx`); "
+                      "no store was touched")
+        raise SystemExit(1)
     failed = 0
     for root in discovery.discover_roots():
         root = Path(root)
+        if slc.is_installed(root):
+            ok, why = slc.check(root, rmx=rmx)
+            if not ok:
+                try:
+                    slc.reinstall(root, rmx=rmx)
+                    console.print(f"[yellow]reinstalled[/] {root} session-indexer plist ({why})")
+                except Exception as e:  # noqa: BLE001 — named per store, then counted
+                    failed += 1
+                    console.print(f"[red]FAILED[/] {root}  session-indexer plist reinstall: {e}")
         if not lc.is_loaded(root):
             console.print(f"[dim]skip[/] {root} (not supervised)")
             continue
@@ -2956,36 +2998,42 @@ def version_cmd(verbose: bool, as_json: bool):
     console.print(f"refmatrix {ident['version']}")
     if not verbose:
         return
-    _print_code_identity(ident["import_path"], ident["dev_tree"])
+    _print_code_identity(ident["import_path"], ident["dev_tree"], ident)
+    if ident.get("dev_tree"):
+        console.print(f"dev reason: {ident.get('dev_reason')}")
     console.print(f"venv tree: {ident['venv_tree'] or '(none — system interpreter)'}")
+    console.print(f"deploy root: {ident.get('deploy_root') or '(none — RMX_DEPLOY_ROOT unset and no ~/refmatrix)'}")
     console.print(f"editable target: {ident['editable_target'] or '(none)'}")
 
 
-def _watchdog_pause(root: Path, seconds: float) -> None:
-    """Best-effort: a restart is not a wedge. The hub's no-process branch
-    kicked five relaunching daemons inside launchd's ThrottleInterval on
-    2026-09-15 (ch-bsd plan-4 r3 #s-3); the primitive for "an operator is
-    restarting this root" existed (`Watchdog.pause`) and nothing called it.
-    A hub that is down is said, never fatal — the restart proceeds."""
-    from refmatrix import hub as hub_mod
+def _plist_rmx() -> str:
+    """`launchctl._rmx_path()` for a CLI command: the binary every plist
+    command renders, checks or restarts with (r5 #s-1). Its refusal is a
+    ClickException naming `RMX_BIN`, never a traceback."""
+    from refmatrix import launchctl as _lc
     try:
-        hub_mod.rpc("pause", {"root": str(root), "seconds": float(seconds)}, timeout=3.0)
-    except Exception as e:  # noqa: BLE001 — said, then the restart proceeds
-        console.print(f"[dim]hub watchdog not paused ({type(e).__name__}); restarting anyway[/]")
+        return _lc._rmx_path()
+    except FileNotFoundError as e:
+        raise click.ClickException(str(e))
 
 
-def _watchdog_resume(root: Path) -> None:
-    from refmatrix import hub as hub_mod
-    try:
-        hub_mod.rpc("resume", {"root": str(root)}, timeout=3.0)
-    except Exception as e:  # noqa: BLE001 — the pause expires on its own
-        console.print(f"[dim]hub watchdog not resumed ({type(e).__name__}); the pause expires on its own[/]")
+def _print_code_identity(code_path, dev_tree: bool, ident: "dict | None" = None) -> None:
+    """One line every status surface shares: what tree the code came from.
 
-
-def _print_code_identity(code_path, dev_tree: bool) -> None:
-    """One line every status surface shares: what tree the code came from."""
-    flag = "  [bold red][DEV TREE][/] — this venv belongs to another tree" if dev_tree else ""
-    console.print(f"code: {code_path}{flag}")
+    The `[DEV TREE]` explanation is `upgrade.dev_tree_message` — the ONE
+    wording of the dev-tree rule — given whatever identity the surface has
+    (`rmx version -v`: the full one; `daemon status` / `hub status`: the
+    ping's code path + `dev_reason`). It said "this venv belongs to another
+    tree" for every case, rule (a)'s words for a venv whose editable install
+    is correct (ch-bsd plan-4 r6 #m-2; task 4.6 R6-4)."""
+    if not dev_tree:
+        console.print(f"code: {code_path}")
+        return
+    from refmatrix import upgrade as _up
+    ident = {"import_path": code_path, **(ident or {})}
+    ident["import_path"] = ident.get("import_path") or code_path
+    console.print(f"code: {code_path}  [bold red][DEV TREE][/]", highlight=False)
+    console.print(f"  {_up.dev_tree_message(ident)}", markup=False, highlight=False)
 
 
 @main.group()
@@ -3041,6 +3089,9 @@ def daemon_start(watch: bool, watch_roots: tuple[Path, ...], debounce_ms: int,
     entrypoint launchd itself invokes."""
     import sys as _sys
     from refmatrix import daemon as daemon_mod
+    from refmatrix import launchctl as _lc
+    # FIRST: the daemon's children inherit the binary it runs (r6 #b-1).
+    _lc.export_service_binary(log=lambda m: click.echo(m, err=True))
     root = _root()
     if not root.is_dir():
         raise click.ClickException(
@@ -3249,12 +3300,20 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
                             f"fallback guess, not verified — `rmx version -v` inside "
                             f"the daemon's venv")
                     if mine_ident.get("dev_tree") or res.get("dev_tree"):
+                        # The ONE wording of the dev-tree rule, per side
+                        # (ch-bsd plan-4 r6 #m-2; task 4.6 R6-4).
+                        why = []
+                        if res.get("dev_tree"):
+                            why.append("the daemon: " + _up.dev_tree_message(
+                                {"import_path": theirs,
+                                 "dev_reason": res.get("dev_reason")}))
+                        if mine_ident.get("dev_tree"):
+                            why.append("this CLI: " + _up.dev_tree_message(mine_ident))
                         raise click.ClickException(
                             f"[DEV TREE] relaunched daemon pid={pid} imports {theirs} "
                             f"(dev_tree={bool(res.get('dev_tree'))}); this CLI imports "
-                            f"{mine} (dev_tree={bool(mine_ident.get('dev_tree'))}) — a "
-                            f"venv that belongs to {mine_ident.get('venv_tree')} is "
-                            f"running another tree; fix the editable install first")
+                            f"{mine} (dev_tree={bool(mine_ident.get('dev_tree'))}) — "
+                            + "; ".join(why))
                     if str(theirs) != mine:
                         raise click.ClickException(
                             f"relaunched daemon pid={pid} imports {theirs} but "
@@ -3306,15 +3365,24 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
         from refmatrix import launchctl as lc
         try:
             loaded = lc.is_loaded(root)
-        except Exception:  # noqa: BLE001 — supervision probe is best-effort
-            loaded = False
+        except Exception as e:  # noqa: BLE001 — reported; never guessed unsupervised
+            # Guessing "unsupervised" here stopped a supervised daemon (exit
+            # 0, no KeepAlive respawn) and spawned one beside the label —
+            # bug-013, the shape r5 #b-1 found in `upgrade` (task 4.6).
+            raise click.ClickException(
+                f"could not probe launchd for {root} ({type(e).__name__}: {e}); not "
+                f"restarting a daemon that may be supervised. `rmx daemon restart "
+                f"--standalone` restarts it outside launchd deliberately")
         if not loaded and lc.is_installed(root):
             # A plist on disk with no loaded label is the bug-013 state (a
             # forced reinstall whose bootstrap failed): the store IS
             # supervised, so bootstrap it — a standalone spawn here would
             # run an unsupervised daemon that launchd will later fight.
+            # Through `reinstall` with THE resolver's binary: `install(root)`
+            # re-rendered default flags (dropping --no-watch, --debounce-ms,
+            # --watch-root, RMX_PARTITION) against `which rmx` (r5 #s-1).
             try:
-                lc.install(root)
+                lc.reinstall(root, rmx=_plist_rmx())
             except (RuntimeError, FileNotFoundError) as e:
                 raise click.ClickException(
                     f"plist installed but label not loaded, and bootstrap failed: {e}")
@@ -3331,40 +3399,35 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
                     "ignored (the plist governs). Use `rmx daemon launchctl "
                     "install --force ...` to change supervised watch config."
                 )
-            # launchd is a supervisor too (ch-bsd plan-4 r3 #b-1): a bare
-            # `kickstart -k` SIGTERMs the job and SIGKILLs it at launchd's
-            # ExitTimeOut — five daemons died mid-drain on 2026-09-15. So:
-            # pause the hub's watchdog for this root (a relaunch is not a
-            # wedge — r3 #s-3), ask the daemon to stop and give it the
-            # grace, kick WITHOUT -k when it stopped (a clean stop exits 0,
-            # which KeepAlive's SuccessfulExit:false does NOT respawn — the
-            # kick is what starts it), and -k only when it ignored the
-            # signal — said, because that -k is a SIGKILL after ExitTimeOut.
-            grace = daemon_mod.stop_grace_s()
-            _watchdog_pause(root, grace * 2 + 60.0)
+            # launchd is a supervisor too (ch-bsd plan-4 r3 #b-1): ONE helper
+            # owns the sequence (watchdog pause, graceful stop with the grace,
+            # kick without -k when it stopped, resume) — `rmx upgrade` uses it
+            # too (r5 #b-1). A kick that fails is an error, never a fallback
+            # to the standalone stop+spawn: that stops the already stopped
+            # supervised daemon and forks an unsupervised one beside the
+            # loaded label — bug-013 (task 4.6 B1.3, 2026-10-19).
+            # --relaunch verifies INSIDE the watchdog pause (r6 #s-1): the
+            # verify and its clinging-predecessor kick are the relaunch window.
+            kw: dict = {}
+            if relaunch:
+                kw["after_kick"] = lambda: _verify_relaunch(
+                    lambda: lc.kickstart(root, restart=True))
             try:
-                stopped = daemon_mod.graceful_stop(root, grace=grace)
-                if not stopped:
-                    console.print(
-                        f"[yellow]predecessor still alive after the {grace:g}s grace; "
-                        f"launchd kickstart -k will SIGTERM it and SIGKILL it at "
-                        f"ExitTimeOut ({lc.EXIT_TIMEOUT_S:g}s)[/]")
-                try:
-                    label = lc.kickstart(root, restart=not stopped)
-                except Exception as e:  # noqa: BLE001 — fall back to standalone
-                    console.print(
-                        f"[yellow]kickstart failed ({e}); restarting standalone[/]")
-                else:
-                    pid = daemon_mod.read_pid(root)
-                    pid_part = f" pid={pid}" if pid else ""
-                    console.print(
-                        f"[green]daemon restarted[/] (launchd kickstart"
-                        f"{'' if stopped else ' -k'} label={label}){pid_part} root={root}")
-                    if relaunch:
-                        _verify_relaunch(lambda: lc.kickstart(root, restart=True))
-                    return
-            finally:
-                _watchdog_resume(root)
+                label, stopped = lc.supervised_restart(root, log=console.print, **kw)
+            except click.ClickException:
+                raise                      # the verify's own, already worded
+            except Exception as e:  # noqa: BLE001 — reported, exit != 0
+                raise click.ClickException(
+                    f"launchd restart of {root} failed ({type(e).__name__}: {e}); "
+                    f"nothing was spawned beside the label. Check `launchctl print "
+                    f"{lc._domain()}/{lc.label_for_root(root)}`, or pass --standalone "
+                    f"to restart it outside launchd deliberately")
+            pid = daemon_mod.read_pid(root)
+            pid_part = f" pid={pid}" if pid else ""
+            console.print(
+                f"[green]daemon restarted[/] (launchd kickstart"
+                f"{'' if stopped else ' -k'} label={label}){pid_part} root={root}")
+            return
 
     # Standalone path: stop the current daemon with the grace every
     # supervisor uses, and REFUSE to spawn beside one that is still alive —
@@ -3403,7 +3466,19 @@ def daemon_restart(watch: bool, watch_roots: tuple[Path, ...],
     console.print(f"[green]daemon restarted[/] pid={pid} root={root}{extra}")
     if relaunch:
         def _respawn():
-            daemon_mod.stop_daemon(root)
+            # The kick stops with the same grace and the same refusal as the
+            # standalone stop above: it used `stop_daemon(root)` (the old 5 s),
+            # discarded the False and spawned a second daemon beside a live
+            # predecessor (ch-bsd plan-4 r4 #s-3; task 4.5 R2, 2026-10-19).
+            _kgrace = daemon_mod.stop_grace_s()
+            _krep: dict = {}
+            if not daemon_mod.stop_daemon(root, timeout=_kgrace, report=_krep):
+                raise click.ClickException(
+                    f"predecessor pid={_krep.get('pid') or daemon_mod.read_pid(root)} "
+                    f"still alive after the {_kgrace:g}s grace "
+                    f"({_krep.get('kill') or _krep.get('signal') or 'no signal delivered'}); "
+                    f"the relaunch kick is not spawning a second daemon beside it — "
+                    f"`rmx daemon status`")
             daemon_mod.spawn_daemon(
                 root, partition=_resolve_partition(),
                 watch_root=resolved_watch_roots or None,
@@ -3549,7 +3624,7 @@ def daemon_status():
                     f"code: {r.get('code_path')}  [yellow][UNVERIFIED][/] — "
                     f"daemon could not compute its identity: {r['identity_error']}")
             elif r.get("code_path"):
-                _print_code_identity(r["code_path"], bool(r.get("dev_tree")))
+                _print_code_identity(r["code_path"], bool(r.get("dev_tree")), r)
             else:
                 console.print("code: [yellow]unknown[/] (ping carries no code path; "
                               "pre-0.66.3 daemon?)  [yellow][UNVERIFIED][/]")
@@ -3652,24 +3727,40 @@ def daemon_launchctl():
 @click.option("--check", "check_only", is_flag=True,
               help="Compare the installed plist with its render (exit 1 on "
                    "drift); write nothing. Run with the deployed rmx.")
+@click.option("--allow-dev", is_flag=True,
+              help="Install against a dev-tree binary anyway (deliberate, "
+                   "and said out loud).")
 def daemon_launchctl_install(watch: bool, watch_roots: tuple[Path, ...],
                              debounce_ms: int, semantic: bool, force: bool,
-                             check_only: bool):
-    """Install + bootstrap the LaunchAgent plist for the active store."""
+                             check_only: bool, allow_dev: bool):
+    """Install + bootstrap the LaunchAgent plist for the active store.
+
+    `--allow-dev` is the daemon twin of `rmx hub launchctl install
+    --allow-dev` (bug-028): the dev-tree refusal has told operators to use
+    the override since plan-4 r3, and until task 4.5 (r4 #m-5, 2026-10-19)
+    no command exposed it."""
     from refmatrix import launchctl as lc
     root = _root()
     if not root.is_dir():
         raise click.ClickException(
             f"no refmatrix at {root}. Run `rmx init` first."
         )
+    # THE resolver: the binary this invocation ran (or $RMX_BIN), never
+    # `which rmx` — from a dev shell that refused the deployed binary the
+    # operator typed (r5 #s-1, probe P1).
+    rmx = _plist_rmx()
     if check_only:
         # The plist carries settings the daemon needs (RMX_SUPERVISED, the
         # rmx path, watch roots); nothing re-rendered it on deploy until
         # ch-bsd plan-4 r2 #b-1. Same shape as `install-hooks --check`.
-        ok, why = lc.check(root)
+        ok, why = lc.check(root, rmx=rmx)
         if ok:
             console.print(f"[green]plist in sync[/] {lc.plist_path(root)}")
             return
+        if lc.reason_kind(why) == "identity":
+            # Not drift: both drift fixes refuse this binary (r5 #m-1).
+            console.print(f"[red]binary not verified[/] — {why}")
+            raise SystemExit(1)
         console.print(f"[red]plist DRIFT[/] {why}")
         console.print("fix: `rmx daemon launchctl install --force` (or `rmx hub relaunch-fleet`)")
         raise SystemExit(1)
@@ -3679,7 +3770,7 @@ def daemon_launchctl_install(watch: bool, watch_roots: tuple[Path, ...],
             root, partition=_resolve_partition(),
             watch=watch, debounce_ms=debounce_ms,
             semantic=semantic, force=force,
-            watch_roots=roots_list,
+            watch_roots=roots_list, rmx=rmx, allow_dev=allow_dev,
         )
     except (RuntimeError, FileNotFoundError) as e:
         raise click.ClickException(str(e))
@@ -14439,15 +14530,39 @@ def session_launchctl_grp():
                    "tick (instead of the current project's matching dir).")
 @click.option("--force", is_flag=True,
               help="Rewrite the plist + reload even if already installed.")
-def session_launchctl_install(interval_seconds, all_projects, force):
-    """Install + bootstrap the session-indexer LaunchAgent."""
+@click.option("--check", "check_only", is_flag=True,
+              help="Compare the installed plist with its render (exit 1 on "
+                   "drift); write nothing. Run with the deployed rmx.")
+@click.option("--allow-dev", is_flag=True,
+              help="Install against a dev-tree binary anyway (deliberate, "
+                   "and said out loud).")
+def session_launchctl_install(interval_seconds, all_projects, force, check_only, allow_dev):
+    """Install + bootstrap the session-indexer LaunchAgent.
+
+    `--check` / `--allow-dev` are the daemon command's twins (task 4.6 S3,
+    2026-10-19): the session plist had no guard and no check, so 0/6
+    installed labels carried ExitTimeOut and nothing could say so."""
+    from refmatrix import launchctl as lc
     from refmatrix import session_launchctl as sl
     root = _root()
+    rmx = _plist_rmx()
+    if check_only:
+        ok, why = sl.check(root, rmx=rmx)
+        if ok:
+            console.print(f"[green]session plist in sync[/] {sl.plist_path(root)}")
+            return
+        if lc.reason_kind(why) == "identity":
+            console.print(f"[red]binary not verified[/] — {why}")
+            raise SystemExit(1)
+        console.print(f"[red]session plist DRIFT[/] {why}")
+        console.print("fix: `rmx session launchctl install --force` (or `rmx hub relaunch-fleet`)")
+        raise SystemExit(1)
     try:
         p = sl.install(
             root, partition=_session_partition(),
             interval_seconds=interval_seconds,
             all_projects=all_projects, force=force,
+            rmx=rmx, allow_dev=allow_dev,
         )
     except (RuntimeError, FileNotFoundError) as e:
         raise click.ClickException(str(e))

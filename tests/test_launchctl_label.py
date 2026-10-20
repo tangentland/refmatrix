@@ -65,12 +65,7 @@ def test_daemon_plist_disables_objc_fork_safety(tmp_path, monkeypatch):
     assert env["TOKENIZERS_PARALLELISM"] == "false"
 
 
-def test_hub_plist_disables_objc_fork_safety(tmp_path, monkeypatch):
+def test_hub_plist_disables_objc_fork_safety(deployed_rmx):
     import plistlib
-    fake_rmx = tmp_path / "bin" / "rmx"
-    fake_rmx.parent.mkdir()
-    fake_rmx.write_text("#!/bin/sh\nexit 0\n")
-    fake_rmx.chmod(0o755)
-    monkeypatch.setenv("RMX_BIN", str(fake_rmx))
     env = plistlib.loads(lc.render_hub_plist())["EnvironmentVariables"]
     assert env["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] == "YES"

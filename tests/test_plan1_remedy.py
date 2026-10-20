@@ -60,6 +60,7 @@ def test_upgrade_refuses_when_this_interpreter_runs_a_dev_tree(tmp_path, monkeyp
         up.upgrade(root=deploy, install_fn=lambda r, log=print: None, restart_fn=lambda r, log=print: True)
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_upgrade_verifies_editable_on_the_already_up_to_date_path(tmp_path):
     """2026-09-14 state: the deploy tree WAS at master's sha; only the .pth
     was wrong. 'already up to date' must still verify the venv."""
@@ -81,6 +82,7 @@ def test_editable_marker_present_but_unreadable_fails_loud(tmp_path):
         up.verify_editable(deploy)
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_daemon_restart_relaunch_fails_on_code_path_mismatch(tmp_path, monkeypatch):
     """The documented deploy path is ff + `daemon restart --relaunch`; it must
     compare what the NEW daemon imports with what this CLI imports."""

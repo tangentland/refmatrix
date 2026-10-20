@@ -191,6 +191,7 @@ def test_hub_status_shows_each_daemons_version_and_flags_stale(monkeypatch):
     assert "v0.69.1" in b and "STALE" not in b
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_relaunch_fleet_relaunches_every_supervised_store(monkeypatch, tmp_path):
     roots = [tmp_path / "a" / ".refmatrix", tmp_path / "b" / ".refmatrix"]
     for r in roots:
@@ -250,6 +251,7 @@ def test_heartbeat_stops_when_the_serving_pool_is_dead(tmp_path, monkeypatch):
 
 # ---- #m-9 adoption is gated on the supervisor ---------------------------------------------
 
+@pytest.mark.usefixtures("deployed_rmx")   # task 4.6 M2: rendered via the removed `which rmx`
 def test_plist_marks_the_daemon_supervised_and_adoption_is_gated(tmp_path):
     root = tmp_path / "proj" / ".refmatrix"; root.mkdir(parents=True)
     assert b"RMX_SUPERVISED" in launchctl.render_plist(root)

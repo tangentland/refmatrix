@@ -47,6 +47,7 @@ def test_read_version_and_package_root(tmp_path):
     assert up.package_root(sub / "__init__.py") == tmp_path
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_from_dev_promote_fast_forwards_and_installs(tmp_path):
     deploy = tmp_path / "deploy"
     _init_repo(deploy, "0.1.0")
@@ -61,7 +62,10 @@ def test_from_dev_promote_fast_forwards_and_installs(tmp_path):
     def inst(root, *, log=print): calls["installed"] = True
     def rest(root, *, log=print): calls["restarted"] = True; return True
 
-    res = up.upgrade(root=deploy, from_dev=dev, install_fn=inst, restart_fn=rest)
+    # The restart is of a STORE, handed in; without one nothing is restarted (task 4.6 AC-7).
+    store = tmp_path / "proj" / ".refmatrix"; store.mkdir(parents=True)
+    res = up.upgrade(root=deploy, from_dev=dev, install_fn=inst, restart_fn=rest,
+                     store_root=store)
     assert res.changed
     assert res.old_version == "0.1.0" and res.new_version == "0.2.0"
     assert calls == {"installed": True, "restarted": True}
@@ -69,6 +73,7 @@ def test_from_dev_promote_fast_forwards_and_installs(tmp_path):
     assert res.source.startswith("dev:")
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_check_is_readonly(tmp_path):
     deploy = tmp_path / "deploy"
     _init_repo(deploy, "0.1.0")
@@ -90,6 +95,7 @@ def test_check_is_readonly(tmp_path):
     assert installed["n"] == 0
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_already_up_to_date_is_noop(tmp_path):
     deploy = tmp_path / "deploy"
     _init_repo(deploy, "0.1.0")
@@ -102,6 +108,7 @@ def test_already_up_to_date_is_noop(tmp_path):
     assert not res.installed
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_non_fast_forward_refuses(tmp_path):
     deploy = tmp_path / "deploy"
     _init_repo(deploy, "0.1.0")
@@ -115,7 +122,9 @@ def test_non_fast_forward_refuses(tmp_path):
     _git(deploy, "config", "user.name", "t")
     _bump(deploy, "0.1.1")
 
-    with pytest.raises(up.UpgradeError):
+    # the ff-only refusal, not any UpgradeError: in a clone this passed on the dev-tree refusal
+    # before a single git command ran (task 4.6 M2)
+    with pytest.raises(up.UpgradeError, match="merge --ff-only"):
         up.upgrade(root=deploy, from_dev=dev, install_fn=_noop_install,
                    restart=False)
 
@@ -155,18 +164,23 @@ def test_runtime_identity_detects_foreign_editable_target(tmp_path):
     assert ident["editable_target"] == dev / "src"
 
 
-def test_runtime_identity_clean_when_venv_imports_its_own_tree(tmp_path):
+def test_runtime_identity_clean_when_venv_imports_its_own_tree(tmp_path, monkeypatch):
     deploy = _fake_tree(tmp_path, "deploy")
+    # The premise "this tree IS the deploy tree" is stated, not implied (task 4.6 S2: a source
+    # tree that is not the deploy root is a dev tree, and under the sandbox none exists).
+    monkeypatch.setenv("RMX_DEPLOY_ROOT", str(deploy))
     prefix = _fake_venv(deploy, deploy / "src")
     ident = up.runtime_identity(prefix=prefix, import_file=deploy / "src" / "refmatrix" / "__init__.py")
     assert ident["dev_tree"] is False
     assert ident["code_root"] == deploy == ident["venv_tree"]
 
 
-def test_runtime_identity_unknown_when_prefix_has_no_tree(tmp_path):
+def test_runtime_identity_unknown_when_prefix_has_no_tree(tmp_path, monkeypatch):
     """A system interpreter (no pyproject above sys.prefix) cannot be a dev-tree
-    mismatch; report None rather than a false alarm."""
+    mismatch; report None rather than a false alarm. The imported tree is pinned as the deploy
+    root (task 4.6 S2): this test is about the venv rule, not the deploy-root rule."""
     dev = _fake_tree(tmp_path, "dev")
+    monkeypatch.setenv("RMX_DEPLOY_ROOT", str(dev))
     prefix = tmp_path / "sys" / "python"; prefix.mkdir(parents=True)
     ident = up.runtime_identity(prefix=prefix, import_file=dev / "src" / "refmatrix" / "__init__.py")
     assert ident["venv_tree"] is None and ident["dev_tree"] is False
@@ -186,6 +200,7 @@ def test_verify_editable_accepts_own_tree(tmp_path):
     assert up.verify_editable(deploy) == deploy / "src"
 
 
+@pytest.mark.usefixtures("deployed_rmx")
 def test_upgrade_from_dev_verifies_editable_after_install(tmp_path):
     """The install step is injectable; the VERIFY step is not — an install_fn
     that leaves the venv pointing at the dev tree must fail the upgrade."""

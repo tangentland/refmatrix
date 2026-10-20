@@ -3410,6 +3410,9 @@ def _op_ping(d: Daemon, args: dict) -> dict:
         "version": _v,
         "code_path": ident["code_path"],
         "dev_tree": ident["dev_tree"],
+        # WHY it is a dev tree, so `_verify_relaunch` / `daemon status` name
+        # the daemon's own reason (ch-bsd plan-4 r6 #m-2; task 4.6 R6-4).
+        "dev_reason": ident.get("dev_reason"),
     }
     # The fallback identity is a GUESS; say so on the wire so every consumer
     # (hub rows, relaunch guard, daemon status) renders it as unverified
@@ -3429,7 +3432,8 @@ def _process_identity() -> dict:
             from refmatrix import upgrade as _up
             ident = _up.runtime_identity()
             _PROCESS_IDENTITY = {"code_path": str(ident["import_path"]),
-                                 "dev_tree": bool(ident["dev_tree"])}
+                                 "dev_tree": bool(ident["dev_tree"]),
+                                 "dev_reason": ident.get("dev_reason")}
         except Exception as e:  # noqa: BLE001 — never take the ping down
             import refmatrix
             _PROCESS_IDENTITY = {"code_path": str(getattr(refmatrix, "__file__", "?")),
@@ -6895,14 +6899,24 @@ def graceful_stop(root: Path, *, grace: float,
     return pid is None or not is_alive(pid)
 
 
-def stop_daemon(root: Path, *, timeout: float = 5.0,
+def stop_daemon(root: Path, *, timeout: "float | None" = None,
                 report: "dict | None" = None) -> bool:
     """`graceful_stop` (signal first, then the grace) and, for a daemon that
     ignored a delivered stop op, SIGTERM + 2 s; then the heartbeat-gated
     SIGKILL. Returns True if the daemon stopped (or none was running).
     `report` records WHY the stop op was or was not sent (`stop_op`), the
     signal, and the kill decision, so a supervisor's log can tell a
-    delivered stop from a swallowed one (ch-bsd plan-4 r1 #m-12)."""
+    delivered stop from a swallowed one (ch-bsd plan-4 r1 #m-12).
+
+    `timeout=None` means `stop_grace_s()`. The default was launchd's OLD
+    5 s, so every caller that took it — `rmx daemon stop`, `rmx compact`,
+    `upgrade`'s restart, the hub UI's stop, `restart --relaunch`'s kick —
+    gave a ~50 s drain a tenth of the grace the plist's ExitTimeOut grants,
+    and reported a working daemon as "did not stop" (ch-bsd plan-4 r4 #s-3;
+    task 4.5 R2, 2026-10-19). Adoption still passes ADOPT_GRACE_S explicitly
+    (plan-4 Q6)."""
+    if timeout is None:
+        timeout = stop_grace_s()
     rep = report if report is not None else {}
     if graceful_stop(root, grace=timeout, report=rep):
         return True
