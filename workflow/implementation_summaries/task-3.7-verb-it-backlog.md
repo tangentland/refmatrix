@@ -158,3 +158,55 @@ graduation-log row:
   writer until the process exits. A later read-only open in the same process can then hit
   bug-135's handle conflict; a separate CLI invocation is unaffected.
 {#limits-list}
+
+## Remedy round 1 {#remedy-r1}
+
+rel: implements -> [[task-3.7-verb-it-backlog#remedy-r1]]
+rel: derives-from -> [[bsd-plan3-task37-impl-41c3568]]
+
+Decisions from the spec's [[task-3.7-verb-it-backlog#remedy-r1]] table (`6fd9b7c`); RED
+`56a5815` (`red-remedy-r1.log`). {#remedy-r1-lead}
+
+| row | GREEN commit | what changed |
+|-----|--------------|--------------|
+| R-B2 | `68df326` | `discovery.resolve_partition` (flag → `$RMX_PARTITION` → marker → store name), shared by `cli._resolve_partition` and `verbs.project_partition`; `rmx_focus` takes `partition` |
+| R-S1, R-RM1, R-RM2, R-RM4, R-H1 | `7e20c4a` | link / unlink / canon link send names, and the ops resolve them under the writer; `ann_search` takes a store getter resolved in the lock; `graph_recall` uses `d.partition`; canon link uses `_matrix_write`; one embed client per process |
+| R-B1, R-M2, R-OBJC, R-L (fsync) | `cae4373` | hooks run `curator status` without `--drain`; `--drain` drains only fully-printed files; raw-path legacy lines are `reason: legacy`; `HOOK_ENV` exports the fork-safety env; `write_spool` fsyncs the directory |
+| R-RM5, R-RM6, R-RM7, R-L | `c29b4b6` | forget preview 600 s; taxonomy OSError named; dead code deleted (except `cli._concept_files`, which tests/test_concept_timeline.py imports); one `session_title`; `session show` refuses an ambiguous prefix; hints; the `--via-replica` deprecation warning |
+| R-M1 | `364a90e` | bug-155 / bug-156 (base failures, open); bug-157..160 (fixed) |
+{#remedy-r1-table}
+
+Behaviour changes users will see:
+- The prompt / session-start curator line no longer drains. It keeps showing the count
+  until the gmd-curator runs `drain --token`.
+- `rmx -p X focus composite` reads X.
+- An `add concept` followed at once by `link` works on a live daemon.
+- `session show <ambiguous prefix>` exits 1 with "matches N sessions".
+- `--via-replica` on neighbors / describe prints a deprecation note.
+- Hook commands export `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` and
+  `TOKENIZERS_PARALLELISM=false`, so a hook-run `rmx` does not re-exec on macOS.
+
+Deploy adds nothing beyond the steps in [[#deploy]]: `rmx install-hooks --apply`
+re-applies the changed hook commands. {#remedy-r1-behaviour}
+
+### Remedy r1 verification {#remedy-r1-verify}
+
+- **Targeted set** (`green-remedy-r1-1.log`): all task3_7 files, test_refine_cli,
+  test_verb_parity, test_task3_6_r9_remedy, test_docs_generated, test_hooks and
+  test_concept_timeline gave 505 passed, 1 failed. The failure is
+  `test_task3_7_curator.py::test_write_spool_is_tmp_fsync_rename_and_never_visible_half_written`.
+  It pins the os-level events to exactly `["fsync", "rename"]`, while R-L adds the
+  directory fsync after the rename. This is a test conflict with the R-L decision,
+  routed to the test engineer.
+- **Full suite** (`suite-remedy-r1.log`): 3694 passed, 6 failed.
+  - Three are the known failures: bug-155, bug-156 and `test_watch` (bug-091).
+  - One is the fsync conflict above.
+  - `test_plan4_remedy::test_graceful_stop_on_a_live_daemon_returns_quickly` is a load
+    flake. Stop waits for the model warm-up in both trees; alternating samples measured
+    HEAD 5.06–5.32 s vs 591a2fb 5.25–5.69 s against an 8 s bound
+    (`r1-stopprobe-samples.log`).
+  - `test_task21_1_used_events::test_ac11a_memory_get_by_name…` is a cold-start flake.
+    Run alone it fails identically at 591a2fb ("fixture: recall did not deliver: []",
+    `r1-ac11a-bisect2.log`). It passes when another daemon test warmed the models first.
+- The spec status stays `in-progress` until the fsync test conflict is resolved.
+{#remedy-r1-verify-list}
