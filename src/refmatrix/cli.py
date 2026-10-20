@@ -7900,7 +7900,13 @@ def _expired_reads(root: Path) -> str:
     try:
         resp = daemon_mod.call(root, "stats", {}, timeout=10.0, retries=0)
     except (OSError, ValueError) as e:
-        return f"unavailable (daemon did not answer: {type(e).__name__}: {e})"
+        # Worded by THE transport classifier (bug-137, 2026-10-19): this handler said "daemon
+        # did not answer" for a refused socket too, and plan-3's transport guard flagged it at
+        # the 0.80.1 merge. ValueError covers the empty-reply JSONDecodeError of a daemon
+        # dying mid-request, which the classifier calls busy.
+        from refmatrix import verbs as _verbs
+        c = _verbs.classify_transport_error(e, op="stats", root=root, timeout=10.0)
+        return f"unavailable ({c})"
     if not resp.get("ok"):
         return f"unavailable (stats refused: {resp.get('error')})"
     n = (resp.get("result") or {}).get("expired_reads")
