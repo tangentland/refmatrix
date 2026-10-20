@@ -119,7 +119,9 @@ def test_status_returns_at_least_one_whole_file_even_over_max_entries(root):
 
 
 def test_a_bad_line_is_counted_and_warned_not_dropped_silently(root):
-    flush(root, ["/p/good.md"], raw_lines=["not json at all", "/p/raw-path.md"])
+    # remedy r1 R-M2: a raw PATH line is a legacy entry now, so the bad lines here are
+    # ones no format accepts — broken JSON and a JSON value that is not an object.
+    flush(root, ["/p/good.md"], raw_lines=['{"ts": 1, "path": ', '["not", "an", "object"]'])
     out = verbs.curator(root, action="status")
     assert _paths(out) == ["/p/good.md"], out
     assert out["warnings"] and any("2" in w for w in out["warnings"]), out
@@ -427,12 +429,14 @@ def test_cli_drain_without_a_token_fails_and_deletes_nothing(root):
     assert len(list(spool(root).glob("*.jsonl"))) == 1
 
 
-def test_cli_hook_form_prints_the_summary_within_limit_and_drains_what_it_read(root):
+def test_cli_drain_form_prints_the_summary_within_limit_and_keeps_what_it_did_not_show(root):
+    """Remedy r1 R-B1 (ch-bsd post-impl #b-1): `--drain` drains only what that call
+    printed (`max_entries = limit`); a file whose entries were partly shown stays."""
     flush(root, [f"/p/f{i}.md" for i in range(5)])
     r = CliRunner().invoke(cli_mod.main, ["curator", "status", "--drain", "--limit", "2"])
     assert r.exit_code == 0, r.output
     assert "curator-queue: 5" in r.output and "+3 more" in r.output, r.output
-    assert not list(spool(root).glob("*.jsonl"))
+    assert list(spool(root).glob("*.jsonl")), "drained entries the line never showed"
 
 
 # ---- the gmd-curator flow carries the token (r5 S1) ------------------------------

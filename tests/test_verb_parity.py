@@ -71,9 +71,10 @@ PAIRING = {
     "rmx_save_state": (("save-state",), {}, {"lint", "sync"}),
     # task 3.7: the other actions' params are not options of `focus context`; each
     # action's own command is compared by test_cli_action_click_defaults_*.
+    # `partition` (remedy r1 R-B2): the CLI carries it on the `rmx` group (`-p`).
     "rmx_focus": (("focus", "context"), {}, {"action", "n", "line", "context", "label",
                                             "selector", "k", "max_tokens", "no_expand",
-                                            "no_autoscale", "timeout"}),
+                                            "no_autoscale", "timeout", "partition"}),
     "rmx_focus_note": (("focus", "note"), {}, {"session"}),
     "rmx_change_subject": (("focus", "change-subject"), {}, set()),
     "rmx_projects": (("projects",), {}, set()),

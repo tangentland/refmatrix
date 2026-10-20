@@ -97,7 +97,7 @@ def test_link_is_one_classified_write_through_link_canon(snap_store, monkeypatch
     fd = FakeDaemon({"link_canon": {"ok": True, "result": {"canon_id": 4242}}}).install(monkeypatch)
     out = verbs.canon(root, action="link", concept="alpha", canon_name="Alpha")
     _op, args, timeout, retries = fd.last("link_canon")
-    assert args["local_concept_id"] == ids["alpha"], args
+    assert args["concept"] == "alpha", ("remedy r1 R-S1: the op resolves the NAME", args)
     assert args["canon_partition"] == "canon" and args["canon_concept_name"] == "Alpha"
     assert args["partition"] == discovery.store_name(root)
     assert timeout == 60.0 and retries == 0, (timeout, retries)
@@ -135,12 +135,15 @@ def test_link_refusal_carries_the_daemons_words(snap_store, monkeypatch):
     assert "CANARY-canon-no" in str(ei.value)
 
 
-def test_link_of_an_unknown_concept_sends_nothing(snap_store, monkeypatch):
+def test_link_of_an_unknown_concept_is_the_daemons_refusal(snap_store, monkeypatch):
+    """Remedy r1 R-S1: the op resolves the name under the writer, so an unknown concept
+    is the daemon's refusal, carried as a VerbError."""
     root, _ids = snap_store
-    fd = FakeDaemon({}).install(monkeypatch)
-    with pytest.raises(verbs.VerbError):
+    FakeDaemon({"link_canon": {"ok": False, "error": "ValueError: no concept named 'nope'"}}
+               ).install(monkeypatch)
+    with pytest.raises(verbs.VerbError) as ei:
         verbs.canon(root, action="link", concept="nope")
-    assert "link_canon" not in fd.ops()
+    assert "nope" in str(ei.value)
 
 
 def test_link_with_no_daemon_writes_in_process(root):

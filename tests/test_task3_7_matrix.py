@@ -101,13 +101,13 @@ def test_add_entity_forwards_its_fields(root, monkeypatch):
     assert args["partition"] == discovery.store_name(root)
 
 
-def test_link_resolves_its_ends_and_sends_one_write(root, monkeypatch):
-    ids = graph_store(root)
-    make_snapshot(root)
+def test_link_sends_names_and_one_write(root, monkeypatch):
+    """Remedy r1 R-S1: the verb sends NAMES; the op resolves them under the writer (an
+    id resolved on the lagging snapshot made add-then-link fail)."""
     fd = FakeDaemon({"link": {"ok": True, "result": {"created": True}}}).install(monkeypatch)
     out = verbs.matrix(root, action="link", concept="beta", entity="d0.md", linkage="defines")
     _op, args, timeout, retries = fd.last("link")
-    assert args["concept_id"] == ids["beta"] and args["entity_id"] == ids["docs"][0], args
+    assert args["concept"] == "beta" and args["entity"] == "d0.md", args
     assert args["linkage"] == "defines" and timeout == 60.0 and retries == 0
     assert out["created"] is True
 
