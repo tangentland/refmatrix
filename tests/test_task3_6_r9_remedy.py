@@ -778,3 +778,32 @@ def test_bug_135_is_not_left_open_in_the_registry():
     assert len(rows) == 1, rows
     status = rows[0].split(" | ")[6].strip()
     assert not status.startswith("open"), f"bug-135 status is {status!r}"
+
+
+# ---- #r10-amend S2: the classifier words a WRITE timeout itself -------------
+
+def test_a_write_timeout_is_not_confirmed_and_may_still_complete():
+    """`classify_transport_error(write=True)`: a timeout on a WRITE says the
+    write is not confirmed and the daemon may still complete it (the request may
+    already be in its hands — bsd-plan2-r3 #m-6, formerly `focus summarize
+    --promote`'s own words). A read timeout says neither."""
+    e = verbs.classify_transport_error(TimeoutError("timed out"), op="memory_add",
+                                       root="/r", timeout=5.0, write=True)
+    assert isinstance(e, verbs.VerbBusyError), type(e)
+    assert "not confirmed" in str(e) and "may still complete" in str(e), str(e)
+    r = verbs.classify_transport_error(TimeoutError("timed out"), op="memory_get",
+                                       root="/r", timeout=5.0)
+    assert isinstance(r, verbs.VerbBusyError), type(r)
+    assert "not confirmed" not in str(r) and "may still complete" not in str(r), str(r)
+
+
+@pytest.mark.parametrize("exc", [ConnectionRefusedError(61, "Connection refused"),
+                                 FileNotFoundError(2, "No such file or directory")],
+                         ids=["refused", "missing"])
+def test_a_write_that_never_reached_a_socket_is_plainly_not_running(exc):
+    """A refused or missing socket rules out "may still complete": nothing was
+    sent. `write=True` must not add the not-confirmed clause there."""
+    e = verbs.classify_transport_error(exc, op="memory_add", root="/r", timeout=5.0, write=True)
+    assert isinstance(e, verbs.VerbAbsentError), type(e)
+    assert "not running" in str(e), str(e)
+    assert "not confirmed" not in str(e) and "may still complete" not in str(e), str(e)
