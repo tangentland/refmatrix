@@ -190,6 +190,25 @@ endpoints". Yes: two tiers, split by ownership. {#http-tiers-lead}
   partition resolution or error typing, and the route list is generated from `VERBS`, so the
   existing parity gate covers it. {#http-verbs-only}
 
+## Distribution: marketplace AND deploy-tree `--plugin-dir` (user, 2026-10-20) {#distribution}
+
+The user, 2026-10-20: "distribution should allow for both". {#distribution-lead}
+
+- **One source.** The mod lives IN the refmatrix repo (a `mod/` folder), generated from `verbs.py`
+  at build. The deploy tree carries it, so `--plugin-dir ~/refmatrix/mod` loads the exact build
+  the daemons run. The public repo (github.com/tangentland/refmatrix) carries a marketplace file,
+  so `/plugin install refmatrix --marketplace tangentland/refmatrix` installs a tagged release.
+- **Version handshake.** A marketplace install can be older or newer than the `rmx` a store's
+  daemon runs. At `session.start` the mod reads each store's version and verb-schema hash (from
+  the hub's discovery answer, or the store's recorded file when the hub is down). Tools whose
+  schema differs are not registered, and the skew is shown as a toast plus a status-line entry,
+  never silently served. The same handshake the hub already does with the daemons
+  ([[project_hub_version_handshake]]), one level out.
+- **Both installed at once.** The deploy-tree `--plugin-dir` copy wins and the marketplace copy
+  stands down, saying so at load: two copies would register every tool and hook twice.
+- **Releases.** A refmatrix release tags the mod with the same version; the marketplace entry
+  points at the tag. {#distribution-body}
+
 ## Transition Summary {#transition-summary}
 
 **Status:** IN PROGRESS
@@ -221,7 +240,7 @@ written; `status: drafting` when it is)
 - Q2 — decided (user, 2026-10-20): the per-store HTTP surface serves **verbs only**
   ([[#http-verbs-only]]). The no-daemon fallback is decided too: spawn the project's `rmx`
   ([[#verb-host-absent]]).
-- Q3: Distribution — a marketplace repo for the mod, or `--plugin-dir` from the deploy tree only?
+- Q3 — decided (user, 2026-10-20): "distribution should allow for both" ([[#distribution]]).
 
 ### What Is NOT Moving Forward {#what-is-not-moving-forward}
 
