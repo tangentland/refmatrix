@@ -5,7 +5,7 @@ title: "Task 21.1: telemetry that can count how the agent uses rmx context, and 
 tags: [task, telemetry, context, mcp, agent, recall-events]
 metadata:
   node_type: task
-  status: pending
+  status: completed
   created: 2026-10-07
   updated: 2026-10-15
 ---

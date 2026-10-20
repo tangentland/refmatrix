@@ -5,7 +5,7 @@ title: "Task 4.6: plan-4 round-5 remedy — upgrade honours a failed stop and re
 tags: [task, plan-4, remedy, bsd, launchd, daemon, identity]
 metadata:
   node_type: task
-  status: approved
+  status: completed
   plan: plan-4-daemon-resilience
   wave: W1-a
   created: 2026-10-19

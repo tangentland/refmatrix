@@ -5,7 +5,7 @@ title: "Task 4.5: plan-4 round-4 remedy — unknown binary fails closed, one sto
 tags: [task, plan-4, remedy, bsd, launchd, daemon]
 metadata:
   node_type: task
-  status: approved
+  status: completed
   plan: plan-4-daemon-resilience
   wave: W1-a
   created: 2026-10-19
