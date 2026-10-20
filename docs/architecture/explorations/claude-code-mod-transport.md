@@ -184,6 +184,11 @@ endpoints". Yes: two tiers, split by ownership. {#http-tiers-lead}
 - **Transport errors** (refused / missing / path too long / timeout) arise client-side in TS, so
   the classifier gets a TS twin, parity-tested against `classify_transport_error`; errors the
   daemon returns keep their Python wording. {#verb-host-lead}
+- **Verbs only — decided (user, 2026-10-20).** Each daemon's HTTP socket serves one endpoint per
+  verb, `verbs.<fn>` run server-side, and nothing else. Raw daemon ops stay on `rmxd.sock`
+  line-JSON for the CLI and operator tooling. A mod therefore cannot bypass a verb's budget,
+  partition resolution or error typing, and the route list is generated from `VERBS`, so the
+  existing parity gate covers it. {#http-verbs-only}
 
 ## Transition Summary {#transition-summary}
 
@@ -213,9 +218,9 @@ written; `status: drafting` when it is)
 ### Open Questions Requiring User Decisions {#open-questions-requiring-user-decisions}
 
 - Q1: Which projects carry the gate week (refmatrix + one of viascope / cliquedb / atldb)?
-- Q2: Per-store HTTP — verbs only (preferred, [[#verb-host]]), or raw ops too for operator
-  tooling? (The no-daemon fallback is decided: spawn the project's `rmx`,
-  [[#verb-host-absent]].)
+- Q2 — decided (user, 2026-10-20): the per-store HTTP surface serves **verbs only**
+  ([[#http-verbs-only]]). The no-daemon fallback is decided too: spawn the project's `rmx`
+  ([[#verb-host-absent]]).
 - Q3: Distribution — a marketplace repo for the mod, or `--plugin-dir` from the deploy tree only?
 
 ### What Is NOT Moving Forward {#what-is-not-moving-forward}
