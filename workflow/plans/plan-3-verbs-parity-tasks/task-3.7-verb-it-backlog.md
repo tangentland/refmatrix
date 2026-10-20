@@ -27,6 +27,7 @@ rel: implements -> [[bsd-plan3-verbs-parity-r12-b18d7e8#m-2]]
 rel: amends -> [[bsd-plan3-task37-spec-7d6c418]]
 rel: amends -> [[bsd-plan3-task37-spec-r2-15232c5]]
 rel: amends -> [[bsd-plan3-task37-spec-r3-090eb5e]]
+rel: amends -> [[bsd-plan3-task37-spec-r4-1c501a4]]
 
 ## Why {#why}
 
@@ -175,7 +176,7 @@ overridable by a `timeout` param. {#budgets-lead}
 | focus.composite | `snapshot_read` + resolved session | n/a |
 | session.list / recall / show | `_call` (`memory_iter` 100k rows / `memory_get` / `memory_search`); absent ⇒ C4a | 60 s |
 | refine.list / show | `_hub_rpc` | hub default |
-| curator.status / drain | queue file under `curator.queue.lock` | n/a |
+| curator.status / drain | `.refmatrix/curator.spool/` files (no lock) | n/a |
 | taxonomy.* | `~/.refmatrix/taxonomy.json` under a file lock | n/a |
 
 ## Families {#families}
@@ -321,36 +322,41 @@ gmd-curator agent reads and drains (`gmd-curator.md` :138, :150). {#fam-refine-l
   gate of the "no silent writes" refinement queue; the hub UI is the other surface for the same
   gate. Code check: `gmd-curator.md` never calls `rmx refine` (the old reason "the gmd-curator
   agent drives it" was false). {#fam-refine-gate}
-- **`rmx_curator` (r1 B3).** Drain today reads nothing: entries appended between the agent's
-  `curator status` snapshot and its `curator drain` are lost, the hooks run `curator status
-  --drain` on every prompt, and an MCP agent offered only a drain could not take the snapshot.
-  So:
-  - ONE JSON-lines parser for status, scan and drain (r2 B1): the daemon watcher writes one
-    JSON object per line (`{ts, path, reason}`, daemon.py ~3127), but `gmd_curator.read_queue`
-    reads each line as a raw path — its test fixture uses raw paths, so it passes on a format
-    nobody writes, and the scheduled `curator scan` finds zero files and then deletes the queue.
-    A bad line is counted and returned as a warning, never dropped silently; an `OSError` is
-    raised. Fixtures use the watcher's format. Bug row logged;
-  - a SEPARATE lock file `curator.queue.lock` (`fcntl`) holds a **generation counter**. Every
-    drain bumps it; an append never does (r3 B1: an in-place rewrite keeps the inode, so a
-    dev/ino token cannot see "drained by a hook, then refilled by the watcher" — the agent's
-    stale drain would delete new, unprocessed entries);
-  - `status` returns the parsed entries plus `token = {"generation": g, "size": n}` read under
-    the lock;
-  - `drain(token)` takes the lock, refuses with `VerbError` "queue changed since status" unless
-    the generation is still `g` and the file is at least `n` bytes, removes exactly the first `n`
-    bytes by rewriting the remainder IN PLACE (truncate, never rename — an append must never land
-    in an orphaned file), bumps the generation; no token is a `VerbArgsError`. RED test: status →
-    hook `status --drain` → watcher append ≥ n bytes → `drain(token)` raises "queue changed";
-  - the watcher's append takes the same lock NON-blocking with a bounded retry (r3 M2: a hung
-    drainer must not block the flush thread forever); on timeout it keeps the entries in memory
-    for the next flush and logs a counted line — entries are never dropped;
-  - `scan_and_enqueue(drain=True)` (the scheduled `curator scan`) drains only via
-    `drain(token)` under the same lock;
-  - `gmd_curator.drain_queue`'s swallowed errors are surfaced (C8);
+- **`rmx_curator` (r1 B3; redesigned at r4).** Drain today reads nothing: entries appended
+  between the agent's `curator status` snapshot and its `curator drain` are lost, the hooks run
+  `curator status --drain` on every prompt, and an MCP agent offered only a drain could not take
+  the snapshot. Rounds r2-r4 patched a single shared queue file with a token, a lock, a
+  generation counter and an in-place truncate, and each patch opened a new loss window (inode
+  reuse, a counter reset, a crash mid-drain, entries held in daemon memory across a fast-exit).
+  The shared mutable file is the defect, so it goes. **A spool directory replaces it:**
+  - the daemon watcher (`_enqueue_curator`, daemon.py ~3115) writes each flush as ONE new file
+    `.refmatrix/curator.spool/<ns-timestamp>-<uuid4>.jsonl` — written to a `.tmp` name, fsynced,
+    then `os.rename`d into place. No lock, nothing held in memory, nothing a reader can see
+    half-written; a write failure is logged with a count (C8);
+  - ONE JSON-lines parser (r2 B1) reads every spool file: the watcher writes `{ts, path, reason}`
+    per line, but `gmd_curator.read_queue` today reads each line as a raw path (its fixture uses
+    raw paths, so it passes on a format nobody writes, and the scheduled `curator scan` finds zero
+    files then deletes the queue). A bad line is counted and returned as a warning; an `OSError`
+    is raised. Fixtures use the watcher's format. Bug row logged;
+  - `status` returns the parsed entries plus `token = [<spool file names it read>]`, oldest first;
+  - `drain(token)` unlinks exactly those files. A name already gone is reported in `missing` (a
+    concurrent drain took it — never an error, never a deletion of anything else); no token is a
+    `VerbArgsError`. A file written after `status` is never in the token, so it can never be
+    drained unread. RED test: status → hook `status --drain` → new flush → `drain(old token)`
+    removes nothing new and the new entries are still returned by the next `status`;
+  - `curator status --drain` (the generated hooks' form) is status-then-drain(token) through the
+    verb; `scan_and_enqueue(drain=True)` (the scheduled `curator scan`) drains only via
+    `drain(token)`; `gmd_curator.drain_queue`'s swallowed errors are surfaced (C8);
+  - no src path other than `drain(token)` deletes a spool file, and nothing unlinks the legacy
+    `curator.queue` (today cli.py ~9136 / ~9160 / ~9171 and `gmd_curator.drain_queue` do) — a
+    test greps `src/` for both (r4 M1);
+  - **rollout:** a daemon still running pre-3.7 code appends to the legacy `curator.queue` until
+    it is restarted (every deploy restarts daemons). `status` first moves a legacy file into the
+    spool with ONE `os.rename` (atomic), so its entries are drained like any other spool file;
+    the remaining window — an old-code append through an fd opened before that rename — closes at
+    the deploy's restart and is named in the release notes;
   - twins: `curator status` (no `--drain`) is the `CLI_MAP` twin (it leaves category `hook`);
-    `curator drain` is a `CLI_ACTIONS` twin; `curator status --drain` (the generated hooks'
-    form) is status-then-drain(token) through the verb. {#fam-refine-drain}
+    `curator drain` is a `CLI_ACTIONS` twin. {#fam-refine-drain}
 - Defects found in the re-decided operator paths are logged as bug rows (accept KeyError on a
   gmd-curator candidate; reject has no pending check; accept writes project memories to
   `store_name` not `memory_partition`; candidate ids use per-process `hash()`), not fixed here.
