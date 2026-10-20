@@ -124,3 +124,51 @@ purge. All seven were killed:
 - 3.6 file: 20 passed (`task3.6-green-target.log`).
 - Plan-3 files (incl. 3.5, 3.6, plan-2 remedy, hub, lance): 551 passed (`task3.6-green-plan3.log`).
 - Full suite: 3018 passed, 20 failed, 19 skipped (`task3.6-green-full.log`). The failures are the 19 clone-only DEV TREE refusals plus the gmd repo-scope gate, and nothing else.
+
+## Amendment after r10 (#r10-amend) {#r10}
+
+rel: implements -> [[task-3.6-r9-remedy#r10-amend]]
+rel: evidence-for -> [[bsd-plan3-verbs-parity-r10-1081a05]]
+
+This is the GREEN for the test engineer's `a420c90`. The tests there were 6 RED.
+
+- **S1: one legacy-partition detector.** `verbs.legacy_memory_partition_exists(root, legacy)
+  -> bool` does a read-only open (the snapshot if there is one, else the primary catalog),
+  is closed in a `finally`, and is never cached. A store with no catalog file has no legacy
+  partition.
+  - `verbs.memory_partition` uses it on the no-replica, absent-daemon branch. A read failure
+    there is `VerbBusyError`, never a guessed partition.
+  - `cli._memory_partition_default` now delegates to `verbs.memory_partition`. On a
+    `VerbError` it keeps the CLI's old behaviour: warn, and use the project partition for this
+    command only.
+  - `cli._legacy_memory_partition_exists` and its process cache are deleted, along with
+    `_ingest_partition`'s now-unused `daemon_up` parameter. MCP `rmx_memory_add` already went
+    through `verbs.memory_partition`.
+  - Result: MCP, CLI and the verb all land in `memory-p` on a pre-merge store that has never
+    been snapshotted, and an in-process write afterwards succeeds, so bug-135 stays fixed.
+- **S2: two more sites through the classifier.**
+  - **`focus summarize --promote`** (`cli.py:1341`). The "may still complete it" note for a
+    timeout is a transport fact, so it now comes from the classifier:
+    `classify_transport_error(..., write=True)`. On a timeout of a write op it says "the daemon
+    is busy — the write is not confirmed within Ns and the daemon may still complete it". A
+    refused or missing socket gets the plain absent wording.
+  - **`memory recall`'s dense leg** (`_degrade_or_raise`, `cli.py:12270`). It now types and
+    words raw OSErrors through the classifier. An already-typed `VerbError` keeps its own
+    words. The hook-mode stdout note interpolates the classified error, escaped for Rich.
+- **M1:** bug-135's status is now `fixed (1919764; …)`. A closure line says the fix moved the
+  no-daemon legacy check, S1 restores that check as a closed-after read, and the enabler is
+  bug-136, which belongs to task 23.5. bug-136 itself is not touched.
+
+**Tests that pin the deleted CLI detector.** The spec deletes the CLI detector, so these
+three fail with `AttributeError: module 'refmatrix.cli' has no attribute
+'_legacy_memory_partition_exists'`. They need updating by the test engineer:
+
+- `tests/test_plan2_remedy.py::test_legacy_partition_probe_warns_and_does_not_cache_a_timeout`:
+  the intent (warn on a failed probe, cache nothing) still holds in
+  `cli._memory_partition_default`.
+- `tests/test_plan2_remedy_r7.py::test_cli_partition_probe_reads_the_replica_under_a_held_writer`:
+  it asserts the CLI process cache is populated, which contradicts "never cached". Its replica
+  intent is covered by the sibling verb test in the same file.
+- `tests/test_memory.py::test_memory_partition_default_resolves_to_project_scoped`: it fails
+  on line 291, `hasattr(cli_mod._legacy_memory_partition_exists, "_cache")`. The behaviour it
+  asserts still holds.

@@ -1339,13 +1339,18 @@ def focus_summarize(session, promote, is_global, timeout):
                 resp = _memory_daemon_call("memory_add", args, timeout=float(timeout),
                                            retries=0)
             except (TimeoutError, _socket.timeout, OSError) as e:
-                # The request is in the daemon's hands by now; the digest
-                # (upserted by name) probably lands — only the reply is
-                # lost. Say what is known (bsd-plan2-r3 #m-6).
+                # Typed and worded by THE classifier (task 3.6 #r10-amend S2,
+                # ch-bsd plan-3 r10 #s-2): every OSError here read "daemon
+                # busy", a refused socket included. `write=True`: only a
+                # TIMEOUT means the request may be in the daemon's hands — the
+                # digest (upserted by name) may still land — and only then
+                # does the classifier say so (bsd-plan2-r3 #m-6).
+                from refmatrix import verbs as _verbs
+                c = _verbs.classify_transport_error(e, op="memory_add", root=root,
+                                                    timeout=float(timeout), write=True)
                 raise click.ClickException(
-                    f"daemon busy: promote not confirmed within {timeout:g}s "
-                    f"({e}); the daemon may still complete it — the next "
-                    f"PreCompact / save-state promote confirms") from e
+                    f"promote: {c} — the next PreCompact / save-state promote "
+                    f"catches up") from e
             if not resp.get("ok"):
                 raise click.ClickException(resp.get("error", "daemon error"))
             eid = resp["result"]["id"]
@@ -9972,10 +9977,10 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
     # this, ingested memories are orphaned. With --as-memory we mirror
     # `_apply_memory_partition_default`: explicit -p / RMX_PARTITION wins,
     # otherwise default to `memory-<project>`.
-    def _ingest_partition(daemon_up=None, timeout=10.0) -> str:
+    def _ingest_partition(timeout=10.0) -> str:
         if as_memory and not _partition_override \
                 and not os.environ.get("RMX_PARTITION"):
-            return _memory_partition_default(daemon_up=daemon_up, timeout=timeout)
+            return _memory_partition_default(timeout=timeout)
         return _resolve_partition()
     # --prestage: walk files and stamp gmd_content_hash on existing
     # entities. Does not ingest. Useful to bootstrap auto-resume on a
@@ -10039,8 +10044,9 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
                 f"daemon (`rmx daemon start`), or run without the flag")
     if daemon_up is None:
         daemon_up = daemon_mod.ping(root)
-    # Resolved AFTER the classification so the legacy-partition probe reuses
-    # it instead of paying its own full-cost ping first.
+    # The legacy-partition probe is `verbs.memory_partition` (task 3.6
+    # #r10-amend S1): replica first, then ONE bounded ping (`retries=0` under
+    # a timeout) — it no longer reuses this classification.
     # On the hook path (--detach/--progress) ONE deadline covers the probe,
     # the legacy-partition probe and the start op (bsd-plan2-r4 #s-1, r5
     # #m-3: separate budgets summed to 20 s and the message named one leg).
@@ -10053,7 +10059,7 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
             return default
         return max(0.5, min(default, _detach_deadline - _time2.monotonic()))
 
-    ingest_partition = _ingest_partition(daemon_up=daemon_up, timeout=_detach_left(10.0))
+    ingest_partition = _ingest_partition(timeout=_detach_left(10.0))
     if daemon_up:
         op_args = {
             "targets": [str(p) for p in resolved],
@@ -11136,8 +11142,7 @@ def _replica_memory_recall(query: str, *, k: int, kinds: list,
 MEMORY_PARTITION_PREFIX = _store_mod.MEMORY_PARTITION_PREFIX
 
 
-def _memory_partition_default(*, daemon_up: "bool | None" = None,
-                              timeout: float = 10.0) -> str:
+def _memory_partition_default(*, timeout: float = 10.0) -> str:
     """Resolve the memory partition for the active CLI invocation.
 
     Post-0.5.0 default: project partition (`default_partition_name`),
@@ -11150,93 +11155,30 @@ def _memory_partition_default(*, daemon_up: "bool | None" = None,
 
     Migration auto-detect: if the legacy `memory-<project>` partition
     still exists (a host that hasn't run `rmx partition merge`), keep
-    routing to it so existing data stays reachable. After the operator
-    runs the merge (drops the legacy partition row), the default flips
-    to the project partition automatically.
-    """
+    routing to it so existing data stays reachable.
+
+    ONE resolver (task 3.6 #r10-amend S1, ch-bsd plan-3 r10 #s-1,
+    2026-10-19): this used to run its own detector
+    (`_legacy_memory_partition_exists`, with a process cache) and
+    disagreed with `verbs.memory_partition` on a never-snapshotted
+    pre-merge store — CLI `memory add` landed in `memory-p`, MCP
+    `rmx_memory_add` in `p`. It now asks the verb, which reads the
+    replica, then the daemon, then (no daemon) the shared closed-after
+    detector `verbs.legacy_memory_partition_exists`. A probe that fails
+    keeps the CLI's long-standing behaviour: warn, and use the project
+    partition for THIS command only (nothing is cached)."""
+    from refmatrix import verbs as _verbs
     from refmatrix.store import default_partition_name
     try:
         root = _root()
-        project = root.resolve().parent.name or "default"
-        legacy = f"{MEMORY_PARTITION_PREFIX}{project}"
-        # Best-effort legacy detection: peek at partitions table without
-        # holding the writer lock. Daemon-up call is preferred so a CLI
-        # invocation while the daemon owns the lock doesn't crash on
-        # the read; daemon-down falls back to a lock-free reader.
-        if _legacy_memory_partition_exists(root, legacy, daemon_up=daemon_up,
-                                           timeout=timeout):
-            return legacy
-        return default_partition_name(root)
     except Exception:
         return f"{MEMORY_PARTITION_PREFIX}default"
-
-
-def _legacy_memory_partition_exists(root: Path, legacy: str, *,
-                                    daemon_up: "bool | None" = None,
-                                    timeout: float = 10.0) -> bool:
-    """True when the `memory-<project>` partition row is still present
-    (pre-merge state). Caches per process so repeated `rmx memory`
-    invocations don't re-query.
-
-    Read paths (in order of preference):
-      1. The lock-free replica (`catalog.read.duckdb`) — milliseconds, and
-         it does not wait on the writer. The daemon op used to come first,
-         but `partition_list` takes the writer lock daemon-side, so every
-         hook probe timed out (and the hook answered `[]`) whenever the
-         watcher was flushing an edit — the operator's own edits made the
-         hooks blind (bsd-plan2-r7 re-measure, 2026-09-15 03:36).
-      2. Daemon RPC `partition_list` when there is no replica yet and the
-         daemon is up (the bootstrap window).
-      3. Neither → return False. A fresh tree has no legacy partition by
-         definition; routing to the project partition is the correct default.
-
-    NEVER opens the active rotation slot directly — that would crash
-    with `Could not set lock on catalog.B.duckdb` whenever the daemon
-    is alive but `ping()` momentarily failed (restart window, socket
-    hiccup), exactly the path that produced the 0.5.1 regression."""
-    cache_key = (str(root), legacy)
-    cached = getattr(_legacy_memory_partition_exists, "_cache", {})
-    if cache_key in cached:
-        return cached[cache_key]
-    found = False
-    probe_failed = False
     try:
-        from refmatrix import daemon as daemon_mod
-        rs = _reader_store()
-        if rs is not None:
-            try:
-                row = rs._connect().execute(
-                    "SELECT 1 FROM partitions WHERE name=?", (legacy,),
-                ).fetchone()
-                found = row is not None
-            finally:
-                try:
-                    rs.close()
-                except Exception:
-                    pass
-        # `daemon_up` lets a caller that already classified the daemon skip
-        # a second full-cost ping (~2 s against a silent socket).
-        elif daemon_up if daemon_up is not None else daemon_mod.ping(root):
-            # retries=0: partition_list takes the writer lock daemon-side;
-            # on a busy writer the library default retried for 30 s under
-            # the SessionStart bridge hook (bsd-plan2-r4 #s-1). A miss here
-            # only means "assume the project partition".
-            resp = daemon_mod.call(
-                root, "partition_list", {}, timeout=timeout, retries=0,
-            )
-            if resp.get("ok"):
-                rows = resp["result"].get("rows", [])
-                found = any(r.get("name") == legacy for r in rows)
-        # else: no snapshot and no daemon → fresh tree → no legacy partition.
-    except Exception as e:  # noqa: BLE001 — named, not cached (bsd-plan2-r5 #m-4)
-        probe_failed = True
-        click.echo(f"# rmx: warning: partition_list probe failed ({type(e).__name__}: {e}); "
+        return _verbs.memory_partition(root, timeout=timeout)
+    except _verbs.VerbError as e:
+        click.echo(f"# rmx: warning: memory-partition probe failed ({e}); "
                    f"assuming the project partition for THIS command only", err=True)
-        found = False
-    if not probe_failed:
-        cached[cache_key] = found
-        _legacy_memory_partition_exists._cache = cached  # type: ignore[attr-defined]
-    return found
+        return default_partition_name(root)
 
 
 def _memory_daemon_call(op: str, args: dict, *, timeout: float = 60.0,
@@ -12038,19 +11980,28 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
         return min(default, rem)
 
     def _degrade_or_raise(e: Exception):
-        """Hook modes degrade loudly; interactive use fails loudly."""
-        msg = (str(e) if isinstance(e, _verbs.VerbBusyError)
-               else f"daemon busy (recall not confirmed within {budget:g}s: {e})")
+        """Hook modes degrade loudly; interactive use fails loudly.
+
+        A raw transport error (the dense leg's `memory_recall` dial) is typed
+        and worded by THE classifier (task 3.6 #r10-amend S2, ch-bsd plan-3
+        r10 #s-2, 2026-10-19): it used to call a refused socket "daemon busy
+        (recall not confirmed …)". An already-typed `VerbError` keeps its words."""
+        from rich.markup import escape as _escape
+        if isinstance(e, _verbs.VerbError):
+            c = e
+        else:
+            c = _verbs.classify_transport_error(e, op="memory_recall", root=_root(),
+                                                timeout=budget)
         if not hook_mode:
-            raise click.ClickException(msg)
-        click.echo(f"# rmx: warning: recall skipped: {msg}", err=True)
+            raise click.ClickException(f"{c}")
+        click.echo(f"# rmx: warning: recall skipped: {c}", err=True)
         if as_json:
             click.echo("[]")
         elif as_gmd:
             click.echo(_render_memory_gmd([], query=q, mode="skipped",
                                           partition=_resolve_partition()))
         else:
-            console.print("[yellow]recall skipped (daemon busy)[/]")
+            console.print(f"[yellow]recall skipped[/] ({_escape(str(c))})")
 
     from refmatrix import verbs as _verbs
 

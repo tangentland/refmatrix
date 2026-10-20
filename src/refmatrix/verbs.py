@@ -206,7 +206,7 @@ def require_daemon(root: Path, *, retries: int = 2) -> dict:
 
 
 def classify_transport_error(e: BaseException, *, op: str, root: "Path | str",
-                             timeout: float) -> VerbError:
+                             timeout: float, write: bool = False) -> VerbError:
     """THE one place a `daemon.call` transport exception becomes words and a type.
 
     Why (task 3.5 amendment #req-amend, 2026-10-19, the project-store sibling of
@@ -226,6 +226,14 @@ def classify_transport_error(e: BaseException, *, op: str, root: "Path | str",
       restarting mid-request) → `VerbBusyError` naming the type and message,
       the classification `_call` always gave it.
 
+    `write=True` (a WRITE op): a timeout also says the write is NOT CONFIRMED
+    and may still land — the request may already be in the daemon's hands,
+    which a refused or missing socket rules out. That distinction is a
+    transport fact, so it is worded here, not by each caller (task 3.6
+    #r10-amend S2, ch-bsd plan-3 r10 #s-2: `focus summarize --promote`
+    carried it as its own "daemon busy: promote not confirmed" for every
+    OSError, bsd-plan2-r3 #m-6).
+
     Returns the error; the caller raises it (`raise … from e`)."""
     import socket as _socket
     kind = type(e).__name__
@@ -241,6 +249,11 @@ def classify_transport_error(e: BaseException, *, op: str, root: "Path | str",
         # render this to users, and r4 pinned that no raw `TimeoutError`
         # leaks into a busy message (`_promote_digest`).
         why = f" ({e})" if str(e) else ""
+        if write:
+            return VerbBusyError(f"daemon op {op} on {root} did not answer within "
+                                 f"{timeout:g}s{why}; the daemon is busy — the write is "
+                                 f"not confirmed within {timeout:g}s and the daemon may "
+                                 f"still complete it")
         return VerbBusyError(f"daemon op {op} on {root} did not answer within {timeout:g}s"
                              f"{why}; the daemon is busy")
     return VerbBusyError(f"daemon op {op} on {root} failed in transport ({kind}: {e}); "
@@ -331,6 +344,35 @@ def global_write(op: str, args: dict, *, timeout: "float | None" = None) -> dict
     return g.get("result", {})
 
 
+def legacy_memory_partition_exists(root: Path, legacy: str) -> bool:
+    """THE legacy-partition detector: is the pre-merge `memory-<project>`
+    partition row present in this store?
+
+    One place (task 3.6 #r10-amend S1, ch-bsd plan-3 r10 #s-1, 2026-10-19):
+    the CLI had its own detector with a process cache while
+    `memory_partition` had none on the no-snapshot branch, and the two
+    disagreed on the same store — the split-brain family. Both use this now.
+
+    A read-only open (the snapshot when there is one, else the primary
+    catalog), CLOSED before returning and never cached: a cached read-only
+    attach of the writer's file is bug-135, and a cached answer goes stale
+    the moment a partition is created or merged. A store with no catalog file
+    yet has no legacy partition. Open/read errors propagate to the caller.
+
+    Call it only where no daemon holds the catalog (the absent branch), or
+    with a snapshot present; under a live daemon the primary file is locked."""
+    from refmatrix.store import Store
+    s = Store(root, read_only=True)
+    try:
+        if not Path(s.db_path).exists():
+            return False
+        row = s._connect().execute(
+            "SELECT 1 FROM partitions WHERE name=?", (legacy,)).fetchone()
+        return row is not None
+    finally:
+        s.close()
+
+
 def memory_partition(root: Path, *, timeout: "float | None" = None) -> str:
     """Legacy-aware memory partition (memory-<project> pre-merge, else the
     project partition). THE routing every memory verb must use — one handler
@@ -363,7 +405,20 @@ def memory_partition(root: Path, *, timeout: "float | None" = None) -> str:
     try:
         require_daemon(root, retries=0 if timeout is not None else 2)
     except VerbAbsentError:
-        return project
+        # NO daemon and no snapshot: read the partitions table ourselves, with
+        # a closed-after read-only open (task 3.6 #r10-amend S1, ch-bsd plan-3
+        # r10 #s-1, 2026-10-19). Returning the project partition blind here —
+        # which is what bug-135's fix left once `cached_replica` stopped
+        # caching the writer's file — split MCP `rmx_memory_add` (→ `p`) from
+        # CLI `memory add` (→ `memory-p`) on a pre-merge, never-snapshotted
+        # store. No daemon holds the catalog in this branch, so the open is safe.
+        try:
+            return legacy if legacy_memory_partition_exists(root, legacy) else project
+        except Exception as e:  # noqa: BLE001 — typed for the caller, never guessed past
+            raise VerbBusyError(
+                f"no daemon for {root}, and its catalog could not be read to find the "
+                f"memory partition ({type(e).__name__}: {e}) — another process holds it; "
+                f"retry shortly") from e
     op_timeout = min(10.0, timeout) if timeout else 10.0
     try:
         # One attempt: a held writer does not free in 10 s, and a retried
