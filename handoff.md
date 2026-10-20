@@ -26,16 +26,26 @@ rel: supersedes -> [[handoff-016-wave0-close-plan-review]]
 
 ## In flight {#in-flight}
 
-- **Plan-3 (W1-b)** in `/Volumes/littlebig/refmatrix-plan3-close`, branch `plan3-close-w1` (base
-  d4bf001, NOT yet on 0.80.0): tasks 3.4, 3.5, 3.6 built; ch-bsd r10 (`fc80c7b`) found S1 (CLI/MCP
-  bootstrap partition split, from the bug-135 fix) and S2 (transport-wording guard foolable; live
-  sites cli.py:1341, :12270). RED for the fix at `a420c90`; implementer GREEN running. Then ch-bsd
-  r11, then merge as 0.80.1. Plan-3 closes only with task 3.7 (verb-it backlog, W2-d) done or the
-  user carrying it past closure.
+- **Release 0.80.1** in `/Volumes/littlebig/refmatrix-rel080`, branch `release-0.80.1` (HEAD
+  `591a2fb`, not yet on master): plan-3 tasks 3.4-3.6 (ch-bsd r12 MEH-only, `9f12239`) merged on
+  0.80.0 + bug-137 integration fix (`ae7713d`; 21.1's `_expired_reads` routed through the
+  classifier). Full-suite rerun was running (`workflow/review-output/rel0801-full-2.log` in that
+  clone). When clean: `git checkout -B master origin/master && git merge --no-ff release-0.80.1`
+  there, `git fetch <clone> master:master` in the dev tree, deploy, push `master:main`.
+- **AC-6 reconciliation** in `/Volumes/littlebig/refmatrix-ac6` (branch `ac6-fixture` off 0.80.0):
+  the user cut the fixture 2026-10-19 (untracked copy also in the dev tree at
+  `tests/fixtures/agent_usage/` — do not commit it from there). Report prints context 3 (match),
+  grep-replica 1121 (test pins 1,119), memory recall commands=244 (pins 34). A test-engineer is
+  measuring which side is wrong and checking redaction/size (22 MB cli.log).
+- **Task 3.7 (verb-it backlog) — user decided: do NOW, after this save-state.** Clone ready:
+  `/Volumes/littlebig/refmatrix-task-3.7`, branch `task-3.7-verb-it-backlog` off release-0.80.1.
+  First step: rewrite 3.7 into a buildable per-family spec (actions, params, read source, budget,
+  busy/absent, output shape, MCP tool) + RED tests; fold in the two r12 deferral rows (guard
+  fixed-point plants; `global_recall_rows` errno + `cli.py` catch-all). Plan-3 closes with 3.7.
 
 ## Waiting on the user {#user}
 
-- AC-6 fixture: `! cd /Users/tholley/claude_tools/refmatrix && python3 tools/cut_agent_usage_fixture.py`
+- (AC-6 fixture cut — done 2026-10-19.)
 - 19.5 R1 hook-limit probe; 20.1 gold labels; 21.4 question set; 19.6 tables.
 
 ## Next (Wave 1) {#next}
