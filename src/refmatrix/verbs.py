@@ -2512,6 +2512,8 @@ CLI_MAP: dict[str, "tuple[str, ...] | None"] = {
     "rmx_curate": ("protect",),
     "rmx_taxonomy": ("taxonomy", "list"),
     "rmx_curator": ("curator", "status"),
+    "rmx_graph": ("neighbors",),
+    "rmx_canon": ("canon", "find"),
 }
 # How each twin is WIRED to its verb (asserted by test_verb_parity.py by
 # recording the call while the click command runs — ch-bsd plan-3 r1 #bs-1
@@ -2588,6 +2590,16 @@ CLI_ACTIONS: dict[tuple[str, ...], tuple[str, str]] = {
     ("taxonomy", "add"): ("rmx_taxonomy", "add"),
     ("taxonomy", "remove"): ("rmx_taxonomy", "remove"),
     ("curator", "drain"): ("rmx_curator", "drain"),
+    # Task 3.7 batch B (#fam-graph-read incl. `stats` #decisions-r2, #fam-canon).
+    ("co-occur",): ("rmx_graph", "co_occur"),
+    ("top",): ("rmx_graph", "top"),
+    ("describe",): ("rmx_graph", "describe"),
+    ("recall",): ("rmx_graph", "recall"),
+    ("search-dense",): ("rmx_graph", "dense"),
+    ("stats",): ("rmx_graph", "stats"),
+    ("concept", "timeline"): ("rmx_graph", "timeline"),
+    ("canon", "siblings"): ("rmx_canon", "siblings"),
+    ("canon", "link"): ("rmx_canon", "link"),
 }
 
 # CLI-only BY DECISION. On 2026-10-06 the user accepted CLI-only commands for
@@ -2646,13 +2658,6 @@ LEGACY_UNPAIRED: dict[tuple[str, ...], tuple[str, str]] = {
     #    Bash; MCP agents cannot reach them. Each owes a verb, and each reason
     #    names the task-3.7 family that owes it (ch-bsd plan-3 r9 #b-1: "owes a
     #    verb" with no task behind it was a parking lot).
-    **_legacy("verb-it", "graph read an agent runs to navigate the matrix; owes the "
-              "graph verb — task-3.7#fam-graph-read",
-              ("neighbors",), ("co-occur",), ("top",), ("describe",), ("recall",),
-              ("search-dense",), ("concept", "timeline"), ("pairs", "show")),
-    **_legacy("verb-it", "cross-project canon view an agent consults; owes the canon verb "
-              "— task-3.7#fam-canon",
-              ("canon", "find"), ("canon", "siblings"), ("canon", "link")),
     **_legacy("verb-it", "low-level matrix edit / saved-query surface agents script; owes "
               "the matrix verb — task-3.7#fam-matrix-edit",
               ("add", "concept"), ("add", "entity"), ("add", "linkage-type"),
@@ -2722,8 +2727,12 @@ LEGACY_UNPAIRED: dict[tuple[str, ...], tuple[str, str]] = {
               ("migrate-to-duckdb",), ("export",), ("import",), ("dump-log",)),
     # -- harness: telemetry, logs, eval conditions and debugging.
     **_legacy("harness", "telemetry, log and debug inspection",
-              ("telemetry",), ("cli-log",), ("log",), ("cctree",), ("stats",),
+              ("telemetry",), ("cli-log",), ("log",), ("cctree",),
               ("fingerprint",), ("tools-primer",), ("focus", "size")),
+    **_legacy("harness", "a debug view of the coref inventory `pairs compile` (maintenance) "
+              "builds; no template, primer or hook teaches it and 0 of 12 cli.logs call it "
+              "(task 3.7 #fam-graph-read-pairs, re-decided)",
+              ("pairs", "show")),
     **_legacy("harness", "a manual STM event append for tests and debugging; no generated "
               "hook runs it (every focus hook runs `focus hook --event …`)",
               ("focus", "record")),
