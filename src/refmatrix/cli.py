@@ -12643,7 +12643,7 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
             if gr.get("name") in seen_names:
                 continue
             shown += 1
-            cells.append(([str(shown), "—", str(gr.get("id")), f"{gr['name']} [global]"], gr))
+            cells.append(([str(shown), "—", str(gr.get("id")), gr["name"]], gr))
             table_rows.append(gr)
     # 21.1 ch-bsd r1 #b3 (spec rev round 13, 2026-10-19): the table is the agent's default
     # `recall` channel, so it goes through THE recall table path (`_echo_recall_table`).
@@ -12670,13 +12670,27 @@ def _echo_recall_table(rec: "_RecallCall", columns: "tuple[str, ...]",
     (21.1 ch-bsd r2 #b1, 2026-10-19). Spans come from the RENDERER's layout (row i is body
     line i, the name is the start of cell `name_col`), never from searching the text: a
     search found a memory named `name` / `rank` / `1` in the header or the rank cell
-    (r2 #m1). Every cell is escaped, so rich never reads `[global]` or a `[`-bearing name as
-    markup (r1 #b3). `cells` pairs each displayed row with the row it delivers (None for a
-    hit whose memory could not be fetched, shown as `?`, delivered nowhere). `ctx_rows`
-    (degree > 0) adds each row's context block below the table, in the same payload."""
+    (r2 #m1). `cells` pairs each displayed row with the row it delivers (None for a hit whose
+    memory could not be fetched, shown as `?`, delivered nowhere). `ctx_rows` (degree > 0)
+    adds each row's context block below the table, in the same payload.
+
+    Cells are rich `Text`, never markup: no tag, escape or emoji is interpreted, so a name
+    prints VERBATIM. Markup + `rich_escape` printed `fix:smile:now` as `fix😄now` and
+    `trail\\` with a doubled backslash, and the span check (`startswith`) still claimed it
+    (21.1 ch-bsd r3 #m1, 2026-10-19). A span now requires the name to be followed by the
+    cell's padding or the ` [global]` label. The label is THIS function's: a delivered row
+    whose `scope` is `global` is labelled here, for every route -- the `--recent` /
+    `--subject --scope both` table printed global rows unlabelled while the query caller
+    added the suffix itself (r3 #m2)."""
+    from rich.text import Text
     t = Table(*columns)
-    for row_cells, _row in cells:
-        t.add_row(*[rich_escape(_one_line(c)) for c in row_cells])
+    labels: "list[str]" = []
+    for row_cells, row in cells:
+        label = " [global]" if row is not None and row.get("scope") == "global" else ""
+        labels.append(label)
+        shown_cells = [_one_line(c) for c in row_cells]
+        shown_cells[name_col] += label
+        t.add_row(*[Text(c) for c in shown_cells])
     table_text = _render_table_text(t)
     lines = table_text.split("\n")
     rule = next((i for i, ln in enumerate(lines) if ln.startswith("┡")), None)
@@ -12698,7 +12712,9 @@ def _echo_recall_table(rec: "_RecallCall", columns: "tuple[str, ...]",
             parts = line.split("│")
             if len(parts) > name_col + 1:
                 prefix = "│".join(parts[: name_col + 1]) + "│ "      # border, cells, pad
-                if line[len(prefix):].startswith(name):
+                after = line[len(prefix):]
+                tail = after[len(name) + len(labels[i]):]
+                if after.startswith(name + labels[i]) and tail.startswith(" "):
                     span = (starts[rule + 1 + i] + len(prefix.encode("utf-8")),
                             len(name.encode("utf-8")))
         spans.append(span)
@@ -12717,7 +12733,8 @@ def _render_table_text(t: "Table") -> str:
     mode writes and spans (21.1 r1 #b3)."""
     import io as _io
     rec_console = Console(record=True, file=_io.StringIO(), width=10_000,
-                          color_system=None, soft_wrap=False)
+                          color_system=None, soft_wrap=False, markup=False, emoji=False,
+                          highlight=False)
     rec_console.print(t)
     return rec_console.export_text(styles=False).rstrip("\n")
 

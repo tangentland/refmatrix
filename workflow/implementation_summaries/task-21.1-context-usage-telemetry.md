@@ -67,20 +67,30 @@ rel: derives-from -> [[bsd-task21.1-context-usage-r2-b9660ba]]
 | r2 #b1 `--recent` / `--subject` table logged 0 delivered | Both text tables of `rmx memory recall` now go through ONE path, `cli._echo_recall_table`. It renders at natural width, escapes every cell, puts each cell on one line, writes through `rec.echo` and sets `rec.delivered`. The recent table's `console.print` is gone, so no third table can print around the capture. |
 | r2 #m1 text spans found by search | `context.name_spans` is JSON-only now. A text payload brings its renderer's spans: the table records each delivered row's name at the start of its own name cell (row i = body line i), and `_render_memory_gmd_spans` records each name in its own `## <name>` heading. `_RecallCall.emit` spans nothing it was not told, and `call_events` counts any unspanned row. A memory named `name`, `rank` or `1` now spans its own name cell. |
 | r2 #m3 empty root resolved to cwd | `telemetry.norm_path` returns None for a null or empty path, and only absolute spellings are cached. `stm.scope_key(None)` is None. A null or empty `root` row is an `unscoped-row` to every scoped reader and in scope for none. `migrated_from` is spelled by `scope_key` too. |
-| r2 #m5 stale Open section | Refreshed below. |
+| r2 #s1 five remedies unguarded | The test-engineer added a killing test for each, proven in a mutated copy (`3e399f0`): the `[global]` label, `CountingStream.close` not flushing, a long name printed whole, `prune_unreadable=1` / `legacy_pointers_undropped=1`, unspanned delivered counted and not written, and the STM-hook clause naming `stm.errors_log_path()`. |
+| r2 #s2 / bug-134 live-log guard false positive | `3e399f0` attributed appended rows. That opened a live log under the 23.0 audit hook, so `ef83617` made the per-test guard stat-only: an inode change or a shrink fails, and growth is recorded to the sandbox growth ledger. The 23.0 end-of-run check (`scripts/sandbox-proof.sh`) then reads each range once, outside the sandbox. Registry rows: `d7ef3f7`, `cf7e4bb`. |
+| r2 #m2 AC-11e accepted `[]` | AC-11e now asserts `["concept"]` exactly (`3e399f0`). |
+| r2 #m4 AC-11f retry on an unmeasured cause | The AC-11 setup records each retried attempt's query.log outcome (`3e399f0`). |
+| r2 #m5 stale Open section | Refreshed in `89c597d`, and again in this round (r3 #s2). |
+
+## ch-bsd r3 remedy (2026-10-19) {#remedy-r3}
+
+rel: derives-from -> [[bsd-task21.1-context-usage-r3-cf7e4bb]]
+
+| finding | fix |
+|---|---|
+| r3 #m1 table rewrote some names; prefix span check | `_echo_recall_table` adds cells as rich `Text`, and `_render_table_text` renders with markup, emoji and highlight off, so `fix:smile:now` and `trail\` print verbatim. A span requires the name, then the row's label, then the cell padding. A prefix match is no longer a span. |
+| r3 #m2 `[global]` label left to the query caller | The label comes from `row["scope"] == "global"` inside `_echo_recall_table`, for every route. `--recent` / `--subject --scope both` now label global rows like the query table, and the query caller no longer adds the suffix. |
+| r3 #s1 GMD spans and the one-line rule unguarded | Guarded by the test-engineer (`26f4a20`): GMD spans on their own headings, one-line cells, verbatim names, and the recent `[global]` label. |
+| r3 #s2 stale summary | This revision. |
 
 ## Verification {#verification}
 
-- r1 round: `workflow/review-output/task21.1-r1-remedy-full.log`.
-- Final full suite of the r2 round: `workflow/review-output/task21.1-r2-remedy-full.log`.
-
-The expected failures are the clone-only dev-tree refusals and AC-6 BLOCKED. The full counts by
-error text are in the r2 remedy commit's report.
+- r1: `workflow/review-output/task21.1-r1-remedy-full.log`.
+- r2: `workflow/review-output/task21.1-r2-remedy-full.log`, then `task21.1-r2-guard-full.log`
+  after the guard fix: 21 failed = 20 clone-only + AC-6, content check 0 offending.
+- Final (r3), through `scripts/sandbox-proof.sh`: `workflow/review-output/task21.1-r3-final-full.log`.
 
 ## Open {#open}
 
 - The AC-6 frozen fixture waits on the user (deferral registry row, cutting command named).
-- The r2 #s1 guards (the five remedies with no failing test), the r2 #s2 live-log guard and the
-  r2 #m2/#m4 test tightenings belong to the test-engineer, in the r2 test commit.
-- Closed since r1: AC-11b/11e were amended to round 13 (`b9660ba`); the D9 caller list was
-  amended (`f738f3e`).
