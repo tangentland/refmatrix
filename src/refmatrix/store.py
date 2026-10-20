@@ -1982,16 +1982,20 @@ class Store:
                 yield self
                 return
             con = self._conn
-            con.execute(
-                "INSERT OR IGNORE INTO partitions(name, kind, created_at) "
-                "VALUES (?, 'repo', ?)",
-                (name, time.time()),
-            )
-            con.commit()
+            if not self._read_only:
+                con.execute(
+                    "INSERT OR IGNORE INTO partitions(name, kind, created_at) "
+                    "VALUES (?, 'repo', ?)",
+                    (name, time.time()),
+                )
+                con.commit()
             row = con.execute(
                 "SELECT id FROM partitions WHERE name=?", (name,)
             ).fetchone()
-            self._partition_id = row[0]
+            # A read-only store cannot create the row (the driver refuses the
+            # INSERT — task 3.7 `verbs.snapshot_read`); a partition it does not
+            # have reads as EMPTY (id -1 matches no row), never as another one.
+            self._partition_id = row[0] if row is not None else -1
             self._partition_name = name
             # Drop the cached vector store too — its bound partition
             # would mismatch if we don't.

@@ -261,15 +261,17 @@ def classify_transport_error(e: BaseException, *, op: str, root: "Path | str",
 
 
 def _call(root: Path, op: str, payload: dict, *, timeout: float = 60.0,
-          retries: int = 2) -> dict:
+          retries: int = 2, write: bool = False) -> dict:
     """`retries=0` for budgeted paths: `daemon.call` retries on timeout, so a
-    5 s bound with the library default is a 15 s wait."""
+    5 s bound with the library default is a 15 s wait. `write=True` for a WRITE
+    op: a timeout then also says the write is not confirmed (task 3.7 C5)."""
     from refmatrix import daemon as daemon_mod
     require_daemon(root, retries=0 if retries == 0 else 2)
     try:
         r = daemon_mod.call(root, op, payload, timeout=timeout, retries=retries)
     except Exception as e:  # noqa: BLE001 — transport-level only (call does socket+json)
-        raise classify_transport_error(e, op=op, root=root, timeout=timeout) from e
+        raise classify_transport_error(e, op=op, root=root, timeout=timeout,
+                                       write=write) from e
     if not r.get("ok"):
         raise VerbError(str(r.get("error")))
     return r.get("result", {})
@@ -443,6 +445,123 @@ def memory_partition(root: Path, *, timeout: "float | None" = None) -> str:
         "memory_partition: partition_list answered an error for %s (%s); using %r",
         root, r.get("error"), project)
     return project
+
+
+def project_partition(root: Path) -> str:
+    """The project-store partition a verb uses when the caller names none: `$RMX_PARTITION`,
+    else the store's own name — the same order `Store()` and the CLI's `_resolve_partition`
+    apply (task 3.7 C7). The CLI passes its `-p` value explicitly; MCP callers get this."""
+    import os
+    from refmatrix import discovery
+    return os.environ.get("RMX_PARTITION") or discovery.store_name(root)
+
+
+# ---- verb-layer store access: the read snapshot and the no-daemon writer -----
+
+
+def _writer_catalog_files(root: Path) -> "list[Path]":
+    """Every file a WRITER may hold for this store: the rotation slots and the pre-rotation
+    `catalog.duckdb` / `catalog.db`. `snapshot_read` refuses a replica that is any of them."""
+    return [p for p in (root / "catalog.A.duckdb", root / "catalog.B.duckdb",
+                        root / "catalog.duckdb", root / "catalog.db") if p.exists()]
+
+
+def snapshot_read(root: Path, fn: "Callable[[Any], dict]", *, partition: str) -> dict:
+    """THE verb-layer reader: run `fn(store)` against a READ-ONLY store and return its dict
+    with `source` added ("snapshot" | "in-process").
+
+    Why (task 3.7 C3, spec review r1 B1, 2026-10-19): there was no verb-layer reader. The
+    CLI's `_read_store` raises `ClickException` and falls to `_store_rw` (the writer slot),
+    and `search.cached_replica` caches a Store for the life of the process — the bug-136
+    hazard inside the long-lived `rmx mcp`. This helper:
+
+    - opens `catalog.read.duckdb` read-only PER CALL and closes it; nothing is cached, so a
+      rotated snapshot is seen by the very next call;
+    - refuses a replica that is a symlink or the same file as a writer catalog (the active
+      slot must never be read through the replica name) — a plain `VerbError`;
+    - daemon up or busy with no snapshot yet → `VerbBusyError` worded as a read ("no read
+      snapshot yet"); busy is never treated as absent;
+    - daemon truly ABSENT → the store's primary catalog opened read-only in-process EVEN
+      when an old snapshot exists (spec review r2 S2: with no daemon the snapshot is stale,
+      and an in-process write would vanish from the next read).
+
+    A partition with no row in the catalog reads as EMPTY: the read-only open's own fallback
+    is partition id 1, which would answer from whichever partition owns that id."""
+    from refmatrix import discovery
+    from refmatrix.store import Store
+    root = Path(root)
+    st = discovery.daemon_status(root, retries=0)
+    s = Store(root, partition=partition, read_only=True)
+    if not st.get("up") and not st.get("busy"):
+        primary = s._active_slot_path() if s._backend.kind == "duckdb" else None
+        primary = primary or (s.root / s._backend.db_filename)
+        if not primary.exists():
+            raise VerbError(f"no refmatrix catalog at {root} ({primary.name} missing) — "
+                            f"run `rmx init` first")
+        s.db_path = primary
+        source = "in-process"
+    else:
+        snap = root / "catalog.read.duckdb"
+        if snap.is_symlink() or any(snap.exists() and snap.samefile(w)
+                                    for w in _writer_catalog_files(root)):
+            raise VerbError(f"{snap} is not the read snapshot (it resolves to a writer "
+                            f"catalog); refusing to read the active slot through it")
+        if not snap.exists():
+            state = "up" if st.get("up") else "busy (alive, not answering)"
+            raise VerbBusyError(
+                f"no read snapshot yet for {root}: its daemon pid={st.get('pid')} is {state} "
+                f"and has not produced catalog.read.duckdb; a read never opens the store "
+                f"under a live daemon — retry after the daemon's first snapshot")
+        s.db_path = snap
+        source = "snapshot"
+    try:
+        con = s._connect()
+        if con.execute("SELECT 1 FROM partitions WHERE name=?", (partition,)).fetchone() is None:
+            s._partition_id = -1
+        out = fn(s)
+    finally:
+        s.close()
+    if not isinstance(out, dict):
+        raise TypeError(f"snapshot_read: fn must return a dict, got {type(out).__name__}")
+    return {**out, "source": source}
+
+
+def local_write(root: Path, fn: "Callable[[Any], dict]", *, partition: str) -> dict:
+    """THE no-daemon writer: open the store read-write in-process, run `fn(store)`, CLOSE,
+    and return `fn`'s dict with `source: "in-process"`.
+
+    Why one helper (task 3.7 C4a, spec review r2 S2): today's CLI serves writes in-process
+    when NO daemon runs and the suite depends on it; the verbs keep that, through one place
+    shaped like `_memory_write`'s local fallback. Callers reach it on `VerbAbsentError` ONLY
+    — never busy, never an undiallable socket path: opening the writer slot under a live
+    daemon is the 2026-09-14 lock crash. A call that reads AND writes does its reads inside
+    `fn` on this handle; holding a `snapshot_read` in-process handle while this opens is
+    bug-135's `StaleDuckDBInstance … already attached` (spec review r3 M3)."""
+    from refmatrix.store import Store
+    s = Store(Path(root), partition=partition)
+    if not s.db_path.exists():
+        raise VerbError(f"no refmatrix catalog at {root} ({s.db_path.name} missing) — "
+                        f"run `rmx init` first")
+    try:
+        out = fn(s)
+    finally:
+        s.close()
+    if not isinstance(out, dict):
+        raise TypeError(f"local_write: fn must return a dict, got {type(out).__name__}")
+    return {**out, "source": "in-process"}
+
+
+def _write_or_local(root: Path, op: str, payload: dict, *, timeout: float,
+                    local: "Callable[[Any], dict]", partition: str) -> dict:
+    """One daemon WRITE, single attempt (C4/C5), with `local_write` as the absent-daemon
+    bootstrap (C4a). Busy, refused and undiallable all raise from `_call`; only
+    `VerbAbsentError` reaches the in-process store."""
+    try:
+        res = _call(root, op, {**payload, "partition": partition}, timeout=timeout,
+                    retries=0, write=True)
+    except VerbAbsentError:
+        return local_write(root, local, partition=partition)
+    return {**res, "source": "daemon"}
 
 
 # ---- payload builders (shared by verbs AND bespoke CLI routing) ------------
