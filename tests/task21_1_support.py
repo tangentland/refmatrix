@@ -98,18 +98,21 @@ def live_snapshot(paths: "list[Path] | None" = None) -> dict:
 
 
 def assert_live_logs_unchanged(before: dict) -> None:
-    """The AC preamble's guard, ATTRIBUTING what moved (21.1 ch-bsd r2 #s2, bug-134). The
-    main dev tree's `query.log` is appended by every hook of whichever Claude session works
-    there, so a size check alone was red for the user's typing (task21.1-r1-tests-final-full
-    ERROR: +379 B, a live `scan-prompt` hook row). Now:
-    - an inode change, a file that appeared from nothing with test rows, or a SHRINK fails
-      (truncation and rotation are never the user's);
-    - on growth only the appended bytes are read, and the guard fails on a complete row
-      that carries a test marker (`_test_markers`: a sandbox path or a minted token). A row
-      with none is concurrent live use and is ignored; an incomplete trailing line (a
-      concurrent writer mid-append) is not judged."""
-    marks = _test_markers()
+    """The AC preamble's per-test guard -- STAT ONLY (21.1 ch-bsd r2 #s2, bug-134; converged
+    with 23.0). A test process may never OPEN a live log: 23.0's audit hook refuses it
+    (`SandboxViolation: open on live target …/.refmatrix/query.log`), and the r2 version that
+    read the appended bytes here tripped it. So:
+    - an inode change or a SHRINK fails here (truncation and rotation are never the user's);
+    - growth is NOT judged here: the main dev tree's `query.log` grows with every hook of
+      whichever Claude session works there. Each growth is recorded -- (path, inode, start,
+      end, this test's nodeid, its markers: sandbox paths and minted tokens) -- to the
+      sandbox's growth ledger, and attributed ONCE by 23.0's end-of-run content check
+      (`rmx_sandbox.check_logs` / `growth_leaks`, run by scripts/sandbox-proof.sh), which
+      fails on an appended row carrying a recorded marker."""
+    import rmx_sandbox
     bad: dict = {}
+    marks = sorted(_test_markers())
+    nodeid = os.environ.get("PYTEST_CURRENT_TEST", "?").rsplit(" (", 1)[0]
     for k, (ino0, size0) in before.items():
         try:
             st = os.stat(k)
@@ -124,16 +127,10 @@ def assert_live_logs_unchanged(before: dict) -> None:
         if size1 < size0:
             bad[k] = f"shrank {size0} -> {size1} (truncated)"
             continue
-        with open(k, "rb") as f:
-            f.seek(size0 if ino0 else 0)
-            data = f.read(size1 - (size0 if ino0 else 0))
-        lines = data.split(b"\n")
-        complete = lines[:-1] if not data.endswith(b"\n") else lines
-        hits = [ln.decode("utf-8", "replace")[:300] for ln in complete
-                if ln.strip() and any(m in ln.decode("utf-8", "replace") for m in marks)]
-        if hits:
-            bad[k] = f"{len(hits)} appended row(s) attributable to this test: {hits[:3]}"
-    assert not bad, f"a LIVE log was written by the test: {bad}"
+        rmx_sandbox.record_growth({"path": k, "ino": ino1, "start": size0 if ino0 else 0,
+                                   "end": size1, "nodeid": nodeid, "markers": marks,
+                                   "t": time.time()})
+    assert not bad, f"a LIVE log was rotated or truncated during the test: {bad}"
 
 
 # ---- env + subprocess -----------------------------------------------------------------------
