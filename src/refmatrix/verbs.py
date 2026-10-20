@@ -2104,6 +2104,379 @@ def curator(root: Path, action: typing.Literal["status", "drain"] = "status", *,
     raise VerbArgsError(f"unknown curator action {action!r}")
 
 
+# ---- task 3.7 batch B: graph-read and canon ------------------------------------------
+
+ACTION_DEFAULTS.update({
+    ("rmx_graph", "neighbors"): {"limit": 50},
+    ("rmx_graph", "co_occur"): {"limit": 20, "linkage": "mentions"},
+    ("rmx_graph", "top"): {"linkage": "mentions", "k": 10},
+    ("rmx_graph", "describe"): {"timeout": 10.0},
+    ("rmx_graph", "recall"): {"k": 10, "timeout": 180.0},
+    ("rmx_graph", "dense"): {"k": 10, "timeout": 180.0},
+    ("rmx_graph", "stats"): {"timeout": 10.0},
+    ("rmx_graph", "timeline"): {"k": 40, "timeout": 60.0},
+    ("rmx_canon", "link"): {"timeout": 60.0},
+})
+
+
+def _int_ids(values, *, what: str) -> "list[int] | None":
+    """`-s` values arrive as strings from the CLI and MCP; each must be an entity id."""
+    if not values:
+        return None
+    out = []
+    for v in values:
+        try:
+            out.append(int(v))
+        except (TypeError, ValueError) as e:
+            raise VerbArgsError(f"{what} values must be integer entity ids; got {v!r}") from e
+    return out
+
+
+def _as_list(v) -> "list[str] | None":
+    if v is None:
+        return None
+    return [v] if isinstance(v, str) else list(v)
+
+
+def session_memories(root: Path, *, partition: str, timeout: float = 60.0,
+                     query: "str | None" = None, limit: int = 100000) -> list[dict]:
+    """Session cards (`mtype == "session"`) from the sessions partition through THE read
+    routing (task 3.7 #fam-session-store / #fam-graph-read): the daemon's `memory_search`
+    (with `query`) or `memory_iter` op, ONE attempt bounded by `timeout`; an ABSENT daemon
+    reads in-process read-only (`snapshot_read`, C4a). Busy raises `VerbBusyError` and a
+    refusal `VerbError` — never the writer slot opened read-write, which is what
+    `_iter_session_memories` did whenever ping failed (the 2026-09-14 lock-crash shape)."""
+    if query:
+        op, payload = "memory_search", {"query": query, "limit": limit}
+    else:
+        op, payload = "memory_iter", {"mtype": "session", "limit": limit}
+    try:
+        res = _call(root, op, {**payload, "partition": partition}, timeout=timeout, retries=0)
+        rows = res.get("rows", [])
+    except VerbAbsentError:
+        def _read(s) -> dict:
+            mems = list(s.iter_memories(mtype="session", limit=limit))
+            if query:
+                q = query.lower()
+                mems = [m for m in mems if q in (m.get("content") or "").lower()]
+            return {"rows": mems}
+        rows = snapshot_read(root, _read, partition=partition)["rows"]
+    return [r for r in rows if r.get("mtype") == "session"]
+
+
+def session_memory_get(root: Path, name: str, *, partition: str,
+                       timeout: float = 60.0) -> "dict | None":
+    """One session card by memory name through THE read routing: the daemon's `memory_get`
+    op, one bounded attempt; an ABSENT daemon reads in-process read-only (C4a). Replaces
+    `_resolve_session`'s direct read-WRITE `Store(...)` open (task 3.7 #fam-session-store)."""
+    try:
+        return _call(root, "memory_get", {"name": name, "partition": partition},
+                     timeout=timeout, retries=0).get("memory")
+    except VerbAbsentError:
+        return snapshot_read(root, lambda s: {"memory": s.get_memory(name)},
+                             partition=partition)["memory"]
+
+
+def _timeline_git_leg(project: str, concept: str, files: dict, warnings: list) -> list:
+    """The code-introduction commit by git pickaxe, scoped to the concept's files. A leg
+    that cannot run (no git binary, not a repository, a timeout) is a `warnings` entry —
+    C8: never an `except: pass`."""
+    import shutil
+    import subprocess
+    if not shutil.which("git"):
+        warnings.append("git leg skipped: no `git` on PATH")
+        return []
+    pathspec = list(files.values()) or ["."]
+    try:
+        out = subprocess.run(["git", "-C", project, "log", "--reverse", "-i", "-S", concept,
+                              "--pretty=%h%x09%aI%x09%s", "--", *pathspec],
+                             capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as e:
+        warnings.append(f"git leg failed ({type(e).__name__}: {e})")
+        return []
+    if out.returncode != 0:
+        why = (out.stderr or "").strip().splitlines()[:1]
+        warnings.append(f"git leg skipped: git log exited {out.returncode}"
+                        f"{(' — ' + why[0]) if why else ''}")
+        return []
+    first = next((ln for ln in out.stdout.splitlines() if ln.strip()), None)
+    if not first:
+        return []
+    h, aiso, subj = (first.split("\t") + ["", "", ""])[:3]
+    return [{"date": aiso, "type": "git", "ref": h,
+             "detail": f"introduced `{concept}` — {subj[:60]}"}]
+
+
+@verb("rmx_graph",
+      "Read-only graph navigation beside rmx_context / rmx_query. action=neighbors (depth-N "
+      "linkage walk), co_occur (concepts sharing entities), top (top-k by weight), describe "
+      "(every stored fact about one entity), recall (bitmap-prefiltered dense recall, RRF "
+      "with symbolic ids), dense (raw ANN), stats (catalog counts; stale=true lists stale "
+      "files), timeline (when a concept was introduced / worked on).")
+def graph(root: Path, action: typing.Literal["neighbors", "co_occur", "top", "describe",
+                                             "recall", "dense", "stats", "timeline"], *,
+          concept: str | list[str] | None = None, depth: int = 1,
+          linkage: str | list[str] | None = None, limit: int | None = None,
+          include_noise: bool = False, strict: bool = False, ref: str | None = None,
+          first: bool = False, edge_limit: int = 200, evidence_limit: int = 20,
+          sibling_limit: int = 200, no_vectors: bool = False, query: str | None = None,
+          k: int | None = None, kinds: list[str] | None = None,
+          symbolic: list[str] | None = None, no_dense: bool = False, stale: bool = False,
+          hops: int = 0, since: str | None = None, until: str | None = None,
+          git: bool = True, partition: str | None = None,
+          timeout: float | None = None) -> dict:
+    """Task 3.7 #fam-graph-read: one dispatcher over the graph-read commands, each routed
+    by #budgets (snapshot reads never touch the writer slot; daemon ops are one attempt;
+    no daemon at all ⇒ in-process read-only, C4a). Defects that died with the old CLI
+    bodies: `neighbors` read through `_store()` (the WRITE accessor), `search-dense` sent
+    no `partition`, `recall` loaded `Embedder()` in the caller, `concept timeline`
+    swallowed its legs and opened the writer slot for sessions."""
+    from refmatrix import graphread
+    ad = lambda p, v: action_default("rmx_graph", action, p, v)  # noqa: E731
+    part = partition or project_partition(root)
+    if action in ("neighbors", "co_occur", "top", "timeline") and not concept:
+        raise VerbArgsError(f"graph {action} requires 'concept'")
+    if action == "neighbors":
+        return snapshot_read(root, lambda s: graphread.neighbors_payload(
+            s, str(concept), depth=depth, linkages=_as_list(linkage),
+            limit=int(ad("limit", limit)), include_noise=include_noise, strict=strict),
+            partition=part)
+    if action == "co_occur":
+        lk = linkage if isinstance(linkage, str) else (linkage[0] if linkage else None)
+        return snapshot_read(root, lambda s: graphread.co_occur_payload(
+            s, str(concept), linkage=str(ad("linkage", lk)), limit=int(ad("limit", limit)),
+            include_noise=include_noise), partition=part)
+    if action == "top":
+        lk = linkage if isinstance(linkage, str) else (linkage[0] if linkage else None)
+
+        def _top(s) -> dict:
+            try:
+                return graphread.top_payload(s, str(concept), linkage=str(ad("linkage", lk)),
+                                             k=int(ad("k", k)))
+            except LookupError as e:
+                raise VerbError(str(e)) from e
+        return snapshot_read(root, _top, partition=part)
+    if action == "describe":
+        if not ref:
+            raise VerbArgsError("graph describe requires 'ref'")
+        kw = {"evidence_limit": evidence_limit, "edge_limit": edge_limit,
+              "sibling_limit": sibling_limit, "include_vectors": not no_vectors}
+        try:
+            return _call(root, "describe", {"ref": str(ref), "first": first,
+                                            "partition": part, **kw},
+                         timeout=float(ad("timeout", timeout)), retries=0)
+        except VerbAbsentError:
+            return snapshot_read(root, lambda s: graphread.describe_payload(
+                s, str(ref), first=first, **kw), partition=part)
+    if action == "recall":
+        return _graph_recall(root, query=query, k=int(ad("k", k)), kinds=kinds,
+                             concept=_as_list(concept), symbolic=_int_ids(symbolic,
+                                                                          what="symbolic"),
+                             no_dense=no_dense, partition=part,
+                             timeout=float(ad("timeout", timeout)))
+    if action == "dense":
+        if not query:
+            raise VerbArgsError("graph dense requires 'query'")
+        return _graph_dense(root, query=query, k=int(ad("k", k)), kinds=kinds,
+                            partition=part, timeout=float(ad("timeout", timeout)))
+    if action == "stats":
+        if not stale:
+            return snapshot_read(root, lambda s: s.stats(), partition=part)
+        # The replica's tracked_files is never refreshed, so --stale is the writer's
+        # (r3 S1): the daemon's stats op, one attempt; no daemon ⇒ in-process (C4a).
+        try:
+            return _call(root, "stats", {"include_stale": True, "partition": part},
+                         timeout=float(ad("timeout", timeout)), retries=0)
+        except VerbAbsentError:
+            return snapshot_read(root, lambda s: {**s.stats(), "stale_files": s.stale_files()},
+                                 partition=part)
+    if action == "timeline":
+        return _graph_timeline(root, str(concept), hops=hops, since=since, until=until,
+                               k=int(ad("k", k)), git=git, partition=part,
+                               timeout=float(ad("timeout", timeout)))
+    raise VerbArgsError(f"unknown graph action {action!r}")
+
+
+def _graph_recall(root: Path, *, query, k, kinds, concept, symbolic, no_dense, partition,
+                  timeout) -> dict:
+    """recall through the NEW daemon op `graph_recall` (one attempt, 180 s for a cold
+    model start). On `VerbAbsentError` ONLY (spec decision 2026-10-20): the SAME library
+    function in-process over a read-only store, with the embedder from the ONE seam the
+    daemon uses (`recall.shared_embedder`), embedded before the store opens. Busy never
+    runs in-process."""
+    from refmatrix import recall as recall_mod
+    payload = {"query": query, "k": k, "kinds": list(kinds) if kinds else None,
+               "concept": concept, "symbolic": symbolic, "no_dense": no_dense,
+               "partition": partition}
+    try:
+        return _call(root, "graph_recall", payload, timeout=timeout, retries=0)
+    except VerbAbsentError:
+        return _graph_recall_in_process(root, query=query, k=k, kinds=kinds,
+                                        concept=concept, symbolic=symbolic,
+                                        no_dense=no_dense, partition=partition)
+
+
+def _graph_recall_in_process(root: Path, *, query, k, kinds, concept, symbolic, no_dense,
+                             partition) -> dict:
+    """The no-daemon branch of `_graph_recall` (C4a): embed first, then read."""
+    from refmatrix import recall as recall_mod
+    try:
+        emb = recall_mod.prepare_graph_recall_embedder(
+            lambda: recall_mod.shared_embedder(root), query, no_dense=no_dense)
+    except ImportError as e:
+        raise VerbError(f"dense extra not installed: {e}") from e
+    return snapshot_read(root, lambda s: recall_mod.graph_recall(
+        s, emb, query=query, k=k, kinds=kinds, concept=concept, symbolic=symbolic,
+        no_dense=no_dense), partition=partition)
+
+
+def _graph_dense(root: Path, *, query, k, kinds, partition, timeout) -> dict:
+    """search-dense: the daemon `ann_search` op WITH `partition` (the old CLI omitted it,
+    so ids resolved against the daemon's partition under `-p`), names resolved from the
+    SAME partition's snapshot. No daemon ⇒ `recall.ann_search` in-process over a
+    read-only store with the shared embedder (C4a); no cross-encoder runs there, which
+    a warning says when rerank is on."""
+    from refmatrix import recall as recall_mod
+    payload = {"query": query, "k": k, "partition": partition}
+    if kinds:
+        payload["kinds"] = list(kinds)
+    warnings: list[str] = []
+    try:
+        res = _call(root, "ann_search", payload, timeout=timeout, retries=0)
+        src = "daemon"
+    except VerbAbsentError:
+        try:
+            emb = recall_mod.shared_embedder(root)
+        except ImportError as e:
+            raise VerbError(f"dense extra not installed: {e}") from e
+        from refmatrix.reranker import rerank_enabled
+        if rerank_enabled():
+            warnings.append("no daemon: the cross-encoder rerank did not run "
+                            "(in-process dense answers in retrieval order)")
+
+        def _run(s) -> dict:
+            out = recall_mod.ann_search(s, emb, query=query, k=k, kinds=kinds,
+                                        partition=partition)
+            if out.get("ok") is False:
+                raise VerbError(str(out.get("error")))
+            return {"res": out, "names": _entity_names(s, [h["id"] for h in out["hits"]])}
+        r = snapshot_read(root, _run, partition=partition)
+        return _dense_hits(r["res"], r["names"], warnings, source="in-process")
+    if res.get("ok") is False:
+        raise VerbError(str(res.get("error")))
+    ids = [h["id"] for h in res.get("hits", [])]
+    try:
+        names = snapshot_read(root, lambda s: {"names": _entity_names(s, ids)},
+                              partition=partition)["names"]
+    except VerbBusyError as e:
+        names = {}
+        warnings.append(f"hit names unresolved ({e})")
+    return _dense_hits(res, names, warnings, source=src)
+
+
+def _entity_names(s, ids) -> dict:
+    con = s._connect()
+    out = {}
+    for eid in ids:
+        row = con.execute("SELECT kind, name FROM entities WHERE id = ?", [eid]).fetchone()
+        if row:
+            out[int(eid)] = (row[0], row[1])
+    return out
+
+
+def _dense_hits(res: dict, names: dict, warnings: list, *, source: str) -> dict:
+    hits = []
+    for rank, h in enumerate(res.get("hits", []), 1):
+        kind, name = names.get(int(h["id"]), (None, None))
+        hits.append({"rank": rank, **h, "kind": kind, "name": name})
+    return {"hits": hits, "warnings": list(res.get("warnings") or []) + warnings,
+            "source": source}
+
+
+def _graph_timeline(root: Path, concept: str, *, hops, since, until, k, git, partition,
+                    timeout) -> dict:
+    """concept timeline (#fam-graph-read): the graph leg from the snapshot (an unknown
+    concept is a `VerbError`); the session leg through the daemon `memory_search` /
+    `memory_iter` ops on the sessions partition under ONE budget (`session_memories`);
+    the git leg by subprocess. A leg that fails or is skipped is a `warnings` entry —
+    the old body's two `except Exception: pass` blocks and its direct `Store(...)` open
+    on the writer slot are gone."""
+    import time as _time
+    from refmatrix import graphread
+    deadline = _time.monotonic() + timeout
+
+    def _graph(s) -> dict:
+        try:
+            return graphread.timeline_graph_leg(s, concept, hops=hops)
+        except LookupError as e:
+            raise VerbError(str(e)) from e
+    g = snapshot_read(root, _graph, partition=partition)
+    warnings: list[str] = []
+    git_events = _timeline_git_leg(g["project"], concept, g["files"], warnings) if git else []
+    sp = graphread.sessions_partition(root)
+    direct: list = []
+    indirect: list = []
+    try:
+        direct = session_memories(root, partition=sp, query=concept, limit=max(k * 4, 100),
+                                  timeout=max(0.05, deadline - _time.monotonic()))
+        if g["files"]:
+            indirect = session_memories(root, partition=sp,
+                                        timeout=max(0.05, deadline - _time.monotonic()))
+    except VerbError as e:
+        warnings.append(f"session leg skipped: {e}")
+    return graphread.build_timeline(concept, hops=hops, k=k, graph=g, git_events=git_events,
+                                    direct_rows=direct, indirect_rows=indirect, since=since,
+                                    until=until, warnings=warnings)
+
+
+@verb("rmx_canon",
+      "Cross-project canon view beside rmx_where. action=find (which live stores host a "
+      "concept; `skipped` names stores that could not be read), siblings (concepts in other "
+      "partitions sharing this concept's canon hub), link (wire this partition's concept to "
+      "a canonical concept, created if missing).")
+def canon(root: Path, action: typing.Literal["find", "siblings", "link"], *,
+          concept: str | None = None, canon_name: str | None = None,
+          canon_partition: str = "canon", partition: str | None = None,
+          timeout: float | None = None) -> dict:
+    """Task 3.7 #fam-canon. `find` is federated over every live store (as `rmx_where`;
+    `federated_concept` reads replicas and claims no timeout); `siblings` is a snapshot
+    read; `link` is ONE classified write via the partition-correct `link_canon` op (60 s,
+    `write=True`), the local concept resolved from the read route first — an unknown
+    concept sends nothing. No daemon ⇒ the resolve AND the write happen inside
+    `local_write`'s one handle (C4a)."""
+    if not concept:
+        raise VerbArgsError(f"canon {action} requires 'concept'")
+    if action == "find":
+        from refmatrix import search as search_mod
+        return search_mod.federated_concept(concept)
+    part = partition or project_partition(root)
+
+    def _local_id(s) -> int:
+        e = s.get_entity("concept", concept)
+        if e is None:
+            raise VerbError(f"no concept '{concept}' in partition '{part}' — add it first "
+                            f"(`rmx add concept {concept}`)")
+        return int(e.id)
+    if action == "siblings":
+        return snapshot_read(root, lambda s: {"concept": concept, "partition": part,
+                                              "rows": s.siblings_via_canon(_local_id(s))},
+                             partition=part)
+    if action == "link":
+        name = canon_name or concept
+        t = float(action_default("rmx_canon", action, "timeout", timeout))
+        try:
+            require_daemon(root, retries=0)
+        except VerbAbsentError:
+            return local_write(root, lambda s: {"canon_id": s.link_canon(
+                _local_id(s), canon_partition, name)}, partition=part)
+        cid = snapshot_read(root, lambda s: {"id": _local_id(s)}, partition=part)["id"]
+        return _write_or_local(
+            root, "link_canon", {"local_concept_id": cid, "canon_partition": canon_partition,
+                                 "canon_concept_name": name}, timeout=t, partition=part,
+            local=lambda s: {"canon_id": s.link_canon(_local_id(s), canon_partition, name)})
+    raise VerbArgsError(f"unknown canon action {action!r}")
+
+
 # ---- CLI twins (asserted by tests/test_verb_parity.py) --------------------
 # verb name -> click command path. None = MCP-only, with the reason in MCP_ONLY.
 CLI_MAP: dict[str, "tuple[str, ...] | None"] = {

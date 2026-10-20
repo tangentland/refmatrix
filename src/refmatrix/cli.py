@@ -80,6 +80,7 @@ from refmatrix.query import QueryEngine
 from refmatrix import store as _store_mod
 from refmatrix.store import Store, default_partition_name
 from refmatrix.telemetry import log_query
+from refmatrix import graphread as _graphread
 
 console = Console()
 
@@ -896,8 +897,13 @@ def init(path: Path | None, hooks: bool, memory_hooks: bool, agents: bool,
         )
     else:
         s.init()
-        atexit.register(s.close)
-        console.print(f"[green]initialized[/] {s.root} (partition={s.partition_name})")
+        msg = f"[green]initialized[/] {s.root} (partition={s.partition_name})"
+        # Closed now, not at interpreter exit (task 3.7): a writer held for the life of
+        # the process makes a later read-only open of the catalog in it (`verbs.
+        # snapshot_read`, the no-daemon read route) fail with bug-135's "Unique file
+        # handle conflict".
+        s.close()
+        console.print(msg)
 
     if hooks:
         from refmatrix.hooks import install
@@ -4522,18 +4528,12 @@ def canon_link(concept: str, canon_name: str | None, canon_partition: str):
 
     Auto-creates the canon concept if it doesn't exist yet. Re-running is
     idempotent — a second invocation re-asserts the same_as edge."""
-    s = _store()
-    local = s.get_entity("concept", concept)
-    if local is None:
-        raise click.ClickException(
-            f"no concept '{concept}' in partition '{s.partition_name}'. "
-            f"Run `rmx add-concept {concept}` first."
-        )
-    name = canon_name or concept
-    canon_id = s.link_canon(local.id, canon_partition, name)
+    part = _resolve_partition()
+    res = _canon_verb(action="link", concept=concept, canon_name=canon_name,
+                      canon_partition=canon_partition, partition=part)
     console.print(
-        f"[green]linked[/] {s.partition_name}/{concept} "
-        f"-> {canon_partition}/{name} (canon_id={canon_id})"
+        f"[green]linked[/] {part}/{concept} "
+        f"-> {canon_partition}/{canon_name or concept} (canon_id={res.get('canon_id')})"
     )
 
 
@@ -4559,16 +4559,11 @@ def _echo_skipped(skipped: list) -> str:
 @click.argument("concept")
 def canon_find(concept: str):
     """Find which projects host CONCEPT (cross-project canon view)."""
-    from refmatrix.search import federated_concept
-    res = federated_concept(concept)
-    projs = res["projects"]
-    skipped = res.get("skipped") or []
-    # A store that could not be searched is said so — this command was one
-    # of three consumers discarding its fan-out's `skipped` list, so a busy daemon
-    # turned into "no live project hosts X" and the operator was told a
-    # concept exists nowhere (ch-bsd plan-3 r6 #s-3; the r3 #b-2 defect that
-    # `rmx locate` already fixed, one command over).
-    suffix = _echo_skipped(skipped)
+    res = _canon_verb(action="find", concept=concept)
+    projs = res.get("projects") or []
+    # A store that could not be searched is said so (ch-bsd plan-3 r6 #s-3): a busy
+    # daemon must never read as "no live project hosts X".
+    suffix = _echo_skipped(res.get("skipped") or [])
     if not projs:
         console.print(f"[yellow]no live project hosts[/] {concept}{suffix}")
         return
@@ -4585,14 +4580,8 @@ def canon_find(concept: str):
 @click.argument("concept")
 def canon_siblings(concept: str):
     """List concepts in other partitions that share a canon hub with CONCEPT."""
-    def _run(s):
-        local = s.get_entity("concept", concept)
-        if local is None:
-            raise click.ClickException(
-                f"no concept '{concept}' in partition '{s.partition_name}'."
-            )
-        return s.partition_name, s.siblings_via_canon(local.id)
-    part, rows = _replica_read(_run)
+    part = _resolve_partition()
+    rows = _canon_verb(action="siblings", concept=concept, partition=part).get("rows") or []
     if not rows:
         console.print(
             f"[yellow]no siblings[/] for {part}/{concept} "
@@ -4604,11 +4593,8 @@ def canon_siblings(concept: str):
     table.add_column("concept")
     table.add_column("via canon")
     for r in rows:
-        table.add_row(
-            r["partition_name"],
-            r["name"],
-            f"{r['canon_partition']}/{r['canon_name']}",
-        )
+        table.add_row(r.get("partition_name", ""), r.get("name", ""),
+                      f"{r.get('canon_partition')}/{r.get('canon_name')}")
     console.print(table)
 
 
@@ -5148,6 +5134,33 @@ def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter, st
             console.print(t)
 
 
+def _graph_verb(**kw) -> dict:
+    """One `rmx_graph` call for a graph-read command (task 3.7 #fam-graph-read, C2): the
+    command parses options, CALLS the verb with the CLI's `-p` partition, renders the
+    dict. Busy / refused / absent-and-unreadable are ClickExceptions with the verb's words."""
+    from refmatrix import verbs as _verbs
+    try:
+        return _verbs.graph(_root(), partition=_resolve_partition(), **kw)
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e)) from e
+
+
+def _canon_verb(**kw) -> dict:
+    """One `rmx_canon` call (task 3.7 #fam-canon, C2)."""
+    from refmatrix import verbs as _verbs
+    try:
+        return _verbs.canon(_root(), **kw)
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e)) from e
+
+
+def _render_rows_table(columns, rows) -> None:
+    t = Table(*columns)
+    for r in rows:
+        t.add_row(*[str(v) for v in r])
+    console.print(t)
+
+
 @main.command()
 @click.argument("concept")
 @click.option("--depth", default=1, type=int)
@@ -5158,42 +5171,23 @@ def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter, st
 @click.option("--strict", is_flag=True,
               help="Disable surface-form variant expansion for the seed concept.")
 @click.option("--via-replica", is_flag=True,
-              help="Read from the rotation reader slot instead of the daemon. "
-                   "Lock-free; sees stale-by-N-seconds data.")
+              help="Kept for compatibility: reads always route through the read "
+                   "snapshot (or the in-process store when no daemon runs).")
 def neighbors(concept, depth, linkage, limit, include_noise, strict, via_replica):
     """Walk linkages from a concept (depth-N closure)."""
-    via_replica = _should_via_replica(via_replica)
-
-    def _run(s):
-        qe = QueryEngine(s, include_noise=include_noise, strict=strict)
-        with log_query(s, kind="neighbors", body=concept,
-                       source="neighbors") as t:
-            bm = qe.neighbors(concept, depth=depth,
-                              linkages=list(linkage) or None)
-            t.cardinality = len(bm)
-        _print_bitmap(s, bm, limit=limit)
-        if len(bm) == 0:
-            # An empty walk is ambiguous: unknown seed, no edges, or the
-            # edges live on a sibling node. Say which, so the caller doesn't
-            # conclude "this graph is unwalkable".
-            if not s.resolve_concept_ids(concept, strict=strict):
-                console.print(
-                    f"[dim]no concept resolves to '{concept}'"
-                    f"{' (try without --strict)' if strict else ''}[/]"
-                )
-            else:
-                hint = f"'{concept}' has no edges at depth={depth}"
-                if "#" not in concept and s.resolve_entity(f"{concept}#root"):
-                    hint += (
-                        f"; GMD rel: edges for this doc are on "
-                        f"'{concept}#root'"
-                    )
-                console.print(f"[dim]{hint}[/]")
-
-    if via_replica:
-        _replica_read(_run)
+    res = _graph_verb(action="neighbors", concept=concept, depth=depth,
+                      linkage=list(linkage) or None, limit=limit,
+                      include_noise=include_noise, strict=strict)
+    ents = res.get("entities") or []
+    _render_rows_table(("id", "kind", "name", "path"),
+                       [(e["id"], e["kind"], e["name"], e.get("path") or "") for e in ents])
+    card = res.get("cardinality", len(ents))
+    if card > len(ents):
+        console.print(f"[dim]... {card - len(ents)} more (cardinality={card})[/]")
     else:
-        _run(_store())
+        console.print(f"[dim]cardinality={card}[/]")
+    if res.get("hint"):
+        console.print(f"[dim]{res['hint']}[/]")
 
 
 @main.command()
@@ -5591,7 +5585,8 @@ def _render_describe(d: dict) -> None:
 @click.option("--no-vectors", is_flag=True,
               help="Skip the Lance probe (catalog-only, no dense import).")
 @click.option("--via-replica", is_flag=True,
-              help="Read from the rotation reader slot instead of the daemon.")
+              help="Kept for compatibility: describe routes through its lock-free "
+                   "daemon op (or the in-process store when no daemon runs).")
 def describe(ref, fmt, first, edge_limit, evidence_limit, sibling_limit,
              no_vectors, via_replica):
     """Dump EVERY stored fact about one entity — the whole row plus the
@@ -5608,41 +5603,11 @@ def describe(ref, fmt, first, edge_limit, evidence_limit, sibling_limit,
     the memory sidecar (content / mtype / tags / metadata), and Lance
     vector presence. `--format json` emits the whole payload verbatim.
     """
-    from refmatrix import daemon as daemon_mod
-
-    kwargs = {
-        "evidence_limit": evidence_limit,
-        "edge_limit": edge_limit,
-        "sibling_limit": sibling_limit,
-        "include_vectors": not no_vectors,
-    }
-
-    def _run(s):
-        targets = s.find_describe_targets(str(ref))
-        if not targets:
-            return {"found": None, "candidates": []}
-        if len(targets) > 1 and not first:
-            return {"found": None, "candidates": targets}
-        return {"found": s.describe_entity(targets[0]["id"], **kwargs),
-                "candidates": targets}
-
-    root = _root()
-    if _should_via_replica(via_replica):
-        payload = _replica_read(_run)
-    elif daemon_mod.ping(root):
-        resp = daemon_mod.call(root, "describe", {
-            "ref": str(ref), "first": first,
-            "partition": _resolve_partition(), **kwargs,
-        }, timeout=60.0)
-        if not resp.get("ok"):
-            raise click.ClickException(
-                f"daemon describe failed: {resp.get('error')}")
-        payload = resp["result"]
-    else:
-        payload = _run(_read_store())
-
-    if payload["found"] is None:
-        cands = payload["candidates"]
+    payload = _graph_verb(action="describe", ref=str(ref), first=first,
+                          edge_limit=edge_limit, evidence_limit=evidence_limit,
+                          sibling_limit=sibling_limit, no_vectors=no_vectors)
+    if payload.get("found") is None:
+        cands = payload.get("candidates") or []
         if not cands:
             raise click.ClickException(
                 f"no entity matches {ref!r} in partition "
@@ -5655,10 +5620,9 @@ def describe(ref, fmt, first, edge_limit, evidence_limit, sibling_limit,
                   title=f"{len(cands)} matches for {ref!r} — re-run with an id "
                         f"or --first")
         for c in cands:
-            t.add_row(str(c["id"]), c["kind"], c["name"], c["path"] or "—")
+            t.add_row(str(c["id"]), c["kind"], c["name"], c.get("path") or "—")
         console.print(t)
         return
-
     if fmt == "json":
         click.echo(json.dumps(payload["found"], indent=2, default=str))
     else:
@@ -5673,17 +5637,10 @@ def describe(ref, fmt, first, edge_limit, evidence_limit, sibling_limit,
               help="Include noise-marked concepts.")
 def co_occur(concept, linkage, limit, include_noise):
     """Concepts that share entities with the given concept under a linkage."""
-    def _run(s):
-        qe = QueryEngine(s, include_noise=include_noise)
-        with log_query(s, kind="co-occur", body=concept, source="co-occur") as t:
-            rows = qe.co_occurrence(concept, linkage=linkage)[:limit]
-            t.cardinality = len(rows)
-        return rows
-    rows = _replica_read(_run)
-    t = Table("concept", "overlap")
-    for name, n in rows:
-        t.add_row(name, str(n))
-    console.print(t)
+    res = _graph_verb(action="co_occur", concept=concept, linkage=linkage, limit=limit,
+                      include_noise=include_noise)
+    _render_rows_table(("concept", "overlap"),
+                       [(r["concept"], r["overlap"]) for r in res.get("rows") or []])
 
 
 
@@ -7680,47 +7637,23 @@ main.add_command(_alias(list_queries, "list-queries"))
                    "Reads the writer's tracked_files via the daemon — no need "
                    "to stop the daemon.")
 @click.option("--via-replica", is_flag=True,
-              help="Read counts from the rotation reader slot instead of the "
-                   "daemon. Lock-free; sees stale-by-N-seconds data. Cannot be "
-                   "combined with --stale (the replica's tracked_files isn't "
-                   "refreshed).")
+              help="Read counts from the read snapshot (the default for plain "
+                   "counts). Cannot be combined with --stale (the replica's "
+                   "tracked_files isn't refreshed).")
 def stats(stale, via_replica):
     """Print catalog and bitmap stats."""
-    from refmatrix import daemon as daemon_mod
-    root = _root()
     if via_replica and stale:
         raise click.ClickException(
             "--via-replica and --stale are incompatible: the replica's "
             "tracked_files isn't refreshed. Use plain `--stale` (routes "
             "through the daemon's writer).")
-    if via_replica or (not stale and _should_via_replica(False)):
-        # Replica-first for plain counts, gated on the replica file EXISTING —
-        # not on ping. The replica (catalog.read.duckdb) is never write-locked,
-        # so this works even when the daemon is saturated and its ping times
-        # out. (Gating on ping was the old bug: a busy daemon fails the 0.5s
-        # ping, the caller then opened the writer slot r/w -> "Conflicting
-        # lock".) --stale skips this branch — it needs the live writer.
-        out = _replica_read(lambda st: st.stats())
-    elif daemon_mod.ping(root):
-        # Daemon owns the writer (+ tracked_files). Route through it so --stale
-        # works WITHOUT stopping the daemon. Never open the writer slot directly
-        # while the daemon owns it.
-        resp = daemon_mod.call(root, "stats", {"include_stale": stale})
-        if not resp.get("ok"):
-            raise click.ClickException(f"daemon stats failed: {resp.get('error')}")
-        out = resp["result"]
-    else:
-        # No daemon: safe to read the live catalog directly.
-        s = _store_rw()
-        out = s.stats()
-        if stale:
-            out["stale_files"] = s.stale_files()
+    out = _graph_verb(action="stats", stale=stale)
     t1 = Table("kind", "count", title="entities")
-    for k, v in out["entities"].items():
+    for k, v in (out.get("entities") or {}).items():
         t1.add_row(k, str(v))
     console.print(t1)
     t2 = Table("linkage", "concepts (rows)", "set bits", title="linkages")
-    for name, d in out["linkages"].items():
+    for name, d in (out.get("linkages") or {}).items():
         t2.add_row(name, str(d["concepts"]), str(d["bits"]))
     console.print(t2)
     if stale:
@@ -9498,19 +9431,10 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
 @click.option("-k", default=10, type=int)
 def top(concept, linkage, k):
     """Top-K entities by weight under (linkage, concept)."""
-    def _run(s):
-        e = s.resolve_entity(concept)
-        if e is None or e.kind != "concept":
-            raise click.ClickException(f"no concept: {concept}")
-        with log_query(s, kind="top", body=concept, source="top") as tlog:
-            rows = s.top_weighted(linkage, e.id, k=k)
-            tlog.cardinality = len(rows)
-        return [(s.get_entity_by_id(eid), w) for eid, w in rows]
-    pairs = _replica_read(_run)
-    t = Table("entity", "kind", "weight")
-    for ent, w in pairs:
-        t.add_row(ent.name if ent else "?", ent.kind if ent else "", f"{w:g}")
-    console.print(t)
+    res = _graph_verb(action="top", concept=concept, linkage=linkage, k=k)
+    _render_rows_table(("entity", "kind", "weight"),
+                       [(r.get("name") or "?", r.get("kind") or "", f"{r['weight']:g}")
+                        for r in res.get("rows") or []])
 
 
 @main.command("locate")
@@ -10825,7 +10749,13 @@ def _stamp_derive_pass(root: Path, partition: str, pass_name: str, *,
         from refmatrix.daemon import Daemon, _op_derive_stamp
         d = Daemon(root)
         d.store = _store(write=True)
-        result = _op_derive_stamp(d, args)
+        try:
+            result = _op_derive_stamp(d, args)
+        finally:
+            # Released now (task 3.7), not at exit: see `init` — a held in-process
+            # writer breaks every later read-only open of this catalog in the process.
+            if isinstance(d.store, Store):
+                d.store.close()
         if result.get("ok") is False:
             raise RuntimeError(result.get("error", "stamp failed"))
     except Exception as exc:        # noqa: BLE001 — said, never mute
@@ -11100,58 +11030,25 @@ def search_dense_cmd(query, k, kinds):
     """Dense ANN search via Lance. Embeds QUERY with the same model
     used at index time, then returns top-k entities sorted by L2
     distance ascending."""
-    from refmatrix import daemon as daemon_mod
-    from rich.table import Table
-
-    root = _root()
-    args: dict = {"query": query, "k": k}
-    if kinds:
-        args["kinds"] = list(kinds)
-    if daemon_mod.ping(root):
-        # 180s covers embedder cold-start (sentence-transformers model
-        # load can take 30-90s on a busy CPU). Steady-state ANN search
-        # is sub-second.
-        resp = daemon_mod.call(root, "ann_search", args, timeout=180.0)
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        result = resp["result"]
-    else:
-        from refmatrix.daemon import _op_ann_search, Daemon
-        d = Daemon(root)
-        d.store = _read_store()  # replica-first; never the writer slot
-        result = _op_ann_search(d, args)
-    if result.get("ok") is False:
-        raise click.ClickException(result.get("error", "ann_search failed"))
-    for w in result.get("warnings") or []:
+    res = _graph_verb(action="dense", query=query, k=k, kinds=list(kinds) or None)
+    for w in res.get("warnings") or []:
         click.echo(f"rmx search-dense: {w}", err=True)
-
-    hits = result.get("hits", [])
+    hits = res.get("hits") or []
     if not hits:
         console.print("[yellow]no hits[/]")
         return
-
-    # Resolve ids to (kind, name) via a read-only Store for a readable
-    # table. Lock-free against the daemon's writer.
-    s = _read_store()
-    con = s._connect()
+    # A reranked answer carries a cross-encoder `score`, not an L2 `distance` (bug-089).
+    reranked = any(h.get("reranked") for h in hits)
     table = Table(show_header=True, header_style="bold")
     table.add_column("rank", justify="right")
-    # A reranked answer carries a cross-encoder `score`, not an L2 `distance`
-    # (bug-089: `KeyError: 'distance'` on viascope, whose daemon reranks).
-    reranked = any(h.get("reranked") for h in hits)
     table.add_column("rerank score" if reranked else "distance", justify="right")
     table.add_column("id", justify="right")
     table.add_column("kind")
     table.add_column("name")
-    for rank, h in enumerate(hits, 1):
-        eid = h["id"]
-        dist = h["score"] if reranked else h["distance"]
-        row = con.execute(
-            "SELECT kind, name FROM entities WHERE id = ?", [eid]
-        ).fetchone()
-        kind = row["kind"] if row else "?"
-        name = row["name"] if row else "?"
-        table.add_row(str(rank), f"{dist:.3f}", str(eid), kind, name)
+    for h in hits:
+        dist = h.get("score") if reranked else h.get("distance")
+        table.add_row(str(h["rank"]), f"{float(dist or 0.0):.3f}", str(h["id"]),
+                      h.get("kind") or "?", h.get("name") or "?")
     console.print(table)
 
 
@@ -11197,109 +11094,31 @@ def recall_cmd(query, k, kinds, concept, symbolic, as_json, no_dense):
         rmx recall "parser" -s 42 -s 17 -s 88
             -- fuse a symbolic top-3 with the dense side via RRF.
 
-    Requires the [dense] extra unless --no-dense is set.
+    The daemon embeds and ranks (`graph_recall`); with no daemon the same
+    algorithm runs here (task 3.7 #fam-graph-read-recall).
     """
-    from refmatrix.recall import (
-        bitmap_prefilter, dense_available, dense_recall, hybrid_recall,
-    )
-    from rich.table import Table
-
-    # Recall is read-only: bitmap prefilter, ANN ranking, then name
-    # lookup. Use the lock-free reader so we don't race the daemon's
-    # writer.
-    s = _read_store()
-    candidate_ids = None
-    if concept:
-        cids: list[int] = []
-        for name in concept:
-            e = s.get_entity("concept", name)
-            if e is None:
-                console.print(f"[yellow]unknown concept: {name}[/]")
-                continue
-            cids.append(e.id)
-        if cids:
-            candidate_ids = bitmap_prefilter(s, cids, linkage="mentions")
-            if not candidate_ids:
-                console.print(
-                    "[yellow]concept pre-filter produced empty candidate set "
-                    "— nothing matches the given concepts under 'mentions'.[/]"
-                )
-                return
-
-    symbolic_hits = [int(x) for x in symbolic] if symbolic else None
-
-    if no_dense or not dense_available():
-        if symbolic_hits is None:
-            console.print(
-                "[yellow]dense not available and no --symbolic given — "
-                "nothing to rank.[/]"
-            )
-            return
-        # Symbolic-only short-circuit (the caller already ranked).
-        ids = list(symbolic_hits)
-        if candidate_ids is not None:
-            allowed = set(candidate_ids)
-            ids = [i for i in ids if i in allowed]
-        ranked: list[tuple[int, float]] = [
-            (eid, 1.0 - i / max(1, len(ids))) for i, eid in enumerate(ids[:k])
-        ]
-    else:
-        from refmatrix.embedder import Embedder
-        embedder = Embedder()
-        if symbolic_hits is None and not query:
-            console.print("[yellow]no query and no --symbolic given.[/]")
-            return
-        if symbolic_hits is None:
-            ranked = dense_recall(
-                s, embedder, query, k=k,
-                kinds=list(kinds) if kinds else None,
-                candidate_ids=candidate_ids,
-            )
-        else:
-            ranked = hybrid_recall(
-                s, embedder, query, k=k,
-                kinds=list(kinds) if kinds else None,
-                symbolic_hits=symbolic_hits,
-                candidate_ids=candidate_ids,
-            )
-
-    con = s._connect()
+    res = _graph_verb(action="recall", query=query, k=k, kinds=list(kinds) or None,
+                      concept=list(concept) or None, symbolic=list(symbolic) or None,
+                      no_dense=no_dense)
+    for w in res.get("warnings") or []:
+        click.echo(f"rmx recall: {w}", err=True)
+    hits = res.get("hits") or []
     if as_json:
-        # Every other read surface (`context`, `memory recall`, `scan-prompt`,
-        # `query`) speaks JSON; this one only ever rendered a rich table, so a
-        # programmatic caller had to scrape it. Emitted before the empty check
-        # so "no hits" is a parseable [] rather than prose on stdout.
-        out = []
-        for rank, (eid, score) in enumerate(ranked, 1):
-            row = con.execute(
-                "SELECT kind, name, path FROM entities WHERE id = ?", [eid],
-            ).fetchone()
-            out.append({
-                "rank": rank, "id": eid, "score": float(score),
-                "kind": row[0] if row else None,
-                "name": row[1] if row else None,
-                "path": row[2] if row else None,
-            })
-        click.echo(json.dumps(out))
+        # Emitted before the empty check so "no hits" is a parseable [].
+        click.echo(json.dumps(hits))
         return
-
-    if not ranked:
+    if not hits:
         console.print("[yellow]no hits[/]")
         return
-
     table = Table(show_header=True, header_style="bold")
     table.add_column("rank", justify="right")
     table.add_column("score", justify="right")
     table.add_column("id", justify="right")
     table.add_column("kind")
     table.add_column("name")
-    for rank, (eid, score) in enumerate(ranked, 1):
-        row = con.execute(
-            "SELECT kind, name FROM entities WHERE id = ?", [eid]
-        ).fetchone()
-        kind = row["kind"] if row else "?"
-        name = row["name"] if row else "?"
-        table.add_row(str(rank), f"{score:.4f}", str(eid), kind, name)
+    for h in hits:
+        table.add_row(str(h["rank"]), f"{float(h['score']):.4f}", str(h["id"]),
+                      h.get("kind") or "?", h.get("name") or "?")
     console.print(table)
 
 
@@ -13596,11 +13415,7 @@ SESSIONS_PARTITION_PREFIX = _store_mod.SESSIONS_PARTITION_PREFIX
 def _sessions_partition_default() -> str:
     """Resolve `sessions-<project_name>` for the active CLI invocation.
     Parallels `_memory_partition_default()`."""
-    try:
-        project = _root().resolve().parent.name or "default"
-    except Exception:
-        project = "default"
-    return f"{SESSIONS_PARTITION_PREFIX}{project}"
+    return _graphread.sessions_partition(_root())
 
 
 def _encode_claude_project_dir(cwd: Path) -> str:
@@ -14021,16 +13836,25 @@ def session_ingest_cmd(targets, all_projects, force, verbose, no_index):
                            duration_s=_time.time() - now)
         return
 
-    s = _store()
     files = collect_gmd_files([cards_dir])
     if not files:
         console.print("[yellow]no cards to index[/]")
         return
-    with s.with_partition(partition):
-        stats = ingest_gmd_paths(
-            s, files, verbose=verbose,
-            as_memory=True, memory_mtype_default="session",
-        )
+    s = _store()
+    try:
+        with s.with_partition(partition):
+            stats = ingest_gmd_paths(
+                s, files, verbose=verbose,
+                as_memory=True, memory_mtype_default="session",
+            )
+    finally:
+        # Close the in-process writer HERE, not at interpreter exit (task 3.7): a
+        # writer left open for the life of the process makes every later read-only
+        # open of the same catalog in it — `verbs.snapshot_read`, which the session
+        # reads now route through — fail with bug-135's "Unique file handle
+        # conflict … already attached".
+        if isinstance(s, Store):
+            s.close()
     console.print(stats.report())
     _stamp_derive_pass(root, partition, "sessions",
                        duration_s=_time.time() - now)
@@ -14057,61 +13881,22 @@ def _session_call(op: str, args: dict, *, timeout: float = 60.0):
 
 
 def _iter_session_memories() -> list[dict]:
-    """Return all memory rows in the active sessions partition. Routes
-    through daemon when available; falls back to direct store read."""
-    from refmatrix import daemon as daemon_mod
-    root = _root()
-    if daemon_mod.ping(root):
-        resp = _session_call(
-            "memory_iter", {"mtype": "session", "limit": 100000},
-        )
-        if resp.get("ok"):
-            return resp["result"]["rows"]
-    s = Store(root, partition=_session_partition())
-    return list(s.iter_memories(mtype="session", limit=100000))
+    """All session cards in the active sessions partition, through the verb layer's
+    read routing (`verbs.session_memories`, task 3.7 #fam-session-store): the daemon's
+    `memory_iter` op, one bounded attempt; no daemon ⇒ an in-process READ-ONLY read.
+    It used to open `Store(root, partition=…)` read-WRITE on the writer slot whenever
+    ping failed — a busy daemon included. Busy / refused are ClickExceptions."""
+    from refmatrix import verbs as _verbs
+    try:
+        return _verbs.session_memories(_root(), partition=_session_partition())
+    except _verbs.VerbError as e:
+        raise click.ClickException(f"session index unreadable: {e}") from e
 
 
-def _session_meta_get(mem: dict, key: str, default=None):
-    """Reach into memory_content.metadata; handle daemon (already-parsed)
-    vs. direct-store (may be a JSON str) shapes."""
-    meta = mem.get("metadata") or {}
-    if isinstance(meta, str):
-        try:
-            meta = json.loads(meta)
-        except (json.JSONDecodeError, TypeError):
-            meta = {}
-    return meta.get(key, default) if isinstance(meta, dict) else default
-
-
-def _session_meta_list(mem: dict, key: str) -> list[str]:
-    """List-valued metadata accessor. Frontmatter list values like
-    `files_touched: ["a", "b"]` survive ingest as JSON-encoded strings
-    (the YAML parser used by ingest-gmd's --as-memory path doesn't unwrap
-    nested metadata). Parse on read."""
-    v = _session_meta_get(mem, key)
-    if v is None:
-        return []
-    if isinstance(v, list):
-        return [str(x) for x in v]
-    if isinstance(v, str):
-        s = v.strip()
-        if s.startswith("[") and s.endswith("]"):
-            try:
-                parsed = json.loads(s)
-                if isinstance(parsed, list):
-                    return [str(x) for x in parsed]
-            except json.JSONDecodeError:
-                pass
-            # Fallback: split on commas, strip quotes
-            inner = s[1:-1].strip()
-            if not inner:
-                return []
-            return [
-                item.strip().strip("'\"") for item in inner.split(",")
-                if item.strip()
-            ]
-        return [s] if s else []
-    return []
+# Shared with the `rmx_graph` timeline action (task 3.7): the session-card metadata
+# readers live in graphread.
+_session_meta_get = _graphread.session_meta_get
+_session_meta_list = _graphread.session_meta_list
 
 
 def _session_passes_filters(
@@ -14144,23 +13929,7 @@ def _session_passes_filters(
     return True
 
 
-def _since_to_iso(since: str | None) -> str | None:
-    """Convert `7d`/`1h`/ISO-prefix to ISO timestamp string for comparison."""
-    if not since:
-        return None
-    # If looks like ISO date, pass through.
-    if since and (since[0:4].isdigit() and "-" in since):
-        return since
-    try:
-        secs = _parse_duration(since)
-    except click.BadParameter:
-        return since
-    import time
-    return (
-        __import__("datetime").datetime.fromtimestamp(
-            time.time() - secs, tz=__import__("datetime").timezone.utc,
-        ).isoformat().replace("+00:00", "Z")
-    )
+_since_to_iso = _graphread.since_to_iso
 
 
 @session_grp.command("recall")
@@ -14296,21 +14065,19 @@ def session_recall_cmd(query, project, branch, commit, touched,
 def _resolve_session(prefix: str) -> dict | None:
     """Resolve a session by id, short prefix, or full memory name."""
     # Direct hit by memory name
-    from refmatrix import daemon as daemon_mod
-    root = _root()
+    # Through the verb layer's read routing (task 3.7): the direct read-WRITE
+    # `Store(...)` open here ran whenever ping failed, a busy daemon included.
+    from refmatrix import verbs as _verbs
     candidate_names = [prefix]
     if not prefix.startswith("session-"):
         candidate_names.append(f"session-{prefix[:8]}")
     for nm in candidate_names:
-        if daemon_mod.ping(root):
-            resp = _session_call("memory_get", {"name": nm})
-            if resp.get("ok") and resp["result"].get("memory"):
-                return resp["result"]["memory"]
-        else:
-            s = Store(root, partition=_session_partition())
-            row = s.get_memory(nm)
-            if row:
-                return row
+        try:
+            row = _verbs.session_memory_get(_root(), nm, partition=_session_partition())
+        except _verbs.VerbError as e:
+            raise click.ClickException(f"session index unreadable: {e}") from e
+        if row:
+            return row
     # Prefix scan over session_id
     for m in _iter_session_memories():
         sid = _session_meta_get(m, "session_id") or ""
@@ -14790,46 +14557,9 @@ def concept_grp():
     were worked on) and git (authoritative code-introduction commit)."""
 
 
-# Structural linkages whose neighbors carry the concept's file footprint.
-_TIMELINE_LINKAGES = [
-    "defines", "implements", "calls", "called_by", "imports", "mentions",
-]
-
-
-def _concept_files(s, cids, *, hops, cap=200):
-    """Resolve concept ids -> {abspath: relpath} for the code/doc files in the
-    concept's structural footprint, expanding `hops` concept-hops out. Also
-    returns the set of concept names visited (for the header)."""
-    from refmatrix.context import _concept_rows
-    # Only walk linkages that actually exist — top_weighted/load_bitmap raise
-    # on an unregistered linkage type (a fresh store has only what's linked).
-    existing = {lk["name"] for lk in s.list_linkages()}
-    linkages = [ln for ln in _TIMELINE_LINKAGES if ln in existing]
-    files: dict[str, str] = {}
-    seen: set[int] = set(cids)
-    names: dict[int, str] = {}
-    for cid in cids:
-        ent = s.get_entity_by_id(cid)
-        if ent is not None:
-            names[cid] = ent.name
-    frontier = list(cids)
-    depth = 0
-    while frontier and depth <= hops and len(files) < cap:
-        nxt: list[int] = []
-        for cid in frontier:
-            for _ln, eid, _w in _concept_rows(s, cid, linkages, cap):
-                e = s.get_entity_by_id(eid)
-                if e is None:
-                    continue
-                if e.kind in ("code", "doc") and e.path:
-                    files.setdefault(e.path, e.name or e.path)
-                elif e.kind == "concept" and depth < hops and e.id not in seen:
-                    seen.add(e.id)
-                    names[e.id] = e.name
-                    nxt.append(e.id)
-        frontier = nxt
-        depth += 1
-    return files, names
+# The concept -> files resolution moved to graphread (task 3.7), shared with the verb.
+_TIMELINE_LINKAGES = _graphread.TIMELINE_LINKAGES
+_concept_files = _graphread.concept_files
 
 
 @concept_grp.command("timeline")
@@ -14852,128 +14582,22 @@ def concept_timeline_cmd(concept, hops, since, until, k, no_git, as_json):
     Joins the context graph (concept -> its files) with the session index
     (files/commits -> when touched) plus a git pickaxe for the authoritative
     code-introduction commit. Direct = a session names the concept; indirect =
-    a session edited one of its files without naming it."""
-    import shutil
-    import subprocess
-    from refmatrix import daemon as daemon_mod
-
-    since_iso = _since_to_iso(since)
-    until_iso = _since_to_iso(until)
-
-    # 1. Graph: resolve concept -> its files.
-    s = _read_store()
-    cids = s.resolve_concept_ids(concept, strict=False)
-    if not cids:
-        e = s.resolve_entity(concept)
-        if e is not None and e.kind == "concept":
-            cids = [e.id]
-    if not cids:
-        raise click.ClickException(f"unknown concept: {concept!r}")
-    files, cnames = _concept_files(s, cids, hops=hops)
-    rel_keys = list(files.values())
-    proj = s.root.parent
-
-    events: list[dict] = []  # {date, type, ref, detail}
-
-    # 2. Git: first commit that introduced the concept string (pickaxe),
-    #    scoped to the resolved files when we have them.
-    if not no_git and shutil.which("git"):
-        pathspec = rel_keys or ["."]
-        try:
-            out = subprocess.run(
-                ["git", "-C", str(proj), "log", "--reverse", "-i",
-                 "-S", concept, "--pretty=%h%x09%aI%x09%s", "--", *pathspec],
-                capture_output=True, text=True, timeout=30,
-            )
-            first = next((ln for ln in out.stdout.splitlines() if ln.strip()),
-                         None)
-            if first:
-                parts = (first.split("\t") + ["", "", ""])[:3]
-                h, aiso, subj = parts
-                events.append({"date": aiso, "type": "git", "ref": h,
-                               "detail": f"introduced `{concept}` — {subj[:60]}"})
-        except Exception:
-            pass
-
-    # 3. Sessions: direct (names the concept) + indirect (touched a file).
-    sessions: dict[str, dict] = {}
-
-    def _record(m, how, via=None):
-        sid = _session_meta_get(m, "session_id") or m.get("name", "")
-        ended = _session_meta_get(m, "ended") or ""
-        if since_iso and ended and ended < since_iso:
-            return
-        if until_iso and ended and ended > until_iso:
-            return
-        title = (m.get("content") or "").split("\n", 2)[0].lstrip("# ").strip()
-        title = title.split(" {#")[0]
-        cur = sessions.get(sid)
-        if cur is None:
-            sessions[sid] = {"date": ended, "title": title[:56],
-                             "how": how, "via": via}
-        elif how == "direct" and cur["how"] != "direct":
-            cur["how"] = "direct"  # naming the concept outranks a file touch
-            cur["via"] = None
-
-    # Session collection is best-effort — a project with no session index
-    # still gets a useful git-only timeline.
-    try:
-        direct_rows: list[dict] = []
-        if daemon_mod.ping(_root()):
-            resp = _session_call("memory_search",
-                                 {"query": concept, "limit": max(k * 4, 100)})
-            if resp.get("ok"):
-                direct_rows = [r for r in resp["result"]["rows"]
-                               if r.get("mtype") == "session"]
-        else:
-            direct_rows = [m for m in _iter_session_memories()
-                           if concept.lower() in (m.get("content") or "").lower()]
-        for m in direct_rows:
-            _record(m, "direct")
-
-        if rel_keys:
-            for m in _iter_session_memories():
-                touched = _session_meta_list(m, "files_touched")
-                hit = next((rel for rel in rel_keys
-                            if any(rel in f for f in touched)), None)
-                if hit:
-                    _record(m, "indirect", via=hit)
-    except Exception:
-        pass
-
-    for sid, d in sessions.items():
-        via = f" via {d['via']}" if d.get("via") else ""
-        events.append({"date": d["date"], "type": "session", "ref": sid[:8],
-                       "detail": f"[{d['how']}{via}] {d['title']}"})
-
-    events = [e for e in events if e["date"]]
-    events.sort(key=lambda e: e["date"])
-    session_events = [e for e in events if e["type"] == "session"]
-    truncated = len(session_events) > k
-    if truncated:
-        # Keep the earliest k session rows; introduction is the point.
-        keep = set(id(e) for e in session_events[:k])
-        events = [e for e in events
-                  if e["type"] != "session" or id(e) in keep]
-
+    a session edited one of its files without naming it. A leg that fails or is
+    skipped is said (`warnings`), never dropped."""
+    res = _graph_verb(action="timeline", concept=concept, hops=hops, since=since,
+                      until=until, k=k, git=not no_git)
     if as_json:
-        click.echo(json.dumps({
-            "concept": concept,
-            "resolved_files": len(files),
-            "resolved_concepts": len(cnames),
-            "hops": hops,
-            "events": events,
-            "session_count": len(session_events),
-            "truncated": truncated,
-        }, indent=2, default=str))
+        click.echo(json.dumps(res, indent=2, default=str))
         return
-
+    for w in res.get("warnings") or []:
+        click.echo(f"rmx concept timeline: {w}", err=True)
+    events = res.get("events") or []
     click.echo(f"=== timeline for `{concept}` ===")
-    click.echo(f"graph: {len(files)} files, {len(cnames)} concepts (hops={hops})")
+    click.echo(f"graph: {res.get('resolved_files', 0)} files, "
+               f"{res.get('resolved_concepts', 0)} concepts (hops={hops})")
     if not events:
         click.echo("(no events — concept resolved but no git/session hits)")
         return
-    from rich.table import Table
     from rich.text import Text
     t = Table(show_lines=False)
     t.add_column("date", style="dim")
@@ -14981,11 +14605,11 @@ def concept_timeline_cmd(concept, hops, since, until, k, no_git, as_json):
     t.add_column("ref")
     t.add_column("detail")
     for e in events:
-        t.add_row((e["date"] or "")[:10], e["type"], e["ref"],
-                  Text(e["detail"]))
+        t.add_row((e["date"] or "")[:10], e["type"], e["ref"], Text(e["detail"]))
     console.print(t)
-    if truncated:
-        console.print(f"[dim](+{len(session_events) - k} more sessions; "
+    session_events = [e for e in events if e["type"] == "session"]
+    if res.get("truncated"):
+        console.print(f"[dim](+{res.get('session_count', 0) - k} more sessions; "
                       f"raise --k)[/]")
     first = events[0]
     click.echo(f"\nfirst seen: {(first['date'] or '')[:10]}  "

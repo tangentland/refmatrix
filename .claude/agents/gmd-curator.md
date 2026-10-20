@@ -335,7 +335,7 @@ Routine health pass. Surface findings; let the user decide what to fix.
 ```bash
 rmx ingest-gmd docs/ 2>&1 | tail -30          # current ingest health
 rmx stats                                       # entity / link counts, drift
-rmx top mentions -k 30                          # noise candidates
+rmx primer --top 30                             # most-referenced (noise candidates)
 rmx query "name~'query/'"  --limit 50           # learn-on-miss promotions
 rmx primer                                      # density-ranked top concepts
 ```
@@ -556,7 +556,7 @@ rmx context <doc-id>#<anchor>         # specific GMD node
 rmx neighbors <Concept> --depth 2     # graph walk
 rmx query "defines:X AND mentions:Y"  # DSL
 rmx co-occur <X>                      # what shares context with X
-rmx top mentions -k 20                # most-mentioned
+rmx primer --top 20                   # most-referenced entities
 rmx grep <Pattern>                    # index-backed grep, learn-on-miss
 ```
 
