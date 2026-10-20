@@ -205,6 +205,61 @@ def require_daemon(root: Path, *, retries: int = 2) -> dict:
     raise VerbAbsentError(f"daemon not running for {root}")
 
 
+def classify_transport_error(e: BaseException, *, op: str, root: "Path | str",
+                             timeout: float, write: bool = False) -> VerbError:
+    """THE one place a `daemon.call` transport exception becomes words and a type.
+
+    Why (task 3.5 amendment #req-amend, 2026-10-19, the project-store sibling of
+    ch-bsd plan-3 r8 #s-2): `_call` wrapped EVERY transport exception as "did
+    not answer within Ns; the daemon is busy", so `rmx memory forget` under a
+    pytest tmp root said a busy daemon timed out on an op that never reached a
+    socket ("AF_UNIX path too long"); r8 found the same lie on the global leg.
+    Q11: absent is not busy, and neither is unreachable.
+
+    - missing / refused socket → `VerbAbsentError` "not running" (a daemon
+      that died without unlinking its socket is absent);
+    - socket path too long (macOS `sun_path` ~104 bytes) → a PLAIN `VerbError`
+      saying so — NOT absent: absent licenses the in-process store fallback,
+      and an undiallable path proves nothing about whether a daemon holds it;
+    - a real timeout → `VerbBusyError` "did not answer within Ns";
+    - anything else (reset / broken pipe / an empty reply — a daemon dying or
+      restarting mid-request) → `VerbBusyError` naming the type and message,
+      the classification `_call` always gave it.
+
+    `write=True` (a WRITE op): a timeout also says the write is NOT CONFIRMED
+    and may still land — the request may already be in the daemon's hands,
+    which a refused or missing socket rules out. That distinction is a
+    transport fact, so it is worded here, not by each caller (task 3.6
+    #r10-amend S2, ch-bsd plan-3 r10 #s-2: `focus summarize --promote`
+    carried it as its own "daemon busy: promote not confirmed" for every
+    OSError, bsd-plan2-r3 #m-6).
+
+    Returns the error; the caller raises it (`raise … from e`)."""
+    import socket as _socket
+    kind = type(e).__name__
+    if isinstance(e, (FileNotFoundError, ConnectionRefusedError)):
+        return VerbAbsentError(f"daemon not running for {root}: {op} found no listening "
+                               f"socket ({kind})")
+    if isinstance(e, OSError) and "path too long" in str(e).lower():
+        return VerbError(f"cannot dial the daemon for {root}: its socket path is too long "
+                         f"for AF_UNIX (macOS limit ~104 bytes); {op} was not sent — use a "
+                         f"shorter store root")
+    if isinstance(e, (TimeoutError, _socket.timeout)):
+        # The exception's words ("timed out"), not its class name: callers
+        # render this to users, and r4 pinned that no raw `TimeoutError`
+        # leaks into a busy message (`_promote_digest`).
+        why = f" ({e})" if str(e) else ""
+        if write:
+            return VerbBusyError(f"daemon op {op} on {root} did not answer within "
+                                 f"{timeout:g}s{why}; the daemon is busy — the write is "
+                                 f"not confirmed within {timeout:g}s and the daemon may "
+                                 f"still complete it")
+        return VerbBusyError(f"daemon op {op} on {root} did not answer within {timeout:g}s"
+                             f"{why}; the daemon is busy")
+    return VerbBusyError(f"daemon op {op} on {root} failed in transport ({kind}: {e}); "
+                         f"treating the daemon as busy")
+
+
 def _call(root: Path, op: str, payload: dict, *, timeout: float = 60.0,
           retries: int = 2) -> dict:
     """`retries=0` for budgeted paths: `daemon.call` retries on timeout, so a
@@ -214,11 +269,108 @@ def _call(root: Path, op: str, payload: dict, *, timeout: float = 60.0,
     try:
         r = daemon_mod.call(root, op, payload, timeout=timeout, retries=retries)
     except Exception as e:  # noqa: BLE001 — transport-level only (call does socket+json)
-        raise VerbBusyError(f"daemon op {op} on {root} did not answer within "
-                            f"{timeout:g}s ({e}); the daemon is busy") from e
+        raise classify_transport_error(e, op=op, root=root, timeout=timeout) from e
     if not r.get("ok"):
         raise VerbError(str(r.get("error")))
     return r.get("result", {})
+
+
+def global_write(op: str, args: dict, *, timeout: "float | None" = None) -> dict:
+    """THE path from a verb to the global store's daemon for a WRITE.
+
+    Why one helper (task 3.5, ch-bsd plan-3 r8 #s-2, 2026-10-19): `memory add
+    --global` and `memory promote` each called `hub.global_call` themselves and
+    drifted apart. `add --global` went through `global_call`'s ensure branch and
+    started an absent global daemon; r7's bound on `promote` switched it to
+    `retries=0`, which skips that branch, so a cold global store failed promote
+    in 0.0 s with `[Errno 2] No such file or directory` (r8 probe P2). Both now
+    route here, and the global daemon's three states are named, not inferred
+    from an errno:
+
+    - up     → ONE write.
+    - busy   (a live rmx pid that does not answer ping) → `VerbBusyError`; never
+      spawned over, never called "not running".
+    - absent → started the way `ensure_global_daemon` always has; if it cannot
+      be started, `VerbAbsentError` saying "not running" with the spawn cause.
+
+    `timeout=None` keeps `memory add --global`'s documented unbounded wait
+    (ensure, then `global_call`'s defaults). With a `timeout` the whole thing —
+    status probe, spawn readiness, the write — fits that budget: the spawn
+    waits only what is left, and the write is one attempt (`retries=0`) bounded
+    by what is left after that. Returns the op's `result`."""
+    import time as _time
+    from refmatrix import discovery, hub as hub_mod
+    groot = hub_mod.global_store_root()
+    deadline = (_time.monotonic() + float(timeout)) if timeout is not None else None
+
+    def left() -> "float | None":
+        if deadline is None:
+            return None
+        rem = deadline - _time.monotonic()
+        if rem <= 0:
+            raise VerbBusyError(f"global store {op} not confirmed within {timeout:g}s — "
+                                f"the global daemon at {groot} is busy")
+        return rem
+
+    st = discovery.daemon_status(groot, retries=0 if timeout is not None else 2)
+    if not st.get("up"):
+        if st.get("busy"):
+            raise VerbBusyError(
+                f"global store daemon busy pid={st.get('pid')} at {groot} (alive, not "
+                f"answering — starting, or holding the store lock); retry shortly")
+        causes: list[str] = []
+        wait = left()
+        try:
+            started = (hub_mod.ensure_global_daemon(errors=causes) if wait is None
+                       else hub_mod.ensure_global_daemon(wait_for_ready=wait, errors=causes))
+        except Exception as e:  # noqa: BLE001 — the bootstrap's own failure, said below
+            started, causes = False, causes + [f"{type(e).__name__}: {e}"]
+        if not started:
+            why = "; ".join(causes) or "it did not answer after the spawn"
+            raise VerbAbsentError(f"global store daemon not running at {groot} and could "
+                                  f"not be started ({why})")
+    rem = left()
+    try:
+        g = (hub_mod.global_call(op, args) if rem is None
+             else hub_mod.global_call(op, args, timeout=rem, retries=0))
+    except Exception as e:  # noqa: BLE001 — transport-level; typed by THE classifier
+        # A daemon that went away between the probe and the write is absent,
+        # a stall is busy, an undiallable path is neither (#req-amend).
+        c = classify_transport_error(e, op=op, root=groot,
+                                     timeout=rem if rem is not None else 60.0)
+        raise type(c)(f"global store: {c}") from e
+    if not g.get("ok"):
+        raise VerbError(str(g.get("error")))
+    return g.get("result", {})
+
+
+def legacy_memory_partition_exists(root: Path, legacy: str) -> bool:
+    """THE legacy-partition detector: is the pre-merge `memory-<project>`
+    partition row present in this store?
+
+    One place (task 3.6 #r10-amend S1, ch-bsd plan-3 r10 #s-1, 2026-10-19):
+    the CLI had its own detector with a process cache while
+    `memory_partition` had none on the no-snapshot branch, and the two
+    disagreed on the same store — the split-brain family. Both use this now.
+
+    A read-only open (the snapshot when there is one, else the primary
+    catalog), CLOSED before returning and never cached: a cached read-only
+    attach of the writer's file is bug-135, and a cached answer goes stale
+    the moment a partition is created or merged. A store with no catalog file
+    yet has no legacy partition. Open/read errors propagate to the caller.
+
+    Call it only where no daemon holds the catalog (the absent branch), or
+    with a snapshot present; under a live daemon the primary file is locked."""
+    from refmatrix.store import Store
+    s = Store(root, read_only=True)
+    try:
+        if not Path(s.db_path).exists():
+            return False
+        row = s._connect().execute(
+            "SELECT 1 FROM partitions WHERE name=?", (legacy,)).fetchone()
+        return row is not None
+    finally:
+        s.close()
 
 
 def memory_partition(root: Path, *, timeout: "float | None" = None) -> str:
@@ -253,19 +405,34 @@ def memory_partition(root: Path, *, timeout: "float | None" = None) -> str:
     try:
         require_daemon(root, retries=0 if timeout is not None else 2)
     except VerbAbsentError:
-        return project
+        # NO daemon and no snapshot: read the partitions table ourselves, with
+        # a closed-after read-only open (task 3.6 #r10-amend S1, ch-bsd plan-3
+        # r10 #s-1, 2026-10-19). Returning the project partition blind here —
+        # which is what bug-135's fix left once `cached_replica` stopped
+        # caching the writer's file — split MCP `rmx_memory_add` (→ `p`) from
+        # CLI `memory add` (→ `memory-p`) on a pre-merge, never-snapshotted
+        # store. No daemon holds the catalog in this branch, so the open is safe.
+        try:
+            return legacy if legacy_memory_partition_exists(root, legacy) else project
+        except Exception as e:  # noqa: BLE001 — typed for the caller, never guessed past
+            raise VerbBusyError(
+                f"no daemon for {root}, and its catalog could not be read to find the "
+                f"memory partition ({type(e).__name__}: {e}) — another process holds it; "
+                f"retry shortly") from e
     op_timeout = min(10.0, timeout) if timeout else 10.0
     try:
         # One attempt: a held writer does not free in 10 s, and a retried
         # probe multiplied every caller's wait by three (bsd-plan3-r4 #b-2).
         r = daemon_mod.call(root, "partition_list", {}, timeout=op_timeout, retries=0)
-    except Exception as e:  # noqa: BLE001 — transport-level: the op did not answer
+    except Exception as e:  # noqa: BLE001 — transport-level; typed by THE classifier
         # Op-level busy is BUSY (bsd-plan3-r4 #s-4): guessing here let the
         # write that follows land on the guessed partition once the lock
         # freed — the split-brain family this function exists to prevent.
-        raise VerbBusyError(
-            f"daemon busy pid={daemon_mod.read_pid(root)} for {root}: partition_list "
-            f"did not answer within {op_timeout:g}s ({e}); retry shortly") from e
+        # A refused / missing socket is ABSENT, not busy (task 3.6 #2, ch-bsd
+        # plan-3 r9 #s-1): raised as the classifier types it, and never
+        # guessed past — the caller decides what absent means.
+        raise classify_transport_error(e, op="partition_list", root=root,
+                                       timeout=op_timeout) from e
     if r.get("ok"):
         if any(row.get("name") == legacy for row in r["result"].get("rows", [])):
             return legacy
@@ -686,23 +853,16 @@ def memory_add(root: Path, name: str, content: str, *,
     payload = {"name": name, "content": content, "mtype": mtype, "tags": tags,
                "metadata": metadata, "protected": protect}
     if to_global:
-        from refmatrix import hub as hub_mod
-        try:
-            # DELIBERATELY unbounded, unlike the `promote` action's global write
-            # two hundred lines below, which carries `timeout=_left(30.0),
-            # retries=0`. The difference is the caller, not an oversight:
-            # `memory add --global` is a user-initiated plain write with no
-            # budget over it, and the documented choice there is to wait rather
-            # than drop the write. `promote` runs under the memory group's read
-            # budget and promised 10 s. Named here because ch-bsd plan-3 r7
-            # flagged this as #b-2's sibling and the quoted-line-sibling pattern
-            # says a reader must not have to guess which case this is.
-            g = hub_mod.global_call("memory_add", payload)
-        except Exception as e:  # noqa: BLE001 — typed for the caller
-            raise VerbError(f"global store memory_add failed: {e}") from e
-        if not g.get("ok"):
-            raise VerbError(str(g.get("error")))
-        return g.get("result", {})
+        # DELIBERATELY unbounded (`timeout=None`), unlike the `promote` action's
+        # global write, which passes its remaining budget. The difference is the
+        # caller, not an oversight: `memory add --global` is a user-initiated
+        # plain write with no budget over it, and the documented choice there is
+        # to wait rather than drop the write. `promote` runs under the memory
+        # group's read budget and promised 10 s (ch-bsd plan-3 r7 #b-2's
+        # sibling). Both go through ONE helper since task 3.5 (r8 #s-2,
+        # 2026-10-19): the two had diverged on whether an absent global daemon
+        # is started.
+        return global_write("memory_add", payload)
     return _call(root, "memory_add", {**payload, "partition": memory_partition(root)},
                  timeout=30.0)
 
@@ -1310,9 +1470,7 @@ def memory(root: Path, action: typing.Literal[
     dedicated verbs (recall forwards every recall knob it accepts); promote
     copies project→global; everything else routes to the daemon's memory_*
     op with the project partition injected."""
-    from refmatrix import daemon as daemon_mod, hub as hub_mod
-    a = {k: v for k, v in locals().items()
-         if k not in ("root", "action", "daemon_mod", "hub_mod", "timeout")}
+    a = {k: v for k, v in locals().items() if k not in ("root", "action", "timeout")}
     if action == "recall":
         kw = {k: v for k, v in a.items()
               if k in _RECALL_FORWARD and v is not None}
@@ -1354,25 +1512,20 @@ def memory(root: Path, action: typing.Literal[
         if not m:
             raise VerbError("no memory matching the id/name")
         tg = list(dict.fromkeys((m.get("tags") or []) + ["behavior"]))
-        try:
-            # The leg that actually costs the time. Round 7 bounded the project
-            # READ above and left this at `global_call`'s `timeout=60,
-            # retries=2` default, so a held GLOBAL store still cost 180.2 s —
-            # r6 #b-2's number to the decimal, one leg over (r7 #b-2, measured
-            # three times: by the auditor, by its worktree re-take, and by me).
-            # `hub.global_call`'s own docstring says `retries=0` exists to
-            # prevent exactly this. `Store.add_memory` upserts on name, so a
-            # single attempt cannot leave a half-written row.
-            g = hub_mod.global_call("memory_add", {
-                "name": m["name"], "content": m["content"],
-                "mtype": m.get("mtype") or "feedback", "tags": tg,
-                "metadata": m.get("metadata")},
-                timeout=_left(30.0), retries=0)
-        except Exception as e:  # noqa: BLE001 — typed for the caller (r3 #s-4)
-            raise VerbError(f"global store memory_add failed: {e}") from e
-        if not g.get("ok"):
-            raise VerbError(str(g.get("error")))
-        return g.get("result", {})
+        # The leg that actually costs the time. Round 7 bounded the project
+        # READ above and left this at `global_call`'s `timeout=60, retries=2`
+        # default, so a held GLOBAL store still cost 180.2 s — r6 #b-2's number
+        # to the decimal, one leg over (r7 #b-2). The bound is what is LEFT of
+        # the budget (r8 M4: a fixed 30 s survived the r7 test). Since task 3.5
+        # (r8 #s-2, 2026-10-19) the write goes through `global_write`, which
+        # also STARTS an absent global daemon inside that budget — `retries=0`
+        # had skipped `global_call`'s ensure branch, so a cold global store
+        # failed promote in 0.0 s with a raw `[Errno 2]`. `Store.add_memory`
+        # upserts on name, so a single attempt cannot leave a half-written row.
+        return global_write("memory_add", {
+            "name": m["name"], "content": m["content"],
+            "mtype": m.get("mtype") or "feedback", "tags": tg,
+            "metadata": m.get("metadata")}, timeout=_left(30.0))
     op = _MEMORY_OPS.get(action)
     if op is None:
         raise VerbError(f"unknown memory action {action!r}")
@@ -1385,7 +1538,12 @@ def memory(root: Path, action: typing.Literal[
         if action == "get" and id is None and name and (res or {}).get("memory"):
             emit_memory_get_used(root, name, scope="project")
         return res
-    return _call(root, op, payload, timeout=120.0)
+    # A WRITE honours an explicit `timeout` (task 3.4 R3, ch-bsd plan-3 r8
+    # #t34-build, 2026-10-19): `rmx memory bulk-forget` deletes up to every row
+    # of an mtype — the 271-card viascope cleanup — and its own daemon call had
+    # carried 600 s before it was routed through this verb. Ignoring the
+    # caller's timeout here would have cut that to 120 s the day it moved.
+    return _call(root, op, payload, timeout=float(timeout) if timeout is not None else 120.0)
 
 
 def emit_memory_get_used(root: Path, name: str, *, scope: str = "project") -> int:
@@ -1568,4 +1726,191 @@ MCP_ONLY: dict[str, str] = {
                  "is `rmx locate` (paths) + per-store `rmx context`",
     "rmx_search": "federated DSL over every live store; the CLI `query` is "
                   "single-store by design",
+}
+
+
+# ---- the REVERSE walk: every invocable CLI path, classified exactly once ---
+# Task 3.4 (ch-bsd plan-3 r8 #s-4 / #t34-build, 2026-10-19). `CLI_MAP` proves
+# every verb has a twin; nothing proved every click command is a twin or a
+# DECIDED exception, so a new agent-facing command with no verb was
+# indistinguishable from an accepted internal one. tests/test_verb_parity.py
+# walks `cli.main` (195 invocable paths at d4bf001: 193 leaves plus the
+# `invoke_without_command` groups `learn` and `queue`) and requires each path
+# in EXACTLY ONE of: a `CLI_MAP` value, `CLI_ACTIONS`, `INTERNAL_CLI`,
+# `HIDDEN_ALIASES`, `LEGACY_UNPAIRED`. A key that names no invocable path fails
+# too — an allowlist nobody reads is the defect the walk exists to catch.
+
+# A dispatcher verb's ACTION twins: click path -> (verb, action). The verb's
+# own `CLI_MAP` twin (`memory get`, `task list`) is not repeated here. Every
+# action is a member of the verb's `action` Literal, and every command here
+# CALLS the verb (wiring class `calls`) — the seven memory writes were routed
+# through `memory()` by task 3.4 R3 instead of being excepted.
+CLI_ACTIONS: dict[tuple[str, ...], tuple[str, str]] = {
+    ("memory", "list"): ("rmx_memory", "list"),
+    ("memory", "search"): ("rmx_memory", "search"),
+    ("memory", "promote"): ("rmx_memory", "promote"),
+    ("memory", "brief"): ("rmx_memory", "brief"),
+    ("memory", "forget"): ("rmx_memory", "forget"),
+    ("memory", "reclassify"): ("rmx_memory", "reclassify"),
+    ("memory", "retag"): ("rmx_memory", "retag"),
+    ("memory", "link"): ("rmx_memory", "link"),
+    ("memory", "score"): ("rmx_memory", "score"),
+    ("memory", "bulk-forget"): ("rmx_memory", "bulk_forget"),
+    ("memory", "dedup"): ("rmx_memory", "dedup"),
+    ("task", "push"): ("rmx_task", "push"),
+    ("task", "pop"): ("rmx_task", "pop"),
+    ("task", "current"): ("rmx_task", "current"),
+    ("task", "swap"): ("rmx_task", "swap"),
+}
+
+# CLI-only BY DECISION. On 2026-10-06 the user accepted CLI-only commands for
+# internal and test-harness surfaces (workflow/deferral_registry.md row 47);
+# each reason quotes those words. Task 16.1's `grep-learn` joins this map when
+# the command exists — seeding it now would be a stale key.
+_INTERNAL_DECISION = ('user, 2026-10-06 (deferral row 47): "I\'m okay with internal '
+                      'harness/testing cli only commands"')
+INTERNAL_CLI: dict[tuple[str, ...], str] = {
+    ("derive", "log"): f"derive-pass history for the operator — {_INTERNAL_DECISION}",
+    ("derive", "diff"): f"derive-pass impact diff — {_INTERNAL_DECISION}",
+    ("derive", "status"): f"derive-pass state — {_INTERNAL_DECISION}",
+    ("derive", "unstamp"): f"derive-pass repair switch — {_INTERNAL_DECISION}",
+    ("learn",): f"the grep→graph learning switch, bare form — {_INTERNAL_DECISION}",
+    ("learn", "on"): f"the grep→graph learning switch — {_INTERNAL_DECISION}",
+    ("learn", "off"): f"the grep→graph learning switch — {_INTERNAL_DECISION}",
+    ("learn", "status"): f"the grep→graph learning switch — {_INTERNAL_DECISION}",
+}
+
+# The six `_alias` copies: a HIDDEN command running the same callback as a
+# visible one. The target's classification applies. "Skip hidden" is not the
+# rule — task 16.1's `grep-learn` will be hidden and belongs in INTERNAL_CLI.
+HIDDEN_ALIASES: dict[tuple[str, ...], tuple[str, ...]] = {
+    ("add-concept",): ("add", "concept"),
+    ("add-entity",): ("add", "entity"),
+    ("add-linkage-type",): ("add", "linkage-type"),
+    ("list-entities",): ("list", "entities"),
+    ("list-linkages",): ("list", "linkages"),
+    ("list-queries",): ("list", "queries"),
+}
+
+# Today's unpaired surface, each with a DECISION. Pinned in the test to the
+# frozen 140-path baseline and shrink-only: a path leaves by gaining a verb
+# (then it is a CLI_MAP twin) or an INTERNAL_CLI reason; a new command may not
+# land here. The decision table is in
+# workflow/implementation_summaries/task-3.4-internal-cli-allowlist.md.
+LEGACY_CATEGORIES: dict[str, str] = {
+    "verb-it": "agent-facing; owes a verb (the decision is \"verb it\")",
+    "operator": "daemon / hub / launchctl / replica / partition / schedule administration",
+    "maintenance": "store maintenance, repair, migration, derive passes",
+    "hook": "invoked by a generated Claude Code hook, not by an agent",
+    "harness": "test, eval, telemetry or debug harness",
+}
+
+
+def _legacy(category: str, reason: str, *paths: "tuple[str, ...]") -> dict:
+    """One family, one reason. Fails at import on an unknown category so a
+    typo cannot ship a path the test would only catch later."""
+    if category not in LEGACY_CATEGORIES:
+        raise ValueError(f"unknown LEGACY_UNPAIRED category {category!r}")
+    return {p: (category, reason) for p in paths}
+
+
+LEGACY_UNPAIRED: dict[tuple[str, ...], tuple[str, str]] = {
+    # -- verb-it: agent-facing reads and curation an agent calls today through
+    #    Bash; MCP agents cannot reach them. Each owes a verb, and each reason
+    #    names the task-3.7 family that owes it (ch-bsd plan-3 r9 #b-1: "owes a
+    #    verb" with no task behind it was a parking lot).
+    **_legacy("verb-it", "graph read an agent runs to navigate the matrix; owes the "
+              "graph verb — task-3.7#fam-graph-read",
+              ("neighbors",), ("co-occur",), ("top",), ("describe",), ("recall",),
+              ("search-dense",), ("concept", "timeline"), ("pairs", "show")),
+    **_legacy("verb-it", "cross-project canon view an agent consults; owes the canon verb "
+              "— task-3.7#fam-canon",
+              ("canon", "find"), ("canon", "siblings"), ("canon", "link")),
+    **_legacy("verb-it", "low-level matrix edit / saved-query surface agents script; owes "
+              "the matrix verb — task-3.7#fam-matrix-edit",
+              ("add", "concept"), ("add", "entity"), ("add", "linkage-type"),
+              ("link",), ("unlink",), ("list", "entities"), ("list", "linkages"),
+              ("list", "queries"), ("run",), ("save-query",)),
+    **_legacy("verb-it", "entity curation the primer tells agents to use (protect / noise / "
+              "forget); owes the curate verb — task-3.7#fam-curation",
+              ("protect",), ("unprotect",), ("noise",), ("unnoise",), ("forget",)),
+    **_legacy("verb-it", "STM focus read or navigation an agent uses mid-session; owes "
+              "actions on rmx_focus — task-3.7#fam-focus",
+              ("focus", "tail"), ("focus", "topics"), ("focus", "show"),
+              ("focus", "subject"), ("focus", "subjects"), ("focus", "clear-subject"),
+              ("focus", "composite"), ("focus", "detour"), ("focus", "detours"),
+              ("focus", "return"), ("focus", "clear")),
+    **_legacy("verb-it", "session-history lookup an agent uses for recall; owes the session "
+              "verb — task-3.7#fam-session",
+              ("session", "list"), ("session", "recall"), ("session", "show"),
+              ("session", "stats")),
+    **_legacy("verb-it", "refinement-queue review the gmd-curator agent drives; owes the "
+              "refine verb — task-3.7#fam-refine",
+              ("refine", "list"), ("refine", "show"), ("refine", "accept"),
+              ("refine", "reject"), ("curator", "drain")),
+    **_legacy("verb-it", "shared tag vocabulary agents validate memory tags against; owes "
+              "the taxonomy verb — task-3.7#fam-taxonomy",
+              ("taxonomy", "list"), ("taxonomy", "add"), ("taxonomy", "remove")),
+    # -- hook: called by the generated Claude Code hooks (hooks.py /
+    #    search_hooks.py), not by agents. Every focus hook runs `focus hook
+    #    --event …`; `focus record` is not among them (r9 #m-1).
+    **_legacy("hook", "invoked by a generated Claude Code hook (hooks.py / search_hooks.py)",
+              ("focus", "hook"), ("focus", "summarize"), ("scan-prompt",), ("primer",),
+              ("grep",), ("sync",), ("curator", "status"), ("ingest-gmd",)),
+    # -- operator: process supervision and store administration.
+    **_legacy("operator", "the operator's hook installer: renders, applies and checks the "
+              "generated hook config (`rmx install-hooks --check` is a pre-commit gate)",
+              ("install-hooks",)),
+    **_legacy("operator", "per-store daemon lifecycle",
+              ("daemon", "start"), ("daemon", "stop"), ("daemon", "restart"),
+              ("daemon", "status")),
+    **_legacy("operator", "launchd supervision (macOS LaunchAgents)",
+              ("daemon", "launchctl", "install"), ("daemon", "launchctl", "kickstart"),
+              ("daemon", "launchctl", "print"), ("daemon", "launchctl", "status"),
+              ("daemon", "launchctl", "uninstall"),
+              ("hub", "launchctl", "install"), ("hub", "launchctl", "status"),
+              ("hub", "launchctl", "uninstall"),
+              ("session", "launchctl", "install"), ("session", "launchctl", "status"),
+              ("session", "launchctl", "uninstall")),
+    **_legacy("operator", "hub lifecycle and fleet control",
+              ("hub", "start"), ("hub", "stop"), ("hub", "status"), ("hub", "pause"),
+              ("hub", "resume"), ("hub", "relaunch-fleet"), ("ui",), ("mcp",),
+              ("bus", "sub")),
+    **_legacy("operator", "replica slot rotation administration",
+              ("replica", "audit"), ("replica", "merge"), ("replica", "path"),
+              ("replica", "refresh"), ("replica", "status")),
+    **_legacy("operator", "partition layout administration (ADR-0003)",
+              ("partition", "add"), ("partition", "audit"), ("partition", "drop"),
+              ("partition", "list"), ("partition", "merge"), ("partition", "rename")),
+    **_legacy("operator", "scheduled per-project jobs",
+              ("schedule", "add"), ("schedule", "list"), ("schedule", "remove")),
+    **_legacy("operator", "install, identity and store setup",
+              ("init",), ("upgrade",), ("version",), ("info",), ("watch",)),
+    # -- maintenance: derive passes, repair, migration, compaction.
+    **_legacy("maintenance", "derive / ingest pass over the store",
+              ("reingest",), ("rebuild",), ("embed",), ("pagerank",),
+              ("graphify-warm",), ("tldr-warm",), ("session", "ingest"),
+              ("memory", "compile"), ("pairs", "compile"), ("focus", "rebuild"),
+              ("focus", "promote-edges"), ("coref", "link")),
+    **_legacy("maintenance", "a by-hand run of the memory bridge (an alias of `ingest-gmd "
+              "--as-memory <dir>`, kept for the guardrail compiler's callers); the automatic "
+              "bridge runs as `ingest-gmd` and in-process from save-state",
+              ("memory", "sync-disk")),
+    **_legacy("maintenance", "curator queue lint, driven by the scheduler (scheduler.py "
+              "op `curator-scan`), not by an agent",
+              ("curator", "scan")),
+    **_legacy("maintenance", "store repair, compaction and cleanup",
+              ("checkpoint",), ("compact",), ("compact-log",), ("repair-index",),
+              ("vacuum",), ("prune-noise",), ("untrack",), ("merge-verb-aliases",),
+              ("audit-same-as",), ("queue",), ("queue", "clear")),
+    **_legacy("maintenance", "catalog migration, export and import",
+              ("migrate-to-duckdb",), ("export",), ("import",), ("dump-log",)),
+    # -- harness: telemetry, logs, eval conditions and debugging.
+    **_legacy("harness", "telemetry, log and debug inspection",
+              ("telemetry",), ("cli-log",), ("log",), ("cctree",), ("stats",),
+              ("fingerprint",), ("tools-primer",), ("focus", "size"),
+              ("focus", "export")),
+    **_legacy("harness", "a manual STM event append for tests and debugging; no generated "
+              "hook runs it (every focus hook runs `focus hook --event …`)",
+              ("focus", "record")),
 }

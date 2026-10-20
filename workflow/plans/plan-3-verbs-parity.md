@@ -22,6 +22,10 @@ rel: implements -> [[tdd-governance]]
 rel: specifies -> [[task-3.1-plan-3-verbs-parity]]
 rel: specifies -> [[task-3.2-plan-3-verbs-parity]]
 rel: specifies -> [[task-3.3-plan-3-verbs-parity]]
+rel: specifies -> [[task-3.4-internal-cli-allowlist]]
+rel: specifies -> [[task-3.5-r8-remedy]]
+rel: specifies -> [[task-3.6-r9-remedy]]
+rel: specifies -> [[task-3.7-verb-it-backlog]]
 
 ## Context {#context}
 
@@ -97,6 +101,15 @@ generated.
 | 3.1 | memory_recall verb owns recall semantics | — |
 | 3.2 | Migrate the 20 direct-call tools to verbs | 3.1 |
 | 3.3 | Generated TOOLS + parity test | 3.2 |
+| 3.4 | Every invocable CLI path classified exactly once (INTERNAL_CLI, CLI_ACTIONS, HIDDEN_ALIASES, shrink-only LEGACY_UNPAIRED); the seven memory writes call `verbs.memory` | 3.3 |
+| 3.5 | r8 remedy: pin M4/M8/M10/M12, absent global store is started or "not running" (one global-write helper), real-daemon `--degree` test | 3.3 |
+| 3.6 | r9 remedy: every store-daemon transport site through `classify_transport_error` (+ AST guard), one spawn deadline, ME/MD/ML/MF pinned, `memory add` bootstrap (bug-135), four LEGACY reasons made true | 3.5 |
+| 3.7 | verb-it backlog: 49 agent-facing paths in eight families, each verbed or re-decided (r9 #b-1; wave W2-d) | 3.4, 3.6 |
+
+rel: specifies -> [[task-3.4-internal-cli-allowlist]]
+rel: specifies -> [[task-3.5-r8-remedy]]
+rel: specifies -> [[task-3.6-r9-remedy]]
+rel: specifies -> [[task-3.7-verb-it-backlog]]
 
 ## Execution contract {#execution}
 

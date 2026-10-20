@@ -866,3 +866,17 @@ rel: derives-from -> [[bsd-plan2-hooks-reproducible-r9-ffed3df#s-3]]
 - **AC-rider.** With a replica whose partition binding lags the writer's (planted in a tmp
   store), `memory add` lands in the writer's partition; a mutation that restores the
   unconditional `cached_replica` read for writes fails the test. {#w1c-rider-ac}
+
+## Folded rider: the read-only fallback onto the writer's catalog (2026-10-19) {#bug136-rider}
+
+Found by plan-3 ch-bsd r10 (S1/Q2): `Store(read_only=True)` resolves to the writer's own
+`catalog.duckdb` when no snapshot exists, so any long-lived read-only holder in a process that
+later writes reproduces bug-135 (`StaleDuckDBInstanceError … already attached by database
+"rmx_ro"`). Plan-3 task 3.6 fixed the one holder that did it (`search.cached_replica`); the
+enabler stays. This task owns it because it owns the read path.
+
+- **R-bug136.** A read-only open never attaches the writer's primary catalog for longer than one
+  bounded read; a store with no snapshot is read through a closed-after-use open or reports "no
+  replica yet". {#bug136-req}
+- **AC-bug136.** In one process: a read-only read of a snapshot-less store, then an in-process
+  write, succeeds; a mutation that caches the read-only attach fails the test. {#bug136-ac}
