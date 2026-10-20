@@ -140,15 +140,28 @@ def classify_outcome(exc_type, exc_val, *, budgeted: bool = False
     their evidence in `outcome` — they are not dropped, they are named.
 
     `budgeted=True` is the recall hook's degrade path (task 21.1 R4, rounds
-    9-12): the path catches `(VerbBusyError, TimeoutError, socket.timeout,
-    OSError, json.JSONDecodeError)`, so "it degraded" is not "its budget ran
-    out" — a refused or reset connection degrades too. Classified by TYPE: a
-    busy daemon or a timeout is `skipped_budget`; any other `OSError` (tested
-    BEFORE the BrokenPipeError mapping, so a daemon-socket broken pipe is an
-    `error`, never `consumer-closed`) and anything else is `error`. The verb
-    (MCP) route classifies unbudgeted by design: `verbs._call` wraps every
-    transport exception as `VerbBusyError`, and an MCP call carries no hook
-    budget (round-11 #m11-6)."""
+    9-12): its handlers catch `(VerbBusyError, VerbAbsentError)` around the
+    verb legs and `(VerbBusyError, TimeoutError, socket.timeout, OSError,
+    json.JSONDecodeError)` around the raw dials, so "it degraded" is not "its
+    budget ran out" — a refused or reset connection degrades too. Classified
+    by TYPE: a busy daemon or a timeout is `skipped_budget`; any other
+    `OSError` (tested BEFORE the BrokenPipeError mapping, so a daemon-socket
+    broken pipe is an `error`, never `consumer-closed`) and anything else is
+    `error`.
+
+    Since plan-3's one transport classifier (`verbs.classify_transport_error`,
+    task 3.5/3.6, released with this in 0.80.1; bug-137 found this docstring
+    still describing the old wrap-all-as-busy `_call`), the verb types are:
+    - a timeout, or a reset / broken pipe / empty reply mid-request →
+      `VerbBusyError` → `skipped_budget` when budgeted, `error` otherwise;
+    - a missing or refused socket → `VerbAbsentError` (daemon not running):
+      the recall leg reads the in-process store instead of degrading, so it
+      normally never reaches here; where it does, it is `error` (an absent
+      daemon is a failure, not a spent budget);
+    - a socket path too long for AF_UNIX → a plain `VerbError` → `error`
+      (the recall raises it as a ClickException; the hook does not degrade).
+    The verb (MCP) route classifies unbudgeted by design, so every `VerbError`
+    there is `error`: an MCP call carries no hook budget (round-11 #m11-6)."""
     if exc_type is None:
         return ("ok", None)
     if budgeted and isinstance(exc_type, type):

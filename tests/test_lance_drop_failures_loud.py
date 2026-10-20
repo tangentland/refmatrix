@@ -215,16 +215,30 @@ def test_the_daemon_sync_render_prints_the_count(tmp_path, monkeypatch):
 
 
 def test_memory_forget_carries_the_count_from_the_daemon(tmp_path, monkeypatch):
+    """The count rides back in the VERB's result and reaches the caller's
+    terminal. Task 3.4 routed `memory forget` through `verbs.memory` (the
+    anti-drift rule), so the seam is the verb now, not the retired
+    `cli._memory_daemon_call` + `daemon.ping` pair this test used to patch —
+    patching those left the command dialling a real socket under pytest's
+    tmp_path ("AF_UNIX path too long"). The recorder also pins that the
+    command asks for `action="forget"` with the name it was given."""
     from click.testing import CliRunner
 
     from refmatrix import cli as cli_mod
-    from refmatrix import daemon as daemon_mod
+    from refmatrix import verbs
 
     monkeypatch.setattr(cli_mod, "_root", lambda: tmp_path / ".refmatrix")
-    monkeypatch.setattr(daemon_mod, "ping", lambda *a, **k: True)
-    monkeypatch.setattr(cli_mod, "_memory_daemon_call", lambda op, args, **k: {
-        "ok": True, "result": {"forgotten": True, "vector_delete_failed": 1}})
+    # An explicit partition: the memory group's default-partition probe is not
+    # what this test is about, and it would dial the same tmp socket.
+    monkeypatch.setenv("RMX_PARTITION", "p")
+    seen: list = []
+
+    def recorder(root, action=None, **kw):
+        seen.append((action, kw))
+        return {"forgotten": True, "vector_delete_failed": 1}
+    monkeypatch.setattr(verbs, "memory", recorder)
     r = CliRunner().invoke(cli_mod.main, ["memory", "forget", "m1", "--yes"])
+    assert seen and seen[-1][0] == "forget" and seen[-1][1].get("name") == "m1", seen
     assert "rmx memory forget: 1 vector delete(s) FAILED" in r.stderr, (r.output, r.stderr)
 
 

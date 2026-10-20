@@ -20,6 +20,10 @@ from refmatrix import discovery
 # store carries its own lock.
 _REPLICA_CACHE: "dict[str, tuple]" = {}
 _REPLICA_CACHE_LOCK = threading.Lock()
+# The snapshot-tier files a read-only Store may resolve to (store.py): the
+# daemon's `catalog.read.duckdb`, or the legacy `read_only.duckdb` symlink.
+# Anything else is the writer's own catalog (bug-135).
+_REPLICA_FILES = frozenset({"catalog.read.duckdb", "read_only.duckdb"})
 
 
 def _snapshot_sig(s) -> "tuple | None":
@@ -62,6 +66,18 @@ def cached_replica(root: Path):
         # of the plain fact — no replica yet (2026-09-15, the replica-first
         # partition probe on a bootstrap-window root).
         raise FileNotFoundError(f"no replica catalog to read at {s.db_path}")
+    if Path(s.db_path).name not in _REPLICA_FILES:
+        # No snapshot yet: `Store(read_only=True)` fell back to the WRITER's
+        # primary catalog. Caching THAT for the life of the process held a
+        # read-only `rmx_ro` attach of the writer file, and the next in-process
+        # write in the same process (`rmx memory add`'s no-daemon bootstrap,
+        # after `verbs.memory_partition`'s replica-first probe) died with
+        # DuckDB's "Unique file handle conflict … already attached by database
+        # rmx_ro" — bug-135, measured 2026-10-19 (task 3.6 #5, ch-bsd plan-3
+        # r9 #s-4). A replica cache holds replicas only; callers already treat
+        # this error as "no replica yet" and route to the daemon or a default.
+        raise FileNotFoundError(f"no replica catalog to read at {s.root} (only the writer's "
+                                f"primary catalog exists; it is never cached as a replica)")
     entry = (s, threading.Lock(), _snapshot_sig(s))
     with _REPLICA_CACHE_LOCK:
         existing = _REPLICA_CACHE.setdefault(key, entry)
@@ -169,9 +185,13 @@ def _where_one_project(root, q: str) -> "tuple[list[dict], list[str]]":
                             "path": None, "snippet": (m.get("content") or "")[:120]})
         else:
             reasons.append(f"memory_search answered an error: {mem.get('error')}")
-    except Exception as e:  # noqa: BLE001 — a held writer: the op did not answer
-        reasons.append(f"memory_search did not answer within {WHERE_MEMORY_OP_S:g}s "
-                       f"({type(e).__name__})")
+    except Exception as e:  # noqa: BLE001 — transport-level; worded by THE classifier
+        # A refused or missing socket is "not running", only a stall is "did
+        # not answer" (task 3.6 #2, ch-bsd plan-3 r9 #s-1: this leg sat 20
+        # lines above the global leg r8 fixed and still called both a timeout).
+        from refmatrix import verbs
+        reasons.append(str(verbs.classify_transport_error(
+            e, op="memory_search", root=root, timeout=WHERE_MEMORY_OP_S)))
     return out, reasons
 
 
@@ -192,6 +212,22 @@ def _live_roots() -> "tuple[list, list[dict]]":
             skipped.append({"project": discovery.store_name(rp), "root": str(r),
                             "reason": "daemon not running"})
     return roots, skipped
+
+
+def _global_leg_reason(e: BaseException) -> str:
+    """Word the global leg's skip through THE transport classifier.
+
+    Absent is not busy (task 3.5, ch-bsd plan-3 r8 #s-2 / probe P4b,
+    2026-10-19): every failure used to read "did not answer within 3s", so a
+    socket that does not exist or has no listener was reported as a timeout
+    for an op that failed instantly. Since the #req-amend amendment the
+    wording is `verbs.classify_transport_error`'s — one classifier shared with
+    `verbs._call`, not a second isinstance ladder here."""
+    from refmatrix import hub as hub_mod, verbs
+    c = verbs.classify_transport_error(e, op="memory_search",
+                                       root=hub_mod.global_store_root(),
+                                       timeout=WHERE_MEMORY_OP_S)
+    return f"global store: {c}"
 
 
 def federated_where(q: str, *, limit: int = 40) -> dict:
@@ -243,8 +279,7 @@ def federated_where(q: str, *, limit: int = 40) -> dict:
     except Exception as e:  # noqa: BLE001 — the global leg, said
         from refmatrix import hub as hub_mod
         skipped.append({"project": "global", "root": str(hub_mod.global_store_root()),
-                        "reason": f"global memory_search did not answer within "
-                                  f"{WHERE_MEMORY_OP_S:g}s ({type(e).__name__})"})
+                        "reason": _global_leg_reason(e)})
 
     seen, deduped = set(), []
     for r in results:
@@ -295,9 +330,12 @@ def federated_query(dsl: str, *, limit: int = 50) -> dict:
             r = daemon_mod.call(root, "query",
                                 {"expr": dsl, "partition": proj, "limit": limit},
                                 timeout=QUERY_OP_TIMEOUT_S, retries=0)
-        except Exception as e:  # noqa: BLE001 — the op did not answer: said
-            _skip(skipped, root, f"daemon busy: query did not answer within "
-                                 f"{QUERY_OP_TIMEOUT_S:g}s ({type(e).__name__})")
+        except Exception as e:  # noqa: BLE001 — transport-level; worded by THE classifier
+            # task 3.6 #2 (r9 #s-1): "daemon busy" was said for a refused
+            # socket too — absent is not busy.
+            from refmatrix import verbs
+            _skip(skipped, root, str(verbs.classify_transport_error(
+                e, op="query", root=root, timeout=QUERY_OP_TIMEOUT_S)))
             continue
         if r.get("ok"):
             res = r["result"]

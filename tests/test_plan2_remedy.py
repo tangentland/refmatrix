@@ -604,21 +604,32 @@ def test_detach_path_has_one_deadline_and_reports_the_wait(pingonly, monkeypatch
 
 def test_legacy_partition_probe_warns_and_does_not_cache_a_timeout(tmp_path, monkeypatch, capsys):
     """#m-4: a probe that timed out is not 'no legacy partition' for the
-    rest of the process, and it says so on stderr."""
+    rest of the process, and it says so on stderr.
+
+    Retargeted (task 3.6 #r10-amend S1): the CLI's own detector and its process
+    cache are gone; `cli._memory_partition_default` asks `verbs.memory_partition`
+    (replica -> daemon `partition_list` -> the shared closed-after detector). The
+    contract is unchanged: a failed probe WARNS, uses the project partition for
+    THIS command, and caches nothing -- the next command asks again."""
     from refmatrix import cli as cli_mod
     from refmatrix import daemon as daemon_mod
+    from refmatrix import discovery
+    from refmatrix.store import default_partition_name
     root = tmp_path / ".refmatrix"; root.mkdir()
+    legacy = "memory-" + discovery.store_name(root)
     monkeypatch.setattr(cli_mod, "_root", lambda: root)
-    cli_mod._legacy_memory_partition_exists._cache = {}
+    monkeypatch.setattr(discovery, "daemon_status",
+                        lambda r, **kw: {"up": True, "busy": False, "pid": 4242})
     calls = []
 
     def call(r, op, args=None, **kw):
         calls.append(op)
         if len(calls) == 1:
             raise TimeoutError("timed out")
-        return {"ok": True, "result": {"rows": [{"name": "memory-" + root.parent.name}]}}
+        return {"ok": True, "result": {"rows": [{"name": legacy}]}}
     monkeypatch.setattr(daemon_mod, "call", call)
-    assert cli_mod._legacy_memory_partition_exists(root, "memory-" + root.parent.name, daemon_up=True) is False
-    assert "warning" in capsys.readouterr().err
-    assert cli_mod._legacy_memory_partition_exists(root, "memory-" + root.parent.name, daemon_up=True) is True
-    assert calls == ["partition_list", "partition_list"]
+    assert cli_mod._memory_partition_default(timeout=1.0) == default_partition_name(root)
+    err = capsys.readouterr().err
+    assert "warning" in err and "THIS command only" in err, err
+    assert cli_mod._memory_partition_default(timeout=1.0) == legacy
+    assert calls == ["partition_list", "partition_list"], calls

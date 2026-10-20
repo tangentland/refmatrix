@@ -155,15 +155,35 @@ def held_with_replica():
 
 
 def test_cli_partition_probe_reads_the_replica_under_a_held_writer(held_with_replica, monkeypatch):
-    from refmatrix import daemon as dm
+    """The CLI memory-partition default answers from the lock-free replica under
+    a held writer -- the daemon is never asked and the budget is not spent.
+
+    Retargeted (task 3.6 #r10-amend S1): the CLI detector and its process cache
+    are gone, so this runs through the CLI path that replaced it
+    (`_memory_partition_default` -> `verbs.memory_partition`). "A real answer is
+    cached" was the old contract; the new one is NEVER cached (a cached answer
+    goes stale on a partition create/merge, and a cached read-only attach of the
+    writer's file is bug-135), so the second call resolves again."""
+    from refmatrix import daemon as dm, discovery
     d = held_with_replica
     monkeypatch.setattr(cli_mod, "_root", lambda: d.root)
     monkeypatch.setattr(dm, "call", lambda *a, **kw: (_ for _ in ()).throw(AssertionError("asked the daemon")))
+    reads = []
+    real = verbs.memory_partition
+
+    def spy(*a, **kw):
+        reads.append(a)
+        return real(*a, **kw)
+    monkeypatch.setattr(verbs, "memory_partition", spy)
     t0 = time.monotonic()
-    assert cli_mod._legacy_memory_partition_exists(d.root, "memory-nope", timeout=1.0) is False
+    assert cli_mod._memory_partition_default(timeout=1.0) == discovery.store_name(d.root)
     assert time.monotonic() - t0 < 0.8
-    # answered from the replica, not by a failed probe: a real answer is cached
-    assert (str(d.root), "memory-nope") in cli_mod._legacy_memory_partition_exists._cache
+    assert cli_mod._memory_partition_default(timeout=1.0) == discovery.store_name(d.root)
+    assert len(reads) == 2, "the second command did not resolve again -- something cached it"
+    assert not hasattr(cli_mod, "_legacy_memory_partition_exists"), (
+        "a second CLI-side detector is back (task 3.6 #r10-amend S1: one detector)")
+    for fn in (cli_mod._memory_partition_default, verbs.legacy_memory_partition_exists, real):
+        assert not hasattr(fn, "_cache"), f"{fn.__name__} grew a process cache"
 
 
 def test_verb_memory_partition_reads_the_replica_under_a_held_writer(held_with_replica, monkeypatch):

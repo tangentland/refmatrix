@@ -96,10 +96,15 @@ def test_canon_find_does_not_claim_nowhere_when_a_store_could_not_be_read(
     monkeypatch.setattr(discovery, "discover_roots", lambda: [up_without_replica.root])
     r = CliRunner().invoke(cli_mod.main, ["canon", "find", "held_row"])
     out = r.output
-    if "no live project hosts" in out:
-        assert "skipped" in out, (
-            "told the operator the concept exists NOWHERE while a store could "
-            f"not be read, with no skipped line: {out!r}")
+    # UNCONDITIONAL (task 3.5, ch-bsd plan-3 r8 #s-1 M8): this assertion used
+    # to sit under `if "no live project hosts" in out:`, so a canon_find that
+    # printed a DIFFERENT nowhere line with no suffix skipped the check and
+    # passed. The probe's exact output (r8 P3) is the contract.
+    assert r.exit_code == 0, out
+    assert "# rmx: skipped" in out, f"no per-store skipped line on stderr: {out!r}"
+    assert "no live project hosts held_row (1 store skipped — see stderr)" in out, (
+        "told the operator the concept exists NOWHERE while a store could "
+        f"not be read, with no skipped suffix: {out!r}")
 
 
 def test_replica_bundle_reports_its_failure_to_a_caller_that_asks():
@@ -178,9 +183,16 @@ def test_promote_is_bounded_on_the_global_write_too(held_global, tmp_path, monke
     r = CliRunner().invoke(cli_mod.main, ["memory", "promote", "held_row"])
     elapsed = time.monotonic() - t0
     assert r.exit_code != 0, f"the held global store answered? {r.output!r}"
-    assert elapsed < 40.0, (
-        f"{elapsed:.1f}s — the global write is still unbounded "
+    # The command PROMISES `MEMORY_READ_BUDGET_S` (10 s) and runs in 10.0 s.
+    # This bound was `< 40.0`, so a fixed `timeout=30.0` (30.3 s, a 3x
+    # regression of the promise) passed it — r8 mutant M4 (task 3.5). Same
+    # bound as the sibling below.
+    assert elapsed < verbs.MEMORY_READ_BUDGET_S + 3.0, (
+        f"{elapsed:.1f}s against a promised {verbs.MEMORY_READ_BUDGET_S:g}s — the "
+        f"global write is not bounded by the remaining budget "
         f"(60s x 3 = 180.2s was r6 #b-2's measurement, reproduced at r7)")
+    # Busy stays busy (r8 #s-2): a held global store is not "not running".
+    assert "not running" not in r.output, r.output
     assert held_global.ops.count("memory_add") <= 1, (
         f"retried a write on a stalled global store: {held_global.ops}")
 

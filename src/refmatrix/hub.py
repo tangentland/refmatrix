@@ -131,9 +131,17 @@ def _bootstrap_global_store() -> None:
     s.close()
 
 
-def ensure_global_daemon() -> bool:
+def ensure_global_daemon(*, wait_for_ready: float = 30.0,
+                         errors: "list[str] | None" = None) -> bool:
     """Make sure the global store has a (watcher-less) daemon serving. The
-    store is memory-only, so no filesystem watch. Returns True if up."""
+    store is memory-only, so no filesystem watch. Returns True if up.
+
+    `wait_for_ready` is the spawn's readiness window; a BUDGETED caller
+    (`verbs.global_write` under `memory promote`'s 10 s) passes what is left
+    of its budget instead of the 30 s default (task 3.5, ch-bsd plan-3 r8
+    #s-2, 2026-10-19). `errors`, when given, receives the spawn failure so
+    the caller can SAY why the global store is not running instead of only
+    logging it to hub.log."""
     root = global_store_root()
     if daemon_mod.ping(root):
         return True
@@ -143,9 +151,12 @@ def ensure_global_daemon() -> bool:
         # queue threads) and forking it risks a deadlocked child (see
         # spawn_daemon_subprocess).
         daemon_mod.spawn_daemon_subprocess(
-            root, partition=GLOBAL_PARTITION, watch_root=[])
+            root, partition=GLOBAL_PARTITION, watch_root=[],
+            wait_for_ready=wait_for_ready)
     except Exception as e:
         _log(f"global daemon spawn failed: {e}")
+        if errors is not None:
+            errors.append(f"spawn failed: {e}")
         return False
     return daemon_mod.ping(root)
 

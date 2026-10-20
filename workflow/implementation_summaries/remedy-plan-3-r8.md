@@ -58,6 +58,10 @@ This is the quoted-line-sibling lesson applied before the audit rather than
 after: the auditor's round-9 plan named "whether `on_error` is read by every
 caller" as its first check.
 
+**Amendment (2026-10-19, task 3.5, ch-bsd plan-3 r8 #m-1):** the record above is
+wrong about who fixed it. The third `_replica_bundle` caller was fixed by
+`6675d17` (bug-069), not by this r8 remedy; the r8 merge shipped that test red.
+
 ### A sibling deliberately left alone {#sibling}
 
 `verbs.memory_add` (`--global`) has the same unbounded `global_call` and **stays

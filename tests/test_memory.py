@@ -286,10 +286,9 @@ def test_memory_partition_default_resolves_to_project_scoped(
     # No env var, no override.
     monkeypatch.delenv("RMX_PARTITION", raising=False)
     monkeypatch.setattr(cli_mod, "_partition_override", None, raising=False)
-    # Make sure the legacy-detect cache doesn't carry state from a
-    # prior test in this module.
-    if hasattr(cli_mod._legacy_memory_partition_exists, "_cache"):
-        cli_mod._legacy_memory_partition_exists._cache = {}
+    # (The CLI's legacy-detect process cache is gone: task 3.6 #r10-amend S1
+    # made `verbs.legacy_memory_partition_exists` the one detector, never
+    # cached, so there is no cross-test state to reset.)
     # Daemon down + no legacy partition row → project default.
     from refmatrix import daemon as daemon_mod
     monkeypatch.setattr(daemon_mod, "ping", lambda *a, **kw: False)
