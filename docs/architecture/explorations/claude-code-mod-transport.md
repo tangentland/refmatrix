@@ -134,8 +134,11 @@ non-speed case at every band. {#gate-second}
 - **The two slowest hooks are slow in daemon work** ([[#measured-work]]); a mod does not change
   that. Any speed claim beyond spawn would be false.
 - **A mod cannot call Python.** No Node, no DOM: everything goes through `$`. The daemons speak
-  line-JSON over Unix sockets, not HTTP, so the mod needs hub HTTP endpoints for the daemon ops
-  (the hub is already FastAPI on :7777). `$.process.run` would bring the spawn back.
+  line-JSON over Unix sockets, not HTTP, so the mod needs HTTP surfaces, in two tiers
+  ([[#http-tiers]]). `$.process.run` would bring the spawn back.
+- **Where the verbs run is the real design question** ([[#verb-host]]). Today `verbs.py` runs
+  CLIENT-side (CLI or `rmx mcp` process) and calls daemon ops; a mod calling raw ops would have to
+  re-implement the verb layer in TS.
 - **Verb parity becomes cross-language.** Tool registrations and hook payloads must be GENERATED
   from `verbs.py` (a schema export), with a parity test across the boundary, or the drift class
   `verbs.py` exists to kill returns.
@@ -144,6 +147,37 @@ non-speed case at every band. {#gate-second}
   known.
 - **Tooling gap.** Mod tests run under `claude plugin test`, apart from pytest; the ch-* agents
   and ch-bsd audits are Python-centric today.
+
+## HTTP surfaces: per-store and hub (user, 2026-10-20) {#http-tiers}
+
+The user, 2026-10-20: "wouldn't we have http endpoints per-rmx installation in addition to hub
+endpoints". Yes: two tiers, split by ownership. {#http-tiers-lead}
+
+- **Per store, in each project's daemon.** That project's verbs (context, query, memory, focus,
+  graph, session, matrix, curate) over a Unix socket beside `rmxd.sock`
+  (`<root>/.refmatrix/rmxd-http.sock`, reached with `$.http.fetch(url, { socketPath })`): no TCP
+  port per project, filesystem permissions as auth, no hub hop. A project's reads and writes keep
+  working through a hub outage ([[project_shared_worker_private_split]] is what a hub outage cost
+  last time), and busy / absent stays per store, as `classify_transport_error` models it. The
+  ~104-byte `sun_path` limit applies here as it does to `rmxd.sock`.
+- **Hub** (`hub.sock` / :7777): the global memory store, federated lookups (`where`, `search`,
+  `locate`, `canon find`), bus, queues, model workers, fleet status, and DISCOVERY — "which store
+  owns this cwd?" → its socket path, asked once per session and cached, so store discovery is
+  not re-implemented in TS.
+
+## Where the verbs run {#verb-host}
+
+- **Mod calls raw daemon ops:** the verb layer (budgets, partition resolution, payload builders,
+  C4a) is re-written in TS. Rejected: that is the drift class `verbs.py` exists to remove.
+- **The daemon hosts the verbs (preferred):** one HTTP endpoint per verb runs `verbs.<fn>`
+  server-side; the mod's tool registrations are generated from the same signatures. Needs an
+  in-daemon execution path, since a verb inside the daemon cannot `_call` its own socket.
+- **No daemon:** C4a (in-process) is impossible from TS. The mod's fallback is `$.process.run`
+  of `rmx …` (the spawn returns, on the rare path only) or asking the hub to start the daemon.
+  Busy is never treated as absent.
+- **Transport errors** (refused / missing / path too long / timeout) arise client-side in TS, so
+  the classifier gets a TS twin, parity-tested against `classify_transport_error`; errors the
+  daemon returns keep their Python wording. {#verb-host-lead}
 
 ## Transition Summary {#transition-summary}
 
@@ -166,13 +200,15 @@ written; `status: drafting` when it is)
 ### Key Constraints Discovered {#key-constraints-discovered}
 
 - `cli.log` cannot measure spawn ([[#measured-spawn]]); the gate needs a wrapper timestamp.
-- Daemon ops need an HTTP surface before a mod can reach them.
+- Each daemon needs an HTTP verb surface, and the hub a global / federated / discovery one
+  ([[#http-tiers]]); the verbs move server-side ([[#verb-host]]).
 - Tool and payload generation from `verbs.py` is mandatory, not optional.
 
 ### Open Questions Requiring User Decisions {#open-questions-requiring-user-decisions}
 
 - Q1: Which projects carry the gate week (refmatrix + one of viascope / cliquedb / atldb)?
-- Q2: Hub HTTP endpoints — expose every daemon op, or only the verbs' ops?
+- Q2: Per-store HTTP — verbs only (preferred, [[#verb-host]]), or raw ops too for operator
+  tooling? And the no-daemon fallback: `$.process.run` of `rmx`, or ask the hub to start it?
 - Q3: Distribution — a marketplace repo for the mod, or `--plugin-dir` from the deploy tree only?
 
 ### What Is NOT Moving Forward {#what-is-not-moving-forward}
