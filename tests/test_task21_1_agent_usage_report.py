@@ -363,14 +363,18 @@ def test_ac7_the_bypass_check_can_fail(tmp_path):
 # ---- AC-6: the frozen fixture -----------------------------------------------------------------
 
 def test_ac6_frozen_fixture_prints_the_exact_counts(R):
-    """AC-6. BLOCKED, not RED, while the fixture is absent: the RED-phase agent was refused a
-    read of the live project logs (2026-10-16), so `tools/cut_agent_usage_fixture.py` must be
-    run by the user to commit tests/fixtures/agent_usage/{query.log,cli.log,manifest.json}.
-    With the fixture: `--since 2026-09-23 --until 2026-10-07T11:06:35` prints EXACTLY 3
-    context calls (context-replica), 1,119 grep-replica greps, 34 memory recalls (not 68:
-    phase=start excluded) and `excluded_test_rows=0 legacy_fixture_rows=0
+    """AC-6. The fixture (cut by the user 2026-10-19 with `tools/cut_agent_usage_fixture.py`,
+    trimmed by its `--from-fixture` re-cut, spec round 14): `--since 2026-09-23 --until
+    2026-10-07T11:06:35` prints EXACTLY 3 context calls (context-replica), 1,121 grep-replica
+    greps, 34 memory recalls (R11 channel `recall`: the agent's own `memory recall`, not the
+    hooks' 210; not 68: phase=start excluded) and `excluded_test_rows=0 legacy_fixture_rows=0
     legacy_unattributed=<L>` (L from the manifest). Count lines matched tolerantly (the spec
-    fixes no per-route format): a line naming the surface and holding the number as a word."""
+    fixes no per-route format): a line naming the surface and holding the number as a word.
+
+    1,121, not plan-21's 1,119 (round 14, measured on the fixture): 1,119 was counted with the
+    upper bound `2026-10-07T11:06` (minute precision; bsd 3104a81 "to 2026-10-07T11:06", 837
+    dropin + 21 index), which drops the two grep-replica rows at 11:06:04. This AC's own window
+    ends at 11:06:35 and holds them (839 dropin + 21 index). Same rows, a different cut."""
     manifest = FIXTURE / "manifest.json"
     assert manifest.is_file(), (
         "AC-6 BLOCKED: the redacted fixture is not committed; run "
@@ -383,11 +387,56 @@ def test_ac6_frozen_fixture_prints_the_exact_counts(R):
     assert f"excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed={L}" in out, out
     assert [ln for ln in _line_with(out, "context-replica") if re.search(r"\b3\b", ln)], out
     assert [ln for ln in _line_with(out, "grep-replica")
-            if re.search(r"\b1,?119\b", ln)], out
+            if re.search(r"\b1,?121\b", ln)], out
     rec = [ln for ln in out.splitlines() if "recall" in ln.lower()]
     assert [ln for ln in rec if re.search(r"\b34\b", ln)], out
     assert not [ln for ln in rec if re.search(r"\b68\b", ln)], out
     assert code == 0, out
+
+
+def test_ac6_cli_log_recalls_are_split_per_channel(R):
+    """AC-6 / R7 (round 14, RED at 246efb8): R7 prints recall "per invocation" and "per recall
+    channel (R11's `recall_channel`, recomputed from the row)". A pre-21.1 store has no
+    `kind=recall` query.log rows, so its recalls exist only in cli.log; the report lumps them
+    into ONE `cli.log: memory recall commands=<n>` line, so the frozen fixture prints 244
+    (201 prompt_recall + 6 session_start + 3 precompact hook calls + 34 agent calls) and the 34
+    AC-6 pins is printed nowhere. The channel is recomputable from a cli.log row: the flag NAMES
+    survive redaction (`--session-start`, `--stdin-json`, `--recent`) and `source` is the
+    invocation (`hook` / `unknown`). Here: 5 prompt_recall, 2 session_start, 3 precompact
+    (hook `--recent`), 4 recall (3 agent queries + 1 agent `--recent`, which R11 files as
+    `recall`, not `precompact`), each with its phase=start row (never counted)."""
+    def pair(ts, argv, source):
+        return [_cli_row(ts, argv, phase="start", source=source), _cli_row(ts, argv, source=source)]
+    cli = []
+    for i in range(5):
+        cli += pair(f"2026-10-01T10:0{i}:00",
+                    ["memory", "recall", "--stdin-json", "--k", "sha256:" + "a" * 64,
+                     "--scope", "sha256:" + "b" * 64, "--json"], "hook")
+    for i in range(2):
+        cli += pair(f"2026-10-02T10:0{i}:00",
+                    ["memory", "recall", "--session-start", "--json"], "hook")
+    for i in range(3):
+        cli += pair(f"2026-10-03T10:0{i}:00",
+                    ["memory", "recall", "--recent", "--scope", "sha256:" + "c" * 64], "hook")
+    for i in range(3):
+        cli += pair(f"2026-10-04T10:0{i}:00",
+                    ["memory", "recall", "sha256:" + "d" * 64, "--k", "sha256:" + "e" * 64],
+                    "unknown")
+    cli += pair("2026-10-05T10:00:00", ["memory", "recall", "--recent"], "unknown")
+    _write_jsonl(R / "query.log", [])
+    _write_jsonl(R / "cli.log", cli)
+    code, out = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+    assert code == 0, out
+
+    def chan(name: str, n: int) -> list:
+        word = re.compile(rf"(?<![\w-]){name}(?![\w-])")
+        return [ln for ln in out.splitlines() if word.search(ln) and re.search(rf"\b{n}\b", ln)]
+    assert chan("prompt_recall", 5), out
+    assert chan("session_start", 2), out
+    assert chan("precompact", 3), out
+    # channel `recall` = 4: a line naming the bare channel (not `memory recall commands=14`)
+    assert [ln for ln in chan("recall", 4) if "commands=" not in ln], out
+    assert not chan("precompact", 4), out   # the agent's --recent is `recall`, not precompact
 
 
 def _cli_row(ts, argv, *, phase=None, source="unknown"):

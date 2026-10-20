@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: completed
   created: 2026-10-07
-  updated: 2026-10-15
+  updated: 2026-10-19
 ---
 
 # Task 21.1: make agent context usage measurable {#root}
@@ -1159,8 +1159,13 @@ line counts are unchanged.
    cut at `2026-10-07T11:06:35` (bodies replaced by their sha256 and paths scrubbed, per d8f;
    counts are invariant under redaction) is committed under `tests/fixtures/agent_usage/`.
    `rmx telemetry --agent-usage --since 2026-09-23 --until 2026-10-07T11:06:35` on it prints
-   EXACTLY: 3 context calls (`context-replica`), 1,119 `grep-replica` greps, 34 memory recalls
-   (not 68: `phase=start` rows excluded). The cut excludes the 20 replay rows of
+   EXACTLY: 3 context calls (`context-replica`), 1,121 `grep-replica` greps, 34 memory recalls
+   (not 68: `phase=start` rows excluded). The 34 are R11 channel `recall` (the agent's own
+   `rmx memory recall`, `source` != `hook`); the window's other 210 recall commands are hook
+   channels (201 `prompt_recall`, 6 `session_start`, 3 `precompact`), and R7's per-channel
+   split prints them on their own lines. 1,121, not plan-21's 1,119: measured on the fixture
+   in round 14 ([[#rev-round-14]]), 1,119 was counted with the upper bound
+   `2026-10-07T11:06`, which drops the two `grep-replica` rows at 11:06:04. The cut excludes the 20 replay rows of
    2026-10-07T11:06:35-11:07:13 by window. Every row in the fixture is legacy (no `cwd`/`root`
    at HEAD), and per R5's totals rule they ARE counted, so the same run also prints
    `excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed=<L>`, where `<L>` is the
@@ -1789,4 +1794,39 @@ rel: derives-from -> [[bsd-task21.1-context-usage-r1-d3ec62d]]
 | r1 #s1 (context_by_name ignores every earlier context delivery; events written twice per call) | Exclude only the current call's own `query_id` from the delivered-set lookup; `emit_context_call` writes each event exactly once (R11). |
 | r1 #m1 (`scan.read_stdin_prompt` had no caller before or after GREEN) | Deleted with its scan→cli import; D9's envelope callers are `focus hook` and `_resolve_query` (Files table and AC-4b (xii)(c) amended in place). The R-section code facts at the old `scan.py:1036-1054` stay as the pre-21.1 record. |
 | r1 #m3 (`PRE_PROMPT_SKEW_S = 10.0` interim) | Kept as interim; a deferral-registry row names 19.0 R0 as the measurement that replaces it. |
+
+## Revision round 14 (2026-10-19): AC-6 measured on the cut fixture {#rev-round-14}
+
+The user cut the fixture with `tools/cut_agent_usage_fixture.py` (manifest `cut`
+2026-10-07T11:07:14; origin `query.log` sha256 `939b5c52…`, `cli.log` `a0c63b00…`). AC-6 then
+failed on two of its three numbers. Each was recounted from the fixture by an independent script
+(no report code), and the origin of each pinned number was traced. Logs:
+`workflow/review-output/ac6-measure-1.log`, `ac6-measure-2.log`, `ac6-measure-trimmed.log`,
+`ac6-report-fixture.log`, `pytest-ac6-r14.log`.
+
+rel: amends -> [[#acceptance]]
+rel: derives-from -> [[bsd-plan21-spec-review-3104a81]]
+rel: derives-from -> [[exploration-agent-context-usage]]
+
+| figure | report | recount | where the pin came from | case | decision |
+|---|---|---|---|---|---|
+| context-replica | 3 | 3 | exploration 2026-10-07 | match | none |
+| grep-replica | 1,121 | 1,121 (839 `dropin`, 21 `index`, 252 no `answered_by`, 5 `none`, 4 `floor`) | bsd 3104a81 counted "2026-09-23 to 2026-10-07T11:06": 1,119, 837 `dropin`, 21 `index`. The recount with `ts < "2026-10-07T11:06"` gives exactly 1,119 / 837 / 21. The two extra rows are `dropin` greps at 11:06:04, inside this AC's window (`--until 2026-10-07T11:06:35`). | (b) another cut | AC-6 and its test pin 1,121. The window stays 11:06:35, the bound that excludes the 20 replay rows. |
+| memory recall | `cli.log: memory recall commands=244` | 244 end rows (245 start rows; one `--stdin-json` start row has no end row). By `source`: hook 210, unknown 34. By R11 channel: `prompt_recall` 201, `session_start` 6, `precompact` 3, `recall` 34. | Exploration row "`rmx memory recall` (agent)": 34. bsd 3104a81: "68 = 34 `phase=start` intent rows plus 34 end rows". Those are the 34 agent pairs (34 start + 34 end). The hooks' 210 were never in the figure. | (a) report defect | The pin stays 34. R7 already requires recall "per invocation" and "per recall channel (R11's `recall_channel`, recomputed from the row)". The report applies that only to `kind=recall` query.log rows, which a pre-21.1 store does not have. Its cli.log leg prints one lumped total, so the 34 is printed nowhere. RED test `test_ac6_cli_log_recalls_are_split_per_channel`; bug-137. |
+| (c) cut drift | | `query.log` has 0 rows out of `ts` order, and the cut filters by `ts`, not by file position | | not (c) | The two figures above are fully explained by (b) and (a); no row dated inside the window was appended after the cut. |
+
+**The fixture was trimmed and re-redacted** (d8f and size). The first cut kept every row before
+`cut`: 2.1 MB `query.log` and 22.6 MB `cli.log`. It also kept four argv tokens verbatim because
+they began with `-`, but they were grep PATTERNS: `--(force|check|port)`,
+`--(force|check|port|allow)`, `--[a-z-]+` and `-i -l`. The tool now keeps a flag token only when
+it has a flag's shape, and its redaction is idempotent. It cuts [`2026-09-22`, `cut`), one day
+before `--since`, so the lower bound still excludes rows: 2 `grep-replica` and 4 recall rows.
+From `cli.log` it keeps only `memory` commands, the report's one cli.log input; `memory get` and
+`memory search` stay as negative controls. `--from-fixture` re-cut the user's files without the
+live logs. Every kept row is byte-identical to a row of the user's cut, and a second re-cut
+reproduces the same sha256. Result: `query.log` 4,736 rows / 1.35 MB, `cli.log` 587 rows /
+0.24 MB. The manifest carries the origin sha256s forward (`origin_sources`) and records each
+committed file's `fixture_sha256` and the per-channel recall counts. A field scan of the trimmed
+fixture finds no free text: every `body`, `error`, path and argv value is `sha256:` or
+`<scrubbed>`. The rest are enums, command names and flag names.
 

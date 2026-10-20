@@ -1,0 +1,48 @@
+{
+  "since": "2026-09-23",
+  "until": "2026-10-07T11:06:35",
+  "cut": "2026-10-07T11:07:14",
+  "keep_from": "2026-09-22",
+  "cli_commands_kept": [
+    "memory"
+  ],
+  "sources": {
+    "query.log": {
+      "sha256": "df7b91eeb8a0049bc401fd289aa938d62c60f0810566e0574efc1ab23df516fd",
+      "kept": 4736,
+      "unparseable_skipped": 0,
+      "fixture_sha256": "ac0a5614728c31887a2e249b240ae9cb1a1893291b9c88b94d5586210e785595"
+    },
+    "cli.log": {
+      "sha256": "6e6581b7e01d1240f9badd31cfff556a72f78acc9272ffcf14c35de46c5e6324",
+      "kept": 587,
+      "unparseable_skipped": 0,
+      "dropped_other_command": 37384,
+      "fixture_sha256": "fa5f2896b67520d5aa0626cea05c3ec07b7f916082813097efb91d4b8e1a5713"
+    }
+  },
+  "origin_sources": {
+    "query.log": {
+      "sha256": "939b5c52e06ed9e0f8aa09807285c8cb790f06953397a385296cbb1f74e6927c",
+      "kept": 8421,
+      "unparseable_skipped": 0
+    },
+    "cli.log": {
+      "sha256": "a0c63b0016166eeed0bdde35dda1d9204348d17f9b17d42a1faa421a05b55b66",
+      "kept": 77612,
+      "unparseable_skipped": 0
+    }
+  },
+  "L": 4709,
+  "window_rows": 4709,
+  "counts": {
+    "context-replica": 3,
+    "grep-replica": 1121,
+    "memory-recall-by-channel": {
+      "precompact": 3,
+      "prompt_recall": 201,
+      "recall": 34,
+      "session_start": 6
+    }
+  }
+}
