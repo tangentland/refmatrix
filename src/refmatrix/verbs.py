@@ -644,12 +644,18 @@ def global_recall_rows(q: "str | None", *, k: int, recent: bool,
         op, args = "memory_search", {"query": q, "limit": k}
     else:
         return []
+    groot = hub_mod.global_store_root()
     try:
         # `retries=0` from budgeted callers: the library default retried a
         # 30 s timeout three times on a held global store (bsd-plan2-r6 #b-1).
         resp = hub_mod.global_call(op, args, timeout=timeout, retries=retries)
-    except Exception as e:  # noqa: BLE001 — re-raised as a typed, named failure
-        raise VerbError(f"global store {op} failed: {e}") from e
+    except Exception as e:  # noqa: BLE001 — transport-level; typed by THE classifier
+        # Task 3.7 R53 (ch-bsd plan-3 r12 #m-2): this said "global store <op>
+        # failed: <raw errno>" as one plain VerbError for a held, a stopped and a
+        # refused global daemon alike. Typed like `global_write`: absent, busy,
+        # or undiallable — the caller's scope=both warning can now tell them apart.
+        c = classify_transport_error(e, op=op, root=groot, timeout=timeout)
+        raise type(c)(f"global store: {c}") from e
     if not resp.get("ok"):
         raise VerbError(f"global store {op} failed: {resp.get('error')}")
     rows = resp.get("result", {}).get("rows", [])

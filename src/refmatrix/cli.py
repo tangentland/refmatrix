@@ -1466,7 +1466,20 @@ def _file_under_active_subject(s, leaf_eid: "int | None", *,
             f"promoted id={leaf_eid} but subject filing under {label!r}: {c} — "
             f"`rmx focus subject` / `rmx memory recall --subject {label}` to "
             f"verify") from e
-    except Exception as e:  # noqa: BLE001 — a refusal, surfaced as such
+    except json.JSONDecodeError as e:
+        # An empty or truncated reply: the daemon died or restarted mid-request.
+        # A transport failure, worded by THE classifier — not a refusal (task 3.7
+        # R53, ch-bsd plan-3 r12 #m-2: the catch-all below called it "refused").
+        from refmatrix import verbs as _verbs
+        c = _verbs.classify_transport_error(e, op=op, root=_root(), timeout=timeout,
+                                            write=True)
+        raise click.ClickException(
+            f"promoted id={leaf_eid} but subject filing under {label!r}: {c} — "
+            f"`rmx focus subject` / `rmx memory recall --subject {label}` to "
+            f"verify") from e
+    except RuntimeError as e:
+        # Exactly what `_subject_upsert` / `_subject_link` raise for an answered
+        # `ok:false` — the one case that IS a refusal (task 3.7 R53).
         raise click.ClickException(
             f"promoted id={leaf_eid} but the daemon refused the subject filing "
             f"under {label!r}: {e} — `rmx focus subject` to inspect") from e
