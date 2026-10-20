@@ -10,12 +10,16 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from refmatrix.store import Store
 
 
 # ---- describe ---------------------------------------------------------------------------
 
 
-def describe_payload(s, ref: str, *, first: bool = False, evidence_limit: int = 20,
+def describe_payload(s: "Store", ref: str, *, first: bool = False, evidence_limit: int = 20,
                      edge_limit: int = 200, sibling_limit: int = 200,
                      include_vectors: bool = True) -> dict:
     """`{found, candidates}` for one entity ref — the daemon `describe` op and the verb's
@@ -35,7 +39,8 @@ def describe_payload(s, ref: str, *, first: bool = False, evidence_limit: int = 
 # ---- neighbors / co-occur / top -----------------------------------------------------------
 
 
-def neighbors_payload(s, concept: str, *, depth: int = 1, linkages=None, limit: int = 50,
+def neighbors_payload(s: "Store", concept: str, *, depth: int = 1,
+                      linkages: "list[str] | None" = None, limit: int = 50,
                       include_noise: bool = False, strict: bool = False) -> dict:
     """The depth-N linkage closure of `concept`: `{concept, entities: [{id, kind, name,
     path}] (first `limit`), cardinality, hint}`. An empty walk is ambiguous — unknown seed,
@@ -63,7 +68,7 @@ def neighbors_payload(s, concept: str, *, depth: int = 1, linkages=None, limit: 
     return {"concept": concept, "entities": entities, "cardinality": len(bm), "hint": hint}
 
 
-def co_occur_payload(s, concept: str, *, linkage: str = "mentions", limit: int = 20,
+def co_occur_payload(s: "Store", concept: str, *, linkage: str = "mentions", limit: int = 20,
                      include_noise: bool = False) -> dict:
     """Concepts sharing entities with `concept` under `linkage`: `{rows: [{concept,
     overlap}]}`, most overlap first."""
@@ -76,7 +81,7 @@ def co_occur_payload(s, concept: str, *, linkage: str = "mentions", limit: int =
     return {"rows": [{"concept": name, "overlap": int(n)} for name, n in rows]}
 
 
-def top_payload(s, concept: str, *, linkage: str = "mentions", k: int = 10) -> dict:
+def top_payload(s: "Store", concept: str, *, linkage: str = "mentions", k: int = 10) -> dict:
     """Top-`k` entities by weight under (`linkage`, `concept`): `{rows: [{id, name, kind,
     weight}]}`. An unknown concept raises `LookupError` (the verb words it)."""
     from refmatrix.telemetry import log_query
@@ -100,7 +105,8 @@ def top_payload(s, concept: str, *, linkage: str = "mentions", k: int = 10) -> d
 TIMELINE_LINKAGES = ["defines", "implements", "calls", "called_by", "imports", "mentions"]
 
 
-def concept_files(s, cids, *, hops, cap=200):
+def concept_files(s: "Store", cids: "list[int]", *, hops: int,
+                  cap: int = 200) -> "tuple[dict[str, str], dict[int, str]]":
     """Resolve concept ids -> {abspath: relpath} for the code/doc files in the
     concept's structural footprint, expanding `hops` concept-hops out. Also
     returns the concept names visited (for the header)."""
@@ -136,7 +142,7 @@ def concept_files(s, cids, *, hops, cap=200):
     return files, names
 
 
-def timeline_graph_leg(s, concept: str, *, hops: int) -> dict:
+def timeline_graph_leg(s: "Store", concept: str, *, hops: int) -> dict:
     """The timeline's graph leg: `{files: {abspath: relpath}, concepts: {id: name},
     project: <project dir>}`. An unresolvable concept raises `LookupError`."""
     cids = s.resolve_concept_ids(concept, strict=False)
@@ -168,8 +174,8 @@ def since_to_iso(since: "str | None") -> "str | None":
             .isoformat().replace("+00:00", "Z"))
 
 
-def build_timeline(concept: str, *, hops: int, k: int, graph: dict, git_events: list,
-                   direct_rows: list, indirect_rows: list, since: "str | None",
+def build_timeline(concept: str, *, hops: int, k: int, graph: dict, git_events: list[dict],
+                   direct_rows: list[dict], indirect_rows: list[dict], since: "str | None",
                    until: "str | None", warnings: list) -> dict:
     """Join the legs into the `concept timeline` answer: direct sessions (they name the
     concept) outrank indirect ones (they touched one of its files); events sort by date;
@@ -185,8 +191,7 @@ def build_timeline(concept: str, *, hops: int, k: int, graph: dict, git_events: 
             return
         if until_iso and ended and ended > until_iso:
             return
-        title = (m.get("content") or "").split("\n", 2)[0].lstrip("# ").strip()
-        title = title.split(" {#")[0]
+        title = session_title(m)
         cur = sessions.get(sid)
         if cur is None:
             sessions[sid] = {"date": ended, "title": title[:56], "how": how, "via": via}
@@ -223,7 +228,7 @@ def build_timeline(concept: str, *, hops: int, k: int, graph: dict, git_events: 
 # ---- the session index (the `sessions-<project>` partition) ------------------------------
 
 
-def sessions_partition(root) -> str:
+def sessions_partition(root: "Path | str") -> str:
     """`sessions-<project>` for the store at `root` — where session cards live."""
     from refmatrix.store import SESSIONS_PARTITION_PREFIX
     try:
@@ -233,7 +238,14 @@ def sessions_partition(root) -> str:
     return f"{SESSIONS_PARTITION_PREFIX}{project}"
 
 
-def session_meta_get(mem: dict, key: str, default=None):
+def session_title(mem: dict) -> str:
+    """A session card's title: its first line without the `# ` and the `{#anchor}`
+    (ONE helper for the list / recall rows and the timeline, task 3.7 remedy r1 R-L)."""
+    first = (mem.get("content") or "").split("\n", 2)[0].lstrip("# ").strip()
+    return first.split(" {#")[0]
+
+
+def session_meta_get(mem: dict, key: str, default: Any = None) -> Any:
     """Reach into memory_content.metadata; handle daemon (already-parsed)
     vs. direct-store (may be a JSON str) shapes."""
     meta = mem.get("metadata") or {}

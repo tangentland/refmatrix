@@ -1964,7 +1964,10 @@ class Store:
     def with_partition(self, name: str):
         """Context manager: temporarily switch self._partition_id to the
         partition row matching `name` for the duration of the block, then
-        restore. Auto-creates the partition row if new. The daemon binds
+        restore. A read-write Store auto-creates the partition row if new; a
+        READ-ONLY Store never writes — a partition it lacks binds to id -1, so
+        the block reads EMPTY rather than another partition's rows (task 3.7,
+        `verbs.snapshot_read`; pinned by remedy r1 R-S2). The daemon binds
         to one partition for writes, but memory ops need to land in
         whichever partition the CLI requested; this lets the daemon
         re-target per call without re-binding the Store.

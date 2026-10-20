@@ -1116,7 +1116,6 @@ def _memory_recall_rows(root: Path, *, query: str | None = None, k: int = 10,
     `recent_rows`). Dense rows carry `score`/`distance`/`fused`
     (`annotate_hit`)."""
     import time as _time
-    from refmatrix import daemon as daemon_mod
     patterns = (list(exclude_mtype) if exclude_mtype is not None
                 else ([] if include_session else ["session/*"]))
     warnings: list[str] = []
@@ -2026,7 +2025,9 @@ def curate(root: Path, action: typing.Literal["protect", "unprotect", "noise", "
             local=lambda s: s.set_flag_by_selector(flag, value, **sel))
     if action != "forget":
         raise VerbArgsError(f"unknown curate action {action!r}")
-    preview_budget = float(timeout) if timeout is not None else 60.0
+    # The preview runs the same selector scan as the purge, so it carries the same 600 s
+    # budget (remedy r1 R-RM5: 60 s cut a large preview short).
+    preview_budget = float(timeout) if timeout is not None else 600.0
 
     def _preview() -> dict:
         return _write_or_local(root, "forget", {"dry_run": True, **sel},
@@ -2075,6 +2076,11 @@ def taxonomy(root: Path, action: typing.Literal["list", "add", "remove"], *,
             return {"removed": tax.remove_tag(tag), "tag": tag}
     except tax.TaxonomyCorrupt as e:
         raise VerbError(str(e)) from e
+    except OSError as e:
+        # Remedy r1 R-RM6: a write that cannot write (a read-only home, a full disk)
+        # names the file instead of escaping as a raw OSError.
+        raise VerbError(f"taxonomy file {tax.taxonomy_path()} could not be written "
+                        f"({type(e).__name__}: {e})") from e
     raise VerbArgsError(f"unknown taxonomy action {action!r}")
 
 
@@ -2122,7 +2128,7 @@ ACTION_DEFAULTS.update({
 })
 
 
-def _int_ids(values, *, what: str) -> "list[int] | None":
+def _int_ids(values: "list[str] | list[int] | None", *, what: str) -> "list[int] | None":
     """`-s` values arrive as strings from the CLI and MCP; each must be an entity id."""
     if not values:
         return None
@@ -2135,7 +2141,7 @@ def _int_ids(values, *, what: str) -> "list[int] | None":
     return out
 
 
-def _as_list(v) -> "list[str] | None":
+def _as_list(v: "str | list[str] | None") -> "list[str] | None":
     if v is None:
         return None
     return [v] if isinstance(v, str) else list(v)
@@ -2180,7 +2186,7 @@ def session_memory_get(root: Path, name: str, *, partition: str,
                              partition=partition)["memory"]
 
 
-def _timeline_git_leg(project: str, concept: str, files: dict, warnings: list) -> list:
+def _timeline_git_leg(project: str, concept: str, files: dict, warnings: list[str]) -> list[dict]:
     """The code-introduction commit by git pickaxe, scoped to the concept's files. A leg
     that cannot run (no git binary, not a repository, a timeout) is a `warnings` entry —
     C8: never an `except: pass`."""
@@ -2300,14 +2306,14 @@ def graph(root: Path, action: typing.Literal["neighbors", "co_occur", "top", "de
     raise VerbArgsError(f"unknown graph action {action!r}")
 
 
-def _graph_recall(root: Path, *, query, k, kinds, concept, symbolic, no_dense, partition,
-                  timeout) -> dict:
+def _graph_recall(root: Path, *, query: "str | None", k: int, kinds: "list[str] | None",
+                  concept: "list[str] | None", symbolic: "list[int] | None",
+                  no_dense: bool, partition: str, timeout: float) -> dict:
     """recall through the NEW daemon op `graph_recall` (one attempt, 180 s for a cold
     model start). On `VerbAbsentError` ONLY (spec decision 2026-10-20): the SAME library
     function in-process over a read-only store, with the embedder from the ONE seam the
     daemon uses (`recall.shared_embedder`), embedded before the store opens. Busy never
     runs in-process."""
-    from refmatrix import recall as recall_mod
     payload = {"query": query, "k": k, "kinds": list(kinds) if kinds else None,
                "concept": concept, "symbolic": symbolic, "no_dense": no_dense,
                "partition": partition}
@@ -2319,8 +2325,10 @@ def _graph_recall(root: Path, *, query, k, kinds, concept, symbolic, no_dense, p
                                         no_dense=no_dense, partition=partition)
 
 
-def _graph_recall_in_process(root: Path, *, query, k, kinds, concept, symbolic, no_dense,
-                             partition) -> dict:
+def _graph_recall_in_process(root: Path, *, query: "str | None", k: int,
+                             kinds: "list[str] | None", concept: "list[str] | None",
+                             symbolic: "list[int] | None", no_dense: bool,
+                             partition: str) -> dict:
     """The no-daemon branch of `_graph_recall` (C4a): embed first, then read."""
     from refmatrix import recall as recall_mod
     try:
@@ -2333,7 +2341,8 @@ def _graph_recall_in_process(root: Path, *, query, k, kinds, concept, symbolic, 
         no_dense=no_dense), partition=partition)
 
 
-def _graph_dense(root: Path, *, query, k, kinds, partition, timeout) -> dict:
+def _graph_dense(root: Path, *, query: str, k: int, kinds: "list[str] | None",
+                 partition: str, timeout: float) -> dict:
     """search-dense: the daemon `ann_search` op WITH `partition` (the old CLI omitted it,
     so ids resolved against the daemon's partition under `-p`), names resolved from the
     SAME partition's snapshot. No daemon ⇒ `recall.ann_search` in-process over a
@@ -2377,7 +2386,7 @@ def _graph_dense(root: Path, *, query, k, kinds, partition, timeout) -> dict:
     return _dense_hits(res, names, warnings, source=src)
 
 
-def _entity_names(s, ids) -> dict:
+def _entity_names(s: Any, ids: "list[int]") -> "dict[int, tuple[str, str]]":
     con = s._connect()
     out = {}
     for eid in ids:
@@ -2387,7 +2396,7 @@ def _entity_names(s, ids) -> dict:
     return out
 
 
-def _dense_hits(res: dict, names: dict, warnings: list, *, source: str) -> dict:
+def _dense_hits(res: dict, names: dict, warnings: list[str], *, source: str) -> dict:
     hits = []
     for rank, h in enumerate(res.get("hits", []), 1):
         kind, name = names.get(int(h["id"]), (None, None))
@@ -2396,8 +2405,9 @@ def _dense_hits(res: dict, names: dict, warnings: list, *, source: str) -> dict:
             "source": source}
 
 
-def _graph_timeline(root: Path, concept: str, *, hops, since, until, k, git, partition,
-                    timeout) -> dict:
+def _graph_timeline(root: Path, concept: str, *, hops: int, since: "str | None",
+                    until: "str | None", k: int, git: bool, partition: str,
+                    timeout: float) -> dict:
     """concept timeline (#fam-graph-read): the graph leg from the snapshot (an unknown
     concept is a `VerbError`); the session leg through the daemon `memory_search` /
     `memory_iter` ops on the sessions partition under ONE budget (`session_memories`);
@@ -2485,14 +2495,14 @@ ACTION_DEFAULTS.update({
 _MATRIX_WRITE_BUDGET_S = 60.0
 
 
-def _resolve_concept_id(s, ref: str) -> int:
+def _resolve_concept_id(s: Any, ref: str) -> int:
     e = s.resolve_entity(ref)
     if e is None or e.kind != "concept":
         raise VerbError(f"no concept named {ref!r} — `rmx add concept {ref}` first")
     return int(e.id)
 
 
-def _resolve_entity_id(s, ref: str) -> int:
+def _resolve_entity_id(s: Any, ref: str) -> int:
     e = s.resolve_entity(ref)
     if e is None:
         raise VerbError(f"no entity named {ref!r}")
@@ -2650,7 +2660,7 @@ def matrix(root: Path, action: typing.Literal[
 
 def _session_row(m: dict) -> dict:
     from refmatrix import graphread
-    title = (m.get("content") or "").split("\n", 2)[0].lstrip("# ").strip().split(" {#")[0]
+    title = graphread.session_title(m)
     meta = m.get("metadata")
     if isinstance(meta, str):
         try:
@@ -2668,8 +2678,10 @@ def _session_row(m: dict) -> dict:
             "title": title, "metadata": meta if isinstance(meta, dict) else {}}
 
 
-def session_passes_filters(mem: dict, *, project_filter=None, branch=None, commit=None,
-                           touched=None, since_iso=None, until_iso=None) -> bool:
+def session_passes_filters(mem: dict, *, project_filter: "str | None" = None,
+                           branch: "str | None" = None, commit: "str | None" = None,
+                           touched: "str | None" = None, since_iso: "str | None" = None,
+                           until_iso: "str | None" = None) -> bool:
     """The session list / recall metadata filters (moved from the CLI, task 3.7)."""
     from refmatrix import graphread as g
     if project_filter and project_filter not in (g.session_meta_get(mem, "project") or ""):
@@ -2747,15 +2759,21 @@ def session(root: Path, action: typing.Literal["list", "recall", "show"], *,
             row = session_memory_get(root, nm, partition=part, timeout=t)
             if row:
                 return {"session": row, "mode": mode}
-        for m in session_memories(root, partition=part, timeout=t):
-            sid = graphread.session_meta_get(m, "session_id") or ""
-            if sid.startswith(session_id) or m.get("name", "").endswith(session_id):
-                return {"session": m, "mode": mode}
+        hits = [m for m in session_memories(root, partition=part, timeout=t)
+                if (graphread.session_meta_get(m, "session_id") or "").startswith(session_id)
+                or m.get("name", "").endswith(session_id)]
+        if len(hits) > 1:
+            # Like `refine show` (remedy r1 R-L): a prefix never silently picks one.
+            ids = ", ".join((graphread.session_meta_get(m, "session_id") or m.get("name", ""))
+                            for m in hits[:5])
+            raise VerbArgsError(f"{session_id!r} matches {len(hits)} sessions: {ids}")
+        if hits:
+            return {"session": hits[0], "mode": mode}
         raise VerbError(f"no session matching {session_id!r} in partition {part!r}")
     raise VerbArgsError(f"unknown session action {action!r}")
 
 
-def refine_pick(cand_id: str, rows: list) -> dict:
+def refine_pick(cand_id: str, rows: list[dict]) -> dict:
     """An id or an UNAMBIGUOUS id prefix → one candidate. A prefix matching two raises
     `VerbArgsError`: accept writes a memory, so a prefix never silently picks one."""
     exact = [c for c in rows if c.get("id") == cand_id]
@@ -2770,7 +2788,7 @@ def refine_pick(cand_id: str, rows: list) -> dict:
     return hits[0]
 
 
-def refine_rows(status: str) -> list:
+def refine_rows(status: str) -> list[dict]:
     """The hub's refinement queue at `status`, through THE hub boundary `_hub_rpc`: a hub
     refusal or a timeout is a `VerbError` with the hub's words — `_refine_rows` turned an
     `ok:false` into `[]`, which `refine list` printed as "no pending candidates"."""

@@ -298,22 +298,6 @@ class _DaemonWriter:
             "entity_id": entity_id, "weight": weight, "protect": protect,
         }).get("created", False)
 
-    def unlink(self, linkage, concept_id, entity_id):
-        return self._call("unlink", {
-            "linkage": linkage, "concept_id": concept_id,
-            "entity_id": entity_id,
-        }).get("unlinked", False)
-
-    def link_canon(self, local_concept_id, canon_partition, canon_concept_name):
-        return self._call("link_canon", {
-            "local_concept_id": local_concept_id,
-            "canon_partition": canon_partition,
-            "canon_concept_name": canon_concept_name,
-        }).get("canon_id")
-
-    def save_query(self, name, body):
-        self._call("save_query", {"name": name, "body": body})
-
     def add_concept(self, name, description=None, protected=True):
         return self._call("add_concept", {
             "name": name, "description": description, "protected": protected,
@@ -5113,6 +5097,16 @@ def query(expr, is_pql, ids_only, limit, explain, include_noise, name_filter, st
             console.print(t)
 
 
+def _warn_via_replica(via_replica: bool) -> None:
+    """`--via-replica` is accepted but ignored since task 3.7 — every graph read routes
+    through the read snapshot (or the in-process store with no daemon). Said, not silent
+    (remedy r1 R-L)."""
+    if via_replica:
+        click.echo("rmx: --via-replica is deprecated and ignored — reads always route "
+                   "through the read snapshot (or the in-process store when no daemon "
+                   "runs)", err=True)
+
+
 def _graph_verb(**kw) -> dict:
     """One `rmx_graph` call for a graph-read command (task 3.7 #fam-graph-read, C2): the
     command parses options, CALLS the verb with the CLI's `-p` partition, renders the
@@ -5154,6 +5148,7 @@ def _render_rows_table(columns, rows) -> None:
                    "snapshot (or the in-process store when no daemon runs).")
 def neighbors(concept, depth, linkage, limit, include_noise, strict, via_replica):
     """Walk linkages from a concept (depth-N closure)."""
+    _warn_via_replica(via_replica)
     res = _graph_verb(action="neighbors", concept=concept, depth=depth,
                       linkage=list(linkage) or None, limit=limit,
                       include_noise=include_noise, strict=strict)
@@ -5582,6 +5577,7 @@ def describe(ref, fmt, first, edge_limit, evidence_limit, sibling_limit,
     the memory sidecar (content / mtype / tags / metadata), and Lance
     vector presence. `--format json` emits the whole payload verbatim.
     """
+    _warn_via_replica(via_replica)
     payload = _graph_verb(action="describe", ref=str(ref), first=first,
                           edge_limit=edge_limit, evidence_limit=evidence_limit,
                           sibling_limit=sibling_limit, no_vectors=no_vectors)
@@ -13864,9 +13860,6 @@ _session_meta_get = _graphread.session_meta_get
 _session_meta_list = _graphread.session_meta_list
 
 
-_since_to_iso = _graphread.since_to_iso
-
-
 def _session_verb(**kw) -> dict:
     """One `rmx_session` call (task 3.7 #fam-session, C2) on the CLI's sessions
     partition (`-p` / RMX_PARTITION, else `sessions-<project>`)."""
@@ -14397,7 +14390,6 @@ def concept_grp():
 
 
 # The concept -> files resolution moved to graphread (task 3.7), shared with the verb.
-_TIMELINE_LINKAGES = _graphread.TIMELINE_LINKAGES
 _concept_files = _graphread.concept_files
 
 
