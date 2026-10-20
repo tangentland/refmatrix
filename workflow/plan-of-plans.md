@@ -24,7 +24,7 @@ plan's remaining work is scheduled in the folded wave list [[plan-review-2026-10
 | 1 | plan-1-deploy-runtime | completed | yes (3) | `workflow/plans/plan-1-deploy-runtime.md` | — |
 | 2 | plan-2-hooks-reproducible | in-progress (ch-bsd r9 DIRTY; #b-1 closed by bug-025, #m-5 registered; #s-2 + #s-3 + #m-4 OPEN, re-verified 2026-10-01; remaining work is W1-c: #s-3 rides 23.5, #s-2/#m-4 ride 19.1, the scan-prompt rerank observation is measured by 19.5) | yes (3) | `workflow/plans/plan-2-hooks-reproducible.md` | plan 1 (deploy path) |
 | 3 | plan-3-verbs-parity | in-progress (3.1-3.3 completed: 82bbc2b, merged 8ba4799; ch-bsd r7 DIRTY at e0b7df6; round-8 remedy 0e3002f/273cc16 not yet audited; r8 audit + task 3.4 = W1-b) | yes (4) | `workflow/plans/plan-3-verbs-parity.md` | plan 2 (deploy path) |
-| 4 | plan-4-daemon-resilience | in-progress (ch-bsd r4 DIRTY; #b-1 closed by bug-028; #s-2 + #s-3 + #s-4 + #m-5 + #m-6 OPEN, re-verified 2026-10-01; remedy is W1-a, with todo G9 and a ledger line confirming #s-4 closed by 23.0) | yes (4) | `workflow/plans/plan-4-daemon-resilience.md` | — |
+| 4 | plan-4-daemon-resilience | completed (W1-a: task 4.5 r4 remedy + task 4.6 r5 remedy and r6 amendment; ch-bsd r7 at 10d45e1 0 blocking, 1 MEH registered; todo G9 closed; released in 0.80.0) | yes (4) | `workflow/plans/plan-4-daemon-resilience.md` | — |
 | 5 | plan-5-memory-bridge-complete | completed | yes (3) | `workflow/plans/plan-5-memory-bridge-complete.md` | — |
 | 6 | plan-6-deferrals-docs-benchmark | in-progress (ch-bsd r1 DIRTY at e0b7df6, may NOT flip; remedy #b-1, #b-2, #s-1, #s-3, #m-1..#m-5 + todo G7/G8 = W2-a; r1 #m-4 docstring also listed under W1-d) | yes (5) | `workflow/plans/plan-6-deferrals-docs-benchmark.md` | — |
 | 7 | plan-7-longmemeval | in-progress (symbolic reported; bug-030 fixed 2026-09-16, dense/fused re-run is W2-c; deferrals W4-a) | yes (4) | `workflow/plans/plan-7-longmemeval.md` | — |
@@ -41,7 +41,7 @@ plan's remaining work is scheduled in the folded wave list [[plan-review-2026-10
 | 18 | plan-18-duckdb-store-maintenance | APPROVED specs 2026-10-15 (d9co; 18.1 completed; Wave 4)
 | 19 | plan-19-adaptive-memory-budget | APPROVED 2026-10-15 (d9ce; ch-bsd r13 CLEAN `a0c0060`; 19.0-19.6 approval-ready; helix substrate per d9bi; execution of 19.0 AC-6f waits on 23.0 merge)
 | 20 | plan-20-concept-similarity-eval | drafting (plan + task specs 20.1-20.3 written 2026-10-07: frozen labelled pairs, signals scored across 6 stores, conditional dense synonyms; read-only; merges target ADR-0004's alias map) |
-| 21 | plan-21-agent-context-usage | APPROVED 2026-10-15 (d9ce; ch-bsd r13 CLEAN `a0c0060`; 21.1-21.4 approval-ready; 21.3 AC-5 execution waits on 23.0 merge) | yes (4) | `workflow/plans/plan-21-agent-context-usage.md` | 16 (21.3), 23 |
+| 21 | plan-21-agent-context-usage | in-progress (APPROVED 2026-10-15, d9ce; 21.1 built through ch-bsd r3 at cf7e4bb and released in 0.80.0, its AC-6 frozen fixture BLOCKED on the user's cut (deferral registry); 21.2-21.4 approval-ready; 21.3 AC-5 execution waits on 23.0 merge) | yes (4) | `workflow/plans/plan-21-agent-context-usage.md` | 16 (21.3), 23 |
 | 22 | plan-22-audited-removal-and-repair | APPROVED 2026-10-15 (d9cm; ch-bsd r15 CLEAN `8fbfb0c`) | yes (7) | `workflow/plans/plan-22-audited-removal-and-repair.md` | 16.6, 23 |
 | 23 | plan-23-bounded-write-harness | in-progress (APPROVED 2026-10-15, d9cn; 23.0 completed in 0.79.1, master d4bf001; 23.5 gated on bug-112 merge) | yes (6) | `workflow/plans/plan-23-bounded-write-harness.md` | — |
 
