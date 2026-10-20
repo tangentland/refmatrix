@@ -26,6 +26,7 @@ rel: implements -> [[bsd-plan3-verbs-parity-r12-b18d7e8#m-1]]
 rel: implements -> [[bsd-plan3-verbs-parity-r12-b18d7e8#m-2]]
 rel: amends -> [[bsd-plan3-task37-spec-7d6c418]]
 rel: amends -> [[bsd-plan3-task37-spec-r2-15232c5]]
+rel: amends -> [[bsd-plan3-task37-spec-r3-090eb5e]]
 
 ## Why {#why}
 
@@ -118,7 +119,10 @@ Applies to every family. Tests pin each clause per verb. {#contract-lead}
   `snapshot_read`'s in-process branch and a write to ONE new helper `verbs.local_write(root, fn,
   *, partition)` (the `_memory_write` local-fallback shape: opens the store read-write
   in-process, runs `fn`, closes). The result carries `source: "in-process"`. No existing test is
-  rewritten to accept a new "requires the daemon" error. {#c4a}
+  rewritten to accept a new "requires the daemon" error. A call that reads AND writes does its
+  reads inside `local_write`'s `fn` on the writer handle — it never holds a `snapshot_read`
+  in-process handle while `local_write` opens the writer (r3 M3: bug-135's `StaleDuckDBInstance`);
+  a test pins read-then-write in one call with no daemon. {#c4a}
 - **C5 — transport errors are classified.** Every handler of a `daemon.call` / `global_call`
   transport exception words it through `classify_transport_error` (`write=True` for writes) and
   raises its type; `tests/transport_guard.py` covers every new function. busy ⇒ `VerbBusyError`,
@@ -141,7 +145,9 @@ Applies to every family. Tests pin each clause per verb. {#contract-lead}
 - **C8 — no silent failure.** No `except Exception: pass`, no `{}` / `[]` stand-in for a failed
   leg. A leg that is skipped by design (e.g. no git repo) reports it in a `warnings` list. {#c8}
 - **C9 — params mirror the CLI (r1 M1).** Verb params are the CLI option names 1:1 in
-  snake_case (list-typed where the click option is `multiple=True`); the verb maps them to op arg
+  snake_case (list-typed where the click option is `multiple=True`), except render-only options
+  that write a local file (`--out`), which stay CLI-only and are listed in the parity test's
+  CLI-only set (r3 M1); the verb maps them to op arg
   names internally (`name` → the op's `names`, etc.). Exception: a CLI `--project` FILTER
   (session list/recall/stats, refine list) is named **`project_filter`** — `project` is the MCP
   transport's store-selector and the MCP layer overwrites a param of that name (r1 S2). {#c9}
@@ -154,8 +160,9 @@ overridable by a `timeout` param. {#budgets-lead}
 
 | verb.action | route | default budget |
 |-------------|-------|----------------|
-| graph.neighbors / co_occur / top / stats | `snapshot_read` | n/a (local) |
+| graph.neighbors / co_occur / top / stats(stale=False) | `snapshot_read` | n/a (local) |
 | graph.describe | its existing lock-free daemon op (`describe`), not the snapshot | 10 s |
+| graph.stats(stale=True) | daemon `stats` op, `include_stale` | 10 s |
 | graph.recall / dense | daemon op (server-side embed; cold model start) | 180 s |
 | graph.timeline | snapshot + sessions `memory_search` op + git subprocess (30 s) | 60 s |
 | canon.find | federated (as `rmx_where`; `federated_concept` reads cached replicas and takes no timeout — none is claimed) | n/a, `skipped` |
@@ -187,7 +194,7 @@ evidence: the PRIMER header and the hooks.py CLAUDE briefing teach `neighbors`, 
 | `describe` | `describe` | its existing lock-free daemon op (r1 S3) | as the CLI |
 | `recall` | `recall` | a NEW daemon op `graph_recall` that runs exactly the CLI's algorithm server-side (see [[#fam-graph-read-recall]]) | `query`, `k`, `kinds`, `concept`, `symbolic`, `no_dense` |
 | `dense` | `search-dense` | daemon `ann_search` op WITH `partition` (today omitted — ids resolve against the wrong partition under `-p`); names resolved from the same partition | `query`, `k`, `kinds` |
-| `stats` | `stats` (outside the 49, [[#decisions-r2]]) | `snapshot_read` | `stale` (as the CLI) |
+| `stats` | `stats` (outside the 49, [[#decisions-r2]]) | `stale=False` → `snapshot_read`; `stale=True` → the daemon `stats` op with `include_stale` (the replica's `tracked_files` is not refreshed — cli.py ~7681-7720 forbids `--via-replica --stale`), absent ⇒ C4a (r3 S1) | `stale` |
 | `timeline` | `concept timeline` | graph leg from the snapshot; session leg through the daemon `memory_search` op on the sessions partition (budgeted); git leg via subprocess. A failed leg is a `warnings` entry, never `except: pass`; the direct `Store(...)` open in `_iter_session_memories` is gone | `concept`, `hops`, `since`, `until`, `k`, `git` |
 
 - `recall` no longer loads `Embedder()` in the caller's process. It does NOT go through the
@@ -260,7 +267,9 @@ take them. Agent evidence: every generated PRIMER.md header prints
 
 `rmx_focus` gains `action: Literal["context", "tail", "show", "topics", "subject", "subjects",
 "clear_subject", "composite", "export", "detour", "detours", "return", "clear"] = "context"`
-(`export` is `focus export`, outside the 49, [[#decisions-r2]]). `context` is today's
+(`export` is `focus export`, outside the 49, [[#decisions-r2]]; the verb RETURNS the
+line-numbered events, and `-o/--out` stays a CLI-only render option declared as such — an MCP
+call never writes a file, r3 M1). `context` is today's
 behaviour unchanged (existing MCP callers send no action). All STM actions resolve the session
 through `resolve_session_source` (`purpose="read"` for reads, `"write"` for writes). The
 `/detour` and `/return` command templates invoke `rmx focus detour|return`; no generated hook
@@ -322,13 +331,20 @@ gmd-curator agent reads and drains (`gmd-curator.md` :138, :150). {#fam-refine-l
     nobody writes, and the scheduled `curator scan` finds zero files and then deletes the queue.
     A bad line is counted and returned as a warning, never dropped silently; an `OSError` is
     raised. Fixtures use the watcher's format. Bug row logged;
-  - `status` returns the parsed entries plus a `token` = `(st_dev, st_ino, size)` of the queue
-    file read (r2 S1);
-  - `drain(token)` takes a SEPARATE lock file `curator.queue.lock` (`fcntl`) that the watcher's
-    append (`_enqueue_curator`) also takes, checks the file still has that dev/ino and at least
-    that size (else `VerbError` "queue changed since status"), and removes exactly the first
-    `size` bytes by rewriting the remainder IN PLACE (truncate, never rename — an append must
-    never land in an orphaned file); no token is a `VerbArgsError`;
+  - a SEPARATE lock file `curator.queue.lock` (`fcntl`) holds a **generation counter**. Every
+    drain bumps it; an append never does (r3 B1: an in-place rewrite keeps the inode, so a
+    dev/ino token cannot see "drained by a hook, then refilled by the watcher" — the agent's
+    stale drain would delete new, unprocessed entries);
+  - `status` returns the parsed entries plus `token = {"generation": g, "size": n}` read under
+    the lock;
+  - `drain(token)` takes the lock, refuses with `VerbError` "queue changed since status" unless
+    the generation is still `g` and the file is at least `n` bytes, removes exactly the first `n`
+    bytes by rewriting the remainder IN PLACE (truncate, never rename — an append must never land
+    in an orphaned file), bumps the generation; no token is a `VerbArgsError`. RED test: status →
+    hook `status --drain` → watcher append ≥ n bytes → `drain(token)` raises "queue changed";
+  - the watcher's append takes the same lock NON-blocking with a bounded retry (r3 M2: a hung
+    drainer must not block the flush thread forever); on timeout it keeps the entries in memory
+    for the next flush and logs a counted line — entries are never dropped;
   - `scan_and_enqueue(drain=True)` (the scheduled `curator scan`) drains only via
     `drain(token)` under the same lock;
   - `gmd_curator.drain_queue`'s swallowed errors are surfaced (C8);
