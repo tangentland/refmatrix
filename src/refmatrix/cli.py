@@ -1319,11 +1319,20 @@ def focus_summarize(session, promote, is_global, timeout):
             "metadata": {"title": f"Session summary {s.session[:8]}"},
             "protected": False}
     if is_global:
-        from refmatrix import hub as hub_mod
-        resp = hub_mod.global_call("memory_add", args)
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        eid = resp["result"]["id"]
+        # THE global write path, under --timeout (task 3.6 #r11-amend, ch-bsd
+        # plan-3 r11 #obs-summarize-global, 2026-10-19): this called
+        # `hub.global_call` directly — unbudgeted (60 s x 3) under a hook that
+        # promises --timeout, and bypassing `verbs.global_write`'s up / busy /
+        # absent classification (an absent global daemon is started inside the
+        # budget, a held one is busy, never spawned over).
+        from refmatrix import verbs as _verbs
+        try:
+            res = _verbs.global_write("memory_add", args, timeout=float(timeout))
+        except _verbs.VerbError as e:
+            raise click.ClickException(
+                f"promote --global: {e} — the next PreCompact / save-state promote "
+                f"catches up") from e
+        eid = res.get("id")
     else:
         from refmatrix import discovery as _disc
         root = _root()
@@ -1406,18 +1415,27 @@ def _file_under_active_subject(s, leaf_eid: "int | None", *,
         if deadline is None:
             return timeout
         return max(0.05, min(timeout, deadline - _time.monotonic()))
+    op = "subject_upsert"
     try:
         sid = _subject_upsert(label, timeout=_left(), retries=retries,
                               daemon_up=daemon_up)
         if sid:
+            op = "subject_link"
             _subject_link(int(leaf_eid), int(sid), timeout=_left(), retries=retries,
                           daemon_up=daemon_up)
     except (TimeoutError, _socket.timeout, OSError) as e:
+        # Typed and worded by THE classifier, as a WRITE (task 3.6
+        # #r11-amend, ch-bsd plan-3 r11 #s-1, 2026-10-19): this said "the
+        # daemon may still complete it" for a refused socket too — the claim
+        # `write=True` exists to make only for a timeout — 75 lines below the
+        # `memory_add` leg r10 fixed, two wrappers deep from the dial.
+        from refmatrix import verbs as _verbs
+        c = _verbs.classify_transport_error(e, op=op, root=_root(), timeout=timeout,
+                                            write=True)
         raise click.ClickException(
-            f"promoted id={leaf_eid} but subject filing under {label!r} not "
-            f"confirmed within {timeout:g}s ({e}); the daemon may still "
-            f"complete it — `rmx focus subject` / `rmx memory recall --subject "
-            f"{label}` to verify") from e
+            f"promoted id={leaf_eid} but subject filing under {label!r}: {c} — "
+            f"`rmx focus subject` / `rmx memory recall --subject {label}` to "
+            f"verify") from e
     except Exception as e:  # noqa: BLE001 — a refusal, surfaced as such
         raise click.ClickException(
             f"promoted id={leaf_eid} but the daemon refused the subject filing "
