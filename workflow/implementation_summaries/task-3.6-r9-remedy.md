@@ -181,3 +181,34 @@ r10 runs:
 - Full suite: 3037 passed, 23 failed, 19 skipped (`task3.6-r10-green-full.log`). The failures
   are the 19 clone-only DEV TREE refusals, the gmd repo-scope gate, and the same three
   detector-pinning tests.
+
+## Amendment after r11 (#r11-amend) {#r11}
+
+rel: evidence-for -> [[bsd-plan3-verbs-parity-r11-999313c]]
+
+GREEN in `e31ade1`, against the test engineer's `01dad2e`.
+
+- **r11 #s-1:** `_file_under_active_subject` (the subject-filing leg of `focus summarize
+  --promote`) now types and words its transport errors with
+  `classify_transport_error(e, op=<subject_upsert|subject_link>, root=…, timeout=…,
+  write=True)`. The "promoted id=… but subject filing under …" prefix stays. A refused socket
+  no longer claims that the daemon may still complete the filing; only a timeout says so. The
+  guard's wrapper set is now a fixed point (test side, `01dad2e`), so it sees this two-level
+  dial.
+- **r11 #obs-summarize-global:** `focus summarize --promote --global` used to write with an
+  unbudgeted, direct `hub.global_call`. It now writes through `verbs.global_write(...,
+  timeout=--timeout)`. A failure is a ClickException that carries the typed verb error.
+- **r11 #m-1:** `legacy_memory_partition_exists` still closes in a `finally`, and the absent
+  branch's read failure still raises `VerbBusyError`. `01dad2e` pins both (P2, P8). Neither
+  changed here.
+
+r11 runs:
+
+- the 3.6 file: 53 passed (`task3.6-r11-green-target.log`);
+- the plan-3 files plus the focus, STM and subject files (`test_stm*`, `test_subject`,
+  `test_composite`, `test_hook_wiring`, `test_bug115_liveness_under_load`, …) and the plan-2
+  files: 712 passed, 0 failed (`task3.6-r11-green-plan3.log`);
+- the full suite: 3050 passed, 21 failed, 19 skipped (`task3.6-r11-green-full.log`). The
+  failures are the 19 clone-only DEV TREE refusals, the gmd repo-scope gate, and one recurrence
+  of the known flaky bug-091, `test_watch.py::test_run_watcher_picks_up_new_file` ("watcher did
+  not fire"). That file passed 3/3 alone afterwards; its registry row now reads Seen 2, recurring.
