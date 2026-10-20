@@ -172,9 +172,15 @@ endpoints". Yes: two tiers, split by ownership. {#http-tiers-lead}
 - **The daemon hosts the verbs (preferred):** one HTTP endpoint per verb runs `verbs.<fn>`
   server-side; the mod's tool registrations are generated from the same signatures. Needs an
   in-daemon execution path, since a verb inside the daemon cannot `_call` its own socket.
-- **No daemon:** C4a (in-process) is impossible from TS. The mod's fallback is `$.process.run`
-  of `rmx …` (the spawn returns, on the rare path only) or asking the hub to start the daemon.
-  Busy is never treated as absent.
+- **No daemon — decided (user, 2026-10-20): "the mod should spawn the project rmx when
+  needed".** C4a (in-process) is impossible from TS, so on ABSENT only the mod runs the verb
+  through `$.process.run` of the PROJECT's `rmx`, which then takes its own C4a path. The spawn
+  cost returns on this rare path only. Busy is never treated as absent and never spawns.
+  "The project rmx" is the binary that store's installation runs, never the first `rmx` on PATH
+  (the same rule plist writers follow: `RMX_BIN` / argv[0], never `which rmx`). The hub's
+  discovery answer carries it beside the socket path. With the hub down, the mod reads it from a
+  file the store records when its daemon starts, so a hub outage does not strand the fallback.
+  {#verb-host-absent}
 - **Transport errors** (refused / missing / path too long / timeout) arise client-side in TS, so
   the classifier gets a TS twin, parity-tested against `classify_transport_error`; errors the
   daemon returns keep their Python wording. {#verb-host-lead}
@@ -208,7 +214,8 @@ written; `status: drafting` when it is)
 
 - Q1: Which projects carry the gate week (refmatrix + one of viascope / cliquedb / atldb)?
 - Q2: Per-store HTTP — verbs only (preferred, [[#verb-host]]), or raw ops too for operator
-  tooling? And the no-daemon fallback: `$.process.run` of `rmx`, or ask the hub to start it?
+  tooling? (The no-daemon fallback is decided: spawn the project's `rmx`,
+  [[#verb-host-absent]].)
 - Q3: Distribution — a marketplace repo for the mod, or `--plugin-dir` from the deploy tree only?
 
 ### What Is NOT Moving Forward {#what-is-not-moving-forward}
