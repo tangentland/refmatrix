@@ -5,7 +5,7 @@ title: "Task 3.5: plan-3 r8 remedy — pin the three unguarded closures, classif
 tags: [task, plan-3, remedy, bsd, verbs, search]
 metadata:
   node_type: task
-  status: approved
+  status: completed
   plan: plan-3-verbs-parity
   created: 2026-10-19
   amended: 2026-10-19 (project-store transport classifier; bulk-forget pins)

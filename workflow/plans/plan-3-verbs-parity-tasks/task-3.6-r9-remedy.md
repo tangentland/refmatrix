@@ -5,7 +5,7 @@ title: "Task 3.6: plan-3 r9 remedy — one transport classifier for every store-
 tags: [task, plan-3, remedy, bsd, verbs, search, daemon]
 metadata:
   node_type: task
-  status: approved
+  status: completed
   plan: plan-3-verbs-parity
   created: 2026-10-19
   amended: 2026-10-19 (#r10-amend — ch-bsd plan-3 r10; #r11-amend — r11)

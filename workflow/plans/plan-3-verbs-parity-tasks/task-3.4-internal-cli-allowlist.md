@@ -5,7 +5,7 @@ title: "Task 3.4: every invocable CLI path is classified exactly once — verb t
 tags: [task, plan-3, verbs, parity, cli]
 metadata:
   node_type: task
-  status: approved
+  status: completed
   plan: plan-3-verbs-parity
   created: 2026-10-06
   rewritten: 2026-10-19
