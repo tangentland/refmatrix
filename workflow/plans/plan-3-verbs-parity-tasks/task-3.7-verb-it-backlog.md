@@ -29,6 +29,7 @@ rel: amends -> [[bsd-plan3-task37-spec-r2-15232c5]]
 rel: amends -> [[bsd-plan3-task37-spec-r3-090eb5e]]
 rel: amends -> [[bsd-plan3-task37-spec-r4-1c501a4]]
 rel: amends -> [[bsd-plan3-task37-spec-r5-925f121]]
+rel: amends -> [[bsd-plan3-task37-spec-r6-5fc593e]]
 
 ## Why {#why}
 
@@ -252,14 +253,14 @@ rather than re-decided. Hidden aliases (`add-concept`, …) follow their targets
 
 ### curation {#fam-curation}
 
-`rmx_curate(action=protect|unprotect|noise|unnoise|forget, name=…, like=…, namespace=…,
+`rmx_curate(action=protect|unprotect|noise|unnoise|forget, names=…, like=…, namespace=…,
 kind=…)`. The selector forms are exactly the CLI's; the `set_flag` / `forget` daemon ops already
 take them. Agent evidence: every generated PRIMER.md header prints
 `rmx protect|unprotect|noise|unnoise|forget <sel>`. {#fam-curation-lead}
 
 - At least one selector is required (`VerbArgsError`).
 - `forget` defaults to `dry_run=True` in the verb: it returns what WOULD be forgotten. A
-  selector that is ONLY `kind` and/or `namespace` (no `name` / `like`) also requires
+  selector that is ONLY `kind` and/or `namespace` (no `names` / `like`) also requires
   `broad=True`, else `VerbArgsError` naming the count it would remove. The CLI twin keeps its
   confirmation / `-y` behaviour and passes `dry_run=False, broad=True` after it (logged operator
   wipes like `forget --kind code -y` still work). The forget op keeps its 600 s write budget.
@@ -343,7 +344,7 @@ gmd-curator agent reads and drains (`gmd-curator.md` :138, :150). {#fam-refine-l
     is raised — EXCEPT `ENOENT` on a listed file or on the legacy rename, which means a
     concurrent drain took it: that file is skipped, kept out of the token and reported in
     `missing` (r5 S2). Fixtures use the watcher's format. Bug row logged;
-  - `status(limit=500)` returns the parsed entries of the oldest files up to `limit` entries
+  - `status(max_entries=500)` returns the parsed entries of the oldest files up to `max_entries`
     (whole files only), `token = [<spool file names it read>]` oldest first, and
     `spool = {files, bytes, remaining_files}` so a never-drained spool is visible (r5 M2);
   - `drain(token)` unlinks exactly those files. A name already gone is reported in `missing` (a
@@ -365,8 +366,10 @@ gmd-curator agent reads and drains (`gmd-curator.md` :138, :150). {#fam-refine-l
     the deploy's restart and is named in the release notes;
   - twins: `curator status` (no `--drain`) is the `CLI_MAP` twin (it leaves category `hook`);
     `curator drain` is a `CLI_ACTIONS` twin. The CLI passes the token: `curator status --json`
-    emits it, `curator drain --token <names…|@file>` takes it back; `token` and `limit` get
-    PAIRING rows. The gmd-curator agent's documented flow (`gmd-curator.md` ~136-150, ~692:
+    emits it, `curator drain --token <names…|@file>` takes it back; `token` and `max_entries`
+    (CLI `--max-entries`) get PAIRING rows. The existing click `curator status --limit` (default
+    10, cli.py ~9105: sample paths printed in the hook's context line) stays a CLI-only render
+    option, declared as such like `--out` (r6 S1). The gmd-curator agent's documented flow (`gmd-curator.md` ~136-150, ~692:
     `rmx curator status > /tmp/snap.txt` … `rmx curator drain`, no token) is rewritten to
     `status --json` → `drain --token @<file>` in the template AND the installed
     `.claude/agents/gmd-curator.md` (r5 S1). {#fam-refine-drain}
@@ -384,7 +387,8 @@ add` / `retag` output tells agents to "add via `rmx taxonomy add`" (r1 S4). {#fa
   `tag_warnings` for tags outside the vocabulary (the warning the CLI prints today; MCP adds and
   retags never get it, r1 M6). The warning points at `rmx_taxonomy` (action `add`).
 - `add` / `remove` write `~/.refmatrix/taxonomy.json` atomically (temp + rename) under an
-  `fcntl` lock (today: no lock). {#fam-taxonomy-admin}
+  `fcntl` lock on a sidecar `taxonomy.json.lock` that is never deleted — never on the file the
+  rename replaces (r6 M3; today: no lock). {#fam-taxonomy-admin}
 - **Defect fixed here (data loss):** a corrupt `~/.refmatrix/taxonomy.json` silently loads the
   defaults, and the next `add` / `remove` overwrites the user's file. After the fix (r1 S5):
   - `add` / `remove` REFUSE to write over a corrupt file (`VerbError` naming the file);
@@ -417,7 +421,7 @@ open: the four refine operator bugs. {#defects-lead}
 
 Per family (each a separate RED → GREEN step): {#ac-family}
 
-1. **Verbed paths** meet C1-C8; each fixed defect has a test that fails at the task's base
+1. **Verbed paths** meet C1-C9 (incl. C4a); each fixed defect has a test that fails at the task's base
    (`591a2fb`) and passes after.
 2. **Re-decided paths** move to their category in `LEGACY_UNPAIRED` with the reason above; the
    reason no longer says `verb-it`.
