@@ -38,7 +38,8 @@ _MANUAL_EFFECTIVE_DEFAULTS = {
 }
 # The action a required-`action` dispatcher's CLI_MAP twin runs (a dispatcher with a
 # default action uses that default).
-_TWIN_ACTION = {"rmx_memory": "get", "rmx_curate": "protect"}
+_TWIN_ACTION = {"rmx_memory": "get", "rmx_curate": "protect", "rmx_graph": "neighbors",
+                "rmx_canon": "find"}
 
 
 def _effective_defaults() -> dict:
@@ -99,6 +100,15 @@ PAIRING = {
     # `max_entries` pairs with the new `--max-entries`; the click `--limit` (sample
     # paths in the hook line) is a CLI-only render option (r6 S1).
     "rmx_curator": (("curator", "status"), {}, {"action", "token"}),
+    # task 3.7 batch B. The twin is `neighbors`; the other actions' params are
+    # compared on their own commands by test_cli_action_click_defaults_*.
+    "rmx_graph": (("neighbors",), {}, {"action", "linkage", "ref", "first", "edge_limit",
+                                       "evidence_limit", "sibling_limit", "no_vectors",
+                                       "query", "k", "kinds", "symbolic", "no_dense",
+                                       "stale", "hops", "since", "until", "git",
+                                       "partition", "timeout"}),
+    "rmx_canon": (("canon", "find"), {}, {"action", "canon_name", "canon_partition",
+                                          "partition", "timeout"}),
 }
 # A no_twin param that DOES have a same-named click option must be one of
 # these declared shape differences (a click `multiple=True` option defaults
@@ -110,6 +120,8 @@ SHAPE_DIFFERENCES = {
     ("rmx_memory_recall", "exclude_mtype"): "click multiple=True () vs verb None",
     ("rmx_bus_read", "channels"): "click nargs=-1 () vs verb None",
     ("rmx_ingest", "path"): "click required argument vs verb default (store parent)",
+    ("rmx_graph", "linkage"): "click multiple=True () on `neighbors` vs verb None, resolved "
+                              "per action (co_occur / top: \"mentions\")",
 }
 
 
@@ -305,6 +317,19 @@ CLI_INVOKE = {
                      "spool": {"files": 1, "bytes": 10, "remaining_files": 0},
                      "warnings": [], "missing": []},
                     {"action": "status", "max_entries": 7}, "CANARY-cur"),
+    # task 3.7 batch B
+    "rmx_graph": (["neighbors", "alpha", "--depth", "2", "--linkage", "mentions", "--limit", "5",
+                   "--strict"],
+                  {"concept": "alpha", "entities": [{"id": 3, "kind": "doc", "name": "CANARY-nb",
+                                                     "path": "/p/d.md"}],
+                   "cardinality": 1, "source": "snapshot"},
+                  {"action": "neighbors", "concept": "alpha", "depth": 2, "linkage": ["mentions"],
+                   "limit": 5, "strict": True}, "CANARY-nb"),
+    "rmx_canon": (["canon", "find", "alpha"],
+                  {"concept": "alpha", "projects": [{"project": "CANARY-proj", "root": "/r",
+                                                     "kind": "concept", "neighbors": 3}],
+                   "skipped": []},
+                  {"action": "find", "concept": "alpha"}, "CANARY-proj"),
 }
 # payload-class twins: argv + the daemon op the click command must issue with
 # a payload built by the verb's helper (recorded by wrapping the helper).
@@ -491,6 +516,16 @@ _ACTIONS_SEED = {
     ("taxonomy", "add"): ("rmx_taxonomy", "add"),
     ("taxonomy", "remove"): ("rmx_taxonomy", "remove"),
     ("curator", "drain"): ("rmx_curator", "drain"),
+    # task 3.7 batch B (#fam-graph-read incl. `stats`, #fam-canon)
+    ("co-occur",): ("rmx_graph", "co_occur"),
+    ("top",): ("rmx_graph", "top"),
+    ("describe",): ("rmx_graph", "describe"),
+    ("recall",): ("rmx_graph", "recall"),
+    ("search-dense",): ("rmx_graph", "dense"),
+    ("stats",): ("rmx_graph", "stats"),
+    ("concept", "timeline"): ("rmx_graph", "timeline"),
+    ("canon", "siblings"): ("rmx_canon", "siblings"),
+    ("canon", "link"): ("rmx_canon", "link"),
 }
 _HIDDEN_SEED = {
     ("add-concept",): ("add", "concept"),
@@ -562,8 +597,15 @@ _TASK_3_7_BATCH_A = frozenset({
     ('taxonomy', 'list'), ('taxonomy', 'add'), ('taxonomy', 'remove'),
     ('curator', 'status'), ('curator', 'drain'),
 })
-LEGACY_BASELINE = _BASELINE_3_4 - _TASK_3_7_BATCH_A
-LEGACY_BASELINE_SIZE = 118
+# Task 3.7 batch B: graph-read (7) + `stats` + canon (3) = 11. `pairs show` STAYS in
+# LEGACY_UNPAIRED, re-decided as `harness` (#fam-graph-read-pairs).
+_TASK_3_7_BATCH_B = frozenset({
+    ('neighbors',), ('co-occur',), ('top',), ('describe',), ('recall',), ('search-dense',),
+    ('concept', 'timeline'), ('stats',),
+    ('canon', 'find'), ('canon', 'siblings'), ('canon', 'link'),
+})
+LEGACY_BASELINE = _BASELINE_3_4 - _TASK_3_7_BATCH_A - _TASK_3_7_BATCH_B
+LEGACY_BASELINE_SIZE = 107
 _USER_QUOTE = "internal harness/testing cli only commands"
 
 
@@ -692,8 +734,9 @@ def test_a_stale_key_in_any_map_fails_hygiene(which, monkeypatch):
 
 def test_cli_actions_are_the_seeded_dispatcher_twins():
     """AC-5: r8 #s-4 item 1 — these 15 would otherwise land in LEGACY. Task 3.7
-    batch A adds 19 (focus 12, curation 4, taxonomy 2, curator drain)."""
-    assert len(_ACTIONS_SEED) == 34
+    batch A adds 19 (focus 12, curation 4, taxonomy 2, curator drain); batch B adds 9
+    (graph 7 beside the `neighbors` twin, canon 2 beside the `canon find` twin)."""
+    assert len(_ACTIONS_SEED) == 43
     import typing
     assert dict(verbs.CLI_ACTIONS) == _ACTIONS_SEED, sorted(
         set(verbs.CLI_ACTIONS.items()) ^ set(_ACTIONS_SEED.items()))
@@ -720,6 +763,8 @@ def test_legacy_unpaired_carries_a_category_and_can_only_shrink():
     the set is a subset of the frozen baseline and never larger than it."""
     assert len(_BASELINE_3_4) == _BASELINE_3_4_SIZE
     assert _TASK_3_7_BATCH_A <= _BASELINE_3_4 and len(_TASK_3_7_BATCH_A) == 22
+    assert _TASK_3_7_BATCH_B <= _BASELINE_3_4 and len(_TASK_3_7_BATCH_B) == 11
+    assert not (_TASK_3_7_BATCH_A & _TASK_3_7_BATCH_B)
     assert len(LEGACY_BASELINE) == LEGACY_BASELINE_SIZE
     legacy = set(verbs.LEGACY_UNPAIRED)
     grown = sorted(legacy - LEGACY_BASELINE)
@@ -866,6 +911,54 @@ CLI_ACTION_INVOKE = {
                            {"drained": ["n1.jsonl"], "missing": ["CANARY-miss.jsonl"]},
                            {"action": "drain", "token": ["n1.jsonl", "n2.jsonl"]},
                            "CANARY-miss"),
+    # ---- task 3.7 batch B: graph-read (the CLI_MAP twin is `neighbors`) ----
+    ("co-occur",): (["co-occur", "alpha", "--type", "defines", "--limit", "3"],
+                    {"rows": [{"concept": "CANARY-co", "overlap": 2}], "source": "snapshot"},
+                    {"action": "co_occur", "concept": "alpha", "linkage": "defines", "limit": 3},
+                    "CANARY-co"),
+    ("top",): (["top", "alpha", "--type", "mentions", "-k", "4"],
+               {"rows": [{"id": 6, "name": "CANARY-top", "kind": "doc", "weight": 4.0}],
+                "source": "snapshot"},
+               {"action": "top", "concept": "alpha", "linkage": "mentions", "k": 4}, "CANARY-top"),
+    ("describe",): (["describe", "d3.md", "--first", "--edge-limit", "7", "--no-vectors",
+                     "--format", "json"],
+                    {"found": {"id": 6, "name": "CANARY-desc"}, "candidates": [{"id": 6}]},
+                    {"action": "describe", "ref": "d3.md", "first": True, "edge_limit": 7,
+                     "no_vectors": True}, "CANARY-desc"),
+    ("recall",): (["recall", "q", "-k", "3", "-K", "doc", "-c", "beta", "--json"],
+                  {"hits": [{"rank": 1, "id": 8, "score": 0.03, "kind": "doc",
+                             "name": "CANARY-rec", "path": "/p"}]},
+                  {"action": "recall", "query": "q", "k": 3, "kinds": ["doc"],
+                   "concept": ["beta"]}, "CANARY-rec"),
+    ("search-dense",): (["search-dense", "q", "-k", "4", "-K", "doc"],
+                        {"hits": [{"rank": 1, "id": 6, "distance": 0.1, "kind": "doc",
+                                   "name": "CANARY-dense"}], "warnings": []},
+                        {"action": "dense", "query": "q", "k": 4, "kinds": ["doc"]},
+                        "CANARY-dense"),
+    ("stats",): (["stats", "--stale"],
+                 {"partition": "proj", "entities": {"doc": 6},
+                  "linkages": {"mentions": {"concepts": 2, "bits": 8}},
+                  "stale_files": [{"path": "CANARY-stale.py", "status": "modified",
+                                   "mtime": 2.0, "last_synced": 1.0}]},
+                 {"action": "stats", "stale": True}, "CANARY-stale"),
+    ("concept", "timeline"): (["concept", "timeline", "alpha", "--hops", "1", "--k", "5",
+                               "--no-git", "--json"],
+                              {"concept": "alpha", "resolved_files": 1, "resolved_concepts": 1,
+                               "hops": 1, "events": [{"date": "2026-10-01", "type": "session",
+                                                      "ref": "CANARY-tl", "detail": "d"}],
+                               "session_count": 1, "truncated": False, "warnings": []},
+                              {"action": "timeline", "concept": "alpha", "hops": 1, "k": 5,
+                               "git": False}, "CANARY-tl"),
+    # ---- canon (the CLI_MAP twin is `canon find`) ----
+    ("canon", "siblings"): (["canon", "siblings", "alpha"],
+                            {"rows": [{"partition_name": "other", "name": "CANARY-sib",
+                                       "canon_partition": "canon", "canon_name": "Alpha"}],
+                             "source": "snapshot"},
+                            {"action": "siblings", "concept": "alpha"}, "CANARY-sib"),
+    ("canon", "link"): (["canon", "link", "alpha", "--canon-name", "Alpha"],
+                        {"canon_id": 4242, "source": "daemon"},
+                        {"action": "link", "concept": "alpha", "canon_name": "Alpha",
+                         "canon_partition": "canon"}, "4242"),
 }
 
 
@@ -940,12 +1033,28 @@ ACTION_PAIRING = {
     ("taxonomy", "add"): ({}, set()),
     ("taxonomy", "remove"): ({}, set()),
     ("curator", "drain"): ({}, set()),
+    # task 3.7 batch B. `--via-replica` is dead on every snapshotted store and the verb
+    # always routes by #budgets; `--format` / `--json` are renderings.
+    ("co-occur",): ({}, set()),
+    ("top",): ({}, set()),
+    ("describe",): ({}, {"fmt", "via_replica"}),
+    ("recall",): ({}, {"as_json"}),
+    ("search-dense",): ({}, set()),
+    ("stats",): ({}, {"via_replica"}),
+    ("concept", "timeline"): ({"git": "no_git"}, {"as_json"}),
+    ("canon", "siblings"): ({}, set()),
+    ("canon", "link"): ({}, set()),
 }
 # (path, verb param) -> why the click default may differ from the resolved one.
 ACTION_SHAPE_DIFFERENCES = {
     (("forget",), "dry_run"): "the verb previews by default over MCP (#fam-curation-forget); "
                               "the CLI keeps its confirm / -y gate and passes dry_run=False",
     (("curator", "drain"), "token"): "click multiple=True () vs verb None",
+    (("recall",), "kinds"): "click multiple=True () vs verb None",
+    (("recall",), "concept"): "click multiple=True () vs verb None (a str for other actions)",
+    (("recall",), "symbolic"): "click multiple=True () vs verb None",
+    (("search-dense",), "kinds"): "click multiple=True () vs verb None",
+    (("concept", "timeline"), "git"): "inverted flag: click --no-git False == verb git True",
 }
 # Pre-3.7 dispatcher whose per-action parity is its dedicated verbs' job (PAIRING
 # "ALL"). Closed: no other verb may be escaped.
@@ -999,7 +1108,7 @@ def test_action_shape_differences_name_real_click_options():
         assert why.strip()
 
 
-def test_legacy_shrinks_by_exactly_the_batch_a_paths():
-    """C6 / AC-G5 at the batch-A boundary: 140 - 22 = 118, nothing else moved."""
+def test_legacy_shrinks_by_exactly_the_batched_paths():
+    """C6 / AC-G5 at the batch-B boundary: 140 - 22 - 11 = 107, nothing else moved."""
     assert set(verbs.LEGACY_UNPAIRED) == set(LEGACY_BASELINE), sorted(
         set(verbs.LEGACY_UNPAIRED) ^ set(LEGACY_BASELINE))

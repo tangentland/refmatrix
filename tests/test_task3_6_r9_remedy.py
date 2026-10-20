@@ -773,6 +773,51 @@ def test_batch_a_paths_are_twins_of_their_decided_verb_and_left_legacy():
     assert not bad, "\n" + "\n".join(bad)
 
 
+# Task 3.7 batch B: graph-read (less `pairs show`) + `stats` (was `harness`,
+# #decisions-r2) → rmx_graph; canon → rmx_canon.
+_BATCH_B_TWINS = {
+    "rmx_graph": (VERB_IT_FAMILIES["fam-graph-read"] - {("pairs", "show")}) | {("stats",)},
+    "rmx_canon": VERB_IT_FAMILIES["fam-canon"],
+}
+
+
+def test_batch_b_paths_are_twins_of_their_decided_verb_and_left_legacy():
+    bad = []
+    for vname, paths in _BATCH_B_TWINS.items():
+        for path in sorted(paths):
+            if path in verbs.LEGACY_UNPAIRED:
+                bad.append(f"{' '.join(path)}: still LEGACY_UNPAIRED "
+                           f"{verbs.LEGACY_UNPAIRED[path][0]}")
+                continue
+            twin = vname if verbs.CLI_MAP.get(vname) == path else (
+                verbs.CLI_ACTIONS.get(path, (None, None))[0])
+            if twin != vname:
+                bad.append(f"{' '.join(path)}: twin of {twin!r}, expected {vname}")
+    assert not bad, "\n" + "\n".join(bad)
+
+
+def test_pairs_show_is_re_decided_as_harness_with_a_true_reason():
+    """#fam-graph-read-pairs / AC-family 2: a re-decided path moves to its category
+    and its reason no longer says verb-it. Code check behind the reason: no template,
+    primer or hook teaches `pairs show`."""
+    cat, reason = verbs.LEGACY_UNPAIRED[("pairs", "show")]
+    assert cat == "harness", cat
+    assert "verb-it" not in reason and "owes" not in reason, reason
+    assert "pairs compile" in reason, "the reason names what it inspects"
+    taught = (_SRC / "primer.py").read_text() + (_SRC / "hooks.py").read_text() + \
+        "".join(p.read_text() for p in (_SRC / "templates").rglob("*.md"))
+    assert "pairs show" not in taught
+
+
+def test_the_batch_c_families_keep_their_verb_it_reasons():
+    """AC-G1 at the batch-B boundary: matrix-edit, session and refine (less the
+    curator drain batch A verbed) are still `verb-it` naming their family."""
+    for fam in ("fam-matrix-edit", "fam-session", "fam-refine"):
+        for path in VERB_IT_FAMILIES[fam] - {("curator", "drain")}:
+            cat, reason = verbs.LEGACY_UNPAIRED[path]
+            assert cat == "verb-it" and f"task-3.7#{fam}" in reason, (path, cat, reason)
+
+
 def test_the_deferral_registry_points_the_backlog_at_task_3_7():
     text = (_REPO / "workflow" / "deferral_registry.md").read_text()
     assert "[[task-3.7-verb-it-backlog]]" in text

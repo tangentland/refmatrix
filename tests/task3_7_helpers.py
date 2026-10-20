@@ -115,3 +115,51 @@ class FakeDaemon:
         hits = [c for c in self.calls if c[0] == op]
         assert hits, f"op {op!r} never sent; sent: {self.ops()}"
         return hits[-1]
+
+
+# ---- batch B: a graph fixture with real Lance vectors ------------------------
+
+
+class HashEmbedder:
+    """ONE deterministic test embedder (task 3.7 #fam-graph-read-recall, r2 M3):
+    injected into BOTH the base CLI's `Embedder()` and the daemon's `d._embedder()`
+    so a rank order can be pinned across the two paths. sha256 → 8 floats, L2-normed."""
+    dim = 8
+    model_name = "test-hash-8"
+
+    def embed_texts(self, texts):
+        import hashlib
+
+        import numpy as np
+        out = []
+        for t in texts:
+            h = hashlib.sha256(str(t).encode()).digest()
+            v = np.frombuffer(h[:self.dim * 4], dtype=np.uint32).astype("float32")
+            out.append(v / np.linalg.norm(v))
+        return np.vstack(out).astype("float32")
+
+
+def graph_store(root: Path, *, partition: "str | None" = None) -> dict:
+    """concepts alpha / beta; docs d0..d5 (`path` under the project dir); alpha
+    `mentions` d0..d3 with weights 1..4, beta `mentions` d2..d5; one 8-dim
+    HashEmbedder vector per doc ("document number i"). Ids are deterministic on a
+    fresh store: alpha=1, beta=2, d0..d5=3..8. Returns the ids."""
+    p = partition or discovery.store_name(root)
+    s = Store(root)
+    s.init()
+    try:
+        with s.with_partition(p):
+            a = s.add_concept("alpha")
+            b = s.add_concept("beta")
+            docs = [s.upsert_entity("doc", f"d{i}.md", path=str(root.parent / f"d{i}.md"))
+                    for i in range(6)]
+            for j, d in enumerate(docs[:4]):
+                s.link("mentions", a, d, weight=float(j + 1))
+            for d in docs[2:]:
+                s.link("mentions", b, d)
+            emb = HashEmbedder()
+            s.upsert_vector(docs, emb.embed_texts([f"document number {i}" for i in range(6)]),
+                            kind="doc", dim=emb.dim)
+    finally:
+        s.close()
+    return {"alpha": a, "beta": b, "docs": docs}
