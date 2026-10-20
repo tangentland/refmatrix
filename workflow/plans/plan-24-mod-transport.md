@@ -78,7 +78,7 @@ Spawn cost is a secondary benefit, measured as a before/after baseline (24.0), n
 | [[task-24.3-hub-http-discovery]] | hub HTTP on `hub-http.sock`: discovery (cwd → store socket + identity), global, federated, bus + long-poll wake (D2) | G4, G5 | spec written |
 | [[task-24.4-generated-mod-surface]] | verb-schema export; the mod's tools and routes GENERATED from `VERBS`; a TS transport-error classifier twin with cross-language parity | G4 | spec written |
 | [[task-24.5-mod-core]] | the mod: `session.start` handshake, real session identity end to end, tool registration, status line + toasts, pane, bus wake, outbox, `userConfig` | G1, G4, G5, G6 | spec written |
-| [[task-24.6-context-and-observation]] | context and observation move in: `prompt.compose` / `prompt.section` / `prompt.context` / `prompt.submit`, `tool.call`, `tool.check`, `session.append`, `session.compact`, `turn.complete`; shell hooks stay as a fallback that stands down while the mod is live | G1, G2, G3, G6 | spec written |
+| [[task-24.6-context-and-observation]] | context and observation move in: `prompt.compose` / `prompt.section` / `prompt.context` / `prompt.submit`, `tool.call`, `session.append` (observe only), `session.compact`, `turn.complete`; shell hooks stay as a fallback that stands down while the mod is live | G1, G2, G3, G6 | spec written |
 | [[task-24.7-distribution]] | distribution: marketplace file, deploy `CLAUDE_CODE_PLUGIN_DIRS`, the double-load stand-down (D5), one version | — | spec written |
 | [[task-24.8-retire-mcp-and-retarget]] | retire `rmx mcp` on the Claude Code path; the held items re-specified against the mod (D1); follow-up candidates listed | G4 | spec written |
 

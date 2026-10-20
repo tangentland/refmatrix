@@ -27,6 +27,7 @@ rel: implements -> [[exploration-claude-code-mod-transport#http-tiers]]
 rel: implements -> [[plan-24-mod-transport#goals]]
 rel: related-to -> [[project_shared_worker_private_split]]
 rel: related-to -> [[reference_claude_channel_mcp_push]]
+rel: derives-from -> [[bsd-plan24-spec-review-r2-03c2d1f#meh]]
 
 ## Why {#why}
 
@@ -82,12 +83,14 @@ installed. Neither is the mod's surface as it stands. {#why-lead}
    `rmx_queues`, 3.7's `rmx_canon` and `rmx_refine`, and every `rmx_bus_*` verb are
    `tier="hub"` (served here, 404 on a store socket). Their bodies are unchanged; inside the hub
    `_hub_rpc` dispatches in-process (d7). {#r5}
-6. **R6 — `rmx_bus_wait(channels: list[str], agent: str, cursor: str | None = None, timeout_s:
-   float = 25.0)`** (engine, hub, read with cursor advance only when `ack=True` is passed in a
-   follow-up `rmx_bus_mark_read`). Returns as soon as one unread message matches, or `{"messages":
-   [], "cursor": ...}` at `timeout_s` (max 25). Implemented on `Bus.subscribe` (the
-   `_stream_bus_sub` mechanism), unsubscribed in `finally`. Each message carries `wake: bool` per
-   d9. {#r6}
+6. **R6 — `rmx_bus_wait(channels: list[str], agent: str, timeout_s: float = 25.0)`** (engine,
+   hub, READ: it never advances `agent`'s read cursor). Returns as soon as at least one message
+   unread by `agent` matches `channels` (with every such message), or `{"messages": []}` at
+   `timeout_s` (max 25). The caller acknowledges what it has acted on with the existing
+   `rmx_bus_mark_read(channel, agent, up_to=<id>)`; until then the same messages are returned
+   again, so a mod that dies between receiving and acting loses nothing. Implemented on
+   `Bus.subscribe` (the `_stream_bus_sub` mechanism) after a check of the unread backlog,
+   unsubscribed in `finally`. Each message carries `wake: bool` per d9. {#r6}
 7. **R7 — pools.** Hub verbs on `hub-verb` (default 8, `RMX_HUB_VERB_WORKERS`); `rmx_bus_wait`
    on `hub-wait` (default 16, `RMX_HUB_WAIT_WORKERS`); a full wait pool answers 503 immediately
    (the mod backs off), never queues a long-poll behind long-polls. {#r7}
@@ -135,3 +138,10 @@ hub: the suite's isolation from live sockets ([[project_suite_reaches_live_socke
 | `src/refmatrix/mcp.py`, `src/refmatrix/cli.py` | call the one cwd / project resolver; `rmx discover`, `rmx bus wait` twins |
 | `src/refmatrix/daemon.py` | skip the HTTP bind for the global store (d13) |
 | `tests/test_task24_3_hub_http.py` | AC-1..AC-6 |
+
+## Revision r2 (2026-10-20, ch-bsd r2 03c2d1f) {#rev-r2}
+
+| finding | change |
+|---|---|
+| m5 the cursor / ack wording contradicted itself | R6: the wait is a pure read that never advances the cursor; acknowledgement is `rmx_bus_mark_read` after acting; unacknowledged messages are returned again |
+

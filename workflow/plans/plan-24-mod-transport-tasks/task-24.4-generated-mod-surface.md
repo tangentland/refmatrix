@@ -125,7 +125,11 @@ the busy / absent rule (busy never spawns, D4) needs a twin held to the original
    the same case table; `eval/mod_probe/fetch_rejections.json` exists with the engine version, and
    every `ts.rejection` in the table equals a probe record. A table row whose TS class differs from
    its Python class fails both halves' shared assertion that the table is internally consistent.
-   {#ac-3}
+   Because the `ts` cells are COPIED from the probe, equality alone proves nothing about the twin
+   (r2 m3): the `expect` column is written from Python's rules BEFORE the probe values are pasted
+   (its commit precedes the probe's), and a mutation run over a copy of `transport.ts` (swap the
+   absent / undialable branches; make the race timer absent; drop the write wording) must fail the
+   TS half for each mutation. {#ac-3}
 4. **AC-4 (R6).** Removing one model verb's `TOOLS` entry from the generated file (a copy) fails
    the parity gate naming the verb. {#ac-4}
 5. **AC-5 (R7).** `claude plugin validate mod` exits 0 on the generated surface plus 24.5's
@@ -135,7 +139,7 @@ the busy / absent rule (busy never spawns, D4) needs a twin held to the original
 ## Test strategy {#test-strategy}
 
 `tests/test_task24_4_modgen.py` (AC-1, AC-2, AC-4, the Python half of AC-3),
-`tests/test_task24_4_mod_gates.py` (AC-5 and the TS half), `mod/tests/transport.test.ts` (the twin
+`tests/test_task24_4_mod_gates.py` (AC-5, the TS half, and AC-3's mutation run over copies of `transport.ts`), `mod/tests/transport.test.ts` (the twin
 over `transport_cases.ts`, using `test` / `expect` from `claude-code/testing`). The registry copy in
 AC-1 / AC-4 is a fixture, listed in `workflow/test_mock_registry.md`. RED first, logged to
 `workflow/review-output/task24_4-red.log`. {#test-strategy-body}
@@ -152,3 +156,10 @@ AC-1 / AC-4 is a fixture, listed in `workflow/test_mock_registry.md`. RED first,
 | `scripts/check-generated.sh` | runs `modgen --check` and `install-hooks --check` (R2) |
 | `tests/test_verb_parity.py`, `tests/test_task24_4_modgen.py`, `tests/test_task24_4_mod_gates.py` | R6, R7, AC-1..AC-5 |
 | `workflow/development_resources.md`, `workflow/test_mock_registry.md` | the `claude` dev dependency; the registry-copy fixture |
+
+## Revision r2 (2026-10-20, ch-bsd r2 03c2d1f) {#rev-r2}
+
+| finding | change |
+|---|---|
+| m3 AC-3 passed by construction (cells copied from the probe) | AC-3: `expect` written before the probe values; a three-mutation run over `transport.ts` must fail the TS half |
+

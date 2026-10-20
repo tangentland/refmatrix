@@ -22,6 +22,8 @@ metadata:
 > nothing waits on it
 
 rel: part-of -> [[plan-24-mod-transport]]
+rel: depends-on -> [[task-3.7-verb-it-backlog]]
+rel: derives-from -> [[bsd-plan24-spec-review-r2-03c2d1f]]
 rel: part-of -> [[plan-24-mod-transport#goals-tail]]
 rel: derives-from -> [[bsd-plan24-spec-review-cdcfbc3]]
 rel: related-to -> [[feedback_measure_the_path_users_run]]
@@ -64,7 +66,14 @@ is stated with a measured before and after. The BEFORE window must open before t
    - `import_ms` = time from `t_entry` to `cli_entry`'s first statement;
    - `t_start_ms` / `t_end_ms` = epoch ms of the kernel start and of the row write.
 
-   A failed start-time lookup records those fields `null` plus `timing_error` with the reason. It
+   These field names, `hook_event`, `hook_blocking`, `session`, `prompt_id` and `agent_id` are ONE
+   row schema shared with the verb host's mod rows (24.2 R9), defined once in `telemetry.py`
+   (`HOOK_ROW_FIELDS`) and validated by one schema test. `hook_event` takes a value from
+   `telemetry.HOOK_EVENTS`: the Claude Code settings-hook event names (`SessionStart`,
+   `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SubagentStop`, `PreCompact`) plus the
+   mod-only `SessionAppend` and `ModelTool`; the mod maps its engine events onto these names (24.6
+   d16). `prompt_id` is null on shell rows (the report assigns them to prompts by time, R5) and is
+   the mod's `<session>:<n>` per-session prompt counter on mod rows. A failed start-time lookup records those fields `null` plus `timing_error` with the reason. It
    never fails the command and never silently omits the field. {#r2}
 3. **R3 — blocking is per invocation, set by one generator helper.** `hooks.py` emits every rmx
    invocation through ONE helper that prefixes `RMX_HOOK_EVENT=<event>` and `RMX_HOOK_BLOCKING=1|0`
@@ -81,6 +90,8 @@ is stated with a measured before and after. The BEFORE window must open before t
    [--until <date>] [--root <store>]` reads `cli.log` and groups rows by session into prompts.
    - A prompt opens at the EARLIEST `UserPromptSubmit` row of a burst, by `t_start_ms`, not by
      which row was written first; rows sharing one event inside one burst are one event instance.
+   - A mod row (`invocation: "mod"`) joins the prompt its `prompt_id` names; its cost is its
+     `wall_ms` (no pre-code fields), reported as the in-engine wait beside the shell's.
    - Per prompt, the report prints:
      - **the wait**: Σ over blocking event instances of the LONGEST row's pre-code time
        (`interp_ms + reexec_ms + import_ms`), since hooks of one event run in parallel;
@@ -106,10 +117,14 @@ is stated with a measured before and after. The BEFORE window must open before t
    per-call wall time against the shell hook's pre-code plus work. {#r7}
 8. **R8 — the fork-safety variable is held constant across windows.** Setting
    `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` in the generated hook env roughly halves every hook's
-   pre-code time with no mod. The user chose to ship it with task 3.7 (2026-10-20: "yes, ship the
-   OBJC fix with 3.7"), so it is live before this task's BEFORE window opens. Both windows then
-   have `reexec_ms` ≈ 0 for hook rows, and the mod is not credited with it. The report states the
-   fix's deploy sha, and that rows earlier than it are outside both windows. {#r8}
+   pre-code time with no mod. That fix is NOT this task's work: it is task 3.7's remedy row R-OBJC
+   ([[task-3.7-verb-it-backlog]], section "Remedy round 1", decided in the 3.7 clone at 6fd9b7c and not yet merged here: `HOOK_ENV`
+   exports `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` and `TOKENIZERS_PARALLELISM=false`, with a RED
+   test over the generated config), from the user's 2026-10-20 "yes, ship the OBJC fix with 3.7".
+   This task depends on it being merged and deployed before the BEFORE window opens (AC-7 checks
+   the deployed `HOOK_ENV`). Both windows then have `reexec_ms` ≈ 0 for hook rows, and the mod is
+   not credited with it. The report states the fix's deploy sha, and rows earlier than it are
+   outside both windows. {#r8}
 9. **R9 — collection.**
    - BEFORE: deploy R1-R4, re-apply `rmx install-hooks`, collect ≥ 7 calendar days AND ≥ 5
      sessions on refmatrix (the only active project). `--since` excludes earlier rows.
@@ -128,8 +143,12 @@ to build, and D0 removed the gate. {#report-body}
 ## Acceptance criteria {#acceptance}
 
 1. **AC-1 (R1, R2).** A subprocess test runs the real console script under a short tmp store.
-   - A module that `refmatrix.cli` imports is made to sleep 200 ms (through a test-only module on
-     `PYTHONPATH` that the package imports when a test env var is set; registered as a mock).
+   - The import of `refmatrix.cli` is made to take ≥ 200 ms by a `sitecustomize.py` in a test
+     directory on `PYTHONPATH` that installs a `sys.meta_path` finder which sleeps 200 ms when
+     `refmatrix.cli` is imported, then defers to the normal finders. No src change and no test
+     switch in the package (r2 s8); the finder is registered as a double. It runs at interpreter
+     start on both passes of a re-exec, but only the final pass imports `refmatrix.cli`, so the
+     sleep lands in `import_ms`.
    - The row's `import_ms` is ≥ 200, and `interp_ms` is < 200.
    - With the variable unset, `reexec_ms` > 0; with it set, `reexec_ms` == 0.
 
@@ -148,15 +167,21 @@ to build, and D0 removed the gate. {#report-body}
    - a disowned row;
    - an intent row;
    - a row without timings;
-   - rows with `out_bytes` of 10,001 and 10,000.
+   - rows with `out_bytes` of 10,001 and 10,000;
+   - two mod rows (`invocation: "mod"`, `hook_event: "UserPromptSubmit"` and `"PreToolUse"`) whose
+     `prompt_id` names one of the prompts, and one whose `hook_event` is outside `HOOK_EVENTS`.
 
    The expected outputs: per-instance-max and plain-sum waits, the prompt opened at the earliest
-   row, the excluded count, and 1 truncation. A before/after pair prints both windows and the
+   row, the mod rows' `wall_ms` attributed to the prompt their `prompt_id` names, the out-of-
+   vocabulary row counted as invalid (never silently dropped), the excluded count, and 1
+   truncation. Every fixture row validates against `HOOK_ROW_FIELDS` except the invalid one. A before/after pair prints both windows and the
    difference. {#ac-5}
 6. **AC-6 (R7).** Listed here, built in 24.2: a mod-invoked verb writes one `invocation: "mod"`
    row carrying session, prompt id and `wall_ms`. {#ac-6}
 7. **AC-7 (R9, R10).** After the before window, `docs/measurements/hook-cost-baseline.md` exists,
-   lints clean, names sha, window, sessions, prompts and the R8 state, and contains no argv. The
+   lints clean, names sha, window, sessions, prompts and the R8 state, and contains no argv; before
+   the window opens, the deployed `~/refmatrix` `hooks.py` `HOOK_ENV` is read and shown to export
+   `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` (3.7 R-OBJC), and its sha is the one the report names. The
    after section is added once 24.6 has deployed. {#ac-7}
 
 ## Test strategy {#test-strategy}
@@ -164,8 +189,8 @@ to build, and D0 removed the gate. {#report-body}
 New `tests/test_task24_0_hook_cost.py`: AC-1 and AC-2 as subprocess tests under 23.0's sandbox;
 AC-3 over `hooks.py`'s generated config; AC-4 through the real `focus hook` with an envelope on
 stdin; AC-5 against `eval/hook_cost/report.py` with fixtures under `tests/fixtures/hook_cost/`.
-RED run first, logged to `workflow/review-output/`. The AC-1 sleep module and the AC-2
-lookup failure are the only doubles, both registered in `workflow/test_mock_registry.md`.
+RED run first, logged to `workflow/review-output/`. The AC-1 `sitecustomize` meta-path finder and
+the AC-2 lookup failure are the only doubles, both registered in `workflow/test_mock_registry.md`.
 {#test-strategy-body}
 
 ## Files to modify {#files}
@@ -175,7 +200,7 @@ lookup failure are the only doubles, both registered in `workflow/test_mock_regi
 | `pyproject.toml` | console scripts → `refmatrix._entry:main` (R1) |
 | `src/refmatrix/_entry.py` | new: stamps, the one fork-safety re-exec, then `cli_entry` (R1) |
 | `src/refmatrix/cli.py` | `_reexec_for_fork_safety` moves out; `cli_entry` stamps its first statement (R1, R2) |
-| `src/refmatrix/telemetry.py` | `interp_ms`, `reexec_ms`, `import_ms`, `t_start_ms`, `t_end_ms`, `timing_error`, `hook_event`, `hook_blocking`, envelope `session` in `log_cli_invocation` rows (R2-R4) |
+| `src/refmatrix/telemetry.py` | `HOOK_ROW_FIELDS`, `HOOK_EVENTS` (shared with 24.2), `interp_ms`, `reexec_ms`, `import_ms`, `t_start_ms`, `t_end_ms`, `timing_error`, `hook_event`, `hook_blocking`, envelope `session` in `log_cli_invocation` rows (R2-R4) |
 | `src/refmatrix/hooks.py` | one per-invocation prefix helper for every generated rmx call (R3) |
 | `eval/hook_cost/report.py` | the report (R5, R6, R8) |
 | `tests/test_task24_0_hook_cost.py`, `tests/fixtures/hook_cost/` | AC-1..AC-5 |
@@ -193,3 +218,12 @@ lookup failure are the only doubles, both registered in `workflow/test_mock_regi
 | m1 psutil unneeded | R2 uses `stm._proc_info` |
 | m2 stale `#gate` edge and a wrong `telemetry.py ~546` premise | edge removed; Why rewritten |
 | (new) the fork-safety re-exec doubles start-up today and is independent of the mod | R8 held constant / reported apart |
+
+## Revision r2 (2026-10-20, ch-bsd r2 03c2d1f) {#rev-r2}
+
+| finding | change |
+|---|---|
+| b3 the OBJC fix was anchored to a 3.7 that lacked it | R8 cites 3.7 remedy R-OBJC (clone 6fd9b7c, with its RED test) as the fix, not this task's work; `depends-on` 3.7; AC-7 reads the deployed `HOOK_ENV` before the window opens |
+| s7 rows did not join 24.2's | R2: one shared row schema (`HOOK_ROW_FIELDS`), the `HOOK_EVENTS` vocabulary, `prompt_id` from the mod's per-session counter; R5 joins mod rows by `prompt_id`; AC-5 fixture has mod rows and an out-of-vocabulary row |
+| s8 AC-1 needed a test switch in src | AC-1: a `sitecustomize` `meta_path` finder sleeps on the `refmatrix.cli` import; no src change |
+

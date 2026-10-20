@@ -76,7 +76,7 @@ name) and must be believed. {#why-lead}
    "say", "reason", "session-start"], session: str, *, tool: str | None, input: dict | None, result: dict |
    None, tool_use_id: str | None, prompt: str | None, text: str | None, transcript_path: str | None,
    agent_id: str | None, source: str | None, cwd: str | None, owner_pid: int | None,
-   mentions: list[str] | None)`. `session` is REQUIRED (no default). The body is `focus_hook`'s
+   mentions: list[str] | None, row_uuid: str | None)`. `session` is REQUIRED (no default). The body is `focus_hook`'s
    body today (`cli.py` ~2053-2170) moved into `stm` / `verbs` helpers, unchanged in effect: the
    in-flight park/clear keyed by `tool_use_id`, the input snapshot + sweep + record order of 21.1
    R9, the git-milestone and rationale harvest, `say` from `text` else `transcript_path`.
@@ -84,7 +84,10 @@ name) and must be believed. {#why-lead}
    surfacing lines as `{"lines": [...], "errors": [...]}` instead of printing. `reason` (new, for
    24.6's `session.append` capture) records `text` as a `reason` event with `refs=[]`, the kind the
    commit-rationale harvest already writes, so the reasoning the assistant states in prose joins the
-   intent thread without admitting prose tokens into the focus graph. `mentions` is 24.6's
+   intent thread without admitting prose tokens into the focus graph. `row_uuid` (24.6 d14): an
+   event whose `(session, row_uuid)` was already recorded is dropped and answered `{"recorded":
+   false, "reason": "duplicate row_uuid"}`; the recorded uuids are read from the ring itself (the
+   event stores its `row_uuid`), so the check survives a daemon restart. `mentions` is 24.6's
    used-evidence input (R3 there); this task accepts and stores it on the event. {#r3}
 4. **R4 — `rmx_scan_prompt` (engine, read; its telemetry rows and events are logs, not store
    writes).** `(prompt: str, session: str, *, max_tokens=2000,
@@ -106,13 +109,8 @@ name) and must be believed. {#why-lead}
 7. **R7 — `rmx_focus` action `summarize`.** Params `promote: bool`, `global_: bool` (alias
    `global`), `timeout`; the body of `focus summarize`. CLI `focus summarize` becomes its
    `CLI_ACTIONS` twin. {#r7}
-8. **R8 — the shell's grep paths.** `rmx_shell_rewrite(command: str)` (engine, read, `tier:
-   "both"`): the rewriter's pure function lifted out of `REWRITER_TEMPLATE` into
-   `search_hooks.rewrite_command()`, which the rendered script also calls (one implementation,
-   the script imports nothing new: the template inlines the module source at render time, as it
-   does now, and a test asserts the inlined text equals the module function's source).
-   `rmx_grep_teach(pattern: str, path: str | None)` (engine, writes): the teach script's work
-   (learn switch, TTL throttle stamp, `grep -E --limit 3`) in-process. {#r8}
+8. **R8 — (removed in r2).** The shell's grep paths stay shell hooks; their verb forms
+   (`rmx_shell_rewrite`, `rmx_grep_teach`) are 24.8 follow-up candidates (ch-bsd r2 s9). {#r8}
 9. **R9 — recall trigger.** `rmx_memory_recall(..., trigger=None, session=None)`;
    `telemetry.recall_channel` takes `trigger` first (`prompt` → `prompt_recall`, `session_start` →
    `session_start`, `precompact` → `precompact`), falling back to today's inference. The CLI's
@@ -158,11 +156,10 @@ name) and must be believed. {#why-lead}
    `VerbBusyError` and touches no catalog file; `rmx_focus(action="summarize", promote=True)` with
    an explicit session promotes that session's digest; `rmx_memory_recall(trigger="prompt",
    session="S")` emits `prompt_recall` events with `invocation="mod"` under a mod caller. {#ac-4}
-5. **AC-5 (R8).** `rmx_shell_rewrite` returns the same rewrite as the rendered rewriter script for
-   every case in `tests/test_search_hooks.py`'s rewrite table; the inlined-source assertion holds.
-   {#ac-5}
+5. **AC-5 (R3, row_uuid).** Two `reason` observes with one `row_uuid` record one event; after a
+   daemon restart a third is still dropped. {#ac-5}
 6. **AC-6 (R10).** The existing hook regression suites pass unchanged
-   (`test_hook_wiring.py`, `test_hooks.py`, `test_task21_1_*`, `test_search_hooks.py`), and the
+   (`test_hook_wiring.py`, `test_hooks.py`, `test_task21_1_*`), and the
    parity walk shows the moved paths as twins. {#ac-6}
 7. **AC-7 (R11, R12).** The three structural gates of R12 fail on a deliberately broken copy
    (a verb copy that calls the resolver without a `session` param; a write verb left
@@ -181,10 +178,18 @@ the existing `_pingonlydaemon` / `_silentdaemon` fixture. {#test-strategy-body}
 
 | file | change |
 |---|---|
-| `src/refmatrix/verbs.py` | `Caller`, `CALLER`, `caller()`; resolver order; `session` params (R2); new verbs R3-R8; `@verb` fields (R11); `CLI_MAP` / `CLI_ACTIONS` / `LEGACY_UNPAIRED` moves (R10) |
+| `src/refmatrix/verbs.py` | `Caller`, `CALLER`, `caller()`; resolver order; `session` params (R2); new verbs R3-R7; `@verb` fields (R11); `CLI_MAP` / `CLI_ACTIONS` / `LEGACY_UNPAIRED` moves (R10) |
 | `src/refmatrix/telemetry.py` | `"mod"` invocation; `resolve_event_session(..., session=)`; `recall_channel(trigger=)`; `host-no-session` miss reason |
 | `src/refmatrix/stm.py` | the observe body's helpers (moved from `cli.py`), no behaviour change |
 | `src/refmatrix/cli.py` | `focus hook`, `scan-prompt`, `primer`, `sync`, `focus summarize`, `memory recall` become adapters |
-| `src/refmatrix/search_hooks.py` | `rewrite_command()` and the inlined-source render |
 | `src/refmatrix/mcp.py` | `_build_tools` keeps model-surface verbs |
 | `tests/test_task24_2a_hook_verbs.py`, `tests/test_verb_parity.py` | AC-1..AC-7 |
+
+## Revision r2 (2026-10-20, ch-bsd r2 03c2d1f) {#rev-r2}
+
+| finding | change |
+|---|---|
+| s9 `rmx_shell_rewrite` / `rmx_grep_teach` built here, wired in 24.6, retired in 24.8 | R8 removed; AC-5 replaced; `search_hooks.py` row dropped; listed in 24.8's candidates |
+| s3 reason / say double-record | R3 `row_uuid` with a restart-proof duplicate drop; new AC-5 |
+| s5 curator drain per prompt | no change here: `rmx_curator(action="status")` is 3.7's verb; 24.6 d15 calls status only |
+

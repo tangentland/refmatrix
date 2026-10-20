@@ -46,10 +46,10 @@ guessing the session, and without ever spawning over a busy daemon. {#why-lead}
 
 | # | decision | reason |
 |---|----------|--------|
-| d1 | The session id is `await $.session.id()` (the transcript's name), read per call, never cached past a `session.end` | G1; `/clear` ends the session (`session.end` reason `clear`) with no new `session.start`, so a cached id would name the dead session — the frozen `CLAUDE_CODE_SESSION_ID` defect, in TypeScript |
+| d1 | The session id is `await $.session.id()` (the transcript's name), read per call, never cached past a `session.end`; on `session.end` reason `clear` the timers, the bus loop and 24.6's stand-down marker KEEP RUNNING and re-key to the new id; they stop only for the other reasons (exit, logout, resume, signal, the end of a `-p` run) | G1; `/clear` ends the session with no new `session.start` (types: SessionEndInput, session.start), so a cached id would name the dead session, and timers stopped there would never restart for the rest of the process (r2 b1) |
 | d2 | Discovery: hub `rmx_discover(cwd)` first; hub down → walk `$.session.root()`'s ancestors with `$.fs.stat` for `.refmatrix/identity.json` (24.3 d10's rule, parity-tested by `discovery_cases.ts`) and `$.fs.read` it | D5's hub-down source; the only discovery logic in TS is that walk |
 | d3 | Per verb: register when `VERB_HASHES[name] == identity.verb_hashes[name]`; otherwise skip it and say so (toast + status `schema: N skipped`); a version difference with equal hashes registers and shows `vX≠vY` | D5: never serve a mismatched schema silently; equal schemas across versions are safe |
-| d4 | Tool results are `{ result }` holding the verb's dict; a verb error is `{ result: { error: { type, message } } }` | the shape the `refmatrix` MCP server returns today (`{"error": str}`), so the model's reading does not change; `deny` means a refusal and is logged as one |
+| d4 | A tool result is a STRING: `{ result: JSON.stringify(dict) }`, the text the `refmatrix` MCP server returns today; a verb error is `{ isError: true, result: "<type>: <message>" }` | the engine validates a hook's answer against the tool's output shape and refused an object ("expected string, received object", [[plan-24-mod-transport#probes]], r2 b2); `deny` means a refusal and is logged as one |
 | d5 | Absent (24.4's twin says `TransportAbsent` on THIS store's socket) → `$.process.run([identity.rmx_bin, "verb", "run", name, "--session", s, "--json"], { stdin, cwd: project_root, timeoutMs })`; busy / undialable → the typed error, never a spawn; `rmx_bin` null → an error naming `identity.json` | D4; the spawned CLI re-classifies the daemon itself (24.2 R11), so the mod never decides "absent" alone and never opens a store |
 | d6 | `$.state` contract `refmatrix.{focus, health, injected, delivered}` in `mod/types/index.d.ts`; this task owns `focus` and `health` (24.6 owns `injected`, `delivered`) | render subscription redraws the status line and pane on `set`, no `invalidate`; survives a hot reload |
 | d7 | NEITHER `$.state` NOR `$.store` is a system of record for memory or STM: the daemon's store and the GMD memory files stay authoritative | a crash or a worker loss drops `$.state`; the CLI, subagents, the shell fallback and save-state all read the ring from the store |
@@ -60,17 +60,19 @@ guessing the session, and without ever spawning over a busy daemon. {#why-lead}
 | d12 | Pane and bus wake live here (ch-bsd s5): `/rmx` opens the pane; a long-poll loop on `rmx_bus_wait` turns a wake message into `$.prompt.submit` | G5 had no home; both are core surfaces, not context injection |
 | d13 | While the `refmatrix` MCP server is connected (its tools appear in `$.tool.list()`), the mod registers no colliding tool and says so | two registrations of one name with different transports; 24.8 removes the server, and the mod's tools go live then on the dev box |
 | d14 | Tunables are `userConfig` fields in `plugin.json` (rows in `/config`, read as `register`'s `options`; a change reloads the module with new options); no env-var-only knobs on the mod path | the engine's own settings surface, stored per plugin under `pluginConfigs`; a picker for enumerations |
-| d15 | Peer deliveries are OBSERVED: `session.receive` and `session.send` mirror the text to the bus (`proj:<store>:peer`) and pass it on unchanged (`next(e)`); nothing is consumed or rewritten | the bus becomes the record of cross-session traffic without the mod deciding what a session may receive |
 
 ## Requirements {#requirements}
 
 1. **R1 — module shape.** `mod/src/index.ts` exports `register: Register`; hooks: `session.start`
-   (handshake), `session.end` (stop timers, clear `health`), `tool.call` with one matcher per
+   (handshake), `session.end` (reason `clear`: re-key timers, `health`, the bus loop and 24.6's
+   marker to the new `$.session.id()` and reset per-session state; any other reason: stop timers,
+   clear `health`), `tool.call` with one matcher per
    registered tool (`{ tool: "mcp__refmatrix__<name>" }`), `ui.render` for the pane, `command.run`
    for `/rmx`. Every hook body runs in a `try` whose `catch` writes `$.ui.log(<plugin>: <event>:
    <type>: <message>)` (transcript and debug log, G6) and then continues the chain (`next(e)`)
    where the event allows; a guard-free observer never blocks the user's work. {#r1}
-2. **R2 — the handshake, awaited in `session.start`.** (a) `$.session.root()`; (b) discovery per
+2. **R2 — the handshake, awaited in `session.start`.** (0) FIRST, synchronously, before any
+   await: 24.6's stand-down marker is set and its own timer started (24.6 d8); (a) `$.session.root()`; (b) discovery per
    d2 (hub socket `$.env.get("RMX_HOME")` else `$.env.get("HOME")` + `/.refmatrix/hub-http.sock`);
    (c) identity from the answer or the file; (d) compare per d3; (e) `await $.tool.register` for
    each passing model tool (`isDeferred` from `TOOLS`) BEFORE `next(e)` resolves, so they are
@@ -114,8 +116,10 @@ guessing the session, and without ever spawning over a busy daemon. {#why-lead}
     channels: ["proj:<store_name>:*"], agent: <session id> })`; a `wake` message → `$.prompt.submit({
     text: "[rmx bus] <from> on <channel>: <body, first 2,000 chars>" })` at most once per 60 s
     (later wakes in the window are coalesced into one prompt listing them); a non-wake → toast and
-    the pane's unread count. 503 → back off 5 s; hub down → back off 30 s; each loop error is a
-    debug-log line. Stopped at `session.end`. {#r10}
+    the pane's unread count; after acting, `rmx_bus_mark_read` up to the last handled id (24.3 R6:
+    the wait never advances the cursor, so an unhandled message comes back). 503 → back off 5 s; hub down → back off 30 s; each loop error is a
+    debug-log line. Stopped at `session.end` except reason `clear` (d1), where it re-subscribes with
+    the new session id as `agent`. {#r10}
 11. **R11 — collision (d13).** If `$.tool.list()` contains a `mcp__refmatrix__*` tool not
     registered by this plugin, register none, status `rmx: MCP server still configured (24.8)`,
     one transcript line. {#r11}
@@ -125,13 +129,12 @@ guessing the session, and without ever spawning over a busy daemon. {#why-lead}
     - **P-sub-state:** does a subagent's loop read the parent's `$.state` values and see the
       parent's `set`s? (If not, the subagent's tool calls still route by `e.agentId` under the
       parent's session; focus shown in the pane is the main loop's.)
-    - **P-sub-tools:** are `$.tool.register`ed tools offered to a subagent (Agent tool), and does
-      the `tool.call` hook answer them there? (If not, subagents keep the MCP route until 24.8 says
-      otherwise — 24.8 cannot retire it before this reads.)
-    - **P-print:** under `claude -p --plugin-dir mod`, does `session.start` run before the prompt,
-      are the tools callable, and where do `$.ui.status` / `$.ui.toast` / `$.ui.log` go (the
-      reference says `ui_log` messages and stderr)? (If tools are not callable in `-p`, `-p`
-      sessions keep the shell + MCP path; 24.6's stand-down marker is not set there.)
+    - **P-sub-tools — ANSWERED yes** ([[plan-24-mod-transport#probes]], 5aac253, `-p`): a subagent
+      is offered a registered tool, calls it, and the mod serves it; `tool.call` sees subagent calls
+      with `agentId`. Remaining: the same in an INTERACTIVE session (**P-interactive**).
+    - **P-print — ANSWERED for `session.start`, `prompt.compose`, `tool.call`** (same source).
+      Remaining: where `$.ui.status` / `$.ui.toast` / `$.ui.log` go under `-p` (the reference
+      says `ui_log` messages and stderr).
     - **P-collision:** what the engine does when the MCP server and the mod register the same
       name (confirms or retires d13).
     - **P-socket:** the mod's largest accepted `socketPath` (from 24.4 R5) against 24.2's
@@ -144,21 +147,14 @@ guessing the session, and without ever spawning over a busy daemon. {#why-lead}
 14. **R14 — `userConfig` (d14).** Fields (each with a default equal to today's generated hook
     argument): `scan_max_tokens` 2000, `scan_timeout_s` 5, `recall_k` 5, `recall_scope`
     (picker: project / global / both, default both), `composite_every` 3, `health_interval_s` 15,
-    `status_line` (picker: full / compact / off), `bus_wake` (picker: on / off), `scrub_secrets` (picker: on / off, default on; 24.6 R12), `outbox_max_entries`
+    `status_line` (picker: full / compact / off), `bus_wake` (picker: on / off), `outbox_max_entries`
     2000. 24.6 reads the scan / recall / composite fields; this task the rest. Validated by
     `claude plugin validate`; a test runs `test(name, { options }, body)` with a non-default value
     and sees it used. {#r14}
 15. **R15 — timers.** The health tick and the bus loop run on `$.clock.every` /
     `$.clock.after` started in `session.start` (they outlive the dispatch, are cancelled on reload
-    and at `session.end`); the bus loop re-arms with `$.clock.after(0)` after each long-poll
+    and at `session.end` except reason `clear`, d1); the bus loop re-arms with `$.clock.after(0)` after each long-poll
     returns, never with `$.clock.sleep` inside a hook (a sleep spends the hook budget). {#r15}
-16. **R16 — peer deliveries (d15).** `session.receive` (origin `peer` / `coordinator`) and
-    `session.send` hooks publish `{ from, to, text (first 4,000 chars), agentId }` with
-    `rmx_bus_pub(channel="proj:<store>:peer", type="peer")` and return `next(e)` untouched; a
-    publish failure is a debug line, never a refusal. Probe **P-send**: whether `$.session.send({
-    to: { sessionId } })` reaches another local session; the result is recorded and listed as a
-    follow-up candidate in 24.8, not built here. {#r16}
-
 ## Acceptance criteria {#acceptance}
 
 1. **AC-1 (R2, d3).** Handshake test: a discovery answer whose `verb_hashes` differ for one model
@@ -186,22 +182,34 @@ guessing the session, and without ever spawning over a busy daemon. {#why-lead}
    within 60 s none (coalesced into the next); a non-wake causes a toast and no submit. {#ac-7}
 8. **AC-8 (R11).** With a foreign `mcp__refmatrix__rmx_context` in `$.tool.list()`, zero
    registrations and the line. {#ac-8}
-9. **AC-9 (R12, R16).** The six probe files (R12's five, R16's P-send) exist and each has its decision row in this spec. {#ac-9}
+9. **AC-9 (R12).** The open probes of R12 (P-sub-state, P-interactive, P-print's UI half,
+   P-collision, P-socket) have files under `eval/mod_probe/`, and each probe, answered or open, has
+   its decision row in this spec. {#ac-9}
 10. **AC-10 (R1).** A hook forced to throw (a mocked `http.fetch` that throws a non-Error) leaves a
     transcript line naming the event, and the tool call still answers with an error result. {#ac-10}
 11. **AC-11 (R14, R15).** With `options.health_interval_s = 5`, the mocked clock shows a tick
     every 5 s; `bus_wake: "off"` makes a `wake` message toast instead of submitting; after
-    `session.end` no timer fires. {#ac-11}
-12. **AC-12 (R16).** A mocked `session.receive` from a peer is passed on byte-identical and one
-    `rmx_bus_pub` request names `proj:<store>:peer`; a failing publish still passes it on. {#ac-12}
+    `session.end` reason `exit` no timer fires. {#ac-11}
+12. **AC-12 (R1, R10, d1 — r2 b1).** Simulated `/clear`: `session.end` reason `clear`, then
+    `$.session.id()` answers a new id. The mocked clock still fires the health tick, the next
+    `rmx_store_identity` and `rmx_bus_wait` requests carry the NEW session / agent, 24.6's
+    `RMX_MOD_LIVE` was set within the last 15 s, and the outbox and `$.state` `health` / `focus`
+    are keyed to the new id. {#ac-12}
+13. **AC-13 (d4 — r2 b2).** Through `$.tool.call({ tool: "mcp__refmatrix__rmx_context", ref:
+    "x" })` under `claude plugin test`, with `http.fetch` answered by a recorded 24.2 body holding a
+    real verb dict: the call resolves with `text` equal to `JSON.stringify(dict)` and no engine
+    refusal; with a recorded 422 body it resolves `isError: true` with `"VerbError: …"`. If the
+    engine refuses a hook's `isError` answer, the test records it and d4 falls back to the string
+    `"error: <type>: <message>"` with a revision row. {#ac-13}
 
 ## Test strategy {#test-strategy}
 
 TypeScript tests under `mod/tests/` (`handshake.test.ts`, `routing.test.ts`, `health.test.ts`,
-`outbox.test.ts`, `pane_bus.test.ts`, `config.test.ts`, `peer.test.ts`), run by `claude plugin test mod` from
+`outbox.test.ts`, `pane_bus.test.ts`, `config.test.ts`, `clear.test.ts`, `result_shape.test.ts`), run by `claude plugin test mod` from
 `tests/test_task24_4_mod_gates.py` (24.4 R7), logs captured. Host bodies come from recorded 24.2 /
 24.3 responses committed under `mod/tests/fixtures/` (produced by the Python suites, not written by
-hand). Probes (R12) run in a scratch project with `--plugin-dir`, never against this repo's live
+hand). The op answers beneath the plugin and `mock.clock` are doubles of the host and are registered
+in `workflow/test_mock_registry.md` (r2 m3). Probes (R12) run in a scratch project with `--plugin-dir`, never against this repo's live
 store or settings. RED first: each test file committed failing against a `register` that does
 nothing, logged to `workflow/review-output/task24_5-red.log`. {#test-strategy-body}
 
@@ -214,6 +222,18 @@ nothing, logged to `workflow/review-output/task24_5-red.log`. {#test-strategy-bo
 | `mod/src/health.ts`, `mod/src/status.ts`, `mod/src/pane.tsx`, `mod/src/bus.ts` | R6, R7, R9, R10 |
 | `mod/src/outbox.ts` | R8 |
 | `mod/types/index.d.ts`, `mod/.claude-plugin/plugin.json` | the `PluginState` contract, `"types"`, `version` (R5), `userConfig` (R14) |
-| `mod/src/peer.ts` | R16 |
-| `mod/tests/*.test.ts`, `mod/tests/fixtures/` | AC-1..AC-12 |
+| `mod/tests/*.test.ts`, `mod/tests/fixtures/` | AC-1..AC-13 |
+| `workflow/test_mock_registry.md` | the TS op answers beneath the plugin (`http.fetch`, `process.run`, `store.*`, `env.get`) and `mock.clock`, each classified (r2 m3) |
 | `eval/mod_probe/` | R12's records |
+
+## Revision r2 (2026-10-20, ch-bsd r2 03c2d1f) {#rev-r2}
+
+| finding | change |
+|---|---|
+| b1 `/clear` killed the timers and the marker | d1, R1, R10, R15: timers, bus loop and marker survive reason `clear` and re-key; AC-11 now uses reason `exit`; new AC-12 through a simulated clear |
+| b2 tool results were objects the engine rejects | d4: `JSON.stringify` string result, `isError` errors; new AC-13 through `$.tool.call` |
+| s9 SendMessage→bus mirroring served no goal | d15, R16, AC-12 (old), P-send removed; listed in 24.8's candidates |
+| s2 secret scrub (24.6) | `scrub_secrets` removed from R14 |
+| m3 TS doubles unregistered | test strategy + files: registered in `workflow/test_mock_registry.md` |
+| m4 probe evidence moved | R12: P-sub-tools and P-print answered from [[plan-24-mod-transport#probes]] (`-p`); P-interactive added for interactive parity |
+

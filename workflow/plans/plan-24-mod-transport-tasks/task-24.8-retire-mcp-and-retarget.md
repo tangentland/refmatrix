@@ -30,6 +30,8 @@ rel: amends -> [[task-21.2-precise-identifier-context]]
 rel: amends -> [[task-21.3-indexed-symbol-nudge]]
 rel: amends -> [[task-21.4-surfaces-and-nl-ranking]]
 rel: related-to -> [[feedback_mcp_server_reload_and_orphans]]
+rel: derives-from -> [[plan-24-mod-transport#probes]]
+rel: derives-from -> [[bsd-plan24-spec-review-r2-03c2d1f]]
 rel: implements -> [[exploration-claude-code-mod-transport#facilities-priority]]
 
 ## Why {#why}
@@ -45,7 +47,7 @@ records. This task does both. {#why-lead}
 | # | decision | reason |
 |---|----------|--------|
 | d1 | `rmx mcp` STAYS as a command and module; it is removed only from the Claude Code path (this repo's `.mcp.json`, the docs' Claude Code setup) | refmatrix is usable from any MCP client (Claude Desktop, other agents); `mcp.py` is a thin adapter over the same verbs, so keeping it costs no drift (the parity gate covers it); removing it would end that use for no gain |
-| d2 | The retirement is GATED: it lands only when P-sub-tools (24.5) shows registered tools serve subagents and P-print shows them callable under `claude -p`; otherwise this task stops and the user decides | MCP tools reach subagents and `-p` today; removing them before the mod is shown to would take tools away from those contexts |
+| d2 | The retirement is GATED on evidence that mod tools serve every context MCP tools serve today. Under `claude -p` that evidence exists: subagents are offered and call mod tools and the mod serves them ([[plan-24-mod-transport#probes]], logs in `workflow/review-output/plan-24-probes/`). Still required: the same in an INTERACTIVE session (24.5's P-interactive); a negative stops this task and the user decides | MCP tools reach subagents and every session kind today; removing them before the mod is shown to would take tools away (r2 m4) |
 | d3 | The `claude/channel` bus bridge stays in `mcp.py` for MCP clients; on Claude Code the bus wake (24.5 R10) replaces it | the bridge is an experimental capability of the MCP transport; the mod has a native wake |
 | d4 | The pid-pointer ladder and `_LONG_LIVED` are KEPT: the shell fallback and non-Claude-Code MCP clients still need them; the Claude Code path no longer reaches them | G1 retires the ladder on the Claude Code path, not everywhere; the fallback must keep working |
 | d5 | Tool names do not change (24.4 d4: `mcp__refmatrix__rmx_*`), so agent overlays, skills and memories that name them need no edit | an edit sweep across templates and memories would be churn with risk and no gain |
@@ -53,9 +55,11 @@ records. This task does both. {#why-lead}
 
 ## Requirements {#requirements}
 
-1. **R1 — the gate (d2).** Before any change: `eval/mod_probe/sub_tools.json` and `print.json`
-   (24.5 R12) both positive, cited in the implementation summary. Negative → stop, write the
-   finding to the plan, ask the user. {#r1}
+1. **R1 — the gate (d2).** Before any change, the implementation summary cites (a)
+   [[plan-24-mod-transport#probes]] and `workflow/review-output/plan-24-probes/probe-run2.*` for
+   `-p` (subagent offer, call and service: yes), and (b) `eval/mod_probe/interactive.json` (24.5
+   P-interactive) positive for the same three in an interactive session. (b) negative → stop,
+   write the finding to the plan, ask the user. {#r1}
 2. **R2 — `.mcp.json`.** Remove the `refmatrix` server entry (the file's only entry: delete the
    tracked file). The mod's collision rule (24.5 d13) then stops firing on this repo, and the
    mod's tools register; the implementation summary records the first session where `rmx mod
@@ -76,16 +80,16 @@ records. This task does both. {#why-lead}
    | held item | what changes against the mod |
    |---|---|
    | [[task-16.1-argv-faithful-learner]] | For Claude Code calls the learner is fed the output the agent SAW: 24.6's `tool.call` passes `ran.text` (and whether it was cut) to a new engine verb `rmx_grep_learn(argv, cwd, output, truncated)`; the re-run of the caller's search remains ONLY for the shell shim (terminals, non-Claude callers). The "corpus hits only, each line once" rule is unchanged |
-   | [[task-16.2-invisible-shim]] | Scoped to non-Claude-Code shells. On Claude Code the Bash command is no longer rewritten to `rmxgrep`: `tool.call` observes it unchanged, so 24.6's `rmx_shell_rewrite` step and the user-global grep-rewrite-guard retire on that path (the guard's stand-down becomes permanent there) |
-   | [[task-16.3-grep-tool-hook-and-docs]] | The Grep-tool hook becomes 24.6's `tool.call` on Grep: argv is built from the tool's input, the learner gets the real result; `grep-tool-teach.sh` and `rmx_grep_teach` retire on Claude Code. The docs half ("grep is observed") is unchanged |
+   | [[task-16.2-invisible-shim]] | Scoped to non-Claude-Code shells. On Claude Code the Bash command is no longer rewritten to `rmxgrep`: `tool.call` observes it unchanged, so the user-global grep-rewrite-guard (still a shell hook beside the mod after 24.6) retires on that path; the candidate verb `rmx_shell_rewrite` (R7) is NOT built for Claude Code |
+   | [[task-16.3-grep-tool-hook-and-docs]] | The Grep-tool hook becomes 24.6's `tool.call` on Grep: argv is built from the tool's input, the learner gets the real result; `grep-tool-teach.sh` (still a shell hook after 24.6) retires on Claude Code, and the candidate `rmx_grep_teach` (R7) is not needed there. The docs half ("grep is observed") is unchanged |
    | [[task-16.4-measurement]] | "What the agent actually saw" is now recorded, not reconstructed: the measurement reads the observed outputs (complete, with the cut flag) from the learner's input log; the re-run comparison stays for the shim path only |
    | [[task-16.5-explicit-grep-hands-off]], [[task-16.6-learned-row-validation]] | No change (CLI semantics and store-side validation); each gains a one-line note that it is unaffected by 24.x |
    | [[task-19.5-measure-delivery]] R1 | The hook-output threshold probe is replaced, for the mod path, by recording the engine's stated limits for `prompt.submit` `context` (past 100,000 characters per entry, 200,000 together, the model reads a head and a path) and verifying them once in a scratch project; the shell probe runs only for contexts 24.6 R7 left on the fallback. R2-R5 add the mod as a delivery channel source (24.2 R9 rows, `invocation: "mod"`) |
-   | [[task-19.6-phased-context-and-topic-cache]] | Injection lands through 24.6's two routes: session-fixed blocks in the `refmatrix:session` compose section, per-prompt blocks in `prompt.submit` context. R5's versioned blocks build on `refmatrix.injected` and `rmx_scan_prompt(skip_block_shas)` (the verb decides and emits `unchanged`); R6's deltas are verb output; R4's budget stays verb-side; R8's compaction lever becomes 24.6's `session.compact` hook rewriting `instructions` (24.6 passes them unchanged; this is where that changes). R4's per-prompt budget reads the session's real headroom from `session.measure` (context fill and rate-limit windows, pushed per turn) instead of a fixed allotment — the same retarget applies to plan-19's other budget tasks (19.1) as a stated input, not a rewrite of their method |
+   | [[task-19.6-phased-context-and-topic-cache]] | Injection lands through 24.6's two routes: session-fixed blocks in the `prompt.context` block or the `refmatrix:memory` section (24.6 d2, d4b), per-prompt blocks in `prompt.submit` context; the primer stays CLAUDE.md's import (24.6 d4) unless 24.6's P-agent-route gives subagents another route. R5's versioned blocks build on `refmatrix.injected` and `rmx_scan_prompt(skip_block_shas)` (the verb decides and emits `unchanged`); R6's deltas are verb output; R4's budget stays verb-side; R8's compaction lever becomes 24.6's `session.compact` hook rewriting `instructions` (24.6 passes them unchanged; this is where that changes). R4's per-prompt budget reads the session's real headroom from `session.measure` (context fill and rate-limit windows, pushed per turn) instead of a fixed allotment — the same retarget applies to plan-19's other budget tasks (19.1) as a stated input, not a rewrite of their method |
    | [[task-21.2-precise-identifier-context]] | Not hook-shaped: `--brief` becomes an `rmx_context(brief=True)` parameter so the mod tool and MCP reach it; the replay harness calls the verb. Otherwise unchanged |
    | [[task-21.3-indexed-symbol-nudge]] | The nudge is a `tool.call` hook on Bash / Grep that returns `ran` with one `context` line (`ToolCallResult.context`: read after the result, never shown); R0's timing harness times the 24.2 HTTP verb call, not a hook spawn; R4's off switch is a mod `userConfig` field plus `RMX_CONTEXT_NUDGE`; R5's "generated by hooks.py" becomes "generated in the mod's event map"; the shell variant exists only for fallback contexts. ALSO evaluated as an arm: the nudge at the source, a `tool.describe` hook on Grep (and Bash) whose description points at `rmx_context` for indexed identifiers — cached per session, so it costs no per-call request; R0 measures both arms |
    | plan-21's usage telemetry ([[task-21.1-context-usage-telemetry]], shipped) | No rewrite; a follow-up spec adds two event sources: `turn.step` / `turn.start` for per-step model usage beside each recall delivery, and `mcp.call` for OTHER MCP servers' calls entering `used` evidence and STM |
-| [[task-21.4-surfaces-and-nl-ranking]] | "Every steering surface" adds the generated tool descriptions (they come from the verbs' descriptions, so one edit covers mod and MCP) and the `refmatrix:session` compose section's preamble; the rule is written into the verbs and the section, not into a hook's printed text |
+   | [[task-21.4-surfaces-and-nl-ranking]] | "Every steering surface" adds the generated tool descriptions (they come from the verbs' descriptions, so one edit covers mod and MCP) and the `refmatrix:memory` section's preamble (24.6 d2); the rule is written into the verbs and the section, not into a hook's printed text |
 
 6. **R6 — the plans.** `plan-16`, `plan-19`, `plan-21` and `plan-24` task tables record the
    rewrites (status `drafting`), and `workflow/plan-of-plans.md` moves them out of "held". {#r6}
@@ -107,10 +111,14 @@ records. This task does both. {#why-lead}
    | `$.model.complete` | subject / cluster labels and tag suggestions |
    | `session.receive` / `session.send` | the bus as real deliveries (24.5's P-send result decides) |
    | `telemetry.log` / `telemetry.mark` | join 21.x usage with Claude Code's own OTel records |
+   | `session.append` rewrite (moved from 24.6, r2 s2) | secret scrubbing of tool results; if specified, it must be limited to Bash output and never file-reading tools, with an AC that a Read → Edit round-trip leaves the file's bytes unchanged |
+   | `tool.call` rewrite + `rmx_shell_rewrite` / `rmx_grep_teach` verbs (moved from 24.2a / 24.6, r2 s9) | the grep guard and teach ping as engine verbs, for non-Claude-Code contexts only if plan-16's retarget still wants them |
+   | `session.receive` / `session.send` mirroring (moved from 24.5, r2 s9) | peer messages recorded on the bus (`proj:<store>:peer`), observe-only |
+   | `tool.check` (moved from 24.6, r2 s9) | the enforce-test-to-file / enforce-rmx-grep guards as a TS port with a shared parity case table against the shell scripts |
 
 ## Acceptance criteria {#acceptance}
 
-1. **AC-1 (R1).** The implementation summary cites both probe files with positive results, or
+1. **AC-1 (R1).** The implementation summary cites the `-p` probe evidence and the interactive probe file, both positive, or
    the task is closed blocked with the user's decision recorded. {#ac-1}
 2. **AC-2 (R2, R4).** `.mcp.json` is gone from the tree; R4's walk finds no Claude Code
    `rmx mcp` caller; `tests/test_mcp_*.py` still pass (the server works for other clients). {#ac-2}
@@ -120,7 +128,7 @@ records. This task does both. {#why-lead}
    change of R5's table, an `amends` edge to this task, status `drafting`, and lints clean; the
    plan tables and plan-of-plans agree. {#ac-4}
 
-5. **AC-5 (R7).** `workflow/plan-of-plans.md` lists the eleven candidates, each naming its
+5. **AC-5 (R7).** `workflow/plan-of-plans.md` lists the fifteen candidates, each naming its
    facility and the primitive it builds on; none has a task spec yet. {#ac-5}
 
 ## Test strategy {#test-strategy}
@@ -140,3 +148,13 @@ walk fails while `.mcp.json` exists, logged to `workflow/review-output/task24_8-
 | `workflow/plans/plan-16-invisible-grep-shim-tasks/task-16.1..16.6`, `plan-19-…/task-19.5`, `task-19.6`, `plan-21-…/task-21.2..21.4` | R5 |
 | `workflow/plans/plan-16-invisible-grep-shim.md`, `plan-19-adaptive-memory-budget.md`, `plan-21-agent-context-usage.md`, `plan-24-mod-transport.md`, `workflow/plan-of-plans.md` | R6 |
 | `tests/test_task24_8_mcp_retired.py` | AC-2 |
+
+## Revision r2 (2026-10-20, ch-bsd r2 03c2d1f) {#rev-r2}
+
+| finding | change |
+|---|---|
+| m4 the gate named probe files that do not exist; evidence is `-p` only | d2 / R1 / AC-1 cite [[plan-24-mod-transport#probes]] and `workflow/review-output/plan-24-probes/`; interactive parity (24.5 P-interactive) is the remaining gate |
+| m2 `refmatrix:session` section does not exist | 19.6 and 21.4 rows name 24.6's `prompt.context` block and `refmatrix:memory` section; the primer stays the CLAUDE.md import |
+| s2 secret scrub | R7 candidate, with the Bash-only limit and the round-trip AC it would need |
+| s9 scope creep | R7 candidates: the grep rewrite / teach verbs, SendMessage→bus mirroring, the `tool.check` port; 16.2 / 16.3 rows retire the still-running shell hooks instead of 24.6 wiring |
+
