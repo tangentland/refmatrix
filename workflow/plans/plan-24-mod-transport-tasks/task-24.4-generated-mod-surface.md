@@ -51,7 +51,7 @@ the busy / absent rule (busy never spawns, D4) needs a twin held to the original
 | d4 | Tool names are the verb names: `$.tool.register({ name: "rmx_context" })` lists as `mcp__refmatrix__rmx_context`, the name the `refmatrix` MCP server's tool has today | prompts, skills, agent overlays and memories that name `mcp__refmatrix__rmx_*` keep working through 24.8 |
 | d5 | Only `surface == "model"` verbs become tool specs; every verb (both surfaces) becomes a route entry with its `tier` | the model calls tools; the mod's own hooks call engine verbs |
 | d6 | The classifier twin is HAND-WRITTEN (`mod/src/transport.ts`) and held by a case table generated from `tests/fixtures/transport_errors.json`, which pytest runs against Python and `claude plugin test` runs against TypeScript | the twin classifies TS-side rejections no Python can raise; what can be shared is the cases and the expected class and words |
-| d7 | A client-side wait that outlives its bound is BUSY, as Python's timeout is | `HttpInit` has no timeout or abort; the mod races `$.http.fetch` against a `$.clock.after` timer, and an abandoned fetch is a request the daemon may still be serving (24.2 R7 holds the server-side bound) |
+| d7 | No client-side race timer: the engine aborts EVERY `$.http.fetch` at 30 s (`aborted: no complete answer within 30000ms`) and a raced-away fetch is not cancelled ([[plan-24-mod-transport#probes-batch2]]); the bound is the server's `deadline_s ≤ 25` (24.5 R3) under the engine's 30 s, and the engine abort is classified BUSY ("not confirmed" for a write) | a race frees nothing and the hook budget pauses during `$` calls, so the engine's abort is the only client bound there is (r3) |
 | d8 | The case table's TypeScript inputs come from a recorded probe, not from guesses | the types declare `$.http.fetch`'s resolution, not its rejection shapes; the twin may only match what the engine actually throws |
 | d9 | `claude plugin validate` and `claude plugin test` are build gates run from pytest; a missing `claude` binary is a FAILURE naming the gap, never a skip | "ALL tests run"; the cross-language half of the parity gate cannot be optional |
 | d10 | The mod's directory is `mod/` at the repo root (D5), its plugin name `refmatrix` | D5's one source; the name makes the `mcp__refmatrix__` prefix (d4) |
@@ -65,9 +65,9 @@ the busy / absent rule (busy never spawns, D4) needs a twin held to the original
      `isDeferred` = `deferred`), `ROUTES: Record<string, { tier: "store" | "hub" | "both";
      surface: "model" | "engine"; writes: boolean | readonly string[]; hash: string }>`;
    - `mod/src/generated/client.ts` — `callVerb($, target, name, args, opts)` where `target` is
-     `{ socketPath }`, `opts` = `{ session, caller?, deadlineS?, idempotencyKey?, waitMs }`; POSTs
-     24.2 R5's body to `http://rmx/v1/verbs/<name>` with `X-Rmx-Schema`, races the fetch with
-     `$.clock.after(waitMs)`, parses 24.2 R6's body, and returns `{ ok: true, result }` or throws
+     `{ socketPath }`, `opts` = `{ session, caller?, deadlineS?, idempotencyKey? }` (`deadlineS` capped at 25);
+     POSTs 24.2 R5's body to `http://rmx/v1/verbs/<name>` with `X-Rmx-Schema`, awaits the fetch
+     (no race, d7), parses 24.2 R6's body, and returns `{ ok: true, result }` or throws
      a typed error from `errors.ts`;
    - `mod/src/generated/errors.ts` — `VerbArgsError`, `SessionRequired`, `SessionUnresolved`,
      `SchemaMismatch` (with both hashes), `VerbBusyError`, `VerbAbsentError` (a dependency, with
@@ -82,19 +82,34 @@ the busy / absent rule (busy never spawns, D4) needs a twin held to the original
    unified diff per file; `scripts/lint-gmd.sh`'s neighbour `scripts/check-generated.sh` runs it
    with `rmx install-hooks --check`. {#r2}
 3. **R3 — the twin.** `mod/src/transport.ts` exports `classifyTransportError(err, { op, socketPath,
-   waitMs, write }): TransportAbsent | TransportBusy | TransportUndialable` with Python's rules and
-   words: missing / refused socket → absent "not running … found no listening socket"; path too
-   long → undialable (NEVER absent: absent licenses the D4 spawn); the race timer → busy "did not
-   answer within Ns", plus "the write is not confirmed …" when `write`; anything else (reset,
-   empty reply, a body that is not 24.2's JSON) → busy naming the error. An HTTP response is never
-   classified here: a status means the host answered (24.2 R6 owns it). {#r3}
+   write }): TransportAbsent | TransportBusy | TransportUndialable`. The engine throws a
+   `HooksError` with NO `code`, so the twin parses `err.message` (r3, [[plan-24-mod-transport#probes-batch2]]):
+   `/ failed: (E[A-Z]+): /` gives the errno, and `/aborted: no complete answer within (\d+)ms/` the
+   engine abort. Five shapes, with Python's words: {#r3-list}
+   - `ENOENT`, `ECONNREFUSED` → absent "not running … found no listening socket";
+   - `ENAMETOOLONG` → undialable (NEVER absent: absent licenses the D4 spawn);
+   - the engine's 30 s abort → busy "did not answer within 30s", plus "the write is not confirmed
+     … may still complete" when `write`;
+   - any other errno (reset, broken pipe) or an unparseable message → busy naming the message;
+   - a response that is not 24.2's JSON → busy naming it.
+
+   An HTTP response with 24.2's body is never classified here: a status means the host answered
+   (24.2 R6 owns it). {#r3}
 4. **R4 — the case table.** `tests/fixtures/transport_errors.json`: rows `{case, py: {exc,
    args}, ts: {rejection, from_probe}, expect: {class, words: [...]}}` for missing, refused,
-   too-long, timeout (read and write), reset, empty reply. pytest constructs each `py` exception
+   too-long, engine abort (read and write), an unknown errno, and a non-JSON body. The `ts`
+   cells of the first four are the probe's EXACT strings, e.g. `{"name": "HooksError", "message":
+   "refmatrix: $.http.fetch(http://rmx/v1/verbs/rmx_context) over <socketPath> failed: ENOENT:
+   ENOENT: Was there a typo in the url or port?"}` and `{"name": "HooksError", "message": "…
+   aborted: no complete answer within 30000ms"}` (with the probe's plugin and path replaced by
+   the mod's; the replacement is the only edit). pytest constructs each `py` exception
    and asserts `classify_transport_error`'s class and that each `words` fragment appears; the TS
    test feeds each `ts.rejection` (an object as the probe recorded it) to the twin with the same
    assertions. {#r4}
-5. **R5 — the probe (P-fetch), before R3 is written.** A scratch mod under `claude --plugin-dir
+5. **R5 — the probe (P-fetch).** ANSWERED for missing, refused, a 124-byte path and the 30 s
+   abort by batch 2 ([[plan-24-mod-transport#probes-batch2]]); the record is copied into
+   `eval/mod_probe/fetch_rejections.json`. Still to run: a regular file, a reset, and paths of
+   exactly 101 and 104 bytes. The original method: a scratch mod under `claude --plugin-dir
    <scratch>` in a scratch project (never this repo's settings) calls `$.http.fetch(url, {
    socketPath })` against: a path with no file; a regular file; a socket bound but not listening;
    a path of 101, 104 and 110 bytes; a server that accepts and never answers (stopped by the
@@ -128,7 +143,7 @@ the busy / absent rule (busy never spawns, D4) needs a twin held to the original
    Because the `ts` cells are COPIED from the probe, equality alone proves nothing about the twin
    (r2 m3): the `expect` column is written from Python's rules BEFORE the probe values are pasted
    (its commit precedes the probe's), and a mutation run over a copy of `transport.ts` (swap the
-   absent / undialable branches; make the race timer absent; drop the write wording) must fail the
+   absent / undialable branches; classify the engine abort as absent; drop the write wording) must fail the
    TS half for each mutation. {#ac-3}
 4. **AC-4 (R6).** Removing one model verb's `TOOLS` entry from the generated file (a copy) fails
    the parity gate naming the verb. {#ac-4}
@@ -162,4 +177,12 @@ AC-1 / AC-4 is a fixture, listed in `workflow/test_mock_registry.md`. RED first,
 | finding | change |
 |---|---|
 | m3 AC-3 passed by construction (cells copied from the probe) | AC-3: `expect` written before the probe values; a three-mutation run over `transport.ts` must fail the TS half |
+
+## Revision r3 (2026-10-20, probe batch 2) {#rev-r3}
+
+| finding | change |
+|---|---|
+| fetch failures are a `HooksError` with the errno only in the message | R3 parses the message; R4 uses the probe's exact strings |
+| the engine aborts any fetch at 30 s; a race does not cancel it | d7: no race; the abort is a fifth shape, busy / not confirmed; client `deadlineS` capped at 25 |
+| P-fetch answered in part | R5: answered cases recorded; regular file, reset, 101 / 104 bytes still to run |
 

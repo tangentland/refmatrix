@@ -57,11 +57,13 @@ records. This task does both. {#why-lead}
 
 1. **R1 — the gate (d2).** Before any change, the implementation summary cites (a)
    [[plan-24-mod-transport#probes]] and `workflow/review-output/plan-24-probes/probe-run2.*` for
-   `-p` (subagent offer, call and service: yes), and (b) `eval/mod_probe/interactive.json` (24.5
-   P-interactive) positive for the same three in an interactive session. (b) negative → stop,
+   `-p` (subagent offer, call and service: yes), and (b) `eval/mod_probe/interactive.json` positive for the same three in an interactive session
+   (batch 2 #p8 answered interactive `/clear` behaviour, not subagent tool service; 24.5 R12). (b) negative → stop,
    write the finding to the plan, ask the user. {#r1}
 2. **R2 — `.mcp.json`.** Remove the `refmatrix` server entry (the file's only entry: delete the
-   tracked file). The mod's collision rule (24.5 d13) then stops firing on this repo, and the
+   tracked file). Until then the two coexist safely: the mod's `$.tool.register` throw is caught and
+   its handlers pass `next(e)` for tools it did not register (24.5 d13, AC-8; batch 2 #p7). The
+   mod's collision rule then stops firing on this repo, and the
    mod's tools register; the implementation summary records the first session where `rmx mod
    status` shows them served (24.7 d8). {#r2}
 3. **R3 — docs.** `CLAUDE.md` `#mcp-servers` and `docs/INTEGRATION.md`: Claude Code uses the mod;
@@ -157,4 +159,11 @@ walk fails while `.mcp.json` exists, logged to `workflow/review-output/task24_8-
 | m2 `refmatrix:session` section does not exist | 19.6 and 21.4 rows name 24.6's `prompt.context` block and `refmatrix:memory` section; the primer stays the CLAUDE.md import |
 | s2 secret scrub | R7 candidate, with the Bash-only limit and the round-trip AC it would need |
 | s9 scope creep | R7 candidates: the grep rewrite / teach verbs, SendMessage→bus mirroring, the `tool.check` port; 16.2 / 16.3 rows retire the still-running shell hooks instead of 24.6 wiring |
+
+## Revision r3 (2026-10-20, probe batch 2) {#rev-r3}
+
+| finding | change |
+|---|---|
+| a same-named MCP server makes `$.tool.register` throw; the plugin's `tool.call` hook intercepts its tools | R2: coexistence is safe once 24.5 d13 / AC-8 land (register in `try`, handlers pass unregistered tools on); removal is still this task's |
+| batch 2 answered interactive `/clear`, not interactive subagent tool service | R1 (b): the gate stays on interactive subagent service |
 

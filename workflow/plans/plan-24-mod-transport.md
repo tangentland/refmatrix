@@ -117,6 +117,27 @@ from the tool path (the agent calls `rmx_context`), the agent definition, or an 
 (4) Not yet probed: `$.state` sharing between parent and subagent, background agents and
 teammates, interactive (non-`-p`) parity. {#probes-consequences}
 
+### Batch 2 (2026-10-20) {#probes-batch2}
+
+Run with throwaway mods on Claude Code 2.1.304 (`--model haiku`; `-p` runs with
+`--setting-sources project --strict-mcp-config`; probe 8 interactive under `screen`). Full write-up
+and logs: `workflow/review-output/plan-24-probes/batch2-results.md` and `batch2/` beside it (local,
+gitignored). {#probes-batch2-method}
+
+| probe | result | evidence (batch2-results.md section, log line) |
+|---|---|---|
+| `$.state` and `$.session.id()` main ↔ subagent | **shared** (foreground and background) | #p1: `rp_get agentId=a4c396546e64ce27e sid=64f3f96f-… value="MAIN-WAS-HERE" ver=1` |
+| subagent context routes | **reach the subagent:** `agent.spawn` prompt rewrite, `session.append` rewrite of the subagent's `door=prompt` row, `$.session.append({ agentId })`, `prompt.context` blocks (computed once, shared). **Do not fire for it:** `prompt.section`, `prompt.compose`. `skill.prompt` never fired: **UNKNOWN** | #p2: subagent quoted `MOD-SPAWN`, `PELICAN`, `OSPREY`, `HERON`; `prompt.section` rows only at 18:50:09.329 |
+| subagent turn attribution | `turn.step` and `turn.complete` carry `agentId`; `turn.start` fires **without** one | #p2: `turn.step agentId=a4c396546e64ce27e idx=0`; `turn.complete agentId=a4c396546e64ce27e reason=answer` |
+| background agent | behaves like a subagent: tools served, hooks see it, all four routes land | #p3: `agent.spawn … bg=true`; `rp_ping agentId=a3e23341b458ceedd n=5` |
+| settings hook sees `$.env.set` | **yes** under `-p` (and the Bash tool does) | #p4: `settings-hook.out: RMX_MOD_PROBE=[1]` |
+| `$.http.fetch` failure shape | `HooksError`, no `code`; the errno only in the message: `failed: ENOENT: ENOENT: …`, `ECONNREFUSED`, `ENAMETOOLONG` (124-byte path), each in 1-2 ms | #p5 table, cases a-c |
+| a hung fetch | the engine aborts ANY fetch at 30 s: `aborted: no complete answer within 30000ms`; a race timer does not cancel it; the hook budget clock pauses during `$` calls; `HttpInit` has no signal | #p5 cases d, d2 (30003 ms / 30010 ms) |
+| two plugin dirs with one name | **first wins**; the second logs `hooks module not loaded: another plugin of that name loads first` | #p6 |
+| plugin vs MCP server of the same name | `$.tool.register` **throws** ("the session already has an MCP server named …"), which skips the rest of that `session.start` hook; the plugin's `tool.call` hook still **intercepts** `mcp__<name>__*` calls; unhooked tools pass to the server | #p7: `session.start hook skipped: threw pc: $.tool.register: …` |
+| interactive `/clear` | `session.end` reason `clear`, no `session.start`, a new `$.session.id()`, `$.clock.every` survives, **`$.state` wiped**; `prompt.context` re-fires at the next prompt; `prompt.section` re-runs every prompt interactively | #p8: `session.end reason=clear …`, `tick 24 sid=62d27609-…`, `rp_get value=undefined ver=0` |
+| not tested | an installed plugin vs a `--plugin-dir` copy of one name; a socket path of exactly 101 or 104 bytes | #p5, #p6 |
+
 ## Out of scope {#out-of-scope}
 
 - Making `scan-prompt` or `memory recall` faster: their cost is daemon work

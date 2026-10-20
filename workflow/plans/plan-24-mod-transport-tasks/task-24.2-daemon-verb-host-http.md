@@ -109,7 +109,9 @@ execution path of its own, not a socket. {#why-lead}
    | queued read past its deadline | 504 | never run (bug-116); writes are never dropped |
    | anything else | 500 | logged with its traceback to `rmxd.log`; `_fast_exit_if_invalidated` applies |
 
-7. **R7 — budgets.** `deadline_s` (default 60, max 600) bounds the request: the host passes it as
+7. **R7 — budgets.** `deadline_s` (default 25, max 25 for a synchronous request: the mod's fetch
+   is aborted by the engine at 30 s, [[plan-24-mod-transport#probes-batch2]]; a longer verb is
+   submitted per R13, whose job deadline may be up to 600) bounds the request: the host passes it as
    `timeout` to a verb that declares `timeout` and the caller left it unset, and as `deadline_s`
    to every `dispatch` the verb makes. A read whose wait in its lane's queue already exceeds its
    deadline is answered 504 without running; a write is never dropped, and its wait for its op is
@@ -143,6 +145,17 @@ execution path of its own, not a socket. {#why-lead}
     one `TRANSPORT_CLI` entry (a new map with one reason). {#r11}
 12. **R12 — the ADR.** d12, written and lint-clean before the GREEN commit; `docs/adr/0000` and
     `docs/INDEX.md` rows. {#r12}
+13. **R13 — submit-then-poll (r3).** A request with `"mode": "submit"` is validated (schema,
+    session, args, idempotency reservation) and answered at once `202 {"ok": true, "job_id":
+    ...}`; the verb runs on a third lane, `verb_job_pool` (`RMX_DAEMON_VERB_JOB_WORKERS`, default
+    2), under its own `deadline_s` (≤ 600) with the same `CALLER`, dispatch and error mapping. A
+    new store-tier verb `rmx_job(job_id: str, wait_s: float = 20.0)` (engine surface, read)
+    long-polls up to `wait_s` (max 20) and answers `{state: "running"}`, `{state: "done", result}`
+    or `{state: "error", error: {type, message}}` (24.2 R6's error body). Jobs are kept in memory
+    for 10 min after they end; an unknown id (expired, or lost to a daemon restart) is
+    `VerbError("unknown job …; the daemon restarted or the job expired")`, never a silent empty
+    answer. The registry reuses the ingest-job shape (`_register_ingest_job`). Which (verb,
+    action) pairs the mod submits is 24.5 d16's rule, computed by `modgen`. {#r13}
 
 ## Acceptance criteria {#acceptance}
 
@@ -183,6 +196,10 @@ execution path of its own, not a socket. {#why-lead}
     table while it runs and is dropped (504) past its deadline in the `cli_pool` queue; a verb that
     reads `verbs.CALLER` inside the lane sees the request's session (a test verb in a copied
     registry returns it). {#ac-12}
+13. **AC-13 (R7, R13).** A synchronous request with `deadline_s: 60` is clamped to 25 (the row
+    shows it); a fixture verb that sleeps 40 s submitted with `mode: "submit"` answers 202 within
+    1 s, `rmx_job` answers `running` with each call returning within `wait_s`, then `done` with the
+    result; after a daemon restart the same id answers the `unknown job` error. {#ac-13}
 
 ## Test strategy {#test-strategy}
 
@@ -199,7 +216,7 @@ of AC-6 is registered into a copied `VERBS` for the test only and listed in
 |---|---|
 | `src/refmatrix/httpsock.py` | new: the unix-socket HTTP server, request parsing, the R6 error map, the R9 row (shared with 24.3) |
 | `src/refmatrix/daemon.py` | `dispatch` + `dispatch_fn` (R1, d8), the two verb lanes, `http_socket_path`, bind + sun_path check (R3, R4), shutdown wiring (R10), identity `http_*` fields, idempotency ledger (R8) |
-| `src/refmatrix/verbs.py` | in-host short-circuit in `_call` / `require_daemon` / `snapshot_read` / `local_write` / `global_write` (R2); `run_request()` used by the host and `rmx verb run` |
+| `src/refmatrix/verbs.py` | `rmx_job` (R13); in-host short-circuit in `_call` / `require_daemon` / `snapshot_read` / `local_write` / `global_write` (R2); `run_request()` used by the host and `rmx verb run` |
 | `src/refmatrix/cli.py` | `rmx verb run` (R11) |
 | `src/refmatrix/telemetry.py` | the mod row fields (R9) |
 | `docs/adr/0005-verb-host-http.md`, `docs/adr/0000-adr-overview.md`, `docs/INDEX.md` | R12 |
@@ -216,4 +233,10 @@ of AC-6 is registered into a copied `VERBS` for the test only and listed in
 | s6(e) `CALLER` and `submit` | d12b: set inside the lane thread, stated; AC-12 |
 | s7 rows did not join 24.0's | R9: 24.0 R2's field set (`t_start_ms` / `t_end_ms`, the `hook_event` vocabulary, `prompt_id` from the mod); AC-8 validates against it |
 | m1 dead `global_write` short-circuit | R2: dropped |
+
+## Revision r3 (2026-10-20, probe batch 2) {#rev-r3}
+
+| finding | change |
+|---|---|
+| the engine aborts every mod fetch at 30 s | R7: synchronous `deadline_s` default and max 25; R13: submit-then-poll with a job lane and `rmx_job`; AC-13 |
 
