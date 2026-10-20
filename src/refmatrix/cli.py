@@ -1132,24 +1132,44 @@ def focus_record(kind, terse, refs):
     console.print(f"[dim]stm[/] {ev['kind']}: {', '.join(ev['refs']) or '—'}")
 
 
+def _focus_verb(**kw) -> dict:
+    """Run one `rmx_focus` action for a `focus` subcommand (task 3.7 #fam-focus, C2: the
+    command parses options, CALLS the verb, renders its dict). A refused write (task 21.1
+    D2) exits 2 with ONE stderr line naming the sources tried; any other verb error is a
+    ClickException with the verb's words."""
+    from refmatrix import verbs as _verbs
+    try:
+        return _verbs.focus(_root(), **kw)
+    except _verbs.SessionUnresolved as e:
+        click.echo(f"rmx: {e}", err=True)
+        raise SystemExit(2)
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e)) from e
+
+
+def _session_label(res: dict) -> str:
+    """` (newest ring; not resolved)` when the verb fell back to the newest ring (task 21.1
+    R9: the `read` tail is labelled, never passed off as the resolved session)."""
+    return f" {_NEWEST_RING_LABEL}" if res.get("session_source") == "latest" else ""
+
+
 @focus.command("tail")
 @click.option("-n", type=int, default=20, show_default=True)
 @click.option("-s", "--session", default=None,
               help="Session id to read. Default: active Claude session.")
 def focus_tail(n, session):
     """Show recent short-term events (defaults to the active session)."""
-    from refmatrix import stm as stm_mod
-    sess, source = _resolve_stm_session_source(session, purpose="read")
-    s = stm_mod.Stm(_root(), sess)
-    label = f" {_NEWEST_RING_LABEL}" if source == "latest" else ""
-    rows = s.tail(n)
+    res = _focus_verb(action="tail", n=n, session=session)
+    label = _session_label(res)
+    rows = res.get("events") or []
     if not rows:
-        click.echo(f"no focus events (session {s.session}){label}")
+        click.echo(f"no focus events (session {res.get('session')}){label}")
         return
-    click.echo(f"session {s.session}{label}")
+    click.echo(f"session {res.get('session')}{label}")
     for ev in rows:
         task = f" [dim]({ev['task']})[/]" if ev.get("task") else ""
-        console.print(f"[dim]{ev['ts']}[/] [cyan]{ev['kind']}[/]{task}: {ev['terse']}")
+        console.print(f"[dim]{ev.get('ts', '')}[/] [cyan]{ev.get('kind', '')}[/]{task}: "
+                      f"{ev.get('terse', '')}")
 
 
 @focus.command("context")
@@ -1228,17 +1248,21 @@ def focus_context(top, session):
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSONL events.")
 def focus_export(session, out, as_json):
     """Dump the FULL session focus log — every event, untrimmed. The ring file
-    is never trimmed, so the complete context is always retrievable here."""
-    s = _stm(session, prefer_latest=True)
-    events = s.all_events()
+    is never trimmed, so the complete context is always retrievable here.
+    `-o/--out` and `--json` are CLI-only render options: the `rmx_focus` export
+    action returns the line-numbered events and never writes a file (task 3.7 r3 M1)."""
+    res = _focus_verb(action="export", session=session)
+    events = res.get("events") or []
     if as_json:
-        text = "\n".join(json.dumps(e) for e in events)
+        text = "\n".join(json.dumps({k: v for k, v in e.items() if k != "line"})
+                         for e in events)
     else:
-        lines = [f"# focus log · session {s.session} · {len(events)} events", ""]
+        lines = [f"# focus log · session {res.get('session')} · {len(events)} events", ""]
         # Line-numbered (1-based) so the L<n> refs in `focus context` resolve.
-        for i, e in enumerate(events, 1):
+        for e in events:
             task = f" ({e['task']})" if e.get("task") else ""
-            lines.append(f"{i:>5}: {e['ts']} [{e['kind']}]{task} {e.get('terse', '')}")
+            lines.append(f"{e['line']:>5}: {e.get('ts', '')} [{e.get('kind', '')}]{task} "
+                         f"{e.get('terse', '')}")
         text = "\n".join(lines)
     if out:
         Path(out).write_text(text + "\n")
@@ -1256,17 +1280,13 @@ def focus_export(session, out, as_json):
 def focus_show(line, session, ctx):
     """Show the full event(s) at a log line (the L<n> refs in `focus context`)
     — untruncated terse + refs + task. -C N widens the window for depth."""
-    s = _stm(session, prefer_latest=True)
-    events = s.all_events()
-    lo, hi = max(1, line - ctx), min(len(events), line + ctx)
-    if line < 1 or line > len(events):
-        console.print(f"[yellow]line {line} out of range[/] (1..{len(events)})")
-        return
-    for i in range(lo, hi + 1):
-        e = events[i - 1]
-        mark = "[bold]►[/]" if i == line else " "
+    res = _focus_verb(action="show", line=line, context=ctx, session=session)
+    for e in res.get("events") or []:
+        i = e.get("line")
+        mark = "[bold]►[/]" if i == res.get("line") else " "
         task = f" [dim]({e['task']})[/]" if e.get("task") else ""
-        console.print(f"{mark} [dim]L{i}[/] [dim]{e['ts']}[/] [cyan]{e['kind']}[/]{task}")
+        console.print(f"{mark} [dim]L{i}[/] [dim]{e.get('ts', '')}[/] "
+                      f"[cyan]{e.get('kind', '')}[/]{task}")
         console.print(f"    {e.get('terse', '')}")
         if e.get("refs"):
             console.print(f"    [dim]refs: {', '.join(e['refs'])}[/]")
@@ -1282,48 +1302,26 @@ def focus_topics(top, session):
     timeline. Each topic shows its symbols + the L<n> range into the full log,
     so you can follow the session's evolution topically and drill via
     `focus show`."""
-    from refmatrix import stm as stm_mod
-    s = _stm(session, prefer_latest=True)
-    g = s.focus_graph(top=top)
-    # Cluster on the real symbols only (shell/path noise would merge topics).
-    clean = {"nodes": [n for n in g["nodes"]
-                       if n["name"].lower() not in _SS_FOCUS_NOISE],
-             "edges": g["edges"]}
-    clusters = stm_mod.cluster_focus(clean)
-    if not clusters:
+    res = _focus_verb(action="topics", top=top, session=session)
+    topics = res.get("topics") or []
+    if not topics:
         console.print("[yellow]no topics yet[/]")
-        _echo_pointer_clauses()
-        return
-    events = s.all_events()
-    first_line: dict[str, int] = {}
-    last_line: dict[str, int] = {}
-    for i, e in enumerate(events, 1):
-        for r in (e.get("refs") or []):
-            first_line.setdefault(r, i)
-            last_line[r] = i
-    weight = {n["name"]: n["weight"] for n in g["nodes"]}
-    # Order topics as a timeline by first appearance in the log.
-    def span(c):
-        ls = [first_line[n] for n in c if n in first_line]
-        return min(ls) if ls else 10**9
-    console.print(f"[bold]topics[/] · {g['events']} events · session {g['session']}")
-    for c in sorted(clusters, key=span):
-        members = sorted(c, key=lambda n: weight.get(n, 0), reverse=True)
-        lines = [last_line[n] for n in c if n in last_line] + \
-                [first_line[n] for n in c if n in first_line]
-        rng = f"L{min(lines)}–L{max(lines)}" if lines else ""
-        console.print(f"[bold]● {members[0]}[/] [dim]{rng}[/]")
-        console.print(f"    [dim]{', '.join(members[:8])}[/]")
-    _echo_pointer_clauses()
+    else:
+        console.print(f"[bold]topics[/] · {res.get('events_total', 0)} events · "
+                      f"session {res.get('session')}")
+        for t in topics:
+            lo, hi = t.get("first_line"), t.get("last_line")
+            rng = f"L{lo}–L{hi}" if lo is not None else ""
+            console.print(f"[bold]● {t['lead']}[/] [dim]{rng}[/]")
+            console.print(f"    [dim]{', '.join((t.get('members') or [])[:8])}[/]")
+    _echo_pointer_clauses(res.get("anomalies") or [])
 
 
-def _echo_pointer_clauses() -> None:
+def _echo_pointer_clauses(clauses: "list[str]") -> None:
     """`rmx focus topics`' LAST line: the scoped pointer-error clauses of this root (task 21.1
     D6, round-7 #m-4 (b)) — also when there are no topics, since a session whose pointer
     never resolved is exactly the one with an empty or wrong ring. Raw `click.echo`: the
     clauses carry a path and backticks that rich markup would mangle."""
-    from refmatrix import handoff
-    clauses = handoff.session_pointer_anomalies(_root())
     if clauses:
         click.echo("pointer errors: " + " | ".join(clauses))
 
@@ -1515,27 +1513,22 @@ def focus_note(text):
               help="STM focus only — skip long-term graph expansion.")
 @click.option("--no-autoscale", is_flag=True,
               help="Fixed budget (disable session-depth autoscaling).")
-def focus_composite(k, max_tokens, no_expand, no_autoscale):
+@click.option("--session", default=None,
+              help="Session id. Default: active Claude session (the one resolver).")
+def focus_composite(k, max_tokens, no_expand, no_autoscale, session):
     """Emit a GMD topic-composite subgraph of the current STM focus.
 
     Splits the session's focus graph — the running aggregate of every
     prompt+result — into its dominant topic threads and fuses each with its
     long-term graph neighborhood. This is the same block `scan-prompt` injects
     each turn; call it to pull the composite on demand."""
-    from refmatrix.composite import build_topic_composite
-    root = _root()
-
-    def _run(s):
-        return build_topic_composite(
-            s, root, k=k, max_tokens=max_tokens,
-            expand=not no_expand, autoscale=not no_autoscale)
-
-    out = _replica_read(_run)
-    if out:
-        click.echo(out)
+    res = _focus_verb(action="composite", k=k, max_tokens=max_tokens, no_expand=no_expand,
+                      no_autoscale=no_autoscale, session=session)
+    if res.get("composite"):
+        click.echo(res["composite"])
     else:
         console.print(
-            "[dim]no STM topic composite "
+            f"[dim]no STM topic composite for session {res.get('session')} "
             "(empty focus or no multi-node topic yet)[/]")
 
 
@@ -1669,9 +1662,9 @@ def focus_detour(label):
     """Soft branch detour — bookmark the current focus before chasing a
     related-but-off-task tangent, so you can rewind to it with `focus return`.
     No git, no stash; just a focus return-point on the L-ref'd log."""
-    m = _stm(prefer_latest=True, purpose="write").focus_mark(label or "")
+    m = _focus_verb(action="detour", label=label)
     console.print(f"[magenta]⤴ detour[/] [bold]{m['label']}[/]  "
-                  f"[dim]return-point at L{m['line']} · /return to rewind[/]")
+                  f"[dim]return-point at L{m.get('line')} · /return to rewind[/]")
 
 
 @focus.command("detours")
@@ -1679,13 +1672,13 @@ def focus_detour(label):
               help="Session id. Default: active Claude session.")
 def focus_detours(session):
     """List open soft-detour return-points (most recent first)."""
-    marks = _stm(session, prefer_latest=True).focus_marks()
+    marks = _focus_verb(action="detours", session=session).get("detours") or []
     if not marks:
         console.print("[yellow]no open detours[/]")
         return
-    for i, m in enumerate(reversed(marks), 1):
-        console.print(f"[bold]{i}[/] {m['label']}  [dim]L{m.get('line')} · "
-                      f"{m['ts']}[/]")
+    for m in marks:
+        console.print(f"[bold]{m['index']}[/] {m['label']}  [dim]L{m.get('line')} · "
+                      f"{m.get('ts')}[/]")
 
 
 @focus.command("return")
@@ -1694,21 +1687,26 @@ def focus_return(selector):
     """Return from a soft detour — rewind focus to the bookmark. Default = most
     recent; SELECTOR (index from `focus detours` or label substring) returns
     from a specific detour. The tangent stays in the full log."""
-    r = _stm(prefer_latest=True, purpose="write").focus_return(selector)
-    if r["returned"] is None:
+    r = _focus_verb(action="return", selector=selector)
+    if r.get("returned") is None:
         console.print(f"[yellow]{r.get('error') or 'no open detours'}[/]")
         return
     console.print(f"[green]⤶ returned[/] from [bold]{r['returned']}[/] "
-                  f"[dim](L{r.get('line')}, {r['remaining']} detour(s) left)[/]")
+                  f"[dim](L{r.get('line')}, {r.get('remaining', 0)} detour(s) left)[/]")
     if r.get("focus"):
         console.print(f"  [dim]focus: {', '.join(r['focus'][:8])}[/]")
 
 
 @focus.command("clear")
-def focus_clear():
-    """Clear short-term memory + task stack for this session."""
-    _stm().clear()
-    console.print("[green]focus cleared[/]")
+@click.option("-s", "--session", default=None,
+              help="Session id to clear. Default: the resolved active session.")
+def focus_clear(session):
+    """Clear short-term memory + task stack for this session.
+
+    The session resolves like every STM write (task 3.7 #fam-focus-clear): an
+    unresolved one is refused, never the literal `default` ring."""
+    res = _focus_verb(action="clear", session=session)
+    console.print(f"[green]focus cleared[/] (session {res.get('session')})")
 
 
 # ---- subjects (ADR-0002): a named STM partition + durable LTM container ----
@@ -1767,8 +1765,7 @@ def focus_change_subject(label, session):
               help="Session id. Default: active Claude session.")
 def focus_subject(session):
     """Show the active subject for this session (or none)."""
-    s = _stm(session, prefer_latest=True)
-    cur = s.get_subject()
+    cur = _focus_verb(action="subject", session=session).get("subject")
     if not cur:
         console.print("[yellow]no active subject[/] (bare session ring) — set one "
                       "with `rmx focus change-subject \"<label>\"`")
@@ -1780,13 +1777,11 @@ def focus_subject(session):
 @focus.command("subjects")
 def focus_subjects():
     """List durable subjects in this project (newest-active first) with leaf
-    counts — the cross-session map of pursuits."""
-    from refmatrix import daemon as daemon_mod
-    if daemon_mod.ping(_root()):
-        resp = _memory_daemon_call("subject_list", {})
-        rows = resp.get("result", {}).get("rows", []) if resp.get("ok") else []
-    else:
-        rows = _store().list_subjects()
+    counts — the cross-session map of pursuits.
+
+    Read from the memory partition `change-subject` writes; a daemon refusal
+    fails loudly (task 3.7 #fam-focus-subjects)."""
+    rows = _focus_verb(action="subjects").get("rows") or []
     if not rows:
         console.print("[yellow]no subjects yet[/] — `rmx focus change-subject "
                       "\"<label>\"`")
@@ -1804,9 +1799,8 @@ def focus_subjects():
 def focus_clear_subject(session):
     """Unset the active subject (revert to the bare session ring). The durable
     subject node + its filed leaves are untouched."""
-    s = _stm(session, prefer_latest=True, purpose="write")
-    had = s.clear_subject()
-    console.print("[green]subject cleared[/]" if had
+    res = _focus_verb(action="clear_subject", session=session)
+    console.print("[green]subject cleared[/]" if res.get("cleared")
                   else "[yellow]no active subject[/]")
 
 

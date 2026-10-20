@@ -1306,17 +1306,124 @@ def save_state(root: Path, *, message: str | None = None,
     return res
 
 
+# Per-action defaults (task 3.7 C6, spec review r1 S1). A dispatcher param whose default
+# differs by action — focus `top` is 20 for `context` and 60 for `topics` — is typed
+# `X | None = None` and resolved HERE, so every CLI action twin's click default can be
+# compared with the value the verb really uses (tests/test_verb_parity.py walks them all).
+ACTION_DEFAULTS: dict[tuple[str, str], dict[str, Any]] = {
+    ("rmx_focus", "context"): {"top": 20},
+    ("rmx_focus", "topics"): {"top": 60},
+    ("rmx_focus", "tail"): {"n": 20},
+    ("rmx_focus", "show"): {"context": 0},
+    ("rmx_focus", "composite"): {"k": 3, "max_tokens": 1200},
+    ("rmx_focus", "subjects"): {"timeout": 10.0},
+}
+
+
+def action_default(verb_name: str, action: str, param: str, value: Any) -> Any:
+    """`value` when the caller sent one, else the `ACTION_DEFAULTS` entry for
+    `(verb_name, action)` (None when the action has none for `param`)."""
+    if value is not None:
+        return value
+    return ACTION_DEFAULTS.get((verb_name, action), {}).get(param)
+
+
+# STM actions that WRITE a ring file: an unresolved session is refused (task 21.1 D2).
+_FOCUS_WRITES = frozenset({"clear_subject", "detour", "return", "clear"})
+
+
 @verb("rmx_focus",
-      "Current short-term focus graph + task stack for the project (what is "
-      "being worked on right now).")
-def focus(root: Path, *, top: int = 20, session: str | None = None) -> dict:
+      "Short-term focus (STM) for the project. action=context (default): the focus graph + "
+      "task stack + intent dialogue; tail / show / export / topics read the session log; "
+      "subject / subjects / clear_subject manage the active subject; detour / detours / "
+      "return are soft return-points; composite is the GMD topic composite; clear empties "
+      "the session ring.")
+def focus(root: Path, *, action: typing.Literal[
+              "context", "tail", "show", "topics", "subject", "subjects", "clear_subject",
+              "composite", "export", "detour", "detours", "return", "clear"] = "context",
+          top: int | None = None, session: str | None = None, n: int | None = None,
+          line: int | None = None, context: int | None = None, label: str | None = None,
+          selector: str | None = None, k: int | None = None, max_tokens: int | None = None,
+          no_expand: bool = False, no_autoscale: bool = False,
+          timeout: float | None = None) -> dict:
+    """One dispatcher over the `rmx focus` group (task 3.7 #fam-focus). `context` is the
+    pre-3.7 behaviour unchanged — existing MCP callers send no `action`.
+
+    Every STM action resolves its session through THE resolver (`resolve_session_source`,
+    `purpose="read"` for reads, `"write"` for writes) and returns `session` +
+    `session_source`. Three defects died with the old CLI bodies:
+
+    - `clear` (#fam-focus-clear) skipped the resolver and cleared `$RMX_SESSION` or the
+      literal `default` ring; hooks do not export RMX_SESSION, so an agent cleared the
+      wrong ring and was told "focus cleared". It resolves as a write now.
+    - `subjects` (#fam-focus-subjects) listed the CODE partition while `change_subject`
+      writes `memory_partition(root)`, and an `ok:false` printed "no subjects yet".
+    - `composite` (#fam-focus-composite) had no session and `composite.py` picked the
+      newest ring itself."""
+    from refmatrix import stm as stm_mod
+    ad = lambda p, v: action_default("rmx_focus", action, p, v)  # noqa: E731
+    if action == "subjects":
+        return _focus_subjects(root, timeout=float(ad("timeout", timeout)))
+    sess, source = resolve_session_source(
+        root, session, purpose="write" if action in _FOCUS_WRITES else "read")
+    prov = {"session": sess, "session_source": source}
+    s = stm_mod.Stm(root, sess)
+    if action == "context":
+        return {**_focus_context(s, top=int(ad("top", top))), **prov}
+    if action == "tail":
+        return {"events": s.tail(int(ad("n", n))), **prov}
+    if action == "export":
+        events = s.all_events()
+        return {"events": [{"line": i, **e} for i, e in enumerate(events, 1)],
+                "total": len(events), **prov}
+    if action == "show":
+        if line is None:
+            raise VerbArgsError("focus show requires 'line' (a 1-based log line)")
+        events = s.all_events()
+        if line < 1 or line > len(events):
+            raise VerbArgsError(f"line {line} out of range (1..{len(events)}) for session "
+                                f"{sess}")
+        ctx = int(ad("context", context))
+        lo, hi = max(1, line - ctx), min(len(events), line + ctx)
+        return {"line": line, "total": len(events),
+                "events": [{"line": i, **events[i - 1]} for i in range(lo, hi + 1)], **prov}
+    if action == "topics":
+        return {**_focus_topics(root, s, top=int(ad("top", top))), **prov}
+    if action == "subject":
+        return {"subject": s.get_subject(), **prov}
+    if action == "clear_subject":
+        return {"cleared": s.clear_subject(), **prov}
+    if action == "detour":
+        m = s.focus_mark(label or "")
+        return {"label": m["label"], "line": m["line"], "ts": m["ts"], **prov}
+    if action == "detours":
+        marks = s.focus_marks()
+        return {"detours": [{"index": i, "label": m["label"], "line": m.get("line"),
+                             "ts": m.get("ts")}
+                            for i, m in enumerate(reversed(marks), 1)], **prov}
+    if action == "return":
+        return {**s.focus_return(selector), **prov}
+    if action == "clear":
+        s.clear()
+        return {"cleared": True, **prov}
+    if action == "composite":
+        from refmatrix.composite import build_topic_composite
+        kk, mt = int(ad("k", k)), int(ad("max_tokens", max_tokens))
+
+        def _run(st) -> dict:
+            return {"composite": build_topic_composite(
+                st, root, k=kk, max_tokens=mt, expand=not no_expand,
+                autoscale=not no_autoscale, session=sess)}
+        return {**snapshot_read(root, _run, partition=project_partition(root)), **prov}
+    raise VerbArgsError(f"unknown focus action {action!r}")
+
+
+def _focus_context(s, *, top: int) -> dict:
     """Graph + tasks + what `rmx focus context` renders around them: the
     intent `dialogue` (input / say / reason events, newest last, with their
     1-based line in the full log), git `milestones`, `last_line` (ref → last
     line that mentioned it) and `events_total` — so an MCP caller gets what
     the CLI shows (ch-bsd plan-3 r2 #s-3)."""
-    from refmatrix import stm as stm_mod
-    s = stm_mod.Stm(root, resolve_session_source(root, session, purpose="read").session)
     events = s.all_events()
     last_line: dict[str, int] = {}
     dialogue: list[dict] = []
@@ -1332,6 +1439,61 @@ def focus(root: Path, *, top: int = 20, session: str | None = None) -> dict:
     return {"graph": s.focus_graph(top=top), "tasks": s.task_list(),
             "dialogue": dialogue, "milestones": milestones,
             "last_line": last_line, "events_total": len(events)}
+
+
+def _focus_topics(root: Path, s, *, top: int) -> dict:
+    """The session's topic clusters as a timeline: each `{lead, members, first_line,
+    last_line}` (members by weight, the L<n> range into the full log), ordered by first
+    appearance. Shell/path noise is dropped before clustering (it would merge topics).
+    `anomalies` carries this root's pointer-error clauses (task 21.1 D6), which the CLI
+    prints as its LAST line — also when there are no topics."""
+    from refmatrix import handoff, stm as stm_mod
+    g = s.focus_graph(top=top)
+    clean = {"nodes": [nd for nd in g["nodes"]
+                       if nd["name"].lower() not in handoff._SS_FOCUS_NOISE],
+             "edges": g["edges"]}
+    clusters = stm_mod.cluster_focus(clean)
+    topics: list[dict] = []
+    if clusters:
+        first: dict[str, int] = {}
+        last: dict[str, int] = {}
+        for i, e in enumerate(s.all_events(), 1):
+            for r in (e.get("refs") or []):
+                first.setdefault(r, i)
+                last[r] = i
+        weight = {nd["name"]: nd["weight"] for nd in g["nodes"]}
+        for c in clusters:
+            members = sorted(c, key=lambda nm: weight.get(nm, 0), reverse=True)
+            lines = [last[nm] for nm in c if nm in last] + [first[nm] for nm in c if nm in first]
+            topics.append({"lead": members[0], "members": members,
+                           "first_line": min(lines) if lines else None,
+                           "last_line": max(lines) if lines else None})
+        topics.sort(key=lambda t: t["first_line"] if t["first_line"] is not None else 10**9)
+    return {"topics": topics, "events_total": g["events"],
+            "anomalies": handoff.session_pointer_anomalies(root)}
+
+
+def _focus_subjects(root: Path, *, timeout: float) -> dict:
+    """Durable subjects from `memory_partition(root)` — the partition `change_subject`
+    writes (task 3.7 #fam-focus-subjects) — through ONE budgeted daemon attempt (#budgets:
+    10 s for the partition probe and the list together). A refusal is a `VerbError` with
+    the daemon's words, a stall is busy; only an ABSENT daemon reads in-process (C4a)."""
+    import time as _time
+    deadline = _time.monotonic() + timeout
+
+    def left() -> float:
+        rem = deadline - _time.monotonic()
+        if rem <= 0:
+            raise VerbBusyError(f"focus subjects not answered within {timeout:g}s — the "
+                                f"daemon for {root} is busy")
+        return rem
+    part = memory_partition(root, timeout=left())
+    try:
+        res = _call(root, "subject_list", {"partition": part}, timeout=left(), retries=0)
+    except VerbAbsentError:
+        return snapshot_read(root, lambda st: {"rows": st.list_subjects(), "partition": part},
+                             partition=part)
+    return {"rows": res.get("rows", []), "partition": part, "source": "daemon"}
 
 
 @verb("rmx_focus_note",
