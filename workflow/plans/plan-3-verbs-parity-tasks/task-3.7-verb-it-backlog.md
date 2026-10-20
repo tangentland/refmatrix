@@ -211,7 +211,12 @@ evidence: the PRIMER header and the hooks.py CLAUDE briefing teach `neighbors`, 
   order the base CLI (`591a2fb`) produces on a fixture store, with ONE deterministic test
   embedder injected into both paths (the base CLI's `Embedder()` and the daemon's
   `d._embedder()`), r2 M3. `-s` values are validated as ints
-  (`VerbArgsError`). {#fam-graph-read-recall}
+  (`VerbArgsError`). **No daemon (decided 2026-10-20, Batch B RED):** `recall` / `dense` follow
+  C4a — on `VerbAbsentError` only, they run the SAME library function the `graph_recall` /
+  `ann_search` op runs, in-process over a read-only store, with the embedder from the accessor the
+  daemon uses (the hub's shared model worker when it is up); the result says `source:
+  "in-process"`. Busy never runs in-process. This keeps today's daemonless CLI working; the
+  "no `Embedder()` in the caller" rule binds the daemon-up path. {#fam-graph-read-recall}
 - `top`: `gmd-curator.md` lines 290 and 511 teach `rmx top mentions -k N`, which treats
   `mentions` as the concept (2 of 3 logged calls failed). The comments want the most-referenced
   entities, which is `rmx primer`; rewrite both lines to it in the template
