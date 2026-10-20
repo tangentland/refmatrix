@@ -2131,6 +2131,10 @@ CLI_MAP: dict[str, "tuple[str, ...] | None"] = {
     "rmx_bus_unarchive": ("bus", "unarchive"),
     "rmx_bus_purge": ("bus", "purge"),
     "rmx_bus_stats": ("bus", "stats"),
+    # task 3.7 batch A: each dispatcher's twin; its other actions are CLI_ACTIONS
+    "rmx_curate": ("protect",),
+    "rmx_taxonomy": ("taxonomy", "list"),
+    "rmx_curator": ("curator", "status"),
 }
 # How each twin is WIRED to its verb (asserted by test_verb_parity.py by
 # recording the call while the click command runs — ch-bsd plan-3 r1 #bs-1
@@ -2186,6 +2190,27 @@ CLI_ACTIONS: dict[tuple[str, ...], tuple[str, str]] = {
     ("task", "pop"): ("rmx_task", "pop"),
     ("task", "current"): ("rmx_task", "current"),
     ("task", "swap"): ("rmx_task", "swap"),
+    # Task 3.7 batch A (#fam-focus incl. `export` #decisions-r2, #fam-curation,
+    # #fam-taxonomy, #fam-refine-drain): these left LEGACY_UNPAIRED by gaining a verb.
+    ("focus", "tail"): ("rmx_focus", "tail"),
+    ("focus", "topics"): ("rmx_focus", "topics"),
+    ("focus", "show"): ("rmx_focus", "show"),
+    ("focus", "subject"): ("rmx_focus", "subject"),
+    ("focus", "subjects"): ("rmx_focus", "subjects"),
+    ("focus", "clear-subject"): ("rmx_focus", "clear_subject"),
+    ("focus", "composite"): ("rmx_focus", "composite"),
+    ("focus", "export"): ("rmx_focus", "export"),
+    ("focus", "detour"): ("rmx_focus", "detour"),
+    ("focus", "detours"): ("rmx_focus", "detours"),
+    ("focus", "return"): ("rmx_focus", "return"),
+    ("focus", "clear"): ("rmx_focus", "clear"),
+    ("unprotect",): ("rmx_curate", "unprotect"),
+    ("noise",): ("rmx_curate", "noise"),
+    ("unnoise",): ("rmx_curate", "unnoise"),
+    ("forget",): ("rmx_curate", "forget"),
+    ("taxonomy", "add"): ("rmx_taxonomy", "add"),
+    ("taxonomy", "remove"): ("rmx_taxonomy", "remove"),
+    ("curator", "drain"): ("rmx_curator", "drain"),
 }
 
 # CLI-only BY DECISION. On 2026-10-06 the user accepted CLI-only commands for
@@ -2256,15 +2281,6 @@ LEGACY_UNPAIRED: dict[tuple[str, ...], tuple[str, str]] = {
               ("add", "concept"), ("add", "entity"), ("add", "linkage-type"),
               ("link",), ("unlink",), ("list", "entities"), ("list", "linkages"),
               ("list", "queries"), ("run",), ("save-query",)),
-    **_legacy("verb-it", "entity curation the primer tells agents to use (protect / noise / "
-              "forget); owes the curate verb — task-3.7#fam-curation",
-              ("protect",), ("unprotect",), ("noise",), ("unnoise",), ("forget",)),
-    **_legacy("verb-it", "STM focus read or navigation an agent uses mid-session; owes "
-              "actions on rmx_focus — task-3.7#fam-focus",
-              ("focus", "tail"), ("focus", "topics"), ("focus", "show"),
-              ("focus", "subject"), ("focus", "subjects"), ("focus", "clear-subject"),
-              ("focus", "composite"), ("focus", "detour"), ("focus", "detours"),
-              ("focus", "return"), ("focus", "clear")),
     **_legacy("verb-it", "session-history lookup an agent uses for recall; owes the session "
               "verb — task-3.7#fam-session",
               ("session", "list"), ("session", "recall"), ("session", "show"),
@@ -2272,16 +2288,13 @@ LEGACY_UNPAIRED: dict[tuple[str, ...], tuple[str, str]] = {
     **_legacy("verb-it", "refinement-queue review the gmd-curator agent drives; owes the "
               "refine verb — task-3.7#fam-refine",
               ("refine", "list"), ("refine", "show"), ("refine", "accept"),
-              ("refine", "reject"), ("curator", "drain")),
-    **_legacy("verb-it", "shared tag vocabulary agents validate memory tags against; owes "
-              "the taxonomy verb — task-3.7#fam-taxonomy",
-              ("taxonomy", "list"), ("taxonomy", "add"), ("taxonomy", "remove")),
+              ("refine", "reject")),
     # -- hook: called by the generated Claude Code hooks (hooks.py /
     #    search_hooks.py), not by agents. Every focus hook runs `focus hook
     #    --event …`; `focus record` is not among them (r9 #m-1).
     **_legacy("hook", "invoked by a generated Claude Code hook (hooks.py / search_hooks.py)",
               ("focus", "hook"), ("focus", "summarize"), ("scan-prompt",), ("primer",),
-              ("grep",), ("sync",), ("curator", "status"), ("ingest-gmd",)),
+              ("grep",), ("sync",), ("ingest-gmd",)),
     # -- operator: process supervision and store administration.
     **_legacy("operator", "the operator's hook installer: renders, applies and checks the "
               "generated hook config (`rmx install-hooks --check` is a pre-commit gate)",
@@ -2333,8 +2346,7 @@ LEGACY_UNPAIRED: dict[tuple[str, ...], tuple[str, str]] = {
     # -- harness: telemetry, logs, eval conditions and debugging.
     **_legacy("harness", "telemetry, log and debug inspection",
               ("telemetry",), ("cli-log",), ("log",), ("cctree",), ("stats",),
-              ("fingerprint",), ("tools-primer",), ("focus", "size"),
-              ("focus", "export")),
+              ("fingerprint",), ("tools-primer",), ("focus", "size")),
     **_legacy("harness", "a manual STM event append for tests and debugging; no generated "
               "hook runs it (every focus hook runs `focus hook --event …`)",
               ("focus", "record")),

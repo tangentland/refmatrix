@@ -347,7 +347,7 @@ rmx
 ├── coref                          Pronoun dereferencing (coref.py). Within-doc resolution runs at
 │   └── link                       Cross-document resolution: bind each document's doc-INITIAL
 ├── curator                        gmd-curator coordination — watcher-populated queue + dispatch
-│   ├── drain                      Empty the curator queue without printing anything.
+│   ├── drain                      Drain exactly the spool files a curator status token names.
 │   ├── scan                       Lint queued GMD docs → file curation candidates into the refine…
 │   └── status                     Summarize the curator queue for hook injection.
 ├── daemon                         Per-store background process that holds the catalog open and
