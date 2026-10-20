@@ -5,7 +5,7 @@ title: "Task 3.7: the verb-it backlog — 49 agent-facing CLI paths in eight fam
 tags: [task, plan-3, verbs, parity, backlog, deferral]
 metadata:
   node_type: task
-  status: completed
+  status: in-progress
   plan: plan-3-verbs-parity
   created: 2026-10-19
   updated: 2026-10-20
@@ -466,6 +466,32 @@ One clone (`/Volumes/littlebig/refmatrix-task-3.7`), one branch, batches landing
 Each batch: `@ch-test-engineer` RED (run recorded) → `@ch-implementer` GREEN → relevant tests
 logged. After batch C: full suite, mutation check, `/ch-review`, `@ch-bsd` iterated to clean,
 summary, release.
+
+## Remedy round 1 (2026-10-20) {#remedy-r1}
+
+Sources: ch-bsd post-implementation audit [[bsd-plan3-task37-impl-41c3568]] (DIRTY, 2 BULLSHIT /
+2 SKETCHY / 2 MEH; mutations 16/18 killed) and a ch-code-reviewer pass (0 Critical / 1 High /
+8 Medium). Decisions by the orchestrator on the user's pattern, plus one user decision (R-OBJC).
+Every code fix gets a RED test first, except pure deletions and docstrings. {#remedy-r1-lead}
+
+| id | finding | decision |
+|----|---------|----------|
+| R-B1 | the generated per-prompt hook `curator status --drain` drains entries it never showed (prints 10, drains 15), so the gmd-curator's `status --json → work → drain --token` flow never sees them | the generated hooks run `curator status` WITHOUT `--drain`; only the curator agent's `drain --token` removes entries. The prompt line keeps showing the count until the curator runs (it is the reminder). `--drain` stays on the CLI for operators but drains only what that call printed (`max_entries = limit`) |
+| R-B2 | `focus composite` ignores `-p`; `project_partition` skips the `.refmatrix/partition` marker (review M3) | ONE shared partition resolver used by the CLI's `_resolve_partition` and `verbs.project_partition` (flag → `RMX_PARTITION` → marker → store name); `rmx_focus` gains `partition: str \| None`, PAIRING row updated, the CLI passes its resolved partition |
+| R-S1 | add-then-link fails: `link` / `unlink` / `canon link` resolve names on the lagging snapshot | the verbs send NAMES; `_op_link`, `_op_unlink`, `_op_link_canon` resolve them under the writer. Read-your-writes RED test against a real daemon |
+| R-S2 | the "unknown partition reads EMPTY" guards are untested (M11, M18 survived) | one test per guard (`verbs.snapshot_read`, `Store.with_partition` read-only) asserting empty while partition 1 has rows; both mutations re-run and must die |
+| R-M1 | two known base failures have no bug row | rows for the GMD repo-scope gate and the AC-6 clone-only fixture failure (not bug-138, which is reserved) |
+| R-M2 | a legacy raw-path `curator.queue` adopted into the spool counts its lines unparseable and loses them | the one parser accepts a raw-path line as a legacy entry (`reason: legacy`) |
+| R-H1 | no daemon: every `rmx_graph` recall/dense in the long-lived `rmx mcp` spawns a never-reaped embed worker | `recall.shared_embedder` caches ONE client per process (lock, one atexit close); test: N calls → one client |
+| R-RM1 | `_op_ann_search` reads `d._st()` before taking the lock | pass a getter resolved inside `with lock` |
+| R-RM2 | `_op_graph_recall` reads the partition name unlocked | fall back to `d.partition` |
+| R-RM4 | `canon` link re-implements `_matrix_write` | call `_matrix_write` |
+| R-RM5 | forget preview budget 60 s (was 600 s) | 600 s for preview and purge |
+| R-RM6 | taxonomy add/remove lets `OSError` escape raw | `VerbError` naming the file |
+| R-RM7 | dead `_DaemonWriter.unlink/link_canon/save_query`, `_since_to_iso`, `_TIMELINE_LINKAGES`, `_concept_files` | deleted; `tests/test_concept_timeline.py` points at `graphread` |
+| R-RM8 | FakeDaemon rows promised graduation "when batch C lands" | graduate one payload test per family (canon, curation, matrix, focus) onto a spawned daemon, or rewrite the rows' terms — graduation chosen |
+| R-L | lows: `with_partition` docstring; unused imports/vars; one `session_title` helper; `session show` refuses an ambiguous prefix like `refine show`; type hints on new signatures; `write_spool` fsyncs the directory; deprecation warning on the ignored `--via-replica` | all applied |
+| R-OBJC | user, 2026-10-20: "yes, ship the OBJC fix with 3.7" | `HOOK_ENV` exports `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` and `TOKENIZERS_PARALLELISM=false` (exactly what `_reexec_for_fork_safety` sets), so hook processes skip the re-exec; RED test over the generated config; README hooks table regenerated |
 
 ## Definition of done {#done}
 
