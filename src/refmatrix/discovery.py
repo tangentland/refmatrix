@@ -262,6 +262,40 @@ def footprint(root: Path) -> dict:
     }
 
 
+def partition_marker(start: "Path | None" = None) -> "str | None":
+    """The `.refmatrix/partition` marker found walking up from `start` (default: cwd) — a
+    one-line partition name that binds a tree to a named partition in a shared store.
+    None when no marker is found; an unreadable or empty marker is skipped."""
+    cur = Path(start or Path.cwd()).resolve()
+    for p in [cur, *cur.parents]:
+        marker = p / ".refmatrix" / "partition"
+        if not marker.is_file():
+            continue
+        try:
+            lines = marker.read_text(encoding="utf-8").strip().splitlines()
+        except OSError:
+            continue
+        name = lines[0].strip() if lines else ""
+        if name:
+            return name
+    return None
+
+
+def resolve_partition(root: Path, *, override: "str | None" = None,
+                      cwd: "Path | None" = None) -> str:
+    """THE project-partition resolver (task 3.7 remedy r1 R-B2): `override` (the CLI's
+    `-p`) → `$RMX_PARTITION` → the `.refmatrix/partition` marker walked up from `cwd` →
+    the store's own name. `cli._resolve_partition` and `verbs.project_partition` both
+    call it; they used to disagree on the marker, so `rmx_focus` composite and the CLI
+    read different partitions of one store."""
+    if override:
+        return override
+    env = os.environ.get("RMX_PARTITION")
+    if env:
+        return env
+    return partition_marker(cwd) or store_name(root)
+
+
 def store_name(root: Path) -> str:
     if is_global_root(root):
         return "global"  # the home dir (~/.refmatrix) is the global store

@@ -158,22 +158,8 @@ def _resolve_partition() -> str:
     per-project .refmatrix/partition file selects which partition this
     project's CLI invocations write into.
     """
-    if _partition_override:
-        return _partition_override
-    env = os.environ.get("RMX_PARTITION")
-    if env:
-        return env
-    cur = Path.cwd().resolve()
-    for p in [cur, *cur.parents]:
-        marker = p / ".refmatrix" / "partition"
-        if marker.is_file():
-            try:
-                name = marker.read_text(encoding="utf-8").strip().splitlines()[0].strip()
-            except (OSError, IndexError):
-                continue
-            if name:
-                return name
-    return default_partition_name(_root())
+    from refmatrix import discovery as _discovery
+    return _discovery.resolve_partition(_root(), override=_partition_override)
 
 
 def _active_slot_path() -> Path | None:
@@ -1135,7 +1121,7 @@ def _focus_verb(**kw) -> dict:
     ClickException with the verb's words."""
     from refmatrix import verbs as _verbs
     try:
-        return _verbs.focus(_root(), **kw)
+        return _verbs.focus(_root(), partition=_resolve_partition(), **kw)
     except _verbs.SessionUnresolved as e:
         click.echo(f"rmx: {e}", err=True)
         raise SystemExit(2)
@@ -1182,7 +1168,8 @@ def focus_context(top, session):
     # still displays the real symbols. _ss_clean_focus is the shared filter.
     # The graph comes from the verb (what rmx_focus returns); the L<n>
     # provenance below is CLI rendering over the same ring.
-    fres = _verbs.focus(_root(), top=max(top * 3, 30), session=sess)
+    fres = _verbs.focus(_root(), top=max(top * 3, 30), session=sess,
+                        partition=_resolve_partition())
     g = fres["graph"]
     nodes = _ss_clean_focus(g["nodes"], limit=top)
     if not nodes:

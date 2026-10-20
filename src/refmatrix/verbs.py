@@ -448,12 +448,12 @@ def memory_partition(root: Path, *, timeout: "float | None" = None) -> str:
 
 
 def project_partition(root: Path) -> str:
-    """The project-store partition a verb uses when the caller names none: `$RMX_PARTITION`,
-    else the store's own name — the same order `Store()` and the CLI's `_resolve_partition`
-    apply (task 3.7 C7). The CLI passes its `-p` value explicitly; MCP callers get this."""
-    import os
+    """The project-store partition a verb uses when the caller names none, through THE
+    resolver `discovery.resolve_partition` (`$RMX_PARTITION` → `.refmatrix/partition`
+    marker → store name) that the CLI's `_resolve_partition` also calls (task 3.7 C7,
+    remedy r1 R-B2). The CLI passes its `-p` value explicitly; MCP callers get this."""
     from refmatrix import discovery
-    return os.environ.get("RMX_PARTITION") or discovery.store_name(root)
+    return discovery.resolve_partition(root)
 
 
 # ---- verb-layer store access: the read snapshot and the no-daemon writer -----
@@ -1367,7 +1367,7 @@ def focus(root: Path, *, action: typing.Literal[
           line: int | None = None, context: int | None = None, label: str | None = None,
           selector: str | None = None, k: int | None = None, max_tokens: int | None = None,
           no_expand: bool = False, no_autoscale: bool = False,
-          timeout: float | None = None) -> dict:
+          timeout: float | None = None, partition: str | None = None) -> dict:
     """One dispatcher over the `rmx focus` group (task 3.7 #fam-focus). `context` is the
     pre-3.7 behaviour unchanged — existing MCP callers send no `action`.
 
@@ -1436,7 +1436,10 @@ def focus(root: Path, *, action: typing.Literal[
             return {"composite": build_topic_composite(
                 st, root, k=kk, max_tokens=mt, expand=not no_expand,
                 autoscale=not no_autoscale, session=sess)}
-        return {**snapshot_read(root, _run, partition=project_partition(root)), **prov}
+        # The partition the CLI's `-p` names, else THE resolver (remedy r1 R-B2: the
+        # composite ignored `-p` and the `.refmatrix/partition` marker).
+        return {**snapshot_read(root, _run, partition=partition or project_partition(root)),
+                **prov}
     raise VerbArgsError(f"unknown focus action {action!r}")
 
 
