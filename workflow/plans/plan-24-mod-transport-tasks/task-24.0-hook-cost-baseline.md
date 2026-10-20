@@ -105,10 +105,11 @@ is stated with a measured before and after. The BEFORE window must open before t
    mod and `wall_ms`. So the after window has prompts and a cost, and the comparison is the mod's
    per-call wall time against the shell hook's pre-code plus work. {#r7}
 8. **R8 — the fork-safety variable is held constant across windows.** Setting
-   `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` in the generated hook env would roughly halve every
-   hook's pre-code time today, with no mod. That is a separate, independent change. Its effect is
-   reported as `reexec_ms` going to 0, never credited to the mod. Whichever windows it falls in
-   are named in the report. {#r8}
+   `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` in the generated hook env roughly halves every hook's
+   pre-code time with no mod. The user chose to ship it with task 3.7 (2026-10-20: "yes, ship the
+   OBJC fix with 3.7"), so it is live before this task's BEFORE window opens. Both windows then
+   have `reexec_ms` ≈ 0 for hook rows, and the mod is not credited with it. The report states the
+   fix's deploy sha, and that rows earlier than it are outside both windows. {#r8}
 9. **R9 — collection.**
    - BEFORE: deploy R1-R4, re-apply `rmx install-hooks`, collect ≥ 7 calendar days AND ≥ 5
      sessions on refmatrix (the only active project). `--since` excludes earlier rows.
