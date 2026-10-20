@@ -8,7 +8,7 @@ metadata:
   status: approved
   plan: plan-3-verbs-parity
   created: 2026-10-19
-  amended: 2026-10-19 (#r10-amend — ch-bsd plan-3 r10)
+  amended: 2026-10-19 (#r10-amend — ch-bsd plan-3 r10; #r11-amend — r11)
 ---
 
 # Task 3.6: plan-3 r9 remedy {#root}
@@ -221,6 +221,63 @@ rel: related-to -> [[task-23.5-read-path-and-holder-bounds]]
 6. **AC-R10-6 (N8).** `ingest-gmd --detach` against a refused socket says "not running". This pin
    passes at HEAD and kills N8. {#ac-r10-6}
 7. **AC-R10-7 (M1, RED).** bug-135's registry status is not `open`. {#ac-r10-7}
+
+## Amendment after r11 {#r11-amend}
+
+ch-bsd plan-3 r11 at `999313c` was DIRTY (0B/1S/3M). r10's S1, S2 and M1 are closed in behaviour,
+and all eight r10 guard evasions are flagged. One sibling survives in the same command. Two
+guarantees fail no test when reverted. Two records overstate. 3.7 is unchanged (AC-G4).
+
+rel: derives-from -> [[bsd-plan3-verbs-parity-r11-999313c]]
+rel: implements -> [[bsd-plan3-verbs-parity-r11-999313c#s-1]]
+rel: implements -> [[bsd-plan3-verbs-parity-r11-999313c#m-1]]
+rel: implements -> [[bsd-plan3-verbs-parity-r11-999313c#m-2]]
+
+### R11-1 — the subject-filing leg and a fixed-point guard (r11 #s-1) {#r11-1}
+
+`focus summarize --promote` makes three daemon writes. The `memory_add` leg goes through
+`classify_transport_error(write=True)`. The subject-filing leg (`_file_under_active_subject`,
+cli.py:1414-1419 at `999313c`) dials two wrappers deep (`_subject_upsert` / `_subject_link` →
+`_memory_daemon_call`). It still says "not confirmed … the daemon may still complete it" for
+any OSError, a refused socket included.
+
+- Route it through `classify_transport_error(…, write=True)`, keeping the "promoted id=… but
+  subject filing under …" prefix.
+- `tests/transport_guard.py` computes the TRUE fixed point of dial wrappers (any depth). It also
+  reads dict / list / tuple message tables as constants, treats `getattr(<daemon alias>,
+  "call")(…)` as a dial, and adds the synonym "no answer".
+- New plants that must be flagged: two-level wrapper, dict of messages, getattr dial, "no answer".
+
+### R11-2 — pin P2 and P8 (r11 #m-1) {#r11-2}
+
+- **P2:** the detector's `close()`. The test counts every Store the detector opens and requires
+  each one closed before return; refcounting hides a missing close from behaviour tests.
+- **P8:** the absent branch never guesses past an unreadable catalog. A REAL second process holds
+  the catalog writer, and `verbs.memory_partition` must raise `VerbBusyError`.
+
+### R11-3 — `focus summarize --promote --global` through `verbs.global_write` (orchestrator) {#r11-3}
+
+It wrote with `hub.global_call("memory_add", args)` directly. That write was unbudgeted, ignored
+`--timeout` and bypassed the one global-write helper. It goes through `verbs.global_write("memory_add",
+args, timeout=<≤ --timeout>)`.
+
+### R11-4 — records (r11 #m-2) {#r11-4}
+
+- The mock-registry row for `test_cli_partition_probe_reads_the_replica_under_a_held_writer` is
+  reworded: it runs on a socket double plus a real snapshot, not a real held writer.
+- bug-136's rider is anchored in the dev tree's `task-23.5-read-path-and-holder-bounds#bug136-rider`
+  and arrives here at the release merge. The bug row says so.
+
+### Acceptance criteria (r11) {#r11-acceptance}
+
+1. **AC-R11-1 (RED).** The live guard scan is empty. At `999313c` it names `cli.py:1415`. {#ac-r11-1}
+2. **AC-R11-2.** The four new plants are flagged; the clean plants still pass. {#ac-r11-2}
+3. **AC-R11-3 (RED).** The subject-filing leg on a refused socket says "not running", with no
+   "not confirmed" and no "may still complete". {#ac-r11-3}
+4. **AC-R11-4 (pins).** The P2 and P8 tests pass at HEAD and kill their mutants. {#ac-r11-4}
+5. **AC-R11-5 (RED).** `focus summarize --promote --global --timeout 5` calls
+   `verbs.global_write("memory_add", …, timeout≤5)` and never `hub.global_call` directly. {#ac-r11-5}
+6. **AC-R11-6.** The two record corrections land; no test. {#ac-r11-6}
 
 ## Files to modify {#files-to-modify}
 

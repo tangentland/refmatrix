@@ -279,6 +279,45 @@ def f(root):
         raise RuntimeError(f"x failed: busy ({e})")
 """,
 }
+# #r11-amend (ch-bsd plan-3 r11 #s-1): four more shapes the r10 guard missed.
+_PLANTS_FLAGGED.update({
+    "two_level_wrapper": _HDR + """
+def _memory_daemon_call(op, args):
+    return daemon_mod.call("/r", op, args)
+
+def _subject_upsert(label):
+    return _memory_daemon_call("subject_upsert", {"label": label})
+
+def f():
+    try:
+        _subject_upsert("x")
+    except OSError as e:
+        raise RuntimeError(f"subject filing not confirmed ({e}); the daemon may still complete it")
+""",
+    "dict_of_messages": _HDR + """
+MSGS = {"busy": "the daemon is busy", "gone": "the daemon is gone"}
+
+def f(root):
+    try:
+        daemon_mod.call(root, "x", {})
+    except Exception as e:
+        raise RuntimeError(MSGS["busy"] + f" ({e})")
+""",
+    "getattr_dial": _HDR + """
+def f(root):
+    try:
+        getattr(daemon_mod, "call")(root, "x", {})
+    except Exception as e:
+        raise RuntimeError(f"daemon did not answer ({e})")
+""",
+    "synonym_no_answer": _HDR + """
+def f(root):
+    try:
+        daemon_mod.call(root, "x", {})
+    except Exception as e:
+        raise RuntimeError(f"no answer from the store ({e})")
+""",
+})
 _PLANTS_CLEAN = {
     "raises_the_classifier": _HDR + """
 def f(root):
@@ -807,3 +846,111 @@ def test_a_write_that_never_reached_a_socket_is_plainly_not_running(exc):
     assert isinstance(e, verbs.VerbAbsentError), type(e)
     assert "not running" in str(e), str(e)
     assert "not confirmed" not in str(e) and "may still complete" not in str(e), str(e)
+
+
+
+# ---- #r11-amend (ch-bsd plan-3 r11, 999313c) ---------------------------------
+
+@pytest.mark.timeout(60)
+def test_subject_filing_on_a_refused_socket_does_not_claim_it_may_still_complete(monkeypatch):
+    """r11 #s-1: `focus summarize --promote`'s memory_add leg is classified
+    (`write=True`), but its subject-filing leg — two wrappers deep
+    (`_subject_upsert` -> `_memory_daemon_call`) — still said "not confirmed …
+    the daemon may still complete it" for a REFUSED socket, where nothing was
+    sent. Real refused socket file; `daemon_up=True` as the command passes it
+    after its status probe (the race)."""
+    import click
+    base, root = _refused_root("rmxf-")
+    monkeypatch.setattr(cli_mod, "_root", lambda: root)
+    monkeypatch.setenv("RMX_PARTITION", "p")
+    try:
+        s = cli_mod._stm("sess-r11", prefer_latest=False)
+        s.set_subject("subj-x")
+        with pytest.raises(click.ClickException) as ei:
+            cli_mod._file_under_active_subject(s, 1, timeout=3.0, retries=0, daemon_up=True)
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+    msg = ei.value.message
+    assert "promoted id=1" in msg, msg
+    assert "may still complete" not in msg and "not confirmed" not in msg, msg
+    assert "not running" in msg, msg
+
+
+def test_the_legacy_detector_closes_its_handle(monkeypatch):
+    """r11 #m-1 P2: removing the detector's `close()` survived 45 tests, because
+    refcounting frees the handle on return. Pin the close itself: every Store
+    the detector opens is closed before it returns."""
+    base, root = _legacy_store("rmxc-")
+    opened: list = []
+    closed: list = []
+    real_init, real_close = Store.__init__, Store.close
+
+    def rec_init(self, *a, **kw):
+        opened.append(id(self))
+        real_init(self, *a, **kw)
+
+    def rec_close(self, *a, **kw):
+        closed.append(id(self))
+        return real_close(self, *a, **kw)
+    monkeypatch.setattr(Store, "__init__", rec_init)
+    monkeypatch.setattr(Store, "close", rec_close)
+    try:
+        assert verbs.legacy_memory_partition_exists(root, "memory-p") is True
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+    assert opened, "the detector opened no Store"
+    assert set(opened) <= set(closed), (
+        f"the detector returned with {len(set(opened) - set(closed))} Store handle(s) open")
+
+
+@pytest.mark.timeout(60)
+def test_memory_partition_never_guesses_past_an_unreadable_catalog(monkeypatch):
+    """r11 #m-1 P8: with no daemon and no snapshot, a catalog that cannot be read
+    (another, non-daemon process holds it) must be typed busy — never the
+    project partition guessed past it. A REAL second process holds the writer."""
+    import subprocess
+    import sys
+    base, root = _legacy_store("rmxh-")
+    holder = subprocess.Popen(
+        [sys.executable, "-c",
+         "import sys, time; from refmatrix.store import Store; "
+         "s = Store(sys.argv[1]); s._connect(); print('held', flush=True); time.sleep(60)",
+         str(root)],
+        stdout=subprocess.PIPE, text=True)
+    try:
+        assert holder.stdout.readline().strip() == "held"
+        assert not dm.ping(root)
+        with pytest.raises(verbs.VerbBusyError) as ei:
+            verbs.memory_partition(root, timeout=5.0)
+        assert "could not be read" in str(ei.value), str(ei.value)
+    finally:
+        holder.kill()
+        holder.wait()
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_summarize_promote_global_goes_through_global_write_within_its_timeout(monkeypatch,
+                                                                               tmp_path):
+    """r11 observation, orchestrator decision: `focus summarize --promote
+    --global` wrote with `hub.global_call("memory_add", args)` directly —
+    unbudgeted, ignoring `--timeout`, bypassing the one global-write helper.
+    It goes through `verbs.global_write` with its budget bounded by --timeout."""
+    from refmatrix import hub as _hub
+    monkeypatch.setattr(cli_mod, "_root", lambda: tmp_path / ".refmatrix")
+    seen: list = []
+
+    def recorder(op, args, *, timeout=None):
+        seen.append((op, timeout))
+        return {"id": 7}
+    monkeypatch.setattr(verbs, "global_write", recorder)
+
+    def tripwire(*a, **kw):
+        raise AssertionError("focus summarize --global dialled hub.global_call directly")
+    monkeypatch.setattr(_hub, "global_call", tripwire)
+    r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "-s", "sess-g", "--promote",
+                                          "--global", "--timeout", "5"])
+    assert seen, (r.output, r.stderr, repr(r.exception))
+    op, timeout = seen[0]
+    assert op == "memory_add", seen
+    assert timeout is not None and timeout <= 5.0, f"budget {timeout!r} does not honour --timeout 5"
+    assert r.exit_code == 0, (r.output, r.stderr)

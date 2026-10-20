@@ -13,14 +13,18 @@ What counts as a DIAL:
     daemon or hub MODULE by any import spelling, or a name containing "daemon";
   - a bare name bound by `from …daemon import call [as x]` / `from …hub import
     global_call`;
-  - a call to a DIAL WRAPPER: any function that dials directly (e.g.
-    `_memory_daemon_call`) and is not itself a clean delegate.
+  - `getattr(<daemon alias>, "call")(...)`;
+  - a call to a DIAL WRAPPER: any function that dials, directly or through
+    another wrapper at ANY depth (the true fixed point — r11 #s-1:
+    `_subject_upsert` -> `_memory_daemon_call` -> `daemon_mod.call` was two
+    levels deep and the one-level set missed it), and is not a clean delegate.
 What counts as WORDING (the handler's own text, plus what it reaches):
   - string literals and f-strings in the handler;
-  - module-level string constants it names;
+  - module-level string constants it names, including dict / list / tuple
+    tables of messages;
   - string text of module-level helpers it calls (two levels), except dial
     wrappers and clean delegates;
-  - synonyms: did not answer / not answering / not running / not confirmed / busy /
+  - synonyms: did not answer / not answering / no answer / not running / not confirmed / busy /
     timed out / unreachable / wedged / down / hung / stuck.
 A handler is CLEAN when it:
   - catches only already-typed errors (`Verb*Error`, `ClickException`); or
@@ -32,7 +36,7 @@ A handler is CLEAN when it:
 import ast, re
 
 CLASSIFIER = "classify_transport_error"
-WORDS = re.compile(r"did not answer|not answering|not running|not confirmed|busy|timed? ?out"
+WORDS = re.compile(r"did not answer|not answering|no answer|not running|not confirmed|busy|timed? ?out"
                    r"|unreachable|wedged|\bdown\b|\bhung\b|\bstuck\b", re.I)
 
 
@@ -81,7 +85,8 @@ def _module_strings(tree):
     """Module-level NAME = "str" constants and def name -> its own string text."""
     consts, fn_text = {}, {}
     for n in tree.body:
-        if isinstance(n, ast.Assign) and isinstance(n.value, (ast.Constant, ast.JoinedStr)):
+        if isinstance(n, ast.Assign) and isinstance(n.value, (ast.Constant, ast.JoinedStr,
+                                                               ast.Dict, ast.List, ast.Tuple)):
             for t in n.targets:
                 if isinstance(t, ast.Name):
                     consts[t.id] = _strings(n.value)
@@ -108,13 +113,22 @@ class Corpus:
             self.fns.update(f)
         # delegates: functions that call the classifier AND use it cleanly
         self.delegates = {f for f, node in self.fns.items() if self._classifies_cleanly(node)}
-        # dial wrappers: fixed point over functions that dial (not delegates)
-        # dial wrappers: functions that dial DIRECTLY (one level, as r10 asked:
-        # `_memory_daemon_call` and any function that calls daemon_mod.call),
-        # minus the delegates, whose dial errors leave them already classified.
+        # dial wrappers: the TRUE fixed point (ch-bsd plan-3 r11 #s-1). A
+        # function is a wrapper when it dials directly OR calls a known wrapper,
+        # at any depth (`_subject_upsert` -> `_memory_daemon_call` ->
+        # `daemon_mod.call` was two levels and the one-level set missed it);
+        # iterate until no function is added. Clean delegates are excluded:
+        # their dial errors leave them already classified.
         self.wrappers = set()
-        self.wrappers = {fname for fname, node in self.fns.items()
-                         if fname not in self.delegates and self._dials(node, file=None)}
+        changed = True
+        while changed:
+            changed = False
+            for fname, node in self.fns.items():
+                if fname in self.wrappers or fname in self.delegates:
+                    continue
+                if self._dials(node, file=None, skip_self=fname):
+                    self.wrappers.add(fname)
+                    changed = True
 
     def _dials(self, node, file, skip_self=None):
         froms = set().union(*self.fromcalls.values()) if file is None else self.fromcalls[file]
@@ -128,6 +142,13 @@ class Corpus:
                         _is_daemon_alias(f.value.id) or f.value.id in aliases):
                 return True
             if isinstance(f, ast.Name) and f.id in froms:
+                return True
+            # getattr(daemon_mod, "call")(...)
+            if (isinstance(f, ast.Call) and getattr(f.func, "id", None) == "getattr"
+                    and len(f.args) >= 2 and isinstance(f.args[0], ast.Name)
+                    and (_is_daemon_alias(f.args[0].id) or f.args[0].id in aliases)
+                    and isinstance(f.args[1], ast.Constant)
+                    and f.args[1].value in ("call", "global_call")):
                 return True
             name = _callee(n)
             if name and name != skip_self and name in self.wrappers:
