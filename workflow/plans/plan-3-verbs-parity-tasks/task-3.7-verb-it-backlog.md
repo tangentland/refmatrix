@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: task-3.7-verb-it-backlog
-title: "Task 3.7: the verb-it backlog — 49 agent-facing CLI paths in eight families: 42 verbed, 7 re-decided"
+title: "Task 3.7: the verb-it backlog — 49 agent-facing CLI paths in eight families: 45 verbed, 4 re-decided"
 tags: [task, plan-3, verbs, parity, backlog, deferral]
 metadata:
   node_type: task
@@ -24,6 +24,7 @@ rel: derives-from -> [[bsd-plan3-verbs-parity-r9-1acadd2#b-1]]
 rel: amends -> [[task-3.4-internal-cli-allowlist#r5-legacy]]
 rel: implements -> [[bsd-plan3-verbs-parity-r12-b18d7e8#m-1]]
 rel: implements -> [[bsd-plan3-verbs-parity-r12-b18d7e8#m-2]]
+rel: amends -> [[bsd-plan3-task37-spec-7d6c418]]
 
 ## Why {#why}
 
@@ -57,12 +58,19 @@ ready-to-implement and record the reason). Each re-decision cites code-checked e
 | [[#fam-canon]] | `canon find`, `canon siblings`, `canon link` (3) | `rmx_canon` | — |
 | [[#fam-matrix-edit]] | all 10 | `rmx_matrix` | — |
 | [[#fam-curation]] | all 5 | `rmx_curate` | — |
-| [[#fam-focus]] | `tail`, `topics`, `show`, `subject`, `subjects`, `clear-subject`, `detour`, `detours`, `return`, `clear` (10) | actions on `rmx_focus` | `focus composite` → `harness` |
+| [[#fam-focus]] | all 11 (`tail`, `topics`, `show`, `subject`, `subjects`, `clear-subject`, `composite`, `detour`, `detours`, `return`, `clear`) | actions on `rmx_focus` | — |
 | [[#fam-session]] | `session list`, `recall`, `show` (3) | `rmx_session` | `session stats` → `harness` |
-| [[#fam-refine]] | `refine list`, `refine show` (2); `curator drain` (1) | `rmx_refine`; `rmx_curator_drain` | `refine accept`, `refine reject` → `operator` |
-| [[#fam-taxonomy]] | `taxonomy list` (1) | `rmx_taxonomy` | `taxonomy add`, `taxonomy remove` → `operator` |
+| [[#fam-refine]] | `refine list`, `refine show` (2); `curator drain` (1) | `rmx_refine`; `rmx_curator` | `refine accept`, `refine reject` → `operator` |
+| [[#fam-taxonomy]] | all 3 (`list`, `add`, `remove`) | `rmx_taxonomy` | — |
 
-**42 verbed + 7 re-decided = 49.** Eight new MCP tools; `rmx_focus` gains an `action`. {#decisions-count}
+**45 verbed + 4 re-decided = 49.** Plus `curator status` (today category `hook`) becomes
+`rmx_curator`'s twin (see [[#fam-refine-drain]]), so **46 paths leave `LEGACY_UNPAIRED`
+(140 → 94).** Eight new MCP tools; `rmx_focus` gains an `action`. {#decisions-count}
+
+Spec review r1 ([[bsd-plan3-task37-spec-7d6c418]], 15 findings) moved `focus composite` and
+`taxonomy add`/`remove` from re-decided to verbed: composite's own help says "call it to pull the
+composite on demand", and `rmx memory add` / `retag` output tells agents to "add via `rmx taxonomy
+add`" — the "zero agent evidence" claims were false (S4). {#decisions-r1}
 
 ## Shared contract for every new verb {#contract}
 
@@ -76,11 +84,20 @@ Applies to every family. Tests pin each clause per verb. {#contract-lead}
   click command parses options, calls the verb, renders the dict. Its old body (direct store
   access, inline daemon calls) is deleted, not kept as a fallback. Existing CLI options keep
   their meaning; output text may change where the old text came from a defect. {#c2}
-- **C3 — reads never touch the writer slot.** A read goes through the daemon op with a bounded,
-  single-attempt budget (`retries=0`, default `READ_BUDGET_S = MEMORY_READ_BUDGET_S`), or through
-  the lock-free snapshot via the existing `read_store` / `read_with_fallback` helpers. Never
-  `_store()` (the write accessor), never `Store(root, …)` on a live `.refmatrix/`, never an
-  in-process `Daemon(...)`. {#c3}
+- **C3 — reads never touch the writer slot.** A read goes through a daemon op with the
+  single-attempt budget its row in [[#budgets]] names, or through **`verbs.snapshot_read(root,
+  fn, *, partition)`** — a NEW verb-layer reader (r1 B1: no such helper exists today; the CLI's
+  `_read_store` raises `ClickException` and falls to `_store_rw`, and `search.cached_replica`
+  caches a Store for the life of the process, the bug-136 hazard inside `rmx mcp`). Its contract:
+  - opens `catalog.read.duckdb` read-only **per call** and closes it; never caches;
+  - refuses any file that is not the replica (never the active writer slot);
+  - daemon up, no snapshot yet → `VerbBusyError` worded as a read ("no read snapshot yet");
+  - daemon truly ABSENT (classifier says absent) and no snapshot → opens the store read-only
+    in-process; daemon busy is never treated as absent;
+  - the result dict carries `source: "snapshot" | "in-process"`.
+
+  Never `_store()` (the write accessor), never `Store(root, …)` read-write on a live
+  `.refmatrix/`, never an in-process `Daemon(...)`. {#c3}
 - **C4 — writes go through the daemon.** Via `verbs._call` (or `global_write` for the global
   store); no write is retried silently past the caller's budget. {#c4}
 - **C5 — transport errors are classified.** Every handler of a `daemon.call` / `global_call`
@@ -89,12 +106,47 @@ Applies to every family. Tests pin each clause per verb. {#contract-lead}
   absent ⇒ `VerbAbsentError`, refusal (`ok:false`) ⇒ `VerbError` with the daemon's words — never
   an empty answer. {#c5}
 - **C6 — parity rows.** `PAIRING` / defaults rows in `tests/test_verb_parity.py` for every twin;
-  verbed paths leave `LEGACY_UNPAIRED`, and `LEGACY_BASELINE` shrinks by exactly those paths. {#c6}
+  verbed paths leave `LEGACY_UNPAIRED`, and `LEGACY_BASELINE` shrinks by exactly those paths.
+  **Action defaults (r1 S1):** today's defaults test checks only each verb's one `CLI_MAP` twin,
+  and shared params conflict across actions (focus `top` 20 vs 60, `limit` 50 vs 20, `k` 10 vs
+  40, `linkage` multi/None vs `"mentions"`). So a param whose default differs by action is typed
+  `X | None = None` and resolved through `verbs.ACTION_DEFAULTS[(verb, action)]`; a new test
+  walks EVERY `CLI_ACTIONS` twin (via `_ACTIONS_SEED` / `CLI_ACTION_INVOKE`) and asserts the click
+  default equals the resolved verb default. No `"ALL"` escape for the new verbs. {#c6}
 - **C7 — partition.** A project-store verb forwards the CLI's `-p` / `RMX_PARTITION` partition
   (verb param `partition: str | None`) to every op it calls; a memory or session read uses the
   memory / sessions partition resolver the CLI uses today. {#c7}
 - **C8 — no silent failure.** No `except Exception: pass`, no `{}` / `[]` stand-in for a failed
   leg. A leg that is skipped by design (e.g. no git repo) reports it in a `warnings` list. {#c8}
+- **C9 — params mirror the CLI (r1 M1).** Verb params are the CLI option names 1:1 in
+  snake_case (list-typed where the click option is `multiple=True`); the verb maps them to op arg
+  names internally (`name` → the op's `names`, etc.). Exception: a CLI `--project` FILTER
+  (session list/recall/stats, refine list) is named **`project_filter`** — `project` is the MCP
+  transport's store-selector and the MCP layer overwrites a param of that name (r1 S2). {#c9}
+
+## Route and budget per action {#budgets}
+
+One `READ_BUDGET_S = MEMORY_READ_BUDGET_S` (10 s) does not fit every read (r1 S3). Each action's
+route and default budget; every daemon call is single-attempt (`retries=0`) and every budget is
+overridable by a `timeout` param. {#budgets-lead}
+
+| verb.action | route | default budget |
+|-------------|-------|----------------|
+| graph.neighbors / co_occur / top | `snapshot_read` | n/a (local) |
+| graph.describe | its existing lock-free daemon op (`describe`), not the snapshot | 10 s |
+| graph.recall / dense | daemon op (server-side embed; cold model start) | 180 s |
+| graph.timeline | snapshot + sessions `memory_search` op + git subprocess (30 s) | 60 s |
+| canon.find | federated (as `rmx_where`) | 10 s per store, `skipped` |
+| canon.siblings, matrix.list_* / run | `snapshot_read` | n/a |
+| canon.link, matrix writes, curate (not forget) | `_call` write | 60 s |
+| curate.forget (not dry-run) | `_call` write | 600 s |
+| focus.* (STM) | STM files | n/a |
+| focus.subjects / clear_subject | `_call` on `memory_partition(root)` | 10 s |
+| focus.composite | `snapshot_read` + resolved session | n/a |
+| session.list / recall / show | `_call` (`memory_iter` 100k rows / `memory_get` / `memory_search`) | 60 s |
+| refine.list / show | `_hub_rpc` | hub default |
+| curator.status / drain | queue file under the shared lock | n/a |
+| taxonomy.* | `~/.refmatrix/taxonomy.json` under a file lock | n/a |
 
 ## Families {#families}
 
@@ -106,20 +158,29 @@ evidence: the PRIMER header and the hooks.py CLAUDE briefing teach `neighbors`, 
 
 | action | CLI path | route (C3) | params beyond `partition` |
 |--------|----------|------------|---------------------------|
-| `neighbors` | `neighbors` | snapshot (`read_store`) — today it reads through `_store()`, the WRITE accessor, so a busy daemon says "writes go through the daemon" | as the CLI |
-| `co_occur` | `co-occur` | snapshot | as the CLI |
-| `top` | `top` | snapshot | `linkage`, `concept`, `k` |
-| `describe` | `describe` | snapshot | as the CLI |
-| `recall` | `recall` | daemon `memory_recall` op (hybrid dense⊕symbolic, server-side embed, rerank) with `kinds`; `--concept` / `--symbolic` seeds become an explicit `candidate_ids` prefilter the op accepts (op extended); `--no-dense` ⇒ symbolic only | `query`, `k`, `kinds`, `concepts`, `symbolic`, `dense` |
+| `neighbors` | `neighbors` | `snapshot_read` — today it reads through `_store()`, the WRITE accessor, so a busy daemon says "writes go through the daemon" | as the CLI |
+| `co_occur` | `co-occur` | `snapshot_read` | as the CLI |
+| `top` | `top` | `snapshot_read` | `linkage`, `concept`, `k` |
+| `describe` | `describe` | its existing lock-free daemon op (r1 S3) | as the CLI |
+| `recall` | `recall` | a NEW daemon op `graph_recall` that runs exactly the CLI's algorithm server-side (see [[#fam-graph-read-recall]]) | `query`, `k`, `kinds`, `concept`, `symbolic`, `no_dense` |
 | `dense` | `search-dense` | daemon `ann_search` op WITH `partition` (today omitted — ids resolve against the wrong partition under `-p`); names resolved from the same partition | `query`, `k`, `kinds` |
 | `timeline` | `concept timeline` | graph leg from the snapshot; session leg through the daemon `memory_search` op on the sessions partition (budgeted); git leg via subprocess. A failed leg is a `warnings` entry, never `except: pass`; the direct `Store(...)` open in `_iter_session_memories` is gone | `concept`, `hops`, `since`, `until`, `k`, `git` |
 
-- `recall` no longer loads `Embedder()` in the caller's process (the CLI and the MCP server
-  both hand the embed to the daemon). `-s` values are validated as ints (`VerbArgsError`).
-  {#fam-graph-read-recall}
+- `recall` no longer loads `Embedder()` in the caller's process. It does NOT go through the
+  `memory_recall` op (r1 B2): that op fuses BM25 with dense by default and reranks under the
+  store lock, while the CLI is pure dense by default and `-s` is a RANKED input to fusion, not a
+  filter. `graph_recall` runs the CLI's own code path server-side — `bitmap_prefilter` from
+  `--concept` → `candidate_ids`; `dense_recall` by default; `hybrid_recall(symbolic_hits=…,
+  candidate_ids=…)` when `-s` is given; the symbolic-only fallback when dense is unavailable or
+  `no_dense` — with no rerank and no fusion unless the CLI does it, the embed outside the store
+  lock, reads from a read store (the `memory_recall` bug-098 pattern). A test pins the rank
+  order the base CLI (`591a2fb`) produces on a fixture store. `-s` values are validated as ints
+  (`VerbArgsError`). {#fam-graph-read-recall}
 - `top`: `gmd-curator.md` lines 290 and 511 teach `rmx top mentions -k N`, which treats
-  `mentions` as the concept (2 of 3 logged calls failed). Rewrite both lines to a command that
-  does what the comment says, checked against the real signature. {#fam-graph-read-top}
+  `mentions` as the concept (2 of 3 logged calls failed). The comments want the most-referenced
+  entities, which is `rmx primer`; rewrite both lines to it in the template
+  (`src/refmatrix/templates/agents/gmd-curator.md`) AND the installed
+  `.claude/agents/gmd-curator.md` (r1 M3). {#fam-graph-read-top}
 - **Re-decided: `pairs show` → `harness`.** A debug view of the `pairs compile` (maintenance)
   coref inventory; zero agent evidence in templates, primer, docs; 0 calls in 12 cli.logs.
   {#fam-graph-read-pairs}
@@ -151,7 +212,8 @@ rather than re-decided. Hidden aliases (`add-concept`, …) follow their targets
 - `list_entities` gains `limit` (default 200) and the CLI gains `--json` (a logged agent call
   `list entities --json` failed with exit 2).
 - The daemon ops `iter_entities`, `list_linkages`, `list_saved_queries` have no callers and take
-  the writer lock; delete them unless a verb in this task calls one. {#fam-matrix-edit-dead}
+  the writer lock; delete them unless a verb in this task calls one — from `OPS` AND from the
+  daemon's interactive-pool op list (daemon.py ~6565, r1 M2). {#fam-matrix-edit-dead}
 
 ### curation {#fam-curation}
 
@@ -171,7 +233,7 @@ take them. Agent evidence: every generated PRIMER.md header prints
 ### focus {#fam-focus}
 
 `rmx_focus` gains `action: Literal["context", "tail", "show", "topics", "subject", "subjects",
-"clear_subject", "detour", "detours", "return", "clear"] = "context"`. `context` is today's
+"clear_subject", "composite", "detour", "detours", "return", "clear"] = "context"`. `context` is today's
 behaviour unchanged (existing MCP callers send no action). All STM actions resolve the session
 through `resolve_session_source` (`purpose="read"` for reads, `"write"` for writes). The
 `/detour` and `/return` command templates invoke `rmx focus detour|return`; no generated hook
@@ -184,11 +246,12 @@ runs any of these paths. {#fam-focus-lead}
 - **Defect fixed here — `focus subjects`:** it lists subjects from the CODE partition while
   `change_subject` writes to `memory_partition(root)`, and a daemon `ok:false` prints "no
   subjects yet". `subjects` reads `memory_partition(root)` through `_call` (budgeted, C5); a
-  refusal is a `VerbError`. {#fam-focus-subjects}
-- **Re-decided: `focus composite` → `harness`.** It renders the STM topic composite the
-  scan-prompt hook injects, reads the replica with no `--session` (composite.py calls
-  `latest_session` directly); zero agent evidence. A debug view of a hook's output.
-  {#fam-focus-composite}
+  refusal is a `VerbError`. The defect shows only when the memory partition differs from the
+  project partition (legacy `memory-<p>` or `-p`), so its RED test sets that up (r1). {#fam-focus-subjects}
+- **Defect fixed here — `focus composite`** (verbed per r1 S4: its help says "call it to pull
+  the composite on demand"): it has no `--session` and `composite.py` calls `latest_session`
+  directly, skipping the one resolver. The action resolves through `resolve_session_source`
+  (`purpose="read"`) and reads via `snapshot_read`; the CLI gains `--session`. {#fam-focus-composite}
 
 ### session {#fam-session}
 
@@ -214,17 +277,26 @@ runs any of these paths. {#fam-focus-lead}
 
 `rmx_refine(action=list|show)` — read-only views of the hub's refinement queue through
 `verbs._hub_rpc` (today the CLI bypasses it: a hub `ok:false` becomes an empty list or "unknown
-error", a timeout a traceback). `rmx_curator_drain` — the curator queue drain the gmd-curator
-agent runs (`gmd-curator.md` :138, :150). {#fam-refine-lead}
+error", a timeout a traceback). `rmx_curator(action=status|drain)` — the curator queue the
+gmd-curator agent reads and drains (`gmd-curator.md` :138, :150). {#fam-refine-lead}
 
 - **Re-decided: `refine accept`, `refine reject` → `operator`.** They are the human approval
   gate of the "no silent writes" refinement queue; the hub UI is the other surface for the same
   gate. Code check: `gmd-curator.md` never calls `rmx refine` (the old reason "the gmd-curator
   agent drives it" was false). {#fam-refine-gate}
-- `curator drain`: verb + CLI twin share ONE drain (`gmd_curator.drain_queue`, which today
-  swallows errors — fixed to surface them, C8). The drain renames the queue file atomically
-  before reading it, so a watcher append during the drain lands in a fresh queue rather than
-  being unlinked. {#fam-refine-drain}
+- **`rmx_curator` (r1 B3).** Drain today reads nothing: entries appended between the agent's
+  `curator status` snapshot and its `curator drain` are lost, the hooks run `curator status
+  --drain` on every prompt, and an MCP agent offered only a drain could not take the snapshot.
+  So:
+  - `status` returns the queued entries plus a `token` (the byte length of the queue file read);
+  - `drain(token)` removes ONLY that prefix, under one `fcntl` lock that the daemon watcher's
+    append also takes, so an append after the snapshot survives the drain; a token larger than
+    the file, or no token, is a `VerbArgsError`;
+  - ONE implementation (`gmd_curator`), which today swallows errors in `drain_queue` — fixed to
+    surface them (C8);
+  - twins: `curator status` (no `--drain`) is the `CLI_MAP` twin (it leaves category `hook`);
+    `curator drain` is a `CLI_ACTIONS` twin; `curator status --drain` (the generated hooks'
+    form) is status-then-drain(token) through the verb. {#fam-refine-drain}
 - Defects found in the re-decided operator paths are logged as bug rows (accept KeyError on a
   gmd-curator candidate; reject has no pending check; accept writes project memories to
   `store_name` not `memory_partition`; candidate ids use per-process `hash()`), not fixed here.
@@ -232,15 +304,20 @@ agent runs (`gmd-curator.md` :138, :150). {#fam-refine-lead}
 
 ### taxonomy {#fam-taxonomy}
 
-`rmx_taxonomy()` — the shared tag vocabulary (read). {#fam-taxonomy-lead}
+`rmx_taxonomy(action=list|add|remove)` — the shared tag vocabulary. Agent evidence: `rmx memory
+add` / `retag` output tells agents to "add via `rmx taxonomy add`" (r1 S4). {#fam-taxonomy-lead}
 
-- **Parity fix:** `memory_add` (verb) returns `tag_warnings` for tags outside the vocabulary,
-  the warning the CLI prints today and MCP adds never get.
-- **Re-decided: `taxonomy add`, `taxonomy remove` → `operator`.** Vocabulary administration;
-  zero agent evidence in templates or cli.log. {#fam-taxonomy-admin}
+- **Parity fix:** the `memory_add` verb AND the `rmx_memory` `retag` action return
+  `tag_warnings` for tags outside the vocabulary (the warning the CLI prints today; MCP adds and
+  retags never get it, r1 M6). The warning points at `rmx_taxonomy` (action `add`).
+- `add` / `remove` write `~/.refmatrix/taxonomy.json` atomically (temp + rename) under an
+  `fcntl` lock (today: no lock). {#fam-taxonomy-admin}
 - **Defect fixed here (data loss):** a corrupt `~/.refmatrix/taxonomy.json` silently loads the
-  defaults, and the next `add` / `remove` overwrites the user's file. Load fails loudly on a
-  corrupt file and add / remove refuse to write over it. {#fam-taxonomy-corrupt}
+  defaults, and the next `add` / `remove` overwrites the user's file. After the fix (r1 S5):
+  - `add` / `remove` REFUSE to write over a corrupt file (`VerbError` naming the file);
+  - `list` and tag validation DEGRADE: they report the corruption as a warning and validate
+    against nothing — a corrupt vocabulary never blocks `memory add` / `retag`;
+  - a read never writes (today `load` writes the default file on first read). {#fam-taxonomy-corrupt}
 
 ## Folded deferral rows {#folded}
 
@@ -259,8 +336,13 @@ agent runs (`gmd-curator.md` :138, :150). {#fam-refine-lead}
 Each gets a `workflow/bug_registry.md` row (bug-138 is reserved for AC-6's renumber; this task
 takes the next free numbers). Fixed here: search-dense partition, timeline silent passes,
 neighbors write accessor, session / timeline writer-slot opens, add_concept / upsert_entity
-partition, focus clear session, focus subjects partition, taxonomy overwrite, drain swallow.
-Logged open: the four refine operator bugs. {#defects-lead}
+partition, focus clear session, focus subjects partition, focus composite session, taxonomy
+overwrite and read-writes, curator drain race and swallow. Logged open: the four refine operator
+bugs. {#defects-lead}
+
+Out of scope, logged as a deferral row (r1 M7): the CLAUDE briefing hooks.py writes teaches
+`focus export` and `stats`, both filed `harness` outside the 49 — a later pass decides whether
+the briefing or the category is wrong. {#defects-m7}
 
 ## Acceptance criteria {#acceptance}
 
@@ -277,22 +359,29 @@ Global ACs:
   `LEGACY_CATEGORIES` once empty (the shrink-only pin then forbids its return).
   `test_every_verb_it_path_names_its_task_3_7_family` is updated to assert the empty set and
   that each of the 49 paths is either a twin of the verb named in [[#decisions]] or in the
-  re-decided category named there. {#ac-g1}
+  re-decided category named there. Until batch C lands, the family's paths still in `verb-it`
+  keep their `task-3.7#fam-…` reason (the test holds at every batch boundary). {#ac-g1}
 - **AC-G2.** `VERB_IT_FAMILIES` in `tests/test_task3_6_r9_remedy.py` mirrors [[#decisions]]
   (verbed vs re-decided) and partitions the 49 paths. {#ac-g2}
-- **AC-G3.** Deferral rows 51 (the backlog), 52 and 53 move to resolved, citing this task. {#ac-g3}
+- **AC-G3.** Three `workflow/deferral_registry.md` rows move to resolved, citing this task: "The
+  49 `verb-it` CLI paths", "`tests/transport_guard.py` fixed-point loop unpinned by plant order",
+  and "Two transport handlers render the raw exception outside the one classifier" (named by
+  content; the registry has no row ids, r1 M4). {#ac-g3}
 - **AC-G4.** Plan-3 closes when this task is `completed`. {#ac-g4}
-- **AC-G5.** `LEGACY_BASELINE` shrinks by exactly the 42 verbed paths (140 → 98); the total of
-  invocable paths is unchanged. {#ac-g5}
-- **AC-G6.** `rmx install-hooks --check` clean; generated CLI tree / tools-primer artifacts
-  regenerated where a test pins them. {#ac-g6}
+- **AC-G5.** `LEGACY_BASELINE` shrinks by exactly the 46 paths that gain twins (45 verbed +
+  `curator status`; 140 → 94); the total of invocable paths is unchanged; the categories assert
+  (`tests/test_verb_parity.py` ~642) is updated for the removed `verb-it` category. {#ac-g5}
+- **AC-G6.** `rmx install-hooks --check` clean; `docs/ARCHITECTURE.md` `{#cli-hook-surface}`
+  regenerated so `tests/test_docs_generated.py` passes; other generated CLI-tree / tools-primer
+  artifacts regenerated where a test pins them (r1 M5). {#ac-g6}
 
 ## Build order {#schedule}
 
 One clone (`/Volumes/littlebig/refmatrix-task-3.7`), one branch, batches landing in order so
 `verbs.py` / `cli.py` / `test_verb_parity.py` are never edited by two agents at once:
 
-1. **Batch A:** focus, curation, taxonomy, curator drain, R52, R53.
+1. **Batch A:** `snapshot_read` + `ACTION_DEFAULTS` (shared infrastructure), focus, curation,
+   taxonomy, curator, R52, R53.
 2. **Batch B:** graph-read, canon.
 3. **Batch C:** matrix-edit, session, refine; AC-G1..G6.
 
