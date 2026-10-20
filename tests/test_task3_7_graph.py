@@ -464,3 +464,82 @@ def test_graph_action_defaults_resolve_the_shared_param_conflicts():
     sig = inspect.signature(verbs.graph)
     for p in ("limit", "k", "linkage"):
         assert sig.parameters[p].default is None, f"{p}: a per-action default is X | None = None"
+
+
+# ---- recall / dense with NO daemon (spec b12c0ed #fam-graph-read-recall "No daemon") -----
+#
+# C4a: on VerbAbsentError ONLY, recall / dense run the SAME library function the
+# `graph_recall` / `ann_search` op runs, in-process over a read-only store, with the
+# embedder from the accessor the daemon uses (`Daemon._embedder`, patched here to the ONE
+# HashEmbedder for both paths); `source: "in-process"`. Busy never runs in-process.
+# RMX_RERANK=0 keeps the cross-encoder (on by default) out of both paths.
+
+
+def _op_result(root, op, args):
+    s = Store(root)
+    s.init()
+    d = dm.Daemon(root)
+    d.store = s
+    d._log = lambda msg: None
+    try:
+        return dm.OPS[op](d, {"partition": discovery.store_name(root), **args})
+    finally:
+        s.close()
+
+
+@pytest.mark.parametrize("case", sorted(_BASE_ORDER))
+def test_recall_with_no_daemon_ranks_exactly_as_the_daemon_op(gstore, monkeypatch, case):
+    root, _ids = gstore
+    monkeypatch.setenv("RMX_RERANK", "0")
+    monkeypatch.setattr(dm.Daemon, "_embedder", lambda self: HashEmbedder())
+    assert not dm.ping(root)
+    args, expected = _BASE_ORDER[case]
+    out = verbs.graph(root, action="recall", k=10, **args)
+    got = [(h["id"], round(float(h["score"]), 4)) for h in out["hits"]]
+    assert got == expected, (case, got)
+    assert out["source"] == "in-process", out
+    assert "graph_recall" in dm.OPS
+    op = _op_result(root, "graph_recall", {"k": 10, "kinds": None, **args})
+    assert [(h["id"], round(float(h["score"]), 4)) for h in op["hits"]] == got, (
+        "the no-daemon path and the daemon op disagree")
+
+
+def test_dense_with_no_daemon_ranks_exactly_as_the_ann_search_op(gstore, monkeypatch):
+    root, _ids = gstore
+    monkeypatch.setenv("RMX_RERANK", "0")
+    monkeypatch.setattr(dm.Daemon, "_embedder", lambda self: HashEmbedder())
+    assert not dm.ping(root)
+    out = verbs.graph(root, action="dense", query="document number 3", k=10)
+    assert out["source"] == "in-process", out
+    op = _op_result(root, "ann_search", {"query": "document number 3", "k": 10,
+                                         "rerank": False})
+    want = [(h["id"], round(float(h["distance"]), 4)) for h in op["hits"]]
+    got = [(h["id"], round(float(h["distance"]), 4)) for h in out["hits"]]
+    assert got == want and got[0][0] == 6, (got, want)
+    assert out["hits"][0]["name"] == "d3.md"
+
+
+@pytest.mark.parametrize("action,kw", [("recall", {"query": "document number 3"}),
+                                       ("dense", {"query": "document number 3"})])
+def test_recall_and_dense_on_a_busy_daemon_never_run_in_process(silent_with_snapshot,
+                                                                monkeypatch, action, kw):
+    loaded: list = []
+    monkeypatch.setattr(dm.Daemon, "_embedder",
+                        lambda self: loaded.append("Daemon._embedder") or HashEmbedder())
+
+    class _NoModel:
+        def __init__(self, *a, **k):
+            loaded.append("Embedder()")
+            raise AssertionError("embedder constructed under a busy daemon")
+    monkeypatch.setattr("refmatrix.embedder.Embedder", _NoModel)
+    opened: list = []
+    real = Store.__init__
+
+    def rec(self, root, *a, **k):
+        opened.append((str(root), k.get("read_only")))
+        return real(self, root, *a, **k)
+    monkeypatch.setattr(Store, "__init__", rec)
+    with pytest.raises(verbs.VerbBusyError):
+        verbs.graph(silent_with_snapshot.root, action=action, **kw)
+    assert opened == [], f"an in-process store was opened under a busy daemon: {opened}"
+    assert loaded == [], f"an embedder was loaded under a busy daemon: {loaded}"
