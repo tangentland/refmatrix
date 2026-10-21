@@ -58,7 +58,7 @@ That is the containment B-scoped indexes. {#answer-body}
 | M3 MRR Δ (d2_top1) | — | lines −0.030, merge −0.028 | — | — | — | — | MemAware test-720 −0.0075 (held-out) → loss > 0.005: C stays eliminated |
 | M4 tree saving | 3.4% (as defined); 16.7% concept-anchor variant | 18.7%* | 31.0%* | 17.9%* | 21.2%* | 28.6%* | as defined < 10% → keep flat (relative paths save 3.9%); *the variant only |
 | M5 modularity | 0.15 | 0.12 | 0.45 | 0.14 | 0.26 | 0.33 | viascope ≥ 0.40 admit (labels generic); atldb 0.30–0.40, labels fail; rest < 0.30 none |
-| M6 p95 place ÷ p95 sync | not finished | 0.36% | not finished | 0.33% | 1.30% | 0.81% | < 5% → inline (per-file p95 14–39%: fuse into the entity transaction) |
+| M6 p95 place ÷ p95 sync | 1.07% | 0.36% | 0.20% | 0.33% | 1.30% | 0.81% | < 5% → inline (per-file p95 7.6–39%: fuse into the entity transaction) |
 | M7 Dewey vs random | 2.42% | 2.51% | 6.85% | 0.21% | 0.09% | 1.21% | 3 stores 2–10% → order at compaction only; 3 stores < 2% → irrelevant |
 
 {#band-table-body}
@@ -421,18 +421,19 @@ also running during the quiet arms, so "quiet" is not idle. The table reports th
 | cliquet | 61 | 29.0 | 20,833 | 11.8 / 69.1 | 0.33% | 14.3% | 0.51% | < 5%: inline |
 | orderly | 51 | 9.2 | 2,410 | 9.4 / 31.2 | 1.30% | 38.5% | 1.35% | < 5%: inline |
 | atldb | 100 | 2.6 | 1,700 | 6.7 / 13.7 | 0.81% | 31.6% | 1.59% | < 5%: inline |
-| viascope | — | — | — | — | — | — | — | NOT FINISHED at report time |
-| refmatrix | — | — | — | — | — | — | — | NOT FINISHED at report time |
+| viascope | 100 | 14.5 | 11,376 | 11.5 / 22.6 | 0.20% | 7.6% | 0.22% | < 5%: inline |
+| refmatrix | 100 | 10.1 | 8,751 | 14.5 / 93.5 | 1.07% | 20.3% | 0.71% | < 5%: inline |
 
 {#m6-table}
 
-**Band.** Placement adds 6–70 ms at p95 against a p95 re-sync of 1.7–21 s: 0.3–1.3%, so the band
-is **< 5%: inline** in all four finished stores. When the run was handed back, the viascope and
-refmatrix runs were still going under the same script. Their `results/m6_<store>.json` will land
-there, and they are NOT reported here. {#m6-band}
+**Band.** Placement adds 14–94 ms at p95 against a p95 re-sync of 1.7–21 s: 0.2–1.3%, so the
+band is **< 5%: inline** in all six stores. The viascope and refmatrix rows finished after the
+first report (2026-10-21). /Volumes/littlebig unmounted mid-run, so both were re-run in full from
+copies in the session scratchpad. viascope used the same snapshot (2026-10-19 23:09:45). refmatrix
+used a newer one (2026-10-20 15:14:03, not 12:08:55). {#m6-band}
 
-**The per-file reading differs.** Taken file by file, the p95 of t_place/t_ingest is 14–39%,
-which is > 20% in three stores. The cause is small files that re-sync in ~15–50 ms, where a 5–10
+**The per-file reading differs.** Taken file by file, the p95 of t_place/t_ingest is 7.6–39%,
+which is > 20% in four stores (refmatrix just over, at 20.3% in the separate arm and 18.4% fused). The cause is small files that re-sync in ~15–50 ms, where a 5–10
 ms write is a large share. The cost is a fixed per-transaction write, not row volume
 (2.6–29 rows per file). Inline maintenance is therefore safe in aggregate. For small files,
 placement writes should batch into the same transaction as the entity writes (the `fused` mode),

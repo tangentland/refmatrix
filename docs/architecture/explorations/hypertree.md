@@ -507,7 +507,7 @@ rel: evidence-for -> [[spike-2026-10-20-hypertree]]
 | M3 | tree-scoped MRR −0.026 to −0.342 (cliquedb), −0.0075 MemAware test-720 held-out | loss > 0.005 → C stays eliminated |
 | M4 | 3.4% on 200 real prompts (relative paths alone 3.9%); concept-anchor variant 17–31% | < 10% → keep flat |
 | M5 | modularity 0.12–0.26 in 4 stores, atldb 0.33 (was 0.43), viascope 0.45 with generic labels | no subject tree, except viascope in principle |
-| M6 | p95 placement ÷ p95 re-sync 0.3–1.3% (4 stores; viascope and refmatrix unfinished) | < 5% → inline, fused into the entity transaction |
+| M6 | p95 placement ÷ p95 re-sync 0.2–1.3% (all 6 stores); per-file p95 7.6–39% | < 5% → inline, fused into the entity transaction |
 | M7 | Dewey vs random sid bytes 0.1–6.9% | 2–10% (3 stores) compaction only; < 2% (3 stores) irrelevant |
 
 {#spike-results-table}

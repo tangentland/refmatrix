@@ -21,10 +21,10 @@ rel: supersedes -> [[handoff-017-wave1-releases-0801-ac6]]
   probes); not merged to master, not pushed. Untracked: `tests/fixtures/` (the RAW AC-6 cut, 24 MB —
   never `git add -A`; move it off the tree once AC-6 merges) and `eval/spike_hypertree/` (the M1-M7
   spike, in flight).
-- **Background work at save time:** all agents finished. Only the hypertree M6 timing run for
-  viascope then refmatrix is still running as a plain process (`m6_placement_write.py`); it writes
-  `eval/spike_hypertree/results/m6_{viascope,refmatrix}.json` — commit those two files when they
-  appear and fill the doc's NOT FINISHED rows.
+- **Background work:** none. The M6 viascope + refmatrix runs finished 2026-10-21 and are committed
+  (all six stores inline at p95÷p95). /Volumes/littlebig UNMOUNTED mid-run: the spike copies under
+  `/Volumes/littlebig/refmatrix-spike-hypertree/` and the 3.7 / AC-6 clones are unreachable until
+  it is remounted.
 
 ## Task 3.7 — verb-it backlog {#t37}
 

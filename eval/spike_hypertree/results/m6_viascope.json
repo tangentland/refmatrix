@@ -1,0 +1,272 @@
+{
+  "store": "viascope",
+  "seed": 20261020,
+  "method": "in-process sync_files on a no-daemon copy",
+  "n_sampled": 100,
+  "arms": {
+    "fused/quiet": {
+      "arm": "quiet",
+      "mode": "fused",
+      "n_files": 100,
+      "t_ingest_ms": {
+        "p50": 6269.94299935177,
+        "p95": 7576.604720787145
+      },
+      "t_place_ms": {
+        "p50": 7.983667077496648,
+        "p95": 14.740733499638736,
+        "max": 29.33616703376174
+      },
+      "ratio_per_file": {
+        "p50": 0.0016156345390934395,
+        "p95": 0.05454272545253835
+      },
+      "ratio_p95_over_p95": 0.00194555926339883,
+      "t_derive_ms": {
+        "p50": 1.4379580970853567,
+        "p95": 1.8037126399576664
+      },
+      "t_write_ms": {
+        "p50": 6.458166986703873,
+        "p95": 13.243825058452785
+      },
+      "write_only_ratio_per_file": {
+        "p50": 0.001406438283737944,
+        "p95": 0.03731331576035808
+      },
+      "ratio_sum": 0.002139176739365104,
+      "rows_per_file": {
+        "mean": 14.49,
+        "p95": 33.05,
+        "max": 83
+      },
+      "files_not_touched": 0,
+      "vector_delete_failed": 0,
+      "by_ext": {
+        ".md": {
+          "n": 43,
+          "t_ingest_p50_ms": 388.2832075469196,
+          "t_place_p50_ms": 9.835999924689531,
+          "rows_mean": 17.41860465116279
+        },
+        ".pseudo": {
+          "n": 1,
+          "t_ingest_p50_ms": 3710.6377920135856,
+          "t_place_p50_ms": 22.92187511920929,
+          "rows_mean": 61.0
+        },
+        ".py": {
+          "n": 56,
+          "t_ingest_p50_ms": 6772.552396403626,
+          "t_place_p50_ms": 6.802937481552362,
+          "rows_mean": 11.410714285714286
+        }
+      },
+      "placement_rows_total": 1511
+    },
+    "fused/loaded": {
+      "arm": "loaded",
+      "mode": "fused",
+      "n_files": 100,
+      "t_ingest_ms": {
+        "p50": 9487.748687388375,
+        "p95": 11375.749836303292
+      },
+      "t_place_ms": {
+        "p50": 11.5426667034626,
+        "p95": 22.584231500513848,
+        "max": 115.59991724789143
+      },
+      "ratio_per_file": {
+        "p50": 0.0013944916300184262,
+        "p95": 0.07565455685041209
+      },
+      "ratio_p95_over_p95": 0.0019852960750280447,
+      "t_derive_ms": {
+        "p50": 2.550166565924883,
+        "p95": 4.312937427312136
+      },
+      "t_write_ms": {
+        "p50": 9.034916525706649,
+        "p95": 20.09476702660322
+      },
+      "write_only_ratio_per_file": {
+        "p50": 0.001195406007763754,
+        "p95": 0.05381565429049825
+      },
+      "ratio_sum": 0.0021664658434935704,
+      "rows_per_file": {
+        "mean": 14.49,
+        "p95": 33.05,
+        "max": 83
+      },
+      "files_not_touched": 0,
+      "vector_delete_failed": 0,
+      "by_ext": {
+        ".md": {
+          "n": 43,
+          "t_ingest_p50_ms": 735.6798751279712,
+          "t_place_p50_ms": 13.669082894921303,
+          "rows_mean": 17.41860465116279
+        },
+        ".pseudo": {
+          "n": 1,
+          "t_ingest_p50_ms": 7711.018458008766,
+          "t_place_p50_ms": 23.57187494635582,
+          "rows_mean": 61.0
+        },
+        ".py": {
+          "n": 56,
+          "t_ingest_p50_ms": 10243.890604004264,
+          "t_place_p50_ms": 9.917228948324919,
+          "rows_mean": 11.410714285714286
+        }
+      },
+      "placement_rows_total": 1511
+    },
+    "separate/quiet": {
+      "arm": "quiet",
+      "mode": "separate",
+      "n_files": 100,
+      "t_ingest_ms": {
+        "p50": 5860.887000570074,
+        "p95": 7511.092141503468
+      },
+      "t_place_ms": {
+        "p50": 8.222020464017987,
+        "p95": 14.242431521415709,
+        "max": 29.75054131820798
+      },
+      "ratio_per_file": {
+        "p50": 0.001692151557820086,
+        "p95": 0.0587816181725923
+      },
+      "ratio_p95_over_p95": 0.0018961865003249518,
+      "t_derive_ms": {
+        "p50": 1.3465415686368942,
+        "p95": 1.742510637268424
+      },
+      "t_write_ms": {
+        "p50": 6.898729130625725,
+        "p95": 12.88322096224874
+      },
+      "write_only_ratio_per_file": {
+        "p50": 0.0014238793181781926,
+        "p95": 0.04119206633411318
+      },
+      "ratio_sum": 0.0022187453446249655,
+      "rows_per_file": {
+        "mean": 14.49,
+        "p95": 33.05,
+        "max": 83
+      },
+      "files_not_touched": 0,
+      "vector_delete_failed": 0,
+      "by_ext": {
+        ".md": {
+          "n": 43,
+          "t_ingest_p50_ms": 382.1634156629443,
+          "t_place_p50_ms": 9.85266687348485,
+          "rows_mean": 17.41860465116279
+        },
+        ".pseudo": {
+          "n": 1,
+          "t_ingest_p50_ms": 3646.4426671154797,
+          "t_place_p50_ms": 23.231165949255228,
+          "rows_mean": 61.0
+        },
+        ".py": {
+          "n": 56,
+          "t_ingest_p50_ms": 6553.981417091563,
+          "t_place_p50_ms": 6.92939548753202,
+          "rows_mean": 11.410714285714286
+        }
+      },
+      "placement_rows_total": 1511
+    },
+    "separate/loaded": {
+      "arm": "loaded",
+      "mode": "separate",
+      "n_files": 100,
+      "t_ingest_ms": {
+        "p50": 9377.991249784827,
+        "p95": 23124.205625429746
+      },
+      "t_place_ms": {
+        "p50": 12.772541493177414,
+        "p95": 32.8365012537688,
+        "max": 124.9629589729011
+      },
+      "ratio_per_file": {
+        "p50": 0.0017052872271759098,
+        "p95": 0.05956699860937459
+      },
+      "ratio_p95_over_p95": 0.0014200055900583423,
+      "t_derive_ms": {
+        "p50": 2.7388124726712704,
+        "p95": 4.99805009458214
+      },
+      "t_write_ms": {
+        "p50": 10.221562813967466,
+        "p95": 25.999733014032234
+      },
+      "write_only_ratio_per_file": {
+        "p50": 0.0014385204362659543,
+        "p95": 0.036200532169800355
+      },
+      "ratio_sum": 0.001735143845136178,
+      "rows_per_file": {
+        "mean": 14.49,
+        "p95": 33.05,
+        "max": 83
+      },
+      "files_not_touched": 0,
+      "vector_delete_failed": 0,
+      "by_ext": {
+        ".md": {
+          "n": 43,
+          "t_ingest_p50_ms": 719.8243751190603,
+          "t_place_p50_ms": 13.957458082586527,
+          "rows_mean": 17.41860465116279
+        },
+        ".pseudo": {
+          "n": 1,
+          "t_ingest_p50_ms": 7531.466834247112,
+          "t_place_p50_ms": 32.800540793687105,
+          "rows_mean": 61.0
+        },
+        ".py": {
+          "n": 56,
+          "t_ingest_p50_ms": 10904.039499815553,
+          "t_place_p50_ms": 11.540687177330256,
+          "rows_mean": 11.410714285714286
+        }
+      },
+      "placement_rows_total": 1511
+    }
+  },
+  "reported": {
+    "fused": {
+      "p95_of_per_file_ratio": 0.07565455685041209,
+      "arm": "loaded",
+      "band_per_file_ratio": "batch at snapshot tick (5-20%)",
+      "p95_place_over_p95_ingest": 0.0019852960750280447,
+      "arm_p95p95": "loaded",
+      "band_p95p95": "inline (<5%)",
+      "t_place_p95_ms_worst": 22.584231500513848,
+      "write_only_p95_ratio_worst": 0.05381565429049825,
+      "band_write_only": "batch at snapshot tick (5-20%)"
+    },
+    "separate": {
+      "p95_of_per_file_ratio": 0.05956699860937459,
+      "arm": "loaded",
+      "band_per_file_ratio": "batch at snapshot tick (5-20%)",
+      "p95_place_over_p95_ingest": 0.0018961865003249518,
+      "arm_p95p95": "quiet",
+      "band_p95p95": "inline (<5%)",
+      "t_place_p95_ms_worst": 32.8365012537688,
+      "write_only_p95_ratio_worst": 0.04119206633411318,
+      "band_write_only": "inline (<5%)"
+    }
+  }
+}
