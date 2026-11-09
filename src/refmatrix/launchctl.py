@@ -459,7 +459,12 @@ def render_hub_plist(*, port: int = 7777, host: str = "127.0.0.1",
         "ExitTimeOut": int(EXIT_TIMEOUT_S),
         "StandardOutPath": str(home / "hub.stdout.log"),
         "StandardErrorPath": str(home / "hub.stderr.log"),
-        "ProcessType": "Background",
+        # NOT Background: the hub's children are the shared embed/rerank
+        # workers, which inherit its QoS and answer interactive hook budgets.
+        # At Background they ran on throttled efficiency cores — the same
+        # 10-doc rerank took 3.6 s instead of 0.23 s, and every scan-prompt
+        # rerank blew its 4.9 s budget (bug-162, cliquedb 2026-11-08).
+        "ProcessType": "Standard",
     }
     return plistlib.dumps(plist)
 

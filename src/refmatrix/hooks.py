@@ -23,7 +23,16 @@ from pathlib import Path
 # Prefix for every Claude-hook command so cli.log tags the invocation form as
 # `hook` (telemetry "by form" axis). Exported so it reaches every rmx in a
 # compound command.
-HOOK_ENV = "export RMX_INVOCATION_SOURCE=hook; "
+#
+# It also puts rmx's install dirs on PATH, because a hook inherits whatever
+# PATH the session's LAUNCHER built. On 2026-11-08 Herdr started a session as
+# `bash -l`, which never sources ~/.bashrc (the only place ~/bin entered
+# PATH), and every rmx hook in that session exited 127 `rmx: command not
+# found` — the Stop summary visibly, the rest behind `|| true` (bug-163).
+# `$HOME` is expanded by the hook's shell, not baked here, so the generated
+# text is the same on every machine and `install-hooks --check` stays stable.
+# The dirs lead `launchctl._LAUNCHD_PATH_DIRS` for the same reason.
+HOOK_ENV = 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; '
 
 GIT_HOOK_SCRIPTS: dict[str, str] = {
     "post-commit": r"""#!/usr/bin/env bash
