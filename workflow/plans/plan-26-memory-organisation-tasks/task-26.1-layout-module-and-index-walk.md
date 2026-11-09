@@ -37,11 +37,18 @@ viascope2 12, cliquet 8.
    - `iter_memory_files(memdir)`, which walks recursively and yields only `.md` files. It
      excludes `MEMORY.md`, `README.md`, every dotfile, and everything under a dot-directory;
    - `iter_savestates(memdir)`, which yields `savestates/*.md` plus legacy top-level
-     `savestate_*.md`, ordered newest-first by ONE key: frontmatter `updated`, then `created`,
-     then mtime (ch-bsd r1 #s2).
-2. **AC-2: the bridge uses that walk (ch-bsd r1 #s3).** `ingest_gmd.collect_gmd_files`, called
-   with `as_memory=True` (the memory bridge), expands each directory target with
-   `iter_memory_files`. Test: put a `.organise-rollback-1/x.md` and a `.hidden/y.md` inside a
+     `savestate_*.md`. They are ordered newest-first by ONE key: frontmatter `updated`, parsed as
+     a datetime when it carries a time of day and as a date otherwise, then mtime. `created` is
+     NOT part of the key (r2 s3: a session created earlier but saved later must win).
+   - `is_organised(memdir)`, which reads `<memdir>/.memory-layout` ([[#marker-gate]]).
+2. **AC-2: the bridge uses that walk (ch-bsd r1 #s3).**
+   - `ingest_gmd.collect_gmd_files(targets, *, as_memory=False)` gains the keyword. With
+     `as_memory=True` it expands each directory target with `iter_memory_files`.
+   - All four memory call sites pass it (r2 m1): `cli.py:10478` (in-process), `daemon.py:3772`
+     (the sync op), `daemon.py:3789` (the detached op behind the SessionStart hook) and
+     `daemon.py:3898` (prestage).
+   - The test below runs three ways: in-process, through the daemon sync op, and through the
+     detached op. Test: put a `.organise-rollback-1/x.md` and a `.hidden/y.md` inside a
    throwaway memdir, then run `rmx ingest-gmd --as-memory <dir>`. The store must have no `x` row
    and no `y` row. At HEAD both are ingested, so this is RED. Doc ingest (without `as_memory`)
    keeps its own walk.
@@ -83,6 +90,20 @@ viascope2 12, cliquet 8.
    `tests/test_memory_index_char_budget.py` pass unchanged. A flat dir with no prose renders
    byte-identically to HEAD.
 
+
+### The layout-marker gate (r2 s2) {#marker-gate}
+
+9. **AC-9: un-organised dirs keep HEAD's index behaviour.**
+   - `memory_index.write` uses the new render only when `is_organised(memdir)`. That covers the
+     id-keyed sidecar, the carried prose block, and later 26.7's 19.3 blocks.
+   - In a dir without `.memory-layout`, it renders exactly as at HEAD, byte-identically on the
+     flat fixture, and it writes no new sidecar.
+   - The AC-6 content-shrink guard applies in EVERY dir. It only refuses a write, so it changes
+     no file and closes the viascope wipe in un-organised dirs too.
+   - Test: in the same fixture, run once without the marker and once with it. Without the marker,
+     the output is HEAD bytes and no `.memory_hooks.json` is created. With the marker, prose is
+     carried and the sidecar is keyed by id.
+
 ## Files to Create / Modify {#files}
 
 - Create `src/refmatrix/memory_layout.py`.
@@ -90,6 +111,8 @@ viascope2 12, cliquet 8.
   block, the shrink guard.
 - Modify `src/refmatrix/ingest_gmd.py`: `collect_gmd_files` uses `iter_memory_files` on the
   as-memory path.
+- Modify `src/refmatrix/cli.py` (`:10478`) and `src/refmatrix/daemon.py` (`:3772`, `:3789`, `:3898`):
+  pass `as_memory=True` (r2 m1).
 - Create `tests/test_memory_layout.py`.
 - Extend `tests/test_memory_index.py` and `tests/test_memory_bridge.py`.
 
@@ -124,3 +147,13 @@ viascope2 12, cliquet 8.
 | S2 (two definitions of "newest") | `iter_savestates` defines it once | AC-1 |
 | B4 (prose and hooks dropped; guard counts links) | Id-keyed hooks for every dir, carried prose, content-line guard | AC-4, AC-5, AC-6 |
 | M1 (AC-2 count) | Assert on `collect()`: 8 vs 2 | AC-3 |
+
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
+
+| finding | change | anchor |
+|---|---|---|
+| s3 ("newest" key regresses on same-day saves) | `updated` (datetime when present), then mtime; `created` dropped | AC-1 |
+| s2 (new on-disk behaviour reaches un-organised dirs) | Marker gate; the HEAD render is kept for un-organised dirs; guards that only refuse apply everywhere | [[#marker-gate]] |
+| m1 (four call sites; one pinned) | Keyword on `collect_gmd_files`; four sites named; AC-2 runs three ways; `daemon.py`/`cli.py` added to Files | AC-2, [[#files]] |

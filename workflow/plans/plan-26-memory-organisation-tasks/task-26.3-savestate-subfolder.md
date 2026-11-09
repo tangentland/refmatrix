@@ -22,10 +22,16 @@ rel: reinforces -> [[feedback_recall_state_means_resume]]
 
 ## Requirements {#requirements}
 
-1. **AC-1: the writer.** `rmx save-state` (CLI) and `rmx_save_state` (MCP) write
-   `<memdir>/savestates/savestate_<slug>.md`, creating the folder if needed. The returned
-   `target` names that path. At HEAD the file is written at the top level, so this is RED.
-2. **AC-2: the frozen `created:` survives a move.**
+1. **AC-1: the writer, in organised dirs only (r2 s2).**
+   - In a memdir that has `.memory-layout` (26.1 `is_organised`): `rmx save-state` (CLI) and
+     `rmx_save_state` (MCP) write `<memdir>/savestates/savestate_<slug>.md`, creating the folder
+     if needed.
+   - In a dir WITHOUT the marker, both write the top-level file exactly as at HEAD. Test both
+     branches.
+   - Going forward, `_ss_render` writes `updated:` as a full ISO datetime with time of day
+     (`2026-11-09T14:03:22`; r2 s3). `created:` stays a frozen date.
+   - The returned `target` names the path actually written. At HEAD the file is written at the top level, so this is RED.
+2. **AC-2: the frozen `created:` survives a move (organised dirs only).**
    - Case: `savestate_<slug>.md` exists at the top level (legacy), and the same session saves
      again.
    - `_ss_frozen_created` reads the legacy file's `created:`.
@@ -37,6 +43,8 @@ rel: reinforces -> [[feedback_recall_state_means_resume]]
      iterator applies ONE ordering (26.1 AC-1: `updated`, then `created`, then mtime) across
      `savestates/` and the legacy top level.
    - A dir that has only legacy files still resumes. That is every other project today.
+   - The ordering is `updated` (datetime when present), then mtime. `created` is not a key
+     (r2 s3).
    - Cases to test:
      - only new files;
      - only legacy files;
@@ -44,6 +52,12 @@ rel: reinforces -> [[feedback_recall_state_means_resume]]
      - mixed, with the newest file new;
      - a legacy file whose mtime is NEWER but whose `updated:` is OLDER. The newer `updated:`
        must win. This is ch-bsd r1 #s2's cliquedb shape.
+     - **same day, two sessions (r2 s3):**
+       - session A: created 11-07, re-saved 11-08 at 23:00;
+       - session B: created and saved 11-08 at 15:00.
+
+       A must win, both with date-only `updated:` (decided by mtime) and with datetime
+       `updated:`. Mutation: putting `created` before mtime turns this case RED.
    - `rmx recall-state` and `rmx_recall_state` both return the same result (parity).
 4. **AC-4: recents.**
    - `_ss_recent_memories` uses `iter_memory_files`, excluding save-states and impressions.
@@ -55,6 +69,7 @@ rel: reinforces -> [[feedback_recall_state_means_resume]]
    - Its needle also matches a legacy `](<id>.md)` line and replaces it.
    - The pointer line in `memory_index` links the newest save-state by the AC-3 ordering, so there
      is ONE definition of "newest".
+   - In an un-organised dir, `_ss_update_index` and the index write behave as at HEAD (26.1 AC-9).
 6. **AC-6: the GMD lint target.** `finalize_save_state` lints the file at its new path. The bridge
    ingests it: a memory recall for a phrase unique to the handoff finds it.
 7. **AC-7: the command docs.**
@@ -89,3 +104,12 @@ rel: reinforces -> [[feedback_recall_state_means_resume]]
 |---|---|---|
 | S2 (newest by mtime; two definitions) | Reader and pointer line use `iter_savestates`' one ordering; cliquedb-shape case | AC-3, AC-5 |
 | M3 (recents glob) | States that `handoff.py:104` is top-level only | AC-4 |
+
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
+
+| finding | change | anchor |
+|---|---|---|
+| s2 (save-state rewrites fleet dirs before plan-27) | `savestates/` writing and the legacy move happen only in organised dirs; HEAD behaviour otherwise; readers dual | AC-1, AC-2, AC-5 |
+| s3 ("newest" picks the session started last) | `_ss_render` writes `updated` with time of day; ordering is `updated` then mtime; same-day-two-sessions case plus mutation | AC-1, AC-3 |

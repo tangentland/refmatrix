@@ -12,7 +12,7 @@ metadata:
 
 # Plan 26: memory-layer organisation {#root}
 
-**Date:** 2026-11-08. Revised 2026-11-09, round 1 ([[#rev-round-1]]).
+**Date:** 2026-11-08. Revised 2026-11-09, rounds 1 ([[#rev-round-1]]) and 2 ([[#rev-round-2]]).
 **Status:** Drafting.
 **Location:** `workflow/plans/plan-26-memory-organisation.md`. This file stays here; its stage is
 `metadata.status`.
@@ -36,6 +36,7 @@ rel: reinforces -> [[feedback_reuse_shared_stoplist]]
 rel: reinforces -> [[feedback_go_no_go_ranges_not_predrop]]
 rel: reinforces -> [[feedback_converge_repeated_shapes]]
 rel: derives-from -> [[bsd-plan26-27-spec-review-r1-96feccd]]
+rel: derives-from -> [[bsd-plan26-27-spec-review-r2-8af766a]]
 rel: related-to -> [[plan-25-cliquedb-field-report]]
 rel: motivates -> [[plan-27-memory-fleet-rollout]]
 rel: specifies -> [[task-26.0-adr-memory-dir-layout]]
@@ -174,7 +175,7 @@ unclustered.
 |---|---|---|
 | viascope (resolved under `~/at/bdep/viascope/.claude/projects/...`) | the viascope repo | 147, including `MEMORY.md` |
 | refmatrix | `~/.claude` (a git repo) | 2: `MEMORY.md` and `project_csn_production_harness.md` |
-| others | `~/.claude` | 95 memory files in total across all projects; 27.1 inventories them |
+| others | `~/.claude` | Besides the 2 refmatrix files, 93 files are tracked under the deleted `-Users-tholley-enduris-cliquedb` memdir. git shows them as unstaged deletions; all 93 names exist in the bdep-cliquedb memdir. That is pre-existing dirt, and the staged summary names it (26.5 AC-4). |
 
 What tracked status means for this plan:
 - A move inside a tracked dir is a `git mv`, staged in the owning repo.
@@ -200,7 +201,7 @@ the audit.
 | 19.4 R2 index on bridge write | 26.6 | none |
 | 19.4 R3 compile regenerates the index | 26.6 (after 26.7) | none |
 | 19.4 R4 compile never loses | 26.6 | none |
-| 19.4 R5 stale mark, never reaped | 26.6 | none: the `stale`/`stale_since` mark is used. Round 0's `retired_at` is withdrawn. |
+| 19.4 R5 stale mark, never reaped | 26.6 | The `stale`/`stale_since` mark is used; round 0's `retired_at` is withdrawn. **19.4 AC-4's recall leg** ("absent from `rmx memory recall`, with and without `--include-subjects`") is NOT built here. It needs 19.1 R2, which is built by 25.1 R2/AC-6 after plan-26. 26.6 asserts the mark, `memory get`, the list mark and the index. The recall leg lands with 25.1 (r2 s1). |
 | 19.4 R6 stable unlabeled names (`cluster_cid`) | 26.6 | none (built here or by 19.6, whichever merges first, per 19.4) |
 | 19.4 R7 loud | 26.6 | none |
 | (new) compile scope | 26.6 | Subjects carry `compiled_scope`, and prune/stale are scope-local. This is B3's fix, needed by 26.9. |
@@ -209,10 +210,16 @@ the audit.
 | 19.3 R1-R8 | 26.7 | Scores: until 19.2 lands, 26.7 runs on 19.3 R7's virtual scores (files only). 19.2 swaps in real scores without touching 26.7. |
 | (new) id-keyed hooks, carried prose, content-line shrink guard | 26.1 | 19.3 R6 preserves hooks keyed by path. 26.1 re-keys them by id, so they survive moves (B4). |
 
+**Note for plan-25 (r2 s1).** This is text only; plan-25 files are not edited here. 25.1's
+delta must name 19.4 AC-4's recall leg (a stale subject is absent from recall, even with
+`--include-subjects`) as its own acceptance. 26.6 deliberately leaves that leg to 25.1, because
+recall excludes only `session/*` today (`verbs.py:983`) and `--include-subjects` does not exist
+yet.
+
 **What plan-19 must record when these land** (by plan-19's owner; plan-19 files are not edited
 here):
 - 19.3 status `realized by task-26.7`. Residual: the 19.2 score source.
-- 19.4 status `realized by task-26.6`. Residual: 17.2 step registration (R1) and AC-2.
+- 19.4 status `realized by task-26.6`. Residual: 17.2 step registration (R1) and AC-2, plus AC-4's recall leg (lands with 25.1).
 - The plan-of-plans row 19 note.
 
 ## Proposed Approach {#approach}
@@ -229,6 +236,31 @@ here):
 The bridge's memory walk IS `iter_memory_files`. This was ch-bsd r1 #s3: round 0 left the bridge
 on its own `rglob`. The other callers are `handoff.py` ×3 and `memory_index.py`. Dot-dirs, dotfiles
 and `README.md` are never memories.
+
+### Only organised dirs see new on-disk behaviour (r2 s2) {#layout-marker}
+
+After 26.8 deploys, every project runs the new `rmx`, but plan-27 backs up the other memdirs
+later. So every NEW on-disk behaviour is gated on a marker file, `<memdir>/.memory-layout`. Only
+`rmx memory organise --apply` writes that file. It records the ADR-0005 layout version, the
+organise date, and the backup tarball. The marker is a dotfile, so it is never a memory.
+
+**Gated behaviours (organised dirs only):**
+- save-state writes into `savestates/` and moves a legacy file into it (26.3);
+- the new `MEMORY.md` renderer: 19.3 blocks, the carried-prose block, the id-keyed
+  `.memory_hooks.json` (26.1, 26.7);
+- index regeneration on every bridge write (19.4 R2, 26.6);
+- the `source_path`-aware resume gate and its refresh writes (26.2).
+
+**In a dir without the marker, all of these behave exactly as at HEAD.** Two kinds of change
+still apply everywhere:
+- **Readers stay dual.** `iter_savestates` and recall-state read legacy plus `savestates/`,
+  which changes no file.
+- **Guards that only REFUSE a write apply everywhere.** 26.1's content-shrink guard leaves the
+  index untouched; that is strictly more conservative than HEAD, and it closes the viascope wipe
+  in un-organised dirs too.
+
+The 26.4 bridge mtype rule is a store-row correction, not a disk write. It applies everywhere,
+because it is what keeps mis-typed save-states out of hook recall.
 
 ### Make moving safe before moving anything {#safe-first}
 
@@ -295,7 +327,12 @@ Further ordering rules:
   is only through plan-22's audited path.
 - No change to store identity. A memory's id stays its frontmatter `id`.
 - No commit in another repo. Tracked moves are staged, and the user commits.
-- No edits to other projects' memory dirs or stores. That is [[plan-27-memory-fleet-rollout]].
+- No change to other projects' memory dirs when 26.8 deploys. Every new on-disk behaviour is
+  gated on the `.memory-layout` marker ([[#layout-marker]]), and un-organised dirs keep HEAD
+  behaviour until plan-27 organises them. Two kinds of change still reach every dir: the dual
+  readers and the refuse-only guards. The one store-side change that does reach other projects'
+  stores is the 26.4 mtype correction. 26.8 also takes a read-only fleet snapshot (every
+  memdir's `MEMORY.md` + sidecar) BEFORE the deploy.
 - No hook-payload budgeting (plan-25 bug-164).
 - No registration on 17.2's nightly tick (stays with plan-17/19).
 
@@ -344,9 +381,10 @@ Further ordering rules:
   value, hooks preserved), built by 26.7. Round 0's "one header per subject" is withdrawn: 63
   headers would spend a third of the 200-line cap.
 - **Q7: ADR first?** Yes (26.0), carrying B2/B4/S1/S3.
-- **Q8 (new): who applies the edit to the user-global `~/.claude/MEMORY-RULES.md`?** 26.0
-  proposes the text. Recommend that the USER applies it, or authorises it, at 26.8, because the
-  file governs every project's agents.
+- **Q8: who applies the edit to the user-global `~/.claude/MEMORY-RULES.md`?** RECORDED
+  (orchestrator, r2; ch-bsd r2 agrees): the user authorises it at 26.8, and 26.0 proposes the
+  text. The edit is load-bearing. Until it lands, agents keep writing at the memdir top level,
+  which keeps `organise --check` non-zero and can trip 26.2's duplicate-id refusal (26.8 AC-8).
 
 ## Revision round 1 (2026-11-09) {#rev-round-1}
 
@@ -373,3 +411,22 @@ B2, B3, B4, S1, and R4 (26.9) were relayed 2026-11-09.
 | Q2/Q5/Q6 verdicts | Taken as written | [[#open-questions]] |
 | S7, S8 (plan-27) | Fixed in plan-27 | [[plan-27-memory-fleet-rollout#rev-round-1]] |
 | M1, M4, M5, M7, M8 | Per-task | task revision tables |
+
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Answers [[bsd-plan26-27-spec-review-r2-8af766a]] (DIRTY 0B/7S/8M). Orchestrator decisions were
+relayed on 2026-11-09.
+
+| finding | change | anchor |
+|---|---|---|
+| s1 (19.4 AC-4's recall leg needs 19.1 R2 = 25.1) | Dropped from 26.6/26.8; recorded as landing with 25.1; note for plan-25 | [[#plan-19]] |
+| s2 (the deploy reaches fleet dirs before plan-27's backups) | `.memory-layout` marker gates every new on-disk behaviour; readers dual; non-goal reworded; pre-deploy fleet snapshot | [[#layout-marker]], [[#non-goals]], [[task-26.8-refmatrix-live-rollout#rev-round-2]] |
+| s3 ("newest" key) | `updated` (with time of day) then mtime; `created` dropped | [[task-26.1-layout-module-and-index-walk#rev-round-2]], [[task-26.3-savestate-subfolder#rev-round-2]] |
+| s4 (rollback contradicts itself) | One per-id rule | [[task-26.5-memory-organise-verb#rev-round-2]] |
+| s5 (apply moves, then the index refuses) | Preview renders; apply refuses before the first move | [[task-26.5-memory-organise-verb#rev-round-2]] |
+| s7 (26.9 window) | Window in runs; pointer bullets; pre-measured cap | [[task-26.9-impression-patterns#rev-round-2]] |
+| s6 (viascope prose) | Plan-27 task 27.2a | [[plan-27-memory-fleet-rollout#rev-round-2]] |
+| m1, m2, m3, m4, m5, m7, m8 | Per-task tables | task revision tables |
+| m5 (`~/.claude` count) | "2 live + 93 deleted" | [[#git-tracked]] |
+| m6 | Plan-27 (27.0) | [[plan-27-memory-fleet-rollout#rev-round-2]] |
+| Q8 verdict | Recorded: the user authorises at 26.8, with the reason | [[#open-questions]] |

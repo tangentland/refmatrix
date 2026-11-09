@@ -75,16 +75,33 @@ multi-membership), in its own compile scope.
    - **The user approves each pattern doc before step 0b reads it.** An unapproved doc is tagged
      `pattern-draft`, and step 0b skips it.
 3. **R3: Ledger window, lossless.** {#r3}
-   - **A run is a report file.** Each bullet in `IMPRESSIONS.md` belongs to the run whose report
-     it links. A bullet without a link is matched to a report by its leading date and plan/round
-     label. A bullet that matches no report is listed as `unassigned` and stays in the window. It
-     is never folded.
-   - **The window** is the bullets of the newest 20 report files.
-   - **Every older bullet gets AT LEAST ONE home** (multi-membership is allowed). A home is either
-     a pattern doc's generated "sightings" section (date, report link, bullet text verbatim) or the
-     consolidated bullet.
-   - **Caps.** The window is capped at 50 lines AND 12,000 characters, and so is the consolidated
-     bullet: a single bullet cannot absorb everything (S10).
+   - **Three kinds of bullet (r2 s7).** The real ledger at `045ed4e` has 227 bullets:
+
+     | kind | count | how it is recognised |
+     |---|---|---|
+     | run bullets | 182 dated | carry a date and a plan/round label |
+     | pointer bullets | 45 undated | `imp-…` → `[[impression_bsd_…]]`; an index entry, not a run observation |
+     | (linked) | 6 | the only run bullets that carry a report link |
+
+   - **A run is a report file.** A run bullet belongs to the report it links. Without a link, it
+     is matched by its leading date and plan/round label. A run bullet that matches no report is
+     `unassigned`: it stays in the window and is never folded.
+   - **The window is defined in RUNS, not characters.** It holds every run bullet of the newest 20
+     report files, plus `unassigned` ones. There is no character cap on the window: the measured
+     newest-20 holds 33 bullets / 14,450 chars, and those stay whole.
+   - **Pointer bullets leave the window.** Each moves to the pattern doc whose members include its
+     target (a "pointers" list there). If no pattern claims it, it moves into ONE consolidated
+     "legacy pointers" bullet that is a link list (`- legacy pointers: [[impression_bsd_a]],
+     [[impression_bsd_b]], …`). A pointer's home is also its memory file, which already exists.
+   - **Older run bullets get AT LEAST ONE home** (multi-membership allowed). A home is a pattern
+     doc's generated "sightings" section (date, report link, bullet text verbatim), or the
+     consolidated "pointer-free" bullet for run bullets no pattern claims.
+   - **The character cap applies only to pointer-free consolidated bullets.** Its value is NOT
+     guessed. The fold checker first measures, on a COPY of the real ledger, the characters of
+     the run bullets that no candidate pattern claims. The cap is then pre-registered in the test
+     file before the fold runs: that measurement rounded up to the next 1,000 chars, plus 20%
+     headroom. If the measurement exceeds 12,000 chars, the cap is not raised. The checker stops
+     and reports that the patterns claim too little (S10).
    - **No deletion without a home.** Decay demotes; it never loses
      ([[feedback_decay_never_loses_knowledge]]).
 4. **R4: Procedure, in the overlay, independently reviewed.** {#r4}
@@ -133,11 +150,14 @@ multi-membership), in its own compile scope.
 3. **AC-3: the fold is lossless.** {#ac-3}
    - Run the R3 fold on a COPY of the real `IMPRESSIONS.md`.
    - Expected results:
-     - the window is at most 50 lines and at most 12,000 characters;
+     - the window holds exactly the run bullets of the newest 20 report files plus the
+       `unassigned` ones; the expected count is pre-registered from the measurement (33 run
+       bullets at `045ed4e`, re-measured on the copy at RED time);
+     - every pointer bullet is in its pattern's pointers list or the "legacy pointers" bullet;
      - every folded bullet's verbatim text is findable in AT LEAST ONE home. A checker enumerates
        bullets before and after and fails listing any bullet with no home;
      - `unassigned` bullets are listed and still in the window;
-     - the consolidated bullet is within its character cap;
+     - the pointer-free consolidated bullet is within its pre-registered character cap;
      - sighting counts equal the checker's derivation from the report files.
 4. **AC-4: the overlay names the pattern location.** {#ac-4}
    - A test asserts that `.claude/agents/ch-bsd.local.md` names the pattern location for step 0b
@@ -188,3 +208,11 @@ multi-membership), in its own compile scope.
 | M4: parity (LEGACY compile) | `scope` reached through the `memory_compile` verb | AC-1 |
 | M8: sighting count in curated prose | Derived from report files by the checker | R2, AC-3 |
 | M9: live step gating plan close | AC-5 does not gate | header, AC-5 |
+
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
+
+| finding | change | anchor |
+|---|---|---|
+| s7 (AC-3 cannot pass on the real ledger: pointer bullets and the char cap) | Window defined in runs (newest 20 report files), no char cap on it; pointer bullets moved to their pattern or one "legacy pointers" link-list bullet; char cap only on pointer-free consolidated bullets, pre-measured on a ledger copy and pre-registered (rounded up plus 20%, with a 12,000 ceiling that stops instead of rising) | R3, AC-3 |

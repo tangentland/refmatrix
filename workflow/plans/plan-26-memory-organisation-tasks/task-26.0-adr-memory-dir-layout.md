@@ -48,6 +48,18 @@ rel: related-to -> [[task-19.4-keep-derived-layers-current]]
      `~/.refmatrix/backups/memory-organise/`, never inside a memdir.
    - **Legacy dirs.** Flat legacy dirs stay readable forever: the code falls back to them; there
      is never a hard cut.
+   - **The layout marker (r2 s2).** `<memdir>/.memory-layout` records the layout version, the
+     organise date and the backup path. Only `rmx memory organise --apply` writes it. Every NEW
+     on-disk behaviour applies only where the marker is present:
+     - `savestates/` writes;
+     - the new index renderer and the id-keyed hooks sidecar;
+     - index-on-bridge;
+     - `source_path`-aware refresh writes.
+
+     A dir without the marker keeps the pre-ADR behaviour. Readers are dual everywhere. Guards
+     that only refuse a write apply everywhere.
+   - **"Newest" save-state (r2 s3).** Ordered by frontmatter `updated` (a datetime when present),
+     then by mtime. `created` is never a tie-breaker.
 2. Add a `rel: catalogs` row to `docs/adr/0000-adr-overview.md` and a row to `docs/INDEX.md`.
 3. Add edges `rel: depends-on -> ADR-0002` and `rel: related-to -> ADR-0003`. The ADR must not
    contradict either one.
@@ -74,3 +86,12 @@ Documentation only. `./scripts/lint-gmd.sh` must report zero errors. `@ch-alignm
 | Q7 verdict (ADR must also fix B2, B4, S1, S3) | Five statements added | [[#requirements]] item 1 |
 | B3 / B1 | ADR states `compiled_scope` and the 19.4 stale mark | [[#requirements]] item 1 |
 | M6 (MEMORY-RULES not updated) | Proposed paragraph in an appendix; the user applies it | [[#requirements]] item 4 |
+
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
+
+| finding | change | anchor |
+|---|---|---|
+| s2 (the deploy reaches un-backed-up dirs) | The ADR states the marker and its gate | [[#requirements]] item 1 |
+| s3 ("newest" key) | The ADR states `updated` then mtime | [[#requirements]] item 1 |

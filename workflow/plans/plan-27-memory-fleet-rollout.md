@@ -26,6 +26,7 @@ rel: reinforces -> [[feedback_launchd_install_force_leaves_it_unloaded]]
 rel: reinforces -> [[feedback_store_calls_via_daemon]]
 rel: specifies -> [[task-27.0-organise-merge-from]]
 rel: specifies -> [[task-27.1-fleet-inventory]]
+rel: specifies -> [[task-27.2a-index-prose-to-memories]]
 rel: specifies -> [[task-27.2-viascope2-fold-and-repoint]]
 rel: specifies -> [[task-27.3-thiquet-store-repoint]]
 rel: specifies -> [[task-27.4-quiet-dir-migrations]]
@@ -97,15 +98,21 @@ Every live change follows the same rules:
   overwrites a later edit (26.5 AC-7).
 
 Round 1 added these rules (see [[#rev-round-1]]):
-- **The target store is resolved from the memdir (B2).** Every organise run in this plan passes
-  `--store-from-memdir`. The verb resolves the store from the memdir's projects slug, never from
+- **The target store is resolved from the memdir (B2).** `--store-from-memdir` is THE default
+  of every organise run (26.5 AC-1, r2 m3), and a resolved or relative memdir path is a hard
+  error. The verb resolves the store from the memdir's projects slug, never from
   the session's cwd (26.5 AC-1). This matters because plan-27 is driven from a refmatrix session.
 - **Hooks and prose survive regeneration (B4).** Every `MEMORY.md` regeneration carries
   hand-written prose and keeps hooks keyed by id (26.1 AC-4..AC-6). A dir whose prose would not
   fit is refused and reported. Nothing is dropped.
 - **Git-tracked dirs (S1).** In a tracked memdir, the moves are staged `git mv`s in the owning
-  repo, and the user commits. Today that means viascope's repo (147 files) and `~/.claude`
-  (95 memory files across projects).
+  repo, and the verb exits 3 with the exact commit command. The user commits. Today that means
+  viascope's repo (147 files) and `~/.claude` (2 live refmatrix files; that repo also carries 93
+  unrelated unstaged deletions, so the command is never `commit -a`).
+- **The marker (r2 s2).** Plan-26's deploy leaves every un-organised dir on HEAD behaviour. The
+  dir changes only when this plan's organise apply backs it up and writes `.memory-layout`. From
+  then on, save-states land in `savestates/` and the new index renderer applies there.
+  26.8 AC-0's pre-deploy fleet snapshot is the earliest backup of each dir's index.
 - **Live sessions (S8).** A dir whose project has a live session is changed only after that
   session's explicit acknowledgement (bus or user). There is no idle timer. This applies to
   cliquedb, and also to bdep/thiquet, whose store is written in-process by a daemonless session
@@ -129,7 +136,8 @@ Round 1 added these rules (see [[#rev-round-1]]):
 |------|------|------------|
 | [[task-27.0-organise-merge-from]] | `rmx memory organise --merge-from <dir>`: id-reconciling fold | plan-26 deployed |
 | [[task-27.1-fleet-inventory]] | dry-run every dir; memdir→store mapping; bridge coverage | plan-26 deployed |
-| [[task-27.2-viascope2-fold-and-repoint]] | fold viascope2 into viascope; repoint; retire the viascope2 dir | 27.0, 27.1 |
+| [[task-27.2a-index-prose-to-memories]] | convert viascope's 22,643 chars of `MEMORY.md` prose (94% of the budget), and any dir over 50%, into user-approved memories | 27.1 |
+| [[task-27.2-viascope2-fold-and-repoint]] | fold viascope2 into viascope; repoint; retire the viascope2 dir | 27.0, 27.1, 27.2a |
 | [[task-27.3-thiquet-store-repoint]] | supervise bdep/thiquet; retire the `~/enduris/thiquet` store | 27.1 |
 | [[task-27.4-quiet-dir-migrations]] | organise each remaining dir, one at a time | 27.1 (27.3 before the thiquet dir) |
 | [[task-27.5-cliquedb-at-session-boundary]] | staged, announced cliquedb migration | 27.1, 27.4 |
@@ -187,3 +195,16 @@ rel: derives-from -> [[bsd-plan26-27-spec-review-r1-96feccd]]
 | S5 (one-time refresh) | 27.1 records `refresh_pending` per store before any run | [[task-27.1-fleet-inventory#rev-round-1]] |
 | 27 Q1-Q6 verdicts | Sound, taken as written. Q5 note: the enduris daemon is running (pid 82374), and the uninstall must verify it stopped (27.3) | [[#open-questions]] |
 
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
+
+rel: derives-from -> [[bsd-plan26-27-spec-review-r2-8af766a]]
+
+| finding | change | anchor |
+|---|---|---|
+| s6 (viascope prose migration anchored to no task) | New task 27.2a, ahead of 27.2 and 27.6; user-approved conversion; lossless checker | [[#tasks]], [[task-27.2a-index-prose-to-memories]] |
+| s2 (the deploy reaches dirs before this plan backs them up) | Marker gate stated; the pre-deploy fleet snapshot is named | [[#approach]] |
+| m3 (`--store-from-memdir` semantics) | It is the default; bad paths are a hard error | [[#approach]] |
+| m5 (`~/.claude` count; stop definition) | "2 live + 93 deleted"; exit 3 with the exact commit command | [[#approach]] |
+| m6 (27.0 citations) | Fixed in 27.0 | [[task-27.0-organise-merge-from#rev-round-2]] |

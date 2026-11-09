@@ -67,6 +67,9 @@ because plan Q6 defers to 19.3.
   against the budget.
 - **AC-C:** after 26.5 moves a file, its curated hook appears on its subject or type line
   unchanged.
+- **AC-D: marker-gated (r2 s2).** The 19.3 render runs only in a memdir with `.memory-layout`.
+  An un-organised dir gets HEAD's render (26.1 AC-9), so the deploy does not re-render fleet
+  indexes before plan-27 backs them up. Test: one twin with the marker and one without.
 
 ## Files to Create / Modify {#files}
 
@@ -101,3 +104,11 @@ Mutations: 19.3's list, plus:
 | Q6 verdict (defer to 19.3) | Round-0 header shape withdrawn | [[#requirements]] |
 | B4 (hooks keyed by path) | 19.3 R6 amended to id-keyed hooks (26.1) | [[#plan-19-delta]], AC-C |
 | M9 (25.1 depends on 26.7, which collided with 19.3) | Ownership resolved: 26.7 IS 19.3's build | [[#requirements]] |
+
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
+
+| finding | change | anchor |
+|---|---|---|
+| s2 (the deploy re-renders fleet indexes) | The 19.3 render is marker-gated; twin test | AC-D |

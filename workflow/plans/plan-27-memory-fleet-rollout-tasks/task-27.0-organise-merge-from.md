@@ -32,10 +32,11 @@ in the same verb, CLI and MCP tool.
      `--resolve <id>=keep-dest|import-as:<new_id>`;
    - every `[[id]]` or `rel:` target in src that resolves only inside src;
    - every dest file that links an id the merge would rename.
-2. **AC-2: backup of BOTH dirs** comes before any change (26.5 AC-2 applied twice).
-3. **AC-3: frozen fields survive.** An imported file keeps `id`, `created:` and
-   `originSessionId` byte-identical. Only `updated:` is bumped, and only on files the merge
-   rewrites.
+2. **AC-2: backup of BOTH dirs** comes before any change (26.5 AC-3 applied twice; r2 m6).
+3. **AC-3: frozen fields survive.** An imported file keeps `created:` and `originSessionId`
+   byte-identical. It keeps its `id` byte-identical too, EXCEPT under AC-4's
+   `import-as:<new_id>`, which renames the id on purpose. Only `updated:` is bumped, and only on
+   files the merge rewrites (r2 m6).
 4. **AC-4: renames rewrite edges, under MEMORY-RULES.** For `import-as:<new_id>`:
    - the imported file's `id` becomes `<new_id>`, and it gains
      `rel: supersedes|amends -> [[<old_id>]]`, with the verb chosen by `--resolve` (the user's
@@ -91,3 +92,11 @@ Answers [[bsd-plan26-27-spec-review-r1-96feccd]].
 | S4, S3 (rollback; aside location) | Id-aware rollback; asides under backups | AC-7 |
 | S1 (tracked memdirs) | `git mv`/`git add` staged; user commits | AC-8 |
 | B4 (hooks and prose) | Src hooks keyed by id; src prose carried or refused | AC-9 |
+
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
+
+| finding | change | anchor |
+|---|---|---|
+| m6 (wrong AC citation; `id` claim contradicts `import-as`) | Cites 26.5 AC-3; `id` byte-identical except under `import-as` | AC-2, AC-3 |

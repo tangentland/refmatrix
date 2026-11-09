@@ -14,10 +14,11 @@ metadata:
 
 > Plan: [[plan-27-memory-fleet-rollout]]
 > Status: Pending
-> Depends on: [[task-27.0-organise-merge-from]], [[task-27.1-fleet-inventory]]
+> Depends on: [[task-27.0-organise-merge-from]], [[task-27.1-fleet-inventory]], [[task-27.2a-index-prose-to-memories]]
 
 rel: part-of -> [[plan-27-memory-fleet-rollout]]
 rel: depends-on -> [[task-27.0-organise-merge-from]]
+rel: depends-on -> [[task-27.2a-index-prose-to-memories]]
 
 ## Requirements {#requirements}
 
@@ -50,10 +51,12 @@ filename.
 4. **AC-4: viascope's own dir is put in order.**
    - `organise --check` reads clean.
    - `MEMORY.md` is regenerated. Its 62 hand-written prose lines (17 headers, a session log,
-     "Active Campaign") are CARRIED (26.1 AC-5), never dropped. It is grouped by subject after
-     27.6. If the carried prose would leave less than 25% of the budget for entries, the
-     regeneration refuses (B4). Then the user decides which prose moves into a `project/` memory
-     before the rerun. The 33 KB file is in the backup either way.
+     "Active Campaign") take 22,643 chars, 94% of the budget, so the refusal is certain, not
+     conditional (r2 s6). [[task-27.2a-index-prose-to-memories]] therefore runs FIRST: it
+     converts the prose into approved `project/` memories, so the carried prose is at most 25%
+     of the budget. Only then does this task's merge preview report `index: ok`. 26.5 AC-3
+     refuses the apply otherwise, before any move (r2 s5). It is grouped by subject after 27.6.
+     The 33 KB file is in the backup either way.
    - The stray `.memory.db` is reported and stays in place, covered by the backup. Deleting it
      is the user's decision.
    - If 27.1 shows the viascope store is missing memories, the apply's bridge run fills it, and
@@ -93,3 +96,12 @@ Answers [[bsd-plan26-27-spec-review-r1-96feccd]].
 | B2 (wrong store) | `--store-from-memdir`; the preview must name viascope's store | AC-2 |
 | B4 (viascope's 62 prose lines) | Carried, or refused for a user decision; never dropped | AC-4 |
 | S1 (the viascope repo tracks 147 memory files) | The fold is staged in the viascope repo; the user commits | AC-7 |
+
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
+
+| finding | change | anchor |
+|---|---|---|
+| s6 (viascope prose migration anchored to no task) | 27.2a runs first; the preview must report `index: ok` before apply | AC-4 |
+| s5 (apply-then-refuse) | Relies on 26.5 AC-3's refusal before the first move | AC-4 |

@@ -47,7 +47,13 @@ fix for bug-164 stays with plan-25.
    - Fixture: four cliquedb-shaped save-states with June/July mtimes and `updated:`, plus a newer
      August one. Run organise. `rmx recall-state` still resumes from the August one. If the
      rewrite bumped mtime or `updated:`, it would resume from July (RED).
-4. **AC-4: other folders are report-only.** A `project`-typed file in `feedback/` is NOT
+4. **AC-3b: scope of the two halves (r2 s2).**
+   - The AC-1 bridge rule is a store-row correction. It applies in every dir, organised or not,
+     because it keeps mis-typed save-states out of hook recall fleet-wide. It writes no file.
+   - The AC-3 file rewrite happens only through `organise --apply`, which writes the marker.
+   - Under r2 s3, `updated:` is the ordering key. AC-3 preserves it, so the rewrite cannot change
+     which save-state is newest.
+5. **AC-4: other folders are report-only.** A `project`-typed file in `feedback/` is NOT
    re-typed. `organise --check` reports it as `folder/type mismatch` (plan Q3).
 
 ## Files to Create / Modify {#files}
@@ -78,3 +84,12 @@ fix for bug-164 stays with plan-25.
 | S2 (rewrite resumes from the wrong save-state) | Rewrite preserves mtime and `updated:`; recall-state assertion | AC-3 |
 | M5 (waited-job branch) | `mtype_normalised` carried there too | AC-1 |
 | Q4 verdict | Sound; unchanged | [[#requirements]] |
+
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
+
+| finding | change | anchor |
+|---|---|---|
+| s2 (fleet effect of the deploy) | The store rule applies everywhere (no file write); the file rewrite only via organise | AC-3b |
+| s3 (ordering key) | AC-3's preservation of `updated:` is what keeps the newest stable under the new key | AC-3b |

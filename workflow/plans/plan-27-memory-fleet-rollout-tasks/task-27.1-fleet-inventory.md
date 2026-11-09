@@ -55,7 +55,15 @@ This task is read-only. Output: `workflow/plans/plan-27-memory-fleet-rollout-tas
 
 6. **AC-6: round-1 columns.** Each row also records:
    - `git_tracked`: the owning repo top level and its tracked count, or `untracked`. Expected
-     today: viascope's repo for viascope, `~/.claude` for the 95 tracked memory files.
+     today: viascope's repo for viascope. In `~/.claude`, 2 live refmatrix files plus 93
+     unstaged deletions under the gone `-Users-tholley-enduris-cliquedb` dir; all 93 names exist
+     in the bdep-cliquedb memdir. Record that dirt and do not touch it (r2 m5).
+   - `prose_chars` and its share of the 24,000-char budget. A share over 50% routes the dir to
+     [[task-27.2a-index-prose-to-memories]] (r2 s6).
+   - `refresh_pending`, taken from the pre-deploy measurement on copies (26.8 AC-0), not from a
+     live run (r2 s2).
+   - `organised`: whether `.memory-layout` is present. Expected: false everywhere except
+     refmatrix.
    - `refresh_pending`: the 26.2 one-time refresh count for that store.
    - `prose_lines`: from the 26.5 preview, with a flag when the carried prose would exceed 75% of
      the index budget.
@@ -82,3 +90,13 @@ Answers [[bsd-plan26-27-spec-review-r1-96feccd]].
 | S5 (one-time refresh) | `refresh_pending` per store | AC-6 |
 | B2 (store resolution) | The mapping uses 26.5 AC-1's resolver; disagreements are listed | AC-6 |
 | B4 (prose) | `prose_lines` per dir; dirs whose prose cannot fit are flagged | AC-6 |
+
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
+
+| finding | change | anchor |
+|---|---|---|
+| m5 (`~/.claude` count) | "2 live + 93 deleted" recorded as pre-existing dirt | AC-6 |
+| s6 (viascope prose) | `prose_chars` share; over 50% routes to 27.2a | AC-6 |
+| s2 (refresh measured before deploy) | `refresh_pending` from 26.8 AC-0's copy measurement; `organised` column | AC-6 |

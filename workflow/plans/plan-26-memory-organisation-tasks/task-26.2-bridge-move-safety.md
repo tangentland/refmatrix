@@ -47,10 +47,23 @@ provenance goes stale.
    - No `gmd_source_path` key is added.
    - An unchanged file at an unchanged path is still skipped. The stats count it as skipped, and
      the store write counter does not move.
-3. **AC-3: the one-time re-ingest is stated and measured.** A row whose `source_path` is missing,
-   or disagrees with the resolved file path, is re-ingested once. This task ships a read-only
-   count, `rmx memory organise --check` field `refresh_pending`, so 26.8 and 27.1 can measure that
-   cost per store BEFORE the deploy. The count is reported per dir.
+3. **AC-3: the one-time re-ingest is stated and measured (r2 m4, s2).**
+   - A row whose `source_path` is missing, or disagrees with the resolved file path, is
+     re-ingested once.
+   - This task ships the count itself: `rmx ingest-gmd --as-memory --dry-run <dir>` reports
+     `refresh_pending` and writes nothing. The count is NOT a field of the later `organise`
+     command, which depends on this task. 26.5's `--check` re-exports the same stat.
+   - The pre-deploy measurement uses the dev build against COPIES, never the live store or the
+     live memdir. For each live memdir:
+     1. copy the dir;
+     2. copy its store's read snapshot into a sandbox store under a short `mkdtemp()` root;
+     3. run the dry-run with the dev venv against the copies.
+   - 26.8 AC-2 records the result for every store before the deploy.
+4. **AC-3b: the gate is marker-gated (r2 s2).** The path-aware gate and its refresh writes apply
+   only to files under a memdir with `.memory-layout` (26.1 `is_organised`). In an un-organised
+   dir the gate is HEAD's hash-only gate, so the deploy causes no fleet-wide refresh. Test: the
+   AC-1 move in an un-organised dir behaves as at HEAD (stale path kept); with the marker, it
+   refreshes.
 4. **AC-4: an id claimed twice is refused, counted and named.**
    - When two files in one walk share a frontmatter `id`, neither overwrites the other.
    - Both are reported in `stats.duplicate_ids: [(id, [paths])]`.
@@ -95,3 +108,12 @@ provenance goes stale.
 |---|---|---|
 | S5 (a second copy of the path; an unstated full re-ingest) | Gate on the existing resolved `source_path` / `entities.path`; no new key; `refresh_pending` count; cost measured in 26.8/27.1 | AC-2, AC-3 |
 | M5 (the waited-job branch) | `_bridge_wait_for_active_job` carries `duplicate_ids` | AC-4 |
+
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
+
+| finding | change | anchor |
+|---|---|---|
+| m4 (26.2 shipped a field of a command 26.5 creates) | `refresh_pending` is a bridge `--dry-run` stat; 26.5 re-exports it | AC-3 |
+| s2 (refresh before plan-27's backups; "before the deploy" impossible) | Measured with the dev build on copies of each memdir plus a store-snapshot copy; refresh writes marker-gated | AC-3, AC-3b |

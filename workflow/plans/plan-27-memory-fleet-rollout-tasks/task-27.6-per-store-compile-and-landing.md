@@ -35,8 +35,9 @@ rel: depends-on -> [[task-26.7-memory-index-by-subject]]
    - live-subject blocks;
    - `rmx memory index --check-reach` passes;
    - carried prose and id-keyed hooks are preserved (B4);
-   - under budget, with `--check` in sync. viascope's index shrinks from 33 KB to under 24 KB, and the fold
-   count is stated.
+   - under budget, with `--check` in sync. viascope's index goes from 33 KB to under 24,000 chars. That is reachable only
+   because 27.2a converted its 22,643 chars of prose: carried prose is at most 6,000 chars, and
+   the rest is entries and 19.3 blocks. The fold count is stated (r2 s6).
 3. **AC-3: landing report.** One table, one row per project:
    - Does `rmx save-state` write `savestates/`? Yes for all, because everything runs the
      deployed `~/bin/rmx`. Verify with one dry-run (`rmx save-state --dry-run` reports the
@@ -64,3 +65,11 @@ Answers [[bsd-plan26-27-spec-review-r1-96feccd]].
 |---|---|---|
 | B1 (compile/index ownership) | Runs 26.6 (19.4) and 26.7 (19.3); the mark is `stale` | AC-1, AC-2 |
 | B4 (prose and hooks) | Carried and preserved | AC-2 |
+
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
+
+| finding | change | anchor |
+|---|---|---|
+| s6 (unreachable expected number) | The 24,000-char target is tied to 27.2a's at-most-6,000-char carried prose | AC-2 |
