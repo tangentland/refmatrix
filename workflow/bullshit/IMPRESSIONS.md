@@ -27,6 +27,7 @@ Window: the newest run bullets. Older bullets are folded VERBATIM, anchor ids un
 - 2026-11-09 (plan-26/27 spec r5): **A FOLD THAT WIDENS ONE BEHAVIOUR BREAKS OLDER "BYTE-IDENTICAL" CLAUSES ELSEWHERE.** r4 s1's ungated collect was right, but it falsified 26.8 AC-0 spot-check (b) and re-broke r1 m1's impressions-pointer wording. After a scope change, grep every "byte-identical"/"exactly HEAD" clause. {#imp-widening-fold-breaks-identity-clauses}
 
 - 2026-11-09 (plan-25 spec r3, 2f64edb): **COUNT A PRE-REGISTERED BAND'S DENOMINATOR BEFORE ACCEPTING THE BAND.** 25.5's 1% / 5% bands read the path-less leg of `query.log`: 35 rows in refmatrix, 0 in cliquedb, no flags logged, so one call moves 2.9 points and the "pre-registered" outcome is decided by one or two calls. A band needs a named source, a named denominator, a minimum n, and a default for below-minimum. {#imp-count-the-band-denominator}
+- 2026-11-09 (plan-25 confirm r4-lite, cdd6720): **A CITED PRECEDENT INCLUDES THE BRANCH IT RUNS IN, AND A PRESCRIBED JOIN NEEDS ITS KEY ON BOTH SIDES.** d10 copied 3.7's `shared_embedder` "exactly as its graph verbs do" but dropped their `except VerbAbsentError:` condition, so daemon-up/hub-down would spawn private workers. My own r3 fix joined logs "by pid and ts" when `query.log` has 0 pid on 7,788 rows. Read the caller's condition and both schemas before writing the fix. {#imp-precedent-carries-its-branch}
 
 ## Former anchors, restored {#former-anchors}
 
