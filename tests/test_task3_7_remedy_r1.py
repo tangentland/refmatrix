@@ -294,6 +294,15 @@ def test_no_daemon_graph_calls_share_one_embed_client(root, monkeypatch):
     graph_store(root)
     monkeypatch.setenv("RMX_RERANK", "0")
     monkeypatch.setattr(subproc, "subproc_embed_enabled", lambda: True)
+    # Off the machine's live hub socket: a cached non-shared client may be re-probed
+    # against the hub (remedy r3 S-1), and this test's fake is not a worker.
+    monkeypatch.setenv("RMX_SHARED_MODELS", "0")
+    # All four process-wide globals (ch-bsd r2 #m-2/#m-3): a leaked ATEXIT flag made the
+    # registration count below 0 whatever the code did.
+    monkeypatch.setattr(recall_mod, "_EMBED_CLIENT", None)
+    monkeypatch.setattr(recall_mod, "_EMBED_CLIENT_ISSUED", None)
+    monkeypatch.setattr(recall_mod, "_EMBED_CLIENT_REBUILDS", 0)
+    monkeypatch.setattr(recall_mod, "_EMBED_CLIENT_ATEXIT", False)
     clients: list = []
 
     class _Client:
@@ -302,17 +311,22 @@ def test_no_daemon_graph_calls_share_one_embed_client(root, monkeypatch):
     monkeypatch.setattr(recall_mod, "new_model_client",
                         lambda *a, **k: clients.append(_Client()) or clients[-1])
     monkeypatch.setattr(recall_mod, "remote_embedder", lambda client, *a, **k: HashEmbedder())
+    # Counts EVERY callable `refmatrix.recall` registers (ch-bsd r2 #m-3: the spy counted
+    # only functions named `close`, and the closer is `_close_process_embed_client`, so
+    # the count was always 0). Recorded, not really registered.
     closes: list = []
     real_register = atexit.register
     monkeypatch.setattr(atexit, "register",
-                        lambda fn, *a, **k: (closes.append(fn), real_register(fn, *a, **k))[1]
-                        if getattr(fn, "__name__", "") == "close" else real_register(fn, *a, **k))
+                        lambda fn, *a, **k: (closes.append(fn) or fn)
+                        if getattr(fn, "__module__", "") == recall_mod.__name__
+                        else real_register(fn, *a, **k))
     for _ in range(3):
         verbs.graph(root, action="dense", query="document number 3", k=3)
     for _ in range(2):
         verbs.graph(root, action="recall", query="document number 3", k=3)
     assert len(clients) <= 1, f"{len(clients)} embed clients for 5 calls in one process"
-    assert len(closes) <= 1, f"{len(closes)} atexit closes registered"
+    assert closes == [recall_mod._close_process_embed_client], (
+        f"{len(closes)} atexit closer(s) registered for one process: {closes}")
 
 
 # ---- R-RM1 / R-RM2: no store read outside _store_lock -----------------------------------------

@@ -567,6 +567,62 @@ drains only fully printed files, and they no longer name a hook as a drainer.
 since `b04c1ac6`. Logs: `workflow/review-output/task-3.7/r2-green-meh.log` and
 `r2-green-meh-regress.log`.
 
+## Remedy round 3 (2026-11-08) {#remedy-r3}
+
+Source: ch-bsd re-audit `workflow/bullshit/2026-11-08-2352-task-3.7-remedy-r2-3281c53.md`
+(0B/2S/4M).
+
+rel: derives-from -> [[bsd-plan3-task37-r2-3281c53]]
+
+**RED (r3).** {#remedy-r3-red} Tests in `tests/test_task3_7_remedy_r3.py`, plus edits to
+`tests/test_task3_7_remedy_r2.py` and R13 in `tests/test_task3_7_remedy_r1.py`. Red log
+`workflow/review-output/task-3.7/r3-red.log` (4 failed on their assertions, 8 passed); the
+neighbouring files `r3-red-regress.log` (4 failed, 48 passed: the same four); mutations
+`r3-mutations.log`, HEAD pass of the mutation-killers `r3-mutation-head.log`.
+
+- S-1 `test_a_private_fallback_returns_to_the_hub_once_it_answers_again`. Hub up, SIGKILL,
+  fallback to one private worker (r2's contract, green), hub restarted. With the daemon's knob
+  `RMX_SHARED_REPROBE_S=0` (and `_MAX_S=0`), the process must be back on a hub-shared client
+  serving `stub/hub` within 3 calls, reuse it on the next call, have closed the private
+  worker (`proc.poll()` not None, `_proc` None), spawned at most one private worker or
+  in-process load across the outage, and registered one atexit closer. At HEAD four calls
+  after the restart all answer `stub/private` on the same private client.
+- S-2 `test_a_healthy_hub_client_is_reused_across_calls_without_a_rebuild`. Two calls with
+  the hub up: one `SharedWorkerClient`, `_EMBED_CLIENT_REBUILDS` unchanged, no "lost its
+  connection" notice. Green at HEAD; M3 (`not client.alive()` -> `True`) fails it.
+- M-1 `test_a_rebuild_on_the_production_path_reaches_stderr_with_its_count` and
+  `test_an_in_process_fallback_on_the_production_path_reaches_stderr`. A child interpreter
+  with no logging configured calls `shared_embedder(root)` with no `log`, as
+  `verbs._graph_dense` does. The rebuild notice must reach stderr and carry the count (`1`);
+  the in-process fallback notice must reach stderr. **Surface:** stderr, as a WARNING on the
+  `refmatrix.recall` logger, like `verbs.memory_partition`'s notice (verbs.py) and
+  `embedder`'s degraded-extraction line; the `lastResort` handler prints WARNING and above in
+  `rmx mcp` and the CLI. The count is read from that line. The codebase's worker-health
+  surface (`Daemon.worker_kinds()` -> `health.workers` -> hub `private_workers`) is per
+  daemon; a daemonless process has no such surface, and none is invented here. At HEAD
+  stderr is `''` in both.
+- M-2. The rig resets all four globals (`_EMBED_CLIENT`, `_ISSUED`, `_REBUILDS`, `_ATEXIT`)
+  and records atexit registrations. **Decision: drop the `_EMBED_CLIENT_ISSUED` conjunct.**
+  No production sequence caches a shared client that was not handed out:
+  `new_model_client` connects it via `info()` before returning, and the cache marks it issued
+  in the same critical section. r2's
+  `test_a_cached_client_that_fails_in_shared_embedder_is_dropped_not_retried` is replaced by
+  `test_a_disconnected_cached_shared_client_is_rebuilt_before_it_serves`: a cached hub-shared
+  client holding no socket is rebuilt BEFORE it serves, so all three calls answer
+  `stub/private` on one client and the in-process model never loads. At HEAD the first call
+  is served by the seeded dead client and loads the in-process model.
+- M-3 `test_the_atexit_closer_is_registered_once_across_a_crash_and_rebuild`: exactly one
+  registration, and it is `_close_process_embed_client`. M6 fails it with 2. R13's spy now
+  counts every callable from `refmatrix.recall` and asserts exactly
+  `[_close_process_embed_client]` (it also sets `RMX_SHARED_MODELS=0`, so an S-1 re-probe
+  cannot reach the machine's live hub socket). R13 alone cannot kill M6: it builds one client.
+- M-4, one test per clause of `_is_legacy_path_line`:
+  `test_a_line_with_internal_whitespace_is_bad_even_with_a_slash_and_a_suffix` (M9 fails it),
+  `test_a_suffix_only_name_is_a_legacy_path` (M10), `test_a_slash_only_name_is_a_legacy_path`
+  (M11), `test_a_name_with_neither_slash_nor_suffix_is_bad`. Green at HEAD.
+
+Doubles: registry row "task 3.7 remedy r3".
+
 ## Definition of done {#done}
 
 - Each family: RED (recorder/parity/defect rows) before GREEN; mutation check; summary rows in

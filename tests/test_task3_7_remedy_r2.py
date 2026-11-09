@@ -103,7 +103,25 @@ def rig(monkeypatch):
     monkeypatch.setenv("RMX_MODEL_SOCK", str(sock))
     monkeypatch.setenv("RMX_SHARED_MODELS", "1")
     monkeypatch.setenv("RMX_EMBED_SUBPROC", "1")
+    # ALL four process-wide globals (ch-bsd r2 #m-2: only `_EMBED_CLIENT` was reset, so
+    # ISSUED / REBUILDS / ATEXIT leaked from test to test and order decided the outcome).
     monkeypatch.setattr(recall_mod, "_EMBED_CLIENT", None)
+    monkeypatch.setattr(recall_mod, "_EMBED_CLIENT_ISSUED", None)
+    monkeypatch.setattr(recall_mod, "_EMBED_CLIENT_REBUILDS", 0)
+    monkeypatch.setattr(recall_mod, "_EMBED_CLIENT_ATEXIT", False)
+    # atexit recorder: every callable `refmatrix.recall` registers is recorded and NOT
+    # really registered (a reset ATEXIT flag would otherwise pile real closers onto the
+    # interpreter's exit list, one per test); anything else passes through.
+    import atexit
+    registered: list = []
+    real_register = atexit.register
+
+    def _register(fn, *a, **k):
+        if getattr(fn, "__module__", "") == recall_mod.__name__:
+            registered.append(fn)
+            return fn
+        return real_register(fn, *a, **k)
+    monkeypatch.setattr(atexit, "register", _register)
 
     loads: list = []
 
@@ -157,7 +175,8 @@ def rig(monkeypatch):
         assert not modelsrv.shared_available(), "hub still answers after SIGKILL"
 
     yield {"loads": loads, "privates": privates, "start_hub": start_hub,
-           "kill_hub": kill_hub, "root": base}
+           "kill_hub": kill_hub, "root": base, "registered": registered, "stub": stub,
+           "hub_py": hub_py}
 
     cached = recall_mod._EMBED_CLIENT
     for c in [cached, *privates]:
@@ -209,11 +228,20 @@ def test_a_hub_crash_does_not_pin_the_process_to_its_dead_shared_client(rig):
         f"in-process model loaded {len(rig['loads'])}x across 3 calls: {shown}")
 
 
-def test_a_cached_client_that_fails_in_shared_embedder_is_dropped_not_retried(rig):
-    """The audit's probe shape: the cached hub client has no header and the hub is gone,
-    so `remote_embedder` raises INSIDE `shared_embedder` and the in-process model serves.
-    The next call must build a fresh client (a private worker), not retry the dead one
-    and load the in-process model again."""
+def test_a_disconnected_cached_shared_client_is_rebuilt_before_it_serves(rig):
+    """Remedy r3 (ch-bsd r2 #m-2) replaces r2's
+    `test_a_cached_client_that_fails_in_shared_embedder_is_dropped_not_retried`.
+
+    That test seeded `_EMBED_CLIENT` with a never-connected `SharedWorkerClient` and
+    expected the first call to load the IN-PROCESS model, because `_EMBED_CLIENT_ISSUED`
+    shielded a cached client that had not been handed out. No production sequence reaches
+    that state: `new_model_client` returns a shared client only after its `info()` probe
+    connected it, and `_process_embed_client` marks every client it caches as issued in
+    the same critical section. The conjunct guards a test shape (mutation M4 died only
+    here). The decision (r3): drop the conjunct. A cached hub-shared client that holds no
+    socket is dead, whatever its history; it is rebuilt BEFORE it serves, so the first
+    call already embeds through a fresh private worker and the in-process model never
+    loads."""
     root, logs = rig["root"], []
     seeded = modelsrv.SharedWorkerClient("embed", timeout=2)
     recall_mod._EMBED_CLIENT = seeded   # monkeypatch restores the module global
@@ -223,10 +251,9 @@ def test_a_cached_client_that_fails_in_shared_embedder_is_dropped_not_retried(ri
                                                              else ""))
               for k, v in o.items()} for o in calls]
 
-    assert calls[0]["ok"] and calls[0]["model"] == "in-process", shown
-    assert all(o["client"] is not seeded for o in calls[1:]), (
-        f"the dead cached client was kept after the fallback: {shown}")
-    assert len(rig["loads"]) == 1, (
+    assert all(o["client"] is not seeded for o in calls), (
+        f"a cached hub-shared client with no socket served a call: {shown}")
+    assert all(o["ok"] and o["model"] == "stub/private" for o in calls), shown
+    assert calls[0]["client"] is calls[1]["client"] is calls[2]["client"], shown
+    assert rig["loads"] == [], (
         f"in-process model loaded {len(rig['loads'])}x across 3 calls: {shown}")
-    assert all(o["ok"] and o["model"] == "stub/private" for o in calls[1:]), shown
-    assert calls[1]["client"] is calls[2]["client"], shown
