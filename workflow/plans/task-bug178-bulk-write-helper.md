@@ -31,17 +31,23 @@ and 8-10 other sites never got it. {#why-fact}
 
 ## Inventory at `8ddf68e` (verify each at RED time) {#inventory}
 
-| site | DuckDB-reachable? (to verify) | shape |
-|---|---|---|
-| `pagerank.py:467` `store_scores` | yes | INSERT pagerank rows |
-| `replica_merge.py:232` `_merge_linkage_types` | yes | INSERT remap temp table |
-| `replica_merge.py:326,328` `_merge_into` | yes | INSERT remap temp tables |
-| `store.py:3962` `_backfill_canonical_name_if_needed` | yes | UPDATE entities by id |
-| `store.py:4907` `link_many` | yes | INSERT OR IGNORE entity_links |
-| `store.py:6950` `_clear_gmd_content_hashes` | yes | UPDATE entities meta by id (900-row chunks) |
-| `store.py:6969` `save_coref` | yes | INSERT coref_resolutions |
-| `store.py:7037` `compile_pairs` | yes | INSERT pair_index |
-| `store.py:2326,2409` `bulk_upsert_entity`, `4863` `bulk_link`, `6483` `bulk_mark_tracked` | no — SQLite branch only (Arrow on DuckDB already) | migrate their Arrow branch onto the helper |
+| site | DuckDB-reachable? (verified at `56e8d14`, RED) | shape | evidence |
+|---|---|---|---|
+| `pagerank.py:467` `store_scores` | **yes** | INSERT pagerank rows | `store._connect()` = `DuckDBConnection`; spy saw 1 call at N=5,000 |
+| `replica_merge.py:232` `_merge_linkage_types` | **yes** — on a RAW `duckdb.DuckDBPyConnection` | INSERT remap temp table | `open_duckdb(target)` returns the raw connection, NOT the wrapper; a spy on `DuckDBConnection.executemany` cannot see it (the test's C-call observer does) |
+| `replica_merge.py:326,328` `_merge_into` | **yes** — raw connection, as above | INSERT remap temp tables | observer saw both lines at 2 x 5,000 collisions |
+| `store.py:2326` `bulk_upsert_entity` | **yes — inventory corrected** | INSERT … ON CONFLICT DO UPDATE entities | DuckDB falls back to `executemany` when the batch holds an intra-batch duplicate `(kind, name)` (`has_dups`); HEAD semantics are a sequential merge (COALESCE later-non-NULL, `protected` ratchet, first `canonical_name`). The helper path must keep that (e.g. collapse in Python first, as `bulk_link` does) |
+| `store.py:2409` `bulk_upsert_entity` (concepts) | no — `else` of `kind == "duckdb"` | INSERT OR IGNORE concepts | DuckDB uses the Arrow `ON CONFLICT DO NOTHING` branch |
+| `store.py:3962` `_backfill_canonical_name_if_needed` | **yes** | UPDATE entities by id | runs from `_connect()` on every DuckDB writer open (one-shot, rows with NULL `canonical_name`) |
+| `store.py:4863` `bulk_link` | no — SQLite `else` (Arrow on DuckDB) | INSERT entity_links | migrate its Arrow branch onto the helper (R2) |
+| `store.py:4907` `link_many` | **yes** | INSERT OR IGNORE entity_links | spy saw 1 call |
+| `store.py:6483` `bulk_mark_tracked` | no — SQLite `else` (Arrow on DuckDB) | INSERT … ON CONFLICT tracked_files | migrate its Arrow branch onto the helper (R2) |
+| `store.py:6950` `_clear_gmd_content_hashes` | **yes** (via `clear_tracked_stamps`) | UPDATE entities meta by id (900-row chunks) | spy saw 6 calls at 5,000 rows |
+| `store.py:6969` `save_coref` | **yes** | INSERT coref_resolutions (900-row chunks) | spy saw 6 calls; a duplicate `pos` raises on both backends and HEAD leaves the rows before it (not atomic) |
+| `store.py:7037` `compile_pairs` | **yes** | INSERT pair_index (500-row chunks) | spy saw 12 calls at 5,994 pairs |
+| `backend.py:573` `DuckDBConnection.executemany` | the wrapper itself | — | R3: raises above a small count or logs a counted warning |
+
+Verified count: **10 DuckDB-reachable call sites** (9 functions), 3 SQLite-only, plus the wrapper.
 
 ## Requirements {#requirements}
 
@@ -75,6 +81,13 @@ and 8-10 other sites never got it. {#why-fact}
 5. **AC-5 (guard)** R3's test passes after GREEN and fails if any one site is reverted (mutation per
    site class). {#ac-5}
 6. **AC-6** Full suite: no new failures vs `8ddf68e` by error text. {#ac-6}
+
+## Measured at HEAD {#measured-head}
+
+`workflow/measurements/bug178-store-scores.py` at `56e8d14` (src clean), Apple M3 Max, Python
+3.14.5, DuckDB backend, 50,000 entities, 3 reps of `pagerank.store_scores` (DELETE + insert):
+wall 19.405 s / 21.125 s / 19.924 s, **best 19.405 s** (`workflow/review-output/bug178-store-scores-head.log`).
+AC-3's bar: the new path's best <= 3.88 s on the same machine. {#measured-head-fact}
 
 ## Files to modify {#files}
 
