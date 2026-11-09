@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-10-15
+  updated: 2026-11-09
 ---
 
 # Task 19.1: pack recall under the budget {#root}
@@ -290,10 +290,11 @@ Record only; no requirement or AC of this task changes here. Added per
 plan-25 ahead of plan-19's wave ([[plan-of-plans#override-2026-11-08b]]).
 
 rel: related-to -> [[task-25.1-recall-hook-byte-budget]]
+rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
 
 | 19.1 item | realized by | note |
 |---|---|---|
-| R1 budget | [[task-25.1-recall-hook-byte-budget#r1]] | the single `DEFAULT_HOOK_BUDGET_BYTES` becomes a per-channel table in `hook_budget.py` (21.1 channel names) plus an event split, set by 25.1 R0 |
+| R1 budget | [[task-25.1-recall-hook-byte-budget#r1]] | the single `DEFAULT_HOOK_BUDGET_BYTES` becomes a per-channel table in `hook_budget.py` (21.1 channel names). The unit is the GENERATED HOOK COMMAND (25.1 d9): producers sharing one command share its budget. An event split (`EVENT_SPLIT`, per event) exists only under 25.1 R0's per-event outcomes (B)/(C); under (A) each command has `0.9 × cap`. Reworded 2026-11-09 per [[bsd-plan25-spec-r3-2f64edb#m7]] |
 | R2 subjects (AC-3 incl. the stale leg) | 25.1 R2, AC-6 | unchanged |
 | R3 pack (AC-1, AC-2 report-only, AC-5) | 25.1 R3/R4, AC-1..AC-3, AC-9 | packer in `recall_pack.py` over `hook_budget.fit_blocks`, called by the verb; per-prompt pack is pointers-only at its budget |
 | R4 hooks (AC-4, AC-8) | 25.1 R7, AC-8, AC-13 | |

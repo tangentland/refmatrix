@@ -14,8 +14,8 @@ metadata:
 # Task 25.2: ack-only prompt gate {#root}
 
 > Plan: [[plan-25-cliquedb-field-report]]
-> Status: Pending (spec drafted 2026-11-08; revision rounds 1-2 2026-11-09, [[#rev-round-1]],
-> [[#rev-round-2]])
+> Status: Pending (spec drafted 2026-11-08; revision rounds 1-3 2026-11-09, [[#rev-round-1]],
+> [[#rev-round-2]], [[#rev-round-3]]; r3 folded, a short r4-lite confirm is next)
 > Bug: bug-165 (cliquedb priority 2)
 > Depends on: [[task-25.1-recall-hook-byte-budget]] merged (it moves the per-prompt recall into
 > the verb, where this gate lives, and owns the hook generator; the after-measurement is taken on
@@ -27,6 +27,7 @@ rel: depends-on -> [[task-3.7-verb-it-backlog]]
 rel: derives-from -> [[bug_registry#registry]]
 rel: derives-from -> [[bsd-plan25-spec-r1-2f4a1df]]
 rel: derives-from -> [[bsd-plan25-spec-r2-5b8ed15]]
+rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
 rel: depends-on -> [[feedback_reuse_shared_stoplist]]
 rel: related-to -> [[task-24.2a-hook-verbs-explicit-session]]
 rel: related-to -> [[task-21.1-context-usage-telemetry]]
@@ -61,7 +62,7 @@ goes in a separate, documented set applied IN ADDITION ([[feedback_reuse_shared_
 | g1 | ONE function `terms.prompt_gate(prompt) -> PromptGate(passed, tokens, reason)` | two call sites (scan-prompt, prompt recall) and the mod later must agree |
 | g2 | The gate tokenizes on WHITESPACE, not `scan._IDENT_RE` | `#44`, `25.2`, `bug-164` must be tokens it sees; the identifier regex cannot start on `#` or a digit. No second identifier regex is introduced: the gate only asks "is every token an ack" |
 | g3 | `terms.ACK_WORDS`: a documented set of acknowledgement / continuation words, applied in addition to `STOPWORDS`, used ONLY by the gate | `next` must stay a matchable concept everywhere else |
-| g4 | Gated iff EVERY token (punctuation stripped, lower-cased) is in `STOPWORDS ∪ ACK_WORDS` or is a list-marker shape (a single letter or digit, a roman numeral up to `x`, optionally followed by `.` / `)` / `-`, or a bare `-` / `—`), AND at least one token is an `ACK_WORDS` word or a list marker; an empty prompt is gated | a single content word, an issue or task number, or any identifier passes; a prompt made only of function words (`where are we`, `what now`) is a real question and passes (orchestrator 2026-11-09) |
+| g4 | Gated iff EVERY token (punctuation stripped, lower-cased) is in `STOPWORDS ∪ ACK_WORDS` or is a list-marker shape (a single letter or digit, a roman numeral up to `x`, optionally followed by `.` / `)` / `-`, or a bare `-` / `—`), AND at least one token is an `ACK_WORDS` word or a list marker; an empty prompt is gated | a single content word, an issue or task number, or any identifier passes; a prompt made only of function words (`where are we`, `so where are we`) is a real question and passes (orchestrator 2026-11-09). `what now` also passes, but as a CONTENT-word prompt: `now` is in neither `terms.STOPWORDS` nor `ACK_WORDS` (r3 #m6) |
 | g5 | The gate suppresses prompt-DERIVED output only: concept bundles, the content leg, helix, the prompt recall. The STM topic composite (session-derived, own `--composite-every` cadence) is not gated | on "yes next" the session's current topics are the relevant thing; AC-5 measures it |
 | g6 | A gated call prints nothing and is counted | a one-line stub costs tokens on every ack; the count lives in telemetry ([[#r4]]) |
 
@@ -96,8 +97,12 @@ goes in a separate, documented set applied IN ADDITION ([[feedback_reuse_shared_
    per channel. {#r4}
 5. **R5 Gate rate and noise, measured.** Before GREEN, re-run the gate over every input event in
    the local STM rings of refmatrix and cliquedb (counts only: gated / total, and a count of gated
-   prompts whose tokens include a word outside `STOPWORDS ∪ ACK_WORDS`, which must be 0 by
-   construction). Record the rate beside the first draft's 8.6% / 7.6%. After deploy, record bytes
+   prompts with a token outside `STOPWORDS ∪ ACK_WORDS ∪ list-marker shapes` (g4's full union: a
+   single letter or digit, a roman numeral up to `x`, optionally followed by `.` / `)` / `-`, or a
+   bare `-` / `—`), which must be 0 by construction. The union MUST include the list-marker shapes:
+   cliquedb's `b` / `c` option answers are gated by design, and a check over
+   `STOPWORDS ∪ ACK_WORDS` alone would report them and invite "fixing" a correct gate, r3 #m6).
+   Record the rate beside the first draft's 8.6% / 7.6%. After deploy, record bytes
    per UserPromptSubmit event (scan-prompt + recall summed) for ack prompts and real prompts, and
    whether rerank ran. If real prompts still carry save-state «NEXT» content hits with rerank live,
    log a new bug row (not fixed here). {#r5}
@@ -123,9 +128,12 @@ fixture is changed until AC-1 is RED, and the route is recorded. {#acceptance-le
    - Passed (the bsd's measured false-gate set, single content words): `push`, `deploy`, `build`,
      `commit`, `purge`, `reap`, `ugrep`, `littlebig`, `refmatrix`, `hooks`, `fold`, `status`,
      `dispatch`, `bsd`, `spec`, `vocab`, `login`, `#44`; and `do 25.2`, `bug-164?`, `ScanPrompt`,
-     `fix rmx_context timeout`, `why is the daemon slow`, `yes, push`; and the all-stopword status
-     questions `where are we`, `so where are we`, `what now` (gated 7 times across the two stores
-     under the r1 rule; decided 2026-11-09: a real status question, recall is useful there).
+     `fix rmx_context timeout`, `why is the daemon slow`, `yes, push`; the all-stopword status
+     questions `where are we`, `so where are we` (gated 7 times across the two stores under the r1
+     rule; decided 2026-11-09: a real status question, recall is useful there; these rows kill
+     the "drop the ack-or-marker clause" mutation); and `what now`, which passes as a CONTENT-word
+     prompt (`now` is not in `terms.STOPWORDS`, checked in the dev venv 2026-11-09), so it guards
+     the false-gate side and does not test the ack-or-marker clause (r3 #m6).
    - At HEAD every gated row fails (nothing is gated).
 4. **AC-4 Counted.** After AC-1..AC-3, `query.log` and the recall rows carry exactly one
    `gated: "ack-only"` row per gated invocation per channel and no prompt text in `reason` (RED:
@@ -201,3 +209,15 @@ Answers [[bsd-plan25-spec-r2-5b8ed15]] with the orchestrator's decisions of 2026
 | finding | change | anchor |
 |---|---|---|
 | M4 `where are we` is gated and undecided | decided NOT gated: g4 now also requires at least one ack word or list marker, so an all-stopword question passes; AC-3 rows `where are we`, `so where are we`, `what now`; mutation added | [[#decisions]] g4, [[#r1]], AC-3, AC-8 |
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan25-spec-r3-2f64edb#m6]]. Text only; the gate rule (g4) is unchanged.
+
+rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
+
+| finding | change | anchor |
+|---|---|---|
+| M6 R5's "0 by construction" check ignores list markers | the check's union is `STOPWORDS ∪ ACK_WORDS ∪ list-marker shapes`, g4's full union | [[#r5]] |
+| M6 `what now` is not all-stopword | relabelled a content-word prompt (`now` is not in `terms.STOPWORDS`); `where are we` / `so where are we` still kill the ack-or-marker mutation | [[#decisions]] g4, AC-3 |
+

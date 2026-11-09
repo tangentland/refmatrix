@@ -15,7 +15,9 @@ metadata:
 **Date:** 2026-11-08 (session 8d9a255f).
 **Status:** Drafting. Plan and task specs 25.1-25.4 written; ch-bsd spec review r1 DIRTY 0B/9S/9M
 folded in revision round 1 ([[#rev-round-1]]); r2 DIRTY 0B/3S/7M folded in revision round 2
-([[#rev-round-2]]); task 25.5 added for bug-174; spec review r3 is next. No `src/` or `tests/` change is made by this document.
+([[#rev-round-2]]); task 25.5 added for bug-174; r3 DIRTY 0B/4S/9M folded in revision round 3
+([[#rev-round-3]]); a short r4-lite confirm is next, then `approved`. No `src/` or `tests/` change
+is made by this document.
 **Location:** `workflow/plans/plan-25-cliquedb-field-report.md`; stage is `metadata.status`.
 **Ordering authority:** the user's override [[plan-of-plans#override-2026-11-08]] as amended the
 same day by [[plan-of-plans#override-2026-11-08b]]: task 3.7, then plan-26 (memory-layer
@@ -38,6 +40,7 @@ rel: amends -> [[task-19.0-stm-cluster-hygiene]]
 rel: amends -> [[task-19.5-measure-delivery]]
 rel: derives-from -> [[bsd-plan25-spec-r1-2f4a1df]]
 rel: derives-from -> [[bsd-plan25-spec-r2-5b8ed15]]
+rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
 rel: reinforces -> [[feedback_measure_the_path_users_run]]
 rel: reinforces -> [[feedback_green_tests_are_not_a_working_command]]
 rel: reinforces -> [[feedback_no_raw_prompts_in_public_repo]]
@@ -86,7 +89,7 @@ this repo keeps paying for ([[feedback_converge_repeated_shapes]]). So: {#prior-
 
 | plan-19 text | plan-25 change | why |
 |---|---|---|
-| 19.1 R1: one `DEFAULT_HOOK_BUDGET_BYTES` (9,500) | one budget module `hook_budget` with 21.1's channel names: `prompt_recall` 4,000 B, `scan_prompt` 5,000 B, `session_start` 9,000 B, `precompact` 9,000 B (PROVISIONAL), plus an `EVENT_SPLIT` over all four UserPromptSubmit producers, set by one of R0's three outcomes | UserPromptSubmit shares the model's input with scan-prompt (`--max-tokens 2000` plus a composite) and the focus input hook; a per-event cap would sink a 9,500 B recall. cliquedb asked for "under ~4KB". |
+| 19.1 R1: one `DEFAULT_HOOK_BUDGET_BYTES` (9,500) | one budget module `hook_budget` with 21.1's channel names: `prompt_recall` 4,000 B, `scan_cmd` 5,000 B (= `scan_prompt` 4,500 + `curator_status` 500), `session_start` 9,000 B, `focus_context` 1,500 B, `precompact` 9,000 B (PROVISIONAL, one set, r3 #m7), plus an `EVENT_SPLIT` and a `NON_RMX_RESERVE_BYTES` per event (UserPromptSubmit's four producers; SessionStart's curator status, recall, ingest line and resume `focus context`), set by one of R0's three outcomes per event | UserPromptSubmit shares the model's input with scan-prompt (`--max-tokens 2000` plus a composite) and the focus input hook; a per-event cap would sink a 9,500 B recall. cliquedb asked for "under ~4KB". |
 | 19.1 files: the packer in `cli.py` | the packer in a library module the verb calls (`recall_pack.py` over `hook_budget.fit_blocks`); `verbs.memory_recall` takes `max_bytes` / `pack`; the per-prompt hybrid replica-first leg moves INTO the verb so the CLI only renders | the user's override: budgeting is verb-side logic the mod reuses; plan-24's mod calls `rmx_memory_recall` ([[task-24.6-context-and-observation]]) and must get the same pack. |
 | 19.1 depends on 19.5 R1 (the probe) | 25.1 R0 RUNS that probe as its first step | 19.5 R1 depends on nothing and was never run (no file under `workflow/measurements/`). |
 | 19.1 R2 (subjects) | kept; the mis-typed save-state half of bug-164 is OWNED by [[task-26.4-savestate-mtype-normalisation]] and only re-asserted on the packed path ([[task-25.1-recall-hook-byte-budget#r2b]]) | one owner for the bridge rule; plan-26 lands first |
@@ -102,9 +105,10 @@ the CLI twin, never written into `cli.py` or into a hook string:
 
 - the byte budget and the packer: `hook_budget` + `recall_pack` (25.1), reached through
   `verbs.memory_recall`, whose rows now include the root-explicit replica-first leg for EVERY
-  caller (hooks, MCP, the interactive CLI: one computation of "which rows"); every rmx
-  UserPromptSubmit producer, curator status included, is fitted by the same
-  `hook_budget.fit_blocks`, budgeted per generated hook command;
+  caller (hooks, MCP, the interactive CLI: one computation of "which rows"), embedding through
+  3.7's `recall.shared_embedder` except in hook modes, which stay hub-only for their 5 s budget;
+  every rmx UserPromptSubmit AND SessionStart producer, curator status and resume `focus context`
+  included, is fitted by the same `hook_budget.fit_blocks`, budgeted per generated hook command;
 - the ack-only gate: `terms.prompt_gate` next to the stoplist it reuses (25.2), called by
   `scan.scan_prompt` (which 24.2a R4's `rmx_scan_prompt` wraps) and by the recall verb's
   prompt trigger;
@@ -132,7 +136,7 @@ throwaway shell-surface work. {#principle-tail}
   25.4 does not touch the memory layer and need not wait for 26/27; the recommendation is still
   to run it in the plan-25 slot so the release that closes cliquedb's report closes all four rows.
 - **3.7 first** (the override). Its branch (`task-3.7-verb-it-backlog`, clone
-  `/Volumes/littlebig/refmatrix-task-3.7`, HEAD `3281c53`, base `591a2fb`) touches files this plan
+  `/Volumes/littlebig/refmatrix-task-3.7`, HEAD `d093f65` read 2026-11-09, base `591a2fb`) touches files this plan
   edits; see [[#overlap]]. Every 25.x branch is cut from `master` AFTER 3.7 merges.
 - **25.1 before 25.2.** 25.1 moves the per-prompt rows into the verb, where 25.2's gate lives, and
   both edit the hook generator. 25.2's after-measurement is taken on 25.1's packed payload, so its noise number
@@ -149,17 +153,42 @@ throwaway shell-surface work. {#principle-tail}
 
 ### File overlap with task 3.7 (3.7 merges first) {#overlap}
 
-Read 2026-11-08 by `git diff 591a2fb 3281c53 --stat -- src` in the 3.7 clone.
+Re-read 2026-11-09 (r3 #m8) by `git diff --numstat 591a2fb d093f65` in the 3.7 clone (branch
+`task-3.7-verb-it-backlog`, remedy r4), against master `9bcf464`. 3.7 does not touch `mcp.py`,
+`memory_index.py`, `scan.py`, `stm.py`, `helix.py`, `terms.py` or `context.py`. Function bodies
+plan-25 edits that are byte-identical on both trees: `_replica_memory_recall`,
+`_memory_recall_impl`, `_tool_event_fields`, `_index_may_answer`, `_grep_bare_flags`.
+
+Line positions move, so every `cli.py` / `verbs.py` line in the 25.x specs is master's and is
+re-read after 3.7 merges:
+
+| symbol | master `9bcf464` | 3.7 `d093f65` | delta |
+|---|---|---|---|
+| `cli.grep` | 6324 | 6248 | −76 |
+| `cli._index_may_answer` | 6606 | 6530 | −76 |
+| `cli._tool_event_fields` | 1992 | 1966 | −26 |
+| `cli._replica_memory_recall` | 11347 | 11177 | −170 |
+| `cli._memory_partition_default` | 11453 | 11283 | −170 |
+| `cli._degrade_or_raise` (nested) | 12340 | 12175 | −165 |
+| `cli._RecallCall` | 12837 | 12672 | −165 |
+| `verbs.memory_partition` | 376 | 378 | +2 |
+| `verbs.memory_recall` | 908 | 1045 | +137 |
+| `verbs._memory_recall_rows` | 961 | 1098 | +137 |
+| `recall.shared_embedder` | — | 623 | new |
+| `discovery.resolve_partition` | — | 284 | new |
+| `modelsrv.REQUEST_PROBE_TIMEOUT_S` | — | 81 | new |
 
 | file | 3.7 changes | plan-25 task | conflict risk |
 |---|---|---|---|
-| `src/refmatrix/hooks.py` | `HOOK_ENV` gains the two fork-safety exports; curator `status --drain 2>/dev/null` → `status \|\| true` in the scan-prompt and SessionStart commands, so `curator status` now prints on EVERY prompt in the UserPromptSubmit event (counted in 25.1's `EVENT_SPLIT`) | 25.1 (recall argv), 25.2 (none expected), 25.3 (none) | textual: `HOOK_ENV` also changed on master (bug-163 PATH prefix, 0.80.2) — 3.7's merge resolves that, 25.1 rebases on the result. `install-hooks --check` golden files move twice. |
-| `src/refmatrix/cli.py` | 1,675 lines: many read commands become verb adapters (`top`, `describe`, `focus *`, `curator`, `recall_cmd`'s embedder path, `scan_prompt_cmd` neighbourhood, `_stamp_derive_pass`) | 25.1 (`memory recall` render / exclusion), 25.2 (`scan_prompt_cmd` envelope → gate), 25.3 (`_tool_event_fields`), 25.4 (grep BRE block) | no hunk of 3.7 touches `_memory_recall_impl`, `_tool_event_fields` or the grep BRE block; `scan_prompt_cmd` is adjacent to a 3.7 hunk. Line numbers in these specs are master's and WILL move. |
-| `src/refmatrix/verbs.py` | +1,290: `focus` dispatcher, `curator`, `graph`, `session_memories`, `snapshot_read` / `local_write` | 25.1 (`memory_recall` gains `max_bytes` / `pack`), 25.2 (recall gate) | `memory_recall` itself is not in 3.7's diff; the module grows around it. |
-| `src/refmatrix/recall.py` | +325: `shared_embedder`, `_process_embed_client`, `graph_recall`, `ann_search` (embed-client code) | 25.1 moves `_replica_memory_recall` here (d5), beside `shared_embedder` | none textual; 25.1's fixture runs dense recall through 3.7's embed client, so its RED is taken after 3.7 merges. |
+| `src/refmatrix/hooks.py` (+14 / −3) | `HOOK_ENV` gains the two fork-safety exports; curator `status --drain 2>/dev/null` → `status \|\| true` in the scan-prompt and SessionStart commands, so `curator status` now prints on EVERY prompt in the UserPromptSubmit event and on every SessionStart (both counted in 25.1's per-event `EVENT_SPLIT`) | 25.1 (recall argv), 25.2 (none expected), 25.3 (none) | textual: `HOOK_ENV` also changed on master (bug-163 PATH prefix, 0.80.2) — 3.7's merge resolves that, 25.1 rebases on the result. `install-hooks --check` golden files move twice. |
+| `src/refmatrix/cli.py` (+580 / −1,095) | many read commands become verb adapters (`top`, `describe`, `focus *`, `curator`, `recall_cmd`'s embedder path, `scan_prompt_cmd` neighbourhood, `_stamp_derive_pass`) | 25.1 (`memory recall` render / exclusion), 25.2 (`scan_prompt_cmd` envelope → gate), 25.3 (`_tool_event_fields`), 25.4 (grep BRE block) | no hunk of 3.7 touches `_memory_recall_impl`, `_tool_event_fields` or the grep BRE block; `scan_prompt_cmd` is adjacent to a 3.7 hunk. Line numbers in these specs are master's and WILL move. |
+| `src/refmatrix/verbs.py` (+1,233 / −57) | `focus` dispatcher, `curator`, `graph`, `session_memories`, `snapshot_read` / `local_write`; its daemonless `graph_recall` / `ann_search` branches embed through `recall.shared_embedder(root)` (3.7 `verbs.py:2336,2361`) | 25.1 (`memory_recall` gains `max_bytes` / `pack`), 25.2 (recall gate) | `memory_recall` itself is not in 3.7's diff; the module grows around it. |
+| `src/refmatrix/recall.py` (+565 / −1; 273 → 837 lines) | `shared_embedder` ("THE embedder accessor": hub worker, else a private worker, else ONE cached in-process model), `_process_embed_client`, `_process_inproc_standin` (the bug-171 / bug-173 remedies), `graph_recall`, `ann_search` | 25.1 moves `_replica_memory_recall` here (d5), beside `shared_embedder`, and uses it for interactive / MCP callers (d10) | none textual; SEMANTIC overlap (r3 #s1): one daemonless embed policy with one documented exception (hook modes hub-only). 25.1's RED is taken after 3.7 merges. |
+| `src/refmatrix/discovery.py` (+34) | `resolve_partition(root, *, override, cwd)`, "THE project-partition resolver" (`-p` → `$RMX_PARTITION` → cwd marker → store name) | 25.1 reads it only through MCP's `_resolve_root` / `discover_roots` (AC-4 e) | none textual; 25.1's moved leg binds `verbs.memory_partition(root)`, the MEMORY partition, never `resolve_partition` (r3 #m3 b) |
+| `src/refmatrix/modelsrv.py` (+14) | `REQUEST_PROBE_TIMEOUT_S` (env `RMX_SHARED_REQUEST_PROBE_TIMEOUT_S`, default 1.0 s), a bounded request-path re-probe | 25.1's hook-mode leg probes the hub worker (`shared_available`) inside the 5 s budget | none textual; 25.1 re-reads the probe bound after the merge and keeps the hook leg's probe ≤ its remaining budget |
 | `src/refmatrix/stm.py`, `scan.py`, `helix.py`, `terms.py`, `context.py` | not touched | 25.2, 25.3 | none |
-| `workflow/bug_registry.md` | adds bug-171 and bug-173 (an in-process `Embedder()` per daemonless call, cited in 3.7's `recall.py` and `tests/test_task3_7_remedy_r4.py`) | 25.4 / 25.5 close bug-167 / bug-174; plan-25's rg-fallback note is bug-180 | id collision removed in r3 (#s4): plan-25's row, logged 11 minutes after 3.7's, was renumbered bug-173 → bug-180 on master before 3.7 merges; the merge still conflicts textually at the table tail (append-only, keep both sides) |
-| `tests/test_verb_parity.py`, `tests/transport_guard.py` | 3.7 rewrites both | 25.1 / 25.2 add verb params (parity rows) | additive after 3.7 |
+| `workflow/bug_registry.md` (+24) | adds bug-171 and bug-173 (an in-process `Embedder()` per daemonless call, cited in 3.7's `recall.py` and `tests/test_task3_7_remedy_r4.py`) | 25.4 / 25.5 close bug-167 / bug-174; plan-25's rg-fallback note is bug-180 | id collision removed in r3 (#s4): plan-25's row, logged 11 minutes after 3.7's, was renumbered bug-173 → bug-180 on master before 3.7 merges; the merge still conflicts textually at the table tail (append-only, keep both sides) |
+| `tests/test_verb_parity.py` (+512 / −8), `tests/transport_guard.py` (+54 / −2) | 3.7 rewrites both | 25.1 / 25.2 add verb params (parity rows) | additive after 3.7 |
 
 ### File overlap with plan-26 (plan-26 merges first) {#overlap-26}
 
@@ -196,8 +225,8 @@ Read from the plan-26 task specs' file lists on 2026-11-08 (drafts; re-read at 2
 | [[task-25.1-recall-hook-byte-budget]] | bug-164 | probe the cap (three outcomes); per-prompt rows through the verb; pack recall pointers-first after the merge; byte-cap scan-prompt; every UserPromptSubmit producer in one event budget | the generated per-prompt argv emits > 10,000 B on the fixture store |
 | [[task-25.2-thin-prompt-gate]] | bug-165 | one ack-only gate: a prompt made only of stopwords / ack words / list markers → scan-prompt and the prompt recall inject nothing; a single content word passes | the generated scan-prompt + recall argvs on "yes next" emit > 0 B of content hits |
 | [[task-25.3-stm-ref-admission-and-helix-repeat]] | bug-166 (both halves) | one ref-admission predicate at both extraction sites and the rebuild; helix says a line once per session, never annotates a hub neighbour, and logs every suppression | a replayed `focus hook` envelope stores `s.repla`; a second identical prompt re-emits the helix line |
-| [[task-25.4-grep-bre-translation]] | bug-167 | any backslash-escaped BRE translated once for every grep leg; anything not provably the same language (compile failure, stacked quantifier, locale-inexact class) to the real grep; differential tests against BSD and GNU grep in two locales |
-| [[task-25.5-substring-bre-metas]] | bug-174 | unescaped `. * [ ^ $` read as BRE on the drop-in legs via 25.4's translator; the index leg decided by a pre-registered count of changed real calls | `rmx grep 'a.b' file` misses `axb` | `rmx grep -n 'B0\|group_key' file` exits 2 |
+| [[task-25.4-grep-bre-translation]] | bug-167 | any backslash-escaped BRE translated once for every grep leg; anything not provably the same language (compile failure, stacked quantifier, locale-inexact class, ANY pattern under a non-UTF-8 locale) to the real grep; differential tests against BSD and GNU grep in two locales | `rmx grep -n 'B0\|group_key' file` exits 2 |
+| [[task-25.5-substring-bre-metas]] | bug-174 | unescaped `. * [ ^ $` read as BRE on the drop-in legs via 25.4's translator; the index leg decided by a pre-registered count of changed real calls | `rmx grep 'a.b' file` misses `axb` |
 
 ## Acceptance for the plan {#acceptance}
 
@@ -221,7 +250,7 @@ Recorded with a recommendation; each task spec repeats the ones it owns.
 | # | decision | recommendation |
 |---|---|---|
 | q1 | Pull 19.1 / 19.0 R1 forward into plan-25 (build them here) or write independent fixes | pull forward ([[#prior-specs]]); a second packer is the defect shape this repo keeps fixing |
-| q2 | Per-prompt recall budget before the probe | 4,000 B provisional (`scan_prompt` 5,000 B); R0's outcome (A / B / C) replaces both before GREEN |
+| q2 | Per-prompt recall budget before the probe | 4,000 B provisional (`scan_cmd` 5,000 B = `scan_prompt` 4,500 + `curator_status` 500, r3 #m7); R0's outcome (A / B / C, per event) replaces all of them before GREEN |
 | q3 | Fix for mis-typed save-states | settled by plan-26: the bridge normalises (26.4); 25.1 re-asserts on the packed path and adds no second rule |
 | q4 | Does the thin-prompt gate also suppress the STM composite | no: the composite is session-derived, not prompt-derived, and keeps its own `--composite-every` cadence; measured in 25.2 AC-5 |
 | q5 | `ACK_WORDS` beside the stoplist, and how aggressive the gate is | decided 2026-11-09: `ACK_WORDS` applied IN ADDITION to the stoplist; gate ACK-ONLY prompts only; a single content word or an issue / task number is never gated |
@@ -264,3 +293,30 @@ decisions of 2026-11-09. Per-task detail is in each spec's revision-round-2 tabl
 | M4 `where are we` | not gated; AC-3 row | [[task-25.2-thin-prompt-gate#rev-round-2]] |
 | M5 / M6 / M7 | suppressed notes count toward the neighbour cap; p99 over all linked entities; "head" defined | [[task-25.3-stm-ref-admission-and-helix-repeat#rev-round-2]] |
 | U6 bug-174 unscheduled | task 25.5 added | [[#tasks]], [[#non-goals]], [[task-25.5-substring-bre-metas]] |
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan25-spec-r3-2f64edb]] (DIRTY 0B/4S/9M at `2f64edb`). The report left no user
+question: it decided S1, S3 and S4 as the user would, and this fold adopts those decisions (the
+rationale is recorded in each task's revision-round-3 table). S4 was folded first, in its own
+commit (`9bcf464`), because it had to land before 3.7 merges. Every `src` line cited by the fold
+was re-read at master `9bcf464`.
+
+rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
+
+| finding | change | anchor |
+|---|---|---|
+| S1 moved leg hub-only for every caller vs 3.7's `shared_embedder` | hook modes stay hub-only (5 s budget cannot absorb a 6-33 s spawn / load); interactive and MCP embed through `recall.shared_embedder(root)`; AC-4 (c) hook-only; AC-4 (g) + mutation | [[#principle]], [[#overlap]], [[task-25.1-recall-hook-byte-budget#r5]], [[task-25.1-recall-hook-byte-budget#rev-round-3]] |
+| S2 25.4 Unicode classes under `LC_ALL=C` | 25.4 b10: under a non-UTF-8 locale every translated BRE delegates to the real grep; C-locale rows + mutation; 25.5 inherits | [[#tasks]], [[task-25.4-grep-bre-translation#rev-round-3]], [[task-25.5-substring-bre-metas#r2]] |
+| S3 25.5 bands cannot decide | source `cli.log` joined to `query.log`; (b) and (c) over M; minimum M ≥ 30; NO-GO by default below it with the counted note; re-measure from `bre_meta_literal` rows | [[task-25.5-substring-bre-metas#r3]], [[task-25.5-substring-bre-metas#r4]] |
+| S4 bug-173 collides with 3.7's | plan-25's row renumbered bug-180 (free on master, the 3.7 clone and the bug-178 clone); `bug_registry.md` row in `#overlap`; commit `9bcf464` | [[#non-goals]], [[#overlap]], [[task-25.4-grep-bre-translation#why]] |
+| M1 25.5 contract edges | 25.4 AC-4 `a.b` superseded explicitly; help text + docstring rewritten; "explicit PATH arguments"; `-G` parsed so AC-4's `-G` leg is RED | [[task-25.5-substring-bre-metas#rev-round-3]] |
+| M2 hooks map keys | id first, then relative path; path-keyed AC-9 case | [[task-25.1-recall-hook-byte-budget#r4]] |
+| M3 recorder / partition / A/B switch | existing `classify_outcome` recorder (`outcome: "error"`, `VerbAbsentError`); `verbs.memory_partition(root)`; `RMX_RECALL_REPLICA_FIRST` kept in the moved leg | [[task-25.1-recall-hook-byte-budget#r5]] |
+| M4 `project=B` resolution; silent cwd fallback | AC-4 (e) registers B and asserts resolution; the silent fallback in `mcp._resolve_root` logged as bug-181 (open; NOT scheduled by this fold) | [[task-25.1-recall-hook-byte-budget#acceptance]], [[bug_registry#registry]] |
+| M5 percentile method | nearest-rank, strict `>`, n recorded; ≥ 200-entity fixture with a unique-max hub | [[task-25.3-stm-ref-admission-and-helix-repeat#r8]] |
+| M6 25.2 text | R5's union includes list markers; `what now` relabelled a content-word prompt | [[task-25.2-thin-prompt-gate#rev-round-3]] |
+| M7 provisional numbers; plan-19 records | one set (`scan_cmd` 5,000 = `scan_prompt` 4,500 + `curator_status` 500, kept because d9 makes the command the unit); 19.1 `#rev-plan25` R1 row reworded; 19.4 gains `#rev-plan25` | [[#deltas]], q2, [[task-19.1-pack-recall-under-budget#rev-plan25]], [[task-19.4-keep-derived-layers-current#rev-plan25]] |
+| M8 `#overlap` stale | re-read at 3.7 `d093f65`: numstat, line deltas, new `discovery.py`, `modelsrv.py` and `bug_registry.md` rows | [[#overlap]], [[#ordering]] |
+| M9 SessionStart not covered | R0 probes SessionStart too; reserve and split per event (caveman-activate ~1.2 KB); resume `focus context` byte-capped; AC-12b | [[task-25.1-recall-hook-byte-budget#r0]], [[task-25.1-recall-hook-byte-budget#rev-round-3]] |
+

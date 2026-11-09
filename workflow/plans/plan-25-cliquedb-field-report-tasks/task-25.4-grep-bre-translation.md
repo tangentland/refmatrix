@@ -14,8 +14,8 @@ metadata:
 # Task 25.4: grep BRE translation {#root}
 
 > Plan: [[plan-25-cliquedb-field-report]]
-> Status: Pending (spec drafted 2026-11-08; revision rounds 1-2 2026-11-09, [[#rev-round-1]],
-> [[#rev-round-2]])
+> Status: Pending (spec drafted 2026-11-08; revision rounds 1-3 2026-11-09, [[#rev-round-1]],
+> [[#rev-round-2]], [[#rev-round-3]]; r3 folded, a short r4-lite confirm is next)
 > Bug: bug-167 (BRE escapes; cliquedb priority 5). Out of scope and logged separately: bug-180
 > (the `# rmx grep fallback via rg` line on every call, cliquedb item 5). bug-174 (substring
 > mode reads unescaped BRE metas literally) is [[task-25.5-substring-bre-metas]], which reuses
@@ -28,6 +28,7 @@ rel: depends-on -> [[task-3.7-verb-it-backlog]]
 rel: derives-from -> [[bug_registry#registry]]
 rel: derives-from -> [[bsd-plan25-spec-r1-2f4a1df]]
 rel: derives-from -> [[bsd-plan25-spec-r2-5b8ed15]]
+rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
 rel: motivates -> [[task-25.5-substring-bre-metas]]
 rel: depends-on -> [[project_grep_surface_defect_family]]
 rel: related-to -> [[project_grep_output_shape_one_resolver]]
@@ -66,6 +67,22 @@ compatible") and GNU grep 3.12 (`/opt/local/bin/ggrep`), `LANG=en_US.UTF-8`, pro
 The platform grep (the one the wrappers fall back to) is BSD, so BSD is the reference where they
 differ, and anything a translation cannot reproduce exactly goes to the real grep.
 
+Under a non-UTF-8 locale both greps read BYTES, and no Python translation does. Probed by
+[[bsd-plan25-spec-r3-2f64edb#probes]] (BSD 2.6.0 and GNU 3.12, which agree with each other in
+both locales) on lines `café x`, `naïve_y`, ` @foo `, `a@foo b`:
+
+| probe | `LC_ALL=en_US.UTF-8` | `LC_ALL=C` | Python `re` on decoded text |
+|---|---|---|---|
+| `-o '\w\+'` | `café`, `naïve_y` | `caf`, `na`, `ve_y` | `café`, `naïve_y` |
+| `-c 'caf\b'` | 0 | 1 | 0 |
+| `-o 'caf.'` | `café` | `caf` + one byte (`\303`) | `café` |
+| `-ow 'caf'` | exit 1 | `caf`, exit 0 | no match |
+
+rg (R4's fallback) is Unicode in every locale, so no rmx leg can reproduce grep's C-locale byte
+semantics; b10 sends every translated BRE to the real grep there. The locale an agent's Bash call
+sees on this workstation is `LANG=en_US.UTF-8` (read 2026-11-09), so the delegation costs nothing
+in practice.
+
 `# rmx grep fallback via rg` on every call (cliquedb item 5) is a stderr line (`cli.py:6901`,
 `err=True`) and is bug-180 (renumbered from bug-173 in r3); whether the index answers plain literals at all is plan-14 / plan-16's
 measurement. Substring mode reading `a.b` literally is bug-174.
@@ -82,7 +99,8 @@ measurement. Substring mode reading `a.b` literally is bug-174.
 | b6 | Patterns with no backslash keep today's substring path | changing what `a.b` means for every call is bug-174, with its own measurement |
 | b7 | `-o` (and `--color`) with an alternation in the pattern → real grep | grep's `-o` is leftmost-LONGEST (`echo ab \| grep -o 'a\|ab'` prints `ab`); Python's alternation is leftmost-first |
 | b8 | A translation is accepted only if it is PROVABLY the same language: anything Python refuses to compile, and any quantifier directly after a quantifier (`a**b`, `.*\+x`, `a*\?b`, `a\{2\}*`), is `UntranslatableBRE` → the real grep | possessive / lazy readings change the meaning silently; BSD itself rejects several of these |
-| b9 | POSIX classes follow the locale grep runs under: Unicode-aware under a UTF-8 `LC_CTYPE` (`[:alpha:]` → `[^\W\d_]`, `[:digit:]` → `\d`, `[:alnum:]` → `[^\W_]`, `[:space:]` → `\s`, …), ASCII ranges under `C` / `POSIX`; a class with no exact Python equivalent in the active locale (`[:punct:]`, `[:graph:]`, `[:print:]`, `[:cntrl:]` under UTF-8) is untranslatable → real grep. Because Python cannot nest a negated class inside a set, a bracket holding a Unicode class plus other members becomes an alternation of sets (`[[:alpha:]0-9]` → `(?:[^\W\d_]\|[0-9])`), and a NEGATED bracket holding one (`[^[:alpha:]]`) is untranslatable | both greps match `café` with `caf[[:alpha:]]` under the default locale; R1's `\w` is already Unicode |
+| b9 | POSIX classes follow the locale grep runs under. This rule applies only under a UTF-8 `LC_CTYPE`, where they are Unicode-aware (`[:alpha:]` → `[^\W\d_]`, `[:digit:]` → `\d`, `[:alnum:]` → `[^\W_]`, `[:space:]` → `\s`, …); under any other locale b10 delegates before a class is mapped; a class with no exact Python equivalent in the active locale (`[:punct:]`, `[:graph:]`, `[:print:]`, `[:cntrl:]` under UTF-8) is untranslatable → real grep. Because Python cannot nest a negated class inside a set, a bracket holding a Unicode class plus other members becomes an alternation of sets (`[[:alpha:]0-9]` → `(?:[^\W\d_]\|[0-9])`), and a NEGATED bracket holding one (`[^[:alpha:]]`) is untranslatable | both greps match `café` with `caf[[:alpha:]]` under the default locale; R1's `\w` is already Unicode |
+| b10 | Under a non-UTF-8 `LC_CTYPE` (`C`, `POSIX`, any non-UTF-8 codeset, or no locale variable set), EVERY pattern that would be translated is `UntranslatableBRE` → the real grep (b5), with the stderr note naming the reason (`non-UTF-8 locale`) | grep reads bytes there and Python's `re` (and rg) read decoded characters: `\w`, `\b`, `.`, `-w` and `-x` all answer differently on any non-ASCII line ([[#why]] C-locale table, r3 #s2); delegation is the only provable rule |
 
 ## Requirements {#requirements}
 
@@ -90,7 +108,11 @@ measurement. Substring mode reading `a.b` literally is bug-174.
    - operators: `\|` → `|`; `\(` `\)` → `(` `)`; `\{m\}`, `\{m,\}`, `\{m,n\}` → `{m}`, `{m,}`,
      `{m,n}`; `\+` → `+`; `\?` → `?`;
    - word anchors: `\<` → `\b(?=\w)`; `\>` → `\b(?<=\w)`; `\b`, `\B`, `\w`, `\W`, `\s`, `\S` kept
-     (Python's Unicode classes, consistent with b9);
+     (Python's Unicode classes, which equal both greps' reading under a UTF-8 locale ONLY; under
+     any other locale nothing reaches this rule, b10);
+   - **locale gate first** (b10): before any rule above runs, `bre_to_py` reads the locale the
+     way grep does (`LC_ALL`, then `LC_CTYPE`, then `LANG`; unset = `C`) and raises
+     `UntranslatableBRE("non-UTF-8 locale")` unless the codeset is UTF-8;
    - escaped literals: `\.`, `\*`, `\[`, `\]`, `\\`, `\^`, `\$`, `\/` → the Python-escaped literal;
    - back-references `\1`-`\9` kept and `needs_backrefs` set;
    - literal in BRE, operator in Python: `|`, `(`, `)`, `{`, `}`, `+`, `?` → escaped;
@@ -105,9 +127,8 @@ measurement. Substring mode reading `a.b` literally is bug-174.
      b5); any other escape not listed raises.
    Inside a bracket expression:
    - a backslash is LITERAL (POSIX): `[\.]` → `[\\.]`; `[a\]` is the set `{a, \}`;
-   - `]` first (or after `^`) is literal; POSIX classes map per b9 (locale read from
-     `LC_ALL` / `LC_CTYPE` / `LANG` the way grep reads it; Unicode-aware under UTF-8, ASCII
-     under C); a class with no exact equivalent in that locale, an unknown class, or an
+   - `]` first (or after `^`) is literal; POSIX classes map per b9 (Unicode-aware; only a
+     UTF-8 locale reaches this rule, b10); a class with no exact equivalent, an unknown class, or an
      equivalence / collating element (`[=a=]`, `[.a.]`) raises;
    - a literal `[` and the pairs `&&`, `--`, `||`, `~~` are escaped so Python emits no
      nested-set FutureWarning (the test runs with `-W error::FutureWarning`). {#r1}
@@ -153,8 +174,13 @@ sandbox on a fixture project. The oracle is the real tools; the test runs with
    via R3), `.*\+x` (BSD exit 2), `a*\?b` (BSD 0 / GNU 6 → rmx equals BSD via R3),
    `caf[[:alpha:]]` on a `café` line, and `-w` with `@foo` on lines ` @foo ` and `a@foo b`. `-o`
    rows include `a\|ab` (R3 delegation). Every row runs twice, under `LC_ALL=en_US.UTF-8` and
-   under `LC_ALL=C`, with `LC_ALL` pinned for both oracles and rmx. RED at HEAD: every row with a
-   backslash.
+   under `LC_ALL=C`, with `LC_ALL` pinned for both oracles and rmx. Under `LC_ALL=C` every
+   backslash row is answered by the real grep (b10): stdout and exit equal `/usr/bin/grep`'s and
+   stderr carries the `non-UTF-8 locale` delegation note. C-locale rows on the `café x` /
+   `naïve_y` lines that a translation would get wrong (r3 #s2): `\w\+ -o` (grep: `caf`, `na`,
+   `ve_y`), `caf\b -c` (grep: 1), and `-x 'caf.\? x'` on the `café x` line (grep under C:
+   exit 1, since `é` is two bytes; a decoded-text translation matches). The backslash-free
+   `-x .` row is 25.5's (it inherits this rule). RED at HEAD: every row with a backslash.
 3. **AC-3 Path-less (index + fallback).** In a project whose index has no concept for the
    pattern, `rmx grep "alpha\|beta"` exits 0 and its file:line set equals `grep -rn
    "alpha\|beta" <root>` restricted to indexed files (RED at HEAD: exit 2); the learned concept is
@@ -162,7 +188,9 @@ sandbox on a fixture project. The oracle is the real tools; the test runs with
 4. **AC-4 Dialects untouched.** `rmx grep -E 'a\|b'` and `rmxrg 'a\|b'` (rg dialect, `-E`
    injected) match a literal pipe, as `grep -E` / `rg` do; `rmx grep -F 'a\|b'` matches the
    literal backslash-pipe; `rmx grep 'a.b'` keeps substring semantics (b6, bug-174), asserted so a
-   change to it is deliberate.
+   change to it is deliberate. That `a.b` clause is SUPERSEDED on the drop-in legs by
+   [[task-25.5-substring-bre-metas#r2]] (25.5 rewrites this assertion in
+   `tests/test_task25_4_grep_bre.py` and says so in the test's docstring, r3 #m1 a).
 5. **AC-5 `-w` / `-x` semantics.** `rmx grep -w 'a\|b'`, `rmx grep -x 'a\|b'`, `rmx grep -w
    '@foo'` and `rmx grep -E -w '@foo'` equal grep on the file leg and the stdin leg; and
    `rmx grep -E -x 'a|b'` (native regex, no translation) likewise (RED at HEAD on the file leg:
@@ -175,7 +203,9 @@ sandbox on a fixture project. The oracle is the real tools; the test runs with
    positions, every POSIX class, backslash inside brackets, the four nested-set pairs, `\<` / `\>`
    vs `\b`; unknown classes, `[=a=]`, `\{,n\}` and unlisted escapes raise `UntranslatableBRE`;
    `^*a` translates to a literal star; `a**b`, `.*\+x`, `a*\?b` raise; `[[:alpha:]]` yields the
-   Unicode form under a UTF-8 locale and the ASCII range under C.
+   Unicode form under a UTF-8 locale; under `LC_ALL=C`, `LC_ALL=POSIX`, `LC_CTYPE=en_US.ISO8859-1`
+   and with no locale variable set, `foo\.py` and `[[:alpha:]]` both raise
+   `UntranslatableBRE("non-UTF-8 locale")` (b10).
 9. **AC-9 Mutations that must FAIL a test:** translate but leave `regex=False` (AC-1); translate
    after the stdin branch (AC-2 stdin leg); trigger only on the old five escapes (AC-1 `foo\.py`);
    skip escaping Python-only operators (AC-2 `a|b`, `(x)`); `\<` → `\b` (AC-2 `\>a`); copy
@@ -183,7 +213,8 @@ sandbox on a fixture project. The oracle is the real tools; the test runs with
    Python (AC-2 `a\|ab -o`); delegate rg-first (AC-6); translate under `-E` (AC-4); translate
    `\{,n\}` GNU-style (AC-2 divergence row); `-w` as `\b…\b` (AC-5 `@foo`); translate a stacked
    quantifier (AC-2 `a*\?b`, `.*\+x`); let a `re.error` escape (AC-2 `a**b`); ASCII-only POSIX
-   classes under UTF-8 (AC-2 `café`).
+   classes under UTF-8 (AC-2 `café`); **translate under C** (drop the b10 gate: AC-2's C rows
+   `\w\+ -o` and `caf\b -c` differ from grep, AC-8's C rows stop raising).
 
 ## Files to create {#files-to-create}
 
@@ -241,3 +272,18 @@ Answers [[bsd-plan25-spec-r2-5b8ed15]] with the orchestrator's decisions of 2026
 | S3 (d) POSIX classes ASCII-only; locale unpinned | b9: Unicode-aware classes under UTF-8, ASCII under C, untranslatable where no exact equivalent; `café` row; every row under `LC_ALL=en_US.UTF-8` and `LC_ALL=C` | b9, [[#r1]], AC-2 |
 | S3 divergences under-recorded | BSD / GNU / naive-Python table in [[#why]]; BSD is the reference (e4) | [[#why]], e4 |
 | U6 bug-174 unscheduled | [[task-25.5-substring-bre-metas]] | header, e3 |
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan25-spec-r3-2f64edb]] (DIRTY 0B/4S/9M at `2f64edb`), decided as the user would
+in the report. The new `-x 'caf.\? x'` row was probed on 2026-11-09 against both greps (C: 0
+lines, exit 1; UTF-8: 1 line) and Python `re` (match).
+
+rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
+
+| finding | change | anchor |
+|---|---|---|
+| S2 `\w \b \s .` kept Unicode under `LC_ALL=C`, AC-2 runs every row under C | b10: under a non-UTF-8 `LC_CTYPE` every translated BRE is `UntranslatableBRE` → the real grep (the provable rule; rg is Unicode in every locale too); locale gate first in R1; b9 applies under UTF-8 only; the C-locale probe table in [[#why]]; AC-2 C rows `\w\+ -o`, `caf\b -c`, `-x 'caf.\? x'`; AC-8 C rows raise; mutation "translate under C"; 25.5 inherits | [[#why]], [[#decisions]] b9 b10, [[#r1]], AC-2, AC-8, AC-9 |
+| S4 bug-id collision | the fallback note is bug-180 (renumbered from bug-173 in `9bcf464`, before 3.7 merges) | header, [[#why]], [[#files-to-modify]] |
+| M1 (a) AC-4's `a.b` clause | marked superseded on the drop-in legs by [[task-25.5-substring-bre-metas#r2]] | AC-4 |
+

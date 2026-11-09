@@ -14,8 +14,8 @@ metadata:
 # Task 25.3: STM ref admission and the helix repeat {#root}
 
 > Plan: [[plan-25-cliquedb-field-report]]
-> Status: Pending (spec drafted 2026-11-08; revision rounds 1-2 2026-11-09, [[#rev-round-1]],
-> [[#rev-round-2]])
+> Status: Pending (spec drafted 2026-11-08; revision rounds 1-3 2026-11-09, [[#rev-round-1]],
+> [[#rev-round-2]], [[#rev-round-3]]; r3 folded, a short r4-lite confirm is next)
 > Bug: bug-166 (cliquedb priority 4), both halves: junk topic members AND the stale helix line
 > "whatever the topic".
 > Depends on: [[task-25.2-thin-prompt-gate]] merged for the helix half (its ACs need prompts that
@@ -32,6 +32,7 @@ rel: amends -> [[task-19.0-stm-cluster-hygiene]]
 rel: derives-from -> [[bug_registry#registry]]
 rel: derives-from -> [[bsd-plan25-spec-r1-2f4a1df]]
 rel: derives-from -> [[bsd-plan25-spec-r2-5b8ed15]]
+rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
 rel: depends-on -> [[feedback_reuse_shared_stoplist]]
 rel: depends-on -> [[project_helix_phase2_decision_criterion]]
 rel: related-to -> [[project_helix_log_confounded]]
@@ -156,12 +157,17 @@ pre-registered. So every suppression is logged and the criterion reads rendered 
 8. **R8 Hub neighbours are not annotated.** In `_helix_neighbor_sweep`, a neighbour whose link
    degree (count of `entity_links` rows naming it, the measure `scan._concept_signal` uses for
    concepts, extended to the neighbour's entity id) is above the p99 of that count is not
-   annotated. **Population: all linked entities of every kind in the store's catalog** (not docs
+   annotated. **Method (r3 #m5):** p99 is the NEAREST-RANK percentile over the sorted degrees
+   (`d[ceil(0.99 × n) − 1]`, 0-indexed, ascending), and "above" is a strict `degree > p99`; never
+   `statistics.quantiles` (its default exclusive method puts p99 ABOVE the maximum at n = 41, so a
+   hub is never suppressed, [[bsd-plan25-spec-r3-2f64edb#probes]]). n is recorded beside the
+   threshold. **Population: all linked entities of every kind in the store's catalog** (not docs
    only, not per partition), computed once per store stamp and cached in `helix_index.json` beside
    the touch index. Anchor-role notes are unaffected. Measured on a copy of cliquedb's read
    catalog ([[bsd-plan25-spec-r2-5b8ed15#probes]]): 21,918 linked entities, p99 = 280, p99.9 = 736,
    220 entities above p99; the hub `docs/adr32-35_chat_history.md` has 2,331 links, so p99 catches
-   it. The constant's comment records the threshold, the population size and the count above it,
+   it (the method's choice does not matter at n = 21,918; it decides small fixtures). The
+   constant's comment records the method, the threshold, n and the count above it,
    and the implementation summary re-records them for refmatrix and cliquedb at GREEN. {#r8}
 9. **R9 Every suppression is a row; the criterion reads rendered + suppressed.** A suppressed note
    (repeat or hub) is not returned; its row goes through the same deferred sink and `flush` writes
@@ -221,8 +227,13 @@ from the ring file the hook wrote, never from a helper. {#acceptance-lead}
    concept prints in the original session.
 9. **AC-8 Built-not-rendered.** A bundle that builds a helix note and is dropped before render
    (the existing anchor-less drop) does not mark the key: the next rendering prompt prints it.
-10. **AC-9 Hub neighbour.** The fixture holds a hub document linked to every concept (degree above
-    p99) with a 10-day-old touch. Three prompts on three unrelated topics: at HEAD each prints a
+10. **AC-9 Hub neighbour.** The fixture holds ≥ 200 linked entities with the hub document as the
+    UNIQUE maximum degree (linked to every concept) and a 10-day-old touch, so nearest-rank p99 is
+    strictly below the hub's degree; the test asserts n, p99 and `hub_degree > p99` before the
+    prompts run (r3 #m5). A unit row pins the method on the r3 probe's shape: one degree-100 hub among 40
+    entities of degree < 100 (n = 41) gives nearest-rank p99 = 100 (index `ceil(40.59) − 1 = 40`,
+    the hub itself), so the hub is NOT strictly above it; `statistics.quantiles`' default
+    (exclusive) extrapolates past the maximum there (156.3 on the probe's degrees). Three prompts on three unrelated topics: at HEAD each prints a
     neighbor-role `[helix]` line for the hub (RED); after, none does, and helix.log has three
     `suppressed: "hub-neighbor"` rows. A non-hub stale neighbour of one prompt still renders.
 11. **AC-10 Instrument continuity.** The fixture gives one prompt SEVEN stale neighbours, the
@@ -240,7 +251,7 @@ from the ring file the hook wrote, never from a helper. {#acceptance-lead}
     the existence check (AC-2 `S/as.sh`); extract from heredoc bodies (AC-4); keep
     `_PATH_RE.findall` at `_tool_event_fields` (AC-1); skip the render-time filter (AC-3); mark the
     helix key at annotate instead of flush (AC-8); drop a suppressed row (AC-10); key by concept
-    only (AC-7 newer touch); disable the hub rule (AC-9); fall back to the newest ring for the
+    only (AC-7 newer touch); disable the hub rule (AC-9); p99 by `statistics.quantiles`' default method or a `>=` comparison (AC-9 unit row); fall back to the newest ring for the
     sidecar (AC-11); print the sidecar error to stderr only (AC-12); suppressed notes not counted
     toward the neighbour cap (AC-10: a sixth neighbour renders); the head rule applied to a slashed
     ref (AC-2: `S/as.sh` dropped without the existence check).
@@ -309,3 +320,14 @@ Answers [[bsd-plan25-spec-r2-5b8ed15]] with the orchestrator's decisions of 2026
 | M5 rendered + suppressed ≠ HEAD under the neighbour cap | suppressed notes count toward `_HELIX_NEIGHBOR_NOTES` and `_HELIX_NEIGHBOR_SCAN`; AC-10's fixture has seven stale neighbours; mutation added | [[#r9]], AC-10, AC-13 |
 | M6 p99 population unstated | all linked entities of every kind in the store's catalog; cliquedb measurement (21,918 / p99 280 / 220 above / hub 2,331) recorded; counts re-recorded at GREEN in every case | [[#r8]] |
 | M7 "head" undefined | head = the leading identifier before the first `.`, for slashless refs only; slashed refs are never subject to head rules, so `S/as.sh` stays the existence witness | [[#r1]], AC-2, AC-13 |
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan25-spec-r3-2f64edb#m5]].
+
+rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
+
+| finding | change | anchor |
+|---|---|---|
+| M5 "above the p99" has no method; on a small fixture the method decides AC-9 | nearest-rank over sorted degrees, strict `>`, n recorded beside the threshold; AC-9 fixture ≥ 200 linked entities with the hub the unique maximum, asserted before the prompts; a unit row pins the method at n = 41; mutation | [[#r8]], AC-9, AC-13 |
+

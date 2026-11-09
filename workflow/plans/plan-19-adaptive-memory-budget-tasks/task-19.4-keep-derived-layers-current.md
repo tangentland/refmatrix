@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-10-15
+  updated: 2026-11-09
 ---
 
 # Task 19.4: keep the derived memory layers current {#root}
@@ -263,3 +263,19 @@ rel: depends-on -> [[task-19.6-phased-context-and-topic-cache#rev-round-11]]
 | finding | answered at |
 |---|---|
 | r11 #m11-4 (`cluster_cid`'s byte serialization unpinned; no 19.4 Files row builds it if 19.4 merges first) | R6: `hashlib.sha256("\n".join(sorted(members)).encode("utf-8")).hexdigest()[:8]`, the same formula as 19.6 R9; [[#files-to-modify]] (`stm.py` row: built here or by 19.6, whichever merges first) |
+
+## Revision: realized by plan-25 (2026-11-09) {#rev-plan25}
+
+Record only; no requirement or AC of this task changes here. Added per
+[[bsd-plan25-spec-r3-2f64edb#m7]], the same reason 19.0, 19.1 and 19.5 got theirs
+([[bsd-plan25-spec-r1-2f4a1df#m9]]): so a builder does not follow stale text. The user ordered
+plan-25 ahead of plan-19's wave ([[plan-of-plans#override-2026-11-08b]]).
+
+rel: related-to -> [[task-25.1-recall-hook-byte-budget]]
+rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
+
+| 19.4 item | realized by | note |
+|---|---|---|
+| AC-4, recall leg (a `stale` subject is absent from `rmx memory recall`, with and without `--include-subjects`) | [[task-25.1-recall-hook-byte-budget#acceptance]] AC-6 (and its AC-14 mutation "stale subject visible in recall") | moved from plan-26 r2; 25.1 asserts it on the per-prompt argv, the SessionStart argv and the verb |
+| AC-4, the other legs (row kept, `protected`, absent from `MEMORY.md`, `memory get` returns it); R5's stale mark itself | not realized by plan-25 | the stale mark is written by plan-26's 26.6; recording 19.4's realized-by-26.6 status is left to plan-19's owner when 26.6 lands |
+
