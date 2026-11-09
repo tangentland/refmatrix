@@ -75,7 +75,7 @@ def test_every_generated_rmx_hook_runs_without_rmx_on_the_callers_path(tmp_path)
 
 
 def test_store_daemon_plist_does_not_run_at_background_qos(tmp_path):
-    """bug-174: the per-store daemon plists still rendered `ProcessType=Background`
+    """bug-176: the per-store daemon plists still rendered `ProcessType=Background`
     after bug-162 fixed the hub's. Under load (three reingests, 2026-11-09 00:30) a
     `rmx sync --since HEAD~1` of a few markdown files held the refmatrix daemon's
     writer for 71.7 s, so the Stop hook's `focus summarize --promote` (a write)
