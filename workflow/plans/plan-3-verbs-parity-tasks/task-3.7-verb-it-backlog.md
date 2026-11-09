@@ -623,6 +623,18 @@ neighbouring files `r3-red-regress.log` (4 failed, 48 passed: the same four); mu
 
 Doubles: registry row "task 3.7 remedy r3".
 
+**GREEN `e60033e` (S-1, M-1, M-2).** {#remedy-r3-green} `recall.reprobe_shared_client` is
+now THE hub re-probe and backoff (`RMX_SHARED_REPROBE_S` / `_MAX_S`): `Daemon._maybe_adopt_shared`
+keeps only the role selection and the swap, and `_process_embed_client`, still the one place
+that judges the cached client, re-probes while that client is private and on success swaps
+and retires the private worker. With no injected `log`, `shared_embedder` emits the rebuild
+notice (with `rebuild #N`) and the in-process fallback notice at WARNING on
+`refmatrix.recall`. `_embed_client_is_dead` no longer reads `_EMBED_CLIENT_ISSUED`; the
+global stays, unread, because the r1/r2 rigs `monkeypatch.setattr` it (drop those resets,
+then the line). Logs `workflow/review-output/task-3.7/r3-green-first.log` (r3 + r2: 11
+passed) and `r3-green.log` (related set, 18 files: 428 passed). Open, out of scope:
+bug-173.
+
 ## Definition of done {#done}
 
 - Each family: RED (recorder/parity/defect rows) before GREEN; mutation check; summary rows in
