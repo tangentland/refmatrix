@@ -38,6 +38,36 @@ provenance goes stale.
      - the vector, `created_at`, protected/noise flags and inbound `rel:` edges are unchanged;
      - there is exactly one `x` memory row.
    - At HEAD the path assertions fail (RED).
+1. **AC-1b: a move refreshes EVERY row on the old path, not only the id row (r5 s1).**
+   - **Why.** A store that predates the `sync-disk` alias (`cli.py:13141`) can hold a second,
+     legacy row for one file: `source: memory_sync_disk`, named by the frontmatter `name:`, with
+     the same `source_path`. HEAD's bridge only WRITES `source_path` (`ingest_gmd.py:948`) and
+     never looks a row up by path, so a move leaves the legacy row on a dead path, and no
+     per-file count sees it. Probe of a copy of refmatrix's read snapshot at 3ded49e: 376 memory
+     rows under the memdir for 357 files, i.e. 19 files with two rows each.
+   - **Rule.** When a marker-on bridge refreshes a moved file (AC-1), it refreshes
+     `memory_content.metadata.source_path` on EVERY row in the memory partition whose stored
+     `source_path` equals the moved file's OLD path (resolved on both sides, as AC-2), not only
+     the row keyed by the file's id. Only `source_path` changes on those extra rows: their entity
+     id, name, content, vector, `created_at`, protected/noise flags and edges are untouched.
+     The id-row refresh and the extra-row refresh are ONE store write per file, so an id row is
+     never refreshed without its legacy rows.
+   - **Count.** The extra rows are reported as a fourth term, `moved_legacy` (the id row stays
+     under `moved`). It is printed in the bridge report, carried by `_bridge_stats` and
+     `_bridge_wait_for_active_job`'s result, and reported by `--dry-run`: for each file whose id
+     row would be refreshed as `moved`, the rows other than the id row that share its stored old
+     path.
+   - **RED fixture.** Ingest `a/x.md` (id `x`) in a marker-on dir. Seed a second row with
+     `Store` on the THROWAWAY store only: name `legacy-x`, `source: memory_sync_disk`, the same
+     resolved `source_path` as `a/x.md`. Move the file to `b/x.md` and bridge again. Expected:
+     both rows carry the resolved `b/x.md`; `legacy-x`'s id, content and flags are unchanged;
+     the report says `moved = 1`, `moved_legacy = 1`. At HEAD `legacy-x` keeps `a/x.md` and
+     there is no such term (RED). Marker-off twin: HEAD behaviour (AC-3b), nothing refreshed.
+   - **Out of scope.** Merging or forgetting the legacy duplicate is NOT done here. Both rows
+     stay, and recall may still serve the older one; that is a pre-existing condition, and
+     removing knowledge is a separate, audited decision
+     ([[feedback_decay_never_loses_knowledge]]). This task only keeps their provenance live and
+     counted.
 2. **AC-2: the gate reuses the path already recorded; it adds no second record (ch-bsd r1 #s5).**
    - For memory rows, the skip requires two things: the hash matches, AND the row's existing
      `memory_content.metadata.source_path` equals the file's resolved path. For doc rows, the
@@ -72,10 +102,11 @@ provenance goes stale.
      - **Daemonless is asserted.** The test runs under task 23.0's sandbox connect recorder, with
        `RMX_HOME` pointed at an empty sandbox. The `--store-snapshot` run must succeed and record
        ZERO socket connects to any daemon or hub socket.
-     - **Stats split for the post-apply check (r4 s3).** The bridge reports re-ingested rows as
-       three terms: `moved`, `stale_before` (a path that disagreed before any move: missing or
-       symlink-form `source_path`) and `forced` (save-states forced by 26.5 AC-5 that were not
-       moved).
+     - **Stats split for the post-apply check (r4 s3; r5 s1).** The bridge reports re-ingested
+       rows as three terms: `moved`, `stale_before` (a path that disagreed before any move:
+       missing or symlink-form `source_path`) and `forced` (save-states forced by 26.5 AC-5 that
+       were not moved). A fourth term, `moved_legacy` (AC-1b), counts the extra rows refreshed
+       alongside a `moved` id row; it is a row count, not a file count.
      - **Relocated-twin RED case.** Copy the memdir with nothing changed and dry-run it through
        `--path-map`. It must report `refresh_pending = 0`. Without the map it reports about 100%,
        and that "~100%" is exactly the defect this case pins.
@@ -111,7 +142,9 @@ provenance goes stale.
   (an in-process read-only open of the copied catalog, never `daemon_mod`) and `--path-map`
   (r4 s2).
 - Modify `src/refmatrix/ingest_gmd.py`: dry-run stats with the `moved` / `stale_before` /
-  `forced` split.
+  `forced` split, plus `moved_legacy` (r5 s1).
+- Modify `src/refmatrix/ingest_gmd.py`: the move refresh updates every row on the old
+  `source_path` in one write (AC-1b).
 - Create `tests/test_bridge_move_safety.py`.
 
 ## Test Strategy {#test-strategy}
@@ -129,6 +162,7 @@ provenance goes stale.
 |---|---|
 | drop the path term from the gate | AC-1 goes RED |
 | drop the duplicate check | AC-4 goes RED |
+| refresh the id row only (HEAD's write) | AC-1b goes RED |
 | drop the field from the waited-job result | the AC-4 waited case goes RED |
 
 ## Revision round 1 (2026-11-09) {#rev-round-1}
@@ -163,3 +197,32 @@ Answers [[bsd-plan26-27-spec-review-r4-f89e640]].
 |---|---|---|
 | s2 (three flags that did not exist; which gate; daemonless unspecified) | `--dry-run`, `--store-snapshot` and `--path-map` added to `rmx ingest-gmd` (`cli.py:10230`); the dry-run evaluates the marker-on rule; the `--store-snapshot` path is in-process and asserted socket-free under 23.0's connect recorder | AC-3, [[#files]] |
 | s3 (the post-apply comparison mixed terms) | Bridge stats split into `moved` / `stale_before` / `forced` | AC-3 |
+
+## Implementation notes (r5) {#impl-notes-r5}
+
+Answers [[bsd-plan26-27-spec-review-r5-3ded49e]] findings that ride as notes.
+
+- **m3, term precedence.** A re-ingested row is in exactly ONE term, chosen by its stored
+  path's shape: a missing or symlink-form `source_path` → `stale_before`; otherwise a real,
+  different path → `moved`. `forced` is only a save-state in neither. `moved_legacy` counts the
+  extra rows of AC-1b and never an id row. The comparable pre-deploy number for `stale_before`
+  is AC-3's first two pre-registered terms (missing + symlink-form), not the whole
+  `refresh_pending` (26.8 AC-2).
+- **m4, the socket assertion.** Task 23.0's sandbox REFUSES live sockets
+  (`rmx_sandbox.violation`, `tests/conftest.py:176`); it does not record a connect to a sandbox
+  socket. The AC-3 "ZERO connects" assertion therefore installs a test-local
+  `sys.addaudithook` that appends every `socket.connect` address to a list while a flag the
+  test sets is on (audit hooks cannot be removed, so the hook is gated, installed once per
+  process). The `--store-snapshot` run must leave that list empty.
+
+## Revision round 5 (2026-11-09) {#rev-round-5}
+
+Answers [[bsd-plan26-27-spec-review-r5-3ded49e]].
+
+rel: derives-from -> [[bsd-plan26-27-spec-review-r5-3ded49e]]
+
+| finding | change | anchor |
+|---|---|---|
+| s1 (19 legacy `memory_sync_disk` rows keep the pre-move `source_path`, uncounted) | Every row on the old path is refreshed in one write; fourth term `moved_legacy`; RED fixture with a second, differently named row; merge/forget out of scope | AC-1b, AC-3, [[#files]] |
+| m3 (terms defined two ways; no precedence) | Precedence by stored-path shape; `stale_before` compares with AC-3's first two terms | [[#impl-notes-r5]] |
+| m4 (23.0 does not record sandbox connects) | Test-local `sys.addaudithook` on `socket.connect` | [[#impl-notes-r5]] |

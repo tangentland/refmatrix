@@ -66,8 +66,9 @@ filename.
    viascope-native memory, as a control.
 6. **AC-6: the viascope2 dir is retired, not deleted.** The backup tarball exists. The tombstone
    `README.md` names viascope's dir and the tarball. No `.md` memory remains there apart from the
-   README. Deleting the dir, and archiving the `~/github/atollogy/bdep/viascope2` checkout, are
-   flagged for the user (plan Q2). Neither is done here.
+   README. Deleting the dir needs a further explicit go from the user; it is not done here. The
+   `~/github/atollogy/bdep/viascope2` checkout IS archived, by AC-8, after AC-5 passes (plan
+   Q2, decided by the user 2026-11-09: archive, no delete).
 
 7. **AC-7: git (S1).**
    - viascope's memdir is tracked by the viascope repo: 147 files at review time.
@@ -76,11 +77,35 @@ filename.
    - The viascope2 memdir is not tracked by a product repo. Check `~/.claude`: if it tracks the
      viascope2 memdir there, stage there too.
 
+8. **AC-8: archive the viascope2 checkout; move and delete nothing (plan Q2; r5 m6).** Runs
+   only after AC-2..AC-5 pass and AC-3 shows no viascope2 path left in viascope's store.
+   - **Announce first.** Tell the user the target path and the tarball path before writing.
+   - **Record before archiving**, into `workflow/review-output/27.2-viascope2-archive.log`:
+     `du -sk` of the checkout; free space on the backups volume (stop and report if under twice
+     the size); `git -C ~/github/atollogy/bdep/viascope2 status --porcelain`; unpushed commits
+     (`git log --branches --not --remotes --oneline`); its remotes. Dirt or unpushed commits are
+     reported to the user and archived as they are, never committed, reset or pushed.
+   - **Backup.** `~/.refmatrix/backups/memory-organise/checkout-viascope2-<UTC ts>.tar.gz`,
+     beside this plan's other backups. It holds the WHOLE checkout, `.git` and dotfiles
+     included, so it restores to a working repo. Its member count must equal a full `os.walk`
+     of the checkout that includes dotfiles (the 26.5 AC-3 rule), and `tar -tzf` must read it
+     back. A failed or short backup stops here and writes no tombstone.
+   - **Tombstone.** Write `RETIRED.md` at the checkout root, never over the repo's own
+     `README.md`. If `RETIRED.md` already exists, stop and report. It names: the merge into
+     viascope (`git subtree add`, `98df0696`, 2026-04-17), viascope's checkout, the tarball path
+     and its member count, and "moving or deleting this checkout needs an explicit go from the
+     user". It is left untracked: no commit in another repo.
+   - **Nothing else.** The checkout is not moved, renamed or deleted, and no hub registry or
+     launchd entry is changed by this AC (AC-3 owns repoints). The implementation summary names
+     the tarball and the tombstone.
+
 ## Files to Create / Modify {#files}
 
 - Modify the live dirs only through the verb.
 - Create `workflow/implementation_summaries/task-27.2-viascope2-fold-and-repoint.md`.
-- Create `workflow/review-output/27.2-*.log`.
+- Create `workflow/review-output/27.2-*.log`, including `27.2-viascope2-archive.log` (AC-8).
+- Create `~/github/atollogy/bdep/viascope2/RETIRED.md` (untracked tombstone, AC-8) and the
+  checkout tarball under `~/.refmatrix/backups/memory-organise/`.
 
 ## Test Strategy {#test-strategy}
 
@@ -105,3 +130,13 @@ Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
 |---|---|---|
 | s6 (viascope prose migration anchored to no task) | 27.2a runs first; the preview must report `index: ok` before apply | AC-4 |
 | s5 (apply-then-refuse) | Relies on 26.5 AC-3's refusal before the first move | AC-4 |
+
+## Revision round 5 (2026-11-09) {#rev-round-5}
+
+Answers [[bsd-plan26-27-spec-review-r5-3ded49e]].
+
+rel: derives-from -> [[bsd-plan26-27-spec-review-r5-3ded49e]]
+
+| finding | change | anchor |
+|---|---|---|
+| m6 (Q2 decided at 3ded49e but AC-6 said "neither is done here"; no archive step) | AC-6 reworded; new AC-8 archives the checkout as a whole-repo tarball in `~/.refmatrix/backups/memory-organise/` plus an untracked `RETIRED.md` tombstone, after the fold verifies; nothing moved or deleted without a further go | AC-6, AC-8, [[#files]] |

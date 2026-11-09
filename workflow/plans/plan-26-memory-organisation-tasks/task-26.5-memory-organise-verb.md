@@ -69,6 +69,9 @@ verb-parity test covers both. No file is ever moved by hand, here or in plan-27.
    - the save-state type rewrites (26.4 AC-3);
    - `duplicate_ids`;
    - `refresh_pending` (26.2 AC-3);
+   - `moved_legacy` projected over THIS plan's moves (r5 s1): the rows, other than a file's id
+     row, whose resolved `source_path` equals a planned move's from-path (26.2 AC-1b). Read via
+     the resolved store's daemon; `no store` reports `n/a`;
    - the resolved store and partition, or `no store`;
    - whether the memdir is a symlink, and its resolved target;
    - `git_tracked: <toplevel>` with a count of tracked files, or `untracked` (S1);
@@ -126,7 +129,8 @@ verb-parity test covers both. No file is ever moved by hand, here or in plan-27.
    - **One-time forced re-bridge of save-states (r3 m8).** `--apply` re-ingests EVERY save-state
      file in the dir, bypassing the hash gate for those paths only. 26.4's mtype rule therefore
      reaches unchanged mis-typed save-states too. `mtype_normalised` must list them. The result
-     reports re-ingested rows split into `moved` / `stale_before` / `forced` (26.2 AC-3; r4 s3).
+     reports re-ingested rows split into `moved` / `stale_before` / `forced` (26.2 AC-3; r4 s3),
+     plus `moved_legacy` (26.2 AC-1b; r5 s1), which must equal the preview's projected count.
 6. **AC-6: recall proves it.** In the throwaway end-to-end test, after `--apply`:
    - `rmx memory recall "<phrase unique to a moved save-state>"`, run in the resolved root,
      returns it;
@@ -173,7 +177,13 @@ verb-parity test covers both. No file is ever moved by hand, here or in plan-27.
 8. **AC-8: check mode, report-only.**
    - `--check` exits non-zero when any file is out of place, a save-state is mis-typed, a
      duplicate id exists, `refresh_pending > 0`, or `index: refuse`. It changes nothing.
-     `refresh_pending` is 26.2's bridge `--dry-run` stat, re-exported here (r2 m4).
+     `refresh_pending` is 26.2's bridge `--dry-run` stat, re-exported here (r2 m4). It
+     includes the `moved_legacy` term (26.2 AC-1b; r5 s1), and `--check` prints it on its own
+     line, so a legacy row left on a dead path keeps `--check` non-zero.
+   - Test (r5 s1): a marker-on fixture with a legacy row on `a/x.md` (26.2's AC-1b fixture), the
+     file moved by hand to `b/x.md` with no bridge. `--check` exits non-zero and reports
+     `moved_legacy: 1`. After one bridge it exits 0. At HEAD there is no such term and the
+     legacy row is invisible (RED).
    - `rmx save-state` prints a one-line `organise --check` summary but never moves a file (plan
      Q2, ch-bsd r1 verdict: report-only).
 9. **AC-9: fail closed on a live store.** The verb never opens `Store()` itself.
@@ -263,3 +273,25 @@ Answers [[bsd-plan26-27-spec-review-r4-f89e640]].
 |---|---|---|
 | m1 (rollback regenerated the index marker-off and dropped prose) | Skip the rebuild when the archive's `MEMORY.md` is restored; otherwise rebuild before the marker is moved aside; prose line asserted | AC-7 |
 | s3 (stats split) | `moved` / `stale_before` / `forced` reported | AC-5 |
+
+## Implementation notes (r5) {#impl-notes-r5}
+
+- **m5, the rollback restore branch.** AC-7 restores the archive's `MEMORY.md` only when it is
+  unchanged since apply AND no file was kept at a moved path (no "different bytes → KEEP" row
+  fired for a file whose current path differs from its archive path). Otherwise the restored
+  index would link the archive path of a file that still lives at `feedback/x.md`, so the index
+  is regenerated (marker-on, before the marker goes aside), as in AC-7's second branch. The
+  AC-7 test already edits a feedback memory, so it takes the regenerate branch; it also asserts
+  every link in the post-rollback `MEMORY.md` resolves to a file. Raised by
+  [[bsd-plan26-27-spec-review-r5-3ded49e]].
+
+## Revision round 5 (2026-11-09) {#rev-round-5}
+
+Answers [[bsd-plan26-27-spec-review-r5-3ded49e]].
+
+rel: derives-from -> [[bsd-plan26-27-spec-review-r5-3ded49e]]
+
+| finding | change | anchor |
+|---|---|---|
+| s1 (legacy rows on the old path uncounted; `--check` clean over them) | Preview projects `moved_legacy`; apply reports it and must match; `--check` includes it, with a RED case | AC-2, AC-5, AC-8 |
+| m5 (restore branch can restore a dead link) | Restore only when no file was kept at a moved path; else regenerate | [[#impl-notes-r5]] |

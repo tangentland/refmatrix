@@ -13,8 +13,9 @@ metadata:
 # Plan 26: memory-layer organisation {#root}
 
 **Date:** 2026-11-08. Revised 2026-11-09, rounds 1 ([[#rev-round-1]]), 2 ([[#rev-round-2]]), 3
-([[#rev-round-3]]) and 4 ([[#rev-round-4]]).
-**Status:** Drafting.
+([[#rev-round-3]]), 4 ([[#rev-round-4]]) and 5 ([[#rev-round-5]]).
+**Status:** Drafting. ch-bsd r5 (0B/1S/6M) folded; next is a focused confirm of r5 s1, m2 and m6,
+not a full round.
 **Location:** `workflow/plans/plan-26-memory-organisation.md`. This file stays here; its stage is
 `metadata.status`.
 **Sequencing:** task 3.7 → plan-26 (this plan) → plan-25 (the cliquedb bugs) → plan-24 (the mod).
@@ -40,6 +41,7 @@ rel: derives-from -> [[bsd-plan26-27-spec-review-r1-96feccd]]
 rel: derives-from -> [[bsd-plan26-27-spec-review-r2-8af766a]]
 rel: derives-from -> [[bsd-plan26-27-spec-review-r3-696c3cb]]
 rel: derives-from -> [[bsd-plan26-27-spec-review-r4-f89e640]]
+rel: derives-from -> [[bsd-plan26-27-spec-review-r5-3ded49e]]
 rel: related-to -> [[plan-25-cliquedb-field-report]]
 rel: motivates -> [[plan-27-memory-fleet-rollout]]
 rel: specifies -> [[task-26.0-adr-memory-dir-layout]]
@@ -293,6 +295,10 @@ Task 26.2 makes the resume gate compare the stored resolved `source_path` (memor
 `entities.path` (docs) as well as the hash. A path change re-ingests:
 - the row, its links, its vector and its decay record keep their identity;
 - only `path`/`source_path` are refreshed;
+- every row whose stored `source_path` is the moved file's old path is refreshed in the same
+  write, including legacy `memory_sync_disk` rows named by `name:`; they are counted as
+  `moved_legacy` (19 in refmatrix's store), and merging or forgetting them is out of scope
+  (r5 s1; [[task-26.2-bridge-move-safety#rev-round-5]]);
 - no new key is stored (ch-bsd r1 #s5).
 
 Two files claiming one `id` are a counted, named refusal.
@@ -478,3 +484,18 @@ Answers [[bsd-plan26-27-spec-review-r4-f89e640]].
 | s1 (the ungated `collect` contradicted "HEAD's render" in viascope) | `collect` and the bridge walk are named as every-dir changes; viascope's trade restated as prose loss on a save-state, not a wipe | [[#layout-marker]] |
 | m3 (the every-dir list was short) | Now four entries | [[#layout-marker]] |
 | 26 Q8 | Execution-time authorisation at 26.8 (r4 verdict) | [[#open-questions]] |
+
+## Revision round 5 (2026-11-09) {#rev-round-5}
+
+Answers [[bsd-plan26-27-spec-review-r5-3ded49e]] (DIRTY 0B/1S/6M). No user decision was open;
+Q8 was decided by the user at 3ded49e.
+
+| finding | change | anchor |
+|---|---|---|
+| s1 (19 legacy `memory_sync_disk` rows keep the pre-move `source_path`, uncounted) | The move refresh covers every row on the old path in one write; fourth term `moved_legacy`; RED fixture; `--check` includes it; refmatrix expects 19, exact; 27.1 records it per store; merge/forget out of scope ([[feedback_decay_never_loses_knowledge]]) | [[#safe-first]], [[task-26.2-bridge-move-safety#rev-round-5]], [[task-26.5-memory-organise-verb#rev-round-5]], [[task-26.8-refmatrix-live-rollout#rev-round-5]], [[plan-27-memory-fleet-rollout#rev-round-5]] |
+| m1 (26.1 AC-9 "all 8 listed") | Implementation note: 7 entry links + the impressions pointer | [[task-26.1-layout-module-and-index-walk#impl-notes-r5]] |
+| m2 (26.8 spot-check (b) fails in viascope by design) | Scoped to flat dirs; viascope's expected diff stated | [[task-26.8-refmatrix-live-rollout#rev-round-5]] |
+| m3 (term precedence) | Implementation note; 26.8 compares `stale_before` with AC-0's first two terms | [[task-26.2-bridge-move-safety#impl-notes-r5]], [[task-26.8-refmatrix-live-rollout#rev-round-5]] |
+| m4 (23.0 does not record sandbox connects) | Implementation note: test-local `sys.addaudithook` on `socket.connect` | [[task-26.2-bridge-move-safety#impl-notes-r5]] |
+| m5 (rollback restore branch can restore a dead link) | Implementation note: restore only when no file was kept at a moved path | [[task-26.5-memory-organise-verb#impl-notes-r5]] |
+| m6 (3ded49e not carried into plan-27) | Fixed in plan-27 | [[plan-27-memory-fleet-rollout#rev-round-5]] |

@@ -208,3 +208,21 @@ Answers [[bsd-plan26-27-spec-review-r4-f89e640]].
 | finding | change | anchor |
 |---|---|---|
 | s1 (the ungated `collect` vs "HEAD's render") | AC-3 named ungated and every-dir; "HEAD bytes" scoped to flat-plus-`impressions/` dirs; marker-off nested fixture added | AC-3, AC-9 |
+
+## Implementation notes (r5) {#impl-notes-r5}
+
+- **m1, the nested AC-9 count.** `render` collapses `impressions/` into one pointer line
+  (r1 m1), so "all 8 entries are still listed" in the AC-9 nested test means **7 entry links +
+  the impressions pointer** (`ch-bsd impressions (1)`) in the rendered `MEMORY.md`; assert all 8
+  on `collect()`, as AC-3 does. HEAD renders 1 entry link + the pointer (RED). Raised by
+  [[bsd-plan26-27-spec-review-r5-3ded49e]].
+
+## Revision round 5 (2026-11-09) {#rev-round-5}
+
+Answers [[bsd-plan26-27-spec-review-r5-3ded49e]].
+
+rel: derives-from -> [[bsd-plan26-27-spec-review-r5-3ded49e]]
+
+| finding | change | anchor |
+|---|---|---|
+| m1 (AC-9 "all 8 listed" vs the impressions pointer) | Read as 7 entry links + the pointer; 8 asserted on `collect()` | [[#impl-notes-r5]] |

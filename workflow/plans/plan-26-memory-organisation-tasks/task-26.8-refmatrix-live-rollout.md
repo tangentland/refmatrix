@@ -49,7 +49,16 @@ first.
      - after ONE bridge only (no save-state), cliquedb's and viascope's `MEMORY.md` and sidecar
        are byte-identical to the snapshot; or
      - on a COPY of each dir, the deployed binary's save-state output is byte-identical to the
-       pre-deploy binary's output on a second copy.
+       pre-deploy binary's output on a second copy. **Scope (r5 m2):** byte-identity holds only
+       for FLAT dirs (memories top-level or in `impressions/`, 26.1 AC-9). In a nested
+       un-organised dir, 26.1 AC-3's ungated `collect` legitimately widens the index. viascope's
+       expected diff is stated, not waived: HEAD renders 3 entries (1 line / 119 chars); the
+       deployed binary renders 145 (65 feedback, 68 project, 9 reference, 3 impressions) as
+       139 lines / 23,857 chars, under the 24,000 budget, with 5 project entries folded behind
+       "nothing was deleted". The ONLY permitted diff is those added entry/fold lines; the
+       hand-written prose is dropped on BOTH sides (HEAD's compaction), so a prose line present
+       on one side only fails. Any other differing line fails. Numbers from the r5 probe on a
+       copy ([[bsd-plan26-27-spec-review-r5-3ded49e]]); re-measure on the copy and record.
 1. **AC-1: deploy.**
    - Release on `master`.
    - Run `git -C ~/refmatrix pull --ff-only origin master`, then `rmx daemon restart --relaunch`.
@@ -64,11 +73,16 @@ first.
 
      | term | expected | tolerance |
      |---|---|---|
-     | `stale_before` | AC-0's `refresh_pending` | ±5 |
+     | `stale_before` | AC-0's first two terms only: missing + symlink-form `source_path` (r5 m3) | ±5 |
      | `moved` | the AC-3 preview's move count (40 save-states + 250 typed) | exact |
      | `forced` | save-states forced by 26.5 AC-5 that were NOT moved; 0 here, because all 40 move | exact |
+     | `moved_legacy` (r5 s1) | **19**: the legacy `memory_sync_disk` rows that share a moved file's `source_path` (r5 probe of a read-snapshot copy: 376 rows / 357 files), and the AC-3 preview's projected count | exact |
 
-     The moved save-states are counted once, under `moved`.
+     The moved save-states are counted once, under `moved`. A row falls in one term only, by
+     its stored path's shape (26.2 `#impl-notes-r5`). If `moved_legacy` is not 19, or differs
+     from the preview's projection, log a bug row and report before AC-5. The 19 legacy
+     duplicates are NOT merged or forgotten here (26.2 AC-1b, out of scope;
+     [[feedback_decay_never_loses_knowledge]]); the implementation summary lists them by name.
    - Then run ONE `rmx memory sync-disk` and record two things from the bridge report: the number
      of rows re-ingested, and the store write counter. Record wall time only as context.
    - If that sync holds `_store_lock` for more than 60 s, log a bug row and report it to the
@@ -81,6 +95,7 @@ first.
      and the 250 typed files to `feedback/`, `project/` and `reference/` (68, 170 and 12) per
      plan Q1. `unplaceable` must be 0, or every unplaceable file is named.
    - The preview must report `index: ok` (26.5 AC-2, r2 s5).
+   - The preview must report `moved_legacy: 19` (26.5 AC-2; r5 s1).
    - The preview must report `git_tracked: ~/.claude` for the two tracked files: `MEMORY.md` and
      `project_csn_production_harness.md`. It must also report the carried prose line count.
 4. **AC-4: back up, then apply.**
@@ -96,7 +111,10 @@ first.
    - `rmx memory recall "<phrase unique to one moved save-state>"` returns that save-state.
    - The same recall check passes for one moved feedback memory.
    - `rmx context <a moved memory's anchor>` shows a `path` under the new folder (26.2).
-   - `rmx memory organise --check` is clean.
+   - `rmx memory organise --check` is clean, including `moved_legacy: 0` (26.5 AC-8; r5 s1).
+   - For 3 of the 19 legacy rows, a daemon read by name (`rmx memory get <name>`, e.g.
+     `refmatrix-daemon-architecture`) shows `source_path` under the new folder, and its content
+     is unchanged from before the apply (r5 s1).
 6. **AC-6: re-compile (26.6 builds 19.4).**
    - Run `memory_compile --apply` (scope `memory`) through the daemon.
    - The 20 pre-0.34 rows (15 `unlabeled_N`; `from`, `existing`, `feedback`, `fixes`, `memory`)
@@ -180,3 +198,15 @@ Answers [[bsd-plan26-27-spec-review-r4-f89e640]].
 | finding | change | anchor |
 |---|---|---|
 | s3 (the expected count compared a pre-move number with a post-move bridge) | Expected count = AC-0 + preview moves + forced-not-moved, per term; the >50 STOP is on AC-0's number, before AC-4 | AC-2 |
+
+## Revision round 5 (2026-11-09) {#rev-round-5}
+
+Answers [[bsd-plan26-27-spec-review-r5-3ded49e]].
+
+rel: derives-from -> [[bsd-plan26-27-spec-review-r5-3ded49e]]
+
+| finding | change | anchor |
+|---|---|---|
+| s1 (19 legacy rows go dead-path on apply, uncounted) | `moved_legacy` = 19, exact, in the preview and the apply bridge; `--check` includes it; 3 legacy rows read by name; merge/forget out of scope | AC-2, AC-3, AC-5 |
+| m2 (spot-check option (b) fails in viascope by design) | Byte-identity scoped to flat dirs; viascope's expected diff stated (entries added, prose dropped on both sides) | AC-0 |
+| m3 (`stale_before` compared with the whole `refresh_pending`) | Compared with AC-0's first two terms | AC-2 |

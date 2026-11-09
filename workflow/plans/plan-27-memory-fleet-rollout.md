@@ -12,7 +12,9 @@ metadata:
 # Plan 27: memory fleet rollout {#root}
 
 **Date:** 2026-11-08
-**Status:** Drafting
+**Status:** Drafting. Revised 2026-11-09, rounds 1-5 ([[#rev-round-5]]). ch-bsd r5 (0B/1S/6M)
+folded, including the user's 3ded49e decisions (Q2, Q6); next is a focused confirm of r5 s1, m2
+and m6, not a full round.
 **Location:** `workflow/plans/plan-27-memory-fleet-rollout.md`
 **Depends on:** [[plan-26-memory-organisation]] merged, released AND deployed (26.8 green).
 Plan 27 changes no behaviour of its own, apart from the merge mode in task 27.0. It applies the
@@ -49,7 +51,7 @@ says whether the project has the SessionStart `ingest-gmd --as-memory` hook.
 | `-bdep-viascope` (symlink → `~/at/bdep/viascope/.claude/projects/…`) | 146 | 1 | 0 | viascope, supervised | **no** |
 | `-bdep-viascope2` | 32 | 32 | 0 | **no store**; repo merged into viascope 2026-04-17 (`98df0696`) | n/a |
 | `-bdep-thiquet` | 34 | 34 | 13 | bdep/thiquet store, **NOT supervised**; supervised `~/enduris/thiquet` store is empty and maps to no memory dir | to inventory |
-| `-bdep-ble-sniffer-mqtt` | 21 | 21 | 1 | checkout not found at `~/github/atollogy/bdep/ble-sniffer-mqtt` | n/a |
+| `-bdep-ble-sniffer-mqtt` | 21 | 21 | 1 | checkout is `~/github/atollogy/bdep/ble_sniffer_mqtt` (the slug turns `_` into `-`); **no store** (no `.refmatrix/`, confirmed by r5 probe) | n/a |
 | `-bdep-portal` | 16 | 16 | 0 | no store | n/a |
 | `-DataGripProjects-evolution` | 11 | 11 | 0 | no store | none |
 | `-bdep-intropretor` 8, `-enduris-enduris` 8, `-enduris-shrub` 6, `-bdep-cat-herder` 6 (1 ss), `-claude-tools-gmd` 5 (1 ss), `-bdep-atlftpd` 4 (1 ss), `-bdep-atldb` 2 (2 ss), `-enduris-unified-tree-server` 2, `-bdep-orderly` 1 (1 ss) | small | | | cat-herder, atlftpd, atldb and orderly have stores; atldb and orderly are supervised | to inventory |
@@ -96,6 +98,10 @@ Every live change follows the same rules:
 - **Daemon ops only.** Every store touch goes through daemon ops.
 - **Rollback per dir.** `rmx memory organise --rollback <tarball>` is id-aware and never
   overwrites a later edit (26.5 AC-7).
+- **Legacy rows counted (r5 s1).** Each apply's bridge reports `moved_legacy` (26.2 AC-1b): rows
+  that share a moved file's old `source_path`, refreshed with it. It must equal the count 27.1
+  recorded for that store from the preview, exact; a mismatch stops the dir and logs a bug row.
+  The duplicates are left in place, not merged or forgotten.
 
 Round 1 added these rules (see [[#rev-round-1]]):
 - **The target store is resolved from the memdir (B2).** `--store-from-memdir` is THE default
@@ -127,7 +133,9 @@ Round 1 added these rules (see [[#rev-round-1]]):
 - No hook regeneration in other repos. 27.6 REPORTS drift (`rmx install-hooks --check` per
   project). Regenerating is the user's call, and plan-24's mod replaces the shell hooks anyway
   (Q3).
-- No archiving of the viascope2 checkout. It is flagged for the user's decision.
+- No move or deletion of the viascope2 checkout. Archiving it IS in scope (Q2, decided by the
+  user 2026-11-09): after 27.2 verifies the fold, 27.2 AC-8 writes a backup tarball plus a
+  tombstone and leaves the checkout in place. Moving or deleting it needs a further explicit go.
 - No commit in another repo. Tracked moves are staged, and the user commits.
 - No compile or index design. 27.6 runs plan-26's 26.6 (which builds 19.4) and 26.7 (which builds
   19.3) per store.
@@ -139,7 +147,7 @@ Round 1 added these rules (see [[#rev-round-1]]):
 | [[task-27.0-organise-merge-from]] | `rmx memory organise --merge-from <dir>`: id-reconciling fold | plan-26 deployed |
 | [[task-27.1-fleet-inventory]] | dry-run every dir; memdir→store mapping; bridge coverage | plan-26 deployed |
 | [[task-27.2a-index-prose-to-memories]] | convert viascope's 22,643 chars of `MEMORY.md` prose (94% of the budget), and any dir over 50%, into user-approved memories | 27.1 |
-| [[task-27.2-viascope2-fold-and-repoint]] | fold viascope2 into viascope; repoint; retire the viascope2 dir | 27.0, 27.1, 27.2a |
+| [[task-27.2-viascope2-fold-and-repoint]] | fold viascope2 into viascope; repoint; retire the viascope2 dir; archive the viascope2 checkout (tarball + tombstone, nothing moved) | 27.0, 27.1, 27.2a |
 | [[task-27.3-thiquet-store-repoint]] | supervise bdep/thiquet; retire the `~/enduris/thiquet` store | 27.1 |
 | [[task-27.4-quiet-dir-migrations]] | organise each remaining dir, one at a time | 27.1 (27.3 before the thiquet dir) |
 | [[task-27.5-cliquedb-at-session-boundary]] | staged, announced cliquedb migration | 27.1, 27.4 |
@@ -153,7 +161,10 @@ Round 1 added these rules (see [[#rev-round-1]]):
   that project's store, and `rmx recall-state` resumes.
 - Nothing resolves the viascope project's memory to viascope2. `rmx hub status` lists
   bdep/thiquet and not `~/enduris/thiquet`.
-- A backup tarball exists for every dir touched, named in the implementation summary.
+- A backup tarball exists for every dir touched, named in the implementation summary, and one
+  for the viascope2 checkout (27.2 AC-8).
+- Every apply's bridge reports `moved_legacy` equal to 27.1's projected count for that store,
+  exact (r5 s1).
 - `@ch-bsd` over the commit range (27.0 code plus the bookkeeping) is CLEAN.
 
 ## Open questions (phrased as decisions) {#open-questions}
@@ -233,5 +244,18 @@ Answers [[bsd-plan26-27-spec-review-r4-f89e640]].
 | finding | change | anchor |
 |---|---|---|
 | r4 verdicts on 27 Q1, Q3, Q4, Q5 | Recorded as DECIDED (recommendations adopted) | [[#open-questions]] |
-| 27 Q2, Q6 | Remain open for the user (archive the viascope2 checkout; the ble-sniffer-mqtt location) | [[#open-questions]] |
+| 27 Q2, Q6 | Open at r4; DECIDED by the user at 3ded49e (Q2: archive after 27.2 verifies, no delete; Q6: `~/github/atollogy/bdep/ble_sniffer_mqtt`, `no store`), carried into the text at r5 | [[#open-questions]], [[#rev-round-5]] |
 | m2 (27.2a checker) | Whole-line multiset match per block | [[task-27.2a-index-prose-to-memories#rev-round-4]] |
+
+## Revision round 5 (2026-11-09) {#rev-round-5}
+
+Answers [[bsd-plan26-27-spec-review-r5-3ded49e]] (DIRTY 0B/1S/6M). No user decision remains:
+the user's 3ded49e decisions (Q2, Q6) are carried into the text here.
+
+rel: derives-from -> [[bsd-plan26-27-spec-review-r5-3ded49e]]
+
+| finding | change | anchor |
+|---|---|---|
+| s1 (legacy rows in every pre-alias store go dead-path, uncounted) | 27.1 records projected `moved_legacy` and the legacy-duplicate count per store; every apply must match it, exact | [[#approach]], [[#acceptance]], [[task-27.1-fleet-inventory#rev-round-5]] |
+| m6 (3ded49e not carried) | `#non-goals` viascope2 line flipped; 27.2 AC-6 and new AC-8 archive the checkout (tarball under `~/.refmatrix/backups/memory-organise/`, tombstone `RETIRED.md`, nothing moved or deleted); r4 table Q2/Q6 rows marked decided; survey and 27.1 AC-4 name `~/github/atollogy/bdep/ble_sniffer_mqtt`, `no store`; 27.1 "latent wipe" restated as prose loss (r4 s1) | [[#non-goals]], [[#survey]], [[#tasks]], [[#rev-round-4]], [[task-27.2-viascope2-fold-and-repoint#rev-round-5]], [[task-27.1-fleet-inventory#rev-round-5]] |
+| s1, m1-m5 (plan-26 text) | Folded in plan-26 | [[plan-26-memory-organisation#rev-round-5]] |
