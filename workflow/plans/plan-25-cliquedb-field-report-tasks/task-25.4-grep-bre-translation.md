@@ -14,10 +14,12 @@ metadata:
 # Task 25.4: grep BRE translation {#root}
 
 > Plan: [[plan-25-cliquedb-field-report]]
-> Status: Pending (spec drafted 2026-11-08; revision round 1 2026-11-09, [[#rev-round-1]])
+> Status: Pending (spec drafted 2026-11-08; revision rounds 1-2 2026-11-09, [[#rev-round-1]],
+> [[#rev-round-2]])
 > Bug: bug-167 (BRE escapes; cliquedb priority 5). Out of scope and logged separately: bug-173
-> (the `# rmx grep fallback via rg` line on every call, cliquedb item 5) and bug-174 (substring
-> mode reads unescaped BRE metas literally).
+> (the `# rmx grep fallback via rg` line on every call, cliquedb item 5). bug-174 (substring
+> mode reads unescaped BRE metas literally) is [[task-25.5-substring-bre-metas]], which reuses
+> this task's translator.
 > Depends on: task 3.7 merged (it edits `cli.py`; no 3.7 hunk is in the grep block). Independent
 > of 25.1-25.3.
 
@@ -25,6 +27,8 @@ rel: part-of -> [[plan-25-cliquedb-field-report]]
 rel: depends-on -> [[task-3.7-verb-it-backlog]]
 rel: derives-from -> [[bug_registry#registry]]
 rel: derives-from -> [[bsd-plan25-spec-r1-2f4a1df]]
+rel: derives-from -> [[bsd-plan25-spec-r2-5b8ed15]]
+rel: motivates -> [[task-25.5-substring-bre-metas]]
 rel: depends-on -> [[project_grep_surface_defect_family]]
 rel: related-to -> [[project_grep_output_shape_one_resolver]]
 rel: related-to -> [[plan-16-invisible-grep-shim]]
@@ -45,10 +49,22 @@ stdin leg, [[bsd-plan25-spec-r1-2f4a1df#probes]]): `rmx grep 'foo\.py'` prints t
 `foo\.py` and misses `foo.py`; `a\+b`, `\bab`, `ab\b` match nothing where grep matches. `\.` is
 probably the most common escaped pattern an agent writes.
 
-The oracles agree almost everywhere. `/usr/bin/grep` (BSD grep 2.6.0-FreeBSD, "GNU compatible")
-and GNU grep 3.12 (`/opt/local/bin/ggrep`) agree on 26 of 27 patterns in the bsd's sweep. The one
-divergence is `a\{,1\}b`: BSD exits 2 ("invalid repetition count(s)"), GNU matches. The platform
-grep (the one the wrappers fall back to) is BSD, so BSD is the authority where they differ.
+The oracles agree on most patterns but not all. `/usr/bin/grep` (BSD grep 2.6.0-FreeBSD, "GNU
+compatible") and GNU grep 3.12 (`/opt/local/bin/ggrep`), `LANG=en_US.UTF-8`, probed by
+[[bsd-plan25-spec-r1-2f4a1df#probes]] and [[bsd-plan25-spec-r2-5b8ed15#probes]]:
+
+| pattern | BSD | GNU | a naive Python translation |
+|---|---|---|---|
+| `a\{,1\}b` | exit 2 | matches | — |
+| `.*\+x` | exit 2 | 4 matches | possessive `.*+x`: 0 |
+| `a**b` | exit 2 | 6 matches | `re.error` |
+| `a*\?b` | 0 matches | 6 matches | lazy `a*?b`: 6 |
+| `^*a` | 1 (literal `*`) | 1 | `re.error` |
+| `-w @foo` | ` @foo ` line | same | `\b(?:@foo)\b` picks `a@foo b` |
+| `caf[[:alpha:]]` on `café` | 1 | 1 | ASCII range: 0 (all give 0 under `LC_ALL=C`) |
+
+The platform grep (the one the wrappers fall back to) is BSD, so BSD is the reference where they
+differ, and anything a translation cannot reproduce exactly goes to the real grep.
 
 `# rmx grep fallback via rg` on every call (cliquedb item 5) is a stderr line (`cli.py:6901`,
 `err=True`) and is bug-173; whether the index answers plain literals at all is plan-14 / plan-16's
@@ -65,35 +81,44 @@ measurement. Substring mode reading `a.b` literally is bug-174.
 | b5 | Not provably translated → the REAL GREP FIRST with the original argv (never rg, never `UsageError`, never literal) | the platform grep is the authority |
 | b6 | Patterns with no backslash keep today's substring path | changing what `a.b` means for every call is bug-174, with its own measurement |
 | b7 | `-o` (and `--color`) with an alternation in the pattern → real grep | grep's `-o` is leftmost-LONGEST (`echo ab \| grep -o 'a\|ab'` prints `ab`); Python's alternation is leftmost-first |
+| b8 | A translation is accepted only if it is PROVABLY the same language: anything Python refuses to compile, and any quantifier directly after a quantifier (`a**b`, `.*\+x`, `a*\?b`, `a\{2\}*`), is `UntranslatableBRE` → the real grep | possessive / lazy readings change the meaning silently; BSD itself rejects several of these |
+| b9 | POSIX classes follow the locale grep runs under: Unicode-aware under a UTF-8 `LC_CTYPE` (`[:alpha:]` → `[^\W\d_]`, `[:digit:]` → `\d`, `[:alnum:]` → `[^\W_]`, `[:space:]` → `\s`, …), ASCII ranges under `C` / `POSIX`; a class with no exact Python equivalent in the active locale (`[:punct:]`, `[:graph:]`, `[:print:]`, `[:cntrl:]` under UTF-8) is untranslatable → real grep. Because Python cannot nest a negated class inside a set, a bracket holding a Unicode class plus other members becomes an alternation of sets (`[[:alpha:]0-9]` → `(?:[^\W\d_]\|[0-9])`), and a NEGATED bracket holding one (`[^[:alpha:]]`) is untranslatable | both greps match `café` with `caf[[:alpha:]]` under the default locale; R1's `\w` is already Unicode |
 
 ## Requirements {#requirements}
 
 1. **R1 `bre_to_py`.** In a new `src/refmatrix/grep_dialect.py`, pure. Outside brackets:
    - operators: `\|` → `|`; `\(` `\)` → `(` `)`; `\{m\}`, `\{m,\}`, `\{m,n\}` → `{m}`, `{m,}`,
      `{m,n}`; `\+` → `+`; `\?` → `?`;
-   - word anchors: `\<` → `\b(?=\w)`; `\>` → `\b(?<=\w)`; `\b`, `\B`, `\w`, `\W`, `\s`, `\S` kept;
+   - word anchors: `\<` → `\b(?=\w)`; `\>` → `\b(?<=\w)`; `\b`, `\B`, `\w`, `\W`, `\s`, `\S` kept
+     (Python's Unicode classes, consistent with b9);
    - escaped literals: `\.`, `\*`, `\[`, `\]`, `\\`, `\^`, `\$`, `\/` → the Python-escaped literal;
    - back-references `\1`-`\9` kept and `needs_backrefs` set;
    - literal in BRE, operator in Python: `|`, `(`, `)`, `{`, `}`, `+`, `?` → escaped;
-   - `*` at the start, after `\(` or after `\|` is literal (escaped);
+   - `*` at the start, after a leading `^`, after `\(` or after `\|` is literal (escaped):
+     `^*a` → `^\*a` (both greps: literal `*`);
+   - b8: a quantifier (`*`, `\+`, `\?`, `\{…\}`) directly after another quantifier raises
+     `UntranslatableBRE`; after building, the result is passed to `re.compile` and ANY `re.error`
+     (or warning under `-W error`) raises `UntranslatableBRE`;
    - `^` is an anchor only at the start / after `\(` / after `\|`; `$` only at the end / before
      `\)` / before `\|`; elsewhere escaped;
    - `\{,n\}` raises `UntranslatableBRE` (BSD exits 2, GNU matches; the platform grep decides via
      b5); any other escape not listed raises.
    Inside a bracket expression:
    - a backslash is LITERAL (POSIX): `[\.]` → `[\\.]`; `[a\]` is the set `{a, \}`;
-   - `]` first (or after `^`) is literal; POSIX classes (`[:alpha:]`, `[:digit:]`, `[:space:]`,
-     `[:alnum:]`, `[:upper:]`, `[:lower:]`, `[:punct:]`, `[:xdigit:]`, `[:blank:]`, `[:cntrl:]`,
-     `[:print:]`, `[:graph:]`) map to explicit ranges; an unknown class or an equivalence /
-     collating element (`[=a=]`, `[.a.]`) raises;
+   - `]` first (or after `^`) is literal; POSIX classes map per b9 (locale read from
+     `LC_ALL` / `LC_CTYPE` / `LANG` the way grep reads it; Unicode-aware under UTF-8, ASCII
+     under C); a class with no exact equivalent in that locale, an unknown class, or an
+     equivalence / collating element (`[=a=]`, `[.a.]`) raises;
    - a literal `[` and the pairs `&&`, `--`, `||`, `~~` are escaped so Python emits no
      nested-set FutureWarning (the test runs with `-W error::FutureWarning`). {#r1}
 2. **R2 One entry, every leg, grouped.** In `cli.grep` the guard at `cli.py:6407-6419` is replaced:
    when b3 / b4 hold, `pattern` becomes `bre_to_py(pattern).regex` and `regex = True` BEFORE the
    stdin branch, the `-w` / `-x` wrapping and the index / fallback fork, so every leg reads the
-   translated pattern. `-w` wraps as `\b(?:p)\b` and `-x` as `^(?:p)$` on EVERY leg (the file leg
-   builds `\b{p}\b` / `^{p}$` ungrouped at `cli.py:6450-6453`, and the stdin leg groups only `-x`;
-   both are fixed, for translated and native regex alike). The original pattern is kept for
+   translated pattern. `-w` wraps as `(?<!\w)(?:p)(?!\w)` (grep's word-constituent rule: the
+   match must not be preceded or followed by a word character, whatever the pattern's own edge
+   characters are; so `-w @foo` matches ` @foo ` and not `a@foo b`) and `-x` as `^(?:p)$`, on
+   EVERY leg (the file leg builds `\b{p}\b` / `^{p}$` ungrouped at `cli.py:6450-6453`, and the
+   stdin leg groups only `-x`; both are fixed, for translated and native regex alike). The original pattern is kept for
    `query.log`'s `body`, the learned concept name and delegation. {#r2}
 3. **R3 Real grep for the rest.** `UntranslatableBRE`; `needs_backrefs` on a leg that would reach
    rg; or b7 (`-o` / `--color` with `has_alternation`) → `_grep_delegate(..., grep_first=True)`
@@ -124,8 +149,12 @@ sandbox on a fixture project. The oracle is the real tools; the test runs with
    row: BSD exit 2, so rmx exit 2 via R3), `a\+b`, `a\?b`, `\<word\>`, `\>a`, `\ba`, `ab\b`,
    `^a\|b$`, `a|b` (literal pipe in BRE), `(x)`, `{1}`, `a+`, `*star`, `x^y$z`,
    `[[:digit:]]\+`, `[]a]`, `[^]a]`, `[\.]`, `[a\]`, `[a&&b]`, `\(a\)\1` (back-reference),
-   `foo\.py`, `\.\*`, `a\\b`, `\w\+`. `-o` rows include `a\|ab` (R3 delegation). RED at HEAD:
-   every row with a backslash.
+   `foo\.py`, `\.\*`, `a\\b`, `\w\+`; plus the r2 rows `^*a`, `a**b` (BSD exit 2 → rmx exit 2
+   via R3), `.*\+x` (BSD exit 2), `a*\?b` (BSD 0 / GNU 6 → rmx equals BSD via R3),
+   `caf[[:alpha:]]` on a `café` line, and `-w` with `@foo` on lines ` @foo ` and `a@foo b`. `-o`
+   rows include `a\|ab` (R3 delegation). Every row runs twice, under `LC_ALL=en_US.UTF-8` and
+   under `LC_ALL=C`, with `LC_ALL` pinned for both oracles and rmx. RED at HEAD: every row with a
+   backslash.
 3. **AC-3 Path-less (index + fallback).** In a project whose index has no concept for the
    pattern, `rmx grep "alpha\|beta"` exits 0 and its file:line set equals `grep -rn
    "alpha\|beta" <root>` restricted to indexed files (RED at HEAD: exit 2); the learned concept is
@@ -134,22 +163,27 @@ sandbox on a fixture project. The oracle is the real tools; the test runs with
    injected) match a literal pipe, as `grep -E` / `rg` do; `rmx grep -F 'a\|b'` matches the
    literal backslash-pipe; `rmx grep 'a.b'` keeps substring semantics (b6, bug-174), asserted so a
    change to it is deliberate.
-5. **AC-5 `-w` / `-x` grouping.** `rmx grep -w 'a\|b'` and `rmx grep -x 'a\|b'` equal grep on the
-   file leg and the stdin leg; and `rmx grep -E -x 'a|b'` (native regex, no translation) likewise
-   (RED at HEAD on the file leg: ungrouped `^a|b$`).
+5. **AC-5 `-w` / `-x` semantics.** `rmx grep -w 'a\|b'`, `rmx grep -x 'a\|b'`, `rmx grep -w
+   '@foo'` and `rmx grep -E -w '@foo'` equal grep on the file leg and the stdin leg; and
+   `rmx grep -E -x 'a|b'` (native regex, no translation) likewise (RED at HEAD on the file leg:
+   ungrouped `^a|b$`, and `\b@foo\b` selecting `a@foo b`).
 6. **AC-6 Back-reference and delegation.** `rmx grep '\(ab\)\1' file` equals `/usr/bin/grep` on
    file and stdin; the stderr note names the delegation whenever the real tool answered.
 7. **AC-7 Wrappers.** `rmxgrep 'B0\|group_key' file` in rich mode returns the same bytes without
    taking the wrapper's fallback branch (asserted by its stderr marker).
 8. **AC-8 Unit table.** `bre_to_py` over every R1 rule, including anchor and leading-`*`
    positions, every POSIX class, backslash inside brackets, the four nested-set pairs, `\<` / `\>`
-   vs `\b`; unknown classes, `[=a=]`, `\{,n\}` and unlisted escapes raise `UntranslatableBRE`.
+   vs `\b`; unknown classes, `[=a=]`, `\{,n\}` and unlisted escapes raise `UntranslatableBRE`;
+   `^*a` translates to a literal star; `a**b`, `.*\+x`, `a*\?b` raise; `[[:alpha:]]` yields the
+   Unicode form under a UTF-8 locale and the ASCII range under C.
 9. **AC-9 Mutations that must FAIL a test:** translate but leave `regex=False` (AC-1); translate
    after the stdin branch (AC-2 stdin leg); trigger only on the old five escapes (AC-1 `foo\.py`);
    skip escaping Python-only operators (AC-2 `a|b`, `(x)`); `\<` → `\b` (AC-2 `\>a`); copy
    brackets verbatim (AC-2 `[\.]`, `[a\]`); ungrouped `-x` (AC-5); answer `-o` with alternation in
    Python (AC-2 `a\|ab -o`); delegate rg-first (AC-6); translate under `-E` (AC-4); translate
-   `\{,n\}` GNU-style (AC-2 divergence row).
+   `\{,n\}` GNU-style (AC-2 divergence row); `-w` as `\b…\b` (AC-5 `@foo`); translate a stacked
+   quantifier (AC-2 `a*\?b`, `.*\+x`); let a `re.error` escape (AC-2 `a**b`); ASCII-only POSIX
+   classes under UTF-8 (AC-2 `café`).
 
 ## Files to create {#files-to-create}
 
@@ -182,8 +216,8 @@ sandbox on a fixture project. The oracle is the real tools; the test runs with
 |---|---|---|
 | e1 | Translate vs delegate every BRE | translate (b1); delegation for what is not provably translated (b5, b7) |
 | e2 | GNU grep as a required test dependency | yes; BSD and GNU disagree at the edges (`\{,n\}`) and the drop-in must know where |
-| e3 | Substring-mode `a.b` | out of scope; logged as bug-174 |
-| e4 | Where BSD and GNU disagree | follow `/usr/bin/grep` (the platform grep the wrappers fall back to) |
+| e3 | Substring-mode `a.b` | bug-174, scheduled as [[task-25.5-substring-bre-metas]] (orchestrator 2026-11-09) |
+| e4 | Where BSD and GNU disagree | follow `/usr/bin/grep` (the platform grep the wrappers fall back to); the known disagreements are tabled in [[#why]] |
 
 ## Revision round 1 (2026-11-09) {#rev-round-1}
 
@@ -194,3 +228,16 @@ Answers [[bsd-plan25-spec-r1-2f4a1df]] and the orchestrator's decisions of 2026-
 | S8 most escapes stay silently literal; AC-2 contradicts b4 | trigger on ANY backslash (b4); the full escape set in R1; `foo\.py` in AC-1/AC-2; `\.\*` is now consistent with the trigger | [[#why]], [[#decisions]] b4, [[#r1]], AC-1, AC-2 |
 | S9 translation rules disagree with both greps | `\<` / `\>` as look-around word starts/ends; backslash literal inside brackets; nested-set pairs escaped (test under `-W error`); `-o` / `--color` with alternation delegated (b7); `(?:…)` grouping for `-w` / `-x` on every leg; `\{,n\}` follows BSD via delegation; six cases added to AC-2 and AC-8 | [[#r1]], [[#r2]], [[#r3]], AC-2, AC-5, AC-8, AC-9 |
 | M8 bug-167 also carries item 5; `a.b` unlogged | bug-167 split: the fallback-banner row is bug-173, substring `a.b` is bug-174, both logged 2026-11-09 | header, [[#why]], e3 |
+
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Answers [[bsd-plan25-spec-r2-5b8ed15]] with the orchestrator's decisions of 2026-11-09.
+
+| finding | change | anchor |
+|---|---|---|
+| S3 (a) `-w` wrong on non-word edges | `-w` = `(?<!\w)(?:p)(?!\w)` on every leg; AC-5 adds `-w @foo` (BRE and `-E`) | [[#r2]], AC-5, AC-9 |
+| S3 (b) compile failures undefined | `^*a` added to the literal-`*` positions; every translation is compiled and any `re.error` is `UntranslatableBRE` → real grep (b8) | [[#decisions]] b8, [[#r1]], AC-2, AC-8 |
+| S3 (c) stacked quantifiers change meaning | a quantifier after a quantifier is untranslatable → real grep; rows `a**b`, `.*\+x`, `a*\?b` | b8, [[#r1]], AC-2 |
+| S3 (d) POSIX classes ASCII-only; locale unpinned | b9: Unicode-aware classes under UTF-8, ASCII under C, untranslatable where no exact equivalent; `café` row; every row under `LC_ALL=en_US.UTF-8` and `LC_ALL=C` | b9, [[#r1]], AC-2 |
+| S3 divergences under-recorded | BSD / GNU / naive-Python table in [[#why]]; BSD is the reference (e4) | [[#why]], e4 |
+| U6 bug-174 unscheduled | [[task-25.5-substring-bre-metas]] | header, e3 |

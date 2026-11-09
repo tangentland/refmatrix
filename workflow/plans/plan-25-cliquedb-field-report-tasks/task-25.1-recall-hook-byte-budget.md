@@ -14,7 +14,8 @@ metadata:
 # Task 25.1: recall hook byte budget {#root}
 
 > Plan: [[plan-25-cliquedb-field-report]]
-> Status: Pending (spec drafted 2026-11-08; revision round 1 2026-11-09, [[#rev-round-1]])
+> Status: Pending (spec drafted 2026-11-08; revision rounds 1-2 2026-11-09, [[#rev-round-1]],
+> [[#rev-round-2]])
 > Bug: bug-164 (cliquedb priority 1)
 > Depends on: task 3.7 MERGED to `master` ([[plan-25-cliquedb-field-report#overlap]]); plan-26
 > merged (its 26.4 owns the save-state mtype fix this task re-asserts on the packed path, and its
@@ -36,6 +37,7 @@ rel: amends -> [[task-19.1-pack-recall-under-budget]]
 rel: realizes -> [[task-19.5-measure-delivery]]
 rel: derives-from -> [[bug_registry#registry]]
 rel: derives-from -> [[bsd-plan25-spec-r1-2f4a1df]]
+rel: derives-from -> [[bsd-plan25-spec-r2-5b8ed15]]
 rel: depends-on -> [[reference_hook_output_10k_cap]]
 rel: related-to -> [[project_recall_hook_savestate_noise_fix]]
 rel: related-to -> [[task-24.2a-hook-verbs-explicit-session]]
@@ -105,14 +107,23 @@ mutation is carried (AC-14 maps them) unless a row below says otherwise.
    character on UserPromptSubmit and SessionStart. A second run puts TWO hooks of 6,000 chars on
    one UserPromptSubmit; a third puts FOUR hooks of 3,000. Record the cap and its unit (chars or
    bytes), the preview size, per-hook vs per-event, and whether PreCompact stdout reaches the
-   agent. Commit the table to `workflow/measurements/hook-output-cap-probe.md`. Exactly one of
-   three outcomes is recorded and sets `hook_budget` ([[#r1]]):
-   - **(A) per-hook cap.** Every producer's budget is `0.9 × cap`.
+   agent. It also records, read-only, the bytes every NON-rmx UserPromptSubmit hook installed in
+   the user's global settings adds to the event: today `~/.claude/hooks/caveman-mode-tracker.js`,
+   which writes one `additionalContext` JSON of ~200-250 B when a caveman mode is active and
+   nothing otherwise (read 2026-11-09; its `/caveman-stats` branch blocks the prompt and is not a
+   per-turn producer). Commit the table to `workflow/measurements/hook-output-cap-probe.md`.
+   The unit of budgeting is the GENERATED HOOK COMMAND, because that is what Claude Code caps:
+   UserPromptSubmit has `scan_cmd` (scan-prompt `;` curator status: ONE command, one stdout),
+   `focus_input_cmd` and the recall command. Exactly one of three outcomes is recorded and sets
+   `hook_budget` ([[#r1]]):
+   - **(A) per-hook cap.** Each hook command's budget is `0.9 × cap`. Inside `scan_cmd`,
+     scan-prompt and curator status SHARE that one budget: `scan_prompt` + `curator_status` ≤
+     `0.9 × cap`, with the split written next to the constant.
    - **(B) per-event cap, residual ≥ `MIN_USEFUL_RECALL_BYTES`** (2,000 B: header + 6 hook
-     lines). `EVENT_BUDGET = 0.9 × cap` is split across the event's producers by
-     `hook_budget.EVENT_SPLIT` (`scan_prompt`, `prompt_recall`, `focus_input`, `curator_status`).
-     The fixed producers (`focus_input`, `curator_status`) get their measured max on the fixture
-     plus 20%; the rest is split scan-prompt : recall in the ratio written next to the constant.
+     lines). `EVENT_BUDGET = 0.9 × cap − NON_RMX_RESERVE_BYTES` (the measured non-rmx bytes
+     rounded up to 512 B) is split across the rmx producers by `hook_budget.EVENT_SPLIT`
+     (`scan_prompt`, `curator_status`, `focus_input`, `prompt_recall`). EVERY producer's share is
+     a hard byte cap it enforces on itself (no "measured max + margin" shares).
    - **(C) per-event cap, residual < `MIN_USEFUL_RECALL_BYTES`.** scan-prompt's share is cut
      until recall gets `MIN_USEFUL_RECALL_BYTES`, and the split is recorded with both numbers.
    The probe is recorded before GREEN; ACs read the constants, never the probe. {#r0}
@@ -120,13 +131,20 @@ mutation is carried (AC-14 maps them) unless a row below says otherwise.
     `rmx scan-prompt --max-bytes N` (default `hook_budget.budget("scan_prompt")`): the rendered
     text (bundles, content block, helix lines and the composite) is fitted by
     `hook_budget.fit_blocks` in its existing render order, whole blocks only, with a one-line
-    `+N blocks omitted` trailer. The hook argv gets no new flag (the default applies). {#r0b}
+    `+N blocks omitted` trailer. The hook argv gets no new flag (the default applies).
+    **Every other rmx producer on the event is capped the same way:** `rmx curator status`
+    (3.7's verb `curator(action="status")` after its merge; today it prints up to `--limit 10`
+    repo-relative paths of any length plus overflow text on every prompt) fits its lines through
+    `fit_blocks` to `budget("curator_status")`, and `focus hook --event input` fits whatever it
+    prints to `budget("focus_input")`. {#r0b}
 1. **R1 One budget module, one unit.** `src/refmatrix/hook_budget.py` holds `CHANNEL_BUDGET_BYTES`
-   (keys `prompt_recall`, `scan_prompt`, `session_start`, `precompact`), `EVENT_SPLIT`,
+   (keys `prompt_recall`, `scan_prompt`, `curator_status`, `focus_input`, `session_start`,
+   `precompact`), `HOOK_COMMAND_CHANNELS` (which channels share one generated hook command:
+   `scan_cmd` = `scan_prompt` + `curator_status`), `EVENT_SPLIT`, `NON_RMX_RESERVE_BYTES`,
    `MIN_USEFUL_RECALL_BYTES`, `budget(channel) -> int` and the pure
    `fit_blocks(blocks, max_bytes, *, trailer) -> Fitted(text, kept, dropped, payload_bytes)`.
-   PROVISIONAL values until R0: `prompt_recall` 4,000; `scan_prompt` 5,000; `session_start` 9,000;
-   `precompact` 9,000. `--max-bytes N` / verb `max_bytes=N` override a channel;
+   PROVISIONAL values until R0: `prompt_recall` 4,000; `scan_prompt` 4,500; `curator_status` 500;
+   `focus_input` 256; `session_start` 9,000; `precompact` 9,000; `NON_RMX_RESERVE_BYTES` 512. `--max-bytes N` / verb `max_bytes=N` override a channel;
    `RMX_HOOK_BUDGET_BYTES`, when set, overrides every channel and is never interpolated into an
    argv; a non-integer value exits non-zero naming the variable. The unit is UTF-8 bytes of the
    rendered payload (19.1 R1's reason: bytes ≥ chars, so either harness unit is safe). {#r1}
@@ -151,20 +169,40 @@ mutation is carried (AC-14 maps them) unless a row below says otherwise.
    called exactly once per invocation on the final row list: after every source is merged
    (`_merge_scope`) and excluded, in every hook mode (`--recent`, `--session-start`,
    `--stdin-json`, dense, hybrid). {#r4}
-6. **R5 Recall rows come from the verb; the CLI renders.** (orchestrator S1 (a))
-   - `verbs._memory_recall_rows` gains the replica-first leg: `_replica_memory_recall` moves out
-     of `cli.py` (to `recall.py` beside 3.7's `shared_embedder`, or to `verbs.py`; one copy) and
-     the verb's dense branch tries it first, then the daemon RPC, exactly the CLI's order today.
-     The verb's own second dense leg (`verbs.py:1054-1077`) is the daemon fallback, not a parallel
-     path.
-   - With no daemon: the verb serves from the replica + shared workers when both answer; else it
-     raises `VerbAbsentError("memory recall needs the daemon up (dense embedder lives there) or a
-     replica + shared model workers")`. In hook mode the CLI renders that as today's degrade line
-     and exits 0.
+6. **R5 Recall rows come from the verb, for EVERY caller; the CLI renders.** (orchestrator S1 (a),
+   extended 2026-11-09 by decisions d6-d8)
+   - **Root-correct move.** `_replica_memory_recall` (`cli.py:11347`) moves to
+     `recall.replica_memory_recall(root, *, partition, query, k, kinds, fuse, rerank, left,
+     warnings)` over `search.cached_replica(root)` (the primitive `memory_partition` already
+     uses). It reads NO CLI global and no CWD: `_reader_store()` and `_resolve_partition()` are
+     replaced by the explicit `root` / `partition`. So an MCP call with `project=cliquedb` from a
+     refmatrix session reads cliquedb's replica.
+   - **The body fetch moves with it.** Replica-served hits are resolved to memory rows from the
+     same replica (the CLI's `_fetch_memory` logic, root-explicit), never by the daemon-only
+     `_call(root, "memory_get")`; the daemon fetch remains for daemon-served hits.
+   - `verbs._memory_recall_rows`' dense branch tries the replica leg first, then the daemon RPC
+     (the CLI's order today). The verb's own dense leg (`verbs.py:1054-1077`) becomes the daemon
+     fallback, not a parallel path.
+   - **Every caller goes through it (d6):** the hook modes, MCP `rmx_memory_recall` (`mcp.py:142`)
+     and the interactive `rmx memory recall "q"` (table and `--json`, `hook_mode` False at
+     `cli.py:12323`). The CLI-only `kind=doc` leg moves into the verb as a `kinds` value the verb
+     honours, owned by this task. After 25.1 there is one which-rows computation for recall.
+   - **Accepted consequence (d7):** MCP and interactive query recall are served from the replica
+     snapshot when it and the shared workers answer, so they may lag the writer by the replica
+     rotation interval. The rerank default is resolved where the call runs
+     (`reranker.rerank_enabled()` in the calling process on the replica leg, the daemon's default
+     on the RPC leg); the verb's `warnings` name which leg served and whose default applied.
+   - **No daemon, no workers (d8):** the verb raises `VerbAbsentError("memory recall needs the
+     daemon up (dense embedder lives there) or a replica + shared model workers")`. In hook modes
+     the CLI catches it, prints NOTHING to stdout, exits 0, and writes the 21.1 recall row with
+     `degraded: "no-daemon-no-workers"` (counted in the hook-cost report, never silent). Today
+     (`cli.py:12570-12574`) the same case raises `ClickException` and exits 1, a user-visible hook
+     error; this is a deliberate change of the failure surface. Interactive and MCP callers still
+     get the error.
    - `verbs.memory_recall(..., pack: bool = False, max_bytes: int | None = None,
      include_subjects: bool = False)` returns `{"text", "spans", "named", "more",
-     "payload_bytes", "warnings"}` when `pack`. `cli._memory_recall_impl` calls the verb for every
-     hook mode and prints `text`; it computes no rows of its own.
+     "payload_bytes", "warnings"}` when `pack`. `cli._memory_recall_impl` prints the verb's
+     `text` (or renders its rows as the table); it computes no rows of its own.
    - The verb's `trigger` (24.2a d9) is NOT added here; 24.2a adds it on top. {#r5}
 7. **R6 Scope-correct fetch** (19.1 R6): `rmx memory get --scope {project,global}` and the
    `rmx_memory` get action's `scope`; with `--scope global` it reads the global store and never
@@ -206,8 +244,16 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
      `modelsrv` worker on the sandbox `models.sock`): `verbs.memory_recall(query=…, pack=True)`
      returns rows from the replica within the budget. RED at HEAD: the verb never consults the
      replica and raises / returns empty.
-   - (c) **No daemon, no workers:** the per-prompt argv prints the named degrade line, exits 0,
-     and the verb raises `VerbAbsentError` with the R5 message.
+   - (c) **No daemon, no workers:** the per-prompt argv prints nothing on stdout, exits 0, and
+     the recall row carries `degraded: "no-daemon-no-workers"`; the verb raises `VerbAbsentError`
+     with the R5 message. RED at HEAD: exit 1.
+   - (e) **MCP, cross-project, real worker.** Two sandbox stores A and B (B's memories distinct),
+     a real `modelsrv` worker on the sandbox `models.sock`, no daemons. MCP `rmx_memory_recall`
+     called from A's root with `project=B` returns B's rows (none of A's) from B's replica. RED at
+     HEAD: the MCP verb never consults a replica and raises. A mutation that leaves the moved
+     function reading the CWD's store returns A's rows and fails.
+   - (f) **Interactive path.** `rmx memory recall "q"` (table) and `--json` name the same hits as
+     the verb for the same query, including a `kind=doc` row on the fixture.
    - (d) **Rows parity:** with the replica leg forced on and forced off (worker present / absent,
      daemon up in both), the per-prompt argv's named hits equal the verb's named hits.
    - A mutation that budgets project rows before `_merge_scope` fails (a).
@@ -238,15 +284,20 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
     slices exactly its hook line / body out of the payload bytes; the 4 unbodied hits have null
     body fields. Pre-check recorded before GREEN: the fixture puts ≥ 3 `—` before the LAST hook
     line and in every body (≥ 6 B of excess before each checked span), so character spans miss on
-    every bodied hit. No `delivered` event for a trimmed hit.
+    every bodied hit. No `delivered` event for a trimmed hit. A global hit's `delivered` event is
+    in the tmp global root's file with `scope=global` (19.1 AC-6's global leg).
 11. **AC-11 Global pointer** (19.1 AC-7). With a project row and a global row both named `X`, the
     pack's printed fetch command for the global hit returns the global row; `rmx memory get X`
     (no scope) returns the project row.
 12. **AC-12 scan-prompt bound.** The generated scan-prompt command on the fixture's question
     prompt (composite on) prints ≤ `budget("scan_prompt")` bytes; RED at HEAD when the fixture's
     bundles exceed it (the fixture is sized to push scan-prompt past 10,000 B at HEAD, like the
-    measured 11,555 B maximum). Under outcome (B)/(C), the sum of all four UserPromptSubmit
-    producers on one event is ≤ `EVENT_BUDGET`, asserted by running all four generated commands.
+    measured 11,555 B maximum). The fixture's curator queue holds 30 long paths (> 120 chars
+    each). Under outcome (A), each generated UserPromptSubmit hook COMMAND's stdout (`scan_cmd` =
+    scan-prompt + curator status; the focus input command; the recall command) is ≤ `0.9 × cap`.
+    Under (B)/(C), the sum of all generated UserPromptSubmit commands on one event is ≤
+    `EVENT_BUDGET`. In every outcome `rmx curator status` alone is ≤ `budget("curator_status")`
+    (RED at HEAD with the long-path queue).
 13. **AC-13 Generator and isolation.** `rmx install-hooks --check` clean after `--apply` in the
     sandbox; the three recall commands contain `--pack`, no `--json`, no `$`; 23.0's guard records
     0 connects to any live socket.
@@ -259,7 +310,10 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
     named hit (AC-9); `memory get --scope global` falling back to the project row (AC-11); a
     `delivered` event for a trimmed hit (AC-10); the packer calling a telemetry writer (AC-10: 14
     not 7); the CLI computing its own rows instead of printing the verb's text (AC-7); the verb
-    skipping the replica leg (AC-4 b); scan-prompt not fitted (AC-12).
+    skipping the replica leg (AC-4 b); scan-prompt not fitted (AC-12); curator status not fitted
+    (AC-12); the moved replica leg reading the CWD store (AC-4 e); the interactive path computing
+    its own rows (AC-4 f); the no-daemon hook exiting 1 or emitting no `degraded` row (AC-4 c); a
+    global hit's `delivered` event in the project file (AC-10).
 
 ## Fixture and measurement {#fixture}
 
@@ -291,7 +345,10 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
 
 | file | change |
 |---|---|
-| `src/refmatrix/verbs.py` (`memory_recall`, `_memory_recall_rows`, `rmx_memory` get) | replica-first leg; `pack`, `max_bytes`, `include_subjects`; default `exclude_mtype` adds `subject`; get `scope`; hooks map from `load_hooks` |
+| `src/refmatrix/verbs.py` (`memory_recall`, `_memory_recall_rows`, `rmx_memory` get) | root-explicit replica-first leg and its body fetch; the `kind=doc` leg; `pack`, `max_bytes`, `include_subjects`; default `exclude_mtype` adds `subject`; get `scope`; hooks map from `load_hooks` |
+| `src/refmatrix/mcp.py` (`rmx_memory_recall`, `:142`) | unchanged surface; behaviour now replica-first via the verb (d6, d7) |
+| `src/refmatrix/cli.py` (`curator status`, after 3.7) / `verbs.curator` | `fit_blocks` to `budget("curator_status")` |
+| `tests/test_mcp_memory_recall_routing.py` | its `daemon.call` mock no longer proves the route; AC-4 (e) runs a real worker |
 | `src/refmatrix/cli.py` (`memory recall`, `_memory_recall_impl`, `_replica_memory_recall`, `memory get`, `scan-prompt`) | the hybrid branch calls the verb and renders; `_replica_memory_recall` moves out; `--pack`, `--max-bytes`, `--include-subjects`; `memory get --scope`; `scan-prompt --max-bytes` |
 | `src/refmatrix/recall.py` (if the replica leg lands beside 3.7's embed client) | `replica_memory_recall` |
 | `src/refmatrix/scan.py` | `max_bytes` through `hook_budget.fit_blocks` |
@@ -323,7 +380,11 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
 | d2 | Where the save-state mtype fix lives | in the bridge, owned by 26.4; 25.1 re-asserts only |
 | d3 | Per-prompt `--k` 12 under ~4,000 B | yes, as a POINTER list: 12 hook lines at 250-370 B fill the budget and no body fits; the trailer covers the rest; bodies are a `session_start` feature |
 | d4 | Does 25.1 land 19.1 R6 (`memory get --scope`) | yes, with AC-11 |
-| d5 | Home of the moved replica leg | `recall.py`, beside 3.7's `shared_embedder` (both are "rows without the writer"), imported by the verb; never two copies |
+| d5 | Home of the moved replica leg | `recall.py`, beside 3.7's `shared_embedder` (both are "rows without the writer"), root-explicit over `search.cached_replica(root)`, imported by the verb; never two copies |
+| d6 | Does MCP / interactive query recall go replica-first too | yes (orchestrator 2026-11-09): one which-rows path for hooks, MCP and the interactive CLI; this task owns the `kind=doc` leg |
+| d7 | Replica lag on MCP / interactive recall | accepted: results may lag the writer by the replica rotation interval; the warnings say which leg served |
+| d8 | No daemon and no workers on the per-prompt hook | exit 0, nothing injected, counted as `degraded` in the 21.1 row; today it exits 1 (a hook error); interactive and MCP callers keep the error |
+| d9 | Budget unit | the generated hook COMMAND (what Claude Code caps); producers sharing a command share its budget; every rmx producer is hard-capped; non-rmx hooks get a measured reserve |
 
 ## Revision round 1 (2026-11-09) {#rev-round-1}
 
@@ -338,3 +399,15 @@ Answers [[bsd-plan25-spec-r1-2f4a1df]] and the orchestrator's decisions of 2026-
 | M2 one channel, two names | `prompt_recall` everywhere (21.1's name) | [[#r1]], [[#deltas]] |
 | plan-26 r2 (`696c3cb`, `#plan-19`) hands over 19.4 AC-4's recall leg | delta row; AC-6 asserts a 26.6-marked stale subject is absent from recall incl. `--include-subjects`; mutation added to AC-14 | [[#deltas]], AC-6, AC-14 |
 | M3 `pack()` needs hooks | `hooks` mapping parameter; the verb builds it with `memory_index.load_hooks` for the project and the global memdir | [[#r4]] |
+
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Answers [[bsd-plan25-spec-r2-5b8ed15]] with the orchestrator's decisions of 2026-11-09.
+
+| finding | change | anchor |
+|---|---|---|
+| S1 MCP change unstated; moved leg bound to the CWD; interactive path keeps its own rows | `recall.replica_memory_recall(root, *, partition, …)` over `search.cached_replica(root)`; MCP and interactive recall go through the verb (d6), the `kind=doc` leg moves into the verb; replica lag accepted (d7); AC-4 (e) cross-project MCP with a real worker, (f) interactive parity | [[#r5]], d5-d7, AC-4, AC-14 |
+| S2 split by producer, cap by hook command; uncapped producers; non-rmx producer uncounted | budget per generated hook command (d9); scan-prompt + curator status share `scan_cmd`'s budget; curator status and focus input hard-capped through `fit_blocks`; R0 records non-rmx hook bytes (caveman tracker ~200-250 B) as `NON_RMX_RESERVE_BYTES`; AC-12 asserts per command, with a long-path curator queue | [[#r0]], [[#r0b]], [[#r1]], AC-12, d9 |
+| M1 "today's degrade line" is exit 1 today | decision d8: exit 0, nothing injected, counted `degraded`; text corrected | [[#r5]], AC-4 (c), d8 |
+| M2 body fetch unnamed | replica-served hits fetched from the same replica; named in R5 | [[#r5]] |
+| M3 19.1 AC-6 global leg missing | added to AC-10 and AC-14 | AC-10, AC-14 |

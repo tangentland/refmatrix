@@ -14,7 +14,8 @@ metadata:
 
 **Date:** 2026-11-08 (session 8d9a255f).
 **Status:** Drafting. Plan and task specs 25.1-25.4 written; ch-bsd spec review r1 DIRTY 0B/9S/9M
-folded in revision round 1 ([[#rev-round-1]]); spec review r2 is next. No `src/` or `tests/` change is made by this document.
+folded in revision round 1 ([[#rev-round-1]]); r2 DIRTY 0B/3S/7M folded in revision round 2
+([[#rev-round-2]]); task 25.5 added for bug-174; spec review r3 is next. No `src/` or `tests/` change is made by this document.
 **Location:** `workflow/plans/plan-25-cliquedb-field-report.md`; stage is `metadata.status`.
 **Ordering authority:** the user's override [[plan-of-plans#override-2026-11-08]] as amended the
 same day by [[plan-of-plans#override-2026-11-08b]]: task 3.7, then plan-26 (memory-layer
@@ -36,6 +37,7 @@ rel: amends -> [[task-19.1-pack-recall-under-budget]]
 rel: amends -> [[task-19.0-stm-cluster-hygiene]]
 rel: amends -> [[task-19.5-measure-delivery]]
 rel: derives-from -> [[bsd-plan25-spec-r1-2f4a1df]]
+rel: derives-from -> [[bsd-plan25-spec-r2-5b8ed15]]
 rel: reinforces -> [[feedback_measure_the_path_users_run]]
 rel: reinforces -> [[feedback_green_tests_are_not_a_working_command]]
 rel: reinforces -> [[feedback_no_raw_prompts_in_public_repo]]
@@ -45,6 +47,7 @@ rel: specifies -> [[task-25.1-recall-hook-byte-budget]]
 rel: specifies -> [[task-25.2-thin-prompt-gate]]
 rel: specifies -> [[task-25.3-stm-ref-admission-and-helix-repeat]]
 rel: specifies -> [[task-25.4-grep-bre-translation]]
+rel: specifies -> [[task-25.5-substring-bre-metas]]
 
 ## Context {#context}
 
@@ -98,8 +101,10 @@ Every rule this plan adds is a pure function in a library module, called by the 
 the CLI twin, never written into `cli.py` or into a hook string:
 
 - the byte budget and the packer: `hook_budget` + `recall_pack` (25.1), reached through
-  `verbs.memory_recall`, whose rows now include the per-prompt replica-first leg (one
-  computation of "which rows"); scan-prompt is fitted by the same `hook_budget.fit_blocks`;
+  `verbs.memory_recall`, whose rows now include the root-explicit replica-first leg for EVERY
+  caller (hooks, MCP, the interactive CLI: one computation of "which rows"); every rmx
+  UserPromptSubmit producer, curator status included, is fitted by the same
+  `hook_budget.fit_blocks`, budgeted per generated hook command;
 - the ack-only gate: `terms.prompt_gate` next to the stoplist it reuses (25.2), called by
   `scan.scan_prompt` (which 24.2a R4's `rmx_scan_prompt` wraps) and by the recall verb's
   prompt trigger;
@@ -139,7 +144,8 @@ throwaway shell-surface work. {#principle-tail}
   need prompts that pass 25.2's gate (a bare ack no longer reaches helix at all). 25.3's STM half
   has no dependency and may be built in parallel in its own clone.
 - **25.4 is independent** (`cli.py` grep block only, plus a new module). It may land in any slot
-  after 3.7.
+  after 3.7. **25.5 follows 25.4** (it reuses the translator and the entry point) and carries a
+  pre-registered measurement before its index-leg decision.
 
 ### File overlap with task 3.7 (3.7 merges first) {#overlap}
 
@@ -177,7 +183,7 @@ Read from the plan-26 task specs' file lists on 2026-11-08 (drafts; re-read at 2
   mutations, with the deltas).
 - **`# rmx grep fallback via rg`** (cliquedb item 5) is a stderr line (`cli.py:6901`), not stdout;
   it is logged as bug-173 (split from bug-167 on 2026-11-09) and stays open when 25.4 closes
-  bug-167. Substring-mode `a.b` is bug-174, also open.
+  bug-167. Substring-mode `a.b` (bug-174) is IN scope as task 25.5 (orchestrator 2026-11-09).
 - **No raw cliquedb prompt or memory text is committed.** Every fixture is synthetic, shaped to the
   measured sizes ([[feedback_no_raw_prompts_in_public_repo]]).
 
@@ -188,11 +194,13 @@ Read from the plan-26 task specs' file lists on 2026-11-08 (drafts; re-read at 2
 | [[task-25.1-recall-hook-byte-budget]] | bug-164 | probe the cap (three outcomes); per-prompt rows through the verb; pack recall pointers-first after the merge; byte-cap scan-prompt; every UserPromptSubmit producer in one event budget | the generated per-prompt argv emits > 10,000 B on the fixture store |
 | [[task-25.2-thin-prompt-gate]] | bug-165 | one ack-only gate: a prompt made only of stopwords / ack words / list markers → scan-prompt and the prompt recall inject nothing; a single content word passes | the generated scan-prompt + recall argvs on "yes next" emit > 0 B of content hits |
 | [[task-25.3-stm-ref-admission-and-helix-repeat]] | bug-166 (both halves) | one ref-admission predicate at both extraction sites and the rebuild; helix says a line once per session, never annotates a hub neighbour, and logs every suppression | a replayed `focus hook` envelope stores `s.repla`; a second identical prompt re-emits the helix line |
-| [[task-25.4-grep-bre-translation]] | bug-167 | any backslash-escaped BRE translated once for every grep leg; the rest to the real grep; differential tests against BSD and GNU grep | `rmx grep -n 'B0\|group_key' file` exits 2 |
+| [[task-25.4-grep-bre-translation]] | bug-167 | any backslash-escaped BRE translated once for every grep leg; anything not provably the same language (compile failure, stacked quantifier, locale-inexact class) to the real grep; differential tests against BSD and GNU grep in two locales |
+| [[task-25.5-substring-bre-metas]] | bug-174 | unescaped `. * [ ^ $` read as BRE on the drop-in legs via 25.4's translator; the index leg decided by a pre-registered count of changed real calls | `rmx grep 'a.b' file` misses `axb` | `rmx grep -n 'B0\|group_key' file` exits 2 |
 
 ## Acceptance for the plan {#acceptance}
 
-- bug-164..167 reach `fixed` with the mechanism named, each verified on the deployed build against
+- bug-164..167 reach `fixed` with the mechanism named, and bug-174 reaches `fixed` or stays open
+  with its measured band (25.5 R5), each verified on the deployed build against
   the cliquedb store (read-only, sizes only, nothing copied into the repo) after the release.
 - Each task: RED recorded on the generated hook argv or the CLI (the production path), GREEN
   recorded, at least one mutation per new guard that FAILS a test, implementation summary.
@@ -238,3 +246,18 @@ revision-round-1 table.
 | M4 / M5 / M6 / M7 | `_PATH_RE` users and the `overlap` instrument; failure on the row; resolver reuse; existence check replaces the extension list | [[task-25.3-stm-ref-admission-and-helix-repeat#rev-round-1]] |
 | M8 out-of-scope items need rows | bug-167 split: bug-173 (fallback note), bug-174 (substring `a.b`) logged 2026-11-09 | [[#non-goals]], [[bug_registry#registry]] |
 | M9 plan-19 revision rows now | rows added to 19.0, 19.1, 19.5 | [[#prior-specs]] |
+
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Answers [[bsd-plan25-spec-r2-5b8ed15]] (DIRTY 0B/3S/7M at `5b8ed15`) with the orchestrator's
+decisions of 2026-11-09. Per-task detail is in each spec's revision-round-2 table.
+
+| finding | change | anchor |
+|---|---|---|
+| S1 MCP / CWD / interactive path | root-explicit `recall.replica_memory_recall(root, …)`; MCP and interactive recall through the verb; `kind=doc` leg owned by 25.1; replica lag accepted | [[#principle]], [[task-25.1-recall-hook-byte-budget#rev-round-2]] |
+| S2 budget unit | per generated hook command; every rmx producer hard-capped; non-rmx reserve measured | [[#principle]], [[task-25.1-recall-hook-byte-budget#r0]] |
+| S3 BRE rules vs both greps | `-w` word-constituent rule; compile failures and stacked quantifiers untranslatable; locale-aware classes; divergence table | [[#tasks]], [[task-25.4-grep-bre-translation#rev-round-2]] |
+| M1 / M2 / M3 | no-daemon hook: exit 0, counted `degraded` (decision d8); body fetch named; 19.1 AC-6 global leg | [[task-25.1-recall-hook-byte-budget#rev-round-2]] |
+| M4 `where are we` | not gated; AC-3 row | [[task-25.2-thin-prompt-gate#rev-round-2]] |
+| M5 / M6 / M7 | suppressed notes count toward the neighbour cap; p99 over all linked entities; "head" defined | [[task-25.3-stm-ref-admission-and-helix-repeat#rev-round-2]] |
+| U6 bug-174 unscheduled | task 25.5 added | [[#tasks]], [[#non-goals]], [[task-25.5-substring-bre-metas]] |

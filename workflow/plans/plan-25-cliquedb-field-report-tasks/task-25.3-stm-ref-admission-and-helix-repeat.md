@@ -14,7 +14,8 @@ metadata:
 # Task 25.3: STM ref admission and the helix repeat {#root}
 
 > Plan: [[plan-25-cliquedb-field-report]]
-> Status: Pending (spec drafted 2026-11-08; revision round 1 2026-11-09, [[#rev-round-1]])
+> Status: Pending (spec drafted 2026-11-08; revision rounds 1-2 2026-11-09, [[#rev-round-1]],
+> [[#rev-round-2]])
 > Bug: bug-166 (cliquedb priority 4), both halves: junk topic members AND the stale helix line
 > "whatever the topic".
 > Depends on: [[task-25.2-thin-prompt-gate]] merged for the helix half (its ACs need prompts that
@@ -30,6 +31,7 @@ rel: realizes -> [[task-19.0-stm-cluster-hygiene#requirements]]
 rel: amends -> [[task-19.0-stm-cluster-hygiene]]
 rel: derives-from -> [[bug_registry#registry]]
 rel: derives-from -> [[bsd-plan25-spec-r1-2f4a1df]]
+rel: derives-from -> [[bsd-plan25-spec-r2-5b8ed15]]
 rel: depends-on -> [[feedback_reuse_shared_stoplist]]
 rel: depends-on -> [[project_helix_phase2_decision_criterion]]
 rel: related-to -> [[project_helix_log_confounded]]
@@ -98,8 +100,13 @@ pre-registered. So every suppression is logged and the criterion reads rendered 
 ### STM ref admission {#req-stm}
 
 1. **R1 One predicate, two tiers.** In `stm.py`:
-   - `is_code_noise(ref) -> bool`: SHAPE rules, no I/O: a dotted ref whose head is ≤ 2 chars; a
-     dotted ref whose head is in `CODE_NOISE_HEADS` (stdlib modules, 19.0 R1's set, documented
+   - **Head, defined:** for a ref containing no `/`, its head is the leading identifier, the
+     characters before its first `.` (`s.count` → `s`, `json.loads` → `json`, `refmatrix.stm` →
+     `refmatrix`). A ref containing `/` has no head and is never subject to the head rules (its
+     admission is the existence check). So `S/as.sh` cannot be dropped by a head rule, whichever
+     segment an implementer looks at.
+   - `is_code_noise(ref) -> bool`: SHAPE rules, no I/O: a slashless dotted ref whose head is ≤ 2
+     chars; a slashless dotted ref whose head is in `CODE_NOISE_HEADS` (stdlib modules, 19.0 R1's set, documented
      next to `_STOP`, applied in addition to the shared stoplist); a sed / perl substitution shape
      (`^[sy]([/|#,:]).+\1`); an ALL-CAPS token of ≤ 5 chars that is a heredoc delimiter in the
      same text (`<<-?['"]?TOKEN`).
@@ -148,16 +155,21 @@ pre-registered. So every suppression is logged and the criterion reads rendered 
    (`hooks.py:249`, `2>/dev/null || true`). {#r7}
 8. **R8 Hub neighbours are not annotated.** In `_helix_neighbor_sweep`, a neighbour whose link
    degree (count of `entity_links` rows naming it, the measure `scan._concept_signal` uses for
-   concepts, extended to the neighbour's entity id) is above the store's p99 of that count is not
-   annotated. The p99 is computed once per store stamp and cached in `helix_index.json` beside the
-   touch index. Anchor-role notes are unaffected. Before GREEN, record the measured cliquedb
-   59-row key's degree percentile (read-only); if it is NOT above p99, the threshold is set from
-   that measurement (the lowest percentile that catches it, and the count of other neighbours it
-   also catches) and both numbers are written next to the constant. {#r8}
+   concepts, extended to the neighbour's entity id) is above the p99 of that count is not
+   annotated. **Population: all linked entities of every kind in the store's catalog** (not docs
+   only, not per partition), computed once per store stamp and cached in `helix_index.json` beside
+   the touch index. Anchor-role notes are unaffected. Measured on a copy of cliquedb's read
+   catalog ([[bsd-plan25-spec-r2-5b8ed15#probes]]): 21,918 linked entities, p99 = 280, p99.9 = 736,
+   220 entities above p99; the hub `docs/adr32-35_chat_history.md` has 2,331 links, so p99 catches
+   it. The constant's comment records the threshold, the population size and the count above it,
+   and the implementation summary re-records them for refmatrix and cliquedb at GREEN. {#r8}
 9. **R9 Every suppression is a row; the criterion reads rendered + suppressed.** A suppressed note
    (repeat or hub) is not returned; its row goes through the same deferred sink and `flush` writes
    it as `{..., "rendered": false, "suppressed": "session-repeat" | "hub-neighbor"}`, only when the
-   bundle it belonged to rendered. Every row gains `cur_session`. A `rendered: true` row keeps its
+   bundle it belonged to rendered. **A suppressed note counts toward `_HELIX_NEIGHBOR_NOTES` (5)
+   and `_HELIX_NEIGHBOR_SCAN` (20)** (`context.py:91-92`) exactly as a rendered note does, so the
+   sweep stops where HEAD stopped and never renders a sixth stale neighbour HEAD capped out. Every
+   row gains `cur_session`. A `rendered: true` row keeps its
    meaning. So, over any window, `rendered` + `suppressed` = what HEAD would have logged for the
    same prompts. **The phase-2 criterion reads `rendered + suppressed`** until a new
    pre-registered criterion supersedes [[project_helix_phase2_decision_criterion]]; `rendered`
@@ -185,8 +197,8 @@ from the ring file the hook wrote, never from a helper. {#acceptance-lead}
    with the prompt `"x.pk = 1 fails after s.count(x); see S/as.sh, pyproject.toml,
    src/pkg/stm_like.py and memory_recall, then cat <<EOF"` records refs including
    `src/pkg/stm_like.py`, `pyproject.toml` and `memory_recall`, and none of `x.pk`, `s.count`,
-   `S/as.sh`, `EOF` (RED at HEAD). `S/as.sh` is path-shaped, has an allowed shape, a long head and
-   no quotes: only the existence check drops it, so it is the existence-check witness. Recorded,
+   `S/as.sh`, `EOF` (RED at HEAD). `S/as.sh` is path-shaped, contains `/` (so no head rule applies,
+   R1) and is unquoted: only the existence check drops it, so it is the existence-check witness. Recorded,
    not gated: `cliquedb.pk` in PROSE is an identifier candidate and is kept; cliquedb's instances
    came from command text, which AC-1 covers.
 4. **AC-3 Existing rings.** A synthetic ring written in HEAD's format with the AC-1 junk in its
@@ -213,8 +225,10 @@ from the ring file the hook wrote, never from a helper. {#acceptance-lead}
     p99) with a 10-day-old touch. Three prompts on three unrelated topics: at HEAD each prints a
     neighbor-role `[helix]` line for the hub (RED); after, none does, and helix.log has three
     `suppressed: "hub-neighbor"` rows. A non-hub stale neighbour of one prompt still renders.
-11. **AC-10 Instrument continuity.** After AC-6 and AC-9, for each concept, `rendered: true` +
-    `suppressed` rows equal HEAD's `rendered: true` count for the same prompts; every row carries
+11. **AC-10 Instrument continuity.** The fixture gives one prompt SEVEN stale neighbours, the
+    hub among them. After AC-6 and AC-9, for each concept, `rendered: true` + `suppressed` rows
+    equal HEAD's `rendered: true` count for the same prompts, and the per-prompt neighbour-role
+    total stays ≤ 5 (no sixth neighbour rendered because one was suppressed); every row carries
     `cur_session`.
 12. **AC-11 Session from the envelope.** With two sessions' rings present and the OTHER session's
     ring newer, the sidecar written is `<envelope session>.helix.json`. With no envelope session,
@@ -227,7 +241,9 @@ from the ring file the hook wrote, never from a helper. {#acceptance-lead}
     `_PATH_RE.findall` at `_tool_event_fields` (AC-1); skip the render-time filter (AC-3); mark the
     helix key at annotate instead of flush (AC-8); drop a suppressed row (AC-10); key by concept
     only (AC-7 newer touch); disable the hub rule (AC-9); fall back to the newest ring for the
-    sidecar (AC-11); print the sidecar error to stderr only (AC-12).
+    sidecar (AC-11); print the sidecar error to stderr only (AC-12); suppressed notes not counted
+    toward the neighbour cap (AC-10: a sixth neighbour renders); the head rule applied to a slashed
+    ref (AC-2: `S/as.sh` dropped without the existence check).
 
 ## Measurement {#measurement}
 
@@ -283,3 +299,13 @@ Answers [[bsd-plan25-spec-r1-2f4a1df]] and the orchestrator's decisions of 2026-
 | M6 resolver purpose unstated | reuse the session `scan_prompt_cmd` resolves with `telemetry.resolve_event_session`; None → no sidecar, no suppression, `cur_session: null` | [[#r6]], AC-11 |
 | M7 extension allow-list drops working files | allow-list removed; existence check applies to every path-shaped candidate (`pyproject.toml` kept, `cliquedb.pk` dropped) | [[#beyond-19-0]], [[#r1]], AC-2, AC-4 |
 | M9 (19.0 half) | `command_refs(..., root=None)` is shape-only, the form 19.0's rebuild re-extraction calls; revision row added to 19.0 | [[#beyond-19-0]] |
+
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Answers [[bsd-plan25-spec-r2-5b8ed15]] with the orchestrator's decisions of 2026-11-09.
+
+| finding | change | anchor |
+|---|---|---|
+| M5 rendered + suppressed ≠ HEAD under the neighbour cap | suppressed notes count toward `_HELIX_NEIGHBOR_NOTES` and `_HELIX_NEIGHBOR_SCAN`; AC-10's fixture has seven stale neighbours; mutation added | [[#r9]], AC-10, AC-13 |
+| M6 p99 population unstated | all linked entities of every kind in the store's catalog; cliquedb measurement (21,918 / p99 280 / 220 above / hub 2,331) recorded; counts re-recorded at GREEN in every case | [[#r8]] |
+| M7 "head" undefined | head = the leading identifier before the first `.`, for slashless refs only; slashed refs are never subject to head rules, so `S/as.sh` stays the existence witness | [[#r1]], AC-2, AC-13 |
