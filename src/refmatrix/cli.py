@@ -14389,10 +14389,6 @@ def concept_grp():
     were worked on) and git (authoritative code-introduction commit)."""
 
 
-# The concept -> files resolution moved to graphread (task 3.7), shared with the verb.
-_concept_files = _graphread.concept_files
-
-
 @concept_grp.command("timeline")
 @click.argument("concept")
 @click.option("--hops", default=0, type=int, show_default=True,

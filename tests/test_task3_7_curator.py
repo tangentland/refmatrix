@@ -33,6 +33,7 @@ import ast
 import json
 import os
 import re
+import stat
 import time
 import uuid
 from pathlib import Path
@@ -519,16 +520,22 @@ def test_enqueue_curator_writes_through_the_atomic_spool_writer():
 
 
 def test_write_spool_is_tmp_fsync_rename_and_never_visible_half_written(root, monkeypatch):
+    """The durable sequence is: fsync the WHOLE tmp file -> rename it within the spool dir ->
+    fsync the spool directory (remedy r1 R-L added the last step: a crash after an un-synced
+    rename can lose the new name). Each fsync is identified by `fstat` on its fd, so the
+    trailing directory fsync can never stand in for a missing file fsync."""
     events: list = []
     real_fsync, real_rename = os.fsync, os.rename
 
     def fsync(fd):
-        events.append(("fsync",))
+        st = os.fstat(fd)
+        kind = "dir" if stat.S_ISDIR(st.st_mode) else "file" if stat.S_ISREG(st.st_mode) else "?"
+        events.append(("fsync", kind, st.st_ino, st.st_size))
         return real_fsync(fd)
 
     def rename(src, dst, *a, **k):
         s, d = Path(src), Path(dst)
-        events.append(("rename", s.name, d.name))
+        events.append(("rename", s.name, d.name, s.stat().st_ino))
         assert s.parent == d.parent == spool(root), (s, d)
         assert s.name.endswith(".jsonl.tmp") and _NAME.match(d.name), (s.name, d.name)
         assert not list(spool(root).glob("*.jsonl")), "a reader could see a half-written file"
@@ -536,9 +543,17 @@ def test_write_spool_is_tmp_fsync_rename_and_never_visible_half_written(root, mo
     monkeypatch.setattr(os, "fsync", fsync)
     monkeypatch.setattr(os, "rename", rename)
     name = gmd_curator.write_spool(root, ["/p/a.md", "/p/b.md"])
-    assert [e[0] for e in events] == ["fsync", "rename"], events
-    assert events[1][2] == name
-    rows = [json.loads(ln) for ln in (spool(root) / name).read_text().splitlines()]
+    final = spool(root) / name
+    shape = [e[:2] if e[0] == "fsync" else e[:1] for e in events]
+    assert shape == [("fsync", "file"), ("rename",), ("fsync", "dir")], events
+    file_sync, ren, dir_sync = events
+    assert ren[2] == name
+    # the file fsync hit the very inode that was renamed into place, at its FULL size
+    assert file_sync[2] == ren[3] == final.stat().st_ino, (file_sync, ren)
+    assert file_sync[3] == final.stat().st_size > 0, (file_sync, final.stat().st_size)
+    # the trailing fsync is the spool directory itself, not some other directory
+    assert dir_sync[2] == spool(root).stat().st_ino, (dir_sync, spool(root).stat().st_ino)
+    rows = [json.loads(ln) for ln in final.read_text().splitlines()]
     assert [r["path"] for r in rows] == ["/p/a.md", "/p/b.md"]
     assert all(r["reason"] == "fs-change" and isinstance(r["ts"], float) for r in rows)
     assert not list(spool(root).glob("*.tmp"))
