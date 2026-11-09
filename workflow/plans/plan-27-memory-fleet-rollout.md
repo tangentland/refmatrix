@@ -89,9 +89,27 @@ Empty dirs (`-viascope-src-viascope`, `-viascope2-docs`) need nothing beyond bei
 5. **Per STORE, not per dir (27.6).** Re-compile subjects once a store's memory dir is
    organised. Regenerate `MEMORY.md`. Report hook drift.
 
-Every live change is announced to the user first and backed up first
-(`~/.refmatrix/backups/memory-organise/`). Every store touch goes through daemon ops. Rollback is
-`rmx memory organise --rollback <tarball>` per dir.
+Every live change follows the same rules:
+- **Announce and back up first.** The user hears about the change before it happens, and a backup
+  lands in `~/.refmatrix/backups/memory-organise/`.
+- **Daemon ops only.** Every store touch goes through daemon ops.
+- **Rollback per dir.** `rmx memory organise --rollback <tarball>` is id-aware and never
+  overwrites a later edit (26.5 AC-7).
+
+Round 1 added these rules (see [[#rev-round-1]]):
+- **The target store is resolved from the memdir (B2).** Every organise run in this plan passes
+  `--store-from-memdir`. The verb resolves the store from the memdir's projects slug, never from
+  the session's cwd (26.5 AC-1). This matters because plan-27 is driven from a refmatrix session.
+- **Hooks and prose survive regeneration (B4).** Every `MEMORY.md` regeneration carries
+  hand-written prose and keeps hooks keyed by id (26.1 AC-4..AC-6). A dir whose prose would not
+  fit is refused and reported. Nothing is dropped.
+- **Git-tracked dirs (S1).** In a tracked memdir, the moves are staged `git mv`s in the owning
+  repo, and the user commits. Today that means viascope's repo (147 files) and `~/.claude`
+  (95 memory files across projects).
+- **Live sessions (S8).** A dir whose project has a live session is changed only after that
+  session's explicit acknowledgement (bus or user). There is no idle timer. This applies to
+  cliquedb, and also to bdep/thiquet, whose store is written in-process by a daemonless session
+  (S7).
 
 ### What this plan will NOT do {#non-goals}
 
@@ -101,6 +119,9 @@ Every live change is announced to the user first and backed up first
   project). Regenerating is the user's call, and plan-24's mod replaces the shell hooks anyway
   (Q3).
 - No archiving of the viascope2 checkout. It is flagged for the user's decision.
+- No commit in another repo. Tracked moves are staged, and the user commits.
+- No compile or index design. 27.6 runs plan-26's 26.6 (which builds 19.4) and 26.7 (which builds
+  19.3) per store.
 
 ## Task list {#tasks}
 
@@ -148,3 +169,21 @@ Every live change is announced to the user first and backed up first
   leave the directory in place for the user to decide.
 - **Q6: what about `-bdep-ble-sniffer-mqtt`, whose checkout is not at the expected path?**
   Recommend organising it file-only and asking the user where the repo lives.
+
+## Revision round 1 (2026-11-09) {#rev-round-1}
+
+This round answers [[bsd-plan26-27-spec-review-r1-96feccd]].
+
+rel: derives-from -> [[bsd-plan26-27-spec-review-r1-96feccd]]
+
+| finding | change | anchor |
+|---|---|---|
+| B2 (verb bridges into the cwd's store) | Every run passes `--store-from-memdir`; 27.0, 27.2 and 27.4 assert the resolved store | [[#approach]], [[task-27.0-organise-merge-from#rev-round-1]], [[task-27.4-quiet-dir-migrations#rev-round-1]] |
+| B4 (regeneration drops prose and hooks) | Prose is carried and hooks are keyed by id in every dir; refusal instead of loss | [[#approach]], [[task-27.2-viascope2-fold-and-repoint#rev-round-1]], [[task-27.6-per-store-compile-and-landing#rev-round-1]] |
+| S1 (git-tracked memdirs) | `git mv` staged and the user commits; 27.1 inventories tracking per dir | [[#approach]], [[#non-goals]], [[task-27.1-fleet-inventory#rev-round-1]] |
+| S7 (bdep/thiquet written in-process) | Explicit acknowledgement gate before backup | [[task-27.3-thiquet-store-repoint#rev-round-1]] |
+| S8 (an idle timer is not a session boundary) | Explicit acknowledgement only | [[#approach]], [[task-27.5-cliquedb-at-session-boundary#rev-round-1]] |
+| B1 (compile/index ownership) | 27.6 runs 26.6 and 26.7 (19.4 and 19.3) | [[#non-goals]] |
+| S5 (one-time refresh) | 27.1 records `refresh_pending` per store before any run | [[task-27.1-fleet-inventory#rev-round-1]] |
+| 27 Q1-Q6 verdicts | Sound, taken as written. Q5 note: the enduris daemon is running (pid 82374), and the uninstall must verify it stopped (27.3) | [[#open-questions]] |
+

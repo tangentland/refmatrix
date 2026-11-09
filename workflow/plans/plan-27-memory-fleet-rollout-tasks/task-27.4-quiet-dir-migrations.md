@@ -7,6 +7,7 @@ metadata:
   node_type: task
   status: pending
   plan: plan-27-memory-fleet-rollout
+  updated: 2026-11-09
 ---
 
 # Task 27.4: quiet-dir migrations {#root}
@@ -45,6 +46,15 @@ viascope and viascope2 (27.2) and cliquedb (27.5). Order: smallest first. The ho
 5. **AC-5: rollback is per dir.** Name each tarball in the summary. If any AC-2 check fails, run
    `--rollback` for that dir only, log a bug row, and stop.
 
+6. **AC-6: round-1 rules, per dir.**
+   - **B2.** Every run passes `--store-from-memdir`. The preview's resolved store must equal the
+     27.1 mapping for that dir, or the dir stops.
+   - **B4.** Prose (cliquet: 8 lines) is carried, and hooks are kept by id. A refusal stops the
+     sequence for a user decision.
+   - **S1.** Tracked files (`~/.claude`) are staged with `git mv`, and the user commits before the
+     next dir.
+   - **S8.** A dir whose project has a live session waits for that session's acknowledgement.
+
 ## Files to Create / Modify {#files}
 
 - Modify the live dirs through the verb only.
@@ -55,3 +65,14 @@ viascope and viascope2 (27.2) and cliquedb (27.5). Order: smallest first. The ho
 Live verification. All store work goes through each project's daemon. Where a project has no
 daemon, the bridge's `require_daemon` rule applies: in-process only when there is no daemon, and
 never on a busy one.
+
+## Revision round 1 (2026-11-09) {#rev-round-1}
+
+Answers [[bsd-plan26-27-spec-review-r1-96feccd]].
+
+| finding | change | anchor |
+|---|---|---|
+| B2 (wrong store) | `--store-from-memdir`; the preview must name the expected root | AC-6 |
+| B4 (prose and hooks) | Carried prose and id-keyed hooks; refusal stops the sequence | AC-6 |
+| S1 (tracked memdirs) | Staged in `~/.claude`; the user commits per dir | AC-6 |
+| S8 (live sessions) | The project's acknowledgement first; no idle timer | AC-6 |

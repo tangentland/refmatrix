@@ -1,19 +1,23 @@
 ---
 gmd: "0.1"
 id: task-26.9-impression-patterns
-title: "Task 26.9: ch-bsd impressions gain a pattern layer, derived by compile, and the ledger becomes a rolling window"
+title: "Task 26.9: ch-bsd impressions gain a pattern layer, derived by the scoped compile, and the ledger becomes a rolling window"
 tags: [task, plan-26, ch-bsd, impressions, compile, subjects, patterns]
 metadata:
   node_type: task
   status: pending
   plan: plan-26-memory-organisation
+  updated: 2026-11-09
 ---
 
 # Task 26.9: impression patterns {#root}
 
 > Plan: [[plan-26-memory-organisation]]
 > Status: Pending
-> Depends on: [[task-26.6-compile-subject-hygiene]] (labels, retirement), [[task-26.1-layout-module-and-index-walk]] (`impressions/` is a type folder)
+> Depends on:
+> - [[task-26.6-compile-subject-hygiene]]: scope-aware compile R-A, the `memory_compile` verb, and the `stale` mark.
+> - [[task-26.1-layout-module-and-index-walk]]: `impressions/` is a type folder.
+> - Live AC-5 runs after 26.8. AC-5 does NOT gate plan-26's close (ch-bsd r1 #m9).
 
 rel: part-of -> [[plan-26-memory-organisation]]
 rel: depends-on -> [[task-26.6-compile-subject-hygiene]]
@@ -24,83 +28,163 @@ rel: reinforces -> [[feedback_prefer_existing_infra]]
 
 ## Why {#why}
 
-User, 2026-11-08: "yes add the impression work" — after asking whether the impressions need
-another layer. Measured state at `2f4a1df`: {#why-state}
+On 2026-11-08 the user asked whether the impressions need another layer, then said "yes add the
+impression work". The state measured at `2f4a1df` follows. {#why-state}
 
-- `workflow/bullshit/IMPRESSIONS.md` is 290 lines / 177 bullets. `ch-bsd.md#update-impressions-md`
-  caps it at 50 lines ("summarize the oldest 10 into one consolidated bullet"); the cap has been
-  applied only sporadically, so every run reads the whole ledger at step 0b.
-- `memory/impressions/` holds 67 durable lessons with 125 `rel:` edges among them
-  (amends / reinforces / related-to), and 149 run reports sit under them as evidence.
-- Many lessons are repeated sightings of a few families (busy≠absent, partial bound, quoted-line
-  sibling, count cannot see order, guard cannot fire, measured on a path users do not run, counter
-  read at the wrong instant). Escalation by family is in the agent's procedure
-  (`ch-bsd.md` "a finding that matches a pattern … gets escalated") but the families exist only
-  implicitly across the ledger.
+- **The ledger has outgrown its cap.**
+  - `workflow/bullshit/IMPRESSIONS.md` holds 295 lines (113 KB).
+  - `ch-bsd.md#update-impressions-md` caps it at 50 lines, by folding the oldest 10 bullets into
+    one consolidated bullet. That cap has been applied only sporadically.
+  - So every run reads the whole ledger at step 0b.
+- **The durable layer under it.**
+  - `memory/impressions/` holds 67 durable lessons, with 125 `rel:` edges among them.
+  - 149 run reports sit under them as evidence.
+- **The families exist only implicitly.**
+  - Many lessons are repeated sightings of a few families, such as busy≠absent, partial bound,
+    and counter read at the wrong instant.
+  - The procedure already escalates findings by family.
+  - But no pattern node exists to escalate against.
 
-The missing layer is a small set of PATTERN nodes above the lessons — the same derived-subject
-mechanism plan-26 already repairs for memory (ADR-0002 container, `part-of` edges, multi-membership).
-Not hand-built folders, not a second clustering path.
+The missing layer is a small set of PATTERN nodes above the lessons. It uses the same
+derived-subject mechanism that 26.6 builds (ADR-0002 container, `part-of` edges,
+multi-membership), in its own compile scope.
 
 ## Requirements {#requirements}
 
-1. **R1 Derive.** `rmx memory compile` runs over the `impression` mtype (scoped selection, same
-   code path as 26.6 — no second clusterer) and produces candidate pattern subjects with
-   `part-of` edges to member impressions. A lesson may belong to several patterns. {#r1}
-2. **R2 Curate.** Each accepted pattern becomes a GMD memory `impressions/pattern_bsd_<slug>.md`
-   (`metadata.type: impression`, tag `pattern`) carrying: the rule (one paragraph), a check list
-   ("when you see X, look at Y"), `rel: part-of` edges FROM its members (or `catalogs` edges to
-   them), and a sighting count derived from member count + ledger mentions. The rule text is
-   written by ch-bsd in a dedicated run after 26.8 (user decision 2026-11-08, see [[#q1-decided]]), never auto-generated; compile only proposes membership. {#r2}
-3. **R3 Ledger window.** `IMPRESSIONS.md` keeps the last ~20 runs' bullets; older bullets are folded
-   into the pattern they belong to (pattern doc gains a "sightings" line with date + report link) or,
-   if unmatched, into one consolidated bullet — never deleted without a home. A bullet's history is
-   reachable from its pattern (decay demotes, never loses — [[feedback_decay_never_loses_knowledge]]). {#r3}
-4. **R4 Procedure.** `.claude/agents/ch-bsd.md` (and the shipped template under
-   `src/refmatrix/templates/agents/`) step 0b reads pattern docs first, then the ledger window;
-   the escalation rule cites a pattern id and bumps its sighting count; the 50-line cap is enforced
-   by the fold in R3. {#r4}
-5. **R5 Graph.** Patterns ingest through the normal bridge and are reachable by
-   `rmx memory recall --type impression` and `rmx context <pattern-id>`; no new store table. {#r5}
+1. **R1: Derive candidates.** {#r1}
+   - The `memory_compile` verb runs with `scope=pattern`, using 26.6 R-A's single compile path.
+     There is no second clusterer.
+   - The pattern scope's corpus is mtype `impression`, minus docs tagged `pattern`.
+   - The default `memory` scope excludes both: impressions and pattern docs.
+   - Candidate subjects are slugged `pattern_<label>` and stamped `compiled_scope: pattern`.
+   - A pattern compile never prunes, marks stale, or un-marks a `memory`-scope subject, and the
+     reverse also holds (26.6 AC-A). This is ch-bsd r1 B3.
+   - A lesson may belong to several patterns.
+2. **R2: Curate, with derived counts and user approval.** {#r2}
+   - Each accepted pattern becomes a GMD memory `impressions/pattern_bsd_<slug>.md`, with
+     `metadata.type: impression` and tag `pattern`. The doc carries:
+     - the rule, as one paragraph;
+     - a check list ("when you see X, look at Y");
+     - `rel: catalogs` edges to its members.
+   - The rule text is written by ch-bsd in a dedicated run after 26.8 (user decision 2026-11-08,
+     [[#q1-decided]]). It is never auto-generated; the compile only proposes membership.
+   - Sighting counts are DERIVED, not kept in prose (ch-bsd r1 #m8, S9). The fold checker (R3)
+     counts a pattern's sightings as the run reports under `workflow/bullshit/` that cite either
+     the pattern id or a member impression id. The doc carries only the derivation command. A
+     generated "sightings" section is rewritten by the checker and never edited by hand.
+   - **The user approves each pattern doc before step 0b reads it.** An unapproved doc is tagged
+     `pattern-draft`, and step 0b skips it.
+3. **R3: Ledger window, lossless.** {#r3}
+   - **A run is a report file.** Each bullet in `IMPRESSIONS.md` belongs to the run whose report
+     it links. A bullet without a link is matched to a report by its leading date and plan/round
+     label. A bullet that matches no report is listed as `unassigned` and stays in the window. It
+     is never folded.
+   - **The window** is the bullets of the newest 20 report files.
+   - **Every older bullet gets AT LEAST ONE home** (multi-membership is allowed). A home is either
+     a pattern doc's generated "sightings" section (date, report link, bullet text verbatim) or the
+     consolidated bullet.
+   - **Caps.** The window is capped at 50 lines AND 12,000 characters, and so is the consolidated
+     bullet: a single bullet cannot absorb everything (S10).
+   - **No deletion without a home.** Decay demotes; it never loses
+     ([[feedback_decay_never_loses_knowledge]]).
+4. **R4: Procedure, in the overlay, independently reviewed.** {#r4}
+   - The ch-bsd procedure change goes into `.claude/agents/ch-bsd.local.md`, which is the project
+     overlay. The neutral `.claude/agents/ch-bsd.md` says project specifics belong in the overlay.
+     A baseline change, if one is wanted, is a cat-herder change outside this plan. Note that
+     `src/refmatrix/templates/agents/` holds only `gmd-curator.md`, so round 0's "shipped
+     template" did not exist (S9).
+   - The overlay says three things:
+     - step 0b reads APPROVED pattern docs first, then the ledger window;
+     - the escalation rule cites a pattern id; the count moves only when the checker re-derives it;
+     - the 50-line / 12,000-char cap is enforced by the R3 fold.
+   - **Conflict of interest (ch-bsd r1 S9):** ch-bsd is the agent whose procedure R4 rewrites. The
+     R4 overlay text and the R3 fold checker are therefore assessed by an independent reviewer,
+     `@ch-code-reviewer` or `@ch-architect`, NOT by ch-bsd. That review is recorded in this
+     task's implementation summary.
+5. **R5: Graph.** {#r5}
+   - Patterns ingest through the normal bridge.
+   - They are reachable by `rmx memory recall --type impression` and `rmx context <pattern-id>`.
+   - There is no new store table.
+   - Pattern subjects (scope `pattern`) are excluded from project `MEMORY.md` indexes (26.7 AC-A).
 
 ## Acceptance criteria {#acceptance}
 
-1. **AC-1** On a throwaway memory dir seeded with ≥12 impression fixtures forming ≥3 families
-   (multi-membership in at least one), the compile run proposes ≥3 candidate patterns whose
-   membership matches the planted families (precision/recall reported, threshold pre-registered
-   in the test before running). RED at HEAD: compile has no mtype-scoped selection. {#ac-1}
-2. **AC-2** A pattern doc written per R2 lints with zero errors and is returned by
-   `rmx memory recall` for a phrase unique to its rule text (recall, not `memory get` —
-   [[feedback_verify_memory_by_recall_not_get]]). {#ac-2}
-3. **AC-3** The fold (R3) on a copy of the real `IMPRESSIONS.md` leaves ≤50 lines, and every folded
-   bullet's text is findable in exactly one pattern doc or the consolidated bullet (a checker
-   enumerates bullets before and after). {#ac-3}
-4. **AC-4** The ch-bsd procedure change ships in both the repo agent file and the template, and a
-   test asserts step 0b names the pattern location. {#ac-4}
-5. **AC-5** Live: after 26.8, the real refmatrix impressions compile; the user (or ch-bsd) accepts
-   the curated patterns; the ledger fold runs once; the next ch-bsd run reports which pattern ids
-   it escalated against. {#ac-5}
+1. **AC-1: scopes stay separate.** {#ac-1}
+   - Setup: a throwaway memory dir and store holding project memories, plus at least 12
+     impression fixtures that form at least 3 families, with multi-membership in at least one.
+     Run in this order:
+     1. the `memory` compile;
+     2. the `pattern` compile;
+     3. the `memory` compile again.
+   - Expected results:
+     - The `memory` subjects' leaves and their `stale` flags are byte-identical across step 2.
+     - The `pattern` subjects survive step 3.
+     - The pattern candidates match the planted families. Precision and recall are reported
+       against thresholds pre-registered in the test before the first run.
+   - RED at HEAD: a scoped `--apply` (`--exclude-mtype '[!i]*'`) unlinks every project subject's
+     leaves.
+   - Parity: the `scope` parameter is reachable through the `memory_compile` verb (CLI and MCP),
+     not only through the LEGACY `memory compile` command (ch-bsd r1 #m4).
+2. **AC-2: pattern docs lint and recall.** {#ac-2}
+   - A pattern doc written per R2 lints with zero errors.
+   - Once approved, it is returned by `rmx memory recall` for a phrase unique to its rule text.
+     The check uses recall, not `memory get` ([[feedback_verify_memory_by_recall_not_get]]).
+   - A `pattern-draft` doc is not read by the step 0b reader check.
+3. **AC-3: the fold is lossless.** {#ac-3}
+   - Run the R3 fold on a COPY of the real `IMPRESSIONS.md`.
+   - Expected results:
+     - the window is at most 50 lines and at most 12,000 characters;
+     - every folded bullet's verbatim text is findable in AT LEAST ONE home. A checker enumerates
+       bullets before and after and fails listing any bullet with no home;
+     - `unassigned` bullets are listed and still in the window;
+     - the consolidated bullet is within its character cap;
+     - sighting counts equal the checker's derivation from the report files.
+4. **AC-4: the overlay names the pattern location.** {#ac-4}
+   - A test asserts that `.claude/agents/ch-bsd.local.md` names the pattern location for step 0b
+     and the approval rule.
+   - The independent reviewer's assessment of R4 and R3 is linked from the implementation summary.
+5. **AC-5: live, after 26.8.** {#ac-5}
+   - The real refmatrix impressions compile in scope `pattern`.
+   - ch-bsd writes the rule text, and the user approves each doc.
+   - The ledger fold runs once.
+   - The next ch-bsd run reports which pattern ids it escalated against.
+   - AC-5 does not gate plan-26's close.
 
 ## Files to modify {#files-to-modify}
 
 | File | Change |
 |---|---|
-| `src/refmatrix/consolidate.py` (compile) | mtype-scoped selection for compile (if 26.6 does not already add it) |
-| `src/refmatrix/cli.py`, `src/refmatrix/verbs.py`, `src/refmatrix/mcp.py` | `memory compile --type` option, verb-first, parity |
-| `.claude/agents/ch-bsd.md`, `src/refmatrix/templates/agents/ch-bsd.md` | step 0b + escalation + fold procedure |
-| `workflow/bullshit/IMPRESSIONS.md` | the one-time fold (R3) |
+| `src/refmatrix/consolidate.py`, `daemon.py`, `verbs.py` | nothing beyond 26.6's `scope` (R-A); this task adds no clusterer |
+| `src/refmatrix/bsd_fold.py` (new) | the R3 fold and its checker; derived sighting counts; run assignment by report |
+| `.claude/agents/ch-bsd.local.md` | step 0b, escalation and fold procedure (R4) |
+| `workflow/bullshit/IMPRESSIONS.md` | the one-time fold (AC-5) |
 | `memory/impressions/pattern_bsd_*.md` | curated pattern docs (live dir, after 26.8) |
+| `tests/test_bsd_fold.py`, `tests/test_memory_compile_scope.py` | AC-1, AC-3, AC-4 |
 
 ## Test strategy {#test-strategy}
 
-Throwaway memory dir + throwaway store under a short `mkdtemp()` root; real compile through the
-CLI/MCP verb (no mocking compile). The fold checker runs on a copy of the real ledger, never the
-live file, until AC-5. Pre-register AC-1's thresholds in the test file before the first run
-([[feedback_go_no_go_ranges_not_predrop]]).
+- Use a throwaway memory dir and a throwaway store under a short `mkdtemp()` root, in task 23.0's
+  sandbox.
+- Run the real compile through the `memory_compile` verb. Compile is never mocked.
+- The fold checker runs on a copy of the real ledger, never on the live file, until AC-5.
+- Pre-register AC-1's thresholds in the test file before the first run
+  ([[feedback_go_no_go_ranges_not_predrop]]).
 
 ## Open questions {#open-questions}
 
 1. **Who writes the rule text for each pattern?** DECIDED (user, 2026-11-08): ch-bsd writes the
-   patterns in a dedicated run right after 26.8 lands (AC-5); the user reviews them. {#q1-decided}
-2. **Should project memories (not only impressions) get the same pattern layer?** Recommend no for
-   now — 26.7's subject-grouped MEMORY.md covers them; revisit after AC-5.
+   patterns in a dedicated run right after 26.8 lands (AC-5), and the user reviews and approves
+   them (R2). {#q1-decided}
+2. **Should project memories, not only impressions, get the same pattern layer?** No (ch-bsd r1
+   verdict: sound). 19.3, built by 26.7, covers project memories.
+
+## Revision round 1 (2026-11-09) {#rev-round-1}
+
+| finding | change | anchor |
+|---|---|---|
+| B3: two compiles destroy each other; slug collision; impressions already in the default corpus; RED premise false | Scope-aware single path (26.6 R-A); `pattern_` namespace; corpus split; RED AC is "a scoped apply leaves the other scope untouched" | R1, AC-1 |
+| S9: template path does not exist; project specifics placed in the neutral file; conflict of interest | Procedure goes in the `ch-bsd.local.md` overlay; independent reviewer, not ch-bsd; user approves each pattern doc | R2, R4, AC-4 |
+| S10: "exactly one home" contradicts multi-membership; line cap can be gamed; "last ~20 runs" undefined; pattern docs re-enter the compile | At least one home; line AND character caps; runs defined by report file; `tag: pattern` excluded from both corpora | R1, R3, AC-3 |
+| M4: parity (LEGACY compile) | `scope` reached through the `memory_compile` verb | AC-1 |
+| M8: sighting count in curated prose | Derived from report files by the checker | R2, AC-3 |
+| M9: live step gating plan close | AC-5 does not gate | header, AC-5 |

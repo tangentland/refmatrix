@@ -7,6 +7,7 @@ metadata:
   node_type: task
   status: pending
   plan: plan-27-memory-fleet-rollout
+  updated: 2026-11-09
 ---
 
 # Task 27.2: viascope2 → viascope {#root}
@@ -36,7 +37,8 @@ filename.
    - any `[[id]]` in viascope's memories that names a viascope2-only id;
    - any hub registry or launchd entry naming viascope2.
 2. **AC-2: the fold goes through the verb.** Run
-   `rmx memory organise <viascope memdir> --merge-from <viascope2 memdir>`. Show the preview
+   `rmx memory organise <viascope memdir> --merge-from <viascope2 memdir> --store-from-memdir`.
+   The preview must name viascope's store as the target (B2). Show the preview
    to the user, including the overlap's diff and the Q1 resolution. Then `--apply`. Both
    tarballs are named. Every imported file lands in viascope's type folders, which on the symlink
    means the resolved target under `~/at/bdep/viascope/.claude/projects/…`. `created:` and
@@ -47,8 +49,11 @@ filename.
    refresh), checked with a daemon read.
 4. **AC-4: viascope's own dir is put in order.**
    - `organise --check` reads clean.
-   - `MEMORY.md` is regenerated: it was 33 KB and must come in under budget, grouped by subject
-     after 27.6.
+   - `MEMORY.md` is regenerated. Its 62 hand-written prose lines (17 headers, a session log,
+     "Active Campaign") are CARRIED (26.1 AC-5), never dropped. It is grouped by subject after
+     27.6. If the carried prose would leave less than 25% of the budget for entries, the
+     regeneration refuses (B4). Then the user decides which prose moves into a `project/` memory
+     before the rerun. The 33 KB file is in the backup either way.
    - The stray `.memory.db` is reported and stays in place, covered by the backup. Deleting it
      is the user's decision.
    - If 27.1 shows the viascope store is missing memories, the apply's bridge run fills it, and
@@ -61,6 +66,13 @@ filename.
    README. Deleting the dir, and archiving the `~/github/atollogy/bdep/viascope2` checkout, are
    flagged for the user (plan Q2). Neither is done here.
 
+7. **AC-7: git (S1).**
+   - viascope's memdir is tracked by the viascope repo: 147 files at review time.
+   - The fold's moves and imports are staged in that repo with `git mv`/`git add` (27.0 AC-8).
+   - The verb stops, and the user commits in the viascope repo.
+   - The viascope2 memdir is not tracked by a product repo. Check `~/.claude`: if it tracks the
+     viascope2 memdir there, stage there too.
+
 ## Files to Create / Modify {#files}
 
 - Modify the live dirs only through the verb.
@@ -71,3 +83,13 @@ filename.
 
 Live verification only; the code was tested in 27.0. Every store read and write goes through
 viascope's daemon. No `Store()` opens.
+
+## Revision round 1 (2026-11-09) {#rev-round-1}
+
+Answers [[bsd-plan26-27-spec-review-r1-96feccd]].
+
+| finding | change | anchor |
+|---|---|---|
+| B2 (wrong store) | `--store-from-memdir`; the preview must name viascope's store | AC-2 |
+| B4 (viascope's 62 prose lines) | Carried, or refused for a user decision; never dropped | AC-4 |
+| S1 (the viascope repo tracks 147 memory files) | The fold is staged in the viascope repo; the user commits | AC-7 |

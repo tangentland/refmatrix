@@ -7,6 +7,7 @@ metadata:
   node_type: task
   status: pending
   plan: plan-27-memory-fleet-rollout
+  updated: 2026-11-09
 ---
 
 # Task 27.6: per-store compile, index and landing {#root}
@@ -24,13 +25,17 @@ rel: depends-on -> [[task-26.7-memory-index-by-subject]]
 
 1. **AC-1: compile once per store, not per dir.** For each store whose memory partition was
    touched (cliquedb, cliquet, viascope, bdep/thiquet, atldb, orderly, cat-herder, atlftpd, and
-   the home/global store only if plan Q4 says so), run `rmx memory compile --apply` through that
-   store's daemon. Record:
-   - the subjects retired (26.6);
+   the home/global store only if plan Q4 says so), run the `memory_compile` verb with
+   `--apply`, scope `memory`, through that store's daemon. This is 26.6, which builds 19.4.
+   Record:
+   - the subjects marked `stale` (19.4 R5), with their `stale_new`/`stale_total`;
    - that `rmx daemon status` shows no stale `memory-compile` line;
    - the label grade band, or "not graded" with a reason.
-2. **AC-2: regenerate `MEMORY.md` grouped by subject** in each store-backed dir, under budget,
-   with `--check` in sync. viascope's index shrinks from 33 KB to under 24 KB, and the fold
+2. **AC-2: regenerate `MEMORY.md` per 19.3, as built by 26.7,** in each store-backed dir:
+   - live-subject blocks;
+   - `rmx memory index --check-reach` passes;
+   - carried prose and id-keyed hooks are preserved (B4);
+   - under budget, with `--check` in sync. viascope's index shrinks from 33 KB to under 24 KB, and the fold
    count is stated.
 3. **AC-3: landing report.** One table, one row per project:
    - Does `rmx save-state` write `savestates/`? Yes for all, because everything runs the
@@ -50,3 +55,12 @@ rel: depends-on -> [[task-26.7-memory-index-by-subject]]
 ## Test Strategy {#test-strategy}
 
 Live verification through each store's daemon.
+
+## Revision round 1 (2026-11-09) {#rev-round-1}
+
+Answers [[bsd-plan26-27-spec-review-r1-96feccd]].
+
+| finding | change | anchor |
+|---|---|---|
+| B1 (compile/index ownership) | Runs 26.6 (19.4) and 26.7 (19.3); the mark is `stale` | AC-1, AC-2 |
+| B4 (prose and hooks) | Carried and preserved | AC-2 |

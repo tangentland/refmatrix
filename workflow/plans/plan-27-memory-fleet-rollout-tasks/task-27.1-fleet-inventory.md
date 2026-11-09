@@ -7,6 +7,7 @@ metadata:
   node_type: task
   status: pending
   plan: plan-27-memory-fleet-rollout
+  updated: 2026-11-09
 ---
 
 # Task 27.1: fleet inventory {#root}
@@ -52,6 +53,15 @@ This task is read-only. Output: `workflow/plans/plan-27-memory-fleet-rollout-tas
    `organise` preview. Nothing is written in any memdir or store. The inventory doc names each
    command it ran.
 
+6. **AC-6: round-1 columns.** Each row also records:
+   - `git_tracked`: the owning repo top level and its tracked count, or `untracked`. Expected
+     today: viascope's repo for viascope, `~/.claude` for the 95 tracked memory files.
+   - `refresh_pending`: the 26.2 one-time refresh count for that store.
+   - `prose_lines`: from the 26.5 preview, with a flag when the carried prose would exceed 75% of
+     the index budget.
+   - The store that 26.5 AC-1's resolver returns for the UNRESOLVED memdir path. Any disagreement
+     with AC-2's computed mapping is listed as an anomaly.
+
 ## Files to Create / Modify {#files}
 
 - Create `workflow/plans/plan-27-memory-fleet-rollout-tasks/inventory.md`.
@@ -61,3 +71,14 @@ This task is read-only. Output: `workflow/plans/plan-27-memory-fleet-rollout-tas
 
 There is no code. The check is that rerunning the inventory gives the same counts (idempotent,
 read-only). `@ch-bsd` spot-checks three rows against the disk.
+
+## Revision round 1 (2026-11-09) {#rev-round-1}
+
+Answers [[bsd-plan26-27-spec-review-r1-96feccd]].
+
+| finding | change | anchor |
+|---|---|---|
+| S1 (tracked memdirs) | `git_tracked` column per dir | AC-6 |
+| S5 (one-time refresh) | `refresh_pending` per store | AC-6 |
+| B2 (store resolution) | The mapping uses 26.5 AC-1's resolver; disagreements are listed | AC-6 |
+| B4 (prose) | `prose_lines` per dir; dirs whose prose cannot fit are flagged | AC-6 |

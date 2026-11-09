@@ -7,6 +7,7 @@ metadata:
   node_type: task
   status: pending
   plan: plan-27-memory-fleet-rollout
+  updated: 2026-11-09
 ---
 
 # Task 27.0: organise --merge-from {#root}
@@ -44,9 +45,29 @@ in the same verb, CLI and MCP tool.
 5. **AC-5: the source is tombstoned, not deleted.** On apply, src keeps a `README.md`
    ("merged into <dest> on <date>; backup <tarball>") and its now-empty folders. No file is
    deleted except `same_id_identical` duplicates, and those are in the backup.
-6. **AC-6: bridge and recall.** Apply runs dest's bridge through dest's store daemon. In the
-   end-to-end test, recall for a phrase unique to an imported file returns it from dest's store.
-7. **AC-7: rollback.** `--rollback` takes both tarballs and restores both dirs.
+6. **AC-6: bridge and recall, into DEST's store (B2).**
+   - The store is resolved from DEST's memdir slug, using 26.5 AC-1's resolver on the unresolved
+     path. It is never `_root()` or the cwd.
+   - SRC's slug (viascope2) resolves to `no store`, so nothing is bridged for src.
+   - RED test: run the verb from root A with dest = root B's memdir. Assert:
+     - no row lands in A;
+     - the imported memories land in B;
+     - recall in B for a phrase unique to an imported file returns it.
+7. **AC-7: rollback.** `--rollback` takes both tarballs and restores both dirs. It uses 26.5
+   AC-7's id-aware rules: a post-merge edit is moved aside and never overwritten, and asides live
+   under `~/.refmatrix/backups/`.
+8. **AC-8: tracked dirs (S1).** When dest or src is git-tracked (viascope's memdir is, by the
+   viascope repo):
+   - every import and move is a `git mv`, or a `git add` for cross-repo imports;
+   - files are staged, never committed;
+   - the verb stops and prints the summary for the user to commit;
+   - rollback reverses the staged ops.
+9. **AC-9: hooks and prose (B4).**
+   - Each imported file's curated hook is read from SRC's `MEMORY.md` (keyed by id, per 26.1
+     AC-4) and carried into DEST's index.
+   - SRC's hand-written prose lines (viascope2: 12) are carried into DEST's index under a
+     `carried from <src>` block. If they do not fit the budget, the merge refuses and names
+     them.
 
 ## Files to Create / Modify {#files}
 
@@ -59,3 +80,14 @@ Two throwaway memdirs under one short `mkdtemp()` HOME, a throwaway dest store w
 the real CLI plus the MCP verb. Fixtures: one identical overlap, one differing overlap, and one
 src-local wikilink chain. Mutation check: skip the src-local link rewrite and the AC-4 chain
 assertion goes RED.
+
+## Revision round 1 (2026-11-09) {#rev-round-1}
+
+Answers [[bsd-plan26-27-spec-review-r1-96feccd]].
+
+| finding | change | anchor |
+|---|---|---|
+| B2 (bridges into the cwd's store) | Store resolved from DEST's memdir; RED from root A | AC-6 |
+| S4, S3 (rollback; aside location) | Id-aware rollback; asides under backups | AC-7 |
+| S1 (tracked memdirs) | `git mv`/`git add` staged; user commits | AC-8 |
+| B4 (hooks and prose) | Src hooks keyed by id; src prose carried or refused | AC-9 |

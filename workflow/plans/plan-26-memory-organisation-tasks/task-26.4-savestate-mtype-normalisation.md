@@ -1,12 +1,13 @@
 ---
 gmd: "0.1"
 id: task-26.4-savestate-mtype-normalisation
-title: "Task 26.4: a save-state's type is session/recall-state wherever it came from, and a disagreement is said"
+title: "Task 26.4: a save-state's type is session/recall-state wherever it came from, a disagreement is said, and the file fix does not move 'newest'"
 tags: [task, plan-26, save-state, mtype, bridge, recall, bug-164]
 metadata:
   node_type: task
   status: pending
   plan: plan-26-memory-organisation
+  updated: 2026-11-09
 ---
 
 # Task 26.4: save-state mtype normalisation {#root}
@@ -20,34 +21,60 @@ rel: related-to -> [[plan-25-cliquedb-field-report]]
 
 ## Requirements {#requirements}
 
-Four cliquedb save-states that an agent wrote by hand carry `type: project`. The bridge copies
-that into `memory_content.mtype`, so hook-mode recall's `session/*` exclusion does not hide them
-and they inflate the recall payload (bug-164's symptom; bug-164 keeps the budget fix).
+Four cliquedb save-states were written by hand and carry `type: project`. The bridge copies that
+type into `memory_content.mtype`. As a result, hook-mode recall's `session/*` exclusion does not
+hide them, and they inflate the recall payload. That inflation is bug-164's symptom. The budget
+fix for bug-164 stays with plan-25.
 
-1. **AC-1: the bridge rule.** For a file under `savestates/`, or whose `id` starts with
-   `savestate_`, the bridge stores `mtype = session/recall-state`. The frontmatter `type` is
-   ignored for that file. The override is counted in `stats.mtype_normalised: [(id, from, to)]`,
-   printed in the bridge report and carried by `_sync_memory_dir`. At HEAD the store reads
-   `project` (RED).
-2. **AC-2: the recall consequence.** After AC-1, `rmx memory recall --stdin-json ... --json` (the
-   hook-mode call) over the throwaway store no longer returns the hand-typed save-state. It still
-   returns it with `--include-session`. Assert both.
-3. **AC-3: the file is corrected, not only the row.** `rmx memory organise --apply` (task 26.5)
-   rewrites `metadata.type` in each mismatched file to `session/recall-state`, bumps `updated:`
-   and leaves `created:` and `originSessionId` frozen. Disk and store then agree. The next bridge
-   run counts zero normalisations.
+1. **AC-1: the bridge rule.**
+   - Applies to a file under `savestates/`, or a file whose `id` starts with `savestate_`.
+   - The bridge stores `mtype = session/recall-state`. The frontmatter `type` is ignored for that
+     file.
+   - Every override is counted in `stats.mtype_normalised: [(id, from, to)]`.
+   - The count is printed in the bridge report and carried by both `_bridge_stats` and
+     `_bridge_wait_for_active_job` (ch-bsd r1 #m5).
+   - At HEAD the store reads `project`, so this AC is RED.
+2. **AC-2: the recall consequence.** After AC-1, the hook-mode call
+   `rmx memory recall --stdin-json ... --json` no longer returns the hand-typed save-state. The
+   same call with `--include-session` still returns it. Assert both.
+3. **AC-3: the file is corrected, and "newest" stays where it was (ch-bsd r1 #s2).**
+   - `rmx memory organise --apply` (26.5) rewrites `metadata.type` to `session/recall-state` in
+     each mismatched file.
+   - The rewrite is a metadata correction, not a content update. It preserves the file's mtime
+     (`os.utime` to the prior value) and its `updated:`, `created:` and `originSessionId` fields.
+   - The correction is listed in the organise report.
+   - After the rewrite, disk and store agree, and the next bridge run counts zero normalisations.
+   - Fixture: four cliquedb-shaped save-states with June/July mtimes and `updated:`, plus a newer
+     August one. Run organise. `rmx recall-state` still resumes from the August one. If the
+     rewrite bumped mtime or `updated:`, it would resume from July (RED).
 4. **AC-4: other folders are report-only.** A `project`-typed file in `feedback/` is NOT
-   re-typed. `organise --check` reports it as `folder/type mismatch`. Plan Q3.
+   re-typed. `organise --check` reports it as `folder/type mismatch` (plan Q3).
 
 ## Files to Create / Modify {#files}
 
-- Modify `src/refmatrix/ingest_gmd.py` (the mtype resolution at about line 943, using
-  `memory_layout`).
-- Modify `src/refmatrix/cli.py` (`_bridge_stats`).
-- Create `tests/test_savestate_mtype.py`.
+| file | change |
+|---|---|
+| `src/refmatrix/ingest_gmd.py` | mtype resolution (around line 943), using `memory_layout` |
+| `src/refmatrix/cli.py` | `_bridge_stats`, `_bridge_wait_for_active_job` |
+| `tests/test_savestate_mtype.py` | create |
 
 ## Test Strategy {#test-strategy}
 
-Fixture: a synthetic copy of the cliquedb shape (frontmatter only, made-up body; no raw session
-text in the public repo). Run the real bridge CLI and the real recall CLI against a throwaway
-store. Mutation check: remove the override and AC-1 and AC-2 go RED.
+- The fixture is a synthetic copy of the cliquedb shape: frontmatter only, made-up body. No raw
+  session text goes into the public repo.
+- Run the real bridge, recall, organise and recall-state CLIs against a throwaway store in task
+  23.0's sandbox.
+- Mutation checks:
+
+| mutation | RED |
+|---|---|
+| remove the override | AC-1, AC-2 |
+| let the rewrite touch mtime | AC-3 |
+
+## Revision round 1 (2026-11-09) {#rev-round-1}
+
+| finding | change | anchor |
+|---|---|---|
+| S2 (rewrite resumes from the wrong save-state) | Rewrite preserves mtime and `updated:`; recall-state assertion | AC-3 |
+| M5 (waited-job branch) | `mtype_normalised` carried there too | AC-1 |
+| Q4 verdict | Sound; unchanged | [[#requirements]] |

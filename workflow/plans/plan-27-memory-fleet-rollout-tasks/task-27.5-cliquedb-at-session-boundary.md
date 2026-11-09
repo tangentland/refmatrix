@@ -7,6 +7,7 @@ metadata:
   node_type: task
   status: pending
   plan: plan-27-memory-fleet-rollout
+  updated: 2026-11-09
 ---
 
 # Task 27.5: cliquedb, staged {#root}
@@ -29,10 +30,15 @@ itself.
    and post a bus message on `proj:cliquedb:*`. The message gives what will move, the 4
    type rewrites, the 6 non-GMD files left in place, the backup location, and the request to
    apply at the next session end.
-2. **AC-2: apply only at a boundary.** Apply only after the cliquedb session acknowledges on the
-   bus, or after there has been no session activity for 30 minutes. Activity is measured as no
-   new STM events in its store and no file under its memdir modified in that window. Back up
-   first, then `--apply`.
+2. **AC-2: apply only on an explicit acknowledgement (S8).**
+   - Apply only after the cliquedb session acknowledges on `proj:cliquedb:*`, or the user confirms
+     that no cliquedb session is live.
+   - Verify it: no Claude process has its cwd under `~/github/atollogy/bdep/cliquedb`.
+   - There is NO idle-timer fallback. A resumed session edits the paths it loaded from the old
+     `MEMORY.md`, and a Write that recreates a top-level file with an existing id would trip
+     26.2's duplicate refusal.
+   - Back up first, with `--store-from-memdir` (B2). Then `--apply`.
+   - cliquedb's 29 prose lines are carried (B4).
 3. **AC-3: verify.**
    - `--check` is clean.
    - In cliquedb's root, `rmx memory recall "<phrase unique to savestate_7c4e19d2a8f3>"` returns
@@ -49,3 +55,12 @@ itself.
 ## Test Strategy {#test-strategy}
 
 Live verification through cliquedb's daemon only.
+
+## Revision round 1 (2026-11-09) {#rev-round-1}
+
+Answers [[bsd-plan26-27-spec-review-r1-96feccd]].
+
+| finding | change | anchor |
+|---|---|---|
+| S8 (an idle timer is not a session boundary) | Explicit acknowledgement plus a process check only | AC-2 |
+| B2, B4 | `--store-from-memdir`; prose carried | AC-2 |

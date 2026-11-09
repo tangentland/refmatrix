@@ -7,6 +7,7 @@ metadata:
   node_type: task
   status: pending
   plan: plan-27-memory-fleet-rollout
+  updated: 2026-11-09
 ---
 
 # Task 27.3: thiquet supervision repoint {#root}
@@ -37,8 +38,15 @@ memories, 13 save-states) is correct and stays.
    - any `source_path` under it in any store (a global-store daemon read);
    - session-indexer labels.
    Record each with its action.
-2. **AC-2: bdep/thiquet's store state, announced and backed up first.** Before supervising,
-   `tar` bdep/thiquet's `.refmatrix/` with its daemon stopped. Then:
+2. **AC-2: bdep/thiquet's store state, announced, quiesced, then backed up (S7).**
+   - bdep/thiquet has NO daemon, and a live session writes its catalog in-process: `cli.log`
+     shows agent `sync` writes at 2026-11-08T23:25, and `catalog.A.duckdb` has mtime 23:25. So
+     "daemon stopped" holds no writer.
+   - Before the backup, get an explicit acknowledgement (from the user, or on the bus channel of
+     thiquet's session) that every thiquet session is ended, and verify that no process has its
+     cwd under `~/github/atollogy/bdep/thiquet` (`lsof +D` on `.refmatrix/`, which must be empty).
+     There is no idle timer.
+   - Then `tar` `.refmatrix/`. Then:
    - run `rmx derive` / `rmx daemon status` in that root, plus entity and memory counts;
    - if the derive is stale or the store is empty, `rmx reingest --force` through its own daemon
      after supervision, and record the before and after counts.
@@ -58,6 +66,9 @@ memories, 13 save-states) is correct and stays.
    `rmx memory recall "<phrase unique to a thiquet memory>"` returns it, and `rmx recall-state`
    resumes from the newest of its 13 save-states.
 
+6. **AC-6: the enduris daemon is really stopped (Q5 note).** After the AC-4 uninstall, `ps` shows
+   no process for `thiquet-369d4c5eeb65`. pid 82374 was observed at review time.
+
 ## Files to Create / Modify {#files}
 
 - Use only the `launchctl`/hub commands, and touch store data only through daemon ops.
@@ -67,3 +78,12 @@ memories, 13 save-states) is correct and stays.
 
 Live verification. Every step is announced to the user and backed up first. Restart the hub, if
 needed, with `rmx hub stop` plus ONE `launchctl kickstart`.
+
+## Revision round 1 (2026-11-09) {#rev-round-1}
+
+Answers [[bsd-plan26-27-spec-review-r1-96feccd]].
+
+| finding | change | anchor |
+|---|---|---|
+| S7 (backs up a store being written in-process) | Explicit acknowledgement plus an empty `lsof` before the tar; no idle timer | AC-2 |
+| 27 Q5 note (the enduris daemon is running, pid 82374) | AC-4 verifies the process is gone, not only the label | AC-4 |
