@@ -32,6 +32,8 @@ not paying for seven copies of the model.
 """
 from __future__ import annotations
 
+import logging
+import math
 import os
 import socket
 import threading
@@ -51,6 +53,45 @@ def model_sock_path() -> Path:
     )
 
 
+_ENV_WARNED: "set[tuple[str, str]]" = set()
+_ENV_WARNED_LOCK = threading.Lock()
+
+
+def env_float(name: str, default: float) -> float:
+    """THE parse of a numeric shared-model knob (`RMX_SHARED_*_S`): the env value as a
+    float, else `default`. Unset or empty is the default, silently. A value that is not a
+    finite, non-negative number (an operator typo: `300s`, `30m`, `nan`, `-5`) is ALSO the
+    default, with ONE WARNING per process naming the variable and the value.
+
+    Why (task 3.7 remedy r5, ch-bsd r4 #m-2, 2026-11-09): every knob on the shared-worker
+    path was a bare `float(os.environ.get(...))`. A typo'd `RMX_SHARED_REPROBE_S=300s`
+    raised `ValueError` out of `recall._reprobe_window`, inside the embed call of a
+    daemonless process with a HEALTHY private worker; the call fell through to the
+    in-process model, so 4 calls cost 4 uncached ~610 MB loads (bug-173's cost), and the
+    `ValueError` was repeated as a warning on every call. The same typo in
+    `RMX_SHARED_PROBE_TIMEOUT_S` made `import refmatrix.modelsrv` itself raise. One helper,
+    so no knob hand-rolls its own parse; once per `(name, value)`, so a per-call read
+    (`_reprobe_window` reads per call to honour a changed env) does not flood the log."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return float(default)
+    try:
+        value = float(raw)
+    except ValueError:
+        value = None
+    if value is not None and math.isfinite(value) and value >= 0.0:
+        return value
+    key = (name, raw)
+    with _ENV_WARNED_LOCK:
+        first = key not in _ENV_WARNED
+        _ENV_WARNED.add(key)
+    if first:
+        logging.getLogger(__name__).warning(
+            "%s=%r is not a finite non-negative number of seconds; using the default %s "
+            "(said once per process)", name, raw, float(default))
+    return float(default)
+
+
 def shared_enabled() -> bool:
     """Should daemons prefer the shared workers? Default: yes.
 
@@ -65,7 +106,9 @@ def shared_enabled() -> bool:
 # daemon that booted or relaunched while the hub was cold to a private
 # worker for good (bug-014: sixteen ~450 MB workers on one machine). A mute
 # socket (hub mid-restart) still costs at most this long, once per role.
-PROBE_TIMEOUT_S = float(os.environ.get("RMX_SHARED_PROBE_TIMEOUT_S", "45") or "45")
+# Parsed by `env_float` (remedy r5 #m-2): a typo'd value is the default plus one warning,
+# never an `import` that raises.
+PROBE_TIMEOUT_S = env_float("RMX_SHARED_PROBE_TIMEOUT_S", 45.0)
 
 # REQUEST-PATH re-probe bound (task 3.7 remedy r4, ch-bsd r3 #s-1, 2026-11-09). A
 # daemonless process (`rmx mcp`, the CLI) holding a PRIVATE embed worker re-probes the
@@ -76,10 +119,11 @@ PROBE_TIMEOUT_S = float(os.environ.get("RMX_SHARED_PROBE_TIMEOUT_S", "45") or "4
 # (`new_model_client`) and the daemon's tick, never to a request. Here the hub either
 # answers its header at once or it does not: 1.0 s is twice `shared_available`'s 0.5 s
 # connect bound. A cold hub worker misses it, but the probe has already asked the hub to
-# start that worker, so the next re-probe (one backoff window later) finds it warm.
-# Env `RMX_SHARED_REQUEST_PROBE_TIMEOUT_S`.
-REQUEST_PROBE_TIMEOUT_S = float(
-    os.environ.get("RMX_SHARED_REQUEST_PROBE_TIMEOUT_S", "1.0") or "1.0")
+# start that worker. That miss re-arms the re-probe at the BASE window, never a doubled
+# one (`recall.reprobe_shared_client`, task 3.7 remedy r5 #m-3, 2026-11-09: before r5 the
+# miss doubled, so a cold hub cost base + 2*base), and the next re-probe finds the worker
+# warm. Env `RMX_SHARED_REQUEST_PROBE_TIMEOUT_S` (parsed by `env_float`).
+REQUEST_PROBE_TIMEOUT_S = env_float("RMX_SHARED_REQUEST_PROBE_TIMEOUT_S", 1.0)
 
 
 def shared_available(timeout: float = 0.5) -> bool:

@@ -322,10 +322,16 @@ def new_model_client(role: str, *, log: "Callable[[str], None] | None" = None,
 
 def _reprobe_window() -> "tuple[float, float]":
     """The re-probe backoff window `(base, cap)`: `RMX_SHARED_REPROBE_S` (default 300 s)
-    and `RMX_SHARED_REPROBE_MAX_S` (1800 s), read per call so an operator's env applies."""
-    import os
-    base = float(os.environ.get("RMX_SHARED_REPROBE_S", "300") or "300")
-    cap = float(os.environ.get("RMX_SHARED_REPROBE_MAX_S", "1800") or "1800")
+    and `RMX_SHARED_REPROBE_MAX_S` (1800 s), read per call so an operator's env applies.
+
+    Never raises (task 3.7 remedy r5, ch-bsd r4 #m-2, 2026-11-09): both go through
+    `modelsrv.env_float`, so a malformed value is its default plus ONE warning naming the
+    variable. Before r5 a typo'd `300s` raised out of here into the embed call of a
+    process with a healthy private worker, which then loaded the in-process model on
+    every call."""
+    from refmatrix import modelsrv
+    base = modelsrv.env_float("RMX_SHARED_REPROBE_S", 300.0)
+    cap = modelsrv.env_float("RMX_SHARED_REPROBE_MAX_S", 1800.0)
     return base, cap
 
 
@@ -337,8 +343,17 @@ def hold_reprobe(role: str, *, next_at: "dict[str, float]", backoff: "dict[str, 
     Task 3.7 remedy r4 (ch-bsd r3 #s-1, 2026-11-09): r3 CLEARED the throttle after every
     build, so a build that had just probed the hub, failed and gone private told the very
     next call to probe again at once; behind a mute hub that was a second full probe on
-    the request path. The build's own probe IS the first attempt of the window."""
+    the request path. The build's own probe IS the first attempt of the window.
+
+    Skipped when shared models are disabled (task 3.7 remedy r5, ch-bsd r4 #m-2,
+    2026-11-09): under `RMX_SHARED_MODELS=0` no hub can ever be adopted, so there is no
+    window to hold, and r4 still parsed the reprobe env here (a typo then cost the call
+    its private worker)."""
     import time
+
+    from refmatrix import modelsrv
+    if not modelsrv.shared_enabled():
+        return
     base, _cap = _reprobe_window()
     now = time.time() if now is None else float(now)
     backoff[role] = base
@@ -364,6 +379,19 @@ def reprobe_shared_client(role: str, *, next_at: "dict[str, float]",
     machine that will never have a hub does not probe at full rate forever. A success
     clears the role's state.
 
+    A COLD hub is not an absent one (task 3.7 remedy r5, ch-bsd r4 #m-3, 2026-11-09):
+    when the socket CONNECTED (`shared_available`) and only the `info` header timed out,
+    the hub is alive and our probe has just asked it to load its worker, so the next
+    re-probe is re-armed at the BASE window (`backoff = base`). Before r5 that miss
+    doubled like a dead hub's, so a hub that came up cold was adopted only after
+    base + 2*base, with a duplicate private worker running beside the hub's. The case is
+    told apart by STAGE and exception TYPE, never by message text: the miss must happen
+    after the connect probe succeeded (stage `header`) and be a `TimeoutError`, which is
+    what `SharedWorkerClient.call` re-raises for a bounded read that expired. An absent
+    socket file or a refused connect (no hub; a stale socket nobody listens on) makes
+    `shared_available` False, and a connect refused inside `info` raises
+    `ConnectionRefusedError`: those still double.
+
     `probe_timeout` bounds the header probe. Default `modelsrv.PROBE_TIMEOUT_S`, the
     cold-worker bound, for the daemon's background tick. A caller on a REQUEST path passes
     `modelsrv.REQUEST_PROBE_TIMEOUT_S` (1.0 s; task 3.7 remedy r4, ch-bsd r3 #s-1,
@@ -379,21 +407,35 @@ def reprobe_shared_client(role: str, *, next_at: "dict[str, float]",
     base, cap = _reprobe_window()
     bound = modelsrv.PROBE_TIMEOUT_S if probe_timeout is None else float(probe_timeout)
     client = None
+    cold = False                      # connected, header timed out: re-arm at base (r5 #m-3)
+    stage = "connect"
     try:
         if modelsrv.shared_available(timeout=0.5):
+            stage = "header"
             from refmatrix.daemon import SHARED_OP_TIMEOUT_S
             client = modelsrv.SharedWorkerClient(role, log=log, timeout=SHARED_OP_TIMEOUT_S)
             client.info(timeout=bound)
     except Exception as exc:  # noqa: BLE001 — logged; the private worker keeps serving
+        cold = stage == "header" and isinstance(exc, TimeoutError)
         if client is not None:
             try:
                 client.close()
             except Exception as cexc:  # noqa: BLE001 — named; the private worker serves
                 log(f"{role}: closing the unusable shared client failed: {cexc!r}")
         client = None
-        log(f"{role}: shared worker still unusable ({exc!r}); keeping the private worker")
+        if cold:
+            log(f"{role}: shared worker still unusable ({exc!r}): the hub socket "
+                f"connected but its worker did not answer within {bound}s (cold, loading "
+                f"its model); keeping the private worker, re-probing at the base window "
+                f"{base}s")
+        else:
+            log(f"{role}: shared worker still unusable ({exc!r}); keeping the private "
+                f"worker")
     if client is None:
-        wait = min(max(base, backoff.get(role, 0.0) * 2.0), cap)
+        if cold:
+            wait = min(base, cap)
+        else:
+            wait = min(max(base, backoff.get(role, 0.0) * 2.0), cap)
         backoff[role] = wait
         next_at[role] = now + wait
         return None

@@ -6662,8 +6662,10 @@ def _shared_op_timeout_default() -> float:
     # use sites, not at the top); it costs nothing — modelsrv imports only
     # socket/threading and subproc, never a model.
     from refmatrix import modelsrv
+    # `env_float` (task 3.7 remedy r5 #m-2, 2026-11-09): a typo'd value is the default
+    # plus one named warning, not a `ValueError` at `import refmatrix.daemon`.
     return max(
-        float(os.environ.get("RMX_SHARED_OP_TIMEOUT_S", "45") or "45"),
+        modelsrv.env_float("RMX_SHARED_OP_TIMEOUT_S", 45.0),
         modelsrv.PROBE_TIMEOUT_S,
     )
 
