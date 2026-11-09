@@ -1,0 +1,52 @@
+---
+gmd: "0.1"
+id: task-27.6-per-store-compile-and-landing
+title: "Task 27.6: re-compile subjects per store, regenerate each MEMORY.md, and report how future save-states land"
+tags: [task, plan-27, compile, subjects, memory-index, hooks, drift]
+metadata:
+  node_type: task
+  status: pending
+  plan: plan-27-memory-fleet-rollout
+---
+
+# Task 27.6: per-store compile, index and landing {#root}
+
+> Plan: [[plan-27-memory-fleet-rollout]]
+> Status: Pending
+> Depends on: [[task-27.2-viascope2-fold-and-repoint]], [[task-27.3-thiquet-store-repoint]],
+> [[task-27.4-quiet-dir-migrations]], [[task-27.5-cliquedb-at-session-boundary]]
+
+rel: part-of -> [[plan-27-memory-fleet-rollout]]
+rel: depends-on -> [[task-26.6-compile-subject-hygiene]]
+rel: depends-on -> [[task-26.7-memory-index-by-subject]]
+
+## Requirements {#requirements}
+
+1. **AC-1: compile once per store, not per dir.** For each store whose memory partition was
+   touched (cliquedb, cliquet, viascope, bdep/thiquet, atldb, orderly, cat-herder, atlftpd, and
+   the home/global store only if plan Q4 says so), run `rmx memory compile --apply` through that
+   store's daemon. Record:
+   - the subjects retired (26.6);
+   - that `rmx daemon status` shows no stale `memory-compile` line;
+   - the label grade band, or "not graded" with a reason.
+2. **AC-2: regenerate `MEMORY.md` grouped by subject** in each store-backed dir, under budget,
+   with `--check` in sync. viascope's index shrinks from 33 KB to under 24 KB, and the fold
+   count is stated.
+3. **AC-3: landing report.** One table, one row per project:
+   - Does `rmx save-state` write `savestates/`? Yes for all, because everything runs the
+     deployed `~/bin/rmx`. Verify with one dry-run (`rmx save-state --dry-run` reports the
+     `savestates/` target) in two projects.
+   - Does a SessionStart bridge hook exist?
+   - `rmx install-hooks --check` drift.
+   - Recommended action, per plan Q3: report only; regeneration rides plan-24.
+4. **AC-4: close-out.** Bring `workflow/plan-of-plans.md`'s plan-27 row up to date (by the plan
+   owner), bring `handoff.md` up to date, and get `@ch-bsd` over the range to CLEAN.
+
+## Files to Create / Modify {#files}
+
+- Create `workflow/implementation_summaries/task-27.6-per-store-compile-and-landing.md`.
+- Create `workflow/review-output/27.6-*.log`.
+
+## Test Strategy {#test-strategy}
+
+Live verification through each store's daemon.
