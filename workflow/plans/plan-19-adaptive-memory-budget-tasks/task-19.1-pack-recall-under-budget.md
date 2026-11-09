@@ -282,3 +282,23 @@ rel: derives-from -> [[bsd-plan2-hooks-reproducible-r9-ffed3df]]
 - **#m-4.** The degrade line names the 1.5 s `RECALL_DAEMON_SLICE_S` slice as "the budget". The
   line names the slice and the total budget separately. AC: the rendered degrade line contains
   both numbers, each labelled. {#w1c-m4}
+
+## Revision: realized by plan-25 (2026-11-09) {#rev-plan25}
+
+Record only; no requirement or AC of this task changes here. Added per
+[[bsd-plan25-spec-r1-2f4a1df#m9]] so a builder does not follow stale text. The user ordered
+plan-25 ahead of plan-19's wave ([[plan-of-plans#override-2026-11-08b]]).
+
+rel: related-to -> [[task-25.1-recall-hook-byte-budget]]
+
+| 19.1 item | realized by | note |
+|---|---|---|
+| R1 budget | [[task-25.1-recall-hook-byte-budget#r1]] | the single `DEFAULT_HOOK_BUDGET_BYTES` becomes a per-channel table in `hook_budget.py` (21.1 channel names) plus an event split, set by 25.1 R0 |
+| R2 subjects (AC-3 incl. the stale leg) | 25.1 R2, AC-6 | unchanged |
+| R3 pack (AC-1, AC-2 report-only, AC-5) | 25.1 R3/R4, AC-1..AC-3, AC-9 | packer in `recall_pack.py` over `hook_budget.fit_blocks`, called by the verb; per-prompt pack is pointers-only at its budget |
+| R4 hooks (AC-4, AC-8) | 25.1 R7, AC-8, AC-13 | |
+| R5 loud overflow, R7 arithmetic (AC-5) | 25.1 R8, AC-9 | |
+| R6 `memory get --scope` (AC-7) | 25.1 R6, AC-11 | |
+| R8 spans (AC-6) | 25.1 R9, AC-10 | |
+| AC-9 isolation, AC-10 mutations | 25.1 AC-13, AC-14 | all twelve mutations carried |
+| folded riders #w1c-s2, #w1c-m4 | not realized; stay with 19.1 | |

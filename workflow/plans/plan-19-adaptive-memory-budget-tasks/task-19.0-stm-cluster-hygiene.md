@@ -911,3 +911,17 @@ rel: depends-on -> [[task-23.0-test-sandbox#rev-amend-r10]]
 | finding | answered at |
 |---|---|
 | r11 #m11-5 (AC-6f's empty `connects.log` passes vacuously when a hook command's interpreter never loaded 23.0's hook) | AC-6f: each command also runs with `RMX_SANDBOX_PRELOAD=<tmp>/mark.py`, which appends its pid to `<tmp>/loaded.log`; at least one `loaded.log` line per command run is required |
+
+## Revision: realized by plan-25 (2026-11-09) {#rev-plan25}
+
+Record only; no requirement or AC of this task changes here. Added per
+[[bsd-plan25-spec-r1-2f4a1df#m9]] so a builder does not follow stale text.
+
+rel: related-to -> [[task-25.3-stm-ref-admission-and-helix-repeat]]
+
+| 19.0 item | realized by | note |
+|---|---|---|
+| R1 `stm.command_refs` and the code-noise set (hook path) | [[task-25.3-stm-ref-admission-and-helix-repeat#r2]] | signature becomes `command_refs(cmd, *, root=None, cwd=None)`; with `root=None` it is SHAPE-ONLY (no existence checks). R1's rebuild re-extraction, which stays with 19.0, calls it with `root=None` (25.3 R5 forbids existence checks on replay) |
+| R1 rebuild path | partly: 25.3 R5 FILTERS stored refs shape-only in `rebuild_focus` and the composite render | re-extraction from `detail` remains 19.0's |
+| R1 unterminated scripts rule | [[task-25.3-stm-ref-admission-and-helix-repeat#r2]] | same rule |
+| R0, R2-R7 | not realized; stay with 19.0 | |

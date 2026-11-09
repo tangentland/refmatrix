@@ -186,3 +186,15 @@ was skipped for budget, or was not attempted, and reports the rate. No fix is as
 number decides whether a follow-up task is opened.
 
 rel: derives-from -> [[bsd-plan2-hooks-reproducible-r9-ffed3df]]
+
+## Revision: R1 realized by plan-25 (2026-11-09) {#rev-plan25}
+
+Record only; no requirement or AC of this task changes here. Added per
+[[bsd-plan25-spec-r1-2f4a1df#m9]].
+
+rel: related-to -> [[task-25.1-recall-hook-byte-budget]]
+
+| 19.5 item | realized by | note |
+|---|---|---|
+| R1 threshold probe | [[task-25.1-recall-hook-byte-budget#r0]] | run as 25.1 R0, with three recorded outcomes (per-hook; per-event split; per-event residual below the minimum useful recall); table in `workflow/measurements/hook-output-cap-probe.md` |
+| R2-R4 | not realized; stay with 19.5 | |

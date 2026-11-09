@@ -7,14 +7,14 @@ metadata:
   node_type: plan
   status: drafting
   created: 2026-11-08
-  updated: 2026-11-08
+  updated: 2026-11-09
 ---
 
 # Plan 25: cliquedb field report (bug-164..167) {#root}
 
 **Date:** 2026-11-08 (session 8d9a255f).
-**Status:** Drafting. Plan and task specs 25.1-25.4 written; spec review (`@ch-bsd`, `@ch-architect`)
-is next. No `src/` or `tests/` change is made by this document.
+**Status:** Drafting. Plan and task specs 25.1-25.4 written; ch-bsd spec review r1 DIRTY 0B/9S/9M
+folded in revision round 1 ([[#rev-round-1]]); spec review r2 is next. No `src/` or `tests/` change is made by this document.
 **Location:** `workflow/plans/plan-25-cliquedb-field-report.md`; stage is `metadata.status`.
 **Ordering authority:** the user's override [[plan-of-plans#override-2026-11-08]] as amended the
 same day by [[plan-of-plans#override-2026-11-08b]]: task 3.7, then plan-26 (memory-layer
@@ -35,6 +35,7 @@ rel: related-to -> [[task-24.6-context-and-observation]]
 rel: amends -> [[task-19.1-pack-recall-under-budget]]
 rel: amends -> [[task-19.0-stm-cluster-hygiene]]
 rel: amends -> [[task-19.5-measure-delivery]]
+rel: derives-from -> [[bsd-plan25-spec-r1-2f4a1df]]
 rel: reinforces -> [[feedback_measure_the_path_users_run]]
 rel: reinforces -> [[feedback_green_tests_are_not_a_working_command]]
 rel: reinforces -> [[feedback_no_raw_prompts_in_public_repo]]
@@ -75,18 +76,19 @@ this repo keeps paying for ([[feedback_converge_repeated_shapes]]). So: {#prior-
 - **25.3 BUILDS 19.0 R1's ref admission** (the `stm.command_refs` function and its code-noise
   set) and extends the same predicate to the prose path. 19.0 R0, R2-R7 (subagents, hand-backs,
   typos, the resolver, the fixture, the pre-prompt snapshot) stay with 19.0.
-- When 25.1 / 25.3 merge, 19.0 and 19.1 get a revision row naming what was realized here
-  (a doc edit done at merge time, not in this draft).
+- 19.0, 19.1 and 19.5 carry a revision row NOW (2026-11-09, bsd r1 #m9) naming which of their
+  requirements 25.1 / 25.3 realize, so no builder follows their stale text.
 
 ### Deltas from plan-19 {#deltas}
 
 | plan-19 text | plan-25 change | why |
 |---|---|---|
-| 19.1 R1: one `DEFAULT_HOOK_BUDGET_BYTES` (9,500) | a per-channel table, one owner: `prompt` 4,000 B, `session_start` 9,000 B, `precompact` 9,000 B (PROVISIONAL until 25.1 R0's probe) | UserPromptSubmit shares the model's input with scan-prompt (`--max-tokens 2000` plus a composite) and the focus input hook; a per-event cap would sink a 9,500 B recall. cliquedb asked for "under ~4KB". |
-| 19.1 files: the packer in `cli.py` | the packer in a library module the verb calls (`recall_pack.py`); `verbs.memory_recall` takes `max_bytes` / `pack` | the user's override: budgeting is verb-side logic the mod reuses; plan-24's mod calls `rmx_memory_recall` ([[task-24.6-context-and-observation]]) and must get the same pack. |
+| 19.1 R1: one `DEFAULT_HOOK_BUDGET_BYTES` (9,500) | one budget module `hook_budget` with 21.1's channel names: `prompt_recall` 4,000 B, `scan_prompt` 5,000 B, `session_start` 9,000 B, `precompact` 9,000 B (PROVISIONAL), plus an `EVENT_SPLIT` over all four UserPromptSubmit producers, set by one of R0's three outcomes | UserPromptSubmit shares the model's input with scan-prompt (`--max-tokens 2000` plus a composite) and the focus input hook; a per-event cap would sink a 9,500 B recall. cliquedb asked for "under ~4KB". |
+| 19.1 files: the packer in `cli.py` | the packer in a library module the verb calls (`recall_pack.py` over `hook_budget.fit_blocks`); `verbs.memory_recall` takes `max_bytes` / `pack`; the per-prompt hybrid replica-first leg moves INTO the verb so the CLI only renders | the user's override: budgeting is verb-side logic the mod reuses; plan-24's mod calls `rmx_memory_recall` ([[task-24.6-context-and-observation]]) and must get the same pack. |
 | 19.1 depends on 19.5 R1 (the probe) | 25.1 R0 RUNS that probe as its first step | 19.5 R1 depends on nothing and was never run (no file under `workflow/measurements/`). |
 | 19.1 R2 (subjects) | kept; the mis-typed save-state half of bug-164 is OWNED by [[task-26.4-savestate-mtype-normalisation]] and only re-asserted on the packed path ([[task-25.1-recall-hook-byte-budget#r2b]]) | one owner for the bridge rule; plan-26 lands first |
-| 19.0 R1: `command_refs` for the tool path | plus the prose path (`_extract_refs`), plus a right boundary on `_PATH_RE`, plus existence for slash refs | the junk cliquedb saw comes through both sites |
+| 19.0 R1: `command_refs(cmd)` for the tool path | `command_refs(cmd, *, root=None, cwd=None)` (shape-only when `root=None`, the form 19.0's rebuild calls); plus the prose path, a right boundary on `_PATH_RE`, and an existence check for every path-shaped candidate | the junk cliquedb saw comes through both sites |
+| (none) | scan-prompt is byte-capped through the same fitter (25.1 R0b) | it reaches 11,555 B on its own (21.1 telemetry) |
 
 ## Proposed approach {#approach}
 
@@ -95,14 +97,17 @@ this repo keeps paying for ([[feedback_converge_repeated_shapes]]). So: {#prior-
 Every rule this plan adds is a pure function in a library module, called by the verb layer and by
 the CLI twin, never written into `cli.py` or into a hook string:
 
-- the byte budget and the packer: `recall_pack` (25.1), reached through `verbs.memory_recall`;
-- the thin-prompt gate: `terms.prompt_gate` next to the stoplist it reuses (25.2), called by
+- the byte budget and the packer: `hook_budget` + `recall_pack` (25.1), reached through
+  `verbs.memory_recall`, whose rows now include the per-prompt replica-first leg (one
+  computation of "which rows"); scan-prompt is fitted by the same `hook_budget.fit_blocks`;
+- the ack-only gate: `terms.prompt_gate` next to the stoplist it reuses (25.2), called by
   `scan.scan_prompt` (which 24.2a R4's `rmx_scan_prompt` wraps) and by the recall verb's
   prompt trigger;
 - the ref admission predicate: `stm.admit_ref` / `stm.command_refs` (25.3), called by both
   extraction sites and the focus rebuild;
-- the helix repeat memory: `helix` with an explicit session (25.3), the shape 24.2a R2 requires;
-- the BRE translation: one function `grep_dialect.bre_to_ere` (25.4) that every grep leg reads.
+- the helix repeat memory and hub rule: `helix` with an explicit session (25.3), the shape 24.2a R2
+  requires;
+- the BRE translation: one function `grep_dialect.bre_to_py` (25.4) that every grep leg reads.
 
 When plan-24's mod lands, it calls the same verbs with its own budget (the mod has no 10k cap,
 [[plan-24-mod-transport#goals]] G2) and gets the same gate and the same pack. Nothing here is
@@ -124,8 +129,8 @@ throwaway shell-surface work. {#principle-tail}
 - **3.7 first** (the override). Its branch (`task-3.7-verb-it-backlog`, clone
   `/Volumes/littlebig/refmatrix-task-3.7`, HEAD `3281c53`, base `591a2fb`) touches files this plan
   edits; see [[#overlap]]. Every 25.x branch is cut from `master` AFTER 3.7 merges.
-- **25.1 before 25.2.** Both edit the per-prompt recall path in `cli._memory_recall_impl` and the
-  hook generator. 25.2's after-measurement is taken on 25.1's packed payload, so its noise number
+- **25.1 before 25.2.** 25.1 moves the per-prompt rows into the verb, where 25.2's gate lives, and
+  both edit the hook generator. 25.2's after-measurement is taken on 25.1's packed payload, so its noise number
   is about the gate, not about an overflow that already hid the noise.
 - **25.2 owns the gate helper**; 25.1 does not need it. 25.2's gate decides whether recall RUNS;
   25.1's budget decides how much of what ran is SAID. They compose; neither reads the other's
@@ -142,10 +147,10 @@ Read 2026-11-08 by `git diff 591a2fb 3281c53 --stat -- src` in the 3.7 clone.
 
 | file | 3.7 changes | plan-25 task | conflict risk |
 |---|---|---|---|
-| `src/refmatrix/hooks.py` | `HOOK_ENV` gains the two fork-safety exports; curator `status --drain 2>/dev/null` → `status \|\| true` in the scan-prompt and SessionStart commands | 25.1 (recall argv), 25.2 (none expected), 25.3 (none) | textual: `HOOK_ENV` also changed on master (bug-163 PATH prefix, 0.80.2) — 3.7's merge resolves that, 25.1 rebases on the result. `install-hooks --check` golden files move twice. |
+| `src/refmatrix/hooks.py` | `HOOK_ENV` gains the two fork-safety exports; curator `status --drain 2>/dev/null` → `status \|\| true` in the scan-prompt and SessionStart commands, so `curator status` now prints on EVERY prompt in the UserPromptSubmit event (counted in 25.1's `EVENT_SPLIT`) | 25.1 (recall argv), 25.2 (none expected), 25.3 (none) | textual: `HOOK_ENV` also changed on master (bug-163 PATH prefix, 0.80.2) — 3.7's merge resolves that, 25.1 rebases on the result. `install-hooks --check` golden files move twice. |
 | `src/refmatrix/cli.py` | 1,675 lines: many read commands become verb adapters (`top`, `describe`, `focus *`, `curator`, `recall_cmd`'s embedder path, `scan_prompt_cmd` neighbourhood, `_stamp_derive_pass`) | 25.1 (`memory recall` render / exclusion), 25.2 (`scan_prompt_cmd` envelope → gate), 25.3 (`_tool_event_fields`), 25.4 (grep BRE block) | no hunk of 3.7 touches `_memory_recall_impl`, `_tool_event_fields` or the grep BRE block; `scan_prompt_cmd` is adjacent to a 3.7 hunk. Line numbers in these specs are master's and WILL move. |
 | `src/refmatrix/verbs.py` | +1,290: `focus` dispatcher, `curator`, `graph`, `session_memories`, `snapshot_read` / `local_write` | 25.1 (`memory_recall` gains `max_bytes` / `pack`), 25.2 (recall gate) | `memory_recall` itself is not in 3.7's diff; the module grows around it. |
-| `src/refmatrix/recall.py` | +325: `shared_embedder`, `_process_embed_client`, `graph_recall`, `ann_search` (embed-client code) | 25.1 does not edit it; it CALLS whatever recall uses after 3.7 | none textual; 25.1's fixture runs dense recall through 3.7's embed client, so its RED is taken after 3.7 merges. |
+| `src/refmatrix/recall.py` | +325: `shared_embedder`, `_process_embed_client`, `graph_recall`, `ann_search` (embed-client code) | 25.1 moves `_replica_memory_recall` here (d5), beside `shared_embedder` | none textual; 25.1's fixture runs dense recall through 3.7's embed client, so its RED is taken after 3.7 merges. |
 | `src/refmatrix/stm.py`, `scan.py`, `helix.py`, `terms.py`, `context.py` | not touched | 25.2, 25.3 | none |
 | `tests/test_verb_parity.py`, `tests/transport_guard.py` | 3.7 rewrites both | 25.1 / 25.2 add verb params (parity rows) | additive after 3.7 |
 
@@ -167,12 +172,12 @@ Read from the plan-26 task specs' file lists on 2026-11-08 (drafts; re-read at 2
 - **No ranking change.** bug-165's noise is attacked by not running retrieval on a thin prompt,
   not by retuning BM25 / rerank. Rerank works again (bug-162); 25.2 measures noise WITH it.
 - **No mod work.** The verbs gain parameters the mod will pass; the mod itself is plan-24.
-- **No plan-19 completion.** 19.1 R6 (`memory get --scope`), R8's `delivered` spans beyond what
-  the pack must return, 19.2-19.6 stay in plan-19. 25.1 lists exactly which 19.1 requirements it
-  lands.
-- **`# rmx grep fallback via rg`** (cliquedb item 5) is a stderr line (`cli.py:6901`,
-  `click.echo(..., err=True)`), not stdout; whether the index answers plain literals is a separate
-  question (plan-14 / plan-16 measure it). Out of scope; 25.4 records the observation only.
+- **No plan-19 completion beyond 19.1 and 19.0 R1.** 19.0 R0, R2-R7, the 19.1 folded riders and
+  19.2-19.6 stay in plan-19. 25.1 lists which 19.1 items it lands (all R1-R8 and their ACs and
+  mutations, with the deltas).
+- **`# rmx grep fallback via rg`** (cliquedb item 5) is a stderr line (`cli.py:6901`), not stdout;
+  it is logged as bug-173 (split from bug-167 on 2026-11-09) and stays open when 25.4 closes
+  bug-167. Substring-mode `a.b` is bug-174, also open.
 - **No raw cliquedb prompt or memory text is committed.** Every fixture is synthetic, shaped to the
   measured sizes ([[feedback_no_raw_prompts_in_public_repo]]).
 
@@ -180,10 +185,10 @@ Read from the plan-26 task specs' file lists on 2026-11-08 (drafts; re-read at 2
 
 | task | bug | what | RED on |
 |---|---|---|---|
-| [[task-25.1-recall-hook-byte-budget]] | bug-164 | probe the cap; pack recall under a per-channel byte budget after the four-source merge; mis-typed save-states excluded | the generated per-prompt argv emits > 10,000 B on the fixture store |
-| [[task-25.2-thin-prompt-gate]] | bug-165 | one gate: < 2 content terms and no identifier-shaped token → scan-prompt and the prompt recall inject nothing | the generated scan-prompt + recall argvs on "yes next" emit > 0 B of content hits |
-| [[task-25.3-stm-ref-admission-and-helix-repeat]] | bug-166 | one ref-admission predicate at both extraction sites and the rebuild; helix says a line once per session, counting what it suppressed | a replayed `focus hook` envelope stores `s.repla`; a second identical prompt re-emits the helix line |
-| [[task-25.4-grep-bre-translation]] | bug-167 | BRE → ERE translation feeding every grep leg; differential tests against BSD and GNU grep | `rmx grep -n 'B0\|group_key' file` exits 2 |
+| [[task-25.1-recall-hook-byte-budget]] | bug-164 | probe the cap (three outcomes); per-prompt rows through the verb; pack recall pointers-first after the merge; byte-cap scan-prompt; every UserPromptSubmit producer in one event budget | the generated per-prompt argv emits > 10,000 B on the fixture store |
+| [[task-25.2-thin-prompt-gate]] | bug-165 | one ack-only gate: a prompt made only of stopwords / ack words / list markers → scan-prompt and the prompt recall inject nothing; a single content word passes | the generated scan-prompt + recall argvs on "yes next" emit > 0 B of content hits |
+| [[task-25.3-stm-ref-admission-and-helix-repeat]] | bug-166 (both halves) | one ref-admission predicate at both extraction sites and the rebuild; helix says a line once per session, never annotates a hub neighbour, and logs every suppression | a replayed `focus hook` envelope stores `s.repla`; a second identical prompt re-emits the helix line |
+| [[task-25.4-grep-bre-translation]] | bug-167 | any backslash-escaped BRE translated once for every grep leg; the rest to the real grep; differential tests against BSD and GNU grep | `rmx grep -n 'B0\|group_key' file` exits 2 |
 
 ## Acceptance for the plan {#acceptance}
 
@@ -205,8 +210,31 @@ Recorded with a recommendation; each task spec repeats the ones it owns.
 | # | decision | recommendation |
 |---|---|---|
 | q1 | Pull 19.1 / 19.0 R1 forward into plan-25 (build them here) or write independent fixes | pull forward ([[#prior-specs]]); a second packer is the defect shape this repo keeps fixing |
-| q2 | Per-prompt recall budget before the probe | 4,000 B provisional; 25.1 R0's probe replaces it before GREEN |
+| q2 | Per-prompt recall budget before the probe | 4,000 B provisional (`scan_prompt` 5,000 B); R0's outcome (A / B / C) replaces both before GREEN |
 | q3 | Fix for mis-typed save-states | settled by plan-26: the bridge normalises (26.4); 25.1 re-asserts on the packed path and adds no second rule |
 | q4 | Does the thin-prompt gate also suppress the STM composite | no: the composite is session-derived, not prompt-derived, and keeps its own `--composite-every` cadence; measured in 25.2 AC-5 |
-| q5 | Add an `ACK_WORDS` set beside the stoplist ("next", "ok", "continue", "go", "please") | yes, applied IN ADDITION to `_PROMPT_STOPWORDS` per [[feedback_reuse_shared_stoplist]]; otherwise "please continue" passes a 2-term gate |
+| q5 | `ACK_WORDS` beside the stoplist, and how aggressive the gate is | decided 2026-11-09: `ACK_WORDS` applied IN ADDITION to the stoplist; gate ACK-ONLY prompts only; a single content word or an issue / task number is never gated |
 | q6 | Helix repeat memory: sidecar file or derive from `helix.log` | sidecar `stm/<session>.helix.json`, the existing per-session sidecar pattern |
+| q7 | The helix phase-2 criterion's reading after dedupe | decided 2026-11-09: `rendered + suppressed` (both logged), `rendered` reported beside it, until a new pre-registered criterion supersedes it |
+| q8 | The hub neighbour behind the repeated helix line | decided 2026-11-09: fixed in 25.3 (R8), not parked |
+
+## Revision round 1 (2026-11-09) {#rev-round-1}
+
+Answers [[bsd-plan25-spec-r1-2f4a1df]] (DIRTY 0B/9S/9M at `2f4a1df`) with the orchestrator's
+decisions of 2026-11-09. Every finding is folded; per-task detail is in each spec's own
+revision-round-1 table.
+
+| finding | change | anchor |
+|---|---|---|
+| S1 per-prompt argv never reaches the verb | (a): the replica-first hybrid leg moves into `verbs._memory_recall_rows`; the CLI renders; AC-4 restated with a RED-able replica leg and a named no-daemon error | [[#principle]], [[#deltas]], [[task-25.1-recall-hook-byte-budget#r5]] |
+| S2 dropped 19.1 ACs / mutations | all carried into 25.1 (stale subject, span pre-check, global pointer, twelve mutations) | [[task-25.1-recall-hook-byte-budget#rev-round-1]] |
+| S3 no per-event branch; scan-prompt overflows | R0 three outcomes; `EVENT_SPLIT` over scan-prompt + recall + focus input + 3.7's `curator status`; scan-prompt byte cap | [[#deltas]], [[#overlap]], [[task-25.1-recall-hook-byte-budget#r0]] |
+| S4 false gates | ack-only gate; the bsd's measured false-gate set as must-pass rows; gate rate re-measured | [[#tasks]], q5, [[task-25.2-thin-prompt-gate#rev-round-1]] |
+| S5 unkillable boundary mutation | `docs/notes.md5sum` witness; `S/as.sh` as the existence witness | [[task-25.3-stm-ref-admission-and-helix-repeat#rev-round-1]] |
+| S6 criterion reading | `rendered + suppressed` | q7, [[task-25.3-stm-ref-admission-and-helix-repeat#r9]] |
+| S7 hub neighbour parked | in-plan: 25.3 R8 + AC-9 | q8, [[#tasks]] |
+| S8 / S9 BRE coverage and rule errors | trigger on any backslash; full escape set; bracket, word-anchor, `-o`, `-w`/`-x` grouping rules; BSD as authority on `\{,n\}` | [[#principle]], [[task-25.4-grep-bre-translation#rev-round-1]] |
+| M1 / M2 / M3 | pointers-only per-prompt pack; `prompt_recall` everywhere; `hooks` map into `pack` | [[task-25.1-recall-hook-byte-budget#rev-round-1]] |
+| M4 / M5 / M6 / M7 | `_PATH_RE` users and the `overlap` instrument; failure on the row; resolver reuse; existence check replaces the extension list | [[task-25.3-stm-ref-admission-and-helix-repeat#rev-round-1]] |
+| M8 out-of-scope items need rows | bug-167 split: bug-173 (fallback note), bug-174 (substring `a.b`) logged 2026-11-09 | [[#non-goals]], [[bug_registry#registry]] |
+| M9 plan-19 revision rows now | rows added to 19.0, 19.1, 19.5 | [[#prior-specs]] |
