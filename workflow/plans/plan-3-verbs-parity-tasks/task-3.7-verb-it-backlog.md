@@ -493,6 +493,15 @@ Every code fix gets a RED test first, except pure deletions and docstrings. {#re
 | R-L | lows: `with_partition` docstring; unused imports/vars; one `session_title` helper; `session show` refuses an ambiguous prefix like `refine show`; type hints on new signatures; `write_spool` fsyncs the directory; deprecation warning on the ignored `--via-replica` | all applied |
 | R-OBJC | user, 2026-10-20: "yes, ship the OBJC fix with 3.7" | `HOOK_ENV` exports `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` and `TOKENIZERS_PARALLELISM=false` (exactly what `_reexec_for_fork_safety` sets), so hook processes skip the re-exec; RED test over the generated config; README hooks table regenerated |
 
+**r1 test-side follow-ups (2026-11-08, `1df6c25`).** {#remedy-r1-test-followups}
+R-L's directory fsync broke `test_write_spool_is_tmp_fsync_rename_and_never_visible_half_written`,
+which pinned the event list to exactly `[fsync, rename]`. The test now identifies each fsync by
+`fstat` and pins `fsync(regular file) → rename (within the spool dir) → fsync(spool dir)`, with the
+file fsync on the renamed inode at its full size. Mutations, each RED then restored by
+`git checkout`: drop the pre-rename file fsync; replace the rename with copy + unlink; drop the
+directory fsync. R-RM7's kept `cli._concept_files` alias is deleted;
+`tests/test_concept_timeline.py` imports `concept_files` from `graphread`.
+
 ## Definition of done {#done}
 
 - Each family: RED (recorder/parity/defect rows) before GREEN; mutation check; summary rows in
