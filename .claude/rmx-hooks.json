@@ -1,5 +1,5 @@
 {
-  "version": "0.77.0",
+  "version": "0.80.2",
   "flags": {
     "claude": true,
     "memory_hooks": true,
