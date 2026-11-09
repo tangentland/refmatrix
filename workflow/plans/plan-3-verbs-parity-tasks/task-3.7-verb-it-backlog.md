@@ -825,6 +825,35 @@ was empty after each.
   error other than `TimeoutError`, such as a hub that accepts and then closes, or one that
   answers `ok: false`. That killer is also requested from ch-test-engineer.
 
+**r5 GREEN killers (ch-test-engineer).** {#remedy-r5-killers} Both survivors are now killed,
+by tests added to `tests/test_task3_7_remedy_r5.py` (15/15 at HEAD, `r5-killers-head.log`).
+Each mutation was applied with `src` clean, run, and restored with `git checkout -- src/...`
+in its own command; `src/**/__pycache__` was cleared and `git status --short src` was empty
+after each.
+
+- `first = True` (`modelsrv.env_float`): KILLED, 2 failed and 13 passed
+  (`r5-killers-mut-once.log`). `test_a_malformed_knob_read_many_times_warns_once_per_name_and_value`
+  reads `RMX_SHARED_REPROBE_S='300s'` 7 times (4 via `_reprobe_window()`, 3 via
+  `env_float`). Exactly one WARNING is expected; the mutant logged 7. A second distinct value
+  (`5m`) adds exactly one more, and a repeat of `300s` adds none.
+  `test_a_typod_cap_reread_on_every_request_path_probe_warns_once` uses the process-level
+  shape: base `0` and cap `30m`, with 4 request-path calls served by the private worker. A
+  pass-through spy shows the cap is read 3 or more times. Exactly one warning is expected; the
+  mutant logged 4. The `env_warned` fixture resets `_ENV_WARNED`.
+- `cold = stage == "header"` (`recall.reprobe_shared_client`): KILLED, 2 failed and 13 passed
+  (`r5-killers-mut-type.log`). The test is
+  `test_a_header_stage_failure_that_is_not_a_timeout_still_doubles` `[error]` / `[eof]`.
+  `_FailingHeaderHub` is a real unix socket that accepts the connection (so
+  `shared_available` passes and the probe reaches the header stage). It then either answers
+  `{"ok": false}`, which gives `WorkerError`, or closes the connection, which gives `EOFError`
+  after the client's one reconnect. The backoff must double from 100 to 200. The mutant
+  re-armed it at base 100.
+
+bug-184 (a task-21.1 flake that predates r5) was fixed test-side in the same commit. Every
+AC-11/R12 setup in `tests/test_task21_1_used_events.py` that needs a delivery now goes through
+`_prompt_recall_delivering`, which now accepts a tuple of names. The row is in
+`workflow/bug_registry.md`.
+
 ## Definition of done {#done}
 
 - Each family: RED (recorder/parity/defect rows) before GREEN; mutation check; summary rows in

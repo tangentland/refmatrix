@@ -369,3 +369,158 @@ def test_a_request_path_probe_of_a_cold_hub_rearms_at_base(rig5, monkeypatch):
         f"ch-bsd r5 #m-3: a request-path probe of a hub whose worker is cold (connected, "
         f"header timed out) doubled the re-probe window: backoff={back}s, next in "
         f"{nxt - t0:.1f}s (base 2 s). {logs}")
+
+
+# ---- r5 GREEN killers (spec #remedy-r5-green; requested from ch-test-engineer) --------------
+#
+# Two GREEN lines survived their mutations (`r5-green-mut-once.log`, `r5-green-mut-type.log`):
+#   once  `first = True` in `modelsrv.env_float`: the M-2 test reads the env only ONCE per
+#         process (calls 2-4 fall inside the 300 s window), so nothing counted a second read.
+#   type  `cold = stage == "header"`: no test reached the header stage with an error that is
+#         NOT a `TimeoutError`, so "any header-stage failure is cold" passed everything.
+
+
+@pytest.fixture
+def env_warned(monkeypatch):
+    """A fresh `modelsrv._ENV_WARNED` (process-wide: a (name, value) another test already
+    warned for would make this test's first read silent)."""
+    fresh: set = set()
+    monkeypatch.setattr(modelsrv, "_ENV_WARNED", fresh)
+    return fresh
+
+
+def _env_warnings(caplog, name: str) -> list:
+    """The `env_float` WARNINGs for `name`, as the raw values they named (matched on the
+    record's args, so `RMX_SHARED_REPROBE_S` never counts a `..._MAX_S` warning)."""
+    return [r.args[1] for r in caplog.records
+            if r.name == "refmatrix.modelsrv" and r.levelno >= logging.WARNING
+            and isinstance(r.args, tuple) and len(r.args) >= 2 and r.args[0] == name]
+
+
+@pytest.mark.timeout(30)
+def test_a_malformed_knob_read_many_times_warns_once_per_name_and_value(
+        env_warned, monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="refmatrix.modelsrv")
+    monkeypatch.setenv("RMX_SHARED_REPROBE_S", "300s")
+    monkeypatch.delenv("RMX_SHARED_REPROBE_MAX_S", raising=False)
+
+    windows = [recall_mod._reprobe_window() for _ in range(4)]
+    direct = [modelsrv.env_float("RMX_SHARED_REPROBE_S", 300.0) for _ in range(3)]
+    assert windows == [(300.0, 1800.0)] * 4 and direct == [300.0] * 3, (windows, direct)
+    assert _env_warnings(caplog, "RMX_SHARED_REPROBE_S") == ["300s"], (
+        f"ch-bsd r5 #m-2 GREEN: 7 reads of the SAME malformed RMX_SHARED_REPROBE_S='300s' "
+        f"in one process must warn exactly ONCE (the per-call read of `_reprobe_window` "
+        f"would otherwise flood the log): {_env_warnings(caplog, 'RMX_SHARED_REPROBE_S')}")
+
+    monkeypatch.setenv("RMX_SHARED_REPROBE_S", "5m")       # a second, distinct typo
+    for _ in range(3):
+        assert recall_mod._reprobe_window() == (300.0, 1800.0)
+    monkeypatch.setenv("RMX_SHARED_REPROBE_S", "300s")     # the first one again
+    assert recall_mod._reprobe_window() == (300.0, 1800.0)
+    assert _env_warnings(caplog, "RMX_SHARED_REPROBE_S") == ["300s", "5m"], (
+        f"once per (name, value): a distinct bad value warns once more, a repeat of an "
+        f"already-named value never does: {_env_warnings(caplog, 'RMX_SHARED_REPROBE_S')}")
+    assert ("RMX_SHARED_REPROBE_S", "300s") in env_warned
+    assert ("RMX_SHARED_REPROBE_S", "5m") in env_warned
+
+
+@pytest.mark.timeout(60)
+def test_a_typod_cap_reread_on_every_request_path_probe_warns_once(
+        rig5, env_warned, monkeypatch, caplog):
+    """The process-level shape: base `0` puts a re-probe on EVERY call, so the typo'd cap
+    is re-read by `_reprobe_window` each time; the private worker serves throughout."""
+    monkeypatch.setenv("RMX_SHARED_MODELS", "1")
+    monkeypatch.setenv("RMX_SHARED_REPROBE_S", "0")
+    monkeypatch.setenv("RMX_SHARED_REPROBE_MAX_S", "30m")
+    caplog.set_level(logging.WARNING, logger="refmatrix.modelsrv")
+    root, logs = rig5["root"], []
+    assert not rig5["sock"].exists()             # no hub: each re-probe misses
+
+    reads: list = []
+    real_window = recall_mod._reprobe_window
+
+    def _counting_window():
+        reads.append(1)
+        return real_window()
+
+    monkeypatch.setattr(recall_mod, "_reprobe_window", _counting_window)
+    calls = [_one_call(root, logs) for _ in range(4)]
+    assert all(o["ok"] and o["model"] == "stub/private" for o in calls), _brief(calls)
+    assert len(reads) >= 3, (
+        f"precondition: the typo'd cap was read only {len(reads)}x in 4 calls (base 0 "
+        f"should re-probe on every call): {logs}")
+    assert _env_warnings(caplog, "RMX_SHARED_REPROBE_MAX_S") == ["30m"], (
+        f"{len(reads)} reads of RMX_SHARED_REPROBE_MAX_S='30m' must warn exactly once: "
+        f"{_env_warnings(caplog, 'RMX_SHARED_REPROBE_MAX_S')}")
+
+
+class _FailingHeaderHub(_StubHub):
+    """A hub that ACCEPTS (so `shared_available` passes and the probe reaches the header
+    stage) and then fails the `info` with something that is not a timeout:
+      `error`  answers `{"ok": false}` (a hub whose worker failed to start), which
+               `SharedWorkerClient._call_once` raises as `WorkerError`;
+      `eof`    reads the frame and closes the connection (a hub dying mid-request), which
+               the client's one reconnect meets again and raises as `EOFError`.
+    Neither is a cold worker; both must double like any other miss."""
+
+    def __init__(self, path, *, mode: str):
+        self.mode = mode                         # set before the accept thread starts
+        super().__init__(path, answer=True)
+
+    def _handle(self, conn):
+        rw = conn.makefile("rwb")
+        try:
+            try:
+                req, _ = recv_frame(rw)
+            except (EOFError, OSError):
+                return
+            if self.mode == "error":
+                try:
+                    send_frame(rw, {"ok": False, "error": "worker failed to start (stub)",
+                                    "op": req.get("op")})
+                except OSError:
+                    return
+        finally:
+            try:
+                rw.close()
+            finally:
+                conn.close()
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.parametrize("mode", ["error", "eof"])
+def test_a_header_stage_failure_that_is_not_a_timeout_still_doubles(
+        rig5, monkeypatch, mode):
+    monkeypatch.setenv("RMX_SHARED_MODELS", "1")
+    monkeypatch.setenv("RMX_SHARED_REPROBE_S", "100")
+    monkeypatch.setenv("RMX_SHARED_REPROBE_MAX_S", "1000")
+    sock, logs = rig5["sock"], []
+    nxt: dict = {}
+    back: dict = {}
+    t = 1_000_000.0
+    recall_mod.hold_reprobe("embed", next_at=nxt, backoff=back, now=t)
+    assert back["embed"] == 100.0, back           # precondition: backoff = base
+    t = nxt["embed"]
+
+    hub = _FailingHeaderHub(sock, mode=mode)
+    try:
+        assert modelsrv.shared_available(), "precondition: the stub hub does not accept"
+        client = recall_mod.reprobe_shared_client(
+            "embed", next_at=nxt, backoff=back, log=logs.append, now=t, probe_timeout=5.0)
+        assert client is None, client
+        assert _settle(hub) >= 2, (
+            f"precondition: the probe never reached the header stage (connections="
+            f"{hub.connections}; `shared_available` is one): {logs}")
+    finally:
+        hub.close()
+
+    unusable = [m for m in logs if "shared worker still unusable" in m]
+    assert unusable and "TimeoutError" not in unusable[-1], (
+        f"precondition: the miss was not logged, or the header failed by timeout: {logs}")
+    waited = round(nxt["embed"] - t)
+    assert waited == 200 and back["embed"] == 200.0, (
+        f"ch-bsd r5 #m-3: the hub accepted and the info header failed with a NON-timeout "
+        f"error ({mode}); only a header TIMEOUT is a cold worker, so this miss must double "
+        f"(base 100 -> 200), yet the next re-probe waits {waited}s (backoff={back}). {logs}")
+    assert "cold" not in unusable[-1], (
+        f"a non-timeout header failure was reported as a cold worker: {unusable[-1]}")
