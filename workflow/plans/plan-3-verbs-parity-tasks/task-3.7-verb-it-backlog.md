@@ -502,6 +502,29 @@ file fsync on the renamed inode at its full size. Mutations, each RED then resto
 directory fsync. R-RM7's kept `cli._concept_files` alias is deleted;
 `tests/test_concept_timeline.py` imports `concept_files` from `graphread`.
 
+## Remedy round 2 (2026-11-08) {#remedy-r2}
+
+Source: ch-bsd re-audit `workflow/bullshit/2026-11-08-2256-task-3.7-remedy-r1-2a4096c.md` #s-1
+(SKETCHY): R-H1's process-wide embed client `recall._EMBED_CLIENT` is never dropped, so after the
+hub dies a daemonless process keeps the dead hub-shared client.
+
+**RED (R2-S1).** `tests/test_task3_7_remedy_r2.py`, red log
+`workflow/review-output/task-3.7/r2-red-embed-client.log`. A real `ModelServer` in a subprocess
+is SIGKILLed after one successful call. Then: (1) `test_a_hub_crash_does_not_pin_the_process_to_its_dead_shared_client`.
+After the first failed call, later calls must not hold the dead client. They must embed through a
+fresh private worker that is shared across calls, and the in-process model may load at most once.
+At HEAD all three calls fail with `ConnectionRefusedError` on the same dead client, and no fallback
+runs. (2) `test_a_cached_client_that_fails_in_shared_embedder_is_dropped_not_retried` uses the
+audit probe's shape: a cached client with no header and no hub. At HEAD the in-process model loads
+3 times and the dead client stays cached. {#remedy-r2-red}
+
+**GREEN must cover both paths.** The audit's fix (drop the cache in `shared_embedder`'s `except`
+branch) turns only (2) green. On the real path `SharedWorkerClient.info()` returns its cached
+header without touching the socket, so `RemoteEmbedder.dim` succeeds and the failure surfaces
+later in `embed_texts`, outside that branch. After a failed call the client's `alive()` is False
+(`close()` nulls `_sock`), which is one signal that `_process_embed_client` could check. R13
+(`test_no_daemon_graph_calls_share_one_embed_client`) must stay green. {#remedy-r2-green-note}
+
 ## Definition of done {#done}
 
 - Each family: RED (recorder/parity/defect rows) before GREEN; mutation check; summary rows in
