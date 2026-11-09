@@ -167,4 +167,4 @@ rel: implements -> [[#remedy-r2]]
   compares the whole `clear_tracked_stamps` result to a fixed dict. The key that
   [[#r2-b1]] requires is missing from that dict, so the test fails on
   `{'gmd_hashes_skipped': 0}`. The fix is to add `"gmd_hashes_skipped": 0` to the expected dict.
-  The implementer does not edit tests. {#r2g-gap}
+  The implementer does not edit tests. Closed by `d4ea1fa`. {#r2g-gap}
