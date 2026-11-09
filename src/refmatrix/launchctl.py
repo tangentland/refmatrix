@@ -396,7 +396,14 @@ def render_plist(root: Path, *, partition: str | None = None,
         "ExitTimeOut": int(EXIT_TIMEOUT_S),
         "StandardOutPath": str(root / "daemon.stdout.log"),
         "StandardErrorPath": str(root / "daemon.stderr.log"),
-        "ProcessType": "Background",
+        # NOT Background (bug-176, 2026-11-09): a store daemon answers interactive
+        # hook budgets (Stop promote, scan-prompt, recall) through its one writer.
+        # At Background it runs on throttled efficiency cores whenever the
+        # performance cores are busy: under three reingests a `sync --since HEAD~1`
+        # of a few markdown files held the refmatrix writer 71.7 s, two Stop
+        # promotes timed out at 5 s and scan-prompt took 12.8 s. Same fix as the
+        # hub's (bug-162).
+        "ProcessType": "Standard",
     }
     return plistlib.dumps(plist)
 
