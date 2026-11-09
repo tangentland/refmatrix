@@ -103,10 +103,10 @@ def rig(monkeypatch):
     monkeypatch.setenv("RMX_MODEL_SOCK", str(sock))
     monkeypatch.setenv("RMX_SHARED_MODELS", "1")
     monkeypatch.setenv("RMX_EMBED_SUBPROC", "1")
-    # ALL four process-wide globals (ch-bsd r2 #m-2: only `_EMBED_CLIENT` was reset, so
-    # ISSUED / REBUILDS / ATEXIT leaked from test to test and order decided the outcome).
+    # ALL process-wide globals (ch-bsd r2 #m-2: only `_EMBED_CLIENT` was reset, so
+    # REBUILDS / ATEXIT leaked from test to test and order decided the outcome). The
+    # ISSUED global went with its conjunct in remedy r3.
     monkeypatch.setattr(recall_mod, "_EMBED_CLIENT", None)
-    monkeypatch.setattr(recall_mod, "_EMBED_CLIENT_ISSUED", None)
     monkeypatch.setattr(recall_mod, "_EMBED_CLIENT_REBUILDS", 0)
     monkeypatch.setattr(recall_mod, "_EMBED_CLIENT_ATEXIT", False)
     # atexit recorder: every callable `refmatrix.recall` registers is recorded and NOT

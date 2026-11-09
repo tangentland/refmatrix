@@ -297,10 +297,9 @@ def test_no_daemon_graph_calls_share_one_embed_client(root, monkeypatch):
     # Off the machine's live hub socket: a cached non-shared client may be re-probed
     # against the hub (remedy r3 S-1), and this test's fake is not a worker.
     monkeypatch.setenv("RMX_SHARED_MODELS", "0")
-    # All four process-wide globals (ch-bsd r2 #m-2/#m-3): a leaked ATEXIT flag made the
+    # All process-wide globals (ch-bsd r2 #m-2/#m-3): a leaked ATEXIT flag made the
     # registration count below 0 whatever the code did.
     monkeypatch.setattr(recall_mod, "_EMBED_CLIENT", None)
-    monkeypatch.setattr(recall_mod, "_EMBED_CLIENT_ISSUED", None)
     monkeypatch.setattr(recall_mod, "_EMBED_CLIENT_REBUILDS", 0)
     monkeypatch.setattr(recall_mod, "_EMBED_CLIENT_ATEXIT", False)
     clients: list = []
