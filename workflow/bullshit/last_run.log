@@ -12,3 +12,4 @@
 2026-11-09T01:41:13-0800 commit=2f64edb verdict=DIRTY findings=13 (0B/4S/9M) report=2026-11-09-0141-plan-25-spec-r3-2f64edb.md
 2026-11-09T01:54:10-0800 commit=9bcf464 verdict=DIRTY findings=11 (2B/3S/6M) report=2026-11-09-0154-plan23-1-2-freshness-9bcf464.md
 2026-11-09T02:02:24-0800 commit=cdd6720 verdict=DIRTY findings=6 (0B/1S/5M) report=2026-11-09-0202-plan-25-spec-confirm-r4-lite-cdd6720.md
+2026-11-09T02:05:39-0800 commit=c5f91e4 verdict=DIRTY findings=10 (0B/3S/7M) report=2026-11-09-0205-bug179-spec-r1-c5f91e4.md
