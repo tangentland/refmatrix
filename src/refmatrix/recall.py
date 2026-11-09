@@ -320,9 +320,35 @@ def new_model_client(role: str, *, log: "Callable[[str], None] | None" = None,
     return client
 
 
+def _reprobe_window() -> "tuple[float, float]":
+    """The re-probe backoff window `(base, cap)`: `RMX_SHARED_REPROBE_S` (default 300 s)
+    and `RMX_SHARED_REPROBE_MAX_S` (1800 s), read per call so an operator's env applies."""
+    import os
+    base = float(os.environ.get("RMX_SHARED_REPROBE_S", "300") or "300")
+    cap = float(os.environ.get("RMX_SHARED_REPROBE_MAX_S", "1800") or "1800")
+    return base, cap
+
+
+def hold_reprobe(role: str, *, next_at: "dict[str, float]", backoff: "dict[str, float]",
+                 now: "float | None" = None) -> None:
+    """A hub decision was JUST made for `role` and it went private: the next re-probe
+    waits one base window (`next_at = now + base`, `backoff = base`).
+
+    Task 3.7 remedy r4 (ch-bsd r3 #s-1, 2026-11-09): r3 CLEARED the throttle after every
+    build, so a build that had just probed the hub, failed and gone private told the very
+    next call to probe again at once; behind a mute hub that was a second full probe on
+    the request path. The build's own probe IS the first attempt of the window."""
+    import time
+    base, _cap = _reprobe_window()
+    now = time.time() if now is None else float(now)
+    backoff[role] = base
+    next_at[role] = now + base
+
+
 def reprobe_shared_client(role: str, *, next_at: "dict[str, float]",
                           backoff: "dict[str, float]", log: "Callable[[str], None]",
-                          now: "float | None" = None):
+                          now: "float | None" = None,
+                          probe_timeout: "float | None" = None):
     """THE re-probe of the hub's shared model socket for a holder of a PRIVATE `role`
     worker: a connected `SharedWorkerClient` when the hub answers now, else None.
 
@@ -336,8 +362,12 @@ def reprobe_shared_client(role: str, *, next_at: "dict[str, float]",
     swap; this owns the probe and the backoff rule. A failed probe doubles the wait from
     `RMX_SHARED_REPROBE_S` (default 300 s) up to `RMX_SHARED_REPROBE_MAX_S` (1800 s), so a
     machine that will never have a hub does not probe at full rate forever. A success
-    clears the role's state."""
-    import os
+    clears the role's state.
+
+    `probe_timeout` bounds the header probe. Default `modelsrv.PROBE_TIMEOUT_S`, the
+    cold-worker bound, for the daemon's background tick. A caller on a REQUEST path passes
+    `modelsrv.REQUEST_PROBE_TIMEOUT_S` (1.0 s; task 3.7 remedy r4, ch-bsd r3 #s-1,
+    2026-11-09): behind a mute hub the r3 request path paid the 45 s cold bound per call."""
     import time
 
     from refmatrix import modelsrv
@@ -346,14 +376,14 @@ def reprobe_shared_client(role: str, *, next_at: "dict[str, float]",
     now = time.time() if now is None else float(now)
     if now < next_at.get(role, 0.0):
         return None
-    base = float(os.environ.get("RMX_SHARED_REPROBE_S", "300") or "300")
-    cap = float(os.environ.get("RMX_SHARED_REPROBE_MAX_S", "1800") or "1800")
+    base, cap = _reprobe_window()
+    bound = modelsrv.PROBE_TIMEOUT_S if probe_timeout is None else float(probe_timeout)
     client = None
     try:
         if modelsrv.shared_available(timeout=0.5):
             from refmatrix.daemon import SHARED_OP_TIMEOUT_S
             client = modelsrv.SharedWorkerClient(role, log=log, timeout=SHARED_OP_TIMEOUT_S)
-            client.info(timeout=modelsrv.PROBE_TIMEOUT_S)
+            client.info(timeout=bound)
     except Exception as exc:  # noqa: BLE001 — logged; the private worker keeps serving
         if client is not None:
             try:
@@ -394,9 +424,18 @@ _EMBED_CLIENT_ATEXIT = False
 _EMBED_CLIENT_LOCK = threading.Lock()
 # The re-probe throttle of THIS process's private embed client, in the shape
 # `reprobe_shared_client` shares with the daemon (`Daemon._reprobe_next` / `_backoff`).
-# Cleared whenever a fresh client is built: that build just made its own hub decision.
+# A build that went private SETS it (`hold_reprobe`); a build that got the hub clears it
+# (task 3.7 remedy r4, ch-bsd r3 #s-1: r3 cleared it after every build).
 _EMBED_REPROBE_NEXT: "dict[str, float]" = {}
 _EMBED_REPROBE_BACKOFF: "dict[str, float]" = {}
+# True while one caller runs the request-path re-probe OUTSIDE `_EMBED_CLIENT_LOCK`;
+# every other caller keeps the cached client instead of queueing a second probe
+# (remedy r4, ch-bsd r3 #s-1). Read and written only under the lock.
+_EMBED_REPROBE_INFLIGHT = False
+# The in-process model standing in for a cached client whose worker could not serve
+# (bug-173, remedy r4): `(client, embedder)`. Valid only while `_EMBED_CLIENT is client`.
+_EMBED_INPROC: "tuple[object, object] | None" = None
+_EMBED_INPROC_LOCK = threading.Lock()
 
 
 def _close_process_embed_client() -> None:
@@ -417,7 +456,9 @@ def _embed_client_is_dead(client) -> bool:
     dropped the "was it handed out" conjunct, ch-bsd r2 #m-2). A private `WorkerClient`
     respawns its own process on the next call (`_ensure`), so a dead private process is
     not a reason to rebuild; a private client is REPLACED by the hub's once the hub
-    answers (`_process_embed_client`), not rebuilt."""
+    answers (`_process_embed_client`), not rebuilt. A private client whose worker could
+    not start at all is served by the cached in-process stand-in (`_EMBED_INPROC`,
+    bug-173) until then."""
     from refmatrix.modelsrv import SharedWorkerClient
     return isinstance(client, SharedWorkerClient) and not client.alive()
 
@@ -439,15 +480,24 @@ def _process_embed_client(log: "Callable[[str], None]",
       shared worker once the hub answers again, through `reprobe_shared_client`, the same
       probe and backoff knobs (`RMX_SHARED_REPROBE_S` / `_MAX_S`) a daemon's tick uses.
       The private worker is retired (not just closed) so a caller that captured it before
-      the swap cannot respawn it. The probe runs under this lock on purpose: two
-      concurrent calls must not both adopt.
+      the swap cannot respawn it.
+    - remedy r4 (2026-11-09, ch-bsd r3 #s-1): that re-probe runs on a REQUEST path, so it
+      is bounded by `modelsrv.REQUEST_PROBE_TIMEOUT_S` (1.0 s), not the 45 s cold-worker
+      `PROBE_TIMEOUT_S`, and it runs OUTSIDE `_EMBED_CLIENT_LOCK` behind the
+      `_EMBED_REPROBE_INFLIGHT` flag: a concurrent caller keeps the cached private client
+      instead of waiting for the lock and then probing again (r3: 45 s then 90 s behind a
+      mute hub). The lock is taken again only for the swap, which still happens once. A
+      build that went private SETS the throttle (`hold_reprobe`): its own probe was the
+      window's first attempt.
 
     `warn` carries what the operator must see (the rebuild and its count): a WARNING on
     this module's logger when no `log` was injected (remedy r3, ch-bsd r2 #m-1)."""
     import atexit
 
+    from refmatrix import modelsrv
     from refmatrix.modelsrv import SharedWorkerClient
     global _EMBED_CLIENT, _EMBED_CLIENT_REBUILDS, _EMBED_CLIENT_ATEXIT
+    global _EMBED_REPROBE_INFLIGHT, _EMBED_INPROC
     warn = warn or log
     with _EMBED_CLIENT_LOCK:
         cached = _EMBED_CLIENT
@@ -457,29 +507,117 @@ def _process_embed_client(log: "Callable[[str], None]",
                  f"dropping it and building a fresh client "
                  f"(rebuild #{_EMBED_CLIENT_REBUILDS} in this process)")
             _EMBED_CLIENT = None
+            _EMBED_INPROC = None          # a stand-in keyed to the dropped client goes
             try:
                 cached.close()
             except Exception as exc:  # noqa: BLE001 — named; the rebuild proceeds
                 warn(f"embed: closing the dead hub-shared client failed: {exc!r}")
-        elif cached is not None and not isinstance(cached, SharedWorkerClient):
-            shared = reprobe_shared_client("embed", next_at=_EMBED_REPROBE_NEXT,
-                                           backoff=_EMBED_REPROBE_BACKOFF, log=log)
-            if shared is not None:
-                _EMBED_CLIENT = shared
-                pid = getattr(getattr(cached, "_proc", None), "pid", "?")
-                try:
-                    getattr(cached, "retire", cached.close)(timeout=2.0)
-                except Exception as exc:  # noqa: BLE001 — the swap already happened
-                    warn(f"embed: private worker close failed after adoption: {exc!r}")
-                log(f"embed: adopted hub-shared worker; closed private worker pid={pid}")
         if _EMBED_CLIENT is None:
             _EMBED_CLIENT = new_model_client("embed", log=log)
-            _EMBED_REPROBE_NEXT.clear()
-            _EMBED_REPROBE_BACKOFF.clear()
+            if isinstance(_EMBED_CLIENT, SharedWorkerClient):
+                _EMBED_REPROBE_NEXT.clear()
+                _EMBED_REPROBE_BACKOFF.clear()
+            else:
+                hold_reprobe("embed", next_at=_EMBED_REPROBE_NEXT,
+                             backoff=_EMBED_REPROBE_BACKOFF)
             if not _EMBED_CLIENT_ATEXIT:
                 atexit.register(_close_process_embed_client)
                 _EMBED_CLIENT_ATEXIT = True
-        return _EMBED_CLIENT
+            return _EMBED_CLIENT
+        if isinstance(cached, SharedWorkerClient) or _EMBED_REPROBE_INFLIGHT:
+            return cached
+        _EMBED_REPROBE_INFLIGHT = True
+    # The request-path re-probe, outside the lock: only this caller runs it.
+    shared = None
+    try:
+        shared = reprobe_shared_client("embed", next_at=_EMBED_REPROBE_NEXT,
+                                       backoff=_EMBED_REPROBE_BACKOFF, log=log,
+                                       probe_timeout=modelsrv.REQUEST_PROBE_TIMEOUT_S)
+    finally:
+        with _EMBED_CLIENT_LOCK:
+            _EMBED_REPROBE_INFLIGHT = False
+            swapped = shared is not None and _EMBED_CLIENT is cached
+            if swapped:
+                _EMBED_CLIENT = shared
+                _EMBED_INPROC = None      # the in-process stand-in (if any) goes too
+            current = _EMBED_CLIENT
+    if shared is not None and not swapped:
+        # Unreachable while the flag holds (only a dead SHARED client is ever replaced
+        # under it), armed so a future path cannot leak a hub connection.
+        log("embed: the cached client changed during the re-probe; closing the probe's "
+            "hub-shared client unused")
+        try:
+            shared.close()
+        except Exception as exc:  # noqa: BLE001 — named; the cached client serves
+            warn(f"embed: closing the unused hub-shared client failed: {exc!r}")
+    if swapped:
+        pid = getattr(getattr(cached, "_proc", None), "pid", "?")
+        try:
+            getattr(cached, "retire", cached.close)(timeout=2.0)
+        except Exception as exc:  # noqa: BLE001 — the swap already happened
+            warn(f"embed: private worker close failed after adoption: {exc!r}")
+        log(f"embed: adopted hub-shared worker; closed private worker pid={pid}")
+    return current
+
+
+def _process_inproc_standin(client):
+    """The cached in-process model standing in for `client`, or None (bug-173)."""
+    held = _EMBED_INPROC
+    if held is not None and client is not None and held[0] is client:
+        return held[1]
+    return None
+
+
+def _load_process_inproc_standin(client, say: "Callable[[str], None]"):
+    """Load the in-process model ONCE as the stand-in for `client`, the cached private
+    client whose worker could not serve (bug-173, task 3.7 remedy r4, ch-bsd r3 #b-1,
+    2026-11-09).
+
+    Before r4 a daemonless process whose private worker could not spawn (a sandbox that
+    forbids it, an interpreter the child cannot reach) built a fresh `Embedder()` on EVERY
+    call: 3 calls, 3 loads of ~610 MB and 6-33 s each, under `RMX_SHARED_MODELS` 0 and 1.
+    Now the process does what a daemon does in the same state (`Daemon._embedder`'s
+    `on_fallback` drops its private worker and keeps `_embedder_inst`): it keeps ONE
+    in-process model and stops respawning the failed worker. The stand-in is keyed to the
+    cached client, so it lives exactly as long as that client is the process's choice:
+    when the hub answers again, `_process_embed_client`'s re-probe swaps the client and
+    drops the stand-in (as `Daemon._maybe_adopt_shared` drops `_embedder_inst`), so the
+    cached fallback never pins the process off the hub. Under `RMX_SHARED_MODELS=0` there
+    is no hub to return to, and the process stays in-process for its life, as a daemon
+    does.
+
+    The failed worker is closed (its exited process reaped); it stays cached as the key
+    and is retired by the swap. The load runs under its own lock: two callers that fail
+    together load once, and neither holds `_EMBED_CLIENT_LOCK` through a model load. A
+    `client` of None (the client build itself raised) is not cached: that call loads and
+    says so."""
+    global _EMBED_INPROC
+    from refmatrix.embedder import Embedder
+    if client is None:
+        say("embed: no process embed client was built; loading an UNCACHED in-process "
+            "model for this call")
+        e = Embedder()
+        _ = e.dim
+        return e
+    with _EMBED_INPROC_LOCK:
+        held = _process_inproc_standin(client)
+        if held is not None:
+            return held
+        try:
+            client.close()
+        except Exception as exc:  # noqa: BLE001 — named; the stand-in still loads
+            say(f"embed: closing the private worker that could not serve failed: {exc!r}")
+        e = Embedder()
+        _ = e.dim
+        with _EMBED_CLIENT_LOCK:
+            if _EMBED_CLIENT is client:
+                _EMBED_INPROC = (client, e)
+            else:
+                say("embed: the process embed client changed during the in-process load; "
+                    "this model serves the call and is not cached")
+        say(f"embed: in-process model cached as this process's stand-in for its private "
+            f"worker (loaded once; dropped when the hub is re-adopted)")
+        return e
 
 
 def shared_embedder(root, *, remote: "Callable[[], object] | None" = None,
@@ -492,6 +630,9 @@ def shared_embedder(root, *, remote: "Callable[[], object] | None" = None,
     `Daemon._embedder` passes its own `remote` builder (over its cached worker client),
     `log` and `on_fallback` (which drops its private worker); a daemonless caller — the
     verb's C4a branch — passes none and gets a worker client of its own, closed at exit.
+    A daemonless caller whose worker could not serve gets ONE cached in-process model for
+    as long as that client stays the process's choice (bug-173, remedy r4,
+    `_load_process_inproc_standin`), never a fresh load per call.
     Raises ImportError when the [dense] extra is missing; callers surface that cleanly."""
     import logging
 
@@ -504,11 +645,19 @@ def shared_embedder(root, *, remote: "Callable[[], object] | None" = None,
     # fallback reached no one. An injected `log` (the daemon's file) gets both lines.
     warn = log or logging.getLogger(__name__).warning
     if subproc_embed_enabled():
+        client = None
         try:
             if remote is not None:
                 e = remote()
             else:
-                e = remote_embedder(_process_embed_client(say, warn))
+                client = _process_embed_client(say, warn)
+                held = _process_inproc_standin(client)
+                if held is not None:
+                    say(f"embedder: serving the cached in-process model (the private "
+                        f"worker could not serve; re-probing the hub) "
+                        f"model={getattr(held, 'model_name', '?')}")
+                    return held
+                e = remote_embedder(client)
             say(f"embedder loaded (subprocess) model={e.model_name} dim={e.dim}")
             return e
         except ImportError:
@@ -523,6 +672,10 @@ def shared_embedder(root, *, remote: "Callable[[], object] | None" = None,
                  "RMX_EMBED_SUBPROC=0 to silence this, or investigate the spawn failure.")
             if on_fallback is not None:
                 on_fallback()
+            if remote is None:
+                e = _load_process_inproc_standin(client, say)
+                say(f"embedder loaded model={e.model_name} dim={e.dim}")
+                return e
     from refmatrix.embedder import Embedder
     e = Embedder()
     _ = e.dim

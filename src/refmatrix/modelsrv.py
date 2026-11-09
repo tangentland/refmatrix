@@ -67,6 +67,20 @@ def shared_enabled() -> bool:
 # socket (hub mid-restart) still costs at most this long, once per role.
 PROBE_TIMEOUT_S = float(os.environ.get("RMX_SHARED_PROBE_TIMEOUT_S", "45") or "45")
 
+# REQUEST-PATH re-probe bound (task 3.7 remedy r4, ch-bsd r3 #s-1, 2026-11-09). A
+# daemonless process (`rmx mcp`, the CLI) holding a PRIVATE embed worker re-probes the
+# hub inside an embed call (`recall._process_embed_client`), because it has no
+# background tick. r3 used `PROBE_TIMEOUT_S` there: behind a hub that accepts and never
+# answers, two concurrent calls took 45 s and 90 s and the next call 45 s again. That
+# bound exists for a COLD worker's model load (bug-014) and belongs to the first build
+# (`new_model_client`) and the daemon's tick, never to a request. Here the hub either
+# answers its header at once or it does not: 1.0 s is twice `shared_available`'s 0.5 s
+# connect bound. A cold hub worker misses it, but the probe has already asked the hub to
+# start that worker, so the next re-probe (one backoff window later) finds it warm.
+# Env `RMX_SHARED_REQUEST_PROBE_TIMEOUT_S`.
+REQUEST_PROBE_TIMEOUT_S = float(
+    os.environ.get("RMX_SHARED_REQUEST_PROBE_TIMEOUT_S", "1.0") or "1.0")
+
 
 def shared_available(timeout: float = 0.5) -> bool:
     """Cheap probe: is something listening on the model socket?
