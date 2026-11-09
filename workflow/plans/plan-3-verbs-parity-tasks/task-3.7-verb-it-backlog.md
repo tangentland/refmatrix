@@ -772,6 +772,59 @@ the same 5 failed, 37 passed (`r5-mutations.log`, tail).
 Doubles: registry rows "task 3.7 remedy r4" (now with the `shared_available` spy) and "task
 3.7 remedy r5".
 
+**GREEN `55a5e8d` (M-2, M-3).** {#remedy-r5-green} M-2: `modelsrv.env_float(name, default)`
+is now the only parser for the shared-model knobs: `RMX_SHARED_REPROBE_S`,
+`RMX_SHARED_REPROBE_MAX_S` (through `recall._reprobe_window`), `RMX_SHARED_PROBE_TIMEOUT_S`,
+`RMX_SHARED_REQUEST_PROBE_TIMEOUT_S` (the module constants) and `RMX_SHARED_OP_TIMEOUT_S`
+(`daemon._shared_op_timeout_default`). Unset or empty gives the default with no warning. A
+value that is not a finite, non-negative number gives the default and ONE WARNING on
+`refmatrix.modelsrv` that names the variable and the value. "Once" means once per
+`(name, value)` per process, kept in `_ENV_WARNED` under a lock. So `_reprobe_window` can no
+longer raise, and a typo in a probe timeout can no longer make `import` raise.
+`hold_reprobe` now returns early when `not modelsrv.shared_enabled()`. M-3:
+`reprobe_shared_client` records which stage it reached. It is `connect` until
+`shared_available` succeeds and `header` after that. If the `info` probe then raises
+`TimeoutError` (which `SharedWorkerClient.call` re-raises for a bounded read that expired),
+the hub is cold. The probe re-arms at base (`backoff = base`, `next_at = now + base`), and the
+log line still contains "shared worker still unusable". Three cases still double: an absent
+socket file, a refused connect (`shared_available` False), and any other exception, including
+`ConnectionRefusedError` from inside `info`. There is one implementation, so the request path
+(1.0 s probe) and `Daemon._maybe_adopt_shared` (45 s probe) both get the fix. The
+`REQUEST_PROBE_TIMEOUT_S` comment now says "base window" instead of "one backoff window
+later".
+
+Results (logs in `workflow/review-output/task-3.7/`):
+
+- r5 file: 11/11 (`r5-green.log`).
+- Related set: all `test_task3_7_*`, readoption, modelsrv, daemon adopt/dense/subproc-embed,
+  worker-budget invariant, plan12 remedy, rerank real clients and verb parity. 557 passed
+  (`r5-green-related.log`).
+- Full suite (`r5-green-full-suite.log`, 32:03): 4 failed, 3731 passed, 19 skipped.
+  - bug-155 (the `docs/INDEX.md` dangling ids) and bug-156 ("AC-6 BLOCKED"), both matched by
+    error text.
+  - Two `test_task21_1_used_events.py` AC-11a tests, both failing with
+    `fixture: recall did not deliver: []`. This is bug-184, a flake that predates r5 (logged
+    this round). The file alone passes 13/13 (`r5-green-used-events.log`).
+    `tests/test_task21_1_*.py` fails the same way (`recall rows []`) on different tests both
+    at GREEN (`r5-green-task21_1.log`: ac11b, ac11c) and with `src` at the RED sha `f8d1acd`
+    (`r5-green-task21_1-all-at-red.log`: ac11e, r12).
+
+Mutations ran after the commit. Each restore was its own command, and `git status --short src`
+was empty after each.
+
+- A cold hub doubles again (`cold = False`): `[cold]` and the request-path cold test fail,
+  2 failed and 9 passed (`r5-green-mut-cold.log`). KILLED.
+- The once-guard removed (`first = True`): SURVIVED, 11 passed (`r5-green-mut-once.log`). In
+  the M-2 test the env is read once, by `hold_reprobe` on call 1. Calls 2-4 fall inside the
+  300 s window, so `reprobe_shared_client` returns before it reaches `_reprobe_window`. A
+  killer needs two or more reads of the same malformed value in one process, for example
+  base `0` with a typo'd cap, or direct `_reprobe_window()` calls. Requested from
+  ch-test-engineer.
+- Any header-stage error counted as cold (`cold = stage == "header"`): SURVIVED, 31 passed
+  (`r5-green-mut-type.log`, r5 + r4 + readoption). No test reaches the header stage with an
+  error other than `TimeoutError`, such as a hub that accepts and then closes, or one that
+  answers `ok: false`. That killer is also requested from ch-test-engineer.
+
 ## Definition of done {#done}
 
 - Each family: RED (recorder/parity/defect rows) before GREEN; mutation check; summary rows in
