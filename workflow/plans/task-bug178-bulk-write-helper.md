@@ -89,6 +89,13 @@ Verified count: **10 DuckDB-reachable call sites** (9 functions), 3 SQLite-only,
 wall 19.405 s / 21.125 s / 19.924 s, **best 19.405 s** (`workflow/review-output/bug178-store-scores-head.log`).
 AC-3's bar: the new path's best <= 3.88 s on the same machine. {#measured-head-fact}
 
+## Decisions {#decisions}
+
+- **`save_coref` with a duplicate `pos` (user, 2026-11-09):** accept the change. HEAD raises and
+  leaves the rows `executemany` inserted before the duplicate; the set-based path raises and leaves
+  nothing (all-or-nothing). The test pins only that it still raises; the partial-row state is NOT
+  part of "semantics unchanged". {#decision-save-coref-atomic}
+
 ## Files to modify {#files}
 
 `src/refmatrix/backend.py`, `src/refmatrix/store.py`, `src/refmatrix/pagerank.py`,
