@@ -101,3 +101,38 @@ AC-3's bar: the new path's best <= 3.88 s on the same machine. {#measured-head-f
 `src/refmatrix/backend.py`, `src/refmatrix/store.py`, `src/refmatrix/pagerank.py`,
 `src/refmatrix/replica_merge.py`; new `tests/test_bug178_bulk_write.py`; `workflow/bug_registry.md`
 (bug-178 row); implementation summary `workflow/implementation_summaries/bug-178-bulk-write-helper.md`.
+
+## Remedy r2 (orchestrator decisions, 2026-11-09) {#remedy-r2}
+
+Folds the ch-bsd r1 audit at `d13c4d7` (DIRTY 1B/3S/2M). Decided as the user would; nothing is
+deferred. RED + mutation killers: `tests/test_bug178_r2.py`; logs
+`workflow/review-output/bug178-r2-red.log`, `workflow/review-output/bug178-r2-mutations.log`.
+
+rel: derives-from -> [[bsd-bug178-r1-d13c4d7]]
+rel: amends -> [[#decisions]]
+
+- **Finding #b1 is FIXED in code, not deferred.** (a) `_clear_gmd_content_hashes` COUNTS the
+  rows it skips for unparseable or non-dict meta and returns the count; `clear_tracked_stamps`
+  carries it to its caller as `gmd_hashes_skipped` (the daemon op returns the dict unchanged; the
+  `rmx ingest --force` stamp-clear line should print it beside `gmd_hashes_cleared`). (b)
+  `pagerank.store_scores` no longer swallows a `commit()` failure — the error propagates (only
+  SQLite can raise there; DuckDB `commit()` is a no-op). RED:
+  `test_red_clear_tracked_stamps_counts_skipped_gmd_meta`,
+  `test_red_store_scores_propagates_a_commit_failure` (a REAL commit failure: SQLite
+  `defer_foreign_keys` moves the `pagerank.entity_id` FK check to COMMIT). {#r2-b1}
+- **Finding #m1: `bulk_write` VALIDATES pinned integer columns.** A `bool`, or a float with a
+  fractional part, bound for an int-pinned column raises an error naming the column (and writes
+  nothing) instead of Arrow truncating `1.5` to `1` or raising an unnamed `ArrowTypeError`.
+  `int`, `None`, numpy integers and integral floats (`4.0`) still pass. Scope: the DuckDB (Arrow)
+  branch — the SQLite branch does not use `types`. RED:
+  `test_red_bulk_write_rejects_non_int_for_pinned_int_column`; guard:
+  `test_bulk_write_accepts_ints_and_integral_values_for_pinned_int_column`. {#r2-m1}
+- **Findings #s1/#s2/#s3: killers for m4/m2/m5.** `test_m4_*` (pinned clock, DuckDB vs SQLite
+  row-wise, expected `updated_at` per scenario by hand), `test_m2_*` (no `_rmx*` view in
+  `duckdb_views()` after every site op, the three Arrow-branch ops, and a statement that fails
+  inside an outer `BEGIN`; the `ConstraintException` is what surfaces), `test_m5_*` (33 rows
+  raise `DuckDBExecutemanyError` naming `bulk_write`; 1 and 32 rows run, bump
+  `duck_executemany_calls()` by one and log one WARNING on `refmatrix.backend`). These pass at
+  the r1 tree and each kills its mutation. {#r2-killers}
+- **Finding #m2 (docs):** the bug-178 registry row reads `fix pending merge (eeda2a1, branch
+  fix-bug178-bulk-write)` until the merge, then flips to `fixed` with the merge sha. {#r2-m2}
