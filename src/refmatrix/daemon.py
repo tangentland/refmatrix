@@ -944,14 +944,17 @@ class Daemon:
         Backs off (doubling to `RMX_SHARED_REPROBE_MAX_S`) so a machine that
         will never have a hub does not probe at full rate forever. Returns the
         roles adopted, for the caller's log and for tests.
+
+        The probe and its backoff are `recall.reprobe_shared_client`, the ONE re-probe a
+        daemonless process uses too (task 3.7 remedy r3, ch-bsd r2 #s-1); this method
+        owns only which roles qualify and the swap.
         """
         from refmatrix import modelsrv
+        from refmatrix.recall import reprobe_shared_client
 
         if not modelsrv.shared_enabled():
             return []
         now = time.time() if now is None else float(now)
-        base = float(os.environ.get("RMX_SHARED_REPROBE_S", "300") or "300")
-        cap = float(os.environ.get("RMX_SHARED_REPROBE_MAX_S", "1800") or "1800")
         adopted: list[str] = []
         for role, attr, cache in (("embed", "_embed_worker", "_embedder_inst"),
                                   ("rerank", "_rerank_worker", "_reranker_inst")):
@@ -966,28 +969,10 @@ class Daemon:
                 if not (role == "embed" and isinstance(
                         getattr(self, "_embedder_inst", None), Embedder)):
                     continue
-            if now < self._reprobe_next.get(role, 0.0):
-                continue
-            client = None
-            try:
-                if modelsrv.shared_available(timeout=0.5):
-                    client = modelsrv.SharedWorkerClient(
-                        role, log=self._log, timeout=SHARED_OP_TIMEOUT_S)
-                    client.info(timeout=modelsrv.PROBE_TIMEOUT_S)
-            except Exception as exc:  # noqa: BLE001 — logged; private keeps serving
-                try:
-                    if client is not None:
-                        client.close()
-                except Exception:
-                    pass
-                client = None
-                self._log(f"{role}: shared worker still unusable ({exc!r}); "
-                          f"keeping the private worker")
+            client = reprobe_shared_client(role, next_at=self._reprobe_next,
+                                           backoff=self._reprobe_backoff, log=self._log,
+                                           now=now)
             if client is None:
-                prev = self._reprobe_backoff.get(role, 0.0)
-                wait = min(max(base, prev * 2.0), cap)
-                self._reprobe_backoff[role] = wait
-                self._reprobe_next[role] = now + wait
                 continue
             with self._worker_lock:
                 setattr(self, attr, client)
@@ -1000,8 +985,6 @@ class Daemon:
             except Exception as exc:  # noqa: BLE001 — the swap already happened
                 self._log(f"{role}: private worker close failed after adoption: "
                           f"{exc!r}")
-            self._reprobe_backoff.pop(role, None)
-            self._reprobe_next.pop(role, None)
             if w is None:
                 # Precise on purpose: we released OUR reference. The model is
                 # still resident until the last in-flight caller releases it —
