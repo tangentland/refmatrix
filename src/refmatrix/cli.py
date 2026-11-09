@@ -9067,6 +9067,15 @@ def curator_status(drain: bool, quiet_when_empty: bool, limit: int, as_json: boo
             unshown = {e.get("file") for e in out.get("entries") or []
                        if e.get("path") and _rel(e["path"]) not in shown}
             done = [f for f in out["token"] if f not in unshown]
+            kept = len(out["token"]) - len(done)
+            if kept:
+                # A kept file is data-safe but was a silent skip (task 3.7 remedy r2
+                # R2-M1, CLAUDE.md#no-silent-failures): say how many and why, on stderr
+                # so the hook's stdout context line is unchanged.
+                click.echo(
+                    f"rmx curator: kept {kept} spool file(s) not fully shown within "
+                    f"--limit {limit}; raise --limit or drain with "
+                    f"`rmx curator drain --token @<status.json>`", err=True)
         if done:
             _curator_verb(action="drain", token=done)
 

@@ -136,13 +136,13 @@ report. To inspect the queue manually:
 ```bash
 rmx curator status                       # show the queue; drains nothing
 rmx curator status --json                # the same, plus the `token` (spool files read)
-rmx curator status --drain               # show + drain what it read (hooks do this)
+rmx curator status --drain               # show + drain only the files it fully printed
 rmx curator drain --token @<status.json> # drain exactly the files a status read
 ```
 
 `drain` deletes only the spool files named in a `status --json` token — a
 flush that lands after your status is never in it, so it is never drained
-unread. A token file already drained by someone else (the prompt hook) is
+unread. A token file already drained by someone else (another `status --drain`) is
 reported as "already gone", never an error.
 
 **Crash-safe drain order:** never drain BEFORE doing the work. If the

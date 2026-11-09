@@ -19,7 +19,7 @@ import subprocess
 import sys
 import time
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePath
 
 # The GMD lint lives outside the package (project convention); override with
 # RMX_GMD_LINT. Absent/unfound → lint step is skipped, structural checks still run.
@@ -113,6 +113,19 @@ def _adopt_legacy_queue(root: Path, missing: "list[str]") -> None:
         missing.append(LEGACY_QUEUE)
 
 
+def _is_legacy_path_line(text: str) -> bool:
+    """A non-JSON spool line is a legacy raw PATH only when it is path-SHAPED: no internal
+    whitespace, and it contains `/` or has a file suffix (task 3.7 remedy r2 R2-M3 — r1's
+    R-M2 took ANY non-JSON line as a path, so a stray `Traceback (most recent call last):`
+    became a file-change entry). Everything else is a counted bad line. The rule holds in
+    every spool file: an adopted `curator.queue` takes the spool name, so origin is not
+    observable. A bare suffix-less name (`README`) is therefore bad, not a path — no writer
+    ever produced one (the watcher wrote JSONL from the start, b04c1ac6)."""
+    if any(c.isspace() for c in text):
+        return False
+    return "/" in text or bool(PurePath(text).suffix)
+
+
 def _parse_spool_bytes(raw: bytes) -> "tuple[list[dict], int]":
     """THE parser of the watcher's format (task 3.7 r2 B1): one JSON object per line with
     at least a string `path`. Returns `(entries, bad_line_count)` — a bad line is counted,
@@ -130,7 +143,7 @@ def _parse_spool_bytes(raw: bytes) -> "tuple[list[dict], int]":
             # fixtures and some writers used); adopted into the spool it is a legacy
             # entry, not noise (task 3.7 remedy r1 R-M2). Broken JSON stays bad.
             text = ln.strip()
-            if text[:1] in ("{", "[", '"'):
+            if text[:1] in ("{", "[", '"') or not _is_legacy_path_line(text):
                 bad += 1
                 continue
             entries.append({"ts": None, "path": text, "reason": "legacy"})
