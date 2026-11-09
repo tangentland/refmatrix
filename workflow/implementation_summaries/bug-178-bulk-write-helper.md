@@ -115,9 +115,24 @@ that batch is kept. HEAD left the rows that came before the duplicate. The user 
   0.035 s on committed src, against 19.405 s at HEAD (`bug178-store-scores-green.log`). That is about 550× faster,
   and the bar was ≤ 3.88 s.
 
-## Flagged, not fixed {#flagged}
+## Remedy r2 {#r2}
 
-- `pagerank.store_scores` still wraps `con.commit()` in `except Exception: pass`, which hides any
-  failure. That is a silent-failure shape outside bug-178's scope, and it is left for a follow-up.
-- `_clear_gmd_content_hashes` skips unparseable or non-dict meta without counting the rows it
-  skips. This is HEAD behaviour, the goldens pin it, and it is left as is.
+rel: implements -> [[task-bug178-bulk-write-helper#remedy-r2]]
+
+This row covers the fix at `ae7c0c7`. Detail is in
+[[task-bug178-bulk-write-helper#remedy-r2-green]]. Remedy r2 fixed both items that r1 flagged:
+
+- `clear_tracked_stamps` now reports `gmd_hashes_skipped`, and `rmx reingest --force` prints
+  that count when it is above zero.
+- `pagerank.store_scores` no longer swallows a failed commit. It rolls back and re-raises.
+- `bulk_write` rejects a bool, a fractional float or a non-numeric value bound for a column pinned
+  to an integer type. The error names the column, and nothing from the batch is written.
+
+Results:
+
+- `tests/test_bug178_r2.py`: 33/33 passed.
+- Both bug-178 files together: 64/64 passed.
+- Full suite: 3,430 passed and 4 failed. Three of the failures are the baseline. The fourth is
+  `test_clear_leaves_a_store_with_no_stamps_alone`, which asserts the result dict exactly and
+  needs the new key from the test-engineer.
+- AC-3: best 0.039 s.

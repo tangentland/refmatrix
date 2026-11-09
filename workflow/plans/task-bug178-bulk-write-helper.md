@@ -136,3 +136,35 @@ rel: amends -> [[#decisions]]
   the r1 tree and each kills its mutation. {#r2-killers}
 - **Finding #m2 (docs):** the bug-178 registry row reads `fix pending merge (eeda2a1, branch
   fix-bug178-bulk-write)` until the merge, then flips to `fixed` with the merge sha. {#r2-m2}
+
+## Remedy r2 GREEN (2026-11-09) {#remedy-r2-green}
+
+The fix landed at `ae7c0c7` on top of RED `aefd0aa`. Its logs are under `workflow/review-output/`.
+
+rel: implements -> [[#remedy-r2]]
+
+- [[#r2-b1]] (a): `_clear_gmd_content_hashes` now returns `(cleared, skipped)`, and
+  `clear_tracked_stamps` adds `gmd_hashes_skipped` to its result. The daemon op passes that dict
+  through unchanged. The `rmx reingest --force` stamp-clear step prints a yellow line when the
+  skip count is above zero. The cli line and the daemon op are the only consumers of the dict;
+  no MCP tool or verb reads it. (b): when `store_scores` hits a commit failure it rolls back and
+  re-raises. {#r2g-b1}
+- [[#r2-m1]]: `bulk_write` scans every column pinned to an integer type before it builds the
+  Arrow table, so a rejected batch writes nothing. The scan raises `TypeError` on a bool or a
+  non-numeric value and `ValueError` on a fractional or non-finite float, and each message names
+  the column and the row. Columns that are not pinned, or are pinned to a non-integer type, are
+  not scanned. {#r2g-m1}
+- Results:
+  - `tests/test_bug178_r2.py`: 33/33 passed.
+  - Both bug-178 files together: 64/64 passed (`bug178-r2-green.log`).
+  - Related suites: 236 passed and 1 failed (`bug178-r2-green-related.log`).
+  - Full suite: 4 failed, 3,430 passed and 1 skipped (`bug178-r2-green-full.log`). Three of
+    those failures are the baseline at `56e8d14` with the same error text: bug-127 lock, the GMD
+    stricter-gate dangling ids, and AC-6 BLOCKED.
+  - AC-3: best 0.039 s on the committed tree, against a bar of 3.88 s (`bug178-r2-green-ac3.log`).
+  {#r2g-results}
+- **Gap (test-engineer):** `tests/test_clear_tracked_stamps.py::test_clear_leaves_a_store_with_no_stamps_alone`
+  compares the whole `clear_tracked_stamps` result to a fixed dict. The key that
+  [[#r2-b1]] requires is missing from that dict, so the test fails on
+  `{'gmd_hashes_skipped': 0}`. The fix is to add `"gmd_hashes_skipped": 0` to the expected dict.
+  The implementer does not edit tests. {#r2g-gap}
