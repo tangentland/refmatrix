@@ -7,13 +7,15 @@ metadata:
   node_type: plan
   status: in-progress
   created: 2026-10-07
-  updated: 2026-10-15
+  updated: 2026-11-09
 ---
 
 # Plan 23: the bounded-write harness {#root}
 
 **Date:** 2026-10-07, revised 2026-10-14.
-**Status:** Drafting (revision round 9 after the b84fd8d diff check: 23.5's snapshot flushes
+**Status:** Drafting (revision round 10, 2026-11-09: the 23.1 + 23.2 freshness fold of
+[[bsd-plan23-1-2-freshness-9bcf464]]: 23.1 gains R11, the `hook_writes` queue that closes bug-177,
+and the consumer table gains its rows; [[#rev-round-10]]. Revision round 9 after the b84fd8d diff check: 23.5's snapshot flushes
 dirty bitmap fragments, bug-112 FIXED on `master` gates 23.5, 23.5 stands alone of plan-18;
 [[#rev-round-9]]. Round 8 after the 23ad703 re-review and d9bn, which settles
 23.5's read path; [[#rev-round-8]]. Round 7 after the 331b414 re-review and d9az, which adds task
@@ -111,6 +113,8 @@ handle and no consumer changes. {#core-body}
 | 17.1 (per-dataset maintenance) | `bounded_steps` (one dataset per step, `batch=1`), `bind(partition_name)`, `RunResult.hold_s`, recorder; no queue, no per-dataset Lance lock | d2b; revisit triggered by 23.4's verdict. 17.2's hub `maintenance_steps` is NOT 23.1's daemon `tick_registry` |
 | 22.2 (repair / removal apply) | `bounded_steps`, `bind`, recorder, `finalize` (one Lance delete per kind) | no lossy queue (#t2-fixes, 22 #s-1/#s-2) |
 | 23.3 (bug-093 between-file yield) | `bounded_steps`, `bind`, recorder | d2c |
+| bug-177 hook writes (`hook_writes`, round 10) | `drain`, `scope="window"`, explicit last-wins-by-name `merge_fn` keyed `(op, partition, name)`, `idempotent=True` checked by 23.1 AC-21, `batch=1`, tick registrant; producers `focus summarize --promote` (Stop / PreCompact) and the save-state promote through 3.7's `_write_or_local(…, queue="hook_writes")` | [[task-23.1-queue-and-drain#r11]]; the digest and its subject `part-of` filing in ONE entry and ONE batch transaction; needs 26.2's `add_memory` → `_maybe_commit` |
+| 26.6 `memory_compile` apply (round 10) | NOT a harness consumer yet: a LONG HOLDER (`_op_memory_compile_apply` holds `_store_lock` across the whole `apply_plan`) | named so the holder census sees it ([[task-23.1-queue-and-drain#merge-order]]); bounding it (`bounded_steps`, or a 23.5 named holder) is decided at 23.5's next revision |
 | plan-21 | 21.1 PRODUCES `recall-events.jsonl` lock-free and does not depend on plan-23's code (d4a); plan-21's tests need only 23.0 | the consumer edge 23 #s-3 asked for |
 
 {#consumers-body}
@@ -383,3 +387,20 @@ round-8 table above is unchanged history.
 | nm23-r9-1, nm23-r9-2, nm23-r9-3 | [[task-23.5-read-path-and-holder-bounds#rev-round-9]] |
 
 rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d]]
+
+## Revision round 10 (2026-11-09) {#rev-round-10}
+
+Source: [[bsd-plan23-1-2-freshness-9bcf464]] (pre-implementation freshness review of 23.1 + 23.2
+at `9bcf464`; DIRTY 2B/3S/6M). The tasks' own tables carry the per-finding answers:
+[[task-23.1-queue-and-drain#rev-round-11]] and [[task-23.2-lock-hold-fixture#rev-round-2]]. The
+round-9 table above is unchanged history.
+
+| finding | answered at |
+|---|---|
+| b1 (no 23.1 requirement covers bug-177) | [[#consumers]] (`hook_writes` row), [[task-23.1-queue-and-drain#r11]] |
+| b2 (scan-prompt overrun unowned) | not plan-23's: [[task-23.1-queue-and-drain#non-goals]] (its own bug row, bug-182) |
+| m6 (plan-26 overlap; `memory_compile` apply a long holder) | [[#consumers]] (the 26.6 row), [[task-23.1-queue-and-drain#merge-order]] (3.7 → bug-178 → plan-26 → 23.2 → 23.1) |
+| s1, s2, m1, m4, m5 | [[task-23.1-queue-and-drain#rev-round-11]] |
+| s3, m2, m3 | [[task-23.2-lock-hold-fixture#rev-round-2]] |
+
+rel: derives-from -> [[bsd-plan23-1-2-freshness-9bcf464]]

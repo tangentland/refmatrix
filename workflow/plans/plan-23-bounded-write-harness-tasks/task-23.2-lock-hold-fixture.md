@@ -7,14 +7,17 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-10-14
+  updated: 2026-11-09
 ---
 
 # Task 23.2: the lock-hold and write-count fixture {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: Pending (revision after the 2026-10-14 decision log)
-> Depends on: 23.0 (test sandbox)
+> Status: Pending (revision round 2, 2026-11-09: freshness fold of
+> [[bsd-plan23-1-2-freshness-9bcf464]] (s3, m1, m2, m3, m6), re-cited against HEAD `9901589`; see
+> [[#rev-round-2]]. Earlier: the 2026-10-14 decision log)
+> Depends on: 23.0 (test sandbox). **Merge order (m6):** 3.7 → bug-178 → plan-26 → **23.2** →
+> 23.1. 23.2 is written after bug-178 merges, so R3's proxy is built against its `bulk_write`.
 > Blocks: 23.1 (its ACs count holds and writes with this recorder), 23.3, and the consumers' tests
 > (16.6, 17.1, 19.2, 22.2)
 
@@ -37,7 +40,7 @@ Two kinds of wedge motivate plan-23, and they need two kinds of detector:
   counts them (23 #b-3).
 
 The fakes in today's lock tests use `threading.RLock()` / `threading.Lock()`, never the production
-`_FairLock` (`daemon.py:200`, strict FIFO, ownership handed on release, not reentrant;
+`_FairLock` (`daemon.py::_FairLock`; strict FIFO, ownership handed on release, not reentrant;
 `acquire(blocking=False)` is False when the lock is held OR waiters are queued). A nested reacquire
 is invisible under an RLock (23 #s-4). 23.1's ACs need this recorder, so this task now comes
 FIRST (#t2-fixes: "23.2 before 23.1"). {#why-body}
@@ -51,7 +54,9 @@ The fixture lives in `tests/lockhold.py` and is registered from `tests/conftest.
    at the moment the code under test is inside its model call (a fake `score`, `embed_texts`, …).
    A probe thread tries `lock.acquire(blocking=False)`, releases it from the SAME thread if it got
    it (the r8 RLock lesson), and the function returns True when the lock was free. It accepts any
-   lock: `_store_lock`, and the read mirror's `_use_lock` (r9 #b-2's shape). It is not a context
+   lock: `_store_lock`, and the read mirror's lock AS `_MemMirror.acquire_use()` RETURNS IT
+   (`daemon.py::_MemMirror.acquire_use`, r9 #b-2's shape; m2: the adopted test probes through that
+   method, never through the `_use_lock` field, so R1 takes whatever object it returns). It is not a context
    manager: a context manager wraps the call and cannot fire inside it. {#r1}
 2. **R2 `HoldRecorder`** wraps a REAL lock, by default a real `daemon._FairLock()`, as a
    pass-through (not a fake) with the full `_FairLock` surface (`acquire`, `release`, `locked`,
@@ -63,10 +68,20 @@ The fixture lives in `tests/lockhold.py` and is registered from `tests/conftest.
    assert a property at every release (23.3 uses it for "no open transaction"). {#r2}
 3. **R3 Write counts per hold and per run** (23 #b-3). While installed on a `Store`, the recorder
    counts:
-   - DuckDB statements: a pass-through proxy replaces the store's `DuckDBConnection` wrapper's
-     `execute`/`executemany` AND its raw `_duck` handle (fragment flushes call `con._duck.execute`
-     directly, `store.py` `_flush_fragments_duckdb`). `executemany` counts as one statement and
-     records its row count separately;
+   - DuckDB statements (rewritten in round 2 against bug-178's `backend.py::bulk_write`, m3):
+     - the recorder PATCHES THE EXISTING `DuckDBConnection` wrapper INSTANCE (its `execute` /
+       `executemany` attributes and its `_duck` attribute), never replaces the wrapper with a
+       proxy object: `bulk_write` dispatches on `isinstance(con, DuckDBConnection)` /
+       `isinstance(con, duckdb.DuckDBPyConnection)`, and a stand-in object would make it raise
+       its "SQLite connection reached a DuckDB-only bulk write" `TypeError`;
+     - `_duck`'s proxy (fragment flushes call `con._duck.execute` directly,
+       `store.py::Store._flush_fragments_duckdb`) passes `register` / `unregister` through
+       uncounted and counts `execute`;
+     - one `bulk_write` call counts as ONE statement (its register + one `execute` + unregister);
+     - `executemany` counts as one statement and records its row count separately, and the
+       recorder READS bug-178's counter `backend.py::duck_executemany_calls` for it instead of
+       keeping a second one (on branch `fix-bug178-bulk-write` at `d13c4d7`, not on `master` at
+       `9901589`; it exists once bug-178 merges, which precedes 23.2);
    - Lance versions: the sum of `lance.dataset(p).version` over `<root>/vectors/*/*.lance` at hold
      entry and exit (a new dataset counts its versions);
    - single-row upserts into `entities` and `concepts` (the bug-093 shape), by statement text.
@@ -83,13 +98,35 @@ The fixture lives in `tests/lockhold.py` and is registered from `tests/conftest.
 5. **R5 Seconds are an alarm, counts are the bound.** The plan's per-hold time is an alarm (23.1's
    `hold_alarm_s` logs it); consumers assert `max_writes_per_hold` / `max_writes_per_run` at
    fixture scale and use `max_lock_hold` only for model-call shapes. {#r5}
-6. **R6 Adoption** (23 #m-2). These tests move onto the fixture, on a real `_FairLock` wrapped by
-   the recorder, and their inline probe and counting-lock code is deleted:
+6. **R6 Adoption** (23 #m-2; extended to every fake-lock file in round 2, s3). These tests move
+   onto the fixture, on a real `_FairLock` wrapped by the recorder, and their inline probe and
+   counting-lock code is deleted:
    - `tests/test_context_rerank_off_the_writer_lock.py` (an `RLock` fake today);
-   - `tests/test_read_path_partition_and_budget.py` (its `_use_lock` probe, r9 #b-2);
+   - `tests/test_read_path_partition_and_budget.py` (its probe through
+     `d._mem_mirror.acquire_use()`, r9 #b-2, m2; a plain `threading.Lock()` `_store_lock` in its
+     `_daemon` builder);
    - `tests/test_rerank_warning_routes.py` (the r9 #s-1 probes; an `RLock` fake today);
-   - `tests/test_learn_queue.py` (`_CountingLock` at :182 and its competitor thread);
-   - `tests/test_bigop_nonblocking.py` (`_CountingLock` at :104, `threading.Lock()` at :176).
+   - `tests/test_learn_queue.py` (the nested `class _CountingLock` installed as `_store_lock`, and
+     its competitor thread);
+   - `tests/test_bigop_nonblocking.py` (module-level `class _CountingLock`, and a
+     `threading.Lock()` assigned to `_store_lock`).
+
+   **Every other file that assigns a fake `_store_lock` (s3).** AC-6's grep is suite-wide, so R6
+   covers every file it finds, not only the five above. The census, run at `9901589` with AC-6's
+   pattern narrowed to assignments (15 assignment lines in 14 files; the five above plus these
+   nine):
+   - `threading.RLock()` (an RLock hides exactly the non-reentrancy 23.1 R1.6 and this task's
+     AC-5 rely on): `tests/test_context_rerank_warning.py`, `tests/test_plan12_remedy.py`,
+     `tests/test_graph_landing.py` (two assignments), `tests/test_lance_drop_failures_loud.py`,
+     `tests/test_embed_phases_r10.py`;
+   - `threading.Lock()`: `tests/test_ingest_concurrency.py`, `tests/test_snapshot_tier.py`,
+     `tests/test_derive_unstamp.py`, `tests/test_bug110_snapshot_keeps_lock.py`.
+
+   Each gets a REAL `daemon._FairLock()` where the test only needs a lock to exist, or
+   `recorded_daemon` where it probes or counts holds. A test that went green only BECAUSE the
+   fake was reentrant is a finding, logged in the implementation summary with the nested
+   acquire it hid (not "fixed" by making the fixture reentrant). The implementer re-runs the
+   census at its own HEAD; a file added since `9901589` joins this list.
    {#r6}
 
 ## Acceptance criteria {#acceptance}
@@ -97,8 +134,9 @@ The fixture lives in `tests/lockhold.py` and is registered from `tests/conftest.
 1. **r8 #s-2 revert fails.** Moving the context rerank back under the writer lock fails the adopted
    `test_context_rerank_off_the_writer_lock.py` test through `lock_free_during`. {#ac-1}
 2. **r9 #s-1 revert fails.** Moving `memory_recall`'s embedding back under the lock fails the
-   adopted `test_rerank_warning_routes.py` probe. Reverting r9 #b-2 (the mirror read under
-   `_use_lock`) fails `test_read_path_partition_and_budget.py`. {#ac-2}
+   adopted `test_rerank_warning_routes.py` probe. Reverting r9 #b-2 (the mirror read under the
+   lock `_MemMirror.acquire_use()` returns; m2) fails `test_read_path_partition_and_budget.py`
+   through `lock_free_during(d._mem_mirror.acquire_use())`. {#ac-2}
 3. **The write-count detector fires on both incidents** (23 #b-3; pre-registered mutations):
    - re-introduce one Lance delete per entity in `Store.purge_path` (the bug-085 shape): a test
      marked `max_writes_per_run(lance_versions=1)` over a 12-entity purge FAILS;
@@ -114,7 +152,10 @@ The fixture lives in `tests/lockhold.py` and is registered from `tests/conftest.
 6. **Every probe implementation is gone.** `rmx grep -E 'class _CountingLock|threading\.R?Lock\(\)'
    tests/` returns no line that assigns a `_store_lock` or `_use_lock`, and no file in R6 defines a
    probe thread; the only definitions are in `tests/lockhold.py`. The grep pattern and its one
-   exclusion (`tests/lockhold.py`) are fixed here. {#ac-6}
+   exclusion (`tests/lockhold.py`) are fixed here. It can go green only because R6 now covers all
+   14 files the census found (round 2, s3); with round 1's five it failed on a correct build. A
+   non-lock `threading.Lock()` the grep also hits (one not assigned to `_store_lock` /
+   `_use_lock`) is not a failure. {#ac-6}
 
 ## Test strategy {#test-strategy}
 
@@ -134,3 +175,24 @@ injected store roots, the refuse guard active. Real `Store` on a short `mkdtemp`
 | 23 #m-2 (`test_learn_queue.py`, `test_bigop_nonblocking.py` probes) | [[#r6]], [[#ac-6]] |
 | #t2-fixes (real `_FairLock`, recorder required, 23.2 before 23.1, write-count recorder) | [[#r2]], [[#r3]], [[#r4]] |
 | d1a/d1b (tests in 23.0's sandbox) | [[#test-strategy]] |
+
+## Revision round 2 (2026-11-09) {#rev-round-2}
+
+Source: [[bsd-plan23-1-2-freshness-9bcf464]], the pre-implementation freshness review at
+`9bcf464`. Code facts re-read at `9901589` (`src/` unchanged since `9bcf464`) and, read-only, in the
+bug-178 clone (`fix-bug178-bulk-write` at `d13c4d7`). No user decision remained; the report's
+decisions are adopted. The 2026-10-14 table above is unchanged history.
+
+| finding | answered at | rationale |
+|---|---|---|
+| s3 (AC-6's suite-wide grep fails on a correct build: 9 more fake-lock files outside R6) | [[#r6]] (the nine files, by kind), [[#ac-6]] | converge the shape: one fixture, every file; an `RLock` fake hides the non-reentrancy AC-5 and 23.1 R1.6 test |
+| m1 (line drift) | [[#why]] (`daemon.py::_FairLock`), [[#r6]] (symbols, not `:182` / `:104` / `:176`) | cite `file::symbol`; numbers only "at <sha>" |
+| m2 (the read-path probe goes through `_MemMirror.acquire_use()`) | [[#r1]], [[#r6]], [[#ac-2]] | name what the test touches |
+| m3 (R3's proxy vs bug-178's `bulk_write` `isinstance` dispatch) | [[#r3]] | patch the wrapper instance; pass `register` / `unregister` through; one `bulk_write` = one statement; reuse `duck_executemany_calls()` |
+| m6 (merge order) | header `Depends on:` | 3.7 → bug-178 → plan-26 → 23.2 → 23.1 |
+
+rel: derives-from -> [[bsd-plan23-1-2-freshness-9bcf464]]
+rel: derives-from -> [[bsd-plan23-1-2-freshness-9bcf464#s3]]
+rel: derives-from -> [[bsd-plan23-1-2-freshness-9bcf464#m2]]
+rel: derives-from -> [[bsd-plan23-1-2-freshness-9bcf464#m3]]
+rel: related-to -> [[task-bug178-bulk-write-helper]]
