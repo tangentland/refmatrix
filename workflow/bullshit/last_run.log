@@ -16,3 +16,4 @@
 2026-11-09T02:15:57-0800 commit=1c0b66a verdict=DIRTY findings=10 (1B/2S/7M) report=2026-11-09-0215-plan23-1-2-freshness-confirm-1c0b66a.md
 2026-11-09T02:33:55-0800 commit=a9147d5 verdict=DIRTY findings=6 (0B/3S/3M) report=2026-11-09-0233-plan23-fold-additions-a9147d5.md
 2026-11-09T05:31:32-0800 commit=62a2465 verdict=DIRTY findings=7 (1B/2S/4M) report=2026-11-09-0531-plan23-3-5-freshness-62a2465.md
+2026-11-09T05:54:53-0800 commit=da67220 verdict=DIRTY findings=9 (0B/4S/5M) report=2026-11-09-0554-bug185-spec-r1-da67220.md
