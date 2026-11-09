@@ -337,20 +337,66 @@ def remote_embedder(model_client):
 
 
 _EMBED_CLIENT: "object | None" = None
+_EMBED_CLIENT_ISSUED: "object | None" = None
+_EMBED_CLIENT_REBUILDS = 0
+_EMBED_CLIENT_ATEXIT = False
 _EMBED_CLIENT_LOCK = threading.Lock()
+
+
+def _close_process_embed_client() -> None:
+    """atexit: close whichever client is cached when the process exits (a rebuilt-away
+    client was already closed when it was dropped)."""
+    client = _EMBED_CLIENT
+    if client is not None:
+        client.close()
+
+
+def _embed_client_is_dead(client) -> bool:
+    """Whether the cached client can no longer serve (task 3.7 remedy r2, ch-bsd
+    2026-11-08-2256 #s-1). Only the HUB-shared client can pin the process dead: its
+    backend is the hub's, and after the hub dies its `call` closes the socket, tries one
+    reconnect, and leaves `_sock` None when that fails too -- `alive()` False. A private
+    `WorkerClient` respawns its own process on the next call (`_ensure`), so a dead
+    private process is not a reason to rebuild. A shared client that was never handed out
+    has not failed: it connects lazily, so "disconnected" means "failed" only after it
+    served (or tried to serve) a call."""
+    from refmatrix.modelsrv import SharedWorkerClient
+    return (client is _EMBED_CLIENT_ISSUED and isinstance(client, SharedWorkerClient)
+            and not client.alive())
 
 
 def _process_embed_client(log: "Callable[[str], None]"):
     """The ONE embed-worker client of a daemonless process (task 3.7 remedy r1 R-H1): the
     long-lived `rmx mcp` used to spawn a new, never-reaped worker on every no-daemon
-    recall / dense call. Created once under a lock, closed once at exit."""
+    recall / dense call. Created once under a lock, closed once at exit.
+
+    Remedy r2 (2026-11-08): this is also the ONE place that decides the cached client is
+    unusable. A hub-shared client whose last call failed (the hub died: its socket is
+    gone) is closed, counted in `_EMBED_CLIENT_REBUILDS`, said, and replaced by a fresh
+    `new_model_client` -- a private worker while the hub stays down, the hub again once it
+    answers. Before this the process kept the dead client forever: every later call
+    retried the dead socket. The call that met the dead socket already raised (or, inside
+    `shared_embedder`, logged and degraded); the rebuild does not hide it."""
     import atexit
-    global _EMBED_CLIENT
+    global _EMBED_CLIENT, _EMBED_CLIENT_ISSUED, _EMBED_CLIENT_REBUILDS, _EMBED_CLIENT_ATEXIT
     with _EMBED_CLIENT_LOCK:
+        dead = _EMBED_CLIENT
+        if dead is not None and _embed_client_is_dead(dead):
+            _EMBED_CLIENT_REBUILDS += 1
+            log(f"embed: hub-shared client lost its connection (its last call failed); "
+                f"dropping it and building a fresh client "
+                f"(rebuild #{_EMBED_CLIENT_REBUILDS} in this process)")
+            _EMBED_CLIENT = None
+            try:
+                dead.close()
+            except Exception as exc:  # noqa: BLE001 — named; the rebuild proceeds
+                log(f"embed: closing the dead hub-shared client failed: {exc!r}")
         if _EMBED_CLIENT is None:
-            client = new_model_client("embed", log=log)
-            atexit.register(client.close)
-            _EMBED_CLIENT = client
+            _EMBED_CLIENT = new_model_client("embed", log=log)
+            if not _EMBED_CLIENT_ATEXIT:
+                atexit.register(_close_process_embed_client)
+                _EMBED_CLIENT_ATEXIT = True
+        _EMBED_CLIENT_ISSUED = _EMBED_CLIENT
         return _EMBED_CLIENT
 
 
