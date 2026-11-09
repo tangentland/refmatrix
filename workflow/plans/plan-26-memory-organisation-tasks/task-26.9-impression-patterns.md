@@ -51,7 +51,7 @@ Not hand-built folders, not a second clustering path.
    (`metadata.type: impression`, tag `pattern`) carrying: the rule (one paragraph), a check list
    ("when you see X, look at Y"), `rel: part-of` edges FROM its members (or `catalogs` edges to
    them), and a sighting count derived from member count + ledger mentions. The rule text is
-   written by ch-bsd (or the user), never auto-generated; compile only proposes membership. {#r2}
+   written by ch-bsd in a dedicated run after 26.8 (user decision 2026-11-08, see [[#q1-decided]]), never auto-generated; compile only proposes membership. {#r2}
 3. **R3 Ledger window.** `IMPRESSIONS.md` keeps the last ~20 runs' bullets; older bullets are folded
    into the pattern they belong to (pattern doc gains a "sightings" line with date + report link) or,
    if unmatched, into one consolidated bullet — never deleted without a home. A bullet's history is
@@ -100,8 +100,7 @@ live file, until AC-5. Pre-register AC-1's thresholds in the test file before th
 
 ## Open questions {#open-questions}
 
-1. **Who writes the rule text for each pattern — ch-bsd on its next run, or a one-off curation pass
-   now?** Recommend a one-off pass by ch-bsd right after 26.8, reviewed by the user, so the first
-   escalations already cite patterns.
+1. **Who writes the rule text for each pattern?** DECIDED (user, 2026-11-08): ch-bsd writes the
+   patterns in a dedicated run right after 26.8 lands (AC-5); the user reviews them. {#q1-decided}
 2. **Should project memories (not only impressions) get the same pattern layer?** Recommend no for
    now — 26.7's subject-grouped MEMORY.md covers them; revisit after AC-5.
