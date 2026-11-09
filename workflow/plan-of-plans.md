@@ -45,7 +45,7 @@ plan's remaining work is scheduled in the folded wave list [[plan-review-2026-10
 | 22 | plan-22-audited-removal-and-repair | APPROVED 2026-10-15 (d9cm; ch-bsd r15 CLEAN `8fbfb0c`) | yes (7) | `workflow/plans/plan-22-audited-removal-and-repair.md` | 16.6, 23 |
 | 23 | plan-23-bounded-write-harness | in-progress (APPROVED 2026-10-15, d9cn; 23.0 completed in 0.79.1, master d4bf001; 23.5 gated on bug-112 merge) | yes (6) | `workflow/plans/plan-23-bounded-write-harness.md` | — |
 | 25 | plan-25-cliquedb-field-report | drafting (plan + task specs 25.1-25.4 written 2026-11-08, session 8d9a255f: bug-164 recall byte budget (builds 19.1 + 19.5 R1), bug-165 thin-prompt gate, bug-166 STM ref admission (builds 19.0 R1) + helix once-per-session, bug-167 BRE translation; spec review next; after plan-26/27 and before plan-24 per [[#override-2026-11-08b]]) | yes (4) | `workflow/plans/plan-25-cliquedb-field-report.md` | 3.7 merged; plan-26 (26.4, 26.7); plan-27; 23.0; 21.1 |
-| 26 | plan-26-memory-organisation | drafting (2026-11-08; 9 task specs 26.0-26.8; sequenced after 3.7, before plan-25 per #override-2026-11-08b) | yes (9) | `workflow/plans/plan-26-memory-organisation.md` | 3.7 |
+| 26 | plan-26-memory-organisation | drafting (2026-11-08; 10 task specs 26.0-26.9; sequenced after 3.7, before plan-25 per #override-2026-11-08b) | yes (10) | `workflow/plans/plan-26-memory-organisation.md` | 3.7 |
 | 27 | plan-27-memory-fleet-rollout | drafting (2026-11-08; 7 task specs 27.0-27.6; viascope2→viascope fold, thiquet supervision repoint, fleet migration) | yes (7) | `workflow/plans/plan-27-memory-fleet-rollout.md` | plan-26 deployed |
 
 ## Sequence rationale {#sequence}

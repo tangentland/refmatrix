@@ -38,6 +38,7 @@ rel: specifies -> [[task-26.5-memory-organise-verb]]
 rel: specifies -> [[task-26.6-compile-subject-hygiene]]
 rel: specifies -> [[task-26.7-memory-index-by-subject]]
 rel: specifies -> [[task-26.8-refmatrix-live-rollout]]
+rel: specifies -> [[task-26.9-impression-patterns]]
 
 ## Context {#context}
 
@@ -187,6 +188,7 @@ audited path. A compile also stamps `derive_stamps('memory-compile')` (task 12.4
 | [[task-26.6-compile-subject-hygiene]] | retire stale compiled subjects; derive stamp; casefold; graded labels | none (parallel) |
 | [[task-26.7-memory-index-by-subject]] | `MEMORY.md` grouped by subject | 26.1, 26.6 |
 | [[task-26.8-refmatrix-live-rollout]] | deploy; back up; organise the refmatrix dir; re-compile; verify | all |
+| [[task-26.9-impression-patterns]] | ch-bsd impressions: compile-derived pattern layer, curated rule text, IMPRESSIONS.md folded to a rolling window, ch-bsd step 0b reads patterns first (user, 2026-11-08) | 26.6, 26.1, 26.8 for live |
 
 ## Acceptance for the plan {#acceptance}
 
