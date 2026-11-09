@@ -525,6 +525,13 @@ later in `embed_texts`, outside that branch. After a failed call the client's `a
 (`close()` nulls `_sock`), which is one signal that `_process_embed_client` could check. R13
 (`test_no_daemon_graph_calls_share_one_embed_client`) must stay green. {#remedy-r2-green-note}
 
+**GREEN `4643541`.** `recall._process_embed_client` is the one place that judges the cached
+client. A hub-shared client that was handed out and now reports `alive()` False is closed,
+counted in `_EMBED_CLIENT_REBUILDS`, logged, and replaced by a fresh `new_model_client`. A
+private `WorkerClient` is never rebuilt, because it respawns its own process. One atexit closer
+handles whichever client is cached at exit. Log: `workflow/review-output/task-3.7/r2-green-embed-client.log`.
+Registry row: bug-171. {#remedy-r2-green}
+
 ## Definition of done {#done}
 
 - Each family: RED (recorder/parity/defect rows) before GREEN; mutation check; summary rows in

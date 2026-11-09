@@ -175,6 +175,7 @@ Decisions from the spec's [[task-3.7-verb-it-backlog#remedy-r1]] table (`6fd9b7c
 | R-RM5, R-RM6, R-RM7, R-L | `c29b4b6` | forget preview 600 s; taxonomy OSError named; dead code deleted (except `cli._concept_files`, which tests/test_concept_timeline.py imports); one `session_title`; `session show` refuses an ambiguous prefix; hints; the `--via-replica` deprecation warning |
 | R-M1 | `364a90e` | bug-155 / bug-156 (base failures, open); bug-157..160 (fixed) |
 | R-L (test), R-RM7 (alias) | `1df6c25` | the spool test asserts file fsync → rename → dir fsync, each fsync identified by `fstat` (three mutations RED); `tests/test_concept_timeline.py` imports `graphread.concept_files`, and `cli._concept_files` is deleted |
+| R2-S1 (remedy r2) | `4643541` | `_process_embed_client` drops a handed-out hub-shared client that reports `alive()` False (the hub died), closes it, counts it in `_EMBED_CLIENT_REBUILDS`, logs it, and builds a fresh client (a private worker while the hub is down). A private worker is never rebuilt. One atexit closer for the cached client (bug-171; RED `0359858`) |
 {#remedy-r1-table}
 
 Behaviour changes users will see:
