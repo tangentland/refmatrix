@@ -6925,12 +6925,13 @@ class Store:
                 "DELETE FROM tracked_files WHERE partition_id=?",
                 (self._partition_id,),
             )
-        gmd = self._clear_gmd_content_hashes(con)
+        gmd, gmd_skipped = self._clear_gmd_content_hashes(con)
         self._maybe_commit(con)
         return {"stamps_cleared": int(n), "gmd_hashes_cleared": gmd,
+                "gmd_hashes_skipped": gmd_skipped,
                 "partition": self._partition_name}
 
-    def _clear_gmd_content_hashes(self, con) -> int:
+    def _clear_gmd_content_hashes(self, con) -> tuple[int, int]:
         """Strip `gmd_content_hash` / `gmd_pass2_done` from doc+memory meta in
         the active partition.
 
@@ -6939,7 +6940,14 @@ class Store:
         alone leaves every already-ingested markdown file skipped at
         `pass1-skip` / `pass2-skip` and the body terms never get re-derived.
         Two independent stamps, the same defect: both key on the identity of
-        the INPUT while it is the transform that changed."""
+        the INPUT while it is the transform that changed.
+
+        Returns `(cleared, skipped)`. `skipped` counts stamped rows whose meta
+        does not parse as a JSON object (bug-178 r2 #b1, 2026-11-09): those
+        rows keep their hash, so the next ingest skips them again — an
+        uncounted `continue` on a memory path hid that. The LIKE prefilter
+        selects only rows whose text names the stamp, so an unstamped row is
+        never counted."""
         rows = con.execute(
             "SELECT id, meta FROM entities "
             "WHERE partition_id=? AND kind IN ('doc','memory') "
@@ -6947,12 +6955,15 @@ class Store:
             (self._partition_id,),
         ).fetchall()
         payload: list[tuple[str, int]] = []
+        skipped = 0
         for eid, raw in rows:
             try:
                 meta = json.loads(raw) if raw else None
             except (TypeError, ValueError):
+                skipped += 1
                 continue
             if not isinstance(meta, dict):
+                skipped += 1
                 continue
             meta.pop("gmd_content_hash", None)
             meta.pop("gmd_pass2_done", None)
@@ -6970,7 +6981,7 @@ class Store:
             types={"meta": "string", "id": "int64"},
             view="_rmx_bulk_gmd_meta",
         )
-        return len(payload)
+        return len(payload), skipped
 
     # ---- coref sidecar + pair index ---------------------------------------
 

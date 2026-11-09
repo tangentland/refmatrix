@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+import numbers
 import os
 import sqlite3
 import threading
@@ -640,6 +641,41 @@ _DUCK_EXECUTEMANY_LOCK = threading.Lock()
 _BULK_VIEW_SEQ = itertools.count(1)
 
 
+def _check_pinned_int_column(col: str, vals: Sequence[Any]) -> None:
+    """Refuse a value that an Arrow integer column would mangle or reject
+    namelessly (bug-178 r2 #m1, 2026-11-09).
+
+    `pa.array([3, 1.5], type=int64)` stores `1` — a silent truncation — and
+    `True` dies in an `ArrowTypeError` that names no column, so the caller of
+    a 50k-row batch cannot tell which field was wrong. This pass runs BEFORE
+    the Arrow table is built and the batch registered, so a rejected batch
+    writes nothing. Accepted: int (any width Arrow takes), numpy integers,
+    None, and floats with no fractional part (`4.0`, which Arrow converts
+    exactly). Refused: bool (an int subclass, but never a count), fractional
+    or non-finite floats, and any non-numeric value. One pass, `type(v) is int`
+    short-circuits the common case."""
+    for i, v in enumerate(vals):
+        if v is None or type(v) is int:
+            continue
+        if isinstance(v, bool):
+            raise TypeError(
+                f"bulk_write: column {col!r} is pinned to an integer type but row "
+                f"{i} carries a bool ({v!r}); pass an int (bug-178 r2)")
+        if isinstance(v, numbers.Integral):
+            continue
+        if isinstance(v, numbers.Real):
+            f = float(v)
+            if f.is_integer():
+                continue
+            raise ValueError(
+                f"bulk_write: column {col!r} is pinned to an integer type but row "
+                f"{i} carries the non-integral value {v!r}; Arrow would truncate "
+                f"it (bug-178 r2)")
+        raise TypeError(
+            f"bulk_write: column {col!r} is pinned to an integer type but row {i} "
+            f"carries a {type(v).__name__} ({v!r}) (bug-178 r2)")
+
+
 class DuckDBExecutemanyError(RuntimeError):
     """A DuckDB `executemany` above `DUCK_EXECUTEMANY_MAX_ROWS` rows — the
     per-row write bug-178 removed; the caller must use `bulk_write`."""
@@ -683,7 +719,12 @@ def bulk_write(
 
     Errors from the statement propagate unchanged (constraint violations
     included); a set-based statement is atomic, so a failure leaves none of
-    the batch behind (user decision 2026-11-09, save_coref)."""
+    the batch behind (user decision 2026-11-09, save_coref).
+
+    Integer-pinned columns are validated first (bug-178 r2 #m1): a bool or a
+    fractional float raises naming the column, before any write, instead of
+    Arrow truncating `1.5` to `1`. Unpinned and non-integer columns are not
+    scanned."""
     rows = list(rows)
     if not rows:
         return 0
@@ -720,9 +761,15 @@ def bulk_write(
     unknown = set(pinned) - set(cols)
     if unknown:
         raise ValueError(f"bulk_write: types name unknown columns {sorted(unknown)}")
+    columns_data = dict(zip(cols, zip(*rows)))
+    # Validate every int-pinned column BEFORE anything is built or registered,
+    # so a bad value rejects the whole batch by name (bug-178 r2 #m1).
+    for c, t in pinned.items():
+        if pa.types.is_integer(t):
+            _check_pinned_int_column(c, columns_data[c])
     tbl = pa.table({
         c: pa.array(list(vals), type=pinned.get(c))
-        for c, vals in zip(cols, zip(*rows))
+        for c, vals in columns_data.items()
     })
     name = f"{view}_{os.getpid()}_{next(_BULK_VIEW_SEQ)}"
     duck.register(name, tbl)

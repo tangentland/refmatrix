@@ -479,10 +479,19 @@ def store_scores(
                "computed_at": "float64"},
         view="_rmx_bulk_pagerank",
     )
+    # The commit's failure PROPAGATES (bug-178 r2 #b1, 2026-11-09). It was
+    # swallowed by `except Exception: pass`, so a SQLite commit refused at
+    # COMMIT time (a deferred FK on `pagerank.entity_id`) returned success
+    # while the replace never landed. DuckDB's `commit()` is a no-op; only
+    # SQLite raises here. Roll the half-done replace back first so the
+    # connection is not left holding a transaction every later commit would
+    # trip over, then re-raise: the daemon op answers `ok: False` (and skips
+    # its pass stamp), `rmx pagerank` / `rmx reingest` report it.
     try:
         con.commit()
     except Exception:
-        pass
+        con.rollback()
+        raise
     return len(scores)
 
 
