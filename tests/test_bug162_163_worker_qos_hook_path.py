@@ -72,3 +72,16 @@ def test_every_generated_rmx_hook_runs_without_rmx_on_the_callers_path(tmp_path)
             failures.append((c, r.returncode, r.stderr.strip()))
     assert not failures, failures
     assert marker.exists() and marker.read_text().strip(), "no hook reached rmx"
+
+
+def test_store_daemon_plist_does_not_run_at_background_qos(tmp_path):
+    """bug-174: the per-store daemon plists still rendered `ProcessType=Background`
+    after bug-162 fixed the hub's. Under load (three reingests, 2026-11-09 00:30) a
+    `rmx sync --since HEAD~1` of a few markdown files held the refmatrix daemon's
+    writer for 71.7 s, so the Stop hook's `focus summarize --promote` (a write)
+    timed out at its 5 s budget twice and `scan-prompt` took 12.8 s against a 5 s
+    timeout. A daemon serves interactive hook budgets just like the workers do."""
+    root = tmp_path / "proj" / ".refmatrix"
+    root.mkdir(parents=True)
+    plist = plistlib.loads(launchctl.render_plist(root, rmx=_fake_rmx(tmp_path)))
+    assert plist.get("ProcessType") == "Standard"
