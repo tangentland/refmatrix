@@ -389,13 +389,6 @@ def remote_embedder(model_client):
 
 
 _EMBED_CLIENT: "object | None" = None
-# Remedy r3 (ch-bsd r2 #m-2): no longer read. `_embed_client_is_dead` judged a cached
-# client "failed" only if it had been handed out, a state no production sequence lacks
-# (`new_model_client` connects a shared client by its `info()` probe before returning it,
-# and the cache handed out every client it built). Kept only because the r1/r2 test rigs
-# reset it with `monkeypatch.setattr` (which raises on a missing attribute); flagged to
-# the test engineer to drop those resets so this line can go.
-_EMBED_CLIENT_ISSUED: "object | None" = None
 _EMBED_CLIENT_REBUILDS = 0
 _EMBED_CLIENT_ATEXIT = False
 _EMBED_CLIENT_LOCK = threading.Lock()
