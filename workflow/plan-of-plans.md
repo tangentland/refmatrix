@@ -47,6 +47,8 @@ plan's remaining work is scheduled in the folded wave list [[plan-review-2026-10
 
 ## Sequence rationale {#sequence}
 
+**Override (user, 2026-11-08, session 8d9a255f): cliquedb's field-report bugs land BEFORE the mod transition.** Order: (1) close task 3.7 (merge + release); (2) bug-164 (recall hook overflow), bug-165 (bare-ack prompt noise), bug-166 (STM junk topics + stale helix line), bug-167 (BRE `\|`) — the consumer-visible defects in [[bug_registry#registry]], cliquedb's priority order; (3) only then plan-24 (spec r7 → approval → 24.0/24.1). Why: the shell-hook surface is what every project runs today, and the mod is weeks out; fixing what the consumer sees now is not throwaway, since recall budgeting and prompt gating are verb-side logic the mod reuses. {#override-2026-11-08}
+
 **Current order (2026-10-19, user-requested fold of plans 1-15): [[plan-review-2026-10-14#t11-folded-waves]], amending [[plan-review-2026-10-14#t10-waves]] for EVERY wave** (bug-105 hotfix first; Wave 1 starts with 23.0 ∥ 23.4). Superseded: (2026-10-07) [[plan-review-2026-10-07#order]]. The numbered rationale below is historical.
 
 
