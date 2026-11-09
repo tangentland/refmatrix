@@ -168,3 +168,5 @@ rel: implements -> [[#remedy-r2]]
   [[#r2-b1]] requires is missing from that dict, so the test fails on
   `{'gmd_hashes_skipped': 0}`. The fix is to add `"gmd_hashes_skipped": 0` to the expected dict.
   The implementer does not edit tests. Closed by `d4ea1fa`. {#r2g-gap}
+- bsd r2 [[bsd-bug178-r2-52dcfb6#s1]] and [[bsd-bug178-r2-52dcfb6#m1]] closed by `96873e3`: m9 and m11
+  are KILLED (`bug178-r2-final-tests-mutations.log`); 70/70 passed (`bug178-r2-final-tests.log`). {#r2g-s1-m1}
