@@ -5,7 +5,7 @@ title: "Plan 25: cliquedb's 2026-11-08 field report — recall that reaches the 
 tags: [plan, bugs, hooks, memory-recall, scan-prompt, stm, helix, grep, cliquedb, budget]
 metadata:
   node_type: plan
-  status: drafting
+  status: approved
   created: 2026-11-08
   updated: 2026-11-09
 ---
@@ -13,12 +13,13 @@ metadata:
 # Plan 25: cliquedb field report (bug-164..167) {#root}
 
 **Date:** 2026-11-08 (session 8d9a255f).
-**Status:** Drafting. Plan and task specs 25.1-25.4 written; ch-bsd spec review r1 DIRTY 0B/9S/9M
+**Status:** Approved 2026-11-09 ([[#approval]]); not started (its build waits on the
+ordering below). Plan and task specs 25.1-25.4 written; ch-bsd spec review r1 DIRTY 0B/9S/9M
 folded in revision round 1 ([[#rev-round-1]]); r2 DIRTY 0B/3S/7M folded in revision round 2
 ([[#rev-round-2]]); task 25.5 added for bug-174; r3 DIRTY 0B/4S/9M folded in revision round 3
 ([[#rev-round-3]]); r4-lite confirm DIRTY 0B/1S/5M folded in revision round 4 ([[#rev-round-4]]);
-`approved` is pending the user's decision on whether bug-181 joins 25.1. No `src/` or `tests/`
-change is made by this document.
+the user folded bug-181 into 25.1 on 2026-11-09, revision round 5 ([[#rev-round-5]]), which
+removed the last approval blocker. No `src/` or `tests/` change is made by this document.
 **Location:** `workflow/plans/plan-25-cliquedb-field-report.md`; stage is `metadata.status`.
 **Ordering authority:** the user's override [[plan-of-plans#override-2026-11-08]] as amended the
 same day by [[plan-of-plans#override-2026-11-08b]]: task 3.7, then plan-26 (memory-layer
@@ -43,6 +44,7 @@ rel: derives-from -> [[bsd-plan25-spec-r1-2f4a1df]]
 rel: derives-from -> [[bsd-plan25-spec-r2-5b8ed15]]
 rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
 rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
+rel: implements -> [[plan-of-plans#goal-2026-11-09-scope]]
 rel: reinforces -> [[feedback_measure_the_path_users_run]]
 rel: reinforces -> [[feedback_green_tests_are_not_a_working_command]]
 rel: reinforces -> [[feedback_no_raw_prompts_in_public_repo]]
@@ -226,7 +228,7 @@ Read from the plan-26 task specs' file lists on 2026-11-08 (drafts; re-read at 2
 
 | task | bug | what | RED on |
 |---|---|---|---|
-| [[task-25.1-recall-hook-byte-budget]] | bug-164 | probe the cap (three outcomes); per-prompt rows through the verb; pack recall pointers-first after the merge; byte-cap scan-prompt; every UserPromptSubmit producer in one event budget | the generated per-prompt argv emits > 10,000 B on the fixture store |
+| [[task-25.1-recall-hook-byte-budget]] | bug-164, bug-181 | probe the cap (three outcomes); per-prompt rows through the verb; pack recall pointers-first after the merge; byte-cap scan-prompt; every UserPromptSubmit producer in one event budget; an MCP `project=` that resolves nothing raises `VerbUnknownProjectError` on every tool (R10, folded r5) | the generated per-prompt argv emits > 10,000 B on the fixture store |
 | [[task-25.2-thin-prompt-gate]] | bug-165 | one ack-only gate: a prompt made only of stopwords / ack words / list markers → scan-prompt and the prompt recall inject nothing; a single content word passes | the generated scan-prompt + recall argvs on "yes next" emit > 0 B of content hits |
 | [[task-25.3-stm-ref-admission-and-helix-repeat]] | bug-166 (both halves) | one ref-admission predicate at both extraction sites and the rebuild; helix says a line once per session, never annotates a hub neighbour, and logs every suppression | a replayed `focus hook` envelope stores `s.repla`; a second identical prompt re-emits the helix line |
 | [[task-25.4-grep-bre-translation]] | bug-167 | any backslash-escaped BRE translated once for every grep leg; anything not provably the same language (compile failure, stacked quantifier, locale-inexact class, ANY pattern under a non-UTF-8 locale) to the real grep; differential tests against BSD and GNU grep in two locales | `rmx grep -n 'B0\|group_key' file` exits 2 |
@@ -234,7 +236,7 @@ Read from the plan-26 task specs' file lists on 2026-11-08 (drafts; re-read at 2
 
 ## Acceptance for the plan {#acceptance}
 
-- bug-164..167 reach `fixed` with the mechanism named, and bug-174 reaches `fixed` or stays open
+- bug-164..167 and bug-181 reach `fixed` with the mechanism named, and bug-174 reaches `fixed` or stays open
   with its measured band (25.5 R5), each verified on the deployed build against
   the cliquedb store (read-only, sizes only, nothing copied into the repo) after the release.
 - Each task: RED recorded on the generated hook argv or the CLI (the production path), GREEN
@@ -342,3 +344,41 @@ rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
 | N4 25.5 re-measure trigger | queue line in [[plan-of-plans#queue-bug174-remeasure]] (M ≥ 30 or 2026-12-31); `rmx telemetry --agent-usage` prints the `bre_meta_literal` count | [[task-25.5-substring-bre-metas#r4]], [[task-25.5-substring-bre-metas#rev-round-4]] |
 | N5 bug-181 unscheduled | NOT folded: pending the user | [[task-25.1-recall-hook-byte-budget#open-decisions]] |
 | N6 UserPromptSubmit provisional sum overflows under (B) | R1 names both events (9,256 B > 8,488 B) | [[task-25.1-recall-hook-byte-budget#r1]] |
+
+## Revision round 5 (2026-11-09) {#rev-round-5}
+
+Folds the user's scope decision of 2026-11-09 ([[plan-of-plans#goal-2026-11-09-scope]]): bug-181
+(an MCP `project=` that resolves nothing silently reads the cwd store) joins task 25.1. This
+closes r4-lite N5 ([[bsd-plan25-spec-confirm-r4-lite-cdd6720#n5]]) and 25.1's d12. Detail in
+[[task-25.1-recall-hook-byte-budget#rev-round-5]].
+
+rel: implements -> [[plan-of-plans#goal-2026-11-09-scope]]
+rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720#n5]]
+
+| finding | change | anchor |
+|---|---|---|
+| N5 bug-181 unscheduled (user: fold into 25.1) | 25.1 R10: an unresolved `project` raises `VerbUnknownProjectError(VerbArgsError)` naming the discovered stores, on all 28 MCP tools; `project=None` keeps the cwd behaviour; AC-4 (e) R10 legs + a sweep over `mcp.TOOLS`; AC-14 mutation "silent fallback restored" | [[task-25.1-recall-hook-byte-budget#r10]], [[task-25.1-recall-hook-byte-budget#acceptance]] |
+| task list / plan acceptance | 25.1's row names bug-181; bug-181 joins the plan's `fixed` list | [[#tasks]], [[#acceptance]] |
+| bug-181 registry row | Fix column points at 25.1 R10 / AC-4 (e); status stays open until built | [[bug_registry#registry]] |
+
+## Approval (2026-11-09) {#approval}
+
+`metadata.status: approved` per CLAUDE.md `#plans-pre-written`. Gate checked at `5a4ced8`:
+every task in [[#tasks]] has its spec under `workflow/plans/plan-25-cliquedb-field-report-tasks/`
+(task-25.1-recall-hook-byte-budget, task-25.2-thin-prompt-gate,
+task-25.3-stm-ref-admission-and-helix-repeat, task-25.4-grep-bre-translation,
+task-25.5-substring-bre-metas; 5 of 5, each frontmatter `id` equal to its stem, each `pending`).
+{#approval-gate}
+
+- **Review basis:** the r4-lite confirm ([[bsd-plan25-spec-confirm-r4-lite-cdd6720]], DIRTY
+  0B/1S/5M at `cdd6720`) confirmed all 13 r3 findings closed; N1-N4 and N6 were folded in
+  [[#rev-round-4]] (the report allows the N1 fold to be self-verified); N5 was the one item left,
+  waiting on the user. {#approval-basis}
+- **The last blocker:** the user decided on 2026-11-09 to fold bug-181 into 25.1
+  ([[plan-of-plans#goal-2026-11-09-scope]]); folded in [[#rev-round-5]]. {#approval-bug181}
+- **What approval does not change:** the build order stays [[#ordering]] (3.7, plan-26, plan-27,
+  then 25.1-25.5, before plan-24), and every task still records RED at HEAD after its
+  dependencies merge. {#approval-order}
+
+rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
+rel: implements -> [[plan-of-plans#goal-2026-11-09-scope]]

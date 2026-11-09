@@ -15,9 +15,10 @@ metadata:
 
 > Plan: [[plan-25-cliquedb-field-report]]
 > Status: Pending (spec drafted 2026-11-08; revision rounds 1-3 2026-11-09, [[#rev-round-1]],
-> [[#rev-round-2]], [[#rev-round-3]], [[#rev-round-4]]; r4-lite confirm folded; approval pending
-> the user's bug-181 decision, d12)
-> Bug: bug-164 (cliquedb priority 1)
+> [[#rev-round-2]], [[#rev-round-3]], [[#rev-round-4]]; r4-lite confirm folded; revision round 5
+> [[#rev-round-5]] folds bug-181 as [[#r10]] on the user's decision of 2026-11-09 (d12 closed);
+> plan-25 approved 2026-11-09, [[plan-25-cliquedb-field-report#approval]]; not built)
+> Bugs: bug-164 (cliquedb priority 1); bug-181 (MCP `project=` silent cwd fallback, folded r5)
 > Depends on: task 3.7 MERGED to `master` ([[plan-25-cliquedb-field-report#overlap]]); plan-26
 > merged (its 26.4 owns the save-state mtype fix this task re-asserts on the packed path, and its
 > 26.7 regroups `MEMORY.md`, which R3's curated-hook lookup reads); 23.0's
@@ -41,6 +42,7 @@ rel: derives-from -> [[bsd-plan25-spec-r1-2f4a1df]]
 rel: derives-from -> [[bsd-plan25-spec-r2-5b8ed15]]
 rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
 rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
+rel: implements -> [[plan-of-plans#goal-2026-11-09-scope]]
 rel: depends-on -> [[reference_hook_output_10k_cap]]
 rel: related-to -> [[project_recall_hook_savestate_noise_fix]]
 rel: related-to -> [[task-24.2a-hook-verbs-explicit-session]]
@@ -307,6 +309,63 @@ mutation is carried (AC-14 maps them) unless a row below says otherwise.
 10. **R9 Spans to the one emitter** (19.1 R8): the pack returns per-named-hit byte spans; 21.1's
     single site (`_RecallCall`, `cli.py:12837`) emits `delivered` from them, never for a trimmed
     hit. The packer emits nothing. {#r9}
+11. **R10 A named MCP target that resolves nothing is an error, on every tool** (bug-181; folded
+    by the user's decision of 2026-11-09, d12, [[plan-of-plans#goal-2026-11-09-scope]]; sized by
+    [[bsd-plan25-spec-confirm-r4-lite-cdd6720#n5]]). R5 makes `project=` load-bearing for recall
+    (the moved leg reads the NAMED store's replica), so a name that resolves nothing must not
+    quietly become the cwd store. {#r10}
+    - **Resolution order** in `mcp._resolve_root(args)` (`mcp.py:49-67`): `root` given → as
+      today (it wins; `project` is not consulted). `project` given (truthy, as today; an empty
+      string counts as not given) and `_resolve_project_root` returns None → **raise
+      `verbs.VerbUnknownProjectError`**; never fall through to `$REFMATRIX_ROOT` or the cwd store.
+      Neither given (`project=None`) → unchanged: `$REFMATRIX_ROOT`, then the nearest
+      `.refmatrix` above the server's cwd. {#r10-order}
+    - **The type.** `class VerbUnknownProjectError(VerbArgsError)` in `verbs.py`, beside
+      `VerbError` / `VerbBusyError` / `VerbAbsentError` / `VerbArgsError` (`verbs.py:32-52`).
+      It is a caller mistake (the caller named a target that does not exist), and `_verb_tool`
+      already re-raises `VerbArgsError` so the dispatcher answers `isError: true` with the text
+      `VerbUnknownProjectError: …` (`mcp.py:80-90`, `:211-220`). It is NOT `VerbAbsentError`:
+      absent is the one condition that licenses a bootstrap fallback (`_t_memory_add`'s
+      in-process `Store` open, `mcp.py:98-118`), and an unknown name says nothing about any
+      daemon. It is NOT `VerbBusyError` (nothing is busy). It does not go through
+      `verbs.classify_transport_error` (`verbs.py:208`): that function classifies `daemon.call`
+      exceptions, and this is raised before anything is dialled; it follows that function's rule
+      that each condition gets its own type and its own words. {#r10-type}
+    - **The words.** The message names the project and the discovered store names, sorted, from
+      the same `discovery.discover_roots()` / `discovery.store_name()` walk the lookup used:
+      `project 'C' names no registered refmatrix store (known: A, B, global); pass a registered
+      project name or root=<path>`. {#r10-words}
+    - **No swallowed skip.** `_resolve_project_root`'s `except Exception: continue` (`mcp.py:43-45`)
+      is removed: `discovery.store_name` already absorbs its own failures
+      (`discovery.py:265-273`), so the clause can only hide a defect on a memory path (CLAUDE.md
+      `#no-silent-failures`). {#r10-no-skip}
+    - **Every tool, not only recall.** `project` is a TRANSPORT property merged into every
+      verb's schema (`verbs._TRANSPORT_PROPS`, `verbs.py:147-157`, appended by the `@verb`
+      registrar), and every MCP handler resolves its root through `_resolve_root` before its verb
+      runs: the 27 generated `_verb_tool` handlers evaluate `_resolve_root(args)` before
+      `VERBS[name].run`, and the one special handler `_t_memory_add` calls it before its `try`,
+      so its bootstrap fallback is never reached on an unknown name. The 28 tools at `5a4ced8`
+      (`set(TOOLS) == set(VERBS)`, `tests/test_verb_parity.py`): `rmx_context`, `rmx_query`,
+      `rmx_memory_add` (special handler), `rmx_memory_recall`, `rmx_ingest`, `rmx_save_state`,
+      `rmx_focus`, `rmx_focus_note`, `rmx_change_subject`, `rmx_projects`, `rmx_where`,
+      `rmx_search`, `rmx_locate`, `rmx_task`, `rmx_queues`, `rmx_ingest_status`,
+      `rmx_recall_state`, `rmx_memory`, `rmx_bus_pub`, `rmx_bus_history`, `rmx_bus_channels`,
+      `rmx_bus_read`, `rmx_bus_mark_read`, `rmx_bus_delete`, `rmx_bus_archive`,
+      `rmx_bus_unarchive`, `rmx_bus_purge`, `rmx_bus_stats`. Tools 3.7 / 26.5 add before this
+      task's RED inherit it through the same registrar; AC-4 (e) sweeps `mcp.TOOLS` at test time,
+      so a later tool is covered without a list edit. {#r10-tools}
+    - **`rmx_bus_pub`'s second meaning.** `project` is also `bus_pub`'s own message field
+      (`verbs.py:1607-1616`); the transport reads the same key first. After R10 a publish with
+      `project="X"` for an unregistered X raises instead of publishing from the cwd store
+      (whose name is the default sender, `_bus_sender`). Accepted: the hub bus is machine-local,
+      and a publish tagged with a project this machine does not know is the same caller mistake.
+      A channel-derived project (`proj:X:…` with no `project=` argument) never reaches
+      `_resolve_root` and is untouched. Splitting the two meanings is out of scope. {#r10-bus}
+    - **Schema words.** `_TRANSPORT_PROPS["project"]["description"]` changes from "Target another
+      project by NAME (any live store)" to say a registered store and that an unknown name is an
+      error, never a fallback. {#r10-schema}
+    - Not touched: the channel bridge's `_resolve_root({})` (`mcp.py:259`, no project) and the
+      CLI's own resolver (`cli._hub_resolve_root`, `cli.py:2705`). {#r10-scope}
 
 ## Acceptance criteria {#acceptance}
 
@@ -349,7 +408,20 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
      exactly like the mutation below). Then MCP `rmx_memory_recall` called from A's root with
      `project=B` returns B's rows (none of A's) from B's replica. RED at HEAD: the MCP verb never
      consults a replica and raises. A mutation that leaves the moved function reading the CWD's
-     store returns A's rows and fails. The silent fallback itself is bug-181, not fixed here.
+     store returns A's rows and fails.
+     **Unregistered target (R10, bug-181).** With `REFMATRIX_ROOT` unset, the cwd inside A, and a
+     store name C in NO sandbox registry: (1) `mcp._resolve_root({"project": "C"})` raises
+     `VerbUnknownProjectError` whose message names `C` and `B` (a discovered name); (2) MCP
+     `tools/call` `rmx_memory_recall` with `project="C"` answers `isError: true`, text starting
+     `VerbUnknownProjectError:`, and carries none of A's rows; (3) the same call for EVERY name in
+     `mcp.TOOLS` (parametrized at test time, `project="C"` and no other argument) answers
+     `isError` with that type before any verb runs, 23.0's guard records 0 socket connects, and
+     after `rmx_memory_add` with `project="C"`, `name`, `content` A's memory count is unchanged
+     (no bootstrap write into the cwd store); (4) `{}` still resolves to A (today's cwd
+     behaviour) and `{"root": <A>, "project": "C"}` resolves to A (root wins). RED at HEAD: (1)
+     returns A's root and (2) returns A's rows. `tests/test_mcp_memory_recall_routing.py::
+     test_resolve_root_unknown_project_falls_through`, which pins the fallback at HEAD, is
+     inverted into (1).
    - (f) **Interactive path.** `rmx memory recall "q"` (table) and `--json` name the same hits as
      the verb for the same query, including a `kind=doc` row on the fixture.
    - (d) **Rows parity:** with the replica leg forced on and forced off (worker present / absent,
@@ -451,7 +523,9 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
     `verbs.memory_partition(root)` (AC-4 h); the pack looking hooks up by id only (AC-9 path-keyed
     memdir prints first sentences); `focus context` not fitted (AC-12b); a single
     `NON_RMX_RESERVE_BYTES` for both events (AC-12b under (B)/(C) overflows with caveman-activate's
-    bytes).
+    bytes); **HEAD's silent fallback restored** (`_resolve_root` falls through to
+    `$REFMATRIX_ROOT` / the cwd store when `project` resolves nothing: AC-4 (e) R10 legs (1)-(3)
+    fail, (2) by returning A's rows).
 
 ## Fixture and measurement {#fixture}
 
@@ -485,9 +559,11 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
 |---|---|
 | `src/refmatrix/verbs.py` (`memory_recall`, `_memory_recall_rows`, `rmx_memory` get) | root-explicit replica-first leg and its body fetch; the `kind=doc` leg; `pack`, `max_bytes`, `include_subjects`; `embedder_policy` read from `**internal` (R5, never a named param); default `exclude_mtype` adds `subject`; get `scope`; hooks map from `load_hooks` |
 | `src/refmatrix/mcp.py` (`rmx_memory_recall`, `:142`) | unchanged surface; behaviour now replica-first via the verb (d6, d7) |
+| `src/refmatrix/mcp.py` (`_resolve_root` `:49-67`, `_resolve_project_root` `:33-46`) | R10: an unresolved `project` raises `VerbUnknownProjectError` naming the discovered stores; `project=None` unchanged; the `except Exception: continue` goes |
+| `src/refmatrix/verbs.py` (error classes `:32-52`, `_TRANSPORT_PROPS` `:147-157`) | R10: `VerbUnknownProjectError(VerbArgsError)`; the `project` transport description says registered-only, no fallback |
 | `src/refmatrix/cli.py` (`curator status`, after 3.7) / `verbs.curator` | `fit_blocks` to `budget("curator_status")` |
 | `src/refmatrix/cli.py` (`focus context`) / 3.7's `verbs.focus` dispatcher | `--max-bytes`, `fit_blocks` to `budget("focus_context")` (R0b) |
-| `tests/test_mcp_memory_recall_routing.py` | its `daemon.call` mock no longer proves the route; AC-4 (e) runs a real worker |
+| `tests/test_mcp_memory_recall_routing.py` | its `daemon.call` mock no longer proves the route; AC-4 (e) runs a real worker; `test_resolve_root_unknown_project_falls_through` (pins bug-181's fallback) inverted to assert the raise (R10) |
 | `src/refmatrix/cli.py` (`memory recall`, `_memory_recall_impl`, `_replica_memory_recall`, `memory get`, `scan-prompt`) | the hybrid branch calls the verb and renders; `_replica_memory_recall` moves out; `--pack`, `--max-bytes`, `--include-subjects`; `memory get --scope`; `scan-prompt --max-bytes` |
 | `src/refmatrix/recall.py` | `replica_memory_recall(root, *, partition, embedder_policy, …)` beside 3.7's `shared_embedder` (d5, d10); `RMX_RECALL_REPLICA_FIRST` read here |
 | `src/refmatrix/scan.py` | `max_bytes` through `hook_budget.fit_blocks` |
@@ -495,11 +571,11 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
 | `src/refmatrix/hooks.py` (`:296-300`, `:331-336`, `:357-362`) | `--pack`, raised `--k`, PreCompact per R0 |
 | `src/refmatrix/mcp.py` (if its tool schema is hand-listed) | the new verb params (`pack`, `max_bytes`, `include_subjects`; never `embedder_policy`) |
 | `tests/test_verb_parity.py` | the new params' twins (`embedder_policy` has none: `**internal`, AC-7) |
-| `workflow/bug_registry.md` | bug-164 → fixed at merge, with the mechanism and the before / after; bug-181 (MCP silent cwd fallback) is NOT closed by this task |
+| `workflow/bug_registry.md` | bug-164 → fixed at merge, with the mechanism and the before / after; bug-181 (MCP silent cwd fallback) → fixed at merge (R10, AC-4 (e)), with the mechanism |
 
 ## Test strategy {#test-strategy}
 
-- RED first: AC-1, AC-4 (a)(b), AC-6, AC-11, AC-12 against HEAD (after 3.7 and plan-26 merge),
+- RED first: AC-1, AC-4 (a)(b), AC-4 (e)'s R10 legs (1)-(2), AC-6, AC-11, AC-12 against HEAD (after 3.7 and plan-26 merge),
   recorded with byte counts; a RED that passes at HEAD is not a RED
   ([[feedback_red_test_must_fail_at_head]]).
 - No mock of recall, the verb, the packer, the fitter, the bridge or the hook generator. The only
@@ -525,7 +601,7 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
 | d8 | No daemon and no hub worker on a hook | exit 0, nothing injected, counted through the existing recorder (`outcome: "error"`, `error: "VerbAbsentError: …"`); today it exits 1 (a hook error). Interactive and MCP callers: per d10 |
 | d10 | Daemonless embedder policy (r3 #s1, decided as the user would) | hook modes stay hub-only (5 s budget; a spawn or in-process load is 6-33 s); leg order hub-worker replica → daemon RPC → `recall.shared_embedder(root)` replica ONLY on `VerbAbsentError` (no daemon); interactive and MCP use that last step as 3.7's graph verbs do, in the no-daemon branch only (r4 #n1); `embedder_policy` rides `**internal` (r4 #n2); `warnings` name the leg and the embedder |
 | d11 | SessionStart budget (r3 #m9) | same per-command unit and per-event reserve as UserPromptSubmit; R0 probes both events; `focus context` capped through `fit_blocks`; AC-12b |
-| d12 | Does bug-181 (MCP silent cwd fallback, `mcp._resolve_root`) join 25.1 (r4 #n5) | **PENDING the user's decision**; not folded; plan-25 does not depend on it (AC-4 (e) guards its own test) |
+| d12 | Does bug-181 (MCP silent cwd fallback, `mcp._resolve_root`) join 25.1 (r4 #n5) | **decided by the user, 2026-11-09: folded** ([[plan-of-plans#goal-2026-11-09-scope]]); [[#r10]] raises `VerbUnknownProjectError` (a `VerbArgsError`) on every MCP tool; `project=None` keeps the cwd behaviour; AC-4 (e) R10 legs + AC-14 mutation |
 | d9 | Budget unit | the generated hook COMMAND (what Claude Code caps); producers sharing a command share its budget; every rmx producer is hard-capped; non-rmx hooks get a measured reserve |
 
 ## Revision round 1 (2026-11-09) {#rev-round-1}
@@ -588,3 +664,20 @@ rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
 | N2 `embedder_policy` published in the MCP schema, no click twin | rides `**internal` like `trace` (`verbs.py:919`, `:928`); the schema skips only `**kwargs` (`verbs.py:136`); AC-7 asserts it absent from the schema, no parity row; mutation "named verb param" | [[#r5]], AC-7, AC-14, [[#files-to-modify]] |
 | N5 bug-181 has no slot | NOT folded: pending the user (d12) | d12 |
 | N6 UserPromptSubmit provisional sum also overflows under (B) | R1 names both events: UPS 9,256 B > `EVENT_BUDGET` 8,488 B | [[#r1]] |
+
+## Revision round 5 (2026-11-09) {#rev-round-5}
+
+Folds the user's decision of 2026-11-09 ([[plan-of-plans#goal-2026-11-09-scope]]): bug-181 joins
+this task, closing d12 and r4-lite N5 ([[bsd-plan25-spec-confirm-r4-lite-cdd6720#n5]]). The `src`
+lines cited were re-read at master `5a4ced8`.
+
+rel: implements -> [[plan-of-plans#goal-2026-11-09-scope]]
+rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720#n5]]
+
+| finding | change | anchor |
+|---|---|---|
+| N5 bug-181 has no slot (now: the user folds it here) | R10: an unresolved `project` raises `VerbUnknownProjectError(VerbArgsError)` naming the discovered stores, on all 28 MCP tools (27 `_verb_tool` handlers + `_t_memory_add`); `project=None` unchanged; `root` still wins; `rmx_bus_pub`'s double meaning of `project` accepted and recorded; the swallowing `except` in `_resolve_project_root` removed | [[#r10]] |
+| AC for bug-181 | AC-4 (e) R10 legs (1)-(4): resolver raises, recall answers `isError` without A's rows, a sweep over `mcp.TOOLS`, no bootstrap write; HEAD's pinning test inverted | [[#acceptance]] |
+| mutation | HEAD's silent fallback restored fails AC-4 (e) R10 legs (1)-(3) | AC-14 |
+| d12 | closed as decided by the user | [[#open-decisions]] |
+| files | `mcp.py` resolver, `verbs.py` error class + transport description, the routing test, bug-181's registry row closes at merge | [[#files-to-modify]] |
