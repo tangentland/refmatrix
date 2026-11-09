@@ -28,17 +28,213 @@ Window: the newest run bullets. Older bullets are folded VERBATIM, anchor ids un
 
 ## Former anchors, restored {#former-anchors}
 
-Each id resolves here so historical citations stay valid; the content lives at the link before it. Folded run bullets keep the SAME id inside their ledger memory. Several ids share a line (the linter accepts it) to hold the ~50-line cap.
+Each id resolves here so historical citations stay valid; the content lives at the link before it. Folded run bullets keep the SAME id inside their ledger memory. One id per line (GMD SPEC §3): the store ingester registers only the first anchor on a line, so packed ids lint clean but vanish from `rmx` (found 2026-11-09 after efa5f33). This section is exempt from the 50-line cap.
 
-- Pointers: `imp-busy-absent-call-tree` → [[impression_bsd_busy_absent_call_tree]]. {#imp-busy-absent-call-tree} · `imp-cost-measured-idle` → [[impression_bsd_cost_measured_idle]]. {#imp-cost-measured-idle} · `imp-existence-check-tests` → [[impression_bsd_existence_check_tests]]. {#imp-existence-check-tests} · `imp-quoted-line-sibling` → [[impression_bsd_quoted_line_sibling]]. {#imp-quoted-line-sibling} · `imp-tests-bypass-wiring` → [[impression_bsd_tests_bypass_wiring]]. {#imp-tests-bypass-wiring} · `imp-unread-diagnostic-field` → [[impression_bsd_unread_diagnostic_field]]. {#imp-unread-diagnostic-field} · `imp-grace-before-signal` → [[impression_bsd_grace_spent_before_signal]]. {#imp-grace-before-signal}
-- Pointers: `imp-partial-bound` → [[impression_bsd_partial_bound_guard]], amended by [[impression_bsd_partial_bound_guard_2]]. {#imp-partial-bound} · `imp-silent-memory` → [[impression_bsd_silent_memory_paths]]. {#imp-silent-memory} · `imp-registry-2-strikes` → [[impression_bsd_registry_row_deferral]]. {#imp-registry-2-strikes} · `imp-registry-three-strikes` → [[impression_bsd_registry_row_deferral]], same lineage one strike later. {#imp-registry-three-strikes} · `imp-consolidated-1` — listed by name in [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-consolidated-1} · `imp-consolidated-2` — listed by name in [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-consolidated-2} · `imp-fix-at-quoted-line` — listed by name in [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]; the live form is [[impression_bsd_quoted_line_sibling]]. {#imp-fix-at-quoted-line}
-- Pointers: `imp-socket-sim-probe` — listed by name in [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-socket-sim-probe} · `imp-busy-absent-verb-layer` — busy≠absent at the verb layer; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-busy-absent-verb-layer} · `imp-fleet-sum-timeouts` — a fan-out's bound is the SUM of its legs' timeouts; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-fleet-sum-timeouts} · `imp-guard-vs-incident-state` — guards built for the fixed state, not the incident; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-guard-vs-incident-state} · `imp-migration-no-tests` — verb migrations shipped without tests; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-migration-no-tests} · `imp-mock-the-sut` — a test that monkeypatches the function under test; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-mock-the-sut} · `imp-plan3-r3-progress` — plan-3 round-3 progress note; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-plan3-r3-progress}
-- Pointers: `imp-silent-pass-migrates` — a silent pass carried across a migration; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-silent-pass-migrates} · `imp-summary-claims-bookkeeping` — a summary claiming the bookkeeping instead of the behaviour; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-summary-claims-bookkeeping} · `imp-two-paths` — two ways to do X, one of them unwired; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-two-paths} · `imp-getsource-mid-run-edit` — a suite run whose source files changed underneath it (`inspect.getsource` and imports read the edited file mid-run) is not a run of the committed tree; dropped from the graph by commit `8645ef6` and restored here for bug-041/042/043's citation (bug-114); consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-getsource-mid-run-edit} · `imp-verbatim-fix` — a remedy implementing my one-line wording verbatim and still wrong; the live form is [[impression_bsd_my_fix_needs_measuring]]. {#imp-verbatim-fix}
-- [[impression_bsd_ledger_2026_09_14_16]] (2026-09-14..16, plans 1-12 and bug-041/042/043): {#imp-consolidated-0914} {#imp-consolidated-0914b} {#imp-one-rule-drops-exceptions} {#imp-consolidated-0914c} {#imp-consolidated-r6} {#imp-verb-bound-twin-bypass} {#imp-consolidated-r10} {#imp-read-fix-reaches-write-path} {#imp-consolidated-r12} {#imp-renderer-destroys-payload} {#imp-fake-omits-the-new-field} {#imp-counter-read-at-completion} {#imp-right-side-wrong-scope} {#imp-gate-firing-rate} {#imp-harness-omits-the-losing-arms} {#imp-mutation-that-did-nothing} {#imp-mutate-the-mistake} {#imp-plan12-close} {#imp-i-did-it-too} {#imp-cap-in-the-wrong-unit} {#imp-whose-stdout-is-it} {#imp-poll-loses-the-partial-read}
-- [[impression_bsd_ledger_2026_09_20]] (2026-09-20, plan-13 pre-build audit): {#imp-arbiter-cannot-see-mechanism} {#imp-the-before-row} {#imp-gap-that-already-ships} {#imp-partition-is-not-a-peer} {#imp-who-builds-the-sample} {#imp-my-number-becomes-their-headline} {#imp-one-prefix-four-gates} {#imp-harness-env-decides}
-- [[impression_bsd_ledger_2026_10_01]] (2026-10-01, plans 3/6/8/9/10): {#imp-callee-contract-not-raising} {#imp-the-number-came-back} {#imp-fleet-state-is-not-evidence} {#imp-json-format-drops-the-payload} {#imp-gate-run-per-member} {#imp-complete-without-summary} {#imp-correction-reverses-decision} {#imp-guard-list-by-length} {#imp-suite-measurement-contaminated} {#imp-collected-count-shrank-silently} {#imp-lint-scope-is-checkout-derived} {#imp-shared-tree-confound} {#imp-peer-warning-is-testable} {#imp-parallel-auditors-one-tree} {#imp-collected-count-not-verdict}
-- [[impression_bsd_ledger_2026_10_06]] (2026-10-06, plans 14-16 and bug-073/074): {#imp-suite-writes-its-own-source} {#imp-cause-broader-than-diff} {#imp-the-one-hand-computed-cell} {#imp-shell-control-is-not-a-control} {#imp-order-fix-regresses-the-unranked} {#imp-count-cannot-see-order} {#imp-resolve-is-not-identity} {#imp-filter-after-limit} {#imp-guard-moved-off-path} {#imp-live-proof-wrong-path}
-- [[impression_bsd_ledger_2026_10_07]] (2026-10-07, plan-16 r2-r4 and bug-076..085 rounds r3-r13): {#imp-offset-paging-total-order} {#imp-second-universe} {#imp-r4-quality-siblings} {#imp-resolved-to-read-not-printed} {#imp-symlinked-cwd-is-live} {#imp-superseded-must-be-on-the-deletion-list} {#imp-dedup-asserted-through-a-set} {#imp-env-after-import-is-inert} {#imp-denylist-not-shape} {#imp-loud-on-one-leg} {#imp-batch-one-level-down} {#imp-count-in-a-dict} {#imp-importorskip-broken-install} {#imp-dormant-path-woken} {#imp-lock-fix-moves-the-answer} {#imp-deadline-is-not-a-timeout} {#imp-budget-view-shares-the-lock} {#imp-fallback-sets-the-name} {#imp-close-is-not-retirement} {#imp-heal-runs-once} {#imp-route-named-helper-tested}
-- [[impression_bsd_ledger_2026_10_14]] (2026-10-14, plans 16-23 spec rounds and bug-098/105/109/110/111): {#imp-yield-owns-the-binding} {#imp-exactly-once-window} {#imp-count-not-seconds} {#imp-phantom-handle} {#imp-circular-guard} {#imp-discover-roots-live} {#imp-reachability-by-fiat} {#imp-undecayed-counter-one-way} {#imp-derived-rows-pollute-recall} {#imp-shared-schema-first-consumer} {#imp-exploration-number-rerun} {#imp-suite-writes-measured-log} {#imp-repair-on-a-uniqueness-the-data-lacks} {#imp-recovery-primitive-assumed} {#imp-the-log-names-the-leak} {#imp-seed-must-survive-verification} {#imp-provenance-needs-dialect} {#imp-click-still-parses} {#imp-paraphrase-flips-the-verb} {#imp-needs-x-is-unowned} {#imp-anchor-must-measure-the-thing} {#imp-2026-10-14-p19-21-r2-a-fixed-producer-does-not-f} {#imp-2026-10-14-p19-21-r2-a-replay-of-stored-derived-} {#imp-2026-10-14-p19-21-r2-measure-the-window-before-y} {#imp-plan-16-22-re-review-32dde06-re-run-the-caller-s} {#imp-a-provenance-table-outside-facts-log-is-erased-b} {#imp-read-a-probe-s-by-root-as-relative-to-which-base} {#imp-binding-is-every-cache} {#imp-idempotent-is-a-claim} {#imp-chunking-moves-the-stamp} {#imp-guards-read-the-old-shape} {#imp-oracle-invariant-to-legit-change} {#imp-restore-shares-a-key} {#imp-the-binding-local-guards-daemon-py-2066-store-py} {#imp-2026-10-14-p19-21-r3-an-env-var-is-a-snapshot-of} {#imp-2026-10-14-p19-21-r3-fixing-one-racy-field-invit} {#imp-2026-10-14-p19-21-r3-check-the-renderer-before-t} {#imp-plan-16-22-r3-6091648-before-demanding-reproduce} {#imp-a-re-run-verifier-must-replay-the-environment-to} {#imp-set-level-repair-specs-test-them-with-a-real-lin} {#imp-adopt-by-merge-not-sha} {#imp-find-the-reader} {#imp-param-needs-consumer-edit} {#imp-unknown-is-not-absent} {#imp-log-on-read-is-a-write} {#imp-fallback-hides-primary} {#imp-shortcut-partial-identity} {#imp-remedy-guards-unpinned} {#imp-same-name-different-failure} {#imp-inventory-row-wrong-fence} {#imp-repair-is-a-writer} {#imp-gc-cannot-see-pybind} {#imp-derived-read-needs-presence} {#imp-scope-helper-in-a-loop} {#imp-extend-the-merged-not-the-cited} {#imp-scan-through-the-helper} {#imp-decision-row-does-not-edit-spec} {#imp-guard-wired-at-one-open} {#imp-id-keyed-event-cannot-replay} {#imp-decision-row-not-reflected}
-- [[impression_bsd_ledger_2026_10_15_16]] (2026-10-15..16, plans 16-23 r7-r8, plan-18, bugs 112-129): {#imp-residual-is-the-majority} {#imp-relocated-sink-loses-scope} {#imp-named-safe-needs-exemption} {#imp-guard-after-side-effect} {#imp-retirement-reason-is-global} {#imp-caveat-is-a-root-defect} {#imp-nameless-is-reborn} {#imp-dead-id-is-catalog-relative} {#imp-static-rule-walks-helpers} {#imp-read-the-whole-stop} {#imp-181-child-vs-inproc} {#imp-plan18-wal-sidecar-and-interrupt-gap} {#imp-respawn-exit-races-graceful} {#imp-fix-meets-old-slot} {#imp-181-seq-open-state} {#imp-close-under-use-per-driver} {#imp-recovered-exit-skips-success-tail} {#imp-caller-keyed-exemption} {#imp-redirect-silent-skips} {#imp-wrapper-exception-hides-cause} {#imp-state-file-capture-misses-live} {#imp-host-diff-closes-capture-fix} {#imp-pidfile-suite-first} {#imp-ast-guard-one-spelling}
-- [[impression_bsd_ledger_2026_10_19]] (2026-10-19, task 21.1, plan-3 r8-r12, plan-4 r5-r6): {#imp-spec-contradiction-settled-in-src} {#imp-bool-writer-callers-drop} {#imp-recorder-preconditions-unguarded} {#imp-table-fixes-one-column} {#imp-dev-venv-not-dev-tree} {#imp-argv0-misses-dash-m} {#imp-extraction-moves-finally} {#imp-remedy-mutations-own-edits} {#imp-spec-vs-walk} {#imp-owes-is-a-deferral} {#imp-ping-double-skips-busy} {#imp-crash-to-success-check-landing} {#imp-guard-closure-depth} {#imp-plant-the-breaking-order}
+- `imp-busy-absent-call-tree` → [[impression_bsd_busy_absent_call_tree]]. {#imp-busy-absent-call-tree}
+- `imp-cost-measured-idle` → [[impression_bsd_cost_measured_idle]]. {#imp-cost-measured-idle}
+- `imp-existence-check-tests` → [[impression_bsd_existence_check_tests]]. {#imp-existence-check-tests}
+- `imp-quoted-line-sibling` → [[impression_bsd_quoted_line_sibling]]. {#imp-quoted-line-sibling}
+- `imp-tests-bypass-wiring` → [[impression_bsd_tests_bypass_wiring]]. {#imp-tests-bypass-wiring}
+- `imp-unread-diagnostic-field` → [[impression_bsd_unread_diagnostic_field]]. {#imp-unread-diagnostic-field}
+- `imp-grace-before-signal` → [[impression_bsd_grace_spent_before_signal]]. {#imp-grace-before-signal}
+- `imp-partial-bound` → [[impression_bsd_partial_bound_guard]], amended by [[impression_bsd_partial_bound_guard_2]]. {#imp-partial-bound}
+- `imp-silent-memory` → [[impression_bsd_silent_memory_paths]]. {#imp-silent-memory}
+- `imp-registry-2-strikes` → [[impression_bsd_registry_row_deferral]]. {#imp-registry-2-strikes}
+- `imp-registry-three-strikes` → [[impression_bsd_registry_row_deferral]], same lineage one strike later. {#imp-registry-three-strikes}
+- `imp-consolidated-1` — listed by name in [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-consolidated-1}
+- `imp-consolidated-2` — listed by name in [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-consolidated-2}
+- `imp-fix-at-quoted-line` — listed by name in [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]; the live form is [[impression_bsd_quoted_line_sibling]]. {#imp-fix-at-quoted-line}
+- `imp-socket-sim-probe` — listed by name in [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-socket-sim-probe}
+- `imp-busy-absent-verb-layer` — busy≠absent at the verb layer; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-busy-absent-verb-layer}
+- `imp-fleet-sum-timeouts` — a fan-out's bound is the SUM of its legs' timeouts; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-fleet-sum-timeouts}
+- `imp-guard-vs-incident-state` — guards built for the fixed state, not the incident; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-guard-vs-incident-state}
+- `imp-migration-no-tests` — verb migrations shipped without tests; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-migration-no-tests}
+- `imp-mock-the-sut` — a test that monkeypatches the function under test; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-mock-the-sut}
+- `imp-plan3-r3-progress` — plan-3 round-3 progress note; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-plan3-r3-progress}
+- `imp-silent-pass-migrates` — a silent pass carried across a migration; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-silent-pass-migrates}
+- `imp-summary-claims-bookkeeping` — a summary claiming the bookkeeping instead of the behaviour; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-summary-claims-bookkeeping}
+- `imp-two-paths` — two ways to do X, one of them unwired; consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-two-paths}
+- `imp-getsource-mid-run-edit` — a suite run whose source files changed underneath it (`inspect.getsource` and imports read the edited file mid-run) is not a run of the committed tree; dropped from the graph by commit `8645ef6` and restored here for bug-041/042/043's citation (bug-114); consolidated, see [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-getsource-mid-run-edit}
+- `imp-verbatim-fix` — a remedy implementing my one-line wording verbatim and still wrong; the live form is [[impression_bsd_my_fix_needs_measuring]]. {#imp-verbatim-fix}
+- [[impression_bsd_ledger_2026_09_14_16]] (2026-09-14..16, plans 1-12 and bug-041/042/043) — folded run bullets; each id below keeps the same id inside that memory.
+  - `imp-consolidated-0914` → [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914]]. {#imp-consolidated-0914}
+  - `imp-consolidated-0914b` → [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914b]]. {#imp-consolidated-0914b}
+  - `imp-one-rule-drops-exceptions` → [[impression_bsd_ledger_2026_09_14_16#imp-one-rule-drops-exceptions]]. {#imp-one-rule-drops-exceptions}
+  - `imp-consolidated-0914c` → [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-0914c]]. {#imp-consolidated-0914c}
+  - `imp-consolidated-r6` → [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-r6]]. {#imp-consolidated-r6}
+  - `imp-verb-bound-twin-bypass` → [[impression_bsd_ledger_2026_09_14_16#imp-verb-bound-twin-bypass]]. {#imp-verb-bound-twin-bypass}
+  - `imp-consolidated-r10` → [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-r10]]. {#imp-consolidated-r10}
+  - `imp-read-fix-reaches-write-path` → [[impression_bsd_ledger_2026_09_14_16#imp-read-fix-reaches-write-path]]. {#imp-read-fix-reaches-write-path}
+  - `imp-consolidated-r12` → [[impression_bsd_ledger_2026_09_14_16#imp-consolidated-r12]]. {#imp-consolidated-r12}
+  - `imp-renderer-destroys-payload` → [[impression_bsd_ledger_2026_09_14_16#imp-renderer-destroys-payload]]. {#imp-renderer-destroys-payload}
+  - `imp-fake-omits-the-new-field` → [[impression_bsd_ledger_2026_09_14_16#imp-fake-omits-the-new-field]]. {#imp-fake-omits-the-new-field}
+  - `imp-counter-read-at-completion` → [[impression_bsd_ledger_2026_09_14_16#imp-counter-read-at-completion]]. {#imp-counter-read-at-completion}
+  - `imp-right-side-wrong-scope` → [[impression_bsd_ledger_2026_09_14_16#imp-right-side-wrong-scope]]. {#imp-right-side-wrong-scope}
+  - `imp-gate-firing-rate` → [[impression_bsd_ledger_2026_09_14_16#imp-gate-firing-rate]]. {#imp-gate-firing-rate}
+  - `imp-harness-omits-the-losing-arms` → [[impression_bsd_ledger_2026_09_14_16#imp-harness-omits-the-losing-arms]]. {#imp-harness-omits-the-losing-arms}
+  - `imp-mutation-that-did-nothing` → [[impression_bsd_ledger_2026_09_14_16#imp-mutation-that-did-nothing]]. {#imp-mutation-that-did-nothing}
+  - `imp-mutate-the-mistake` → [[impression_bsd_ledger_2026_09_14_16#imp-mutate-the-mistake]]. {#imp-mutate-the-mistake}
+  - `imp-plan12-close` → [[impression_bsd_ledger_2026_09_14_16#imp-plan12-close]]. {#imp-plan12-close}
+  - `imp-i-did-it-too` → [[impression_bsd_ledger_2026_09_14_16#imp-i-did-it-too]]. {#imp-i-did-it-too}
+  - `imp-cap-in-the-wrong-unit` → [[impression_bsd_ledger_2026_09_14_16#imp-cap-in-the-wrong-unit]]. {#imp-cap-in-the-wrong-unit}
+  - `imp-whose-stdout-is-it` → [[impression_bsd_ledger_2026_09_14_16#imp-whose-stdout-is-it]]. {#imp-whose-stdout-is-it}
+  - `imp-poll-loses-the-partial-read` → [[impression_bsd_ledger_2026_09_14_16#imp-poll-loses-the-partial-read]]. {#imp-poll-loses-the-partial-read}
+- [[impression_bsd_ledger_2026_09_20]] (2026-09-20, plan-13 pre-build audit) — folded run bullets; each id below keeps the same id inside that memory.
+  - `imp-arbiter-cannot-see-mechanism` → [[impression_bsd_ledger_2026_09_20#imp-arbiter-cannot-see-mechanism]]. {#imp-arbiter-cannot-see-mechanism}
+  - `imp-the-before-row` → [[impression_bsd_ledger_2026_09_20#imp-the-before-row]]. {#imp-the-before-row}
+  - `imp-gap-that-already-ships` → [[impression_bsd_ledger_2026_09_20#imp-gap-that-already-ships]]. {#imp-gap-that-already-ships}
+  - `imp-partition-is-not-a-peer` → [[impression_bsd_ledger_2026_09_20#imp-partition-is-not-a-peer]]. {#imp-partition-is-not-a-peer}
+  - `imp-who-builds-the-sample` → [[impression_bsd_ledger_2026_09_20#imp-who-builds-the-sample]]. {#imp-who-builds-the-sample}
+  - `imp-my-number-becomes-their-headline` → [[impression_bsd_ledger_2026_09_20#imp-my-number-becomes-their-headline]]. {#imp-my-number-becomes-their-headline}
+  - `imp-one-prefix-four-gates` → [[impression_bsd_ledger_2026_09_20#imp-one-prefix-four-gates]]. {#imp-one-prefix-four-gates}
+  - `imp-harness-env-decides` → [[impression_bsd_ledger_2026_09_20#imp-harness-env-decides]]. {#imp-harness-env-decides}
+- [[impression_bsd_ledger_2026_10_01]] (2026-10-01, plans 3/6/8/9/10) — folded run bullets; each id below keeps the same id inside that memory.
+  - `imp-callee-contract-not-raising` → [[impression_bsd_ledger_2026_10_01#imp-callee-contract-not-raising]]. {#imp-callee-contract-not-raising}
+  - `imp-the-number-came-back` → [[impression_bsd_ledger_2026_10_01#imp-the-number-came-back]]. {#imp-the-number-came-back}
+  - `imp-fleet-state-is-not-evidence` → [[impression_bsd_ledger_2026_10_01#imp-fleet-state-is-not-evidence]]. {#imp-fleet-state-is-not-evidence}
+  - `imp-json-format-drops-the-payload` → [[impression_bsd_ledger_2026_10_01#imp-json-format-drops-the-payload]]. {#imp-json-format-drops-the-payload}
+  - `imp-gate-run-per-member` → [[impression_bsd_ledger_2026_10_01#imp-gate-run-per-member]]. {#imp-gate-run-per-member}
+  - `imp-complete-without-summary` → [[impression_bsd_ledger_2026_10_01#imp-complete-without-summary]]. {#imp-complete-without-summary}
+  - `imp-correction-reverses-decision` → [[impression_bsd_ledger_2026_10_01#imp-correction-reverses-decision]]. {#imp-correction-reverses-decision}
+  - `imp-guard-list-by-length` → [[impression_bsd_ledger_2026_10_01#imp-guard-list-by-length]]. {#imp-guard-list-by-length}
+  - `imp-suite-measurement-contaminated` → [[impression_bsd_ledger_2026_10_01#imp-suite-measurement-contaminated]]. {#imp-suite-measurement-contaminated}
+  - `imp-collected-count-shrank-silently` → [[impression_bsd_ledger_2026_10_01#imp-collected-count-shrank-silently]]. {#imp-collected-count-shrank-silently}
+  - `imp-lint-scope-is-checkout-derived` → [[impression_bsd_ledger_2026_10_01#imp-lint-scope-is-checkout-derived]]. {#imp-lint-scope-is-checkout-derived}
+  - `imp-shared-tree-confound` → [[impression_bsd_ledger_2026_10_01#imp-shared-tree-confound]]. {#imp-shared-tree-confound}
+  - `imp-peer-warning-is-testable` → [[impression_bsd_ledger_2026_10_01#imp-peer-warning-is-testable]]. {#imp-peer-warning-is-testable}
+  - `imp-parallel-auditors-one-tree` → [[impression_bsd_ledger_2026_10_01#imp-parallel-auditors-one-tree]]. {#imp-parallel-auditors-one-tree}
+  - `imp-collected-count-not-verdict` → [[impression_bsd_ledger_2026_10_01#imp-collected-count-not-verdict]]. {#imp-collected-count-not-verdict}
+- [[impression_bsd_ledger_2026_10_06]] (2026-10-06, plans 14-16 and bug-073/074) — folded run bullets; each id below keeps the same id inside that memory.
+  - `imp-suite-writes-its-own-source` → [[impression_bsd_ledger_2026_10_06#imp-suite-writes-its-own-source]]. {#imp-suite-writes-its-own-source}
+  - `imp-cause-broader-than-diff` → [[impression_bsd_ledger_2026_10_06#imp-cause-broader-than-diff]]. {#imp-cause-broader-than-diff}
+  - `imp-the-one-hand-computed-cell` → [[impression_bsd_ledger_2026_10_06#imp-the-one-hand-computed-cell]]. {#imp-the-one-hand-computed-cell}
+  - `imp-shell-control-is-not-a-control` → [[impression_bsd_ledger_2026_10_06#imp-shell-control-is-not-a-control]]. {#imp-shell-control-is-not-a-control}
+  - `imp-order-fix-regresses-the-unranked` → [[impression_bsd_ledger_2026_10_06#imp-order-fix-regresses-the-unranked]]. {#imp-order-fix-regresses-the-unranked}
+  - `imp-count-cannot-see-order` → [[impression_bsd_ledger_2026_10_06#imp-count-cannot-see-order]]. {#imp-count-cannot-see-order}
+  - `imp-resolve-is-not-identity` → [[impression_bsd_ledger_2026_10_06#imp-resolve-is-not-identity]]. {#imp-resolve-is-not-identity}
+  - `imp-filter-after-limit` → [[impression_bsd_ledger_2026_10_06#imp-filter-after-limit]]. {#imp-filter-after-limit}
+  - `imp-guard-moved-off-path` → [[impression_bsd_ledger_2026_10_06#imp-guard-moved-off-path]]. {#imp-guard-moved-off-path}
+  - `imp-live-proof-wrong-path` → [[impression_bsd_ledger_2026_10_06#imp-live-proof-wrong-path]]. {#imp-live-proof-wrong-path}
+- [[impression_bsd_ledger_2026_10_07]] (2026-10-07, plan-16 r2-r4 and bug-076..085 rounds r3-r13) — folded run bullets; each id below keeps the same id inside that memory.
+  - `imp-offset-paging-total-order` → [[impression_bsd_ledger_2026_10_07#imp-offset-paging-total-order]]. {#imp-offset-paging-total-order}
+  - `imp-second-universe` → [[impression_bsd_ledger_2026_10_07#imp-second-universe]]. {#imp-second-universe}
+  - `imp-r4-quality-siblings` → [[impression_bsd_ledger_2026_10_07#imp-r4-quality-siblings]]. {#imp-r4-quality-siblings}
+  - `imp-resolved-to-read-not-printed` → [[impression_bsd_ledger_2026_10_07#imp-resolved-to-read-not-printed]]. {#imp-resolved-to-read-not-printed}
+  - `imp-symlinked-cwd-is-live` → [[impression_bsd_ledger_2026_10_07#imp-symlinked-cwd-is-live]]. {#imp-symlinked-cwd-is-live}
+  - `imp-superseded-must-be-on-the-deletion-list` → [[impression_bsd_ledger_2026_10_07#imp-superseded-must-be-on-the-deletion-list]]. {#imp-superseded-must-be-on-the-deletion-list}
+  - `imp-dedup-asserted-through-a-set` → [[impression_bsd_ledger_2026_10_07#imp-dedup-asserted-through-a-set]]. {#imp-dedup-asserted-through-a-set}
+  - `imp-env-after-import-is-inert` → [[impression_bsd_ledger_2026_10_07#imp-env-after-import-is-inert]]. {#imp-env-after-import-is-inert}
+  - `imp-denylist-not-shape` → [[impression_bsd_ledger_2026_10_07#imp-denylist-not-shape]]. {#imp-denylist-not-shape}
+  - `imp-loud-on-one-leg` → [[impression_bsd_ledger_2026_10_07#imp-loud-on-one-leg]]. {#imp-loud-on-one-leg}
+  - `imp-batch-one-level-down` → [[impression_bsd_ledger_2026_10_07#imp-batch-one-level-down]]. {#imp-batch-one-level-down}
+  - `imp-count-in-a-dict` → [[impression_bsd_ledger_2026_10_07#imp-count-in-a-dict]]. {#imp-count-in-a-dict}
+  - `imp-importorskip-broken-install` → [[impression_bsd_ledger_2026_10_07#imp-importorskip-broken-install]]. {#imp-importorskip-broken-install}
+  - `imp-dormant-path-woken` → [[impression_bsd_ledger_2026_10_07#imp-dormant-path-woken]]. {#imp-dormant-path-woken}
+  - `imp-lock-fix-moves-the-answer` → [[impression_bsd_ledger_2026_10_07#imp-lock-fix-moves-the-answer]]. {#imp-lock-fix-moves-the-answer}
+  - `imp-deadline-is-not-a-timeout` → [[impression_bsd_ledger_2026_10_07#imp-deadline-is-not-a-timeout]]. {#imp-deadline-is-not-a-timeout}
+  - `imp-budget-view-shares-the-lock` → [[impression_bsd_ledger_2026_10_07#imp-budget-view-shares-the-lock]]. {#imp-budget-view-shares-the-lock}
+  - `imp-fallback-sets-the-name` → [[impression_bsd_ledger_2026_10_07#imp-fallback-sets-the-name]]. {#imp-fallback-sets-the-name}
+  - `imp-close-is-not-retirement` → [[impression_bsd_ledger_2026_10_07#imp-close-is-not-retirement]]. {#imp-close-is-not-retirement}
+  - `imp-heal-runs-once` → [[impression_bsd_ledger_2026_10_07#imp-heal-runs-once]]. {#imp-heal-runs-once}
+  - `imp-route-named-helper-tested` → [[impression_bsd_ledger_2026_10_07#imp-route-named-helper-tested]]. {#imp-route-named-helper-tested}
+- [[impression_bsd_ledger_2026_10_14]] (2026-10-14, plans 16-23 spec rounds and bug-098/105/109/110/111) — folded run bullets; each id below keeps the same id inside that memory.
+  - `imp-yield-owns-the-binding` → [[impression_bsd_ledger_2026_10_14#imp-yield-owns-the-binding]]. {#imp-yield-owns-the-binding}
+  - `imp-exactly-once-window` → [[impression_bsd_ledger_2026_10_14#imp-exactly-once-window]]. {#imp-exactly-once-window}
+  - `imp-count-not-seconds` → [[impression_bsd_ledger_2026_10_14#imp-count-not-seconds]]. {#imp-count-not-seconds}
+  - `imp-phantom-handle` → [[impression_bsd_ledger_2026_10_14#imp-phantom-handle]]. {#imp-phantom-handle}
+  - `imp-circular-guard` → [[impression_bsd_ledger_2026_10_14#imp-circular-guard]]. {#imp-circular-guard}
+  - `imp-discover-roots-live` → [[impression_bsd_ledger_2026_10_14#imp-discover-roots-live]]. {#imp-discover-roots-live}
+  - `imp-reachability-by-fiat` → [[impression_bsd_ledger_2026_10_14#imp-reachability-by-fiat]]. {#imp-reachability-by-fiat}
+  - `imp-undecayed-counter-one-way` → [[impression_bsd_ledger_2026_10_14#imp-undecayed-counter-one-way]]. {#imp-undecayed-counter-one-way}
+  - `imp-derived-rows-pollute-recall` → [[impression_bsd_ledger_2026_10_14#imp-derived-rows-pollute-recall]]. {#imp-derived-rows-pollute-recall}
+  - `imp-shared-schema-first-consumer` → [[impression_bsd_ledger_2026_10_14#imp-shared-schema-first-consumer]]. {#imp-shared-schema-first-consumer}
+  - `imp-exploration-number-rerun` → [[impression_bsd_ledger_2026_10_14#imp-exploration-number-rerun]]. {#imp-exploration-number-rerun}
+  - `imp-suite-writes-measured-log` → [[impression_bsd_ledger_2026_10_14#imp-suite-writes-measured-log]]. {#imp-suite-writes-measured-log}
+  - `imp-repair-on-a-uniqueness-the-data-lacks` → [[impression_bsd_ledger_2026_10_14#imp-repair-on-a-uniqueness-the-data-lacks]]. {#imp-repair-on-a-uniqueness-the-data-lacks}
+  - `imp-recovery-primitive-assumed` → [[impression_bsd_ledger_2026_10_14#imp-recovery-primitive-assumed]]. {#imp-recovery-primitive-assumed}
+  - `imp-the-log-names-the-leak` → [[impression_bsd_ledger_2026_10_14#imp-the-log-names-the-leak]]. {#imp-the-log-names-the-leak}
+  - `imp-seed-must-survive-verification` → [[impression_bsd_ledger_2026_10_14#imp-seed-must-survive-verification]]. {#imp-seed-must-survive-verification}
+  - `imp-provenance-needs-dialect` → [[impression_bsd_ledger_2026_10_14#imp-provenance-needs-dialect]]. {#imp-provenance-needs-dialect}
+  - `imp-click-still-parses` → [[impression_bsd_ledger_2026_10_14#imp-click-still-parses]]. {#imp-click-still-parses}
+  - `imp-paraphrase-flips-the-verb` → [[impression_bsd_ledger_2026_10_14#imp-paraphrase-flips-the-verb]]. {#imp-paraphrase-flips-the-verb}
+  - `imp-needs-x-is-unowned` → [[impression_bsd_ledger_2026_10_14#imp-needs-x-is-unowned]]. {#imp-needs-x-is-unowned}
+  - `imp-anchor-must-measure-the-thing` → [[impression_bsd_ledger_2026_10_14#imp-anchor-must-measure-the-thing]]. {#imp-anchor-must-measure-the-thing}
+  - `imp-2026-10-14-p19-21-r2-a-fixed-producer-does-not-f` → [[impression_bsd_ledger_2026_10_14#imp-2026-10-14-p19-21-r2-a-fixed-producer-does-not-f]]. {#imp-2026-10-14-p19-21-r2-a-fixed-producer-does-not-f}
+  - `imp-2026-10-14-p19-21-r2-a-replay-of-stored-derived-` → [[impression_bsd_ledger_2026_10_14#imp-2026-10-14-p19-21-r2-a-replay-of-stored-derived-]]. {#imp-2026-10-14-p19-21-r2-a-replay-of-stored-derived-}
+  - `imp-2026-10-14-p19-21-r2-measure-the-window-before-y` → [[impression_bsd_ledger_2026_10_14#imp-2026-10-14-p19-21-r2-measure-the-window-before-y]]. {#imp-2026-10-14-p19-21-r2-measure-the-window-before-y}
+  - `imp-plan-16-22-re-review-32dde06-re-run-the-caller-s` → [[impression_bsd_ledger_2026_10_14#imp-plan-16-22-re-review-32dde06-re-run-the-caller-s]]. {#imp-plan-16-22-re-review-32dde06-re-run-the-caller-s}
+  - `imp-a-provenance-table-outside-facts-log-is-erased-b` → [[impression_bsd_ledger_2026_10_14#imp-a-provenance-table-outside-facts-log-is-erased-b]]. {#imp-a-provenance-table-outside-facts-log-is-erased-b}
+  - `imp-read-a-probe-s-by-root-as-relative-to-which-base` → [[impression_bsd_ledger_2026_10_14#imp-read-a-probe-s-by-root-as-relative-to-which-base]]. {#imp-read-a-probe-s-by-root-as-relative-to-which-base}
+  - `imp-binding-is-every-cache` → [[impression_bsd_ledger_2026_10_14#imp-binding-is-every-cache]]. {#imp-binding-is-every-cache}
+  - `imp-idempotent-is-a-claim` → [[impression_bsd_ledger_2026_10_14#imp-idempotent-is-a-claim]]. {#imp-idempotent-is-a-claim}
+  - `imp-chunking-moves-the-stamp` → [[impression_bsd_ledger_2026_10_14#imp-chunking-moves-the-stamp]]. {#imp-chunking-moves-the-stamp}
+  - `imp-guards-read-the-old-shape` → [[impression_bsd_ledger_2026_10_14#imp-guards-read-the-old-shape]]. {#imp-guards-read-the-old-shape}
+  - `imp-oracle-invariant-to-legit-change` → [[impression_bsd_ledger_2026_10_14#imp-oracle-invariant-to-legit-change]]. {#imp-oracle-invariant-to-legit-change}
+  - `imp-restore-shares-a-key` → [[impression_bsd_ledger_2026_10_14#imp-restore-shares-a-key]]. {#imp-restore-shares-a-key}
+  - `imp-the-binding-local-guards-daemon-py-2066-store-py` → [[impression_bsd_ledger_2026_10_14#imp-the-binding-local-guards-daemon-py-2066-store-py]]. {#imp-the-binding-local-guards-daemon-py-2066-store-py}
+  - `imp-2026-10-14-p19-21-r3-an-env-var-is-a-snapshot-of` → [[impression_bsd_ledger_2026_10_14#imp-2026-10-14-p19-21-r3-an-env-var-is-a-snapshot-of]]. {#imp-2026-10-14-p19-21-r3-an-env-var-is-a-snapshot-of}
+  - `imp-2026-10-14-p19-21-r3-fixing-one-racy-field-invit` → [[impression_bsd_ledger_2026_10_14#imp-2026-10-14-p19-21-r3-fixing-one-racy-field-invit]]. {#imp-2026-10-14-p19-21-r3-fixing-one-racy-field-invit}
+  - `imp-2026-10-14-p19-21-r3-check-the-renderer-before-t` → [[impression_bsd_ledger_2026_10_14#imp-2026-10-14-p19-21-r3-check-the-renderer-before-t]]. {#imp-2026-10-14-p19-21-r3-check-the-renderer-before-t}
+  - `imp-plan-16-22-r3-6091648-before-demanding-reproduce` → [[impression_bsd_ledger_2026_10_14#imp-plan-16-22-r3-6091648-before-demanding-reproduce]]. {#imp-plan-16-22-r3-6091648-before-demanding-reproduce}
+  - `imp-a-re-run-verifier-must-replay-the-environment-to` → [[impression_bsd_ledger_2026_10_14#imp-a-re-run-verifier-must-replay-the-environment-to]]. {#imp-a-re-run-verifier-must-replay-the-environment-to}
+  - `imp-set-level-repair-specs-test-them-with-a-real-lin` → [[impression_bsd_ledger_2026_10_14#imp-set-level-repair-specs-test-them-with-a-real-lin]]. {#imp-set-level-repair-specs-test-them-with-a-real-lin}
+  - `imp-adopt-by-merge-not-sha` → [[impression_bsd_ledger_2026_10_14#imp-adopt-by-merge-not-sha]]. {#imp-adopt-by-merge-not-sha}
+  - `imp-find-the-reader` → [[impression_bsd_ledger_2026_10_14#imp-find-the-reader]]. {#imp-find-the-reader}
+  - `imp-param-needs-consumer-edit` → [[impression_bsd_ledger_2026_10_14#imp-param-needs-consumer-edit]]. {#imp-param-needs-consumer-edit}
+  - `imp-unknown-is-not-absent` → [[impression_bsd_ledger_2026_10_14#imp-unknown-is-not-absent]]. {#imp-unknown-is-not-absent}
+  - `imp-log-on-read-is-a-write` → [[impression_bsd_ledger_2026_10_14#imp-log-on-read-is-a-write]]. {#imp-log-on-read-is-a-write}
+  - `imp-fallback-hides-primary` → [[impression_bsd_ledger_2026_10_14#imp-fallback-hides-primary]]. {#imp-fallback-hides-primary}
+  - `imp-shortcut-partial-identity` → [[impression_bsd_ledger_2026_10_14#imp-shortcut-partial-identity]]. {#imp-shortcut-partial-identity}
+  - `imp-remedy-guards-unpinned` → [[impression_bsd_ledger_2026_10_14#imp-remedy-guards-unpinned]]. {#imp-remedy-guards-unpinned}
+  - `imp-same-name-different-failure` → [[impression_bsd_ledger_2026_10_14#imp-same-name-different-failure]]. {#imp-same-name-different-failure}
+  - `imp-inventory-row-wrong-fence` → [[impression_bsd_ledger_2026_10_14#imp-inventory-row-wrong-fence]]. {#imp-inventory-row-wrong-fence}
+  - `imp-repair-is-a-writer` → [[impression_bsd_ledger_2026_10_14#imp-repair-is-a-writer]]. {#imp-repair-is-a-writer}
+  - `imp-gc-cannot-see-pybind` → [[impression_bsd_ledger_2026_10_14#imp-gc-cannot-see-pybind]]. {#imp-gc-cannot-see-pybind}
+  - `imp-derived-read-needs-presence` → [[impression_bsd_ledger_2026_10_14#imp-derived-read-needs-presence]]. {#imp-derived-read-needs-presence}
+  - `imp-scope-helper-in-a-loop` → [[impression_bsd_ledger_2026_10_14#imp-scope-helper-in-a-loop]]. {#imp-scope-helper-in-a-loop}
+  - `imp-extend-the-merged-not-the-cited` → [[impression_bsd_ledger_2026_10_14#imp-extend-the-merged-not-the-cited]]. {#imp-extend-the-merged-not-the-cited}
+  - `imp-scan-through-the-helper` → [[impression_bsd_ledger_2026_10_14#imp-scan-through-the-helper]]. {#imp-scan-through-the-helper}
+  - `imp-decision-row-does-not-edit-spec` → [[impression_bsd_ledger_2026_10_14#imp-decision-row-does-not-edit-spec]]. {#imp-decision-row-does-not-edit-spec}
+  - `imp-guard-wired-at-one-open` → [[impression_bsd_ledger_2026_10_14#imp-guard-wired-at-one-open]]. {#imp-guard-wired-at-one-open}
+  - `imp-id-keyed-event-cannot-replay` → [[impression_bsd_ledger_2026_10_14#imp-id-keyed-event-cannot-replay]]. {#imp-id-keyed-event-cannot-replay}
+  - `imp-decision-row-not-reflected` → [[impression_bsd_ledger_2026_10_14#imp-decision-row-not-reflected]]. {#imp-decision-row-not-reflected}
+- [[impression_bsd_ledger_2026_10_15_16]] (2026-10-15..16, plans 16-23 r7-r8, plan-18, bugs 112-129) — folded run bullets; each id below keeps the same id inside that memory.
+  - `imp-residual-is-the-majority` → [[impression_bsd_ledger_2026_10_15_16#imp-residual-is-the-majority]]. {#imp-residual-is-the-majority}
+  - `imp-relocated-sink-loses-scope` → [[impression_bsd_ledger_2026_10_15_16#imp-relocated-sink-loses-scope]]. {#imp-relocated-sink-loses-scope}
+  - `imp-named-safe-needs-exemption` → [[impression_bsd_ledger_2026_10_15_16#imp-named-safe-needs-exemption]]. {#imp-named-safe-needs-exemption}
+  - `imp-guard-after-side-effect` → [[impression_bsd_ledger_2026_10_15_16#imp-guard-after-side-effect]]. {#imp-guard-after-side-effect}
+  - `imp-retirement-reason-is-global` → [[impression_bsd_ledger_2026_10_15_16#imp-retirement-reason-is-global]]. {#imp-retirement-reason-is-global}
+  - `imp-caveat-is-a-root-defect` → [[impression_bsd_ledger_2026_10_15_16#imp-caveat-is-a-root-defect]]. {#imp-caveat-is-a-root-defect}
+  - `imp-nameless-is-reborn` → [[impression_bsd_ledger_2026_10_15_16#imp-nameless-is-reborn]]. {#imp-nameless-is-reborn}
+  - `imp-dead-id-is-catalog-relative` → [[impression_bsd_ledger_2026_10_15_16#imp-dead-id-is-catalog-relative]]. {#imp-dead-id-is-catalog-relative}
+  - `imp-static-rule-walks-helpers` → [[impression_bsd_ledger_2026_10_15_16#imp-static-rule-walks-helpers]]. {#imp-static-rule-walks-helpers}
+  - `imp-read-the-whole-stop` → [[impression_bsd_ledger_2026_10_15_16#imp-read-the-whole-stop]]. {#imp-read-the-whole-stop}
+  - `imp-181-child-vs-inproc` → [[impression_bsd_ledger_2026_10_15_16#imp-181-child-vs-inproc]]. {#imp-181-child-vs-inproc}
+  - `imp-plan18-wal-sidecar-and-interrupt-gap` → [[impression_bsd_ledger_2026_10_15_16#imp-plan18-wal-sidecar-and-interrupt-gap]]. {#imp-plan18-wal-sidecar-and-interrupt-gap}
+  - `imp-respawn-exit-races-graceful` → [[impression_bsd_ledger_2026_10_15_16#imp-respawn-exit-races-graceful]]. {#imp-respawn-exit-races-graceful}
+  - `imp-fix-meets-old-slot` → [[impression_bsd_ledger_2026_10_15_16#imp-fix-meets-old-slot]]. {#imp-fix-meets-old-slot}
+  - `imp-181-seq-open-state` → [[impression_bsd_ledger_2026_10_15_16#imp-181-seq-open-state]]. {#imp-181-seq-open-state}
+  - `imp-close-under-use-per-driver` → [[impression_bsd_ledger_2026_10_15_16#imp-close-under-use-per-driver]]. {#imp-close-under-use-per-driver}
+  - `imp-recovered-exit-skips-success-tail` → [[impression_bsd_ledger_2026_10_15_16#imp-recovered-exit-skips-success-tail]]. {#imp-recovered-exit-skips-success-tail}
+  - `imp-caller-keyed-exemption` → [[impression_bsd_ledger_2026_10_15_16#imp-caller-keyed-exemption]]. {#imp-caller-keyed-exemption}
+  - `imp-redirect-silent-skips` → [[impression_bsd_ledger_2026_10_15_16#imp-redirect-silent-skips]]. {#imp-redirect-silent-skips}
+  - `imp-wrapper-exception-hides-cause` → [[impression_bsd_ledger_2026_10_15_16#imp-wrapper-exception-hides-cause]]. {#imp-wrapper-exception-hides-cause}
+  - `imp-state-file-capture-misses-live` → [[impression_bsd_ledger_2026_10_15_16#imp-state-file-capture-misses-live]]. {#imp-state-file-capture-misses-live}
+  - `imp-host-diff-closes-capture-fix` → [[impression_bsd_ledger_2026_10_15_16#imp-host-diff-closes-capture-fix]]. {#imp-host-diff-closes-capture-fix}
+  - `imp-pidfile-suite-first` → [[impression_bsd_ledger_2026_10_15_16#imp-pidfile-suite-first]]. {#imp-pidfile-suite-first}
+  - `imp-ast-guard-one-spelling` → [[impression_bsd_ledger_2026_10_15_16#imp-ast-guard-one-spelling]]. {#imp-ast-guard-one-spelling}
+- [[impression_bsd_ledger_2026_10_19]] (2026-10-19, task 21.1, plan-3 r8-r12, plan-4 r5-r6) — folded run bullets; each id below keeps the same id inside that memory.
+  - `imp-spec-contradiction-settled-in-src` → [[impression_bsd_ledger_2026_10_19#imp-spec-contradiction-settled-in-src]]. {#imp-spec-contradiction-settled-in-src}
+  - `imp-bool-writer-callers-drop` → [[impression_bsd_ledger_2026_10_19#imp-bool-writer-callers-drop]]. {#imp-bool-writer-callers-drop}
+  - `imp-recorder-preconditions-unguarded` → [[impression_bsd_ledger_2026_10_19#imp-recorder-preconditions-unguarded]]. {#imp-recorder-preconditions-unguarded}
+  - `imp-table-fixes-one-column` → [[impression_bsd_ledger_2026_10_19#imp-table-fixes-one-column]]. {#imp-table-fixes-one-column}
+  - `imp-dev-venv-not-dev-tree` → [[impression_bsd_ledger_2026_10_19#imp-dev-venv-not-dev-tree]]. {#imp-dev-venv-not-dev-tree}
+  - `imp-argv0-misses-dash-m` → [[impression_bsd_ledger_2026_10_19#imp-argv0-misses-dash-m]]. {#imp-argv0-misses-dash-m}
+  - `imp-extraction-moves-finally` → [[impression_bsd_ledger_2026_10_19#imp-extraction-moves-finally]]. {#imp-extraction-moves-finally}
+  - `imp-remedy-mutations-own-edits` → [[impression_bsd_ledger_2026_10_19#imp-remedy-mutations-own-edits]]. {#imp-remedy-mutations-own-edits}
+  - `imp-spec-vs-walk` → [[impression_bsd_ledger_2026_10_19#imp-spec-vs-walk]]. {#imp-spec-vs-walk}
+  - `imp-owes-is-a-deferral` → [[impression_bsd_ledger_2026_10_19#imp-owes-is-a-deferral]]. {#imp-owes-is-a-deferral}
+  - `imp-ping-double-skips-busy` → [[impression_bsd_ledger_2026_10_19#imp-ping-double-skips-busy]]. {#imp-ping-double-skips-busy}
+  - `imp-crash-to-success-check-landing` → [[impression_bsd_ledger_2026_10_19#imp-crash-to-success-check-landing]]. {#imp-crash-to-success-check-landing}
+  - `imp-guard-closure-depth` → [[impression_bsd_ledger_2026_10_19#imp-guard-closure-depth]]. {#imp-guard-closure-depth}
+  - `imp-plant-the-breaking-order` → [[impression_bsd_ledger_2026_10_19#imp-plant-the-breaking-order]]. {#imp-plant-the-breaking-order}

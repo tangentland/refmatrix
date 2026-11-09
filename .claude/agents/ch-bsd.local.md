@@ -44,3 +44,12 @@ same value in the filename, `INDEX.md` and `last_run.log`, and no `GIT_AUTHOR_DA
 00:53, named `0105`, logged `01:05:00` and committed with an author and committer date of exactly
 `01:00:00`; INDEX.md is the evidence trail for WHICH TREE an audit saw, so a forward-dated stamp
 turns "which commits existed when this ran" into a guess (ch-bsd r4 #m-1-r4).
+
+**IMPRESSIONS.md size cap (overrides the base 50-line rule's scope).** The 50-line cap counts the
+run bullets ABOVE `## Former anchors, restored`; that section is exempt. It holds one `{#id}` per
+line, never several: the linter accepts packed ids, but the store ingester registers only the first
+anchor on a line, so efa5f33's packing made 188 of 200 pointer ids unknown to `rmx` while lint
+stayed green (fixed 2026-11-09). When you fold the oldest bullets into an
+`impression_bsd_ledger_*` memory, add one pointer line per folded id
+(`` - `imp-x` → [[impression_bsd_ledger_<date>#imp-x]]. ``  followed by its anchor), and confirm a
+sample with `rmx context "bsd-impressions#<id>" --no-grep` after the next ingest.
