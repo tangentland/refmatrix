@@ -684,6 +684,36 @@ Red log `workflow/review-output/task-3.7/r4-red.log`: 4 failed on their assertio
 
 Doubles: registry row "task 3.7 remedy r4".
 
+**GREEN `d093f65` (B-1, S-1).** {#remedy-r4-green} B-1 (bug-173): a daemonless call whose
+worker cannot serve loads the in-process model ONCE (`recall._load_process_inproc_standin`)
+and caches it as the stand-in for the cached client (`_EMBED_INPROC`, keyed to
+`_EMBED_CLIENT`). Later calls are served by it without respawning the failed worker. The
+re-probe's swap to the hub, or a dead-shared rebuild, drops it. This is what
+`Daemon._embedder`'s `on_fallback` and `_maybe_adopt_shared` already do. S-1: a build that went
+private SETS the throttle (`recall.hold_reprobe`: `next_at = now + base`, `backoff = base`). A
+build that got the hub clears it. The request-path re-probe runs OUTSIDE
+`_EMBED_CLIENT_LOCK`, behind `_EMBED_REPROBE_INFLIGHT`, and takes the lock only for the swap.
+It is bounded by the new `modelsrv.REQUEST_PROBE_TIMEOUT_S` (env
+`RMX_SHARED_REQUEST_PROBE_TIMEOUT_S`, **1.0 s**), passed through the new `probe_timeout=`
+parameter of the one `reprobe_shared_client`. Its default stays `PROBE_TIMEOUT_S`, so the
+daemon tick is unchanged. Logs (`workflow/review-output/task-3.7/`): `r4-green-first.log`
+(r4 file 8/8) and `r4-green.log` (related set: r1-r4, all `test_task3_7_*`, readoption,
+modelsrv, daemon adopt/dense/subproc-embed, worker-budget invariant; 329 passed).
+`r4-green-full-suite.log`: 2 failed, 3721 passed, 19 skipped (30:43). Both failures are the
+known bug-155 (the same `docs/INDEX.md` dangling ids) and bug-156 ("AC-6 BLOCKED"), matched
+by error text. Mutations after the commit, each restored in its own command (`git status
+--short src` empty):
+
+- M11 (delete the throttle set) fails
+  `test_a_build_that_fell_back_to_private_sets_the_reprobe_throttle` (2 new hub connections,
+  `r4-green-m11.log`).
+- Request probe -> `PROBE_TIMEOUT_S` fails the concurrent-calls test (`r4-green-mbound.log`).
+- Stand-in cache disabled fails both B-1 cases (`r4-green-mstandin.log`).
+- **Survivor:** dropping the in-flight check (`r4-green-minflight.log`). Two parallel 1.0 s
+  probes still finish inside 2.5 s, so no r4 test pins "one probe at a time". A killer would
+  count the mute hub's connections across the two concurrent calls (one probe = 2:
+  `shared_available` + the client). That is open for ch-test-engineer.
+
 ## Definition of done {#done}
 
 - Each family: RED (recorder/parity/defect rows) before GREEN; mutation check; summary rows in
