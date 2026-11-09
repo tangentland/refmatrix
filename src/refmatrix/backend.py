@@ -18,6 +18,7 @@ whose `.refmatrix/catalog.db` already exists.
 """
 from __future__ import annotations
 
+import itertools
 import logging
 import os
 import sqlite3
@@ -25,7 +26,7 @@ import threading
 import weakref
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Iterable, Protocol
+from typing import Any, Iterable, Mapping, Protocol, Sequence
 
 import duckdb
 
@@ -568,9 +569,33 @@ class DuckDBConnection:
     def executemany(
         self, sql: str, seq_of_params: Iterable[Iterable[Any]]
     ) -> _DuckCursor:
-        # DuckDB supports executemany natively. Returned cursor isn't very
-        # useful (no rowset for INSERT/UPDATE/DELETE) but matches sqlite3.
-        result = self._duck.executemany(sql, [list(p) for p in seq_of_params])
+        """sqlite3-parity `executemany`, FENCED (bug-178 R3, 2026-11-09).
+
+        DuckDB runs `executemany` as one statement per row under the store's
+        single writer lock: a viascope reingest sat minutes in
+        `pagerank.store_scores -> executemany` while a CLI op and the periodic
+        flush waited. Every bulk write in src/ now goes through `bulk_write`
+        (one Arrow batch + one set-based statement), so a call here is a
+        regression. Above `DUCK_EXECUTEMANY_MAX_ROWS` rows it RAISES naming
+        the helper; at or below it runs, but is counted
+        (`duck_executemany_calls()`) and logged as a warning so a stray small
+        call is visible instead of silently re-growing the defect."""
+        global _DUCK_EXECUTEMANY_CALLS
+        params = [list(p) for p in seq_of_params]
+        if len(params) > DUCK_EXECUTEMANY_MAX_ROWS:
+            raise DuckDBExecutemanyError(
+                f"executemany of {len(params)} rows on DuckDB (> "
+                f"{DUCK_EXECUTEMANY_MAX_ROWS}) runs one statement per row under "
+                f"the writer lock — use refmatrix.backend.bulk_write (bug-178): "
+                f"{' '.join(str(sql).split())[:120]}")
+        with _DUCK_EXECUTEMANY_LOCK:
+            _DUCK_EXECUTEMANY_CALLS += 1
+            n_calls = _DUCK_EXECUTEMANY_CALLS
+        _log.warning(
+            "DuckDB executemany of %d row(s) (call #%d this process) — per-row "
+            "on DuckDB; route bulk writes through bulk_write (bug-178): %s",
+            len(params), n_calls, " ".join(str(sql).split())[:120])
+        result = self._duck.executemany(sql, params)
         return _DuckCursor(result)
 
     def executescript(self, script: str) -> None:
@@ -596,6 +621,116 @@ class DuckDBConnection:
         # NOT close. Store keeps the connection alive across many `with` blocks.
         if exc[0] is None:
             self.commit()
+
+
+# ---- THE bulk-write helper (bug-178, 2026-11-09) ---------------------------
+#
+# `executemany` is per-row on DuckDB: N statements under the one writer lock.
+# `bulk_upsert_entity`, `bulk_link` and `bulk_mark_tracked` had each
+# hand-rolled the fix (register an Arrow table, one INSERT ... SELECT) while
+# ten other DuckDB-reachable sites never got it — pagerank.store_scores held
+# the writer for minutes in the 2026-11-09 viascope reingest. One helper now
+# owns the shape; `DuckDBConnection.executemany` is fenced (above) and
+# tests/test_bug178_bulk_write.py AST-checks that no other src/ function
+# calls `executemany`.
+
+DUCK_EXECUTEMANY_MAX_ROWS = 32
+_DUCK_EXECUTEMANY_CALLS = 0
+_DUCK_EXECUTEMANY_LOCK = threading.Lock()
+_BULK_VIEW_SEQ = itertools.count(1)
+
+
+class DuckDBExecutemanyError(RuntimeError):
+    """A DuckDB `executemany` above `DUCK_EXECUTEMANY_MAX_ROWS` rows — the
+    per-row write bug-178 removed; the caller must use `bulk_write`."""
+
+
+def duck_executemany_calls() -> int:
+    """How many fenced DuckDB `executemany` calls this process has run (each
+    is also logged as a warning on `refmatrix.backend`)."""
+    with _DUCK_EXECUTEMANY_LOCK:
+        return _DUCK_EXECUTEMANY_CALLS
+
+
+def bulk_write(
+    con: Any,
+    sql: str,
+    columns: Sequence[str],
+    rows: Sequence[Sequence[Any]],
+    *,
+    sqlite_sql: "str | None" = None,
+    types: "Mapping[str, Any] | None" = None,
+    view: str = "_rmx_bulk",
+) -> int:
+    """Write `rows` with ONE set-based statement on DuckDB; `executemany` on
+    SQLite. Returns the number of input rows (0 = no-op, nothing executed).
+
+    DuckDB (`DuckDBConnection` wrapper, or a raw `DuckDBPyConnection` as
+    replica_merge holds): `rows` (row-major, one value per `columns` entry)
+    become one Arrow table, registered under a per-call unique name derived
+    from `view`; every `{view}` in `sql` is replaced by that name and `sql`
+    runs once (`INSERT ... SELECT ... FROM {view}` / `UPDATE ... FROM
+    {view}`). The registration is ALWAYS dropped (`finally`). `types` pins an
+    Arrow type per column (a `pyarrow.DataType` or an alias string such as
+    "int64" / "string" / "float64") where inference would be wrong or
+    null-typed.
+
+    SQLite (`sqlite3.Connection`): `sqlite_sql` — the per-row `VALUES (?..)`
+    statement with the same conflict policy — runs via `executemany`, the
+    legacy backend's batched path (bug-178 changes nothing there). A SQLite
+    connection without `sqlite_sql` raises: a DuckDB-only caller reached the
+    wrong backend, which must not degrade into a silent skip.
+
+    Errors from the statement propagate unchanged (constraint violations
+    included); a set-based statement is atomic, so a failure leaves none of
+    the batch behind (user decision 2026-11-09, save_coref)."""
+    rows = list(rows)
+    if not rows:
+        return 0
+    cols = list(columns)
+    if isinstance(con, sqlite3.Connection):
+        if sqlite_sql is None:
+            raise TypeError(
+                "bulk_write: a SQLite connection reached a DuckDB-only bulk write "
+                f"(no sqlite_sql given): {' '.join(sql.split())[:120]}")
+        con.executemany(sqlite_sql, rows)
+        return len(rows)
+    if isinstance(con, DuckDBConnection):
+        duck = con._duck
+    elif isinstance(con, duckdb.DuckDBPyConnection):
+        duck = con
+    else:
+        raise TypeError(
+            f"bulk_write: unsupported connection type {type(con).__name__!r} "
+            "(expected DuckDBConnection, duckdb.DuckDBPyConnection or "
+            "sqlite3.Connection)")
+    if "{view}" not in sql:
+        raise ValueError(
+            "bulk_write: the DuckDB statement must read the batch FROM {view}: "
+            f"{' '.join(sql.split())[:120]}")
+    for i, r in enumerate(rows):
+        if len(r) != len(cols):
+            raise ValueError(
+                f"bulk_write: row {i} has {len(r)} values for {len(cols)} "
+                f"columns {cols}")
+    import pyarrow as pa
+
+    pinned = {c: (pa.type_for_alias(t) if isinstance(t, str) else t)
+              for c, t in (types or {}).items()}
+    unknown = set(pinned) - set(cols)
+    if unknown:
+        raise ValueError(f"bulk_write: types name unknown columns {sorted(unknown)}")
+    tbl = pa.table({
+        c: pa.array(list(vals), type=pinned.get(c))
+        for c, vals in zip(cols, zip(*rows))
+    })
+    name = f"{view}_{os.getpid()}_{next(_BULK_VIEW_SEQ)}"
+    duck.register(name, tbl)
+    try:
+        duck.execute(sql.replace("{view}", name))
+    finally:
+        duck.unregister(name)
+    return len(rows)
 
 
 class DuckDBBackend(Backend):

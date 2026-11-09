@@ -29,6 +29,7 @@ import re
 import time
 from typing import TYPE_CHECKING
 
+from refmatrix.backend import bulk_write
 from refmatrix.store import _CONCEPT_SHIFT, _ENTITY_MASK
 
 if TYPE_CHECKING:
@@ -460,15 +461,24 @@ def store_scores(
     ts = now if now is not None else time.time()
     con.execute("DELETE FROM pagerank WHERE partition_id = ?", (pid,))
     # Bulk insert — DuckDB (columnar) is pathologically slow at single-row
-    # INSERTs, so a per-row loop took minutes on a 110k-node store. executemany
-    # batches it into one bind.
+    # INSERTs, so a per-row loop took minutes on a 110k-node store. The
+    # executemany that replaced it was STILL per-row on DuckDB: on 2026-11-09
+    # a viascope reingest sat minutes here holding the writer lock (bug-178;
+    # 50k rows measured 19.4 s). `bulk_write` sends one Arrow batch and one
+    # INSERT ... SELECT (executemany on SQLite).
     rows = [(pid, int(nid), float(score), ts) for nid, score in scores.items()]
-    if rows:
-        con.executemany(
-            "INSERT INTO pagerank (partition_id, entity_id, score, computed_at) "
-            "VALUES (?, ?, ?, ?)",
-            rows,
-        )
+    bulk_write(
+        con,
+        "INSERT INTO pagerank (partition_id, entity_id, score, computed_at) "
+        "SELECT partition_id, entity_id, score, computed_at FROM {view}",
+        ["partition_id", "entity_id", "score", "computed_at"],
+        rows,
+        sqlite_sql=("INSERT INTO pagerank (partition_id, entity_id, score, computed_at) "
+                    "VALUES (?, ?, ?, ?)"),
+        types={"partition_id": "int64", "entity_id": "int64", "score": "float64",
+               "computed_at": "float64"},
+        view="_rmx_bulk_pagerank",
+    )
     try:
         con.commit()
     except Exception:
