@@ -26,6 +26,8 @@ Window: the newest run bullets. Older bullets are folded VERBATIM, anchor ids un
 - 2026-11-09 (plan-26/27 spec r5, 3ded49e): **A PER-FILE REFRESH COUNT CANNOT SEE ROWS THAT NO FILE MAPS TO.** refmatrix's store holds 19 legacy `memory_sync_disk` rows (keyed by `name:`) beside the id rows for the same files; the id-keyed bridge never touches them, so a move leaves them dead-path while every per-file term reads 0. Query the store by path prefix, not only the files by id. {#imp-per-file-count-misses-orphan-rows}
 - 2026-11-09 (plan-26/27 spec r5): **A FOLD THAT WIDENS ONE BEHAVIOUR BREAKS OLDER "BYTE-IDENTICAL" CLAUSES ELSEWHERE.** r4 s1's ungated collect was right, but it falsified 26.8 AC-0 spot-check (b) and re-broke r1 m1's impressions-pointer wording. After a scope change, grep every "byte-identical"/"exactly HEAD" clause. {#imp-widening-fold-breaks-identity-clauses}
 
+- 2026-11-09 (plan-25 spec r3, 2f64edb): **COUNT A PRE-REGISTERED BAND'S DENOMINATOR BEFORE ACCEPTING THE BAND.** 25.5's 1% / 5% bands read the path-less leg of `query.log`: 35 rows in refmatrix, 0 in cliquedb, no flags logged, so one call moves 2.9 points and the "pre-registered" outcome is decided by one or two calls. A band needs a named source, a named denominator, a minimum n, and a default for below-minimum. {#imp-count-the-band-denominator}
+
 ## Former anchors, restored {#former-anchors}
 
 Each id resolves here so historical citations stay valid; the content lives at the link before it. Folded run bullets keep the SAME id inside their ledger memory. One id per line (GMD SPEC §3): the store ingester registers only the first anchor on a line, so packed ids lint clean but vanish from `rmx` (found 2026-11-09 after efa5f33). This section is exempt from the 50-line cap.
