@@ -16,7 +16,7 @@ metadata:
 > Plan: [[plan-25-cliquedb-field-report]]
 > Status: Pending (spec drafted 2026-11-08; revision rounds 1-2 2026-11-09, [[#rev-round-1]],
 > [[#rev-round-2]])
-> Bug: bug-167 (BRE escapes; cliquedb priority 5). Out of scope and logged separately: bug-173
+> Bug: bug-167 (BRE escapes; cliquedb priority 5). Out of scope and logged separately: bug-180
 > (the `# rmx grep fallback via rg` line on every call, cliquedb item 5). bug-174 (substring
 > mode reads unescaped BRE metas literally) is [[task-25.5-substring-bre-metas]], which reuses
 > this task's translator.
@@ -67,7 +67,7 @@ The platform grep (the one the wrappers fall back to) is BSD, so BSD is the refe
 differ, and anything a translation cannot reproduce exactly goes to the real grep.
 
 `# rmx grep fallback via rg` on every call (cliquedb item 5) is a stderr line (`cli.py:6901`,
-`err=True`) and is bug-173; whether the index answers plain literals at all is plan-14 / plan-16's
+`err=True`) and is bug-180 (renumbered from bug-173 in r3); whether the index answers plain literals at all is plan-14 / plan-16's
 measurement. Substring mode reading `a.b` literally is bug-174.
 
 ## Decisions {#decisions}
@@ -199,7 +199,7 @@ sandbox on a fixture project. The oracle is the real tools; the test runs with
 | `src/refmatrix/cli.py` (`grep`, `:6407-6419`, `:6450-6453`; `_grep_stdin` `:6113`; `_grep_delegate` `:6541`; `_grep_rg_fallback` `:6803`) | translate once before the fork; grouped `-w` / `-x` on both legs; `grep_first`; translated regex into the fallback |
 | `tests/test_grep_stdin_dialect.py` | R5 supersession of `test_bre_alternation_fails_loud` |
 | `workflow/development_resources.md` | GNU grep (`ggrep`, MacPorts `/opt/local/bin`) named as a test dependency |
-| `workflow/bug_registry.md` | bug-167 → fixed at merge (bug-173 / bug-174 stay open) |
+| `workflow/bug_registry.md` | bug-167 → fixed at merge (bug-180 / bug-174 stay open) |
 
 ## Test strategy {#test-strategy}
 
@@ -227,7 +227,7 @@ Answers [[bsd-plan25-spec-r1-2f4a1df]] and the orchestrator's decisions of 2026-
 |---|---|---|
 | S8 most escapes stay silently literal; AC-2 contradicts b4 | trigger on ANY backslash (b4); the full escape set in R1; `foo\.py` in AC-1/AC-2; `\.\*` is now consistent with the trigger | [[#why]], [[#decisions]] b4, [[#r1]], AC-1, AC-2 |
 | S9 translation rules disagree with both greps | `\<` / `\>` as look-around word starts/ends; backslash literal inside brackets; nested-set pairs escaped (test under `-W error`); `-o` / `--color` with alternation delegated (b7); `(?:…)` grouping for `-w` / `-x` on every leg; `\{,n\}` follows BSD via delegation; six cases added to AC-2 and AC-8 | [[#r1]], [[#r2]], [[#r3]], AC-2, AC-5, AC-8, AC-9 |
-| M8 bug-167 also carries item 5; `a.b` unlogged | bug-167 split: the fallback-banner row is bug-173, substring `a.b` is bug-174, both logged 2026-11-09 | header, [[#why]], e3 |
+| M8 bug-167 also carries item 5; `a.b` unlogged | bug-167 split: the fallback-banner row is bug-173 (renumbered bug-180 in r3), substring `a.b` is bug-174, both logged 2026-11-09 | header, [[#why]], e3 |
 
 ## Revision round 2 (2026-11-09) {#rev-round-2}
 

@@ -158,6 +158,7 @@ Read 2026-11-08 by `git diff 591a2fb 3281c53 --stat -- src` in the 3.7 clone.
 | `src/refmatrix/verbs.py` | +1,290: `focus` dispatcher, `curator`, `graph`, `session_memories`, `snapshot_read` / `local_write` | 25.1 (`memory_recall` gains `max_bytes` / `pack`), 25.2 (recall gate) | `memory_recall` itself is not in 3.7's diff; the module grows around it. |
 | `src/refmatrix/recall.py` | +325: `shared_embedder`, `_process_embed_client`, `graph_recall`, `ann_search` (embed-client code) | 25.1 moves `_replica_memory_recall` here (d5), beside `shared_embedder` | none textual; 25.1's fixture runs dense recall through 3.7's embed client, so its RED is taken after 3.7 merges. |
 | `src/refmatrix/stm.py`, `scan.py`, `helix.py`, `terms.py`, `context.py` | not touched | 25.2, 25.3 | none |
+| `workflow/bug_registry.md` | adds bug-171 and bug-173 (an in-process `Embedder()` per daemonless call, cited in 3.7's `recall.py` and `tests/test_task3_7_remedy_r4.py`) | 25.4 / 25.5 close bug-167 / bug-174; plan-25's rg-fallback note is bug-180 | id collision removed in r3 (#s4): plan-25's row, logged 11 minutes after 3.7's, was renumbered bug-173 → bug-180 on master before 3.7 merges; the merge still conflicts textually at the table tail (append-only, keep both sides) |
 | `tests/test_verb_parity.py`, `tests/transport_guard.py` | 3.7 rewrites both | 25.1 / 25.2 add verb params (parity rows) | additive after 3.7 |
 
 ### File overlap with plan-26 (plan-26 merges first) {#overlap-26}
@@ -182,7 +183,8 @@ Read from the plan-26 task specs' file lists on 2026-11-08 (drafts; re-read at 2
   19.2-19.6 stay in plan-19. 25.1 lists which 19.1 items it lands (all R1-R8 and their ACs and
   mutations, with the deltas).
 - **`# rmx grep fallback via rg`** (cliquedb item 5) is a stderr line (`cli.py:6901`), not stdout;
-  it is logged as bug-173 (split from bug-167 on 2026-11-09) and stays open when 25.4 closes
+  it is logged as bug-180 (split from bug-167 on 2026-11-09 as bug-173, renumbered in r3 because
+  the task-3.7 branch owns bug-173) and stays open when 25.4 closes
   bug-167. Substring-mode `a.b` (bug-174) is IN scope as task 25.5 (orchestrator 2026-11-09).
 - **No raw cliquedb prompt or memory text is committed.** Every fixture is synthetic, shaped to the
   measured sizes ([[feedback_no_raw_prompts_in_public_repo]]).
@@ -207,7 +209,8 @@ Read from the plan-26 task specs' file lists on 2026-11-08 (drafts; re-read at 2
 - `rmx install-hooks --check` clean; verb parity green (every new verb parameter has its CLI twin).
 - The before/after table per hook (bytes per invocation on the frozen fixture store) is in the
   implementation summaries and in `workflow/measurements/plan-25-hook-bytes.md`.
-- A bus reply on `proj:refmatrix:bugs` to `ae9c57ed7f13` once deployed, so cliquedb can verify
+- A bus reply on `proj:refmatrix:bugs` to `ae9c57ed7f13` once deployed (it cites the fallback note
+  as bug-180, never bug-173), so cliquedb can verify
   next session (their offer, `fb3fefdff19b`).
 - `@ch-bsd` over the plan's commit range, remedied to CLEAN.
 
@@ -244,7 +247,7 @@ revision-round-1 table.
 | S8 / S9 BRE coverage and rule errors | trigger on any backslash; full escape set; bracket, word-anchor, `-o`, `-w`/`-x` grouping rules; BSD as authority on `\{,n\}` | [[#principle]], [[task-25.4-grep-bre-translation#rev-round-1]] |
 | M1 / M2 / M3 | pointers-only per-prompt pack; `prompt_recall` everywhere; `hooks` map into `pack` | [[task-25.1-recall-hook-byte-budget#rev-round-1]] |
 | M4 / M5 / M6 / M7 | `_PATH_RE` users and the `overlap` instrument; failure on the row; resolver reuse; existence check replaces the extension list | [[task-25.3-stm-ref-admission-and-helix-repeat#rev-round-1]] |
-| M8 out-of-scope items need rows | bug-167 split: bug-173 (fallback note), bug-174 (substring `a.b`) logged 2026-11-09 | [[#non-goals]], [[bug_registry#registry]] |
+| M8 out-of-scope items need rows | bug-167 split: bug-173 (fallback note; renumbered bug-180 in r3), bug-174 (substring `a.b`) logged 2026-11-09 | [[#non-goals]], [[bug_registry#registry]] |
 | M9 plan-19 revision rows now | rows added to 19.0, 19.1, 19.5 | [[#prior-specs]] |
 
 ## Revision round 2 (2026-11-09) {#rev-round-2}
