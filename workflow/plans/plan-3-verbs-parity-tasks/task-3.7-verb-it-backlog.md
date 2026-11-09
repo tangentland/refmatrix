@@ -719,6 +719,59 @@ by error text. Mutations after the commit, each restored in its own command (`gi
   Logs `r4-inflight-test.log` (r4 file + readoption, 20 passed) and
   `r4-inflight-test-mutation.log`.
 
+## Remedy round 5 (2026-11-09) {#remedy-r5}
+
+Source: ch-bsd re-audit `workflow/bullshit/2026-11-09-0224-task-3.7-remedy-r4-e4faf32.md`
+(0B/1S/3M; probe logs `workflow/review-output/task-3.7/bsd-r5-*.log`). All four are fixed
+in r5, not deferred.
+
+rel: derives-from -> [[bsd-task3.7-remedy-r4-e4faf32]]
+
+**Decisions (orchestrator, as the user would).** {#remedy-r5-decisions}
+
+- S-1: the e4faf32 `modelsrv.shared_available` spy is a pass-through rendezvous, not a mock
+  of the function under test; it is added to the r4 row of `workflow/test_mock_registry.md`.
+- M-2: a malformed `RMX_SHARED_REPROBE_S` / `RMX_SHARED_REPROBE_MAX_S` falls back to the
+  defaults (300 s / 1800 s) with ONE WARNING that names the variable; it never raises out of
+  `_reprobe_window`. `hold_reprobe` is skipped when shared models are disabled
+  (`not modelsrv.shared_enabled()`): with no hub possible there is no window to hold.
+- M-3: a re-probe whose socket CONNECTED and whose info header only timed out (the hub is
+  alive, its worker is warming) re-arms at BASE (`backoff = base`, `next_at = now + base`). An
+  absent socket or a refused connect (no hub, or a stale socket file) still doubles, up to the
+  cap.
+
+**RED (r5).** {#remedy-r5-red} Tests in `tests/test_task3_7_remedy_r5.py`. Red log
+`workflow/review-output/task-3.7/r5-red.log`: 5 failed on their assertions, 6 passed (the
+mutation killers and the "still doubles" halves of M-3). With r2-r4 and the readoption suite:
+the same 5 failed, 37 passed (`r5-mutations.log`, tail).
+
+- M-2 `test_a_malformed_reprobe_env_never_costs_an_in_process_load_with_a_healthy_private_worker`
+  `[base-typo-shared]` / `[base-typo-unshared]` / `[cap-typo-shared]`. No hub, a HEALTHY stub
+  private worker, 4 daemonless calls: all served by `stub/private`, ZERO in-process loads,
+  one private worker, exactly one warning naming the variable (at most one under
+  `RMX_SHARED_MODELS=0`), and the throttle holds the default base (300 s). At HEAD: 4 loads
+  (`=1`, both variables) and 1 load on call 1 (`=0`).
+- M-3 `test_a_cold_hub_rearms_at_base_while_an_absent_or_refused_socket_doubles` `[cold]` /
+  `[absent]` / `[refused]`, on `reprobe_shared_client` with `now=` and base 100: from the
+  state `hold_reprobe` leaves (`backoff = base`), a `_SlowHub` (connects, answers after 5 s,
+  probe bound 0.3 s) must re-arm at 100; no socket file and a stale socket file must give 200.
+  At HEAD `[cold]` gives 200; `[absent]` / `[refused]` pass (they keep the fix honest).
+- M-3 `test_a_request_path_probe_of_a_cold_hub_rearms_at_base`: the audit's process shape
+  (`bsd-r5-probe_coldhub.py`) with base 2 s: a private client is cached, a cold hub appears,
+  the 1.0 s request-path probe connects and times out. At HEAD `backoff=4.0`, next in 4.0 s.
+- M-1 killers, green at HEAD, each proven against the audit's own mutation
+  (`bsd-r5-mutate.py`) in `r5-mutations.log`, every restore in its own command and
+  `git status --short src` empty after each:
+  F2 `test_a_request_path_probe_that_raises_clears_the_inflight_flag_and_the_next_call_probes`
+  (a `shared_enabled` spy raises once inside the re-probe; mutated, the flag stays `True`);
+  F8 `test_readoption_drops_and_frees_the_in_process_standin` (mutated, `_EMBED_INPROC` still
+  holds the stand-in after re-adoption); F13
+  `test_the_failed_private_worker_is_closed_and_reaped_when_the_standin_loads` `[0]`/`[1]`
+  (mutated, the failed client's `_proc` is still a live `Popen`).
+
+Doubles: registry rows "task 3.7 remedy r4" (now with the `shared_available` spy) and "task
+3.7 remedy r5".
+
 ## Definition of done {#done}
 
 - Each family: RED (recorder/parity/defect rows) before GREEN; mutation check; summary rows in
