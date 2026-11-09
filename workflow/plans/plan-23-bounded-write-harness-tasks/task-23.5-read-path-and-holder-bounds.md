@@ -13,7 +13,14 @@ metadata:
 # Task 23.5: the read path and the non-harness lock holders {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: Pending. NEW in revision round 7 (2026-10-15) under d9az: plan-23 OWNS the
+> Status: Pending. **Revision round 13 (2026-11-09):** freshness fold of
+> [[bsd-plan23-3-5-freshness-62a2465]] (s2, m2, m3).
+> - R1.3 re-walks the `CLI_OPS` set on the merged 3.7 tree at RED and records it with its sha.
+> - `recall.ann_search` takes a `lock_cm` factory, and the daemon passes `_cli_writer_lock(d)`.
+> - AC-3's mutations are retargeted to `_op_partition_list`.
+> - The bug-112 gate is SATISFIED.
+>
+> See [[#rev-round-13]]. NEW in revision round 7 (2026-10-15) under d9az: plan-23 OWNS the
 > non-harness `_store_lock` holders and the heartbeat's coupling to the cli pool
 > ([[plan-23-bounded-write-harness#scope-d9az]]). Revision round 8 (2026-10-15): first review
 > [[bsd-plan23-17-spec-rereview-r8-23ad703]] (nb23-r8-1, ns23-r8-1..3, nm23-r8-1..4) answered
@@ -33,15 +40,14 @@ metadata:
 > Depends on: 23.0 (sandbox), 23.2 (recorder), 23.1 (`_FairLock` owner, R1.6 item 1; the learn
 > drain, R9; `_compact_factslog_locked`, R3.7). **bug-115/116 (0.78.2) merged to `master`:
 > SATISFIED** (`607d759`, `1c86d9c` and bug-117's `391ffeb` are ancestors of `master` `b381b6d`;
-> HEAD `23ad703`). **bug-112 FIXED and reachable from `master`: OPEN, a HARD gate (nb23-r9-2;
-> the same gate as 18.3's header).** The fix is in flight on branch `bugs-112-113-118`
-> (`7c38c46`, `0fed0d5`, `462bd0b` so far; clone `/Volumes/littlebig/refmatrix-bugs112-118`),
-> which is NOT an ancestor of `master` at `b84fd8d`. The branch will gain more commits before it
-> merges (d9bw(d) adds `_writer_lost`), so the gate names no branch commit: it names **the merge
-> commit that lands bugs-112-113-118 on master**. 23.5 is not implemented before `git merge-base
-> --is-ancestor <the merge commit that lands bugs-112-113-118 on master> master` succeeds; that
-> sha is read from `git log --merges master` at gate time, and the command and its output are
-> recorded in the implementation summary.
+> HEAD `23ad703`). **bug-112 FIXED and reachable from `master`: SATISFIED** (round 13, m2). The gate was the merge
+> commit that lands bugs-112-113-118 on master. That commit is `74f8f98`, shipped in 0.79.0
+> (`55963e7`), and `git merge-base --is-ancestor 74f8f98 master` exits 0 at `2a4448b`.
+> `backend.open_duckdb` is at `backend.py:359`, and
+> `tests/test_bug112_duckdb_reopen.py::test_every_file_backed_duckdb_connect_goes_through_open_duckdb`
+> is at `:219` ([[bsd-plan23-3-5-freshness-62a2465#p-bug112]]). The implementation summary still
+> records the `git merge-base --is-ancestor` command and its output, run at RED. Round 9's gate
+> text (OPEN, branch `bugs-112-113-118` at `7c38c46` / `0fed0d5` / `462bd0b`) is history.
 > Runs in parallel with 23.3 after 23.1. Blocks nothing in Wave 1; 17.3's hold bound
 > ([[task-17.3-fleet-rollout#r2-measure]]) cites the same coupling.
 > **Stands alone (ns23-r9-1).** 23.5 is Wave 1; plan-18 is Wave 4. Nothing here waits on 18.2 or
@@ -95,6 +101,15 @@ completing (and beating) through any writer hold. {#why-body}
 
 Read at HEAD `23ad703` (0.78.3; bug-115/116 and bug-117 merged) in round 8, by symbol with the
 HEAD line. Round 7's `77ac38f` numbers are superseded.
+**Round 13 (m3):**
+- At `62a2465` every symbol below still exists, and the transitive AST re-walk reproduces the
+  16 / 10 split exactly. Only the line numbers drift
+  ([[bsd-plan23-3-5-freshness-62a2465#drift]]; for example, `CLI_OPS` is at `:6554`,
+  `_read_with_fallback` at `:5015` and `_writer_lock` at `:5116`).
+- 3.7 merges first and changes the op set ([[#r1-sites]]). So the lines below are re-stamped
+  ONCE, at RED, on the post-3.7 `master`, together with R1.3's re-walk. The implementation
+  summary records that sha and the table. Until then, the numbers below are `23ad703`'s, cited
+  by symbol.
 - **Pools.** `CLI_OPS` (`daemon.py:6355`) has 31 entries; `ping` is answered on the dispatcher
   thread in `Daemon._handle` (0.78.2), so 30 reach the cli pool. Everything else goes to the bg
   pool. Sizes on the live store: `pools cli=4 bg=12 disp=20` (`rmxd.log`
@@ -312,6 +327,32 @@ maintenance holds (17.1 / 17.3), plan-18's catalog maintenance and its swap (18.
         `memory_search` `:5063`, `memory_recent` `:5080`, `memory_score` `:5211`,
         `subject_list` `:5366`, `subject_leaves` `:5374`, `memory_recall` `:6101`;
       - `_store_health`'s two calls (`:3903`, `:3909`), with `wait_s=0` as today.
+      - **Re-walked at RED on the merged 3.7 tree (round 13, s2).** The lists above are
+        `23ad703`'s. 3.7 merges first and changes them. At RED, the implementer re-runs R7's
+        transitive AST walk on the post-3.7 `master` and records in the implementation summary
+        the op list, the lock-taking set and the bare `_read_with_fallback` set, with the sha.
+        That recorded list is the one this requirement and AC-1 / AC-3 cover. The expected
+        delta, read at 3.7's `f3d638a` (`CLI_OPS` has 30 entries):
+        - `graph_recall` is added. It is a bare `_read_with_fallback(…, private=True,
+          missing="raise")`, so it moves onto `_cli_read` with the same flags.
+        - `list_linkages` and `list_saved_queries` are removed as ops, and so is `iter_entities`.
+        A delta beyond this list is recorded and covered the same way, not argued away. This is
+        the same rule R9 applies to 26.6's op names.
+      - **`ann_search` under the lock (round 13, s2; decided).**
+        - On 3.7, `_op_ann_search` calls `recall.ann_search(d._st, …, lock=d._store_lock)`.
+          The lock is taken inside `recall.py` (`with (lock …)`, `:856` at `f3d638a`), around a
+          read of the WRITER's store (the getter, resolved inside the lock, 3.7 R-RM1) plus
+          Lance. That is not a `_cli_read(d, partition, fn)` over the READ store.
+        - Decision: `recall.ann_search`'s `lock=` parameter becomes `lock_cm:
+          Callable[[], ContextManager] | None`, a context FACTORY. `None` gives a
+          `nullcontext()` (the verb's no-daemon branch).
+        - The daemon passes `lock_cm=lambda: _cli_writer_lock(d)`, the R2 bounded wait. It
+          raises `WriterBusy(<holder>)` after `_cli_writer_wait(d)` seconds, so `ann_search` is
+          bounded and named, and the call no longer passes `_store_lock` as an argument (R7).
+        - `_cli_writer_lock(d)` is the context-manager form of R2's bounded `_writer_lock(d,
+          <wait>)`. It is not a second lock path.
+        - Moving `ann_search` onto `_cli_read(private=True)` is NOT chosen. Lance plus 3.7's
+          store getter make that a larger change than this task.
       {#r1-sites}
    4. **`snapshot` leaves the cli pool.** `"snapshot"` is removed from `CLI_OPS`, so
       `_op_snapshot` runs on the bg pool: it is a forced writer-side `CHECKPOINT` and copy, and
@@ -521,7 +562,9 @@ maintenance holds (17.1 / 17.3), plan-18's catalog maintenance and its swap (18.
      spelling rule cannot see; 23.1's `bounded.py` front-ends take the lock the same way);
    - `_writer_lock(` without a second argument, or with the literal `None`;
    - `_read_with_fallback(` anywhere except inside `_cli_read`'s body.
-   At HEAD the walk flags 24 ops ([[#facts]]); after R1-R3 it flags none. The test also asserts
+   At HEAD the walk flags 24 ops ([[#facts]]); after R1-R3 it flags none. On the post-3.7 tree
+   the count is the one R1.3's RED re-walk records (round 13). `recall.ann_search` called with
+   `lock_cm=…` passes no `_store_lock`, so it satisfies the argument rule. The test also asserts
    that `_store_health` and `_memory_partition` contain no `_st()` call (R1.6), that
    `CLI_OPS` contains none of `snapshot`, `partition_add`, `partition_rename`, and R1.9's
    flush-before-`CHECKPOINT` order in `_snapshot_catalog`. {#r7}
@@ -645,7 +688,8 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
 
 1. **Reads answer through a long writer hold (R1, R6).** A test thread holds `_store_lock` for
    10 s (more than 3× the stale window), with `RMX_CLI_WRITER_WAIT_S=1`. During the hold:
-   - each R1 read op (the 11 and the 10 sites), called through `daemon.call(…, timeout=2)` from
+   - each R1 read op (the sites R1.3's RED re-walk records on the post-3.7 tree, round 13;
+     `23ad703`'s 11 and 10, with the 3.7 delta), called through `daemon.call(…, timeout=2)` from
      8 concurrent client threads against partitions the snapshot holds, answers `ok` within 1 s;
    - `memory_search` against a partition absent from the snapshot (nb23-r8-1: its writer
      fallback needs the lock) answers within `RMX_CLI_WRITER_WAIT_S` + 0.5 s with an error that
@@ -699,14 +743,17 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
    branch left returning the project default for every `ok: false` instead of calling
    `_raise_for_answer` (the `writer_busy` case returns a name). {#ac-2}
 3. **The rule is static and transitive (R7).** The AST test passes after R1-R3. Mutations, each
-   must FAIL it: `with d._store_lock:` added to `_op_list_linkages`; a new module-level helper
-   `_peek(d)` that does `with d._store_lock:` called from `_op_list_linkages` (the transitive
+   must FAIL it: `with d._store_lock:` added to `_op_partition_list`; a new module-level helper
+   `_peek(d)` that does `with d._store_lock:` called from `_op_partition_list` (the transitive
    case a direct-body rule missed); `_writer_lock(d, None)` in `_op_replica_audit`;
    `_read_with_fallback(…)` called directly from `_op_memory_search`; `snapshot` back in
    `CLI_OPS`; a `d._st()` call added to `_store_health`; `_periodic_flush(d.store,
-   d._store_lock, d._log)` added to `_op_list_linkages` (the lock passed as an argument,
+   d._store_lock, d._log)` added to `_op_partition_list` (the lock passed as an argument,
    nm23-r9-2); the `flush_fragments` call removed from, or moved after the `CHECKPOINT` in,
-   `_snapshot_catalog` (R1.9). {#ac-3}
+   `_snapshot_catalog` (R1.9); `_op_ann_search` passing `lock=d._store_lock` again instead of
+   `lock_cm` (round 13). The targets were `_op_list_linkages` until round 13, but 3.7 removes
+   that op, so the mutations now target `_op_partition_list`, which is in `CLI_OPS` on HEAD and
+   on 3.7. {#ac-3}
 4. **`context` learns without the lock (R3).** With the lock held by a test thread, a `context`
    op whose answer has grep hits answers within 1 s and appends one `learn_queue` line; after
    the release, one tick's drain applies it (the `mentions` link and its evidence rows exist,
@@ -1004,6 +1051,26 @@ rel: derives-from -> [[bsd-plan23-fold-additions-a9147d5]]
 rel: derives-from -> [[bsd-plan23-fold-additions-a9147d5#s3]]
 rel: derives-from -> [[bsd-plan23-fold-additions-a9147d5#m1]]
 rel: depends-on -> [[task-26.6-compile-subject-hygiene#plan-19-delta]]
+
+## Revision round 13 (2026-11-09) {#rev-round-13}
+
+Source: [[bsd-plan23-3-5-freshness-62a2465]], the pre-implementation freshness review of 23.3 and
+23.5 at `62a2465` (DIRTY 1B/2S/4M). This spec's findings are s2, m2 and m3. b1, s1, m1 and m4
+are 23.3's ([[task-23.3-sync-between-file-yield#rev-round-6]]). b1's attribution correction to
+[[#scope]] landed with bug-185 (`2a4448b`). No user decision remained, so the report's fixes are
+adopted. The round-12 table above is unchanged history.
+
+| finding | answered at | rationale |
+|---|---|---|
+| s2 (3.7 changes the site list; `ann_search` passes the lock as an argument R1 has no design for; AC-3's targets removed) | [[#r1-sites]] (RED re-walk on the merged 3.7 tree, recorded with its sha; the `ann_search` `lock_cm` decision), [[#r7]], [[#ac-1]], [[#ac-3]] (retargeted to `_op_partition_list`; an `ann_search` mutation) | an earlier-merging branch changes the op set, so the list is read from merged code at RED, as R9 already does for 26.6. A context factory bounds `ann_search` without moving Lance onto the read path |
+| m2 (header still says the bug-112 gate is OPEN) | header (SATISFIED by `74f8f98`, 0.79.0 `55963e7`) | the merge is an ancestor of `master`; the RED-time check stays recorded |
+| m3 (facts line drift) | [[#facts]] (round-13 note: re-stamped once at the post-3.7 RED, with the re-walk) | re-stamping now would be stale again after 3.7 merges |
+| b1 (attribution, `#scope`) | [[#scope]] (the GMD re-ingest named as the holder; bug-185) | the agent `sync` runs waited; they did not hold |
+
+rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465]]
+rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465#s2]]
+rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465#m2]]
+rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465#m3]]
 
 ## Folded rider: plan-2 r9 #s-3 (2026-10-19) {#w1c-rider}
 

@@ -7,15 +7,21 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-14
-  updated: 2026-10-14
+  updated: 2026-11-09
 ---
 
 # Task 23.3: the between-file yield in `_sync_paths` {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: Pending (revision round 5, 2026-10-14: nm23-r4-3, see [[#rev-round-5]]; round 3:
+> Status: Pending (**revision round 6, 2026-11-09**: freshness fold of
+> [[bsd-plan23-3-5-freshness-62a2465]] (b1, s1, m1, m4): each GMD document is its own
+> `bounded_steps` step and AC-4b counts its writes; all FIVE daemon sync sites plus `cli.py`'s
+> `flush_queue` caller; facts re-stamped at HEAD `2a4448b`; R9 measures the per-file batch
+> against pre-registered bands; see [[#rev-round-6]]. Earlier: revision round 5, 2026-10-14: nm23-r4-3, see [[#rev-round-5]]; round 3:
 > ns23-r3-3, see [[#rev-round-3]]; round 2: nb23-3 and nb23-4, see [[#rev-round-2]])
-> Depends on: 23.1 (`bounded_steps`, `bind`), 23.2 (recorder), 23.0 (sandbox)
+> Depends on: 23.1 (`bounded_steps`, `bind`), 23.2 (recorder), 23.0 (sandbox), and bug-185's
+> bulk GMD ingest ([[task-bug185-bulk-gmd-ingest]], merged after plan-26; AC-4b needs it).
+> Build order (round 6): 3.7 → bug-178 → plan-26 → bug-185 → 23.2 → 23.1 → 23.3 ∥ 23.5.
 
 rel: part-of -> [[plan-23-bounded-write-harness]]
 rel: depends-on -> [[task-23.1-queue-and-drain]]
@@ -31,6 +37,8 @@ rel: related-to -> [[project_sync_mtime_gate_strands_docs]]
 rel: depends-on -> [[feedback_decay_never_loses_knowledge]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#ns23-r3-3]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r4-878647c#nm23-r4-3]]
+rel: depends-on -> [[task-bug185-bulk-gmd-ingest]]
+rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465]]
 
 ## Why {#why}
 
@@ -81,15 +89,54 @@ Added in revision round 3, re-read at HEAD `5a8bf29`:
   and `bulk_apply_records` (`:461`) write evidence through `Store.add_evidence` (`store.py:5267`,
   a plain `INSERT INTO linkage_evidence`; the table has no unique key). A semantic step applied
   twice therefore duplicates its evidence rows (bug-106's shape on the sync path).
+
+Re-stamped in revision round 6 (m1) at HEAD `2a4448b` (`src/` unchanged since `9f09e89`, 0.80.3;
+[[bsd-plan23-3-5-freshness-62a2465#drift]]). The line numbers above, from `b1c4324` / `3357c44` /
+`5a8bf29`, are superseded by this table. Every symbol still exists, and `_sync_paths`' body has
+the same shape.
+
+| symbol | HEAD line |
+|---|---|
+| `_sync_paths`; outer `transaction()+deferred_links()`; purge + `mark_tracked`; GMD batch; `bulk_apply_records` | `sync.py:147`; `:191`; `:241-244`; `:254`; `:330` (unchanged) |
+| the "does not yield" comment; mtime gate; `.md` semantics | `sync.py:176-190`; `:215-224`; `:309-311` |
+| watch `_flush` (its hold) | `daemon.py:3158` (`:3177`) |
+| `_op_flush_queue` (hold); `_op_flush_queue_async`'s runner (hold) | `daemon.py:3453` (`:3457`); `:3466-3497` (`:3482`) |
+| `_op_sync_files` (hold); `_op_sync_since` (holds) | `daemon.py:3537` (`:3543`); `:3906` (`:3916`, `:3926`) |
+| `_watch_flush_line`; `_async_lock` | `daemon.py:4806`; `:773` |
+| non-daemon callers | `watch.py:170`; `cli.py:8727` (`sync_since`), `:8743` (`flush_queue`), `:8747` (`sync_files`) |
+| `apply_record` / `bulk_apply_records` evidence writes; `Store.add_evidence`; `bulk_mark_tracked` | `ingest_records.py:323` / `:461`; `store.py:5577`; `:6447` |
+
+- **Five daemon sites, not three (s1).** `_op_flush_queue` (reached by the Stop hook through
+  `rmx sync --flush-queue`) and `_op_flush_queue_async`'s runner thread `rmxd-async-flush`
+  (reached by every PostToolUse edit through `--async`) also call `flush_queue → _sync_paths`
+  under an outer `with d._store_lock:`. Both date from 2026-05-16. The runner is a bare thread
+  with no `_inflight_ops` entry, so after 23.5 R4 it would be reported as "untracked thread
+  rmxd-async-flush".
+- **The GMD batch is the measured holder (b1).** One `ingest_gmd_paths` call on one document
+  holds 19-40 s live (`IMPRESSIONS.md`, 219 anchors: 39.5 s; the 23.5 spec: 19.2 s). The per-file
+  pass that rounds 1-5 split is ≤ 3 s per `.py` file
+  ([[bsd-plan23-3-5-freshness-62a2465#p-gmd-cost]]). Each of 2026-11-09's four longest windows
+  was one GMD re-ingest, with the other syncs waiting behind it
+  ([[bsd-plan23-3-5-freshness-62a2465#p-holder]]; bug-185).
 {#why-body}
 
 ## Requirements {#requirements}
 
 1. **R1 One transaction per step.** `_sync_paths` takes a REQUIRED `bind` and runs through 23.1's
    `bounded_steps` (23.1 [[task-23.1-queue-and-drain#r10-contract]]):
-   - per-file pass: one file per step (`batch=1`), each step its own `bind` hold,
+   - per-file pass: `RMX_SYNC_FILE_BATCH` files per step (the default is chosen by [[#r9]]'s
+     measurement, not fixed at `1` by fiat), each step its own `bind` hold,
      `batch_transaction`, `deferred_links` scope and in-transaction fragment flush (23.1 R1.3);
-   - the GMD batch: one step (unchanged behaviour, it stamps nothing in `_sync_paths`);
+   - the GMD batch (round 6, b1): ONE DOCUMENT PER STEP, not one step for the whole batch.
+     `prepare` (off the lock) parses every touched GMD path and builds the batch's name table.
+     Then one step per document runs pass 1 (doc row + bulk node rows), and one step per
+     document runs pass 2 (bulk anchor concepts + links, then the `gmd_content_hash` stamp). The
+     in-memory `eid_by_name` table carries ids already committed by earlier steps, so a
+     `[[doc-id#anchor]]` between two documents of the same sync resolves exactly as HEAD's
+     two-pass call does. A stop between steps leaves a document without its hash, so the next
+     sync's resume gate re-ingests it, as a crash does today. `_sync_paths` still stamps no GMD
+     path. Each step's write count is flat in the document's anchor count because bug-185
+     ([[task-bug185-bulk-gmd-ingest]]) makes the writes bulk. AC-4b asserts both;
    - tldr: one step;
    - the ADR map build: one step;
    - `.pseudo` and `.md` semantics: one file per step;
@@ -99,11 +146,30 @@ Added in revision round 3, re-read at HEAD `5a8bf29`:
    The lock is released only between steps, so never inside a transaction. {#r1}
 2. **R2 Partition bound per step.** Each step binds the owner store's project partition by NAME
    through `bind`; no step relies on the binding at rest. {#r2}
-3. **R3 Callers.** The three daemon sites drop their outer `with d._store_lock:` and pass
-   `daemon_bind(d)`; the watcher's pre-flush repair keeps its own single hold. Non-daemon callers
-   pass `serial_bind(store)`, which binds the same way with a process-local lock. The parameter is
-   required; there is no default that skips binding (`feedback_main_path_must_exercise_core_mechanisms`).
-   {#r3}
+3. **R3 Callers (round 6, s1: five daemon sites).** {#r3}
+   - **The five daemon sites:** the watch `_flush` (`daemon.py:3158`), `_op_flush_queue`
+     (`:3453`), `_op_flush_queue_async`'s runner (`:3466-3497`), `_op_sync_files` (`:3537`) and
+     `_op_sync_since` (`:3906`). Each one:
+     - DROPS its outer `with d._store_lock:`;
+     - takes `_sync_mutex` (R8);
+     - passes `daemon_bind(d)`;
+     - logs its R7 start line.
+     The watcher's pre-flush repair keeps its own single hold.
+   - **Why the outer hold must go, not wrap the new call.** `_FairLock` is not re-entrant. A site
+     that keeps `with d._store_lock:` and passes `daemon_bind(d)` inside it deadlocks on the
+     first step's `bind`: 23.2's `LockDeadlock` in tests, a hang on the live store. Binding
+     outside `_sync_mutex` is not allowed either: a flush would then interleave step by step with
+     a watch flush, which is ns23-r3-3's duplicate-evidence hazard. There is no third option, so
+     the spec names this one. AC-10 asserts it per site.
+   - **The async runner is a named holder.** `rmxd-async-flush` runs its whole flush inside
+     `Daemon._inflight("sync")`, 23.5 R4's context manager, whose name list already has `sync`.
+     So 23.5 R4's `writer_holder` names it and never reports "untracked thread". 23.3 and 23.5
+     run in parallel: whichever lands first adds `Daemon._inflight` over `_inflight_ops`, and
+     the other uses it. No second registry is added.
+   - **Non-daemon callers** (`watch.py:170`; `cli.py:8727`, `:8743` (`flush_queue`), `:8747`)
+     pass `serial_bind(store)`, which binds the same way with a process-local lock.
+   - The parameter is required. There is no default that skips binding
+     (`feedback_main_path_must_exercise_core_mechanisms`).
 4. **R4 The stamp is written in the file's LAST step (nb23-3, #t9-fixes).** {#r4}
    - The per-file step does NOT call `mark_tracked`. It records the disk mtime it read in an
      in-memory `pending_stamps: dict[path, mtime]` for that sync.
@@ -122,17 +188,20 @@ Added in revision round 3, re-read at HEAD `5a8bf29`:
 5. **R5 Report unchanged.** The returned report keys (`added`, `updated`, `purged`, `touched`,
    `cancelled`, `vector_delete_failed`) and the `append_sync_log` line keep their meaning; the run's
    `holds` and `max_hold_s` are added. {#r5}
-6. **R6 The comment at `sync.py:182-190` is rewritten** to state the new rule: one transaction per
+6. **R6 The comment at `sync.py:176-190` (HEAD `2a4448b`) is rewritten** to state the new rule: one transaction per
    step, the lock released only between steps, the stamp written in the file's last step. {#r6}
 7. **R7 bug-093's op-start log line (nb23-4).** The watch `_flush` logs `watch flush start: N
    files, roots=[<owner roots>]` through `Daemon._log` BEFORE the first hold of the flush (before
    the pre-flush repair's hold too). The existing completion line is unchanged. `_op_sync_files`
    and `_op_sync_since` log the same shape (`sync_files start: …`, `sync_since start: …`). After
    this task the bug-093 row's open items are both closed by 23.3 (the docs step updates the row).
+   Round 6 (s1): `_op_flush_queue` and the async runner log `flush_queue start: …` and
+   `flush_queue_async start: …` in the same shape, before their first hold.
    {#r7}
 8. **R8 One sync at a time per store, and idempotent semantic evidence (ns23-r3-3).** {#r8}
    - **`sync_mutex`.** `Daemon._sync_mutex` is a plain `threading.Lock`, NOT `_store_lock`. The
-     three daemon sites (watch `_flush`, `_op_sync_files`, `_op_sync_since`) hold it across ONE
+     five daemon sites (watch `_flush`, `_op_flush_queue`, `_op_flush_queue_async`'s runner,
+     `_op_sync_files`, `_op_sync_since`; round 6, s1) hold it across ONE
      whole `_sync_paths` run (every `bounded_steps` step of it). A second sync waits for it; it
      does not coalesce (a waiting sync re-stats its own paths when it starts, and the mtime gate
      skips what the first one already applied and stamped). `serial_bind(store)` callers get the
@@ -147,6 +216,26 @@ Added in revision round 3, re-read at HEAD `5a8bf29`:
      signature and `facts.log` rule), not the plain `add_evidence`. With the mutex this is a
      second guard: a semantic step that is re-applied (a re-sync after a stop, R4) adds no
      duplicate evidence row. `add_evidence` itself is unchanged for its other callers.
+9. **R9 The per-file batch is measured before it is fixed (round 6, m4).** At 23.1 R1.3, every
+   per-file step commits and flushes fragments inside its own transaction, so a 100-file
+   post-commit diff at `batch=1` costs ≥ 100 commits on a ~920 MB catalog. Before GREEN is
+   accepted:
+   - sync a 100-file fixture (60 `.py` with docstring keywords, 30 `.md`, 10 GMD documents of
+     20-200 anchors) at HEAD and at `RMX_SYNC_FILE_BATCH` ∈ {1, 5, 10, 25};
+   - record for each run: the hold count, `max_hold_s`, and the total wall time (median of 3) in
+     the implementation summary.
+
+   The bands below are pre-registered here, before the run
+   ([[feedback_go_no_go_ranges_not_predrop]]). `ratio` = new total wall ÷ HEAD total wall.
+   - **`batch=1` with ratio ≤ 1.25:** the default is 1.
+   - **`batch=1` with ratio over 1.25:** the default is the smallest batch in {5, 10, 25} whose
+     ratio is ≤ 1.25 and whose `max_hold_s` is ≤ 3 s.
+   - **No batch ≤ 25 meets both:** STOP and report to the user with the table. The bands are
+     not widened.
+
+   The GMD steps are one document each in every band ([[#r1]]). The batch setting applies to
+   the per-file pass only.
+   {#r9}
 
 ## Acceptance criteria {#acceptance}
 
@@ -163,6 +252,19 @@ Added in revision round 3, re-read at HEAD `5a8bf29`:
 4. **Write counts (bug-093's detector).** Re-syncing a fixture `.py` file with 10 and with 100
    docstring keywords executes the same number of statements per hold (± 2) and 0 single-row
    concept upserts (23.2 R3). Mutation: the per-row `_ingest_python_semantics` path FAILS. {#ac-4}
+   - **AC-4b GMD documents (round 6, b1).** Fixture: GMD documents with 50 and with 200 anchors.
+     - Re-syncing each executes the same number of statements per hold (± 2), counted by 23.2's
+       recorder, and 0 single-row entity / concept upserts (23.2 R3's counter).
+     - Each document is its own pass-1 step and its own pass-2 step: the recorder's hold count
+       is `2 × documents` for the GMD phase.
+     - Two GMD documents that link each other, both new in the same sync, resolve the links in
+       both directions (AC-6's row diff against HEAD).
+     - Mutations, each must FAIL: the GMD batch back to one step for all documents (hold count
+       1); the per-row pass-1 `upsert_entity` loop restored (statements scale with anchors,
+       single-row counter > 0).
+     - RED at HEAD: the counter sees 854 single-row upserts on the 219-anchor IMPRESSIONS-shaped
+       fixture. Needs bug-185 merged to go GREEN ([[task-bug185-bulk-gmd-ingest#ac-3]]).
+     {#ac-4b}
 5. **A stop before the semantic steps loses nothing (nb23-3).** Fixture: 5 changed files with
    semantics (3 `.py` with docstring keywords, 1 ADR `.md`, 1 `.pseudo`), all previously synced.
    Three runs, each from the same starting copy:
@@ -176,10 +278,19 @@ Added in revision round 3, re-read at HEAD `5a8bf29`:
    Mutation: `mark_tracked` back in the per-file step FAILS (the next sync skips the 5 files and
    their semantic links are missing from the diff). {#ac-5}
 6. **Same graph.** The 5-file sync's entities, links and fragments equal those of the HEAD code on
-   the same fixture (row diff), so chunking changed holds, not results. {#ac-6}
+   the same fixture (row diff), so chunking changed holds, not results. The same diff also runs
+   on [[#r9]]'s 100-file fixture at the chosen batch. The summary records R9's holds and wall
+   table (round 6, m4). {#ac-6}
 7. **Existing sync tests** (`tests/test_sync_semantic_bulk.py` and every test that calls
    `sync_files` / `sync_since` / `flush_queue`) pass with `serial_bind` or `daemon_bind` passed.
-   {#ac-7}
+   The flush-queue tests are named here (round 6, s1):
+   - `tests/test_sync_and_extras.py::test_queue_enqueue_and_flush`;
+   - `tests/test_memory_only_guard.py::test_sync_empty_flush_stays_quiet_on_the_global_store`;
+   - `tests/test_deferrals_clean.py`'s `flush_queue` parametrization (no `yield_lock` /
+     `yield_every` parameter; `bind` is not one of those).
+
+   HEAD has no daemon-level test of `_op_flush_queue` / `_op_flush_queue_async`. AC-10 adds
+   them. {#ac-7}
 8. **Op-start line (nb23-4).** A watch flush on a sandboxed daemon whose first `bind` hold is
    blocked by a competitor holding `_store_lock`: while the flush waits, the daemon's `rmxd.log`
    (in the tmp root) already holds `watch flush start: 5 files, roots=[…]`, and the completion
@@ -205,7 +316,26 @@ Added in revision round 3, re-read at HEAD `5a8bf29`:
    wins between consecutive steps. Mutations, each must FAIL: no `_sync_mutex` (steps interleave;
    duplicate evidence rows); `_sync_mutex` taken inside the first `bind` hold (23.2's
    `LockDeadlock`, or the competitor never wins); `bulk_apply_records` back on the plain
-   `add_evidence` together with the mutex removed (duplicate rows). {#ac-9}
+   `add_evidence` together with the mutex removed (duplicate rows).
+   - **Second pair (round 6, s1).** The same barrier and assertions, with a
+     `flush_queue_async` runner as sync A and a watch `_flush` as sync B, over the same 3 files
+     (enqueued for the flush). The steps of the two syncs never interleave, and there are no
+     duplicate evidence rows. Mutation: the runner bound outside `_sync_mutex` FAILS (its steps
+     interleave with the watch flush's).
+   {#ac-9}
+10. **AC-10 Every daemon sync site drops its outer hold (round 6, s1).** For each of the five
+    sites ([[#r3]]), on a recorded daemon: the site runs a 3-file sync to completion, and a
+    competitor wins between its steps.
+    - The `flush_queue_async` runner's thread has an `_inflight_ops` entry named `sync` for the
+      whole flush.
+    - With 23.5 R4 merged, `writer_holder` names it `sync`, never "untracked thread
+      rmxd-async-flush".
+    - An AST check over `daemon.py`: no `with <x>._store_lock` encloses a call to
+      `flush_queue` / `sync_files` / `sync_since` / `_sync_paths`.
+    - Mutations, each must FAIL: the outer `with d._store_lock:` kept in `_op_flush_queue` (23.2's
+      `LockDeadlock` on the first `bind`, not a hang); the same in the async runner; the
+      runner's `Daemon._inflight("sync")` removed (no `sync` entry while it holds).
+    {#ac-10}
 
 ## Test strategy {#test-strategy}
 
@@ -250,3 +380,23 @@ Source: [[bsd-plan23-17-spec-rereview-r4-878647c]].
 |---|---|
 | nm23-r4-3 (AC-9 does not force the race; the no-mutex mutant can pass if A drains first) | [[#ac-9]] (a barrier: A's first step waits until B is in `_sync_mutex.acquire` or holds a `_FairLock` waiter ticket) |
 
+## Revision round 6 (2026-11-09) {#rev-round-6}
+
+Source: [[bsd-plan23-3-5-freshness-62a2465]], the pre-implementation freshness review of 23.3 and
+23.5 at `62a2465` (DIRTY 1B/2S/4M; this spec's findings are b1, s1, m1, m4; s2, m2, m3 are
+23.5's, [[task-23.5-read-path-and-holder-bounds#rev-round-13]]). Code re-read at HEAD `2a4448b`.
+No user decision remained: the report's fixes are adopted. The round-5 table above is unchanged
+history.
+
+| finding | answered at | rationale |
+|---|---|---|
+| b1 (23.3 left the measured bug-177 holder, the GMD batch, as one unbounded step) | [[#why]] (round-6 facts), [[#r1]] (one document per step: pass 1 and pass 2 each one step per document, name table built in `prepare`), [[#ac-4b]]; bulk writes in [[task-bug185-bulk-gmd-ingest]] (bug-185) | per-file yields bounded work that already took ≤ 3 s; the 19-40 s document stayed one hold. Bounding it needs both the step boundary (this task) and flat writes per step (bug-185) |
+| s1 (three daemon `_sync_paths` sites named, HEAD has five; two are hook-driven) | [[#why]] (round-6 facts), [[#r3]] (five sites + `cli.py:8743`; outer hold dropped; the deadlock and the interleave both named; the async runner under `Daemon._inflight("sync")`), [[#r7]], [[#r8]], [[#ac-7]], [[#ac-9]] (second pair), [[#ac-10]] | with `bind` required and `_FairLock` not re-entrant, an unnamed site either deadlocks or interleaves; the spec now picks the one safe shape |
+| m1 (facts a month stale) | [[#why]] (re-stamp table at `2a4448b`), [[#r6]] | line drift only; symbols and shape unchanged |
+| m4 (`batch=1` per-file commit cost unmeasured) | [[#r9]] (100-file fixture, holds + wall, pre-registered bands), [[#r1]] (`RMX_SYNC_FILE_BATCH`), [[#ac-6]] | the batch is chosen from bands written before the run, not fixed at 1 by fiat |
+
+rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465]]
+rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465#b1]]
+rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465#s1]]
+rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465#m1]]
+rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465#m4]]

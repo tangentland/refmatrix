@@ -13,7 +13,14 @@ metadata:
 # Plan 23: the bounded-write harness {#root}
 
 **Date:** 2026-10-07, revised 2026-10-14.
-**Status:** Drafting (revision round 11, 2026-11-09: the freshness confirm
+**Status:** Drafting (revision round 12, 2026-11-09: the 23.3 + 23.5 freshness review
+[[bsd-plan23-3-5-freshness-62a2465]] (1B/2S/4M) folded:
+- 23.3 makes each GMD document its own step and covers all five daemon sync sites;
+- 23.5 re-walks the op set after 3.7 merges;
+- the measured holder gets its own bug task, bug-185, a bulk GMD ingest;
+- the build order is [[#merge-order]].
+
+See [[#rev-round-12]]. Earlier: revision round 11, 2026-11-09: the freshness confirm
 [[bsd-plan23-1-2-freshness-confirm-1c0b66a]] (1B/2S/7M) folded: 23.1 and 23.2 BUILD-READY; the
 `memory_compile` apply is a named holder with a write bound in 23.5; [[#rev-round-11]]. Revision round 10, 2026-11-09: the 23.1 + 23.2 freshness fold of
 [[bsd-plan23-1-2-freshness-9bcf464]]: 23.1 gains R11, the `hook_writes` queue that closes bug-177,
@@ -78,8 +85,9 @@ prove it run in a sandbox that cannot reach a live store (bug-088, bug-101). {#w
 Order ([[plan-review-2026-10-14#t8-wave1]]): **23.0 ∥ 23.4 → 23.2 → 23.1 (+ tick registry) →
 23.3 ∥ 23.5.** 23.5 (d9az, round 7) also waited for bug-115/116 (0.78.2) merged to `master`;
 that is satisfied (`607d759`, `1c86d9c` are ancestors of `master` `b381b6d`, round 8). It
-also waits for **bug-112 FIXED and reachable from `master`** (round 9, nb23-r9-2): OPEN; the
-fix is on branch `bugs-112-113-118` (`7c38c46`, `0fed0d5`), not yet on `master`.
+also waited for **bug-112 FIXED and reachable from `master`** (round 9, nb23-r9-2). That gate is
+SATISFIED: merge `74f8f98`, 0.79.0 (round 12). The build order with today's prerequisites is
+[[#merge-order]].
 
 | task | what | acceptance (summary) |
 |---|---|---|
@@ -87,7 +95,7 @@ fix is on branch `bugs-112-113-118` (`7c38c46`, `0fed0d5`), not yet on `master`.
 | [[task-23.4-option-a-measurement]] | Option A measurement #4: one writer thread vs N per-op cursor writers on a cliquet copy, a pinned 20,000-event workload including `bitmap_fragments` upserts, drained to completion with in-place retry; go/no-go ranges CONFIRMED (d9l), procedure corrected (d9m, d9y, and d9ap: dangling `entity_links` rows counted, not hashed; new pin; round 7: the `dead-linkage` sub-class added and the cliquedb count corrected, pin d9ba) | the verdict is mechanical from the ranges; integrity compared by NAME; an error at N=1 is INVALID, not NO-GO; the detector proven to fire AND a correct N=2 run proven to pass; runs ordered after the confirmation; the live store untouched by the audit guard |
 | [[task-23.2-lock-hold-fixture]] | `lock_free_during(lock)`, a `HoldRecorder` on the real `_FairLock` that counts holds, DuckDB statements and Lance versions, markers that fail on zero holds | reverting r8 #s-2 / r9 #s-1 fails; re-introducing bug-085's and bug-093's per-row writes fails; no test keeps its own probe |
 | [[task-23.1-queue-and-drain]] | starts only after the bug-105 hotfix is MERGED TO `master`; `bounded.py`: `bind(partition_name)` (lookup-only; the merged hotfix's per-binding cache, all-binding guards, rename/merge flush, merge's fragment work under the writer lock, live-concept predicate adopted as the contract; a held-writer-lock check ADOPTED (d9ag), wired through one writer-Store installer) + one `batch_transaction` per hold (pre-flush before `BEGIN`; fragments and offset inside it; `facts.log` events after `COMMIT`) under three front-ends (`drain(queue)`, `tail(log)`, `bounded_steps(items)`); stop paths, error policy, finalize, per-hold `hold_s`; the daemon tick registry with one budget; `queue_status` / `queue_redrive`; learn re-based with insert-if-absent evidence | two-partition competitor AC on rows AND fragment rows; AC-3d (the merged hotfix suite, five files, as cases (ii)-(ix), 23.1's tick and decision-search cases); the writer-lock check survives every writer reopen (AC-20); a rolled-back batch leaves no phantom fragment bit; lost post-commit events re-derived at the next boot; exactly-once under five injected faults; learn crash-replay counts evidence rows; bug-099 RED→GREEN; finalize once; tail never mutates its file; overflow printed by `rmx learn status` |
-| [[task-23.3-sync-between-file-yield]] | `_sync_paths` on `bounded_steps`: one transaction per step, the lock released between steps, the partition bound per step, each file stamped in its LAST step; one sync at a time per store (`_sync_mutex`), insert-if-absent semantic evidence; bug-093's op-start log line | competitor wins between files; two concurrent syncs equal one; never released inside a transaction; write counts flat in concept count; a crash, cancel or budget stop before the semantic steps loses nothing; same graph as HEAD |
+| [[task-23.3-sync-between-file-yield]] | `_sync_paths` on `bounded_steps`: one transaction per step (one GMD document per step, round 12), all five daemon sync sites incl. the two flush-queue ops, the lock released between steps, the partition bound per step, each file stamped in its LAST step; one sync at a time per store (`_sync_mutex`), insert-if-absent semantic evidence; bug-093's op-start log line | competitor wins between files; two concurrent syncs equal one; never released inside a transaction; write counts flat in concept count; a crash, cancel or budget stop before the semantic steps loses nothing; same graph as HEAD |
 | [[task-23.5-read-path-and-holder-bounds]] | d9az + d9bn: the non-harness `_store_lock` holders. Every cli-reachable read (the 11 cli READ ops that take the lock today AND the 10 bare `_read_with_fallback` sites) goes through ONE helper, `_cli_read`, that always bounds the writer fallback and answers "writer busy" naming the holder; an op stays on the shared mirror only if its measured p99 is under 50 ms, else a private reader; `snapshot`, `partition_add` and `partition_rename` move to the bg pool, so `replica_audit` is the one cli op that needs the writer and waits at most `min(deadline, RMX_CLI_WRITER_WAIT_S)`; `stats(include_health)` runs its health off the writer connection; `context`'s learn write goes to the learn queue; the compaction reuses the snapshot's hold (L0 recorded inside it, the snapshot hard-linked) and dumps off the lock before one short tail hold; every hold over an alarm names its holder from the existing `_inflight_ops` registry; the wait is clamped under the heartbeat's stale window | reads answer and the heartbeat stays fresh through a 10 s writer hold (`_op_stats` back on the lock FAILS; an absent-partition `memory_search` answers); a stalled private read does not park mirror reads; an AST rule that follows helpers from every `CLI_OPS` handler to a fixpoint; compaction loses no event written during the dump; the clamp; a census of every holder's hold length; a `link` is visible to `query` (a bitmap read) within one debounce because the snapshot flushes dirty fragments; overlapping private readers see the newest snapshot (bug-112's fix; round 9) |
 
 {#tasks-body}
@@ -121,11 +129,29 @@ handle and no consumer changes. {#core-body}
 
 {#consumers-body}
 
+## Build order (2026-11-09) {#merge-order}
+
+Recorded in round 12 from [[bsd-plan23-3-5-freshness-62a2465#order]]. It extends
+[[task-23.1-queue-and-drain#merge-order]] with the bulk GMD task and the two tasks the user put in
+scope ([[plan-of-plans#goal-2026-11-09-scope]]):
+
+1. **3.7** (`task-3.7-verb-it-backlog`).
+2. **bug-178** ([[task-bug178-bulk-write-helper]], `backend.bulk_write`).
+3. **plan-26** (26.1 and 26.2 edit `ingest_gmd.py`; 26.6 adds the `memory_compile` hold).
+4. **bug-185, bulk GMD ingest** ([[task-bug185-bulk-gmd-ingest]]). A standalone bug release:
+   it needs neither the harness nor the recorder, and it is the largest single cut in live hold
+   time.
+5. **23.2**, then **23.1** (+R11).
+6. **23.3 ∥ 23.5.** 23.3 with per-document GMD steps and AC-4b, which needs bug-185. 23.5 with
+   R1.3's re-walk on the merged 3.7 tree. 23.5 R9 runs after 26.6 is merged.
+
+rel: depends-on -> [[task-bug185-bulk-gmd-ingest]]
+
 ## Dependencies {#dependencies}
 
 - 23.0 and 23.4: none; they run in parallel.
 - 23.2 → 23.0. 23.1 → 23.2, 23.0, and the bug-105 hotfix MERGED TO `master` (not a sha list;
-  nb23-r4-1). 23.3 → 23.1. 23.5 → 23.1, 23.2, 23.0, and bug-115/116 (0.78.2) MERGED TO `master`
+  nb23-r4-1). 23.3 → 23.1, and bug-185's bulk GMD ingest (round 12; AC-4b). 23.5 → 23.1, 23.2, 23.0, and bug-115/116 (0.78.2) MERGED TO `master`
   (round 7, d9az; satisfied at `23ad703`, round 8), and **bug-112 FIXED and reachable from
   `master`** (round 9, nb23-r9-2; the same gate as 18.3's header; OPEN at `b84fd8d`: the fix
   `backend.open_duckdb` is on branch `bugs-112-113-118`, `7c38c46` + `0fed0d5`). 23.5 does NOT
@@ -424,3 +450,20 @@ round-10 table above is unchanged history.
 | m3 | [[plan-of-plans#goal-2026-11-09]] (bug-182 named in item 6) |
 
 rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a]]
+
+## Revision round 12 (2026-11-09) {#rev-round-12}
+
+Source: [[bsd-plan23-3-5-freshness-62a2465]], the pre-implementation freshness review of 23.3 and
+23.5 at `62a2465` (DIRTY 1B/2S/4M). No user decision remained. The tasks' own tables carry the
+per-finding answers: [[task-23.3-sync-between-file-yield#rev-round-6]],
+[[task-23.5-read-path-and-holder-bounds#rev-round-13]] and
+[[task-23.1-queue-and-drain#rev-round-14]]. The round-11 table above is unchanged history.
+
+| finding | answered at |
+|---|---|
+| b1 (the measured holder is the GMD re-ingest; 23.3 kept it one step) | bug-185 and [[task-bug185-bulk-gmd-ingest]] (`2a4448b`); [[#tasks]] (23.3 row); [[#merge-order]]; [[#dependencies]] |
+| s1, m1, m4 | [[task-23.3-sync-between-file-yield#rev-round-6]] |
+| s2, m2, m3 | [[task-23.5-read-path-and-holder-bounds#rev-round-13]]; m2 also [[#tasks]] (the bug-112 gate SATISFIED) |
+| order | [[#merge-order]]: 3.7 → bug-178 → plan-26 → bug-185 → 23.2 → 23.1 → 23.3 ∥ 23.5 (23.5 R9 after 26.6) |
+
+rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465]]

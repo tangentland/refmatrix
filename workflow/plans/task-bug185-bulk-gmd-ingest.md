@@ -18,7 +18,7 @@ metadata:
 > Depends on: bug-178 merged to `master` ([[task-bug178-bulk-write-helper]]: `backend.bulk_write`,
 > and `bulk_upsert_entity` lifted onto it) AND plan-26 merged to `master` (26.1 and 26.2 edit
 > `ingest_gmd.py`, [[task-26.2-bridge-move-safety]]).
-> Blocks: [[task-23.3-sync-between-file-yield#ac-4]] (needs this task's bulk path to go GREEN).
+> Blocks: [[task-23.3-sync-between-file-yield#ac-4b]] (needs this task's bulk path to go GREEN).
 
 rel: derives-from -> [[bug_registry]] {bug: "bug-185"}
 rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465#b1]]
@@ -161,7 +161,7 @@ Logs go to `workflow/review-output/pytest-bug185.log`.
    on the bug-178 branch). Re-ingesting the 50-anchor and the 200-anchor fixtures executes the
    same number of statements, ± 2. At HEAD the counts differ by hundreds. 23.3 AC-4b later
    asserts the same thing per `bounded_steps` step under 23.2's recorder
-   ([[task-23.3-sync-between-file-yield#ac-4]]). {#ac-3}
+   ([[task-23.3-sync-between-file-yield#ac-4b]]). {#ac-3}
 4. **AC-4 (timing; pre-registered bar, measured before GREEN is accepted).** Wall time of one
    re-ingest of the AC-1 fixture, HEAD vs new, on the same machine, store and fixture. Run 5
    times and take the median.

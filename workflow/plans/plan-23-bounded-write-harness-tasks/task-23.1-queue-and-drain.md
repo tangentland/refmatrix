@@ -13,7 +13,10 @@ metadata:
 # Task 23.1: queue, tail, bounded steps, and the tick registry {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: **BUILD-READY** (revision round 13, 2026-11-09: narrow confirm
+> Status: **BUILD-READY** (revision round 14, 2026-11-09: wording-only fold of
+> [[bsd-plan23-3-5-freshness-62a2465]]. The bug-177 holder named in [[#facts]] round 11 is
+> corrected, and [[#merge-order]] gains bug-185 and 23.3 ∥ 23.5. No requirement changed; see
+> [[#rev-round-14]]. Earlier: revision round 13, 2026-11-09: narrow confirm
 > [[bsd-plan23-fold-additions-a9147d5]] folded, all 6 findings (s1, s2, s3, m1-m3): the
 > authoring time survives facts.log replay (the `memory_content` event carries `updated_at`;
 > both replay paths pass it and order by it); the in-window merge is `newest_by_ts`, with the
@@ -1289,8 +1292,12 @@ Added in round 11 (m6), from [[bsd-plan23-1-2-freshness-9bcf464#overlap]]:
    `bulk_write`.
 3. **plan-26**: 26.2's `add_memory` → `_maybe_commit` (R11.3's precondition) and its bridge
    `store.transaction()` (R1.6 item 4's census); 26.6's `memory_compile` apply.
-4. **23.2** (the recorder 23.1's ACs count with).
-5. **23.1** with R11.
+4. **bug-185** ([[task-bug185-bulk-gmd-ingest]], round 14): `ingest_gmd_paths` writes nodes and
+   anchor concepts in bulk. It touches `ingest_gmd.py` after plan-26 and no 23.1 function. It is
+   the largest single cut in live hold time, so the hook writes R11 queues wait on shorter holds.
+5. **23.2** (the recorder 23.1's ACs count with).
+6. **23.1** with R11.
+7. **23.3 ∥ 23.5** after 23.1 ([[plan-23-bounded-write-harness#merge-order]]; 23.5 R9 after 26.6).
 
 **Holder census addition (m6; owner fixed in round 12, b-n1).** `daemon.py::_op_memory_compile_apply`
 (the same symbol at `77c9f04`, on 3.7 at `e4faf32` and on bug-178 at `ae7c0c7`) holds
@@ -2046,3 +2053,17 @@ rel: derives-from -> [[bsd-plan23-fold-additions-a9147d5#s2]]
 rel: derives-from -> [[bsd-plan23-fold-additions-a9147d5#m2]]
 rel: derives-from -> [[bsd-plan23-fold-additions-a9147d5#m3]]
 rel: related-to -> [[task-26.2-bridge-move-safety#rev-round-6]] {owner: "legacy-row event carries updated_at"}
+
+## Revision round 14 (2026-11-09) {#rev-round-14}
+
+Source: [[bsd-plan23-3-5-freshness-62a2465]] (the 23.3 + 23.5 freshness review, DIRTY 1B/2S/4M).
+None of its findings is 23.1's. Two edits here follow from b1. No requirement or AC changed, so
+23.1 stays BUILD-READY. The round-13 table above is unchanged history.
+
+| finding | answered at | rationale |
+|---|---|---|
+| b1 (attribution: the holder was the GMD re-ingest; the agent `sync` runs waited) | [[#facts]] round-11 note (corrected in `2a4448b`) | the earlier note named the waiter; bug-185 names the holder |
+| b1 / order (the bulk GMD task lands after plan-26) | [[#merge-order]] (bug-185 as step 4; 23.3 ∥ 23.5 as step 7) | one build order across plan-23 ([[plan-23-bounded-write-harness#merge-order]]) |
+
+rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465]]
+rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465#b1]]
