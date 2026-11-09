@@ -29,6 +29,8 @@ rel: depends-on -> [[task-23.0-test-sandbox]]
 rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 rel: depends-on -> [[task-26.4-savestate-mtype-normalisation]]
 rel: depends-on -> [[task-26.7-memory-index-by-subject]]
+rel: realizes -> [[task-19.4-keep-derived-layers-current]]
+rel: related-to -> [[task-26.6-compile-subject-hygiene]]
 rel: realizes -> [[task-19.1-pack-recall-under-budget#requirements]]
 rel: amends -> [[task-19.1-pack-recall-under-budget]]
 rel: realizes -> [[task-19.5-measure-delivery]]
@@ -91,6 +93,7 @@ mutation is carried (AC-14 maps them) unless a row below says otherwise.
 | (none) | scan-prompt gets a byte cap (`--max-bytes`) through the same fitter ([[#r0b]]) | it reaches 11,555 B alone; the plan's goal fails through the sibling hook otherwise |
 | depends on 19.5 R1 | R0 runs it | it was never run |
 | R2 subjects | kept, AC-3's stale-subject leg included (AC-6) | 19.1 AC-3 |
+| 19.4 AC-4, recall leg (moved from plan-26, `696c3cb` `#plan-19`) | AC-6: a subject marked `stale` (19.4 R5, written by 26.6) is absent from recall, including with `--include-subjects`; mutation "stale subject visible in recall" in AC-14 | it needs 19.1 R2, which this task builds; plan-26 r2 hands it here |
 | R3 bodies for the top hits | per-prompt pack carries POINTERS only under its budget; bodies are tested on `session_start` | 12 hook lines at 250-370 B each fill 3.0-4.4 kB; no 2.0 kB body fits ([[bsd-plan25-spec-r1-2f4a1df#m1]]) |
 | AC-2 reach on the local 20-prompt set, ≥ 5x | reported, not gating; AC-3 gates on the frozen fixture | the committed fixture is the reproducible gate |
 | folded riders #w1c-s2, #w1c-m4 | stay with 19.1 | they are time budgets, not byte budgets |
@@ -215,6 +218,10 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
 6. **AC-6 No subject noise** (19.1 AC-3). 0 `mtype=subject` rows on the per-prompt argv (HEAD ≥ 1
    on the fixture's 5 seeded subjects, recorded); `--include-subjects` brings live subjects back;
    a subject SEEDED with `metadata.stale = true` + `stale_since` stays out even with the opt-in.
+   This leg also carries 19.4 AC-4's recall leg (moved from plan-26 r2): a subject marked `stale`
+   (19.4 R5, written by 26.6) is absent from recall on the per-prompt argv, the SessionStart argv
+   and the verb, including with `--include-subjects`. After 26.6 merges, the stale mark is also
+   produced by 26.6's real compile path on the fixture, not only seeded.
 7. **AC-7 The CLI prints the verb.** `verbs.memory_recall(query=<prompt>, k=12, scope="both",
    pack=True)`'s `text` equals the per-prompt argv's stdout byte for byte, with the replica leg on
    (AC-4 (b) setup) AND off. The parity test lists `pack` / `max_bytes` / `include_subjects` with
@@ -247,7 +254,8 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
     budget applied before the merge (AC-4 a); chars instead of bytes (AC-2); bodies before hook
     lines (AC-9); a cut body (AC-9); a missing trailer count (AC-9); spans in characters
     (AC-10); the generator keeping `--json` (AC-13); interpolating `${RMX_HOOK_BUDGET_BYTES}` into
-    the argv (AC-8, AC-13); dropping the `subject` exclusion (AC-6); counting a body as a second
+    the argv (AC-8, AC-13); dropping the `subject` exclusion (AC-6); stale subject visible in recall, with or without
+    `--include-subjects` (AC-6; moved from 26.6); counting a body as a second
     named hit (AC-9); `memory get --scope global` falling back to the project row (AC-11); a
     `delivered` event for a trimmed hit (AC-10); the packer calling a telemetry writer (AC-10: 14
     not 7); the CLI computing its own rows instead of printing the verb's text (AC-7); the verb
@@ -328,4 +336,5 @@ Answers [[bsd-plan25-spec-r1-2f4a1df]] and the orchestrator's decisions of 2026-
 | S3 no per-event branch; scan-prompt overflows alone | R0 has three outcomes (A per-hook, B per-event split, C per-event residual below minimum); all four UserPromptSubmit producers (incl. 3.7's `curator status`) in `EVENT_SPLIT`; scan-prompt byte-capped through the same fitter (R0b, AC-12); the 21.1 distribution is the cited baseline | [[#r0]], [[#r0b]], [[#r1]], [[#why]], AC-12 |
 | M1 no body fits under 4,000 B | d3 rewritten: the per-prompt pack is a pointer list; bodies tested on `session_start` (AC-9) | [[#r3]], d3, AC-9 |
 | M2 one channel, two names | `prompt_recall` everywhere (21.1's name) | [[#r1]], [[#deltas]] |
+| plan-26 r2 (`696c3cb`, `#plan-19`) hands over 19.4 AC-4's recall leg | delta row; AC-6 asserts a 26.6-marked stale subject is absent from recall incl. `--include-subjects`; mutation added to AC-14 | [[#deltas]], AC-6, AC-14 |
 | M3 `pack()` needs hooks | `hooks` mapping parameter; the verb builds it with `memory_index.load_hooks` for the project and the global memdir | [[#r4]] |
