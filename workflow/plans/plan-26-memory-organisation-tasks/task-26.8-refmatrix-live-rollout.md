@@ -37,7 +37,8 @@ first.
      2. run `rmx ingest-gmd --as-memory --dry-run --store-snapshot <copy> <LIVE memdir path>`
         (26.2 AC-3). This is a read-only walk of the live path, and it writes nothing;
      3. also run the relocated-twin control, which must report 0;
-     4. record `refresh_pending` per store, with its three pre-registered terms, in
+     4. record `refresh_pending` per store, with its four pre-registered terms (26.2 AC-3: the
+        three file terms + `moved_legacy`; r6-lite n2), in
         `workflow/review-output/26.8-refresh-pending.log`.
 
      The dev build never opens the live store. It never writes the live memdir.

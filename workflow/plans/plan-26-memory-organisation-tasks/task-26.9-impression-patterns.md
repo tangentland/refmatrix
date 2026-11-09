@@ -96,8 +96,9 @@ multi-membership), in its own compile scope.
      newest-20 holds 33 bullets / 14,450 chars, and those stay whole.
    - **Pointer bullets leave the window.** Each moves to the pattern doc whose members include its
      target (a "pointers" list there). If no pattern claims it, it moves into ONE consolidated
-     "legacy pointers" bullet that is a link list (`- legacy pointers: [[impression_bsd_a]],
-     [[impression_bsd_b]], …`). A pointer's home is also its memory file, which already exists.
+     "legacy pointers" bullet that is a link list, for example:
+     `- legacy pointers: [[impression_bsd_a]], [[impression_bsd_b]], …`.
+     A pointer's home is also its memory file, which already exists.
    - **Older run bullets get AT LEAST ONE home** (multi-membership allowed). A home is a pattern
      doc's generated "sightings" section (date, report link, bullet text verbatim), or the
      consolidated "pointer-free" bullet for run bullets no pattern claims.

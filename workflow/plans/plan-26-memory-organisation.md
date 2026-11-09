@@ -5,7 +5,7 @@ title: "Plan 26: the curated memory dir is organised by type in folders; topic c
 tags: [plan, memory, memory-dir, save-state, recall-state, bridge, compile, subjects, memory-index]
 metadata:
   node_type: plan
-  status: drafting
+  status: approved
   created: 2026-11-08
   updated: 2026-11-09
 ---
@@ -14,8 +14,9 @@ metadata:
 
 **Date:** 2026-11-08. Revised 2026-11-09, rounds 1 ([[#rev-round-1]]), 2 ([[#rev-round-2]]), 3
 ([[#rev-round-3]]), 4 ([[#rev-round-4]]) and 5 ([[#rev-round-5]]).
-**Status:** Drafting. ch-bsd r5 (0B/1S/6M) folded; next is a focused confirm of r5 s1, m2 and m6,
-not a full round.
+**Status:** Approved (2026-11-09, [[#approval]]). ch-bsd r5 (0B/1S/6M) folded; the r6-lite
+confirm closed r5 s1, m2 and m6 (MEH-only, 0B/0S/2M), and its n1/n2 ride in 26.2. Next is
+implementation, starting with 26.0.
 **Location:** `workflow/plans/plan-26-memory-organisation.md`. This file stays here; its stage is
 `metadata.status`.
 **Sequencing:** task 3.7 → plan-26 (this plan) → plan-25 (the cliquedb bugs) → plan-24 (the mod).
@@ -499,3 +500,22 @@ Q8 was decided by the user at 3ded49e.
 | m4 (23.0 does not record sandbox connects) | Implementation note: test-local `sys.addaudithook` on `socket.connect` | [[task-26.2-bridge-move-safety#impl-notes-r5]] |
 | m5 (rollback restore branch can restore a dead link) | Implementation note: restore only when no file was kept at a moved path | [[task-26.5-memory-organise-verb#impl-notes-r5]] |
 | m6 (3ded49e not carried into plan-27) | Fixed in plan-27 | [[plan-27-memory-fleet-rollout#rev-round-5]] |
+
+## Approval (2026-11-09) {#approval}
+
+Approved on the ch-bsd focused confirm r6-lite at `d396317`
+([[bsd-plan26-27-spec-confirm-r6-lite-d396317]]): MEH-only, 0B/0S/2M. r5 s1, m2 and m6 are closed
+in text and buildable, and the 19 legacy rows re-probed exact.
+
+rel: derives-from -> [[bsd-plan26-27-spec-confirm-r6-lite-d396317]]
+
+- **n1** (AC-1b's one store write has no primitive at HEAD; the legacy refresh is unlogged) →
+  implementation note [[task-26.2-bridge-move-safety#impl-notes-r6]].
+- **n2** (`moved_legacy` in the arithmetic; counted beside ANY moved id row, including
+  `stale_before`) → AC text in [[task-26.2-bridge-move-safety#requirements]] (AC-1b count, AC-3
+  stats split and pre-registered expectation) and [[task-26.2-bridge-move-safety#impl-notes-r6]];
+  26.8 AC-0 now records all four terms.
+- **26.9 lint** — the `[[impression_bsd_a]]` example placeholders now sit on one line inside
+  inline code; content unchanged.
+- Every task in [[#tasks]] (26.0-26.9) has its spec under
+  `workflow/plans/plan-26-memory-organisation-tasks/`.

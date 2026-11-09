@@ -51,12 +51,16 @@ provenance goes stale.
      the row keyed by the file's id. Only `source_path` changes on those extra rows: their entity
      id, name, content, vector, `created_at`, protected/noise flags and edges are untouched.
      The id-row refresh and the extra-row refresh are ONE store write per file, so an id row is
-     never refreshed without its legacy rows.
+     never refreshed without its legacy rows. HEAD has no primitive for that write; see
+     [[#impl-notes-r6]] (r6-lite n1).
    - **Count.** The extra rows are reported as a fourth term, `moved_legacy` (the id row stays
      under `moved`). It is printed in the bridge report, carried by `_bridge_stats` and
-     `_bridge_wait_for_active_job`'s result, and reported by `--dry-run`: for each file whose id
-     row would be refreshed as `moved`, the rows other than the id row that share its stored old
-     path.
+     `_bridge_wait_for_active_job`'s result, and reported by `--dry-run`: for each file that
+     MOVED, the rows other than the id row that share its stored old path, whatever term the id
+     row itself lands in (`moved`, or `stale_before` when its stored path is in symlink form;
+     r6-lite n2). A symlinked memdir (viascope, plan-27) is the case where an id row can be
+     `stale_before` while its legacy rows still need refreshing; they are counted here, never
+     dropped.
    - **RED fixture.** Ingest `a/x.md` (id `x`) in a marker-on dir. Seed a second row with
      `Store` on the THROWAWAY store only: name `legacy-x`, `source: memory_sync_disk`, the same
      resolved `source_path` as `a/x.md`. Move the file to `b/x.md` and bridge again. Expected:
@@ -106,13 +110,16 @@ provenance goes stale.
        rows as three terms: `moved`, `stale_before` (a path that disagreed before any move:
        missing or symlink-form `source_path`) and `forced` (save-states forced by 26.5 AC-5 that
        were not moved). A fourth term, `moved_legacy` (AC-1b), counts the extra rows refreshed
-       alongside a `moved` id row; it is a row count, not a file count.
+       alongside ANY id row whose file moved, including an id row classified `stale_before`
+       (r6-lite n2); it is a row count, not a file count.
      - **Relocated-twin RED case.** Copy the memdir with nothing changed and dry-run it through
        `--path-map`. It must report `refresh_pending = 0`. Without the map it reports about 100%,
        and that "~100%" is exactly the defect this case pins.
-     - **Pre-registered expectation.** pending = rows with a missing `source_path` + rows whose
-       stored path is a symlink form of the file's resolved path + files moved since their last
-       ingest. The measurement script prints each term.
+     - **Pre-registered expectation (r6-lite n2).** `refresh_pending` = rows with a missing
+       `source_path` + rows whose stored path is a symlink form of the file's resolved path +
+       files moved since their last ingest + `moved_legacy` (the extra rows on a moved file's old
+       path, AC-1b). This is the same quantity 26.5 AC-8 re-exports. The measurement script, and
+       the dry-run report, print each of the four terms on its own line.
    - 26.8 AC-0 records the result for every store before the deploy.
 4. **AC-3b: the gate is marker-gated (r2 s2).** The path-aware gate and its refresh writes apply
    only to files under a memdir with `.memory-layout` (26.1 `is_organised`). In an un-organised
@@ -214,6 +221,38 @@ Answers [[bsd-plan26-27-spec-review-r5-3ded49e]] findings that ride as notes.
   `sys.addaudithook` that appends every `socket.connect` address to a list while a flag the
   test sets is on (audit hooks cannot be removed, so the hook is gated, installed once per
   process). The `--store-snapshot` run must leave that list empty.
+
+## Implementation notes (r6-lite) {#impl-notes-r6}
+
+Answers [[bsd-plan26-27-spec-confirm-r6-lite-d396317]] n1 and n2, which ride as notes.
+
+rel: derives-from -> [[bsd-plan26-27-spec-confirm-r6-lite-d396317]]
+
+- **n1, AC-1b's "ONE store write" has no primitive at HEAD.** Read at 2390e57:
+  - `Store.add_memory` (`store.py:2447`) ends with an unconditional `con.commit()`
+    (`store.py:2506`), not `_maybe_commit` (`store.py:4534`). Inside an outer
+    `store.transaction()` (`store.py:4546`) that commit ends the transaction early.
+  - The bridge (`ingest_gmd.py`) opens no `transaction()` at all.
+  - An UPDATE of the legacy rows' `memory_content.metadata` emits no facts.log event, so replay
+    (`_apply_one_event`, `store.py:7778`; the `memory_content` branch at `store.py:7879`)
+    restores the OLD path on `rebuild --from-log`.
+
+  Required:
+  - Wrap the id-row `add_memory` and the legacy-row refresh in ONE `store.transaction()`:
+    switch `add_memory`'s commit to `_maybe_commit`, or add a dedicated store method that does
+    both writes in one scope.
+  - Log each legacy row's refresh as a `memory_content` event carrying the updated metadata,
+    so replay reproduces it.
+  - Test: after the AC-1b fixture, replay the throwaway store's facts.log into a FRESH store and
+    assert `legacy-x` carries the resolved `b/x.md`. Mutation: drop the legacy event and the
+    test goes RED.
+- **n2, where `moved_legacy` sits.** `refresh_pending` is four terms: the three file terms of
+  AC-3 + `moved_legacy` (AC-3, matching 26.5 AC-8). `moved_legacy` is counted beside ANY id row
+  whose file moved, whatever term that id row lands in under [[#impl-notes-r5]]'s precedence,
+  including `stale_before` (symlink-form stored path). refmatrix has 0 such rows (r6-lite probe),
+  so 26.8 is unchanged; viascope's symlinked memdir (plan-27) is where it can occur. Test: the
+  AC-1b fixture under a symlinked memdir whose id row stored the symlink form reports the id
+  row as `stale_before` and `moved_legacy = 1`.
 
 ## Revision round 5 (2026-11-09) {#rev-round-5}
 

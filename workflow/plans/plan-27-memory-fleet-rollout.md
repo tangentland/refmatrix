@@ -5,16 +5,17 @@ title: "Plan 27: roll plan-26's memory organisation out to every project's memor
 tags: [plan, memory, memory-dir, rollout, fleet, viascope, thiquet, cliquedb, migration]
 metadata:
   node_type: plan
-  status: drafting
+  status: approved
   created: 2026-11-08
+  updated: 2026-11-09
 ---
 
 # Plan 27: memory fleet rollout {#root}
 
 **Date:** 2026-11-08
-**Status:** Drafting. Revised 2026-11-09, rounds 1-5 ([[#rev-round-5]]). ch-bsd r5 (0B/1S/6M)
-folded, including the user's 3ded49e decisions (Q2, Q6); next is a focused confirm of r5 s1, m2
-and m6, not a full round.
+**Status:** Approved (2026-11-09, [[#approval]]). Revised 2026-11-09, rounds 1-5
+([[#rev-round-5]]). ch-bsd r5 (0B/1S/6M) folded, including the user's 3ded49e decisions (Q2, Q6);
+the r6-lite confirm closed r5 s1, m2 and m6 (MEH-only). Execution waits on plan-26 deployed.
 **Location:** `workflow/plans/plan-27-memory-fleet-rollout.md`
 **Depends on:** [[plan-26-memory-organisation]] merged, released AND deployed (26.8 green).
 Plan 27 changes no behaviour of its own, apart from the merge mode in task 27.0. It applies the
@@ -259,3 +260,19 @@ rel: derives-from -> [[bsd-plan26-27-spec-review-r5-3ded49e]]
 | s1 (legacy rows in every pre-alias store go dead-path, uncounted) | 27.1 records projected `moved_legacy` and the legacy-duplicate count per store; every apply must match it, exact | [[#approach]], [[#acceptance]], [[task-27.1-fleet-inventory#rev-round-5]] |
 | m6 (3ded49e not carried) | `#non-goals` viascope2 line flipped; 27.2 AC-6 and new AC-8 archive the checkout (tarball under `~/.refmatrix/backups/memory-organise/`, tombstone `RETIRED.md`, nothing moved or deleted); r4 table Q2/Q6 rows marked decided; survey and 27.1 AC-4 name `~/github/atollogy/bdep/ble_sniffer_mqtt`, `no store`; 27.1 "latent wipe" restated as prose loss (r4 s1) | [[#non-goals]], [[#survey]], [[#tasks]], [[#rev-round-4]], [[task-27.2-viascope2-fold-and-repoint#rev-round-5]], [[task-27.1-fleet-inventory#rev-round-5]] |
 | s1, m1-m5 (plan-26 text) | Folded in plan-26 | [[plan-26-memory-organisation#rev-round-5]] |
+
+## Approval (2026-11-09) {#approval}
+
+Approved on the ch-bsd focused confirm r6-lite at `d396317`
+([[bsd-plan26-27-spec-confirm-r6-lite-d396317]]): MEH-only, 0B/0S/2M. r5 m6 (the 3ded49e
+decisions) is closed in text and buildable.
+
+rel: derives-from -> [[bsd-plan26-27-spec-confirm-r6-lite-d396317]]
+
+- **n1** and **n2** land in plan-26's task 26.2
+  ([[task-26.2-bridge-move-safety#impl-notes-r6]]). n2 matters here: viascope's symlinked memdir
+  is the case where an id row lands in `stale_before` and its legacy rows still count in
+  `moved_legacy`. 27.1 AC-6 already counts every row on a planned move's from-path, so its
+  wording needed no change.
+- Every task in [[#tasks]] (27.0, 27.1, 27.2a, 27.2-27.6) has its spec under
+  `workflow/plans/plan-27-memory-fleet-rollout-tasks/`.
