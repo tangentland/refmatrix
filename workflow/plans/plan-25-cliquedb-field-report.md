@@ -16,8 +16,9 @@ metadata:
 **Status:** Drafting. Plan and task specs 25.1-25.4 written; ch-bsd spec review r1 DIRTY 0B/9S/9M
 folded in revision round 1 ([[#rev-round-1]]); r2 DIRTY 0B/3S/7M folded in revision round 2
 ([[#rev-round-2]]); task 25.5 added for bug-174; r3 DIRTY 0B/4S/9M folded in revision round 3
-([[#rev-round-3]]); a short r4-lite confirm is next, then `approved`. No `src/` or `tests/` change
-is made by this document.
+([[#rev-round-3]]); r4-lite confirm DIRTY 0B/1S/5M folded in revision round 4 ([[#rev-round-4]]);
+`approved` is pending the user's decision on whether bug-181 joins 25.1. No `src/` or `tests/`
+change is made by this document.
 **Location:** `workflow/plans/plan-25-cliquedb-field-report.md`; stage is `metadata.status`.
 **Ordering authority:** the user's override [[plan-of-plans#override-2026-11-08]] as amended the
 same day by [[plan-of-plans#override-2026-11-08b]]: task 3.7, then plan-26 (memory-layer
@@ -41,6 +42,7 @@ rel: amends -> [[task-19.5-measure-delivery]]
 rel: derives-from -> [[bsd-plan25-spec-r1-2f4a1df]]
 rel: derives-from -> [[bsd-plan25-spec-r2-5b8ed15]]
 rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
+rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
 rel: reinforces -> [[feedback_measure_the_path_users_run]]
 rel: reinforces -> [[feedback_green_tests_are_not_a_working_command]]
 rel: reinforces -> [[feedback_no_raw_prompts_in_public_repo]]
@@ -106,7 +108,9 @@ the CLI twin, never written into `cli.py` or into a hook string:
 - the byte budget and the packer: `hook_budget` + `recall_pack` (25.1), reached through
   `verbs.memory_recall`, whose rows now include the root-explicit replica-first leg for EVERY
   caller (hooks, MCP, the interactive CLI: one computation of "which rows"), embedding through
-  3.7's `recall.shared_embedder` except in hook modes, which stay hub-only for their 5 s budget;
+  3.7's `recall.shared_embedder` only when no daemon answers (hub-worker replica → daemon RPC →
+  `shared_embedder` on `VerbAbsentError`, as 3.7's graph verbs order it) and never in hook modes,
+  which stay hub-only for their 5 s budget;
   every rmx UserPromptSubmit AND SessionStart producer, curator status and resume `focus context`
   included, is fitted by the same `hook_budget.fit_blocks`, budgeted per generated hook command;
 - the ack-only gate: `terms.prompt_gate` next to the stoplist it reuses (25.2), called by
@@ -320,3 +324,21 @@ rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
 | M8 `#overlap` stale | re-read at 3.7 `d093f65`: numstat, line deltas, new `discovery.py`, `modelsrv.py` and `bug_registry.md` rows | [[#overlap]], [[#ordering]] |
 | M9 SessionStart not covered | R0 probes SessionStart too; reserve and split per event (caveman-activate ~1.2 KB); resume `focus context` byte-capped; AC-12b | [[task-25.1-recall-hook-byte-budget#r0]], [[task-25.1-recall-hook-byte-budget#rev-round-3]] |
 
+## Revision round 4 (2026-11-09) {#rev-round-4}
+
+Answers [[bsd-plan25-spec-confirm-r4-lite-cdd6720]] (DIRTY 0B/1S/5M at `cdd6720`; all 13 r3
+findings confirmed closed). N1-N4 and N6 are folded; N5 (bug-181's slot) is NOT, because the user
+has not decided whether bug-181 joins 25.1 ([[task-25.1-recall-hook-byte-budget#open-decisions]]
+d12). The report allows the N1 fold to be self-verified against it; `approved` waits on the
+bug-181 decision only.
+
+rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
+
+| finding | change | anchor |
+|---|---|---|
+| N1 (SKETCHY) d10's replica-first order spawns a private worker with the daemon up and the hub down | `"shared"` order: hub-worker replica → daemon RPC → `recall.shared_embedder` replica only on `VerbAbsentError`, matching 3.7 `verbs.py:2321-2336`, `:2357-2361`; d10 reworded; AC-4 (i) + mutation | [[#principle]], [[task-25.1-recall-hook-byte-budget#r5]], [[task-25.1-recall-hook-byte-budget#rev-round-4]] |
+| N2 `embedder_policy` in the MCP schema | rides the verb's `**internal` channel like `trace` (`verbs.py:928`; schema skips only `**kwargs`, `verbs.py:136`); AC-7 reworded | [[task-25.1-recall-hook-byte-budget#r5]], [[task-25.1-recall-hook-byte-budget#acceptance]] |
+| N3 25.5 join key has no `pid` | ts second + pattern in argv + root + path-less argv; ambiguous excluded and counted (20 unique / 15 ambiguous on 35 rows) | [[task-25.5-substring-bre-metas#r3]] |
+| N4 25.5 re-measure trigger | queue line in [[plan-of-plans#queue-bug174-remeasure]] (M ≥ 30 or 2026-12-31); `rmx telemetry --agent-usage` prints the `bre_meta_literal` count | [[task-25.5-substring-bre-metas#r4]], [[task-25.5-substring-bre-metas#rev-round-4]] |
+| N5 bug-181 unscheduled | NOT folded: pending the user | [[task-25.1-recall-hook-byte-budget#open-decisions]] |
+| N6 UserPromptSubmit provisional sum overflows under (B) | R1 names both events (9,256 B > 8,488 B) | [[task-25.1-recall-hook-byte-budget#r1]] |

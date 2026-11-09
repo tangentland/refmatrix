@@ -15,7 +15,8 @@ metadata:
 
 > Plan: [[plan-25-cliquedb-field-report]]
 > Status: Pending (spec drafted 2026-11-08; revision rounds 1-3 2026-11-09, [[#rev-round-1]],
-> [[#rev-round-2]], [[#rev-round-3]]; r3 folded, a short r4-lite confirm is next)
+> [[#rev-round-2]], [[#rev-round-3]], [[#rev-round-4]]; r4-lite confirm folded; approval pending
+> the user's bug-181 decision, d12)
 > Bug: bug-164 (cliquedb priority 1)
 > Depends on: task 3.7 MERGED to `master` ([[plan-25-cliquedb-field-report#overlap]]); plan-26
 > merged (its 26.4 owns the save-state mtype fix this task re-asserts on the packed path, and its
@@ -39,6 +40,7 @@ rel: derives-from -> [[bug_registry#registry]]
 rel: derives-from -> [[bsd-plan25-spec-r1-2f4a1df]]
 rel: derives-from -> [[bsd-plan25-spec-r2-5b8ed15]]
 rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
+rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
 rel: depends-on -> [[reference_hook_output_10k_cap]]
 rel: related-to -> [[project_recall_hook_savestate_noise_fix]]
 rel: related-to -> [[task-24.2a-hook-verbs-explicit-session]]
@@ -165,8 +167,11 @@ mutation is carried (AC-14 maps them) unless a row below says otherwise.
    `session_start` 9,000; `focus_context` 1,500; `precompact` 9,000;
    `NON_RMX_RESERVE_BYTES` = {`UserPromptSubmit`: 512, `SessionStart`: 1,536} (caveman tracker
    ~250 B and caveman-activate ~1.2 KB plus the nudge, each rounded up to 512 B). Under a per-event
-   SessionStart cap of 10,000 B the provisional `session_start` 9,000 does NOT fit beside the
-   reserve; that is why R0 must replace it before GREEN, not a reason to keep it.
+   cap of 10,000 B (outcome B) BOTH events' provisional sums exceed their budget: SessionStart's
+   `session_start` 9,000 does not fit beside its reserve, and UserPromptSubmit's `prompt_recall`
+   4,000 + `scan_cmd` 5,000 + `focus_input` 256 = 9,256 B exceeds its `EVENT_BUDGET` 0.9 × 10,000
+   − 512 = 8,488 B (r4 #n6); that is why R0 must replace them before GREEN, not a reason to keep
+   them.
    `--max-bytes N` / verb `max_bytes=N` override a channel;
    `RMX_HOOK_BUDGET_BYTES`, when set, overrides every channel and is never interpolated into an
    argv; a non-integer value exits non-zero naming the variable. The unit is UTF-8 bytes of the
@@ -220,24 +225,46 @@ mutation is carried (AC-14 maps them) unless a row below says otherwise.
      hub's shared worker (`modelsrv.shared_available` → `RemoteEmbedder(SharedWorkerClient)`,
      `cli.py:11380-11390`) and returns None otherwise, "never a locally spawned model"
      (`cli.py:11364`). 3.7 makes `recall.shared_embedder(root)` THE daemonless accessor (hub
-     worker, else a private worker, else one cached in-process model; its `graph_recall` and
-     `ann_search` verbs use it). After the move:
-     - **hook modes** (`--stdin-json`, `--session-start`, `--recent`, PreCompact) stay HUB-ONLY:
-       a private-worker spawn or an in-process load (6-33 s) cannot fit the 5 s per-prompt
-       budget. The verb takes `embedder_policy: Literal["hub_only", "shared"] = "shared"` and
-       passes it to the moved function; the CLI passes `"hub_only"` in every hook mode (its
-       parity twin is the hook-mode flag set), MCP never passes it;
-     - **interactive and MCP callers** embed through `recall.shared_embedder(root)`, exactly as
-       3.7's graph verbs do (`embedder_policy="shared"`), and the verb's `warnings` name which
-       embedder served (hub worker, private worker, in-process).
+     worker, else a private worker, else one cached in-process model). 3.7's graph verbs call it
+     ONLY in their `except VerbAbsentError:` branch, after the daemon `_call` raised: 3.7
+     `verbs.py:2321-2322` → `_graph_recall_in_process` → `shared_embedder(root)` at `:2336`, and
+     `_graph_dense` `:2357-2361` (branch `task-3.7-verb-it-backlog`, code unchanged since
+     `d093f65`). A live daemon always answers first. After the move the leg order is (r4 #n1):
+     1. **replica leg, hub worker only** (HEAD's leg: `modelsrv.shared_available` →
+        `RemoteEmbedder(SharedWorkerClient)`, else the leg yields nothing); skipped when
+        `RMX_RECALL_REPLICA_FIRST=0`;
+     2. **otherwise the daemon RPC**;
+     3. **only when step 2 raises `VerbAbsentError`** (no daemon), and only under
+        `embedder_policy="shared"`: the replica leg again, embedding through
+        `recall.shared_embedder(root)` (private worker, else the cached in-process model).
+        Under `"hub_only"` the `VerbAbsentError` propagates (d8).
+     So with the daemon up and the hub down (a hub restart, a split fleet) the warm daemon
+     answers, and no caller spawns a private worker or loads a model while a daemon holds a warm
+     embedder. The policy per caller:
+     - **hook modes** (`--stdin-json`, `--session-start`, `--recent`, PreCompact) are
+       `"hub_only"`: a private-worker spawn or an in-process load (6-33 s) cannot fit the 5 s
+       per-prompt budget;
+     - **interactive and MCP callers** are `"shared"` (the default), as 3.7's graph verbs are, in
+       the no-daemon branch only; the verb's `warnings` name which leg and which embedder served
+       (hub worker, daemon, private worker, in-process).
+     **`embedder_policy` is CLI-internal (r4 #n2).** It is NOT a named parameter of
+     `verbs.memory_recall`: it rides the verb's existing `**internal` channel exactly as `trace`
+     does (`verbs.py:919` `**internal`, `:928` `trace = internal.get("trace")`), read as
+     `internal.get("embedder_policy", "shared")` and forwarded to `_memory_recall_rows` and the
+     moved function on BOTH the traced (CLI) and the bare (MCP) branch. So it is absent from the
+     MCP tool schema (`_schema_from_signature` skips only `VAR_KEYWORD`, `verbs.py:136`) and an
+     MCP argument of that name is dropped by `Verb.call`, which keeps only named params
+     (`verbs.py:72-80`); the CLI passes `embedder_policy="hub_only"` in every hook mode. It has
+     no click option and no parity row.
      One package, one accessor, one documented exception (the hook's latency budget) instead of
      two silent policies.
    - **The body fetch moves with it.** Replica-served hits are resolved to memory rows from the
      same replica (the CLI's `_fetch_memory` logic, root-explicit), never by the daemon-only
      `_call(root, "memory_get")`; the daemon fetch remains for daemon-served hits.
-   - `verbs._memory_recall_rows`' dense branch tries the replica leg first, then the daemon RPC
-     (the CLI's order today). The verb's own dense leg (`verbs.py:1054-1077`) becomes the daemon
-     fallback, not a parallel path.
+   - `verbs._memory_recall_rows`' dense branch tries the hub-worker replica leg first, then the
+     daemon RPC (the CLI's order today), then, on `VerbAbsentError` under `"shared"` only, the
+     `shared_embedder` replica leg (the three steps above). The verb's own dense leg
+     (`verbs.py:1054-1077`) becomes the daemon step, not a parallel path.
    - **Every caller goes through it (d6):** the hook modes, MCP `rmx_memory_recall` (`mcp.py:142`)
      and the interactive `rmx memory recall "q"` (table and `--json`, `hook_mode` False at
      `cli.py:12323`). The CLI-only `kind=doc` leg moves into the verb as a `kinds` value the verb
@@ -259,7 +286,7 @@ mutation is carried (AC-14 maps them) unless a row below says otherwise.
      `ClickException` and exits 1, a user-visible hook error; this is a deliberate change of the
      failure surface.
    - **No daemon, no hub worker, interactive / MCP:** the verb does NOT raise for want of the hub;
-     `shared_embedder` serves (private worker, else the cached in-process model) and `warnings`
+     after the daemon step raises `VerbAbsentError`, `shared_embedder` serves (private worker, else the cached in-process model) and `warnings`
      names it. It raises only when `shared_embedder` itself fails (`ImportError` without the
      `[dense]` extra → `VerbError("dense extra not installed: …")`, as 3.7's graph verbs do).
    - `verbs.memory_recall(..., pack: bool = False, max_bytes: int | None = None,
@@ -337,6 +364,13 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
      `memory-<p>` partition, the replica leg and the daemon RPC leg return the same named hits
      for the same query. RED at HEAD: the replica leg binds the project partition
      (`cli.py:11394`) and returns none of them.
+   - (i) **Daemon up, hub down, INTERACTIVE and MCP** (r4 #n1): a sandbox daemon is up, no
+     `models.sock` worker. `rmx memory recall "q" --json` and MCP `rmx_memory_recall` are served
+     by the daemon RPC (the verb's `warnings` name the daemon leg), and the calling process
+     spawns no `modelsrv` child and imports no `sentence_transformers` (the same two assertions
+     as (c)). Not RED at HEAD (HEAD's leg is hub-only, so the daemon already answers); it is a
+     guard, killed by the mutation "`shared_embedder` tried before the daemon" (AC-14), which
+     spawns the private worker the assertions see.
    - A mutation that budgets project rows before `_merge_scope` fails (a).
 5. **AC-5 Mis-typed save-state, packed path.** The fixture holds `savestate_fx01.md` with
    `metadata.type: project` and the body best matching the question prompt. After 26.4 the packed
@@ -351,8 +385,10 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
    produced by 26.6's real compile path on the fixture, not only seeded.
 7. **AC-7 The CLI prints the verb.** `verbs.memory_recall(query=<prompt>, k=12, scope="both",
    pack=True)`'s `text` equals the per-prompt argv's stdout byte for byte, with the replica leg on
-   (AC-4 (b) setup) AND off. The parity test lists `pack` / `max_bytes` / `include_subjects` /
-   `embedder_policy` with their CLI twins.
+   (AC-4 (b) setup) AND off. The parity test lists `pack` / `max_bytes` / `include_subjects`
+   with their CLI twins. `embedder_policy` rides `**internal` (R5, r4 #n2), so it has no parity
+   row; AC-7 asserts it is absent from `rmx_memory_recall`'s MCP input schema, and that an MCP
+   call carrying `embedder_policy="hub_only"` still behaves as `"shared"` (the arg is dropped).
 8. **AC-8 Environment.** The generated argv runs with `RMX_HOOK_BUDGET_BYTES` unset (exit 0,
    within the table); `=3000` (≤ 3000 B); `=abc` (exit non-zero, stderr names the variable).
 9. **AC-9 Pack and fitter contract.** Arithmetic (R8) on every AC-1..AC-4 payload; unit tables
@@ -409,7 +445,9 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
     (AC-4 c); a global hit's `delivered` event in the project file (AC-10); **hook mode embedding
     through `shared_embedder`** (a private-worker spawn or in-process load on the per-prompt argv:
     AC-4 (c) sees the child process, and the hook overruns its 5 s budget); the interactive / MCP
-    path kept hub-only (AC-4 g raises); the replica leg binding the project partition instead of
+    path kept hub-only (AC-4 g raises); **`shared_embedder` tried before the daemon RPC**
+    (AC-4 i sees the private worker while the daemon is up); `embedder_policy` made a named verb
+    parameter (AC-7: it appears in the MCP schema); the replica leg binding the project partition instead of
     `verbs.memory_partition(root)` (AC-4 h); the pack looking hooks up by id only (AC-9 path-keyed
     memdir prints first sentences); `focus context` not fitted (AC-12b); a single
     `NON_RMX_RESERVE_BYTES` for both events (AC-12b under (B)/(C) overflows with caveman-activate's
@@ -445,7 +483,7 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
 
 | file | change |
 |---|---|
-| `src/refmatrix/verbs.py` (`memory_recall`, `_memory_recall_rows`, `rmx_memory` get) | root-explicit replica-first leg and its body fetch; the `kind=doc` leg; `pack`, `max_bytes`, `include_subjects`; default `exclude_mtype` adds `subject`; get `scope`; hooks map from `load_hooks` |
+| `src/refmatrix/verbs.py` (`memory_recall`, `_memory_recall_rows`, `rmx_memory` get) | root-explicit replica-first leg and its body fetch; the `kind=doc` leg; `pack`, `max_bytes`, `include_subjects`; `embedder_policy` read from `**internal` (R5, never a named param); default `exclude_mtype` adds `subject`; get `scope`; hooks map from `load_hooks` |
 | `src/refmatrix/mcp.py` (`rmx_memory_recall`, `:142`) | unchanged surface; behaviour now replica-first via the verb (d6, d7) |
 | `src/refmatrix/cli.py` (`curator status`, after 3.7) / `verbs.curator` | `fit_blocks` to `budget("curator_status")` |
 | `src/refmatrix/cli.py` (`focus context`) / 3.7's `verbs.focus` dispatcher | `--max-bytes`, `fit_blocks` to `budget("focus_context")` (R0b) |
@@ -455,8 +493,8 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
 | `src/refmatrix/scan.py` | `max_bytes` through `hook_budget.fit_blocks` |
 | `src/refmatrix/memory_index.py` | none expected: `load_hooks` exists (`:188`); re-read after 26.7 |
 | `src/refmatrix/hooks.py` (`:296-300`, `:331-336`, `:357-362`) | `--pack`, raised `--k`, PreCompact per R0 |
-| `src/refmatrix/mcp.py` (if its tool schema is hand-listed) | the new verb params |
-| `tests/test_verb_parity.py` | the new params' twins |
+| `src/refmatrix/mcp.py` (if its tool schema is hand-listed) | the new verb params (`pack`, `max_bytes`, `include_subjects`; never `embedder_policy`) |
+| `tests/test_verb_parity.py` | the new params' twins (`embedder_policy` has none: `**internal`, AC-7) |
 | `workflow/bug_registry.md` | bug-164 → fixed at merge, with the mechanism and the before / after; bug-181 (MCP silent cwd fallback) is NOT closed by this task |
 
 ## Test strategy {#test-strategy}
@@ -485,8 +523,9 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
 | d6 | Does MCP / interactive query recall go replica-first too | yes (orchestrator 2026-11-09): one which-rows path for hooks, MCP and the interactive CLI; this task owns the `kind=doc` leg |
 | d7 | Replica lag on MCP / interactive recall | accepted: results may lag the writer by the replica rotation interval; the warnings say which leg served |
 | d8 | No daemon and no hub worker on a hook | exit 0, nothing injected, counted through the existing recorder (`outcome: "error"`, `error: "VerbAbsentError: …"`); today it exits 1 (a hook error). Interactive and MCP callers: per d10 |
-| d10 | Daemonless embedder policy (r3 #s1, decided as the user would) | hook modes stay hub-only (5 s budget; a spawn or in-process load is 6-33 s); interactive and MCP embed through 3.7's `recall.shared_embedder(root)`, as its graph verbs do; `warnings` name the embedder |
+| d10 | Daemonless embedder policy (r3 #s1, decided as the user would) | hook modes stay hub-only (5 s budget; a spawn or in-process load is 6-33 s); leg order hub-worker replica → daemon RPC → `recall.shared_embedder(root)` replica ONLY on `VerbAbsentError` (no daemon); interactive and MCP use that last step as 3.7's graph verbs do, in the no-daemon branch only (r4 #n1); `embedder_policy` rides `**internal` (r4 #n2); `warnings` name the leg and the embedder |
 | d11 | SessionStart budget (r3 #m9) | same per-command unit and per-event reserve as UserPromptSubmit; R0 probes both events; `focus context` capped through `fit_blocks`; AC-12b |
+| d12 | Does bug-181 (MCP silent cwd fallback, `mcp._resolve_root`) join 25.1 (r4 #n5) | **PENDING the user's decision**; not folded; plan-25 does not depend on it (AC-4 (e) guards its own test) |
 | d9 | Budget unit | the generated hook COMMAND (what Claude Code caps); producers sharing a command share its budget; every rmx producer is hard-capped; non-rmx hooks get a measured reserve |
 
 ## Revision round 1 (2026-11-09) {#rev-round-1}
@@ -533,3 +572,19 @@ rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
 | M4 AC-4 (e) depends on `project=B` resolving | B registered in the sandbox registry and its resolution asserted first; the silent fallback logged as bug-181 (open, not fixed here) | AC-4 (e), [[#files-to-modify]] |
 | M7 provisional numbers in three forms | one set: `scan_cmd` 5,000 = `scan_prompt` 4,500 + `curator_status` 500; R1 and d1 agree, and the plan's `#deltas` and q2 follow | [[#r1]], d1 |
 | M9 SessionStart not covered | R0 runs the multi-hook probes on SessionStart too and measures caveman-activate (~1.2 KB); `NON_RMX_RESERVE_BYTES` and `EVENT_SPLIT` keyed by event; `focus context` byte-capped (`focus_context` 1,500 provisional); new AC-12b; mutations | [[#r0]], [[#r0b]], [[#r1]], AC-1, AC-12b, AC-14, d11 |
+
+## Revision round 4 (2026-11-09) {#rev-round-4}
+
+Answers [[bsd-plan25-spec-confirm-r4-lite-cdd6720]] (DIRTY 0B/1S/5M at `cdd6720`). The 3.7 lines
+were re-read on branch `task-3.7-verb-it-backlog` (verbs.py and recall.py unchanged since
+`d093f65`); the master lines at `d433b0a`. N5 is NOT folded: the user has not decided whether
+bug-181 joins this task (d12).
+
+rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
+
+| finding | change | anchor |
+|---|---|---|
+| N1 replica `shared_embedder` before the daemon (daemon up, hub down spawns a private worker) | leg order: hub-worker replica → daemon RPC → `shared_embedder` replica only on `VerbAbsentError`, as 3.7 `verbs.py:2321-2336`, `:2357-2361`; d10 reworded; AC-4 (i) daemon up / hub down, no child, no in-process load; mutation "`shared_embedder` tried before the daemon" | [[#r5]], d10, AC-4 (i), AC-14 |
+| N2 `embedder_policy` published in the MCP schema, no click twin | rides `**internal` like `trace` (`verbs.py:919`, `:928`); the schema skips only `**kwargs` (`verbs.py:136`); AC-7 asserts it absent from the schema, no parity row; mutation "named verb param" | [[#r5]], AC-7, AC-14, [[#files-to-modify]] |
+| N5 bug-181 has no slot | NOT folded: pending the user (d12) | d12 |
+| N6 UserPromptSubmit provisional sum also overflows under (B) | R1 names both events: UPS 9,256 B > `EVENT_BUDGET` 8,488 B | [[#r1]] |

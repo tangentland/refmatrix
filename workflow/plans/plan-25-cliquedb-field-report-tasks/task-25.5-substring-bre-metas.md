@@ -15,7 +15,8 @@ metadata:
 
 > Plan: [[plan-25-cliquedb-field-report]]
 > Status: Pending (spec drafted 2026-11-09 in revision round 2, [[#rev-round-2]]; first reviewed
-> in r3 and revised in [[#rev-round-3]]; a short r4-lite confirm is next)
+> in r3 and revised in [[#rev-round-3]]; r4-lite confirm folded in [[#rev-round-4]]; plan approval
+> pending the user's bug-181 decision)
 > Bug: bug-174 (logged 2026-11-09 from [[bsd-plan25-spec-r1-2f4a1df#m8]])
 > Depends on: [[task-25.4-grep-bre-translation]] merged (it builds `grep_dialect.bre_to_py`,
 > `UntranslatableBRE`, the `grep_first` delegation and the grouped `-w` / `-x` this task reuses).
@@ -25,6 +26,7 @@ rel: depends-on -> [[task-25.4-grep-bre-translation]]
 rel: derives-from -> [[bug_registry#registry]]
 rel: derives-from -> [[bsd-plan25-spec-r2-5b8ed15]]
 rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
+rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
 rel: amends -> [[task-25.4-grep-bre-translation#acceptance]]
 rel: depends-on -> [[project_grep_surface_defect_family]]
 rel: depends-on -> [[feedback_go_no_go_ranges_not_predrop]]
@@ -83,11 +85,19 @@ Two legs have different contracts:
    - **Source (r3 #s3).** `query.log` alone cannot replay a call: no row records the grep flags,
      and `cwd` is on 136 refmatrix / 513 cliquedb rows only. The population is therefore built
      from **`cli.log`** (argv and cwd, 32,588 refmatrix grep calls) **joined to `query.log`'s
-     `answered_by` by pid and ts**. A path-less call is one whose argv has no path argument AND
+     `answered_by`**. `query.log` grep rows carry NO `pid` (0 of 7,788) and their `ts` has
+     one-second resolution, so the join key is (r4 #n3): the same `ts` second, the `query.log`
+     row's pattern contained in the `cli.log` argv, `query.log` `root` = the store resolved from
+     the `cli.log` row's `cwd`, and a path-less argv. A `cli.log` row matching more than one
+     `query.log` row on that key (the same pattern several times in one second) is AMBIGUOUS:
+     excluded and counted as its own class. On the 35 path-less refmatrix rows at r4-lite the key
+     gives 20 unique matches, 15 ambiguous and 0 unmatched
+     ([[bsd-plan25-spec-confirm-r4-lite-cdd6720#probes]]). A path-less call is one whose argv has no path argument AND
      whose joined row says it was not a stdin call (`answered_by` ∈ {`index`, `floor`, `none`});
      `cli.log`'s own "no path argument" set also covers stdin pipes and is not used alone. Calls
      whose `query.log` row has no `answered_by` (1,592 refmatrix, 351 cliquedb rows predate the
-     field) or that fail the join are EXCLUDED and COUNTED.
+     field), that fail the join, or whose join is ambiguous are EXCLUDED and COUNTED, each class
+     separately.
    - **Replay.** Each path-less call is replayed with its logged flags (`-i`, `-w`, `-x`, …) from
      its logged cwd (the fallback root is `Path.cwd()`) against a frozen scratch snapshot of the
      store's indexed tree, under both readings (substring-on-index as today, BRE via
@@ -117,9 +127,14 @@ Two legs have different contracts:
      BRE reading` and records `bre_meta_literal: true` on the `query.log` row (with the call's
      flags and cwd, so a later replay needs no `cli.log` join), so the deviation is visible and
      counted, never silent.
-   - **Re-measure.** R3 re-runs over the `bre_meta_literal: true` rows when they reach 30, or at
-     the first plan-of-plans review after 2026-12-31, whichever comes first; the bands above
-     decide again, unchanged. The re-run is a bug-174 row update, not a new task.
+   - **Re-measure (r4 #n4).** R3 re-runs over the `bre_meta_literal: true` rows when they reach
+     M ≥ 30, or on 2026-12-31, whichever comes first; the bands above decide again, unchanged.
+     The trigger is a queue line in [[plan-of-plans#queue-bug174-remeasure]] (and the plan-25 row's
+     status text), so it is read where the queue is read. The count has a reader: `rmx telemetry
+     --agent-usage` (`telemetry.agent_usage_report`, `telemetry.py:1799`, which already prints
+     grep rows per `answered_by` from `query.log`) gains one line, `grep bre_meta_literal: N
+     (bug-174 re-measure at 30 or 2026-12-31)`. The re-run is a bug-174 row update, not a new
+     task.
    - **`-G` is a parsed flag** (r3 #m1 d). Today `-G` is not index-expressible:
      `_grep_bare_flags` puts it in `delegate` (`cli.py:5970`), so a path-less `-G` call already
      goes to the real tool, which never learns. R4 makes `-G` a parsed flag that sets "BRE
@@ -153,7 +168,9 @@ Production path: the `rmx grep` CLI as the wrappers and the PreToolUse rewrite i
    `bre_meta_literal: true` plus the call's flags and cwd; `rmx grep -G 'a.b'` (path-less) gives
    the grep answer FROM the index / fallback leg (asserted: no delegation note on stderr, and the
    learned concept `query/a.b` exists afterwards). RED at HEAD: `-G` is delegated (`cli.py:5970`),
-   so the answer is right but the delegation note prints and nothing is learned.
+   so the answer is right but the delegation note prints and nothing is learned. On NO-GO, after
+   two such calls `rmx telemetry --agent-usage` prints `grep bre_meta_literal: 2` (R4's reader;
+   mutation: the line missing or counting every grep row).
 5. **AC-4b Documentation.** `rmx grep --help` no longer says the default is a substring "as in
    grep" without naming the leg; a test asserts the help names both readings (r3 #m1 b).
 6. **AC-5 Mutations that must FAIL a test:** `has_bre_meta` ignoring `[` (AC-1 `[ab]c`); the
@@ -169,7 +186,8 @@ Production path: the `rmx grep` CLI as the wrappers and the PreToolUse rewrite i
 | `src/refmatrix/grep_dialect.py` | `has_bre_meta` |
 | `src/refmatrix/cli.py` (`grep`, help text `:6296-6301`, docstring `:6324-6345`; `_grep_bare_flags` `:5857`, `-G` at `:5970`) | R2 trigger at 25.4's entry point; R4 per band; `-G` parsed; help and docstring rewritten |
 | `tests/test_task25_4_grep_bre.py` | 25.4 AC-4's `a.b` assertion superseded (R2) |
-| `workflow/measurements/grep-substring-bre-metas.md` (new) | R3's counts, with numerators, denominators, M, excluded counts |
+| `src/refmatrix/telemetry.py` (`agent_usage_report`, `:1799`) | one `bre_meta_literal` count line in the grep section (R4 re-measure reader) |
+| `workflow/measurements/grep-substring-bre-metas.md` (new) | R3's counts, with numerators, denominators, M, excluded counts (no-`answered_by`, join failed, ambiguous) |
 | `tests/test_task25_5_substring_bre.py` (new) | AC-1..AC-5 |
 | `workflow/bug_registry.md` | bug-174 per R5 |
 
@@ -186,7 +204,7 @@ Production path: the `rmx grep` CLI as the wrappers and the PreToolUse rewrite i
 |---|---|---|
 | f1 | Drop-in legs switch without measurement | yes: grep's answer is the contract there; the differential test is the gate |
 | f2 | Index-leg bands | as pre-registered in R4 (5% / 1% / 20%, denominator M, minimum M ≥ 30); a result in a band is acted on, not re-argued |
-| f4 | Below the minimum (r3 #s3, decided as the user would) | NO-GO by default with R4's counted note; the `bre_meta_literal` rows accumulate the population; re-measure at 30 rows or after 2026-12-31 |
+| f4 | Below the minimum (r3 #s3, decided as the user would) | NO-GO by default with R4's counted note; the `bre_meta_literal` rows accumulate the population; re-measure at M ≥ 30 or on 2026-12-31, queued in plan-of-plans `#goal-2026-11-09`, counted by `rmx telemetry --agent-usage` (r4 #n4) |
 | f3 | Flag to force BRE on the index leg under NO-GO | `-G`, grep's own name for basic regex |
 
 ## Revision round 2 (2026-11-09) {#rev-round-2}
@@ -214,3 +232,14 @@ rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
 | M1 (c) "file arguments" narrower than the leg | "explicit PATH arguments, files or directories" (`_index_may_answer`, `cli.py:6606`); AC-1 directory rows; mutation | [[#why]], [[#r2]], AC-1, AC-5 |
 | M1 (d) `-G` delegated today | `-G` becomes a parsed flag that keeps the call on the learning leg; AC-4 asserts no delegation note and a learned concept, RED at HEAD | [[#r4]], AC-4, AC-5 |
 
+## Revision round 4 (2026-11-09) {#rev-round-4}
+
+Answers [[bsd-plan25-spec-confirm-r4-lite-cdd6720]] (DIRTY 0B/1S/5M at `cdd6720`). The bands are
+unchanged and no replay has run, so they stay pre-registered.
+
+rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
+
+| finding | change | anchor |
+|---|---|---|
+| N3 join "by pid and ts", but `query.log` grep rows have no `pid` | key = `ts` second + pattern in argv + `root` from `cwd` + path-less argv; ambiguous matches excluded and counted as a third class; measured 20 unique / 15 ambiguous / 0 unmatched on the current 35 path-less rows | [[#r3]], [[#files]] |
+| N4 re-measure trigger not an event, count has no reader | M ≥ 30 or 2026-12-31, queued in [[plan-of-plans#queue-bug174-remeasure]] and the plan-25 row; `rmx telemetry --agent-usage` prints the `bre_meta_literal` count (`telemetry.py:1799`); AC-4 asserts the line; f4 updated | [[#r4]], AC-4, [[#files]], f4 |
