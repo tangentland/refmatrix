@@ -252,7 +252,8 @@ the same shape.
 4. **Write counts (bug-093's detector).** Re-syncing a fixture `.py` file with 10 and with 100
    docstring keywords executes the same number of statements per hold (± 2) and 0 single-row
    concept upserts (23.2 R3). Mutation: the per-row `_ingest_python_semantics` path FAILS. {#ac-4}
-   - **AC-4b GMD documents (round 6, b1).** Fixture: GMD documents with 50 and with 200 anchors.
+   - **AC-4b GMD documents (round 6, b1).** Fixture: GMD documents with 50 and with 200 anchors,
+     both carrying the SAME number of `rel:` lines (round 7: 10, as bug-185's AC-3 fixtures).
      - Re-syncing each executes the same number of statements per hold (± 2), counted by 23.2's
        recorder, and 0 single-row entity / concept upserts (23.2 R3's counter).
      - Each document is its own pass-1 step and its own pass-2 step: the recorder's hold count
@@ -262,8 +263,11 @@ the same shape.
      - Mutations, each must FAIL: the GMD batch back to one step for all documents (hold count
        1); the per-row pass-1 `upsert_entity` loop restored (statements scale with anchors,
        single-row counter > 0).
-     - RED at HEAD: the counter sees 854 single-row upserts on the 219-anchor IMPRESSIONS-shaped
-       fixture. Needs bug-185 merged to go GREEN ([[task-bug185-bulk-gmd-ingest#ac-3]]).
+     - RED at HEAD: the single-row upsert counter is > 0 and scales with the anchor count (200
+       vs 50 anchors; the exact count depends on the fixture's anchor naming, since each
+       multi-part name adds variant upserts, round 7). Needs bug-185 merged to go GREEN
+       ([[task-bug185-bulk-gmd-ingest#ac-3]]); the steps wrap bug-185's per-document entry
+       points ([[task-bug185-bulk-gmd-ingest#r7]]).
      {#ac-4b}
 5. **A stop before the semantic steps loses nothing (nb23-3).** Fixture: 5 changed files with
    semantics (3 `.py` with docstring keywords, 1 ADR `.md`, 1 `.pseudo`), all previously synced.
@@ -400,3 +404,17 @@ rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465#b1]]
 rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465#s1]]
 rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465#m1]]
 rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465#m4]]
+
+## Revision round 7 (2026-11-09) {#rev-round-7}
+
+Source: [[bsd-bug185-spec-r1-da67220#m5]], the bug-185 spec review r1 (its m5 is about this
+spec's composition with bug-185). Only [[#ac-4b]] changed; the round-6 table above is unchanged
+history.
+
+| finding | answered at | rationale |
+|---|---|---|
+| m5 (b) AC-4b quoted the live file's "854" for a synthetic fixture | [[#ac-4b]] ("> 0, scaling with anchors") | 854 is the live `IMPRESSIONS.md`'s call count including `add_concept`'s variant upserts; a generated fixture's count depends on its anchor naming |
+| m5 (c) AC-4b inherits the rel-count condition | [[#ac-4b]] (both fixtures carry the same 10 `rel:` lines) | bug-185 makes rel edges bulk too ([[task-bug185-bulk-gmd-ingest#r2]] step 5), but an equal rel count keeps the flatness claim independent of that choice |
+| m5 (a) which task cuts the per-document pass-1 / pass-2 seam | [[#ac-4b]]; [[task-bug185-bulk-gmd-ingest#r7]] | bug-185 provides `gmd_prepare` / `gmd_pass1_document` / `gmd_pass2_document`; [[#r1]]'s per-document steps wrap them and add nothing inside |
+
+rel: derives-from -> [[bsd-bug185-spec-r1-da67220#m5]]
