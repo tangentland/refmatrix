@@ -304,6 +304,11 @@ def test_red_clear_tracked_stamps_counts_skipped_gmd_meta(kind):
 # 5. RED — pagerank.store_scores lets a commit failure propagate
 # =========================================================================================
 
+def _pagerank_rows(con) -> list[tuple]:
+    return [tuple(r) for r in con.execute(
+        "SELECT entity_id, score, computed_at FROM pagerank ORDER BY entity_id").fetchall()]
+
+
 @pytest.mark.timeout(60)
 def test_red_store_scores_propagates_a_commit_failure():
     from refmatrix import pagerank
@@ -312,6 +317,11 @@ def test_red_store_scores_propagates_a_commit_failure():
         con = s._connect()
         assert isinstance(con, sqlite3.Connection)
         con.commit()
+        # A prior SUCCESSFUL replace (bsd r2 #s1, kills m9): the failed replace below must leave
+        # these rows exactly as they were, and must not leave the connection in a transaction.
+        assert pagerank.store_scores(s, {eid: 0.5}, now=0.25) == 1
+        prior = _pagerank_rows(con)
+        assert prior == [(eid, 0.5, 0.25)], prior
         # Real failure, nothing patched: the FK check moves to COMMIT, so the INSERT succeeds
         # and commit() itself raises for the score whose entity does not exist.
         con.execute("PRAGMA defer_foreign_keys = ON")
@@ -321,6 +331,14 @@ def test_red_store_scores_propagates_a_commit_failure():
                 pagerank.store_scores(s, {eid: 1.0, ghost: 2.0}, now=1.0)
             except sqlite3.IntegrityError as e:
                 raised = e
+                # Observed BEFORE the `finally` cleanup below, which would otherwise mask a
+                # missing rollback in store_scores (m9 survived r2 exactly that way).
+                assert not con.in_transaction, (
+                    "store_scores re-raised its commit failure but left the connection inside "
+                    "the failed transaction: every later commit on the daemon's long-lived "
+                    "connection trips over it (bug-178 bsd r2 #s1 — the rollback is missing)")
+                assert _pagerank_rows(con) == prior, (
+                    "the failed replace was not rolled back: the prior pagerank rows changed")
             else:
                 raised = None
                 # prove the failure mode is real at HEAD too: the swallowed commit is the one
@@ -392,3 +410,50 @@ def test_bulk_write_accepts_ints_and_integral_values_for_pinned_int_column(wrapp
     assert n == 5
     assert rows == sorted([("int", 2), ("null", None), ("np", 7), ("big", 2 ** 62),
                            ("integral-float", 4)])
+
+
+# =========================================================================================
+# 7. m11 killer — `rmx reingest --force` PRINTS the GMD hashes it could not clear
+# =========================================================================================
+
+@pytest.mark.timeout(300)
+def test_reingest_force_prints_the_gmd_hashes_it_did_not_clear(tmp_path, monkeypatch):
+    """bsd r2 #m1 (kills m11). The count is pinned at `Store.clear_tracked_stamps` (test 4);
+    the printed line is the half of CLAUDE.md#no-silent-failures ("counted AND printed") that
+    nothing observed. Drives the real CLI, as tests/test_reingest.py does: an isolated scratch
+    project, cwd-resolved root, sessions/embed/semantic off, no daemon (in-process store)."""
+    from click.testing import CliRunner
+
+    from refmatrix.cli import main
+    from refmatrix.store import Store
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "code.py").write_text("x = 1\n")
+    monkeypatch.chdir(proj)
+    monkeypatch.delenv("REFMATRIX_ROOT", raising=False)
+    runner = CliRunner()
+    assert runner.invoke(main, ["init"], catch_exceptions=False).exit_code == 0
+
+    # One stamped memory row whose meta does not parse as a JSON object: step 0/5 cannot strip
+    # its hash, so it stays skipped by every reingest — and must say so.
+    s = Store(proj / ".refmatrix")
+    s.init()                                 # binds the default (project) partition
+    s.bulk_upsert_entity([("memory", "m_bad_meta", None, None, None)])
+    con = s._connect()
+    con.execute("UPDATE entities SET meta = '{gmd_content_hash' WHERE name = 'm_bad_meta'")
+    con.commit()
+    s.close()
+
+    r = runner.invoke(
+        main,
+        ["reingest", "--force", "--no-sessions", "--no-embed", "--no-semantic",
+         "--memory-dir", str(tmp_path / "no-memory-dir")],
+        catch_exceptions=False,
+    )
+    assert r.exit_code == 0, r.output
+    assert "0/5 clear stamps" in r.output, r.output
+    out = " ".join(r.output.split())         # rich wraps long lines at the runner's width
+    assert "1 GMD content hash(es) NOT cleared" in out, (
+        f"rmx reingest --force did not print the stamped row it could not clear "
+        f"(bug-178 bsd r2 #m1):\n{r.output}")
