@@ -257,7 +257,11 @@ op; the facts.log compaction tick and op; the snapshot's hold (measured and name
 plan-18's shared helper, [[#r5]]); the heartbeat's dependence on the cli pool; a holder name on
 every long hold.
 Out: harness writers (23.1), `_sync_paths` and the watch flush (23.3: one sync at a time, the
-lock released between files, which bounds the 80-110 s shape of the second incident), plan-17's
+lock released between files and between GMD documents), the GMD re-ingest the sync or watch flush
+runs (bug-185, [[task-bug185-bulk-gmd-ingest]]: bulk node and concept writes; together with
+23.3's per-document step this bounds the 80-110 s shape of the second incident, whose holder was
+that re-ingest and not the agent `sync` that waited behind it, corrected 2026-11-09 per
+[[bsd-plan23-3-5-freshness-62a2465#p-holder]]), plan-17's
 maintenance holds (17.1 / 17.3), plan-18's catalog maintenance and its swap (18.2 / 18.3), and
 `ping` (0.78.2). {#scope-body}
 

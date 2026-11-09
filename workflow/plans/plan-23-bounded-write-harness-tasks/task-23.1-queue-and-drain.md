@@ -366,9 +366,14 @@ own sha; the drift table is [[bsd-plan23-1-2-freshness-9bcf464#drift]].
   returns `{"skipped": "learning-disabled", "pending": …}` without draining;
   `tests/test_learn_toggle_sites.py` pins `report["skipped"]` / `["pending"]` and
   `tests/test_learn_queue.py` pins `patterns` / `applied` on the method's dict (m4).
-- **The live holders behind bug-177 are not 23.1's code**: an agent `sync` (30.6-94.2 s; 23.3
-  bounds it) and the periodic facts.log compaction (~12 s hold at 00:51:08-20; 23.5 R5 moves it
-  off the lock). R11 makes the HOOK not wait on them; it does not shorten them.
+- **The live holders behind bug-177 are not 23.1's code**: the GMD re-ingest that a watch flush
+  or a window's first `sync --since` runs (19-40 s for ONE document, 854 single-row upserts for
+  `IMPRESSIONS.md`; bug-185, [[task-bug185-bulk-gmd-ingest]] makes it bulk and 23.3 R1 makes each
+  document its own step) and the periodic facts.log compaction (~12 s hold at 00:51:08-20; 23.5
+  R5 moves it off the lock). R11 makes the HOOK not wait on them; it does not shorten them.
+  **Corrected 2026-11-09** ([[bsd-plan23-3-5-freshness-62a2465#p-holder]]): this note first named
+  "an agent `sync` (30.6-94.2 s)" as the holder; those `sync --since` runs logged `touched=0`
+  and were WAITERS behind the GMD re-ingest.
 
 Added in revision round 12, read at HEAD `77c9f04` (`src/` unchanged since `9bcf464`), and
 read-only in the 3.7 clone (`task-3.7-verb-it-backlog` at `e4faf32`) and the bug-178 clone
