@@ -557,6 +557,16 @@ log is `workflow/review-output/task-3.7/r2-red-meh.log` (4 failed on their asser
   normal spool name, so a file's origin cannot be observed. At HEAD both `not a path at all` and
   `Traceback (most recent call last):` become `reason: legacy` entries.
 
+**GREEN `c47f79f` (R2-M1..M3).** {#remedy-r2-meh-green} `cli.curator_status` prints
+`rmx curator: kept N spool file(s) not fully shown within --limit N` on stderr when `--drain`
+keeps a file; stdout and exit code are unchanged. Both copies of the gmd-curator agent (the
+shipped template and the hand-maintained `.claude/agents/gmd-curator.md`) now say `--drain`
+drains only fully printed files, and they no longer name a hook as a drainer.
+`gmd_curator._is_legacy_path_line` encodes the R2-M3 rule. A bare suffix-less name such as
+`README` is now a bad line. No test and no writer depends on it: the watcher has written JSONL
+since `b04c1ac6`. Logs: `workflow/review-output/task-3.7/r2-green-meh.log` and
+`r2-green-meh-regress.log`.
+
 ## Definition of done {#done}
 
 - Each family: RED (recorder/parity/defect rows) before GREEN; mutation check; summary rows in

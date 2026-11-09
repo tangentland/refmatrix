@@ -176,6 +176,7 @@ Decisions from the spec's [[task-3.7-verb-it-backlog#remedy-r1]] table (`6fd9b7c
 | R-M1 | `364a90e` | bug-155 / bug-156 (base failures, open); bug-157..160 (fixed) |
 | R-L (test), R-RM7 (alias) | `1df6c25` | the spool test asserts file fsync → rename → dir fsync, each fsync identified by `fstat` (three mutations RED); `tests/test_concept_timeline.py` imports `graphread.concept_files`, and `cli._concept_files` is deleted |
 | R2-S1 (remedy r2) | `4643541` | `_process_embed_client` drops a handed-out hub-shared client that reports `alive()` False (the hub died), closes it, counts it in `_EMBED_CLIENT_REBUILDS`, logs it, and builds a fresh client (a private worker while the hub is down). A private worker is never rebuilt. One atexit closer for the cached client (bug-171; RED `0359858`) |
+| R2-M1, R2-M2, R2-M3 (remedy r2) | `c47f79f` | `curator status --drain` prints a counted stderr notice for every spool file it keeps (`kept N spool file(s) ... --limit`). The gmd-curator template and the repo copy no longer say a hook drains. A non-JSON spool line counts as a legacy path only if it is path-shaped (no whitespace, and it has a `/` or a suffix); any other line is counted as unparseable (RED `8961c9c`) |
 {#remedy-r1-table}
 
 Behaviour changes users will see:
