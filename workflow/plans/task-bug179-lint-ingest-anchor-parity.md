@@ -356,8 +356,8 @@ Another repo, **gated on explicit user consent** ([[#r7-b]]): viascope
 - **Follow-up, not this task's: the memory-lint hook is unwired.**
   `~/.claude/hooks/lint-memory-gmd.sh` is referenced by no settings file (`~/.claude/*.json`: 0
   hits), so the PostToolUse memory lint that MEMORY-RULES describes never runs. That predates
-  bug-179, and the escape analysis must not assume it. The orchestrator logs it as its own
-  bug-registry row. This spec does not edit `workflow/bug_registry.md` for it.
+  bug-179, and the escape analysis must not assume it. Logged as **bug-183** (`ac360ae`).
+  This spec does not edit `workflow/bug_registry.md` for it.
   {#fu-memory-hook}
 - **Follow-up: upstream `audit.py:257` registers every anchor match.** It has no refmatrix
   caller. If it is kept, the upstream commit either aligns it with R1 or files an upstream row,
