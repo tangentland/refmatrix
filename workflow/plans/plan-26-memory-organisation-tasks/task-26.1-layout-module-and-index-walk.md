@@ -37,16 +37,27 @@ viascope2 12, cliquet 8.
    - `iter_memory_files(memdir)`, which walks recursively and yields only `.md` files. It
      excludes `MEMORY.md`, `README.md`, every dotfile, and everything under a dot-directory;
    - `iter_savestates(memdir)`, which yields `savestates/*.md` plus legacy top-level
-     `savestate_*.md`. They are ordered newest-first by ONE key: frontmatter `updated`, parsed as
-     a datetime when it carries a time of day and as a date otherwise, then mtime. `created` is
-     NOT part of the key (r2 s3: a session created earlier but saved later must win).
+     `savestate_*.md`. They are ordered newest-first by ONE key: frontmatter `updated`, then
+     mtime. `created` is NOT part of the key (r2 s3: a session created earlier but saved later
+     must win).
+     - `updated` is compared by calendar date first.
+     - When the dates are equal and BOTH sides carry a time of day, the datetimes decide.
+     - When the dates are equal and EITHER side is date-only, mtime decides (r3 m2). A date-only
+       value is never treated as midnight; old MCP stdio servers keep writing date-only values
+       until they are respawned.
    - `is_organised(memdir)`, which reads `<memdir>/.memory-layout` ([[#marker-gate]]).
 2. **AC-2: the bridge uses that walk (ch-bsd r1 #s3).**
    - `ingest_gmd.collect_gmd_files(targets, *, as_memory=False)` gains the keyword. With
      `as_memory=True` it expands each directory target with `iter_memory_files`.
-   - All four memory call sites pass it (r2 m1): `cli.py:10478` (in-process), `daemon.py:3772`
-     (the sync op), `daemon.py:3789` (the detached op behind the SessionStart hook) and
-     `daemon.py:3898` (prestage).
+   - All FIVE memory call sites pass it (r2 m1, r3 m7):
+     - `cli.py:10478` (in-process);
+     - `daemon.py:3772` (the sync op);
+     - `daemon.py:3789` (the detached op behind the SessionStart hook);
+     - `daemon.py:3898` (prestage);
+     - `cli.py:10311` (the no-daemon prestage twin of `:3898`).
+
+     Prestage must walk the same set as ingest, or it stamps hashes on files the bridge then
+     skips.
    - The test below runs three ways: in-process, through the daemon sync op, and through the
      detached op. Test: put a `.organise-rollback-1/x.md` and a `.hidden/y.md` inside a
    throwaway memdir, then run `rmx ingest-gmd --as-memory <dir>`. The store must have no `x` row
@@ -60,9 +71,14 @@ viascope2 12, cliquet 8.
 4. **AC-4: curated hooks are keyed by memory id (B4).**
    - `load_hooks` and `parse_hooks` map every curated hook to the frontmatter `id` of the file
      its link points at. Links that are already dead are kept under their path and reported.
-   - `save_hooks` writes `.memory_hooks.json` keyed by id.
-   - A legacy path-keyed sidecar is read and converted on first write.
-   - Applies to EVERY dir: a dir with no sidecar takes its hooks from its index lines.
+   - **Reader, every dir.** `load_hooks` accepts BOTH key shapes, path and id, in every dir.
+   - **Writer, ORGANISED dirs only (r3 s1).** In a dir with `.memory-layout`, `save_hooks` writes
+     `.memory_hooks.json` keyed by id. A legacy path-keyed sidecar is converted on the first such
+     write. A dir with no sidecar takes its hooks from its index lines.
+   - **Writer, un-organised dirs.** In a dir WITHOUT the marker, `save_hooks` writes HEAD's
+     path-keyed sidecar, byte-for-byte as HEAD. HEAD always writes it, and that write is what
+     keeps bug-050's fold idempotent.
+   - The test below runs in an organised dir:
    - Test: an index-only dir (no sidecar) has a curated hook on `project_x.md`. Move the file to
      `project/project_x.md` and regenerate. The hook is still there verbatim. At HEAD it falls
      back to `_first_prose` (RED).
@@ -79,7 +95,9 @@ viascope2 12, cliquet 8.
    - Idempotence: re-rendering a carried block re-carries it once. It never duplicates.
    - Test: a fixture copied from viascope's index shape (17 headers plus a session log) keeps
      every prose line. At HEAD all of them are dropped (RED).
-6. **AC-6: the shrink guard counts content (B4).** Before replacing the index, `write` compares
+6. **AC-6: the shrink guard counts content (B4). ORGANISED dirs only (r3 m4).** In a dir
+   without the marker, HEAD's write runs unguarded, as at HEAD ([[#marker-gate]]). Before
+   replacing the index, `write` compares
    the old index's CONTENT lines (entry lines plus prose lines) with the new render's (entries
    named, inline or folded, plus carried prose). It refuses when fewer than 50% would remain, or
    when ANY prose line would be lost. The file is left untouched, the reason is printed on the
@@ -96,13 +114,15 @@ viascope2 12, cliquet 8.
 9. **AC-9: un-organised dirs keep HEAD's index behaviour.**
    - `memory_index.write` uses the new render only when `is_organised(memdir)`. That covers the
      id-keyed sidecar, the carried prose block, and later 26.7's 19.3 blocks.
-   - In a dir without `.memory-layout`, it renders exactly as at HEAD, byte-identically on the
-     flat fixture, and it writes no new sidecar.
-   - The AC-6 content-shrink guard applies in EVERY dir. It only refuses a write, so it changes
-     no file and closes the viascope wipe in un-organised dirs too.
-   - Test: in the same fixture, run once without the marker and once with it. Without the marker,
-     the output is HEAD bytes and no `.memory_hooks.json` is created. With the marker, prose is
-     carried and the sidecar is keyed by id.
+   - In a dir without `.memory-layout`, `write` IS HEAD's write: HEAD's render, HEAD's
+     compaction (which drops prose, as today) and HEAD's path-keyed `save_hooks`. No 26.1 guard
+     runs there (r3 s1, m4).
+   - Test, with a fixture that has one prose line, one entry and no sidecar. Run it through HEAD's
+     code (a pinned copy of HEAD's `memory_index` in the test, or HEAD's output recorded as a
+     golden file at RED time). Then run 26.1's code, marker-off.
+     - Expected: `MEMORY.md` bytes AND `.memory_hooks.json` bytes are identical to HEAD's. HEAD
+       creates the sidecar, so "absent" is the wrong assertion.
+     - Marker-on twin: prose is carried, the guard is active, and the sidecar is keyed by id.
 
 ## Files to Create / Modify {#files}
 
@@ -111,7 +131,7 @@ viascope2 12, cliquet 8.
   block, the shrink guard.
 - Modify `src/refmatrix/ingest_gmd.py`: `collect_gmd_files` uses `iter_memory_files` on the
   as-memory path.
-- Modify `src/refmatrix/cli.py` (`:10478`) and `src/refmatrix/daemon.py` (`:3772`, `:3789`, `:3898`):
+- Modify `src/refmatrix/cli.py` (`:10478`, `:10311`) and `src/refmatrix/daemon.py` (`:3772`, `:3789`, `:3898`):
   pass `as_memory=True` (r2 m1).
 - Create `tests/test_memory_layout.py`.
 - Extend `tests/test_memory_index.py` and `tests/test_memory_bridge.py`.
@@ -157,3 +177,14 @@ Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
 | s3 ("newest" key regresses on same-day saves) | `updated` (datetime when present), then mtime; `created` dropped | AC-1 |
 | s2 (new on-disk behaviour reaches un-organised dirs) | Marker gate; the HEAD render is kept for un-organised dirs; guards that only refuse apply everywhere | [[#marker-gate]] |
 | m1 (four call sites; one pinned) | Keyword on `collect_gmd_files`; four sites named; AC-2 runs three ways; `daemon.py`/`cli.py` added to Files | AC-2, [[#files]] |
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
+
+| finding | change | anchor |
+|---|---|---|
+| s1 (AC-9 "no sidecar" vs HEAD always writes one; AC-4 "EVERY dir") | Un-organised: HEAD's path-keyed `save_hooks`, byte-compared to HEAD; reader accepts both shapes everywhere; id-keyed writer organised-only | AC-4, AC-9 |
+| m4 (the everywhere-guard stops compaction) | Guard is organised-only; un-organised = HEAD's write including its compaction | AC-6, AC-9 |
+| m2 (date-only vs datetime on the same date) | Same date and either side date-only → mtime; never midnight | AC-1 |
+| m7 (fifth call site `cli.py:10311`) | Named; prestage walks the same set | AC-2, [[#files]] |

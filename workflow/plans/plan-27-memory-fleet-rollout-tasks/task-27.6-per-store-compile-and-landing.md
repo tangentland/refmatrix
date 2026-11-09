@@ -39,9 +39,11 @@ rel: depends-on -> [[task-26.7-memory-index-by-subject]]
    because 27.2a converted its 22,643 chars of prose: carried prose is at most 6,000 chars, and
    the rest is entries and 19.3 blocks. The fold count is stated (r2 s6).
 3. **AC-3: landing report.** One table, one row per project:
-   - Does `rmx save-state` write `savestates/`? Yes for all, because everything runs the
-     deployed `~/bin/rmx`. Verify with one dry-run (`rmx save-state --dry-run` reports the
-     `savestates/` target) in two projects.
+   - `organised`: is `.memory-layout` present? (r3 m1)
+   - Does `rmx save-state` write `savestates/`? Only where `organised` is true. The deployed
+     binary is the same everywhere, but the MARKER decides (26.3 AC-1). Verify with
+     `rmx save-state --dry-run` in one organised and one un-organised project: the target is
+     `savestates/` in the first and the top level in the second.
    - Does a SessionStart bridge hook exist?
    - `rmx install-hooks --check` drift.
    - Recommended action, per plan Q3: report only; regeneration rides plan-24.
@@ -73,3 +75,11 @@ Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
 | finding | change | anchor |
 |---|---|---|
 | s6 (unreachable expected number) | The 24,000-char target is tied to 27.2a's at-most-6,000-char carried prose | AC-2 |
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
+
+| finding | change | anchor |
+|---|---|---|
+| m1 (the landing table attributed `savestates/` to the binary, not the marker) | `organised` column; dry-run in one organised and one un-organised project | AC-3 |

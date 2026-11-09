@@ -84,8 +84,13 @@ multi-membership), in its own compile scope.
      | (linked) | 6 | the only run bullets that carry a report link |
 
    - **A run is a report file.** A run bullet belongs to the report it links. Without a link, it
-     is matched by its leading date and plan/round label. A run bullet that matches no report is
-     `unassigned`: it stays in the window and is never folded.
+     is matched by its leading date, then plan, then round label. A run bullet that matches no
+     report is `unassigned`: it stays in the window and is never folded.
+   - **Multi-candidate rule (r3 m9).** When a bullet matches more than one report after hash,
+     plan and round, it belongs to the EARLIEST matching report (by report timestamp, then
+     filename). The checker lists every multi-candidate bullet with all of its candidates, so the
+     choice is auditable. Sighting counts use this one assignment. At `5b8ed15` there are 43 such
+     bullets, all from 2026-09-14 to 2026-09-20, outside the window.
    - **The window is defined in RUNS, not characters.** It holds every run bullet of the newest 20
      report files, plus `unassigned` ones. There is no character cap on the window: the measured
      newest-20 holds 33 bullets / 14,450 chars, and those stay whole.
@@ -216,3 +221,11 @@ Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
 | finding | change | anchor |
 |---|---|---|
 | s7 (AC-3 cannot pass on the real ledger: pointer bullets and the char cap) | Window defined in runs (newest 20 report files), no char cap on it; pointer bullets moved to their pattern or one "legacy pointers" link-list bullet; char cap only on pointer-free consolidated bullets, pre-measured on a ledger copy and pre-registered (rounded up plus 20%, with a 12,000 ceiling that stops instead of rising) | R3, AC-3 |
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
+
+| finding | change | anchor |
+|---|---|---|
+| m9 (no multi-candidate rule) | Earliest matching report; candidates listed by the checker; the sighting count uses that assignment | R3 |

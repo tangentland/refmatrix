@@ -44,7 +44,7 @@ delta in [[#plan-19-delta]]. The new scope is R-A to R-D below.
 |---|---|---|
 | R1 scheduled compile | The daemon op `memory_compile` (plan + apply), its verb, single-flight, `retries=0`, `dry_run`/`invoked_by`/`status=True` | NOT built: the `MaintenanceStep` registration on 17.2's tick, and AC-2 (the armed and unarmed days). Task 17.2 is unbuilt; both land with 17.2. Until then, compile runs on demand (26.8, 27.6). |
 | R2 index on bridge write | built | Marker-gated (r2 s2): the bridge regenerates the index only in a memdir with `.memory-layout`. Un-organised dirs keep HEAD behaviour. |
-| R3 compile regenerates the index | built once 26.7 exists | none |
+| R3 compile regenerates the index | built once 26.7 exists | Marker-gated like R2 (r3 m3). Compile regenerates `MEMORY.md` only for a memory root with `.memory-layout`. HEAD's compile writes no index, so in an un-organised dir the compile writes none either. |
 | R4 never loses | built | none |
 | R5 `stale` + `stale_since`, never reaped | built | This replaces round 0's `retired_at` (B1), so plan-22's `stale-subject` audit sees these subjects. **NOT built: 19.4 AC-4's recall leg** (absent from `rmx memory recall`, with and without `--include-subjects`). It needs 19.1 R2, which 25.1 R2/AC-6 builds after plan-26. Recall excludes only `session/*` today (`verbs.py:983`), and `--include-subjects` does not exist. The leg is deferred to 25.1 AC-6 (r2 s1). |
 | R6 `unlabeled-<cluster_cid>` | built: `stm.cluster_cid`, unless 19.6 merges first | ALSO for duplicate-label suffixes (r2 m7). `consolidate.py:586-588` appends `-2`, `-3` by cluster ORDER, and R-B's case-folding can only add duplicates. Every duplicated label is suffixed `-<cluster_cid>` instead, so the name does not depend on order. Test: two clusters share a label; reorder the clusters; both slugs stay the same. |
@@ -104,6 +104,8 @@ delta in [[#plan-19-delta]]. The new scope is R-A to R-D below.
     `MEMORY.md`. Recall absence is 25.1 AC-6's.
   - The AC-8 mutations, minus the R1-tick ones and minus "a stale subject visible in recall"
     (that one moves to 25.1).
+  - 19.4 AC-6 (index after compile) runs marker-ON. A marker-OFF twin asserts that a compile
+    leaves `MEMORY.md` and the sidecar byte-identical (r3 m3).
   - AC-1 (bridge writes the index) runs in a marker-ON memdir. A marker-OFF twin asserts the
     index is unchanged (r2 s2).
 - **AC-A: scopes do not touch each other (B3).**
@@ -185,3 +187,11 @@ Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
 | s1 (AC-0 imported 19.4 AC-4's recall leg, which needs 19.1 R2 = 25.1) | Recall leg named as deferred to 25.1 AC-6; AC-0 asserts the mark, `memory get`, the list mark and the index; the recall mutation moves to 25.1 | [[#plan-19-delta]], AC-0 |
 | s2 (index-on-bridge reaches un-organised dirs) | 19.4 R2 marker-gated; marker-off twin test | [[#plan-19-delta]], AC-0 |
 | m7 (`-N` suffixes depend on order) | Duplicate labels suffixed `-<cluster_cid>`; reorder test | [[#plan-19-delta]] |
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
+
+| finding | change | anchor |
+|---|---|---|
+| m3 (compile's index regeneration, 19.4 R3, is an ungated writer) | Marker-gated like R2; marker-off twin | [[#plan-19-delta]], AC-0 |

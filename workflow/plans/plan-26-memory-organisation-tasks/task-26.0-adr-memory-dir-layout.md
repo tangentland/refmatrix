@@ -56,10 +56,13 @@ rel: related-to -> [[task-19.4-keep-derived-layers-current]]
      - index-on-bridge;
      - `source_path`-aware refresh writes.
 
-     A dir without the marker keeps the pre-ADR behaviour. Readers are dual everywhere. Guards
-     that only refuse a write apply everywhere.
+     A dir without the marker keeps the pre-ADR behaviour exactly. That includes the old
+     renderer, its compaction and its path-keyed hooks sidecar. Readers are dual everywhere: both
+     layouts, and both sidecar key shapes. Compile's index regeneration is gated too (r3 s1, m3,
+     m4; the r2 "refuse-only guards everywhere" clause is withdrawn).
    - **"Newest" save-state (r2 s3).** Ordered by frontmatter `updated` (a datetime when present),
-     then by mtime. `created` is never a tie-breaker.
+     then by mtime. When the dates are equal and either side is date-only, mtime decides
+     (r3 m2). `created` is never a tie-breaker.
 2. Add a `rel: catalogs` row to `docs/adr/0000-adr-overview.md` and a row to `docs/INDEX.md`.
 3. Add edges `rel: depends-on -> ADR-0002` and `rel: related-to -> ADR-0003`. The ADR must not
    contradict either one.
@@ -95,3 +98,12 @@ Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
 |---|---|---|
 | s2 (the deploy reaches un-backed-up dirs) | The ADR states the marker and its gate | [[#requirements]] item 1 |
 | s3 ("newest" key) | The ADR states `updated` then mtime | [[#requirements]] item 1 |
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
+
+| finding | change | anchor |
+|---|---|---|
+| s1, m3, m4 (marker gate scope) | The ADR states that un-organised dirs keep HEAD's renderer, compaction and sidecar; readers dual; compile's index write gated | [[#requirements]] item 1 |
+| m2 (mixed date formats) | Same date with either side date-only → mtime | [[#requirements]] item 1 |

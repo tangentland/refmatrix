@@ -53,12 +53,21 @@ provenance goes stale.
    - This task ships the count itself: `rmx ingest-gmd --as-memory --dry-run <dir>` reports
      `refresh_pending` and writes nothing. The count is NOT a field of the later `organise`
      command, which depends on this task. 26.5's `--check` re-exports the same stat.
-   - The pre-deploy measurement uses the dev build against COPIES, never the live store or the
-     live memdir. For each live memdir:
-     1. copy the dir;
-     2. copy its store's read snapshot into a sandbox store under a short `mkdtemp()` root;
-     3. run the dry-run with the dev venv against the copies.
-   - 26.8 AC-2 records the result for every store before the deploy.
+   - **Measuring before the deploy (r3 s2).** The dry-run writes nothing, so it runs on the LIVE
+     memdir path as a read-only walk. Every row in a store copy stores the live path, so a COPY of
+     the memdir would count the relocation the copy made, not the refresh. The store side is the
+     one that is copied: the dev build reads a copy of that store's read snapshot in a sandbox
+     under a short `mkdtemp()` root. The live store is never opened.
+     - The CLI needs no extra flag for this. `--store-snapshot <copy>` points the dry-run at the
+       copied catalog. `--path-map <live>=<copy>` is the alternative when the memdir must also be
+       copied.
+     - **Relocated-twin RED case.** Copy the memdir with nothing changed and dry-run it through
+       `--path-map`. It must report `refresh_pending = 0`. Without the map it reports about 100%,
+       and that "~100%" is exactly the defect this case pins.
+     - **Pre-registered expectation.** pending = rows with a missing `source_path` + rows whose
+       stored path is a symlink form of the file's resolved path + files moved since their last
+       ingest. The measurement script prints each term.
+   - 26.8 AC-0 records the result for every store before the deploy.
 4. **AC-3b: the gate is marker-gated (r2 s2).** The path-aware gate and its refresh writes apply
    only to files under a memdir with `.memory-layout` (26.1 `is_organised`). In an un-organised
    dir the gate is HEAD's hash-only gate, so the deploy causes no fleet-wide refresh. Test: the
@@ -117,3 +126,11 @@ Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
 |---|---|---|
 | m4 (26.2 shipped a field of a command 26.5 creates) | `refresh_pending` is a bridge `--dry-run` stat; 26.5 re-exports it | AC-3 |
 | s2 (refresh before plan-27's backups; "before the deploy" impossible) | Measured with the dev build on copies of each memdir plus a store-snapshot copy; refresh writes marker-gated | AC-3, AC-3b |
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
+
+| finding | change | anchor |
+|---|---|---|
+| s2 (copying the memdir counts the relocation, ~100% pending) | Dry-run on the LIVE memdir path (read-only) against a snapshot COPY of the store; `--path-map` alternative; relocated twin must report 0; expectation pre-registered term by term | AC-3 |

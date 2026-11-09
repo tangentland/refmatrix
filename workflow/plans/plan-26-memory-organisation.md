@@ -12,7 +12,8 @@ metadata:
 
 # Plan 26: memory-layer organisation {#root}
 
-**Date:** 2026-11-08. Revised 2026-11-09, rounds 1 ([[#rev-round-1]]) and 2 ([[#rev-round-2]]).
+**Date:** 2026-11-08. Revised 2026-11-09, rounds 1 ([[#rev-round-1]]), 2 ([[#rev-round-2]]) and 3
+([[#rev-round-3]]).
 **Status:** Drafting.
 **Location:** `workflow/plans/plan-26-memory-organisation.md`. This file stays here; its stage is
 `metadata.status`.
@@ -37,6 +38,7 @@ rel: reinforces -> [[feedback_go_no_go_ranges_not_predrop]]
 rel: reinforces -> [[feedback_converge_repeated_shapes]]
 rel: derives-from -> [[bsd-plan26-27-spec-review-r1-96feccd]]
 rel: derives-from -> [[bsd-plan26-27-spec-review-r2-8af766a]]
+rel: derives-from -> [[bsd-plan26-27-spec-review-r3-696c3cb]]
 rel: related-to -> [[plan-25-cliquedb-field-report]]
 rel: motivates -> [[plan-27-memory-fleet-rollout]]
 rel: specifies -> [[task-26.0-adr-memory-dir-layout]]
@@ -230,8 +232,9 @@ here):
 - the folder-to-type table;
 - `savestate_dir(memdir)`;
 - `iter_memory_files(memdir)`;
-- `iter_savestates(memdir)`, with ONE "newest" ordering: frontmatter `updated`, then `created`,
-  then mtime.
+- `iter_savestates(memdir)`, with ONE "newest" ordering: frontmatter `updated`, then mtime.
+  If the two dates are equal and either side is date-only, mtime decides (r2 s3, r3 m2).
+  `created` is never a key.
 
 The bridge's memory walk IS `iter_memory_files`. This was ch-bsd r1 #s3: round 0 left the bridge
 on its own `rglob`. The other callers are `handoff.py` ×3 and `memory_index.py`. Dot-dirs, dotfiles
@@ -247,17 +250,28 @@ organise date, and the backup tarball. The marker is a dotfile, so it is never a
 **Gated behaviours (organised dirs only):**
 - save-state writes into `savestates/` and moves a legacy file into it (26.3);
 - the new `MEMORY.md` renderer: 19.3 blocks, the carried-prose block, the id-keyed
-  `.memory_hooks.json` (26.1, 26.7);
-- index regeneration on every bridge write (19.4 R2, 26.6);
+  `.memory_hooks.json`, the content-shrink and prose guard (26.1, 26.7);
+- index regeneration on every bridge write AND on every compile apply (19.4 R2 and R3, 26.6);
 - the `source_path`-aware resume gate and its refresh writes (26.2).
 
-**In a dir without the marker, all of these behave exactly as at HEAD.** Two kinds of change
-still apply everywhere:
-- **Readers stay dual.** `iter_savestates` and recall-state read legacy plus `savestates/`,
-  which changes no file.
-- **Guards that only REFUSE a write apply everywhere.** 26.1's content-shrink guard leaves the
-  index untouched; that is strictly more conservative than HEAD, and it closes the viascope wipe
-  in un-organised dirs too.
+**In a dir without the marker, every one of these behaves exactly as at HEAD.** That includes
+HEAD's render, HEAD's path-keyed `save_hooks` sidecar write, and HEAD's compaction (r3 s1, m4).
+Only two changes reach every dir:
+- **Readers stay dual.** `iter_savestates`, recall-state and `load_hooks` read both layouts and
+  both sidecar key shapes. A reader changes no file.
+- **The 26.4 store-row mtype correction** (below).
+
+**The r2 claim "guards that only refuse apply everywhere" is withdrawn (r3 m4).** With HEAD's
+render, every prose line counts as "lost", so an everywhere-guard would refuse every index write
+in viascope, cliquedb, viascope2 and cliquet. `_ss_update_index` would meanwhile keep appending
+(bug-045's growth). The trade, stated:
+- Un-organised dirs keep HEAD's behaviour, INCLUDING its prose-dropping compaction and the latent
+  viascope wipe.
+- The protection against both is plan-27 organising each dir, behind its backup.
+- Until then, the recovery path is 26.8 AC-0's pre-deploy fleet snapshot of every `MEMORY.md`
+  and sidecar.
+- viascope has never run a save-state (0 save-states). 27.1 announces "no `rmx save-state` in
+  viascope until 27.2" to its sessions.
 
 The 26.4 bridge mtype rule is a store-row correction, not a disk write. It applies everywhere,
 because it is what keeps mis-typed save-states out of hook recall.
@@ -329,8 +343,8 @@ Further ordering rules:
 - No commit in another repo. Tracked moves are staged, and the user commits.
 - No change to other projects' memory dirs when 26.8 deploys. Every new on-disk behaviour is
   gated on the `.memory-layout` marker ([[#layout-marker]]), and un-organised dirs keep HEAD
-  behaviour until plan-27 organises them. Two kinds of change still reach every dir: the dual
-  readers and the refuse-only guards. The one store-side change that does reach other projects'
+  behaviour until plan-27 organises them, including HEAD's sidecar and compaction. Only the dual
+  readers reach every dir (r3 m4: the refuse-only-guard exception is withdrawn). The one store-side change that does reach other projects'
   stores is the 26.4 mtype correction. 26.8 also takes a read-only fleet snapshot (every
   memdir's `MEMORY.md` + sidecar) BEFORE the deploy.
 - No hook-payload budgeting (plan-25 bug-164).
@@ -430,3 +444,14 @@ relayed on 2026-11-09.
 | m5 (`~/.claude` count) | "2 live + 93 deleted" | [[#git-tracked]] |
 | m6 | Plan-27 (27.0) | [[plan-27-memory-fleet-rollout#rev-round-2]] |
 | Q8 verdict | Recorded: the user authorises at 26.8, with the reason | [[#open-questions]] |
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
+
+| finding | change | anchor |
+|---|---|---|
+| m1 (stale ordering text at line 233) | `updated`, then mtime; date-only tie rule | [[#one-module]] |
+| s1, m4 (the marker branch contradicts HEAD's sidecar; the everywhere-guard stops compaction) | Un-organised = HEAD render, HEAD path-keyed sidecar, HEAD compaction; readers dual; r2 "strictly more conservative" withdrawn; the trade and its recovery path stated | [[#layout-marker]], [[#non-goals]] |
+| m3 (compile's index regeneration ungated) | 19.4 R3 added to the gated list | [[#layout-marker]] |
+| Q-verdicts r3 | All sound or closed; Q8 closed | [[#open-questions]] |

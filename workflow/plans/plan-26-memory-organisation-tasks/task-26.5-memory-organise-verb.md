@@ -31,9 +31,12 @@ command `rmx memory organise [MEMDIR]` and the MCP tool are thin adapters over i
 verb-parity test covers both. No file is ever moved by hand, here or in plan-27.
 
 1. **AC-1: the target store comes from the memdir, never from the cwd (B2; r2 m2, m3, m8).**
-   - **Memdir to store.** The verb resolves the store with `_root_from_projects_slug`
-     (`cli.py:113`), applied to the memdir normalised with `.absolute()`. It never calls
-     `.resolve()`. The partition comes from that root's own default.
+   - **Memdir to store.** A non-absolute memdir argument is REJECTED first, before any
+     normalisation, with exit 2 (r3 m10). `.absolute()` of a relative `memory`, run from the slug
+     dir, would land under `projects/` and slip through. The accepted absolute path is passed
+     unchanged to `_root_from_projects_slug` (`cli.py:113`). It is never `.resolve()`d, because
+     resolving a symlinked memdir leaves `projects/` and the lookup returns `None`. The partition
+     comes from the resolved root's own default.
    - **Bad input is a hard error.** A memdir path that does not lie under
      `~/.claude/projects/<slug>/` exits 2 and names the fix: "pass the `~/.claude/projects/<slug>/memory` path,
      not its symlink target or a relative path". This covers resolved symlink targets and relative
@@ -120,6 +123,9 @@ verb-parity test covers both. No file is ever moved by hand, here or in plan-27.
      rollback path applies.
 5. **AC-5: the bridge runs through the resolved store's daemon.** The result includes the 26.2
    refresh counts, `duplicate_ids`, `mtype_normalised`, and the embed counts.
+   - **One-time forced re-bridge of save-states (r3 m8).** `--apply` re-ingests EVERY save-state
+     file in the dir, bypassing the hash gate for those paths only. 26.4's mtype rule therefore
+     reaches unchanged mis-typed save-states too. `mtype_normalised` must list them.
 6. **AC-6: recall proves it.** In the throwaway end-to-end test, after `--apply`:
    - `rmx memory recall "<phrase unique to a moved save-state>"`, run in the resolved root,
      returns it;
@@ -138,8 +144,14 @@ verb-parity test covers both. No file is ever moved by hand, here or in plan-27.
    | present only now (new after the backup) | keep it, and list it |
    | same id at two paths now (a duplicate) | list it as a conflict; touch neither |
 
-   - Non-memory files from the archive (`MEMORY.md`, sidecar, `.memory-layout`) are restored only
-     when unchanged since apply. Otherwise they go to the aside dir, with a report line.
+   - Non-memory files from the archive (`MEMORY.md`, the sidecar) are restored only when they are
+     unchanged since apply. Otherwise they go to the aside dir, with a report line.
+   - **The marker (r3 m6).** The archive predates the marker, so `.memory-layout` is "present
+     only now". When the rollback restores the pre-organise state, the marker is MOVED to the
+     aside dir. It is never kept in place, so the dir really returns to HEAD behaviour: no
+     `savestates/` writes, HEAD's render and sidecar. The rollback test asserts
+     `memory_layout.is_organised(memdir)` is False afterwards. Mutation: keep the marker, and the
+     next save-state writes into `savestates/` of a flat dir (RED).
    - The index is then regenerated and the bridge re-run.
    - Test: after `--apply`, re-save a save-state, which writes `savestates/<id>.md`, and edit one
      feedback memory. Then roll back. Assert:
@@ -223,3 +235,13 @@ Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
 | m5 ("stops" undefined; `~/.claude` dirty) | Defined sequence ending in exit 3; exact commit command; never `commit -a`; pre-existing dirt named | AC-4 |
 | m8 (MCP save-state bridge resolves through `_root()`) | `_sync_memory_dir(memdir, root=)` passed from `verbs.save_state` via `handoff.py:435`; test (e) | AC-1 |
 | m4 (field of a later command) | `refresh_pending` comes from 26.2's bridge dry-run; re-exported | AC-8 |
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
+
+| finding | change | anchor |
+|---|---|---|
+| m10 (`.absolute()` is a no-op on accepted input; relative input slips through) | Reject non-absolute first; pass unchanged; never `.resolve()` | AC-1 |
+| m6 (rollback leaves `.memory-layout` behind) | Marker moved aside on rollback; `is_organised` False asserted; mutation | AC-7 |
+| m8 (mtype rule reaches only re-ingested files) | `--apply` forces a one-time re-bridge of all save-states | AC-5 |

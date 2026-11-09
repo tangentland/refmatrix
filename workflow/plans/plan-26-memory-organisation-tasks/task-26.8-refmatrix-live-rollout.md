@@ -32,15 +32,24 @@ first.
    - **Snapshot.** Before the deploy, tar every `~/.claude/projects/*/memory/MEMORY.md` and every
      `.memory_hooks.json` into `~/.refmatrix/backups/memory-organise/fleet-pre-26.8-<ts>.tar.gz`.
      Follow symlinked memdirs to their targets. Record the member count.
-   - **Measure the refresh on copies.** With the DEV build (`.venv-eval`), for each live memdir:
-     copy the memdir and its store's read snapshot into a sandbox under a short `mkdtemp()` root,
-     then run `rmx ingest-gmd --as-memory --dry-run` (26.2 AC-3) against the copies. Record
-     `refresh_pending` per store in `workflow/review-output/26.8-refresh-pending.log`. The live
-     store and the live memdir are never touched by the dev build.
+   - **Measure the refresh (r3 s2).** With the DEV build (`.venv-eval`), for each live memdir:
+     1. copy ONLY its store's read snapshot into a sandbox under a short `mkdtemp()` root;
+     2. run `rmx ingest-gmd --as-memory --dry-run --store-snapshot <copy> <LIVE memdir path>`
+        (26.2 AC-3). This is a read-only walk of the live path, and it writes nothing;
+     3. also run the relocated-twin control, which must report 0;
+     4. record `refresh_pending` per store, with its three pre-registered terms, in
+        `workflow/review-output/26.8-refresh-pending.log`.
+
+     The dev build never opens the live store. It never writes the live memdir.
    - **What the deploy must and must not do.** Gated behaviours are marker-gated, so the deploy
      must change no file in any un-organised dir. Ungated, it must not refresh `source_path` in
-     any un-organised dir. Spot-check after AC-1: cliquedb's and viascope's `MEMORY.md` are
-     byte-identical to the snapshot after one save-state or bridge there.
+     any un-organised dir.
+   - **Spot-check after AC-1 (r3 m5).** HEAD's `_ss_update_index` legitimately writes a
+     save-state's pointer line, so a save-state is the wrong probe. Choose either:
+     - after ONE bridge only (no save-state), cliquedb's and viascope's `MEMORY.md` and sidecar
+       are byte-identical to the snapshot; or
+     - on a COPY of each dir, the deployed binary's save-state output is byte-identical to the
+       pre-deploy binary's output on a second copy.
 1. **AC-1: deploy.**
    - Release on `master`.
    - Run `git -C ~/refmatrix pull --ff-only origin master`, then `rmx daemon restart --relaunch`.
@@ -50,7 +59,8 @@ first.
    - The refmatrix dir is not organised yet, so the deploy alone triggers no refresh here.
    - After AC-4's apply writes the marker, the first bridge runs the refresh. Its bridge report
      must show re-ingested rows equal to AC-0's measured `refresh_pending`, within ±5 (files
-     edited in between).
+     edited in between), plus the save-states forced by 26.5 AC-5. The two numbers are reported
+     separately.
    - Then run ONE `rmx memory sync-disk` and record two things from the bridge report: the number
      of rows re-ingested, and the store write counter. Record wall time only as context.
    - If `refresh_pending` is more than 50, or the sync holds `_store_lock` for more than 60 s,
@@ -144,3 +154,13 @@ Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
 | s2 (the deploy reaches fleet dirs before plan-27's backups; "measure before deploy" impossible) | Pre-deploy fleet snapshot; dev-build measurement on copies; post-deploy byte-identity spot-check; AC-2 confirms the measured count at the first marker-on bridge | AC-0, AC-2 |
 | m5 (`~/.claude` stop and dirt) | Exit 3, exact commit command, never `commit -a` | AC-4 |
 | Q8 (recorded) | The user authorises at 26.8; reason stated | AC-8 |
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
+
+| finding | change | anchor |
+|---|---|---|
+| s2 (the copied memdir counts its own relocation) | Dry-run on the LIVE memdir path against a store-snapshot copy; relocated-twin control = 0; terms pre-registered | AC-0 |
+| m5 (the spot-check is wrong for save-state) | Check after a bridge only, or compare the pre-deploy binary's output on copies | AC-0 |
+| m8 (forced save-state re-bridge) | Counted separately in AC-2 | AC-2 |

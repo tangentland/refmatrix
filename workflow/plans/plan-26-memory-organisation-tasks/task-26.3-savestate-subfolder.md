@@ -40,8 +40,8 @@ rel: reinforces -> [[feedback_recall_state_means_resume]]
      fire.
 3. **AC-3: the reader, with legacy fallback.**
    - `_latest_savestate` takes the first item of `memory_layout.iter_savestates(memdir)`. That
-     iterator applies ONE ordering (26.1 AC-1: `updated`, then `created`, then mtime) across
-     `savestates/` and the legacy top level.
+     iterator applies ONE ordering (26.1 AC-1: `updated`, then mtime; same date with either side
+     date-only → mtime) across `savestates/` and the legacy top level.
    - A dir that has only legacy files still resumes. That is every other project today.
    - The ordering is `updated` (datetime when present), then mtime. `created` is not a key
      (r2 s3).
@@ -58,6 +58,10 @@ rel: reinforces -> [[feedback_recall_state_means_resume]]
 
        A must win, both with date-only `updated:` (decided by mtime) and with datetime
        `updated:`. Mutation: putting `created` before mtime turns this case RED.
+     - **mixed formats, same date (r3 m2):** one save-state has `updated: 2026-11-08` (written by
+       an old MCP server) and a later mtime; the other has `updated: 2026-11-08T15:00:00` and an
+       earlier mtime. The later mtime must win. Mutation: treating a date-only value as midnight
+       turns this case RED.
    - `rmx recall-state` and `rmx_recall_state` both return the same result (parity).
 4. **AC-4: recents.**
    - `_ss_recent_memories` uses `iter_memory_files`, excluding save-states and impressions.
@@ -113,3 +117,12 @@ Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
 |---|---|---|
 | s2 (save-state rewrites fleet dirs before plan-27) | `savestates/` writing and the legacy move happen only in organised dirs; HEAD behaviour otherwise; readers dual | AC-1, AC-2, AC-5 |
 | s3 ("newest" picks the session started last) | `_ss_render` writes `updated` with time of day; ordering is `updated` then mtime; same-day-two-sessions case plus mutation | AC-1, AC-3 |
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
+
+| finding | change | anchor |
+|---|---|---|
+| m1 (stale "`updated`, then `created`" text) | Fixed to `updated`, then mtime | AC-3 |
+| m2 (mixed date-only/datetime on the same date) | Mixed case added, decided by mtime; midnight mutation | AC-3 |

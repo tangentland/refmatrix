@@ -60,13 +60,20 @@ This task is read-only. Output: `workflow/plans/plan-27-memory-fleet-rollout-tas
      in the bdep-cliquedb memdir. Record that dirt and do not touch it (r2 m5).
    - `prose_chars` and its share of the 24,000-char budget. A share over 50% routes the dir to
      [[task-27.2a-index-prose-to-memories]] (r2 s6).
-   - `refresh_pending`, taken from the pre-deploy measurement on copies (26.8 AC-0), not from a
-     live run (r2 s2).
+   - `refresh_pending`, from 26.8 AC-0's pre-deploy measurement: a dry-run of the LIVE memdir
+     path against a store-snapshot copy (r3 s2). It is never measured on a memdir copy, which
+     counts the copy's own relocation.
+   - **Headroom (r3 m4):** the `MEMORY.md` line count and char count against the 200-line and
+     24,000-char budgets. Un-organised dirs keep HEAD's compaction until organised, so dirs near
+     the cap (viascope 157 lines / 33 KB, cliquedb 77 lines / 17.5 KB) are ordered earlier in
+     27.4.
+   - **viascope notice (r3 m4).** Post one bus message to viascope's sessions: "no
+     `rmx save-state` in viascope until 27.2". HEAD's compaction would drop its prose, and the
+     latent wipe applies there. 26.8 AC-0's fleet snapshot is the recovery path.
    - `organised`: whether `.memory-layout` is present. Expected: false everywhere except
      refmatrix.
-   - `refresh_pending`: the 26.2 one-time refresh count for that store.
-   - `prose_lines`: from the 26.5 preview, with a flag when the carried prose would exceed 75% of
-     the index budget.
+   - `prose_lines`: from the 26.5 preview. The ONE prose threshold is the 50% route above
+     (r3 m1). The r1 75% flag is withdrawn.
    - The store that 26.5 AC-1's resolver returns for the UNRESOLVED memdir path. Any disagreement
      with AC-2's computed mapping is listed as an anomaly.
 
@@ -100,3 +107,13 @@ Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
 | m5 (`~/.claude` count) | "2 live + 93 deleted" recorded as pre-existing dirt | AC-6 |
 | s6 (viascope prose) | `prose_chars` share; over 50% routes to 27.2a | AC-6 |
 | s2 (refresh measured before deploy) | `refresh_pending` from 26.8 AC-0's copy measurement; `organised` column | AC-6 |
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
+
+| finding | change | anchor |
+|---|---|---|
+| m1 (duplicate `refresh_pending` line; two prose thresholds) | One `refresh_pending` line; one threshold (50% route) | AC-6 |
+| s2 (measured on copies) | Live-path dry-run against a store-snapshot copy | AC-6 |
+| m4 (no compaction in un-organised dirs) | Line and char headroom per dir; viascope "no save-state" notice | AC-6 |

@@ -113,6 +113,8 @@ Round 1 added these rules (see [[#rev-round-1]]):
   dir changes only when this plan's organise apply backs it up and writes `.memory-layout`. From
   then on, save-states land in `savestates/` and the new index renderer applies there.
   26.8 AC-0's pre-deploy fleet snapshot is the earliest backup of each dir's index.
+  Un-organised dirs keep HEAD's compaction (r3 m4), so 27.1 orders near-cap dirs earlier and
+  tells viascope's sessions not to save state until 27.2.
 - **Live sessions (S8).** A dir whose project has a live session is changed only after that
   session's explicit acknowledgement (bus or user). There is no idle timer. This applies to
   cliquedb, and also to bdep/thiquet, whose store is written in-process by a daemonless session
@@ -208,3 +210,15 @@ rel: derives-from -> [[bsd-plan26-27-spec-review-r2-8af766a]]
 | m3 (`--store-from-memdir` semantics) | It is the default; bad paths are a hard error | [[#approach]] |
 | m5 (`~/.claude` count; stop definition) | "2 live + 93 deleted"; exit 3 with the exact commit command | [[#approach]] |
 | m6 (27.0 citations) | Fixed in 27.0 | [[task-27.0-organise-merge-from#rev-round-2]] |
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
+
+| finding | change | anchor |
+|---|---|---|
+| s2 (the refresh was measured on memdir copies) | Measured on the live path against a store-snapshot copy | [[task-27.1-fleet-inventory#rev-round-3]] |
+| s3 (27.2a checker) | Artifact, RED cases, verifiable ADR branch, anchored headers | [[task-27.2a-index-prose-to-memories#rev-round-3]] |
+| m1 (27.1 duplicates; 27.6 landing table) | Fixed | [[task-27.1-fleet-inventory#rev-round-3]], [[task-27.6-per-store-compile-and-landing#rev-round-3]] |
+| m4 (no compaction until organised) | Headroom ordering; viascope notice | [[#approach]] |
+| 27 Q1-Q6 r3 verdicts | All sound. Q6: ble-sniffer is `no store`, not exit 2 | [[#open-questions]] |

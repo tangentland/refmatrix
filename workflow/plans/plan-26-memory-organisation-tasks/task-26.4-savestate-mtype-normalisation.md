@@ -49,7 +49,16 @@ fix for bug-164 stays with plan-25.
      rewrite bumped mtime or `updated:`, it would resume from July (RED).
 4. **AC-3b: scope of the two halves (r2 s2).**
    - The AC-1 bridge rule is a store-row correction. It applies in every dir, organised or not,
-     because it keeps mis-typed save-states out of hook recall fleet-wide. It writes no file.
+     and writes no file. It reaches a file ONLY when the bridge re-ingests that file (r3 m8). The
+     resume gate is hash-keyed, so an unchanged mis-typed save-state is skipped and keeps its
+     wrong mtype.
+     - **Organised dirs:** `organise --apply` forces a one-time re-bridge of every save-state file
+       in the dir, whether it was moved, rewritten or untouched. The rule therefore reaches all of
+       them at once. Test: an unchanged, mis-typed save-state reads `session/recall-state` after
+       apply.
+     - **Un-organised dirs:** the fix lands on the file's next touch (an edit or a re-save), or
+       when plan-27 organises the dir. This is accepted and stated. cliquedb's four keep `project`
+       in the store until 27.5.
    - The AC-3 file rewrite happens only through `organise --apply`, which writes the marker.
    - Under r2 s3, `updated:` is the ordering key. AC-3 preserves it, so the rewrite cannot change
      which save-state is newest.
@@ -93,3 +102,11 @@ Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
 |---|---|---|
 | s2 (fleet effect of the deploy) | The store rule applies everywhere (no file write); the file rewrite only via organise | AC-3b |
 | s3 (ordering key) | AC-3's preservation of `updated:` is what keeps the newest stable under the new key | AC-3b |
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
+
+| finding | change | anchor |
+|---|---|---|
+| m8 (the store rule reaches only re-ingested files) | `organise --apply` forces a one-time re-bridge of all save-states; un-organised dirs are fixed on next touch, accepted and stated | AC-3b |

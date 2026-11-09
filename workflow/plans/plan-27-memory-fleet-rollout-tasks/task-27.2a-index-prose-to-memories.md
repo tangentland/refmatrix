@@ -45,16 +45,41 @@ anchored here).
 
 1. **AC-1: scope.** Every dir whose 27.1 `prose_chars` is over 50% of the budget. Today that is
    viascope only. The others stay carried.
-2. **AC-2: convert, without loss.**
-   - Each prose block (a header and its lines up to the next header) becomes either:
-     - a `project/` memory file (MEMORY-RULES shape, GMD, lint-clean), with
-       `originSessionId: plan-27-27.2a` and `created:` set to today; or
-     - a link to an existing ADR or doc in the viascope repo, when the block restates it. The
-       memory then carries a `rel: derives-from` edge to it.
-   - A checker enumerates every prose line before the conversion. It fails if any line's text is
-     not found verbatim in some new memory, or still carried in `MEMORY.md`.
-   - The authoring agent is `@ch-doc-writer` or `@gmd-curator`. It writes the files into the
-     memdir's `project/` folder: these are NEW files, not moves.
+2. **AC-2: convert, with a checker that is a reviewed artifact (r3 s3).**
+   - **Unit.** A prose block is a header and its PROSE lines up to the next header. A grouping
+     header whose block holds only ENTRY lines (`- [..](..)`, for example
+     `### Security & Operational Safety`) has no prose. It stays carried as a header in the index
+     and is not converted.
+   - **Branches.** Each prose block becomes one of:
+     - **(a) a memory.** A `project/` memory file in MEMORY-RULES shape: GMD, lint-clean,
+       `originSessionId: plan-27-27.2a`, `created:` today. The block's lines are in its body
+       verbatim.
+     - **(b) a quote plus an ADR link.** Used when the block restates a viascope ADR or doc. The
+       memory quotes the block verbatim in a `> ` blockquote and carries
+       `rel: derives-from -> [[<adr-id>]]`. The lines therefore stay checkable in the memory
+       itself; the ADR file is not trusted to contain them.
+   - **GMD headers.** Every header copied into a memory gets an `{#anchor}`, per the GMD rule.
+     viascope's 17 index headers are all un-anchored today.
+   - **The checker** is `tools/prose_conversion_check.py`, with its test
+     `tests/test_prose_conversion.py`.
+     - It enumerates every prose line of the pre-conversion `MEMORY.md`.
+     - It passes only if each line is found in some converted memory's body (branch a, or the
+       blockquote of branch b) or is still carried in `MEMORY.md`.
+     - Comparison uses ONE normalisation: strip a trailing ` {#…}` anchor suffix and a leading
+       `> ` quote marker, nothing else. Headers are therefore compared by TEXT, not by anchor.
+     - It prints every missing line with its line number.
+   - **The checker's RED cases**, in `tests/test_prose_conversion.py` with a committed fixture.
+     The fixture is a synthetic prose block in viascope's shape (headers, a dated session log, an
+     "Active Campaign" block, a grouping header over entries) plus a converted set. No live
+     viascope text goes into the public repo.
+     - (a) Drop one line from a converted memory: the checker FAILS and names that line.
+     - (b) A header copied with an appended `{#anchor}`: the checker PASSES.
+     - (c) A branch-(b) memory missing its blockquote: the checker FAILS.
+     - (d) A grouping-only header: not required in any memory, and still carried.
+   - The authoring agent is `@ch-doc-writer` or `@gmd-curator`. It writes NEW files into the
+     memdir's `project/` folder.
+   - The checker runs on the live result BEFORE AC-3's removal. It runs again in 27.6 after the
+     index regenerates.
 3. **AC-3: the user reviews the converted set before anything is removed from `MEMORY.md`.**
    - The agent presents a table: block → new memory id (or ADR link) → char count.
    - Only after the user approves are the converted blocks removed from the index. They are
@@ -80,11 +105,24 @@ anchored here).
 - Modify the live viascope `MEMORY.md`: converted blocks are replaced by pointer lines.
 - Create `workflow/review-output/27.2a-prose-conversion.log`: the checker output, the block
   table and the user's approval.
+- Create `tools/prose_conversion_check.py`: the lossless checker (r3 s3).
+- Create `tests/test_prose_conversion.py` and `tests/fixtures/prose_conversion/`: RED cases (a)
+  through (d), with a synthetic fixture.
 
 ## Test Strategy {#test-strategy}
 
 - This is a live curation, with a checker.
-- The prose-line checker first runs on a COPY of viascope's `MEMORY.md` and the converted set, in
-  a `mkdtemp()` dir.
+- `tests/test_prose_conversion.py` goes RED first. Case (a) fails at HEAD because the checker
+  does not exist yet.
+- Then the checker runs on a COPY of viascope's `MEMORY.md` and the converted set, in a
+  `mkdtemp()` dir.
 - No store writes happen here; 27.2's apply does the bridge.
 - The 26.5 preview's `index:` field is the gate.
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
+
+| finding | change | anchor |
+|---|---|---|
+| s3 (no checker artifact, no RED, the ADR branch unverifiable, verbatim headers vs GMD anchors) | Named checker script and test with a synthetic fixture; RED (a) planted loss fails and names the line, (b) an anchored header passes under ONE normalisation, (c) a missing quote fails, (d) a grouping header stays carried; the ADR branch quotes the block verbatim; the 17 headers are anchored and compared by text | AC-2, [[#files]], [[#test-strategy]] |
