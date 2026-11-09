@@ -13,7 +13,11 @@ metadata:
 # Task 23.2: the lock-hold and write-count fixture {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: Pending (revision round 2, 2026-11-09: freshness fold of
+> Status: **BUILD-READY** (revision round 3, 2026-11-09: the freshness confirm
+> [[bsd-plan23-1-2-freshness-confirm-1c0b66a]]'s m1 folded: the R6 census re-run at `77c9f04`
+> with a pattern that catches every assignment form (21 fake-lock lines in 17 files), AC-6
+> widened to the same pattern, R3's quoted error corrected against bug-178 at `ae7c0c7`; see
+> [[#rev-round-3]]. Merge gate unchanged: bug-178 merges first. Round 2: freshness fold of
 > [[bsd-plan23-1-2-freshness-9bcf464]] (s3, m1, m2, m3, m6), re-cited against HEAD `9901589`; see
 > [[#rev-round-2]]. Earlier: the 2026-10-14 decision log)
 > Depends on: 23.0 (test sandbox). **Merge order (m6):** 3.7 → bug-178 → plan-26 → **23.2** →
@@ -72,16 +76,20 @@ The fixture lives in `tests/lockhold.py` and is registered from `tests/conftest.
      - the recorder PATCHES THE EXISTING `DuckDBConnection` wrapper INSTANCE (its `execute` /
        `executemany` attributes and its `_duck` attribute), never replaces the wrapper with a
        proxy object: `bulk_write` dispatches on `isinstance(con, DuckDBConnection)` /
-       `isinstance(con, duckdb.DuckDBPyConnection)`, and a stand-in object would make it raise
-       its "SQLite connection reached a DuckDB-only bulk write" `TypeError`;
+       `isinstance(con, duckdb.DuckDBPyConnection)`, and a stand-in object (neither of those, nor
+       `sqlite3.Connection`) would make it raise `TypeError("bulk_write: unsupported connection
+       type '<name>' (expected DuckDBConnection, duckdb.DuckDBPyConnection or
+       sqlite3.Connection)")` (`backend.py::bulk_write`'s last branch, on `fix-bug178-bulk-write`
+       at `ae7c0c7`; round 2 quoted the SQLite branch's message, which a stand-in never
+       reaches; round 3, m1);
      - `_duck`'s proxy (fragment flushes call `con._duck.execute` directly,
        `store.py::Store._flush_fragments_duckdb`) passes `register` / `unregister` through
        uncounted and counts `execute`;
      - one `bulk_write` call counts as ONE statement (its register + one `execute` + unregister);
      - `executemany` counts as one statement and records its row count separately, and the
        recorder READS bug-178's counter `backend.py::duck_executemany_calls` for it instead of
-       keeping a second one (on branch `fix-bug178-bulk-write` at `d13c4d7`, not on `master` at
-       `9901589`; it exists once bug-178 merges, which precedes 23.2);
+       keeping a second one (`backend.py::duck_executemany_calls` on branch `fix-bug178-bulk-write`
+       at `ae7c0c7`, round 3; round 2 cited `d13c4d7`; not on `master` at `77c9f04`; it exists once bug-178 merges, which precedes 23.2);
    - Lance versions: the sum of `lance.dataset(p).version` over `<root>/vectors/*/*.lance` at hold
      entry and exit (a new dataset counts its versions);
    - single-row upserts into `entities` and `concepts` (the bug-093 shape), by statement text.
@@ -111,22 +119,42 @@ The fixture lives in `tests/lockhold.py` and is registered from `tests/conftest.
    - `tests/test_bigop_nonblocking.py` (module-level `class _CountingLock`, and a
      `threading.Lock()` assigned to `_store_lock`).
 
-   **Every other file that assigns a fake `_store_lock` (s3).** AC-6's grep is suite-wide, so R6
-   covers every file it finds, not only the five above. The census, run at `9901589` with AC-6's
-   pattern narrowed to assignments (15 assignment lines in 14 files; the five above plus these
-   nine):
+   **Every other file that assigns a fake `_store_lock` (s3; re-run in round 3, m1).** AC-6 is
+   suite-wide, so R6 covers every file it finds, not only the five above. Round 2's census
+   matched only the spellings `threading.R?Lock()` / `class _CountingLock`, so it missed
+   `__import__('threading').Lock()` and a hand-rolled context-manager recorder. The round-3
+   census matches the ASSIGNMENT, whatever its value:
+   `rmx grep -rnE '(_store_lock|_use_lock)\s*=' tests/ --include='*.py'`, excluding
+   `tests/lockhold.py`, plus a search for `setattr(…, "_store_lock" | "_use_lock", …)` (none).
+   At `77c9f04` it returns **23 lines in 18 files**. Two are not fakes:
+   `tests/test_ingest_partition_yield_race.py` (`d._store_lock = _FairLock()`, already the real
+   lock) and `tests/test_learn_queue.py`'s restore line (`d._store_lock = real_lock`). That
+   leaves **21 fake-lock assignment lines in 17 files** (round 2 said "15 lines in 14 files";
+   under its own literal pattern the figure was 14 in 13, [[bsd-plan23-1-2-freshness-confirm-1c0b66a#answers]]
+   Q6). The five above plus these twelve:
    - `threading.RLock()` (an RLock hides exactly the non-reentrancy 23.1 R1.6 and this task's
-     AC-5 rely on): `tests/test_context_rerank_warning.py`, `tests/test_plan12_remedy.py`,
-     `tests/test_graph_landing.py` (two assignments), `tests/test_lance_drop_failures_loud.py`,
-     `tests/test_embed_phases_r10.py`;
+     AC-5 rely on): `tests/test_context_rerank_warning.py`, `tests/test_plan12_remedy.py`
+     (`:292`; and see the next bullet), `tests/test_graph_landing.py` (two assignments),
+     `tests/test_lance_drop_failures_loud.py`, `tests/test_embed_phases_r10.py`;
    - `threading.Lock()`: `tests/test_ingest_concurrency.py`, `tests/test_snapshot_tier.py`,
-     `tests/test_derive_unstamp.py`, `tests/test_bug110_snapshot_keeps_lock.py`.
+     `tests/test_derive_unstamp.py`, `tests/test_bug110_snapshot_keeps_lock.py`;
+   - **`__import__('threading').Lock()` as a class attribute (round 3, m1):**
+     `tests/test_derive_coverage.py` (`:193` at `77c9f04`), `tests/test_derive_stamp.py`
+     (`:179`), `tests/test_plan12_remedy.py` (`:340`, `:381`, `:430`; three more lines in a file
+     already listed);
+   - **a hand-rolled lock-entry recorder (round 3, m1):** `tests/test_brief_surfaces.py`
+     (`_store_lock = _CtxRecorder(locks)` at `:215`; `class _CtxRecorder` at `:240` records
+     `"lock"` on `__enter__`). It moves to 23.2's `HoldRecorder` (its assertion becomes "one
+     hold recorded"), and `_CtxRecorder` is deleted.
+
+   Counted per line at `77c9f04`: `test_plan12_remedy.py` 4, `test_graph_landing.py` 2, and one
+   in each of the other 15 files: 21.
 
    Each gets a REAL `daemon._FairLock()` where the test only needs a lock to exist, or
    `recorded_daemon` where it probes or counts holds. A test that went green only BECAUSE the
    fake was reentrant is a finding, logged in the implementation summary with the nested
    acquire it hid (not "fixed" by making the fixture reentrant). The implementer re-runs the
-   census at its own HEAD; a file added since `9901589` joins this list.
+   census at its own HEAD with the round-3 pattern; a file added since `77c9f04` joins this list.
    {#r6}
 
 ## Acceptance criteria {#acceptance}
@@ -149,13 +177,20 @@ The fixture lives in `tests/lockhold.py` and is registered from `tests/conftest.
    captured the bare lock fails the same way. {#ac-4}
 5. **No hang.** A mutation that takes the recorded `_FairLock` twice on one thread raises
    `LockDeadlock` within the deadline; the test fails in under 15 s. {#ac-5}
-6. **Every probe implementation is gone.** `rmx grep -E 'class _CountingLock|threading\.R?Lock\(\)'
-   tests/` returns no line that assigns a `_store_lock` or `_use_lock`, and no file in R6 defines a
-   probe thread; the only definitions are in `tests/lockhold.py`. The grep pattern and its one
-   exclusion (`tests/lockhold.py`) are fixed here. It can go green only because R6 now covers all
-   14 files the census found (round 2, s3); with round 1's five it failed on a correct build. A
-   non-lock `threading.Lock()` the grep also hits (one not assigned to `_store_lock` /
-   `_use_lock`) is not a failure. {#ac-6}
+6. **Every probe implementation is gone.** `rmx grep -rnE '(_store_lock|_use_lock)\s*='
+   tests/ --include='*.py'` (round 3, m1: the census's own pattern; it matches the ASSIGNMENT,
+   so `__import__('threading').Lock()`, a hand-rolled recorder, or any future spelling is
+   caught) returns, outside its one exclusion (`tests/lockhold.py`), ONLY lines whose value is
+   `_FairLock()` / `daemon._FairLock()`, a 23.2 `HoldRecorder`, or a restore of a lock the same
+   test saved from `d._store_lock`; a search for `setattr(…, "_store_lock" | "_use_lock", …)`
+   in `tests/` returns nothing; `rmx grep -rnE 'class _CountingLock|class _CtxRecorder' tests/`
+   returns nothing; and no file in R6 defines a probe thread: the only definitions are in
+   `tests/lockhold.py`. The patterns and the exclusion are fixed here. It can go green only
+   because R6 covers all 17 files the round-3 census found; round 2's pattern
+   (`class _CountingLock|threading\.R?Lock\(\)`) went green with the three `__import__` files
+   and `_CtxRecorder` still in place. Mutation: leave `tests/test_derive_stamp.py:179`'s
+   `__import__('threading').Lock()` in place: this AC FAILS (round 2's pattern passed it).
+   {#ac-6}
 
 ## Test strategy {#test-strategy}
 
@@ -196,3 +231,18 @@ rel: derives-from -> [[bsd-plan23-1-2-freshness-9bcf464#s3]]
 rel: derives-from -> [[bsd-plan23-1-2-freshness-9bcf464#m2]]
 rel: derives-from -> [[bsd-plan23-1-2-freshness-9bcf464#m3]]
 rel: related-to -> [[task-bug178-bulk-write-helper]]
+
+## Revision round 3 (2026-11-09) {#rev-round-3}
+
+Source: [[bsd-plan23-1-2-freshness-confirm-1c0b66a]], the focused confirm of round 2 at
+`1c0b66a`; its only 23.2 finding is m1. Census re-run at HEAD `77c9f04` (`tests/` read only); the
+error text read, read-only, in the bug-178 clone (`fix-bug178-bulk-write` at `ae7c0c7`). No user
+decision remained. With m1 folded the report rates 23.2 build-ready; its merge gate (bug-178
+first) is unchanged. The round-2 table above is unchanged history.
+
+| finding | answered at | rationale |
+|---|---|---|
+| m1 (the census misses `__import__('threading').Lock()` in three files and `_CtxRecorder`; the count wording; R3's quoted error) | [[#r6]] (pattern `(_store_lock\|_use_lock)\s*=`: 23 lines in 18 files, 21 fake lines in 17 files; three `__import__` files and `test_brief_surfaces.py` added), [[#ac-6]] (the same pattern; exclusions by value; `_CtxRecorder` gone; a mutation round 2's pattern passed), [[#r3]] (`bulk_write: unsupported connection type …`, at `ae7c0c7`) | match the assignment, not the spelling of its value: a spelling list misses the next spelling, and AC-6 must be able to fail on every fake the census names |
+
+rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a]]
+rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a#m1]]

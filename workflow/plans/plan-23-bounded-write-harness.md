@@ -13,7 +13,9 @@ metadata:
 # Plan 23: the bounded-write harness {#root}
 
 **Date:** 2026-10-07, revised 2026-10-14.
-**Status:** Drafting (revision round 10, 2026-11-09: the 23.1 + 23.2 freshness fold of
+**Status:** Drafting (revision round 11, 2026-11-09: the freshness confirm
+[[bsd-plan23-1-2-freshness-confirm-1c0b66a]] (1B/2S/7M) folded: 23.1 and 23.2 BUILD-READY; the
+`memory_compile` apply is a named holder with a write bound in 23.5; [[#rev-round-11]]. Revision round 10, 2026-11-09: the 23.1 + 23.2 freshness fold of
 [[bsd-plan23-1-2-freshness-9bcf464]]: 23.1 gains R11, the `hook_writes` queue that closes bug-177,
 and the consumer table gains its rows; [[#rev-round-10]]. Revision round 9 after the b84fd8d diff check: 23.5's snapshot flushes
 dirty bitmap fragments, bug-112 FIXED on `master` gates 23.5, 23.5 stands alone of plan-18;
@@ -113,8 +115,8 @@ handle and no consumer changes. {#core-body}
 | 17.1 (per-dataset maintenance) | `bounded_steps` (one dataset per step, `batch=1`), `bind(partition_name)`, `RunResult.hold_s`, recorder; no queue, no per-dataset Lance lock | d2b; revisit triggered by 23.4's verdict. 17.2's hub `maintenance_steps` is NOT 23.1's daemon `tick_registry` |
 | 22.2 (repair / removal apply) | `bounded_steps`, `bind`, recorder, `finalize` (one Lance delete per kind) | no lossy queue (#t2-fixes, 22 #s-1/#s-2) |
 | 23.3 (bug-093 between-file yield) | `bounded_steps`, `bind`, recorder | d2c |
-| bug-177 hook writes (`hook_writes`, round 10) | `drain`, `scope="window"`, explicit last-wins-by-name `merge_fn` keyed `(op, partition, name)`, `idempotent=True` checked by 23.1 AC-21, `batch=1`, tick registrant; producers `focus summarize --promote` (Stop / PreCompact) and the save-state promote through 3.7's `_write_or_local(…, queue="hook_writes")` | [[task-23.1-queue-and-drain#r11]]; the digest and its subject `part-of` filing in ONE entry and ONE batch transaction; needs 26.2's `add_memory` → `_maybe_commit` |
-| 26.6 `memory_compile` apply (round 10) | NOT a harness consumer yet: a LONG HOLDER (`_op_memory_compile_apply` holds `_store_lock` across the whole `apply_plan`) | named so the holder census sees it ([[task-23.1-queue-and-drain#merge-order]]); bounding it (`bounded_steps`, or a 23.5 named holder) is decided at 23.5's next revision |
+| bug-177 hook writes (`hook_writes`, round 10) | `drain`, `scope="window"`, explicit last-wins-by-name `merge_fn` keyed `(op, partition, name)`, `idempotent=True` checked by 23.1 AC-21, `batch=1`, tick registrant; producers `focus summarize --promote` (Stop / PreCompact, the hook path) and the user-run save-state promote (round 11) through 3.7's `_write_or_local(…, queue="hook_writes", deadline=…)`; a queued apply never overwrites a newer digest (authoring-time guard in `Store.add_memory`, round 11) | [[task-23.1-queue-and-drain#r11]]; the digest and its subject `part-of` filing in ONE entry and ONE batch transaction; needs 26.2's `add_memory` → `_maybe_commit` |
+| 26.6 `memory_compile` apply (round 10; owner fixed in round 11) | NOT a harness consumer: a NAMED HOLDER owned by 23.5 (`_op_memory_compile_apply` holds `_store_lock` across the whole `apply_plan`, by decision) | [[task-23.5-read-path-and-holder-bounds#r9-compile-apply]] (why not `bounded_steps`: a step boundary between prune and re-file publishes unfiled leaves) and [[task-23.5-read-path-and-holder-bounds#ac-9]] (one hold, `max_writes_per_hold(statements=K, lance_versions=0)` under 23.2's recorder); [[task-23.1-queue-and-drain#merge-order]] points there |
 | plan-21 | 21.1 PRODUCES `recall-events.jsonl` lock-free and does not depend on plan-23's code (d4a); plan-21's tests need only 23.0 | the consumer edge 23 #s-3 asked for |
 
 {#consumers-body}
@@ -404,3 +406,21 @@ round-9 table above is unchanged history.
 | s3, m2, m3 | [[task-23.2-lock-hold-fixture#rev-round-2]] |
 
 rel: derives-from -> [[bsd-plan23-1-2-freshness-9bcf464]]
+
+## Revision round 11 (2026-11-09) {#rev-round-11}
+
+Source: [[bsd-plan23-1-2-freshness-confirm-1c0b66a]] (focused confirm of round 10's fold at
+`1c0b66a`; DIRTY 1B/2S/7M). The tasks' own tables carry the per-finding answers:
+[[task-23.1-queue-and-drain#rev-round-12]], [[task-23.2-lock-hold-fixture#rev-round-3]] and
+[[task-23.5-read-path-and-holder-bounds#rev-round-11]]. No user decision remained. 23.1 and 23.2
+are BUILD-READY; the build order is unchanged (3.7 → bug-178 → plan-26 → 23.2 → 23.1). The
+round-10 table above is unchanged history.
+
+| finding | answered at |
+|---|---|
+| b-n1 (the `memory_compile` apply's bounding deferred to a revision that did not exist) | [[#consumers]] (the 26.6 row names its owner), [[task-23.5-read-path-and-holder-bounds#r9-compile-apply]], [[task-23.5-read-path-and-holder-bounds#ac-9]] |
+| s-n1, s-n2, m2, m4, m5, m6, m7 | [[task-23.1-queue-and-drain#rev-round-12]]; [[#consumers]] (`hook_writes` row) |
+| m1 | [[task-23.2-lock-hold-fixture#rev-round-3]] |
+| m3 | [[plan-of-plans#goal-2026-11-09]] (bug-182 named in item 6) |
+
+rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a]]

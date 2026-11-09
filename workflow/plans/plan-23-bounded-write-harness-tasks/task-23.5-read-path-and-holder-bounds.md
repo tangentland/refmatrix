@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-15
-  updated: 2026-10-15
+  updated: 2026-11-09
 ---
 
 # Task 23.5: the read path and the non-harness lock holders {#root}
@@ -22,6 +22,9 @@ metadata:
 > [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d]] (nb23-r9-1/2, ns23-r9-1/2, nm23-r9-1..3); see
 > [[#rev-round-9]]. Revision round 10 (2026-10-15): diff check
 > [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3]] (nm23-r10-1..5, all MEH); see [[#rev-round-10]].
+> Revision round 11 (2026-11-09): [[bsd-plan23-1-2-freshness-confirm-1c0b66a#b-n1]] — the
+> `memory_compile` apply is a NAMED HOLDER here, [[#r9-compile-apply]] with [[#ac-9]]; see
+> [[#rev-round-11]].
 > Depends on: 23.0 (sandbox), 23.2 (recorder), 23.1 (`_FairLock` owner, R1.6 item 1; the learn
 > drain, R9; `_compact_factslog_locked`, R3.7). **bug-115/116 (0.78.2) merged to `master`:
 > SATISFIED** (`607d759`, `1c86d9c` and bug-117's `391ffeb` are ancestors of `master` `b381b6d`;
@@ -525,7 +528,49 @@ maintenance holds (17.1 / 17.3), plan-18's catalog maintenance and its swap (18.
    snapshot's hold (hold 1, flush included) and the
    compaction's tail hold on that copy. The implementation summary carries all three tables.
    This is a list of HOLD LENGTHS and read latencies; it is unrelated to 23.1 R1.6's
-   lock-presence census. {#r8}
+   lock-presence census. The `memory_compile_apply` site is assigned to this task's R9
+   (round 11). {#r8}
+9. **R9 The `memory_compile` apply is a NAMED HOLDER with a pre-registered write bound (round
+   11, b-n1; decided).** {#r9-compile-apply}
+   - **The holder.** `daemon.py::_op_memory_compile_apply` (the symbol at `master` `77c9f04`, on
+     `task-3.7-verb-it-backlog` at `e4faf32` and on `fix-bug178-bulk-write` at `ae7c0c7`) runs
+     `with d._store_lock, d._st().with_partition(_memory_partition(d, args)):` around the WHOLE
+     `consolidate.apply_plan(store, plan, prune=…)`: with `prune`, one `unlink` per leaf of every
+     compiled subject; then per cluster one `upsert_subject` (an `add_memory`) and one
+     `link_part_of` (an `add_linkage_type` + a `link`) per member; then `_request_snapshot()`
+     after the release. 26.6 ([[task-26.6-compile-subject-hygiene#new-scope]] R-A) adds
+     scope-filtered stale-marking and un-marking to that same apply, and merges before 23.x
+     ([[task-23.1-queue-and-drain#merge-order]]).
+   - **Decision: a named holder, NOT a `bounded_steps` consumer.** Why:
+     1. The apply is ONE logical re-filing: prune every compiled leaf, then re-file. A
+        `bounded_steps` boundary releases `_store_lock` between steps, and a snapshot (the bg
+        tick or any write's `_request_snapshot()`) taken in that gap publishes a subject graph in
+        which compiled leaves are unfiled; recall-by-subject and 26.7's by-subject index read
+        exactly that graph. Today the whole hold keeps the snapshot out (`_snapshot_catalog`
+        takes the same lock), so readers see before or after, never between. Making steps safe
+        would mean re-designing the apply into per-subject prune-and-refile units: that is
+        26.6's algorithm, not a harness concern, and no measurement asks for it.
+     2. What a long hold used to cost is cut elsewhere in plan-23 for EVERY holder: a cli read
+        waits at most `RMX_CLI_WRITER_WAIT_S` and then answers `writer busy: memory_compile_apply
+        …` (R1, R2, R4), the heartbeat no longer depends on it (R6), and a hook write that
+        arrives during it is queued (23.1 R11).
+     3. The failure plan-23 exists to catch is many writes per hold that a fixture's seconds
+        hide (bug-085, bug-093); 23.2's write counter is the detector for it, so the bound is a
+        pre-registered statement count, which is what AC-9 asserts.
+   - **What is built.** No new lock mechanism. The op is already named by R4 (its dispatcher
+     `_inflight_ops` entry, `kind="op"`, `op="memory_compile_apply"`), so R4's alarm and
+     `writer_holder` name it with no extra code. Its docstring gains the decision and its WHY
+     (whole-apply hold by decision; bounded by AC-9's write count; cites this item). R8's census
+     records its hold on the live-copy fixture beside the others.
+   - **The bound.** One hold per apply; Lance versions 0 inside it (it writes no vectors; the
+     re-queued embeddings run later, off the hold); statements per hold at most K, where K is
+     pre-registered at RED as the count the apply makes on AC-9's fixture plus 2 (23.2 AC-3's
+     convention), recorded in the implementation summary together with the fixture's
+     `(clusters, members, pruned_leaves)` so a later reader can tell a fixture change from a
+     regression.
+   - **Order.** AC-9 is written and registered after 26.6 merges (the merge order puts plan-26
+     before 23.x), so K counts the apply WITH 26.6's hygiene; a later change that adds per-row
+     writes to the apply fails AC-9 instead of lengthening the hold silently.
 
 ## Cross-plan obligations for plan-18 (ns23-r9-1) {#cross-plan-18}
 
@@ -740,6 +785,31 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
    a clamp computed from the import-time constants (it yields 50 s; nm23-r9-3 c). The census (R8) is in the implementation summary with every site
    assigned, the snapshot's measured hold and the compaction tail hold among them, and the
    per-op p99 table that justifies each `MIRROR_OPS` member. {#ac-8}
+9. **The `memory_compile` apply is one named hold with a bounded write count (R9; round 11,
+   b-n1).** A sandbox store on a recorded daemon (`recorded_daemon`, so the recorder is
+   `_store_lock` from the first op) with a fixture memory dir bridged in through the real
+   `ingest_gmd` path: 12 memories in 3 groups that `consolidate.compile_memories` clusters, plus
+   one hand-declared subject, and one PRIOR compile already applied so `prune` has leaves to
+   unlink. The plan is built by the real `compile_memories` (not mocked; 26.6's test rule) and
+   applied through the `memory_compile_apply` daemon op. Then:
+   - the recorder shows EXACTLY ONE hold on the op's thread for the apply; that hold's counts
+     are `lance_versions == 0` and `statements <= K` (R9's pre-registered K, through
+     `@pytest.mark.max_writes_per_hold(statements=K, lance_versions=0)`, with the setup ops'
+     holds below K too);
+   - with `RMX_HOLD_ALARM_S=0` the release logs `lock hold: memory_compile_apply <s>s`, and
+     during the hold (a seam pauses `apply_plan` after its prune loop) `stats(include_health=True)`
+     answers within 1 s with `writer_holder.op == "memory_compile_apply"`;
+   - during the same pause the test sends one unrelated `memory_add` op (bg pool) and waits
+     2 s: `catalog.read.duckdb`'s mtime does not change (the write and its snapshot wait for
+     the hold, so no snapshot lands between prune and re-file); after the release the next
+     snapshot holds every member's `part-of` edge and none of the prior compile's pruned
+     leaves, and the hand-declared subject's edges are unchanged.
+   Mutations, each must FAIL: `upsert_subject` moved inside the member loop (statements > K);
+   the apply split into per-cluster holds (`bounded_steps` with `batch=1`, or a
+   `with d._store_lock:` per cluster): more than one hold is recorded, and the paused-gap
+   `memory_add` runs and its snapshot changes the mtime with leaves unfiled; the apply run on
+   a thread the dispatcher did not register (no `_inflight_ops` entry): `writer_holder.op` is
+   `untracked thread …`. Logs: `workflow/review-output/pytest-read-path.log`. {#ac-9}
 
 ## Files to modify {#files}
 
@@ -754,6 +824,8 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
 | `tests/test_inflight_registry.py`, `tests/test_daemon_shutdown_drain.py` | 2-tuples → `InflightEntry`; the `== {}` assertion filters `kind == "op"` (R4; nm23-r9-1) |
 | `tests/test_snapshot_tier.py` | `test_op_snapshot_registered_in_ops_and_cli_ops` asserts `snapshot` is NOT in `CLI_OPS` (R1.4) |
 | `tests/` | AC-1..AC-8 and AC-1b in a new `tests/test_read_path_holder_bounds.py`; the transitive AST test (R7) |
+| `src/refmatrix/daemon.py` (round 11) | `_op_memory_compile_apply`'s docstring states the whole-apply hold decision and cites R9 / AC-9 (R9; b-n1). No lock or code-path change: R4 already names the op |
+| `tests/test_read_path_holder_bounds.py` (round 11) | AC-9, with K and the fixture's `(clusters, members, pruned_leaves)` pre-registered at RED in the implementation summary |
 
 ## Test strategy {#test-strategy}
 
@@ -848,6 +920,24 @@ rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3#nm23-r10-2]]
 rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3#nm23-r10-3]]
 rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3#nm23-r10-4]]
 rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3#approval]]
+
+## Revision round 11 (2026-11-09) {#rev-round-11}
+
+Source: [[bsd-plan23-1-2-freshness-confirm-1c0b66a]] (the focused confirm of the 23.1 + 23.2
+freshness fold at `1c0b66a`), finding b-n1: 23.1 and plan-23 deferred the `memory_compile`
+apply's bounding to an unscheduled 23.5 revision, and this spec had no text for it. Code read at
+`master` `77c9f04` and, read-only, on `task-3.7-verb-it-backlog` (`e4faf32`) and
+`fix-bug178-bulk-write` (`ae7c0c7`): `_op_memory_compile_apply` is the same on all three. No
+user decision remained; the report's own recommendation ("23.5 already owns named non-harness
+holders") is adopted, and the choice between its two options is made here. Rounds 9 and 10 of
+this spec are unchanged history.
+
+| finding | answered at | rationale |
+|---|---|---|
+| b-n1 (the `memory_compile` apply: a long holder with no owning text) | [[#r8]] (census assigns the site to R9), [[#r9-compile-apply]] (named holder; the decision and why), [[#ac-9]] (one hold, `max_writes_per_hold(statements=K, lance_versions=0)` under 23.2's recorder, the holder named, no snapshot mid-apply; three mutations), [[#files]]; pointers from [[task-23.1-queue-and-drain#merge-order]] and [[plan-23-bounded-write-harness#consumers]] | not `bounded_steps`: a step boundary between prune and re-file lets a snapshot publish unfiled leaves, while the hold's costs to readers, the heartbeat and hooks are already cut by R1/R2/R6 and 23.1 R11; the per-row-writes failure is what the write-count bound detects |
+
+rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a#b-n1]]
+rel: related-to -> [[task-26.6-compile-subject-hygiene#new-scope]]
 
 ## Folded rider: plan-2 r9 #s-3 (2026-10-19) {#w1c-rider}
 

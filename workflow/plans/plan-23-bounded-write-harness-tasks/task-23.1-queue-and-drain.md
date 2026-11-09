@@ -13,7 +13,12 @@ metadata:
 # Task 23.1: queue, tail, bounded steps, and the tick registry {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: Pending (**revision round 11, 2026-11-09: freshness fold of
+> Status: **BUILD-READY** (revision round 12, 2026-11-09: freshness confirm
+> [[bsd-plan23-1-2-freshness-confirm-1c0b66a]] folded, all 10 findings (b-n1, s-n1, s-n2,
+> m1-m7): the `memory_compile` apply is bounded in [[task-23.5-read-path-and-holder-bounds#r9-compile-apply]];
+> R11's queued apply never overwrites a newer digest; the queue tables' DDL is in
+> `init_catalog`; see [[#rev-round-12]]. Build order unchanged: 3.7 → bug-178 → plan-26 → 23.2
+> → 23.1.) Earlier: (**revision round 11, 2026-11-09: freshness fold of
 > [[bsd-plan23-1-2-freshness-9bcf464]]** (b1, b2, s1, s2, m1, m4, m5, m6), re-cited against HEAD
 > `9901589` (`src/` identical to `9bcf464`); new [[#r11]] (the `hook_writes` queue that closes
 > bug-177) and [[#ac-21]]; R1.6 item 2 and AC-20 rewritten against HEAD's
@@ -358,6 +363,46 @@ own sha; the drift table is [[bsd-plan23-1-2-freshness-9bcf464#drift]].
 - **The live holders behind bug-177 are not 23.1's code**: an agent `sync` (30.6-94.2 s; 23.3
   bounds it) and the periodic facts.log compaction (~12 s hold at 00:51:08-20; 23.5 R5 moves it
   off the lock). R11 makes the HOOK not wait on them; it does not shorten them.
+
+Added in revision round 12, read at HEAD `77c9f04` (`src/` unchanged since `9bcf464`), and
+read-only in the 3.7 clone (`task-3.7-verb-it-backlog` at `e4faf32`) and the bug-178 clone
+(`fix-bug178-bulk-write` at `ae7c0c7`):
+- **One schema builder (s-n2).** `duckdb_catalog.py::init_catalog` is BOTH the Store's DuckDB
+  schema (`store.py::Store.init` → `backend.py::DuckDBBackend.init_catalog` →
+  `init_duckdb_catalog(con._duck)`) and the merge target's (`replica_merge.py::_merge_into`
+  calls `init_catalog(con, sequence_starts=…)`, bug-113's fix). A table whose DDL is not in it
+  exists in neither. `merge_slots(a_path, b_path, target_path, *, dry_run)` cannot tell which
+  slot is the writer; only `daemon.py::_op_replica_merge` knows (`prev_writer =
+  d._writer_slot_from_store() or d._active_slot or "A"`).
+- **`memory_content.updated_at` is the apply time (s-n1).** `store.py::Store.add_memory` sets
+  `created_at` / `updated_at` to `time.time()` at the call and logs one `memory_content` event per
+  call, after its `con.commit()`. A digest name (`focus_summary_<slug>`) is one row per session,
+  re-promoted every turn, by two writers once R11 lands (the dial and the queue).
+- **Every write op requests a snapshot (m4).** `_op_memory_add`, `_op_subject_upsert`,
+  `_op_subject_link` and `_op_memory_compile_apply` end in `d._request_snapshot()`, and so does
+  `_drain_learn_queue` after a drain that applied rows. A write that does not request one is
+  invisible to every replica reader (`memory recall`, `recall-state`, scan-prompt) until an
+  unrelated write does.
+- **The promote's time before the dial (m5).** `cli.py::focus_summarize` (3.7) probes
+  `discovery.daemon_status(root, retries=0)` itself, THEN computes `deadline = monotonic() +
+  timeout`, then dials through `_memory_daemon_call`; R11's `_write_or_local` → `_call` →
+  `require_daemon` would probe a second time. Each probe is capped at 0.5 s.
+- **Two partition resolvers (m6).** `focus_summarize` reaches `cli.py::_resolve_partition()`,
+  which is `discovery.resolve_partition(root, override=<-p>)` (3.7's ONE project-partition
+  resolver: `-p` → `$RMX_PARTITION` → `.refmatrix/partition` marker → `store_name(root)`; env and
+  file reads only, no socket, no lock); `handoff.py::_promote_digest` passes
+  `discovery.store_name(root)`, the resolver's last fallback only. On a store with a marker or
+  `RMX_PARTITION` the two producers name different partitions for one digest.
+  `verbs.memory_partition` is not lock-free (its `partition_list` fallback can reach the writer).
+- **The save-state promote is not on a hook path (m6).** No generated hook reaches
+  `_promote_digest`: PreCompact runs `save-state --no-promote --no-sync`; only a user-run
+  `rmx save-state` or MCP save-state promotes. `_promote_digest` keeps an in-process `Store`
+  fallback for an ABSENT daemon and never raises (it returns `{"error": …}`), and
+  `finalize_save_state` files the subject only when `promoted` carries an `id`.
+- **The installer refreshes the read link (m2).** `_install_writer_store(st, slot)` always calls
+  `_refresh_read_only_link()`. `serve_forever`'s init sequence already ends in one unconditional
+  `_refresh_read_only_link()` after the init slot rebind and the marker reconcile, derived from the
+  writer it really opened.
 {#facts-body}
 
 ## Requirements {#requirements}
@@ -536,7 +581,18 @@ own sha; the drift table is [[bsd-plan23-1-2-freshness-9bcf464#drift]].
         and, NEW in 23.1, sets `st.writer_lock = lambda: self._store_lock`. `slot` widens to
         `str | None` because the boot open and the legacy fallback open `catalog.duckdb` and
         bind no slot; with `None` the installer leaves `_active_slot` as it is (today's
-        behaviour at those two sites). There is no second installer and no
+        behaviour at those two sites).
+      - **`slot=None` also SKIPS `_refresh_read_only_link()` (round 12, m2; decided).** The
+        installer refreshes the read link only when it installs a slot. Why: at both `None`
+        sites the writer sits on the legacy `catalog.duckdb`, so `_reader_slot()` cannot derive
+        "the slot the writer is NOT on" from the writer and falls to the `active` marker (at
+        the boot open, before `_bootstrap_rotation_if_needed` and the marker reconcile have
+        run). A refresh there points `read_only.duckdb`, which out-of-process CLI
+        readers follow with no daemon in between, by a marker the writer is not on, possibly at
+        a slot file that does not exist yet. Today neither site refreshes, and `serve_forever`
+        ends its init in one refresh derived from the writer it really opened ([[#facts]] round
+        12); that refresh covers both `None` sites. So `None` keeps today's link behaviour as
+        well as today's `_active_slot`, and [[#ac-20]]'s boot case checks it. There is no second installer and no
         `(st) -> Store` construct-then-install form: round 6's body text describing one is
         withdrawn.
       - **Its callers.** `_reopen_writer` already calls it (and so do its callers,
@@ -666,6 +722,19 @@ Every front-end takes the same keyword set, all named:
    overwritten) and keeps it until its LAST offset commits; only then is it unlinked. At daemon boot
    every segment, and any legacy `*.draining` file left by pre-23.1 code, is adopted and resumed
    from its committed offset (bug-099, d2d).
+   - **Unlink only a fully consumed segment, measured at unlink time (round 12, m7).** An
+     appender opens the queue path and then writes; a rotate (rename) between the two lands
+     the line in the just-rotated segment, possibly after the drain read it. So "its last offset
+     commits" is not measured at read time: the drain unlinks a segment only when its committed
+     `offset_bytes` equals `os.stat(segment).st_size` taken immediately before the unlink, after
+     the commit. If the size is larger, the segment is kept and its tail (from the committed
+     offset) is read at the next tick like any other segment past its offset; the unlink is
+     retried then. A segment is never unlinked in the tick that rotated it: the open-then-write
+     gap of an appender that opened the path before the rename is one `write` call, and a tick
+     (`RMX_DAEMON_FLUSH_S`) later that gap has closed; the residual, stated, is an appender
+     process stopped (SIGSTOP, swap) between its `open` and its `write` for longer than a tick.
+     This binds every `BoundedQueue` (learn tolerated a lost line; a lost
+     `hook_writes` line is a digest and a filing that never land). [[#ac-21]] step 7.
 4. **Offsets (d2a).** A catalog table `queue_offsets(queue, segment, offset_bytes,
    finalize_pending, events_pending, PRIMARY KEY(queue, segment))` (`events_pending`: R3.7,
    ns23-r4-2); each batch writes its row inside R1's
@@ -765,6 +834,13 @@ says so.
      the skip consumes no budget. Learn registers `enabled=lambda: learn_switch.learning_enabled(d.root)`,
      the per-tick resolution `_drain_learn_queue` does today, so a learn-off store (this one,
      [[#facts]] round 11) keeps its queue intact and keeps logging its depth.
+   - **A registrant that wrote requests a snapshot (round 12, m4).** After a registrant's turn
+     in which at least one batch COMMITTED with `applied > 0`, `run()` calls
+     `d._request_snapshot()` once (it is debounced; one call per turn, not per batch), exactly
+     as `_op_memory_add` and today's `_drain_learn_queue` do ([[#facts]] round 12). A turn that
+     committed nothing (empty queue, skipped by `enabled()`, stopped before the first commit)
+     requests none. One place, `tick_registry.run()`, so no registrant can forget it; learn and
+     `hook_writes` both get it. [[#ac-21]] step 3 reads the digest through the replica path.
 2. ONE budget for all registrants together: `LEARN_DRAIN_BUDGET_S` (default 5 s) keeps its name so
    existing tests that patch it still work; each registrant gets what the ones before it left.
 3. Start rotates round-robin: a tick starts at the registrant after the one that exhausted the
@@ -815,9 +891,22 @@ it:
    slots predate these tables, so the writer slot is their only source; if the inactive slot has
    them (a slot written by 23.1 code), the writer slot's rows still win, because only the writer
    slot's offsets describe segments that exist on disk.
-2. The target's schema is the Store schema (bug-113's fix), so the three tables exist in it; 23.1
-   adds them to the `tables` handling in `merge_slots` only, not to `duckdb_catalog.init_catalog`
-   (no longer the target builder).
+   - **The merge is told which slot is the writer (round 12, s-n2).** `merge_slots` gains a
+     REQUIRED keyword `writer_side: Literal["A", "B"]`; `_op_replica_merge` passes its
+     `prev_writer` ([[#facts]] round 12). The three tables are copied `INSERT INTO <t> BY NAME
+     SELECT * FROM <writer alias>.<t>` from that side only (the alias `a` or `b` that
+     `_merge_into` attaches), and are NOT in the 10-table tuple `_probe` counts on both sides
+     (a pre-23.1 inactive slot lacks them, and `_probe` would fail on it). An invalid
+     `writer_side` raises `ValueError` before any connection opens. No default: a caller that
+     does not know the writer cannot carry offsets correctly, so it must say.
+2. **The DDL goes IN `duckdb_catalog.init_catalog` (round 12, s-n2; round 11's "not in
+   `init_catalog`" premise was false and is struck).** `init_catalog` is both the Store's schema
+   and the merge target's ([[#facts]] round 12), so declaring `queue_offsets`, `queue_counters`
+   and `bounded_runs` there (`CREATE TABLE IF NOT EXISTS`, the file's existing form) is what
+   makes them exist in every new slot, in every existing slot at its next `Store.init()` (the
+   `IF NOT EXISTS` re-run), and in the merged target before the carry's `INSERT` runs. They are
+   created nowhere else: not lazily in `bounded.py`, not by the merge. The SQLite backend gets
+   no DDL for them (the harness refuses SQLite, R1.3).
 3. AC: [[#ac-13]] (through `_op_replica_merge` on `Store.init()` slots).
 4. **bug-124's general fix supersedes this** when it lands (refuse a merge with an unlisted table,
    or copy every Store table); R8's explicit carry is then deleted in favour of it, and AC-13
@@ -905,7 +994,7 @@ Every consumer task (16.6, 17.1, 19.2, 22.2, 23.3) names these, and only these:
 | `RunResult` | R1.5, including `hold_s` and `finalize_ran` | |
 | `Daemon.tick_registry` | `register(name, runner, *, kind)` | the DAEMON tick only (R6). The hub's nightly steps are a different registry, plan-17's `maintenance_steps` |
 | `queue_status`, `queue_redrive` | daemon ops; CLI `rmx learn status` / `rmx learn redrive`, both in `INTERNAL_CLI`; NO verb, NO MCP tool (round 11, m5; round 2's "+ verbs" struck) | R6.5, R6.7 |
-| `hook_writes` | the R11 `BoundedQueue` (`hook_writes.queue.jsonl` beside `learn_queue.py::queue_path`), key `(op, partition, name)`, explicit last-wins-by-name `merge_fn`, `scope="window"`, `idempotent=True` (checked by AC-21), tick registrant | R11; the producers are the hook-path digest writes (`focus summarize --promote`, the save-state promote), through `_write_or_local(…, queue="hook_writes")` |
+| `hook_writes` | the R11 `BoundedQueue` (`hook_writes.queue.jsonl` beside `learn_queue.py::queue_path`), key `(op, partition, name)`, explicit last-wins-by-name `merge_fn`, `scope="window"`, `idempotent=True` (checked by AC-21), tick registrant | R11; the producers are the digest writes `focus summarize --promote` (hook path: Stop, PreCompact) and the save-state promote (user-run; round 12, m6), through `_write_or_local(…, queue="hook_writes", deadline=…)`; partition from `discovery.resolve_partition` |
 | `Store.batch_transaction` | `batch_transaction() -> ContextManager[None]`; raises `NestedTransaction` | R1.3: pre-flush, `BEGIN`, in-transaction flush, offset, `COMMIT`, post-commit events |
 | `Store.has_dirty_fragments`, `Store.dirty_fragment_count` | `has_dirty_fragments() -> bool`, `dirty_fragment_count() -> int` | every binding (R1.1 item 3); the only "anything dirty" tests |
 | `Store.add_evidence_if_absent` | `add_evidence_if_absent(linkage, concept_id, entity_id, *, file, line, span_end=None, detail=None) -> bool` | R9.5; also used by 23.3's semantic writes ([[task-23.3-sync-between-file-yield#r8]]) and 16.1 R4 |
@@ -938,17 +1027,60 @@ not shorten the holders (23.3 and 23.5 do).
      non-idempotent write as a pre-registered mutation), as R3.5 requires.
    - Append is R3.2's: one `O_APPEND` JSON line, no lock, no socket. Overflow is R3.6's (newest
      win, counted in `queue_counters`, printed by `queue_status`).
-2. **The entry.** One line: `{"op": "memory_add", "partition": <memory partition NAME>, "name":
+2. **The entry.** One line: `{"op": "memory_add", "partition": <partition NAME>, "name":
    <digest name>, "args": <the exact memory_add payload>, "subject": <label> | null, "origin":
    "stop-hook" | "precompact" | "save-state", "ts": <epoch s>}`. Subject filing rides IN the
    same entry (the label the session's active subject had at enqueue time), never as a second
-   queued write.
+   queued write. `ts` is `time.time()` taken when the producer builds the entry, the same clock
+   `Store.add_memory` uses (one host).
+   - **ONE partition resolver for both producers (round 12, m6; decided):
+     `discovery.resolve_partition`.** `focus_summarize` passes `_resolve_partition()` (which IS
+     `discovery.resolve_partition(root, override=<-p>)`), and `_promote_digest` switches from
+     `discovery.store_name(root)` to `discovery.resolve_partition(root)` (no override; it is
+     called from save-state, which has no `-p` of its own beyond the group's, passed through
+     when present). Why this one and not `store_name`: `store_name` is the resolver's LAST
+     fallback, so on a store with `RMX_PARTITION` or a `.refmatrix/partition` marker the two
+     producers would write one digest name under two `(op, partition, name)` keys, two rows,
+     and last-wins could not converge them. `resolve_partition` is 3.7's one project-partition
+     resolver (`verbs.project_partition` calls it too), and it is lock-free: env and file reads,
+     no socket, no store open ([[#facts]] round 12). `verbs.memory_partition` is NOT used: its
+     `partition_list` fallback can reach the writer, which is exactly what the queue avoids.
 3. **The apply.** Per batch, inside `bind(partition)` and R1.3's `batch_transaction`: for each
    coalesced entry, `Store.add_memory(**args)`, then, when `subject` is set,
    `Store.upsert_subject(label)` and `Store.link_part_of(leaf_id, subject_id)`: the SAME store
    methods `_op_memory_add`, `_op_subject_upsert` and `_op_subject_link` call, so there is one
    implementation of each write. The digest row and its `part-of` edge commit in the one
    transaction, with the queue offset.
+   - **A queued apply never overwrites a newer digest (round 12, s-n1).** The queue is not the
+     name's only writer: a later synchronous promote (turn N+1's dial, after the holder
+     released and before the tick) writes the same name. The rule: skip the content upsert when
+     the stored `memory_content.updated_at >= entry["ts"]`; still file the `part-of` edge
+     (`upsert_subject` + `link_part_of` on the existing row's id: a bit is order-free, and the
+     filing is what the hook lost); emit no `memory_content` facts.log event for a skipped
+     upsert; count it in the run result as `superseded`. It is built so that BOTH writers obey
+     it, in ONE place:
+     1. `Store.add_memory` gains a keyword `updated_at: float | None = None`, the content's
+        AUTHORING time. When it is `None` (every existing caller: the bridge, `memory add`,
+        MCP, compile's `upsert_subject`), behaviour is today's exactly. When given: inside the
+        method, if a `memory_content` row exists for the entity and its `updated_at >=` the
+        given value, the method writes nothing, logs no event, and returns the existing id;
+        otherwise it upserts with `memory_content.updated_at` (and `created_at` on an INSERT)
+        set to the given value. `entities.updated_at`'s embedding ratchet keeps `time.time()`.
+     2. Both R11 producers stamp `"updated_at": ts` into the ONE `memory_add` payload (`args`),
+        so the dial and the queued entry carry the same authoring time, and
+        `_op_memory_add` passes `args.get("updated_at")` through. R11.3's apply calls
+        `add_memory(**args)` as before; the guard is the method's, not the drain's.
+     - Why the authoring time and not "the stored time vs. now": with the apply time stored, a
+       queued `v1` applied at time A would make a NEWER queued `v2` (enqueued before A, drained
+       a window later) look older than the row and be skipped; and a turn-N+1 dial held by the
+       dispatcher behind the holder could land AFTER a queued turn-N+2 entry was applied and
+       overwrite it. Comparing authoring times orders every pair the right way whichever path
+       lands first.
+   - Consequence for the dual case (R11.4's timed-out dial that lands after the release): the
+     dial and the entry carry the same `updated_at`, so whichever applies second is skipped:
+     ONE row write and ONE `memory_content` event, not two.
+   - **Snapshot.** The `hook_writes` turn requests a snapshot after it commits (R6.1, round 12,
+     m4), so the digest is visible to replica readers without an unrelated write.
    - **Precondition (m6): no bare commit on this path.** `Store.add_memory` ends in a bare
      `con.commit()` at `9901589`; inside `batch_transaction` it would commit half a batch.
      Plan-26 26.2 ([[task-26.2-bridge-move-safety#impl-notes-r6]] n1) switches it to
@@ -967,25 +1099,66 @@ not shorten the holders (23.3 and 23.5 do).
    (new, allowed only with `queue=`) still raises on an absent daemon, so the Stop hook keeps its
    "refuse when no daemon" rule (constitution VII; no Store opened from a hook). Refused and
    undiallable still raise (they prove nothing about a daemon that will drain the queue).
-   - **The dial's budget leaves room to enqueue.** With `queue=`, the dial gets
-     `max(0.5, timeout - 1.0)` s, so `--timeout 5` exits in under 5 s on the queued path.
+   - **The dial's budget is derived from the caller's deadline, and there is ONE probe (round
+     12, m5; replaces round 11's flat `max(0.5, timeout - 1.0)`).** `_write_or_local` gains a
+     keyword `deadline: float | None` (a `time.monotonic()` value; with `queue=` it is
+     required). `focus_summarize` computes its deadline FIRST, at function entry, before any
+     probe (`deadline = monotonic() + timeout`; today it is computed after its own probe,
+     [[#facts]] round 12), and DROPS its own `discovery.daemon_status` probe on the project
+     branch: `_write_or_local` → `_call` → `require_daemon(root, retries=0)` is the only probe,
+     and its up / busy / absent answer drives the outcome. The dial then gets
+     `left = deadline - monotonic() - ENQUEUE_RESERVE_S` seconds; when `left < MIN_DIAL_S`
+     (0.5 s), there is no dial and the entry is appended directly. `ENQUEUE_RESERVE_S = 1.0`
+     and `MIN_DIAL_S = 0.5` are module constants in `verbs.py`. A probe that answers `busy` also
+     enqueues without a dial. So the queued path's whole cost after interpreter start is one
+     probe (≤ 0.5 s) + at most `left` + one `O_APPEND`, inside `--timeout`. `_promote_digest`
+     passes `deadline = monotonic() + 30.0` (its existing budget).
    - **A timed-out dial may still land, and that is safe.** The dispatcher never drops a write,
-     so the dialed `memory_add` can complete AND the queued entry later re-apply it. Both are an
-     upsert of the same name and content, and `link_part_of` sets a bit: the end state is one
-     row and one edge ([[#ac-21]] step 3 checks exactly that).
-   - `classify_transport_error` gains the queued wording for this outcome (one place, 3.7's
-     rule): "daemon busy: queued <name> for the next drain; it is applied when the writer frees".
+     so the dialed `memory_add` can complete AND the queued entry later be drained. Both carry the
+     same `updated_at` (R11.3), so the second to apply is skipped by `add_memory`'s guard, and
+     `link_part_of` sets a bit: the end state is one row, one edge and one `memory_content`
+     event ([[#ac-21]] step 3 checks exactly that).
+   - **`local=` per producer (round 12, m6; decided).** `focus_summarize` passes `local=None`:
+     on an ABSENT daemon `_write_or_local` raises `VerbAbsentError`, writes NO queue line (an
+     absent daemon will not drain it, and constitution VII forbids the hook's Store open), and
+     `focus_summarize` turns it into its EXISTING refusal, unchanged: `daemon not running for
+     <root> — \`focus summarize --promote\` writes durable memory through the daemon; start it
+     …`, exit 1. `_promote_digest` passes `local=` its EXISTING in-process closure (the
+     `Store(root)` + `with_partition` + `add_memory` it runs today when the daemon is absent;
+     user-run, not a hook, so today's bootstrap stays). [[#ac-21]] step 6 checks the absent case.
+   - **Where the queued wording lives (round 12, m6).** NOT inside `classify_transport_error`:
+     that function returns errors, and a queued promote is a success. One constant beside it in
+     `verbs.py`, `QUEUED_WRITE_MSG = "daemon busy: queued {name} for the next drain; it is applied
+     when the writer frees"`, is the only text: `focus_summarize` prints it (formatted) after
+     `queued: <name>`, and `_promote_digest`'s result carries it as `{"queued": <name>, "name":
+     <name>, "note": QUEUED_WRITE_MSG.format(name=…)}`, which the save-state renderer prints in
+     place of `promoted … (id=…)`. Round 11's "`classify_transport_error` gains the queued
+     wording" is withdrawn.
 5. **The producers, converged** ([[#facts]] round 11: each dials `memory_add` itself today):
-   `cli.py::focus_summarize`'s project branch (the Stop hook's and PreCompact's promote) and
-   `handoff.py::_promote_digest` (the save-state promote) route their `memory_add` through
-   `_write_or_local(…, queue="hook_writes")`. That `memory_add` IS "the hook-path `memory add`"
-   of the report: no generated hook runs `rmx memory add` ([[#facts]] round 11), so
-   `verbs.py::_memory_add_write` (a user-run `rmx memory add`, MCP `rmx_memory_add`: not a hook,
-   a 30 s budget, a caller waiting for an id) stays synchronous and gains no unused flag. A
-   future hook that writes a memory routes through the same keyword. On `queued` the producers
-   exit 0 and print `queued: <name>` (the CLI) or return `{"queued": <name>}` (the save-state
-   result, rendered as such), and they do NOT call `_file_under_active_subject`: the filing is
-   in the entry. The `--global` legs (the hub's global store) are out of R11's scope.
+   `cli.py::focus_summarize`'s project branch (the Stop hook's and PreCompact's promote: the
+   HOOK-PATH producer) and `handoff.py::_promote_digest` (the save-state promote: a USER-RUN
+   producer, `rmx save-state` or MCP save-state; no generated hook reaches it, [[#facts]] round
+   12) route their `memory_add` through `_write_or_local(…, queue="hook_writes")`. No generated
+   hook runs `rmx memory add` ([[#facts]] round 11).
+   - **Why the user-run save-state promote is queued (round 12, m6; relabelled, not "hook
+     path").** It is queued on its OWN grounds, which are not "a hook must not wait": it is
+     best-effort by contract (it never raises; a failure is `{"error": …}`); its primary
+     artifact is the GMD handoff file, already written before the promote runs; and the only
+     consumer of its returned `id` is `finalize_save_state`'s subject filing, which rides in the
+     entry. So a held writer today turns it into a `promote skipped: … busy` line with no digest
+     confirmation and no filing; queued, the digest and the filing both land at the next drain.
+   - **Why `verbs.py::_memory_add_write` stays synchronous** (a user-run `rmx memory add`, MCP
+     `rmx_memory_add`): its caller WAITS FOR AN ID it prints or returns, and it is not
+     best-effort: a queued add would hand back no id and turn a failure the user must see into
+     a deferred one. That, not "not a hook", is the line (round 11's reason contradicted the
+     save-state promote's treatment and is replaced). It gains no unused flag. A future writer
+     that is best-effort and whose id has no consumer outside the entry routes through the same
+     keyword.
+   - On `queued` the producers exit 0 and print `queued: <name>` plus `QUEUED_WRITE_MSG` (the
+     CLI) or return the queued result above (save-state, rendered as such), and they do NOT
+     call `_file_under_active_subject` / file in `finalize_save_state` (it sees no `id`): the
+     filing is in the entry. The `--global` legs (the hub's global store) are out of R11's
+     scope.
 6. **Status.** `queue_status` (R6.5) reports `hook_writes` like any registrant: pending, the
    four totals, `last_run_at`. `rmx learn status` is learn's; `hook_writes` is reported by
    `queue_status` and `_store_health` (`hook_writes_pending`), so a queue that stops draining is
@@ -1008,8 +1181,9 @@ Added in round 11 (b2), so the scope a reader might assume 23.1 owns is stated:
   whole-command wall bound or a rename to `--rerank-timeout`), in the pre-plan-24 queue as the
   half of bug-177's original scope that R11 does not cover.
 - **Shortening the long holders.** The `sync` (23.3), the facts.log compaction (23.5 R5) and
-  26.6's `memory_compile` apply ([[#merge-order]]) keep their holds; R11 only stops the hook from
-  waiting on them.
+  26.6's `memory_compile` apply (a named holder with a write bound,
+  [[task-23.5-read-path-and-holder-bounds#r9-compile-apply]]) are other tasks'; R11 only stops
+  the hook from waiting on them.
 - **The global store's promote legs** (`--global`, the hub's global daemon).
 - **Migrating every `_op_*` writer onto a handle** (R1.6 item 6, unchanged).
 
@@ -1028,12 +1202,16 @@ Added in round 11 (m6), from [[bsd-plan23-1-2-freshness-9bcf464#overlap]]:
 4. **23.2** (the recorder 23.1's ACs count with).
 5. **23.1** with R11.
 
-**Holder census addition (m6).** `daemon.py::_op_memory_compile_apply` holds `_store_lock` with the
-memory partition bound for the WHOLE `consolidate.apply_plan(…)`, and 26.6 adds subject hygiene to
-that apply: a long writer that neither plan-23's consumer table nor 23.5's holder list named. It is
-named now in [[plan-23-bounded-write-harness#consumers]] as a long holder; bounding it (a
-`bounded_steps` consumer, or a 23.5 named holder) is decided when 23.5 is next revised, not here.
-A hook write that arrives during it is queued by R11 instead of failing.
+**Holder census addition (m6; owner fixed in round 12, b-n1).** `daemon.py::_op_memory_compile_apply`
+(the same symbol at `77c9f04`, on 3.7 at `e4faf32` and on bug-178 at `ae7c0c7`) holds
+`_store_lock` with the memory partition bound for the WHOLE `consolidate.apply_plan(…)`, and 26.6
+adds scope-filtered stale-marking to that apply. It is OWNED by 23.5 as a NAMED HOLDER with a
+pre-registered `max_writes_per_hold` bound under 23.2's recorder:
+[[task-23.5-read-path-and-holder-bounds#r9-compile-apply]] (requirement and why not
+`bounded_steps`) and [[task-23.5-read-path-and-holder-bounds#ac-9]] (its AC). It is not a 23.1
+consumer. A hook write that arrives during it is queued by R11 instead of failing.
+**26.2 and R11.3 both edit `Store.add_memory`** (26.2: `con.commit()` → `_maybe_commit`; R11.3:
+the `updated_at=` guard). 26.2 merges first; R11.3's edit is written on top of it.
 
 ## Acceptance criteria {#acceptance}
 
@@ -1219,6 +1397,15 @@ contributes no bit and is never deleted by 23.1's code.
     `overflow (dropped, total): 7` and `events_pending: [learn/<segment>]`; and a following
     drain resumes at byte 4096, not 0. Mutation: `merge_slots`' table handling without the three
     tables FAILS (the rows are absent, the counter reads 0, the drain re-applies from 0).
+    **Round 12 (s-n2):** the case runs TWICE, once with the writer on slot A and once on slot B
+    (the other slot holding a DIFFERENT `queue_offsets` row for the same key, `offset_bytes=8`,
+    so a wrong side is visible); both slots come from `Store.init()` with no table created by
+    the test (the tables exist because their DDL is in `init_catalog`). Mutations, each must
+    FAIL: `writer_side` ignored and the carry always read from `a` (the B-writer run reads
+    offset 8); the three tables' DDL moved out of `init_catalog` into a lazy create in
+    `bounded.py` (the merged target lacks them and the carry's `INSERT` fails, or the
+    `Store.init()` slot has no table to seed). A `merge_slots` call with no `writer_side`, or
+    `writer_side="C"`, raises before any connection opens.
     Round 6's retirement text, kept as history: "**RETIRED (d9ao) with R8.** No test is written
     for it, and it is not in the test list. Reason: [[#r8]] (rotation dropped, no producer of
     diverged slots; the frozen-slot census is a separate d9ao item; bug-113 is not a 23.1
@@ -1312,6 +1499,16 @@ contributes no bit and is never deleted by 23.1's code.
       differs) takes the rebind: `rmxd.log` has `init slot rebind: db_path -> …`
       and NO `init slot rebind: close failed` line, and the recorder shows the rebind's
       flush and close inside one hold by the booting thread.
+    - **`slot=None` does not touch the read link (round 12, m2).** On the same boot, a spy on
+      `Daemon._refresh_read_only_link` records its caller: the boot open's
+      `_install_writer_store(st, None)` records NO call, the init slot rebind's install (a
+      slot) records one, and `serve_forever`'s end-of-init refresh records one; after boot
+      `read_only.duckdb` points where HEAD's code points it for the same fixture (the snapshot
+      file when it exists, else the reader slot derived from the opened writer). A second boot
+      forces the rebind's `init()` to fail (the legacy-fallback site, `slot=None`): again no
+      call from that install, and the end-of-init refresh still runs once. Mutation: the
+      installer refreshing unconditionally FAILS (the spy records a call from a `None`
+      install).
     - **The check survives a reopen (ns23-r6-2; rewritten by symbol against `9901589` in round
       11, s1).** On the same recorded daemon, three reopens, each through a different path to
       the installer:
@@ -1380,26 +1577,76 @@ contributes no bit and is never deleted by 23.1's code.
        (the 2026-11-08 sync's shape).
     2. **The hook returns.** `rmx focus summarize --promote --timeout 5` (the Stop hook's exact
        command, through the generated hook's environment) exits 0 in under 5 s wall clock and
-       prints `queued: focus_summary_<slug>`; `hook_writes`' file holds one line whose
-       `subject` is `s-21`. The save-state promote, run the same way, returns
-       `{"queued": …}` and its rendered result says so.
+       prints `queued: focus_summary_<slug>` and `QUEUED_WRITE_MSG`'s text; `hook_writes`' file
+       holds one line whose `subject` is `s-21` and whose `args.updated_at` equals its `ts`.
+       **Round 12 (m5):** the command's own `cli.log` line (the telemetry record every `rmx`
+       run appends: `ts, argv, cwd, exit_code, latency_ms, …`) has `exit_code` 0 and
+       `latency_ms < 5000`, and the measured wall clock (spawn to exit) is below 5.0 s. An
+       in-process variant (click's `CliRunner`) with a spy on `discovery.daemon_status` counts
+       exactly ONE probe on the queued path. The save-state promote, run the same way, returns
+       `{"queued": <name>, "name": <name>, "note": …}` and its rendered result prints the note,
+       not `promoted … (id=…)`.
     3. **After release, exactly once.** The competitor releases; within two ticks: the digest
        row exists ONCE (`memory_content` has one row for the name, `entities` one entity), its
        `part-of` edge to `s-21`'s subject exists ONCE (`entity_links` one row; the subject's
        fragment row holds the bit), the `hook_writes` offset row covers the line, and
        `queue_status` reports 0 pending. Run twice: once where the timed-out dial's
        `memory_add` also completes after the release (the dispatcher kept it), once where the
-       dial never reached the socket; both end in the same single row and single edge.
+       dial never reached the socket; both end in the same single row and single edge, and
+       facts.log holds exactly ONE `memory_content` event for the name from this step (round
+       12, s-n1: the second apply is skipped by the `updated_at` guard). **Round 12 (m4):** with
+       no other write after the release, `rmx memory get focus_summary_<slug>` (the replica
+       path, served from the snapshot) returns the digest within `RMX_SNAPSHOT_DEBOUNCE_MS` +
+       1 s of the drain's commit, not only a SQL read on the writer.
     4. **Crash between enqueue and drain.** Repeat steps 1-2, then kill the daemon (`os._exit(137)`
        in a spawned child serving the store) before the competitor releases; boot a fresh daemon:
        the first tick applies the entry, and step 3's checks hold.
     5. **Crash replay (R3.5's idempotency check, AC-16 shape).** Three queued digests for three
        sessions; a spawned child drains and `os._exit(137)`s after hold 1 of 3 commits; a fresh
        daemon drains to completion: three digest rows, three `part-of` edges, each once.
+    5a. **Two writers, the queue never wins over newer (round 12, s-n1).** The competitor holds
+       the lock; turn N's promote queues `vN` (content `"vN"`). The competitor releases BEFORE
+       the next tick (the test sets `RMX_DAEMON_FLUSH_S=3600` and drives the tick by hand);
+       turn N+1's promote (content `"vN+1"`) finds the daemon free and its dial writes `vN+1`
+       synchronously. Then the test runs one tick, which drains `vN`. Assert: the row holds
+       `vN+1`; facts.log has no `memory_content` event with content `vN` after the `vN+1`
+       event; the `part-of` edge to `s-21` exists once; the run result counts `superseded: 1`.
+       A second sub-case drives the reverse order through the dispatcher: turn N+1's dial is
+       HELD behind the competitor (it times out client-side and its entry `vN+1` is queued),
+       turn N+2 queues `vN+2`; on release the held dial lands first, then the tick drains:
+       the row holds `vN+2`. A third sub-case: two queued entries for one name in successive
+       windows (`batch=1`), `v1` then `v2`, drained by one tick: the row holds `v2`.
+    6. **Absent daemon, no queue line (round 12, m6).** With no daemon for the store,
+       `rmx focus summarize --promote --timeout 5` exits 1 with its existing message (`daemon not
+       running for <root> — \`focus summarize --promote\` writes durable memory through the
+       daemon; start it …`), `hook_writes.queue.jsonl` does not exist (or its size is unchanged),
+       and no `Store` is opened by the CLI process (a spy on `Store.__init__` in an in-process
+       variant records none).
+    7. **An append racing a rotate (round 12, m7).** A test seam in `drain` pauses after the
+       rotate (`hook_writes.queue.jsonl` renamed to its segment) and after its read of that
+       segment; while paused, the test appends one entry through a file object it OPENED on the
+       queue path BEFORE the rename (the open-then-write gap of a lock-free appender), so the
+       line lands in the rotated segment past the read. The seam releases and the batch commits.
+       Assert: the segment is NOT unlinked in that tick (its size exceeds its committed
+       offset); the next tick applies the late line and only then unlinks the segment; the
+       late entry's row exists once. Mutation: unlink when the read-time offset commits (round
+       11's text) FAILS (the late line's digest never lands).
     - **Mutations, each must FAIL:**
       - the synchronous call (HEAD's `focus_summarize` dialing `memory_add` with no `queue=`)
         → step 2 (exit 1 at ~5 s, "not confirmed");
-      - the dial given the whole `--timeout` instead of `timeout - 1.0` → step 2 (wall ≥ 5 s);
+      - the dial given the whole `--timeout` instead of `deadline - now - ENQUEUE_RESERVE_S`
+        → step 2 (wall ≥ 5 s, `latency_ms` ≥ 5000);
+      - `focus_summarize` keeping its own `daemon_status` probe before `_write_or_local` →
+        step 2's in-process variant (two probes counted);
+      - the unguarded apply (`add_memory` ignoring `updated_at`, or R11.3's apply not passing
+        it) → step 5a (the row holds `vN`, a `vN` event follows `vN+1`) and step 3's
+        one-event count;
+      - the queued apply storing the APPLY time instead of the authoring time → step 5a's
+        third sub-case (`v2` is skipped as older than `v1`'s apply time);
+      - no `_request_snapshot()` after a committing registrant turn → step 3's replica read
+        (the digest is absent from `memory get` until an unrelated write);
+      - a queue line appended before the absent check (or `local=None` falling back to a
+        Store) → step 6;
       - the subject filing done by a separate daemon call after the enqueue instead of riding in
         the entry → step 3 (no edge after release, or the hook blocks on `subject_upsert`);
       - `add_memory` left on its bare `con.commit()` inside `batch_transaction` (R11.3's
@@ -1422,12 +1669,13 @@ owner. Not exhaustive for R1-R9's new modules; it names every EXISTING file 23.1
 | file | change |
 |---|---|
 | `src/refmatrix/bounded.py` (new) | R1-R6's core, front-ends and tick registry |
-| `src/refmatrix/store.py` | `with_partition(create=)`; `batch_transaction`; the event buffer; `writer_lock` + `_require_writer_lock` at R1.6 item 3's sites, purge's three first-line checks included; `Store.close()`'s flush step no longer swallows `WriterLockNotHeld` and records other errors in `close_errors` (R1.6 item 4); `add_evidence_if_absent`; `fragment_flush_failures` |
-| `src/refmatrix/daemon.py` | `_FairLock` owner + `held_by_current_thread`; `_install_writer_store(st, slot: str \| None)` sets `writer_lock` and is called by the 4 direct sites (round 11, s1); `_reopen_writer`'s `assert` → `WriterLockNotHeld`; `_do_close` under a bounded `_store_lock` acquire; the init slot rebind inside `with self._store_lock:`; `_compact_factslog_locked`; the boot `events_pending` check; `tick_registry` (with per-registrant `enabled()`, m4); `queue_status` / `queue_redrive` (daemon ops only, m5); learn re-based with the `_drain_learn_queue()` adapter; the `hook_writes` registrant and `_store_health`'s `hook_writes_pending` (R11) |
-| `src/refmatrix/learn_queue.py`, `cli.py` | R9; `rmx learn status` / `rmx learn redrive` (CLI-only, no verb, no MCP tool; round 11, m5); R11's `focus_summarize` producer |
-| `src/refmatrix/verbs.py` | `rmx learn redrive` added to `INTERNAL_CLI` (m5); `_write_or_local(…, queue=, local=None)` and the queued wording in `classify_transport_error` (R11.4) |
-| `src/refmatrix/handoff.py` | `_promote_digest` through `_write_or_local(…, queue="hook_writes")` (R11.5) |
-| `src/refmatrix/replica_merge.py` | `merge_slots` carries `queue_offsets`, `queue_counters`, `bounded_runs` from the writer slot (R8, round 11, s2); on top of bug-178's edits |
+| `src/refmatrix/duckdb_catalog.py` | `init_catalog` declares `queue_offsets`, `queue_counters`, `bounded_runs` (`CREATE TABLE IF NOT EXISTS`): the Store schema and the merge target's (R8.2, round 12, s-n2) |
+| `src/refmatrix/store.py` | `add_memory(…, updated_at=None)`: the authoring-time guard (R11.3, round 12, s-n1); `with_partition(create=)`; `batch_transaction`; the event buffer; `writer_lock` + `_require_writer_lock` at R1.6 item 3's sites, purge's three first-line checks included; `Store.close()`'s flush step no longer swallows `WriterLockNotHeld` and records other errors in `close_errors` (R1.6 item 4); `add_evidence_if_absent`; `fragment_flush_failures` |
+| `src/refmatrix/daemon.py` | `_FairLock` owner + `held_by_current_thread`; `_install_writer_store(st, slot: str \| None)` sets `writer_lock` and is called by the 4 direct sites (round 11, s1); `_reopen_writer`'s `assert` → `WriterLockNotHeld`; `_do_close` under a bounded `_store_lock` acquire; the init slot rebind inside `with self._store_lock:`; `_compact_factslog_locked`; the boot `events_pending` check; `tick_registry` (with per-registrant `enabled()`, m4); `queue_status` / `queue_redrive` (daemon ops only, m5); learn re-based with the `_drain_learn_queue()` adapter; the `hook_writes` registrant and `_store_health`'s `hook_writes_pending` (R11); round 12: `_install_writer_store(st, None)` skips `_refresh_read_only_link()` (m2), `tick_registry.run()` requests a snapshot after a committing turn (m4), `_op_memory_add` passes `args.get("updated_at")` (s-n1), `_op_replica_merge` passes `writer_side=prev_writer` (s-n2) |
+| `src/refmatrix/learn_queue.py`, `cli.py` | R9; `rmx learn status` / `rmx learn redrive` (CLI-only, no verb, no MCP tool; round 11, m5); R11's `focus_summarize` producer (round 12: deadline computed first, its own probe dropped, `local=None`, `queued:` + `QUEUED_WRITE_MSG` printed, m5/m6); the save-state renderer prints a queued result's note |
+| `src/refmatrix/verbs.py` | `rmx learn redrive` added to `INTERNAL_CLI` (m5); `_write_or_local(…, queue=, local=None, deadline=)`; `ENQUEUE_RESERVE_S`, `MIN_DIAL_S`, `QUEUED_WRITE_MSG` beside `classify_transport_error` (which is unchanged; R11.4, round 12, m5/m6) |
+| `src/refmatrix/handoff.py` | `_promote_digest` through `_write_or_local(…, queue="hook_writes", local=<its in-process closure>, deadline=…)`, partition from `discovery.resolve_partition(root)`, the queued result rendered (R11.2, R11.4, R11.5; round 12, m6) |
+| `src/refmatrix/replica_merge.py` | `merge_slots(…, writer_side=)` carries `queue_offsets`, `queue_counters`, `bounded_runs` from the writer slot (R8, round 11, s2; `writer_side` round 12, s-n2); on top of bug-178's edits |
 | `tests/lockhold.py` | `HoldRecorder.held_by_current_thread()`, one explicit pass-through (R1.6 item 1; nm23-r7-2). 23.2's other surface is unchanged |
 
 ## Test strategy {#test-strategy}
@@ -1439,7 +1687,7 @@ owner. Not exhaustive for R1-R9's new modules; it names every EXISTING file 23.1
   `_store_lock` from the first op; `daemon.ping` False.
 - Faults (c) and (e) run in a spawned Python child that opens its own `Store` after the parent has
   closed its handle; the parent never forks while holding a DuckDB connection.
-- Only AC-12 runs `rmx`, against a daemon on the sandbox's tmp socket.
+- Only AC-12 and AC-21 (round 12: its hook command, `memory get` and the absent-daemon case) run `rmx`, against a daemon on the sandbox's tmp socket.
 - The 23.0 touches log gains 0 lines for this task's files.
 - Logs: `workflow/review-output/pytest-bounded.log`.
 
@@ -1607,3 +1855,37 @@ rel: depends-on -> [[task-3.7-verb-it-backlog]]
 rel: depends-on -> [[task-26.2-bridge-move-safety#impl-notes-r6]]
 rel: related-to -> [[task-bug178-bulk-write-helper]]
 rel: implements -> [[plan-of-plans#goal-2026-11-09]]
+
+## Revision round 12 (2026-11-09) {#rev-round-12}
+
+Source: [[bsd-plan23-1-2-freshness-confirm-1c0b66a]], the focused confirm of round 11's fold at
+`1c0b66a` (DIRTY 1B/2S/7M; all 11 prior findings closed in text). Code facts re-read at HEAD
+`77c9f04` (`src/` unchanged since `9bcf464`) and, read-only, in the 3.7 clone (`e4faf32`) and the
+bug-178 clone (`ae7c0c7`). No user decision remained: the report's fixes are adopted as the user
+would decide them, and each choice the report left open is decided below with its reason. Every
+finding is folded, so the status is BUILD-READY. The round-11 table above is unchanged history.
+
+| finding | answered at | rationale |
+|---|---|---|
+| b-n1 (the `memory_compile` apply's bounding deferred to a 23.5 revision that did not exist) | [[#merge-order]] (holder census addition points at the owner), [[#non-goals]]; [[task-23.5-read-path-and-holder-bounds#r9-compile-apply]] and [[task-23.5-read-path-and-holder-bounds#ac-9]]; plan [[plan-23-bounded-write-harness#consumers]] | 23.5 owns the non-harness holders, so the apply is a NAMED HOLDER there with a pre-registered `max_writes_per_hold` AC; not `bounded_steps`, because a step boundary between prune and re-file publishes an unfiled subject graph to the snapshot |
+| s-n1 (a queued older digest can overwrite a newer synchronous promote) | [[#facts]] round 12, [[#r11]] 2 (`ts`) and 3 (the guard in `Store.add_memory(updated_at=)`; both producers stamp the authoring time), [[#ac-21]] steps 3 and 5a, mutations, [[#files]] | compare AUTHORING times, in one method both paths call: an apply-time comparison skips a newer queued entry drained a window later, and lets a dispatcher-held dial overwrite a newer queued one |
+| s-n2 (R8.2 forbade the one place the queue tables must be declared) | [[#facts]] round 12, [[#r8]] 1 (`writer_side`) and 2 (DDL in `init_catalog`; the false premise struck), [[#ac-13]] (A-writer and B-writer runs; two mutations), [[#files]] (`duckdb_catalog.py`) | `init_catalog` is both the Store schema and the merge target's; only `_op_replica_merge` knows the writer, so it says |
+| m1 (23.2's census and error text) | [[task-23.2-lock-hold-fixture#rev-round-3]] | 23.2's finding |
+| m2 (`_install_writer_store(st, None)` and the link refresh) | [[#facts]] round 12, [[#r1-6-proposed]] item 2 (`None` skips the refresh; decided), [[#ac-20]] (spy case; mutation), [[#files]] | at both `None` sites the writer is on the legacy file, so a refresh would point readers by a marker the writer is not on; the end-of-init refresh already covers both |
+| m3 (bug-182 not in the goal queue) | [[plan-of-plans#goal-2026-11-09]] (item 6 names bug-182 as part of bug-177's original scope) | the row's claim is made true, not dropped: bug-182 is the half of bug-177's scope R11 does not cover ([[#non-goals]]) |
+| m4 (the queued apply never requests a snapshot) | [[#facts]] round 12, [[#r6]] 1 (one call in `tick_registry.run()` after a committing turn), [[#r11]] 3, [[#ac-21]] step 3 (replica read), mutation | one place, so learn and `hook_writes` both get it and no future registrant can forget it |
+| m5 (the queued path's budget not derived) | [[#facts]] round 12, [[#r11]] 4 (`deadline=`; `ENQUEUE_RESERVE_S`, `MIN_DIAL_S`; one probe), [[#ac-21]] step 2 (`cli.log` `latency_ms < 5000`, wall < 5 s, one probe counted), mutations | the deadline `focus_summarize` already computes, moved before the probe, is the budget; `_write_or_local`'s probe is the only one |
+| m6 (producer details) | [[#facts]] round 12, [[#r11]] 2 (ONE resolver: `discovery.resolve_partition`), 4 (`local=None` for the hook, the existing closure for save-state; `QUEUED_WRITE_MSG` beside the classifier, not in it), 5 (save-state relabelled user-run and queued on its own grounds; `memory add` sync because its caller waits for an id), [[#r10-contract]], [[#ac-21]] steps 2 and 6, [[#files]] | `store_name` is the resolver's last fallback and splits the key on a marked store; `resolve_partition` is 3.7's one lock-free resolver |
+| m7 (rotate/append race loses a `hook_writes` line) | [[#r3]] 3 (unlink only when committed offset == size at unlink time, never in the rotating tick), [[#ac-21]] step 7, mutation | a lost learn line was tolerable; a lost hook line is a digest and a filing |
+
+rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a]]
+rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a#b-n1]]
+rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a#n1]]
+rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a#n2]]
+rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a#m2]]
+rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a#m3]]
+rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a#m4]]
+rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a#m5]]
+rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a#m6]]
+rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a#m7]]
+rel: related-to -> [[task-23.5-read-path-and-holder-bounds#r9-compile-apply]] {owner: "memory_compile apply bound"}
