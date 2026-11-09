@@ -363,3 +363,89 @@ def test_a_failing_close_of_the_mute_probe_client_is_named_in_the_log(daemon4, m
     assert named and "close boom r4" in named[0], (
         f"the re-probe's close of the unusable shared client raised and the log did not "
         f"name it: {logs}")
+
+
+# ---- r4 GREEN mutation killer: one request-path probe in flight ---------------------------
+
+
+@pytest.mark.timeout(60)
+def test_two_concurrent_eligible_callers_behind_a_mute_hub_run_one_probe_not_two(
+        rig4, monkeypatch):
+    """`_EMBED_REPROBE_INFLIGHT` survived r4's own mutation run (r4-green-minflight.log):
+    two parallel 1.0 s request probes still fit the 2.5 s ceiling above, so nothing pinned
+    "one probe in flight at a time". Count it instead: one probe of the mute hub is 2 new
+    connections (`shared_available`'s connect + the `SharedWorkerClient`), or 3 when the
+    stub's handler drops the socket after reading the frame and the client takes its ONE
+    reconnect (`SharedWorkerClient` "reconnected once"); two probes are 4-6 (the mutated
+    run measured 6). The probe count itself is read from the spy below.
+
+    Deterministic, no sleeps-as-synchronisation: a SPY on `modelsrv.shared_available`
+    (delegates to the real one; not the function under test) holds caller A inside its
+    probe until caller B's whole call has returned, OR until B itself enters a probe (the
+    mutated build), whichever comes first. So B always meets A's in-flight probe."""
+    monkeypatch.setattr(modelsrv, "PROBE_TIMEOUT_S", COLD_PROBE_S)
+    monkeypatch.setenv("RMX_SHARED_REPROBE_S", "300")
+    monkeypatch.setenv("RMX_SHARED_REPROBE_MAX_S", "1800")
+    root, logs = rig4["root"], []
+
+    # No hub: the build goes private (no socket file, no probe) and the client is cached.
+    first = _one_call(root, logs)
+    assert first["ok"] and first["model"] == "stub/private", _brief([first])
+    private = recall_mod._EMBED_CLIENT
+    assert isinstance(private, subproc.WorkerClient), type(private)
+    recall_mod._EMBED_REPROBE_NEXT.clear()       # a re-probe is due for BOTH callers now
+
+    real_available = modelsrv.shared_available
+    entered: list = []
+    a_probing = threading.Event()
+    release = threading.Event()
+    entered_lock = threading.Lock()
+
+    def _spy_available(timeout: float = 0.5) -> bool:
+        with entered_lock:
+            entered.append(threading.current_thread().name)
+            nth = len(entered)
+        if nth == 1:
+            a_probing.set()
+            release.wait(timeout=10)             # held until B is done or B probes too
+        else:
+            release.set()                        # a second probe: let both run
+        return real_available(timeout=timeout)
+
+    monkeypatch.setattr(modelsrv, "shared_available", _spy_available)
+    hub = _StubHub(rig4["sock"], answer=False)   # a hub mid-restart: accepts, never answers
+    try:
+        out: dict = {}
+
+        def call(tag):
+            out[tag] = _one_call(root, logs)
+            if tag == "B":
+                release.set()
+
+        a = threading.Thread(target=call, args=("A",), name="A")
+        b = threading.Thread(target=call, args=("B",), name="B")
+        a.start()
+        assert a_probing.wait(timeout=10), (
+            f"precondition: caller A never reached the re-probe: {logs}")
+        b.start()
+        b.join(timeout=20)
+        a.join(timeout=20)
+        shown = {k: _brief([v])[0] for k, v in out.items()}
+        assert set(out) == {"A", "B"}, f"a concurrent call never returned: {shown}"
+        assert all(o["ok"] and o["model"] == "stub/private" for o in out.values()), shown
+        assert recall_mod._EMBED_CLIENT is private, shown
+
+        # Let the accept loop catch up on any connection already made (bounded poll).
+        deadline = time.monotonic() + 1.0
+        seen = hub.connections
+        while time.monotonic() < deadline:
+            time.sleep(0.05)
+            if hub.connections != seen:
+                seen, deadline = hub.connections, time.monotonic() + 1.0
+        assert entered == ["A"] and 2 <= hub.connections <= 3, (
+            f"two eligible callers behind a mute hub ran {len(entered)} request-path "
+            f"probe(s) {entered} and made {hub.connections} hub connection(s); one probe "
+            f"in flight at a time is 1 probe, 2-3 connections (`_EMBED_REPROBE_INFLIGHT`): "
+            f"{shown} {logs}")
+    finally:
+        hub.close()

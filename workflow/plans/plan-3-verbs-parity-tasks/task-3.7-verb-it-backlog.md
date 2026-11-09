@@ -709,10 +709,15 @@ by error text. Mutations after the commit, each restored in its own command (`gi
   `r4-green-m11.log`).
 - Request probe -> `PROBE_TIMEOUT_S` fails the concurrent-calls test (`r4-green-mbound.log`).
 - Stand-in cache disabled fails both B-1 cases (`r4-green-mstandin.log`).
-- **Survivor:** dropping the in-flight check (`r4-green-minflight.log`). Two parallel 1.0 s
-  probes still finish inside 2.5 s, so no r4 test pins "one probe at a time". A killer would
-  count the mute hub's connections across the two concurrent calls (one probe = 2:
-  `shared_available` + the client). That is open for ch-test-engineer.
+- Dropping the in-flight check first SURVIVED (`r4-green-minflight.log`): two parallel 1.0 s
+  probes still finish inside 2.5 s. It is now killed by
+  `test_two_concurrent_eligible_callers_behind_a_mute_hub_run_one_probe_not_two`
+  (ch-test-engineer): a spy on `modelsrv.shared_available` holds caller A inside its probe
+  until caller B returns (or B probes too), so B always meets the in-flight probe. At HEAD
+  1 probe, 2 hub connections (8/8 repeats); mutated, 2 probes `['A', 'B']` and 6 connections
+  (one probe is 2-3: `shared_available` + the client + at most its one reconnect).
+  Logs `r4-inflight-test.log` (r4 file + readoption, 20 passed) and
+  `r4-inflight-test-mutation.log`.
 
 ## Definition of done {#done}
 
