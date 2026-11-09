@@ -13,7 +13,10 @@ metadata:
 # Task 23.2: the lock-hold and write-count fixture {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: **BUILD-READY** (revision round 3, 2026-11-09: the freshness confirm
+> Status: **BUILD-READY** (revision round 4, 2026-11-09: the narrow confirm
+> [[bsd-plan23-fold-additions-a9147d5]] reproduced round 3's census exactly and rates 23.2
+> build-ready; no change to R6 or AC-6; one re-run caveat recorded, see [[#rev-round-4]].)
+> Earlier: (revision round 3, 2026-11-09: the freshness confirm
 > [[bsd-plan23-1-2-freshness-confirm-1c0b66a]]'s m1 folded: the R6 census re-run at `77c9f04`
 > with a pattern that catches every assignment form (21 fake-lock lines in 17 files), AC-6
 > widened to the same pattern, R3's quoted error corrected against bug-178 at `ae7c0c7`; see
@@ -246,3 +249,19 @@ first) is unchanged. The round-2 table above is unchanged history.
 
 rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a]]
 rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a#m1]]
+
+## Revision round 4 (2026-11-09) {#rev-round-4}
+
+Source: [[bsd-plan23-fold-additions-a9147d5]], the narrow confirm of round 3's additions. It has
+no 23.2 finding: its check 5 reproduced the census at `77c9f04` (23 lines in 18 files; 21 fake
+lines in 17 files after the two non-fakes; the quoted line numbers exact) and rates 23.2
+build-ready, merge gate unchanged (bug-178 first). One caveat is recorded so a re-run does not
+read a false zero. The round-3 table above is unchanged history.
+
+| item | answered at | rationale |
+|---|---|---|
+| census reproduced ([[bsd-plan23-fold-additions-a9147d5#q5]]) | [[#r6]], [[#ac-6]] unchanged | the counts and AC-6's `rmx grep` pattern hold |
+| re-run caveat: `git grep -E` has no `\s` and returns 0 lines for the census pattern | [[#ac-6]] unchanged; this row | re-run the census with AC-6's own `rmx grep -rnE '(_store_lock\|_use_lock)\s*=' tests/ --include='*.py'` or with `[[:space:]]` in place of `\s` |
+
+rel: derives-from -> [[bsd-plan23-fold-additions-a9147d5#q5]]
+rel: derives-from -> [[bsd-plan23-fold-additions-a9147d5#readiness]]

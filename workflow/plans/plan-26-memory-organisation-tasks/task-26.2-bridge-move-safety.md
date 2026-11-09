@@ -242,7 +242,11 @@ rel: derives-from -> [[bsd-plan26-27-spec-confirm-r6-lite-d396317]]
     switch `add_memory`'s commit to `_maybe_commit`, or add a dedicated store method that does
     both writes in one scope.
   - Log each legacy row's refresh as a `memory_content` event carrying the updated metadata,
-    so replay reproduces it.
+    so replay reproduces it. **Cross-plan note from 23.1 (r6 round, 2026-11-09):** the event
+    also carries `updated_at` (the row's stored `memory_content.updated_at` after the refresh),
+    the field 23.1 R11.3 adds to every `memory_content` event and makes both replay paths read
+    ([[task-23.1-queue-and-drain#r11]] item 3.3); 26.2 merges first, so replay ignores the field
+    until 23.1 lands, and nothing in 26.2's ACs changes. See [[#rev-round-6]].
   - Test: after the AC-1b fixture, replay the throwaway store's facts.log into a FRESH store and
     assert `legacy-x` carries the resolved `b/x.md`. Mutation: drop the legacy event and the
     test goes RED.
@@ -265,3 +269,18 @@ rel: derives-from -> [[bsd-plan26-27-spec-review-r5-3ded49e]]
 | s1 (19 legacy `memory_sync_disk` rows keep the pre-move `source_path`, uncounted) | Every row on the old path is refreshed in one write; fourth term `moved_legacy`; RED fixture with a second, differently named row; merge/forget out of scope | AC-1b, AC-3, [[#files]] |
 | m3 (terms defined two ways; no precedence) | Precedence by stored-path shape; `stale_before` compares with AC-3's first two terms | [[#impl-notes-r5]] |
 | m4 (23.0 does not record sandbox connects) | Test-local `sys.addaudithook` on `socket.connect` | [[#impl-notes-r5]] |
+
+## Revision round 6 (2026-11-09) {#rev-round-6}
+
+Cross-plan implementation note only; plan-26 stays approved and no requirement, AC or mutation
+of 26.2 changes. Source: [[bsd-plan23-fold-additions-a9147d5#s1]], folded into 23.1 as
+[[task-23.1-queue-and-drain#rev-round-13]]: 23.1's authoring-time guard compares stored
+`memory_content.updated_at`, so every `memory_content` event must carry that value for
+`rebuild --from-log` to reproduce it.
+
+rel: derives-from -> [[bsd-plan23-fold-additions-a9147d5]]
+rel: related-to -> [[task-23.1-queue-and-drain#rev-round-13]]
+
+| finding | change | anchor |
+|---|---|---|
+| 23.1 s1 (cross-plan note from 23.1: the authoring time must survive replay) | The n1 legacy-row `memory_content` event carries `updated_at`, the stored value | [[#impl-notes-r6]] |

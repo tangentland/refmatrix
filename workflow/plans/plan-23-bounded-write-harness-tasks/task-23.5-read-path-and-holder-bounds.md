@@ -24,7 +24,12 @@ metadata:
 > [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3]] (nm23-r10-1..5, all MEH); see [[#rev-round-10]].
 > Revision round 11 (2026-11-09): [[bsd-plan23-1-2-freshness-confirm-1c0b66a#b-n1]] — the
 > `memory_compile` apply is a NAMED HOLDER here, [[#r9-compile-apply]] with [[#ac-9]]; see
-> [[#rev-round-11]].
+> [[#rev-round-11]]. **Revision round 12 (2026-11-09): R9 UPDATED** by the narrow confirm
+> [[bsd-plan23-fold-additions-a9147d5]] (s3, m1): R9 names the compile HOLD in every op that
+> runs it (task 26.6's `memory_compile` op first; op names re-read from 26.6's merged code at
+> RED), AC-9 runs through each and asserts each op's own name, marker-ON fixture with a
+> marker-OFF K beside it, and AC-9 states which parts are RED and that K is a ratchet; see
+> [[#rev-round-12]].
 > Depends on: 23.0 (sandbox), 23.2 (recorder), 23.1 (`_FairLock` owner, R1.6 item 1; the learn
 > drain, R9; `_compact_factslog_locked`, R3.7). **bug-115/116 (0.78.2) merged to `master`:
 > SATISFIED** (`607d759`, `1c86d9c` and bug-117's `391ffeb` are ancestors of `master` `b381b6d`;
@@ -532,7 +537,22 @@ maintenance holds (17.1 / 17.3), plan-18's catalog maintenance and its swap (18.
    (round 11). {#r8}
 9. **R9 The `memory_compile` apply is a NAMED HOLDER with a pre-registered write bound (round
    11, b-n1; decided).** {#r9-compile-apply}
-   - **The holder.** `daemon.py::_op_memory_compile_apply` (the symbol at `master` `77c9f04`, on
+   - **The holder is the HOLD, in every op that runs it (round 12, s3).** What R9 bounds is
+     the block `with d._store_lock, d._st().with_partition(…):` around `consolidate.apply_plan`
+     PLUS, on a memory root carrying the `.memory-layout` marker, 19.4 R3's in-hold reads of
+     subjects, members and scores for the `MEMORY.md` render (26.6 [[task-26.6-compile-subject-hygiene#plan-19-delta]],
+     R3 row; marker-gated), wherever that block runs. Task 26.6 (merging before 23.x) builds
+     19.4 R1's op half: a NEW daemon op and verb `memory_compile` (plan + apply,
+     single-flight, `retries=0`, `scope`), which replaces the legacy `memory compile` in the
+     verb table ([[task-26.6-compile-subject-hygiene#new-scope]] R-D) and is what production
+     runs (the verb, MCP, and later 17.2's tick). 26.6 is not built at this revision, so the
+     op set is specified by the hold block's ROLE, not by today's symbol: **at 23.5's RED the
+     implementer reads 26.6's merged `daemon.py`, lists every op whose handler enters the hold
+     block (expected: `memory_compile`, and `memory_compile_apply` only if it survives 26.6),
+     and records that list with its sha in the implementation summary.** Each listed op gets
+     R9's decision, docstring and bound; AC-9 runs through each. The bullet below describes
+     the block as it stands at HEAD, under the name it has there.
+   - **The block at HEAD.** `daemon.py::_op_memory_compile_apply` (the symbol at `master` `77c9f04`, on
      `task-3.7-verb-it-backlog` at `e4faf32` and on `fix-bug178-bulk-write` at `ae7c0c7`) runs
      `with d._store_lock, d._st().with_partition(_memory_partition(d, args)):` around the WHOLE
      `consolidate.apply_plan(store, plan, prune=…)`: with `prune`, one `unlink` per leaf of every
@@ -551,23 +571,28 @@ maintenance holds (17.1 / 17.3), plan-18's catalog maintenance and its swap (18.
         would mean re-designing the apply into per-subject prune-and-refile units: that is
         26.6's algorithm, not a harness concern, and no measurement asks for it.
      2. What a long hold used to cost is cut elsewhere in plan-23 for EVERY holder: a cli read
-        waits at most `RMX_CLI_WRITER_WAIT_S` and then answers `writer busy: memory_compile_apply
+        waits at most `RMX_CLI_WRITER_WAIT_S` and then answers `writer busy: <the compile op>
         …` (R1, R2, R4), the heartbeat no longer depends on it (R6), and a hook write that
         arrives during it is queued (23.1 R11).
      3. The failure plan-23 exists to catch is many writes per hold that a fixture's seconds
         hide (bug-085, bug-093); 23.2's write counter is the detector for it, so the bound is a
         pre-registered statement count, which is what AC-9 asserts.
-   - **What is built.** No new lock mechanism. The op is already named by R4 (its dispatcher
-     `_inflight_ops` entry, `kind="op"`, `op="memory_compile_apply"`), so R4's alarm and
-     `writer_holder` name it with no extra code. Its docstring gains the decision and its WHY
+   - **What is built.** No new lock mechanism. Each listed op is already named by R4 (its
+     dispatcher `_inflight_ops` entry, `kind="op"`, `op=<that op's registered name>`), so R4's
+     alarm and `writer_holder` name it with no extra code. Each listed op's docstring (or the
+     one helper they share, if 26.6 factors the block into one) gains the decision and its WHY
      (whole-apply hold by decision; bounded by AC-9's write count; cites this item). R8's census
      records its hold on the live-copy fixture beside the others.
    - **The bound.** One hold per apply; Lance versions 0 inside it (it writes no vectors; the
-     re-queued embeddings run later, off the hold); statements per hold at most K, where K is
+     re-queued embeddings run later, off the hold); statements per hold at most K, where K (one per
+     listed op, since `memory_compile` may do more inside its hold than the bare apply) is
      pre-registered at RED as the count the apply makes on AC-9's fixture plus 2 (23.2 AC-3's
      convention), recorded in the implementation summary together with the fixture's
-     `(clusters, members, pruned_leaves)` so a later reader can tell a fixture change from a
-     regression.
+     `(clusters, members, pruned_leaves, marker)` and the sha K was measured at, so a later
+     reader can tell a fixture change from a regression. The fixture is marker-ON (the longer
+     hold: the R3 render reads are inside it), and the bound asserts K for it; a marker-OFF
+     count `K_off` is measured on the same fixture and recorded beside K (round 12, s3). K is a
+     RATCHET over code 23.5 does not change ([[#ac-9]] says which of AC-9's clauses are RED).
    - **Order.** AC-9 is written and registered after 26.6 merges (the merge order puts plan-26
      before 23.x), so K counts the apply WITH 26.6's hygiene; a later change that adds per-row
      writes to the apply fails AC-9 instead of lengthening the hold silently.
@@ -790,15 +815,19 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
    `_store_lock` from the first op) with a fixture memory dir bridged in through the real
    `ingest_gmd` path: 12 memories in 3 groups that `consolidate.compile_memories` clusters, plus
    one hand-declared subject, and one PRIOR compile already applied so `prune` has leaves to
-   unlink. The plan is built by the real `compile_memories` (not mocked; 26.6's test rule) and
-   applied through the `memory_compile_apply` daemon op. Then:
+   unlink. The memory root carries the `.memory-layout` marker (marker-ON, so the hold
+   includes 19.4 R3's render reads; round 12, s3). The plan is built by the real
+   `compile_memories` (not mocked; 26.6's test rule) and applied through EACH op R9 lists
+   (26.6's `memory_compile` op with apply; `memory_compile_apply` too only if it survives 26.6),
+   each run on a fresh copy of the fixture. Then, for each op:
    - the recorder shows EXACTLY ONE hold on the op's thread for the apply; that hold's counts
      are `lance_versions == 0` and `statements <= K` (R9's pre-registered K, through
      `@pytest.mark.max_writes_per_hold(statements=K, lance_versions=0)`, with the setup ops'
      holds below K too);
    - with `RMX_HOLD_ALARM_S=0` the release logs `lock hold: memory_compile_apply <s>s`, and
      during the hold (a seam pauses `apply_plan` after its prune loop) `stats(include_health=True)`
-     answers within 1 s with `writer_holder.op == "memory_compile_apply"`;
+     answers within 1 s with `writer_holder.op == <that op's own registered name>` (and the
+     alarm line names the same op);
    - during the same pause the test sends one unrelated `memory_add` op (bg pool) and waits
      2 s: `catalog.read.duckdb`'s mtime does not change (the write and its snapshot wait for
      the hold, so no snapshot lands between prune and re-file); after the release the next
@@ -809,7 +838,18 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
    `with d._store_lock:` per cluster): more than one hold is recorded, and the paused-gap
    `memory_add` runs and its snapshot changes the mtime with leaves unfiled; the apply run on
    a thread the dispatcher did not register (no `_inflight_ops` entry): `writer_holder.op` is
-   `untracked thread …`. Logs: `workflow/review-output/pytest-read-path.log`. {#ac-9}
+   `untracked thread …`; the test asserting one hard-coded name (`memory_compile_apply`) for
+   every op instead of each op's own: the `memory_compile` run FAILS.
+   - **Which parts are RED (round 12, m1).** K is measured from `apply_plan` code 23.5 does not
+     change (23.5 changes only docstrings there), so `statements <= K` passes at HEAD by
+     construction: it is a pre-registered RATCHET whose failing power is proven only by its
+     mutation (`upsert_subject` inside the member loop), and K is recorded with the sha it was
+     measured at. AC-9's RED clauses are R4's: `writer_holder.op` naming the op during the hold
+     and the hold-alarm line `lock hold: <op> <s>s` on release; both FAIL before R4 lands.
+   - **Marker-OFF twin.** The same fixture without the marker is run once per op and its
+     statement count recorded as `K_off` beside K; it is reported, not asserted, so the
+     difference K − K_off names the R3 render's share of the hold.
+   Logs: `workflow/review-output/pytest-read-path.log`. {#ac-9}
 
 ## Files to modify {#files}
 
@@ -826,6 +866,7 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
 | `tests/` | AC-1..AC-8 and AC-1b in a new `tests/test_read_path_holder_bounds.py`; the transitive AST test (R7) |
 | `src/refmatrix/daemon.py` (round 11) | `_op_memory_compile_apply`'s docstring states the whole-apply hold decision and cites R9 / AC-9 (R9; b-n1). No lock or code-path change: R4 already names the op |
 | `tests/test_read_path_holder_bounds.py` (round 11) | AC-9, with K and the fixture's `(clusters, members, pruned_leaves)` pre-registered at RED in the implementation summary |
+| `src/refmatrix/daemon.py`, `tests/test_read_path_holder_bounds.py` (round 12) | R9's docstring on EVERY op that runs the compile hold (the list read from 26.6's merged code at RED, recorded with its sha); AC-9 parametrized over that list, marker-ON, `K_off` recorded; the implementation summary records `(clusters, members, pruned_leaves, marker)`, K, `K_off` and the sha (s3, m1) |
 
 ## Test strategy {#test-strategy}
 
@@ -938,6 +979,27 @@ this spec are unchanged history.
 
 rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a#b-n1]]
 rel: related-to -> [[task-26.6-compile-subject-hygiene#new-scope]]
+
+## Revision round 12 (2026-11-09) {#rev-round-12}
+
+Source: [[bsd-plan23-fold-additions-a9147d5]], the narrow confirm of the round-11 additions
+(DIRTY 0B/3S/3M; this spec's findings are s3 and m1, the rest are 23.1's,
+[[task-23.1-queue-and-drain#rev-round-13]]). Read at HEAD `5c7d6bf` (`src/` unchanged since
+`77c9f04`) and against plan-26 task 26.6's spec ([[task-26.6-compile-subject-hygiene#plan-19-delta]],
+[[task-26.6-compile-subject-hygiene#new-scope]]). No user decision remained; the report's fixes
+are adopted. 26.6 is not built, so its op names are not cited as code: R9 specifies the hold by
+its role and defers the op list to a read of 26.6's merged code at RED. The round-11 table above
+is unchanged history; its decision (a named holder, not `bounded_steps`) stands.
+
+| finding | answered at | rationale |
+|---|---|---|
+| s3 (R9 / AC-9 bound `memory_compile_apply`; after 26.6 the production compile runs as `memory_compile`, with 19.4 R3's marker-gated reads inside the hold) | header, [[#r9-compile-apply]] (the HOLD named in every op that runs it; the op list read from 26.6's merged code at RED and recorded with its sha; K's fixture records the marker; `K_off` beside K), [[#ac-9]] (marker-ON; run through each listed op; each op's own name asserted; a hard-coded-name mutation), [[#files]] | a bound named against HEAD's symbol misses the op an earlier-merging plan makes the production path; the hold block is the stable thing, its op names are not |
+| m1 (AC-9's K clause passes at HEAD by construction) | [[#r9-compile-apply]] (K a ratchet, recorded with its sha), [[#ac-9]] ("Which parts are RED": R4's `writer_holder.op` and the hold-alarm line; K proven only by its mutation) | the TDD rule is that a RED test fails at HEAD; the ratchet is kept, and labelled for what it is |
+
+rel: derives-from -> [[bsd-plan23-fold-additions-a9147d5]]
+rel: derives-from -> [[bsd-plan23-fold-additions-a9147d5#s3]]
+rel: derives-from -> [[bsd-plan23-fold-additions-a9147d5#m1]]
+rel: depends-on -> [[task-26.6-compile-subject-hygiene#plan-19-delta]]
 
 ## Folded rider: plan-2 r9 #s-3 (2026-10-19) {#w1c-rider}
 
