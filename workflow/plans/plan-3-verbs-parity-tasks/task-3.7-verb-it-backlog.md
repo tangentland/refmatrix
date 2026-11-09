@@ -532,6 +532,31 @@ private `WorkerClient` is never rebuilt, because it respawns its own process. On
 handles whichever client is cached at exit. Log: `workflow/review-output/task-3.7/r2-green-embed-client.log`.
 Registry row: bug-171. {#remedy-r2-green}
 
+**RED for the MEH findings (R2-M1..M3).** {#remedy-r2-meh-red} The source is the same audit,
+findings #m-1, #m-2 and #m-3. The tests are in `tests/test_task3_7_remedy_r2_meh.py` and the red
+log is `workflow/review-output/task-3.7/r2-red-meh.log` (4 failed on their assertions; R12
+`test_a_raw_path_legacy_queue_line_is_a_legacy_entry` stays green). No doubles are used.
+
+- R2-M1 `test_drain_behind_an_oversized_head_file_reports_what_it_kept_on_stderr`. The spool is a
+  15-path head file followed by three 2-path files, and the command is `curator status --drain`
+  with limit 10. Every file must stay. Stdout must still carry the `curator-queue: 15 ... +5 more`
+  line. Stderr must match `kept 1 spool file` and name `--limit`. As a control, with `--limit 100`
+  the kept notice is silent. At HEAD stderr is `''`.
+- R2-M2 `test_the_shipped_curator_template_does_not_say_a_hook_drains_the_spool`. The test reads
+  the curator segments of the generated hooks (`hooks._claude_hook_block`). If none of them runs
+  `--drain`, then no line of the shipped template may pair "hook" with draining. At HEAD template
+  lines 139 and 145 match. The repo copy `.claude/agents/gmd-curator.md` is hand-maintained:
+  `install_agents` skips an existing file without `--force`, and the copy has diverged in its GMD
+  frontmatter and its extra sections. It needs the same two-line fix by hand. It is not covered by
+  this test.
+- R2-M3 `test_a_non_path_legacy_line_is_counted_bad_not_an_entry` and
+  `test_a_non_path_raw_line_in_a_watcher_spool_file_is_counted_bad`. **Rule:** a non-JSON line is a
+  legacy path only when it has no internal whitespace AND contains `/` or has a file suffix.
+  Every other non-JSON line is a counted bad line and gets the existing `N unparseable line(s)`
+  warning. The rule applies in every spool file, because an adopted `curator.queue` takes the
+  normal spool name, so a file's origin cannot be observed. At HEAD both `not a path at all` and
+  `Traceback (most recent call last):` become `reason: legacy` entries.
+
 ## Definition of done {#done}
 
 - Each family: RED (recorder/parity/defect rows) before GREEN; mutation check; summary rows in
