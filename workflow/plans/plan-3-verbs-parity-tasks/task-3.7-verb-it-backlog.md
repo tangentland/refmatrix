@@ -629,11 +629,60 @@ keeps only the role selection and the swap, and `_process_embed_client`, still t
 that judges the cached client, re-probes while that client is private and on success swaps
 and retires the private worker. With no injected `log`, `shared_embedder` emits the rebuild
 notice (with `rebuild #N`) and the in-process fallback notice at WARNING on
-`refmatrix.recall`. `_embed_client_is_dead` no longer reads `_EMBED_CLIENT_ISSUED`; the
-global stays, unread, because the r1/r2 rigs `monkeypatch.setattr` it (drop those resets,
-then the line). Logs `workflow/review-output/task-3.7/r3-green-first.log` (r3 + r2: 11
-passed) and `r3-green.log` (related set, 18 files: 428 passed). Open, out of scope:
-bug-173.
+`refmatrix.recall`. `_embed_client_is_dead` no longer reads `_EMBED_CLIENT_ISSUED`, and the
+global is gone: `3670f35` dropped the r1/r2 rigs' `monkeypatch.setattr` resets of it and
+`b0cc89b` deleted the global (no `src/` reference remains; ch-bsd r3 #m-2 corrected this
+paragraph, which first said it stayed unread). Logs
+`workflow/review-output/task-3.7/r3-green-first.log` (r3 + r2: 11 passed) and
+`r3-green.log` (related set, 18 files: 428 passed). bug-173 was first recorded here as out
+of scope; ch-bsd r3 #b-1 ruled that an unanchored deferral of this accessor's own contract,
+and it is fixed in [[#remedy-r4]].
+
+## Remedy round 4 (2026-11-09) {#remedy-r4}
+
+Source: ch-bsd re-audit `workflow/bullshit/2026-11-09-0115-task-3.7-remedy-r3-b0cc89b.md`
+(1B/1S/2M). Decisions (orchestrator, as the user would): B-1 (bug-173) is fixed in r4, not
+deferred; S-1 is fixed, not justified.
+
+rel: derives-from -> [[bsd-plan3-task37-r3-b0cc89b]]
+
+**RED (r4).** {#remedy-r4-red} Tests in `tests/test_task3_7_remedy_r4.py` (commit `4e46ca0`).
+Red log `workflow/review-output/task-3.7/r4-red.log`: 4 failed on their assertions, 4 passed
+(the mutation killers). Related set (r1-r4 + `test_shared_worker_readoption.py`)
+`r4-red-related.log`: the same 4 failed, 52 passed. Mutations `r4-mutations.log`.
+
+- B-1 (bug-173) `test_an_unspawnable_private_worker_loads_the_in_process_model_at_most_once`
+  `[0]`/`[1]` (`RMX_SHARED_MODELS`). No hub, a private worker whose argv exits at once, 4
+  daemonless calls: every call is served in-process (green), and the in-process model loads
+  at most ONCE per process. For `=1` the hub then starts and the process must be back on a
+  `SharedWorkerClient` serving `stub/hub` within 3 calls, still with at most one load. At
+  HEAD: 4 loads in 4 calls under both values. Either GREEN shape satisfies it (cache the
+  in-process fallback once per process, or judge a private client whose spawn failed as
+  dead and rebuild it with backoff), as long as the cached fallback does not pin the
+  process off the hub.
+- S-1 `test_two_concurrent_calls_behind_a_mute_hub_finish_within_the_request_path_bound`.
+  Private client cached (no hub at build), the base window (2 s) passes, a mute hub (a real
+  socket that accepts and never answers) appears, two threads call at once. With
+  `PROBE_TIMEOUT_S` raised to 6 s, each call must finish in 2.5 s, and the next call must make
+  no hub connection and take under 1 s. **The bound:** the request-path re-probe gets its
+  own bound of 1.0 s or less (twice `shared_available`'s 0.5 s); `PROBE_TIMEOUT_S` stays the
+  cold-worker probe of `new_model_client` (bug-014). 2.5 s = two such probes back to back
+  (a caller serialised behind another's probe) + 0.5 s for the stub round trip. At HEAD:
+  6.0 s and 12.0 s.
+- S-1 `test_a_build_that_fell_back_to_private_sets_the_reprobe_throttle`. A mute hub at
+  build time: `new_model_client` probes it, fails, goes private. With
+  `RMX_SHARED_REPROBE_S=300` the next call must make no hub connection: the build SETS the
+  throttle (`next_at = now + base`) instead of clearing it. At HEAD: 2 new connections.
+  This is the killer for the GREEN-time form of M11 (delete the throttle set).
+- M-1 killers, green at HEAD, each proven against its mutation in `r4-mutations.log`:
+  M3 `test_an_embedder_captured_before_the_hub_swap_is_refused_not_respawned` (retire ->
+  close: `DID NOT RAISE`); M10
+  `test_a_successful_reprobe_clears_the_backoff_so_the_next_stint_starts_at_base` and the
+  daemon's `test_the_daemon_after_adopt_and_hub_loss_reprobes_at_base` (both fail with
+  `backoff={'embed': 200.0}` after adoption); M12
+  `test_a_failing_close_of_the_mute_probe_client_is_named_in_the_log` (the line is absent).
+
+Doubles: registry row "task 3.7 remedy r4".
 
 ## Definition of done {#done}
 
