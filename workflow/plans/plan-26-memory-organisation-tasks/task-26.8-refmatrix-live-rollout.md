@@ -57,14 +57,22 @@ first.
    - Restart the hub with `rmx hub stop`, then ONE `launchctl kickstart`.
 2. **AC-2: confirm the measured refresh (ch-bsd r1 #s5; r2 s2).**
    - The refmatrix dir is not organised yet, so the deploy alone triggers no refresh here.
-   - After AC-4's apply writes the marker, the first bridge runs the refresh. Its bridge report
-     must show re-ingested rows equal to AC-0's measured `refresh_pending`, within ±5 (files
-     edited in between), plus the save-states forced by 26.5 AC-5. The two numbers are reported
-     separately.
+   - **STOP before AC-4 (r4 s3).** If AC-0's `refresh_pending` for this store is more than 50,
+     stop: log a bug row and report to the user BEFORE the preview and apply.
+   - The first marker-on bridge is the apply's own (26.5 AC-4 step 4 / AC-5). Its report splits
+     re-ingested rows into terms (26.2 AC-3), each compared separately:
+
+     | term | expected | tolerance |
+     |---|---|---|
+     | `stale_before` | AC-0's `refresh_pending` | ±5 |
+     | `moved` | the AC-3 preview's move count (40 save-states + 250 typed) | exact |
+     | `forced` | save-states forced by 26.5 AC-5 that were NOT moved; 0 here, because all 40 move | exact |
+
+     The moved save-states are counted once, under `moved`.
    - Then run ONE `rmx memory sync-disk` and record two things from the bridge report: the number
      of rows re-ingested, and the store write counter. Record wall time only as context.
-   - If `refresh_pending` is more than 50, or the sync holds `_store_lock` for more than 60 s,
-     STOP. Log a bug row and report to the user before AC-4.
+   - If that sync holds `_store_lock` for more than 60 s, log a bug row and report it to the
+     user.
 3. **AC-3: preview.**
    - Run `rmx memory organise <live memdir>` with the default `--store-from-memdir` (26.5 AC-1).
      The resolved store must be refmatrix's.
@@ -164,3 +172,11 @@ Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
 | s2 (the copied memdir counts its own relocation) | Dry-run on the LIVE memdir path against a store-snapshot copy; relocated-twin control = 0; terms pre-registered | AC-0 |
 | m5 (the spot-check is wrong for save-state) | Check after a bridge only, or compare the pre-deploy binary's output on copies | AC-0 |
 | m8 (forced save-state re-bridge) | Counted separately in AC-2 | AC-2 |
+
+## Revision round 4 (2026-11-09) {#rev-round-4}
+
+Answers [[bsd-plan26-27-spec-review-r4-f89e640]].
+
+| finding | change | anchor |
+|---|---|---|
+| s3 (the expected count compared a pre-move number with a post-move bridge) | Expected count = AC-0 + preview moves + forced-not-moved, per term; the >50 STOP is on AC-0's number, before AC-4 | AC-2 |

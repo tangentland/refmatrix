@@ -63,8 +63,13 @@ anchored here).
    - **The checker** is `tools/prose_conversion_check.py`, with its test
      `tests/test_prose_conversion.py`.
      - It enumerates every prose line of the pre-conversion `MEMORY.md`.
-     - It passes only if each line is found in some converted memory's body (branch a, or the
-       blockquote of branch b) or is still carried in `MEMORY.md`.
+     - It matches WHOLE lines, per block (r4 m2). Each block's lines, after the one
+       normalisation, are compared as a MULTISET (with repeat counts) against the lines of the
+       memory that AC-3's table maps that block to (branch a body, or branch b blockquote), or
+       against the lines still carried in `MEMORY.md`.
+     - It never searches "any memory". A dropped generic line (`---`, `**Status:** done`, a
+       repeated session-log line) therefore cannot pass because some other memory happens to
+       contain it.
      - Comparison uses ONE normalisation: strip a trailing ` {#…}` anchor suffix and a leading
        `> ` quote marker, nothing else. Headers are therefore compared by TEXT, not by anchor.
      - It prints every missing line with its line number.
@@ -76,6 +81,9 @@ anchored here).
      - (b) A header copied with an appended `{#anchor}`: the checker PASSES.
      - (c) A branch-(b) memory missing its blockquote: the checker FAILS.
      - (d) A grouping-only header: not required in any memory, and still carried.
+     - (e) A block contains a line twice (a repeated session-log line), and its mapped memory
+       holds it once, while ANOTHER memory holds the same line. The checker FAILS, naming the
+       line and the missing repeat count (r4 m2).
    - The authoring agent is `@ch-doc-writer` or `@gmd-curator`. It writes NEW files into the
      memdir's `project/` folder.
    - The checker runs on the live result BEFORE AC-3's removal. It runs again in 27.6 after the
@@ -126,3 +134,11 @@ Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
 | finding | change | anchor |
 |---|---|---|
 | s3 (no checker artifact, no RED, the ADR branch unverifiable, verbatim headers vs GMD anchors) | Named checker script and test with a synthetic fixture; RED (a) planted loss fails and names the line, (b) an anchored header passes under ONE normalisation, (c) a missing quote fails, (d) a grouping header stays carried; the ADR branch quotes the block verbatim; the 17 headers are anchored and compared by text | AC-2, [[#files]], [[#test-strategy]] |
+
+## Revision round 4 (2026-11-09) {#rev-round-4}
+
+Answers [[bsd-plan26-27-spec-review-r4-f89e640]].
+
+| finding | change | anchor |
+|---|---|---|
+| m2 (substring match against any memory) | Whole-line multiset match against the block's mapped memory; RED case (e) | AC-2 |

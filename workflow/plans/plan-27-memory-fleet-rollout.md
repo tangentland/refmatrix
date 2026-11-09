@@ -159,26 +159,27 @@ Round 1 added these rules (see [[#rev-round-1]]):
 ## Open questions (phrased as decisions) {#open-questions}
 
 - **Q1: if viascope2's one overlapping id (`reference_atleps01_deploy_target`) differs from
-  viascope's copy, what happens?** Recommend: keep viascope's file under the id. Import
+  viascope's copy, what happens?** DECIDED (orchestrator, r4; recommendation adopted): keep viascope's file under the id. Import
   viascope2's file as a NEW id, `reference_atleps01_deploy_target_viascope2`, with
   `rel: supersedes ->` or `rel: amends ->` pointing whichever way the newer `updated:` says
   (MEMORY-RULES amend/supersede tree). The user reads the diff before apply.
 - **Q2: should the viascope2 checkout (`~/github/atollogy/bdep/viascope2`) be archived?**
-  Recommend archiving it, since it was merged by subtree on 2026-04-17. This is the user's
-  action, not the plan's.
+  Recommend archiving it, since it was merged by subtree on 2026-04-17. OPEN: a user action
+  outside the plan.
 - **Q3: should the stale hooks in cliquedb and viascope (no SessionStart bridge, silent
-  `|| true`) be regenerated now?** Recommend reporting only and leaving them to plan-24's mod.
+  `|| true`) be regenerated now?** DECIDED (r4): report only, and leave them to plan-24's mod.
   Save-state's own bridge covers the migration. Each `rmx install-hooks` in a foreign repo is a
   backup-and-diff operation ([[feedback_install_hooks_no_claude_reaps]]) that should not ride a
   memory rollout.
 - **Q4: should the home dir (`-Users-tholley`) be bridged into the GLOBAL store's memory
-  partition?** Recommend organising its files and NOT changing what it bridges into until 27.1
+  partition?** DECIDED (r4): organise its files, and do NOT change what it bridges into until 27.1
   shows which partition it lands in today. The global store is the hub's.
 - **Q5: what happens to the empty `~/enduris/thiquet` store and its `.obsidian/` and
-  `CLAUDE.md`?** Recommend: unsupervise it, back up `.refmatrix/`, leave a tombstone README, and
+  `CLAUDE.md`?** DECIDED (r4): unsupervise it, back up `.refmatrix/`, leave a tombstone README, and
   leave the directory in place for the user to decide.
 - **Q6: what about `-bdep-ble-sniffer-mqtt`, whose checkout is not at the expected path?**
-  Recommend organising it file-only and asking the user where the repo lives.
+  OPEN for the user: where does its repo live? Until answered, it is organised file-only
+  (`no store`).
 
 ## Revision round 1 (2026-11-09) {#rev-round-1}
 
@@ -222,3 +223,13 @@ Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
 | m1 (27.1 duplicates; 27.6 landing table) | Fixed | [[task-27.1-fleet-inventory#rev-round-3]], [[task-27.6-per-store-compile-and-landing#rev-round-3]] |
 | m4 (no compaction until organised) | Headroom ordering; viascope notice | [[#approach]] |
 | 27 Q1-Q6 r3 verdicts | All sound. Q6: ble-sniffer is `no store`, not exit 2 | [[#open-questions]] |
+
+## Revision round 4 (2026-11-09) {#rev-round-4}
+
+Answers [[bsd-plan26-27-spec-review-r4-f89e640]].
+
+| finding | change | anchor |
+|---|---|---|
+| r4 verdicts on 27 Q1, Q3, Q4, Q5 | Recorded as DECIDED (recommendations adopted) | [[#open-questions]] |
+| 27 Q2, Q6 | Remain open for the user (archive the viascope2 checkout; the ble-sniffer-mqtt location) | [[#open-questions]] |
+| m2 (27.2a checker) | Whole-line multiset match per block | [[task-27.2a-index-prose-to-memories#rev-round-4]] |

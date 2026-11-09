@@ -63,7 +63,10 @@ viascope2 12, cliquet 8.
    throwaway memdir, then run `rmx ingest-gmd --as-memory <dir>`. The store must have no `x` row
    and no `y` row. At HEAD both are ingested, so this is RED. Doc ingest (without `as_memory`)
    keeps its own walk.
-3. **AC-3: the index sees type folders.** `memory_index.collect` uses `iter_memory_files`. Test
+3. **AC-3: the index sees type folders. EVERY dir, ungated (r4 s1).** `memory_index.collect`
+   uses `iter_memory_files`, with or without the marker. On a dir flat except for `impressions/`
+   it yields what HEAD's glob yields, so the output is byte-identical. In a nested, un-organised
+   dir (viascope) it adds the nested entries. Test
    on a throwaway dir laid out like viascope: `feedback/` with 3 files, `project/` with 3,
    `impressions/` with 1, and 1 file at the top level. `memory_index.collect(dir)` returns 8
    entries; at HEAD it returns 2 (RED). Assert on `collect()`, not on rendered lines, because
@@ -117,12 +120,21 @@ viascope2 12, cliquet 8.
    - In a dir without `.memory-layout`, `write` IS HEAD's write: HEAD's render, HEAD's
      compaction (which drops prose, as today) and HEAD's path-keyed `save_hooks`. No 26.1 guard
      runs there (r3 s1, m4).
-   - Test, with a fixture that has one prose line, one entry and no sidecar. Run it through HEAD's
+   - **Scope of "HEAD bytes" (r4 s1):** it holds only for dirs whose memories are top-level or
+     in `impressions/`. A nested un-organised dir gets AC-3's wider `collect` together with
+     HEAD's render, compaction and sidecar.
+   - Test (flat), with a fixture that has one prose line, one entry and no sidecar. Run it through HEAD's
      code (a pinned copy of HEAD's `memory_index` in the test, or HEAD's output recorded as a
      golden file at RED time). Then run 26.1's code, marker-off.
      - Expected: `MEMORY.md` bytes AND `.memory_hooks.json` bytes are identical to HEAD's. HEAD
        creates the sidecar, so "absent" is the wrong assertion.
      - Marker-on twin: prose is carried, the guard is active, and the sidecar is keyed by id.
+   - **Test (nested, marker-off; r4 s1).** The fixture is in viascope's shape: `feedback/` 3,
+     `project/` 3, `impressions/` 1, 1 top-level entry, one prose line, a hand index listing all
+     8. After a `write`:
+     - all 8 entries are still listed. This is RED at HEAD, which renders about 2;
+     - the prose line is dropped (HEAD's trade, asserted, so it is a stated behaviour);
+     - the sidecar is path-keyed.
 
 ## Files to Create / Modify {#files}
 
@@ -188,3 +200,11 @@ Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
 | m4 (the everywhere-guard stops compaction) | Guard is organised-only; un-organised = HEAD's write including its compaction | AC-6, AC-9 |
 | m2 (date-only vs datetime on the same date) | Same date and either side date-only → mtime; never midnight | AC-1 |
 | m7 (fifth call site `cli.py:10311`) | Named; prestage walks the same set | AC-2, [[#files]] |
+
+## Revision round 4 (2026-11-09) {#rev-round-4}
+
+Answers [[bsd-plan26-27-spec-review-r4-f89e640]].
+
+| finding | change | anchor |
+|---|---|---|
+| s1 (the ungated `collect` vs "HEAD's render") | AC-3 named ungated and every-dir; "HEAD bytes" scoped to flat-plus-`impressions/` dirs; marker-off nested fixture added | AC-3, AC-9 |

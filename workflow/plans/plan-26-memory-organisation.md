@@ -12,8 +12,8 @@ metadata:
 
 # Plan 26: memory-layer organisation {#root}
 
-**Date:** 2026-11-08. Revised 2026-11-09, rounds 1 ([[#rev-round-1]]), 2 ([[#rev-round-2]]) and 3
-([[#rev-round-3]]).
+**Date:** 2026-11-08. Revised 2026-11-09, rounds 1 ([[#rev-round-1]]), 2 ([[#rev-round-2]]), 3
+([[#rev-round-3]]) and 4 ([[#rev-round-4]]).
 **Status:** Drafting.
 **Location:** `workflow/plans/plan-26-memory-organisation.md`. This file stays here; its stage is
 `metadata.status`.
@@ -39,6 +39,7 @@ rel: reinforces -> [[feedback_converge_repeated_shapes]]
 rel: derives-from -> [[bsd-plan26-27-spec-review-r1-96feccd]]
 rel: derives-from -> [[bsd-plan26-27-spec-review-r2-8af766a]]
 rel: derives-from -> [[bsd-plan26-27-spec-review-r3-696c3cb]]
+rel: derives-from -> [[bsd-plan26-27-spec-review-r4-f89e640]]
 rel: related-to -> [[plan-25-cliquedb-field-report]]
 rel: motivates -> [[plan-27-memory-fleet-rollout]]
 rel: specifies -> [[task-26.0-adr-memory-dir-layout]]
@@ -256,17 +257,27 @@ organise date, and the backup tarball. The marker is a dotfile, so it is never a
 
 **In a dir without the marker, every one of these behaves exactly as at HEAD.** That includes
 HEAD's render, HEAD's path-keyed `save_hooks` sidecar write, and HEAD's compaction (r3 s1, m4).
-Only two changes reach every dir:
+Four changes reach every dir (r4 s1, m3):
 - **Readers stay dual.** `iter_savestates`, recall-state and `load_hooks` read both layouts and
   both sidecar key shapes. A reader changes no file.
 - **The 26.4 store-row mtype correction** (below).
+- **26.1 AC-2: the bridge's memory walk is `iter_memory_files`.** It skips dotfiles, dot-dirs
+  and `README.md`. The r4 probe found 0 such `.md` files fleet-wide, so this changes no store
+  today.
+- **26.1 AC-3: `memory_index.collect` uses `iter_memory_files`.** It only ADDS entries:
+  - on every dir flat except for `impressions/`, it is byte-identical to HEAD;
+  - in viascope (no marker; 142 nested memories in `feedback/` 65, `project/` 68,
+    `reference/` 9) HEAD's render sees about 4 entries, and the new `collect` sees about 146.
+
+  It stays ungated on purpose: gating it would keep the viascope wipe.
 
 **The r2 claim "guards that only refuse apply everywhere" is withdrawn (r3 m4).** With HEAD's
 render, every prose line counts as "lost", so an everywhere-guard would refuse every index write
 in viascope, cliquedb, viascope2 and cliquet. `_ss_update_index` would meanwhile keep appending
 (bug-045's growth). The trade, stated:
-- Un-organised dirs keep HEAD's behaviour, INCLUDING its prose-dropping compaction and the latent
-  viascope wipe.
+- Un-organised dirs keep HEAD's behaviour, INCLUDING its prose-dropping compaction. In viascope
+  that means prose loss on a save-state (its 62 prose lines). It is NOT a full wipe: the ungated
+  `collect` keeps its 146 entries (r4 s1).
 - The protection against both is plan-27 organising each dir, behind its backup.
 - Until then, the recovery path is 26.8 AC-0's pre-deploy fleet snapshot of every `MEMORY.md`
   and sidecar.
@@ -455,3 +466,13 @@ Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
 | s1, m4 (the marker branch contradicts HEAD's sidecar; the everywhere-guard stops compaction) | Un-organised = HEAD render, HEAD path-keyed sidecar, HEAD compaction; readers dual; r2 "strictly more conservative" withdrawn; the trade and its recovery path stated | [[#layout-marker]], [[#non-goals]] |
 | m3 (compile's index regeneration ungated) | 19.4 R3 added to the gated list | [[#layout-marker]] |
 | Q-verdicts r3 | All sound or closed; Q8 closed | [[#open-questions]] |
+
+## Revision round 4 (2026-11-09) {#rev-round-4}
+
+Answers [[bsd-plan26-27-spec-review-r4-f89e640]].
+
+| finding | change | anchor |
+|---|---|---|
+| s1 (the ungated `collect` contradicted "HEAD's render" in viascope) | `collect` and the bridge walk are named as every-dir changes; viascope's trade restated as prose loss on a save-state, not a wipe | [[#layout-marker]] |
+| m3 (the every-dir list was short) | Now four entries | [[#layout-marker]] |
+| 26 Q8 | Execution-time authorisation at 26.8 (r4 verdict) | [[#open-questions]] |

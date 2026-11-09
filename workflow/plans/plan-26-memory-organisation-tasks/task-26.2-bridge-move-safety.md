@@ -58,9 +58,24 @@ provenance goes stale.
      the memdir would count the relocation the copy made, not the refresh. The store side is the
      one that is copied: the dev build reads a copy of that store's read snapshot in a sandbox
      under a short `mkdtemp()` root. The live store is never opened.
-     - The CLI needs no extra flag for this. `--store-snapshot <copy>` points the dry-run at the
-       copied catalog. `--path-map <live>=<copy>` is the alternative when the memdir must also be
-       copied.
+     - **Three NEW flags on `rmx ingest-gmd` (r4 s2).** HEAD's `cli.py:10230` has none of them.
+       - `--dry-run`: writes nothing and reports the stats.
+       - `--store-snapshot <catalog copy>`: opens that copied catalog IN-PROCESS and read-only.
+         It is fully daemonless: it never calls `daemon_mod`, never touches the hub, and never
+         resolves the live root.
+       - `--path-map <from>=<to>`: rewrites stored paths before comparing them. It is required
+         for the relocated twin, so it is NOT an alternative to `--store-snapshot`; the twin uses
+         both.
+     - **Which gate the dry-run evaluates.** It computes the MARKER-ON path-aware rule (AC-2) for
+       every file, whatever the dir's marker says. It answers "what would organising refresh". A
+       faithful marker-off run would report 0 in every un-organised dir and measure nothing.
+     - **Daemonless is asserted.** The test runs under task 23.0's sandbox connect recorder, with
+       `RMX_HOME` pointed at an empty sandbox. The `--store-snapshot` run must succeed and record
+       ZERO socket connects to any daemon or hub socket.
+     - **Stats split for the post-apply check (r4 s3).** The bridge reports re-ingested rows as
+       three terms: `moved`, `stale_before` (a path that disagreed before any move: missing or
+       symlink-form `source_path`) and `forced` (save-states forced by 26.5 AC-5 that were not
+       moved).
      - **Relocated-twin RED case.** Copy the memdir with nothing changed and dry-run it through
        `--path-map`. It must report `refresh_pending = 0`. Without the map it reports about 100%,
        and that "~100%" is exactly the defect this case pins.
@@ -92,6 +107,11 @@ provenance goes stale.
 - Modify `src/refmatrix/ingest_gmd.py`: the gate, duplicate-id stats, the report line.
 - Modify `src/refmatrix/cli.py`: `_bridge_stats` and `_bridge_wait_for_active_job` carry
   `duplicate_ids`; the save-state render prints them.
+- Modify `src/refmatrix/cli.py` `ingest-gmd` options (`:10230`): `--dry-run`, `--store-snapshot`
+  (an in-process read-only open of the copied catalog, never `daemon_mod`) and `--path-map`
+  (r4 s2).
+- Modify `src/refmatrix/ingest_gmd.py`: dry-run stats with the `moved` / `stale_before` /
+  `forced` split.
 - Create `tests/test_bridge_move_safety.py`.
 
 ## Test Strategy {#test-strategy}
@@ -134,3 +154,12 @@ Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
 | finding | change | anchor |
 |---|---|---|
 | s2 (copying the memdir counts the relocation, ~100% pending) | Dry-run on the LIVE memdir path (read-only) against a snapshot COPY of the store; `--path-map` alternative; relocated twin must report 0; expectation pre-registered term by term | AC-3 |
+
+## Revision round 4 (2026-11-09) {#rev-round-4}
+
+Answers [[bsd-plan26-27-spec-review-r4-f89e640]].
+
+| finding | change | anchor |
+|---|---|---|
+| s2 (three flags that did not exist; which gate; daemonless unspecified) | `--dry-run`, `--store-snapshot` and `--path-map` added to `rmx ingest-gmd` (`cli.py:10230`); the dry-run evaluates the marker-on rule; the `--store-snapshot` path is in-process and asserted socket-free under 23.0's connect recorder | AC-3, [[#files]] |
+| s3 (the post-apply comparison mixed terms) | Bridge stats split into `moved` / `stale_before` / `forced` | AC-3 |

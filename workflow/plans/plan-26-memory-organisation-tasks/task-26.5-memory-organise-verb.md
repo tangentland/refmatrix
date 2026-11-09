@@ -125,7 +125,8 @@ verb-parity test covers both. No file is ever moved by hand, here or in plan-27.
    refresh counts, `duplicate_ids`, `mtype_normalised`, and the embed counts.
    - **One-time forced re-bridge of save-states (r3 m8).** `--apply` re-ingests EVERY save-state
      file in the dir, bypassing the hash gate for those paths only. 26.4's mtype rule therefore
-     reaches unchanged mis-typed save-states too. `mtype_normalised` must list them.
+     reaches unchanged mis-typed save-states too. `mtype_normalised` must list them. The result
+     reports re-ingested rows split into `moved` / `stale_before` / `forced` (26.2 AC-3; r4 s3).
 6. **AC-6: recall proves it.** In the throwaway end-to-end test, after `--apply`:
    - `rmx memory recall "<phrase unique to a moved save-state>"`, run in the resolved root,
      returns it;
@@ -152,7 +153,15 @@ verb-parity test covers both. No file is ever moved by hand, here or in plan-27.
      `savestates/` writes, HEAD's render and sidecar. The rollback test asserts
      `memory_layout.is_organised(memdir)` is False afterwards. Mutation: keep the marker, and the
      next save-state writes into `savestates/` of a flat dir (RED).
-   - The index is then regenerated and the bridge re-run.
+   - **Index after rollback (r4 m1).**
+     - If the archive's `MEMORY.md` was restored (unchanged since apply), the index is NOT
+       regenerated; the restored file is final.
+     - Otherwise the index is regenerated BEFORE the marker is moved aside, still with the
+       marker-on renderer. Carried prose therefore survives. A marker-off regeneration would be
+       HEAD's prose-dropping render.
+     - Then the marker is moved aside, and the bridge is re-run.
+   - The fixture includes one hand-written prose line in `MEMORY.md`. The test asserts that the
+     prose line is in the live `MEMORY.md` after the rollback.
    - Test: after `--apply`, re-save a save-state, which writes `savestates/<id>.md`, and edit one
      feedback memory. Then roll back. Assert:
      - both edited files are still at their current paths with their new bytes;
@@ -245,3 +254,12 @@ Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
 | m10 (`.absolute()` is a no-op on accepted input; relative input slips through) | Reject non-absolute first; pass unchanged; never `.resolve()` | AC-1 |
 | m6 (rollback leaves `.memory-layout` behind) | Marker moved aside on rollback; `is_organised` False asserted; mutation | AC-7 |
 | m8 (mtype rule reaches only re-ingested files) | `--apply` forces a one-time re-bridge of all save-states | AC-5 |
+
+## Revision round 4 (2026-11-09) {#rev-round-4}
+
+Answers [[bsd-plan26-27-spec-review-r4-f89e640]].
+
+| finding | change | anchor |
+|---|---|---|
+| m1 (rollback regenerated the index marker-off and dropped prose) | Skip the rebuild when the archive's `MEMORY.md` is restored; otherwise rebuild before the marker is moved aside; prose line asserted | AC-7 |
+| s3 (stats split) | `moved` / `stale_before` / `forced` reported | AC-5 |
