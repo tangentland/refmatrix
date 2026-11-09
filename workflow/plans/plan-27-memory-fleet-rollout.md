@@ -164,8 +164,9 @@ Round 1 added these rules (see [[#rev-round-1]]):
   `rel: supersedes ->` or `rel: amends ->` pointing whichever way the newer `updated:` says
   (MEMORY-RULES amend/supersede tree). The user reads the diff before apply.
 - **Q2: should the viascope2 checkout (`~/github/atollogy/bdep/viascope2`) be archived?**
-  Recommend archiving it, since it was merged by subtree on 2026-04-17. OPEN: a user action
-  outside the plan.
+  Recommend archiving it, since it was merged by subtree on 2026-04-17. **DECIDED (user,
+  2026-11-09): okay** — archive it after 27.2 verifies the fold (backup first; never delete without
+  a further explicit go).
 - **Q3: should the stale hooks in cliquedb and viascope (no SessionStart bridge, silent
   `|| true`) be regenerated now?** DECIDED (r4): report only, and leave them to plan-24's mod.
   Save-state's own bridge covers the migration. Each `rmx install-hooks` in a foreign repo is a
@@ -178,8 +179,9 @@ Round 1 added these rules (see [[#rev-round-1]]):
   `CLAUDE.md`?** DECIDED (r4): unsupervise it, back up `.refmatrix/`, leave a tombstone README, and
   leave the directory in place for the user to decide.
 - **Q6: what about `-bdep-ble-sniffer-mqtt`, whose checkout is not at the expected path?**
-  OPEN for the user: where does its repo live? Until answered, it is organised file-only
-  (`no store`).
+  **ANSWERED (user, 2026-11-09):** the repo is `~/github/atollogy/bdep/ble_sniffer_mqtt`
+  (origin `bitbucket.org:at0l/ble_sniffer_mqtt`; the memory-dir slug turns `_` into `-`). It has
+  no `.refmatrix/` store, so it stays organised file-only (`no store`), now with the checkout named.
 
 ## Revision round 1 (2026-11-09) {#rev-round-1}
 

@@ -410,6 +410,8 @@ Further ordering rules:
   (orchestrator, r2; ch-bsd r2 agrees): the user authorises it at 26.8, and 26.0 proposes the
   text. The edit is load-bearing. Until it lands, agents keep writing at the memdir top level,
   which keeps `organise --check` non-zero and can trip 26.2's duplicate-id refusal (26.8 AC-8).
+  **DECIDED (user, 2026-11-09): yes** — the user authorises the `MEMORY-RULES.md` edit; it is
+  applied at 26.8 with the text 26.0 proposes.
 
 ## Revision round 1 (2026-11-09) {#rev-round-1}
 
