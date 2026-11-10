@@ -32,11 +32,13 @@ not paying for seven copies of the model.
 """
 from __future__ import annotations
 
+import logging
 import os
 import socket
 import threading
 from pathlib import Path
 
+from refmatrix import envknob as _envknob
 from refmatrix.subproc import WorkerClient, recv_frame, send_frame
 
 ROLES = ("embed", "rerank")
@@ -49,6 +51,28 @@ def model_sock_path() -> Path:
         os.environ.get("RMX_MODEL_SOCK")
         or (Path.home() / ".refmatrix" / "models.sock")
     )
+
+
+# The process-wide dedupe set of `envknob.env_float`, bound here so this module's knobs
+# (and tests that hand it a fresh set) keep their r5 name.
+_ENV_WARNED: "set[tuple[str, str]]" = _envknob._ENV_WARNED
+
+
+def env_float(name: str, default: float) -> float:
+    """THE parse of a numeric shared-model knob (`RMX_SHARED_*_S`), bound to this module's
+    logger: `envknob.env_float` (the env value as a float; unset/empty is the default; a
+    value that is not a finite, non-negative number -- `300s`, `nan`, `-5` -- is the default
+    plus ONE warning per process naming the variable and the value).
+
+    Why (task 3.7 remedy r5, ch-bsd r4 #m-2, 2026-11-09): every knob on the shared-worker
+    path was a bare `float(os.environ.get(...))`. A typo'd `RMX_SHARED_REPROBE_S=300s`
+    raised `ValueError` out of `recall._reprobe_window`, inside the embed call of a
+    daemonless process with a HEALTHY private worker, and the same typo in
+    `RMX_SHARED_PROBE_TIMEOUT_S` made `import refmatrix.modelsrv` itself raise. The parse
+    itself moved to the leaf `envknob` in r6 (ch-bsd 3.7 r6 #m-1, 2026-11-09) so `subproc`,
+    which this module imports, can share it without a cycle. `_ENV_WARNED` is read at call
+    time, so it is the one dedupe set unless a caller rebinds it."""
+    return _envknob.env_float(name, default, logger=__name__, warned=_ENV_WARNED)
 
 
 def shared_enabled() -> bool:
@@ -65,7 +89,25 @@ def shared_enabled() -> bool:
 # daemon that booted or relaunched while the hub was cold to a private
 # worker for good (bug-014: sixteen ~450 MB workers on one machine). A mute
 # socket (hub mid-restart) still costs at most this long, once per role.
-PROBE_TIMEOUT_S = float(os.environ.get("RMX_SHARED_PROBE_TIMEOUT_S", "45") or "45")
+# Parsed by `env_float` (remedy r5 #m-2): a typo'd value is the default plus one warning,
+# never an `import` that raises.
+PROBE_TIMEOUT_S = env_float("RMX_SHARED_PROBE_TIMEOUT_S", 45.0)
+
+# REQUEST-PATH re-probe bound (task 3.7 remedy r4, ch-bsd r3 #s-1, 2026-11-09). A
+# daemonless process (`rmx mcp`, the CLI) holding a PRIVATE embed worker re-probes the
+# hub inside an embed call (`recall._process_embed_client`), because it has no
+# background tick. r3 used `PROBE_TIMEOUT_S` there: behind a hub that accepts and never
+# answers, two concurrent calls took 45 s and 90 s and the next call 45 s again. That
+# bound exists for a COLD worker's model load (bug-014) and belongs to the first build
+# (`new_model_client`) and the daemon's tick, never to a request. Here the hub either
+# answers its header at once or it does not: 1.0 s is twice `shared_available`'s 0.5 s
+# connect bound. A cold hub worker misses it, but the probe has already asked the hub to
+# start that worker. The FIRST such miss of a run re-arms the re-probe at the BASE window,
+# not a doubled one (`recall.reprobe_shared_client`, task 3.7 remedy r5 #m-3, 2026-11-09:
+# before r5 the miss doubled, so a cold hub cost base + 2*base), and the next re-probe
+# finds the worker warm. A CONSECUTIVE header timeout doubles to the cap (ch-bsd 3.7 r6
+# #s-1, 2026-11-09): that hub is mute, not cold. Env `RMX_SHARED_REQUEST_PROBE_TIMEOUT_S` (parsed by `env_float`).
+REQUEST_PROBE_TIMEOUT_S = env_float("RMX_SHARED_REQUEST_PROBE_TIMEOUT_S", 1.0)
 
 
 def shared_available(timeout: float = 0.5) -> bool:
@@ -384,11 +426,13 @@ class ModelServer:
         because one project going quiet is not a reason to drop a model six
         others are using. Only the hub, which owns the processes, can decide
         the fleet is idle.
+
+        A typo (`300s`) is the default 0 plus ONE warning naming the variable
+        (ch-bsd 3.7 r6 #m-1, 2026-11-09): before r6 a `ValueError` here was
+        swallowed with no word, so an operator's typo silently disabled idle
+        reaping.
         """
-        try:
-            return float(os.environ.get("RMX_WORKER_IDLE_S", "0") or "0")
-        except ValueError:
-            return 0.0
+        return env_float("RMX_WORKER_IDLE_S", 0.0)
 
     def _evict_loop(self, idle_s: float, interval: float) -> None:
         while not self._stop.wait(interval):

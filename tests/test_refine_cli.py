@@ -35,34 +35,51 @@ ROWS = [
 
 
 class _Hub:
-    """Stand-in for the hub module: records rpc calls, returns canned results."""
+    """Stand-in for the hub process, speaking its REAL wire protocol (hub.py `_handle`):
+    every answered op is `{"ok": True, "result": <handler dict>}`; a handler exception
+    is `{"ok": False, "error": "<Type>: <msg>"}`. A per-candidate refusal is the bus's
+    own `{"ok": False, "error": …}` INSIDE `result` (bus.accept_refinement).
 
-    def __init__(self, accept=None):
+    Task 3.7 batch C (bug-150): this fixture used to return `{"result": …}` with no
+    `"ok"` and patched `cli._require_hub`; once refine read through `verbs._hub_rpc`
+    (which checks `"ok"`, as the real hub sends it) every test failed on the fixture,
+    not the code. It now patches the boundary the code reads: `hub.is_running` /
+    `hub.rpc`. `refuse` makes the hub answer an op with ok:false."""
+
+    def __init__(self, accept=None, refuse=None):
         self.calls = []
         self._accept = accept or (lambda cid: {"ok": True, "memory_id": 42})
+        self._refuse = dict(refuse or {})
 
     def is_running(self):
         return True
 
-    def rpc(self, op, args=None):
+    def rpc(self, op, args=None, **kw):
         args = args or {}
         self.calls.append((op, args))
+        if op in self._refuse:
+            return {"ok": False, "error": self._refuse[op]}
         if op == "refine_list":
             st = args.get("status", "pending")
             rows = ROWS if st == "all" else [c for c in ROWS if c["status"] == st]
-            return {"result": {"candidates": rows}}
+            return {"ok": True, "result": {"candidates": rows}}
         if op == "refine_accept":
-            return {"result": self._accept(args["id"])}
+            return {"ok": True, "result": self._accept(args["id"])}
         if op == "refine_reject":
-            return {"result": {"ok": True}}
+            return {"ok": True, "result": {"ok": True}}
         raise AssertionError(f"unexpected op {op}")
+
+
+def _install(monkeypatch, h):
+    from refmatrix import hub as hub_mod
+    monkeypatch.setattr(hub_mod, "is_running", h.is_running)
+    monkeypatch.setattr(hub_mod, "rpc", h.rpc)
+    return h
 
 
 @pytest.fixture
 def hub(monkeypatch):
-    h = _Hub()
-    monkeypatch.setattr(cli_mod, "_require_hub", lambda: h)
-    return h
+    return _install(monkeypatch, _Hub())
 
 
 @pytest.fixture
@@ -171,8 +188,7 @@ def test_a_failing_candidate_does_not_strand_the_rest(runner, monkeypatch):
             return {"ok": False, "error": "already accepted"}
         return {"ok": True, "memory_id": 7}
 
-    h = _Hub(accept=accept)
-    monkeypatch.setattr(cli_mod, "_require_hub", lambda: h)
+    h = _install(monkeypatch, _Hub(accept=accept))
     r = CliRunner().invoke(
         cli_mod.main, ["refine", "accept", "8311511383d5", "4c79e9521abb"])
     assert r.exit_code == 0
@@ -191,13 +207,20 @@ def test_reject_marks_without_writing_a_memory(runner, hub):
 # --------------------------------------------------------------- hub down ----
 
 def test_hub_down_is_a_clear_error(runner, monkeypatch):
-    import click
-
-    def boom():
-        raise click.ClickException(
-            "hub not running — start it with `rmx hub start`")
-
-    monkeypatch.setattr(cli_mod, "_require_hub", boom)
+    from refmatrix import hub as hub_mod
+    monkeypatch.setattr(hub_mod, "is_running", lambda: False)
+    monkeypatch.setattr(hub_mod, "rpc", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("rpc sent to a hub that is not running")))
     r = _run(runner, ["list"])
     assert r.exit_code != 0
     assert "hub not running" in r.output
+
+
+def test_a_hub_refusal_in_list_is_an_error_not_an_empty_queue(runner, monkeypatch):
+    """bug-150: `_refine_rows` read `resp.get("result", {})`, so a hub ok:false printed
+    "no pending candidates" and exited 0."""
+    _install(monkeypatch, _Hub(refuse={"refine_list": "KeyError: 'status'"}))
+    r = _run(runner, ["list"])
+    assert r.exit_code != 0, r.output
+    assert "no pending candidates" not in r.output
+    assert "KeyError: 'status'" in r.output

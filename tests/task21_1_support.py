@@ -267,13 +267,24 @@ class SandboxDaemon:
     def __init__(self, root: Path, *, boot_timeout: float = 120.0, **extra):
         self.root = root
         self.env = rmx_env(root, **extra)
+        # Where THIS launch's `rmxd.log` lines start: the sandbox GLOBAL store is shared by
+        # every test of one pytest process, so its log carries earlier daemons' warmup lines
+        # (bug-184 r6: `wait_models_warm` must not read a predecessor's "embedder warm").
+        try:
+            self.log_offset = (root / "rmxd.log").stat().st_size
+        except FileNotFoundError:
+            self.log_offset = 0
         self.log = open(root.parent / "daemon-test.stderr.log", "wb")
         self.proc = subprocess.Popen(
             [rmx_bin(), "daemon", "start", "--no-detach", "--no-watch"],
             env=self.env, cwd=str(root.parent), stdout=self.log, stderr=subprocess.STDOUT)
         from refmatrix import daemon as daemon_mod
-        deadline = time.time() + boot_timeout
-        while time.time() < deadline:
+        # monotonic (mach_absolute_time on macOS: it does not advance while the host sleeps).
+        # A wall-clock deadline expired across a clamshell sleep / DarkWake gap and read as a
+        # daemon that "never answered ping" (r6, 2026-11-09: `pmset -g log` showed the host in
+        # Clamshell Sleep with 45 s DarkWake bursts during the failing runs).
+        deadline = time.monotonic() + boot_timeout
+        while time.monotonic() < deadline:
             if self.proc.poll() is not None:
                 break
             if daemon_mod.ping(root, timeout=0.5, retries=0):
@@ -282,6 +293,60 @@ class SandboxDaemon:
         self.stop()
         raise RuntimeError(f"sandbox daemon never answered ping on {root}: "
                            f"{(root.parent / 'daemon-test.stderr.log').read_text()[-2000:]}")
+
+    # The startup warmup's TERMINAL lines (`Daemon._start_embedder_warmup`'s `_warm`), one set per
+    # role. "failed" is terminal but not ready: it raises, naming the line.
+    _WARM_DONE = {"embed": ("embedder warm in ", "embedder warmup skipped",
+                            "embedder warmup disabled"),
+                  "rerank": ("reranker warm in ", "reranker warmup skipped")}
+    _WARM_FAILED = {"embed": "embedder warmup failed", "rerank": "reranker warmup failed"}
+
+    def wait_models_warm(self, timeout: float = 180.0) -> dict:
+        """Block until this daemon's startup warmup has finished for embed AND rerank.
+
+        bug-184 r6 (ch-bsd r6 #b-1, 2026-11-09): a sandbox has no hub (`RMX_HUB_MODELS=0`), so
+        every fresh SandboxDaemon spawns PRIVATE embed (~7.5 s idle) and rerank (~5 s) workers,
+        and a per-prompt recall issued before they are warm misses the hook's 5 s budget
+        (`skipped_budget`) deterministically, load or no load. A fixed retry COUNT only covered
+        that window on a fast machine. No daemon op reports warmth (`ping`'s `workers` says
+        `private` as soon as the client OBJECT exists, before its model loads), so the signal
+        is the warmup thread's own terminal `rmxd.log` line per role, read from THIS launch's
+        offset. Rerank has no line when `RMX_RERANK=0` (the thread returns early), so it is
+        then not waited for. Returns `{role: line}`; raises on a failed warmup, a dead
+        daemon, or the deadline -- never a silent pass."""
+        roles = ["embed"]
+        if self.env.get("RMX_RERANK", "1") not in ("0", "false", "False"):
+            roles.append("rerank")
+        log = self.root / "rmxd.log"
+        deadline = time.monotonic() + timeout       # sleep-proof, like the boot wait above
+        found: dict = {}
+        tail = ""
+        while True:
+            try:
+                with log.open("rb") as f:
+                    f.seek(self.log_offset)
+                    tail = f.read().decode("utf-8", "replace")
+            except FileNotFoundError:
+                tail = ""
+            for line in tail.splitlines():
+                for role in roles:
+                    if self._WARM_FAILED[role] in line:
+                        raise RuntimeError(f"sandbox daemon on {self.root}: {line.strip()}")
+                    if role not in found and any(m in line for m in self._WARM_DONE[role]):
+                        found[role] = line.strip()
+            if "disabled" in found.get("embed", ""):
+                return found          # RMX_NO_EMBED_WARMUP: the thread returns before rerank
+            if all(r in found for r in roles):
+                return found
+            if self.proc.poll() is not None:
+                raise RuntimeError(f"sandbox daemon on {self.root} exited "
+                                   f"rc={self.proc.returncode} before its models were warm; "
+                                   f"rmxd.log since launch: {tail[-1500:]}")
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"sandbox daemon on {self.root}: models not warm after "
+                                   f"{timeout:.0f}s (have {found}); rmxd.log since launch: "
+                                   f"{tail[-1500:]}")
+            time.sleep(0.25)
 
     def stop(self) -> None:
         if self.proc.poll() is None:

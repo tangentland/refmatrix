@@ -1,6 +1,7 @@
 """Tests for `rmx concept timeline` — graph resolution + CLI shape.
 
-The graph->files resolution (`_concept_files`) is pure and tested directly.
+The graph->files resolution (`graphread.concept_files`, its home since task 3.7) is
+pure and tested directly.
 The CLI happy path is exercised with --no-git and an empty session index
 (session collection is best-effort), so the test needs no git repo or daemon.
 """
@@ -11,7 +12,8 @@ import json
 import pytest
 from click.testing import CliRunner
 
-from refmatrix.cli import _concept_files, main
+from refmatrix.cli import main
+from refmatrix.graphread import concept_files
 from refmatrix.store import Store
 
 
@@ -36,7 +38,7 @@ def store(tmp_path):
 
 def test_concept_files_collects_code_and_doc_paths(store):
     s, ids = store
-    files, names = _concept_files(s, [ids["fov"]], hops=0)
+    files, names = concept_files(s, [ids["fov"]], hops=0)
     assert "/repo/ui/src/FovWedge.tsx" in files
     assert "/repo/docs/design/cameras.md" in files
     # value is the repo-relative name used as the session --touched key
@@ -45,7 +47,7 @@ def test_concept_files_collects_code_and_doc_paths(store):
 
 def test_concept_files_unknown_concept_is_empty(store):
     s, _ = store
-    files, names = _concept_files(s, [], hops=0)
+    files, names = concept_files(s, [], hops=0)
     assert files == {}
 
 

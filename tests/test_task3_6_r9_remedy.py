@@ -318,6 +318,42 @@ def f(root):
         raise RuntimeError(f"no answer from the store ({e})")
 """,
 })
+# Task 3.7 #folded-r52 (ch-bsd plan-3 r12 #m-1). `two_level_wrapper` defines its
+# INNER wrapper first, so mutant Q5 (drop `changed = True`: the fixed point becomes
+# one pass in source order) still flags it and survived all 53 tests. The live
+# layout that hid r11 #s-1 is OUTER-first (`_subject_upsert` above
+# `_memory_daemon_call`). Plus the two r12 evasions most likely in real code.
+_PLANTS_FLAGGED.update({
+    "two_level_outer_first_Q5": _HDR + """
+def f():
+    try:
+        _subject_upsert("x")
+    except OSError as e:
+        raise RuntimeError(f"subject filing not confirmed ({e}); the daemon may still complete it")
+
+def _subject_upsert(label):
+    return _memory_daemon_call("subject_upsert", {"label": label})
+
+def _memory_daemon_call(op, args):
+    return daemon_mod.call("/r", op, args)
+""",
+    "message_prepared_before_try": _HDR + """
+def f(root):
+    msg = f"the daemon for {root} did not answer"
+    try:
+        daemon_mod.call(root, "x", {})
+    except Exception as e:
+        raise RuntimeError(msg)
+""",
+    "local_alias_dial": _HDR + """
+def f(root):
+    dial = daemon_mod.call
+    try:
+        dial(root, "x", {})
+    except Exception as e:
+        raise RuntimeError(f"daemon busy ({e})")
+""",
+})
 _PLANTS_CLEAN = {
     "raises_the_classifier": _HDR + """
 def f(root):
@@ -367,6 +403,25 @@ def test_the_guard_flags_every_evasion_shape(shape):
     """r10 #s-2: each shape passed the r9 guard. Each must be flagged now."""
     assert _second_classifiers({f"{shape}.py": _PLANTS_FLAGGED[shape]}), (
         f"the guard does not see the {shape!r} evasion")
+
+
+def test_the_outer_first_plant_kills_mutant_q5():
+    """Task 3.7 R52 (ch-bsd plan-3 r12 #m-1): Q5 drops `changed = True` inside the
+    fixed-point loop, so it runs one pass in source order. The inner-first plant
+    still passed under Q5; the outer-first plant must not."""
+    import importlib.util
+    import types
+    src = Path(_tg.__file__).read_text()
+    needle = "                    self.wrappers.add(fname)\n                    changed = True\n"
+    assert src.count(needle) == 1, "the fixed-point loop moved; re-aim the mutant"
+    mutant = types.ModuleType("transport_guard_q5")
+    exec(compile(src.replace(needle, "                    self.wrappers.add(fname)\n"),
+                 "transport_guard_q5", "exec"), mutant.__dict__)
+    plant = {"p.py": _PLANTS_FLAGGED["two_level_outer_first_Q5"]}
+    assert _second_classifiers(plant), "the real guard misses the outer-first plant"
+    assert not mutant.second_classifiers(plant), "Q5 survives: the plant does not pin the loop"
+    assert mutant.second_classifiers({"p.py": _PLANTS_FLAGGED["two_level_wrapper"]}), (
+        "control: the inner-first plant is the one Q5 still flags")
 
 
 @pytest.mark.parametrize("shape", sorted(_PLANTS_CLEAN))
@@ -676,20 +731,142 @@ def test_the_backlog_families_partition_and_are_anchored_in_the_spec():
 
 
 def test_every_verb_it_path_names_its_task_3_7_family():
-    """r9 #b-1: "owes a verb" with no task behind it is a parking lot. Every
-    `verb-it` entry's reason carries `task-3.7#fam-…`, the family that path is
-    in. A family re-decided under 3.7 leaves `verb-it`, so it drops out here."""
-    where = {p: fam for fam, paths in VERB_IT_FAMILIES.items() for p in paths}
+    """r9 #b-1, updated by AC-G1: the `verb-it` set is EMPTY once batch C lands (the
+    per-path decision is test_every_one_of_the_49_paths_is_a_twin_…)."""
+    left = sorted(p for p, (cat, _r) in verbs.LEGACY_UNPAIRED.items() if cat == "verb-it")
+    assert left == [], f"still verb-it: {left}"
+
+
+# Task 3.7 batch A (#schedule): these families left `verb-it` by gaining verbs.
+# Each path is now a twin (CLI_MAP or CLI_ACTIONS) of the verb #decisions names;
+# `curator status` (was `hook`) and `focus export` (was `harness`) join them.
+_BATCH_A_TWINS = {
+    "rmx_focus": VERB_IT_FAMILIES["fam-focus"] | {("focus", "export")},
+    "rmx_curate": VERB_IT_FAMILIES["fam-curation"],
+    "rmx_taxonomy": VERB_IT_FAMILIES["fam-taxonomy"],
+    "rmx_curator": {("curator", "drain"), ("curator", "status")},
+}
+
+
+def test_batch_a_paths_are_twins_of_their_decided_verb_and_left_legacy():
     bad = []
-    for path, (cat, reason) in verbs.LEGACY_UNPAIRED.items():
-        if cat != "verb-it":
-            continue
-        fam = where.get(path)
-        if fam is None:
-            bad.append(f"{' '.join(path)}: verb-it but in no task-3.7 family")
-        elif f"task-3.7#{fam}" not in reason:
-            bad.append(f"{' '.join(path)}: reason does not name task-3.7#{fam}")
+    for vname, paths in _BATCH_A_TWINS.items():
+        for path in sorted(paths):
+            if path in verbs.LEGACY_UNPAIRED:
+                bad.append(f"{' '.join(path)}: still LEGACY_UNPAIRED "
+                           f"{verbs.LEGACY_UNPAIRED[path][0]}")
+                continue
+            twin = vname if verbs.CLI_MAP.get(vname) == path else (
+                verbs.CLI_ACTIONS.get(path, (None, None))[0])
+            if twin != vname:
+                bad.append(f"{' '.join(path)}: twin of {twin!r}, expected {vname}")
     assert not bad, "\n" + "\n".join(bad)
+
+
+# Task 3.7 batch B: graph-read (less `pairs show`) + `stats` (was `harness`,
+# #decisions-r2) → rmx_graph; canon → rmx_canon.
+_BATCH_B_TWINS = {
+    "rmx_graph": (VERB_IT_FAMILIES["fam-graph-read"] - {("pairs", "show")}) | {("stats",)},
+    "rmx_canon": VERB_IT_FAMILIES["fam-canon"],
+}
+
+
+def test_batch_b_paths_are_twins_of_their_decided_verb_and_left_legacy():
+    bad = []
+    for vname, paths in _BATCH_B_TWINS.items():
+        for path in sorted(paths):
+            if path in verbs.LEGACY_UNPAIRED:
+                bad.append(f"{' '.join(path)}: still LEGACY_UNPAIRED "
+                           f"{verbs.LEGACY_UNPAIRED[path][0]}")
+                continue
+            twin = vname if verbs.CLI_MAP.get(vname) == path else (
+                verbs.CLI_ACTIONS.get(path, (None, None))[0])
+            if twin != vname:
+                bad.append(f"{' '.join(path)}: twin of {twin!r}, expected {vname}")
+    assert not bad, "\n" + "\n".join(bad)
+
+
+def test_pairs_show_is_re_decided_as_harness_with_a_true_reason():
+    """#fam-graph-read-pairs / AC-family 2: a re-decided path moves to its category
+    and its reason no longer says verb-it. Code check behind the reason: no template,
+    primer or hook teaches `pairs show`."""
+    cat, reason = verbs.LEGACY_UNPAIRED[("pairs", "show")]
+    assert cat == "harness", cat
+    assert "verb-it" not in reason and "owes" not in reason, reason
+    assert "pairs compile" in reason, "the reason names what it inspects"
+    taught = (_SRC / "primer.py").read_text() + (_SRC / "hooks.py").read_text() + \
+        "".join(p.read_text() for p in (_SRC / "templates").rglob("*.md"))
+    assert "pairs show" not in taught
+
+
+# AC-G2: VERB_IT_FAMILIES mirrors task-3.7 #decisions — per path, the verb it became a
+# twin of, or the LEGACY category it was re-decided into.
+_DECIDED = {
+    "fam-graph-read": {**{p: ("verb", "rmx_graph")
+                          for p in VERB_IT_FAMILIES["fam-graph-read"] - {("pairs", "show")}},
+                       ("pairs", "show"): ("legacy", "harness")},
+    "fam-canon": {p: ("verb", "rmx_canon") for p in VERB_IT_FAMILIES["fam-canon"]},
+    "fam-matrix-edit": {p: ("verb", "rmx_matrix") for p in VERB_IT_FAMILIES["fam-matrix-edit"]},
+    "fam-curation": {p: ("verb", "rmx_curate") for p in VERB_IT_FAMILIES["fam-curation"]},
+    "fam-focus": {p: ("verb", "rmx_focus") for p in VERB_IT_FAMILIES["fam-focus"]},
+    "fam-session": {("session", "list"): ("verb", "rmx_session"),
+                    ("session", "recall"): ("verb", "rmx_session"),
+                    ("session", "show"): ("verb", "rmx_session"),
+                    ("session", "stats"): ("legacy", "harness")},
+    "fam-refine": {("refine", "list"): ("verb", "rmx_refine"),
+                   ("refine", "show"): ("verb", "rmx_refine"),
+                   ("refine", "accept"): ("legacy", "operator"),
+                   ("refine", "reject"): ("legacy", "operator"),
+                   ("curator", "drain"): ("verb", "rmx_curator")},
+    "fam-taxonomy": {p: ("verb", "rmx_taxonomy") for p in VERB_IT_FAMILIES["fam-taxonomy"]},
+}
+
+
+def test_the_decisions_mirror_the_families_and_the_spec_table():
+    """AC-G2: the decision map covers exactly the 49 paths, family by family, and
+    45 are verbed + 4 re-decided (#decisions-count)."""
+    for fam, paths in VERB_IT_FAMILIES.items():
+        assert set(_DECIDED[fam]) == paths, fam
+    kinds = [k for d in _DECIDED.values() for k, _ in d.values()]
+    assert kinds.count("verb") == 45 and kinds.count("legacy") == 4, kinds
+    spec = _SPEC_37.read_text()
+    for d in _DECIDED.values():
+        for _k, target in d.values():
+            if target.startswith("rmx_"):
+                assert f"`{target}`" in spec, target
+
+
+def test_every_one_of_the_49_paths_is_a_twin_of_its_verb_or_in_its_category():
+    """AC-G1: no path is left in `verb-it`; each of the 49 is a twin of the verb
+    #decisions names or sits in the re-decided category with a reason that no longer
+    says verb-it."""
+    bad = []
+    for fam, decided in _DECIDED.items():
+        for path, (kind, target) in sorted(decided.items()):
+            name = " ".join(path)
+            if kind == "verb":
+                twin = target if verbs.CLI_MAP.get(target) == path else (
+                    verbs.CLI_ACTIONS.get(path, (None, None))[0])
+                if twin != target:
+                    bad.append(f"{name}: twin of {twin!r}, expected {target} ({fam})")
+                if path in verbs.LEGACY_UNPAIRED:
+                    bad.append(f"{name}: still in LEGACY_UNPAIRED")
+            else:
+                cat, reason = verbs.LEGACY_UNPAIRED.get(path, (None, ""))
+                if cat != target:
+                    bad.append(f"{name}: category {cat!r}, expected {target!r} ({fam})")
+                if "verb-it" in reason or "owes" in reason:
+                    bad.append(f"{name}: reason still says verb-it: {reason!r}")
+    assert not bad, "\n" + "\n".join(bad)
+
+
+def test_the_verb_it_category_is_gone():
+    """AC-G1: the category is removed once empty, so the shrink-only pin forbids its
+    return (`_legacy` refuses an unknown category at import)."""
+    assert "verb-it" not in verbs.LEGACY_CATEGORIES
+    assert not [p for p, (c, _r) in verbs.LEGACY_UNPAIRED.items() if c == "verb-it"]
+    with pytest.raises(ValueError):
+        verbs._legacy("verb-it", "probe", ("zz-probe",))
 
 
 def test_the_deferral_registry_points_the_backlog_at_task_3_7():

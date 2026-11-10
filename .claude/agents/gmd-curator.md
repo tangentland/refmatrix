@@ -164,8 +164,9 @@ mode you're in at the top of your first response.
 
 The daemon watcher writes file paths matching curator-relevant patterns
 (PLAN-/SPEC-/ISSUE-/ROADMAP-/ADR-, `.gmd` files, anything under
-`plans/specs/issues/roadmap/adr/decisions/rfcs/` segments) to
-`.refmatrix/curator.queue` as they change. A `SessionStart` /
+`plans/specs/issues/roadmap/adr/decisions/rfcs/` segments into the
+spool `.refmatrix/curator.spool/` as they change — one file per watcher
+flush, `{ts, path, reason}` per line. A `SessionStart` /
 `UserPromptSubmit` hook surfaces the queue as a one-line context
 notice: `curator-queue: N curator-relevant file change(s) ...`.
 
@@ -174,10 +175,16 @@ listed paths. Read each, follow the discuss-before-write loop, and
 report. To inspect the queue manually:
 
 ```bash
-rmx curator status            # show queue without draining
-rmx curator status --drain    # show + drain (hooks already do this)
-rmx curator drain             # drain silently
+rmx curator status                       # show the queue; drains nothing
+rmx curator status --json                # the same, plus the `token` (spool files read)
+rmx curator status --drain               # show + drain only the files it fully printed
+rmx curator drain --token @<status.json> # drain exactly the files a status read
 ```
+
+`drain` deletes only the spool files named in a `status --json` token — a
+flush that lands after your status is never in it, so it is never drained
+unread. A token file already drained by someone else (another `status --drain`) is
+reported as "already gone", never an error.
 
 **Crash-safe drain order:** never drain BEFORE doing the work. If the
 ingest fails mid-way the drained paths are gone and you have no way
@@ -186,9 +193,9 @@ run the work against the snapshot, drain only after the work + lint +
 verify loop succeeds:
 
 ```bash
-rmx curator status > /tmp/curator-snapshot.txt   # capture, no drain
-# ... process each path in the snapshot, lint, re-ingest, verify ...
-rmx curator drain                                 # only on full success
+rmx curator status --json > /tmp/curator-snapshot.json   # capture + token, no drain
+# ... process each path in the snapshot's `entries`, lint, re-ingest, verify ...
+rmx curator drain --token @/tmp/curator-snapshot.json    # only on full success
 ```
 
 If the work errored partway, do NOT drain — keep the queue so the
@@ -328,7 +335,7 @@ Routine health pass. Surface findings; let the user decide what to fix.
 ```bash
 rmx ingest-gmd docs/ 2>&1 | tail -30          # current ingest health
 rmx stats                                       # entity / link counts, drift
-rmx top mentions -k 30                          # noise candidates
+rmx primer --top 30                             # most-referenced (noise candidates)
 rmx query "name~'query/'"  --limit 50           # learn-on-miss promotions
 rmx primer                                      # density-ranked top concepts
 ```
@@ -549,7 +556,7 @@ rmx context <doc-id>#<anchor>         # specific GMD node
 rmx neighbors <Concept> --depth 2     # graph walk
 rmx query "defines:X AND mentions:Y"  # DSL
 rmx co-occur <X>                      # what shares context with X
-rmx top mentions -k 20                # most-mentioned
+rmx primer --top 20                   # most-referenced entities
 rmx grep <Pattern>                    # index-backed grep, learn-on-miss
 ```
 
@@ -730,8 +737,10 @@ graph density, not vocabulary creep.
 13. **Verify writes through rmx** (`rmx context <doc-id>#<anchor>` +
     `rmx neighbors <doc-id>#<anchor>`) before declaring done. The
     graph state is the source of truth, not your intent.
-14. **Drain the curator queue only after success.** Snapshot first,
-    process, drain last. Mid-failure → leave queue intact.
+14. **Drain the curator queue only after success.** Snapshot first
+    (`rmx curator status --json`), process, drain last with that
+    snapshot's token (`rmx curator drain --token @<file>`). Mid-failure →
+    leave the queue intact.
 15. **Filter session-* mtypes from memory recall by default.**
     `session-request` and `session-milestone` are import noise, not
     curator-managed content.

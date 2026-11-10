@@ -261,15 +261,17 @@ def classify_transport_error(e: BaseException, *, op: str, root: "Path | str",
 
 
 def _call(root: Path, op: str, payload: dict, *, timeout: float = 60.0,
-          retries: int = 2) -> dict:
+          retries: int = 2, write: bool = False) -> dict:
     """`retries=0` for budgeted paths: `daemon.call` retries on timeout, so a
-    5 s bound with the library default is a 15 s wait."""
+    5 s bound with the library default is a 15 s wait. `write=True` for a WRITE
+    op: a timeout then also says the write is not confirmed (task 3.7 C5)."""
     from refmatrix import daemon as daemon_mod
     require_daemon(root, retries=0 if retries == 0 else 2)
     try:
         r = daemon_mod.call(root, op, payload, timeout=timeout, retries=retries)
     except Exception as e:  # noqa: BLE001 — transport-level only (call does socket+json)
-        raise classify_transport_error(e, op=op, root=root, timeout=timeout) from e
+        raise classify_transport_error(e, op=op, root=root, timeout=timeout,
+                                       write=write) from e
     if not r.get("ok"):
         raise VerbError(str(r.get("error")))
     return r.get("result", {})
@@ -445,6 +447,123 @@ def memory_partition(root: Path, *, timeout: "float | None" = None) -> str:
     return project
 
 
+def project_partition(root: Path) -> str:
+    """The project-store partition a verb uses when the caller names none, through THE
+    resolver `discovery.resolve_partition` (`$RMX_PARTITION` → `.refmatrix/partition`
+    marker → store name) that the CLI's `_resolve_partition` also calls (task 3.7 C7,
+    remedy r1 R-B2). The CLI passes its `-p` value explicitly; MCP callers get this."""
+    from refmatrix import discovery
+    return discovery.resolve_partition(root)
+
+
+# ---- verb-layer store access: the read snapshot and the no-daemon writer -----
+
+
+def _writer_catalog_files(root: Path) -> "list[Path]":
+    """Every file a WRITER may hold for this store: the rotation slots and the pre-rotation
+    `catalog.duckdb` / `catalog.db`. `snapshot_read` refuses a replica that is any of them."""
+    return [p for p in (root / "catalog.A.duckdb", root / "catalog.B.duckdb",
+                        root / "catalog.duckdb", root / "catalog.db") if p.exists()]
+
+
+def snapshot_read(root: Path, fn: "Callable[[Any], dict]", *, partition: str) -> dict:
+    """THE verb-layer reader: run `fn(store)` against a READ-ONLY store and return its dict
+    with `source` added ("snapshot" | "in-process").
+
+    Why (task 3.7 C3, spec review r1 B1, 2026-10-19): there was no verb-layer reader. The
+    CLI's `_read_store` raises `ClickException` and falls to `_store_rw` (the writer slot),
+    and `search.cached_replica` caches a Store for the life of the process — the bug-136
+    hazard inside the long-lived `rmx mcp`. This helper:
+
+    - opens `catalog.read.duckdb` read-only PER CALL and closes it; nothing is cached, so a
+      rotated snapshot is seen by the very next call;
+    - refuses a replica that is a symlink or the same file as a writer catalog (the active
+      slot must never be read through the replica name) — a plain `VerbError`;
+    - daemon up or busy with no snapshot yet → `VerbBusyError` worded as a read ("no read
+      snapshot yet"); busy is never treated as absent;
+    - daemon truly ABSENT → the store's primary catalog opened read-only in-process EVEN
+      when an old snapshot exists (spec review r2 S2: with no daemon the snapshot is stale,
+      and an in-process write would vanish from the next read).
+
+    A partition with no row in the catalog reads as EMPTY: the read-only open's own fallback
+    is partition id 1, which would answer from whichever partition owns that id."""
+    from refmatrix import discovery
+    from refmatrix.store import Store
+    root = Path(root)
+    st = discovery.daemon_status(root, retries=0)
+    s = Store(root, partition=partition, read_only=True)
+    if not st.get("up") and not st.get("busy"):
+        primary = s._active_slot_path() if s._backend.kind == "duckdb" else None
+        primary = primary or (s.root / s._backend.db_filename)
+        if not primary.exists():
+            raise VerbError(f"no refmatrix catalog at {root} ({primary.name} missing) — "
+                            f"run `rmx init` first")
+        s.db_path = primary
+        source = "in-process"
+    else:
+        snap = root / "catalog.read.duckdb"
+        if snap.is_symlink() or any(snap.exists() and snap.samefile(w)
+                                    for w in _writer_catalog_files(root)):
+            raise VerbError(f"{snap} is not the read snapshot (it resolves to a writer "
+                            f"catalog); refusing to read the active slot through it")
+        if not snap.exists():
+            state = "up" if st.get("up") else "busy (alive, not answering)"
+            raise VerbBusyError(
+                f"no read snapshot yet for {root}: its daemon pid={st.get('pid')} is {state} "
+                f"and has not produced catalog.read.duckdb; a read never opens the store "
+                f"under a live daemon — retry after the daemon's first snapshot")
+        s.db_path = snap
+        source = "snapshot"
+    try:
+        con = s._connect()
+        if con.execute("SELECT 1 FROM partitions WHERE name=?", (partition,)).fetchone() is None:
+            s._partition_id = -1
+        out = fn(s)
+    finally:
+        s.close()
+    if not isinstance(out, dict):
+        raise TypeError(f"snapshot_read: fn must return a dict, got {type(out).__name__}")
+    return {**out, "source": source}
+
+
+def local_write(root: Path, fn: "Callable[[Any], dict]", *, partition: str) -> dict:
+    """THE no-daemon writer: open the store read-write in-process, run `fn(store)`, CLOSE,
+    and return `fn`'s dict with `source: "in-process"`.
+
+    Why one helper (task 3.7 C4a, spec review r2 S2): today's CLI serves writes in-process
+    when NO daemon runs and the suite depends on it; the verbs keep that, through one place
+    shaped like `_memory_write`'s local fallback. Callers reach it on `VerbAbsentError` ONLY
+    — never busy, never an undiallable socket path: opening the writer slot under a live
+    daemon is the 2026-09-14 lock crash. A call that reads AND writes does its reads inside
+    `fn` on this handle; holding a `snapshot_read` in-process handle while this opens is
+    bug-135's `StaleDuckDBInstance … already attached` (spec review r3 M3)."""
+    from refmatrix.store import Store
+    s = Store(Path(root), partition=partition)
+    if not s.db_path.exists():
+        raise VerbError(f"no refmatrix catalog at {root} ({s.db_path.name} missing) — "
+                        f"run `rmx init` first")
+    try:
+        out = fn(s)
+    finally:
+        s.close()
+    if not isinstance(out, dict):
+        raise TypeError(f"local_write: fn must return a dict, got {type(out).__name__}")
+    return {**out, "source": "in-process"}
+
+
+def _write_or_local(root: Path, op: str, payload: dict, *, timeout: float,
+                    local: "Callable[[Any], dict]", partition: str) -> dict:
+    """One daemon WRITE, single attempt (C4/C5), with `local_write` as the absent-daemon
+    bootstrap (C4a). Busy, refused and undiallable all raise from `_call`; only
+    `VerbAbsentError` reaches the in-process store."""
+    try:
+        res = _call(root, op, {**payload, "partition": partition}, timeout=timeout,
+                    retries=0, write=True)
+    except VerbAbsentError:
+        return local_write(root, local, partition=partition)
+    return {**res, "source": "daemon"}
+
+
 # ---- payload builders (shared by verbs AND bespoke CLI routing) ------------
 
 
@@ -525,12 +644,18 @@ def global_recall_rows(q: "str | None", *, k: int, recent: bool,
         op, args = "memory_search", {"query": q, "limit": k}
     else:
         return []
+    groot = hub_mod.global_store_root()
     try:
         # `retries=0` from budgeted callers: the library default retried a
         # 30 s timeout three times on a held global store (bsd-plan2-r6 #b-1).
         resp = hub_mod.global_call(op, args, timeout=timeout, retries=retries)
-    except Exception as e:  # noqa: BLE001 — re-raised as a typed, named failure
-        raise VerbError(f"global store {op} failed: {e}") from e
+    except Exception as e:  # noqa: BLE001 — transport-level; typed by THE classifier
+        # Task 3.7 R53 (ch-bsd plan-3 r12 #m-2): this said "global store <op>
+        # failed: <raw errno>" as one plain VerbError for a held, a stopped and a
+        # refused global daemon alike. Typed like `global_write`: absent, busy,
+        # or undiallable — the caller's scope=both warning can now tell them apart.
+        c = classify_transport_error(e, op=op, root=groot, timeout=timeout)
+        raise type(c)(f"global store: {c}") from e
     if not resp.get("ok"):
         raise VerbError(f"global store {op} failed: {resp.get('error')}")
     rows = resp.get("result", {}).get("rows", [])
@@ -849,9 +974,21 @@ def memory_add(root: Path, name: str, content: str, *,
                metadata: dict | None = None,
                protect: bool = False, to_global: bool = False) -> dict:
     """`to_global` writes to the shared cross-project behavior store through
-    the hub (CLI `--global`); otherwise this project's memory partition."""
+    the hub (CLI `--global`); otherwise this project's memory partition.
+
+    Tags outside the shared vocabulary come back as `tag_warnings` (task 3.7
+    #fam-taxonomy, spec review r1 M6: the CLI printed that note, MCP adds never
+    got it). Soft: the write always happens, and a corrupt vocabulary is itself
+    the warning, never a block."""
+    from refmatrix import taxonomy as tax
+    warns = tax.tag_warnings(tags or [])
     payload = {"name": name, "content": content, "mtype": mtype, "tags": tags,
                "metadata": metadata, "protected": protect}
+    res = _memory_add_write(root, payload, to_global=to_global)
+    return {**res, "tag_warnings": warns} if warns else res
+
+
+def _memory_add_write(root: Path, payload: dict, *, to_global: bool) -> dict:
     if to_global:
         # DELIBERATELY unbounded (`timeout=None`), unlike the `promote` action's
         # global write, which passes its remaining budget. The difference is the
@@ -979,7 +1116,6 @@ def _memory_recall_rows(root: Path, *, query: str | None = None, k: int = 10,
     `recent_rows`). Dense rows carry `score`/`distance`/`fused`
     (`annotate_hit`)."""
     import time as _time
-    from refmatrix import daemon as daemon_mod
     patterns = (list(exclude_mtype) if exclude_mtype is not None
                 else ([] if include_session else ["session/*"]))
     warnings: list[str] = []
@@ -1084,15 +1220,19 @@ def _memory_recall_rows(root: Path, *, query: str | None = None, k: int = 10,
       rows = project_rows
       if scope != "project":
         gk = k * 10 if patterns else k
+        # The caller's budget is checked OUTSIDE the global leg's handler: a spent
+        # budget is this call's busy and propagates. Inside, every VerbError is the
+        # GLOBAL store's — since task 3.7 R53 typed it, a held global daemon is a
+        # VerbBusyError too, and on scope=both it is a warning beside the project
+        # rows, never a reason to throw them away (as the CLI twin's leg does).
+        g_timeout = _left(30.0)
         try:
             grows = [row for row in global_recall_rows(
                 query or None, k=gk, recent=bool(recent) and not subject,
-                since_s=since_seconds, timeout=_left(30.0), retries=_retries)
+                since_s=since_seconds, timeout=g_timeout, retries=_retries)
                 if not mt_excluded(row.get("mtype"), patterns)]
             if trace is not None:
                 trace.extend(grows)
-        except VerbBusyError:
-            raise
         except VerbError as e:
             if scope == "global":
                 raise
@@ -1187,17 +1327,127 @@ def save_state(root: Path, *, message: str | None = None,
     return res
 
 
+# Per-action defaults (task 3.7 C6, spec review r1 S1). A dispatcher param whose default
+# differs by action — focus `top` is 20 for `context` and 60 for `topics` — is typed
+# `X | None = None` and resolved HERE, so every CLI action twin's click default can be
+# compared with the value the verb really uses (tests/test_verb_parity.py walks them all).
+ACTION_DEFAULTS: dict[tuple[str, str], dict[str, Any]] = {
+    ("rmx_focus", "context"): {"top": 20},
+    ("rmx_focus", "topics"): {"top": 60},
+    ("rmx_focus", "tail"): {"n": 20},
+    ("rmx_focus", "show"): {"context": 0},
+    ("rmx_focus", "composite"): {"k": 3, "max_tokens": 1200},
+    ("rmx_focus", "subjects"): {"timeout": 10.0},
+}
+
+
+def action_default(verb_name: str, action: str, param: str, value: Any) -> Any:
+    """`value` when the caller sent one, else the `ACTION_DEFAULTS` entry for
+    `(verb_name, action)` (None when the action has none for `param`)."""
+    if value is not None:
+        return value
+    return ACTION_DEFAULTS.get((verb_name, action), {}).get(param)
+
+
+# STM actions that WRITE a ring file: an unresolved session is refused (task 21.1 D2).
+_FOCUS_WRITES = frozenset({"clear_subject", "detour", "return", "clear"})
+
+
 @verb("rmx_focus",
-      "Current short-term focus graph + task stack for the project (what is "
-      "being worked on right now).")
-def focus(root: Path, *, top: int = 20, session: str | None = None) -> dict:
+      "Short-term focus (STM) for the project. action=context (default): the focus graph + "
+      "task stack + intent dialogue; tail / show / export / topics read the session log; "
+      "subject / subjects / clear_subject manage the active subject; detour / detours / "
+      "return are soft return-points; composite is the GMD topic composite; clear empties "
+      "the session ring.")
+def focus(root: Path, *, action: typing.Literal[
+              "context", "tail", "show", "topics", "subject", "subjects", "clear_subject",
+              "composite", "export", "detour", "detours", "return", "clear"] = "context",
+          top: int | None = None, session: str | None = None, n: int | None = None,
+          line: int | None = None, context: int | None = None, label: str | None = None,
+          selector: str | None = None, k: int | None = None, max_tokens: int | None = None,
+          no_expand: bool = False, no_autoscale: bool = False,
+          timeout: float | None = None, partition: str | None = None) -> dict:
+    """One dispatcher over the `rmx focus` group (task 3.7 #fam-focus). `context` is the
+    pre-3.7 behaviour unchanged — existing MCP callers send no `action`.
+
+    Every STM action resolves its session through THE resolver (`resolve_session_source`,
+    `purpose="read"` for reads, `"write"` for writes) and returns `session` +
+    `session_source`. Three defects died with the old CLI bodies:
+
+    - `clear` (#fam-focus-clear) skipped the resolver and cleared `$RMX_SESSION` or the
+      literal `default` ring; hooks do not export RMX_SESSION, so an agent cleared the
+      wrong ring and was told "focus cleared". It resolves as a write now.
+    - `subjects` (#fam-focus-subjects) listed the CODE partition while `change_subject`
+      writes `memory_partition(root)`, and an `ok:false` printed "no subjects yet".
+    - `composite` (#fam-focus-composite) had no session and `composite.py` picked the
+      newest ring itself."""
+    from refmatrix import stm as stm_mod
+    ad = lambda p, v: action_default("rmx_focus", action, p, v)  # noqa: E731
+    if action == "subjects":
+        return _focus_subjects(root, timeout=float(ad("timeout", timeout)))
+    sess, source = resolve_session_source(
+        root, session, purpose="write" if action in _FOCUS_WRITES else "read")
+    prov = {"session": sess, "session_source": source}
+    s = stm_mod.Stm(root, sess)
+    if action == "context":
+        return {**_focus_context(s, top=int(ad("top", top))), **prov}
+    if action == "tail":
+        return {"events": s.tail(int(ad("n", n))), **prov}
+    if action == "export":
+        events = s.all_events()
+        return {"events": [{"line": i, **e} for i, e in enumerate(events, 1)],
+                "total": len(events), **prov}
+    if action == "show":
+        if line is None:
+            raise VerbArgsError("focus show requires 'line' (a 1-based log line)")
+        events = s.all_events()
+        if line < 1 or line > len(events):
+            raise VerbArgsError(f"line {line} out of range (1..{len(events)}) for session "
+                                f"{sess}")
+        ctx = int(ad("context", context))
+        lo, hi = max(1, line - ctx), min(len(events), line + ctx)
+        return {"line": line, "total": len(events),
+                "events": [{"line": i, **events[i - 1]} for i in range(lo, hi + 1)], **prov}
+    if action == "topics":
+        return {**_focus_topics(root, s, top=int(ad("top", top))), **prov}
+    if action == "subject":
+        return {"subject": s.get_subject(), **prov}
+    if action == "clear_subject":
+        return {"cleared": s.clear_subject(), **prov}
+    if action == "detour":
+        m = s.focus_mark(label or "")
+        return {"label": m["label"], "line": m["line"], "ts": m["ts"], **prov}
+    if action == "detours":
+        marks = s.focus_marks()
+        return {"detours": [{"index": i, "label": m["label"], "line": m.get("line"),
+                             "ts": m.get("ts")}
+                            for i, m in enumerate(reversed(marks), 1)], **prov}
+    if action == "return":
+        return {**s.focus_return(selector), **prov}
+    if action == "clear":
+        s.clear()
+        return {"cleared": True, **prov}
+    if action == "composite":
+        from refmatrix.composite import build_topic_composite
+        kk, mt = int(ad("k", k)), int(ad("max_tokens", max_tokens))
+
+        def _run(st) -> dict:
+            return {"composite": build_topic_composite(
+                st, root, k=kk, max_tokens=mt, expand=not no_expand,
+                autoscale=not no_autoscale, session=sess)}
+        # The partition the CLI's `-p` names, else THE resolver (remedy r1 R-B2: the
+        # composite ignored `-p` and the `.refmatrix/partition` marker).
+        return {**snapshot_read(root, _run, partition=partition or project_partition(root)),
+                **prov}
+    raise VerbArgsError(f"unknown focus action {action!r}")
+
+
+def _focus_context(s, *, top: int) -> dict:
     """Graph + tasks + what `rmx focus context` renders around them: the
     intent `dialogue` (input / say / reason events, newest last, with their
     1-based line in the full log), git `milestones`, `last_line` (ref → last
     line that mentioned it) and `events_total` — so an MCP caller gets what
     the CLI shows (ch-bsd plan-3 r2 #s-3)."""
-    from refmatrix import stm as stm_mod
-    s = stm_mod.Stm(root, resolve_session_source(root, session, purpose="read").session)
     events = s.all_events()
     last_line: dict[str, int] = {}
     dialogue: list[dict] = []
@@ -1213,6 +1463,61 @@ def focus(root: Path, *, top: int = 20, session: str | None = None) -> dict:
     return {"graph": s.focus_graph(top=top), "tasks": s.task_list(),
             "dialogue": dialogue, "milestones": milestones,
             "last_line": last_line, "events_total": len(events)}
+
+
+def _focus_topics(root: Path, s, *, top: int) -> dict:
+    """The session's topic clusters as a timeline: each `{lead, members, first_line,
+    last_line}` (members by weight, the L<n> range into the full log), ordered by first
+    appearance. Shell/path noise is dropped before clustering (it would merge topics).
+    `anomalies` carries this root's pointer-error clauses (task 21.1 D6), which the CLI
+    prints as its LAST line — also when there are no topics."""
+    from refmatrix import handoff, stm as stm_mod
+    g = s.focus_graph(top=top)
+    clean = {"nodes": [nd for nd in g["nodes"]
+                       if nd["name"].lower() not in handoff._SS_FOCUS_NOISE],
+             "edges": g["edges"]}
+    clusters = stm_mod.cluster_focus(clean)
+    topics: list[dict] = []
+    if clusters:
+        first: dict[str, int] = {}
+        last: dict[str, int] = {}
+        for i, e in enumerate(s.all_events(), 1):
+            for r in (e.get("refs") or []):
+                first.setdefault(r, i)
+                last[r] = i
+        weight = {nd["name"]: nd["weight"] for nd in g["nodes"]}
+        for c in clusters:
+            members = sorted(c, key=lambda nm: weight.get(nm, 0), reverse=True)
+            lines = [last[nm] for nm in c if nm in last] + [first[nm] for nm in c if nm in first]
+            topics.append({"lead": members[0], "members": members,
+                           "first_line": min(lines) if lines else None,
+                           "last_line": max(lines) if lines else None})
+        topics.sort(key=lambda t: t["first_line"] if t["first_line"] is not None else 10**9)
+    return {"topics": topics, "events_total": g["events"],
+            "anomalies": handoff.session_pointer_anomalies(root)}
+
+
+def _focus_subjects(root: Path, *, timeout: float) -> dict:
+    """Durable subjects from `memory_partition(root)` — the partition `change_subject`
+    writes (task 3.7 #fam-focus-subjects) — through ONE budgeted daemon attempt (#budgets:
+    10 s for the partition probe and the list together). A refusal is a `VerbError` with
+    the daemon's words, a stall is busy; only an ABSENT daemon reads in-process (C4a)."""
+    import time as _time
+    deadline = _time.monotonic() + timeout
+
+    def left() -> float:
+        rem = deadline - _time.monotonic()
+        if rem <= 0:
+            raise VerbBusyError(f"focus subjects not answered within {timeout:g}s — the "
+                                f"daemon for {root} is busy")
+        return rem
+    part = memory_partition(root, timeout=left())
+    try:
+        res = _call(root, "subject_list", {"partition": part}, timeout=left(), retries=0)
+    except VerbAbsentError:
+        return snapshot_read(root, lambda st: {"rows": st.list_subjects(), "partition": part},
+                             partition=part)
+    return {"rows": res.get("rows", []), "partition": part, "source": "daemon"}
 
 
 @verb("rmx_focus_note",
@@ -1543,7 +1848,14 @@ def memory(root: Path, action: typing.Literal[
     # of an mtype — the 271-card viascope cleanup — and its own daemon call had
     # carried 600 s before it was routed through this verb. Ignoring the
     # caller's timeout here would have cut that to 120 s the day it moved.
-    return _call(root, op, payload, timeout=float(timeout) if timeout is not None else 120.0)
+    res = _call(root, op, payload, timeout=float(timeout) if timeout is not None else 120.0)
+    if action == "retag":
+        # Task 3.7 #fam-taxonomy (r1 M6): MCP retags got no off-vocabulary note.
+        from refmatrix import taxonomy as tax
+        warns = tax.tag_warnings(replace if replace is not None else (add or []))
+        if warns:
+            res = {**res, "tag_warnings": warns}
+    return res
 
 
 def emit_memory_get_used(root: Path, name: str, *, scope: str = "project") -> int:
@@ -1675,6 +1987,839 @@ def bus_stats(root: Path, *, agent: str | None = None) -> dict:
     return _hub_rpc("bus_stats", {"agent": _bus_sender(root, agent)})
 
 
+# ---- task 3.7 batch A: curation, taxonomy, curator ---------------------------
+
+_CURATE_FLAGS = {"protect": ("protected", True), "unprotect": ("protected", False),
+                 "noise": ("noise", True), "unnoise": ("noise", False)}
+
+
+@verb("rmx_curate",
+      "Entity curation — the PRIMER's `rmx protect|unprotect|noise|unnoise|forget <sel>`. "
+      "Select by names, like (SQL LIKE glob), namespace, and/or kind. forget previews by "
+      "default (dry_run=true); a destructive forget selected only by kind/namespace also "
+      "needs broad=true.")
+def curate(root: Path, action: typing.Literal["protect", "unprotect", "noise", "unnoise",
+                                              "forget"], *,
+           names: list[str] | None = None, like: str | None = None,
+           namespace: str | None = None, kind: str | None = None,
+           dry_run: bool = True, broad: bool = False, partition: str | None = None,
+           timeout: float | None = None) -> dict:
+    """Task 3.7 #fam-curation over the existing `set_flag` / `forget` daemon ops (writes via
+    `_call`, one attempt: 60 s; a destructive forget 600 s, #budgets). No daemon at all →
+    the same selector on the in-process store (C4a). `forget` previews unless
+    `dry_run=False` (#fam-curation-forget): an agent's first call shows what WOULD go, and a
+    sweep selected only by `kind` / `namespace` must also say `broad=True` — the refusal
+    names the count it would remove. The CLI keeps its confirm / `-y` gate and passes
+    `dry_run=False, broad=True` after it."""
+    sel = {"names": list(names) if names else None, "like": like,
+           "namespace": namespace, "kind": kind}
+    if not any(sel.values()):
+        raise VerbArgsError(f"curate {action} needs a selector: names, like, namespace, "
+                            f"or kind — a bare call would touch every entity")
+    part = partition or project_partition(root)
+    if action in _CURATE_FLAGS:
+        flag, value = _CURATE_FLAGS[action]
+        return _write_or_local(
+            root, "set_flag", {"flag": flag, "value": value, **sel},
+            timeout=float(timeout) if timeout is not None else 60.0, partition=part,
+            local=lambda s: s.set_flag_by_selector(flag, value, **sel))
+    if action != "forget":
+        raise VerbArgsError(f"unknown curate action {action!r}")
+    # The preview runs the same selector scan as the purge, so it carries the same 600 s
+    # budget (remedy r1 R-RM5: 60 s cut a large preview short).
+    preview_budget = float(timeout) if timeout is not None else 600.0
+
+    def _preview() -> dict:
+        return _write_or_local(root, "forget", {"dry_run": True, **sel},
+                               timeout=preview_budget, partition=part,
+                               local=lambda s: s.forget_by_selector(dry_run=True, **sel))
+    if dry_run:
+        return _preview()
+    if not sel["names"] and not sel["like"] and not broad:
+        n = len(_preview().get("names") or [])
+        raise VerbArgsError(
+            f"forget selected only by kind/namespace would remove {n} entit"
+            f"{'y' if n == 1 else 'ies'}; pass broad=true to confirm a sweep that wide "
+            f"(or narrow it with names / like)")
+    return _write_or_local(root, "forget", {"dry_run": False, **sel},
+                           timeout=float(timeout) if timeout is not None else 600.0,
+                           partition=part,
+                           local=lambda s: s.forget_by_selector(dry_run=False, **sel))
+
+
+@verb("rmx_taxonomy",
+      "The shared memory-tag vocabulary (~/.refmatrix/taxonomy.json): list it, add a tag "
+      "under a category, or remove a tag. Memory tags outside it come back as tag_warnings "
+      "from rmx_memory_add / rmx_memory retag.")
+def taxonomy(root: Path, action: typing.Literal["list", "add", "remove"], *,
+             category: str | None = None, tag: str | None = None,
+             desc: str = "", color: str = "#64748b") -> dict:
+    """Task 3.7 #fam-taxonomy. `root` is unused — the vocabulary is user-level, shared by
+    every store. `add` / `remove` refuse to write over a corrupt file (the data-loss
+    defect: it silently loaded the defaults and the next add overwrote the user's
+    vocabulary); `list` degrades to an empty vocabulary with a warning; a read never
+    writes (#fam-taxonomy-corrupt)."""
+    from refmatrix import taxonomy as tax
+    if action == "list":
+        data, warnings = tax.read()
+        return {"categories": data.get("categories", {}), "path": str(tax.taxonomy_path()),
+                "warnings": warnings}
+    try:
+        if action == "add":
+            if not category or not tag:
+                raise VerbArgsError("taxonomy add requires 'category' and 'tag'")
+            tax.add_tag(category, tag, description=desc, color=color)
+            return {"added": True, "tag": tag, "category": category}
+        if action == "remove":
+            if not tag:
+                raise VerbArgsError("taxonomy remove requires 'tag'")
+            return {"removed": tax.remove_tag(tag), "tag": tag}
+    except tax.TaxonomyCorrupt as e:
+        raise VerbError(str(e)) from e
+    except OSError as e:
+        # Remedy r1 R-RM6: a write that cannot write (a read-only home, a full disk)
+        # names the file instead of escaping as a raw OSError.
+        raise VerbError(f"taxonomy file {tax.taxonomy_path()} could not be written "
+                        f"({type(e).__name__}: {e})") from e
+    raise VerbArgsError(f"unknown taxonomy action {action!r}")
+
+
+@verb("rmx_curator",
+      "The gmd-curator change queue (a spool of watcher flushes). action=status returns the "
+      "queued {ts, path, reason} entries of the oldest spool files plus a `token` naming "
+      "exactly those files; action=drain with that token deletes exactly them — a flush "
+      "written after the status is never in the token, so nothing is drained unread.")
+def curator(root: Path, action: typing.Literal["status", "drain"] = "status", *,
+            max_entries: int = 500, token: list[str] | None = None) -> dict:
+    """Task 3.7 #fam-refine-drain (r1 B3, redesigned r4). The shared `curator.queue` file was
+    the defect: drain read nothing, so entries appended between an agent's status and its
+    drain were destroyed unread, and the hooks drained it on every prompt. Now each watcher
+    flush is its own spool file (`gmd_curator`), status names the files it read, and drain
+    deletes exactly those. A file a concurrent drain already took is `missing`, never an
+    error and never a reason to delete anything else."""
+    from refmatrix import gmd_curator
+    try:
+        if action == "status":
+            return gmd_curator.read_spool(root, max_entries=max_entries)
+        if action == "drain":
+            if not token:
+                raise VerbArgsError("curator drain requires the `token` from curator status "
+                                    "(the spool file names it read)")
+            return gmd_curator.drain_spool(root, list(token))
+    except gmd_curator.SpoolTokenError as e:
+        raise VerbArgsError(str(e)) from e
+    except OSError as e:
+        raise VerbError(f"curator spool under {root}: {e}") from e
+    raise VerbArgsError(f"unknown curator action {action!r}")
+
+
+# ---- task 3.7 batch B: graph-read and canon ------------------------------------------
+
+ACTION_DEFAULTS.update({
+    ("rmx_graph", "neighbors"): {"limit": 50},
+    ("rmx_graph", "co_occur"): {"limit": 20, "linkage": "mentions"},
+    ("rmx_graph", "top"): {"linkage": "mentions", "k": 10},
+    ("rmx_graph", "describe"): {"timeout": 10.0},
+    ("rmx_graph", "recall"): {"k": 10, "timeout": 180.0},
+    ("rmx_graph", "dense"): {"k": 10, "timeout": 180.0},
+    ("rmx_graph", "stats"): {"timeout": 10.0},
+    ("rmx_graph", "timeline"): {"k": 40, "timeout": 60.0},
+    ("rmx_canon", "link"): {"timeout": 60.0},
+})
+
+
+def _int_ids(values: "list[str] | list[int] | None", *, what: str) -> "list[int] | None":
+    """`-s` values arrive as strings from the CLI and MCP; each must be an entity id."""
+    if not values:
+        return None
+    out = []
+    for v in values:
+        try:
+            out.append(int(v))
+        except (TypeError, ValueError) as e:
+            raise VerbArgsError(f"{what} values must be integer entity ids; got {v!r}") from e
+    return out
+
+
+def _as_list(v: "str | list[str] | None") -> "list[str] | None":
+    if v is None:
+        return None
+    return [v] if isinstance(v, str) else list(v)
+
+
+def session_memories(root: Path, *, partition: str, timeout: float = 60.0,
+                     query: "str | None" = None, limit: int = 100000) -> list[dict]:
+    """Session cards (`mtype == "session"`) from the sessions partition through THE read
+    routing (task 3.7 #fam-session-store / #fam-graph-read): the daemon's `memory_search`
+    (with `query`) or `memory_iter` op, ONE attempt bounded by `timeout`; an ABSENT daemon
+    reads in-process read-only (`snapshot_read`, C4a). Busy raises `VerbBusyError` and a
+    refusal `VerbError` — never the writer slot opened read-write, which is what
+    `_iter_session_memories` did whenever ping failed (the 2026-09-14 lock-crash shape)."""
+    if query:
+        op, payload = "memory_search", {"query": query, "limit": limit}
+    else:
+        op, payload = "memory_iter", {"mtype": "session", "limit": limit}
+    try:
+        res = _call(root, op, {**payload, "partition": partition}, timeout=timeout, retries=0)
+        rows = res.get("rows", [])
+    except VerbAbsentError:
+        def _read(s) -> dict:
+            # The SAME store calls the daemon ops make (`memory_search` / `memory_iter`),
+            # so an in-process answer matches a daemon one.
+            if query:
+                return {"rows": list(s.search_memories(query, limit=limit))}
+            return {"rows": list(s.iter_memories(mtype="session", limit=limit))}
+        rows = snapshot_read(root, _read, partition=partition)["rows"]
+    return [r for r in rows if r.get("mtype") == "session"]
+
+
+def session_memory_get(root: Path, name: str, *, partition: str,
+                       timeout: float = 60.0) -> "dict | None":
+    """One session card by memory name through THE read routing: the daemon's `memory_get`
+    op, one bounded attempt; an ABSENT daemon reads in-process read-only (C4a). Replaces
+    `_resolve_session`'s direct read-WRITE `Store(...)` open (task 3.7 #fam-session-store)."""
+    try:
+        return _call(root, "memory_get", {"name": name, "partition": partition},
+                     timeout=timeout, retries=0).get("memory")
+    except VerbAbsentError:
+        return snapshot_read(root, lambda s: {"memory": s.get_memory(name)},
+                             partition=partition)["memory"]
+
+
+def _timeline_git_leg(project: str, concept: str, files: dict, warnings: list[str]) -> list[dict]:
+    """The code-introduction commit by git pickaxe, scoped to the concept's files. A leg
+    that cannot run (no git binary, not a repository, a timeout) is a `warnings` entry —
+    C8: never an `except: pass`."""
+    import shutil
+    import subprocess
+    if not shutil.which("git"):
+        warnings.append("git leg skipped: no `git` on PATH")
+        return []
+    pathspec = list(files.values()) or ["."]
+    try:
+        out = subprocess.run(["git", "-C", project, "log", "--reverse", "-i", "-S", concept,
+                              "--pretty=%h%x09%aI%x09%s", "--", *pathspec],
+                             capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as e:
+        warnings.append(f"git leg failed ({type(e).__name__}: {e})")
+        return []
+    if out.returncode != 0:
+        why = (out.stderr or "").strip().splitlines()[:1]
+        warnings.append(f"git leg skipped: git log exited {out.returncode}"
+                        f"{(' — ' + why[0]) if why else ''}")
+        return []
+    first = next((ln for ln in out.stdout.splitlines() if ln.strip()), None)
+    if not first:
+        return []
+    h, aiso, subj = (first.split("\t") + ["", "", ""])[:3]
+    return [{"date": aiso, "type": "git", "ref": h,
+             "detail": f"introduced `{concept}` — {subj[:60]}"}]
+
+
+@verb("rmx_graph",
+      "Read-only graph navigation beside rmx_context / rmx_query. action=neighbors (depth-N "
+      "linkage walk), co_occur (concepts sharing entities), top (top-k by weight), describe "
+      "(every stored fact about one entity), recall (bitmap-prefiltered dense recall, RRF "
+      "with symbolic ids), dense (raw ANN), stats (catalog counts; stale=true lists stale "
+      "files), timeline (when a concept was introduced / worked on).")
+def graph(root: Path, action: typing.Literal["neighbors", "co_occur", "top", "describe",
+                                             "recall", "dense", "stats", "timeline"], *,
+          concept: str | list[str] | None = None, depth: int = 1,
+          linkage: str | list[str] | None = None, limit: int | None = None,
+          include_noise: bool = False, strict: bool = False, ref: str | None = None,
+          first: bool = False, edge_limit: int = 200, evidence_limit: int = 20,
+          sibling_limit: int = 200, no_vectors: bool = False, query: str | None = None,
+          k: int | None = None, kinds: list[str] | None = None,
+          symbolic: list[str] | None = None, no_dense: bool = False, stale: bool = False,
+          hops: int = 0, since: str | None = None, until: str | None = None,
+          git: bool = True, partition: str | None = None,
+          timeout: float | None = None) -> dict:
+    """Task 3.7 #fam-graph-read: one dispatcher over the graph-read commands, each routed
+    by #budgets (snapshot reads never touch the writer slot; daemon ops are one attempt;
+    no daemon at all ⇒ in-process read-only, C4a). Defects that died with the old CLI
+    bodies: `neighbors` read through `_store()` (the WRITE accessor), `search-dense` sent
+    no `partition`, `recall` loaded `Embedder()` in the caller, `concept timeline`
+    swallowed its legs and opened the writer slot for sessions."""
+    from refmatrix import graphread
+    ad = lambda p, v: action_default("rmx_graph", action, p, v)  # noqa: E731
+    part = partition or project_partition(root)
+    if action in ("neighbors", "co_occur", "top", "timeline") and not concept:
+        raise VerbArgsError(f"graph {action} requires 'concept'")
+    if action == "neighbors":
+        return snapshot_read(root, lambda s: graphread.neighbors_payload(
+            s, str(concept), depth=depth, linkages=_as_list(linkage),
+            limit=int(ad("limit", limit)), include_noise=include_noise, strict=strict),
+            partition=part)
+    if action == "co_occur":
+        lk = linkage if isinstance(linkage, str) else (linkage[0] if linkage else None)
+        return snapshot_read(root, lambda s: graphread.co_occur_payload(
+            s, str(concept), linkage=str(ad("linkage", lk)), limit=int(ad("limit", limit)),
+            include_noise=include_noise), partition=part)
+    if action == "top":
+        lk = linkage if isinstance(linkage, str) else (linkage[0] if linkage else None)
+
+        def _top(s) -> dict:
+            try:
+                return graphread.top_payload(s, str(concept), linkage=str(ad("linkage", lk)),
+                                             k=int(ad("k", k)))
+            except LookupError as e:
+                raise VerbError(str(e)) from e
+        return snapshot_read(root, _top, partition=part)
+    if action == "describe":
+        if not ref:
+            raise VerbArgsError("graph describe requires 'ref'")
+        kw = {"evidence_limit": evidence_limit, "edge_limit": edge_limit,
+              "sibling_limit": sibling_limit, "include_vectors": not no_vectors}
+        try:
+            return _call(root, "describe", {"ref": str(ref), "first": first,
+                                            "partition": part, **kw},
+                         timeout=float(ad("timeout", timeout)), retries=0)
+        except VerbAbsentError:
+            return snapshot_read(root, lambda s: graphread.describe_payload(
+                s, str(ref), first=first, **kw), partition=part)
+    if action == "recall":
+        return _graph_recall(root, query=query, k=int(ad("k", k)), kinds=kinds,
+                             concept=_as_list(concept), symbolic=_int_ids(symbolic,
+                                                                          what="symbolic"),
+                             no_dense=no_dense, partition=part,
+                             timeout=float(ad("timeout", timeout)))
+    if action == "dense":
+        if not query:
+            raise VerbArgsError("graph dense requires 'query'")
+        return _graph_dense(root, query=query, k=int(ad("k", k)), kinds=kinds,
+                            partition=part, timeout=float(ad("timeout", timeout)))
+    if action == "stats":
+        if not stale:
+            return snapshot_read(root, lambda s: s.stats(), partition=part)
+        # The replica's tracked_files is never refreshed, so --stale is the writer's
+        # (r3 S1): the daemon's stats op, one attempt; no daemon ⇒ in-process (C4a).
+        try:
+            return _call(root, "stats", {"include_stale": True, "partition": part},
+                         timeout=float(ad("timeout", timeout)), retries=0)
+        except VerbAbsentError:
+            return snapshot_read(root, lambda s: {**s.stats(), "stale_files": s.stale_files()},
+                                 partition=part)
+    if action == "timeline":
+        return _graph_timeline(root, str(concept), hops=hops, since=since, until=until,
+                               k=int(ad("k", k)), git=git, partition=part,
+                               timeout=float(ad("timeout", timeout)))
+    raise VerbArgsError(f"unknown graph action {action!r}")
+
+
+def _graph_recall(root: Path, *, query: "str | None", k: int, kinds: "list[str] | None",
+                  concept: "list[str] | None", symbolic: "list[int] | None",
+                  no_dense: bool, partition: str, timeout: float) -> dict:
+    """recall through the NEW daemon op `graph_recall` (one attempt, 180 s for a cold
+    model start). On `VerbAbsentError` ONLY (spec decision 2026-10-20): the SAME library
+    function in-process over a read-only store, with the embedder from the ONE seam the
+    daemon uses (`recall.shared_embedder`), embedded before the store opens. Busy never
+    runs in-process."""
+    payload = {"query": query, "k": k, "kinds": list(kinds) if kinds else None,
+               "concept": concept, "symbolic": symbolic, "no_dense": no_dense,
+               "partition": partition}
+    try:
+        return _call(root, "graph_recall", payload, timeout=timeout, retries=0)
+    except VerbAbsentError:
+        return _graph_recall_in_process(root, query=query, k=k, kinds=kinds,
+                                        concept=concept, symbolic=symbolic,
+                                        no_dense=no_dense, partition=partition)
+
+
+def _graph_recall_in_process(root: Path, *, query: "str | None", k: int,
+                             kinds: "list[str] | None", concept: "list[str] | None",
+                             symbolic: "list[int] | None", no_dense: bool,
+                             partition: str) -> dict:
+    """The no-daemon branch of `_graph_recall` (C4a): embed first, then read."""
+    from refmatrix import recall as recall_mod
+    try:
+        emb = recall_mod.prepare_graph_recall_embedder(
+            lambda: recall_mod.shared_embedder(root), query, no_dense=no_dense)
+    except ImportError as e:
+        raise VerbError(f"dense extra not installed: {e}") from e
+    return snapshot_read(root, lambda s: recall_mod.graph_recall(
+        s, emb, query=query, k=k, kinds=kinds, concept=concept, symbolic=symbolic,
+        no_dense=no_dense), partition=partition)
+
+
+def _graph_dense(root: Path, *, query: str, k: int, kinds: "list[str] | None",
+                 partition: str, timeout: float) -> dict:
+    """search-dense: the daemon `ann_search` op WITH `partition` (the old CLI omitted it,
+    so ids resolved against the daemon's partition under `-p`), names resolved from the
+    SAME partition's snapshot. No daemon ⇒ `recall.ann_search` in-process over a
+    read-only store with the shared embedder (C4a); no cross-encoder runs there, which
+    a warning says when rerank is on."""
+    from refmatrix import recall as recall_mod
+    payload = {"query": query, "k": k, "partition": partition}
+    if kinds:
+        payload["kinds"] = list(kinds)
+    warnings: list[str] = []
+    try:
+        res = _call(root, "ann_search", payload, timeout=timeout, retries=0)
+        src = "daemon"
+    except VerbAbsentError:
+        try:
+            emb = recall_mod.shared_embedder(root)
+        except ImportError as e:
+            raise VerbError(f"dense extra not installed: {e}") from e
+        from refmatrix.reranker import rerank_enabled
+        if rerank_enabled():
+            warnings.append("no daemon: the cross-encoder rerank did not run "
+                            "(in-process dense answers in retrieval order)")
+
+        def _run(s) -> dict:
+            out = recall_mod.ann_search(s, emb, query=query, k=k, kinds=kinds,
+                                        partition=partition)
+            if out.get("ok") is False:
+                raise VerbError(str(out.get("error")))
+            return {"res": out, "names": _entity_names(s, [h["id"] for h in out["hits"]])}
+        r = snapshot_read(root, _run, partition=partition)
+        return _dense_hits(r["res"], r["names"], warnings, source="in-process")
+    if res.get("ok") is False:
+        raise VerbError(str(res.get("error")))
+    ids = [h["id"] for h in res.get("hits", [])]
+    try:
+        names = snapshot_read(root, lambda s: {"names": _entity_names(s, ids)},
+                              partition=partition)["names"]
+    except VerbBusyError as e:
+        names = {}
+        warnings.append(f"hit names unresolved ({e})")
+    return _dense_hits(res, names, warnings, source=src)
+
+
+def _entity_names(s: Any, ids: "list[int]") -> "dict[int, tuple[str, str]]":
+    con = s._connect()
+    out = {}
+    for eid in ids:
+        row = con.execute("SELECT kind, name FROM entities WHERE id = ?", [eid]).fetchone()
+        if row:
+            out[int(eid)] = (row[0], row[1])
+    return out
+
+
+def _dense_hits(res: dict, names: dict, warnings: list[str], *, source: str) -> dict:
+    hits = []
+    for rank, h in enumerate(res.get("hits", []), 1):
+        kind, name = names.get(int(h["id"]), (None, None))
+        hits.append({"rank": rank, **h, "kind": kind, "name": name})
+    return {"hits": hits, "warnings": list(res.get("warnings") or []) + warnings,
+            "source": source}
+
+
+def _graph_timeline(root: Path, concept: str, *, hops: int, since: "str | None",
+                    until: "str | None", k: int, git: bool, partition: str,
+                    timeout: float) -> dict:
+    """concept timeline (#fam-graph-read): the graph leg from the snapshot (an unknown
+    concept is a `VerbError`); the session leg through the daemon `memory_search` /
+    `memory_iter` ops on the sessions partition under ONE budget (`session_memories`);
+    the git leg by subprocess. A leg that fails or is skipped is a `warnings` entry —
+    the old body's two `except Exception: pass` blocks and its direct `Store(...)` open
+    on the writer slot are gone."""
+    import time as _time
+    from refmatrix import graphread
+    deadline = _time.monotonic() + timeout
+
+    def _graph(s) -> dict:
+        try:
+            return graphread.timeline_graph_leg(s, concept, hops=hops)
+        except LookupError as e:
+            raise VerbError(str(e)) from e
+    g = snapshot_read(root, _graph, partition=partition)
+    warnings: list[str] = []
+    git_events = _timeline_git_leg(g["project"], concept, g["files"], warnings) if git else []
+    sp = graphread.sessions_partition(root)
+    direct: list = []
+    indirect: list = []
+    try:
+        direct = session_memories(root, partition=sp, query=concept, limit=max(k * 4, 100),
+                                  timeout=max(0.05, deadline - _time.monotonic()))
+        if g["files"]:
+            indirect = session_memories(root, partition=sp,
+                                        timeout=max(0.05, deadline - _time.monotonic()))
+    except VerbError as e:
+        warnings.append(f"session leg skipped: {e}")
+    return graphread.build_timeline(concept, hops=hops, k=k, graph=g, git_events=git_events,
+                                    direct_rows=direct, indirect_rows=indirect, since=since,
+                                    until=until, warnings=warnings)
+
+
+@verb("rmx_canon",
+      "Cross-project canon view beside rmx_where. action=find (which live stores host a "
+      "concept; `skipped` names stores that could not be read), siblings (concepts in other "
+      "partitions sharing this concept's canon hub), link (wire this partition's concept to "
+      "a canonical concept, created if missing).")
+def canon(root: Path, action: typing.Literal["find", "siblings", "link"], *,
+          concept: str | None = None, canon_name: str | None = None,
+          canon_partition: str = "canon", partition: str | None = None,
+          timeout: float | None = None) -> dict:
+    """Task 3.7 #fam-canon. `find` is federated over every live store (as `rmx_where`;
+    `federated_concept` reads replicas and claims no timeout); `siblings` is a snapshot
+    read; `link` is ONE classified write via the partition-correct `link_canon` op (60 s,
+    `write=True`), the local concept resolved from the read route first — an unknown
+    concept sends nothing. No daemon ⇒ the resolve AND the write happen inside
+    `local_write`'s one handle (C4a)."""
+    if not concept:
+        raise VerbArgsError(f"canon {action} requires 'concept'")
+    if action == "find":
+        from refmatrix import search as search_mod
+        return search_mod.federated_concept(concept)
+    part = partition or project_partition(root)
+
+    def _local_id(s) -> int:
+        e = s.get_entity("concept", concept)
+        if e is None:
+            raise VerbError(f"no concept '{concept}' in partition '{part}' — add it first "
+                            f"(`rmx add concept {concept}`)")
+        return int(e.id)
+    if action == "siblings":
+        return snapshot_read(root, lambda s: {"concept": concept, "partition": part,
+                                              "rows": s.siblings_via_canon(_local_id(s))},
+                             partition=part)
+    if action == "link":
+        name = canon_name or concept
+        t = float(action_default("rmx_canon", action, "timeout", timeout))
+        # Remedy r1 R-S1 / R-RM4: the concept travels as a NAME, resolved by the op under
+        # the writer, through the one matrix write path.
+        return _matrix_write(
+            root, "link_canon", {"concept": concept, "canon_partition": canon_partition,
+                                 "canon_concept_name": name}, partition=part, timeout=t,
+            local=lambda s: {"canon_id": s.link_canon(_local_id(s), canon_partition, name)})
+    raise VerbArgsError(f"unknown canon action {action!r}")
+
+
+# ---- task 3.7 batch C: matrix-edit, session, refine ---------------------------------
+
+ACTION_DEFAULTS.update({
+    ("rmx_matrix", "list_entities"): {"limit": 200},
+    ("rmx_matrix", "run"): {"limit": 50},
+})
+_MATRIX_WRITE_BUDGET_S = 60.0
+
+
+def _resolve_concept_id(s: Any, ref: str) -> int:
+    e = s.resolve_entity(ref)
+    if e is None or e.kind != "concept":
+        raise VerbError(f"no concept named {ref!r} — `rmx add concept {ref}` first")
+    return int(e.id)
+
+
+def _resolve_entity_id(s: Any, ref: str) -> int:
+    e = s.resolve_entity(ref)
+    if e is None:
+        raise VerbError(f"no entity named {ref!r}")
+    return int(e.id)
+
+
+def _matrix_write(root: Path, op: str, payload: dict, *, partition: str, timeout: float,
+                  local: "Callable[[Any], dict]") -> dict:
+    """One matrix WRITE (C4/C5): an ABSENT daemon runs `local` (which resolves its own
+    names) in ONE `local_write` handle (C4a); otherwise the op is one classified attempt
+    and resolves any names itself, under the writer (remedy r1 R-S1)."""
+    try:
+        require_daemon(root, retries=0)
+    except VerbAbsentError:
+        return local_write(root, local, partition=partition)
+    return _write_or_local(root, op, payload, timeout=timeout, partition=partition,
+                           local=local)
+
+
+@verb("rmx_matrix",
+      "Low-level matrix edits and saved queries: add_concept / add_entity / "
+      "add_linkage_type, link / unlink a (linkage, concept, entity) bit, list_entities / "
+      "list_linkages / list_queries, save_query and run a saved query.")
+def matrix(root: Path, action: typing.Literal[
+               "add_concept", "add_entity", "add_linkage_type", "link", "unlink",
+               "list_entities", "list_linkages", "list_queries", "run", "save_query"], *,
+           name: str | None = None, description: str | None = None, no_protect: bool = False,
+           kind: str | None = None, path: str | None = None, tldr: str | None = None,
+           meta: str | None = None, directed: bool = True, concept: str | None = None,
+           entity: str | None = None, linkage: str = "mentions",
+           want_protected: bool | None = None, want_noise: bool | None = None,
+           limit: int | None = None, is_pql: bool = False, ids_only: bool = False,
+           body: str | None = None, partition: str | None = None,
+           timeout: float | None = None) -> dict:
+    """Task 3.7 #fam-matrix-edit. Writes go through the daemon ops (`add_concept`,
+    `upsert_entity`, `add_linkage_type`, `link`, `unlink`, `save_query`) — one attempt,
+    60 s, `write=True` — with the CLI's `-p` partition (the `add_concept` /
+    `upsert_entity` ops ignored it until this task); no daemon ⇒ `local_write`. Reads
+    (`list_*`, `run`) come from `snapshot_read`."""
+    import json as _json
+    part = partition or project_partition(root)
+    t = float(timeout) if timeout is not None else _MATRIX_WRITE_BUDGET_S
+    lim = action_default("rmx_matrix", action, "limit", limit)
+
+    def need(**kw):
+        missing = [k for k, v in kw.items() if not v]
+        if missing:
+            raise VerbArgsError(f"matrix {action} requires " + ", ".join(repr(m) for m in missing))
+    if action == "add_concept":
+        need(name=name)
+        return _matrix_write(root, "add_concept", {"name": name, "description": description,
+                                                    "protected": not no_protect},
+                             partition=part, timeout=t, local=lambda s: {"id": s.add_concept(
+                                 name, description=description, protected=not no_protect)})
+    if action == "add_entity":
+        need(kind=kind, name=name)
+        try:
+            meta_d = _json.loads(meta) if meta else None
+        except ValueError as e:
+            raise VerbArgsError(f"matrix add_entity: meta is not JSON ({e})") from e
+        return _matrix_write(root, "upsert_entity", {
+            "kind": kind, "name": name, "path": path, "tldr": tldr, "meta": meta,
+            "protected": not no_protect}, partition=part, timeout=t,
+            local=lambda s: {"id": s.upsert_entity(kind=kind, name=name, path=path,
+                                                   tldr=tldr, meta=meta_d,
+                                                   protected=not no_protect)})
+    if action == "add_linkage_type":
+        need(name=name)
+        return _matrix_write(root, "add_linkage_type", {
+            "name": name, "directed": directed, "description": description},
+            partition=part, timeout=t, local=lambda s: {"id": s.add_linkage_type(
+                name=name, directed=directed, description=description)})
+    if action in ("link", "unlink"):
+        need(concept=concept, entity=entity)
+        # Remedy r1 R-S1: the verb sends NAMES and the op resolves them under the
+        # writer — ids resolved on the snapshot lagged the writer, so `add concept`
+        # followed at once by `link` failed "no concept named".
+
+        def _ends(s) -> "tuple[int, int]":
+            return _resolve_concept_id(s, concept), _resolve_entity_id(s, entity)
+        if action == "link":
+            def _local(s) -> dict:
+                cid, eid = _ends(s)
+                return {"created": bool(s.link(linkage, cid, eid, protect=not no_protect))}
+            res = _matrix_write(root, "link", {"linkage": linkage, "concept": concept,
+                                               "entity": entity, "protect": not no_protect},
+                                partition=part, timeout=t, local=_local)
+        else:
+            def _local(s) -> dict:
+                cid, eid = _ends(s)
+                return {"unlinked": bool(s.unlink(linkage, cid, eid))}
+            res = _matrix_write(root, "unlink", {"linkage": linkage, "concept": concept,
+                                                 "entity": entity},
+                                partition=part, timeout=t, local=_local)
+        return {**res, "concept": concept, "entity": entity, "linkage": linkage}
+    if action == "save_query":
+        need(name=name, body=body)
+        return _matrix_write(root, "save_query", {"name": name, "body": body},
+                             partition=part, timeout=t,
+                             local=lambda s: (s.save_query(name, body),
+                                              {"saved": True, "name": name})[1])
+    if action == "list_entities":
+        def _ents(s) -> dict:
+            rows: list[dict] = []
+            if want_protected is None and want_noise is None:
+                for e in s.iter_entities(kind):
+                    if len(rows) >= int(lim):
+                        break
+                    rows.append({"id": e.id, "kind": e.kind, "name": e.name, "path": e.path,
+                                 "tldr": e.tldr})
+            else:
+                for eid, nm, ekind, prot, noise in s.find_entity_ids(
+                        kind=kind, protected=want_protected, noise=want_noise)[:int(lim)]:
+                    rows.append({"id": eid, "kind": ekind, "name": nm,
+                                 "protected": bool(prot), "noise": bool(noise)})
+            return {"rows": rows}
+        return snapshot_read(root, _ents, partition=part)
+    if action == "list_linkages":
+        return snapshot_read(root, lambda s: {"rows": [dict(lk) for lk in s.list_linkages()]},
+                             partition=part)
+    if action == "list_queries":
+        return snapshot_read(root, lambda s: {"rows": [{"name": n, "body": b}
+                                                       for n, b in s.list_saved_queries()]},
+                             partition=part)
+    if action == "run":
+        need(name=name)
+
+        def _run(s) -> dict:
+            from refmatrix.query import QueryEngine
+            q = s.get_saved_query(name)
+            if q is None:
+                raise VerbError(f"no saved query: {name}")
+            qe = QueryEngine(s)
+            result = qe.run_pql(q) if is_pql else qe.run(q)
+            if isinstance(result, list):
+                rows = []
+                for eid, w in result[:int(lim)]:
+                    e = s.get_entity_by_id(eid)
+                    rows.append({"id": int(eid), "name": e.name if e else None,
+                                 "weight": float(w)})
+                return {"rows": rows, "shape": "weighted", "cardinality": len(result)}
+            ids = list(result)
+            if ids_only:
+                return {"rows": [{"id": int(i)} for i in ids], "shape": "ids",
+                        "cardinality": len(ids)}
+            rows = []
+            for eid in ids[:int(lim)]:
+                e = s.get_entity_by_id(eid)
+                if e:
+                    rows.append({"id": e.id, "kind": e.kind, "name": e.name, "path": e.path})
+            return {"rows": rows, "shape": "bitmap", "cardinality": len(ids)}
+        return snapshot_read(root, _run, partition=part)
+    raise VerbArgsError(f"unknown matrix action {action!r}")
+
+
+def _session_row(m: dict) -> dict:
+    from refmatrix import graphread
+    title = graphread.session_title(m)
+    meta = m.get("metadata")
+    if isinstance(meta, str):
+        try:
+            import json as _json
+            meta = _json.loads(meta)
+        except ValueError:
+            meta = {}
+    return {"id": m.get("id"), "name": m.get("name"),
+            "session_id": graphread.session_meta_get(m, "session_id"),
+            "project": graphread.session_meta_get(m, "project"),
+            "branch": graphread.session_meta_get(m, "branch"),
+            "started": graphread.session_meta_get(m, "started"),
+            "ended": graphread.session_meta_get(m, "ended"),
+            "turn_count": graphread.session_meta_get(m, "turn_count"),
+            "title": title, "metadata": meta if isinstance(meta, dict) else {}}
+
+
+def session_passes_filters(mem: dict, *, project_filter: "str | None" = None,
+                           branch: "str | None" = None, commit: "str | None" = None,
+                           touched: "str | None" = None, since_iso: "str | None" = None,
+                           until_iso: "str | None" = None) -> bool:
+    """The session list / recall metadata filters (moved from the CLI, task 3.7)."""
+    from refmatrix import graphread as g
+    if project_filter and project_filter not in (g.session_meta_get(mem, "project") or ""):
+        return False
+    if branch and g.session_meta_get(mem, "branch") != branch:
+        return False
+    if commit and not any(commit in c for c in g.session_meta_list(mem, "commits")):
+        return False
+    if touched and not any(touched in f for f in g.session_meta_list(mem, "files_touched")):
+        return False
+    ended = g.session_meta_get(mem, "ended") or ""
+    if since_iso and ended and ended < since_iso:
+        return False
+    if until_iso and ended and ended > until_iso:
+        return False
+    return True
+
+
+@verb("rmx_session",
+      "Session-history lookup over the sessions-<project> index: action=list (paginated, "
+      "newest first), recall (search cards by query + metadata filters), show (one card by "
+      "session id, 8-char prefix or memory name). project_filter filters by project.")
+def session(root: Path, action: typing.Literal["list", "recall", "show"], *,
+            query: str | None = None, project_filter: str | None = None,
+            branch: str | None = None, commit: str | None = None,
+            touched: str | None = None, since: str | None = None, until: str | None = None,
+            k: int = 20, limit: int = 50, offset: int = 0, session_id: str | None = None,
+            mode: typing.Literal["card", "raw", "turns"] = "card",
+            partition: str | None = None, timeout: float | None = None) -> dict:
+    """Task 3.7 #fam-session. Every read goes through `session_memories` /
+    `session_memory_get` (the daemon's memory_iter / memory_search / memory_get ops, one
+    attempt, 60 s; busy ⇒ `VerbBusyError`, refused ⇒ `VerbError`; absent ⇒ read-only
+    in-process, C4a) — `session recall`, `_iter_session_memories` and `_resolve_session`
+    opened the writer slot read-WRITE whenever ping failed. `project_filter` is the CLI
+    `--project` FILTER: `project` is the MCP store selector (C9, r1 S2)."""
+    from refmatrix import graphread
+    part = partition or graphread.sessions_partition(root)
+    t = float(timeout) if timeout is not None else 60.0
+    since_iso, until_iso = graphread.since_to_iso(since), graphread.since_to_iso(until)
+    filt = {"project_filter": project_filter, "branch": branch, "commit": commit,
+            "touched": touched, "since_iso": since_iso, "until_iso": until_iso}
+
+    def _ended(m) -> str:
+        return graphread.session_meta_get(m, "ended") or ""
+    if action == "list":
+        mems = [m for m in session_memories(root, partition=part, timeout=t)
+                if session_passes_filters(m, **filt)]
+        mems.sort(key=_ended, reverse=True)
+        page = mems[offset:] if limit <= 0 else mems[offset:offset + limit]
+        return {"sessions": [_session_row(m) for m in page], "total": len(mems),
+                "partition": part}
+    if action == "recall":
+        from refmatrix.kwic import kwic_one
+        if query:
+            mems = session_memories(root, partition=part, timeout=t, query=query,
+                                    limit=max(k * 4, 100))
+        else:
+            mems = session_memories(root, partition=part, timeout=t)
+        mems = [m for m in mems if session_passes_filters(m, **filt)]
+        if not query:
+            mems.sort(key=_ended, reverse=True)
+        rows = []
+        for m in mems[:k]:
+            r = _session_row(m)
+            r["snippet"] = (kwic_one(m.get("content") or "", query, width=160) or None
+                            if query else None)
+            rows.append(r)
+        return {"sessions": rows, "partition": part}
+    if action == "show":
+        if not session_id:
+            raise VerbArgsError("session show requires 'session_id'")
+        names = [session_id] + ([] if session_id.startswith("session-")
+                                else [f"session-{session_id[:8]}"])
+        for nm in names:
+            row = session_memory_get(root, nm, partition=part, timeout=t)
+            if row:
+                return {"session": row, "mode": mode}
+        hits = [m for m in session_memories(root, partition=part, timeout=t)
+                if (graphread.session_meta_get(m, "session_id") or "").startswith(session_id)
+                or m.get("name", "").endswith(session_id)]
+        if len(hits) > 1:
+            # Like `refine show` (remedy r1 R-L): a prefix never silently picks one.
+            ids = ", ".join((graphread.session_meta_get(m, "session_id") or m.get("name", ""))
+                            for m in hits[:5])
+            raise VerbArgsError(f"{session_id!r} matches {len(hits)} sessions: {ids}")
+        if hits:
+            return {"session": hits[0], "mode": mode}
+        raise VerbError(f"no session matching {session_id!r} in partition {part!r}")
+    raise VerbArgsError(f"unknown session action {action!r}")
+
+
+def refine_pick(cand_id: str, rows: list[dict]) -> dict:
+    """An id or an UNAMBIGUOUS id prefix → one candidate. A prefix matching two raises
+    `VerbArgsError`: accept writes a memory, so a prefix never silently picks one."""
+    exact = [c for c in rows if c.get("id") == cand_id]
+    if exact:
+        return exact[0]
+    hits = [c for c in rows if str(c.get("id", "")).startswith(cand_id)]
+    if not hits:
+        raise VerbError(f"no candidate matching {cand_id!r}")
+    if len(hits) > 1:
+        raise VerbArgsError(f"{cand_id!r} matches {len(hits)} candidates: "
+                            + ", ".join(c["id"] for c in hits[:5]))
+    return hits[0]
+
+
+def refine_rows(status: str) -> list[dict]:
+    """The hub's refinement queue at `status`, through THE hub boundary `_hub_rpc`: a hub
+    refusal or a timeout is a `VerbError` with the hub's words — `_refine_rows` turned an
+    `ok:false` into `[]`, which `refine list` printed as "no pending candidates"."""
+    return list(_hub_rpc("refine_list", {"status": status}).get("candidates", []))
+
+
+@verb("rmx_refine",
+      "Read-only views of the hub's refinement queue (promotion candidates from the bus "
+      "and the gmd-curator): action=list (filter by status / scope / project_filter; "
+      "limit caps the rows shown, total counts all), show (one candidate by id or unique "
+      "prefix). Accepting / rejecting is the human approval gate (CLI / hub UI only).")
+def refine(root: Path, action: typing.Literal["list", "show"], *,
+           status: typing.Literal["pending", "accepted", "rejected", "all"] = "pending",
+           scope: str | None = None, project_filter: str | None = None, limit: int = 20,
+           cand_id: str | None = None) -> dict:
+    """Task 3.7 #fam-refine. `root` is unused — the queue is the hub's, machine-wide."""
+    if action == "list":
+        rows = refine_rows(status)
+        if scope:
+            rows = [c for c in rows if c.get("scope") == scope]
+        if project_filter:
+            rows = [c for c in rows if c.get("project") == project_filter]
+        shown = rows[:limit] if limit and limit > 0 else rows
+        return {"candidates": shown, "total": len(rows), "shown": len(shown)}
+    if action == "show":
+        if not cand_id:
+            raise VerbArgsError("refine show requires 'cand_id'")
+        return {"candidate": refine_pick(cand_id, refine_rows("all"))}
+    raise VerbArgsError(f"unknown refine action {action!r}")
+
+
 # ---- CLI twins (asserted by tests/test_verb_parity.py) --------------------
 # verb name -> click command path. None = MCP-only, with the reason in MCP_ONLY.
 CLI_MAP: dict[str, "tuple[str, ...] | None"] = {
@@ -1706,6 +2851,15 @@ CLI_MAP: dict[str, "tuple[str, ...] | None"] = {
     "rmx_bus_unarchive": ("bus", "unarchive"),
     "rmx_bus_purge": ("bus", "purge"),
     "rmx_bus_stats": ("bus", "stats"),
+    # task 3.7 batch A: each dispatcher's twin; its other actions are CLI_ACTIONS
+    "rmx_curate": ("protect",),
+    "rmx_taxonomy": ("taxonomy", "list"),
+    "rmx_curator": ("curator", "status"),
+    "rmx_graph": ("neighbors",),
+    "rmx_canon": ("canon", "find"),
+    "rmx_matrix": ("add", "concept"),
+    "rmx_session": ("session", "list"),
+    "rmx_refine": ("refine", "list"),
 }
 # How each twin is WIRED to its verb (asserted by test_verb_parity.py by
 # recording the call while the click command runs — ch-bsd plan-3 r1 #bs-1
@@ -1761,6 +2915,50 @@ CLI_ACTIONS: dict[tuple[str, ...], tuple[str, str]] = {
     ("task", "pop"): ("rmx_task", "pop"),
     ("task", "current"): ("rmx_task", "current"),
     ("task", "swap"): ("rmx_task", "swap"),
+    # Task 3.7 batch A (#fam-focus incl. `export` #decisions-r2, #fam-curation,
+    # #fam-taxonomy, #fam-refine-drain): these left LEGACY_UNPAIRED by gaining a verb.
+    ("focus", "tail"): ("rmx_focus", "tail"),
+    ("focus", "topics"): ("rmx_focus", "topics"),
+    ("focus", "show"): ("rmx_focus", "show"),
+    ("focus", "subject"): ("rmx_focus", "subject"),
+    ("focus", "subjects"): ("rmx_focus", "subjects"),
+    ("focus", "clear-subject"): ("rmx_focus", "clear_subject"),
+    ("focus", "composite"): ("rmx_focus", "composite"),
+    ("focus", "export"): ("rmx_focus", "export"),
+    ("focus", "detour"): ("rmx_focus", "detour"),
+    ("focus", "detours"): ("rmx_focus", "detours"),
+    ("focus", "return"): ("rmx_focus", "return"),
+    ("focus", "clear"): ("rmx_focus", "clear"),
+    ("unprotect",): ("rmx_curate", "unprotect"),
+    ("noise",): ("rmx_curate", "noise"),
+    ("unnoise",): ("rmx_curate", "unnoise"),
+    ("forget",): ("rmx_curate", "forget"),
+    ("taxonomy", "add"): ("rmx_taxonomy", "add"),
+    ("taxonomy", "remove"): ("rmx_taxonomy", "remove"),
+    ("curator", "drain"): ("rmx_curator", "drain"),
+    # Task 3.7 batch B (#fam-graph-read incl. `stats` #decisions-r2, #fam-canon).
+    ("co-occur",): ("rmx_graph", "co_occur"),
+    ("top",): ("rmx_graph", "top"),
+    ("describe",): ("rmx_graph", "describe"),
+    ("recall",): ("rmx_graph", "recall"),
+    ("search-dense",): ("rmx_graph", "dense"),
+    ("stats",): ("rmx_graph", "stats"),
+    ("concept", "timeline"): ("rmx_graph", "timeline"),
+    ("canon", "siblings"): ("rmx_canon", "siblings"),
+    ("canon", "link"): ("rmx_canon", "link"),
+    # Task 3.7 batch C (#fam-matrix-edit, #fam-session, #fam-refine).
+    ("add", "entity"): ("rmx_matrix", "add_entity"),
+    ("add", "linkage-type"): ("rmx_matrix", "add_linkage_type"),
+    ("link",): ("rmx_matrix", "link"),
+    ("unlink",): ("rmx_matrix", "unlink"),
+    ("list", "entities"): ("rmx_matrix", "list_entities"),
+    ("list", "linkages"): ("rmx_matrix", "list_linkages"),
+    ("list", "queries"): ("rmx_matrix", "list_queries"),
+    ("run",): ("rmx_matrix", "run"),
+    ("save-query",): ("rmx_matrix", "save_query"),
+    ("session", "recall"): ("rmx_session", "recall"),
+    ("session", "show"): ("rmx_session", "show"),
+    ("refine", "show"): ("rmx_refine", "show"),
 }
 
 # CLI-only BY DECISION. On 2026-10-06 the user accepted CLI-only commands for
@@ -1797,8 +2995,9 @@ HIDDEN_ALIASES: dict[tuple[str, ...], tuple[str, ...]] = {
 # (then it is a CLI_MAP twin) or an INTERNAL_CLI reason; a new command may not
 # land here. The decision table is in
 # workflow/implementation_summaries/task-3.4-internal-cli-allowlist.md.
+# `verb-it` ("agent-facing; owes a verb") was removed by task 3.7 AC-G1 once its last path
+# gained a verb or a re-decision; `_legacy` refuses it at import, so it cannot return.
 LEGACY_CATEGORIES: dict[str, str] = {
-    "verb-it": "agent-facing; owes a verb (the decision is \"verb it\")",
     "operator": "daemon / hub / launchctl / replica / partition / schedule administration",
     "maintenance": "store maintenance, repair, migration, derive passes",
     "hook": "invoked by a generated Claude Code hook, not by an agent",
@@ -1815,49 +3014,18 @@ def _legacy(category: str, reason: str, *paths: "tuple[str, ...]") -> dict:
 
 
 LEGACY_UNPAIRED: dict[tuple[str, ...], tuple[str, str]] = {
-    # -- verb-it: agent-facing reads and curation an agent calls today through
-    #    Bash; MCP agents cannot reach them. Each owes a verb, and each reason
-    #    names the task-3.7 family that owes it (ch-bsd plan-3 r9 #b-1: "owes a
-    #    verb" with no task behind it was a parking lot).
-    **_legacy("verb-it", "graph read an agent runs to navigate the matrix; owes the "
-              "graph verb — task-3.7#fam-graph-read",
-              ("neighbors",), ("co-occur",), ("top",), ("describe",), ("recall",),
-              ("search-dense",), ("concept", "timeline"), ("pairs", "show")),
-    **_legacy("verb-it", "cross-project canon view an agent consults; owes the canon verb "
-              "— task-3.7#fam-canon",
-              ("canon", "find"), ("canon", "siblings"), ("canon", "link")),
-    **_legacy("verb-it", "low-level matrix edit / saved-query surface agents script; owes "
-              "the matrix verb — task-3.7#fam-matrix-edit",
-              ("add", "concept"), ("add", "entity"), ("add", "linkage-type"),
-              ("link",), ("unlink",), ("list", "entities"), ("list", "linkages"),
-              ("list", "queries"), ("run",), ("save-query",)),
-    **_legacy("verb-it", "entity curation the primer tells agents to use (protect / noise / "
-              "forget); owes the curate verb — task-3.7#fam-curation",
-              ("protect",), ("unprotect",), ("noise",), ("unnoise",), ("forget",)),
-    **_legacy("verb-it", "STM focus read or navigation an agent uses mid-session; owes "
-              "actions on rmx_focus — task-3.7#fam-focus",
-              ("focus", "tail"), ("focus", "topics"), ("focus", "show"),
-              ("focus", "subject"), ("focus", "subjects"), ("focus", "clear-subject"),
-              ("focus", "composite"), ("focus", "detour"), ("focus", "detours"),
-              ("focus", "return"), ("focus", "clear")),
-    **_legacy("verb-it", "session-history lookup an agent uses for recall; owes the session "
-              "verb — task-3.7#fam-session",
-              ("session", "list"), ("session", "recall"), ("session", "show"),
-              ("session", "stats")),
-    **_legacy("verb-it", "refinement-queue review the gmd-curator agent drives; owes the "
-              "refine verb — task-3.7#fam-refine",
-              ("refine", "list"), ("refine", "show"), ("refine", "accept"),
-              ("refine", "reject"), ("curator", "drain")),
-    **_legacy("verb-it", "shared tag vocabulary agents validate memory tags against; owes "
-              "the taxonomy verb — task-3.7#fam-taxonomy",
-              ("taxonomy", "list"), ("taxonomy", "add"), ("taxonomy", "remove")),
     # -- hook: called by the generated Claude Code hooks (hooks.py /
     #    search_hooks.py), not by agents. Every focus hook runs `focus hook
     #    --event …`; `focus record` is not among them (r9 #m-1).
     **_legacy("hook", "invoked by a generated Claude Code hook (hooks.py / search_hooks.py)",
               ("focus", "hook"), ("focus", "summarize"), ("scan-prompt",), ("primer",),
-              ("grep",), ("sync",), ("curator", "status"), ("ingest-gmd",)),
+              ("grep",), ("sync",), ("ingest-gmd",)),
     # -- operator: process supervision and store administration.
+    **_legacy("operator", "the human approval gate of the \"no silent writes\" refinement "
+              "queue (accept writes a memory, reject drops it); the hub UI is the other "
+              "surface for the same gate, and no template or agent calls `rmx refine` "
+              "(task 3.7 #fam-refine-gate, re-decided)",
+              ("refine", "accept"), ("refine", "reject")),
     **_legacy("operator", "the operator's hook installer: renders, applies and checks the "
               "generated hook config (`rmx install-hooks --check` is a pre-commit gate)",
               ("install-hooks",)),
@@ -1907,9 +3075,17 @@ LEGACY_UNPAIRED: dict[tuple[str, ...], tuple[str, str]] = {
               ("migrate-to-duckdb",), ("export",), ("import",), ("dump-log",)),
     # -- harness: telemetry, logs, eval conditions and debugging.
     **_legacy("harness", "telemetry, log and debug inspection",
-              ("telemetry",), ("cli-log",), ("log",), ("cctree",), ("stats",),
-              ("fingerprint",), ("tools-primer",), ("focus", "size"),
-              ("focus", "export")),
+              ("telemetry",), ("cli-log",), ("log",), ("cctree",),
+              ("fingerprint",), ("tools-primer",), ("focus", "size")),
+    **_legacy("harness", "a debug view of the coref inventory `pairs compile` (maintenance) "
+              "builds; no template, primer or hook teaches it and 0 of 12 cli.logs call it "
+              "(task 3.7 #fam-graph-read-pairs, re-decided)",
+              ("pairs", "show")),
+    **_legacy("harness", "counter aggregation over every session card (turns, prompts, top "
+              "branches / models / files) — an analytics view with no agent evidence; it "
+              "reads through the rmx_session list action (task 3.7 #fam-session-stats, "
+              "re-decided)",
+              ("session", "stats")),
     **_legacy("harness", "a manual STM event append for tests and debugging; no generated "
               "hook runs it (every focus hook runs `focus hook --event …`)",
               ("focus", "record")),

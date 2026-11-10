@@ -34,6 +34,7 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Callable
 
+from refmatrix.envknob import env_float
 from refmatrix.store import Store, version_key
 from refmatrix.subproc import subproc_embed_enabled
 
@@ -58,12 +59,20 @@ def repair_marker_path(root: Path) -> Path:
 # model-worker reconnect, so "busy" and "dead" are distinguishable.
 # How long a supervised start waits for an unsupervised predecessor to stop
 # gracefully before serve_forever's reap escalates (plan-4 task 4.4).
-ADOPT_GRACE_S = float(os.environ.get("RMX_ADOPT_GRACE_S", "20") or "20")
+# The import-time knobs in this module, and the stop/flush/evict budgets, go through the
+# shared `envknob.env_float` (ch-bsd 3.7 r6 #m-1, 2026-11-09): a typo
+# (`RMX_ADOPT_GRACE_S=20s`) is the default plus one warning naming the variable. Before r6
+# each was a bare `float()` at import, so one typo made `import refmatrix.daemon` raise and
+# the daemon could not start at all. NOT every numeric read is converted yet: the runtime
+# `float(os.environ.get(...))` / `int(...)` reads further down (shutdown timeout, index
+# repair, factslog compaction, snapshot debounce, ingest yield, spawn wait, ...) are bug-188
+# (ch-bsd 3.7 r7 #m-2); two of them treat <= 0 as "disabled", which env_float would reject.
+ADOPT_GRACE_S = env_float("RMX_ADOPT_GRACE_S", 20.0, logger=__name__)
 HEARTBEAT_NAME = "heartbeat"
-HEARTBEAT_INTERVAL_S = float(os.environ.get("RMX_HEARTBEAT_S", "5") or "5")
+HEARTBEAT_INTERVAL_S = env_float("RMX_HEARTBEAT_S", 5.0, logger=__name__)
 # Older than this, a heartbeat no longer means "working" — shared by the
 # hub watchdog and the daemon's own adoption/reap decisions (one number).
-HEARTBEAT_STALE_S = float(os.environ.get("RMX_HUB_HEARTBEAT_STALE_S", "60") or "60")
+HEARTBEAT_STALE_S = env_float("RMX_HUB_HEARTBEAT_STALE_S", 60.0, logger=__name__)
 
 
 class DeadlineExceeded(Exception):
@@ -84,7 +93,9 @@ _RECV_POLL_S = 1.0
 def stop_grace_s() -> float:
     """How long a stop order waits before escalating; `RMX_STOP_GRACE_S`
     overrides (tests, an operator in a hurry)."""
-    return float(os.environ.get("RMX_STOP_GRACE_S", str(DEFAULT_STOP_GRACE_S)) or DEFAULT_STOP_GRACE_S)
+    # `env_float` (ch-bsd 3.7 r6 #m-1, 2026-11-09): a typo is the default + one warning,
+    # never a `ValueError` out of a stop order.
+    return env_float("RMX_STOP_GRACE_S", float(DEFAULT_STOP_GRACE_S), logger=__name__)
 
 
 # The daemon's own shutdown budget. Every stage of serve_forever's finally
@@ -142,13 +153,13 @@ class _StopDeadline:
 def flush_budget_ceiling_s() -> float:
     """The most the final fragment flush may ever wait for `_store_lock`.
     `RMX_DAEMON_FLUSH_BUDGET_S` overrides (bug-041 raised it 5 -> 15)."""
-    return float(os.environ.get("RMX_DAEMON_FLUSH_BUDGET_S", "15") or "15")
+    return env_float("RMX_DAEMON_FLUSH_BUDGET_S", 15.0, logger=__name__)  # r6 #m-1
 
 
 def store_close_budget_s() -> float:
     """The bounded `Store.close()` budget; also the reserve every earlier
     stop stage keeps back for it."""
-    return float(os.environ.get("RMX_STORE_CLOSE_TIMEOUT_S", "5") or "5")
+    return env_float("RMX_STORE_CLOSE_TIMEOUT_S", 5.0, logger=__name__)  # r6 #m-1
 
 
 def remaining_flush_budget_s(elapsed_s: float) -> float:
@@ -705,7 +716,9 @@ def _recv_line(s: socket.socket, timeout: float,
 # How long one flush tick may spend draining queued grep-learn work. The drain
 # takes the writer lock PER ENTRY and releases it in between, so this bounds
 # the tick rather than the lock hold; leftovers ride to the next tick (bug-049).
-LEARN_DRAIN_BUDGET_S = float(os.environ.get("RMX_LEARN_DRAIN_BUDGET_S") or 5.0)
+# Parsed by `envknob.env_float` (ch-bsd 3.7 r6 #m-1, 2026-11-09): a typo is the default
+# plus one warning, not a `ValueError` at `import refmatrix.daemon`.
+LEARN_DRAIN_BUDGET_S = env_float("RMX_LEARN_DRAIN_BUDGET_S", 5.0, logger=__name__)
 
 
 class SlotRepairError(RuntimeError):
@@ -832,6 +845,8 @@ class Daemon:
         self._worker_lock = threading.Lock()
         # Shared-worker re-probe bookkeeping (bug-024): when the next
         # probe is allowed per role, and the backoff that produced it.
+        # `_reprobe_backoff` also carries each role's cold-miss streak under
+        # `recall.cold_streak_key(role)` (ch-bsd 3.7 r6 #s-1, 2026-11-09).
         self._reprobe_next: dict[str, float] = {}
         self._reprobe_backoff: dict[str, float] = {}
         # Snapshot-tier state. `_request_snapshot()` sets `_snapshot_dirty`
@@ -872,77 +887,37 @@ class Daemon:
         self.log_fh.flush()
 
     def _embedder(self):
-        """Lazy-cached Embedder. Loads sentence-transformers model on
-        first call (~134 MB for the default bge-small-en-v1.5).
-        Raises ImportError if the [dense] extra isn't installed —
-        the op handler catches that and surfaces a clean error to
-        the client instead of crashing the daemon."""
+        """Lazy-cached embedder through THE seam, `recall.shared_embedder` (task 3.7
+        #fam-graph-read-recall): the daemon and the verb's no-daemon recall branch get
+        their model the same way — the hub's shared worker when it is up, a private
+        worker otherwise, the in-process model as the loud last resort. This accessor
+        only adds the daemon's cache, its worker client and its log. Raises ImportError
+        if the [dense] extra isn't installed — op handlers surface that cleanly."""
         existing = getattr(self, "_embedder_inst", None)
         if existing is not None:
             return existing
-        if subproc_embed_enabled():
-            try:
-                e = self._remote_embedder()
-                self._embedder_inst = e
-                self._log(
-                    f"embedder loaded (subprocess) "
-                    f"model={e.model_name} dim={e.dim}"
-                )
-                return e
-            except ImportError:
-                # No [dense] extra. In-process would fail identically, so
-                # let the op handlers surface it the way they always have.
-                raise
-            except Exception as exc:
-                # Anything else -- an interpreter the child can't reach, a
-                # sandbox that forbids spawn, a pipe the OS won't give us --
-                # is a transport problem, not a dense problem. Since this is
-                # the DEFAULT path now, failing here would take dense
-                # retrieval down on hosts where it used to work fine. Fall
-                # back to the in-process model and say so loudly.
-                self._log(
-                    f"subprocess embedder unavailable ({exc!r}); "
-                    "falling back to in-process model -- the daemon now "
-                    "carries the model's RSS. Set RMX_EMBED_SUBPROC=0 to "
-                    "silence this, or investigate the spawn failure."
-                )
-                # Only the embed worker: a live rerank worker is unrelated
-                # and killing it would cost a needless model reload.
-                w, self._embed_worker = self._embed_worker, None
-                if w is not None:
-                    try:
-                        w.close(timeout=2.0)
-                    except Exception:
-                        pass
-        from refmatrix.embedder import Embedder
+        from refmatrix import recall as recall_mod
 
-        e = Embedder()
-        # Trigger the model load so the first real call doesn't
-        # eat the latency. Subsequent calls are model.encode-only.
-        _ = e.dim
+        def _drop_private_worker() -> None:
+            # Only the embed worker: a live rerank worker is unrelated and killing it
+            # would cost a needless model reload.
+            w, self._embed_worker = self._embed_worker, None
+            if w is not None:
+                try:
+                    w.close(timeout=2.0)
+                except Exception as exc:  # noqa: BLE001 — named; the fallback proceeds
+                    self._log(f"embed worker close failed after a spawn failure: {exc!r}")
+        e = recall_mod.shared_embedder(self.root, remote=lambda: self._remote_embedder(),
+                                       log=self._log, on_fallback=_drop_private_worker)
         self._embedder_inst = e
-        self._log(f"embedder loaded model={e.model_name} dim={e.dim}")
         return e
 
     def _remote_embedder(self):
-        """Build the subprocess-backed embedder, spawning its worker.
-
-        Raises ImportError when the [dense] extra is missing, matching the
-        in-process path's contract: every `_op_*` already catches ImportError
-        and returns a clean client error instead of crashing the daemon.
-        The worker reports the failure as an error frame; we translate.
-        """
-        from refmatrix.embedder import RemoteEmbedder
-        from refmatrix.subproc import WorkerError
-
-        e = RemoteEmbedder(self._model_client("embed"))
-        try:
-            _ = e.dim          # forces the spawn + model load now
-        except WorkerError as exc:
-            if "ModuleNotFoundError" in str(exc) or "ImportError" in str(exc):
-                raise ImportError(str(exc)) from exc
-            raise
-        return e
+        """The subprocess-backed embedder over this daemon's cached worker client
+        (`recall.remote_embedder`). Raises ImportError when the [dense] extra is missing;
+        every `_op_*` turns that into a clean client error."""
+        from refmatrix.recall import remote_embedder
+        return remote_embedder(self._model_client("embed"))
 
     def _model_client(self, role: str):
         """Return a client for `role` — the hub's shared worker when one is
@@ -960,34 +935,8 @@ class Daemon:
             existing = getattr(self, attr, None)
             if existing is not None:
                 return existing
-            client = None
-            from refmatrix import modelsrv
-            if modelsrv.shared_enabled() and modelsrv.shared_available():
-                try:
-                    # Bounded: the worker's 300 s default let a broken shared
-                    # worker (bug-014/015) stall an op — and the store lock it
-                    # held — for five minutes.
-                    client = modelsrv.SharedWorkerClient(role, log=self._log,
-                                                         timeout=SHARED_OP_TIMEOUT_S)
-                    # prove it answers before adopting — bounded, so a mute
-                    # socket costs seconds, not the 300 s op timeout
-                    client.info(timeout=modelsrv.PROBE_TIMEOUT_S)
-                    self._log(f"{role}: using hub-shared worker")
-                except Exception as exc:
-                    self._log(
-                        f"{role}: hub-shared worker unusable ({exc!r}); "
-                        "falling back to a private worker"
-                    )
-                    try:
-                        if client is not None:
-                            client.close()
-                    except Exception:
-                        pass
-                    client = None
-            if client is None:
-                from refmatrix.subproc import WorkerClient
-                client = WorkerClient(role, log=self._log)
-                client.set_stderr(self.log_fh)
+            from refmatrix.recall import new_model_client
+            client = new_model_client(role, log=self._log, stderr=self.log_fh)
             setattr(self, attr, client)
             return client
 
@@ -1008,16 +957,26 @@ class Daemon:
         worker it started with and only the NEXT call sees the new client.
 
         Backs off (doubling to `RMX_SHARED_REPROBE_MAX_S`) so a machine that
-        will never have a hub does not probe at full rate forever. Returns the
+        will never have a hub does not probe at full rate forever. A hub that
+        connects and times out on the header re-arms at the BASE window only
+        for the FIRST such miss of a run (r5 #m-3: a cold hub is adopted one
+        base window later); every consecutive header timeout doubles to the cap
+        too (ch-bsd 3.7 r6 #s-1, 2026-11-09: r5 re-armed a MUTE hub at base
+        forever, so this tick paid the 45 s `PROBE_TIMEOUT_S` per role every
+        300 s). The run is counted in `_reprobe_backoff` under
+        `recall.cold_streak_key(role)`, so it resets with the throttle. Returns the
         roles adopted, for the caller's log and for tests.
+
+        The probe and its backoff are `recall.reprobe_shared_client`, the ONE re-probe a
+        daemonless process uses too (task 3.7 remedy r3, ch-bsd r2 #s-1); this method
+        owns only which roles qualify and the swap.
         """
         from refmatrix import modelsrv
+        from refmatrix.recall import reprobe_shared_client
 
         if not modelsrv.shared_enabled():
             return []
         now = time.time() if now is None else float(now)
-        base = float(os.environ.get("RMX_SHARED_REPROBE_S", "300") or "300")
-        cap = float(os.environ.get("RMX_SHARED_REPROBE_MAX_S", "1800") or "1800")
         adopted: list[str] = []
         for role, attr, cache in (("embed", "_embed_worker", "_embedder_inst"),
                                   ("rerank", "_rerank_worker", "_reranker_inst")):
@@ -1032,28 +991,10 @@ class Daemon:
                 if not (role == "embed" and isinstance(
                         getattr(self, "_embedder_inst", None), Embedder)):
                     continue
-            if now < self._reprobe_next.get(role, 0.0):
-                continue
-            client = None
-            try:
-                if modelsrv.shared_available(timeout=0.5):
-                    client = modelsrv.SharedWorkerClient(
-                        role, log=self._log, timeout=SHARED_OP_TIMEOUT_S)
-                    client.info(timeout=modelsrv.PROBE_TIMEOUT_S)
-            except Exception as exc:  # noqa: BLE001 — logged; private keeps serving
-                try:
-                    if client is not None:
-                        client.close()
-                except Exception:
-                    pass
-                client = None
-                self._log(f"{role}: shared worker still unusable ({exc!r}); "
-                          f"keeping the private worker")
+            client = reprobe_shared_client(role, next_at=self._reprobe_next,
+                                           backoff=self._reprobe_backoff, log=self._log,
+                                           now=now)
             if client is None:
-                prev = self._reprobe_backoff.get(role, 0.0)
-                wait = min(max(base, prev * 2.0), cap)
-                self._reprobe_backoff[role] = wait
-                self._reprobe_next[role] = now + wait
                 continue
             with self._worker_lock:
                 setattr(self, attr, client)
@@ -1066,8 +1007,6 @@ class Daemon:
             except Exception as exc:  # noqa: BLE001 — the swap already happened
                 self._log(f"{role}: private worker close failed after adoption: "
                           f"{exc!r}")
-            self._reprobe_backoff.pop(role, None)
-            self._reprobe_next.pop(role, None)
             if w is None:
                 # Precise on purpose: we released OUR reference. The model is
                 # still resident until the last in-flight caller releases it —
@@ -1190,7 +1129,9 @@ class Daemon:
         the next query then pays a cold model load — worth it on a
         memory-constrained host, not on a busy one.
         """
-        idle_s = float(os.environ.get("RMX_WORKER_IDLE_S", "0") or "0")
+        # The same knob `modelsrv.ModelServer.idle_seconds` reads, through the same
+        # parser (ch-bsd 3.7 r6 #m-1, 2026-11-09): a typo is 0 (never) + one warning.
+        idle_s = env_float("RMX_WORKER_IDLE_S", 0.0, logger=__name__)
         if idle_s <= 0:
             return
         for attr, cache in (("_embed_worker", "_embedder_inst"),
@@ -1336,12 +1277,15 @@ class Daemon:
     def _start_heartbeat(self) -> None:
         """Touch `.refmatrix/heartbeat` every RMX_HEARTBEAT_S (5) from a
         thread that takes NO lock, so the supervisor's liveness signal is
-        independent of every op. Interval is re-read so tests can shorten it."""
+        independent of every op. Interval is re-read so tests can shorten it,
+        through the shared `envknob.env_float` (ch-bsd 3.7 r6 #m-1, 2026-11-09): a
+        typo'd `RMX_HEARTBEAT_S` is the module default plus one warning, where a bare
+        `float()` raised out of the daemon's startup."""
         import threading as _t
         if getattr(self, "_heartbeat_thread", None) and self._heartbeat_thread.is_alive():
             return
         self._heartbeat_stop = _t.Event()
-        interval = float(os.environ.get("RMX_HEARTBEAT_S", str(HEARTBEAT_INTERVAL_S)) or "5")
+        interval = env_float("RMX_HEARTBEAT_S", HEARTBEAT_INTERVAL_S, logger=__name__)
         _touch = self._heartbeat_touch
 
         def _runner():
@@ -1446,7 +1390,7 @@ class Daemon:
         op trips the fast-exit (ch-bsd plan-4 r1 #m-10). RMX_DEGRADE_EXIT_S
         (default 2) lets the reply flush first."""
         import threading as _t
-        delay = float(os.environ.get("RMX_DEGRADE_EXIT_S", "2") or "2")
+        delay = env_float("RMX_DEGRADE_EXIT_S", 2.0, logger=__name__)  # r6 #m-1
 
         def _later():
             time.sleep(delay)
@@ -1770,6 +1714,19 @@ class Daemon:
                 pass
         return True
 
+    def _sweep_stale_curator_tmp(self) -> None:
+        """Startup sweep of `curator.spool/*.tmp` (task 3.7 #fam-refine-drain). A
+        failure is logged, never fatal to the boot: the leftovers are invisible to
+        readers and the next start retries."""
+        from refmatrix import gmd_curator
+        try:
+            n = gmd_curator.sweep_stale_tmp(self.root)
+        except OSError as exc:
+            self._log(f"curator spool tmp sweep FAILED: {exc!r}")
+            return
+        if n:
+            self._log(f"curator spool: swept {n} stale tmp file(s)")
+
     def serve_forever(self) -> int:
         sock_path = socket_path(self.root)
         # Smart startup: reap any predecessor daemon for this root before we
@@ -1799,6 +1756,10 @@ class Daemon:
             pass
         except OSError as _e:
             self._log(f"could not remove a stale shutdown.started: {_e!r}")
+        # The curator spool's stale `*.tmp` files are a previous instance's crash
+        # leftovers (task 3.7 r5 M1); readers never glob them. Swept here, before
+        # this instance's watcher can start writing a new one.
+        self._sweep_stale_curator_tmp()
         # Heartbeat first: the store open + repairs below can take a while
         # and the supervisor must already see "alive", not "dead".
         self._start_heartbeat()
@@ -2237,7 +2198,7 @@ class Daemon:
         Interval defaults to 30s; override via RMX_DAEMON_FLUSH_S env."""
         import threading as _t
         if interval_s is None:
-            interval_s = float(os.environ.get("RMX_DAEMON_FLUSH_S", "30") or "30")
+            interval_s = env_float("RMX_DAEMON_FLUSH_S", 30.0, logger=__name__)  # r6 #m-1
         self._flush_stop = _t.Event()
 
         def _runner():
@@ -3110,27 +3071,25 @@ class Daemon:
         from refmatrix.sync import sync_files
 
         self._watch_stop = threading.Event()
-        curator_queue_path = self.root / "curator.queue"
-
         def _enqueue_curator(paths: list[str]) -> int:
-            """Append curator-relevant paths to .refmatrix/curator.queue.
-
-            Format: one JSON object per line — {ts, path, reason}. A
-            SessionStart hook reads + drains this so Claude knows to
-            dispatch the gmd-curator subagent."""
-            import json as _json
+            """Spool curator-relevant paths: ONE new file per flush under
+            `.refmatrix/curator.spool/` (task 3.7 #fam-refine-drain), `{ts, path,
+            reason}` per line, written tmp → fsync → rename by
+            `gmd_curator.write_spool`. It replaced appends to the shared
+            `curator.queue`, whose drain destroyed entries it never read. Nothing
+            is held in memory across a fast-exit. A failed write is logged with
+            the count of paths it lost (C8); its `.tmp` is reaped by the next
+            startup sweep."""
+            from refmatrix import gmd_curator
             keep = [p for p in paths if is_curator_relevant(Path(p))]
             if not keep:
                 return 0
-            now = time.time()
             try:
-                with curator_queue_path.open("a", encoding="utf-8") as fh:
-                    for p in keep:
-                        fh.write(_json.dumps({
-                            "ts": now, "path": p, "reason": "fs-change",
-                        }, ensure_ascii=False) + "\n")
+                gmd_curator.write_spool(self.root, keep)
             except OSError as exc:
-                self._log(f"curator queue write failed: {exc!r}")
+                self._log(f"curator spool write FAILED: {len(keep)} path(s) not queued "
+                          f"for the gmd-curator: {exc!r}")
+                return 0
             return len(keep)
 
         # Option A: pre-repair the entity_links secondary index when the
@@ -3923,7 +3882,9 @@ def _op_sync_since(d: Daemon, args: dict) -> dict:
 
 
 def _op_stats(d: Daemon, args: dict) -> dict:
-    with d._store_lock:
+    """Catalog counts (+ `stale_files` with `include_stale`). Honours `partition` (task
+    3.7 C7: the `rmx_graph` stats action forwards the CLI's `-p`)."""
+    with d._store_lock, _op_part_ctx(d, args):
         out = d._st().stats()
         # Task 21.1 R7: reads this daemon dropped at their caller's deadline (bug-116's
         # counter), so the R7 usage report (R7) can reconcile them with the client-side
@@ -4112,7 +4073,9 @@ def _op_upsert_entity(d: Daemon, args: dict) -> dict:
     meta = args.get("meta")
     if isinstance(meta, str):
         meta = _json.loads(meta)
-    with d._store_lock:
+    # Honours `partition` (task 3.7 #fam-matrix-edit-partition): it wrote to the daemon's
+    # bound partition, so `rmx -p X add entity` landed where `-p X link` could not see it.
+    with d._store_lock, _op_part_ctx(d, args):
         eid = d._st().upsert_entity(
             kind=args["kind"], name=args["name"],
             path=args.get("path"), tldr=args.get("tldr"),
@@ -4123,7 +4086,9 @@ def _op_upsert_entity(d: Daemon, args: dict) -> dict:
 
 
 def _op_add_concept(d: Daemon, args: dict) -> dict:
-    with d._store_lock:
+    """Honours `partition` (task 3.7 #fam-matrix-edit-partition): the concept used to land
+    in the daemon's bound partition while `link` / `unlink` / `save_query` honoured `-p`."""
+    with d._store_lock, _op_part_ctx(d, args):
         cid = d._st().add_concept(
             args["name"],
             description=args.get("description"),
@@ -4142,22 +4107,6 @@ def _op_add_linkage_type(d: Daemon, args: dict) -> dict:
         )
     d._request_snapshot()
     return {"id": lid}
-
-
-def _op_iter_entities(d: Daemon, args: dict) -> dict:
-    kind = args.get("kind")
-    with d._store_lock:
-        rows = [
-            {"id": e.id, "kind": e.kind, "name": e.name,
-             "path": e.path, "tldr": e.tldr}
-            for e in d._st().iter_entities(kind)
-        ]
-    return {"rows": rows}
-
-
-def _op_list_linkages(d: Daemon, args: dict) -> dict:
-    with d._store_lock:
-        return {"rows": d._st().list_linkages()}
 
 
 def _op_top_concepts(d: Daemon, args: dict) -> dict:
@@ -4395,11 +4344,6 @@ def _op_partition_list(d: Daemon, args: dict) -> dict:
         ],
         "daemon_partition": d._st().partition_name,
     }
-
-
-def _op_list_saved_queries(d: Daemon, args: dict) -> dict:
-    with d._store_lock:
-        return {"rows": list(d._st().list_saved_queries())}
 
 
 def _op_grep_indexed(d: Daemon, args: dict) -> dict:
@@ -4817,10 +4761,9 @@ def _context_rerank_budget_s() -> float:
     """Seconds the context op's rerank may spend (`RMX_CONTEXT_RERANK_S`,
     default 3.0). Measured warm: ~0.1 s for 10 docs on the daemon's worker
     (ch-bsd r8); the hook's shared worker took 1.33 s for 10 (context.py)."""
-    try:
-        v = float(os.environ.get("RMX_CONTEXT_RERANK_S", "3.0"))
-    except ValueError:
-        v = 3.0
+    # `env_float` (ch-bsd 3.7 r6 #m-1, 2026-11-09): before r6 a typo was swallowed by a
+    # bare `except ValueError` with no word; now it is the default plus one warning.
+    v = env_float("RMX_CONTEXT_RERANK_S", 3.0, logger=__name__)
     return v if v > 0 else 3.0
 
 
@@ -4974,14 +4917,10 @@ def _op_describe(d: Daemon, args: dict) -> dict:
         "include_vectors": bool(args.get("include_vectors", True)),
     }
 
+    from refmatrix.graphread import describe_payload
+
     def _run(s):
-        targets = s.find_describe_targets(str(ref))
-        if not targets:
-            return {"found": None, "candidates": []}
-        if len(targets) > 1 and not args.get("first"):
-            return {"found": None, "candidates": targets}
-        return {"found": s.describe_entity(targets[0]["id"], **kwargs),
-                "candidates": targets}
+        return describe_payload(s, str(ref), first=bool(args.get("first")), **kwargs)
 
     return _read_with_fallback(d, partition, _run)
 
@@ -6174,83 +6113,58 @@ def _op_ann_search(d: Daemon, args: dict) -> dict:
         emb = d._embedder()
     except ImportError as exc:
         return {"ok": False, "error": f"dense extra not installed: {exc}"}
-
-    k = int(args.get("k") or 20)
-    kinds = args.get("kinds")
+    from refmatrix.recall import ann_search
     query = args.get("query")
-    vector = args.get("vector")
-    partition = args.get("partition")
-
-    if vector is None and not query:
-        return {"ok": False, "error": "need 'query' text or 'vector' list"}
-
-    if vector is None:
-        assert query is not None  # the vector-or-query check above returned
-        v = emb.embed_texts([query])[0]
-    else:
-        import numpy as np
-        v = np.asarray(vector, dtype="float32")
-        if v.shape[0] != emb.dim:
-            return {
-                "ok": False,
-                "error": f"vector dim {v.shape[0]} != model dim {emb.dim}",
-            }
-
-    want_rerank = d._maybe_rerank(args) and bool(query)
-    # Over-fetch before reranking: the stage can only reorder what retrieval
-    # already returned, so a true hit sitting at rank 30 of a k=10 request is
-    # unreachable unless the pool is widened here.
-    from refmatrix.reranker import DEFAULT_POOL_MULT, MAX_POOL
-    ann_k = min(max(k, k * DEFAULT_POOL_MULT), MAX_POOL) if want_rerank else k
-    docs = None
-
-    with d._store_lock:
-        hits = d._st().ann_search(
-            v, k=ann_k, dim=emb.dim, kinds=kinds, partition=partition,
-        )
-        if want_rerank:
-            from refmatrix.reranker import collect_rerank_docs
-            try:
-                docs = collect_rerank_docs(d.store, hits, k=k)
-            except Exception as exc:
-                d._log(f"rerank doc collect failed: {exc!r}")
-                docs = None
-
-    rr_warnings: list[str] = []
-    if want_rerank and docs is not None:
-        assert query is not None  # want_rerank requires bool(query)
-        # Model call OUTSIDE _store_lock -- see collect_rerank_docs.
-        reranked = _apply_rerank_safe(d, query, docs, k, warnings=rr_warnings)
-        if reranked is not None:
-            return {"hits": [{"id": eid, "score": sc, "reranked": True}
-                             for eid, sc in reranked]}
-
-    out = {"hits": [{"id": eid, "distance": dist} for eid, dist in hits[:k]]}
-    if rr_warnings:
-        out["warnings"] = rr_warnings
-    return out
+    rerank = None
+    if d._maybe_rerank(args) and query:
+        def rerank(q, docs, k, warnings):
+            return _apply_rerank_safe(d, q, docs, k, warnings=warnings)
+    # ONE algorithm (task 3.7 #fam-graph-read-recall): `recall.ann_search` is also
+    # what the `rmx_graph` dense action runs in-process when no daemon exists.
+    # The store is resolved INSIDE `_store_lock` (remedy r1 R-RM1): `d._st()` read
+    # before the lock could see a store mid-swap.
+    return ann_search(d._st, emb, query=query, vector=args.get("vector"),
+                      k=int(args.get("k") or 20), kinds=args.get("kinds"),
+                      partition=args.get("partition"), rerank=rerank,
+                      lock=d._store_lock, log=d._log)
 
 
-class _PrecomputedQuery:
-    """An embedder stand-in holding ONE precomputed query vector.
+# The precomputed-query stand-in lives in recall.py now (task 3.7): the `graph_recall`
+# op and the verb's no-daemon recall embed before any store is opened through it too.
+from refmatrix.recall import PrecomputedQuery as _PrecomputedQuery  # noqa: E402
 
-    The query is embedded BEFORE `_store_lock` is taken (ch-bsd r9 #s-1: the
-    model call ran inside the lock, so a busy worker held every writer). The
-    recall code under the lock asks this object for the query's vector; any
-    other text is refused loudly, so a later change cannot quietly move a
-    model call back under the lock."""
 
-    def __init__(self, emb, query: str, vec) -> None:
-        self.dim = emb.dim
-        self.model_name = getattr(emb, "model_name", None)
-        self._query = query
-        self._vec = vec
+def _op_graph_recall(d: Daemon, args: dict) -> dict:
+    """`rmx recall`'s algorithm, server-side (task 3.7 #fam-graph-read-recall, r1 B2):
+    `recall.graph_recall` — the bitmap pre-filter, pure dense by default, `hybrid_recall`
+    when `symbolic` ids are given, the symbolic-only fallback — with NO rerank and NO BM25
+    fusion (that is `memory_recall`, a different contract). The CLI used to run this in
+    its own process with its own `Embedder()`.
 
-    def embed_texts(self, texts):
-        if list(texts) == [self._query]:
-            return self._vec
-        raise RuntimeError("model call under _store_lock: only the precomputed "
-                           "query vector is available here")
+    The model call happens FIRST, outside any lock (ch-bsd r9 #s-1); the ranking reads a
+    READ store bound to the requested partition (`_read_with_fallback`, the bug-098
+    pattern: mirror → snapshot file → the writer only under `_store_lock`). An unknown
+    partition raises rather than answering from another one."""
+    from refmatrix import discovery, recall as recall_mod
+    query = args.get("query")
+    no_dense = bool(args.get("no_dense"))
+    try:
+        emb = recall_mod.prepare_graph_recall_embedder(d._embedder, query,
+                                                       no_dense=no_dense)
+    except ImportError as exc:
+        return {"ok": False, "error": f"dense extra not installed: {exc}"}
+    symbolic = args.get("symbolic")
+    # The daemon's bound partition from its own attribute, never an unlocked store
+    # read (remedy r1 R-RM2); the Store's default when the daemon was started unbound.
+    partition = (args.get("partition") or d.partition or os.environ.get("RMX_PARTITION")
+                 or discovery.store_name(d.root))
+    return _read_with_fallback(
+        d, partition,
+        lambda s: recall_mod.graph_recall(
+            s, emb, query=query, k=int(args.get("k") or 10), kinds=args.get("kinds"),
+            concept=args.get("concept"), symbolic=[int(x) for x in symbolic] if symbolic
+            else None, no_dense=no_dense),
+        private=True, missing="raise")
 
 
 def _op_memory_recall(d: Daemon, args: dict) -> dict:
@@ -6352,12 +6266,37 @@ def _op_part_ctx(d: "Daemon", args: dict):
     return d._st().with_partition(p) if p else contextlib.nullcontext()
 
 
+def _edge_ends(st: "Store", args: dict) -> "tuple[int, int]":
+    """`(concept_id, entity_id)` for a link op: ids when the caller sent them
+    (`_DaemonWriter.link`), else the NAMES `concept` / `entity` resolved on the writer,
+    under the caller's lock (task 3.7 remedy r1 R-S1: the verbs used to resolve names on
+    the lagging snapshot, so add-then-link failed). An unknown name raises ValueError."""
+    if args.get("concept_id") is not None and args.get("entity_id") is not None:
+        return int(args["concept_id"]), int(args["entity_id"])
+    return _concept_id_by_name(st, args.get("concept")), _entity_id_by_name(st, args.get("entity"))
+
+
+def _concept_id_by_name(st: "Store", name: "str | None") -> int:
+    e = st.resolve_entity(str(name)) if name else None
+    if e is None or e.kind != "concept":
+        raise ValueError(f"no concept named {name!r} in partition {st._partition_name!r}")
+    return int(e.id)
+
+
+def _entity_id_by_name(st: "Store", name: "str | None") -> int:
+    e = st.resolve_entity(str(name)) if name else None
+    if e is None:
+        raise ValueError(f"no entity named {name!r} in partition {st._partition_name!r}")
+    return int(e.id)
+
+
 def _op_link(d: Daemon, args: dict) -> dict:
     """Create a typed concept->entity edge. Routes `rmx link` through the
-    daemon so the catalog write-lock stays single-owner."""
+    daemon so the catalog write-lock stays single-owner. Takes ids or names."""
     with d._store_lock, _op_part_ctx(d, args):
+        cid, eid = _edge_ends(d._st(), args)
         created = d._st().link(
-            args["linkage"], int(args["concept_id"]), int(args["entity_id"]),
+            args["linkage"], cid, eid,
             weight=args.get("weight"), protect=bool(args.get("protect", False)),
         )
     d._request_snapshot()
@@ -6367,9 +6306,8 @@ def _op_link(d: Daemon, args: dict) -> dict:
 def _op_unlink(d: Daemon, args: dict) -> dict:
     """Remove a typed concept->entity edge (`rmx unlink`)."""
     with d._store_lock, _op_part_ctx(d, args):
-        removed = d._st().unlink(
-            args["linkage"], int(args["concept_id"]), int(args["entity_id"]),
-        )
+        cid, eid = _edge_ends(d._st(), args)
+        removed = d._st().unlink(args["linkage"], cid, eid)
     d._request_snapshot()
     return {"unlinked": bool(removed)}
 
@@ -6380,9 +6318,12 @@ def _op_link_canon(d: Daemon, args: dict) -> dict:
     is same-process as the daemon, so DuckDB permits the second connection
     (the lock conflict is only cross-process)."""
     with d._store_lock, _op_part_ctx(d, args):
+        # The local concept by id or by NAME, resolved under the writer (task 3.7
+        # remedy r1 R-S1).
+        local = (int(args["local_concept_id"]) if args.get("local_concept_id") is not None
+                 else _concept_id_by_name(d._st(), args.get("concept")))
         canon_id = d._st().link_canon(
-            int(args["local_concept_id"]),
-            args["canon_partition"], args["canon_concept_name"],
+            local, args["canon_partition"], args["canon_concept_name"],
         )
     d._request_snapshot()
     return {"canon_id": canon_id}
@@ -6479,10 +6420,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "link_canon": _op_link_canon,
     "save_query": _op_save_query,
     "rebuild_index": _op_rebuild_index,
-    "iter_entities": _op_iter_entities,
     "top_concepts": _op_top_concepts,
-    "list_linkages": _op_list_linkages,
-    "list_saved_queries": _op_list_saved_queries,
     "partition_add": _op_partition_add,
     "partition_audit": _op_partition_audit,
     "partition_drop": _op_partition_drop,
@@ -6514,6 +6452,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "embed": _op_embed,
     "embed_gc": _op_embed_gc,
     "ann_search": _op_ann_search,
+    "graph_recall": _op_graph_recall,
     "memory_recall": _op_memory_recall,
     "promote_edges": _op_promote_edges,
     "memory_add": _op_memory_add,
@@ -6562,8 +6501,6 @@ CLI_OPS: set[str] = {
     "describe",
     "query",
     "grep_indexed",
-    "list_linkages",
-    "list_saved_queries",
     "partition_add",
     # Read-only and asked by an operator waiting at a prompt, so it belongs
     # on the interactive pool rather than behind a bulk ingest (ADR-0003).
@@ -6576,6 +6513,7 @@ CLI_OPS: set[str] = {
     "replica_audit",
     "snapshot",
     "ann_search",
+    "graph_recall",
     "memory_recall",
     "memory_get",
     "memory_iter",
@@ -6750,8 +6688,10 @@ def _shared_op_timeout_default() -> float:
     # use sites, not at the top); it costs nothing — modelsrv imports only
     # socket/threading and subproc, never a model.
     from refmatrix import modelsrv
+    # `env_float` (task 3.7 remedy r5 #m-2, 2026-11-09): a typo'd value is the default
+    # plus one named warning, not a `ValueError` at `import refmatrix.daemon`.
     return max(
-        float(os.environ.get("RMX_SHARED_OP_TIMEOUT_S", "45") or "45"),
+        modelsrv.env_float("RMX_SHARED_OP_TIMEOUT_S", 45.0),
         modelsrv.PROBE_TIMEOUT_S,
     )
 

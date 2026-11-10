@@ -12,7 +12,7 @@ What counts as a DIAL:
   - `<m>.call(...)` / `<m>.global_call(...)` where `<m>` is any name bound to the
     daemon or hub MODULE by any import spelling, or a name containing "daemon";
   - a bare name bound by `from …daemon import call [as x]` / `from …hub import
-    global_call`;
+    global_call`, or by assignment (`dial = daemon_mod.call`, task 3.7 R52);
   - `getattr(<daemon alias>, "call")(...)`;
   - a call to a DIAL WRAPPER: any function that dials, directly or through
     another wrapper at ANY depth (the true fixed point — r11 #s-1:
@@ -24,6 +24,8 @@ What counts as WORDING (the handler's own text, plus what it reaches):
     tables of messages;
   - string text of module-level helpers it calls (two levels), except dial
     wrappers and clean delegates;
+  - string constants / f-strings the enclosing function assigned to a local the
+    handler names (a message prepared before the `try`, task 3.7 R52);
   - synonyms: did not answer / not answering / no answer / not running / not confirmed / busy /
     timed out / unreachable / wedged / down / hung / stuck.
 A handler is CLEAN when it:
@@ -77,6 +79,49 @@ def _from_imported_calls(tree):
     return out
 
 
+def _local_dial_aliases(tree, aliases):
+    """Names bound to a dial by assignment anywhere in the file (task 3.7 R52, ch-bsd
+    plan-3 r12 #m-1 shape 2): `dial = daemon_mod.call` / `dial = getattr(daemon_mod,
+    "call")`, so a later `dial(...)` is a dial."""
+    out = set()
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.Assign):
+            continue
+        v = n.value
+        hit = (isinstance(v, ast.Attribute) and v.attr in ("call", "global_call")
+               and isinstance(v.value, ast.Name)
+               and (_is_daemon_alias(v.value.id) or v.value.id in aliases))
+        hit = hit or (isinstance(v, ast.Call) and getattr(v.func, "id", None) == "getattr"
+                      and len(v.args) >= 2 and isinstance(v.args[0], ast.Name)
+                      and (_is_daemon_alias(v.args[0].id) or v.args[0].id in aliases)
+                      and isinstance(v.args[1], ast.Constant)
+                      and v.args[1].value in ("call", "global_call"))
+        if hit:
+            out |= {t.id for t in n.targets if isinstance(t, ast.Name)}
+    return out
+
+
+def _try_locals(tree):
+    """id(Try) -> {local name: its string text} for string constants / f-strings the
+    ENCLOSING function assigns (task 3.7 R52, r12 #m-1 shape 1: the message prepared
+    before the `try`). Nested functions are walked after their parent, so the
+    innermost function's locals win."""
+    out = {}
+    for fn in _funcs(tree):
+        local = {}
+        for n in ast.walk(fn):
+            if isinstance(n, ast.Assign) and (
+                    isinstance(n.value, ast.JoinedStr)
+                    or (isinstance(n.value, ast.Constant) and isinstance(n.value.value, str))):
+                for t in n.targets:
+                    if isinstance(t, ast.Name):
+                        local[t.id] = local.get(t.id, "") + " " + _strings(n.value)
+        for n in ast.walk(fn):
+            if isinstance(n, ast.Try):
+                out[id(n)] = local
+    return out
+
+
 def _funcs(tree):
     return [f for f in ast.walk(tree) if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))]
 
@@ -106,6 +151,9 @@ class Corpus:
         self.trees = {name: ast.parse(text) for name, text in files.items()}
         self.fromcalls = {n: _from_imported_calls(t) for n, t in self.trees.items()}
         self.aliases = {n: _module_aliases(t) for n, t in self.trees.items()}
+        for n, t in self.trees.items():
+            self.fromcalls[n] = self.fromcalls[n] | _local_dial_aliases(t, self.aliases[n])
+        self.try_locals = {n: _try_locals(t) for n, t in self.trees.items()}
         self.consts, self.fns = {}, {}
         for name, t in self.trees.items():
             c, f = _module_strings(t)
@@ -226,7 +274,11 @@ class Corpus:
                         continue
                     if hcalls & self.delegates:
                         continue
-                    if WORDS.search(self._wording(h)):
+                    local = self.try_locals[name].get(id(n), {})
+                    used = {x.id for x in ast.walk(h) if isinstance(x, ast.Name)
+                            and isinstance(x.ctx, ast.Load)}
+                    pre = " ".join(local[u] for u in used if u in local)
+                    if WORDS.search(self._wording(h) + " " + pre):
                         out.append(f"{name}:{h.lineno}")
         return sorted(set(out))
 

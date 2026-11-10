@@ -8,6 +8,7 @@ validated facet. Validation is SOFT — an off-vocabulary tag warns, never block
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -74,35 +75,105 @@ def taxonomy_path() -> Path:
     return user_home() / TAXONOMY_FILE
 
 
-def load() -> dict:
-    """Load the taxonomy, seeding the default on first use. Best-effort: a
-    corrupt file falls back to the default rather than raising."""
-    p = taxonomy_path()
-    if not p.exists():
-        try:
-            save(DEFAULT_TAXONOMY)
-        except OSError:
-            pass
+class TaxonomyCorrupt(RuntimeError):
+    """The taxonomy file exists but is not a vocabulary (unparseable JSON, or no
+    `categories`). Writers refuse to replace it; readers degrade with a warning."""
+
+
+def _empty() -> dict:
+    return {"version": 1, "categories": {}}
+
+
+def _parse(p: Path) -> dict:
+    """The vocabulary in `p`. Missing → a copy of the defaults (nothing is written).
+    Unparseable / not a vocabulary → `TaxonomyCorrupt` naming the file. Any other
+    read error propagates."""
+    try:
+        raw = p.read_text()
+    except FileNotFoundError:
         return json.loads(json.dumps(DEFAULT_TAXONOMY))
     try:
-        data = json.loads(p.read_text())
-        if not isinstance(data, dict) or "categories" not in data:
-            return json.loads(json.dumps(DEFAULT_TAXONOMY))
-        return data
-    except (json.JSONDecodeError, OSError):
-        return json.loads(json.dumps(DEFAULT_TAXONOMY))
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise TaxonomyCorrupt(f"taxonomy file {p} is corrupt ({e}); refusing to overwrite "
+                              f"it — repair or move it aside") from e
+    if not isinstance(data, dict) or not isinstance(data.get("categories"), dict):
+        raise TaxonomyCorrupt(f"taxonomy file {p} is corrupt (no `categories` mapping); "
+                              f"refusing to overwrite it — repair or move it aside")
+    return data
+
+
+def read() -> "tuple[dict, list[str]]":
+    """`(vocabulary, warnings)` for READERS — never writes.
+
+    Task 3.7 #fam-taxonomy-corrupt (data loss): `load` silently fell back to the defaults
+    on a corrupt file, and the next `add` / `remove` saved those defaults over the user's
+    vocabulary; it also wrote the default file on the first read. Now a corrupt or
+    unreadable file degrades to an EMPTY vocabulary plus a warning naming it — tag
+    validation then checks against nothing, so `memory add` / `retag` are never blocked —
+    and a missing file reads as the defaults without creating it."""
+    p = taxonomy_path()
+    try:
+        return _parse(p), []
+    except TaxonomyCorrupt as e:
+        return _empty(), [str(e)]
+    except OSError as e:
+        return _empty(), [f"taxonomy file {p} is unreadable ({e}); tags are not validated"]
+
+
+def load() -> dict:
+    """The vocabulary for callers that only need the data (the hub UI). Never writes;
+    a corrupt file reads as empty — `read()` carries the warning."""
+    return read()[0]
+
+
+@contextlib.contextmanager
+def _locked():
+    """Exclusive `fcntl` lock on the SIDECAR `taxonomy.json.lock` (task 3.7 r6 M3).
+    Never on `taxonomy.json` itself: `save` replaces that inode by rename, so a lock
+    held on it would guard a file nobody reads any more. The sidecar is never deleted."""
+    import fcntl
+    p = taxonomy_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p.with_name(p.name + ".lock"), "a+") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
 
 
 def save(data: dict) -> None:
+    """Atomic replace: write a temp file, fsync it, rename it over `taxonomy.json`.
+    Callers hold `_locked()`."""
     p = taxonomy_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(data, indent=2))
-    tmp.replace(p)
+    with open(tmp, "w") as fh:
+        fh.write(json.dumps(data, indent=2))
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, p)
+
+
+def tag_warnings(tags: "list[str]") -> "list[str]":
+    """The soft note for off-vocabulary tags, shared by the `memory_add` verb, the
+    `rmx_memory` retag action and their CLI twins (task 3.7 #fam-taxonomy, r1 M6). A corrupt
+    vocabulary yields its own warning instead of flagging every tag."""
+    if not tags:
+        return []
+    data, warns = read()
+    if warns:
+        return warns
+    _, unknown = validate(list(tags), data)
+    if not unknown:
+        return []
+    return [f"off-vocabulary tag(s): {', '.join(unknown)} — add via rmx_taxonomy "
+            f"(action add) / `rmx taxonomy add <category> <tag>`"]
 
 
 def all_tags(data: dict | None = None) -> set[str]:
-    data = data or load()
+    data = data if data is not None else load()
     out: set[str] = set()
     for cat in data.get("categories", {}).values():
         out.update((cat.get("tags") or {}).keys())
@@ -110,7 +181,7 @@ def all_tags(data: dict | None = None) -> set[str]:
 
 
 def category_of(tag: str, data: dict | None = None) -> str | None:
-    data = data or load()
+    data = data if data is not None else load()
     for cat_name, cat in data.get("categories", {}).items():
         if tag in (cat.get("tags") or {}):
             return cat_name
@@ -130,22 +201,26 @@ def add_tag(
     category: str, name: str, *, description: str = "", color: str = "#64748b",
 ) -> dict:
     """Add (or update) a tag under a category, creating the category if needed.
-    Persists and returns the updated taxonomy."""
-    data = load()
-    cats = data.setdefault("categories", {})
-    cat = cats.setdefault(category, {"description": "", "tags": {}})
-    cat.setdefault("tags", {})[name] = {"description": description, "color": color}
-    save(data)
+    Persists and returns the updated taxonomy. Raises `TaxonomyCorrupt` rather than
+    replace a corrupt file (task 3.7 #fam-taxonomy-corrupt)."""
+    with _locked():
+        data = _parse(taxonomy_path())
+        cats = data.setdefault("categories", {})
+        cat = cats.setdefault(category, {"description": "", "tags": {}})
+        cat.setdefault("tags", {})[name] = {"description": description, "color": color}
+        save(data)
     return data
 
 
 def remove_tag(name: str) -> bool:
-    """Remove a tag from wherever it lives. Returns True if removed."""
-    data = load()
-    for cat in data.get("categories", {}).values():
-        tags = cat.get("tags") or {}
-        if name in tags:
-            del tags[name]
-            save(data)
-            return True
+    """Remove a tag from wherever it lives. Returns True if removed. Raises
+    `TaxonomyCorrupt` rather than replace a corrupt file."""
+    with _locked():
+        data = _parse(taxonomy_path())
+        for cat in data.get("categories", {}).values():
+            tags = cat.get("tags") or {}
+            if name in tags:
+                del tags[name]
+                save(data)
+                return True
     return False
