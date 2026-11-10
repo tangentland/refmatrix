@@ -241,7 +241,10 @@ built right after 26.7 merges and 26.6 is `completed` only then (r1 #b-1). Not h
 
 - **R3:** `_op_memory_compile`, on apply, regenerates `MEMORY.md` inside its own
   `_store_lock` block through `ingest_gmd.regenerate_memory_index_reported`, gated by
-  `memory_layout.is_organised` (the one marker reader). {#r3-req}
+  `memory_layout.is_organised` (the one marker reader), called with `files=[memdir]` (the
+  helper skips unless some file is under the memory root, and a compile ingests none — ch-bsd
+  26.6 r2 #m-3-r2). Extra mutation: compile calls the helper with no files (killed by the
+  marker-ON AC). {#r3-req}
 - **ACs:** 19.4 AC-3 and AC-6 marker-ON (index after compile shows the new subjects);
   AC-4's index leg (a stale subject is absent from `MEMORY.md`); the marker-OFF twin
   (`MEMORY.md` + sidecar byte-identical) stays green. Task 23.5 R9/AC-9 reads R3's index write
