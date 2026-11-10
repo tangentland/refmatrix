@@ -28,8 +28,11 @@ The orchestrator lands the commits in order: viascope split, then upstream, then
 - **refmatrix fix** `44c6196`. It re-vendors `tools/gmd/lint.py` and `tools/gmd/slice.py`
   byte-identical from that upstream sha with `git show <sha>:lint.py` and `:slice.py`. Upstream
   `git status --short` was empty at re-vendor time. {#c-refmatrix}
-- **viascope split** (R7 b): pending orchestrator. The user consented. The upstream commit must
-  not reach `~/claude_tools/gmd` before the viascope commit lands. {#c-viascope}
+- **viascope split** (R7 b): **viascope `0b443ef69`** (2026-11-09, user consent; committed by
+  pathspec on viascope's current branch `task-adr-0111-slice2-config-fold`, its other dirty files
+  untouched). The six ids keep their names: the first stays on the bullet, five become sub-items.
+  Then upstream `~/claude_tools/gmd` was fast-forwarded to `efb514a` (33 gate cases pass). Order
+  held: viascope first, then upstream. {#c-viascope}
 
 ## What changed {#changes}
 
