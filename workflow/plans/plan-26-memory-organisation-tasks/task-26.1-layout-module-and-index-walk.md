@@ -257,3 +257,28 @@ rel: derives-from -> [[bsd-task26.1-layout-index-walk-8337368]]
 | m-1 organised write over budget | folds further or refuses | AC-6 |
 | m-3 pseudocode sentence | waiver recorded in ADR-0005 | ADR-0005 |
 
+## Follow-up after ch-bsd 26.1 r2 (2026-11-09) {#followup-r2}
+
+rel: derives-from -> [[bsd-task26.1-r2-layout-index-walk-7b5ea2f]]
+
+Merged at `9b2c4ac` with these open; they land on branch `task-26.1-followup` BEFORE any release
+ships 26.1. Decisions taken as the user would (orchestrator, 2026-11-09):
+
+1. **Hook precedence, narrowed (r2 #s-1, bug-193, and the hook-clear MEH).** An index hook
+   replaces the sidecar value EXCEPT when the index could not carry it: (a) the entry line has no
+   hook because the link alone exceeds the line cap, or (b) the index hook is the rendered cut of
+   the sidecar value (`prefix…` whose prefix matches the sidecar text), or (c) it is a bare `…`.
+   A hook the user deletes from a line that had room for it is CLEARED, as at HEAD, in every dir —
+   so marker-off dirs keep HEAD's hook-clear behaviour (ADR-0005 `#marker` stands). Supersedes the
+   broader "an empty index hook never erases a curated hook" rule taken at the remedy GREEN.
+   {#fu-hooks}
+2. **No false "dropped" line (r2 MEH).** A memory whose old index line was cut inside or before its
+   link and is now rendered with its link is not reported as "dropped … whose file is gone".
+   Only a link whose target file is truly absent is counted there. {#fu-dropped}
+3. **Skip fields reach the caller (r2 MEH).** `_bridge_stats` copies `skipped`/`skipped_paths`;
+   in organised dirs a prose line dropped because it starts `- [` is counted and named.
+   {#fu-skips}
+4. **Total order includes the path (r2 MEH).** The save-state key becomes
+   `(date, mtime, name, relative path)` so `savestates/x.md` vs a top-level `x.md` (26.4's
+   mid-move window) cannot follow input order. {#fu-order}
+
