@@ -1,0 +1,75 @@
+..................................FFF                                    [100%]
+=================================== FAILURES ===================================
+__ test_m1_no_prose_over_budget_even_fully_folded_writes_and_says_still_over ___
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-ursz1ro3/memory')
+
+    def test_m1_no_prose_over_budget_even_fully_folded_writes_and_says_still_over(memdir):
+        """AC-6 (amended 03516f2): with NO carried prose there is nothing the user can move, so an
+        index that cannot fit even fully folded is WRITTEN and `STILL OVER` is printed, exactly as a
+        marker-off dir does -- an index that stops updating is worse than an over-budget one."""
+        for i in range(10):
+            mem(memdir, f"feedback/feedback_f{i}.md", title=f"F{i}", mtype="feedback",
+                body="c" * 130)
+        before = "- [F0](feedback/feedback_f0.md) — the only entry the old index listed\n"
+        (memdir / "MEMORY.md").write_text(before, encoding="utf-8")
+        organise(memdir)
+        r = run_entry(memdir, env={"RMX_MEMORY_INDEX_CHARS": "1000"})
+        said = r.stdout + r.stderr
+        assert r.returncode == 0, said
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert text != before, f"the over-budget, prose-free write was refused: {said}"
+E       AssertionError: the over-budget, prose-free write was refused: MEMORY.md: even with every foldable entry folded the render is 1555 chars, over the 1000-char budget; the carried hand-written prose (0 prose lines, 0 chars) is the margin -- move that prose into a memory; index left untouched
+E         
+E       assert '- [F0](feedback/feedback_f0.md) — the only entry the old index listed\n' != '- [F0](feedback/feedback_f0.md) — the only entry the old index listed\n'
+
+tests/test_memory_index_layout.py:722: AssertionError
+_ test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_organised _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-a1lsbyo0/memory')
+
+    def test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_organised(memdir):
+        rel = "feedback/feedback_" + "l" * 190 + ".md"
+        mid = _long_link_memory(memdir, rel)
+        organise(memdir)
+        (memdir / mi.HOOKS_SIDECAR).write_text(json.dumps({mid: CURATED}), encoding="utf-8")
+        for n in (1, 2):
+            r = run_entry(memdir)
+            assert r.returncode == 0, r.stderr
+            side = sidecar(memdir)
+>           assert side.get(mid) == CURATED, f"render {n}: curated hook lost: {side.get(mid)!r}"
+E           AssertionError: render 2: curated hook lost: 'derived prose, not curated'
+E           assert 'derived prose, not curated' == 'the curated ...r this memory'
+E             
+E             - the curated hook a human wrote for this memory
+E             + derived prose, not curated
+
+tests/test_memory_index_layout.py:758: AssertionError
+_ test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_marker_off _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-dp597s8i/memory')
+
+    def test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_marker_off(memdir):
+        """Readers are dual in every dir (ADR-0005 #marker): the same precedence holds in
+        `load_hooks` without the marker, where `save_hooks` writes the path-keyed sidecar."""
+        rel = "feedback_" + "l" * 195 + ".md"
+        _long_link_memory(memdir, rel)
+        assert not (memdir / ".memory-layout").exists()
+        (memdir / mi.HOOKS_SIDECAR).write_text(json.dumps({rel: CURATED}), encoding="utf-8")
+        for n in (1, 2):
+            r = run_entry(memdir)
+            assert r.returncode == 0, r.stderr
+            side = sidecar(memdir)
+>           assert side.get(rel) == CURATED, f"render {n}: curated hook lost: {side.get(rel)!r}"
+E           AssertionError: render 2: curated hook lost: 'derived prose, not curated'
+E           assert 'derived prose, not curated' == 'the curated ...r this memory'
+E             
+E             - the curated hook a human wrote for this memory
+E             + derived prose, not curated
+
+tests/test_memory_index_layout.py:773: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_m1_no_prose_over_budget_even_fully_folded_writes_and_says_still_over
+FAILED tests/test_memory_index_layout.py::test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_organised
+FAILED tests/test_memory_index_layout.py::test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_marker_off
+3 failed, 34 passed in 3.41s

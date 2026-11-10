@@ -638,6 +638,9 @@ def test_m1_organised_write_refuses_when_a_full_fold_cannot_fit(memdir):
         mem(memdir, f"feedback/feedback_f{i}.md", title=f"F{i}", mtype="feedback", body=f"f{i}")
         lines.append(f"- [F{i}](feedback/feedback_f{i}.md) — " + "c" * 130)
     before = "\n".join(lines) + "\n"
+    # AC-6 (amended 03516f2): refuse only when the CARRIED PROSE blocks the fit -- the same
+    # entries with no carried block fit 2,000 chars.
+    assert len("\n".join(lines[len(prose):]) + "\n") < 2000
     (memdir / "MEMORY.md").write_text(before, encoding="utf-8")
     side_before = json.dumps({f"feedback_f{i}": "c" * 130 for i in range(10)})
     (memdir / mi.HOOKS_SIDECAR).write_text(side_before, encoding="utf-8")
@@ -660,6 +663,7 @@ def test_m1_entry_point_never_writes_over_budget(memdir):
         mem(memdir, f"feedback/feedback_f{i}.md", title=f"F{i}", mtype="feedback", body=f"f{i}")
         lines.append(f"- [F{i}](feedback/feedback_f{i}.md) — " + "c" * 130)
     before = "\n".join(lines) + "\n"
+    assert len("\n".join(lines[len(prose):]) + "\n") < 2000     # no-prose render fits
     (memdir / "MEMORY.md").write_text(before, encoding="utf-8")
     organise(memdir)
     r = run_entry(memdir, env={"RMX_MEMORY_INDEX_CHARS": "2000"})
@@ -699,3 +703,72 @@ def test_b1_a_legacy_link_less_cut_line_is_dropped_and_re_rendered_with_its_link
     assert run_entry(memdir).returncode == 0
     assert (memdir / "MEMORY.md").read_text(encoding="utf-8") == first, \
         "a second render changed the index"
+
+
+def test_m1_no_prose_over_budget_even_fully_folded_writes_and_says_still_over(memdir):
+    """AC-6 (amended 03516f2): with NO carried prose there is nothing the user can move, so an
+    index that cannot fit even fully folded is WRITTEN and `STILL OVER` is printed, exactly as a
+    marker-off dir does -- an index that stops updating is worse than an over-budget one."""
+    for i in range(10):
+        mem(memdir, f"feedback/feedback_f{i}.md", title=f"F{i}", mtype="feedback",
+            body="c" * 130)
+    before = "- [F0](feedback/feedback_f0.md) — the only entry the old index listed\n"
+    (memdir / "MEMORY.md").write_text(before, encoding="utf-8")
+    organise(memdir)
+    r = run_entry(memdir, env={"RMX_MEMORY_INDEX_CHARS": "1000"})
+    said = r.stdout + r.stderr
+    assert r.returncode == 0, said
+    text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+    assert text != before, f"the over-budget, prose-free write was refused: {said}"
+    assert CARRY_HEAD not in text
+    assert len(entry_lines(text)) == 10, text
+    assert len(text) > 1000, len(text)
+    assert "STILL OVER" in said, said
+    assert "untouched" not in said, said
+    n = mi.write(memdir, max_chars=1000, out=io.StringIO())   # the in-process return value
+    assert n == len(text.splitlines()), n
+
+
+# ---- AC-5 hook precedence (amended 03516f2): an empty index hook never erases a curated one -
+#
+# An entry whose link alone is over MAX_LINE_CHARS renders with NO hook. The next render read
+# that line back as an empty curated hook, which overrode the sidecar's curated text; the entry
+# fell back to derived prose and `save_hooks` wrote the derived text over the curated hook.
+
+CURATED = "the curated hook a human wrote for this memory"
+
+
+def _long_link_memory(memdir: Path, rel: str) -> str:
+    mem(memdir, rel, title="Long link", mtype="feedback", body="derived prose, not curated")
+    mem(memdir, "feedback/feedback_short.md" if "/" in rel else "feedback_short.md",
+        title="Short", mtype="feedback", body="derived short")
+    assert len(f"- [Long link]({rel})") > mi.MAX_LINE_CHARS
+    return Path(rel).stem
+
+
+def test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_organised(memdir):
+    rel = "feedback/feedback_" + "l" * 190 + ".md"
+    mid = _long_link_memory(memdir, rel)
+    organise(memdir)
+    (memdir / mi.HOOKS_SIDECAR).write_text(json.dumps({mid: CURATED}), encoding="utf-8")
+    for n in (1, 2):
+        r = run_entry(memdir)
+        assert r.returncode == 0, r.stderr
+        side = sidecar(memdir)
+        assert side.get(mid) == CURATED, f"render {n}: curated hook lost: {side.get(mid)!r}"
+    assert [e.hook for e in mi.collect(memdir) if e.id == mid] == [CURATED]
+
+
+def test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_marker_off(memdir):
+    """Readers are dual in every dir (ADR-0005 #marker): the same precedence holds in
+    `load_hooks` without the marker, where `save_hooks` writes the path-keyed sidecar."""
+    rel = "feedback_" + "l" * 195 + ".md"
+    _long_link_memory(memdir, rel)
+    assert not (memdir / ".memory-layout").exists()
+    (memdir / mi.HOOKS_SIDECAR).write_text(json.dumps({rel: CURATED}), encoding="utf-8")
+    for n in (1, 2):
+        r = run_entry(memdir)
+        assert r.returncode == 0, r.stderr
+        side = sidecar(memdir)
+        assert side.get(rel) == CURATED, f"render {n}: curated hook lost: {side.get(rel)!r}"
+    assert [e.hook for e in mi.collect(memdir) if e.rel == rel] == [CURATED]
