@@ -1,0 +1,18 @@
+.......# rmx: warning: memory-partition probe failed (daemon busy pid=79884 for /tmp/rmxs-9myh3ntn/.refmatrix (alive, not answering — starting, rebuilding an index, or holding the store lock); retry shortly); assuming the project partition for THIS command only
+............DETACH OUT: ingest-gmd --as-memory: skipped 5 non-memory path(s) (dot-path, README.md, nested MEMORY.md, symlinked folder, dangling link or .gmd; ADR-0005 #one-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-vtquyh82/memory/dangling.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-vtquyh82/memory/notes.gmd, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-vtquyh82/memory/.hidden/y.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-vtquyh82/memory/.organise-rollback-1/x.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-vtquyh82/memory/linked
+ingest job 0f7133002a46 started (2 files). poll with: rmx ingest-status 
+0f7133002a46
+
+.PRESTAGE-D OUT: ingest-gmd --as-memory: skipped 5 non-memory path(s) (dot-path, README.md, nested MEMORY.md, symlinked folder, dangling link or .gmd; ADR-0005 #one-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-osb49yt7/memory/dangling.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-osb49yt7/memory/notes.gmd, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-osb49yt7/memory/.hidden/y.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-osb49yt7/memory/.organise-rollback-1/x.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-osb49yt7/memory/linked
+prestaged: considered=2 written=0 skipped=0 missing=2
+
+.PRESTAGE-I OUT: ingest-gmd --as-memory: skipped 5 non-memory path(s) (dot-path, README.md, nested MEMORY.md, symlinked folder, dangling link or .gmd; ADR-0005 #one-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-f39yt582/memory/dangling.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-f39yt582/memory/notes.gmd, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-f39yt582/memory/.hidden/y.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-f39yt582/memory/.organise-rollback-1/x.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-f39yt582/memory/linked
+prestaged: considered=2 written=0 skipped=0 missing=2
+
+.DETACH-EMPTY: 0 'ingest-gmd --as-memory: skipped 2 non-memory path(s) (dot-path, README.md, nested MEMORY.md, symlinked folder, dangling link or .gmd; ADR-0005 #one-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-_vugy6r7/memory/notes.gmd, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-_vugy6r7/memory/.hidden/y.md\nno candidate files found\n' None
+.SYNC-EMPTY: {'ok': True, 'result': {'files': 0, 'report': 'no candidate files found', 'skipped': 1, 'skipped_paths': ['/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-awn0qnip/memory/notes.gmd']}}
+SYNC-EMPTY CLI: no candidate files found
+ingest-gmd --as-memory: skipped 1 non-memory path(s) (dot-path, README.md, nested MEMORY.md, symlinked folder, dangling link or .gmd; ADR-0005 #one-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-awn0qnip/memory/notes.gmd
+
+.
+24 passed in 218.77s (0:03:38)

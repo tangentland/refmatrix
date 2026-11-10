@@ -1,0 +1,65 @@
+== 61b3bde refmatrix marker-off
+module <scratch>/src/61b3bde/src/refmatrix/memory_index.py
+render 1: 127 lines 21860 chars linkless=0 >200=0 check=True
+    MEMORY.md: 127 -> 127 lines, 21860 chars (caps 200 lines / 24000 chars; 369 memories on disk)
+render 2: 127 lines 21860 chars linkless=0 >200=0 check=True
+    MEMORY.md: 127 -> 127 lines, 21860 chars (caps 200 lines / 24000 chars; 369 memories on disk)
+render 3: 127 lines 21860 chars linkless=0 >200=0 check=True
+    MEMORY.md: 127 -> 127 lines, 21860 chars (caps 200 lines / 24000 chars; 369 memories on disk)
+== 61b3bde cliquedb marker-off
+module <scratch>/src/61b3bde/src/refmatrix/memory_index.py
+render 1: 122 lines 23836 chars linkless=8 >200=0 check=True
+    MEMORY.md: 122 -> 122 lines, 23836 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+render 2: 122 lines 23836 chars linkless=8 >200=0 check=True
+    MEMORY.md: 122 -> 122 lines, 23836 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+render 3: 122 lines 23836 chars linkless=8 >200=0 check=True
+    MEMORY.md: 122 -> 122 lines, 23836 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+== 61b3bde cliquet marker-off
+module <scratch>/src/61b3bde/src/refmatrix/memory_index.py
+render 1: 53 lines 10107 chars linkless=1 >200=0 check=True
+    MEMORY.md: 78 -> 53 lines, 10107 chars (caps 200 lines / 24000 chars; 55 memories on disk)
+render 2: 53 lines 10107 chars linkless=1 >200=0 check=True
+    MEMORY.md: 53 -> 53 lines, 10107 chars (caps 200 lines / 24000 chars; 55 memories on disk)
+render 3: 53 lines 10107 chars linkless=1 >200=0 check=True
+    MEMORY.md: 53 -> 53 lines, 10107 chars (caps 200 lines / 24000 chars; 55 memories on disk)
+== 61b3bde viascope marker-off
+module <scratch>/src/61b3bde/src/refmatrix/memory_index.py
+render 1: 1 lines 119 chars linkless=0 >200=0 check=True
+    MEMORY.md: 157 -> 1 lines, 119 chars (caps 200 lines / 24000 chars; 3 memories on disk)
+render 2: 1 lines 119 chars linkless=0 >200=0 check=True
+    MEMORY.md: 1 -> 1 lines, 119 chars (caps 200 lines / 24000 chars; 3 memories on disk)
+render 3: 1 lines 119 chars linkless=0 >200=0 check=True
+    MEMORY.md: 1 -> 1 lines, 119 chars (caps 200 lines / 24000 chars; 3 memories on disk)
+== 7b5ea2f refmatrix marker-off
+module <scratch>/src/7b5ea2f/src/refmatrix/memory_index.py
+render 1: 127 lines 21859 chars linkless=0 >200=0 check=True
+    MEMORY.md: 127 -> 127 lines, 21859 chars (caps 200 lines / 24000 chars; 369 memories on disk)
+render 2: 127 lines 21859 chars linkless=0 >200=0 check=True
+    MEMORY.md: 127 -> 127 lines, 21859 chars (caps 200 lines / 24000 chars; 369 memories on disk)
+render 3: 127 lines 21859 chars linkless=0 >200=0 check=True
+    MEMORY.md: 127 -> 127 lines, 21859 chars (caps 200 lines / 24000 chars; 369 memories on disk)
+== 7b5ea2f cliquedb marker-off
+module <scratch>/src/7b5ea2f/src/refmatrix/memory_index.py
+render 1: 122 lines 23832 chars linkless=0 >200=0 check=True
+    MEMORY.md: 122 -> 122 lines, 23832 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+    MEMORY.md: dropped 11 entries whose file is gone: <names redacted>
+render 2: 122 lines 23832 chars linkless=0 >200=0 check=True
+    MEMORY.md: 122 -> 122 lines, 23832 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+render 3: 122 lines 23832 chars linkless=0 >200=0 check=True
+    MEMORY.md: 122 -> 122 lines, 23832 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+== 7b5ea2f cliquet marker-off
+module <scratch>/src/7b5ea2f/src/refmatrix/memory_index.py
+render 1: 53 lines 10105 chars linkless=0 >200=0 check=True
+    MEMORY.md: 78 -> 53 lines, 10105 chars (caps 200 lines / 24000 chars; 55 memories on disk)
+render 2: 53 lines 10105 chars linkless=0 >200=0 check=True
+    MEMORY.md: 53 -> 53 lines, 10105 chars (caps 200 lines / 24000 chars; 55 memories on disk)
+render 3: 53 lines 10105 chars linkless=0 >200=0 check=True
+    MEMORY.md: 53 -> 53 lines, 10105 chars (caps 200 lines / 24000 chars; 55 memories on disk)
+== 7b5ea2f viascope marker-off
+module <scratch>/src/7b5ea2f/src/refmatrix/memory_index.py
+render 1: 138 lines 23843 chars linkless=0 >200=0 check=True
+    MEMORY.md: 157 -> 138 lines, 23843 chars (caps 200 lines / 24000 chars; 145 memories on disk)
+render 2: 138 lines 23843 chars linkless=0 >200=0 check=True
+    MEMORY.md: 138 -> 138 lines, 23843 chars (caps 200 lines / 24000 chars; 145 memories on disk)
+render 3: 138 lines 23843 chars linkless=0 >200=0 check=True
+    MEMORY.md: 138 -> 138 lines, 23843 chars (caps 200 lines / 24000 chars; 145 memories on disk)

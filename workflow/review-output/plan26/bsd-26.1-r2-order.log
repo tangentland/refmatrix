@@ -1,0 +1,3 @@
+3-cycle newest across 6 orders: ['savestate_c.md']
+fuzz trials with input-order-dependent result: 0 / 200
+dup-name tie: {'savestates/savestate_x.md', 'savestate_x.md'}

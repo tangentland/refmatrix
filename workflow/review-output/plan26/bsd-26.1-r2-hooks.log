@@ -1,0 +1,24 @@
+===== organised=False (<scratch>/src/61b3bde/src/refmatrix/memory_index.py)
+1 curated: {'feedback_a.md': 'CURATED by hand', 'feedback_b.md': 'Derived first prose line.'}
+2 after clearing in index: Derived first prose line.
+3 render 1: sidecar hook len=246 has END=True
+3 render 2: sidecar hook len=171 has END=False
+3 render 3: sidecar hook len=171 has END=False
+===== organised=True (<scratch>/src/61b3bde/src/refmatrix/memory_index.py)
+1 curated: {'feedback_a.md': 'CURATED by hand', 'feedback_b.md': 'Derived first prose line.'}
+2 after clearing in index: Derived first prose line.
+3 render 1: sidecar hook len=246 has END=True
+3 render 2: sidecar hook len=171 has END=False
+3 render 3: sidecar hook len=171 has END=False
+===== organised=False (<scratch>/src/7b5ea2f/src/refmatrix/memory_index.py)
+1 curated: {'feedback_a.md': 'CURATED by hand', 'feedback_b.md': 'Derived first prose line.'}
+2 after clearing in index: CURATED by hand
+3 render 1: sidecar hook len=246 has END=True
+3 render 2: sidecar hook len=171 has END=False
+3 render 3: sidecar hook len=171 has END=False
+===== organised=True (<scratch>/src/7b5ea2f/src/refmatrix/memory_index.py)
+1 curated: {'feedback_a.md': 'CURATED by hand', 'feedback_b.md': 'Derived first prose line.'}
+2 after clearing in index: CURATED by hand
+3 render 1: sidecar hook len=246 has END=True
+3 render 2: sidecar hook len=171 has END=False
+3 render 3: sidecar hook len=171 has END=False

@@ -1,0 +1,5 @@
+marker-off HEAD 61b3bde vs 7b5ea2f, real memdir copies (cp -RPp). Counts only: memory titles/hooks of other projects are not committed to this public repo.
+refmatrix: HEAD 127 lines -> r2 127 lines; lines only at HEAD 1 (bug-192 cut shape: 1), only at r2 1; fold lines changed: []; sidecar keys HEAD 362 r2 362, new keys 0, changed values 0
+cliquedb: HEAD 122 lines -> r2 122 lines; lines only at HEAD 21 (bug-192 cut shape: 20), only at r2 21; fold lines changed: ['- 73', '- 63']; sidecar keys HEAD 251 r2 251, new keys 0, changed values 1
+cliquet: HEAD 53 lines -> r2 53 lines; lines only at HEAD 7 (bug-192 cut shape: 7), only at r2 7; fold lines changed: []; sidecar keys HEAD 55 r2 55, new keys 0, changed values 1
+viascope: HEAD 1 lines -> r2 138 lines; lines only at HEAD 0 (bug-192 cut shape: 0), only at r2 137; fold lines changed: ['- 6']; sidecar keys HEAD 3 r2 145, new keys 142, changed values 0
