@@ -13684,9 +13684,19 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
         console.print(f"[dim]  moved legacy top-level {Path(res['moved_legacy']).name} "
                       f"into savestates/[/]")
     if res.get("removed_duplicate"):
-        console.print(f"[yellow]removed duplicate top-level "
-                      f"{Path(res['removed_duplicate']).name}[/] (a crash mid-move left "
-                      f"it beside the savestates/ copy)")
+        # #rm-newer-copy: name the copy removed AND the copy whose `created:`
+        # this save kept (the newer of the pair; `savestates/` on a tie).
+        gone = Path(res["removed_duplicate"]).name
+        if res.get("kept_copy") == res["removed_duplicate"]:
+            console.print(f"[yellow]removed top-level {gone}[/] after writing this save "
+                          f"to savestates/ (the top-level copy was the newer one; its "
+                          f"created: is kept)")
+        else:
+            console.print(f"[yellow]removed stale top-level {gone}[/] (kept "
+                          f"savestates/{gone}, the newer copy)")
+    if res.get("remove_failed"):
+        console.print(f"[red]could not remove the top-level save-state copy:[/] "
+                      f"{res['remove_failed']} -- the walk keeps naming it as skipped")
 
     fin = res
     lint_out = fin.get("lint")

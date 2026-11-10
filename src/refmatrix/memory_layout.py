@@ -86,12 +86,28 @@ def _is_memory_name(name: str) -> bool:
     return name.endswith(".md") and not name.startswith(".") and name not in NOT_A_MEMORY
 
 
-def is_shadowed_savestate(memdir, name: str) -> bool:
-    """True when the TOP-LEVEL file `name` is a legacy save-state whose
-    `savestates/` copy exists: the mid-move pair (task 26.3 #rd-duplicate).
-    The `savestates/` copy is authoritative (ADR-0005 #authority)."""
-    return name.startswith(SAVESTATE_PREFIX) and \
-        (savestate_dir(memdir) / name).is_file()
+def savestate_pair(memdir, name: str) -> "tuple[Path, Path] | None":
+    """`(kept, other)` when save-state `name` has BOTH a top-level copy and a
+    `savestates/` copy, else None (task 26.3 #rm-newer-copy, ch-bsd 26.3 r1
+    #s-1, 2026-11-10).
+
+    A pair forms when another writer -- an MCP server not yet respawned after
+    the deploy, or a dir without the marker that still has `savestates/` --
+    puts a fresh top-level copy beside an older folder copy. The replace-first
+    writer cannot leave one by crashing. So the kept copy is the one that sorts
+    newest under ADR-0005 #newest's key (`_SaveKey`: `updated` date, then mtime),
+    and only a FULL tie keeps `savestates/`. #rd-duplicate kept the folder copy
+    unconditionally, which read the STALE copy in exactly those shapes."""
+    if not name.startswith(SAVESTATE_PREFIX):
+        return None
+    top, sub = Path(memdir) / name, savestate_dir(memdir) / name
+    if not (top.is_file() and sub.is_file()):
+        return None
+    # The key WITHOUT its path component, so the tie rule is stated here, not
+    # left to how the two path strings happen to compare.
+    if _SaveKey(top).key[:3] > _SaveKey(sub).key[:3]:
+        return top, sub
+    return sub, top
 
 
 def is_savestate_path(memdir, path) -> bool:
@@ -130,16 +146,29 @@ def iter_memory_files(memdir, *, skipped: "list | None" = None) -> Iterator[Path
     shapes were dropped uncounted.
 
     One layout rule lives here too, because every reader must agree on it
-    (task 26.3 spec #rd-duplicate, #rd-duplicate-vs-262, 2026-11-10): a
-    top-level `savestate_<x>.md` SHADOWED by `savestates/savestate_<x>.md` --
-    the pair a crash between save-state's write and its unlink leaves -- is not
-    a memory. The `savestates/` copy is the one recall-state, the index, the
-    recents and the bridge see; the top-level copy goes on `skipped` (so the
-    bridge counts and names it until the next save of that id removes it), and
-    26.2's duplicate-id refusal never sees the pair. Every OTHER duplicate id
-    is still yielded twice, for that refusal to judge.
+    (task 26.3 #rm-newer-copy, superseding #rd-duplicate; #rd-duplicate-vs-262,
+    2026-11-10): when a save-state id has both a top-level `savestate_<x>.md`
+    and `savestates/savestate_<x>.md`, the walk yields only the copy
+    `savestate_pair` keeps (the NEWER one; `savestates/` on a full tie). The
+    other copy goes on `skipped`, so the bridge counts and names it until the
+    next organised save of that id removes the top-level copy. Recall-state,
+    the index, the recents and the bridge therefore see one copy, and 26.2's
+    duplicate-id refusal never sees the pair. Every OTHER duplicate id is
+    still yielded twice, for that refusal to judge.
     """
     root = Path(memdir)
+    # The losing copy of every save-state pair, decided once, before the walk:
+    # the top level is walked before `savestates/`, so the decision cannot wait
+    # for the second copy to be reached.
+    losers: set = set()
+    try:
+        with os.scandir(savestate_dir(root)) as it:
+            for e in it:
+                pair = savestate_pair(root, e.name) if _is_memory_name(e.name) else None
+                if pair:
+                    losers.add(pair[1])
+    except (FileNotFoundError, NotADirectoryError):
+        pass        # no `savestates/` folder: no pair can exist
 
     def _skip(p: Path) -> None:
         if skipped is not None:
@@ -168,7 +197,8 @@ def iter_memory_files(memdir, *, skipped: "list | None" = None) -> Iterator[Path
                 # ingest, and the caller is told so (ch-bsd 26.1 #s-3).
                 _skip(d / e.name)
                 continue
-            if _is_memory_name(e.name) and d == root and is_shadowed_savestate(root, e.name):
+            if (d / e.name) in losers:
+                # The older copy of a save-state pair (#rm-newer-copy).
                 _skip(d / e.name)
                 continue
             if _is_memory_name(e.name):
@@ -269,9 +299,9 @@ def iter_savestates(memdir) -> list:
     """Every save-state, newest-first: `savestates/*.md` plus legacy top-level
     `savestate_*.md` (ADR-0005 #legacy -- a flat dir stays readable forever).
     Nothing else: a `savestate_*` stem in another folder or in a dot-dir is not
-    a save-state. A top-level copy shadowed by its `savestates/` twin (a crash
-    mid-move) is not yielded by the walk, so the `savestates/` copy is the one
-    read even when the stale copy has the later mtime (task 26.3 #rd-duplicate)."""
+    a save-state. Of a top-level / `savestates/` pair of one id the walk yields
+    only the copy `savestate_pair` keeps, so this list holds each id once
+    (task 26.3 #rm-newer-copy)."""
     root = Path(memdir)
     return sort_savestates(p for p in iter_memory_files(root)
                            if is_savestate_path(root, p))

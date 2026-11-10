@@ -392,6 +392,15 @@ def _promote_digest(root: Path, s) -> dict:
 # ---- save-state core -------------------------------------------------------
 
 
+class SaveStateWriteError(OSError):
+    """The handoff file could not be written (task 26.3 remedy-r1, 2026-11-10).
+
+    Raised, never reported as a save: a save-state that returned a `target`
+    it never wrote told the next session to resume from a file that does not
+    hold this handoff. The message names the path and what was left in place,
+    so the caller can say it; `verbs.save_state` turns it into a VerbError."""
+
+
 def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
                        message: str | None = None, promote: bool = True,
                        dry_run: bool = False) -> dict:
@@ -416,10 +425,16 @@ def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
     legacy = memdir / f"{mem_id}.md"
     organised = memory_layout.is_organised(memdir)
     target = memory_layout.savestate_dir(memdir) / f"{mem_id}.md" if organised else legacy
-    # The frozen `created:` comes from the copy that is authoritative: the
-    # `savestates/` file when it exists, else the legacy file it replaces.
-    created = _ss_frozen_created(
-        target if target.exists() or not legacy.exists() else legacy, today)
+    # The frozen `created:` comes from the copy the walk keeps: of a top-level
+    # / `savestates/` pair, the NEWER one (`memory_layout.savestate_pair`,
+    # #rm-newer-copy); else the `savestates/` file when it exists, else the
+    # legacy file it replaces.
+    pair = memory_layout.savestate_pair(memdir, legacy.name) if organised else None
+    if pair:
+        created_from = pair[0]
+    else:
+        created_from = target if target.exists() or not legacy.exists() else legacy
+    created = _ss_frozen_created(created_from, today)
     recents = _ss_recent_memories(memdir, exclude=mem_id)
 
     doc = _ss_render(mem_id=mem_id, session=s.session, repo=repo,
@@ -434,27 +449,44 @@ def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
         "branch": git["branch"], "head": git["head"],
         "dirty": bool(git["dirty"]), "promoted": None,
         "memdir": str(memdir),
-        "moved_legacy": None, "removed_duplicate": None,
+        "moved_legacy": None,
+        # #rm-newer-copy: the top-level copy of a pair this save removed, the
+        # copy whose `created:` it kept, and a removal that failed (said).
+        "removed_duplicate": None, "kept_copy": str(pair[0]) if pair else None,
+        "remove_failed": None,
     }
     if dry_run:
         return result
 
-    memdir.mkdir(parents=True, exist_ok=True)
-    if organised:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if legacy.exists() and not target.exists():
-            # AC-2: MOVE the legacy file in (os.replace keeps its mtime) BEFORE
-            # the write, so no instant holds two copies of one id for 26.2's
-            # duplicate-id refusal to fire on.
-            os.replace(legacy, target)
-            result["moved_legacy"] = str(legacy)
-    target.write_text(doc)
+    try:
+        memdir.mkdir(parents=True, exist_ok=True)
+        if organised:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if legacy.exists() and not target.exists():
+                # AC-2: MOVE the legacy file in (os.replace keeps its mtime)
+                # BEFORE the write, so no instant holds two copies of one id
+                # for 26.2's duplicate-id refusal to fire on.
+                os.replace(legacy, target)
+                result["moved_legacy"] = str(legacy)
+        target.write_text(doc)
+    except OSError as exc:
+        kept = (f"; the top-level {legacy.name} is kept" if organised and legacy.exists()
+                else "")
+        raise SaveStateWriteError(
+            f"save-state could not write {target} ({type(exc).__name__}: {exc})"
+            f"{kept}; nothing was saved") from exc
     if organised and legacy.exists():
-        # #rd-duplicate: a crash mid-move left both copies. The `savestates/`
-        # copy was just written; only now is the stale top-level one removed,
-        # so a crash here still leaves the reader on the fresh copy.
-        legacy.unlink()
-        result["removed_duplicate"] = str(legacy)
+        # #rm-newer-copy: another writer left a top-level copy beside the
+        # folder copy. Removed only NOW, after `savestates/` holds this save
+        # (which carries the kept copy's `created:`), so a failed write above
+        # never costs the only copy of the newest save.
+        try:
+            legacy.unlink()
+            result["removed_duplicate"] = str(legacy)
+        except OSError as exc:
+            # The save landed; the stale copy stays and the walk keeps naming
+            # it as skipped. Said, never mute.
+            result["remove_failed"] = f"{legacy}: {type(exc).__name__}: {exc}"
     hook = (message or f"{repo.name} @ {head_sha}")[:90]
     title = f"Save-state {today}: {message or repo.name + ' @ ' + head_sha}"
     _ss_update_index(memdir, mem_id, title, hook)
