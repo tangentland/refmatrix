@@ -303,3 +303,26 @@ def test_an_unreadable_or_foreign_marker_is_a_hard_error_naming_the_file(memdir,
     with pytest.raises(Exception) as ei:
         ml.is_organised(memdir)
     assert ".memory-layout" in str(ei.value), ei.value
+
+
+# ---- task 26.1 follow-up #fu-order (ch-bsd 26.1 r2 S-2 note): the key ends in the path -------
+
+def test_fu_order_a_folder_copy_and_a_top_level_copy_of_one_save_state_order_the_same_both_ways(
+        memdir):
+    """26.4's mid-move window: `savestates/x.md` and a top-level `x.md` carry the same `updated`
+    date and (mtime preserved by the move) the same mtime. Under `(date, mtime, name)` the two
+    keys are equal and the result followed the input order. The key becomes
+    `(date, mtime, name, relative path)`, so either input order gives one answer."""
+    ml = _layout()
+    moved = _md(memdir / "savestates" / "savestate_x.md", mtype="session/recall-state",
+                updated="2026-11-09T08:00:00-08:00", mtime=T0)
+    legacy = _md(memdir / "savestate_x.md", mtype="session/recall-state",
+                 updated="2026-11-09T08:00:00-08:00", mtime=T0)
+    assert os.stat(moved).st_mtime == os.stat(legacy).st_mtime
+    one = [Path(p) for p in ml.sort_savestates([moved, legacy])]
+    two = [Path(p) for p in ml.sort_savestates([legacy, moved])]
+    assert one == two, f"order follows input order: {[str(p) for p in one]} vs " \
+                       f"{[str(p) for p in two]}"
+    assert sorted(one) == sorted([moved, legacy])
+    # The walk feeds the same function; whatever scandir yields, the newest is one file.
+    assert Path(ml.iter_savestates(memdir)[0]) == one[0]

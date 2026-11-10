@@ -1,0 +1,99 @@
+pyc-guard: recompiled 8 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26/src/refmatrix as checked-hash (bug-037)
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+___ test_fu_skips_in_process_bridge_result_carries_skipped_and_skipped_paths ___
+
+ac2_inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-kms98rk2'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-kms98rk2/proj/.refmatrix'))
+
+    def test_fu_skips_in_process_bridge_result_carries_skipped_and_skipped_paths(ac2_inproc):
+        base, root = ac2_inproc
+        memdir = _s3_memdir(base)
+        assert not dm.ping(root, retries=0), "the in-process leg must run with NO daemon"
+        out = cli_mod._sync_memory_dir(memdir)
+>       _assert_bridge_carries_skips(out, "in-process bridge")
+
+tests/test_memory_bridge.py:509: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+out = {'doc_drop_failed': [], 'embed': {'batches': 1, 'capped': False, 'embedded': 2, 'error': None, ...}, 'error': None, 'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-kms98rk2/memory', ...}
+where = 'in-process bridge'
+
+    def _assert_bridge_carries_skips(out: dict, where: str) -> None:
+        assert out["error"] is None, f"{where}: {out}"
+>       assert out.get("skipped") == 5, f"{where}: bridge result carries no skipped=5: {out}"
+E       AssertionError: in-process bridge: bridge result carries no skipped=5: {'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-kms98rk2/memory', 'report': 'ingested 2 doc(s), 2 node(s), 0 rel: edge(s), 12 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage types: lead, part-of\nmemory embed: 2 row(s) now reachable by recall in proj\ningest-gmd --as-memory: skipped 5 non-memory path(s) (dot-path, README.md, nested MEMORY.md, symlinked folder, dangling link or .gmd; ADR-0005 #one-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-kms98rk2/memory/dangling.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-kms98rk2/memory/notes.gmd, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-kms98rk2/memory/.hidden/y.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-kms98rk2/memory/.organise-rollback-1/x.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-kms98rk2/memory/linked', 'error': None, 'skipped_non_gmd': 0, 'skipped_unparseable': [], 'skipped_index': [], 'waited': False, 'waited_job': None, 'partition': 'proj', 'embed': {'partition': 'proj', 'embedded': 2, 'remaining': 0, 'batches': 1, 'capped': False, 'error': None}, 'doc_drop_failed': []}
+E       assert None == 5
+E        +  where None = <built-in method get of dict object at 0x10c023000>('skipped')
+E        +    where <built-in method get of dict object at 0x10c023000> = {'doc_drop_failed': [], 'embed': {'batches': 1, 'capped': False, 'embedded': 2, 'error': None, ...}, 'error': None, 'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-kms98rk2/memory', ...}.get
+
+tests/test_memory_bridge.py:498: AssertionError
+_____ test_fu_skips_daemon_bridge_result_carries_skipped_and_skipped_paths _____
+
+ac2_daemon = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-3vf4qmug'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-3vf4qmug/proj/.refmatrix'))
+
+    def test_fu_skips_daemon_bridge_result_carries_skipped_and_skipped_paths(ac2_daemon):
+        base, root = ac2_daemon
+        memdir = _s3_memdir(base)
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["waited"] is False, out
+>       _assert_bridge_carries_skips(out, "daemon-backed bridge")
+
+tests/test_memory_bridge.py:517: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+out = {'doc_drop_failed': [], 'embed': {'batches': 1, 'capped': False, 'embedded': 2, 'error': None, ...}, 'error': None, 'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-3vf4qmug/memory', ...}
+where = 'daemon-backed bridge'
+
+    def _assert_bridge_carries_skips(out: dict, where: str) -> None:
+        assert out["error"] is None, f"{where}: {out}"
+>       assert out.get("skipped") == 5, f"{where}: bridge result carries no skipped=5: {out}"
+E       AssertionError: daemon-backed bridge: bridge result carries no skipped=5: {'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-3vf4qmug/memory', 'report': 'ingested 2 doc(s), 2 node(s), 0 rel: edge(s), 12 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage types: lead, part-of\nmemory embed: 2 row(s) now reachable by recall in proj\ningest-gmd --as-memory: skipped 5 non-memory path(s) (dot-path, README.md, nested MEMORY.md, symlinked folder, dangling link or .gmd; ADR-0005 #one-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-3vf4qmug/memory/dangling.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-3vf4qmug/memory/notes.gmd, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-3vf4qmug/memory/.hidden/y.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-3vf4qmug/memory/.organise-rollback-1/x.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-3vf4qmug/memory/linked', 'error': None, 'skipped_non_gmd': 0, 'skipped_unparseable': [], 'skipped_index': [], 'waited': False, 'waited_job': None, 'partition': 'proj', 'embed': {'partition': 'proj', 'embedded': 2, 'remaining': 0, 'batches': 1, 'capped': False, 'error': None}, 'doc_drop_failed': []}
+E       assert None == 5
+E        +  where None = <built-in method get of dict object at 0x11b22ff00>('skipped')
+E        +    where <built-in method get of dict object at 0x11b22ff00> = {'doc_drop_failed': [], 'embed': {'batches': 1, 'capped': False, 'embedded': 2, 'error': None, ...}, 'error': None, 'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-3vf4qmug/memory', ...}.get
+
+tests/test_memory_bridge.py:498: AssertionError
+____ test_fu_skips_a_bridge_that_waited_on_a_covering_job_carries_its_skips ____
+
+ac2_daemon = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-6zi0sidv'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-6zi0sidv/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11a979370>
+
+    def test_fu_skips_a_bridge_that_waited_on_a_covering_job_carries_its_skips(ac2_daemon,
+                                                                             monkeypatch):
+        """The save-state-under-SessionStart overlap: the bridge waits for the covering job and
+        takes ITS result. The job carries `skipped_paths` at the top level of its result
+        (`_skip_fields`); the wait path must read them, not only `res["stats"]`."""
+        base, root = ac2_daemon
+        memdir = _s3_memdir(base)
+        for i in range(350):                      # long enough that the bridge meets it running
+            (memdir / f"doc{i:04d}.md").write_text(GMD.format(id=f"fu_doc{i:04d}", body="x " * 400))
+        part = verbs.memory_partition(root)
+        resp = dm.call(root, "ingest_gmd_start", {"targets": [str(memdir)], "as_memory": True,
+                                                  "memory_mtype": "curated", "partition": part},
+                       timeout=30)
+        assert resp.get("ok"), resp
+        monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "300")
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["waited"] is True and out["waited_job"] == resp["result"]["job_id"], out
+>       _assert_bridge_carries_skips(out, "waited bridge")
+
+tests/test_memory_bridge.py:537: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+out = {'doc_drop_failed': [], 'embed': None, 'error': None, 'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-6zi0sidv/memory', ...}
+where = 'waited bridge'
+
+    def _assert_bridge_carries_skips(out: dict, where: str) -> None:
+        assert out["error"] is None, f"{where}: {out}"
+>       assert out.get("skipped") == 5, f"{where}: bridge result carries no skipped=5: {out}"
+E       AssertionError: waited bridge: bridge result carries no skipped=5: {'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-6zi0sidv/memory', 'report': 'ingested 352 doc(s), 352 node(s), 0 rel: edge(s), 1062 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage types: lead, part-of\nmemory embed: 352 row(s) now reachable by recall in proj', 'error': None, 'skipped_non_gmd': 0, 'skipped_unparseable': [], 'skipped_index': [], 'waited': True, 'waited_job': 'a0f6f8729c3e', 'partition': 'proj', 'embed': None, 'doc_drop_failed': []}
+E       assert None == 5
+E        +  where None = <built-in method get of dict object at 0x11b23c900>('skipped')
+E        +    where <built-in method get of dict object at 0x11b23c900> = {'doc_drop_failed': [], 'embed': None, 'error': None, 'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-6zi0sidv/memory', ...}.get
+
+tests/test_memory_bridge.py:498: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_bridge.py::test_fu_skips_in_process_bridge_result_carries_skipped_and_skipped_paths
+FAILED tests/test_memory_bridge.py::test_fu_skips_daemon_bridge_result_carries_skipped_and_skipped_paths
+FAILED tests/test_memory_bridge.py::test_fu_skips_a_bridge_that_waited_on_a_covering_job_carries_its_skips
+3 failed, 19 deselected in 35.79s
