@@ -1756,7 +1756,8 @@ _MEMORY_DESCRIPTIONS = {
     # bug-198 (2026-11-10): the two scope keys are two vocabularies, so each
     # says which action reads it and what its values mean.
     "scope": "recall only — project: this store; global: the shared behavior "
-             "store; both: round-robin merge. Ignored by every other action",
+             "store; both: round-robin merge. Refused by brief (its compile "
+             "scope is `compile_scope`); ignored by every other action",
     "compile_scope": "brief only — the memory-compile scope whose corpus all four "
                      "detectors read: memory (default; every memory except "
                      "impressions and `tag: pattern` docs) or pattern (impressions "
@@ -1798,6 +1799,16 @@ def memory(root: Path, action: typing.Literal[
     copies project→global; everything else routes to the daemon's memory_*
     op with the project partition injected."""
     a = {k: v for k, v in locals().items() if k not in ("root", "action", "timeout")}
+    if action == "brief" and scope is not None:
+        # bug-200 m-1 (ch-bsd bug-197/198 r1, 2026-11-10): bug-198 renamed the
+        # brief's compile scope to `compile_scope` and stopped forwarding
+        # `scope`, so a caller still sending the OLD key `scope=pattern` got the
+        # MEMORY corpus back with no error. A renamed parameter's old spelling
+        # is refused, not dropped -- before any daemon call, MCP path included.
+        raise VerbArgsError(
+            f"memory brief: `scope` is recall's project|global|both and is not read "
+            f"by brief (got {scope!r}); pass the compile scope as "
+            f"`compile_scope` (memory|pattern)")
     if action == "brief" and compile_scope is not None:
         # Before ANY daemon call (bug-198): the Literal is a schema hint, not
         # a check — `Verb.run` (the MCP path) passes whatever the client sent.

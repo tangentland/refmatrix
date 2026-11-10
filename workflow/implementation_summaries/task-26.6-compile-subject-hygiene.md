@@ -180,9 +180,12 @@ is still open, so the status stays `in-progress`.
 - **#rm-one-corpus (s-3).** `consolidate.in_corpus(name, mtype, tags, scope, exclude_mtypes)`
   is the one predicate. `_memory_rows` filters with it, and `brief._memory_ids(store, scope=)`
   IS `_memory_rows(EXCLUDE_MTYPES, scope)`. `brief.compile_briefs(..., scope="memory")` refuses
-  a plan compiled for another scope and reports `stats.scope`. `_op_memory_brief` and the
-  `rmx_memory brief` payload forward `scope`. `memory brief --compile` plans and briefs the one
-  scope. The dead `brief._excluded_mtype` is removed.
+  a plan compiled for another scope and reports `stats.scope`. `_op_memory_brief` reads the
+  op's wire key `scope`. `memory brief --compile` plans and briefs the one scope. The dead
+  `brief._excluded_mtype` is removed. *Amended 2026-11-10 (bug-198, bug-200 m-1):* the
+  `rmx_memory brief` payload no longer forwards the verb's `scope` argument. The compile scope
+  arrives as `compile_scope` and goes out on the wire key `scope`. A non-None `scope` on brief
+  is refused with `VerbArgsError` before any daemon call, on the MCP path too.
 - **#rm-status-route (m-1).** A new op, `memory_compile_status`, is in `CLI_OPS` and `OPS`, and
   `verbs.memory_compile(status=True)` asks it. `memory_compile status=True` still answers by
   delegating, for direct callers.
@@ -228,9 +231,12 @@ so a row count cannot tell the scopes apart.
 - The top-level `memory_compile` keys are the memory scope's record. They are not an aggregate
   across scopes. Every renderer reads `scopes`.
 - Each status line now ends `; scope <name>: <why>`.
-- No `--scope` flag was added to `memory brief`: the CLI passes `memory` explicitly. The
-  `rmx_memory` verb's existing `scope` argument is forwarded for `brief` and validated by
-  `consolidate._check_scope`.
+- *Superseded 2026-11-10 (bug-198, bug-200 m-1).* As shipped here, `memory brief` had no
+  `--scope` flag, and the `rmx_memory` verb forwarded its `scope` argument for `brief`. bug-198
+  added `memory brief --scope memory|pattern` and the `compile_scope` verb key, and stopped
+  forwarding `scope`. bug-200 m-1 makes the verb refuse a non-None `scope` on brief with
+  `VerbArgsError` naming `compile_scope`, because a silently ignored `scope=pattern` answered
+  from the memory corpus.
 - An older CLI talking to this daemon still works for `status=True`, because the old op
   delegates. A new CLI talking to an older daemon gets "unknown op" on status. They deploy
   together.
