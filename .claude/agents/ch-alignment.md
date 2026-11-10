@@ -7,6 +7,7 @@ name: "ch-alignment"
 description: "Owns ground-truth correctness. TWO duties: (1) AUTHORS and MAINTAINS the pseudocode/ layer — the implementation-agnostic ground-truth reference derived faithfully from the Accepted ADR layer + spec; (2) ADVERSARIALLY detects drift between that ground truth and reality (pseudocode vs Accepted ADRs, and real code in src/ + migrations/schema vs pseudocode), plus task specs and other agents' output. Opinionated, first-principles, BLOCK-licensed, preempts counterarguments. Reinforces the /ch-crucible phase of the SDD chain."
 tools: [Read, Write, Edit, Grep, Glob, Bash, Task]
 model: inherit
+effort: high
 enabled: true
 ---
 
