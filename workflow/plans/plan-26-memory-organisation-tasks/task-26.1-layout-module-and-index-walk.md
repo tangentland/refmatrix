@@ -95,6 +95,9 @@ viascope2 12, cliquet 8.
    - If the carried prose alone leaves less than 25% of the budget for entries, `write` refuses
      (index untouched, reason printed, return 0). It names the prose line count so the user can
      move the prose into a memory.
+   - Hook precedence: an EMPTY hook in the index never overwrites a non-empty curated hook in the
+     sidecar (an entry whose link alone exceeds the line cap renders without its hook; that must
+     not erase the curated text on the next render). Decided 2026-11-09 at the remedy GREEN.
    - Idempotence: re-rendering a carried block re-carries it once. It never duplicates. A line
      shaped like an entry (starts `- [`) is never prose, link or no link — so the link-less lines
      HEAD's cut already left in live indexes (cliquedb: 8) are dropped and re-rendered with their
@@ -114,8 +117,11 @@ viascope2 12, cliquet 8.
    file is left untouched, the reason is printed on the `out` stream, and it returns 0. There is
    no separate "any prose line lost" check: the render carries every prose line by construction
    (AC-5 pins it), so such a check could never fire (ch-bsd 26.1 #s-1 — removed as a dead guard).
-   An organised write also never exceeds `max_chars`: it folds further, and refuses when even a
-   full fold cannot fit (#m-1). Test: a fold is not a loss (links-only counting would refuse it,
+   An organised write folds further to fit `max_chars`. It refuses only when the CARRIED PROSE is
+   what makes it not fit — the same render without the carried block would fit — because then the
+   user can move prose into a memory (#m-1). When even a fold with no carried prose cannot fit, it
+   writes and prints `STILL OVER`, exactly as a marker-off dir does: an index that stops updating
+   is worse than an over-budget one (decided 2026-11-09 at the 26.1 remedy GREEN). Test: a fold is not a loss (links-only counting would refuse it,
    content counting lets it through).
 7. **AC-7: `Entry.kind` reads the folder first.** The stem is the fallback for flat dirs.
 8. **AC-8: no regression.** `tests/test_memory_index.py` and
