@@ -1,0 +1,101 @@
+...........................F.......FF........................            [100%]
+=================================== FAILURES ===================================
+_______ test_ac5_the_pointer_line_and_recall_state_name_the_same_newest ________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-35sjlt9m/memory')
+
+    def test_ac5_the_pointer_line_and_recall_state_name_the_same_newest(memdir):
+        organise(memdir)
+        ss(memdir, "savestate_l.md", created="2026-11-09", updated="2026-11-07",
+           mtime=at(2026, 11, 9, 20))
+        ss(memdir, "savestates/savestate_n.md", created="2026-11-01", updated="2026-11-08",
+           mtime=at(2026, 11, 8, 9))
+        mi.write(memdir, out=io.StringIO())
+        ptr = [ln for ln in (memdir / "MEMORY.md").read_text(encoding="utf-8").splitlines()
+               if ln.startswith("- [Save-states (")]
+>       assert ptr == ["- [Save-states (2), newest savestate_n](savestates/savestate_n.md) — "
+                       "session handoffs; `rmx recall-state` reads the newest"], ptr
+E       AssertionError: ['- [Save-states (2), newest savestate_l](savestate_l.md) — session handoffs; `rmx recall-state` reads the newest']
+E       assert ['- [Save-sta...s the newest'] == ['- [Save-sta...s the newest']
+E         
+E         At index 0 diff: '- [Save-states (2), newest savestate_l](savestate_l.md) — session handoffs; `rmx recall-state` reads the newest' != '- [Save-states (2), newest savestate_n](savestates/savestate_n.md) — session handoffs; `rmx recall-state` reads the newest'
+E         Use -v to get more diff
+
+tests/test_savestate_subfolder.py:399: AssertionError
+_ test_rd_one_newest_a_flat_dirs_pointer_names_the_readers_newest[created-vs-mtime] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-ysa21g6j/memory')
+shape = 'created-vs-mtime'
+
+    @pytest.mark.parametrize("shape", ["created-vs-mtime", "mixed-format"])
+    def test_rd_one_newest_a_flat_dirs_pointer_names_the_readers_newest(memdir, shape):
+        """A flat (no marker) cliquedb-shaped dir. `savestate_n` is the newest save by the ONE key;
+        `savestate_l` has the later `created` (HEAD's pointer key) and, in the mixed-format shape,
+        also the later mtime under an older date."""
+        if shape == "created-vs-mtime":
+            # HEAD's pointer -> l (later created); HEAD's reader -> n (later mtime): they disagree.
+            ss(memdir, "savestate_l.md", created="2026-11-09", updated="2026-11-07",
+               mtime=at(2026, 11, 7, 9))
+            ss(memdir, "savestate_n.md", created="2026-11-01", updated="2026-11-08",
+               mtime=at(2026, 11, 8, 9))
+        else:
+            # date-only vs datetime on one date: mtime decides -> n. HEAD's pointer -> l (created).
+            ss(memdir, "savestate_l.md", created="2026-11-08", updated="2026-11-08T15:00:00",
+               mtime=at(2026, 11, 8, 15))
+            ss(memdir, "savestate_n.md", created="2026-11-07", updated="2026-11-08",
+               mtime=at(2026, 11, 8, 23))
+        note(memdir, "feedback_x.md", mtype="feedback", mtime=at(2026, 11, 1))
+        assert not (memdir / ".memory-layout").exists()
+        mi.write(memdir, out=io.StringIO())
+        name, rel = _pointer_newest(memdir)
+>       assert name == latest(memdir), f"pointer names {name}, recall-state reads {latest(memdir)}"
+E       AssertionError: pointer names savestate_l, recall-state reads savestate_n
+E       assert 'savestate_l' == 'savestate_n'
+E         
+E         - savestate_n
+E         ?           ^
+E         + savestate_l
+E         ?           ^
+
+tests/test_savestate_subfolder.py:567: AssertionError
+_ test_rd_one_newest_a_flat_dirs_pointer_names_the_readers_newest[mixed-format] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-w9zkmwfr/memory')
+shape = 'mixed-format'
+
+    @pytest.mark.parametrize("shape", ["created-vs-mtime", "mixed-format"])
+    def test_rd_one_newest_a_flat_dirs_pointer_names_the_readers_newest(memdir, shape):
+        """A flat (no marker) cliquedb-shaped dir. `savestate_n` is the newest save by the ONE key;
+        `savestate_l` has the later `created` (HEAD's pointer key) and, in the mixed-format shape,
+        also the later mtime under an older date."""
+        if shape == "created-vs-mtime":
+            # HEAD's pointer -> l (later created); HEAD's reader -> n (later mtime): they disagree.
+            ss(memdir, "savestate_l.md", created="2026-11-09", updated="2026-11-07",
+               mtime=at(2026, 11, 7, 9))
+            ss(memdir, "savestate_n.md", created="2026-11-01", updated="2026-11-08",
+               mtime=at(2026, 11, 8, 9))
+        else:
+            # date-only vs datetime on one date: mtime decides -> n. HEAD's pointer -> l (created).
+            ss(memdir, "savestate_l.md", created="2026-11-08", updated="2026-11-08T15:00:00",
+               mtime=at(2026, 11, 8, 15))
+            ss(memdir, "savestate_n.md", created="2026-11-07", updated="2026-11-08",
+               mtime=at(2026, 11, 8, 23))
+        note(memdir, "feedback_x.md", mtype="feedback", mtime=at(2026, 11, 1))
+        assert not (memdir / ".memory-layout").exists()
+        mi.write(memdir, out=io.StringIO())
+        name, rel = _pointer_newest(memdir)
+>       assert name == latest(memdir), f"pointer names {name}, recall-state reads {latest(memdir)}"
+E       AssertionError: pointer names savestate_l, recall-state reads savestate_n
+E       assert 'savestate_l' == 'savestate_n'
+E         
+E         - savestate_n
+E         ?           ^
+E         + savestate_l
+E         ?           ^
+
+tests/test_savestate_subfolder.py:567: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_savestate_subfolder.py::test_ac5_the_pointer_line_and_recall_state_name_the_same_newest
+FAILED tests/test_savestate_subfolder.py::test_rd_one_newest_a_flat_dirs_pointer_names_the_readers_newest[created-vs-mtime]
+FAILED tests/test_savestate_subfolder.py::test_rd_one_newest_a_flat_dirs_pointer_names_the_readers_newest[mixed-format]
+3 failed, 58 passed in 15.39s

@@ -1,0 +1,40 @@
+.................................FF..........................            [100%]
+=================================== FAILURES ===================================
+______ test_r4_a_moved_files_derived_cut_is_never_frozen_into_the_sidecar ______
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-bvz7p8pg/memory')
+
+    def test_r4_a_moved_files_derived_cut_is_never_frozen_into_the_sidecar(memdir):
+        _moved_dir(memdir)
+        fresh = memdir.parent / "fresh"
+        shutil.copytree(memdir, fresh)
+        (fresh / "MEMORY.md").unlink()
+        mi.write(fresh, out=io.StringIO())
+        derived_line = [ln for ln in (fresh / "MEMORY.md").read_text(encoding="utf-8").splitlines()
+                        if "](feedback/feedback_a.md)" in ln]
+        mi.write(memdir, out=io.StringIO())
+        side = json.loads((memdir / mi.HOOKS_SIDECAR).read_text(encoding="utf-8"))
+        frozen = {k: v for k, v in side.items() if v.endswith("…")}
+>       assert not frozen, f"a cut of derived prose was frozen as a curated hook: {frozen}"
+E       AssertionError: a cut of derived prose was frozen as a curated hook: {'feedback_a': 'derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived…'}
+E       assert not {'feedback_a': 'derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived…'}
+
+tests/test_savestate_subfolder.py:515: AssertionError
+_________ test_r4_load_hooks_resolves_a_moved_files_derived_hook_by_id _________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-l3fyvf0k/memory')
+
+    def test_r4_load_hooks_resolves_a_moved_files_derived_hook_by_id(memdir):
+        cut = _moved_dir(memdir)
+        hooks = mi.load_hooks(memdir)
+>       assert cut.split(" — ", 1)[1] not in hooks.values(), hooks
+E       AssertionError: {'feedback_a': 'derived prose derived prose derived prose derived prose derived prose derived prose derived prose deri...ived prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived…'}
+E       assert 'derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived…' not in dict_values(['derived prose derived prose derived prose derived prose derived prose derived prose derived prose derive...ved prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived…'])
+E        +  where dict_values(['derived prose derived prose derived prose derived prose derived prose derived prose derived prose derive...ved prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived…']) = <built-in method values of dict object at 0x106509480>()
+E        +    where <built-in method values of dict object at 0x106509480> = {'feedback_a': 'derived prose derived prose derived prose derived prose derived prose derived prose derived prose deri...ived prose derived prose derived prose derived prose derived prose derived prose derived prose derived prose derived…'}.values
+
+tests/test_savestate_subfolder.py:525: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_savestate_subfolder.py::test_r4_a_moved_files_derived_cut_is_never_frozen_into_the_sidecar
+FAILED tests/test_savestate_subfolder.py::test_r4_load_hooks_resolves_a_moved_files_derived_hook_by_id
+2 failed, 59 passed in 16.58s

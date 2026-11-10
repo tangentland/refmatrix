@@ -1,0 +1,23 @@
+.......................................F.....................            [100%]
+=================================== FAILURES ===================================
+_ test_rd_duplicate_the_next_save_writes_savestates_and_removes_the_top_level_copy _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-41wm00xq/memory')
+
+    def test_rd_duplicate_the_next_save_writes_savestates_and_removes_the_top_level_copy(memdir):
+        organise(memdir)
+        new, old = _duplicate(memdir)
+        r = CliRunner().invoke(cli_mod.main, ["save-state", "-s", "sess-dup", "--memory-dir",
+                                              str(memdir), "--no-lint", "--no-promote", "--no-sync",
+                                              "-m", "after the crash"])
+        assert r.exit_code == 0, f"{r.output}\n{r.exception!r}"
+>       assert not old.exists(), "the top-level duplicate survived the next save"
+E       AssertionError: the top-level duplicate survived the next save
+E       assert not True
+E        +  where True = exists()
+E        +    where exists = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-41wm00xq/memory/savestate_sessdup.md').exists
+
+tests/test_savestate_subfolder.py:606: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_savestate_subfolder.py::test_rd_duplicate_the_next_save_writes_savestates_and_removes_the_top_level_copy
+1 failed, 60 passed in 16.49s

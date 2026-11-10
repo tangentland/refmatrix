@@ -1,0 +1,220 @@
+...........F..FF.FF..FF....F.........FF......................            [100%]
+=================================== FAILURES ===================================
+___________________________ test_ac3_only_new_files ____________________________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-w70n7a16/memory')
+
+    def test_ac3_only_new_files(memdir):
+        organise(memdir)
+        ss(memdir, "savestates/savestate_a.md", updated="2026-11-08", mtime=at(2026, 11, 8))
+        ss(memdir, "savestates/savestate_b.md", updated="2026-11-09", mtime=at(2026, 11, 9))
+        r = handoff._latest_savestate(memdir)
+>       assert r and r["id"] == "savestate_b", r
+E       AssertionError: None
+E       assert (None)
+
+tests/test_savestate_subfolder.py:267: AssertionError
+_______________________ test_ac3_mixed_the_newest_is_new _______________________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-jlyzn78h/memory')
+
+    def test_ac3_mixed_the_newest_is_new(memdir):
+        organise(memdir)
+        ss(memdir, "savestates/savestate_n.md", updated="2026-11-09", mtime=at(2026, 11, 9))
+        ss(memdir, "savestate_l.md", updated="2026-11-07", mtime=at(2026, 11, 7))
+>       assert latest(memdir) == "savestate_n"
+E       AssertionError: assert 'savestate_l' == 'savestate_n'
+E         
+E         - savestate_n
+E         ?           ^
+E         + savestate_l
+E         ?           ^
+
+tests/test_savestate_subfolder.py:290: AssertionError
+___ test_ac3_cliquedb_shape_a_newer_mtime_with_an_older_updated_loses[mixed] ___
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-2eaj5gu7/memory')
+new_rel = 'savestates/savestate_n.md'
+
+    @pytest.mark.parametrize("new_rel", ["savestates/savestate_n.md", "savestate_n.md"],
+                             ids=["mixed", "legacy-only"])
+    def test_ac3_cliquedb_shape_a_newer_mtime_with_an_older_updated_loses(memdir, new_rel):
+        """ch-bsd r1 #s2: cliquedb's newest MTIME was a save-state touched by a later copy, not
+        its newest save. The newer `updated:` wins."""
+        ss(memdir, "savestate_l.md", updated="2026-11-07", mtime=at(2026, 11, 9, 20))
+        ss(memdir, new_rel, updated="2026-11-08", mtime=at(2026, 11, 8, 9))
+>       assert latest(memdir) == "savestate_n"
+E       AssertionError: assert 'savestate_l' == 'savestate_n'
+E         
+E         - savestate_n
+E         ?           ^
+E         + savestate_l
+E         ?           ^
+
+tests/test_savestate_subfolder.py:300: AssertionError
+__ test_ac3_same_day_two_sessions_the_session_saved_last_wins[new-date-only] ___
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-gbwb_jty/memory')
+fmt = 'date-only', folder = 'savestates/'
+
+    @pytest.mark.parametrize("fmt", ["date-only", "datetime"])
+    @pytest.mark.parametrize("folder", ["savestates/", ""], ids=["new", "legacy"])
+    def test_ac3_same_day_two_sessions_the_session_saved_last_wins(memdir, fmt, folder):
+        """r2 s3: A was created 11-07 and re-saved 11-08 at 23:00; B was created and saved 11-08 at
+        15:00. A is the newest save. Mutation: `created` before mtime in the key turns this RED."""
+        ua, ub = (("2026-11-08", "2026-11-08") if fmt == "date-only"
+                  else ("2026-11-08T23:00:00", "2026-11-08T15:00:00"))
+        ss(memdir, f"{folder}savestate_a.md", created="2026-11-07", updated=ua,
+           mtime=at(2026, 11, 8, 23))
+        ss(memdir, f"{folder}savestate_b.md", created="2026-11-08", updated=ub,
+           mtime=at(2026, 11, 8, 15))
+>       assert latest(memdir) == "savestate_a"
+E       AssertionError: assert None == 'savestate_a'
+E        +  where None = latest(PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-gbwb_jty/memory'))
+
+tests/test_savestate_subfolder.py:314: AssertionError
+___ test_ac3_same_day_two_sessions_the_session_saved_last_wins[new-datetime] ___
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-scv2ksn8/memory')
+fmt = 'datetime', folder = 'savestates/'
+
+    @pytest.mark.parametrize("fmt", ["date-only", "datetime"])
+    @pytest.mark.parametrize("folder", ["savestates/", ""], ids=["new", "legacy"])
+    def test_ac3_same_day_two_sessions_the_session_saved_last_wins(memdir, fmt, folder):
+        """r2 s3: A was created 11-07 and re-saved 11-08 at 23:00; B was created and saved 11-08 at
+        15:00. A is the newest save. Mutation: `created` before mtime in the key turns this RED."""
+        ua, ub = (("2026-11-08", "2026-11-08") if fmt == "date-only"
+                  else ("2026-11-08T23:00:00", "2026-11-08T15:00:00"))
+        ss(memdir, f"{folder}savestate_a.md", created="2026-11-07", updated=ua,
+           mtime=at(2026, 11, 8, 23))
+        ss(memdir, f"{folder}savestate_b.md", created="2026-11-08", updated=ub,
+           mtime=at(2026, 11, 8, 15))
+>       assert latest(memdir) == "savestate_a"
+E       AssertionError: assert None == 'savestate_a'
+E        +  where None = latest(PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-scv2ksn8/memory'))
+
+tests/test_savestate_subfolder.py:314: AssertionError
+___________ test_ac3_mixed_formats_on_one_date_the_later_mtime_wins ____________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-0j444ha1/memory')
+
+    def test_ac3_mixed_formats_on_one_date_the_later_mtime_wins(memdir):
+        """r3 m2: an old MCP server wrote `updated: 2026-11-08` (date-only); the other file has
+        `2026-11-08T15:00:00`. Same date, so mtime decides. Mutation: date-only read as midnight
+        turns this RED."""
+        ss(memdir, "savestates/savestate_x.md", updated="2026-11-08", mtime=at(2026, 11, 8, 18))
+        ss(memdir, "savestates/savestate_y.md", updated="2026-11-08T15:00:00",
+           mtime=at(2026, 11, 8, 15))
+>       assert latest(memdir) == "savestate_x"
+E       AssertionError: assert None == 'savestate_x'
+E        +  where None = latest(PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-0j444ha1/memory'))
+
+tests/test_savestate_subfolder.py:324: AssertionError
+___ test_ac3_recall_state_cli_and_mcp_return_the_same_newest_from_savestates ___
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-lhb1qpt1/memory')
+
+    def test_ac3_recall_state_cli_and_mcp_return_the_same_newest_from_savestates(memdir):
+        organise(memdir)
+        ss(memdir, "savestate_l.md", updated="2026-11-07", mtime=at(2026, 11, 9, 20))
+        ss(memdir, "savestates/savestate_n.md", updated="2026-11-08", mtime=at(2026, 11, 8, 9))
+        mcp = verbs.VERBS["rmx_recall_state"].run(
+            store_root(), {"session": "sess-rs", "memory_dir": str(memdir)})
+        r = CliRunner().invoke(cli_mod.main, ["recall-state", "--json", "-s", "sess-rs",
+                                              "--memory-dir", str(memdir)])
+        assert r.exit_code == 0, f"{r.output}\n{r.exception!r}"
+        cli = json.loads(r.stdout)
+>       assert mcp["savestate"] and mcp["savestate"]["id"] == "savestate_n", mcp["savestate"]
+E       AssertionError: {'body': '# Save-state savestate_l {#root}
+E         
+E         handoff body of savestate_l', 'id': 'savestate_l', 'path': '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-lhb1qpt1/memory/savestate_l.md', 'truncated': False}
+E       assert ({'body': '# Save-state savestate_l {#root}\n\nhandoff body of savestate_l', 'id': 'savestate_l', 'path': '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-lhb1qpt1/memory/savestate_l.md', 'truncated': False} and 'savestate_l' == 'savestate_n'
+E         
+E         - savestate_n
+E         ?           ^
+E         + savestate_l
+E         ?           ^)
+
+tests/test_savestate_subfolder.py:337: AssertionError
+_______ test_ac5_the_pointer_line_and_recall_state_name_the_same_newest ________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-r8dhjf83/memory')
+
+    def test_ac5_the_pointer_line_and_recall_state_name_the_same_newest(memdir):
+        organise(memdir)
+        ss(memdir, "savestate_l.md", created="2026-11-09", updated="2026-11-07",
+           mtime=at(2026, 11, 9, 20))
+        ss(memdir, "savestates/savestate_n.md", created="2026-11-01", updated="2026-11-08",
+           mtime=at(2026, 11, 8, 9))
+        mi.write(memdir, out=io.StringIO())
+        ptr = [ln for ln in (memdir / "MEMORY.md").read_text(encoding="utf-8").splitlines()
+               if ln.startswith("- [Save-states (")]
+        assert ptr == ["- [Save-states (2), newest savestate_n](savestates/savestate_n.md) — "
+                       "session handoffs; `rmx recall-state` reads the newest"], ptr
+>       assert latest(memdir) == "savestate_n"
+E       AssertionError: assert 'savestate_l' == 'savestate_n'
+E         
+E         - savestate_n
+E         ?           ^
+E         + savestate_l
+E         ?           ^
+
+tests/test_savestate_subfolder.py:401: AssertionError
+______ test_rd_duplicate_the_reader_takes_the_savestates_copy[organised] _______
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-nev1w143/memory')
+organised = True
+
+    @pytest.mark.parametrize("organised", [True, False], ids=["organised", "unorganised"])
+    def test_rd_duplicate_the_reader_takes_the_savestates_copy(memdir, organised):
+        if organised:
+            organise(memdir)
+        new, _old = _duplicate(memdir)
+        r = handoff._latest_savestate(memdir)
+>       assert r and r["path"] == str(new), r
+E       AssertionError: {'body': '# Save-state savestate_sessdup {#root}
+E         
+E         the stale top-level copy of savestate_sessdup', 'id': 'savestate_s...h': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-nev1w143/memory/savestate_sessdup.md', 'truncated': False}
+E       assert ({'body': '# Save-state savestate_sessdup {#root}\n\nthe stale top-level copy of savestate_sessdup', 'id': 'savestate_s...h': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-nev1w143/memory/savestate_sessdup.md', 'truncated': False} and '/var/folders...te_sessdup.md' == '/var/folders...te_sessdup.md'
+E         
+E         Skipping 71 identical leading characters in diff, use -v to show
+E         - /savestates/savestate_sessdup.md
+E         ? -----------
+E         + /savestate_sessdup.md)
+
+tests/test_savestate_subfolder.py:595: AssertionError
+_____ test_rd_duplicate_the_reader_takes_the_savestates_copy[unorganised] ______
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-w7rkazz4/memory')
+organised = False
+
+    @pytest.mark.parametrize("organised", [True, False], ids=["organised", "unorganised"])
+    def test_rd_duplicate_the_reader_takes_the_savestates_copy(memdir, organised):
+        if organised:
+            organise(memdir)
+        new, _old = _duplicate(memdir)
+        r = handoff._latest_savestate(memdir)
+>       assert r and r["path"] == str(new), r
+E       AssertionError: {'body': '# Save-state savestate_sessdup {#root}
+E         
+E         the stale top-level copy of savestate_sessdup', 'id': 'savestate_s...h': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-w7rkazz4/memory/savestate_sessdup.md', 'truncated': False}
+E       assert ({'body': '# Save-state savestate_sessdup {#root}\n\nthe stale top-level copy of savestate_sessdup', 'id': 'savestate_s...h': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-w7rkazz4/memory/savestate_sessdup.md', 'truncated': False} and '/var/folders...te_sessdup.md' == '/var/folders...te_sessdup.md'
+E         
+E         Skipping 71 identical leading characters in diff, use -v to show
+E         - /savestates/savestate_sessdup.md
+E         ? -----------
+E         + /savestate_sessdup.md)
+
+tests/test_savestate_subfolder.py:595: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_savestate_subfolder.py::test_ac3_only_new_files - Assertion...
+FAILED tests/test_savestate_subfolder.py::test_ac3_mixed_the_newest_is_new - ...
+FAILED tests/test_savestate_subfolder.py::test_ac3_cliquedb_shape_a_newer_mtime_with_an_older_updated_loses[mixed]
+FAILED tests/test_savestate_subfolder.py::test_ac3_same_day_two_sessions_the_session_saved_last_wins[new-date-only]
+FAILED tests/test_savestate_subfolder.py::test_ac3_same_day_two_sessions_the_session_saved_last_wins[new-datetime]
+FAILED tests/test_savestate_subfolder.py::test_ac3_mixed_formats_on_one_date_the_later_mtime_wins
+FAILED tests/test_savestate_subfolder.py::test_ac3_recall_state_cli_and_mcp_return_the_same_newest_from_savestates
+FAILED tests/test_savestate_subfolder.py::test_ac5_the_pointer_line_and_recall_state_name_the_same_newest
+FAILED tests/test_savestate_subfolder.py::test_rd_duplicate_the_reader_takes_the_savestates_copy[organised]
+FAILED tests/test_savestate_subfolder.py::test_rd_duplicate_the_reader_takes_the_savestates_copy[unorganised]
+10 failed, 51 passed in 16.49s

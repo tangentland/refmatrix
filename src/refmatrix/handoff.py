@@ -247,13 +247,15 @@ def _ss_update_index(memdir: Path, mem_id: str, title: str, hook: str) -> None:
 
     In an organised dir (task 26.3 AC-5) the link is `](savestates/<id>.md)`,
     and the needle also matches the legacy `](<id>.md)` line so a moved
-    save-state's old link is REPLACED, never left beside the new one. Every
+    save-state's old link is REPLACED, never left beside the new one; every
     matching line collapses into the one entry. An un-organised dir keeps
-    HEAD's link and needle byte for byte (ADR-0005 #marker, 26.1 AC-9)."""
+    HEAD's link, needle and per-line replacement byte for byte (ADR-0005
+    #marker, 26.1 AC-9)."""
     from refmatrix import memory_layout
     idx = memdir / "MEMORY.md"
     legacy = f"]({mem_id}.md)"
-    if memory_layout.is_organised(memdir):
+    organised = memory_layout.is_organised(memdir)
+    if organised:
         rel = f"{memory_layout.SAVESTATE_FOLDER}/{mem_id}.md"
         needles = (f"]({rel})", legacy)
     else:
@@ -267,7 +269,9 @@ def _ss_update_index(memdir: Path, mem_id: str, title: str, hook: str) -> None:
     out, replaced = [], False
     for ln in lines:
         if any(n in ln for n in needles):
-            if not replaced:
+            # Organised: the legacy line and the `savestates/` line are ONE
+            # entry, so a second match is dropped, not duplicated.
+            if not (organised and replaced):
                 out.append(line)
             replaced = True
         else:
