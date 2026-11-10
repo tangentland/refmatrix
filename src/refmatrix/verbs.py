@@ -1728,9 +1728,12 @@ def _memory_payload(action: str, a: dict) -> dict:
     if action == "dedup":
         return {"dry_run": bool(a.get("dry_run", False))}
     if action == "brief":
+        # `scope` here is the COMPILE scope (memory | pattern) whose corpus the
+        # detectors read (26.6 r1 remedy #rm-one-corpus); the op refuses any
+        # other value and a plan compiled for a different scope.
         p = {}
         for k in ("min_members", "min_dates", "min_mentions", "classes",
-                  "plan"):
+                  "plan", "scope"):
             if a.get(k) is not None:
                 p[k] = a[k]
         if a.get("save"):
@@ -1902,10 +1905,16 @@ def memory_compile(root: Path, *,
 
     ONE attempt (`retries=0`): a compile re-sent after a reset would land on a
     running compile, and the op's single-flight answer is the guard, not the
-    transport's retry loop (feedback_daemon_call_retries_multiply_timeouts)."""
+    transport's retry loop (feedback_daemon_call_retries_multiply_timeouts).
+
+    `status=True` asks the `memory_compile_status` op, which the daemon serves
+    on its cli pool: asked through `memory_compile` it queued behind the bg
+    pool's bulk jobs (26.6 r1 remedy #rm-status-route, 2026-11-10). An applied
+    run's result carries `subjects_gmd`, the subjects index the CLI writes to
+    `--out` (#rm-subjects-gmd)."""
     part = partition or memory_partition(root)
     if status:
-        return _call(root, "memory_compile", {"status": True, "partition": part},
+        return _call(root, "memory_compile_status", {"partition": part},
                      timeout=float(timeout) if timeout is not None else 10.0,
                      retries=0)
     payload = {"scope": scope, "dry_run": not apply, "invoked_by": invoked_by,

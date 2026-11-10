@@ -5399,11 +5399,11 @@ def _op_memory_compile(d: Daemon, args: dict) -> dict:
     """
     from refmatrix import consolidate
 
-    part = _memory_partition(d, args)
     if args.get("status"):
-        with d._compile_flight_lock:
-            run = dict(d._compile_run) if d._compile_run else None
-        return {"running": run is not None, "run": run, "partition": part}
+        # Kept for a caller that still asks this op; the verb asks
+        # `memory_compile_status`, which the dispatcher serves on the cli pool.
+        return _op_memory_compile_status(d, args)
+    part = _memory_partition(d, args)
     invoked_by = str(args.get("invoked_by") or "cli")
     if invoked_by not in MEMORY_COMPILE_INVOKERS:
         raise ValueError(f"memory_compile: invoked_by must be one of "
@@ -5450,6 +5450,22 @@ def _op_memory_compile(d: Daemon, args: dict) -> dict:
             "started_at": run["started_at"], "partition": part}
 
 
+def _op_memory_compile_status(d: Daemon, args: dict) -> dict:
+    """Is a memory compile running? `{running, run, partition}` from the
+    single-flight record alone; NEVER takes `_store_lock`.
+
+    Its own op, in `CLI_OPS`, because of where the dispatcher sends it, not
+    what it does (26.6 r1 remedy #rm-status-route, ch-bsd 26.6 r1 #m-1,
+    2026-11-10): as `memory_compile status=True` it was lock-free but routed to
+    the bg pool, so it queued behind up to 12 bulk jobs (a reingest, a bridge)
+    and timed out — the moment someone asks "is a compile running" is the
+    moment the bg pool is busy."""
+    part = _memory_partition(d, args)
+    with d._compile_flight_lock:
+        run = dict(d._compile_run) if d._compile_run else None
+    return {"running": run is not None, "run": run, "partition": part}
+
+
 def _names_for(store, ids: list) -> dict:
     """`{entity_id: name}` for the given ids — the map `--gmd` links against."""
     if not ids:
@@ -5470,11 +5486,15 @@ def _op_memory_brief(d: Daemon, args: dict) -> dict:
     """Derive coverage briefs; optionally persist them as memory rows.
 
     DERIVATION IS A READ and runs on the read path, not under the writer lock.
-    It decodes a couple of linkage fragments and runs two small SQL queries —
-    nothing like `memory compile`, whose vector matrix is why that pass stayed
-    in the caller (a fat daemon is the process jetsam kills). The expensive
-    half, the compile plan, arrives here as DATA the same way
-    `_op_memory_compile_apply` takes it.
+    It decodes a couple of linkage fragments and runs two small SQL queries.
+    The two plan-derived classes need a `memory compile` plan, which arrives
+    here as DATA (`plan`): `memory brief --compile` plans on the read replica
+    in the CLI process with `consolidate.compile_memories` — a read, not the
+    `memory_compile` op, which plans AND applies under `_store_lock` — and
+    ships the plan with the request. `scope` (default `memory`) names the
+    compile corpus every detector reads, and it must match the plan's
+    (26.6 r1 remedy #rm-one-corpus / #rm-stale-refs, 2026-11-10: this docstring
+    named the removed `_op_memory_compile_apply`).
 
     `save=True` is the only write, and it takes `_store_lock` — one memory row
     per brief in the `brief/<class>` namespace, so a brief is recallable by
@@ -5484,7 +5504,7 @@ def _op_memory_brief(d: Daemon, args: dict) -> dict:
 
     part = _memory_partition(d, args)
     kw = {k: args[k] for k in
-          ("min_members", "min_dates", "min_mentions", "classes")
+          ("min_members", "min_dates", "min_mentions", "classes", "scope")
           if args.get(k) is not None}
     if args.get("plan") is not None:
         kw["plan"] = args["plan"]
@@ -6584,6 +6604,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "subject_upsert": _op_subject_upsert,
     "subject_link": _op_subject_link,
     "memory_compile": _op_memory_compile,
+    "memory_compile_status": _op_memory_compile_status,
     "subject_list": _op_subject_list,
     "subject_leaves": _op_subject_leaves,
     "stop": _op_stop,
@@ -6634,6 +6655,8 @@ CLI_OPS: set[str] = {
     "memory_score",
     "subject_list",
     "subject_leaves",
+    # Lock-free, and asked while the bg pool is busy (26.6 r1 #rm-status-route).
+    "memory_compile_status",
     "ingest_gmd_status",
     "mem_mirror_status",
     "stop",

@@ -54,7 +54,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
 
 from refmatrix.scan import _PROMPT_STOPWORDS, _token_shape_score
-from refmatrix.store import _CONCEPT_SHIFT, _ENTITY_MASK, MEMORY_COMPILE_PASS
+from refmatrix.store import (
+    _CONCEPT_SHIFT, _ENTITY_MASK, MEMORY_COMPILE_PASS, MEMORY_COMPILE_SCOPE_PASSES,
+)
 
 if TYPE_CHECKING:
     from refmatrix.store import Store
@@ -107,11 +109,38 @@ def subject_scope(meta: dict) -> "str | None":
 
 # ---------------------------------------------------------------- corpus ---
 
+def in_corpus(*, name: str, mtype: "str | None", tags: Any, scope: str,
+              exclude_mtypes: Iterable[str]) -> bool:
+    """THE corpus predicate for a compile scope (R-A) — one rule over (name,
+    mtype, tags, scope), read by every reader of "the memories this scope
+    covers": the compile (`_memory_rows`) and the briefs (`brief._memory_ids`).
+
+    Task 26.6 r1 remedy #rm-one-corpus (ch-bsd 26.6 r1 #s-3, 2026-11-10): brief
+    kept its own copy of the filter, so after scopes landed `memory brief
+    --compile` ran `corroborated`/`singleton` over the scope-`memory` corpus
+    and `contradicted`/`orphan-concept` over a corpus that still held
+    impressions and `tag: pattern` docs — four detectors, two corpora, one
+    report. A second copy of this rule is how that happened; do not add one.
+
+    `tags` is the stored value: a list, its JSON text, or None."""
+    _check_scope(scope)
+    m = mtype or ""
+    if any(fnmatch.fnmatch(m, p) for p in exclude_mtypes):
+        return False
+    if _OPERATIONAL_RE.match(str(name)):
+        return False
+    if isinstance(tags, str):
+        tags = json.loads(tags) if tags else []
+    if isinstance(tags, list) and PATTERN_TAG in tags:
+        return False
+    return (m == PATTERN_MTYPE) == (scope == "pattern")
+
+
 def _memory_rows(
     store: "Store", *, exclude_mtypes: Iterable[str], scope: str = DEFAULT_SCOPE,
 ) -> list[dict]:
     """Memory rows of the active partition in `scope`'s corpus (R-A), minus
-    excluded mtypes (globs)."""
+    excluded mtypes (globs). The filter is `in_corpus`, shared with brief."""
     _check_scope(scope)
     store._connect()
     rows = store._read().execute(
@@ -122,20 +151,10 @@ def _memory_rows(
         (store._partition_id,),
     ).fetchall()
     pats = list(exclude_mtypes)
-    out = []
-    for r in rows:
-        mtype = r[2] or ""
-        if any(fnmatch.fnmatch(mtype, p) for p in pats):
-            continue
-        if _OPERATIONAL_RE.match(str(r[1])):
-            continue
-        tags = json.loads(r[3]) if r[3] else []
-        if isinstance(tags, list) and PATTERN_TAG in tags:
-            continue
-        if (mtype == PATTERN_MTYPE) != (scope == "pattern"):
-            continue
-        out.append({"id": int(r[0]), "name": str(r[1]), "mtype": mtype})
-    return out
+    return [{"id": int(r[0]), "name": str(r[1]), "mtype": r[2] or ""}
+            for r in rows
+            if in_corpus(name=r[1], mtype=r[2], tags=r[3], scope=scope,
+                         exclude_mtypes=pats)]
 
 
 def _concept_sets(
@@ -826,7 +845,14 @@ def run_compile(store: "Store", *, scope: str = DEFAULT_SCOPE, dry_run: bool = T
 
     The stamp (R-C) records which consolidate.py derived these subjects, so
     `rmx daemon status` can say when the compile code moved since. A failed
-    stamp is SAID in the result (`stamp_error`) and the apply stands."""
+    stamp is SAID in the result (`stamp_error`) and the apply stands. The pass
+    stamped is THIS scope's (`MEMORY_COMPILE_SCOPE_PASSES`, named in
+    `stamp_pass`): a pattern apply must never clear the memory scope's warning
+    (26.6 r1 remedy #rm-stamp-per-scope, ch-bsd r1 #s-1, 2026-11-10).
+
+    An applied run also carries `subjects_gmd`, the rendered subjects index
+    (26.6 r1 remedy #rm-subjects-gmd, ch-bsd r1 #m-5): the CLI writes that text
+    to `--out`, and an MCP caller gets the same text instead of nothing."""
     unknown = set(params) - set(COMPILE_PARAMS)
     if unknown:
         raise ValueError(f"run_compile: unknown compile param(s) {sorted(unknown)}")
@@ -840,12 +866,15 @@ def run_compile(store: "Store", *, scope: str = DEFAULT_SCOPE, dry_run: bool = T
     res = apply_plan(store, plan, prune=prune, scope=scope)
     out.update({k: v for k, v in res.items() if k != "labels"})
     out["applied"] = True
+    out["subjects_gmd"] = render_gmd(plan, partition=plan["stats"].get("partition"))
+    stamp_pass = MEMORY_COMPILE_SCOPE_PASSES[scope]
+    out["stamp_pass"] = stamp_pass
     try:
-        store.stamp_derive(COMPILED_BY)
+        store.stamp_derive(stamp_pass)
     except Exception as exc:  # noqa: BLE001 — said in the result and on stderr
         import sys as _sys
         out["stamp_error"] = f"{type(exc).__name__}: {exc}"
-        print(f"warning: derive stamp `{COMPILED_BY}` failed: {out['stamp_error']}",
+        print(f"warning: derive stamp `{stamp_pass}` failed: {out['stamp_error']}",
               file=_sys.stderr)
     return out
 

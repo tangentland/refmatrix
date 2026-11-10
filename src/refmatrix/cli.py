@@ -3601,26 +3601,39 @@ def render_derive_warning(status: "dict | None", *,
 
 def render_memory_compile_warning(status: "dict | None", *,
                                   partition: "str | None" = None) -> str:
-    """One line when the partition's compiled subjects were derived by an
-    older consolidate.py, or exist with NO memory-compile stamp; NOTHING
-    otherwise (task 26.6 R-C, 2026-11-09).
+    """One line PER compile scope whose compiled subjects were derived by an
+    older consolidate.py, or exist with NO stamp for that scope; NOTHING when
+    every scope is current (task 26.6 R-C, 2026-11-09).
 
     Separate from `render_derive_warning` on purpose: the compile is excluded
     from the partition verdict (`store._DERIVE_VERDICT_EXCLUDED`), and its
     remedy is `rmx memory compile --apply`, not `rmx reingest --force`. The
     live junk labels were compiled on 2026-07-31, before any stamp existed, and
-    no surface said so — hence the unstamped case prints too."""
+    no surface said so — hence the unstamped case prints too.
+
+    Per scope (26.6 r1 remedy #rm-stamp-per-scope, ch-bsd r1 #s-1,
+    2026-11-10): one shared line let a pattern apply silence a stale memory
+    scope. Each stale scope prints its own line naming its own remedy."""
     mc = (status or {}).get("memory_compile") or {}
-    if not mc.get("needs_compile"):
-        return ""
+    scopes = mc.get("scopes")
+    if not isinstance(scopes, dict):
+        # A daemon from before per-scope stamps answers the memory scope only.
+        scopes = {"memory": mc} if mc else {}
     where = f" (partition {partition})" if partition else ""
-    if mc.get("behind_code"):
-        why = "consolidate.py changed since the last compile"
-    else:
-        why = (f"{mc.get('compiled_subjects', 0)} compiled subject(s) and no "
-               f"compile stamp")
-    return (f"memory-compile: behind code — rmx memory compile --apply{where}; "
-            f"{why}")
+    lines = []
+    for scope in sorted(scopes, key=lambda sc: (sc != "memory", sc)):
+        st = scopes[scope] or {}
+        if not st.get("needs_compile"):
+            continue
+        fix = ("rmx memory compile --apply" if scope == "memory"
+               else f"rmx memory compile --apply --scope {scope}")
+        if st.get("behind_code"):
+            why = "consolidate.py changed since the last compile"
+        else:
+            why = (f"{st.get('compiled_subjects', 0)} compiled subject(s) and no "
+                   f"compile stamp")
+        lines.append(f"memory-compile: behind code — {fix}{where}; scope {scope}: {why}")
+    return "\n".join(lines)
 
 
 @daemon.command("status")
@@ -3683,14 +3696,14 @@ def daemon_status():
                     # into the partition's derive verdict above.
                     mwarn = render_memory_compile_warning(parts[name], partition=name)
                     if mwarn:
-                        console.print(f"[yellow]{rich_escape(mwarn)}[/]")
+                        console.print(f"[yellow]{rich_escape(mwarn)}[/]", soft_wrap=True)
             else:
                 warn = render_derive_warning(result)
                 if warn:
                     console.print(f"[yellow]{rich_escape(warn)}[/]")
                 mwarn = render_memory_compile_warning(result)
                 if mwarn:
-                    console.print(f"[yellow]{rich_escape(mwarn)}[/]")
+                    console.print(f"[yellow]{rich_escape(mwarn)}[/]", soft_wrap=True)
         except Exception as e:  # noqa: BLE001 — diagnostic line, must not raise
             # Unknown is NOT clean on this screen (bsd-plan1 #s-3): the
             # condition that makes a store stale — an ingest under new code —
@@ -13314,11 +13327,19 @@ def memory_compile(scope, k, threshold, threshold_pct, mutual, beta, gamma,
         f"{res.get('stale_total', 0)} stale in scope {res.get('scope', scope)}"
     )
     if res.get("stamp_error"):
-        console.print(f"[yellow]derive stamp `memory-compile` NOT recorded:[/] "
-                      f"{rich_escape(str(res['stamp_error']))}")
+        console.print(f"[yellow]derive stamp `{rich_escape(str(res.get('stamp_pass')))}` "
+                      f"NOT recorded:[/] {rich_escape(str(res['stamp_error']))}")
 
-    gmd = consolidate.render_gmd(
-        plan, partition=plan["stats"].get("partition"))
+    # The verb renders the index (26.6 r1 remedy #rm-subjects-gmd, ch-bsd r1
+    # #m-5): this command only WRITES it, so an MCP caller holds the same text
+    # and the adapter owns no side effect of its own. An applied result without
+    # it is a run this code cannot vouch for — said, never re-rendered here.
+    gmd = res.get("subjects_gmd")
+    if not isinstance(gmd, str):
+        raise click.ClickException(
+            "the compile applied but its result carries no `subjects_gmd`; the "
+            "serving daemon predates it — `rmx daemon restart --relaunch`, then "
+            "re-run to write the index")
     if str(out) == "-":
         # Same defect as the brief --gmd path: rich would eat every `[[link]]`
         # (ch-bsd r3 #b-1-r3, sibling).
@@ -13384,12 +13405,18 @@ def memory_brief(classes, min_members, min_dates, min_mentions, do_compile,
               min_mentions=min_mentions)
     if classes:
         kw["classes"] = list(classes)
+    # ONE corpus for all four detectors (26.6 r1 remedy #rm-one-corpus, ch-bsd
+    # r1 #s-3): the plan and the briefs name the same compile scope, so
+    # `corroborated`/`singleton` (from the plan) and `contradicted`/
+    # `orphan-concept` (from the op) read the same rows.
+    kw["scope"] = consolidate.DEFAULT_SCOPE
     if do_compile:
-        # The clustering pass reads the whole vector matrix, so it stays in
-        # THIS process — the daemon is what jetsam kills when it grows fat.
-        # The plan travels to the op as data, exactly as memory compile --apply
-        # already does.
-        kw["plan"] = consolidate.compile_memories(_read_store())
+        # A PLAN only, on the read replica in this process: briefs are a read,
+        # and the `memory_compile` op plans AND applies under the writer lock
+        # (#rm-stale-refs: this comment described the removed plan-as-data
+        # apply). The plan travels to the brief op as data.
+        kw["plan"] = consolidate.compile_memories(
+            _read_store(), scope=consolidate.DEFAULT_SCOPE)
     if save:
         kw["save"] = True
 
