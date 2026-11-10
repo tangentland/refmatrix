@@ -5,7 +5,7 @@ title: "Task 26.6: the memory_compile op and verb, scope-aware compile, stale-ma
 tags: [implementation-summary, plan-26, plan-19, compile, subjects, derive-stamp, memory-index, bridge]
 metadata:
   node_type: implementation-summary
-  status: complete
+  status: in-progress
   created: 2026-11-09
 ---
 
