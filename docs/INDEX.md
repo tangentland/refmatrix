@@ -33,6 +33,7 @@ rel: catalogs -> [[0001-intuition-lance-integration]]
 rel: catalogs -> [[adr-0002-subject-memory-container]]
 rel: catalogs -> [[adr-0003-canonical-partition-layout]]
 rel: catalogs -> [[adr-0004-unified-location-space-index]]
+rel: catalogs -> [[refmatrix/adr-0005-memory-dir-layout]]
 
 | Doc | Hook |
 |-----|------|
@@ -41,6 +42,7 @@ rel: catalogs -> [[adr-0004-unified-location-space-index]]
 | [[adr-0002-subject-memory-container]] | Subject: memory-scoped working/durable container for threads of work (Proposed) |
 | [[adr-0003-canonical-partition-layout]] | Canonical partition layout: two per project store, one for global, benchmarks mirror production (Proposed) |
 | [[adr-0004-unified-location-space-index]] | One location space for every search mechanism; sentence co-location measured +4–14% MRR (Proposed) |
+| [[refmatrix/adr-0005-memory-dir-layout]] | Memory dir by type/lifecycle folders (`savestates/`, `impressions/`); topic = derived subject; `.memory-layout` marker gates new on-disk behaviour (Proposed) |
 
 ## Authoring guides {#guides}
 

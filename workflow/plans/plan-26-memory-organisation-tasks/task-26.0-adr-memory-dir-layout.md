@@ -5,7 +5,7 @@ title: "Task 26.0: ADR-0005 — the curated memory dir is laid out by type and l
 tags: [task, plan-26, adr, memory-dir, layout]
 metadata:
   node_type: task
-  status: pending
+  status: complete
   plan: plan-26-memory-organisation
   updated: 2026-11-09
 ---
@@ -13,7 +13,8 @@ metadata:
 # Task 26.0: ADR-0005 memory-dir layout {#root}
 
 > Plan: [[plan-26-memory-organisation]]
-> Status: Pending
+> Status: Completed — `docs/adr/0005-memory-dir-layout.md` (Proposed), 2026-11-09;
+> summary [[impl-task-26.0-adr-memory-dir-layout]]
 > Depends on: nothing. Author: `@ch-architect` (dispatched by `/ch-crucible`).
 
 rel: part-of -> [[plan-26-memory-organisation]]
