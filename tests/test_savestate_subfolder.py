@@ -568,47 +568,129 @@ def test_rd_one_newest_a_flat_dirs_pointer_names_the_readers_newest(memdir, shap
     assert (name, rel) == ("savestate_n", "savestate_n.md"), (name, rel)
 
 
-# #rd-duplicate: a crash mid-move leaves both `<id>.md` and `savestates/<id>.md`. The reader
-# takes the `savestates/` copy; the next save of that id writes `savestates/`, removes the
-# top-level copy and prints `removed duplicate top-level <name>`; until then the bridge counts
-# and names the duplicate in its skip line.
+# #rm-newer-copy (remedy after ch-bsd 26.3 r1; supersedes #rd-duplicate): two copies of one
+# save-state id -- `<id>.md` and `savestates/<id>.md` -- form when ANOTHER writer (an MCP
+# server not yet respawned after the deploy, or a flat dir that still has `savestates/`) puts a
+# fresh top-level copy beside an older folder copy; the writer's replace-first order cannot
+# produce a crash pair. Of the two, the walk keeps the one that sorts newest under ADR-0005's
+# key (`sort_savestates`); a full tie keeps `savestates/`. The other copy is skipped, counted
+# and named. #rd-duplicate's "the folder copy always wins" read the STALE copy (the auditor's
+# orgshadow.py / flatshadow.py probes: `newest read: STALE`, organised and flat).
 
 DUP = "savestate_sessdup"
+PAIR_CASES = ("fresh-top", "fresh-folder", "tie")
 
 
-def _duplicate(memdir: Path) -> tuple:
-    """Both copies; the TOP-LEVEL one is the later mtime (the copy a crash after the write and
-    before the unlink would leave newer), so a reader that only sorts picks the wrong one."""
-    new = ss(memdir, f"savestates/{DUP}.md", created="2026-11-01", updated="2026-11-08",
-             mtime=at(2026, 11, 8, 9), body="the savestates copy")
-    old = ss(memdir, f"{DUP}.md", created="2026-11-01", updated="2026-11-08",
-             mtime=at(2026, 11, 8, 10), body="the stale top-level copy")
-    return new, old
+def _pair(memdir: Path, case: str) -> tuple:
+    """`(kept, other)` for one pair case.
+
+    fresh-top    (a): top-level updated 11-10, folder 11-01 -> top-level.
+    fresh-folder (b): folder updated 11-10; the top-level copy has the LATER mtime but an older
+                      `updated` date -> the folder (the date decides before mtime).
+    tie          (c): same `updated`, same mtime -> the folder."""
+    folder_p, top_p = f"savestates/{DUP}.md", f"{DUP}.md"
+    if case == "fresh-top":
+        folder = ss(memdir, folder_p, created="2026-10-01", updated="2026-11-01",
+                    mtime=at(2026, 11, 1, 9), body="STALE folder copy")
+        top = ss(memdir, top_p, created="2026-11-05", updated="2026-11-10T10:00:00",
+                 mtime=at(2026, 11, 10, 10), body="FRESH top-level copy")
+        return top, folder
+    if case == "fresh-folder":
+        folder = ss(memdir, folder_p, created="2026-11-05", updated="2026-11-10T09:00:00",
+                    mtime=at(2026, 11, 10, 9), body="FRESH folder copy")
+        top = ss(memdir, top_p, created="2026-10-01", updated="2026-11-01",
+                 mtime=at(2026, 11, 10, 10), body="STALE top-level copy")
+        return folder, top
+    assert case == "tie", case
+    folder = ss(memdir, folder_p, created="2026-11-05", updated="2026-11-08",
+                mtime=at(2026, 11, 8, 9), body="TIED folder copy")
+    top = ss(memdir, top_p, created="2026-11-05", updated="2026-11-08",
+             mtime=at(2026, 11, 8, 9), body="TIED top-level copy")
+    return folder, top
 
 
-@pytest.mark.parametrize("organised", [True, False], ids=["organised", "unorganised"])
-def test_rd_duplicate_the_reader_takes_the_savestates_copy(memdir, organised):
+def _marker_of(path: Path) -> str:
+    return path.read_text(encoding="utf-8").strip().splitlines()[-1]
+
+
+@pytest.mark.parametrize("organised", [True, False], ids=["organised", "flat"])
+@pytest.mark.parametrize("case", PAIR_CASES)
+def test_rm_newer_copy_the_walk_keeps_the_newer_copy_and_skips_the_other(memdir, case,
+                                                                        organised):
     if organised:
         organise(memdir)
-    new, _old = _duplicate(memdir)
+    kept, other = _pair(memdir, case)
+    skipped: list = []
+    walked = [Path(p) for p in memory_layout.iter_memory_files(memdir, skipped=skipped)]
+    assert kept in walked and other not in walked, (case, walked)
+    assert other in [Path(p) for p in skipped], f"the other copy is not named: {skipped}"
+    assert [Path(p) for p in memory_layout.iter_savestates(memdir)] == [kept]
+
+
+@pytest.mark.parametrize("organised", [True, False], ids=["organised", "flat"])
+@pytest.mark.parametrize("case", PAIR_CASES)
+def test_rm_newer_copy_reader_pointer_and_recall_state_use_the_kept_copy(memdir, case,
+                                                                        organised):
+    if organised:
+        organise(memdir)
+    kept, other = _pair(memdir, case)
+    note(memdir, "feedback_x.md", mtype="feedback", mtime=at(2026, 11, 1))
     r = handoff._latest_savestate(memdir)
-    assert r and r["path"] == str(new), r
-    assert "the savestates copy" in r["body"] and "stale top-level" not in r["body"], r["body"]
+    assert r and r["path"] == str(kept), (case, r and r["path"])
+    assert _marker_of(kept) in r["body"] and _marker_of(other) not in r["body"], r["body"]
+    mi.write(memdir, out=io.StringIO())
+    _name, rel = _pointer_newest(memdir)
+    assert rel == str(kept.relative_to(memdir)), (case, rel)
+    rep = verbs.VERBS["rmx_recall_state"].run(
+        store_root(), {"session": "sess-pair", "memory_dir": str(memdir)})
+    assert rep["savestate"]["path"] == str(memdir.resolve() / kept.relative_to(memdir)), \
+        (case, rep["savestate"]["path"])
 
 
-def test_rd_duplicate_the_next_save_writes_savestates_and_removes_the_top_level_copy(memdir):
+def test_rm_newer_copy_the_next_save_keeps_the_fresh_top_levels_created(memdir):
+    """(a) in an organised dir: the next save writes `savestates/` with the KEPT copy's
+    `created:` (the fresh top-level one), removes the top-level copy, and says which it
+    removed. At #rd-duplicate the folder copy's `created:` was taken."""
     organise(memdir)
-    new, old = _duplicate(memdir)
+    top, folder = _pair(memdir, "fresh-top")
     r = CliRunner().invoke(cli_mod.main, ["save-state", "-s", "sess-dup", "--memory-dir",
                                           str(memdir), "--no-lint", "--no-promote", "--no-sync",
-                                          "-m", "after the crash"])
+                                          "-m", "after the pair"])
     assert r.exit_code == 0, f"{r.output}\n{r.exception!r}"
-    assert not old.exists(), "the top-level duplicate survived the next save"
-    assert "after the crash" in new.read_text(encoding="utf-8"), "the save did not reach savestates/"
-    assert fm(new, "created") == "2026-11-01"
+    assert "after the pair" in folder.read_text(encoding="utf-8")
+    assert fm(folder, "created") == "2026-11-05", "the kept (top-level) copy's created: was lost"
+    assert not top.exists(), "the top-level copy survived the next save"
     assert md_files(memdir) == [f"savestates/{DUP}.md"], md_files(memdir)
     said = " ".join(r.output.split())
-    assert f"removed duplicate top-level {DUP}" in said, r.output
+    assert "removed" in said and f"{DUP}.md" in said, r.output
+
+
+def test_rm_newer_copy_the_top_level_copy_is_removed_only_after_savestates_is_written(memdir):
+    """The top-level copy goes only once `savestates/` holds the save (or holds the top-level
+    copy's content, if it was moved in). With `savestates/` unwritable -- a read-only folder
+    AND a read-only file, so neither a write in place, a temp+rename nor an `os.replace` into
+    it can land -- the save fails, and the fresh top-level copy must still be there: it is the
+    only copy of the newest save."""
+    organise(memdir)
+    top, folder = _pair(memdir, "fresh-top")
+    fresh = top.read_text(encoding="utf-8")
+    os.chmod(folder, 0o444)
+    os.chmod(folder.parent, 0o555)
+    try:
+        r = CliRunner().invoke(cli_mod.main, ["save-state", "-s", "sess-dup", "--memory-dir",
+                                              str(memdir), "--no-lint", "--no-promote",
+                                              "--no-sync", "-m", "cannot land"])
+    finally:
+        os.chmod(folder.parent, 0o755)
+        os.chmod(folder, 0o644)
+    landed = folder.read_text(encoding="utf-8")
+    if not top.exists():
+        assert "cannot land" in landed or landed == fresh, \
+            "the top-level copy was removed before savestates/ held the save"
+    else:
+        assert top.read_text(encoding="utf-8") == fresh
+    assert r.exit_code != 0 or "cannot land" in landed, \
+        f"the save reported success without writing savestates/: {r.output}"
 
 
 @pytest.fixture
@@ -621,28 +703,30 @@ def inproc_store(monkeypatch, base):
     return root
 
 
-def test_rd_duplicate_the_bridge_counts_and_names_the_duplicate_before_the_save(
-        inproc_store, base):
+@pytest.mark.parametrize("organised", [True, False], ids=["organised", "flat"])
+@pytest.mark.parametrize("case", PAIR_CASES)
+def test_rm_newer_copy_the_bridge_skips_and_names_the_other_copy(inproc_store, base, case,
+                                                                organised):
     root = inproc_store
     memdir = base / "memory"
     memdir.mkdir()
-    organise(memdir)
-    _duplicate(memdir)
+    if organised:
+        organise(memdir)
+    kept, other = _pair(memdir, case)
     note(memdir, "feedback/feedback_x.md", mtype="feedback", mtime=at(2026, 11, 1))
     assert not dm.ping(root, retries=0), "the in-process leg must run with NO daemon"
     out = cli_mod._sync_memory_dir(memdir)
     assert out["error"] is None, out
-    assert out.get("skipped") == 1, f"the duplicate is not counted as a skip: {out}"
-    named = " ".join(str(p) for p in (out.get("skipped_paths") or []))
-    # named by absolute path (either spelling of a macOS tmp dir) or by memdir-relative path
-    spellings = (str(memdir / f"{DUP}.md"), str(memdir.resolve() / f"{DUP}.md"))
-    assert any(x in named for x in spellings) or f" {DUP}.md" in f" {named}", out
-    assert "savestates/" not in named, f"the savestates/ copy was skipped instead: {named}"
+    assert out.get("skipped") == 1, f"the other copy is not counted as a skip: {out}"
+    named = [str(p) for p in (out.get("skipped_paths") or [])]
+    rel = str(other.relative_to(memdir))
+    spellings = {str(other), str(memdir.resolve() / rel), rel}
+    assert any(n in spellings for n in named), (case, named)
     report = " ".join(str(out.get("report") or "").split())
-    assert re.search(r"skipped 1\b", report) and f"{DUP}.md" in report, report
+    assert re.search(r"skipped 1\b", report), report
     s = Store(root)
     try:
         row = s.find_memory_any_partition(DUP)
     finally:
         s.close()
-    assert row and "the savestates copy" in (row.get("content") or ""), row
+    assert row and _marker_of(kept) in (row.get("content") or ""), (case, row)
