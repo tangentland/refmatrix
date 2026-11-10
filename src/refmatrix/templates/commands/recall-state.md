@@ -6,9 +6,9 @@ description: Recall state — orient on the prior session before doing anything
 orient before taking any other action. The mirror of "save state." Do every
 step, then WAIT for direction — the orient pass is the whole job.
 
-1. **Latest handoff** — pull the prior session's save-state handoff (the
-   newest `savestate_*` memory in the project memory dir) plus the promoted
-   STM digest and recent memories:
+1. **Latest handoff** — pull the prior session's save-state handoff, the
+   newest save-state (`savestates/`, legacy top-level) in the project memory
+   dir, plus the promoted STM digest and recent memories:
    ```
    rmx recall-state         # handoff + git + daemon + anomalies, one shot
    rmx memory recall --session-start --k 10 --scope both

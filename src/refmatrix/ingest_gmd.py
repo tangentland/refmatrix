@@ -1409,7 +1409,8 @@ def render_memory_skip_line(skipped) -> str:
     more = len(names) - len(shown)
     return (f"ingest-gmd --as-memory: skipped {len(names)} non-memory path(s) "
             f"(dot-path, README.md, nested MEMORY.md, symlinked folder, dangling "
-            f"link or .gmd; ADR-0005 #one-walk): {', '.join(shown)}"
+            f"link, .gmd, or a top-level save-state shadowed by its savestates/ "
+            f"copy; ADR-0005 #one-walk): {', '.join(shown)}"
             f"{f' … and {more} more' if more else ''}")
 
 

@@ -13679,6 +13679,14 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
     console.print(f"[green]save-state[/] {res['target']}  "
                   f"[dim]({res['events']} events, session {res.get('session')}, "
                   f"{res.get('session_source')})[/]")
+    # Task 26.3: say every file the save MOVED or REMOVED in the memory dir.
+    if res.get("moved_legacy"):
+        console.print(f"[dim]  moved legacy top-level {Path(res['moved_legacy']).name} "
+                      f"into savestates/[/]")
+    if res.get("removed_duplicate"):
+        console.print(f"[yellow]removed duplicate top-level "
+                      f"{Path(res['removed_duplicate']).name}[/] (a crash mid-move left "
+                      f"it beside the savestates/ copy)")
 
     fin = res
     lint_out = fin.get("lint")

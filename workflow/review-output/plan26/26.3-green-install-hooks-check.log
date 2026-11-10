@@ -1,0 +1,16 @@
+hooks drift /Volumes/littlebig/refmatrix-plan26-3/.claude/settings.json
+! these hooks were generated for another checkout (/Users/tholley/claude_tools/refmatrix); this tree is /Volumes/littlebig/refmatrix-plan26-3 — the entries below differ by path prefix, not by content
+- SessionStart/startup|resume: {"command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; ( rmx sync --flush-queue --async >/dev/null 2>&1 || true ; rmx primer --out '/Users/tholley/claude_tools/refmatrix/.refmatrix/PRIMER.md' >/dev/null 2>&1 || true ) & disown ; rmx curator status || true", "type": "command"}
++ SessionStart/startup|resume: {"command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; ( rmx sync --flush-queue --async >/dev/null 2>&1 || true ; rmx primer --out '/Volumes/littlebig/refmatrix-plan26-3/.refmatrix/PRIMER.md' >/dev/null 2>&1 || true ) & disown ; rmx curator status || true", "type": "command"}
+- SessionStart/startup|resume|clear: {"command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx ingest-gmd --as-memory --detach '/Users/tholley/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory'", "type": "command"}
++ SessionStart/startup|resume|clear: {"command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx ingest-gmd --as-memory --detach '/Users/tholley/.claude/projects/-Volumes-littlebig-refmatrix-plan26-3/memory'", "type": "command"}
+
+==== 26.3 GREEN AC-7 note ====
+Command: REFMATRIX_ROOT=<clone>/.refmatrix PYTHONPATH=<clone>/src .venv-eval/bin/python -B -m refmatrix.cli install-hooks --check --scope project
+(dev interpreter, clone tree, no store: <clone>/.refmatrix does not exist and was not created)
+exit 1 at GREEN and exit 1 at HEAD 566582d src (git stash of src + .claude/commands); the two outputs are
+byte-identical (diff empty). The only drift is the 2 entries the check itself names as "generated for
+another checkout ... differ by path prefix, not by content" (the clone lives at
+/Volumes/littlebig/refmatrix-plan26-3, the committed settings.json was generated in
+/Users/tholley/claude_tools/refmatrix). The hook config carries no command docs (#rd-ac7), and GREEN
+adds no drift: in the dev tree the check is as clean as it is at master.
