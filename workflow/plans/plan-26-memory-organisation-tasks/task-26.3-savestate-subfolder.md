@@ -166,3 +166,24 @@ duplicate id and keeps the stored row. The one pair this task produces on purpos
 exception: the `savestates/` copy is ingested, the top-level copy is skipped, counted and named.
 Every other duplicate id follows 26.2 AC-4. Whichever of 26.2 / 26.3 merges second carries the
 combined test. {#rd-duplicate-vs-262}
+
+## Remedy after ch-bsd 26.3 r1 (2026-11-10) {#remedy-r1}
+
+rel: derives-from -> [[bsd-task-26.3-r1-savestate-subfolder]]
+rel: supersedes -> [[#rd-duplicate]]
+
+**s-1: a pair keeps the NEWER copy, not the folder copy.** `#rd-duplicate` assumed a crash
+mid-move, which the writer's replace-first order cannot produce. A real pair forms only when
+another writer (an MCP server not yet respawned after the deploy, or a flat dir that still has
+`savestates/`) puts a fresh top-level copy beside an older folder copy. Rule, in the one walk
+(`memory_layout`): of the two copies of one save-state id, keep the one that sorts newest under
+ADR-0005's key (`sort_savestates`); on a full tie keep `savestates/`. The other copy is skipped,
+counted and named; the next save in an organised dir writes `savestates/` with the kept copy's
+`created:` and removes the top-level copy, printing which one it removed. **ACs:** (a) fresh
+top-level + stale folder copy → reader, pointer and recall-state use the top-level copy;
+(b) fresh folder + stale top-level → the folder copy; (c) a full tie → the folder copy; each in
+an organised and a flat dir. **Mutation:** always prefer `savestates/` — killed by (a).
+{#rm-newer-copy}
+
+**m-2:** `updated:` carries an ISO timestamp for save-states; `~/.claude/MEMORY-RULES.md`
+`#frontmatter` is amended to say so (orchestrator, 2026-11-10). {#rm-updated-rule}
