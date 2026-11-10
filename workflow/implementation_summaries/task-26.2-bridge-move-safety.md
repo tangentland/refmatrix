@@ -58,8 +58,10 @@ fixed before 26.5 ships. The RED group is `27e21dc` + `75cd42e`
   - The refusals are carried by `IngestStats.duplicate_ids`, by `_bridge_stats` (all three
     legs, including the waited job) and by the report line `duplicate_ids: N` with every path.
     `save-state` prints that report.
-  - `split_claims` is the **single hook point** for 26.3's exemption of the `savestate_*`
-    top-level/`savestates/` pair. 26.3's preference between the two is NOT implemented here.
+  - The `savestate_*` top-level/`savestates/` pair (#rd-262-263) never reaches `split_claims`:
+    26.3 resolves it in the walk (`memory_layout.iter_memory_files`, spec #ac-4c-combined), so
+    no exemption lives in 26.2. The combined AC-4c test belongs to whichever of 26.2 / 26.3
+    merges second.
 - **AC-3, the measurement.** `rmx ingest-gmd --as-memory --dry-run` calls
   `plan_memory_refresh`, which only reads the store. It prints `refresh_pending` and the four
   terms. {#c-dry}

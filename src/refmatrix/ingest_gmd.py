@@ -1032,11 +1032,13 @@ def split_claims(claims: "dict[str, list[Path]]") -> "tuple[set[str], list]":
     walked silently won). Not marker-gated: a silent last-wins is a defect in
     every dir (#rd-fresh-duplicate).
 
-    THE single place a claim is judged. Task 26.3 (built in parallel) owns the
-    one sanctioned pair -- a save-state at the top level and its
-    `savestates/` copy mid-move (#rd-262-263, 26.3 #rd-duplicate-vs-262);
-    its exemption and its preference between the two belong HERE, so the
-    bridge and `--dry-run` cannot judge a claim two ways."""
+    THE single place a claim is judged, for the bridge and `--dry-run` alike.
+    The one sanctioned pair -- a save-state at the top level and its
+    `savestates/` copy mid-move (#rd-262-263) -- never reaches it: task 26.3
+    resolves that pair in the WALK (`memory_layout.iter_memory_files`, 26.3
+    #rm-newer-copy; spec #ac-4c-combined), which keeps one copy and names the
+    dropped one on its skip list. So no exemption lives here; a pair that does
+    reach this function is a real conflict and is refused."""
     refused: set[str] = set()
     dups: list = []
     for doc_id, ps in claims.items():
