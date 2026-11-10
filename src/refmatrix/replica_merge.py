@@ -33,7 +33,7 @@ from typing import Any
 
 import duckdb
 
-from refmatrix.backend import attach_file, open_duckdb
+from refmatrix.backend import attach_file, bulk_write, open_duckdb
 from refmatrix.duckdb_catalog import init_catalog
 
 
@@ -204,6 +204,23 @@ def _partition_clashes(pa: "dict[str, int]", pb: "dict[str, int]") -> "list[str]
     return by_name + by_id
 
 
+def _fill_remap(con, table: str, old_col: str, new_col: str,
+                remap: "dict[int, int]") -> None:
+    """Fill a two-column BIGINT remap temp table from `remap` in ONE set-based
+    INSERT (bug-178, 2026-11-09). These went through DuckDB executemany — one
+    statement per collision (10,000 in a 2 x 5,000-collision merge) on the
+    merge target's raw connection. Empty `remap` writes nothing."""
+    bulk_write(
+        con,
+        f"INSERT INTO {table} ({old_col}, {new_col}) "
+        f"SELECT {old_col}, {new_col} FROM {{view}}",
+        [old_col, new_col],
+        list(remap.items()),
+        types={old_col: "int64", new_col: "int64"},
+        view=f"_rmx_{table}",
+    )
+
+
 def _merge_linkage_types(con) -> None:
     """linkage_types by NAME (bug-128): refmatrix's own snapshot vs its stale
     slot A failed `Duplicate key "name: part-of"` — one name, different ids.
@@ -228,8 +245,9 @@ def _merge_linkage_types(con) -> None:
         taken.add(tgt)
         if tgt != bid:
             remap[bid] = tgt
-    if remap:
-        con.executemany("INSERT INTO remap_lk_b VALUES (?, ?)", list(remap.items()))
+    # One set-based INSERT (bug-178): `con` is a raw DuckDBPyConnection, where
+    # executemany is one statement per row.
+    _fill_remap(con, "remap_lk_b", "old_id", "new_id", remap)
     con.execute("""
         INSERT INTO linkage_types BY NAME
         SELECT bl.* EXCLUDE (id, inverse_of),
@@ -322,10 +340,8 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
     # Materialize remap as temp tables for SQL joins.
     con.execute("CREATE TEMP TABLE remap_a (loser_id BIGINT, canonical_id BIGINT)")
     con.execute("CREATE TEMP TABLE remap_b (loser_id BIGINT, canonical_id BIGINT)")
-    if remap_a:
-        con.executemany("INSERT INTO remap_a VALUES (?, ?)", list(remap_a.items()))
-    if remap_b:
-        con.executemany("INSERT INTO remap_b VALUES (?, ?)", list(remap_b.items()))
+    _fill_remap(con, "remap_a", "loser_id", "canonical_id", remap_a)
+    _fill_remap(con, "remap_b", "loser_id", "canonical_id", remap_b)
 
     # ---- 5. entities: drop losers, union, newer-wins on shared ids -----
     con.execute("""

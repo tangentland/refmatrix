@@ -69,4 +69,4 @@ def test_clear_scopes_to_a_like_glob(store):
 def test_clear_leaves_a_store_with_no_stamps_alone(store):
     r = store.clear_tracked_stamps()
     assert r == {"stamps_cleared": 0, "gmd_hashes_cleared": 0,
-                 "partition": r["partition"]}
+                 "gmd_hashes_skipped": 0, "partition": r["partition"]}

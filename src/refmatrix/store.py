@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
 from pyroaring import BitMap, BitMap64
 
+from refmatrix.backend import bulk_write
 from refmatrix.edge_records import edge_event, edge_fields, resolve_legacy_kind
 
 _CONCEPT_WORD_SPLIT_RE = re.compile(r"[\s_\-]+")
@@ -47,6 +48,75 @@ def _canonical_for_kind(kind: str, name: str) -> str | None:
         return None
     from refmatrix.identifier import canonicalize_name
     return canonicalize_name(name)
+
+
+# `bulk_upsert_entity`'s one upsert, shared by its DuckDB (Arrow) and SQLite
+# (executemany) forms so the two cannot drift (bug-178, 2026-11-09).
+_ENTITY_UPSERT_COLS = (
+    "partition_id, kind, name, path, tldr, meta, created_at, updated_at, "
+    "protected, canonical_name")
+_ENTITY_UPSERT_TYPES = {
+    "partition_id": "int64", "kind": "string", "name": "string", "path": "string",
+    "tldr": "string", "meta": "string", "created_at": "float64",
+    "updated_at": "float64", "protected": "int64", "canonical_name": "string",
+}
+_ENTITY_UPSERT_CONFLICT = (
+    "ON CONFLICT(partition_id, kind, name) DO UPDATE SET "
+    "path = COALESCE(excluded.path, entities.path), "
+    "tldr = COALESCE(excluded.tldr, entities.tldr), "
+    "meta = COALESCE(excluded.meta, entities.meta), "
+    "updated_at = CASE WHEN "
+    "  (excluded.path IS NOT NULL AND (entities.path IS NULL OR entities.path <> excluded.path)) "
+    "OR (excluded.tldr IS NOT NULL AND (entities.tldr IS NULL OR entities.tldr <> excluded.tldr)) "
+    "OR (excluded.meta IS NOT NULL AND (entities.meta IS NULL OR entities.meta <> excluded.meta)) "
+    "OR (entities.canonical_name IS NULL AND excluded.canonical_name IS NOT NULL) "
+    "THEN excluded.updated_at ELSE entities.updated_at END, "
+    "protected = GREATEST(entities.protected, excluded.protected), "
+    "canonical_name = COALESCE(entities.canonical_name, excluded.canonical_name)")
+
+
+def _collapse_entity_payload(payload: "list[tuple]") -> "tuple[list[tuple], list[tuple]]":
+    """Collapse `bulk_upsert_entity` payload rows sharing a (partition, kind,
+    name) key into the ONE row whose upsert leaves what the row-by-row
+    sequence (HEAD's DuckDB executemany fallback, before bug-178) left.
+
+    DuckDB refuses two rows for one key inside a single `ON CONFLICT DO
+    UPDATE`, so the set-based path needs one row per key. Per key, in input
+    order: path / tldr / meta — the LAST non-NULL wins (each step was
+    `COALESCE(excluded, entities)`); protected — the max (`GREATEST`
+    ratchet); canonical_name — the FIRST non-NULL (`COALESCE(entities,
+    excluded)`); created_at — the first; updated_at — the max. Order of first
+    occurrence is kept (sequence values are drawn in the same order).
+
+    `updated_at` is the one column the collapsed row cannot reproduce alone:
+    the sequence bumps it whenever ANY step changes a field, and a key whose
+    batch carries two DIFFERENT non-NULL values for one field always has such
+    a step, even if the final value equals the stored one. Those keys are
+    returned as `touch` rows `(partition_id, kind, name, updated_at)` to set
+    explicitly. A key whose non-NULL values agree per field changes in the
+    sequence exactly when the collapsed row differs from the stored row — the
+    upsert's own CASE decides it identically."""
+    merged: "dict[tuple, list]" = {}
+    distinct: "dict[tuple, list[set]]" = {}
+    for p in payload:
+        key = (p[0], p[1], p[2])
+        cur = merged.get(key)
+        if cur is None:
+            merged[key] = list(p)
+            distinct[key] = [{p[i]} if p[i] is not None else set() for i in (3, 4, 5)]
+            continue
+        for j, i in enumerate((3, 4, 5)):          # path, tldr, meta
+            if p[i] is not None:
+                cur[i] = p[i]
+                distinct[key][j].add(p[i])
+        cur[7] = max(cur[7], p[7])                   # updated_at
+        cur[8] = max(cur[8], p[8])                   # protected ratchet
+        if cur[9] is None:                           # first canonical_name
+            cur[9] = p[9]
+    rows = [tuple(v) for v in merged.values()]
+    touch = [(k[0], k[1], k[2], merged[k][7]) for k, sets in distinct.items()
+             if any(len(s) > 1 for s in sets)]
+    return rows, touch
 
 
 def _env_f(name: str, default: float = 0.0) -> float:
@@ -2256,8 +2326,10 @@ class Store:
         fact log remains replayable.
 
         Intended for the file-walk + metadata passes where N is in the
-        thousands -- a single transaction-wrapped executemany cuts per-row
-        cursor + COMMIT overhead.
+        thousands -- one set-based write (`backend.bulk_write`: an Arrow
+        batch on DuckDB, executemany on SQLite) cuts per-row cursor + COMMIT
+        overhead. Intra-batch duplicate keys merge in input order exactly as
+        a row-by-row sequence would (bug-178, 2026-11-09).
         """
         if not rows:
             return []
@@ -2270,87 +2342,49 @@ class Store:
              _canonical_for_kind(kind, name))
             for (kind, name, path, tldr, meta) in rows
         ]
-        # DuckDB does not support RETURNING from executemany, so the upsert
-        # is followed by a single SELECT against the (partition_id, kind,
-        # name) unique index. Cheaper than N round-trips.
+        # One set-based upsert through `bulk_write` (bug-178): on DuckDB an
+        # Arrow batch + one INSERT ... SELECT ... ON CONFLICT (DuckDB's
+        # `executemany` is per-row — ~1.3s per 1k-row chunk in profiling —
+        # and the writer lock is held the whole time); on SQLite the same
+        # statement row-wise via executemany. No RETURNING: the ids come from
+        # one keyed SELECT below.
         #
-        # DuckDB's `executemany` runs INSERT...ON CONFLICT row-by-row (no
-        # engine-level batching) — the dominant cost on big ingests (~1.3s
-        # per 1k-row chunk in profiling). So under DuckDB we push the rows as
-        # one Arrow batch and INSERT...SELECT, which IS vectorized (same trick
-        # as `bulk_link`). Falls back to executemany when the batch has
-        # intra-batch duplicate (kind, name) keys: DuckDB rejects two
-        # conflicting rows in a single ON CONFLICT DO UPDATE, whereas
-        # executemany merges them sequentially.
+        # DuckDB rejects two rows for the same key inside ONE
+        # `ON CONFLICT DO UPDATE`. Until bug-178 a batch with an intra-batch
+        # duplicate (kind, name) fell back to DuckDB executemany (a sequential
+        # merge); it is now collapsed IN PYTHON to the row that sequential
+        # merge would leave (see `_collapse_entity_payload`), plus a touch of
+        # `updated_at` for keys the sequence would have touched but the
+        # collapsed row cannot prove. SQLite keeps the row-wise sequence.
         has_dups = len({(p[1], p[2]) for p in payload}) != len(payload)
-        if self._backend.kind == "duckdb" and not has_dups:
-            import pyarrow as pa
-            schema = pa.schema([
-                ("partition_id", pa.int64()), ("kind", pa.string()),
-                ("name", pa.string()), ("path", pa.string()),
-                ("tldr", pa.string()), ("meta", pa.string()),
-                ("created_at", pa.float64()), ("updated_at", pa.float64()),
-                ("protected", pa.int64()), ("canonical_name", pa.string()),
-            ])
-            tbl = pa.table({
-                "partition_id":   [p[0] for p in payload],
-                "kind":           [p[1] for p in payload],
-                "name":           [p[2] for p in payload],
-                "path":           [p[3] for p in payload],
-                "tldr":           [p[4] for p in payload],
-                "meta":           [p[5] for p in payload],
-                "created_at":     [p[6] for p in payload],
-                "updated_at":     [p[7] for p in payload],
-                "protected":      [p[8] for p in payload],
-                "canonical_name": [p[9] for p in payload],
-            }, schema=schema)
-            con._duck.register("_rmx_bulk_entities", tbl)
-            try:
-                con._duck.execute(
-                    "INSERT INTO entities(partition_id, kind, name, path, "
-                    "tldr, meta, created_at, updated_at, protected, "
-                    "canonical_name) SELECT partition_id, kind, name, path, "
-                    "tldr, meta, created_at, updated_at, protected, "
-                    "canonical_name FROM _rmx_bulk_entities "
-                    "ON CONFLICT(partition_id, kind, name) DO UPDATE SET "
-                    "path = COALESCE(excluded.path, entities.path), "
-                    "tldr = COALESCE(excluded.tldr, entities.tldr), "
-                    "meta = COALESCE(excluded.meta, entities.meta), "
-                    "updated_at = CASE WHEN "
-                    "  (excluded.path IS NOT NULL AND (entities.path IS NULL OR entities.path <> excluded.path)) "
-                    "OR (excluded.tldr IS NOT NULL AND (entities.tldr IS NULL OR entities.tldr <> excluded.tldr)) "
-                    "OR (excluded.meta IS NOT NULL AND (entities.meta IS NULL OR entities.meta <> excluded.meta)) "
-                    "OR (entities.canonical_name IS NULL AND excluded.canonical_name IS NOT NULL) "
-                    "THEN excluded.updated_at ELSE entities.updated_at END, "
-                    "protected = GREATEST(entities.protected, "
-                    "excluded.protected), "
-                    "canonical_name = COALESCE(entities.canonical_name, "
-                    "excluded.canonical_name)"
-                )
-            finally:
-                con._duck.unregister("_rmx_bulk_entities")
-        else:
-            con.executemany(
-                """
-                INSERT INTO entities(partition_id, kind, name, path, tldr, meta,
-                                     created_at, updated_at, protected,
-                                     canonical_name)
-                VALUES (?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(partition_id, kind, name) DO UPDATE SET
-                    path = COALESCE(excluded.path, entities.path),
-                    tldr = COALESCE(excluded.tldr, entities.tldr),
-                    meta = COALESCE(excluded.meta, entities.meta),
-                    updated_at = CASE WHEN
-                        (excluded.path IS NOT NULL AND (entities.path IS NULL OR entities.path <> excluded.path))
-                     OR (excluded.tldr IS NOT NULL AND (entities.tldr IS NULL OR entities.tldr <> excluded.tldr))
-                     OR (excluded.meta IS NOT NULL AND (entities.meta IS NULL OR entities.meta <> excluded.meta))
-                     OR (entities.canonical_name IS NULL AND excluded.canonical_name IS NOT NULL)
-                    THEN excluded.updated_at ELSE entities.updated_at END,
-                    protected = GREATEST(entities.protected, excluded.protected),
-                    canonical_name = COALESCE(entities.canonical_name,
-                                              excluded.canonical_name)
-                """,
-                payload,
+        write_rows = payload
+        touch_rows: list[tuple] = []
+        if self._backend.kind == "duckdb" and has_dups:
+            write_rows, touch_rows = _collapse_entity_payload(payload)
+        bulk_write(
+            con,
+            f"INSERT INTO entities({_ENTITY_UPSERT_COLS}) "
+            f"SELECT {_ENTITY_UPSERT_COLS} FROM {{view}} "
+            f"{_ENTITY_UPSERT_CONFLICT}",
+            _ENTITY_UPSERT_COLS.split(", "),
+            write_rows,
+            sqlite_sql=(
+                f"INSERT INTO entities({_ENTITY_UPSERT_COLS}) "
+                f"VALUES (?,?,?,?,?,?,?,?,?,?) {_ENTITY_UPSERT_CONFLICT}"),
+            types=_ENTITY_UPSERT_TYPES,
+            view="_rmx_bulk_entities",
+        )
+        if touch_rows:
+            bulk_write(
+                con,
+                "UPDATE entities SET updated_at = v.updated_at FROM {view} v "
+                "WHERE entities.partition_id = v.partition_id "
+                "AND entities.kind = v.kind AND entities.name = v.name",
+                ["partition_id", "kind", "name", "updated_at"],
+                touch_rows,
+                types={"partition_id": "int64", "kind": "string",
+                       "name": "string", "updated_at": "float64"},
+                view="_rmx_bulk_entity_touch",
             )
         # Look up the ids keyed by (kind, name). Under DuckDB, register the
         # keys as an Arrow table and JOIN: one scan of `entities` regardless
@@ -2395,29 +2429,17 @@ class Store:
             if rows[i][0] == "concept"
         ]
         if concept_payload:
-            if self._backend.kind == "duckdb":
-                import pyarrow as pa
-                ctbl = pa.table({
-                    "id": pa.array([c[0] for c in concept_payload],
-                                   type=pa.int64()),
-                    "description": pa.array([c[1] for c in concept_payload],
-                                            type=pa.string()),
-                })
-                con._duck.register("_rmx_bulk_concepts", ctbl)
-                try:
-                    con._duck.execute(
-                        "INSERT INTO concepts(id, description) "
-                        "SELECT id, description FROM _rmx_bulk_concepts "
-                        "ON CONFLICT(id) DO NOTHING"
-                    )
-                finally:
-                    con._duck.unregister("_rmx_bulk_concepts")
-            else:
-                con.executemany(
-                    "INSERT OR IGNORE INTO concepts(id, description) "
-                    "VALUES (?, ?)",
-                    concept_payload,
-                )
+            bulk_write(
+                con,
+                "INSERT INTO concepts(id, description) "
+                "SELECT id, description FROM {view} ON CONFLICT(id) DO NOTHING",
+                ["id", "description"],
+                concept_payload,
+                sqlite_sql=("INSERT OR IGNORE INTO concepts(id, description) "
+                            "VALUES (?, ?)"),
+                types={"id": "int64", "description": "string"},
+                view="_rmx_bulk_concepts",
+            )
         self._maybe_commit(con)
         for (kind, name, path, tldr, meta) in rows:
             self._log_event(
@@ -3966,9 +3988,18 @@ class Store:
         if not rows:
             return
         payload = [(canonicalize_name(name), eid) for (eid, name) in rows]
-        con.executemany(
-            "UPDATE entities SET canonical_name=? WHERE id=?",
+        # One set-based UPDATE (bug-178): this runs on every DuckDB writer
+        # open, where a per-row executemany held the writer lock for N
+        # statements on an upgraded store.
+        bulk_write(
+            con,
+            "UPDATE entities SET canonical_name = v.canonical_name "
+            "FROM {view} v WHERE entities.id = v.id",
+            ["canonical_name", "id"],
             payload,
+            sqlite_sql="UPDATE entities SET canonical_name=? WHERE id=?",
+            types={"canonical_name": "string", "id": "int64"},
+            view="_rmx_bulk_canonical",
         )
         con.commit()
 
@@ -4831,49 +4862,32 @@ class Store:
                 )
 
         con = self._connect()
-        if self._backend.kind == "duckdb":
-            # Arrow batch path. DuckDB ingests an Arrow table in one shot,
-            # avoiding the per-row binder overhead of executemany.
-            import pyarrow as pa
-
-            tbl = pa.table({
-                "entity_id":  [it[2] for it in items],
-                "linkage_id": [linkage_ids[it[0]] for it in items],
-                "concept_id": [it[1] for it in items],
-                "weight":     [it[3] for it in items],
-            })
-            con._duck.register("_rmx_bulk_links", tbl)
-            try:
-                con._duck.execute(
-                    "INSERT INTO entity_links"
-                    "(entity_id, linkage_id, concept_id, weight) "
-                    "SELECT entity_id, linkage_id, concept_id, weight "
-                    "FROM _rmx_bulk_links "
-                    "ON CONFLICT(entity_id, linkage_id, concept_id) "
-                    + ("DO UPDATE SET weight = CASE WHEN excluded.weight IS NULL "
-                       "THEN entity_links.weight ELSE excluded.weight END"
-                       if update_weight else "DO NOTHING")
-                )
-            finally:
-                con._duck.unregister("_rmx_bulk_links")
-        else:
-            sql = (
-                "INSERT INTO entity_links"
-                "(entity_id, linkage_id, concept_id, weight) VALUES (?,?,?,?) "
-                "ON CONFLICT(entity_id, linkage_id, concept_id) DO UPDATE SET "
-                "weight = CASE WHEN excluded.weight IS NULL "
-                "THEN entity_links.weight ELSE excluded.weight END"
+        # One set-based write through `bulk_write` (bug-178): an Arrow batch
+        # on DuckDB (no per-row binder), executemany on SQLite. The conflict
+        # policy is the mode's: FIRST-WINS (`DO NOTHING` / `OR IGNORE`) or
+        # LAST-NON-NULL-WINS on the deduped batch.
+        conflict = (
+            "ON CONFLICT(entity_id, linkage_id, concept_id) DO UPDATE SET "
+            "weight = CASE WHEN excluded.weight IS NULL "
+            "THEN entity_links.weight ELSE excluded.weight END")
+        bulk_write(
+            con,
+            "INSERT INTO entity_links(entity_id, linkage_id, concept_id, weight) "
+            "SELECT entity_id, linkage_id, concept_id, weight FROM {view} "
+            + (conflict if update_weight
+               else "ON CONFLICT(entity_id, linkage_id, concept_id) DO NOTHING"),
+            ["entity_id", "linkage_id", "concept_id", "weight"],
+            [(it[2], linkage_ids[it[0]], it[1], it[3]) for it in items],
+            sqlite_sql=(
+                "INSERT INTO entity_links(entity_id, linkage_id, concept_id, weight) "
+                "VALUES (?,?,?,?) " + conflict
             ) if update_weight else (
                 "INSERT OR IGNORE INTO entity_links"
-                "(entity_id, linkage_id, concept_id, weight) VALUES (?,?,?,?)"
-            )
-            con.executemany(
-                sql,
-                [
-                    (it[2], linkage_ids[it[0]], it[1], it[3])
-                    for it in items
-                ],
-            )
+                "(entity_id, linkage_id, concept_id, weight) VALUES (?,?,?,?)"),
+            types={"entity_id": "int64", "linkage_id": "int64",
+                   "concept_id": "int64", "weight": "float64"},
+            view="_rmx_bulk_links",
+        )
         self._maybe_commit(con)
 
         if newly_added_for_log and _log_enabled() and not self._replay_mode:
@@ -4911,10 +4925,23 @@ class Store:
         if added:
             self._dirty_fragments.add(linkage)
         con = self._connect()
-        con.executemany(
-            "INSERT OR IGNORE INTO entity_links(entity_id, linkage_id, concept_id) "
-            "VALUES (?,?,?)",
-            [(eid, lid, concept_id) for eid in ids],
+        # One set-based INSERT (bug-178): link_many is hot in ingest, and a
+        # DuckDB executemany here was one statement per id under the writer
+        # lock. The batch is deduped in input order first — every row is
+        # identical per id and OR IGNORE keeps the first, so the dedup is
+        # exactly what the per-row sequence stored.
+        bulk_write(
+            con,
+            "INSERT INTO entity_links(entity_id, linkage_id, concept_id) "
+            "SELECT entity_id, linkage_id, concept_id FROM {view} "
+            "ON CONFLICT(entity_id, linkage_id, concept_id) DO NOTHING",
+            ["entity_id", "linkage_id", "concept_id"],
+            [(eid, lid, concept_id) for eid in dict.fromkeys(ids)],
+            sqlite_sql=(
+                "INSERT OR IGNORE INTO entity_links(entity_id, linkage_id, concept_id) "
+                "VALUES (?,?,?)"),
+            types={"entity_id": "int64", "linkage_id": "int64", "concept_id": "int64"},
+            view="_rmx_link_many",
         )
         self._maybe_commit(con)
         if newly_added and _log_enabled() and not self._replay_mode:
@@ -6465,36 +6492,20 @@ class Store:
             return
         now = time.time()
         con = self._connect()
-        if self._backend.kind == "duckdb":
-            import pyarrow as pa
-
-            tbl = pa.table({
-                "partition_id": [self._partition_id] * len(rows),
-                "path":         [r[0] for r in rows],
-                "mtime":        [float(r[1]) for r in rows],
-                "last_synced":  [now] * len(rows),
-            })
-            con._duck.register("_rmx_bulk_tracked", tbl)
-            try:
-                con._duck.execute(
-                    "INSERT INTO tracked_files"
-                    "(partition_id, path, mtime, last_synced) "
-                    "SELECT partition_id, path, mtime, last_synced "
-                    "FROM _rmx_bulk_tracked "
-                    "ON CONFLICT(partition_id, path) DO UPDATE SET "
-                    "  mtime=excluded.mtime, last_synced=excluded.last_synced"
-                )
-            finally:
-                con._duck.unregister("_rmx_bulk_tracked")
-        else:
-            con.executemany(
-                "INSERT INTO tracked_files"
-                "(partition_id, path, mtime, last_synced) "
-                "VALUES (?,?,?,?) "
-                "ON CONFLICT(partition_id, path) DO UPDATE SET "
-                "  mtime=excluded.mtime, last_synced=excluded.last_synced",
-                [(self._partition_id, r[0], float(r[1]), now) for r in rows],
-            )
+        conflict = ("ON CONFLICT(partition_id, path) DO UPDATE SET "
+                    "  mtime=excluded.mtime, last_synced=excluded.last_synced")
+        bulk_write(
+            con,
+            "INSERT INTO tracked_files(partition_id, path, mtime, last_synced) "
+            "SELECT partition_id, path, mtime, last_synced FROM {view} " + conflict,
+            ["partition_id", "path", "mtime", "last_synced"],
+            [(self._partition_id, r[0], float(r[1]), now) for r in rows],
+            sqlite_sql=("INSERT INTO tracked_files(partition_id, path, mtime, last_synced) "
+                        "VALUES (?,?,?,?) " + conflict),
+            types={"partition_id": "int64", "path": "string", "mtime": "float64",
+                   "last_synced": "float64"},
+            view="_rmx_bulk_tracked",
+        )
         self._maybe_commit(con)
 
     def get_tracked_mtime(self, abs_path: str) -> float | None:
@@ -6921,12 +6932,13 @@ class Store:
                 "DELETE FROM tracked_files WHERE partition_id=?",
                 (self._partition_id,),
             )
-        gmd = self._clear_gmd_content_hashes(con)
+        gmd, gmd_skipped = self._clear_gmd_content_hashes(con)
         self._maybe_commit(con)
         return {"stamps_cleared": int(n), "gmd_hashes_cleared": gmd,
+                "gmd_hashes_skipped": gmd_skipped,
                 "partition": self._partition_name}
 
-    def _clear_gmd_content_hashes(self, con) -> int:
+    def _clear_gmd_content_hashes(self, con) -> tuple[int, int]:
         """Strip `gmd_content_hash` / `gmd_pass2_done` from doc+memory meta in
         the active partition.
 
@@ -6935,7 +6947,14 @@ class Store:
         alone leaves every already-ingested markdown file skipped at
         `pass1-skip` / `pass2-skip` and the body terms never get re-derived.
         Two independent stamps, the same defect: both key on the identity of
-        the INPUT while it is the transform that changed."""
+        the INPUT while it is the transform that changed.
+
+        Returns `(cleared, skipped)`. `skipped` counts stamped rows whose meta
+        does not parse as a JSON object (bug-178 r2 #b1, 2026-11-09): those
+        rows keep their hash, so the next ingest skips them again — an
+        uncounted `continue` on a memory path hid that. The LIKE prefilter
+        selects only rows whose text names the stamp, so an unstamped row is
+        never counted."""
         rows = con.execute(
             "SELECT id, meta FROM entities "
             "WHERE partition_id=? AND kind IN ('doc','memory') "
@@ -6943,21 +6962,33 @@ class Store:
             (self._partition_id,),
         ).fetchall()
         payload: list[tuple[str, int]] = []
+        skipped = 0
         for eid, raw in rows:
             try:
                 meta = json.loads(raw) if raw else None
             except (TypeError, ValueError):
+                skipped += 1
                 continue
             if not isinstance(meta, dict):
+                skipped += 1
                 continue
             meta.pop("gmd_content_hash", None)
             meta.pop("gmd_pass2_done", None)
             payload.append((json.dumps(meta), int(eid)))
-        for i in range(0, len(payload), 900):
-            con.executemany(
-                "UPDATE entities SET meta=? WHERE id=?", payload[i:i + 900]
-            )
-        return len(payload)
+        # One set-based UPDATE (bug-178): clear_tracked_stamps runs this over
+        # every GMD doc+memory row; per-row DuckDB executemany held the writer
+        # for N statements. The old 900-row chunks only sized executemany
+        # batches (no parameter limit applies to it) — no chunking is needed.
+        bulk_write(
+            con,
+            "UPDATE entities SET meta = v.meta FROM {view} v WHERE entities.id = v.id",
+            ["meta", "id"],
+            payload,
+            sqlite_sql="UPDATE entities SET meta=? WHERE id=?",
+            types={"meta": "string", "id": "int64"},
+            view="_rmx_bulk_gmd_meta",
+        )
+        return len(payload), skipped
 
     # ---- coref sidecar + pair index ---------------------------------------
 
@@ -6972,11 +7003,23 @@ class Store:
             (self._partition_id, entity_id))
         rows = [(self._partition_id, entity_id, r.offset, r.pronoun,
                  r.antecedent, r.confidence) for r in resolutions]
-        for i in range(0, len(rows), 900):
-            con.executemany(
-                "INSERT INTO coref_resolutions "
-                "(partition_id, entity_id, pos, pronoun, antecedent, confidence) "
-                "VALUES (?,?,?,?,?,?)", rows[i:i + 900])
+        # One set-based INSERT (bug-178). A duplicate `pos` still raises (PK);
+        # on DuckDB the statement is atomic, so it leaves none of the new set
+        # behind where per-row executemany left the rows before the duplicate
+        # (user decision 2026-11-09: all-or-nothing accepted).
+        cols = ["partition_id", "entity_id", "pos", "pronoun", "antecedent", "confidence"]
+        bulk_write(
+            con,
+            f"INSERT INTO coref_resolutions ({', '.join(cols)}) "
+            f"SELECT {', '.join(cols)} FROM {{view}}",
+            cols,
+            rows,
+            sqlite_sql=(f"INSERT INTO coref_resolutions ({', '.join(cols)}) "
+                        "VALUES (?,?,?,?,?,?)"),
+            types={"partition_id": "int64", "entity_id": "int64", "pos": "int64",
+                   "pronoun": "string", "antecedent": "string", "confidence": "float64"},
+            view="_rmx_bulk_coref",
+        )
         self._maybe_commit(con)
         return len(rows)
 
@@ -7040,11 +7083,22 @@ class Store:
                     (self._partition_id,))
         rows = [(self._partition_id, k, len(b), b.serialize(), now)
                 for k, b in survivors.items()]
-        for i in range(0, len(rows), 500):
-            con.executemany(
-                "INSERT INTO pair_index "
-                "(partition_id, pair_key, df, docs, compiled_at) "
-                "VALUES (?,?,?,?,?)", rows[i:i + 500])
+        # One set-based INSERT (bug-178): the partition's whole inventory in
+        # one statement instead of one DuckDB statement per pair under the
+        # writer lock. The old 500-row chunks only sized executemany batches.
+        cols = ["partition_id", "pair_key", "df", "docs", "compiled_at"]
+        bulk_write(
+            con,
+            f"INSERT INTO pair_index ({', '.join(cols)}) "
+            f"SELECT {', '.join(cols)} FROM {{view}}",
+            cols,
+            rows,
+            sqlite_sql=(f"INSERT INTO pair_index ({', '.join(cols)}) "
+                        "VALUES (?,?,?,?,?)"),
+            types={"partition_id": "int64", "pair_key": "string", "df": "int64",
+                   "docs": "binary", "compiled_at": "float64"},
+            view="_rmx_bulk_pairs",
+        )
         self._maybe_commit(con)
         hapax = sum(1 for b in docs_of.values() if len(b) == 1)
         return {"scanned_docs": scanned, "pairs_total": len(docs_of),

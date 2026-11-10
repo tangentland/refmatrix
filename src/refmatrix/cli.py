@@ -8186,6 +8186,14 @@ def reingest(ctx, semantic, do_sessions, do_embed, rebuild, force, memory_dir):
                         f"  [dim]{part}: {r.get('stamps_cleared', 0)} mtime "
                         f"stamps + {r.get('gmd_hashes_cleared', 0)} GMD "
                         f"content hashes cleared[/]")
+                    # Rows whose stamped meta does not parse keep their hash and
+                    # are skipped by every reingest: say so (bug-178 r2 #b1).
+                    skipped = r.get("gmd_hashes_skipped", 0)
+                    if skipped:
+                        console.print(
+                            f"  [yellow]{part}: {skipped} GMD content hash(es) "
+                            f"NOT cleared — meta is not a JSON object; those "
+                            f"rows stay skipped until their meta is repaired[/]")
             finally:
                 _partition_override = prev
         step("0/5 clear stamps (--force)", _clear)
