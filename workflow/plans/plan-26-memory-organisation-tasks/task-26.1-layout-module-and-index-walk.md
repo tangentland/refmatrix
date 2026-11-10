@@ -96,7 +96,10 @@ viascope2 12, cliquet 8.
      (index untouched, reason printed, return 0). It names the prose line count so the user can
      move the prose into a memory.
    - Idempotence: re-rendering a carried block re-carries it once. It never duplicates. A line
-     equal to an entry line this render generates is never prose, and an entry line is never cut
+     shaped like an entry (starts `- [`) is never prose, link or no link — so the link-less lines
+     HEAD's cut already left in live indexes (cliquedb: 8) are dropped and re-rendered with their
+     link, never carried as junk (decided 2026-11-09 at the 26.1 remedy RED; replaces "equal to an
+     entry line this render generates", which a linked render makes vacuous). An entry line is never cut
      inside its `](rel)` link (ch-bsd 26.1 #b-1: at HEAD `Entry.line` cut every line at 200
      chars, losing the link of a long title; the next organised render re-carried those lines
      and doubled the block every pass). Test: a title over 200 chars rendered twice keeps its
