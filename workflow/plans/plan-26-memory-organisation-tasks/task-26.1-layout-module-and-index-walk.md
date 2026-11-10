@@ -282,3 +282,31 @@ ships 26.1. Decisions taken as the user would (orchestrator, 2026-11-09):
    `(date, mtime, name, relative path)` so `savestates/x.md` vs a top-level `x.md` (26.4's
    mid-move window) cannot follow input order. {#fu-order}
 
+
+## Follow-up r3, after ch-bsd 26.1 r3 (2026-11-10) {#followup-r3}
+
+rel: derives-from -> [[bsd-task-26.1-r3-followup-c9a035e]]
+rel: amends -> [[#fu-hooks]]
+
+Lands on `task-26.1-followup` before the merge to master. Decisions taken as the user would
+(orchestrator, 2026-11-10):
+
+1. **`parse_hooks` goes (r3 #b-1).** Delete it; `tests/test_memory_index_char_budget.py` pins
+   `load_hooks` (the production reader) instead; AC-4 names `load_hooks` only. {#r3-dead}
+2. **"The rendered cut" means the line could not carry the value (r3 #s-1).** Cases (b) `prefix…`
+   and (c) bare `…` keep the existing value ONLY when `len(value) > room`, where room is the
+   numeric hook room of that index line (`MAX_LINE_CHARS - len(link part) - 3`). On a line that had
+   room, a hand-shortened `prefix…` replaces the value, as at HEAD. Test as the matrix
+   (curated / derived / none) x (room / no room) x (edit / cut), marker-off and organised.
+   {#r3-room}
+3. **The existing value includes the derived hook (r3 #m-1).** With no sidecar value, (b) compares
+   against the memory's derived hook (`_first_prose`), so a cut of derived text is never frozen into
+   the sidecar as curated. {#r3-derived}
+4. **One index-line parser (r3 #m-2).** `_parse_index_hooks` is derived from
+   `_index_hook_records`. {#r3-one-parser}
+5. **Generated pointer lines are never hook sources (r3 #m-3).** The save-state pointer and fold
+   lines are skipped by `_index_hook_records`, like the `impressions/` pointer. {#r3-pointers}
+6. **The bug-193 restore is its own tracked item (r3 #s-2), not part of this merge.** It is
+   registered as bug-195 with acceptance criteria and runs after the merge and before the release
+   that ships 26.1: a one-shot, backed-up repair of the live refmatrix sidecar through a committed
+   command (dry-run first). {#r3-restore}
