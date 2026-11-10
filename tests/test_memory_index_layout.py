@@ -668,3 +668,34 @@ def test_m1_entry_point_never_writes_over_budget(memdir):
     assert text == before, \
         f"a full fold cannot fit, so the write must refuse; wrote {len(text)} chars"
     assert "untouched" in (r.stdout + r.stderr), r.stdout + r.stderr
+
+
+def test_b1_a_legacy_link_less_cut_line_is_dropped_and_re_rendered_with_its_link(memdir):
+    """AC-5 (amended 4fff5cc): any line shaped like an entry (starts `- [`) is never prose,
+    link or no link. HEAD's link-less cut lines already sit in live indexes (cliquedb: 8); an
+    organised render drops them and renders the memory again WITH its link -- never carries
+    them. The legacy line is built with HEAD's own cut formula."""
+    rel = "feedback/feedback_long_title.md"
+    mem(memdir, rel, title=LONG_TITLE, mtype="feedback", body="derived long-title prose")
+    mem(memdir, "project/project_plain.md", title="Plain", mtype="project", body="plain")
+    full = f"- [{LONG_TITLE}]({rel}) — derived long-title prose"
+    legacy = full[:mi.MAX_LINE_CHARS - 1].rstrip() + "…"          # HEAD's Entry.line cut
+    assert legacy.startswith("- [") and "](" not in legacy
+    (memdir / "MEMORY.md").write_text("\n".join(B1_PROSE + [
+        legacy, "- [Plain](project/project_plain.md) — curated plain"]) + "\n",
+        encoding="utf-8")
+    organise(memdir)
+    r = run_entry(memdir)
+    assert r.returncode == 0, r.stderr
+    first = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+    lines = first.splitlines()
+    block = carried_block(lines)
+    assert legacy not in block, f"the legacy cut line was carried as prose: {block}"
+    assert block == B1_PROSE, block
+    assert legacy not in lines, "the legacy link-less line survived the render"
+    hits = [ln for ln in lines if f"]({rel})" in ln]
+    assert len(hits) == 1 and hits[0].startswith("- [" + LONG_TITLE[:40]), hits
+    assert not [ln for ln in lines if ln.startswith("- [") and "](" not in ln], lines
+    assert run_entry(memdir).returncode == 0
+    assert (memdir / "MEMORY.md").read_text(encoding="utf-8") == first, \
+        "a second render changed the index"
