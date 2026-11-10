@@ -3728,7 +3728,8 @@ def _op_ingest_gmd(d: Daemon, args: dict) -> dict:
     if not args.get("as_memory"):
         _refuse_filesystem_ingest(d, "ingest-gmd")
     targets = [Path(p).resolve() for p in (args.get("targets") or [])]
-    files = collect_gmd_files(targets)
+    # The memory path walks a memdir with THE memory walk (task 26.1 AC-2).
+    files = collect_gmd_files(targets, as_memory=bool(args.get("as_memory")))
     if not files:
         return {"files": 0, "report": "no candidate files found"}
     job_id = _register_ingest_job(d, files_total=len(files), args=args)
@@ -3745,7 +3746,8 @@ def _op_ingest_gmd_start(d: Daemon, args: dict) -> dict:
     if not args.get("as_memory"):
         _refuse_filesystem_ingest(d, "ingest-gmd")
     targets = [Path(p).resolve() for p in (args.get("targets") or [])]
-    files = collect_gmd_files(targets)
+    # The memory path walks a memdir with THE memory walk (task 26.1 AC-2).
+    files = collect_gmd_files(targets, as_memory=bool(args.get("as_memory")))
     if not files:
         return {"files": 0, "report": "no candidate files found"}
     job_id = _register_ingest_job(d, files_total=len(files), args=args)
@@ -3854,7 +3856,9 @@ def _op_prestage_hashes(d: Daemon, args: dict) -> dict:
     on older stores without re-running the full ingest pipeline."""
     from refmatrix.ingest_gmd import collect_gmd_files, prestage_hashes
     targets = [Path(p).resolve() for p in (args.get("targets") or [])]
-    files = collect_gmd_files(targets)
+    # Prestage walks the SAME set the bridge ingests, or it stamps hashes on
+    # files the bridge then skips (task 26.1 AC-2, plan-26 r2 m1).
+    files = collect_gmd_files(targets, as_memory=bool(args.get("as_memory")))
     partition = args.get("partition") or d._st()._partition_name
     with d._store_lock, d._st().with_partition(partition):
         report = prestage_hashes(d._st(), files)

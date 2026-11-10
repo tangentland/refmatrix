@@ -32,8 +32,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
+
+from refmatrix import memory_layout
 
 # Past this width an entry stops being a one-line hook and starts being prose
 # that pushes the cap down for everyone else.
@@ -64,8 +67,30 @@ MAX_INDEX_CHARS = int(os.environ.get("RMX_MEMORY_INDEX_CHARS") or 24000)
 
 INDEX_NAME = "MEMORY.md"
 
-# Files in the memory dir that are not memories.
-_NOT_A_MEMORY = {INDEX_NAME, "README.md"}
+# Files in the memory dir that are not memories. The one definition lives in
+# `memory_layout` (ADR-0005 #one-walk, task 26.1); this name stays for callers.
+_NOT_A_MEMORY = set(memory_layout.NOT_A_MEMORY)
+
+# The first line of the carried-prose block an ORGANISED dir's index starts
+# with (task 26.1 AC-5). Regeneration used to drop every hand-written line that
+# was not an entry: viascope 62, cliquedb 29, viascope2 12, cliquet 8 (ch-bsd
+# plan-26 r1 #b4). The marker line is how a later render recognises the block
+# and re-carries it ONCE instead of nesting it.
+CARRY_HEAD = "<!-- carried from the hand-written index; edit freely -->"
+
+# The generated fold line (`_render_entries`). Not an entry, not prose.
+_FOLD_RE = re.compile(r"^- (\d+) older project memories folded\b")
+_IMPS_RE = re.compile(r"^- \[ch-bsd impressions \((\d+)\)\]\(impressions/\)")
+_SAVES_RE = re.compile(r"^- \[Save-states \((\d+)\), newest ")
+
+# When carried prose alone leaves less than this share of the char budget for
+# entries, an organised write refuses rather than fold every entry away
+# (task 26.1 AC-5).
+MIN_ENTRY_SHARE = 0.25
+
+# An organised write refuses when fewer than this share of the old index's
+# content lines would remain (task 26.1 AC-6).
+MIN_CONTENT_KEPT = 0.5
 
 
 def _frontmatter(text: str) -> dict:
@@ -118,25 +143,49 @@ def _first_prose(text: str) -> str:
     return ""
 
 
+def _kind_of_type(mtype: str) -> str:
+    """The render class of a `metadata.type`: feedback and reference keep
+    their own sections; every other type renders (and folds) as a project
+    note, as it always has."""
+    if mtype.startswith("impression"):
+        return "impression"
+    if mtype.startswith("session/recall-state"):
+        return "savestate"
+    if mtype.startswith("feedback"):
+        return "feedback"
+    if mtype.startswith("reference"):
+        return "reference"
+    return "project"
+
+
 class Entry:
-    __slots__ = ("path", "rel", "title", "mtype", "hook", "mtime", "created")
+    __slots__ = ("path", "rel", "id", "title", "mtype", "hook", "mtime", "created")
 
     def __init__(self, path: Path, memdir: Path, hooks: dict):
         self.path = path
         self.rel = str(path.relative_to(memdir))
         text = path.read_text(errors="replace")
         fm = _frontmatter(text)
+        # The store identity (ADR-0005 #identity): the frontmatter `id`, which
+        # MEMORY-RULES requires to equal the stem. Never the folder.
+        self.id = fm.get("id") or path.stem
         self.title = fm.get("title") or path.stem
         self.mtype = fm.get("type") or path.stem.split("_")[0]
         self.mtime = path.stat().st_mtime
         self.created = fm.get("created") or ""
-        # Rule 1: a curated hook wins over anything derived.
-        self.hook = hooks.get(self.rel) or _first_prose(text)
+        # Rule 1: a curated hook wins over anything derived. Looked up by path
+        # first (the pre-ADR key), then by id, so a hook survives a move
+        # between folders (task 26.1 AC-4).
+        self.hook = hooks.get(self.rel) or hooks.get(self.id) or _first_prose(text)
 
     @property
     def kind(self) -> str:
-        if self.rel.startswith("impressions/"):
-            return "impression"
+        """Folder first, then the stem / frontmatter (task 26.1 AC-7). In a
+        layout-1 dir the folder IS the type (ADR-0005 #folders); a flat dir has
+        no folder to read, so the pre-ADR rules decide."""
+        parts = Path(self.rel).parts
+        if len(parts) > 1 and parts[0] in memory_layout.FOLDERS:
+            return _kind_of_type(memory_layout.FOLDERS[parts[0]])
         if self.path.stem.startswith("savestate_"):
             return "savestate"
         if self.mtype.startswith("feedback"):
@@ -154,9 +203,12 @@ class Entry:
         return out
 
 
-def parse_hooks(idx: Path) -> dict:
-    """`{relative path: hook}` from an existing index. Hand-written text, so it
-    is read back rather than regenerated."""
+def _is_entry_line(line: str) -> bool:
+    return line.startswith("- [") and "](" in line
+
+
+def _parse_index_hooks(idx: Path) -> dict:
+    """`{relative path: hook}` exactly as written in an existing index."""
     hooks: dict = {}
     if not idx.exists():
         return hooks
@@ -182,7 +234,70 @@ def parse_hooks(idx: Path) -> dict:
     return hooks
 
 
+def _is_path_key(key: str) -> bool:
+    """A sidecar / index key that names a FILE (the pre-ADR shape), as opposed
+    to a memory id (task 26.1 AC-4) or a generated pointer (`impressions/`)."""
+    return key.endswith(".md")
+
+
+def _id_of_link(memdir: Path, rel: str) -> str:
+    """The memory id a path-shaped hook key points at: the linked file's
+    frontmatter `id` when it exists, else its stem -- MEMORY-RULES makes the id
+    equal the stem, which is what lets a hook whose file has MOVED find the
+    memory again (ADR-0005 #hooks)."""
+    p = memdir / rel
+    if p.is_file():
+        try:
+            fid = _frontmatter(p.read_text(errors="replace")).get("id")
+        except OSError as exc:
+            print(f"{INDEX_NAME}: {rel}: unreadable ({exc}); keying its hook by "
+                  f"the file stem", file=sys.stderr)
+            fid = None
+        if fid:
+            return fid
+    return Path(rel).stem
+
+
+def _with_id_aliases(memdir: Path, hooks: dict) -> dict:
+    """Every path-keyed hook ALSO under the id its link points at. Path keys
+    are kept as they are: a dead link's hook stays findable under its path."""
+    out = dict(hooks)
+    for k, v in hooks.items():
+        if _is_path_key(k):
+            out.setdefault(_id_of_link(memdir, k), v)
+    return out
+
+
+def parse_hooks(idx: Path) -> dict:
+    """Curated hooks read back from an existing index -- hand-written text,
+    so it is read back rather than regenerated.
+
+    Keyed by the link's relative path (the pre-ADR key) AND by the memory id
+    the link points at (task 26.1 AC-4, ADR-0005 #hooks, 2026-11-09): a hook
+    keyed only by path was lost the moment its file moved into a type folder."""
+    idx = Path(idx)
+    raw = _parse_index_hooks(idx)
+    out = dict(raw)
+    out.update({_id_of_link(idx.parent, k): v for k, v in raw.items() if _is_path_key(k)})
+    return out
+
+
 HOOKS_SIDECAR = ".memory_hooks.json"
+
+
+def _read_sidecar(memdir: Path) -> dict:
+    hooks: dict = {}
+    side = memdir / HOOKS_SIDECAR
+    if side.exists():
+        try:
+            data = json.loads(side.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                hooks.update({str(k): str(v) for k, v in data.items()})
+        except Exception as exc:  # noqa: BLE001 — named, never mute
+            print(f"{INDEX_NAME}: hook sidecar unreadable ({type(exc).__name__}: "
+                  f"{exc}); folded entries may lose their curated hooks",
+                  file=sys.stderr)
+    return hooks
 
 
 def load_hooks(memdir: Path) -> dict:
@@ -195,28 +310,34 @@ def load_hooks(memdir: Path) -> dict:
     index from itself moved the fold 56 -> 58 with no memory added, and
     `--check` read out of sync immediately after a successful write. Every
     save-state would have degraded the index a little further.
+
+    DUAL reader, every dir, marker or not (task 26.1 AC-4, ADR-0005 #marker):
+    a sidecar keyed by path (pre-ADR, and what an un-organised write still
+    writes) and one keyed by memory id (an organised write) are both read, and
+    every path key is also aliased to its id. A reader writes no file.
     """
-    hooks: dict = {}
-    side = memdir / HOOKS_SIDECAR
-    if side.exists():
-        try:
-            data = json.loads(side.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                hooks.update({str(k): str(v) for k, v in data.items()})
-        except Exception as exc:  # noqa: BLE001 — named, never mute
-            print(f"{INDEX_NAME}: hook sidecar unreadable ({type(exc).__name__}: "
-                  f"{exc}); folded entries may lose their curated hooks",
-                  file=sys.stderr)
+    memdir = Path(memdir)
+    hooks = _with_id_aliases(memdir, _read_sidecar(memdir))
     # The index wins: it is what a human last edited by hand.
     hooks.update(parse_hooks(memdir / INDEX_NAME))
     return hooks
 
 
-def save_hooks(memdir: Path, entries: list) -> None:
+def save_hooks(memdir: Path, entries: list, *, dead: "dict | None" = None) -> None:
     """Persist every entry's hook, listed or folded, so curation survives a
-    fold. Written on the same call that rewrites the index."""
+    fold. Written on the same call that rewrites the index.
+
+    Un-organised dir (no `.memory-layout`): HEAD's path-keyed sidecar, byte for
+    byte -- its write is what keeps bug-050's fold idempotent there (r3 s1).
+    Organised dir: keyed by memory id, so a move never loses a hook, plus every
+    `dead` hook kept under the key it was found under (task 26.1 AC-4)."""
+    memdir = Path(memdir)
     side = memdir / HOOKS_SIDECAR
-    data = {e.rel: e.hook for e in entries if e.hook}
+    if memory_layout.is_organised(memdir):
+        data = dict(dead or {})
+        data.update({e.id: e.hook for e in entries if e.hook})
+    else:
+        data = {e.rel: e.hook for e in entries if e.hook}
     try:
         side.write_text(json.dumps(data, indent=0, sort_keys=True,
                                    ensure_ascii=False), encoding="utf-8")
@@ -226,19 +347,67 @@ def save_hooks(memdir: Path, entries: list) -> None:
               f"curated hooks on the next render", file=sys.stderr)
 
 
-def collect(memdir: Path) -> list:
-    hooks = load_hooks(memdir)
-    out = []
-    for p in sorted(memdir.glob("*.md")) + sorted(memdir.glob("impressions/*.md")):
-        if p.name in _NOT_A_MEMORY:
+def _dead_hooks(memdir: Path, entries: list) -> dict:
+    """Curated hooks (sidecar or index) that point at NO current memory.
+
+    A path key is alive when it names a current file or the id its link
+    points at is a current memory's id (a moved file); an id key is alive when
+    a current memory carries that id. Anything else is dead -- and KEPT under
+    the key it was found under, never silently discarded (task 26.1 AC-4: a
+    file that is gone right now may come back, and the hook is hand-written)."""
+    rels = {e.rel for e in entries}
+    ids = {e.id for e in entries}
+    raw = _read_sidecar(memdir)
+    raw.update(_parse_index_hooks(memdir / INDEX_NAME))
+    dead: dict = {}
+    for k, v in raw.items():
+        if not v or k.endswith("/"):          # a generated pointer's hook
             continue
-        out.append(Entry(p, memdir, hooks))
-    return out
+        if _is_path_key(k):
+            if k in rels or _id_of_link(memdir, k) in ids:
+                continue
+        elif k in ids:
+            continue
+        dead[k] = v
+    return dead
 
 
-def render(memdir: Path, *, max_lines: int = MAX_LINES,
-           max_chars: int = MAX_INDEX_CHARS) -> str:
-    entries = collect(memdir)
+def collect(memdir: Path) -> list:
+    """Every memory in the dir, through THE walk (`memory_layout.iter_memory_files`).
+
+    Ungated, every dir (task 26.1 AC-3, ADR-0005 #marker r4 s1): the old
+    `*.md` + `impressions/*.md` glob saw 4 of viascope's ~146 memories, and
+    gating the walk would have kept that wipe. On a dir flat except for
+    `impressions/` it yields what the glob did, in the same order."""
+    memdir = Path(memdir)
+    hooks = load_hooks(memdir)
+    return [Entry(p, memdir, hooks) for p in memory_layout.iter_memory_files(memdir)]
+
+
+def _prose_lines(lines: list) -> list:
+    """Hand-written prose of an index: every non-blank line that is not an
+    entry, a generated pointer or fold line, or the carried block's own header
+    (task 26.1 AC-5). Verbatim, in order."""
+    return [ln for ln in lines
+            if ln.strip() and ln.strip() != CARRY_HEAD
+            and not _is_entry_line(ln) and not _FOLD_RE.match(ln)]
+
+
+def _carried_block(prose: list) -> str:
+    """The block an organised index starts with. Empty when there is no prose,
+    so a prose-free organised index carries no empty header."""
+    if not prose:
+        return ""
+    return "\n".join([CARRY_HEAD, *prose]) + "\n\n"
+
+
+def _index_lines(memdir: Path) -> list:
+    idx = memdir / INDEX_NAME
+    return idx.read_text(errors="replace").splitlines() if idx.exists() else []
+
+
+def _render_entries(memdir: Path, entries: list, *, max_lines: int, max_chars: int,
+                    organised: bool) -> str:
     by = {}
     for e in entries:
         by.setdefault(e.kind, []).append(e)
@@ -253,13 +422,20 @@ def render(memdir: Path, *, max_lines: int = MAX_LINES,
         lines.append(
             f"- [ch-bsd impressions ({len(imps)})](impressions/) — cross-run audit "
             f"memories; full ledger in `workflow/bullshit/IMPRESSIONS.md`")
-    # By DATE, not by stem: save-state ids are session hashes
-    # (`savestate_fd45323ccbb8`), so sorting the names picked an arbitrary one
-    # and called it newest. `created` comes from the frontmatter, mtime is the
-    # tiebreak.
-    saves = sorted(by.get("savestate", []), key=lambda e: (e.created, e.mtime))
+    saves = by.get("savestate", [])
     if saves:
-        newest = saves[-1]
+        if organised:
+            # ADR-0005 #newest: the ONE ordering (`updated`, then mtime;
+            # never `created`), shared with recall-state (task 26.1 AC-1).
+            first = memory_layout.sort_savestates([e.path for e in saves])[0]
+            newest = next(e for e in saves if e.path == first)
+        else:
+            # Un-organised: HEAD's ordering, kept byte-for-byte (ADR-0005
+            # #marker). By DATE, not by stem: save-state ids are session
+            # hashes (`savestate_fd45323ccbb8`), so sorting the names picked
+            # an arbitrary one and called it newest. `created` comes from the
+            # frontmatter, mtime is the tiebreak.
+            newest = sorted(saves, key=lambda e: (e.created, e.mtime))[-1]
         lines.append(
             f"- [Save-states ({len(saves)}), newest {newest.path.stem}]"
             f"({newest.rel}) — session handoffs; `rmx recall-state` reads the newest")
@@ -301,11 +477,136 @@ def render(memdir: Path, *, max_lines: int = MAX_LINES,
     return text
 
 
+def _render_organised(memdir: Path, entries: list, prose: list, *, max_lines: int,
+                      max_chars: int) -> str:
+    """The layout-1 renderer (ADR-0005 #hooks, task 26.1 AC-5): the carried
+    prose block first, then the entries under what the block leaves of BOTH
+    budgets -- the prose's characters count against `MAX_INDEX_CHARS`."""
+    block = _carried_block(prose)
+    return block + _render_entries(
+        memdir, entries, organised=True,
+        max_lines=max(1, max_lines - block.count("\n")),
+        max_chars=max_chars - len(block))
+
+
+def render(memdir: Path, *, max_lines: int = MAX_LINES,
+           max_chars: int = MAX_INDEX_CHARS) -> str:
+    """The index `write` would produce. An organised dir (`.memory-layout`)
+    gets the layout-1 renderer; any other dir gets the pre-ADR render exactly
+    (ADR-0005 #marker: a deploy changes no un-organised dir's files)."""
+    memdir = Path(memdir)
+    entries = collect(memdir)
+    if memory_layout.is_organised(memdir):
+        return _render_organised(memdir, entries, _prose_lines(_index_lines(memdir)),
+                                 max_lines=max_lines, max_chars=max_chars)
+    return _render_entries(memdir, entries, organised=False,
+                           max_lines=max_lines, max_chars=max_chars)
+
+
+def _named_count(lines: list, rels: set) -> int:
+    """How many memories a rendered index NAMES: inline entry links, plus the
+    count each generated pointer and the fold line stand for (task 26.1 AC-6).
+    A fold is a summary, not a loss -- counting links only would refuse every
+    legitimate fold."""
+    n = 0
+    for ln in lines:
+        for rx in (_FOLD_RE, _IMPS_RE, _SAVES_RE):
+            m = rx.match(ln)
+            if m:
+                n += int(m.group(1))
+                break
+        else:
+            if _is_entry_line(ln) and ln.split("](", 1)[1].split(")", 1)[0] in rels:
+                n += 1
+    return n
+
+
+def _refuse(out, reason: str) -> int:
+    print(f"{INDEX_NAME}: {reason}; index left untouched", file=out)
+    return 0
+
+
+def _write_organised(memdir: Path, entries: list, *, max_lines: int, max_chars: int,
+                     out) -> int:
+    """An organised dir's write: carried prose, the two refusals, the id-keyed
+    sidecar (task 26.1 AC-4..AC-6, ADR-0005 #hooks). Every refusal leaves the
+    index AND the sidecar untouched, says why on `out`, and returns 0."""
+    idx = memdir / INDEX_NAME
+    before_lines = _index_lines(memdir)
+    prose = _prose_lines(before_lines)
+    block = _carried_block(prose)
+    # AC-5: prose counts against the char budget. When it alone leaves less
+    # than a quarter for entries, refuse -- folding every entry away to make
+    # room for prose would hide the memories the index exists to reach.
+    if prose and (max_chars - len(block)) < MIN_ENTRY_SHARE * max_chars:
+        return _refuse(out, (
+            f"the carried hand-written prose ({len(prose)} prose lines, {len(block)} "
+            f"chars) leaves less than {int(MIN_ENTRY_SHARE * 100)}% of the "
+            f"{max_chars}-char budget for entries; move that prose into a memory"))
+    text = _render_organised(memdir, entries, prose,
+                             max_lines=max_lines, max_chars=max_chars)
+    after_lines = text.splitlines()
+    # AC-6: the shrink guard counts CONTENT -- entries plus prose -- not links.
+    after_set = set(after_lines)
+    lost = [p for p in prose if p not in after_set]
+    if lost:
+        return _refuse(out, (
+            f"the render would lose {len(lost)} hand-written prose line(s), e.g. "
+            f"{lost[0][:80]!r}"))
+    before_content = sum(1 for ln in before_lines if _is_entry_line(ln)) + len(prose)
+    after_content = _named_count(after_lines, {e.rel for e in entries}) + len(prose)
+    if before_content and after_content < MIN_CONTENT_KEPT * before_content:
+        return _refuse(out, (
+            f"the render would keep {after_content} of {before_content} content lines "
+            f"(entries + prose; under {int(MIN_CONTENT_KEPT * 100)}%) -- a partial "
+            f"view of {memdir} ({len(entries)} memories visible)"))
+    before_refs = {l.split("](", 1)[1].split(")", 1)[0]
+                   for l in before_lines if _is_entry_line(l)}
+    after_refs = {l.split("](", 1)[1].split(")", 1)[0]
+                  for l in after_lines if _is_entry_line(l)}
+    gone = sorted(r for r in before_refs - after_refs if not (memdir / r).exists())
+    dead = _dead_hooks(memdir, entries)
+    idx.write_text(text)
+    save_hooks(memdir, entries, dead=dead)
+    _report(out, before_lines, after_lines, text, entries, max_lines, max_chars, gone)
+    if prose:
+        print(f"{INDEX_NAME}: carried {len(prose)} hand-written prose line(s)", file=out)
+    if dead:
+        names = sorted(dead)
+        print(f"{INDEX_NAME}: kept {len(dead)} curated hook(s) whose link is dead "
+              f"under their own key in {HOOKS_SIDECAR}: {', '.join(names[:5])}"
+              f"{' …' if len(names) > 5 else ''}", file=out)
+    return len(after_lines)
+
+
+def _report(out, before_lines, after_lines, text, entries, max_lines, max_chars,
+            gone) -> None:
+    over = len(text) > max_chars
+    print(f"{INDEX_NAME}: {len(before_lines)} -> {len(after_lines)} lines, "
+          f"{len(text)} chars (caps {max_lines} lines / {max_chars} chars; "
+          f"{len(entries)} memories on disk)", file=out)
+    if over:
+        # Folding ran out of foldable entries. The index still will not fit,
+        # and saying "in sync" here is exactly the silence bug-042 created.
+        print(f"{INDEX_NAME}: STILL OVER the {max_chars}-char budget at "
+              f"{len(text)} chars — the tail WILL be cut on load; nothing left "
+              f"to fold (feedback entries are never folded)", file=out)
+    if gone:
+        print(f"{INDEX_NAME}: dropped {len(gone)} entr"
+              f"{'y' if len(gone) == 1 else 'ies'} whose file is gone: "
+              f"{', '.join(gone[:5])}{' …' if len(gone) > 5 else ''}", file=out)
+
+
 def write(memdir: Path, *, max_lines: int = MAX_LINES,
           max_chars: int = MAX_INDEX_CHARS, out=None) -> int:
     """Rewrite the index. Returns the number of lines written, and SAYS what it
     did — a silent rewrite of the memory index is the shape this project's
-    no-silent-failures rule exists to prevent."""
+    no-silent-failures rule exists to prevent.
+
+    An organised dir takes `_write_organised` (task 26.1); every other dir
+    takes the pre-ADR write below unchanged, including its prose-dropping
+    compaction and its path-keyed sidecar (ADR-0005 #marker, r3 s1/m4: a guard
+    there would refuse every index write in the fleet's un-organised dirs)."""
     # stderr, NOT stdout: `rmx mcp` speaks JSON-RPC on stdout and save-state
     # calls this with no `out=`, so a report line lands mid-protocol and the
     # client fails to parse the frame around it (bug-045 / ch-bsd #b-2). The
@@ -324,6 +625,9 @@ def write(memdir: Path, *, max_lines: int = MAX_LINES,
         print(f"{INDEX_NAME}: no memory files found under {memdir}; "
               f"index left untouched", file=out)
         return 0
+    if memory_layout.is_organised(memdir):
+        return _write_organised(memdir, entries, max_lines=max_lines,
+                                max_chars=max_chars, out=out)
     before_lines = idx.read_text(errors="replace").splitlines() if idx.exists() else []
     before_refs = {l.split("](", 1)[1].split(")", 1)[0]
                    for l in before_lines if l.startswith("- [") and "](" in l}
@@ -341,20 +645,7 @@ def write(memdir: Path, *, max_lines: int = MAX_LINES,
     # Persist EVERY entry's hook, listed or folded, so the next render
     # does not lose the folded ones and fold further (bug-050).
     save_hooks(memdir, entries)
-    over = len(text) > max_chars
-    print(f"{INDEX_NAME}: {len(before_lines)} -> {len(after_lines)} lines, "
-          f"{len(text)} chars (caps {max_lines} lines / {max_chars} chars; "
-          f"{len(entries)} memories on disk)", file=out)
-    if over:
-        # Folding ran out of foldable entries. The index still will not fit,
-        # and saying "in sync" here is exactly the silence bug-042 created.
-        print(f"{INDEX_NAME}: STILL OVER the {max_chars}-char budget at "
-              f"{len(text)} chars — the tail WILL be cut on load; nothing left "
-              f"to fold (feedback entries are never folded)", file=out)
-    if gone:
-        print(f"{INDEX_NAME}: dropped {len(gone)} entr"
-              f"{'y' if len(gone) == 1 else 'ies'} whose file is gone: "
-              f"{', '.join(gone[:5])}{' …' if len(gone) > 5 else ''}", file=out)
+    _report(out, before_lines, after_lines, text, entries, max_lines, max_chars, gone)
     return len(after_lines)
 
 

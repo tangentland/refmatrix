@@ -1372,8 +1372,26 @@ def ingest_gmd_paths(
 MEMORY_INDEX_FILES = frozenset({"MEMORY.md"})
 
 
-def collect_gmd_files(targets: list[Path]) -> list[Path]:
-    """Expand a list of files or directories to candidate GMD paths."""
+def collect_gmd_files(targets: list[Path], *, as_memory: bool = False) -> list[Path]:
+    """Expand a list of files or directories to candidate GMD paths.
+
+    `as_memory=True` (task 26.1 AC-2, ADR-0005 #one-walk, 2026-11-09): a
+    directory target is a MEMORY DIR and is expanded with
+    `memory_layout.iter_memory_files` -- the one walk of a memdir. The doc walk
+    below (`rglob`) took dot-dirs, so a `.organise-rollback-1/x.md` aside was
+    ingested as a memory (ch-bsd plan-26 r1 #s3). Every memory call site passes
+    the flag -- the daemon sync and detached ops, both prestage twins, the
+    in-process bridge -- so prestage stamps hashes on exactly the set the bridge
+    ingests (r2 m1, r3 m7). Doc ingest keeps its own walk.
+
+    Two details on the memory path, both so nothing is skipped silently:
+    - the memdir's own top-level `MEMORY.md` is still passed through, so
+      `ingest_gmd_paths` keeps COUNTING and naming it as `skipped_index`
+      (ch-bsd plan-5 #b-2's report contract);
+    - every other `.md` the walk excluded (dot-paths, `README.md`, a nested
+      `MEMORY.md`) is counted and named on stderr.
+    """
+    import sys as _sys
     out: list[Path] = []
     seen: set[Path] = set()
     for t in targets:
@@ -1381,6 +1399,25 @@ def collect_gmd_files(targets: list[Path]) -> list[Path]:
             if t not in seen:
                 out.append(t)
                 seen.add(t)
+        elif t.is_dir() and as_memory:
+            from refmatrix.memory_layout import iter_memory_files
+            excluded: list[Path] = []
+            for p in iter_memory_files(t, skipped=excluded):
+                if p not in seen:
+                    out.append(p)
+                    seen.add(p)
+            index = [p for p in excluded
+                     if p.parent == t and p.name in MEMORY_INDEX_FILES]
+            for p in index:
+                if p not in seen:
+                    out.append(p)
+                    seen.add(p)
+            other = [p for p in excluded if p not in index]
+            if other:
+                names = ", ".join(str(p.relative_to(t)) for p in other[:5])
+                print(f"ingest-gmd --as-memory: {t}: skipped {len(other)} non-memory "
+                      f".md file(s) (dot-path or README.md, ADR-0005 #one-walk): "
+                      f"{names}{' …' if len(other) > 5 else ''}", file=_sys.stderr)
         elif t.is_dir():
             for ext in ("*.gmd", "*.md"):
                 for p in sorted(t.rglob(ext)):

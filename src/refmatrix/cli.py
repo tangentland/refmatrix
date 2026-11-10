@@ -10243,6 +10243,8 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
             resp = daemon_mod.call(root, "prestage_hashes", {
                 "targets": [str(p) for p in resolved],
                 "partition": ingest_partition,
+                # the op walks a memdir with the memory walk (task 26.1 AC-2)
+                "as_memory": as_memory,
             }, timeout=600.0)
             if not resp.get("ok"):
                 raise click.ClickException(
@@ -10251,7 +10253,8 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
             report = resp["result"]
         else:
             s = _store()
-            files = collect_gmd_files(resolved)
+            # the no-daemon twin of the `prestage_hashes` op: same walk (r3 m7)
+            files = collect_gmd_files(resolved, as_memory=as_memory)
             with s.with_partition(ingest_partition):
                 report = prestage_hashes(s, files)
         console.print(
@@ -10418,7 +10421,8 @@ def _ingest_gmd_sync(resolved: list[Path], *, as_memory: bool,
         st["embed"] = resp["result"].get("embed")
         return rep, st
     s = _store_rw()
-    files = collect_gmd_files(resolved)
+    # THE memory walk on the memory path (task 26.1 AC-2, ADR-0005 #one-walk)
+    files = collect_gmd_files(resolved, as_memory=as_memory)
     if not files:
         return ("no candidate files found", {}) if with_stats else "no candidate files found"
     if verbose:
