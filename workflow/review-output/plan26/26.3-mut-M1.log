@@ -1,0 +1,90 @@
+FFFF.                                                                    [100%]
+=================================== FAILURES ===================================
+____ test_ac1_compose_writes_the_top_level_in_an_unorganised_dir_as_at_head ____
+
+base = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-jos5s1yv')
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-jos5s1yv/memory')
+
+    def test_ac1_compose_writes_the_top_level_in_an_unorganised_dir_as_at_head(base, memdir):
+        res = compose(base, memdir)
+        want = memdir / f"{MEM_ID}.md"
+>       assert res["target"] == str(want)
+E       AssertionError: assert '/var/folders...te_sess263.md' == '/var/folders...te_sess263.md'
+E         
+E         Skipping 71 identical leading characters in diff, use -v to show
+E         - /savestate_sess263.md
+E         + /savestates/savestate_sess263.md
+E         ? +++++++++++
+
+tests/test_savestate_subfolder.py:178: AssertionError
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 1 lines, 135 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+MEMORY.md: dropped 1 entry whose file is gone: savestate_sess263.md
+_______ test_ac1_the_mcp_verb_writes_where_the_layout_says[unorganised] ________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-cs28e79t/memory')
+organised = False
+
+    @pytest.mark.parametrize("organised", [True, False], ids=["organised", "unorganised"])
+    def test_ac1_the_mcp_verb_writes_where_the_layout_says(memdir, organised):
+        if organised:
+            organise(memdir)
+        res = save_verb(memdir, "sess-mcp")
+        rel = "savestates/savestate_sessmcp.md" if organised else "savestate_sessmcp.md"
+        # the verb resolves `memory_dir` (`/var` -> `/private/var` on macOS)
+>       assert res["target"] == str(memdir.resolve() / rel), res["target"]
+E       AssertionError: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-cs28e79t/memory/savestates/savestate_sessmcp.md
+E       assert '/private/var...te_sessmcp.md' == '/private/var...te_sessmcp.md'
+E         
+E         Skipping 79 identical leading characters in diff, use -v to show
+E         - /savestate_sessmcp.md
+E         + /savestates/savestate_sessmcp.md
+E         ? +++++++++++
+
+tests/test_savestate_subfolder.py:199: AssertionError
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 1 lines, 135 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+MEMORY.md: dropped 1 entry whose file is gone: savestate_sessmcp.md
+__________ test_ac1_the_cli_writes_where_the_layout_says[unorganised] __________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-2cm40rkx/memory')
+organised = False
+
+    @pytest.mark.parametrize("organised", [True, False], ids=["organised", "unorganised"])
+    def test_ac1_the_cli_writes_where_the_layout_says(memdir, organised):
+        if organised:
+            organise(memdir)
+        save_cli(memdir, "sess-cli")
+        rel = "savestates/savestate_sesscli.md" if organised else "savestate_sesscli.md"
+>       assert md_files(memdir) == [rel], md_files(memdir)
+E       AssertionError: ['savestates/savestate_sesscli.md']
+E       assert ['savestates/...e_sesscli.md'] == ['savestate_sesscli.md']
+E         
+E         At index 0 diff: 'savestates/savestate_sesscli.md' != 'savestate_sesscli.md'
+E         Use -v to get more diff
+
+tests/test_savestate_subfolder.py:209: AssertionError
+_______ test_ac2_an_unorganised_dir_overwrites_the_legacy_file_in_place ________
+
+base = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-91snb7o2')
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-91snb7o2/memory')
+
+    def test_ac2_an_unorganised_dir_overwrites_the_legacy_file_in_place(base, memdir):
+        ss(memdir, f"{MEM_ID}.md", created="2026-10-30", mtime=at(2026, 10, 31))
+        compose(base, memdir)
+        p = memdir / f"{MEM_ID}.md"
+        assert p.is_file() and fm(p, "created") == "2026-10-30"
+>       assert not (memdir / "savestates").exists()
+E       AssertionError: assert not True
+E        +  where True = exists()
+E        +    where exists = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-91snb7o2/memory') / 'savestates').exists
+
+tests/test_savestate_subfolder.py:257: AssertionError
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 1 lines, 135 chars (caps 200 lines / 24000 chars; 2 memories on disk)
+=========================== short test summary info ============================
+FAILED tests/test_savestate_subfolder.py::test_ac1_compose_writes_the_top_level_in_an_unorganised_dir_as_at_head
+FAILED tests/test_savestate_subfolder.py::test_ac1_the_mcp_verb_writes_where_the_layout_says[unorganised]
+FAILED tests/test_savestate_subfolder.py::test_ac1_the_cli_writes_where_the_layout_says[unorganised]
+FAILED tests/test_savestate_subfolder.py::test_ac2_an_unorganised_dir_overwrites_the_legacy_file_in_place
+4 failed, 1 passed, 30 deselected in 0.94s

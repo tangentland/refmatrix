@@ -152,6 +152,23 @@ def test_compose_save_state_writes_handoff_and_index(tmp_path):
     assert res["promoted"] is None  # promote=False
 
 
+def test_compose_save_state_writes_updated_with_time_of_day(tmp_path):
+    """Task 26.3 AC-1 (r2 s3): `updated:` is a full ISO datetime going forward, so two saves on
+    one day are ordered by it; `created:` stays a frozen date. At HEAD both were `today`."""
+    import re
+    from refmatrix.stm import Stm
+    root = tmp_path / ".refmatrix"
+    s = Stm(root, "sess-upd")
+    s.record("input", "work")
+    res = handoff.compose_save_state(
+        s, root, repo=tmp_path, memdir=tmp_path / "memory", today="2026-06-23",
+        promote=False, dry_run=False)
+    text = __import__("pathlib").Path(res["target"]).read_text()
+    upd = re.search(r"^  updated: (\S+)$", text, re.M).group(1)
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}([+-]\d{2}:?\d{2}|Z)?", upd), upd
+    assert re.search(r"^  created: 2026-06-23$", text, re.M), text
+
+
 def test_compose_save_state_dry_run_writes_nothing(tmp_path):
     from refmatrix.stm import Stm
     root = tmp_path / ".refmatrix"

@@ -1,0 +1,26 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_ac5_update_index_in_an_unorganised_dir_is_heads _____________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-ykmbzg9i/memory')
+
+    def test_ac5_update_index_in_an_unorganised_dir_is_heads(memdir):
+        idx = memdir / "MEMORY.md"
+        idx.write_text("- [Old](savestate_x.md) — old hook\n", encoding="utf-8")
+        handoff._ss_update_index(memdir, "savestate_x", "New Title", "new hook")
+        body = idx.read_text(encoding="utf-8")
+>       assert body == "- [New Title](savestate_x.md) — new hook\n", body
+E       AssertionError: - [New Title](savestates/savestate_x.md) — new hook
+E         
+E       assert '- [New Title... — new hook\n' == '- [New Title... — new hook\n'
+E         
+E         - - [New Title](savestate_x.md) — new hook
+E         + - [New Title](savestates/savestate_x.md) — new hook
+E         ?                        +++++++++++
+
+tests/test_savestate_subfolder.py:387: AssertionError
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: no memory files found under /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-ykmbzg9i/memory; index left untouched
+=========================== short test summary info ============================
+FAILED tests/test_savestate_subfolder.py::test_ac5_update_index_in_an_unorganised_dir_is_heads
+1 failed in 0.20s
