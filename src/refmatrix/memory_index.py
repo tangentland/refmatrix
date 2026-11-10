@@ -342,11 +342,19 @@ def load_hooks(memdir: Path) -> dict:
     a sidecar keyed by path (pre-ADR, and what an un-organised write still
     writes) and one keyed by memory id (an organised write) are both read, and
     every path key is also aliased to its id. A reader writes no file.
+
+    Precedence (decided 2026-11-09 at the 26.1 remedy GREEN, AC-5): the
+    index wins -- it is what a human last edited by hand -- EXCEPT that an
+    EMPTY index hook never replaces a non-empty sidecar hook, under the id key
+    or the path alias, in every dir. An entry whose link alone exceeds the
+    line cap renders with no hook (bug-192, ch-bsd 26.1 #b-1); letting that
+    empty read win erased the curated text on the very next render.
     """
     memdir = Path(memdir)
     hooks = _with_id_aliases(memdir, _read_sidecar(memdir))
-    # The index wins: it is what a human last edited by hand.
-    hooks.update(parse_hooks(memdir / INDEX_NAME))
+    for k, v in parse_hooks(memdir / INDEX_NAME).items():
+        if v or not hooks.get(k):
+            hooks[k] = v
     return hooks
 
 
@@ -579,18 +587,27 @@ def _write_organised(memdir: Path, entries: list, *, max_lines: int, max_chars: 
     text = _render_organised(memdir, entries, prose,
                              max_lines=max_lines, max_chars=max_chars)
     # AC-6 (#m-1): `_render_entries` has already folded every foldable entry
-    # it could. Still over the budget means the tail WILL be cut on load, and
-    # the carried prose is the margin -- refuse rather than write a render
-    # known to be cut (ch-bsd 26.1 #m-1, 2026-11-09: cliquedb's marker-on
-    # render 1 was 24,378 chars and was written anyway). There is no
+    # it could. Still over the budget means the tail WILL be cut on load
+    # (ch-bsd 26.1 #m-1, 2026-11-09: cliquedb's marker-on render 1 was 24,378
+    # chars, pushed over by its carried prose, and was written anyway). There is no
     # "any prose lost" check: the render carries every prose line by
     # construction (#s-1 removed it as a guard that could never fire).
-    if len(text) > max_chars:
-        return _refuse(out, (
-            f"even with every foldable entry folded the render is {len(text)} chars, "
-            f"over the {max_chars}-char budget; the carried hand-written prose "
-            f"({len(prose)} prose lines, {len(block)} chars) is the margin -- move "
-            f"that prose into a memory"))
+    #
+    # Amended 2026-11-09 at the 26.1 remedy GREEN: refuse only when the CARRIED
+    # PROSE is what blocks the fit -- the same entries rendered without the
+    # block, against the whole budget, would fit -- because then the user can
+    # move prose into a memory. When even that cannot fit (feedback is never
+    # folded), write it and let `_report` say STILL OVER, as a marker-off dir
+    # does: an index that stops updating is worse than an over-budget one.
+    if len(text) > max_chars and prose:
+        bare = _render_entries(memdir, entries, organised=True,
+                               max_lines=max_lines, max_chars=max_chars)
+        if len(bare) <= max_chars:
+            return _refuse(out, (
+                f"even with every foldable entry folded the render is {len(text)} "
+                f"chars, over the {max_chars}-char budget, and without the carried "
+                f"hand-written prose ({len(prose)} prose lines, {len(block)} chars) "
+                f"it would fit ({len(bare)} chars) -- move that prose into a memory"))
     after_lines = text.splitlines()
     # AC-6: the shrink guard counts CONTENT -- entries plus prose -- not links.
     before_content = sum(1 for ln in before_lines if _is_entry_line(ln)) + len(prose)
