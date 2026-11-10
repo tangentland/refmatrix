@@ -42,6 +42,8 @@ Window: the newest run bullets. Older bullets are folded VERBATIM, anchor ids un
 - 2026-11-10 (task 26.1 follow-up r3) — A REGISTRY FIX COLUMN CAN PROMISE A REPAIR THE FOLLOW-UP SPEC QUIETLY DROPS. bug-193 promised to restore cut hooks; no AC carried it. Check the registry Fix text against the spec's ACs. {#imp-registry-fix-vs-spec-acs}
 - 2026-11-10 (task 26.1 follow-up r4, 705dbae) — HOOK PRECEDENCE CONVERGED WHEN THE INDEX WENT BYTE-STABLE ON REAL COPIES. Four real memdirs render byte-identical to r3 and only the pointer fix moves the sidecar; the last edge is identity across a move, which belongs to the first task that moves files (26.3). Check it there. {#imp-precedence-converged-byte-stable}
 - 2026-11-10 (task 26.1 follow-up r4) — AN IMPLEMENTER'S FLAG IN A SUMMARY IS HONEST BUT UNANCHORED. When a summary flag documents a gap, require a test or an AC in the consuming task's spec before accepting it. {#imp-flag-needs-an-anchor}
+- 2026-11-10 (bug-195 r1, 39777c6) — AN AUDITOR'S RECOUNT IS EVIDENCE TOO, AND IT CAN BE LOOSE. r3's "prefix anywhere in the body" heuristic called 2 short curated cuts derived (37/29 vs the tool's 35/30). When a spec quotes an audit's number, re-measure it with the tool's own rule. {#imp-recount-with-the-tools-rule}
+- 2026-11-10 (bug-195 r1) — AN ATOMIC-WRITE HELPER CHANGES THE FILE MODE AS A SIDE EFFECT. mkstemp + replace turned every save-state's 0644 sidecar into 0600 with identical bytes. When a write path is swapped for an atomic one, compare the mode as well as the bytes. {#imp-atomic-write-changes-mode}
 
 ## Former anchors, restored {#former-anchors}
 
