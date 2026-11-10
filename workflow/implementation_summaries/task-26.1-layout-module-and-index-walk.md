@@ -185,3 +185,39 @@ All 6 were killed, with no survivors.
   Such a dir's index stops updating until feedback entries shrink. Marker-off dirs still write
   the over-budget index with `STILL OVER`.
 - **bug-192's registry row** lives on `master`. It is left for the orchestrator to flip at merge.
+
+Both flags above were decided on 2026-11-09 (spec `03516f2`) and fixed in [[#remedy-r2-r3]].
+
+### Remedy r2, round 3: hook precedence and the amended #m-1 {#remedy-r2-r3}
+
+This round is TDD GREEN over RED `bf2a380`, which has 3 tests (log
+`workflow/review-output/plan26/26.1-r3-red.log`). It was built from the 2026-11-09 amendments in
+`03516f2`. Fix commit `b35ad71`. No test was written or edited.
+
+- **`memory_index.load_hooks`.** An EMPTY hook parsed from an index line never replaces a
+  non-empty sidecar value. This holds under the id key and the path alias, in every dir. A
+  non-empty index hook still wins.
+- **`memory_index._write_organised` (#m-1 amended).** When the render is still over `max_chars`
+  after the full fold, it renders the entries again without the carried block, against the whole
+  budget.
+  - If that fits, the carried prose is what blocks the fit. The write refuses: index and sidecar
+    are untouched, the reason names the prose line count plus "untouched", and it returns 0.
+  - If it does not fit either, the carried render is written and `_report` prints `STILL OVER`,
+    as a marker-off dir does.
+  - A prose-free dir never refuses here.
+
+Verification, with the same interpreter and `-B` as above:
+
+- `26.1-r3-green.log`: the 3 RED tests plus the 3 existing #m-1 tests, 6 of 6.
+- `26.1-r3-five-files.log`: 115 of 115.
+- `26.1-r3-family.log`: 439 of 439.
+
+The mutations ran against `b35ad71`, with the same restore discipline as above. Logs are
+`26.1-r3-mut-<name>.log`.
+
+| mutation | killed by |
+|---|---|
+| empty-hook precedence reverted (the index always wins) | `test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_organised` |
+| refuse-always reverted (refuse whenever over budget, prose or not) | `test_m1_no_prose_over_budget_even_fully_folded_writes_and_says_still_over` |
+
+Both mutations were killed.
