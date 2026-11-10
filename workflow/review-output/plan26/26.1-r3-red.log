@@ -1,75 +1,708 @@
-..................................FFF                                    [100%]
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-plan26
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 156 items
+
+tests/test_memory_index_layout.py ...................................... [ 24%]
+..............FFFFFFF......FFFFFF..................FFFFFFF               [ 61%]
+tests/test_memory_index_char_budget.py ...............                   [ 71%]
+tests/test_memory_index.py .................                             [ 82%]
+tests/test_memory_layout.py ............................                 [100%]
+
 =================================== FAILURES ===================================
-__ test_m1_no_prose_over_budget_even_fully_folded_writes_and_says_still_over ___
+_______________________ test_r3_dead_parse_hooks_is_gone _______________________
 
-memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-ursz1ro3/memory')
+    def test_r3_dead_parse_hooks_is_gone():
+        """r3 #b-1: after 85098fe rebuilt `load_hooks` on `_index_hook_records`, `parse_hooks` had
+        no caller in src/ or the templates -- a helper only a test ran. `load_hooks` is the reader
+        (tests/test_memory_index_char_budget.py::test_a_folded_entry_keeps_its_curated_hook)."""
+>       assert not hasattr(mi, "parse_hooks"), \
+            "parse_hooks is still defined in refmatrix.memory_index with no production caller"
+E       AssertionError: parse_hooks is still defined in refmatrix.memory_index with no production caller
+E       assert not True
+E        +  where True = hasattr(mi, 'parse_hooks')
 
-    def test_m1_no_prose_over_budget_even_fully_folded_writes_and_says_still_over(memdir):
-        """AC-6 (amended 03516f2): with NO carried prose there is nothing the user can move, so an
-        index that cannot fit even fully folded is WRITTEN and `STILL OVER` is printed, exactly as a
-        marker-off dir does -- an index that stops updating is worse than an over-budget one."""
-        for i in range(10):
-            mem(memdir, f"feedback/feedback_f{i}.md", title=f"F{i}", mtype="feedback",
-                body="c" * 130)
-        before = "- [F0](feedback/feedback_f0.md) — the only entry the old index listed\n"
-        (memdir / "MEMORY.md").write_text(before, encoding="utf-8")
-        organise(memdir)
-        r = run_entry(memdir, env={"RMX_MEMORY_INDEX_CHARS": "1000"})
-        said = r.stdout + r.stderr
-        assert r.returncode == 0, said
+tests/test_memory_index_layout.py:1108: AssertionError
+_ test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[edit-organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-8p0loxs5/memory')
+organised = True, shape = 'edit'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value(memdir, organised, shape):
+        """r3 #s-1, the auditor's edge_b probe: sidecar value "the curated hook a human wrote for
+        this memory", the user shortens the line to `the curated hook…`. The line had room for
+        the whole value, so the edit is the user's: it replaces the value, as at HEAD 61b3bde. At
+        c9a035e the next write put the old full hook back in the index and the sidecar and said
+        nothing. Marker-off: index AND sidecar bytes equal 61b3bde's own write."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "curated", SHORT, shape)
+        assert len(SHORT) <= _room(link_part)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
         text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
->       assert text != before, f"the over-budget, prose-free write was refused: {said}"
-E       AssertionError: the over-budget, prose-free write was refused: MEMORY.md: even with every foldable entry folded the render is 1555 chars, over the 1000-char budget; the carried hand-written prose (0 prose lines, 0 chars) is the margin -- move that prose into a memory; index left untouched
+>       assert sidecar(memdir).get(key) == hook, \
+            f"{shape}: the hand-shortened hook was reverted to the sidecar value: {sidecar(memdir)}"
+E       AssertionError: edit: the hand-shortened hook was reverted to the sidecar value: {'feedback_a': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == 'the curated hook…'
 E         
-E       assert '- [F0](feedback/feedback_f0.md) — the only entry the old index listed\n' != '- [F0](feedback/feedback_f0.md) — the only entry the old index listed\n'
+E         - the curated hook…
+E         + the curated hook a human wrote for this memory
 
-tests/test_memory_index_layout.py:722: AssertionError
-_ test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_organised _
+tests/test_memory_index_layout.py:1168: AssertionError
+_ test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[edit-marker-off] _
 
-memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-a1lsbyo0/memory')
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-se7rq03q/memory')
+organised = False, shape = 'edit'
 
-    def test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_organised(memdir):
-        rel = "feedback/feedback_" + "l" * 190 + ".md"
-        mid = _long_link_memory(memdir, rel)
-        organise(memdir)
-        (memdir / mi.HOOKS_SIDECAR).write_text(json.dumps({mid: CURATED}), encoding="utf-8")
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value(memdir, organised, shape):
+        """r3 #s-1, the auditor's edge_b probe: sidecar value "the curated hook a human wrote for
+        this memory", the user shortens the line to `the curated hook…`. The line had room for
+        the whole value, so the edit is the user's: it replaces the value, as at HEAD 61b3bde. At
+        c9a035e the next write put the old full hook back in the index and the sidecar and said
+        nothing. Marker-off: index AND sidecar bytes equal 61b3bde's own write."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "curated", SHORT, shape)
+        assert len(SHORT) <= _room(link_part)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert sidecar(memdir).get(key) == hook, \
+            f"{shape}: the hand-shortened hook was reverted to the sidecar value: {sidecar(memdir)}"
+E       AssertionError: edit: the hand-shortened hook was reverted to the sidecar value: {'feedback_a.md': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == 'the curated hook…'
+E         
+E         - the curated hook…
+E         + the curated hook a human wrote for this memory
+
+tests/test_memory_index_layout.py:1168: AssertionError
+_ test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[cut-organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-axrtqb5b/memory')
+organised = True, shape = 'cut'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value(memdir, organised, shape):
+        """r3 #s-1, the auditor's edge_b probe: sidecar value "the curated hook a human wrote for
+        this memory", the user shortens the line to `the curated hook…`. The line had room for
+        the whole value, so the edit is the user's: it replaces the value, as at HEAD 61b3bde. At
+        c9a035e the next write put the old full hook back in the index and the sidecar and said
+        nothing. Marker-off: index AND sidecar bytes equal 61b3bde's own write."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "curated", SHORT, shape)
+        assert len(SHORT) <= _room(link_part)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert sidecar(memdir).get(key) == hook, \
+            f"{shape}: the hand-shortened hook was reverted to the sidecar value: {sidecar(memdir)}"
+E       AssertionError: cut: the hand-shortened hook was reverted to the sidecar value: {'feedback_a': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == 'the curated ...rote for thi…'
+E         
+E         - the curated hook a human wrote for thi…
+E         ?                                       ^
+E         + the curated hook a human wrote for this memory
+E         ?                                       ^^^^^^^^
+
+tests/test_memory_index_layout.py:1168: AssertionError
+_ test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[cut-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-__7pgbgt/memory')
+organised = False, shape = 'cut'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value(memdir, organised, shape):
+        """r3 #s-1, the auditor's edge_b probe: sidecar value "the curated hook a human wrote for
+        this memory", the user shortens the line to `the curated hook…`. The line had room for
+        the whole value, so the edit is the user's: it replaces the value, as at HEAD 61b3bde. At
+        c9a035e the next write put the old full hook back in the index and the sidecar and said
+        nothing. Marker-off: index AND sidecar bytes equal 61b3bde's own write."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "curated", SHORT, shape)
+        assert len(SHORT) <= _room(link_part)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert sidecar(memdir).get(key) == hook, \
+            f"{shape}: the hand-shortened hook was reverted to the sidecar value: {sidecar(memdir)}"
+E       AssertionError: cut: the hand-shortened hook was reverted to the sidecar value: {'feedback_a.md': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == 'the curated ...rote for thi…'
+E         
+E         - the curated hook a human wrote for thi…
+E         ?                                       ^
+E         + the curated hook a human wrote for this memory
+E         ?                                       ^^^^^^^^
+
+tests/test_memory_index_layout.py:1168: AssertionError
+_ test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[bare-organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-gjeagopf/memory')
+organised = True, shape = 'bare'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value(memdir, organised, shape):
+        """r3 #s-1, the auditor's edge_b probe: sidecar value "the curated hook a human wrote for
+        this memory", the user shortens the line to `the curated hook…`. The line had room for
+        the whole value, so the edit is the user's: it replaces the value, as at HEAD 61b3bde. At
+        c9a035e the next write put the old full hook back in the index and the sidecar and said
+        nothing. Marker-off: index AND sidecar bytes equal 61b3bde's own write."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "curated", SHORT, shape)
+        assert len(SHORT) <= _room(link_part)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert sidecar(memdir).get(key) == hook, \
+            f"{shape}: the hand-shortened hook was reverted to the sidecar value: {sidecar(memdir)}"
+E       AssertionError: bare: the hand-shortened hook was reverted to the sidecar value: {'feedback_a': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == '…'
+E         
+E         - …
+E         + the curated hook a human wrote for this memory
+
+tests/test_memory_index_layout.py:1168: AssertionError
+_ test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[bare-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-qd_e21oo/memory')
+organised = False, shape = 'bare'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value(memdir, organised, shape):
+        """r3 #s-1, the auditor's edge_b probe: sidecar value "the curated hook a human wrote for
+        this memory", the user shortens the line to `the curated hook…`. The line had room for
+        the whole value, so the edit is the user's: it replaces the value, as at HEAD 61b3bde. At
+        c9a035e the next write put the old full hook back in the index and the sidecar and said
+        nothing. Marker-off: index AND sidecar bytes equal 61b3bde's own write."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "curated", SHORT, shape)
+        assert len(SHORT) <= _room(link_part)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert sidecar(memdir).get(key) == hook, \
+            f"{shape}: the hand-shortened hook was reverted to the sidecar value: {sidecar(memdir)}"
+E       AssertionError: bare: the hand-shortened hook was reverted to the sidecar value: {'feedback_a.md': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == '…'
+E         
+E         - …
+E         + the curated hook a human wrote for this memory
+
+tests/test_memory_index_layout.py:1168: AssertionError
+_ test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-edit-organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-truhrxl1/memory')
+organised = True, source = 'derived', shape = 'edit'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("source", ["curated", "derived"])
+    def test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value(memdir, organised, source,
+                                                                      shape):
+        """The other half of the rule: the line could not carry the value (`len(value) > room`),
+        so `prefix…` / `…` is the renderer's, not the user's -- the existing value stands, curated
+        (sidecar) or derived (`_first_prose`, r3 #m-1), over two writes. The curated cells are
+        the bug-193 guard (GREEN at c9a035e); the derived cells are r3 #m-1 (RED)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, source, LONG_HOOK, shape)
+        assert len(LONG_HOOK) > _room(link_part)
         for n in (1, 2):
-            r = run_entry(memdir)
-            assert r.returncode == 0, r.stderr
+            mi.write(memdir, out=io.StringIO())
             side = sidecar(memdir)
->           assert side.get(mid) == CURATED, f"render {n}: curated hook lost: {side.get(mid)!r}"
-E           AssertionError: render 2: curated hook lost: 'derived prose, not curated'
-E           assert 'derived prose, not curated' == 'the curated ...r this memory'
+>           assert side.get(key) == LONG_HOOK, \
+                f"write {n}, {source}/{shape}: the index's {hook!r} replaced the value: {side}"
+E           AssertionError: write 1, derived/edit: the index's 'a curated hook…' replaced the value: {'feedback_a': 'a curated hook…'}
+E           assert 'a curated hook…' == 'a curated ho...xes look like'
 E             
-E             - the curated hook a human wrote for this memory
-E             + derived prose, not curated
+E             - a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactly what real indexes look like
+E             + a curated hook…
 
-tests/test_memory_index_layout.py:758: AssertionError
-_ test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_marker_off _
+tests/test_memory_index_layout.py:1194: AssertionError
+_ test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-edit-marker-off] _
 
-memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-dp597s8i/memory')
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-eu2gvijr/memory')
+organised = False, source = 'derived', shape = 'edit'
 
-    def test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_marker_off(memdir):
-        """Readers are dual in every dir (ADR-0005 #marker): the same precedence holds in
-        `load_hooks` without the marker, where `save_hooks` writes the path-keyed sidecar."""
-        rel = "feedback_" + "l" * 195 + ".md"
-        _long_link_memory(memdir, rel)
-        assert not (memdir / ".memory-layout").exists()
-        (memdir / mi.HOOKS_SIDECAR).write_text(json.dumps({rel: CURATED}), encoding="utf-8")
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("source", ["curated", "derived"])
+    def test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value(memdir, organised, source,
+                                                                      shape):
+        """The other half of the rule: the line could not carry the value (`len(value) > room`),
+        so `prefix…` / `…` is the renderer's, not the user's -- the existing value stands, curated
+        (sidecar) or derived (`_first_prose`, r3 #m-1), over two writes. The curated cells are
+        the bug-193 guard (GREEN at c9a035e); the derived cells are r3 #m-1 (RED)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, source, LONG_HOOK, shape)
+        assert len(LONG_HOOK) > _room(link_part)
         for n in (1, 2):
-            r = run_entry(memdir)
-            assert r.returncode == 0, r.stderr
+            mi.write(memdir, out=io.StringIO())
             side = sidecar(memdir)
->           assert side.get(rel) == CURATED, f"render {n}: curated hook lost: {side.get(rel)!r}"
-E           AssertionError: render 2: curated hook lost: 'derived prose, not curated'
-E           assert 'derived prose, not curated' == 'the curated ...r this memory'
+>           assert side.get(key) == LONG_HOOK, \
+                f"write {n}, {source}/{shape}: the index's {hook!r} replaced the value: {side}"
+E           AssertionError: write 1, derived/edit: the index's 'a curated hook…' replaced the value: {'feedback_a.md': 'a curated hook…'}
+E           assert 'a curated hook…' == 'a curated ho...xes look like'
 E             
-E             - the curated hook a human wrote for this memory
-E             + derived prose, not curated
+E             - a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactly what real indexes look like
+E             + a curated hook…
 
-tests/test_memory_index_layout.py:773: AssertionError
+tests/test_memory_index_layout.py:1194: AssertionError
+_ test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-cut-organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-156wcktt/memory')
+organised = True, source = 'derived', shape = 'cut'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("source", ["curated", "derived"])
+    def test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value(memdir, organised, source,
+                                                                      shape):
+        """The other half of the rule: the line could not carry the value (`len(value) > room`),
+        so `prefix…` / `…` is the renderer's, not the user's -- the existing value stands, curated
+        (sidecar) or derived (`_first_prose`, r3 #m-1), over two writes. The curated cells are
+        the bug-193 guard (GREEN at c9a035e); the derived cells are r3 #m-1 (RED)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, source, LONG_HOOK, shape)
+        assert len(LONG_HOOK) > _room(link_part)
+        for n in (1, 2):
+            mi.write(memdir, out=io.StringIO())
+            side = sidecar(memdir)
+>           assert side.get(key) == LONG_HOOK, \
+                f"write {n}, {source}/{shape}: the index's {hook!r} replaced the value: {side}"
+E           AssertionError: write 1, derived/cut: the index's 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which…' replaced the value: {'feedback_a': 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which…'}
+E           assert 'a curated ho...tself, which…' == 'a curated ho...xes look like'
+E             
+E             Skipping 156 identical leading characters in diff, use -v to show
+E             - elf, which is exactly what real indexes look like
+E             + elf, which…
+
+tests/test_memory_index_layout.py:1194: AssertionError
+_ test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-cut-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-syuek855/memory')
+organised = False, source = 'derived', shape = 'cut'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("source", ["curated", "derived"])
+    def test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value(memdir, organised, source,
+                                                                      shape):
+        """The other half of the rule: the line could not carry the value (`len(value) > room`),
+        so `prefix…` / `…` is the renderer's, not the user's -- the existing value stands, curated
+        (sidecar) or derived (`_first_prose`, r3 #m-1), over two writes. The curated cells are
+        the bug-193 guard (GREEN at c9a035e); the derived cells are r3 #m-1 (RED)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, source, LONG_HOOK, shape)
+        assert len(LONG_HOOK) > _room(link_part)
+        for n in (1, 2):
+            mi.write(memdir, out=io.StringIO())
+            side = sidecar(memdir)
+>           assert side.get(key) == LONG_HOOK, \
+                f"write {n}, {source}/{shape}: the index's {hook!r} replaced the value: {side}"
+E           AssertionError: write 1, derived/cut: the index's 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactl…' replaced the value: {'feedback_a.md': 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactl…'}
+E           assert 'a curated ho...ch is exactl…' == 'a curated ho...xes look like'
+E             
+E             Skipping 166 identical leading characters in diff, use -v to show
+E             -  is exactly what real indexes look like
+E             +  is exactl…
+
+tests/test_memory_index_layout.py:1194: AssertionError
+_ test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-bare-organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-8r6tnmw9/memory')
+organised = True, source = 'derived', shape = 'bare'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("source", ["curated", "derived"])
+    def test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value(memdir, organised, source,
+                                                                      shape):
+        """The other half of the rule: the line could not carry the value (`len(value) > room`),
+        so `prefix…` / `…` is the renderer's, not the user's -- the existing value stands, curated
+        (sidecar) or derived (`_first_prose`, r3 #m-1), over two writes. The curated cells are
+        the bug-193 guard (GREEN at c9a035e); the derived cells are r3 #m-1 (RED)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, source, LONG_HOOK, shape)
+        assert len(LONG_HOOK) > _room(link_part)
+        for n in (1, 2):
+            mi.write(memdir, out=io.StringIO())
+            side = sidecar(memdir)
+>           assert side.get(key) == LONG_HOOK, \
+                f"write {n}, {source}/{shape}: the index's {hook!r} replaced the value: {side}"
+E           AssertionError: write 1, derived/bare: the index's '…' replaced the value: {'feedback_a': '…'}
+E           assert '…' == 'a curated ho...xes look like'
+E             
+E             - a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactly what real indexes look like
+E             + …
+
+tests/test_memory_index_layout.py:1194: AssertionError
+_ test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-bare-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-bfsfa51f/memory')
+organised = False, source = 'derived', shape = 'bare'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("source", ["curated", "derived"])
+    def test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value(memdir, organised, source,
+                                                                      shape):
+        """The other half of the rule: the line could not carry the value (`len(value) > room`),
+        so `prefix…` / `…` is the renderer's, not the user's -- the existing value stands, curated
+        (sidecar) or derived (`_first_prose`, r3 #m-1), over two writes. The curated cells are
+        the bug-193 guard (GREEN at c9a035e); the derived cells are r3 #m-1 (RED)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, source, LONG_HOOK, shape)
+        assert len(LONG_HOOK) > _room(link_part)
+        for n in (1, 2):
+            mi.write(memdir, out=io.StringIO())
+            side = sidecar(memdir)
+>           assert side.get(key) == LONG_HOOK, \
+                f"write {n}, {source}/{shape}: the index's {hook!r} replaced the value: {side}"
+E           AssertionError: write 1, derived/bare: the index's '…' replaced the value: {'feedback_a.md': '…'}
+E           assert '…' == 'a curated ho...xes look like'
+E             
+E             - a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactly what real indexes look like
+E             + …
+
+tests/test_memory_index_layout.py:1194: AssertionError
+_ test_r3_derived_a_cut_of_derived_prose_is_never_frozen_into_the_sidecar[organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-zpf5dk2g/memory')
+organised = True
+
+    @_layouts()
+    def test_r3_derived_a_cut_of_derived_prose_is_never_frozen_into_the_sidecar(memdir, organised):
+        """r3 #m-1, how the 37 derived cuts in live refmatrix's sidecar arose (bug-195): no sidecar
+        value, the index line holds HEAD's cut of the memory's first prose on a no-room line. At
+        c9a035e `cur` was empty, the cut won, and `save_hooks` wrote it as if it were curated.
+        After the fix: the sidecar holds no cut, and the line is exactly what a render with no
+        index at all gives (the derived render)."""
+        rel, key, link_part, cut = _room_case(memdir, organised, "derived", LONG_HOOK, "cut")
+        fresh = memdir.parent / "fresh"
+        shutil.copytree(memdir, fresh)
+        (fresh / "MEMORY.md").unlink()
+        mi.write(fresh, out=io.StringIO())
+        derived_line = _line_for((fresh / "MEMORY.md").read_text(encoding="utf-8"), rel)
+        assert derived_line == _cut_line(link_part, LONG_HOOK)
+        mi.write(memdir, out=io.StringIO())
+        side = sidecar(memdir)
+>       assert cut not in side.values(), f"the cut of derived prose was frozen as a hook: {side}"
+E       AssertionError: the cut of derived prose was frozen as a hook: {'feedback_a': 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which…'}
+E       assert 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which…' not in dict_values(['a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which…'])
+E        +  where dict_values(['a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which…']) = <built-in method values of dict object at 0x1124ffb40>()
+E        +    where <built-in method values of dict object at 0x1124ffb40> = {'feedback_a': 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which…'}.values
+
+tests/test_memory_index_layout.py:1256: AssertionError
+_ test_r3_derived_a_cut_of_derived_prose_is_never_frozen_into_the_sidecar[marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-yvww40d1/memory')
+organised = False
+
+    @_layouts()
+    def test_r3_derived_a_cut_of_derived_prose_is_never_frozen_into_the_sidecar(memdir, organised):
+        """r3 #m-1, how the 37 derived cuts in live refmatrix's sidecar arose (bug-195): no sidecar
+        value, the index line holds HEAD's cut of the memory's first prose on a no-room line. At
+        c9a035e `cur` was empty, the cut won, and `save_hooks` wrote it as if it were curated.
+        After the fix: the sidecar holds no cut, and the line is exactly what a render with no
+        index at all gives (the derived render)."""
+        rel, key, link_part, cut = _room_case(memdir, organised, "derived", LONG_HOOK, "cut")
+        fresh = memdir.parent / "fresh"
+        shutil.copytree(memdir, fresh)
+        (fresh / "MEMORY.md").unlink()
+        mi.write(fresh, out=io.StringIO())
+        derived_line = _line_for((fresh / "MEMORY.md").read_text(encoding="utf-8"), rel)
+        assert derived_line == _cut_line(link_part, LONG_HOOK)
+        mi.write(memdir, out=io.StringIO())
+        side = sidecar(memdir)
+>       assert cut not in side.values(), f"the cut of derived prose was frozen as a hook: {side}"
+E       AssertionError: the cut of derived prose was frozen as a hook: {'feedback_a.md': 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactl…'}
+E       assert 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactl…' not in dict_values(['a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactl…'])
+E        +  where dict_values(['a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactl…']) = <built-in method values of dict object at 0x114e172c0>()
+E        +    where <built-in method values of dict object at 0x114e172c0> = {'feedback_a.md': 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactl…'}.values
+
+tests/test_memory_index_layout.py:1256: AssertionError
+_ test_r3_pointers_the_save_state_pointer_never_replaces_the_savestate_hook[organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-ylpqhrfc/memory')
+organised = True
+
+    @_layouts()
+    def test_r3_pointers_the_save_state_pointer_never_replaces_the_savestate_hook(memdir,
+                                                                                 organised):
+        """r3 #m-3: the pointer line `- [Save-states (N), newest savestate_X](savestate_X.md) —
+        session handoffs; ...` is path-keyed, so its GENERATED text won over savestate_X's sidecar
+        hook (cliquedb lost '11-08/09: two ruling walks closed…' this way; pre-existing at 61b3bde).
+        A generated pointer is no hook source; neither is the fold line."""
+        curated = "11-08/09: two ruling walks closed"
+        s, key, _ = _pointer_dir(memdir, organised, curated_save=curated)
+>       assert mi.load_hooks(memdir).get(key) == curated, mi.load_hooks(memdir)
+E       AssertionError: {'feedback/feedback_a.md': 'curated a', 'feedback_a': 'curated a', 'savestate_aaa111': 'session handoffs; `rmx recall-state` reads the newest', 'savestates/savestate_aaa111.md': 'session handoffs; `rmx recall-state` reads the newest'}
+E       assert 'session hand...ds the newest' == '11-08/09: tw... walks closed'
+E         
+E         - 11-08/09: two ruling walks closed
+E         + session handoffs; `rmx recall-state` reads the newest
+
+tests/test_memory_index_layout.py:1291: AssertionError
+_ test_r3_pointers_the_save_state_pointer_never_replaces_the_savestate_hook[marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-l41zzl63/memory')
+organised = False
+
+    @_layouts()
+    def test_r3_pointers_the_save_state_pointer_never_replaces_the_savestate_hook(memdir,
+                                                                                 organised):
+        """r3 #m-3: the pointer line `- [Save-states (N), newest savestate_X](savestate_X.md) —
+        session handoffs; ...` is path-keyed, so its GENERATED text won over savestate_X's sidecar
+        hook (cliquedb lost '11-08/09: two ruling walks closed…' this way; pre-existing at 61b3bde).
+        A generated pointer is no hook source; neither is the fold line."""
+        curated = "11-08/09: two ruling walks closed"
+        s, key, _ = _pointer_dir(memdir, organised, curated_save=curated)
+>       assert mi.load_hooks(memdir).get(key) == curated, mi.load_hooks(memdir)
+E       AssertionError: {'feedback_a': 'curated a', 'feedback_a.md': 'curated a', 'savestate_aaa111': 'session handoffs; `rmx recall-state` reads the newest', 'savestate_aaa111.md': 'session handoffs; `rmx recall-state` reads the newest'}
+E       assert 'session hand...ds the newest' == '11-08/09: tw... walks closed'
+E         
+E         - 11-08/09: two ruling walks closed
+E         + session handoffs; `rmx recall-state` reads the newest
+
+tests/test_memory_index_layout.py:1291: AssertionError
+_ test_r3_pointers_no_sidecar_value_the_pointer_text_is_never_frozen_as_a_hook[organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-95zmdqih/memory')
+organised = True
+
+    @_layouts()
+    def test_r3_pointers_no_sidecar_value_the_pointer_text_is_never_frozen_as_a_hook(memdir,
+                                                                                     organised):
+        """r3 #m-3, the no-value half: with no curated hook for savestate_X the pointer's generated
+        text must not become its hook either -- the derived prose stands."""
+        s, key, _ = _pointer_dir(memdir, organised, curated_save=None)
+        for n in (1, 2):
+            mi.write(memdir, out=io.StringIO())
+            side = sidecar(memdir)
+>           assert "session handoffs" not in side.get(key, ""), (n, side)
+E           AssertionError: (1, {'feedback_a': 'curated a', 'savestate_aaa111': 'session handoffs; `rmx recall-state` reads the newest'})
+E           assert 'session handoffs' not in 'session han...s the newest'
+E             
+E             'session handoffs' is contained here:
+E               session handoffs; `rmx recall-state` reads the newest
+E             ? ++++++++++++++++
+
+tests/test_memory_index_layout.py:1310: AssertionError
+_ test_r3_pointers_no_sidecar_value_the_pointer_text_is_never_frozen_as_a_hook[marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-qu_fb5fa/memory')
+organised = False
+
+    @_layouts()
+    def test_r3_pointers_no_sidecar_value_the_pointer_text_is_never_frozen_as_a_hook(memdir,
+                                                                                     organised):
+        """r3 #m-3, the no-value half: with no curated hook for savestate_X the pointer's generated
+        text must not become its hook either -- the derived prose stands."""
+        s, key, _ = _pointer_dir(memdir, organised, curated_save=None)
+        for n in (1, 2):
+            mi.write(memdir, out=io.StringIO())
+            side = sidecar(memdir)
+>           assert "session handoffs" not in side.get(key, ""), (n, side)
+E           AssertionError: (1, {'feedback_a.md': 'curated a', 'savestate_aaa111.md': 'session handoffs; `rmx recall-state` reads the newest'})
+E           assert 'session handoffs' not in 'session han...s the newest'
+E             
+E             'session handoffs' is contained here:
+E               session handoffs; `rmx recall-state` reads the newest
+E             ? ++++++++++++++++
+
+tests/test_memory_index_layout.py:1310: AssertionError
+____ test_r3_one_parser_parse_index_hooks_is_the_projection_of_the_records _____
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-c_iaheco/memory')
+
+    def test_r3_one_parser_parse_index_hooks_is_the_projection_of_the_records(memdir):
+        """r3 #m-2: `_parse_index_hooks` (read by `_dead_hooks`) and `_index_hook_records` (read by
+        `load_hooks`) repeated one partition + dash-strip. One parser: the dict is the `{rel:
+        hook}` projection of the records, on every line shape a live index carries. The records
+        carry the NUMERIC room (#r3-room), and skip generated pointers (#r3-pointers)."""
+        long_rel = "feedback_long.md"
+        cut_inside = ("- [" + CUT_TITLE + "](feedback_cut_inside_the_link_aaaa.md)")[
+            :mi.MAX_LINE_CHARS - 1] + "…"
+        lines = {
+            "feedback_a.md": "- [A](feedback_a.md) — curated a",
+            "feedback_dash.md": "- [Gamma — a dashed title](feedback_dash.md) — curated — dash",
+            "feedback_bare.md": "- [Bare](feedback_bare.md) —",
+            long_rel: _cut_line(f"- [Long]({long_rel})", LONG_HOOK),
+            "impressions/": ("- [ch-bsd impressions (2)](impressions/) — cross-run audit "
+                             "memories; full ledger in `workflow/bullshit/IMPRESSIONS.md`"),
+        }
+        pointer = ("- [Save-states (4), newest savestate_aaa111](savestate_aaa111.md) — session "
+                   "handoffs; `rmx recall-state` reads the newest")
+        fold = ("- 9 older project memories folded — `rmx memory list` or "
+                "`rmx memory search <term>` reaches them; nothing was deleted")
+        linkless = "- [" + LONG_TITLE[:mi.MAX_LINE_CHARS - 4] + "…"
+        idx = memdir / "MEMORY.md"
+        idx.write_text("\n".join(["# Hand index", "- [ ] todo: a prose line", *lines.values(),
+                                  pointer, fold, cut_inside, linkless]) + "\n", encoding="utf-8")
+        assert "](" in cut_inside and ")" not in cut_inside.split("](", 1)[1]
+        assert "](" not in linkless
+    
+        records = mi._index_hook_records(idx)
+        parsed = mi._parse_index_hooks(idx)
+        assert parsed == {rel: hook for rel, (hook, _) in records.items()}, (parsed, records)
+>       assert "savestate_aaa111.md" not in records, \
+            f"the save-state pointer is read as a hook source: {records.get('savestate_aaa111.md')}"
+E       AssertionError: the save-state pointer is read as a hook source: ('session handoffs; `rmx recall-state` reads the newest', True)
+E       assert 'savestate_aaa111.md' not in {'feedback_a.md': ('curated a', True), 'feedback_bare.md': ('', True), 'feedback_dash.md': ('curated — dash', True), '...se the human who wrote it wanted the whole story in the index rather than in the memory itself, which is…', True), ...}
+
+tests/test_memory_index_layout.py:1344: AssertionError
+==================================== PASSES ====================================
 =========================== short test summary info ============================
-FAILED tests/test_memory_index_layout.py::test_m1_no_prose_over_budget_even_fully_folded_writes_and_says_still_over
-FAILED tests/test_memory_index_layout.py::test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_organised
-FAILED tests/test_memory_index_layout.py::test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_marker_off
-3 failed, 34 passed in 3.41s
+PASSED tests/test_memory_index_layout.py::test_ac3_collect_sees_type_folders_in_an_unorganised_dir
+PASSED tests/test_memory_index_layout.py::test_ac3_collect_skips_dot_dirs_and_the_marker
+PASSED tests/test_memory_index_layout.py::test_ac4_a_moved_file_keeps_its_curated_hook_in_an_organised_dir
+PASSED tests/test_memory_index_layout.py::test_ac4_an_organised_write_converts_a_legacy_path_keyed_sidecar_to_ids
+PASSED tests/test_memory_index_layout.py::test_ac4_a_dead_link_hook_is_kept_under_its_path_and_reported
+PASSED tests/test_memory_index_layout.py::test_ac4_the_reader_takes_an_id_keyed_sidecar_in_an_unorganised_dir
+PASSED tests/test_memory_index_layout.py::test_ac4_the_reader_still_takes_a_path_keyed_sidecar
+PASSED tests/test_memory_index_layout.py::test_ac5_the_viascope_shape_fixture_is_what_the_spec_names
+PASSED tests/test_memory_index_layout.py::test_ac5_every_prose_line_is_carried_verbatim_in_order_before_the_entries
+PASSED tests/test_memory_index_layout.py::test_ac5_re_rendering_a_carried_block_carries_it_once
+PASSED tests/test_memory_index_layout.py::test_ac5_prose_that_leaves_under_a_quarter_of_the_budget_refuses_the_write
+PASSED tests/test_memory_index_layout.py::test_ac6_the_guard_refuses_when_under_half_the_content_would_remain
+PASSED tests/test_memory_index_layout.py::test_ac6_a_fold_is_not_a_loss_content_counting_lets_it_through
+PASSED tests/test_memory_index_layout.py::test_ac6_no_guard_in_an_unorganised_dir
+PASSED tests/test_memory_index_layout.py::test_ac7_kind_reads_the_folder_first[feedback/note_a.md-project-feedback]
+PASSED tests/test_memory_index_layout.py::test_ac7_kind_reads_the_folder_first[reference/note_b.md-project-reference]
+PASSED tests/test_memory_index_layout.py::test_ac7_kind_reads_the_folder_first[project/note_c.md-feedback-project]
+PASSED tests/test_memory_index_layout.py::test_ac7_kind_reads_the_folder_first[savestates/session_d.md-project-savestate]
+PASSED tests/test_memory_index_layout.py::test_ac7_kind_reads_the_folder_first[impressions/note_e.md-feedback-impression]
+PASSED tests/test_memory_index_layout.py::test_ac7_the_stem_is_the_fallback_in_a_flat_dir[feedback_x-feedback]
+PASSED tests/test_memory_index_layout.py::test_ac7_the_stem_is_the_fallback_in_a_flat_dir[reference_y-reference]
+PASSED tests/test_memory_index_layout.py::test_ac7_the_stem_is_the_fallback_in_a_flat_dir[project_z-project]
+PASSED tests/test_memory_index_layout.py::test_ac7_the_stem_is_the_fallback_in_a_flat_dir[savestate_abc-savestate]
+PASSED tests/test_memory_index_layout.py::test_ac8_a_flat_dir_with_no_prose_renders_byte_identically_to_head
+PASSED tests/test_memory_index_layout.py::test_ac9_flat_marker_off_is_heads_write_byte_for_byte
+PASSED tests/test_memory_index_layout.py::test_ac9_flat_marker_on_twin_carries_prose_and_keys_the_sidecar_by_id
+PASSED tests/test_memory_index_layout.py::test_ac9_nested_marker_off_lists_every_entry_drops_prose_keeps_path_keys
+PASSED tests/test_memory_index_layout.py::test_b1_long_title_organised_render_is_stable_over_three_renders
+PASSED tests/test_memory_index_layout.py::test_b1_marker_off_then_organised_never_carries_entry_lines
+PASSED tests/test_memory_index_layout.py::test_b1_marker_off_a_long_title_keeps_its_link
+PASSED tests/test_memory_index_layout.py::test_m1_organised_write_folds_further_to_fit_the_budget
+PASSED tests/test_memory_index_layout.py::test_m1_organised_write_refuses_when_a_full_fold_cannot_fit
+PASSED tests/test_memory_index_layout.py::test_m1_entry_point_never_writes_over_budget
+PASSED tests/test_memory_index_layout.py::test_b1_a_legacy_link_less_cut_line_is_dropped_and_re_rendered_with_its_link
+PASSED tests/test_memory_index_layout.py::test_m1_no_prose_over_budget_even_fully_folded_writes_and_says_still_over
+PASSED tests/test_memory_index_layout.py::test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_organised
+PASSED tests/test_memory_index_layout.py::test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_marker_off
+PASSED tests/test_memory_index_layout.py::test_fu_hooks_a_long_curated_hook_keeps_its_full_text_over_three_renders[organised]
+PASSED tests/test_memory_index_layout.py::test_fu_hooks_a_long_curated_hook_keeps_its_full_text_over_three_renders[marker-off]
+PASSED tests/test_memory_index_layout.py::test_fu_hooks_the_live_cut_state_restores_nothing_lost_from_the_sidecar[organised]
+PASSED tests/test_memory_index_layout.py::test_fu_hooks_the_live_cut_state_restores_nothing_lost_from_the_sidecar[marker-off]
+PASSED tests/test_memory_index_layout.py::test_fu_hooks_a_bare_ellipsis_index_hook_never_replaces_the_sidecar[organised]
+PASSED tests/test_memory_index_layout.py::test_fu_hooks_a_bare_ellipsis_index_hook_never_replaces_the_sidecar[marker-off]
+PASSED tests/test_memory_index_layout.py::test_fu_hooks_guard_an_edited_hook_that_is_not_the_cut_still_replaces[organised]
+PASSED tests/test_memory_index_layout.py::test_fu_hooks_guard_an_edited_hook_that_is_not_the_cut_still_replaces[marker-off]
+PASSED tests/test_memory_index_layout.py::test_fu_hooks_a_hook_deleted_from_a_line_with_room_is_cleared_organised
+PASSED tests/test_memory_index_layout.py::test_fu_hooks_a_hook_deleted_from_a_line_with_room_is_cleared_marker_off_as_at_head
+PASSED tests/test_memory_index_layout.py::test_fu_dropped_a_link_cut_by_head_is_not_reported_as_a_gone_file[organised]
+PASSED tests/test_memory_index_layout.py::test_fu_dropped_a_link_cut_by_head_is_not_reported_as_a_gone_file[marker-off]
+PASSED tests/test_memory_index_layout.py::test_fu_dropped_only_cut_links_no_gone_line_at_all[organised]
+PASSED tests/test_memory_index_layout.py::test_fu_dropped_only_cut_links_no_gone_line_at_all[marker-off]
+PASSED tests/test_memory_index_layout.py::test_fu_skips_an_organised_write_counts_and_names_a_dropped_bracket_prose_line
+PASSED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[curated-edit-organised]
+PASSED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[curated-edit-marker-off]
+PASSED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[curated-cut-organised]
+PASSED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[curated-cut-marker-off]
+PASSED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[curated-bare-organised]
+PASSED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[curated-bare-marker-off]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[room-edit-organised]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[room-edit-marker-off]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[room-cut-organised]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[room-cut-marker-off]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[room-bare-organised]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[room-bare-marker-off]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[no-room-edit-organised]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[no-room-edit-marker-off]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[no-room-cut-organised]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[no-room-cut-marker-off]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[no-room-bare-organised]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[no-room-bare-marker-off]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[edit-organised]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[edit-marker-off]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[cut-organised]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[cut-marker-off]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[bare-organised]
+PASSED tests/test_memory_index_layout.py::test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[bare-marker-off]
+PASSED tests/test_memory_index_char_budget.py::test_render_stays_inside_the_char_budget
+PASSED tests/test_memory_index_char_budget.py::test_the_budget_is_counted_in_characters_not_bytes
+PASSED tests/test_memory_index_char_budget.py::test_a_small_index_is_not_folded_at_all
+PASSED tests/test_memory_index_char_budget.py::test_check_agrees_with_the_char_budget
+PASSED tests/test_memory_index_char_budget.py::test_write_reports_to_stderr_not_stdout_by_default
+PASSED tests/test_memory_index_char_budget.py::test_write_empty_dir_notice_also_avoids_stdout
+PASSED tests/test_memory_index_char_budget.py::test_an_explicit_out_still_wins
+PASSED tests/test_memory_index_char_budget.py::test_the_char_budget_is_overridable
+PASSED tests/test_memory_index_char_budget.py::test_a_budget_that_cannot_be_met_is_announced_not_faked
+PASSED tests/test_memory_index_char_budget.py::test_folding_prefers_old_project_notes_over_feedback
+PASSED tests/test_memory_index_char_budget.py::test_render_is_idempotent_once_folding_kicks_in
+PASSED tests/test_memory_index_char_budget.py::test_a_folded_entry_keeps_its_curated_hook
+PASSED tests/test_memory_index_char_budget.py::test_a_missing_sidecar_is_not_fatal
+PASSED tests/test_memory_index_char_budget.py::test_a_corrupt_sidecar_is_reported_not_swallowed
+PASSED tests/test_memory_index_char_budget.py::test_the_sidecar_is_not_indexed_as_a_memory
+PASSED tests/test_memory_index.py::test_existing_hooks_are_preserved
+PASSED tests/test_memory_index.py::test_a_new_memory_without_a_hook_gets_one_from_its_title
+PASSED tests/test_memory_index.py::test_no_memory_file_is_dropped
+PASSED tests/test_memory_index.py::test_impressions_collapse_to_one_pointer
+PASSED tests/test_memory_index.py::test_savestates_collapse_to_one_pointer_naming_the_newest
+PASSED tests/test_memory_index.py::test_a_long_hook_is_truncated_not_wrapped
+PASSED tests/test_memory_index.py::test_the_cap_holds_by_folding_the_oldest_projects
+PASSED tests/test_memory_index.py::test_feedback_is_never_folded_away
+PASSED tests/test_memory_index.py::test_render_is_idempotent
+PASSED tests/test_memory_index.py::test_write_reports_what_changed_and_check_detects_drift
+PASSED tests/test_memory_index.py::test_the_index_never_indexes_itself
+PASSED tests/test_memory_index.py::test_save_state_compacts_the_index_it_just_appended_to
+PASSED tests/test_memory_index.py::test_compaction_failure_is_said_not_swallowed
+PASSED tests/test_memory_index.py::test_a_title_containing_an_em_dash_survives_a_round_trip
+PASSED tests/test_memory_index.py::test_the_newest_savestate_is_by_date_not_by_name
+PASSED tests/test_memory_index.py::test_an_empty_memdir_never_wipes_the_index
+PASSED tests/test_memory_index.py::test_an_entry_whose_file_is_gone_is_dropped_and_counted
+PASSED tests/test_memory_layout.py::test_folders_maps_every_adr_0005_folder_to_its_type
+PASSED tests/test_memory_layout.py::test_folder_for_type_inverts_the_table[feedback-feedback]
+PASSED tests/test_memory_layout.py::test_folder_for_type_inverts_the_table[project-project]
+PASSED tests/test_memory_layout.py::test_folder_for_type_inverts_the_table[reference-reference]
+PASSED tests/test_memory_layout.py::test_folder_for_type_inverts_the_table[user-user]
+PASSED tests/test_memory_layout.py::test_folder_for_type_inverts_the_table[guardrail-guardrail]
+PASSED tests/test_memory_layout.py::test_folder_for_type_inverts_the_table[impression-impressions]
+PASSED tests/test_memory_layout.py::test_folder_for_type_inverts_the_table[session/recall-state-savestates]
+PASSED tests/test_memory_layout.py::test_savestate_dir_is_the_savestates_collection
+PASSED tests/test_memory_layout.py::test_iter_memory_files_walks_type_folders_and_skips_dot_paths_and_non_memories
+PASSED tests/test_memory_layout.py::test_iter_memory_files_puts_every_dropped_shape_on_skipped
+PASSED tests/test_memory_layout.py::test_iter_savestates_reads_the_folder_and_the_legacy_top_level_only
+PASSED tests/test_memory_layout.py::test_a_later_updated_date_beats_a_newer_mtime
+PASSED tests/test_memory_layout.py::test_created_is_never_part_of_the_key
+PASSED tests/test_memory_layout.py::test_same_date_both_with_time_of_day_mtime_still_decides
+PASSED tests/test_memory_layout.py::test_three_same_day_save_states_order_the_same_for_every_input_permutation
+PASSED tests/test_memory_layout.py::test_same_date_same_mtime_the_file_name_breaks_the_tie
+PASSED tests/test_memory_layout.py::test_no_updated_is_dated_by_the_mtimes_local_date
+PASSED tests/test_memory_layout.py::test_same_date_one_side_date_only_mtime_decides_never_midnight
+PASSED tests/test_memory_layout.py::test_no_updated_falls_back_to_mtime
+PASSED tests/test_memory_layout.py::test_no_marker_is_not_organised
+PASSED tests/test_memory_layout.py::test_a_layout_1_marker_is_organised_and_extra_keys_are_ignored
+PASSED tests/test_memory_layout.py::test_an_unreadable_or_foreign_marker_is_a_hard_error_naming_the_file[{not json]
+PASSED tests/test_memory_layout.py::test_an_unreadable_or_foreign_marker_is_a_hard_error_naming_the_file[]
+PASSED tests/test_memory_layout.py::test_an_unreadable_or_foreign_marker_is_a_hard_error_naming_the_file[payload2]
+PASSED tests/test_memory_layout.py::test_an_unreadable_or_foreign_marker_is_a_hard_error_naming_the_file[payload3]
+PASSED tests/test_memory_layout.py::test_an_unreadable_or_foreign_marker_is_a_hard_error_naming_the_file[payload4]
+PASSED tests/test_memory_layout.py::test_fu_order_a_folder_copy_and_a_top_level_copy_of_one_save_state_order_the_same_both_ways
+FAILED tests/test_memory_index_layout.py::test_r3_dead_parse_hooks_is_gone - ...
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[edit-organised]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[edit-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[cut-organised]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[cut-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[bare-organised]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[bare-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-edit-organised]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-edit-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-cut-organised]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-cut-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-bare-organised]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-bare-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_derived_a_cut_of_derived_prose_is_never_frozen_into_the_sidecar[organised]
+FAILED tests/test_memory_index_layout.py::test_r3_derived_a_cut_of_derived_prose_is_never_frozen_into_the_sidecar[marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_pointers_the_save_state_pointer_never_replaces_the_savestate_hook[organised]
+FAILED tests/test_memory_index_layout.py::test_r3_pointers_the_save_state_pointer_never_replaces_the_savestate_hook[marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_pointers_no_sidecar_value_the_pointer_text_is_never_frozen_as_a_hook[organised]
+FAILED tests/test_memory_index_layout.py::test_r3_pointers_no_sidecar_value_the_pointer_text_is_never_frozen_as_a_hook[marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_one_parser_parse_index_hooks_is_the_projection_of_the_records
+======================= 20 failed, 136 passed in 12.14s ========================
