@@ -1,0 +1,95 @@
+...........FF........................................................... [ 40%]
+...............................F........................................ [ 80%]
+....................................                                     [100%]
+=================================== FAILURES ===================================
+________ test_cli_brief_scope_pattern_reaches_the_verb_as_compile_scope ________
+
+cli_seen = [{'action': 'brief', 'compile_scope': 'memory', 'min_dates': 3, 'min_members': 3, ...}]
+
+    def test_cli_brief_scope_pattern_reaches_the_verb_as_compile_scope(cli_seen):
+        r = CliRunner().invoke(cli_mod.main, ["memory", "brief", "--scope", "pattern", "--json"])
+        assert r.exit_code == 0, r.output
+>       assert cli_seen[-1].get("compile_scope") == "pattern", cli_seen
+E       AssertionError: [{'action': 'brief', 'compile_scope': 'memory', 'min_dates': 3, 'min_members': 3, ...}]
+E       assert 'memory' == 'pattern'
+E         
+E         - pattern
+E         + memory
+
+tests/test_bug198_brief_compile_scope.py:156: AssertionError
+_________________ test_cli_brief_compile_plans_the_same_scope __________________
+
+cli_seen = [{'action': 'brief', 'compile_scope': 'memory', 'min_dates': 3, 'min_members': 3, ...}]
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x112262810>
+
+    def test_cli_brief_compile_plans_the_same_scope(cli_seen, monkeypatch):
+        """One corpus for all four detectors: `--compile --scope pattern` plans the
+        pattern corpus and briefs it, never a memory plan under a pattern brief."""
+        planned = []
+    
+        def fake_plan(store, *, scope, **kw):
+            planned.append(scope)
+            return {"clusters": [], "crosscutting": [], "unclustered": [], "stats": {},
+                    "params": {"scope": scope}}
+        monkeypatch.setattr(consolidate, "compile_memories", fake_plan)
+        monkeypatch.setattr(cli_mod, "_read_store", lambda *a, **k: object())
+        r = CliRunner().invoke(cli_mod.main,
+                               ["memory", "brief", "--compile", "--scope", "pattern", "--json"])
+        assert r.exit_code == 0, r.output
+        assert planned == ["pattern"], planned
+>       assert cli_seen[-1].get("compile_scope") == "pattern", cli_seen
+E       AssertionError: [{'action': 'brief', 'compile_scope': 'memory', 'min_dates': 3, 'min_members': 3, ...}]
+E       assert 'memory' == 'pattern'
+E         
+E         - pattern
+E         + memory
+
+tests/test_bug198_brief_compile_scope.py:175: AssertionError
+_________ test_cli_action_twin_calls_its_dispatcher_verb[memory-brief] _________
+
+path = ('memory', 'brief')
+_cli_env = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-561/test_cli_action_twin_calls_its25/proj/.refmatrix')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1122fe970>
+
+    @pytest.mark.parametrize("path", sorted(CLI_ACTION_INVOKE), ids=lambda p: "-".join(p))
+    def test_cli_action_twin_calls_its_dispatcher_verb(path, _cli_env, monkeypatch):
+        """AC-6, the recorder shape of `test_cli_twin_calls_its_verb`: the verb is
+        CALLED with the root, `action=<x>` and the argv's options ARRIVE as the
+        verb's own parameters (bound against the real signature), and the CLI
+        RENDERS the verb's result (canary). The verb is resolved from the local
+        seed, not `verbs.CLI_ACTIONS`, so each twin's wiring is judged on its own."""
+        import inspect
+        argv, canned, expect, canary = CLI_ACTION_INVOKE[path]
+        vname, _action = _ACTIONS_SEED[path]
+        v = verbs.VERBS[vname]
+        sig = inspect.signature(v.fn)
+        seen = []
+    
+        def recorder(root, *a, **kw):
+            bound = sig.bind(root, *a, **kw)      # a wrong kwarg name fails here
+            bound.apply_defaults()
+            seen.append(bound.arguments)
+            return json.loads(json.dumps(canned))
+        monkeypatch.setattr(verbs, v.fn.__name__, recorder)
+        r = CliRunner().invoke(cli_main, argv, catch_exceptions=False)
+        assert r.exit_code == 0, r.output + (r.stderr or "")
+        assert seen, f"`rmx {' '.join(argv)}` never called verbs.{v.fn.__name__}"
+        assert all(Path(s["root"]) == _cli_env for s in seen)
+        last = seen[-1]
+        for k, val in expect.items():
+            got = last.get(k)
+            if isinstance(got, tuple):
+                got = list(got)
+>           assert got == val, f"{' '.join(path)}.{k}: argv gave {got!r}, expected {val!r}"
+E           AssertionError: memory brief.compile_scope: argv gave 'memory', expected 'pattern'
+E           assert 'memory' == 'pattern'
+E             
+E             - pattern
+E             + memory
+
+/Volumes/littlebig/refmatrix-bug197-198/tests/test_verb_parity.py:1185: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug198_brief_compile_scope.py::test_cli_brief_scope_pattern_reaches_the_verb_as_compile_scope
+FAILED tests/test_bug198_brief_compile_scope.py::test_cli_brief_compile_plans_the_same_scope
+FAILED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-brief]
+3 failed, 177 passed in 8.18s
