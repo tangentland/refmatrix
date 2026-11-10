@@ -1,0 +1,29 @@
+applied marker_soft_fail -> /Volumes/littlebig/refmatrix-plan26/src/refmatrix/memory_layout.py
+..................F
+=================================== FAILURES ===================================
+_ test_an_unreadable_or_foreign_marker_is_a_hard_error_naming_the_file[{not json] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-4oepq3_5/memory')
+payload = '{not json'
+
+    @pytest.mark.parametrize("payload", [
+        "{not json",
+        "",
+        {"layout": 2, "organised": "2026-11-09T10:00:00-08:00", "backup": "/tmp/b.tar.gz"},
+        {"organised": "2026-11-09T10:00:00-08:00", "backup": "/tmp/b.tar.gz"},
+        ["layout", 1],
+    ])
+    def test_an_unreadable_or_foreign_marker_is_a_hard_error_naming_the_file(memdir, payload):
+        """A silent "not organised" would re-enable the old renderer over an organised dir."""
+        ml = _layout()
+        _marker(memdir, payload)
+>       with pytest.raises(Exception) as ei:
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'Exception'>
+
+tests/test_memory_layout.py:205: Failed
+=========================== short test summary info ============================
+FAILED tests/test_memory_layout.py::test_an_unreadable_or_foreign_marker_is_a_hard_error_naming_the_file[{not json]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 18 passed in 0.99s
+pytest exit: 1

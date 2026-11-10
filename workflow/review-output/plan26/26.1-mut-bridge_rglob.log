@@ -1,0 +1,33 @@
+applied bridge_rglob -> /Volumes/littlebig/refmatrix-plan26/src/refmatrix/ingest_gmd.py
+F
+=================================== FAILURES ===================================
+__________________ test_ac2_in_process_bridge_skips_dot_dirs ___________________
+
+ac2_inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-3i_yiur0'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-3i_yiur0/proj/.refmatrix'))
+
+    def test_ac2_in_process_bridge_skips_dot_dirs(ac2_inproc):
+        base, root = ac2_inproc
+        memdir = _ac2_memdir(base)
+        assert not dm.ping(root, retries=0), "the in-process leg must run with NO daemon"
+        _invoke(["ingest-gmd", "--as-memory", str(memdir)])
+        assert not dm.ping(root, retries=0)
+>       _ac2_assert_rows(root)
+
+tests/test_memory_bridge.py:353: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-3i_yiur0/proj/.refmatrix')
+
+    def _ac2_assert_rows(root: Path) -> None:
+        got = _rows(root, ["keep_top", "keep_nested", "x", "y"])
+        assert got["keep_top"] and got["keep_nested"], f"the ingest did not run: {got}"
+>       assert not got["x"], "a `.organise-rollback-1/x.md` aside was ingested as a memory"
+E       AssertionError: a `.organise-rollback-1/x.md` aside was ingested as a memory
+E       assert not True
+
+tests/test_memory_bridge.py:337: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_bridge.py::test_ac2_in_process_bridge_skips_dot_dirs
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 3.39s
+pytest exit: 1
