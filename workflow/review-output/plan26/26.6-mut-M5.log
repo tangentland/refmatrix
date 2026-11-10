@@ -1,0 +1,24 @@
+M5 applied to stm.py
+ src/refmatrix/stm.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+F
+=================================== FAILURES ===================================
+________________ test_r6_cluster_cid_is_the_one_member_set_hash ________________
+
+    def test_r6_cluster_cid_is_the_one_member_set_hash():
+        """19.4 R6 / 19.6 R9 (round-11 #m11-4): ONE helper, `stm.cluster_cid`, with the `\\n` join
+        that keeps {ab, c} and {a, bc} apart; order-independent."""
+        from refmatrix import stm
+        assert hasattr(stm, "cluster_cid"), "stm.cluster_cid is not built (19.4 R6)"
+>       assert stm.cluster_cid(["b", "a"]) == _cid(["a", "b"])
+E       AssertionError: assert 'c4a78e5b' == '7e18f737'
+E         
+E         - 7e18f737
+E         + c4a78e5b
+
+tests/test_memory_compile.py:598: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_compile.py::test_r6_cluster_cid_is_the_one_member_set_hash
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 5.73s
+exit=1

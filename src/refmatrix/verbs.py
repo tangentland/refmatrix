@@ -1728,9 +1728,12 @@ def _memory_payload(action: str, a: dict) -> dict:
     if action == "dedup":
         return {"dry_run": bool(a.get("dry_run", False))}
     if action == "brief":
+        # `scope` here is the COMPILE scope (memory | pattern) whose corpus the
+        # detectors read (26.6 r1 remedy #rm-one-corpus); the op refuses any
+        # other value and a plan compiled for a different scope.
         p = {}
         for k in ("min_members", "min_dates", "min_mentions", "classes",
-                  "plan"):
+                  "plan", "scope"):
             if a.get(k) is not None:
                 p[k] = a[k]
         if a.get("save"):
@@ -1856,6 +1859,75 @@ def memory(root: Path, action: typing.Literal[
         if warns:
             res = {**res, "tag_warnings": warns}
     return res
+
+
+# A compile reads the memory vector matrix and holds the writer for the plan AND
+# the apply; on a ~1,000-memory store that is seconds, but a busy writer queue
+# adds its wait on top. One attempt (retries=0) bounded by this.
+MEMORY_COMPILE_TIMEOUT_S = 600.0
+
+
+@verb("rmx_memory_compile",
+      "Compile the memory corpus into subjects (dense+concept clusters named by their "
+      "highest-lift shared concept). Dry run by default: returns the plan. apply=true "
+      "writes subject nodes + part-of edges for ONE scope (memory | pattern), marks "
+      "compiled subjects left empty `stale` (never deleted), and stamps the "
+      "memory-compile derive pass. One compile per store at a time: a second call "
+      "answers already_running; status=true reports a running compile.",
+      descriptions={
+          "scope": "memory = every memory except impressions and `tag: pattern` docs; "
+                   "pattern = impressions only (subjects named subject_pattern_*)",
+          "apply": "write the plan (default false = plan only)",
+          "invoked_by": "who started the run (cli | mcp | hub), echoed in the result",
+          "status": "report whether a compile is running; touches nothing",
+          "exclude_mtypes": "mtype globs kept out of clustering; default "
+                            "session*/digest*/subject",
+          "prune": "re-file this scope's compiled leaves (false accretes)",
+      })
+def memory_compile(root: Path, *,
+                   scope: typing.Literal["memory", "pattern"] = "memory",
+                   apply: bool = False,
+                   k: int = 8, threshold: float | None = None,
+                   threshold_pct: float = 95.0, mutual: bool = True,
+                   beta: float = 1.0, gamma: float = 0.5, bridge_min: float = 0.35,
+                   hub_df_frac: float = 0.10, min_size: int = 2,
+                   signal: typing.Literal["fused", "dense", "concept"] = "fused",
+                   exclude_mtypes: list[str] | None = None,
+                   max_subjects: int | None = None, prune: bool = True,
+                   invoked_by: typing.Literal["cli", "mcp", "hub"] = "mcp",
+                   status: bool = False, partition: str | None = None,
+                   timeout: float | None = None) -> dict:
+    """`rmx memory compile` as a verb — 19.4 R1's op half, built by task 26.6
+    (plan-26), 2026-11-09. `memory compile` was LEGACY (CLI-only, planning in
+    the CLI process); the daemon op `memory_compile` now plans and applies, and
+    this verb is the one caller the CLI and MCP share. `scope` is the parity
+    surface 26.9's pattern compile uses.
+
+    ONE attempt (`retries=0`): a compile re-sent after a reset would land on a
+    running compile, and the op's single-flight answer is the guard, not the
+    transport's retry loop (feedback_daemon_call_retries_multiply_timeouts).
+
+    `status=True` asks the `memory_compile_status` op, which the daemon serves
+    on its cli pool: asked through `memory_compile` it queued behind the bg
+    pool's bulk jobs (26.6 r1 remedy #rm-status-route, 2026-11-10). An applied
+    run's result carries `subjects_gmd`, the subjects index the CLI writes to
+    `--out` (#rm-subjects-gmd)."""
+    part = partition or memory_partition(root)
+    if status:
+        return _call(root, "memory_compile_status", {"partition": part},
+                     timeout=float(timeout) if timeout is not None else 10.0,
+                     retries=0)
+    payload = {"scope": scope, "dry_run": not apply, "invoked_by": invoked_by,
+               "partition": part, "prune": bool(prune),
+               "k": k, "threshold": threshold, "threshold_pct": threshold_pct,
+               "mutual": mutual, "beta": beta, "gamma": gamma,
+               "bridge_min": bridge_min, "hub_df_frac": hub_df_frac,
+               "min_size": min_size, "signal": signal,
+               "exclude_mtypes": list(exclude_mtypes) if exclude_mtypes else None,
+               "max_subjects": max_subjects}
+    return _call(root, "memory_compile", payload,
+                 timeout=float(timeout) if timeout is not None else MEMORY_COMPILE_TIMEOUT_S,
+                 retries=0, write=bool(apply))
 
 
 def emit_memory_get_used(root: Path, name: str, *, scope: str = "project") -> int:
@@ -2860,6 +2932,8 @@ CLI_MAP: dict[str, "tuple[str, ...] | None"] = {
     "rmx_matrix": ("add", "concept"),
     "rmx_session": ("session", "list"),
     "rmx_refine": ("refine", "list"),
+    # task 26.6 R-D (19.4 R1's op half): `memory compile` left LEGACY_UNPAIRED.
+    "rmx_memory_compile": ("memory", "compile"),
 }
 # How each twin is WIRED to its verb (asserted by test_verb_parity.py by
 # recording the call while the click command runs — ch-bsd plan-3 r1 #bs-1
@@ -3058,7 +3132,7 @@ LEGACY_UNPAIRED: dict[tuple[str, ...], tuple[str, str]] = {
     **_legacy("maintenance", "derive / ingest pass over the store",
               ("reingest",), ("rebuild",), ("embed",), ("pagerank",),
               ("graphify-warm",), ("tldr-warm",), ("session", "ingest"),
-              ("memory", "compile"), ("pairs", "compile"), ("focus", "rebuild"),
+              ("pairs", "compile"), ("focus", "rebuild"),
               ("focus", "promote-edges"), ("coref", "link")),
     **_legacy("maintenance", "a by-hand run of the memory bridge (an alias of `ingest-gmd "
               "--as-memory <dir>`, kept for the guardrail compiler's callers); the automatic "

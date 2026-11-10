@@ -1,0 +1,40 @@
+M12 applied to consolidate.py
+ src/refmatrix/consolidate.py | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+F
+=================================== FAILURES ===================================
+______ test_r6_duplicate_labels_are_named_by_member_set_not_cluster_order ______
+
+store = <refmatrix.store.Store object at 0x104f15d30>
+
+    def test_r6_duplicate_labels_are_named_by_member_set_not_cluster_order(store):
+        """19.4 R6 + task-26.6 r2 m7 (19.4 AC-5's slug half; its `MEMORY.md --subject` half is
+        26.7's). At HEAD the second `tandem` cluster is `tandem-2` by ORDER, so reordering swaps
+        the two names."""
+        _seed_twins(store, a_tight=True)
+        p1 = _plan(store, hub_df_frac=1.0)
+        _seed_twins(store, a_tight=False)
+        p2 = _plan(store, hub_df_frac=1.0)
+        order1 = [sorted(m["name"] for m in c["members"]) for c in p1["clusters"]]
+        order2 = [sorted(m["name"] for m in c["members"]) for c in p2["clusters"]]
+        assert sorted(order1) == sorted(order2) and order1 != order2, (
+            "fixture precondition: same memberships, different cluster order", order1, order2)
+        want = {tuple(ms): f"tandem-{_cid(ms)}" for ms in order1}
+        for plan in (p1, p2):
+            got = {tuple(sorted(m["name"] for m in c["members"])): c["label"]
+                   for c in plan["clusters"]}
+>           assert got == want, got
+E           AssertionError: {('ta1', 'ta2'): 'tandem-2', ('tb1', 'tb2'): 'tandem'}
+E           assert {('ta1', 'ta2...2'): 'tandem'} == {('ta1', 'ta2...dem-7167fdf5'}
+E             
+E             Differing items:
+E             {('tb1', 'tb2'): 'tandem'} != {('tb1', 'tb2'): 'tandem-7167fdf5'}
+E             {('ta1', 'ta2'): 'tandem-2'} != {('ta1', 'ta2'): 'tandem-566ffcc4'}
+E             Use -v to get more diff
+
+tests/test_memory_compile.py:574: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_compile.py::test_r6_duplicate_labels_are_named_by_member_set_not_cluster_order
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.79s
+exit=1

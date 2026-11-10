@@ -1,0 +1,58 @@
+pyc-guard: recompiled 38 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-6/src/refmatrix as checked-hash (bug-037)
+...................................................ssss................. [ 11%]
+........................................................................ [ 22%]
+........................................................................ [ 33%]
+........................................................................ [ 44%]
+........................................................................ [ 55%]
+........................................................................ [ 66%]
+..................................................................F..... [ 77%]
+........................................................................ [ 88%]
+........................................................................ [ 99%]
+....                                                                     [100%]
+=================================== FAILURES ===================================
+_______________ test_cli_twin_calls_its_verb[rmx_memory_compile] _______________
+
+vname = 'rmx_memory_compile'
+_cli_env = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-497/test_cli_twin_calls_its_verb_r22/proj/.refmatrix')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1308ebee0>
+
+    @pytest.mark.parametrize("vname", sorted(CLI_INVOKE))
+    def test_cli_twin_calls_its_verb(vname, _cli_env, monkeypatch):
+        """Three properties per twin: the verb is CALLED (with a root), the argv's
+        options ARRIVE as the verb's own parameters (bound against the real
+        signature), and the CLI RENDERS the verb's result (canary)."""
+        import inspect
+        argv, canned, expect, canary = CLI_INVOKE[vname]
+        v = verbs.VERBS[vname]
+        sig = inspect.signature(v.fn)
+        seen = []
+    
+        def recorder(root, *a, **kw):
+            bound = sig.bind(root, *a, **kw)      # a wrong kwarg name fails here
+            bound.apply_defaults()
+            seen.append(bound.arguments)
+            return json.loads(json.dumps(canned))
+        monkeypatch.setattr(verbs, v.fn.__name__, recorder)
+        r = CliRunner().invoke(cli_main, argv, catch_exceptions=False)
+>       assert r.exit_code == 0, r.output + (r.stderr or "")
+E       AssertionError: # rmx: warning: memory-partition probe failed (daemon op partition_list on /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-497/test_cli_twin_calls_its_verb_r22/proj/.refmatrix failed in transport (AssertionError: test reached a live service — the twin bypassed its verb); treating the daemon as busy); assuming the project partition for THIS command only
+E         scope pattern · 2 candidates · 2 embedded · 0 informative concepts · 0 edges (0 
+E         concept-confirmed, 0 bridges)
+E         ┏━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+E         ┃ subject     ┃ size ┃ evidence (concept, lift) ┃
+E         ┡━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+E         │ CANARY-subj │ 2    │ —                        │
+E         └─────────────┴──────┴──────────────────────────┘
+E         applied 1 subject(s), 2 part-of edge(s) linked, 0 stale edge(s) unlinked; 0 
+E         marked stale, 0 un-marked, 0 stale in scope pattern
+E         Error: the compile applied but its result carries no `subjects_gmd`; the serving daemon predates it — `rmx daemon restart --relaunch`, then re-run to write the index
+E         # rmx: warning: memory-partition probe failed (daemon op partition_list on /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-497/test_cli_twin_calls_its_verb_r22/proj/.refmatrix failed in transport (AssertionError: test reached a live service — the twin bypassed its verb); treating the daemon as busy); assuming the project partition for THIS command only
+E         Error: the compile applied but its result carries no `subjects_gmd`; the serving daemon predates it — `rmx daemon restart --relaunch`, then re-run to write the index
+E         
+E       assert 1 == 0
+E        +  where 1 = <Result SystemExit(1)>.exit_code
+
+/Volumes/littlebig/refmatrix-plan26-6/tests/test_verb_parity.py:454: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_memory_compile]
+1 failed, 647 passed, 4 skipped in 425.94s (0:07:05)

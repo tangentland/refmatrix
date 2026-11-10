@@ -1,0 +1,37 @@
+M10 applied to consolidate.py
+ src/refmatrix/consolidate.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+F
+=================================== FAILURES ===================================
+_________ test_acd_a_real_apply_stamps_the_pass_and_keeps_the_verdict __________
+
+spawn = <function spawn.<locals>._make at 0x10bb58720>
+
+    def test_acd_a_real_apply_stamps_the_pass_and_keeps_the_verdict(spawn):
+        """The wiring test: the REAL compile stamps `memory-compile` with its per-pass hash, so the
+        status line stays quiet and the partition verdict does not move. Fails the 'stamp call
+        skipped' mutation (task-26.6 #test-strategy)."""
+        import refmatrix.store as store_mod
+        ctx = spawn(_seed_scopes)
+        _ok("memory", "compile", "--apply", *P)
+        out = _status(ctx)
+>       assert "memory-compile" not in out, out
+E       AssertionError: running pid=80671 root=/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-r0eckjwl/proj/.refmatrix
+E         code: /Volumes/littlebig/refmatrix-plan26-6/src/refmatrix/__init__.py  [DEV TREE]
+E           code /Volumes/littlebig/refmatrix-plan26-6/src/refmatrix/__init__.py but the venv belongs to None — reinstall the deploy venv from its own tree
+E         memory-compile: behind code — rmx memory compile --apply (partition proj); 2 compiled subject(s) and no compile stamp
+E         supervised: no
+E         
+E       assert 'memory-compile' not in 'running pid...rvised: no\n'
+E         
+E         'memory-compile' is contained here:
+E            own tree
+E           memory-compile: behind code — rmx memory compile --apply (partition proj); 2 compiled subject(s) and no compile stamp
+E           supervised: no
+
+tests/test_memory_compile_scope.py:669: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_compile_scope.py::test_acd_a_real_apply_stamps_the_pass_and_keeps_the_verdict
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 27.94s
+exit=1

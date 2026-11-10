@@ -394,3 +394,36 @@ def test_version_key_is_public_vocabulary():
     assert hasattr(store_mod, "version_key")
     assert not hasattr(store_mod, "_version_key")
     assert store_mod.version_key("0.9.0") < store_mod.version_key("0.71.0")
+
+
+# ---- task 26.6 R-C: memory-compile staleness is a code hash, outside the verdict ----
+
+def test_memory_compile_pass_is_derived_by_consolidate_only():
+    """R-C: `memory-compile -> ("consolidate.py",)`. Unmapped, it falls back to the UNION
+    (ingest.py, ingest_gmd.py, store.py), so an ingest edit would read as a stale compile and
+    a consolidate edit would read as nothing."""
+    from refmatrix import store as store_mod
+    assert store_mod._DERIVE_PASS_MODULES.get("memory-compile") == ("consolidate.py",)
+    assert store_mod.derive_pass_modules("memory-compile") == ("consolidate.py",)
+
+
+def test_memory_compile_is_not_an_expected_pass_of_any_partition_kind():
+    """R-C: on a post-merge store the memory partition IS the project partition; expecting the
+    compile there would list it as `missing` on every store that never compiled."""
+    from refmatrix import store as store_mod
+    for kind, passes in store_mod._DERIVE_EXPECTED_PASSES.items():
+        assert "memory-compile" not in passes, kind
+
+
+def test_a_memory_compile_stamp_never_moves_the_partition_verdict(store, tmp_path):
+    """R-C: a compile stamped by OTHER code (a different version AND a different hash) leaves
+    `stale`, `behind_code`, `oldest_version` and `reason` exactly what they are without it. At HEAD the stamp is just another row: version-mismatched, it marks the whole
+    partition stale."""
+    _track(store, tmp_path)
+    store.stamp_derive("ingest")
+    base = store.derive_status()
+    store.stamp_derive("memory-compile", version="0.0.1", code_hash="p1:" + "0" * 32)
+    got = store.derive_status()
+    for k in ("stale", "behind_code", "oldest_version", "reason", "missing_passes",
+              "never_stamped", "code_unknown"):
+        assert got[k] == base[k], (k, base[k], got[k])

@@ -1,0 +1,60 @@
+.F.F                                                                     [100%]
+=================================== FAILURES ===================================
+________________ test_one_corpus_brief_takes_an_explicit_scope _________________
+
+briefstore = (<refmatrix.store.Store object at 0x11b124590>, 'proj', {'doc_p1': 19, 'doc_p2': 20, 'doc_p3': 21, 'doc_p4': 22, ...})
+
+    def test_one_corpus_brief_takes_an_explicit_scope(briefstore):
+        """`brief` takes the compile's scope; scope `pattern` is exactly the impressions minus the
+        `tag: pattern` docs, as in `consolidate`."""
+        s, part, _ids = briefstore
+        with s.with_partition(part):
+            res = brief.compile_briefs(s, classes=["contradicted", "orphan-concept"],
+                                       scope="pattern")
+        orphans = _labels(res, "orphan-concept")
+>       assert orphans == {"imp_only"}, orphans
+E       AssertionError: {'mem_only'}
+E       assert {'mem_only'} == {'imp_only'}
+E         
+E         Extra items in the left set:
+E         'mem_only'
+E         Extra items in the right set:
+E         'imp_only'
+E         Use -v to get more diff
+
+tests/test_memory_compile_remedy_r1.py:349: AssertionError
+________ test_one_corpus_brief_and_compile_read_the_same_rows[pattern] _________
+
+briefstore = (<refmatrix.store.Store object at 0x11b124050>, 'proj', {'doc_p1': 19, 'doc_p2': 20, 'doc_p3': 21, 'doc_p4': 22, ...})
+scope = 'pattern'
+
+    @pytest.mark.parametrize("scope", ["memory", "pattern"])
+    def test_one_corpus_brief_and_compile_read_the_same_rows(briefstore, scope):
+        """One predicate, two readers: brief's corpus IS the compile's corpus for the same scope
+        (brief additionally drops its own `brief/*` rows, which `EXCLUDE_MTYPES` carries).
+    
+        Compared by row IDENTITY, not only by count: every orphan-concept brief's evidence must be
+        a row of the compile's corpus for that scope, and the corpus must be non-trivially
+        evidenced (the fixture's one orphan per corpus)."""
+        s, part, _ids = briefstore
+        with s.with_partition(part):
+            want = {r["id"] for r in consolidate._memory_rows(
+                s, exclude_mtypes=brief.EXCLUDE_MTYPES, scope=scope)}
+            other = {r["id"] for r in consolidate._memory_rows(
+                s, exclude_mtypes=brief.EXCLUDE_MTYPES,
+                scope="pattern" if scope == "memory" else "memory")}
+            res = brief.compile_briefs(s, classes=["orphan-concept"], scope=scope)
+        assert len(want) != len(other), "control: the fixture corpora must differ in size"
+>       assert res["stats"]["memories"] == len(want), (scope, res["stats"], sorted(want))
+E       AssertionError: ('pattern', {'briefs': 1, 'by_class': {'orphan-concept': 1}, 'classes_not_run': {}, 'classes_run': ['orphan-concept'], ...}, [15, 16, 17, 18])
+E       assert 5 == 4
+E        +  where 4 = len({15, 16, 17, 18})
+
+tests/test_memory_compile_remedy_r1.py:371: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_memory_compile_remedy_r1.py::test_one_corpus_brief_detectors_exclude_impressions_and_pattern_docs_by_default
+PASSED tests/test_memory_compile_remedy_r1.py::test_one_corpus_brief_and_compile_read_the_same_rows[memory]
+FAILED tests/test_memory_compile_remedy_r1.py::test_one_corpus_brief_takes_an_explicit_scope
+FAILED tests/test_memory_compile_remedy_r1.py::test_one_corpus_brief_and_compile_read_the_same_rows[pattern]
+2 failed, 2 passed, 11 deselected in 1.11s

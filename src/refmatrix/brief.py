@@ -33,7 +33,6 @@ own copy of the list; one definition, imported, is the fix that stuck.
 """
 from __future__ import annotations
 
-import fnmatch
 import json
 import re
 import time
@@ -41,7 +40,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Iterable
 
-from refmatrix.consolidate import DEFAULT_EXCLUDE_MTYPES, _OPERATIONAL_RE
+from refmatrix.consolidate import DEFAULT_EXCLUDE_MTYPES, DEFAULT_SCOPE, _OPERATIONAL_RE
 from refmatrix.store import _CONCEPT_SHIFT, _ENTITY_MASK
 from refmatrix.terms import STOPWORDS as _SHARED_STOPWORDS
 
@@ -123,33 +122,22 @@ class Brief:
 
 # ── helpers ────────────────────────────────────────────────────────────────
 
-def _excluded_mtype(mtype: "str | None", patterns: Iterable[str] = ()) -> bool:
-    pats = list(patterns) or list(EXCLUDE_MTYPES)
-    m = mtype or ""
-    return any(fnmatch.fnmatch(m, p) for p in pats)
+def _memory_ids(store: "Store", *, scope: str = DEFAULT_SCOPE) -> dict[int, dict]:
+    """The memory rows of the active partition in compile scope `scope`'s
+    corpus, minus brief's own output (`EXCLUDE_MTYPES`), by id.
 
-
-def _memory_ids(store: "Store") -> dict[int, dict]:
-    """Non-operational memory rows of the active partition, by id.
-
-    Same filter as `consolidate._memory_rows` — mtype globs plus the
-    operational name regex — because a brief over rows compile ignored would
-    describe a corpus nobody else can see.
+    The rows ARE `consolidate._memory_rows` — the same call, over the shared
+    predicate `consolidate.in_corpus` — because a brief over rows the compile
+    ignored describes a corpus nobody else can see. Task 26.6 r1 remedy
+    #rm-one-corpus (ch-bsd 26.6 r1 #s-3, 2026-11-10): this docstring said "same
+    filter" over a hand copy that kept impressions and `tag: pattern` docs
+    after the compile's scope `memory` dropped them, so `memory brief
+    --compile` read two corpora.
     """
-    store._connect()
-    rows = store._read().execute(
-        "SELECT e.id, e.name, mc.mtype FROM entities e "
-        "JOIN memory_content mc ON mc.entity_id = e.id "
-        "WHERE e.partition_id=? AND e.kind='memory' ORDER BY e.id",
-        (store._partition_id,),
-    ).fetchall()
-    out: dict[int, dict] = {}
-    for r in rows:
-        name, mtype = str(r[1]), (r[2] or "")
-        if _excluded_mtype(mtype) or OPERATIONAL_RE.match(name):
-            continue
-        out[int(r[0])] = {"id": int(r[0]), "name": name, "mtype": mtype}
-    return out
+    from refmatrix.consolidate import _memory_rows
+
+    return {r["id"]: r for r in _memory_rows(store, exclude_mtypes=EXCLUDE_MTYPES,
+                                             scope=scope)}
 
 
 def _pairs(store: "Store", linkage: str) -> set[tuple[int, int]]:
@@ -438,13 +426,18 @@ def compile_briefs(store: "Store", *, plan: "dict | None" = None,
                    min_members: int = MIN_MEMBERS,
                    min_dates: int = MIN_DATES,
                    min_mentions: int = MIN_MENTIONS,
-                   classes: "Iterable[str] | None" = None) -> dict:
+                   classes: "Iterable[str] | None" = None,
+                   scope: str = DEFAULT_SCOPE) -> dict:
     """Run every detector over the active partition. Returns briefs + stats.
 
     `plan` is an already-computed `memory compile` plan; when absent the two
     plan-derived classes are skipped rather than silently recomputing a cluster
     pass that costs vectors and minutes. That is a deliberate asymmetry — the
     cheap classes should never be gated behind the expensive one.
+
+    `scope` is the compile scope whose corpus every detector reads (26.6 r1
+    remedy #rm-one-corpus). A `plan` compiled for a DIFFERENT scope is refused:
+    its clusters cover rows the other detectors would not see.
     """
     known = {"corroborated", "singleton", "contradicted", "orphan-concept"}
     wanted = set(classes) if classes else set(known)
@@ -456,7 +449,12 @@ def compile_briefs(store: "Store", *, plan: "dict | None" = None,
         raise ValueError(
             f"unknown brief class(es): {', '.join(unknown)}; "
             f"known classes are {', '.join(sorted(known))}")
-    rows = _memory_ids(store)
+    if plan is not None and (plan.get("scope") or DEFAULT_SCOPE) != scope:
+        raise ValueError(
+            f"compile_briefs: the plan was compiled for scope "
+            f"{plan.get('scope')!r}, the briefs were asked for scope {scope!r}; "
+            f"one report reads one corpus")
+    rows = _memory_ids(store, scope=scope)
     briefs: list[Brief] = []
     skipped = 0
     # Declared BEFORE any detector runs, because every detector that skips
@@ -516,6 +514,7 @@ def compile_briefs(store: "Store", *, plan: "dict | None" = None,
             "classes_run": ran,
             "classes_not_run": not_run,
             "partition": store._partition_name,
+            "scope": scope,
         },
         "params": {"min_members": min_members, "min_dates": min_dates,
                    "min_mentions": min_mentions},

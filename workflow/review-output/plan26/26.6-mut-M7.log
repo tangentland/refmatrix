@@ -1,0 +1,31 @@
+M7 applied to store.py
+ src/refmatrix/store.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+F
+=================================== FAILURES ===================================
+________ test_a_memory_compile_stamp_never_moves_the_partition_verdict _________
+
+store = <refmatrix.store.Store object at 0x105b16cf0>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-453/test_a_memory_compile_stamp_ne0')
+
+    def test_a_memory_compile_stamp_never_moves_the_partition_verdict(store, tmp_path):
+        """R-C: a compile stamped by OTHER code (a different version AND a different hash) leaves
+        `stale`, `behind_code`, `oldest_version` and `reason` exactly what they are without it. At HEAD the stamp is just another row: version-mismatched, it marks the whole
+        partition stale."""
+        _track(store, tmp_path)
+        store.stamp_derive("ingest")
+        base = store.derive_status()
+        store.stamp_derive("memory-compile", version="0.0.1", code_hash="p1:" + "0" * 32)
+        got = store.derive_status()
+        for k in ("stale", "behind_code", "oldest_version", "reason", "missing_passes",
+                  "never_stamped", "code_unknown"):
+>           assert got[k] == base[k], (k, base[k], got[k])
+E           AssertionError: ('stale', False, True)
+E           assert True == False
+
+tests/test_derive_stamp.py:429: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_derive_stamp.py::test_a_memory_compile_stamp_never_moves_the_partition_verdict
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.98s
+exit=1

@@ -5,7 +5,7 @@ title: "Task 26.6: build plan-19's task 19.4 (stale-marked subjects, stable name
 tags: [task, plan-26, compile, subjects, labels, derive-stamp, decay, plan-19]
 metadata:
   node_type: task
-  status: pending
+  status: in-progress
   plan: plan-26-memory-organisation
   updated: 2026-11-09
 ---
@@ -13,7 +13,7 @@ metadata:
 # Task 26.6: build 19.4, scope-aware compile, label hygiene {#root}
 
 > Plan: [[plan-26-memory-organisation]]
-> Status: Pending
+> Status: In progress — GREEN `d77dd68`; r1 remedy and the R3 residual open ([[#remedy-r1]], [[#r3-residual]])
 > Depends on: task 23.0 (sandbox; done in 0.79.1). R3 and AC-3 of 19.4 also need
 > [[task-26.7-memory-index-by-subject]]. The 19.4 R1 tick registration depends on task 17.2 and
 > is NOT built here.
@@ -195,3 +195,60 @@ Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
 | finding | change | anchor |
 |---|---|---|
 | m3 (compile's index regeneration, 19.4 R3, is an ungated writer) | Marker-gated like R2; marker-off twin | [[#plan-19-delta]], AC-0 |
+
+## Remedy after ch-bsd 26.6 r1 (2026-11-10) {#remedy-r1}
+
+rel: derives-from -> [[bsd-task-26.6-r1-compile-hygiene-290348a]]
+
+Decisions taken as the user would (orchestrator, 2026-11-10). Lands on
+`task-26.6-compile-subject-hygiene` before the merge to master.
+
+1. **One stamp per scope (r1 #s-1).** `memory-compile` stamps the memory scope; a new pass
+   `memory-compile:pattern` (module `consolidate.py`, in `_DERIVE_VERDICT_EXCLUDED`, not in
+   `_DERIVE_EXPECTED_PASSES`) stamps the pattern scope. `_memory_compile_status` reports
+   `stamped`/`behind_code`/`compiled_subjects`/`needs_compile` per scope, keyed by
+   `compiled_scope`; the warning prints one line per stale scope. AC: unstamped memory-scope
+   subjects, then a `--scope pattern --apply`, and the memory-scope line still prints.
+   {#rm-stamp-per-scope}
+2. **R2's daemon-down twin and failure branches are tested (r1 #s-2).** Tests: daemon-down
+   marker-ON `ingest-gmd --as-memory` regenerates `MEMORY.md`; an unreadable marker prints the
+   "NOT regenerated" line on both the daemon and the twin path (memories still SAVED, exit 0);
+   the global store prints its skip. One mutation each (twin deleted, error swallowed, skip
+   silent). {#rm-twin-tests}
+3. **One corpus predicate (r1 #s-3).** `consolidate` and `brief` share one predicate over
+   (mtype, tags, scope); `brief` takes an explicit scope (default `memory`), so `memory brief
+   --compile`'s four detectors read one corpus. Docstrings and the `cli.py` comment corrected.
+   {#rm-one-corpus}
+4. **Status is not queued behind bg work (r1 #m-1).** `memory_compile` with `status=True` is
+   served without the bg pool (a cli-pool route or a separate status op), with a
+   dispatcher-level test while a bg job holds the pool. {#rm-status-route}
+5. **The daemon-down compile test runs a real store (r1 #m-2).** Drop the dead `ping` patch; a
+   real tmp store, daemon down, `--apply` asserts subjects, the stamp, and no "NOT recorded"
+   line. {#rm-real-fallback}
+6. **Stale references (r1 #m-3)** in `_op_memory_brief`'s docstring and `cli.py` are rewritten.
+   {#rm-stale-refs}
+7. **`subjects.md` is CLI-only by design (r1 #m-5):** the verb result carries the rendered GMD
+   text (`subjects_gmd`), the CLI writes it to `--out`; MCP callers get the same text.
+   {#rm-subjects-gmd}
+8. **`invoked_by="hub"` (r1 #m-4)** stays reserved for 17.2; no change. {#rm-hub-invoker}
+
+## R3 residual: compile regenerates the index, after 26.7 (2026-11-10) {#r3-residual}
+
+rel: depends-on -> [[task-26.7-memory-index-by-subject]]
+
+19.4 R3 stays owned by THIS task, as plan-26's delta table says ("26.6 (after 26.7)"); it is
+built right after 26.7 merges and 26.6 is `completed` only then (r1 #b-1). Not handed to 26.7.
+
+- **R3:** `_op_memory_compile`, on apply, regenerates `MEMORY.md` inside its own
+  `_store_lock` block through `ingest_gmd.regenerate_memory_index_reported`, gated by
+  `memory_layout.is_organised` (the one marker reader), called with `files=[memdir]` (the
+  helper skips unless some file is under the memory root, and a compile ingests none — ch-bsd
+  26.6 r2 #m-3-r2). Extra mutation: compile calls the helper with no files (killed by the
+  marker-ON AC). {#r3-req}
+- **ACs:** 19.4 AC-3 and AC-6 marker-ON (index after compile shows the new subjects);
+  AC-4's index leg (a stale subject is absent from `MEMORY.md`); the marker-OFF twin
+  (`MEMORY.md` + sidecar byte-identical) stays green. Task 23.5 R9/AC-9 reads R3's index write
+  inside the compile hold. {#r3-acs}
+- **Mutations:** compile writes no index (marker-ON) — killed; compile index ungated — killed by
+  the marker-OFF twin. {#r3-mutations}
+

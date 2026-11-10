@@ -121,6 +121,13 @@ PAIRING = {
                      "mode", "partition", "timeout"}),
     "rmx_refine": (("refine", "list"), {"project_filter": "project"},
                    {"action", "cand_id", "timeout"}),
+    # task 26.6 R-D: `memory compile` leaves LEGACY_UNPAIRED for the 19.4 R1 verb. `apply` is
+    # the click `--apply` flag (dest `do_apply`); `prune` is the inverted `--no-prune`;
+    # `invoked_by` / `status` are op duties (17.2 R2) with no CLI option; `partition` rides
+    # on the `rmx` group (`-p`).
+    "rmx_memory_compile": (("memory", "compile"), {"apply": "do_apply"},
+                           {"exclude_mtypes", "prune", "invoked_by", "status", "partition",
+                            "timeout"}),
 }
 # A no_twin param that DOES have a same-named click option must be one of
 # these declared shape differences (a click `multiple=True` option defaults
@@ -134,6 +141,8 @@ SHAPE_DIFFERENCES = {
     ("rmx_ingest", "path"): "click required argument vs verb default (store parent)",
     ("rmx_graph", "linkage"): "click multiple=True () on `neighbors` vs verb None, resolved "
                               "per action (co_occur / top: \"mentions\")",
+    ("rmx_memory_compile", "exclude_mtypes"): "click multiple=True () vs verb None (None = "
+                                              "consolidate.DEFAULT_EXCLUDE_MTYPES)",
 }
 
 
@@ -246,6 +255,11 @@ def test_click_defaults_match_verb_defaults():
 # The kwargs + canary are what turn the recorder from "was called" into "the
 # options arrive and the result is what gets rendered" (ch-bsd plan-3 r2 #s-3:
 # a twin that called the verb and then rendered from the ring passed).
+# The canned `rmx_memory_compile` index text: a distinct marker, so the CLI can only have
+# written it by copying the verb's `subjects_gmd`, never by rendering its own.
+MEMORY_COMPILE_GMD = ('---\ngmd: "0.1"\nid: memory-subjects\ntitle: "CANARY-GMD"\n'
+                      'tags: [memory]\n---\n\n# CANARY-GMD-written-by-the-verb {#root}\n')
+
 CLI_INVOKE = {
     "rmx_memory_add": (["memory", "add", "n", "-c", "body", "--type", "note", "--protect"],
                        {"id": 4242},
@@ -361,6 +375,31 @@ CLI_INVOKE = {
                     "total": 1, "shown": 1},
                    {"action": "list", "status": "all", "scope": "project", "project_filter": "p",
                     "limit": 4}, "CANARY-cand"),
+    # task 26.6 R-D: the CLI twin CALLS the verb with the scope, the apply flag and
+    # `invoked_by="cli"`, and renders the verb's plan (canary = a cluster label).
+    "rmx_memory_compile": (["memory", "compile", "--apply", "--scope", "pattern",
+                            "--min-size", "3", "--k", "5"],
+                           {"scope": "pattern", "dry_run": False, "applied": True,
+                            "invoked_by": "cli",
+                            "plan": {"clusters": [{"label": "CANARY-subj", "size": 2,
+                                                   "members": [{"id": 1, "name": "a",
+                                                                "mtype": "impression"},
+                                                               {"id": 2, "name": "b",
+                                                                "mtype": "impression"}],
+                                                   "evidence": []}],
+                                     "crosscutting": [], "unclustered": [],
+                                     "stats": {"candidates": 2, "embedded": 2,
+                                               "unembedded": 0, "partition": "proj"},
+                                     "params": {}},
+                            "subjects": [{"id": 9, "name": "subject_pattern_canary_subj",
+                                          "label": "CANARY-subj", "size": 2}],
+                            "linked": 2, "unlinked": 0, "stale_total": 0, "stale_new": 0,
+                            "stale_unmarked": 0,
+                            # 26.6 r1 remedy #rm-subjects-gmd: the VERB renders the index and
+                            # the CLI only writes it; an applied result without it fails closed.
+                            "subjects_gmd": MEMORY_COMPILE_GMD},
+                           {"scope": "pattern", "apply": True, "min_size": 3, "k": 5,
+                            "invoked_by": "cli"}, "CANARY-subj"),
 }
 # payload-class twins: argv + the daemon op the click command must issue with
 # a payload built by the verb's helper (recorded by wrapping the helper).
@@ -429,6 +468,31 @@ def test_cli_twin_calls_its_verb(vname, _cli_env, monkeypatch):
             got = list(got)
         assert got == val, f"{vname}.{k}: argv gave {got!r}, expected {val!r}"
     assert canary in r.output, f"{vname}: CLI did not render the verb's result ({canary!r})"
+
+
+def test_cli_memory_compile_writes_the_verbs_subjects_gmd(_cli_env, monkeypatch):
+    """26.6 r1 remedy #rm-subjects-gmd: `memory compile --apply` writes the verb's
+    `subjects_gmd` byte-for-byte to the default `--out` path, and renders nothing itself."""
+    from refmatrix import consolidate
+    argv, canned, _expect, _canary = CLI_INVOKE["rmx_memory_compile"]
+    v = verbs.VERBS["rmx_memory_compile"]
+    monkeypatch.setattr(verbs, v.fn.__name__,
+                        lambda root, *a, **kw: json.loads(json.dumps(canned)))
+    dest = consolidate.default_out_path(_cli_env)
+    assert not dest.exists(), dest
+    r = CliRunner().invoke(cli_main, argv, catch_exceptions=False)
+    assert r.exit_code == 0, r.output + (r.stderr or "")
+    assert dest.read_text() == MEMORY_COMPILE_GMD, dest.read_text()
+
+    # Fail-closed: an applied result with no `subjects_gmd` writes nothing and exits non-zero.
+    dest.unlink()
+    bare = {k: val for k, val in canned.items() if k != "subjects_gmd"}
+    monkeypatch.setattr(verbs, v.fn.__name__,
+                        lambda root, *a, **kw: json.loads(json.dumps(bare)))
+    r = CliRunner().invoke(cli_main, argv)
+    assert r.exit_code != 0, r.output
+    assert "subjects_gmd" in r.output, r.output
+    assert not dest.exists(), "the adapter wrote an index the verb never rendered"
 
 
 @pytest.mark.parametrize("vname", sorted(CLI_PAYLOAD_INVOKE))
@@ -657,8 +721,11 @@ _TASK_3_7_BATCH_C = frozenset({
     ('session', 'list'), ('session', 'recall'), ('session', 'show'),
     ('refine', 'list'), ('refine', 'show'),
 })
-LEGACY_BASELINE = _BASELINE_3_4 - _TASK_3_7_BATCH_A - _TASK_3_7_BATCH_B - _TASK_3_7_BATCH_C
-LEGACY_BASELINE_SIZE = 92
+# Task 26.6 R-D: `memory compile` gained the `rmx_memory_compile` verb (19.4 R1's op half).
+_TASK_26_6 = frozenset({('memory', 'compile')})
+LEGACY_BASELINE = (_BASELINE_3_4 - _TASK_3_7_BATCH_A - _TASK_3_7_BATCH_B - _TASK_3_7_BATCH_C
+                   - _TASK_26_6)
+LEGACY_BASELINE_SIZE = 91
 _USER_QUOTE = "internal harness/testing cli only commands"
 
 
@@ -1240,6 +1307,7 @@ def test_action_shape_differences_name_real_click_options():
 
 
 def test_legacy_shrinks_by_exactly_the_batched_paths():
-    """C6 / AC-G5: 140 - 22 - 11 - 15 = 92, nothing else moved."""
+    """C6 / AC-G5: 140 - 22 - 11 - 15 = 92; task 26.6 R-D: - 1 (`memory compile`) = 91,
+    nothing else moved."""
     assert set(verbs.LEGACY_UNPAIRED) == set(LEGACY_BASELINE), sorted(
         set(verbs.LEGACY_UNPAIRED) ^ set(LEGACY_BASELINE))

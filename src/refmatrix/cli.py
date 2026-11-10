@@ -3599,6 +3599,43 @@ def render_derive_warning(status: "dict | None", *,
 
 
 
+def render_memory_compile_warning(status: "dict | None", *,
+                                  partition: "str | None" = None) -> str:
+    """One line PER compile scope whose compiled subjects were derived by an
+    older consolidate.py, or exist with NO stamp for that scope; NOTHING when
+    every scope is current (task 26.6 R-C, 2026-11-09).
+
+    Separate from `render_derive_warning` on purpose: the compile is excluded
+    from the partition verdict (`store._DERIVE_VERDICT_EXCLUDED`), and its
+    remedy is `rmx memory compile --apply`, not `rmx reingest --force`. The
+    live junk labels were compiled on 2026-07-31, before any stamp existed, and
+    no surface said so — hence the unstamped case prints too.
+
+    Per scope (26.6 r1 remedy #rm-stamp-per-scope, ch-bsd r1 #s-1,
+    2026-11-10): one shared line let a pattern apply silence a stale memory
+    scope. Each stale scope prints its own line naming its own remedy."""
+    mc = (status or {}).get("memory_compile") or {}
+    scopes = mc.get("scopes")
+    if not isinstance(scopes, dict):
+        # A daemon from before per-scope stamps answers the memory scope only.
+        scopes = {"memory": mc} if mc else {}
+    where = f" (partition {partition})" if partition else ""
+    lines = []
+    for scope in sorted(scopes, key=lambda sc: (sc != "memory", sc)):
+        st = scopes[scope] or {}
+        if not st.get("needs_compile"):
+            continue
+        fix = ("rmx memory compile --apply" if scope == "memory"
+               else f"rmx memory compile --apply --scope {scope}")
+        if st.get("behind_code"):
+            why = "consolidate.py changed since the last compile"
+        else:
+            why = (f"{st.get('compiled_subjects', 0)} compiled subject(s) and no "
+                   f"compile stamp")
+        lines.append(f"memory-compile: behind code — {fix}{where}; scope {scope}: {why}")
+    return "\n".join(lines)
+
+
 @daemon.command("status")
 def daemon_status():
     """Report whether the daemon is running for the active store, plus its
@@ -3655,10 +3692,18 @@ def daemon_status():
                         # that deleted every wikilink from `--gmd` output
                         # (bsd-plan7-10 r3). Caught here by a test, not live.
                         console.print(f"[yellow]{rich_escape(warn)}[/]")
+                    # Task 26.6 R-C: the compile's own line, never folded
+                    # into the partition's derive verdict above.
+                    mwarn = render_memory_compile_warning(parts[name], partition=name)
+                    if mwarn:
+                        console.print(f"[yellow]{rich_escape(mwarn)}[/]", soft_wrap=True)
             else:
                 warn = render_derive_warning(result)
                 if warn:
                     console.print(f"[yellow]{rich_escape(warn)}[/]")
+                mwarn = render_memory_compile_warning(result)
+                if mwarn:
+                    console.print(f"[yellow]{rich_escape(mwarn)}[/]", soft_wrap=True)
         except Exception as e:  # noqa: BLE001 — diagnostic line, must not raise
             # Unknown is NOT clean on this screen (bsd-plan1 #s-3): the
             # condition that makes a store stale — an ingest under new code —
@@ -10482,6 +10527,14 @@ def _ingest_gmd_sync(resolved: list[Path], *, as_memory: bool,
         line = render_memory_embed_line(emb)
         if line:
             rep = f"{rep}\n{line}"
+        # 19.4 R2's daemon-down twin (task 26.6): same helper, same marker gate.
+        from refmatrix.ingest_gmd import (regenerate_memory_index_reported,
+                                          render_memory_index_line)
+        index = regenerate_memory_index_reported(root, files,
+                                                 memory_only=d.memory_only)
+        line = render_memory_index_line(index)
+        if line:
+            rep = f"{rep}\n{line}"
     if skip_line:
         rep = f"{rep}\n{skip_line}"
     if not with_stats:
@@ -11813,14 +11866,39 @@ def memory_list(mtype, tags, tag_any, limit):
     if not rows:
         console.print("[yellow]no memories[/]")
         return
-    t = Table("id", "name", "mtype", "content", "tags")
+    # Task 26.6 R-D / 19.4 R5 (2026-11-09): a compiled subject left with no
+    # members is KEPT and marked stale, and the listing says which, so the CLI
+    # and the `rmx_memory` list (which returns the metadata) agree. The column
+    # appears only when the listing holds a subject.
+    with_state = any(m.get("mtype") == "subject" for m in rows)
+    cols = ["id", "name", "mtype", "content", "tags"] + (["state"] if with_state else [])
+    t = Table(*cols)
     for m in rows:
-        t.add_row(
+        cells = [
             str(m["id"]), m["name"], m["mtype"] or "",
             (m["content"] or "")[:60],
             ", ".join(m["tags"]) if m["tags"] else "",
-        )
+        ]
+        if with_state:
+            cells.append(_subject_state(m))
+        t.add_row(*cells)
     console.print(t)
+
+
+def _subject_state(m: dict) -> str:
+    """`stale since <date>` for a stale-marked subject row, else ""."""
+    meta = m.get("metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except ValueError:
+            meta = {}
+    if not (isinstance(meta, dict) and meta.get("stale")):
+        return ""
+    since = meta.get("stale_since")
+    if isinstance(since, (int, float)):
+        return f"stale since {time.strftime('%Y-%m-%d', time.localtime(since))}"
+    return f"stale since {since}" if since else "stale"
 
 
 @memory_grp.command("search")
@@ -13109,6 +13187,12 @@ def memory_dedup(dry_run):
 
 
 @memory_grp.command("compile")
+@click.option("--scope", type=click.Choice(["memory", "pattern"]), default="memory",
+              show_default=True,
+              help="Corpus and subject namespace. memory = every memory except "
+                   "impressions and `tag: pattern` docs; pattern = impressions "
+                   "only, written as subject_pattern_*. A run prunes and marks "
+                   "only its own scope's subjects.")
 @click.option("--k", type=int, default=8, show_default=True,
               help="Dense neighbours considered per memory.")
 @click.option("--threshold", type=float, default=None,
@@ -13142,8 +13226,8 @@ def memory_dedup(dry_run):
 @click.option("--max-subjects", type=int, default=None,
               help="Keep only the N largest clusters (drops are reported).")
 @click.option("--apply", "do_apply", is_flag=True,
-              help="Write subject nodes + part-of edges and emit the index. "
-                   "Without it this is a preview.")
+              help="Write subject nodes + part-of edges, mark emptied subjects "
+                   "stale, and emit the index. Without it this is a preview.")
 @click.option("--no-prune", is_flag=True,
               help="Keep previously-compiled part-of edges instead of "
                    "re-filing. Accretes; use only to inspect drift.")
@@ -13152,7 +13236,7 @@ def memory_dedup(dry_run):
                    "is <root>/compiled/subjects.md — deliberately NOT the "
                    "memory dir, which would re-ingest it as a memory.")
 @click.option("--json", "as_json", is_flag=True, help="Emit the raw plan.")
-def memory_compile(k, threshold, threshold_pct, mutual, beta, gamma,
+def memory_compile(scope, k, threshold, threshold_pct, mutual, beta, gamma,
                    bridge_min, hub_df_frac, min_size, signal, exclude_mtypes,
                    max_subjects, do_apply, no_prune, out, as_json):
     """Group memories into subjects and link crosscutting concepts.
@@ -13163,19 +13247,40 @@ def memory_compile(k, threshold, threshold_pct, mutual, beta, gamma,
     names each cluster by its highest-lift shared concept.
 
     Preview by default; `--apply` writes subject nodes + `part-of` edges
-    (daemon-routed) and emits the GMD index.
+    (daemon-routed), marks compiled subjects left empty as stale (never
+    deleted), and emits the GMD index.
     """
+    # Task 26.6 R-D (2026-11-09): a thin adapter over the `rmx_memory_compile`
+    # verb, which the daemon op `memory_compile` serves (plan + apply in one
+    # op). Daemon down: the SAME `consolidate.run_compile` in-process, through
+    # the `_store(write=True)` control point, as this command always offered.
     from refmatrix import consolidate
-    from refmatrix import daemon as daemon_mod
+    from refmatrix import verbs as _verbs
 
     _memory_intent("memory_compile")
-    plan = consolidate.compile_memories(
-        _read_store(), k=k, threshold=threshold, threshold_pct=threshold_pct,
-        mutual=mutual, beta=beta, gamma=gamma, bridge_min=bridge_min,
-        hub_df_frac=hub_df_frac, min_size=min_size, signal=signal,
-        max_subjects=max_subjects,
-        exclude_mtypes=list(exclude_mtypes) or None,
-    )
+    root = _root()
+    kw = dict(k=k, threshold=threshold, threshold_pct=threshold_pct,
+              mutual=mutual, beta=beta, gamma=gamma, bridge_min=bridge_min,
+              hub_df_frac=hub_df_frac, min_size=min_size, signal=signal,
+              max_subjects=max_subjects,
+              exclude_mtypes=list(exclude_mtypes) or None)
+    try:
+        res = _verbs.memory_compile(root, scope=scope, apply=do_apply,
+                                    prune=not no_prune, invoked_by="cli",
+                                    partition=_resolve_partition(), **kw)
+    except _verbs.VerbAbsentError as e:
+        click.echo(f"# rmx: {e}; compiling in-process", err=True)
+        store = _store(write=True) if do_apply else _read_store()
+        res = consolidate.run_compile(store, scope=scope, dry_run=not do_apply,
+                                      prune=not no_prune, **kw)
+        res["invoked_by"] = "cli"
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e))
+    if res.get("already_running"):
+        raise click.ClickException(
+            f"a memory compile is already running on this store (run "
+            f"{res.get('run_id')}, started {res.get('started_at')}); nothing started")
+    plan = res["plan"]
     if as_json:
         console.print_json(json.dumps(plan))
         if not do_apply:
@@ -13191,7 +13296,8 @@ def memory_compile(k, threshold, threshold_pct, mutual, beta, gamma,
                 f"excluded from clustering; run `rmx embed` first."
             )
         console.print(
-            f"[dim]{st['candidates']} candidates · {st['embedded']} embedded · "
+            f"[dim]scope {res.get('scope', scope)} · "
+            f"{st['candidates']} candidates · {st['embedded']} embedded · "
             f"{st.get('concept_space', 0)} informative concepts · "
             f"{st.get('edges', 0)} edges "
             f"({st.get('confirmed', 0)} concept-confirmed, "
@@ -13200,20 +13306,20 @@ def memory_compile(k, threshold, threshold_pct, mutual, beta, gamma,
         if not clusters:
             console.print("[yellow]no clusters[/] — loosen --threshold or "
                           "lower --min-size")
-            return
-        t = Table("subject", "size", "evidence (concept, lift)")
-        for c in clusters:
-            t.add_row(
-                c["label"], str(c["size"]),
-                ", ".join(f'{e["concept"]}×{e["lift"]}'
-                          for e in c["evidence"][:3]) or "—",
-            )
-        console.print(t)
+        else:
+            t = Table("subject", "size", "evidence (concept, lift)")
+            for c in clusters:
+                t.add_row(
+                    rich_escape(c["label"]), str(c["size"]),
+                    rich_escape(", ".join(f'{e["concept"]}×{e["lift"]}'
+                                          for e in c["evidence"][:3])) or "—",
+                )
+            console.print(t)
         if plan["crosscutting"]:
             console.print(
                 "\n[bold]crosscutting[/] (bridge score = df × idf ÷ spread):")
             for x in plan["crosscutting"]:
-                console.print(f"  {x['concept']} — {x['spread']} subjects, "
+                console.print(f"  {rich_escape(x['concept'])} — {x['spread']} subjects, "
                               f"{x.get('df', 0)} memories "
                               f"(score {x['score']})")
         if plan["unclustered"]:
@@ -13230,24 +13336,29 @@ def memory_compile(k, threshold, threshold_pct, mutual, beta, gamma,
                           "write subjects + part-of edges[/]")
         return
 
-    root = _root()
-    args = {"plan": plan, "prune": not no_prune}
-    if daemon_mod.ping(root):
-        resp = _memory_daemon_call("memory_compile_apply", args, timeout=180.0)
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        res = resp["result"]
-    else:
-        res = consolidate.apply_plan(
-            _store(write=True), plan, prune=not no_prune)
+    # R7 (19.4): every count, including what was marked and un-marked stale.
     console.print(
-        f"[green]applied[/] {len(res['subjects'])} subject(s), "
-        f"{res['linked']} part-of edge(s) linked, "
-        f"{res['unlinked']} stale edge(s) unlinked"
+        f"[green]applied[/] {len(res.get('subjects') or [])} subject(s), "
+        f"{res.get('linked', 0)} part-of edge(s) linked, "
+        f"{res.get('unlinked', 0)} stale edge(s) unlinked; "
+        f"{res.get('stale_new', 0)} marked stale, "
+        f"{res.get('stale_unmarked', 0)} un-marked, "
+        f"{res.get('stale_total', 0)} stale in scope {res.get('scope', scope)}"
     )
+    if res.get("stamp_error"):
+        console.print(f"[yellow]derive stamp `{rich_escape(str(res.get('stamp_pass')))}` "
+                      f"NOT recorded:[/] {rich_escape(str(res['stamp_error']))}")
 
-    gmd = consolidate.render_gmd(
-        plan, partition=plan["stats"].get("partition"))
+    # The verb renders the index (26.6 r1 remedy #rm-subjects-gmd, ch-bsd r1
+    # #m-5): this command only WRITES it, so an MCP caller holds the same text
+    # and the adapter owns no side effect of its own. An applied result without
+    # it is a run this code cannot vouch for — said, never re-rendered here.
+    gmd = res.get("subjects_gmd")
+    if not isinstance(gmd, str):
+        raise click.ClickException(
+            "the compile applied but its result carries no `subjects_gmd`; the "
+            "serving daemon predates it — `rmx daemon restart --relaunch`, then "
+            "re-run to write the index")
     if str(out) == "-":
         # Same defect as the brief --gmd path: rich would eat every `[[link]]`
         # (ch-bsd r3 #b-1-r3, sibling).
@@ -13313,12 +13424,18 @@ def memory_brief(classes, min_members, min_dates, min_mentions, do_compile,
               min_mentions=min_mentions)
     if classes:
         kw["classes"] = list(classes)
+    # ONE corpus for all four detectors (26.6 r1 remedy #rm-one-corpus, ch-bsd
+    # r1 #s-3): the plan and the briefs name the same compile scope, so
+    # `corroborated`/`singleton` (from the plan) and `contradicted`/
+    # `orphan-concept` (from the op) read the same rows.
+    kw["scope"] = consolidate.DEFAULT_SCOPE
     if do_compile:
-        # The clustering pass reads the whole vector matrix, so it stays in
-        # THIS process — the daemon is what jetsam kills when it grows fat.
-        # The plan travels to the op as data, exactly as memory compile --apply
-        # already does.
-        kw["plan"] = consolidate.compile_memories(_read_store())
+        # A PLAN only, on the read replica in this process: briefs are a read,
+        # and the `memory_compile` op plans AND applies under the writer lock
+        # (#rm-stale-refs: this comment described the removed plan-as-data
+        # apply). The plan travels to the brief op as data.
+        kw["plan"] = consolidate.compile_memories(
+            _read_store(), scope=consolidate.DEFAULT_SCOPE)
     if save:
         kw["save"] = True
 

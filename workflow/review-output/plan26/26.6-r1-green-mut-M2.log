@@ -1,0 +1,92 @@
+.FFFF                                                                    [100%]
+=================================== FAILURES ===================================
+_ test_stamp_per_scope_a_pattern_apply_leaves_the_memory_scope_needing_compile _
+
+    def test_stamp_per_scope_a_pattern_apply_leaves_the_memory_scope_needing_compile():
+        """THE audit probe (#s-1): an unstamped memory-scope subject, then a pattern-only apply.
+        At HEAD the one shared stamp clears `needs_compile` while the memory subjects stay
+        un-recompiled."""
+        base, root, part, s = _tmp_store()
+        try:
+            _seed_scopes(s, part)
+            _unstamped_memory_subject(s, part)
+            with s.with_partition(part):
+                consolidate.run_compile(s, scope="pattern", dry_run=False, **VP)
+                mc = s.derive_status()["memory_compile"]
+        finally:
+            s.close()
+        scopes = mc.get("scopes")
+        assert isinstance(scopes, dict) and set(scopes) == {"memory", "pattern"}, mc
+        for name, st in scopes.items():
+            for key in ("stamped", "behind_code", "compiled_subjects", "needs_compile"):
+                assert key in st, (name, key, st)
+        mem, pat = scopes["memory"], scopes["pattern"]
+>       assert mem["stamped"] is False, mem
+E       AssertionError: {'at': 1794336791.471172, 'behind_code': False, 'code_hash': 'p1:4e86373e8c728fbed3153d999f50fb62', 'compiled_subjects': 3, ...}
+E       assert True is False
+
+tests/test_memory_compile_remedy_r1.py:111: AssertionError
+_______ test_stamp_per_scope_a_memory_apply_stamps_only_the_memory_pass ________
+
+    def test_stamp_per_scope_a_memory_apply_stamps_only_the_memory_pass():
+        """The reverse: a memory apply never stamps (so never clears) the pattern scope."""
+        base, root, part, s = _tmp_store()
+        try:
+            _seed_scopes(s, part)
+            _unstamped_pattern_subject(s, part)
+            with s.with_partition(part):
+                consolidate.run_compile(s, scope="memory", dry_run=False, **VP)
+                mc = s.derive_status()["memory_compile"]
+        finally:
+            s.close()
+        scopes = mc.get("scopes") or {}
+        assert scopes.get("memory", {}).get("needs_compile") is False, mc
+>       assert scopes.get("pattern", {}).get("stamped") is False, mc
+E       AssertionError: {'at': 1794336791.7858582, 'behind_code': False, 'code_hash': 'p1:4e86373e8c728fbed3153d999f50fb62', 'compiled_subjects': 3, ...}
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x127516bc0>('stamped')
+E        +    where <built-in method get of dict object at 0x127516bc0> = {'at': 1794336791.7858582, 'behind_code': False, 'code_hash': 'p1:4e86373e8c728fbed3153d999f50fb62', 'compiled_subjects': 3, ...}.get
+E        +      where {'at': 1794336791.7858582, 'behind_code': False, 'code_hash': 'p1:4e86373e8c728fbed3153d999f50fb62', 'compiled_subjects': 3, ...} = <built-in method get of dict object at 0x127515fc0>('pattern', {})
+E        +        where <built-in method get of dict object at 0x127515fc0> = {'memory': {'at': 1794336791.7858582, 'behind_code': False, 'code_hash': 'p1:4e86373e8c728fbed3153d999f50fb62', 'compi...336791.7858582, 'behind_code': False, 'code_hash': 'p1:4e86373e8c728fbed3153d999f50fb62', 'compiled_subjects': 3, ...}}.get
+
+tests/test_memory_compile_remedy_r1.py:137: AssertionError
+_ test_stamp_per_scope_daemon_status_still_prints_the_memory_line_after_a_pattern_apply _
+
+spawn = <function spawn.<locals>._make at 0x127403cc0>
+
+    def test_stamp_per_scope_daemon_status_still_prints_the_memory_line_after_a_pattern_apply(
+            spawn):
+        """AC (#rm-stamp-per-scope): through the CLI a user runs — `memory compile --apply --scope
+        pattern`, then `rmx daemon status` still says the memory scope is behind."""
+        ctx = spawn(_seed_scopes, pre=_unstamped_memory_subject)
+        assert _status_lines(_ok("daemon", "status")), "control: the unstamped subject must warn"
+        _ok("memory", "compile", "--apply", "--scope", "pattern", *P)
+        lines = _status_lines(_ok("daemon", "status"))
+        mem = [ln for ln in lines if "--scope pattern" not in ln]
+>       assert mem, f"the memory-scope line vanished after a PATTERN apply: {lines}"
+E       AssertionError: the memory-scope line vanished after a PATTERN apply: []
+E       assert []
+
+tests/test_memory_compile_remedy_r1.py:158: AssertionError
+________ test_stamp_per_scope_a_stale_pattern_scope_prints_its_own_line ________
+
+spawn = <function spawn.<locals>._make at 0x127403e20>
+
+    def test_stamp_per_scope_a_stale_pattern_scope_prints_its_own_line(spawn):
+        """One line PER stale scope, each naming its own remedy."""
+        ctx = spawn(_seed_scopes, pre=_unstamped_pattern_subject)
+        _ok("memory", "compile", "--apply", *P)                     # memory scope stamped
+        lines = _status_lines(_ok("daemon", "status"))
+        pat = [ln for ln in lines if "rmx memory compile --apply --scope pattern" in ln]
+>       assert len(pat) == 1, f"no pattern-scope line naming `--scope pattern`: {lines}"
+E       AssertionError: no pattern-scope line naming `--scope pattern`: []
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_memory_compile_remedy_r1.py:170: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_compile_remedy_r1.py::test_stamp_per_scope_a_pattern_apply_leaves_the_memory_scope_needing_compile
+FAILED tests/test_memory_compile_remedy_r1.py::test_stamp_per_scope_a_memory_apply_stamps_only_the_memory_pass
+FAILED tests/test_memory_compile_remedy_r1.py::test_stamp_per_scope_daemon_status_still_prints_the_memory_line_after_a_pattern_apply
+FAILED tests/test_memory_compile_remedy_r1.py::test_stamp_per_scope_a_stale_pattern_scope_prints_its_own_line
+4 failed, 1 passed, 10 deselected in 14.12s

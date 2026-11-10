@@ -1,0 +1,22 @@
+M9 applied to store.py
+ src/refmatrix/store.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+F
+=================================== FAILURES ===================================
+______ test_memory_compile_is_not_an_expected_pass_of_any_partition_kind _______
+
+    def test_memory_compile_is_not_an_expected_pass_of_any_partition_kind():
+        """R-C: on a post-merge store the memory partition IS the project partition; expecting the
+        compile there would list it as `missing` on every store that never compiled."""
+        from refmatrix import store as store_mod
+        for kind, passes in store_mod._DERIVE_EXPECTED_PASSES.items():
+>           assert "memory-compile" not in passes, kind
+E           AssertionError: project
+E           assert 'memory-compile' not in ('ingest', 'semantic', 'gmd', 'embed', 'pagerank', 'memory-compile')
+
+tests/test_derive_stamp.py:415: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_derive_stamp.py::test_memory_compile_is_not_an_expected_pass_of_any_partition_kind
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.17s
+exit=1

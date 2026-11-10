@@ -1,0 +1,50 @@
+M4 applied to daemon.py
+ src/refmatrix/daemon.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+F
+=================================== FAILURES ===================================
+_ test_single_flight_second_call_answers_already_running_and_status_is_lock_free _
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-457/test_single_flight_second_call0')
+
+    def test_single_flight_second_call_answers_already_running_and_status_is_lock_free(tmp_path):
+        """19.4 R1 / 17.1 R11: a call arriving while a compile runs starts nothing and answers
+        `already_running`; `status=True` answers without the store lock. The test HOLDS the writer
+        lock so the first compile cannot finish; every probe runs in a thread with a bound, so a
+        guard that is missing FAILS here instead of hanging (feedback_mutation_must_fail_not_hang)."""
+        assert "memory_compile" in dm.OPS, "no `memory_compile` daemon op (19.4 R1 op half)"
+        op = dm.OPS["memory_compile"]
+        d, s, part = _inproc_daemon(tmp_path)
+        args = {**VP, "partition": part, "dry_run": False, "invoked_by": "cli"}
+        box: dict = {}
+    
+        def _run(key, a):
+            try:
+                box[key] = op(d, a)
+            except Exception as e:            # noqa: BLE001 — recorded, asserted below
+                box[key] = e
+    
+        first = threading.Thread(target=_run, args=("first", args), daemon=True)
+        try:
+            with d._store_lock:
+                first.start()
+                deadline = time.monotonic() + 10
+                running = False
+                while time.monotonic() < deadline and not running:
+                    st = threading.Thread(target=_run, args=("status", {"status": True,
+                                                                        "partition": part}),
+                                          daemon=True)
+                    st.start()
+                    st.join(timeout=3)
+>                   assert not st.is_alive(), "status=True blocked on the store lock (not lock-free)"
+E                   AssertionError: status=True blocked on the store lock (not lock-free)
+E                   assert not True
+E                    +  where True = is_alive()
+E                    +    where is_alive = <Thread(Thread-2 (_run), started daemon 13738864640)>.is_alive
+
+tests/test_memory_compile_scope.py:449: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_compile_scope.py::test_single_flight_second_call_answers_already_running_and_status_is_lock_free
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 4.29s
+exit=1

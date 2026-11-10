@@ -1,0 +1,44 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________ test_status_route_answers_while_a_bg_job_holds_the_bg_pool __________
+
+    def test_status_route_answers_while_a_bg_job_holds_the_bg_pool():
+        """`memory_compile status=True` must not queue behind bulk work: the bg pool has 12
+        workers in production and a reingest or bridge can hold all of them. At HEAD the op is
+        not in `CLI_OPS`, so the status call waits for the bg worker and the verb times out."""
+        base, root, part, s = _tmp_store()
+        d = dm.Daemon(root)
+        d.store = s
+        d._log = lambda m: None
+        cli = ThreadPoolExecutor(max_workers=2, thread_name_prefix="t266-cli")
+        bg = ThreadPoolExecutor(max_workers=1, thread_name_prefix="t266-bg")
+        d._cli_pool, d._bg_pool = cli, bg
+        gate = threading.Event()
+        hold = bg.submit(gate.wait, 30)                 # the one bg worker is occupied
+        srv = _Dispatcher(d, cli, bg)
+        try:
+            probe = bg.submit(lambda: None)
+            time.sleep(0.3)
+            assert not probe.done(), "control: the bg pool must be held"
+            assert dm.ping(root), "control: the dispatcher must answer"
+            box: dict = {}
+    
+            def _status():
+                try:
+                    box["res"] = verbs.memory_compile(root, status=True, partition=part, timeout=3)
+                except Exception as e:        # noqa: BLE001 — asserted below
+                    box["err"] = e
+    
+            t = threading.Thread(target=_status, daemon=True)
+            t.start()
+            t.join(6)
+            assert not t.is_alive(), "the status verb hung past its own 3 s bound"
+>           assert "err" not in box, (
+                f"`memory_compile status=True` queued behind the bg pool: {box.get('err')!r}")
+E               AssertionError: `memory_compile status=True` queued behind the bg pool: VerbBusyError('daemon op memory_compile on /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266r-ac6_y70f/proj/.refmatrix did not answer within 3s (timed out); the daemon is busy')
+E               assert 'err' not in {'err': VerbBusyError('daemon op memory_compile on /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266r-ac6_y70f/proj/.refmatrix did not answer within 3s (timed out); the daemon is busy')}
+
+tests/test_memory_compile_remedy_r1.py:431: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_compile_remedy_r1.py::test_status_route_answers_while_a_bg_job_holds_the_bg_pool
+1 failed, 14 deselected in 3.61s

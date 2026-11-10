@@ -1,0 +1,27 @@
+M6 applied to consolidate.py
+ src/refmatrix/consolidate.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+F
+=================================== FAILURES ===================================
+________________ test_r_b_case_variants_are_one_label_candidate ________________
+
+store = <refmatrix.store.Store object at 0x105115d30>
+
+    def test_r_b_case_variants_are_one_label_candidate(store):
+        _seed_case(store)
+        plan = _plan(store, hub_df_frac=1.0)
+        c = _cluster_of(plan, "g1")
+        assert c is not None and {m["name"] for m in c["members"]} == {"g1", "g2"}, plan["clusters"]
+>       assert c["label"].casefold() == "guardrail", c["label"]
+E       AssertionError: g2
+E       assert 'g2' == 'guardrail'
+E         
+E         - guardrail
+E         + g2
+
+tests/test_memory_compile.py:498: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_compile.py::test_r_b_case_variants_are_one_label_candidate
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 4.13s
+exit=1

@@ -1,0 +1,440 @@
+FFFFFFFFFFFF.FFFF.F                                                      [100%]
+=================================== FAILURES ===================================
+______ test_ac_a_pattern_apply_leaves_every_memory_subject_byte_identical ______
+
+spawn = <function spawn.<locals>._make at 0x10744dbc0>
+
+    def test_ac_a_pattern_apply_leaves_every_memory_subject_byte_identical(spawn):
+        ctx = spawn(_seed_scopes)
+        _ok("memory", "compile", "--apply", *P)
+        first = _subjects(ctx)
+        mem = _scoped(first, "memory")
+>       assert mem.get("subject_daemon_ops", {}).get("leaves") == ["m_ops_a", "m_ops_b"], first
+E       AssertionError: {'subject_daemon_ops': {'leaves': ['i_ops_a', 'i_ops_b', 'i_pat'], 'metadata': {'compiled_at': 1794290022.340096, 'com...iled_at': 1794290022.340096, 'compiled_by': 'memory-compile', 'evidence': ['store_lock'], 'label': 'store_lock', ...}}}
+E       assert None == ['m_ops_a', 'm_ops_b']
+E        +  where None = <built-in method get of dict object at 0x132f4bd00>('leaves')
+E        +    where <built-in method get of dict object at 0x132f4bd00> = {}.get
+E        +      where {} = <built-in method get of dict object at 0x132f4bdc0>('subject_daemon_ops', {})
+E        +        where <built-in method get of dict object at 0x132f4bdc0> = {}.get
+
+tests/test_memory_compile_scope.py:237: AssertionError
+______ test_ac_a_memory_apply_leaves_every_pattern_subject_byte_identical ______
+
+spawn = <function spawn.<locals>._make at 0x132ec2980>
+
+    def test_ac_a_memory_apply_leaves_every_pattern_subject_byte_identical(spawn):
+        ctx = spawn(_seed_scopes)
+>       _ok("memory", "compile", "--apply", "--scope", "pattern", *P)
+
+tests/test_memory_compile_scope.py:260: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+argv = ('memory', 'compile', '--apply', '--scope', 'pattern', '--threshold', ...)
+code = 2
+out = "Usage: main memory compile [OPTIONS]\nTry 'main memory compile -h' for help.\n\nError: No such option: --scope Did yo...ory compile [OPTIONS]\nTry 'main memory compile -h' for help.\n\nError: No such option: --scope Did you mean --json?\n"
+@py_assert2 = 0
+
+    def _ok(*argv: str) -> str:
+        code, out = _cli(*argv)
+>       assert code == 0, f"`rmx {' '.join(argv)}` exited {code}:\n{out}"
+E       AssertionError: `rmx memory compile --apply --scope pattern --threshold 0.5 --k 4 --min-size 2 --hub-df-frac 0.5 --bridge-min 0.35` exited 2:
+E         Usage: main memory compile [OPTIONS]
+E         Try 'main memory compile -h' for help.
+E         
+E         Error: No such option: --scope Did you mean --json?
+E         Usage: main memory compile [OPTIONS]
+E         Try 'main memory compile -h' for help.
+E         
+E         Error: No such option: --scope Did you mean --json?
+E         
+E       assert 2 == 0
+
+tests/test_memory_compile_scope.py:186: AssertionError
+________ test_ac_a_a_row_without_compiled_scope_belongs_to_scope_memory ________
+
+spawn = <function spawn.<locals>._make at 0x132ec28d0>
+
+    def test_ac_a_a_row_without_compiled_scope_belongs_to_scope_memory(spawn):
+        ctx = spawn(_seed_scopes, pre=_legacy_subject)
+        before = _subjects(ctx)["subject_legacy_topic"]
+        assert before["leaves"] == ["m_hub_a"]
+>       _ok("memory", "compile", "--apply", "--scope", "pattern", *P)
+
+tests/test_memory_compile_scope.py:287: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+argv = ('memory', 'compile', '--apply', '--scope', 'pattern', '--threshold', ...)
+code = 2
+out = "Usage: main memory compile [OPTIONS]\nTry 'main memory compile -h' for help.\n\nError: No such option: --scope Did yo...ory compile [OPTIONS]\nTry 'main memory compile -h' for help.\n\nError: No such option: --scope Did you mean --json?\n"
+@py_assert2 = 0
+
+    def _ok(*argv: str) -> str:
+        code, out = _cli(*argv)
+>       assert code == 0, f"`rmx {' '.join(argv)}` exited {code}:\n{out}"
+E       AssertionError: `rmx memory compile --apply --scope pattern --threshold 0.5 --k 4 --min-size 2 --hub-df-frac 0.5 --bridge-min 0.35` exited 2:
+E         Usage: main memory compile [OPTIONS]
+E         Try 'main memory compile -h' for help.
+E         
+E         Error: No such option: --scope Did you mean --json?
+E         Usage: main memory compile [OPTIONS]
+E         Try 'main memory compile -h' for help.
+E         
+E         Error: No such option: --scope Did you mean --json?
+E         
+E       assert 2 == 0
+
+tests/test_memory_compile_scope.py:186: AssertionError
+___ test_ac4_a_subject_left_empty_is_marked_stale_kept_protected_and_listed ____
+
+spawn = <function spawn.<locals>._make at 0x132ec3530>
+
+    def test_ac4_a_subject_left_empty_is_marked_stale_kept_protected_and_listed(spawn):
+        ctx = spawn(_seed_plain)
+        _ok("memory", "compile", "--apply", *P)
+        assert _subjects(ctx)["subject_jetsam"]["leaves"] == ["m_jet_a", "m_jet_b"]
+        # m_jet_b is the only `feedback` row: leaving it out empties `jetsam` (a 1-member group is
+        # no cluster). `--exclude-mtype` REPLACES the default globs, so they are restated.
+        out = _ok("memory", "compile", "--apply", "--exclude-mtype", "feedback",
+                  "--exclude-mtype", "session*", "--exclude-mtype", "digest*",
+                  "--exclude-mtype", "subject", *P)
+        m = re.search(r"(\d+) marked stale", out)
+>       assert m and int(m.group(1)) == 1, f"R7: the apply must say how many it marked stale:\n{out}"
+E       AssertionError: R7: the apply must say how many it marked stale:
+E         5 candidates · 5 embedded · 1 informative concepts · 1 edges (1 concept-confirmed, 0 bridges)
+E         ┏━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+E         ┃ subject    ┃ size ┃ evidence (concept, lift) ┃
+E         ┡━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+E         │ daemon_ops │ 2    │ daemon_ops×2.5           │
+E         └────────────┴──────┴──────────────────────────┘
+E         
+E         3 memory(ies) unclustered
+E         applied 1 subject(s), 2 part-of edge(s) linked, 4 stale edge(s) unlinked
+E         index /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-p0zu3jje/proj/.refmatrix/compiled/subjects.md
+E         
+E       assert (None)
+
+tests/test_memory_compile_scope.py:311: AssertionError
+___________ test_r5_a_stale_subject_that_regains_members_is_unmarked ___________
+
+spawn = <function spawn.<locals>._make at 0x132ec26c0>
+
+    def test_r5_a_stale_subject_that_regains_members_is_unmarked(spawn):
+        ctx = spawn(_seed_plain)
+        excl = ["feedback", "session*", "digest*", "subject"]
+>       _compile_verb(ctx, apply=True)
+
+tests/test_memory_compile_scope.py:355: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+ctx = namespace(base=PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-moq5cpo0'), root=PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-moq5cpo0/proj/.refmatrix'), part='proj')
+kw = {'apply': True}, @py_assert0 = 'rmx_memory_compile'
+@py_assert4 = {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1074009e0>, description='Archive bus me...roject by NAME (any live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...}
+@py_assert2 = False
+@py_format6 = "'rmx_memory_compile' in {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1074009e0>, de...y live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...} = verbs.VERBS\n}"
+@py_format8 = "no `rmx_memory_compile` verb (19.4 R1 op half)\n>assert 'rmx_memory_compile' in {'rmx_bus_archive': Verb(name='rmx_bu...y live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...} = verbs.VERBS\n}"
+
+    def _compile_verb(ctx, **kw) -> dict:
+        """The MCP surface: `rmx_memory_compile` run exactly as the MCP transport runs it."""
+>       assert "rmx_memory_compile" in verbs.VERBS, "no `rmx_memory_compile` verb (19.4 R1 op half)"
+E       AssertionError: no `rmx_memory_compile` verb (19.4 R1 op half)
+E       assert 'rmx_memory_compile' in {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1074009e0>, description='Archive bus me...roject by NAME (any live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...}
+E        +  where {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1074009e0>, description='Archive bus me...roject by NAME (any live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...} = verbs.VERBS
+
+tests/test_memory_compile_scope.py:226: AssertionError
+______ test_ac4b_one_member_gained_mints_one_subject_and_marks_one_stale _______
+
+spawn = <function spawn.<locals>._make at 0x132ec3060>
+
+    def test_ac4b_one_member_gained_mints_one_subject_and_marks_one_stale(spawn):
+        ctx = spawn(_seed_tandem)
+        late_out = ["late", "session*", "digest*", "subject"]
+        kw = {"hub_df_frac": 1.0}
+>       r1 = _compile_verb(ctx, apply=True, exclude_mtypes=late_out, **kw)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_compile_scope.py:373: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+ctx = namespace(base=PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-ky32h_s8'), root=PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-ky32h_s8/proj/.refmatrix'), part='proj')
+kw = {'apply': True, 'exclude_mtypes': ['late', 'session*', 'digest*', 'subject'], 'hub_df_frac': 1.0}
+@py_assert0 = 'rmx_memory_compile'
+@py_assert4 = {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1074009e0>, description='Archive bus me...roject by NAME (any live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...}
+@py_assert2 = False
+@py_format6 = "'rmx_memory_compile' in {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1074009e0>, de...y live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...} = verbs.VERBS\n}"
+@py_format8 = "no `rmx_memory_compile` verb (19.4 R1 op half)\n>assert 'rmx_memory_compile' in {'rmx_bus_archive': Verb(name='rmx_bu...y live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...} = verbs.VERBS\n}"
+
+    def _compile_verb(ctx, **kw) -> dict:
+        """The MCP surface: `rmx_memory_compile` run exactly as the MCP transport runs it."""
+>       assert "rmx_memory_compile" in verbs.VERBS, "no `rmx_memory_compile` verb (19.4 R1 op half)"
+E       AssertionError: no `rmx_memory_compile` verb (19.4 R1 op half)
+E       assert 'rmx_memory_compile' in {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1074009e0>, description='Archive bus me...roject by NAME (any live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...}
+E        +  where {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1074009e0>, description='Archive bus me...roject by NAME (any live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...} = verbs.VERBS
+
+tests/test_memory_compile_scope.py:226: AssertionError
+________ test_verb_dry_run_plans_writes_nothing_and_says_who_invoked_it ________
+
+spawn = <function spawn.<locals>._make at 0x132ec3110>
+
+    def test_verb_dry_run_plans_writes_nothing_and_says_who_invoked_it(spawn):
+        ctx = spawn(_seed_scopes)
+>       res = _compile_verb(ctx)                              # default: apply=False
+              ^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_compile_scope.py:398: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+ctx = namespace(base=PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-09y42tyy'), root=PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-09y42tyy/proj/.refmatrix'), part='proj')
+kw = {}, @py_assert0 = 'rmx_memory_compile'
+@py_assert4 = {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1074009e0>, description='Archive bus me...roject by NAME (any live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...}
+@py_assert2 = False
+@py_format6 = "'rmx_memory_compile' in {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1074009e0>, de...y live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...} = verbs.VERBS\n}"
+@py_format8 = "no `rmx_memory_compile` verb (19.4 R1 op half)\n>assert 'rmx_memory_compile' in {'rmx_bus_archive': Verb(name='rmx_bu...y live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...} = verbs.VERBS\n}"
+
+    def _compile_verb(ctx, **kw) -> dict:
+        """The MCP surface: `rmx_memory_compile` run exactly as the MCP transport runs it."""
+>       assert "rmx_memory_compile" in verbs.VERBS, "no `rmx_memory_compile` verb (19.4 R1 op half)"
+E       AssertionError: no `rmx_memory_compile` verb (19.4 R1 op half)
+E       assert 'rmx_memory_compile' in {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1074009e0>, description='Archive bus me...roject by NAME (any live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...}
+E        +  where {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1074009e0>, description='Archive bus me...roject by NAME (any live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...} = verbs.VERBS
+
+tests/test_memory_compile_scope.py:226: AssertionError
+_ test_single_flight_second_call_answers_already_running_and_status_is_lock_free _
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-424/test_single_flight_second_call0')
+
+    def test_single_flight_second_call_answers_already_running_and_status_is_lock_free(tmp_path):
+        """19.4 R1 / 17.1 R11: a call arriving while a compile runs starts nothing and answers
+        `already_running`; `status=True` answers without the store lock. The test HOLDS the writer
+        lock so the first compile cannot finish; every probe runs in a thread with a bound, so a
+        guard that is missing FAILS here instead of hanging (feedback_mutation_must_fail_not_hang)."""
+>       assert "memory_compile" in dm.OPS, "no `memory_compile` daemon op (19.4 R1 op half)"
+E       AssertionError: no `memory_compile` daemon op (19.4 R1 op half)
+E       assert 'memory_compile' in {'add_concept': <function _op_add_concept at 0x106935850>, 'add_linkage_type': <function _op_add_linkage_type at 0x106...>, 'ann_search': <function _op_ann_search at 0x106953e20>, 'checkpoint': <function _op_checkpoint at 0x1069352d0>, ...}
+E        +  where {'add_concept': <function _op_add_concept at 0x106935850>, 'add_linkage_type': <function _op_add_linkage_type at 0x106...>, 'ann_search': <function _op_ann_search at 0x106953e20>, 'checkpoint': <function _op_checkpoint at 0x1069352d0>, ...} = dm.OPS
+
+tests/test_memory_compile_scope.py:425: AssertionError
+________ test_verb_and_cli_twin_are_registered_and_compile_left_legacy _________
+
+    def test_verb_and_cli_twin_are_registered_and_compile_left_legacy():
+        """R-D: `memory compile` leaves LEGACY_UNPAIRED; `rmx_memory_compile` is its verb, and its
+        `scope` parameter is the parity surface 26.9 uses."""
+        v = verbs.VERBS.get("rmx_memory_compile")
+>       assert v is not None, "no `rmx_memory_compile` verb"
+E       AssertionError: no `rmx_memory_compile` verb
+E       assert None is not None
+
+tests/test_memory_compile_scope.py:481: AssertionError
+__________ test_ac1_bridge_regenerates_the_index_in_an_organised_dir ___________
+
+spawn = <function spawn.<locals>._make at 0x132ec2e50>
+
+    def test_ac1_bridge_regenerates_the_index_in_an_organised_dir(spawn):
+        ctx = spawn()
+        memdir = _memdir(ctx, organised=True)
+        (memdir / "new_note.md").write_text(GMD.format(id="new_note", t="project", body="newest"))
+        _ok("ingest-gmd", "--as-memory", str(memdir))
+        idx = (memdir / "MEMORY.md").read_text()          # no sleep, no retry
+>       assert "](new_note.md)" in idx, idx
+E       AssertionError: - [old_note](old_note.md) — older
+E         - [ch-bsd impressions (1)](impressions/) — pointer
+E         
+E       assert '](new_note.md)' in '- [old_note](old_note.md) — older\n- [ch-bsd impressions (1)](impressions/) — pointer\n'
+
+tests/test_memory_compile_scope.py:524: AssertionError
+_______ test_ac1_the_sessionstart_detached_bridge_regenerates_the_index ________
+
+spawn = <function spawn.<locals>._make at 0x133018720>
+
+    def test_ac1_the_sessionstart_detached_bridge_regenerates_the_index(spawn):
+        ctx = spawn()
+        memdir = _memdir(ctx, organised=True)
+        (memdir / "new_note.md").write_text(GMD.format(id="new_note", t="project", body="newest"))
+        _ok("ingest-gmd", "--as-memory", "--detach", str(memdir))     # the SessionStart hook argv
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            r = dm.call(ctx.root, "ingest_gmd_status", {}, timeout=10, retries=0)
+            jobs = (r.get("result") or {}).get("jobs") or []
+            if jobs and all(j.get("status") in ("done", "error") for j in jobs):
+                break
+            time.sleep(0.1)
+        else:
+            pytest.fail("the detached bridge job never finished")
+        assert all(j.get("status") == "done" for j in jobs), jobs
+        idx = (memdir / "MEMORY.md").read_text()
+>       assert "](new_note.md)" in idx, idx
+E       AssertionError: - [old_note](old_note.md) — older
+E         - [ch-bsd impressions (1)](impressions/) — pointer
+E         
+E       assert '](new_note.md)' in '- [old_note](old_note.md) — older\n- [ch-bsd impressions (1)](impressions/) — pointer\n'
+
+tests/test_memory_compile_scope.py:545: AssertionError
+______ test_ac1_a_subdirectory_target_regenerates_the_memory_roots_index _______
+
+spawn = <function spawn.<locals>._make at 0x1330190c0>
+
+    def test_ac1_a_subdirectory_target_regenerates_the_memory_roots_index(spawn):
+        """R2: the memdir is the STORE's memory root, never the bridge's target path."""
+        ctx = spawn()
+        memdir = _memdir(ctx, organised=True)
+        (memdir / "impressions" / "imp_two.md").write_text(
+            GMD.format(id="imp_two", t="impression", body="two"))
+        _ok("ingest-gmd", "--as-memory", str(memdir / "impressions"))
+        idx = (memdir / "MEMORY.md").read_text()
+>       assert "impressions (2)" in idx, idx
+E       AssertionError: - [old_note](old_note.md) — older
+E         - [ch-bsd impressions (1)](impressions/) — pointer
+E         
+E       assert 'impressions (2)' in '- [old_note](old_note.md) — older\n- [ch-bsd impressions (1)](impressions/) — pointer\n'
+
+tests/test_memory_compile_scope.py:556: AssertionError
+_______ test_ac6_twin_compile_leaves_an_unorganised_index_byte_identical _______
+
+spawn = <function spawn.<locals>._make at 0x132fd50c0>
+
+    def test_ac6_twin_compile_leaves_an_unorganised_index_byte_identical(spawn):
+        """r3 m3. The marker-ON leg of AC-6 waits for 26.7 (R3 needs its subject render). GREEN
+        at HEAD by design (HEAD's compile writes no index); it fails an UNGATED R3. Driven through
+        the verb as well as the CLI so the new op path is the one exercised."""
+        ctx = spawn(_seed_scopes)
+        memdir = _memdir(ctx, organised=False)
+        (memdir / memory_index.HOOKS_SIDECAR).write_text('{"old_note.md": "older"}')
+        idx, side = (memdir / "MEMORY.md").read_bytes(), (memdir / memory_index.HOOKS_SIDECAR).read_bytes()
+        _ok("memory", "compile", "--apply", *P)
+>       _compile_verb(ctx, apply=True)
+
+tests/test_memory_compile_scope.py:583: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+ctx = namespace(base=PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-2ot2rv0j'), root=PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-2ot2rv0j/proj/.refmatrix'), part='proj')
+kw = {'apply': True}, @py_assert0 = 'rmx_memory_compile'
+@py_assert4 = {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1074009e0>, description='Archive bus me...roject by NAME (any live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...}
+@py_assert2 = False
+@py_format6 = "'rmx_memory_compile' in {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1074009e0>, de...y live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...} = verbs.VERBS\n}"
+@py_format8 = "no `rmx_memory_compile` verb (19.4 R1 op half)\n>assert 'rmx_memory_compile' in {'rmx_bus_archive': Verb(name='rmx_bu...y live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...} = verbs.VERBS\n}"
+
+    def _compile_verb(ctx, **kw) -> dict:
+        """The MCP surface: `rmx_memory_compile` run exactly as the MCP transport runs it."""
+>       assert "rmx_memory_compile" in verbs.VERBS, "no `rmx_memory_compile` verb (19.4 R1 op half)"
+E       AssertionError: no `rmx_memory_compile` verb (19.4 R1 op half)
+E       assert 'rmx_memory_compile' in {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1074009e0>, description='Archive bus me...roject by NAME (any live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...}
+E        +  where {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1074009e0>, description='Archive bus me...roject by NAME (any live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...} = verbs.VERBS
+
+tests/test_memory_compile_scope.py:226: AssertionError
+________ test_acd_consolidate_changed_since_the_compile_prints_the_line ________
+
+spawn = <function spawn.<locals>._make at 0x132fd57a0>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-424/test_acd_consolidate_changed_s0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x132fd59c0>
+
+    def test_acd_consolidate_changed_since_the_compile_prints_the_line(spawn, tmp_path, monkeypatch):
+        h = _hash_from_copy(tmp_path, edit=("consolidate.py",), monkeypatch=monkeypatch)
+        ctx = spawn(pre=lambda s, p: _compiled_subject(s, p, stamp={"code_hash": h}))
+        out = _status(ctx)
+>       assert STATUS_LINE in out and STATUS_FIX in out, out
+E       AssertionError: running pid=13858 root=/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-chqhmxvd/proj/.refmatrix
+E         code: /Volumes/littlebig/refmatrix-plan26-6/src/refmatrix/__init__.py  [DEV TREE]
+E           code /Volumes/littlebig/refmatrix-plan26-6/src/refmatrix/__init__.py but the venv belongs to None — reinstall the deploy venv from its own tree
+E         supervised: no
+E         
+E       assert ('memory-compile: behind code' in 'running pid=13858 root=/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-chqhmxvd/proj/.refmatrix\ncode: /Volumes...src/refmatrix/__init__.py but the venv belongs to None — reinstall the deploy venv from its own tree\nsupervised: no\n')
+
+tests/test_memory_compile_scope.py:633: AssertionError
+______ test_acd_a_version_bump_with_consolidate_unchanged_prints_nothing _______
+
+spawn = <function spawn.<locals>._make at 0x132fd5dd0>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-424/test_acd_a_version_bump_with_c0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x132fd5700>
+
+    def test_acd_a_version_bump_with_consolidate_unchanged_prints_nothing(spawn, tmp_path,
+                                                                           monkeypatch):
+        h = _hash_from_copy(tmp_path, edit=("ingest.py", "ingest_gmd.py", "store.py"),
+                            monkeypatch=monkeypatch)
+        ctx = spawn(pre=lambda s, p: _compiled_subject(
+            s, p, stamp={"code_hash": h, "version": "0.0.1"}))
+        out = _status(ctx)
+>       assert "memory-compile" not in out, out
+E       AssertionError: running pid=14096 root=/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-4ikca9ij/proj/.refmatrix
+E         code: /Volumes/littlebig/refmatrix-plan26-6/src/refmatrix/__init__.py  [DEV TREE]
+E           code /Volumes/littlebig/refmatrix-plan26-6/src/refmatrix/__init__.py but the venv belongs to None — reinstall the deploy venv from its own tree
+E         derive[proj]: memory-compile derived by code that has since CHANGED — re-derive with `rmx reingest --force`
+E           derived by memory-compile@0.0.1, running 0.81.2; memory-compile derived before the current ingest code
+E         supervised: no
+E         
+E       assert 'memory-compile' not in 'running pid...rvised: no\n'
+E         
+E         'memory-compile' is contained here:
+E           ve[proj]: memory-compile derived by code that has since CHANGED — re-derive with `rmx reingest --force`
+E         ?           ++++++++++++++
+E             derived by memory-compile@0.0.1, running 0.81.2; memory-compile derived before the current ingest code
+E           supervised: no
+
+tests/test_memory_compile_scope.py:644: AssertionError
+___________ test_acd_compiled_subjects_with_no_stamp_print_the_line ____________
+
+spawn = <function spawn.<locals>._make at 0x132fd64b0>
+
+    def test_acd_compiled_subjects_with_no_stamp_print_the_line(spawn):
+        """The 2026-07-31 case: subjects compiled before any stamp existed."""
+        ctx = spawn(pre=lambda s, p: _compiled_subject(s, p, stamp=None))
+        out = _status(ctx)
+>       assert STATUS_LINE in out and STATUS_FIX in out, out
+E       AssertionError: running pid=14464 root=/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-nbvk15j3/proj/.refmatrix
+E         code: /Volumes/littlebig/refmatrix-plan26-6/src/refmatrix/__init__.py  [DEV TREE]
+E           code /Volumes/littlebig/refmatrix-plan26-6/src/refmatrix/__init__.py but the venv belongs to None — reinstall the deploy venv from its own tree
+E         supervised: no
+E         
+E       assert ('memory-compile: behind code' in 'running pid=14464 root=/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-nbvk15j3/proj/.refmatrix\ncode: /Volumes...src/refmatrix/__init__.py but the venv belongs to None — reinstall the deploy venv from its own tree\nsupervised: no\n')
+
+tests/test_memory_compile_scope.py:652: AssertionError
+_________ test_acd_a_real_apply_stamps_the_pass_and_keeps_the_verdict __________
+
+spawn = <function spawn.<locals>._make at 0x132fe8eb0>
+
+    def test_acd_a_real_apply_stamps_the_pass_and_keeps_the_verdict(spawn):
+        """The wiring test: the REAL compile stamps `memory-compile` with its per-pass hash, so the
+        status line stays quiet and the partition verdict does not move. Fails the 'stamp call
+        skipped' mutation (task-26.6 #test-strategy)."""
+        import refmatrix.store as store_mod
+        ctx = spawn(_seed_scopes)
+        _ok("memory", "compile", "--apply", *P)
+        out = _status(ctx)
+        assert "memory-compile" not in out, out
+        assert f"derive[{ctx.part}]" not in out, out
+        dm.stop_daemon(ctx.root)
+        s = Store(ctx.root)
+        try:
+            rows = s._read().execute(
+                "SELECT p.name, d.code_hash FROM derive_stamps d "
+                "JOIN partitions p ON p.id = d.partition_id WHERE d.pass_name = 'memory-compile'"
+            ).fetchall()
+        finally:
+            s.close()
+        store_mod._DERIVE_CODE_HASH_CACHE.clear()
+>       assert [(r[0], r[1]) for r in rows] == [
+            (ctx.part, store_mod.derive_code_hash("memory-compile"))], rows
+E       AssertionError: []
+E       assert [] == [('proj', 'p1...45623bceb8d')]
+E         
+E         Right contains one more item: ('proj', 'p1:010a73d9609de40e9250845623bceb8d')
+E         Use -v to get more diff
+
+tests/test_memory_compile_scope.py:681: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_compile_scope.py::test_ac_a_pattern_apply_leaves_every_memory_subject_byte_identical
+FAILED tests/test_memory_compile_scope.py::test_ac_a_memory_apply_leaves_every_pattern_subject_byte_identical
+FAILED tests/test_memory_compile_scope.py::test_ac_a_a_row_without_compiled_scope_belongs_to_scope_memory
+FAILED tests/test_memory_compile_scope.py::test_ac4_a_subject_left_empty_is_marked_stale_kept_protected_and_listed
+FAILED tests/test_memory_compile_scope.py::test_r5_a_stale_subject_that_regains_members_is_unmarked
+FAILED tests/test_memory_compile_scope.py::test_ac4b_one_member_gained_mints_one_subject_and_marks_one_stale
+FAILED tests/test_memory_compile_scope.py::test_verb_dry_run_plans_writes_nothing_and_says_who_invoked_it
+FAILED tests/test_memory_compile_scope.py::test_single_flight_second_call_answers_already_running_and_status_is_lock_free
+FAILED tests/test_memory_compile_scope.py::test_verb_and_cli_twin_are_registered_and_compile_left_legacy
+FAILED tests/test_memory_compile_scope.py::test_ac1_bridge_regenerates_the_index_in_an_organised_dir
+FAILED tests/test_memory_compile_scope.py::test_ac1_the_sessionstart_detached_bridge_regenerates_the_index
+FAILED tests/test_memory_compile_scope.py::test_ac1_a_subdirectory_target_regenerates_the_memory_roots_index
+FAILED tests/test_memory_compile_scope.py::test_ac6_twin_compile_leaves_an_unorganised_index_byte_identical
+FAILED tests/test_memory_compile_scope.py::test_acd_consolidate_changed_since_the_compile_prints_the_line
+FAILED tests/test_memory_compile_scope.py::test_acd_a_version_bump_with_consolidate_unchanged_prints_nothing
+FAILED tests/test_memory_compile_scope.py::test_acd_compiled_subjects_with_no_stamp_print_the_line
+FAILED tests/test_memory_compile_scope.py::test_acd_a_real_apply_stamps_the_pass_and_keeps_the_verdict
+17 failed, 2 passed in 102.38s (0:01:42)

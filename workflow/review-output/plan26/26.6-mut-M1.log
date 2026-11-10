@@ -1,0 +1,42 @@
+M1 applied to consolidate.py
+ src/refmatrix/consolidate.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+F
+=================================== FAILURES ===================================
+______ test_ac_a_pattern_apply_leaves_every_memory_subject_byte_identical ______
+
+spawn = <function spawn.<locals>._make at 0x10635c720>
+
+    def test_ac_a_pattern_apply_leaves_every_memory_subject_byte_identical(spawn):
+        ctx = spawn(_seed_scopes)
+        _ok("memory", "compile", "--apply", *P)
+        first = _subjects(ctx)
+        mem = _scoped(first, "memory")
+        assert mem.get("subject_daemon_ops", {}).get("leaves") == ["m_ops_a", "m_ops_b"], first
+        assert mem.get("subject_jetsam", {}).get("leaves") == ["m_jet_a", "m_jet_b"], first
+        filed = {leaf for v in mem.values() for leaf in v["leaves"]}
+        # R-A corpus: scope `memory` takes no impression and no `tag: pattern` doc.
+        assert not {x for x in filed if x.startswith("i_")}, filed
+        assert "m_pat" not in filed, filed
+    
+        _ok("memory", "compile", "--apply", "--scope", "pattern", *P)
+        second = _subjects(ctx)
+        for name, before in mem.items():
+>           assert _canon(second.get(name)) == _canon(before), (
+                f"the pattern compile touched memory-scope subject {name}: "
+                f"{before} -> {second.get(name)}")
+E           AssertionError: the pattern compile touched memory-scope subject subject_daemon_ops: {'metadata': {'label': 'daemon_ops', 'slug': 'daemon_ops', 'compiled_by': 'memory-compile', 'compiled_scope': 'memory', 'compiled_at': 1794312832.962045, 'size': 2, 'evidence': ['daemon_ops'], 'params': {'k': 4, 'threshold': 0.5, 'threshold_pct': 95.0, 'mutual': True, 'beta': 1.0, 'gamma': 0.5, 'bridge_min': 0.35, 'hub_df_frac': 0.5, 'min_size': 2, 'signal': 'fused'}}, 'leaves': ['m_ops_a', 'm_ops_b']} -> {'metadata': {'label': 'daemon_ops', 'slug': 'daemon_ops', 'compiled_by': 'memory-compile', 'compiled_scope': 'memory', 'compiled_at': 1794312832.962045, 'size': 2, 'evidence': ['daemon_ops'], 'params': {'k': 4, 'threshold': 0.5, 'threshold_pct': 95.0, 'mutual': True, 'beta': 1.0, 'gamma': 0.5, 'bridge_min': 0.35, 'hub_df_frac': 0.5, 'min_size': 2, 'signal': 'fused'}}, 'leaves': []}
+E           assert '{"leaves": [...daemon_ops"}}' == '{"leaves": [...daemon_ops"}}'
+E             
+E             - {"leaves": ["m_ops_a", "m_ops_b"], "metadata": {"compiled_at": 1794312832.962045, "compiled_by": "memory-compile", "compiled_scope": "memory", "evidence": ["daemon_ops"], "label": "daemon_ops", "params": {"beta": 1.0, "bridge_min": 0.35, "gamma": 0.5, "hub_df_frac": 0.5, "k": 4, "min_size": 2, "mutual": true, "signal": "fused", "threshold": 0.5, "threshold_pct": 95.0}, "size": 2, "slug": "daemon_ops"}}
+E             ?             --------------------
+E             + {"leaves": [], "metadata": {"compiled_at": 1794312832.962045, "compiled_by": "memory-compile", "compiled_scope": "memory", "evidence"...
+E             
+E             ...Full output truncated (1 line hidden), use '-vv' to show
+
+tests/test_memory_compile_scope.py:247: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_compile_scope.py::test_ac_a_pattern_apply_leaves_every_memory_subject_byte_identical
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 10.73s
+exit=1

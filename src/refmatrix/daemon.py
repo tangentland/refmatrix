@@ -867,6 +867,12 @@ class Daemon:
         # cross-process persistence by design.
         self._ingest_jobs: dict[str, dict] = {}
         self._ingest_jobs_lock = threading.Lock()
+        # `memory_compile` single-flight (task 26.6 / 19.4 R1, 2026-11-09): the
+        # running compile's record, or None. Guarded by its OWN small lock and
+        # never by `_store_lock`, so `status=True` and a second caller answer
+        # while a compile holds the writer.
+        self._compile_run: "dict | None" = None
+        self._compile_flight_lock = threading.Lock()
         # In-memory mirror. Refreshed from `catalog.read.duckdb` after
         # every snapshot tick — reads served from here run against
         # uncompressed in-memory data with no file-system contention.
@@ -3700,6 +3706,21 @@ def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict, *,
         if line:
             d._log(f"ingest-gmd job={job_id} {line}")
             report = f"{report}\n{line}"
+    # 19.4 R2 (task 26.6, 2026-11-09): the bridge regenerates `MEMORY.md` for
+    # the STORE's memory root, marker-gated, after its last memory write — the
+    # one point the synchronous op and the detached SessionStart job share, and
+    # before the job reads `done`, so a caller that waited for `done` reads the
+    # new index. The organised render reads the memdir's files, not the store.
+    index = None
+    if args.get("as_memory"):
+        from refmatrix.ingest_gmd import (regenerate_memory_index_reported,
+                                          render_memory_index_line)
+        index = regenerate_memory_index_reported(d.root, files,
+                                                 memory_only=d.memory_only)
+        line = render_memory_index_line(index)
+        if line:
+            d._log(f"ingest-gmd job={job_id} {line}")
+            report = f"{report}\n{line}"
     result = {
         "files": len(files), "report": report,
         "docs": stats.docs, "nodes": stats.nodes,
@@ -3708,6 +3729,7 @@ def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict, *,
         "stats": stats.as_dict(),
         # Structured, not scraped from the report (ch-bsd plan-5 #m-7).
         "embed": emb,
+        "index": index,
         "job_id": job_id,
         # What the memory walk did NOT take, returned to the caller rather
         # than printed to this daemon's stderr log (ch-bsd 26.1 #s-3).
@@ -5346,21 +5368,102 @@ def _op_subject_link(d: Daemon, args: dict) -> dict:
     return {"linked": created}
 
 
-def _op_memory_compile_apply(d: Daemon, args: dict) -> dict:
-    """Write a `memory compile` plan: subject nodes + `part-of` edges.
+MEMORY_COMPILE_INVOKERS = ("cli", "mcp", "hub")
 
-    Only the APPLY half runs here. The clustering itself stays in the caller
-    because it reads the whole vector matrix, and the daemon is the process
-    that gets jetsammed when it grows fat — the plan arrives as data.
+
+def _op_memory_compile(d: Daemon, args: dict) -> dict:
+    """Plan AND apply `memory compile` in the daemon — 19.4 R1's op half, built
+    by task 26.6 (plan-26), 2026-11-09.
+
+    Replaces `memory_compile_apply`, which took a plan the CLI had computed:
+    with planning in the caller only a human at a terminal could compile, so
+    the live subjects sat as compiled on 2026-07-31, junk labels and all. The
+    hub (17.2's tick, when it lands) needs ONE call that does the whole run.
+    The cost that kept planning out of the daemon — it reads the memory vector
+    matrix, and a fat daemon is what jetsam kills — is bounded by the memory
+    corpus (hundreds to low thousands of rows), not the code corpus.
+
+    - `status=True` answers `{running, run}` from the single-flight record
+      alone and NEVER takes `_store_lock`, so it answers during a compile.
+    - SINGLE-FLIGHT per store: a call that arrives while one runs starts
+      nothing and returns `{already_running: True, run_id, started_at}` without
+      raising, so a caller that timed out and called again never queues a
+      second compile behind the first (feedback_daemon_call_retries_multiply_
+      timeouts). The record is claimed BEFORE the writer lock is requested, so
+      a compile waiting for the lock already counts as running.
+    - Plan and apply run inside ONE `_store_lock` + partition binding on the
+      writer store: the apply files exactly the corpus the plan read (bug-098:
+      a binding that moves under in-flight work writes the wrong partition).
+    - `dry_run` (default True) plans only; `invoked_by` (cli|mcp|hub) is echoed
+      in the result so a run says who started it.
     """
     from refmatrix import consolidate
 
-    plan = args["plan"]
-    prune = bool(args.get("prune", True))
-    with d._store_lock, d._st().with_partition(_memory_partition(d, args)):
-        result = consolidate.apply_plan(d._st(), plan, prune=prune)
-    d._request_snapshot()
-    return result
+    if args.get("status"):
+        # Kept for a caller that still asks this op; the verb asks
+        # `memory_compile_status`, which the dispatcher serves on the cli pool.
+        return _op_memory_compile_status(d, args)
+    part = _memory_partition(d, args)
+    invoked_by = str(args.get("invoked_by") or "cli")
+    if invoked_by not in MEMORY_COMPILE_INVOKERS:
+        raise ValueError(f"memory_compile: invoked_by must be one of "
+                         f"{'|'.join(MEMORY_COMPILE_INVOKERS)}, got {invoked_by!r}")
+    scope = str(args.get("scope") or consolidate.DEFAULT_SCOPE)
+    if scope not in consolidate.SCOPES:
+        raise ValueError(f"memory_compile: scope must be one of "
+                         f"{'|'.join(consolidate.SCOPES)}, got {scope!r}")
+    dry_run = bool(args.get("dry_run", True))
+    params = {k: args[k] for k in consolidate.COMPILE_PARAMS if args.get(k) is not None}
+    with d._compile_flight_lock:
+        if d._compile_run is not None:
+            cur = d._compile_run
+            return {"already_running": True, "run_id": cur["run_id"],
+                    "started_at": cur["started_at"], "scope": cur["scope"],
+                    "invoked_by": cur["invoked_by"], "dry_run": cur["dry_run"]}
+        run = {"run_id": uuid.uuid4().hex[:12], "started_at": time.time(),
+               "scope": scope, "invoked_by": invoked_by, "dry_run": dry_run,
+               "partition": part}
+        d._compile_run = run
+    try:
+        d._log(f"memory-compile start run={run['run_id']} scope={scope} "
+               f"dry_run={dry_run} invoked_by={invoked_by} partition={part}")
+        with d._store_lock, d._st().with_partition(part):
+            result = consolidate.run_compile(
+                d._st(), scope=scope, dry_run=dry_run,
+                prune=bool(args.get("prune", True)), **params)
+        if not dry_run:
+            d._request_snapshot()
+        d._log(f"memory-compile done run={run['run_id']} applied={result['applied']} "
+               f"subjects={len(result['subjects'])} linked={result['linked']} "
+               f"unlinked={result['unlinked']} stale_new={result['stale_new']} "
+               f"stale_unmarked={result['stale_unmarked']} "
+               f"stale_total={result['stale_total']}"
+               + (f" stamp_error={result['stamp_error']}"
+                  if result.get("stamp_error") else ""))
+    except Exception as exc:
+        d._log(f"memory-compile failed run={run['run_id']}: {type(exc).__name__}: {exc}")
+        raise
+    finally:
+        with d._compile_flight_lock:
+            d._compile_run = None
+    return {**result, "invoked_by": invoked_by, "run_id": run["run_id"],
+            "started_at": run["started_at"], "partition": part}
+
+
+def _op_memory_compile_status(d: Daemon, args: dict) -> dict:
+    """Is a memory compile running? `{running, run, partition}` from the
+    single-flight record alone; NEVER takes `_store_lock`.
+
+    Its own op, in `CLI_OPS`, because of where the dispatcher sends it, not
+    what it does (26.6 r1 remedy #rm-status-route, ch-bsd 26.6 r1 #m-1,
+    2026-11-10): as `memory_compile status=True` it was lock-free but routed to
+    the bg pool, so it queued behind up to 12 bulk jobs (a reingest, a bridge)
+    and timed out — the moment someone asks "is a compile running" is the
+    moment the bg pool is busy."""
+    part = _memory_partition(d, args)
+    with d._compile_flight_lock:
+        run = dict(d._compile_run) if d._compile_run else None
+    return {"running": run is not None, "run": run, "partition": part}
 
 
 def _names_for(store, ids: list) -> dict:
@@ -5383,11 +5486,15 @@ def _op_memory_brief(d: Daemon, args: dict) -> dict:
     """Derive coverage briefs; optionally persist them as memory rows.
 
     DERIVATION IS A READ and runs on the read path, not under the writer lock.
-    It decodes a couple of linkage fragments and runs two small SQL queries —
-    nothing like `memory compile`, whose vector matrix is why that pass stayed
-    in the caller (a fat daemon is the process jetsam kills). The expensive
-    half, the compile plan, arrives here as DATA the same way
-    `_op_memory_compile_apply` takes it.
+    It decodes a couple of linkage fragments and runs two small SQL queries.
+    The two plan-derived classes need a `memory compile` plan, which arrives
+    here as DATA (`plan`): `memory brief --compile` plans on the read replica
+    in the CLI process with `consolidate.compile_memories` — a read, not the
+    `memory_compile` op, which plans AND applies under `_store_lock` — and
+    ships the plan with the request. `scope` (default `memory`) names the
+    compile corpus every detector reads, and it must match the plan's
+    (26.6 r1 remedy #rm-one-corpus / #rm-stale-refs, 2026-11-10: this docstring
+    named the removed `_op_memory_compile_apply`).
 
     `save=True` is the only write, and it takes `_store_lock` — one memory row
     per brief in the `brief/<class>` namespace, so a brief is recallable by
@@ -5397,7 +5504,7 @@ def _op_memory_brief(d: Daemon, args: dict) -> dict:
 
     part = _memory_partition(d, args)
     kw = {k: args[k] for k in
-          ("min_members", "min_dates", "min_mentions", "classes")
+          ("min_members", "min_dates", "min_mentions", "classes", "scope")
           if args.get(k) is not None}
     if args.get("plan") is not None:
         kw["plan"] = args["plan"]
@@ -6496,7 +6603,8 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "memory_brief": _op_memory_brief,
     "subject_upsert": _op_subject_upsert,
     "subject_link": _op_subject_link,
-    "memory_compile_apply": _op_memory_compile_apply,
+    "memory_compile": _op_memory_compile,
+    "memory_compile_status": _op_memory_compile_status,
     "subject_list": _op_subject_list,
     "subject_leaves": _op_subject_leaves,
     "stop": _op_stop,
@@ -6547,6 +6655,8 @@ CLI_OPS: set[str] = {
     "memory_score",
     "subject_list",
     "subject_leaves",
+    # Lock-free, and asked while the bg pool is busy (26.6 r1 #rm-status-route).
+    "memory_compile_status",
     "ingest_gmd_status",
     "mem_mirror_status",
     "stop",

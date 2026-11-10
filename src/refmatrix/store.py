@@ -628,6 +628,23 @@ class Entity:
 # whether the code that DERIVES the graph moved since the graph was built.
 _DERIVE_CODE_MODULES = ("ingest.py", "ingest_gmd.py", "store.py")
 
+# The memory compile's pass name: its derive stamp AND the `compiled_by` mark on
+# every subject it writes (consolidate.COMPILED_BY is this constant).
+MEMORY_COMPILE_PASS = "memory-compile"
+
+# ONE stamp PER compile scope (task 26.6 r1 remedy #rm-stamp-per-scope, ch-bsd
+# 26.6 r1 #s-1, 2026-11-10). With one `memory-compile` stamp per partition, a
+# `--scope pattern --apply` stamped the pass and cleared the warning while the
+# memory scope's 2026-07-31 subjects stayed un-recompiled: the line that exists
+# to name exactly that state went quiet. Each scope now stamps its own pass and
+# is reported on its own line. The memory scope keeps the original pass name,
+# so every stamp already on disk still means what it meant.
+MEMORY_COMPILE_PATTERN_PASS = "memory-compile:pattern"
+MEMORY_COMPILE_SCOPE_PASSES: "dict[str, str]" = {
+    "memory": MEMORY_COMPILE_PASS,
+    "pattern": MEMORY_COMPILE_PATTERN_PASS,
+}
+
 # WHICH modules derive WHICH pass (task 15.1). The union above is kept for the
 # no-argument call that existing readers use; per-pass sets are what make a
 # staleness verdict attributable, and what stop an unrelated edit from implying
@@ -663,7 +680,27 @@ _DERIVE_PASS_MODULES: "dict[str, tuple]" = {
     "embed": ("embedder.py", "vectors.py"),
     # The centrality prior scan-prompt salience and `--rank ppr` read.
     "pagerank": ("pagerank.py",),
+    # `rmx memory compile --apply` (task 26.6 R-C, 2026-11-09). The live store's
+    # junk subject labels were compiled on 2026-07-31, before the 0.34.0 label
+    # stoplist existed, and nothing said so. Unmapped, this pass would fall back
+    # to the ingest union, so an ingest edit would read as a stale compile and a
+    # consolidate edit as nothing. Kept OUT of the partition verdict
+    # (`_DERIVE_VERDICT_EXCLUDED`).
+    MEMORY_COMPILE_PASS: ("consolidate.py",),
+    # The pattern scope's own stamp (26.6 r1 #rm-stamp-per-scope): the same
+    # clusterer, so the same module.
+    MEMORY_COMPILE_PATTERN_PASS: ("consolidate.py",),
 }
+
+# Passes stamped and hashed like any other but reported on their OWN line, never
+# in the partition verdict (`stale` / `behind_code` / `oldest_version` /
+# `reason` / `missing_passes`). Task 26.6 R-C (S6), 2026-11-09: on a post-merge
+# store the memory partition IS the project partition, so a compile stamped by
+# an older consolidate.py would make the whole graph read derive-stale and send
+# the reader to `rmx reingest --force`, which does not re-compile anything.
+# Deliberately NOT in `_DERIVE_EXPECTED_PASSES` either: a store that never
+# compiled is not missing a derive.
+_DERIVE_VERDICT_EXCLUDED: "frozenset[str]" = frozenset(MEMORY_COMPILE_SCOPE_PASSES.values())
 
 # WHICH passes a partition of each KIND can run (task 15.4). Declared here, as
 # one named constant, because the alternative is a literal list inside the
@@ -2729,7 +2766,8 @@ class Store:
         return rows
 
     # ---- subjects (durable face of an STM partition; ADR-0002) ----
-    def upsert_subject(self, label: str, metadata: dict | None = None) -> dict:
+    def upsert_subject(self, label: str, metadata: dict | None = None, *,
+                       slug_prefix: str = "") -> dict:
         """Upsert a durable subject node (`mtype='subject'`) in the active
         partition. The STM-partition slug is the entity name (`subject_<slug>`);
         the human label lives in content + metadata. Protected so prune/vacuum
@@ -2737,9 +2775,14 @@ class Store:
 
         `metadata` merges extra keys over the base `{label, slug}` — e.g.
         `memory compile` stamps `compiled_by` so a later run can tell its own
-        derived subjects from hand-declared ones and re-file only its own."""
+        derived subjects from hand-declared ones and re-file only its own.
+
+        `slug_prefix` namespaces the identity (task 26.6 R-A, 2026-11-09): the
+        identity IS the label slug, so a pattern-scope `daemon_ops` and a
+        memory-scope `daemon_ops` were one row and each scope's compile re-filed
+        the other's leaves (B3). The pattern scope passes `pattern_`."""
         from refmatrix.stm import subject_slug
-        slug = subject_slug(label)
+        slug = f"{slug_prefix}{subject_slug(label)}"
         name = f"subject_{slug}"
         meta = {"label": label, "slug": slug, **(metadata or {})}
         eid = self.add_memory(
@@ -6766,6 +6809,11 @@ class Store:
                 (self._partition_id,),
             ).fetchall()
         ]
+        # Task 26.6 R-C: a verdict-excluded pass (the memory compile) never
+        # enters `passes` or any verdict field below; it is reported under its
+        # own key, so its line can be printed without moving the partition's.
+        side = [r for r in rows if r["pass_name"] in _DERIVE_VERDICT_EXCLUDED]
+        rows = [r for r in rows if r["pass_name"] not in _DERIVE_VERDICT_EXCLUDED]
         code_hash = derive_code_hash()
         # COVERAGE (task 15.4). `passes` answers "what stamped"; on its own it
         # cannot say what did not, so one row out of five read as a verdict on
@@ -6797,6 +6845,7 @@ class Store:
                # the fleet is unstamped, and a gate that fired on that would
                # alert every row once and be turned off (ch-bsd plan-12 #b-3).
                "never_stamped": False}
+        out["memory_compile"] = self._memory_compile_status(side)
         if not rows:
             tracked = con.execute(
                 "SELECT count(*) FROM tracked_files WHERE partition_id=?",
@@ -6891,6 +6940,67 @@ class Store:
                     f"to know")
             out["reason"] = f"{out['reason']}; {note}" if out["reason"] else note
         return out
+
+    def _memory_compile_status(self, side_rows: list) -> dict:
+        """The memory compile's own freshness, outside the partition verdict.
+
+        Task 26.6 R-C (S6), 2026-11-09. `behind_code` means "consolidate.py
+        changed since this compile ran" — its per-pass hash, never the release
+        version, which moves on every bump. `needs_compile` also fires when the
+        partition holds compiled subjects and NO stamp: the 2026-07-31 subjects
+        were compiled before any stamp existed, and a silent "no stamp, no
+        line" is how their junk labels went unnoticed for three months.
+
+        PER SCOPE (26.6 r1 remedy #rm-stamp-per-scope, ch-bsd r1 #s-1,
+        2026-11-10): `scopes` holds one record per compile scope, keyed by
+        `compiled_scope`, each judged against ITS OWN pass
+        (`MEMORY_COMPILE_SCOPE_PASSES`) and counting only its own subjects. A
+        single shared record let a pattern apply clear the memory scope's
+        warning. The top-level fields are the `memory` scope's record, kept so
+        the callers that read them before scopes existed still read the scope
+        they meant; a renderer that must see every scope reads `scopes`."""
+        from refmatrix.consolidate import subject_scope
+
+        con = self._connect()
+        compiled: dict = {sc: 0 for sc in MEMORY_COMPILE_SCOPE_PASSES}
+        for r in con.execute(
+            "SELECT mc.metadata FROM entities e "
+            "JOIN memory_content mc ON mc.entity_id = e.id "
+            "WHERE e.partition_id=? AND e.kind='memory' AND mc.mtype='subject'",
+            (self._partition_id,),
+        ).fetchall():
+            meta = json.loads(r[0]) if r[0] else {}
+            sc = subject_scope(meta) if isinstance(meta, dict) else None
+            if sc is None:
+                continue
+            if sc not in compiled:
+                # A scope this code does not know cannot be judged against a
+                # pass; reporting it as "fine" would be the silent state this
+                # record exists to remove.
+                raise ValueError(
+                    f"compiled subject with unknown compiled_scope {sc!r}; "
+                    f"known scopes: {sorted(MEMORY_COMPILE_SCOPE_PASSES)}")
+            compiled[sc] += 1
+        stamps = {r["pass_name"]: r for r in side_rows}
+        scopes: dict = {}
+        for sc, pass_name in MEMORY_COMPILE_SCOPE_PASSES.items():
+            expected = derive_code_hash(pass_name)
+            stamp = stamps.get(pass_name)
+            stamped_hash = (stamp or {}).get("code_hash")
+            behind = bool(stamp is not None and stamped_hash != expected)
+            scopes[sc] = {
+                "pass": pass_name,
+                "stamped": stamp is not None,
+                "version": (stamp or {}).get("version"),
+                "at": (stamp or {}).get("at"),
+                "code_hash": stamped_hash,
+                "expected_code_hash": expected,
+                "modules": list(derive_pass_modules(pass_name)),
+                "compiled_subjects": compiled[sc],
+                "behind_code": behind,
+                "needs_compile": behind or (stamp is None and compiled[sc] > 0),
+            }
+        return {**scopes["memory"], "scopes": scopes}
 
     def clear_tracked_stamps(self, *, like: str | None = None) -> dict:
         """Delete tracked_files rows in the active partition WITHOUT purging

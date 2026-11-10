@@ -1569,3 +1569,93 @@ def render_memory_embed_line(emb: "dict | None") -> str:
         return (f"memory embed: {emb['embedded']} row(s) now reachable by "
                 f"recall in {emb.get('partition')}")
     return ""
+
+
+def regenerate_memory_index(store_root: Path, files: list, *,
+                            memory_only: bool) -> dict:
+    """Regenerate `MEMORY.md` after a bridge batch — plan-19's 19.4 R2, built by
+    task 26.6 (plan-26), 2026-11-09.
+
+    The index used to be written only by save-state, so a memory that reached
+    the store any other way (the SessionStart `--detach` catch-up, a by-hand
+    `ingest-gmd --as-memory`) was absent from the index until the next
+    save-state. Rules:
+
+    - The memdir is the STORE's memory root, `handoff.default_memory_dir(<the
+      store's project root>)`, never the bridge's target: a target such as
+      `impressions/` or one file resolves to the same root, and no index is
+      ever written inside the target.
+    - Only a batch that ingested at least one file under that root regenerates
+      it (a sessions-card ingest does not).
+    - MARKER-GATED (task-26.6 r2 s2): only a root that `memory_layout.
+      is_organised` (the ONE marker reader) is rewritten. An un-organised dir
+      keeps HEAD's behaviour — the bridge writes no index there.
+    - The global store has no project memory root: skipped and SAID.
+
+    Returns `{status, memdir?, lines?, report?, reason?}` with status one of
+    `written`, `unorganised`, `skipped`. A marker that cannot be read RAISES
+    (`memory_layout.MemoryLayoutError`) — the caller reports it; it is never
+    read as "not organised"."""
+    import io
+
+    from refmatrix import handoff, memory_index, memory_layout
+
+    if memory_only:
+        return {"status": "skipped", "no_memory_root": True,
+                "reason": "the global store has no project memory root"}
+    memdir = handoff.default_memory_dir(Path(store_root).parent)
+    mroot = memdir.resolve()
+    inside = False
+    for f in files:
+        try:
+            Path(f).resolve().relative_to(mroot)
+        except ValueError:
+            continue
+        inside = True
+        break
+    if not inside:
+        return {"status": "skipped", "memdir": str(memdir),
+                "reason": "no ingested file under the store's memory root"}
+    if not memory_layout.is_organised(memdir):
+        return {"status": "unorganised", "memdir": str(memdir)}
+    buf = io.StringIO()
+    lines = memory_index.write(memdir, out=buf)
+    return {"status": "written", "memdir": str(memdir), "lines": lines,
+            "report": buf.getvalue().strip()}
+
+
+def render_memory_index_line(idx: "dict | None") -> str:
+    """One report line for `regenerate_memory_index`, or "" when there is
+    nothing a reader needs (an un-organised dir, a non-memory batch). Shared by
+    the daemon's report and the CLI's in-process report, like the embed line."""
+    from refmatrix.memory_index import INDEX_NAME
+
+    if not idx:
+        return ""
+    st = idx.get("status")
+    if st == "error":
+        return (f"{INDEX_NAME} NOT regenerated: {idx.get('error')} — "
+                f"the memories are SAVED; fix the cause and run save-state")
+    if st == "written":
+        rep = idx.get("report") or ""
+        return (f"{INDEX_NAME} regenerated in {idx.get('memdir')} "
+                f"({idx.get('lines')} line(s))" + (f"\n{rep}" if rep else ""))
+    if st == "skipped" and idx.get("no_memory_root"):
+        return f"{INDEX_NAME} not regenerated: {idx.get('reason')}"
+    return ""
+
+
+def regenerate_memory_index_reported(store_root: Path, files: list, *,
+                                     memory_only: bool) -> dict:
+    """`regenerate_memory_index`, with a failure CAPTURED as `status: error`
+    instead of raised: by the time the index is regenerated the batch's rows are
+    committed, and failing the whole ingest would report saved memories as
+    lost. The error is carried in the result and rendered into the report by
+    `render_memory_index_line` (CLAUDE.md #no-silent-failures). Every exception
+    type is captured, as `drain_memory_vectors` does: this runs after the
+    daemon's ingest try-block, so an escaped error would leave the job reading
+    `running` forever and every bridge waiting on it would time out."""
+    try:
+        return regenerate_memory_index(store_root, files, memory_only=memory_only)
+    except Exception as exc:      # noqa: BLE001 — reported in the result, never hidden
+        return {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
