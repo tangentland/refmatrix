@@ -1,0 +1,56 @@
+..........                                                               [100%]
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_bug197_unknown_compile_scope.py::test_derive_status_never_raises_on_an_unknown_compile_scope
+PASSED tests/test_bug197_unknown_compile_scope.py::test_the_known_scopes_are_still_reported_beside_the_unknown_one
+PASSED tests/test_bug197_unknown_compile_scope.py::test_an_unknown_scope_moves_no_other_verdict_field
+PASSED tests/test_bug197_unknown_compile_scope.py::test_the_warning_names_the_unknown_scope
+PASSED tests/test_bug197_unknown_compile_scope.py::test_the_warning_renders_a_hand_built_unknown_record
+PASSED tests/test_bug197_unknown_compile_scope.py::test_the_derive_status_op_answers
+PASSED tests/test_bug197_unknown_compile_scope.py::test_ping_health_keeps_the_derive_verdict
+PASSED tests/test_bug197_unknown_compile_scope.py::test_daemon_status_prints_the_unknown_line_and_a_known_verdict
+PASSED tests/test_bug197_unknown_compile_scope.py::test_rmx_derive_status_answers
+PASSED tests/test_bug197_unknown_compile_scope.py::test_daemon_status_prints_a_derive_status_error_reply
+10 passed in 32.29s
+=== MUTATION: derive: error print removed ===
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________ test_daemon_status_prints_a_derive_status_error_reply _____________
+
+spawn = <function spawn.<locals>._make at 0x10fe5eda0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10fdb5480>
+
+    def test_daemon_status_prints_a_derive_status_error_reply(spawn, monkeypatch):  # noqa: F811
+        """GREEN-review gap (2026-11-10): when the `derive_status` op ANSWERS with
+        ok:false, `rmx daemon status` says so by name. Before bug-197's fix that
+        reply fell through to an empty result and the screen printed nothing about
+        derive at all. Real daemon for every other call; only the derive_status
+        reply is replaced, in this process. The message carries `[x]` so a
+        renderer that drops rich escaping eats it and fails here too."""
+        ctx = spawn(T._seed_scopes)
+        real_call = dm.call
+        asked = []
+    
+        def _call(root, op, args=None, *a, **kw):
+            if op == "derive_status":
+                asked.append(op)
+                return {"ok": False, "error": "CANARY-derive-boom [x]"}
+            return real_call(root, op, args, *a, **kw)
+        monkeypatch.setattr(dm, "call", _call)
+        out = T._ok("daemon", "status")
+        assert asked, f"daemon status never asked derive_status:\n{out}"
+>       assert "derive: error" in out, out
+E       AssertionError: running pid=11971 root=/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-vqn9ba_t/proj/.refmatrix
+E         code: /Volumes/littlebig/refmatrix-bug197-198/src/refmatrix/__init__.py  [DEV TREE]
+E           code /Volumes/littlebig/refmatrix-bug197-198/src/refmatrix/__init__.py but the venv belongs to None — reinstall the deploy venv from its own tree
+E         supervised: no
+E         
+E       assert 'derive: error' in 'running pid=11971 root=/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-vqn9ba_t/proj/.refmatrix\ncode: /Volumes...src/refmatrix/__init__.py but the venv belongs to None — reinstall the deploy venv from its own tree\nsupervised: no\n'
+
+tests/test_bug197_unknown_compile_scope.py:214: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug197_unknown_compile_scope.py::test_daemon_status_prints_a_derive_status_error_reply
+1 failed in 7.15s
+=== RESTORED: rerun ===
+..........                                                               [100%]
+10 passed in 32.79s

@@ -190,3 +190,27 @@ def test_rmx_derive_status_answers(spawn):  # noqa: F811
     out = T._ok("derive", "status", "--json")
     assert "unknown compiled_scope" not in out, out
     assert UNKNOWN in out, out
+
+
+def test_daemon_status_prints_a_derive_status_error_reply(spawn, monkeypatch):  # noqa: F811
+    """GREEN-review gap (2026-11-10): when the `derive_status` op ANSWERS with
+    ok:false, `rmx daemon status` says so by name. Before bug-197's fix that
+    reply fell through to an empty result and the screen printed nothing about
+    derive at all. Real daemon for every other call; only the derive_status
+    reply is replaced, in this process. The message carries `[x]` so a
+    renderer that drops rich escaping eats it and fails here too."""
+    ctx = spawn(T._seed_scopes)
+    real_call = dm.call
+    asked = []
+
+    def _call(root, op, args=None, *a, **kw):
+        if op == "derive_status":
+            asked.append(op)
+            return {"ok": False, "error": "CANARY-derive-boom [x]"}
+        return real_call(root, op, args, *a, **kw)
+    monkeypatch.setattr(dm, "call", _call)
+    out = T._ok("daemon", "status")
+    assert asked, f"daemon status never asked derive_status:\n{out}"
+    assert "derive: error" in out, out
+    assert "CANARY-derive-boom [x]" in out, out
+    assert "[UNVERIFIED]" in out, out
