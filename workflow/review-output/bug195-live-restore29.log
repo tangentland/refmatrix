@@ -1,0 +1,36 @@
+ck_green_tests_are_not_a_working_command.md
+  restore      feedback_hook_exit_127_check_launcher_path.md
+  restore      feedback_lsof_the_stuck_process.md
+  restore      feedback_measurable_benefit_is_not_the_reason.md
+  restore      feedback_measure_the_outcome_not_the_wall.md
+  restore      feedback_mutation_commit_must_hold_the_fix.md
+  restore      feedback_never_search_from_root.md
+  restore      feedback_rmxgrep_no_plain_escape.md
+  restore      project_078x_liveness_and_edge_format.md
+  restore      project_bsd_three_round_arc_plans_7_10.md
+  restore      project_bug098_writer_partition_race.md
+  restore      project_daemon_wedge_per_entity_lance_delete.md
+  restore      project_global_relative_rows_repair.md
+  restore      project_hypertree_associative_power.md
+  restore      project_memory_bridge_never_ran.md
+  restore      project_plan24_mod_transport.md
+  restore      project_refmatrix_entities_index_crashloop_0914.md
+  restore      project_sentence_coloc_measured.md
+  restore      project_session_0906_arc.md
+  restore      project_shared_worker_private_split.md
+  restore      project_storage_redesign_findings.md
+  restore      project_suite_reaches_live_sockets.md
+  restore      project_worker_queue_measured_1109.md
+  restore      reference_claude_code_mod_probe_facts.md
+backup: /Users/tholley/.refmatrix/backups/memory-hooks/Users-tholley-claude-tools-refmatrix-20261110T111906-877826000/.memory_hooks.json
+applied: dropped 0 key(s), restored 29; 364 hook(s) remain
+  rc 0
+ MEMORY.md: 127 -> 127 lines, 21859 chars (caps 200 lines / 24000 chars; 372 memories on disk) rc 0
+MEMORY.md: in sync  rc 0
+mismatched: ['feedback_backgrounded_cd_stays_in_subshell.md', 'feedback_clean_corpus_hides_a_dead_gate.md', 'feedback_compare_failures_by_error_not_name.md', 'feedback_deploy_tree_is_the_runtime.md', 'feedback_external_calls_policy.md', 'feedback_green_tests_are_not_a_working_command.md', 'feedback_hook_exit_127_check_launcher_path.md', 'feedback_lsof_the_stuck_process.md', 'feedback_measurable_benefit_is_not_the_reason.md', 'feedback_measure_the_outcome_not_the_wall.md', 'feedback_mutation_commit_must_hold_the_fix.md', 'feedback_rmxgrep_no_plain_escape.md', 'project_078x_liveness_and_edge_format.md', 'project_bsd_three_round_arc_plans_7_10.md', 'project_bug098_writer_partition_race.md', 'project_daemon_wedge_per_entity_lance_delete.md', 'project_global_relative_rows_repair.md', 'project_hypertree_associative_power.md', 'project_plan24_mod_transport.md', 'project_refmatrix_entities_index_crashloop_0914.md', 'project_sentence_coloc_measured.md', 'project_shared_worker_private_split.md', 'project_storage_redesign_findings.md', 'project_suite_reaches_live_sockets.md', 'project_worker_queue_measured_1109.md', 'reference_claude_code_mod_probe_facts.md'] remaining …-ended: 26
+applied: dropped 0 key(s), restored 29; 365 hook(s) remain 0
+index lines updated 27
+ MEMORY.md: 127 -> 128 lines, 21929 chars (caps 200 lines / 24000 chars; 372 memories on disk) rc 0
+MEMORY.md: in sync  rc 0
+mismatched: [] remaining …-ended: 0
+cut lines in index: 20
