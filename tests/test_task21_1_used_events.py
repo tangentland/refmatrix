@@ -189,24 +189,33 @@ def _ref_delivery(path_root: Path, u: dict) -> dict:
 
 
 def _prompt_recall_delivering(root: Path, session: str, name: "str | tuple[str, ...]",
-                              attempts: int = 3, **extra) -> list:
-    """The generated per-prompt recall, required to DELIVER `name` (setup, not the AC). The
-    hook's `--timeout 5` budget degrades to `[]` under full-suite load (AC-11f flaked that
-    way: no memory delivered, so the note had no memory key to use). Each attempt is a real
-    hook call in `session`; an empty degrade adds no delivered event, so a retry cannot
-    change what the AC counts. Fails with a SETUP message if every attempt degraded.
+                              *, daemons, deadline_s: float = 60.0, **extra) -> list:
+    """The generated per-prompt recall, required to DELIVER `name` (setup, not the AC).
+
+    READINESS first, not a retry count (bug-184 r6, ch-bsd r6 #b-1, 2026-11-09): every
+    sandbox daemon in `daemons` is waited on until its startup warmup has its embed AND rerank
+    models warm (`SandboxDaemon.wait_models_warm`). A sandbox has no hub, so each fresh daemon
+    cold-loads private workers (~7.5 s embed + ~5 s rerank idle), and a recall issued inside
+    that window misses the hook's `--timeout 5` (`skipped_budget`) on every machine, load or
+    none. The r5 helper allowed 3 attempts, which covered the window only while it was under
+    15 s, and the full suite still failed 4 setups.
+
+    After readiness the hook is called until it delivers or `deadline_s` passes (a bound on
+    the setup, not a tuned count). Every attempt is a real hook call in `session`; an empty
+    degrade adds no delivered event and a delivering one emits no `used` (the hook invocation
+    is never a use), so a retry cannot change what an AC counts (ac11a's `deltas[0]` still
+    holds). A retry WARNS with the failed attempts' `query.log` outcomes; a hook that never
+    delivers (audit mutation H1: it prints `[]` always) fails with a SETUP AssertionError
+    listing every attempt -- never a silent pass.
 
     `name` may be a tuple: every one of them must be delivered by ONE attempt (AC-11c needs
-    the project AND the global memory). Every AC-11/R12 setup that needs a delivery goes
-    through here (bug-184, 2026-11-09: ac11a/b/c/e and r12 called `_prompt_recall` once and
-    failed `fixture: recall did not deliver: []` under suite load, a different pair per run;
-    only ac11f had been moved here). An AC whose COUNT includes the recall call itself
-    (ac11a's `deltas[0]`) still holds: an empty attempt emits no event, and a delivering
-    one emits no `used` (the hook invocation is never a use)."""
+    the project AND the global memory)."""
     import warnings
     want = (name,) if isinstance(name, str) else tuple(name)
+    warm = [d.wait_models_warm() for d in daemons]
     seen = []
-    for i in range(attempts):
+    deadline = time.monotonic() + deadline_s      # monotonic: a host sleep is not setup time
+    while True:
         n0 = h.line_count(root / "query.log")
         rows = _prompt_recall(root, session, **extra)
         rec = [q for q in h.jsonl(root / "query.log")[n0:] if q.get("kind") == "recall"]
@@ -214,15 +223,18 @@ def _prompt_recall_delivering(root: Path, session: str, name: "str | tuple[str, 
                    for q in rec]
         seen.append({"names": [r.get("name") for r in rows], "query_log": outcome})
         if all(w in seen[-1]["names"] for w in want):
-            if i:
-                # r2 #m4: a retry happened -- RECORD why (the failed attempts' query.log
-                # outcome: skipped_budget, error, or ok-but-empty), never assume the cause.
-                warnings.warn(f"AC-11 setup: prompt recall needed {i + 1} attempts; "
-                              f"earlier attempts: {seen[:-1]}")
+            if len(seen) > 1:
+                # r2 #m4: a retry happened AFTER readiness -- RECORD why (the failed attempts'
+                # query.log outcome: skipped_budget, error, or ok-but-empty), never assume.
+                warnings.warn(f"AC-11 setup: prompt recall needed {len(seen)} attempts after "
+                              f"the models were warm ({warm}); earlier attempts: {seen[:-1]}")
             return rows
-    raise AssertionError(f"setup: the prompt recall never delivered {want!r} in "
-                         f"{attempts} attempts; per attempt (names, query.log (outcome, "
-                         f"error, latency_ms, cardinality)): {seen}")
+        if time.monotonic() >= deadline:
+            raise AssertionError(
+                f"setup: the prompt recall never delivered {want!r} within {deadline_s:.0f}s "
+                f"after the models were warm ({warm}); {len(seen)} attempts, per attempt "
+                f"(names, query.log (outcome, error, latency_ms, cardinality)): {seen}")
+        time.sleep(1.0)
 
 
 def _wait_context_without(root: Path, ref: str, text: str, session: str | None,
@@ -230,8 +242,8 @@ def _wait_context_without(root: Path, ref: str, text: str, session: str | None,
     """After a forget, the lock-free replica the CLI context route reads lags the writer. Wait
     until a context call no longer shows `text` (a NON-agent, sessionless probe: it can emit
     nothing that a later assertion counts)."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         r = h.run_rmx(["context", ref], root=root)
         if text not in r.stdout:
             return
@@ -258,8 +270,8 @@ def test_ac11a_memory_get_by_name_emits_one_used_and_only_for_the_agent_by_name_
 
     def _n():
         return len(_all_used(root, g, S)) + len(_all_used(root, g, S2))
-    with h.SandboxDaemon(g, RMX_PARTITION="global"), h.SandboxDaemon(root):
-        rows = _prompt_recall_delivering(root, S, ALPHA)
+    with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
+        rows = _prompt_recall_delivering(root, S, ALPHA, daemons=(gd, pd))
         assert ALPHA in [r.get("name") for r in rows], f"fixture: recall did not deliver: {rows}"
         cum.append(_n())
         _agent(root, ["memory", "get", ALPHA], S, RMX_INVOCATION_SOURCE="hook")
@@ -292,8 +304,8 @@ def test_ac11a_mcp_rmx_memory_get_action_by_name_emits_used(root):
     ids = _seed(root)
     g = _seed_global()
     S = _sid("S")
-    with h.SandboxDaemon(g, RMX_PARTITION="global"), h.SandboxDaemon(root):
-        _prompt_recall_delivering(root, S, ALPHA)
+    with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
+        _prompt_recall_delivering(root, S, ALPHA, daemons=(gd, pd))
         with h.McpServer(root, RMX_SESSION=S) as m:
             r1 = m.tool("rmx_memory", {"action": "get", "id": ids[ALPHA]})
             after_id = len(_all_used(root, g, S))
@@ -318,10 +330,10 @@ def test_ac11b_context_by_name_on_the_memory_anchor_emits_one_used(root):
     _seed(root)
     g = _seed_global()
     S, S3 = _sid("S"), _sid("S3")
-    with h.SandboxDaemon(g, RMX_PARTITION="global"), h.SandboxDaemon(root):
-        _prompt_recall_delivering(root, S, ALPHA)
+    with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
+        _prompt_recall_delivering(root, S, ALPHA, daemons=(gd, pd))
         r = _agent(root, ["context", ALPHA], S)
-        _prompt_recall_delivering(root, S3, ALPHA)
+        _prompt_recall_delivering(root, S3, ALPHA, daemons=(gd, pd))
         with h.McpServer(root, RMX_SESSION=S3) as m:
             mr = m.tool("rmx_context", {"ref": ALPHA})
     assert f"anchor: {ALPHA}  [memory]" in r.stdout, f"fixture: anchor is not the memory: {r.stdout[:400]}"
@@ -349,8 +361,8 @@ def test_ac11b_code_symbol_sharing_a_memory_name_is_a_code_use_not_a_memory_use(
     _seed(root, code=[("alpha_rules", ALPHA)])
     g = _seed_global()
     S = _sid("S")
-    with h.SandboxDaemon(g, RMX_PARTITION="global"), h.SandboxDaemon(root):
-        _prompt_recall_delivering(root, S, ALPHA)
+    with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
+        _prompt_recall_delivering(root, S, ALPHA, daemons=(gd, pd))
         out = _scan(root, S, f"fix alpha_rules in {ALPHA} now")
         assert f"{ALPHA}  [code]" in out, f"fixture: scan-prompt did not deliver the code item: {out[:600]}"
         r = h.run_rmx(["memory", "forget", "--yes", ALPHA], root=root)
@@ -384,8 +396,8 @@ def test_ac11c_focus_note_emits_one_used_per_distinct_name_global_to_global_file
     g = _seed_global()
     S = _sid("S")
     note1 = (f"applied {ALPHA}, then {ALPHA} again; see [[{BETA}#why]]")
-    with h.SandboxDaemon(g, RMX_PARTITION="global"), h.SandboxDaemon(root):
-        rows = _prompt_recall_delivering(root, S, (ALPHA, BETA))
+    with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
+        rows = _prompt_recall_delivering(root, S, (ALPHA, BETA), daemons=(gd, pd))
         assert {ALPHA, BETA} <= {r.get("name") for r in rows}, f"fixture: recall rows {rows}"
         out = _scan(root, S, "check the runner_loop and run it")
         assert "run  [code]" in out, f"fixture: scan-prompt did not deliver `run`: {out[:600]}"
@@ -433,8 +445,8 @@ def test_ac11d_lookup_reads_at_most_4mb_and_counts_the_cap_hit(root):
     _seed(root)
     g = _seed_global()
     S = _sid("S")
-    with h.SandboxDaemon(g, RMX_PARTITION="global"), h.SandboxDaemon(root):
-        _prompt_recall_delivering(root, S, ALPHA)
+    with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
+        _prompt_recall_delivering(root, S, ALPHA, daemons=(gd, pd))
         with open(root / "recall-events.jsonl", "ab") as f:
             f.write(_filler_events(6 * 1024 * 1024, root=root, session=S))
         _agent(root, ["memory", "get", ALPHA], S)
@@ -493,10 +505,10 @@ def test_ac11e_concept_anchor_with_attached_memory_body(root):
     from refmatrix.discovery import store_name
     project_partition = store_name(root)
     S0, S = _sid("S0"), _sid("S")
-    with h.SandboxDaemon(g, RMX_PARTITION="global"), h.SandboxDaemon(root):
+    with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
         c0 = _agent(root, ["context", GAMMA], S0)
         rows = _prompt_recall_delivering(root, S, GAMMA, prompt="the gamma rule",
-                                         RMX_PARTITION="intuition")
+                                         daemons=(gd, pd), RMX_PARTITION="intuition")
         assert GAMMA in [r.get("name") for r in rows], f"fixture: recall rows {rows}"
         c1 = _agent(root, ["context", GAMMA], S)
         used_after_c1 = [u["kind"] for u in _all_used(root, g, S)]
@@ -545,8 +557,8 @@ def test_ac11f_focus_note_sentence_final_name_and_one_used_per_key(root):
     _seed(root, code=[("alpha_rules", ALPHA)])
     g = _seed_global()
     S = _sid("S")
-    with h.SandboxDaemon(g, RMX_PARTITION="global"), h.SandboxDaemon(root):
-        _prompt_recall_delivering(root, S, ALPHA)
+    with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
+        _prompt_recall_delivering(root, S, ALPHA, daemons=(gd, pd))
         assert _delivered(root, S, ALPHA, "memory"), (
             "setup: the recall returned the memory but logged no delivered kind=memory event")
         _agent(root, ["focus", "note", f"applied {ALPHA}."], S)
@@ -572,8 +584,8 @@ def test_r12_no_resolved_session_emits_no_used(root):
     _seed(root)
     g = _seed_global()
     S = _sid("S")
-    with h.SandboxDaemon(g, RMX_PARTITION="global"), h.SandboxDaemon(root):
-        _prompt_recall_delivering(root, S, ALPHA)
+    with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
+        _prompt_recall_delivering(root, S, ALPHA, daemons=(gd, pd))
         from refmatrix import stm
         stm.Stm(root, S).record("input", "make S the newest ring on disk")
         _agent(root, ["memory", "get", ALPHA], None)
