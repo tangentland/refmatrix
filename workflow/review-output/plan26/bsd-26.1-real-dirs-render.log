@@ -1,0 +1,39 @@
+== refmatrix marker-off
+HEAD 61b3bde:
+MEMORY.md: 127 -> 126 lines, 21116 chars (caps 200 lines / 24000 chars; 369 memories on disk)
+26.1 8337368:
+MEMORY.md: 127 -> 126 lines, 21116 chars (caps 200 lines / 24000 chars; 369 memories on disk)
+MEMORY.md byte-identical
+sidecar byte-identical
+== refmatrix marker-on (8337368)
+MEMORY.md: 127 -> 126 lines, 21116 chars (caps 200 lines / 24000 chars; 369 memories on disk)
+== viascope marker-off
+HEAD 61b3bde:
+MEMORY.md: 157 -> 1 lines, 119 chars (caps 200 lines / 24000 chars; 3 memories on disk)
+26.1 8337368:
+MEMORY.md: 157 -> 139 lines, 23857 chars (caps 200 lines / 24000 chars; 145 memories on disk)
+MEMORY.md differs
+sidecar differs
+== viascope marker-on (8337368)
+MEMORY.md: the carried hand-written prose (62 prose lines, 22702 chars) leaves less than 25% of the 24000-char budget for entries; move that prose into a memory; index left untouched
+== cliquedb marker-off
+HEAD 61b3bde:
+MEMORY.md: 122 -> 120 lines, 23716 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+26.1 8337368:
+MEMORY.md: 122 -> 120 lines, 23716 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+MEMORY.md byte-identical
+sidecar byte-identical
+== cliquedb marker-on (8337368)
+MEMORY.md: 122 -> 125 lines, 24378 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+MEMORY.md: STILL OVER the 24000-char budget at 24378 chars — the tail WILL be cut on load; nothing left to fold (feedback entries are never folded)
+MEMORY.md: carried 8 hand-written prose line(s)
+== cliquet marker-off
+HEAD 61b3bde:
+MEMORY.md: 78 -> 53 lines, 10107 chars (caps 200 lines / 24000 chars; 55 memories on disk)
+26.1 8337368:
+MEMORY.md: 78 -> 53 lines, 10107 chars (caps 200 lines / 24000 chars; 55 memories on disk)
+MEMORY.md byte-identical
+sidecar byte-identical
+== cliquet marker-on (8337368)
+MEMORY.md: 78 -> 63 lines, 10678 chars (caps 200 lines / 24000 chars; 55 memories on disk)
+MEMORY.md: carried 8 hand-written prose line(s)
