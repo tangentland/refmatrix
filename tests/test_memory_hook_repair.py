@@ -310,3 +310,109 @@ def test_unreadable_memory_file_fails_loud_and_writes_nothing(memdir, rmx_home):
         assert _backups(rmx_home) == []
     finally:
         f.chmod(stat.S_IRUSR | stat.S_IWUSR)
+
+
+# ---- ch-bsd bug-195 r1 m-1: the sidecar's file mode survives the atomic write --------
+#
+# `mkstemp` creates 0600 and `os.replace` keeps it, so ccb9398 turned every save-state's
+# `.memory_hooks.json` owner-only where `write_text` had left 0644 (measured on four copies).
+
+def _mode(p: Path) -> int:
+    return stat.S_IMODE(p.stat().st_mode)
+
+
+@pytest.mark.parametrize("mode", [0o644, 0o640])
+def test_save_hooks_preserves_the_existing_sidecar_mode(memdir, mode):
+    side = memdir / SIDECAR
+    side.chmod(mode)
+    mi.save_hooks(memdir, mi.collect(memdir))
+    assert _mode(side) == mode, f"save_hooks changed {oct(mode)} to {oct(_mode(side))}"
+
+
+@pytest.mark.parametrize("mode", [0o644, 0o640])
+def test_repair_apply_preserves_the_existing_sidecar_mode(memdir, rmx_home, mode):
+    side = memdir / SIDECAR
+    side.chmod(mode)
+    rc, out = _run(memdir, "--apply")
+    assert rc == 0, out
+    assert "feedback_derived.md" not in json.loads(side.read_bytes()), out
+    assert _mode(side) == mode, f"--apply changed {oct(mode)} to {oct(_mode(side))}"
+
+
+@pytest.mark.parametrize("umask", [0o022, 0o027])
+def test_a_new_sidecar_gets_the_umask_mode(memdir, umask):
+    (memdir / SIDECAR).unlink()
+    old = os.umask(umask)
+    try:
+        mi.save_hooks(memdir, mi.collect(memdir))
+    finally:
+        os.umask(old)
+    side = memdir / SIDECAR
+    assert side.exists()
+    assert _mode(side) == 0o666 & ~umask, \
+        f"umask {oct(umask)}: expected {oct(0o666 & ~umask)}, got {oct(_mode(side))}"
+
+
+# ---- ch-bsd bug-195 r1 m-2a: a mistyped or extra argument is refused, never rendered --
+#
+# HEAD (e0086d5) dropped any `--` arg it did not know and called `write()`: a mistyped
+# `--repair-cut-hook` would have REWRITTEN the index the operator meant to inspect.
+
+def _run_raw(*argv: str):
+    p = subprocess.run([sys.executable, "-B", "-m", "refmatrix.memory_index", *argv],
+                       capture_output=True, text=True, timeout=60, env=dict(os.environ))
+    return p.returncode, p.stdout + p.stderr
+
+
+@pytest.mark.parametrize("argv", [
+    ("--repair-cut-hook", "{d}"),                    # the typo
+    ("--repair-cut-hooks", "{d}", "stray"),          # a stray second positional
+    ("{d}", "stray"),                                # a stray positional on the render path
+    ("{d}", "--aply"),                               # a mistyped flag on the render path
+], ids=["typo-flag", "repair-stray-positional", "render-stray-positional", "typo-apply"])
+def test_an_unknown_flag_or_extra_positional_exits_2_and_touches_nothing(
+        memdir, rmx_home, argv):
+    idx = memdir / mi.INDEX_NAME
+    idx.write_text("- sentinel index a render would replace\n", encoding="utf-8")
+    before_idx, before_side = idx.read_bytes(), _sidecar_bytes(memdir)
+    rc, out = _run_raw(*(a.format(d=memdir) for a in argv))
+    assert rc == 2, f"{argv}: expected a usage refusal (rc 2), got {rc}:\n{out}"
+    assert "usage" in out.lower(), out
+    assert idx.read_bytes() == before_idx, f"{argv}: MEMORY.md was rewritten"
+    assert _sidecar_bytes(memdir) == before_side, f"{argv}: the sidecar was rewritten"
+    assert _backups(rmx_home) == []
+
+
+# ---- ch-bsd bug-195 r1 m-2b: the sidecar write is atomic ------------------------------
+
+def _temp_leftovers(memdir: Path) -> list:
+    return sorted(p.name for p in memdir.iterdir()
+                  if p.name != SIDECAR and p.name.startswith(SIDECAR))
+
+
+def _failing_replace(*_a, **_k):
+    raise OSError("injected: rename failed")
+
+
+def test_save_hooks_with_a_failing_rename_keeps_the_old_sidecar(memdir, monkeypatch, capsys):
+    before = _sidecar_bytes(memdir)
+    entries = mi.collect(memdir)
+    monkeypatch.setattr(os, "replace", _failing_replace)
+    mi.save_hooks(memdir, entries)
+    monkeypatch.undo()
+    assert _sidecar_bytes(memdir) == before, "a failed rename must leave the old sidecar whole"
+    assert _temp_leftovers(memdir) == [], "the temp file is removed on failure"
+    assert "could not write hook sidecar" in capsys.readouterr().err, "the failure is named"
+
+
+def test_repair_apply_with_a_failing_rename_keeps_the_old_sidecar(memdir, rmx_home,
+                                                                  monkeypatch, capsys):
+    before = _sidecar_bytes(memdir)
+    monkeypatch.setattr(os, "replace", _failing_replace)
+    rc = mi.repair_cut_hooks(memdir, apply=True)
+    monkeypatch.undo()
+    err = capsys.readouterr().err
+    assert rc != 0, "a failed write is a refusal"
+    assert _sidecar_bytes(memdir) == before, "a failed rename must leave the old sidecar whole"
+    assert _temp_leftovers(memdir) == [], "the temp file is removed on failure"
+    assert "refused" in err, err

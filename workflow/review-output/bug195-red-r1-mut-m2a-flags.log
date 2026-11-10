@@ -1,0 +1,56 @@
+F..F                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_an_unknown_flag_or_extra_positional_exits_2_and_touches_nothing[typo-flag] _
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-520/test_an_unknown_flag_or_extra_0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-520/test_an_unknown_flag_or_extra_0/rmxhome')
+argv = ('--repair-cut-hook', '{d}')
+
+    @pytest.mark.parametrize("argv", [
+        ("--repair-cut-hook", "{d}"),                    # the typo
+        ("--repair-cut-hooks", "{d}", "stray"),          # a stray second positional
+        ("{d}", "stray"),                                # a stray positional on the render path
+        ("{d}", "--aply"),                               # a mistyped flag on the render path
+    ], ids=["typo-flag", "repair-stray-positional", "render-stray-positional", "typo-apply"])
+    def test_an_unknown_flag_or_extra_positional_exits_2_and_touches_nothing(
+            memdir, rmx_home, argv):
+        idx = memdir / mi.INDEX_NAME
+        idx.write_text("- sentinel index a render would replace\n", encoding="utf-8")
+        before_idx, before_side = idx.read_bytes(), _sidecar_bytes(memdir)
+        rc, out = _run_raw(*(a.format(d=memdir) for a in argv))
+>       assert rc == 2, f"{argv}: expected a usage refusal (rc 2), got {rc}:\n{out}"
+E       AssertionError: ('--repair-cut-hook', '{d}'): expected a usage refusal (rc 2), got 0:
+E         MEMORY.md: 1 -> 4 lines, 276 chars (caps 200 lines / 24000 chars; 4 memories on disk)
+E         
+E       assert 0 == 2
+
+tests/test_memory_hook_repair.py:379: AssertionError
+_ test_an_unknown_flag_or_extra_positional_exits_2_and_touches_nothing[typo-apply] _
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-520/test_an_unknown_flag_or_extra_3/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-520/test_an_unknown_flag_or_extra_3/rmxhome')
+argv = ('{d}', '--aply')
+
+    @pytest.mark.parametrize("argv", [
+        ("--repair-cut-hook", "{d}"),                    # the typo
+        ("--repair-cut-hooks", "{d}", "stray"),          # a stray second positional
+        ("{d}", "stray"),                                # a stray positional on the render path
+        ("{d}", "--aply"),                               # a mistyped flag on the render path
+    ], ids=["typo-flag", "repair-stray-positional", "render-stray-positional", "typo-apply"])
+    def test_an_unknown_flag_or_extra_positional_exits_2_and_touches_nothing(
+            memdir, rmx_home, argv):
+        idx = memdir / mi.INDEX_NAME
+        idx.write_text("- sentinel index a render would replace\n", encoding="utf-8")
+        before_idx, before_side = idx.read_bytes(), _sidecar_bytes(memdir)
+        rc, out = _run_raw(*(a.format(d=memdir) for a in argv))
+>       assert rc == 2, f"{argv}: expected a usage refusal (rc 2), got {rc}:\n{out}"
+E       AssertionError: ('{d}', '--aply'): expected a usage refusal (rc 2), got 0:
+E         MEMORY.md: 1 -> 4 lines, 276 chars (caps 200 lines / 24000 chars; 4 memories on disk)
+E         
+E       assert 0 == 2
+
+tests/test_memory_hook_repair.py:379: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_hook_repair.py::test_an_unknown_flag_or_extra_positional_exits_2_and_touches_nothing[typo-flag]
+FAILED tests/test_memory_hook_repair.py::test_an_unknown_flag_or_extra_positional_exits_2_and_touches_nothing[typo-apply]
+2 failed, 2 passed, 19 deselected in 0.83s
