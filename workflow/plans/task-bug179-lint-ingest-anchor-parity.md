@@ -5,17 +5,17 @@ title: "Task bug-179: lint and ingester agree on block anchors"
 tags: [task, bug-179, gmd, lint, ingest, anchors]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   created: 2026-11-09
   updated: 2026-11-09
 ---
 
 # Task bug-179: lint and ingester agree on block anchors {#root}
 
-> Status: Drafting. The spec was written 2026-11-09 for the pre-plan-24 queue, with decisions taken
-> as the user would and recorded with their rationale. Revision round 1 ([[#rev-round-1]]) folds
-> spec review r1. **Approval is pending user consent for the viascope step** ([[#r7]] (b)): it
-> edits another repo, so it cannot be decided as the user would.
+> Status: Approved (2026-11-09, [[#approval]]). The spec was written 2026-11-09 for the
+> pre-plan-24 queue, with decisions taken as the user would and recorded with their rationale.
+> Revision round 1 ([[#rev-round-1]]) folds spec review r1. The user consented to the viascope
+> step ([[#r7]] (b)) on 2026-11-09.
 > Depends on: none. Touches the upstream GMD repo (`~/claude_tools/gmd`) as well as this one, and,
 > gated on consent, one line in viascope.
 
@@ -215,8 +215,9 @@ commit is lint, so that is where the check has to live. {#why-second}
      6 ids keep their names. Ids with inbound links (at least `e2e-specs-absent-pattern`,
      `skip-on-empty-data-pattern` and `stub-handler-pattern`) need nothing re-pointed. If consent
      is withheld, R6's upstream commit does not land, and the task stops at a recorded gap. That
-     gap is never worked around by softening R1 to a warning. Not done; not authorised by this
-     revision. {#r7-b}
+     gap is never worked around by softening R1 to a warning. **Consent given by the user
+     2026-11-09 (session 7aea273d): "ok, viascope split approved — go ahead".** It covers this one
+     line in its own viascope commit, ordered as above; nothing else in viascope. {#r7-b}
    - (c) **Vendoring repos (cliquedb, cliquet): a migration note, applied at their next
      re-vendor.** Upstream `gmd-migration-guide.md` and the upstream commit message list
      [[#f-c-cliquedb-1]] to [[#f-c-cliquet-2]] with the fix for each shape: one id per line; drop a
@@ -389,5 +390,12 @@ and where it landed:
 
 Status stays `drafting`. Every review question is resolved in the spec except one: **approval is
 pending user consent for the viascope step** ([[#r7-b]]).
+
+## Approval (2026-11-09) {#approval}
+
+The user consented to the viascope step ([[#r7-b]]) on 2026-11-09: "ok, viascope split approved —
+go ahead". That was the only open item, so the spec moves to `approved`. Build order: bug-179 is
+independent of the plan-23/25/26/27 chain; the viascope commit lands first, then the upstream
+commit, then the re-vendor ([[#r6]]).
 
 rel: derives-from -> [[bsd-bug179-spec-r1-c5f91e4]]
