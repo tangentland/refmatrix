@@ -525,3 +525,124 @@ def test_r4_load_hooks_resolves_a_moved_files_derived_hook_by_id(memdir):
     assert cut.split(" — ", 1)[1] not in hooks.values(), hooks
     assert hooks.get("feedback_a") == DERIVED, hooks
     assert hooks.get("feedback_a.md") == DERIVED, hooks
+
+
+# ---- RED-round decisions (spec #red-decisions, 995daa9) --------------------------------------
+#
+# #rd-one-newest: the MEMORY.md save-state pointer and the reader use ONE ordering
+# (`memory_layout.sort_savestates`) in EVERY dir. At HEAD a flat dir's pointer ordered by
+# (created, mtime) while the reader took the newest mtime: two answers to "newest". The flat
+# pointer changing is a named exception to 26.1 AC-9's byte-identity.
+
+def _pointer_newest(memdir: Path) -> str:
+    ptr = [ln for ln in (memdir / "MEMORY.md").read_text(encoding="utf-8").splitlines()
+           if ln.startswith("- [Save-states (")]
+    assert len(ptr) == 1, ptr
+    m = re.match(r"- \[Save-states \(\d+\), newest (\S+)\]\(([^)]+)\)", ptr[0])
+    assert m, ptr
+    return m.group(1), m.group(2)
+
+
+@pytest.mark.parametrize("shape", ["created-vs-mtime", "mixed-format"])
+def test_rd_one_newest_a_flat_dirs_pointer_names_the_readers_newest(memdir, shape):
+    """A flat (no marker) cliquedb-shaped dir. `savestate_n` is the newest save by the ONE key;
+    `savestate_l` has the later `created` (HEAD's pointer key) and, in the mixed-format shape,
+    also the later mtime under an older date."""
+    if shape == "created-vs-mtime":
+        # HEAD's pointer -> l (later created); HEAD's reader -> n (later mtime): they disagree.
+        ss(memdir, "savestate_l.md", created="2026-11-09", updated="2026-11-07",
+           mtime=at(2026, 11, 7, 9))
+        ss(memdir, "savestate_n.md", created="2026-11-01", updated="2026-11-08",
+           mtime=at(2026, 11, 8, 9))
+    else:
+        # date-only vs datetime on one date: mtime decides -> n. HEAD's pointer -> l (created).
+        ss(memdir, "savestate_l.md", created="2026-11-08", updated="2026-11-08T15:00:00",
+           mtime=at(2026, 11, 8, 15))
+        ss(memdir, "savestate_n.md", created="2026-11-07", updated="2026-11-08",
+           mtime=at(2026, 11, 8, 23))
+    note(memdir, "feedback_x.md", mtype="feedback", mtime=at(2026, 11, 1))
+    assert not (memdir / ".memory-layout").exists()
+    mi.write(memdir, out=io.StringIO())
+    name, rel = _pointer_newest(memdir)
+    assert name == latest(memdir), f"pointer names {name}, recall-state reads {latest(memdir)}"
+    assert (name, rel) == ("savestate_n", "savestate_n.md"), (name, rel)
+
+
+# #rd-duplicate: a crash mid-move leaves both `<id>.md` and `savestates/<id>.md`. The reader
+# takes the `savestates/` copy; the next save of that id writes `savestates/`, removes the
+# top-level copy and prints `removed duplicate top-level <name>`; until then the bridge counts
+# and names the duplicate in its skip line.
+
+DUP = "savestate_sessdup"
+
+
+def _duplicate(memdir: Path) -> tuple:
+    """Both copies; the TOP-LEVEL one is the later mtime (the copy a crash after the write and
+    before the unlink would leave newer), so a reader that only sorts picks the wrong one."""
+    new = ss(memdir, f"savestates/{DUP}.md", created="2026-11-01", updated="2026-11-08",
+             mtime=at(2026, 11, 8, 9), body="the savestates copy")
+    old = ss(memdir, f"{DUP}.md", created="2026-11-01", updated="2026-11-08",
+             mtime=at(2026, 11, 8, 10), body="the stale top-level copy")
+    return new, old
+
+
+@pytest.mark.parametrize("organised", [True, False], ids=["organised", "unorganised"])
+def test_rd_duplicate_the_reader_takes_the_savestates_copy(memdir, organised):
+    if organised:
+        organise(memdir)
+    new, _old = _duplicate(memdir)
+    r = handoff._latest_savestate(memdir)
+    assert r and r["path"] == str(new), r
+    assert "the savestates copy" in r["body"] and "stale top-level" not in r["body"], r["body"]
+
+
+def test_rd_duplicate_the_next_save_writes_savestates_and_removes_the_top_level_copy(memdir):
+    organise(memdir)
+    new, old = _duplicate(memdir)
+    r = CliRunner().invoke(cli_mod.main, ["save-state", "-s", "sess-dup", "--memory-dir",
+                                          str(memdir), "--no-lint", "--no-promote", "--no-sync",
+                                          "-m", "after the crash"])
+    assert r.exit_code == 0, f"{r.output}\n{r.exception!r}"
+    assert not old.exists(), "the top-level duplicate survived the next save"
+    assert "after the crash" in new.read_text(encoding="utf-8"), "the save did not reach savestates/"
+    assert fm(new, "created") == "2026-11-01"
+    assert md_files(memdir) == [f"savestates/{DUP}.md"], md_files(memdir)
+    said = " ".join(r.output.split())
+    assert f"removed duplicate top-level {DUP}" in said, r.output
+
+
+@pytest.fixture
+def inproc_store(monkeypatch, base):
+    root = base / "proj" / ".refmatrix"
+    root.parent.mkdir()
+    Store(root).init()
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+    monkeypatch.delenv("RMX_PARTITION", raising=False)
+    return root
+
+
+def test_rd_duplicate_the_bridge_counts_and_names_the_duplicate_before_the_save(
+        inproc_store, base):
+    root = inproc_store
+    memdir = base / "memory"
+    memdir.mkdir()
+    organise(memdir)
+    _duplicate(memdir)
+    note(memdir, "feedback/feedback_x.md", mtype="feedback", mtime=at(2026, 11, 1))
+    assert not dm.ping(root, retries=0), "the in-process leg must run with NO daemon"
+    out = cli_mod._sync_memory_dir(memdir)
+    assert out["error"] is None, out
+    assert out.get("skipped") == 1, f"the duplicate is not counted as a skip: {out}"
+    named = " ".join(str(p) for p in (out.get("skipped_paths") or []))
+    # named by absolute path (either spelling of a macOS tmp dir) or by memdir-relative path
+    spellings = (str(memdir / f"{DUP}.md"), str(memdir.resolve() / f"{DUP}.md"))
+    assert any(x in named for x in spellings) or f" {DUP}.md" in f" {named}", out
+    assert "savestates/" not in named, f"the savestates/ copy was skipped instead: {named}"
+    report = " ".join(str(out.get("report") or "").split())
+    assert re.search(r"skipped 1\b", report) and f"{DUP}.md" in report, report
+    s = Store(root)
+    try:
+        row = s.find_memory_any_partition(DUP)
+    finally:
+        s.close()
+    assert row and "the savestates copy" in (row.get("content") or ""), row

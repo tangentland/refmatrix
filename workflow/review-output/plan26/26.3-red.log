@@ -643,3 +643,20 @@ M5 .claude/commands/recall-state.md drifts from the template              -> 1 F
 AC-6 harness sanity (scratch copy, UNORGANISED dir, where HEAD's target is right): 1 passed --
    lint + bridge + embed + recall legs work at HEAD; the committed test is RED only on the
    savestates/ target (26.3-ac6-harness-sanity.log).
+
+==== 26.3 RED round 2: spec #red-decisions (995daa9) ====
+Run: tests/test_savestate_subfolder.py + tests/test_save_state.py -> 32 failed, 29 passed (was 26/29; +6 new, all RED at HEAD 8a867bc src)
+FAILED tests/test_savestate_subfolder.py::test_rd_one_newest_a_flat_dirs_pointer_names_the_readers_newest[created-vs-mtime]
+FAILED tests/test_savestate_subfolder.py::test_rd_one_newest_a_flat_dirs_pointer_names_the_readers_newest[mixed-format]
+FAILED tests/test_savestate_subfolder.py::test_rd_duplicate_the_reader_takes_the_savestates_copy[organised]
+FAILED tests/test_savestate_subfolder.py::test_rd_duplicate_the_reader_takes_the_savestates_copy[unorganised]
+FAILED tests/test_savestate_subfolder.py::test_rd_duplicate_the_next_save_writes_savestates_and_removes_the_top_level_copy
+FAILED tests/test_savestate_subfolder.py::test_rd_duplicate_the_bridge_counts_and_names_the_duplicate_before_the_save
+E lines (full output in 26.3-red-decisions.log):
+ rd_one_newest[created-vs-mtime]  pointer names savestate_l, recall-state reads savestate_n
+ rd_one_newest[mixed-format]      pointer names savestate_l, recall-state reads savestate_n
+ rd_duplicate reader [organised|unorganised]  path is top-level savestate_sessdup.md (stale copy body)
+ rd_duplicate next save           the top-level duplicate survived the next save
+ rd_duplicate bridge              the duplicate is not counted as a skip (skipped 0 == 1)
+#rd-key, #rd-fallback-ungated: no new tests (existing ones match). #rd-ac7: GREEN verifies.
+No test green at HEAD in this round, so no mutation proofs needed.
