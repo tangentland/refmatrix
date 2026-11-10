@@ -1,0 +1,288 @@
+FFFFF....FFFFFF..................................................        [100%]
+=================================== FAILURES ===================================
+_ test_stamp_per_scope_the_pattern_pass_is_registered_and_kept_out_of_the_verdict _
+
+    def test_stamp_per_scope_the_pattern_pass_is_registered_and_kept_out_of_the_verdict():
+        """`memory-compile:pattern` hashes consolidate.py, is reported on its own line, and is
+        never an EXPECTED pass (a store that never compiled patterns is not missing a derive)."""
+>       assert store_mod._DERIVE_PASS_MODULES.get(PATTERN_PASS) == ("consolidate.py",), \
+            sorted(store_mod._DERIVE_PASS_MODULES)
+E       AssertionError: ['embed', 'gmd', 'ingest', 'memory-compile', 'pagerank', 'semantic', ...]
+E       assert None == ('consolidate.py',)
+E        +  where None = <built-in method get of dict object at 0x102612240>('memory-compile:pattern')
+E        +    where <built-in method get of dict object at 0x102612240> = {'embed': ('embedder.py', 'vectors.py'), 'gmd': ('ingest_gmd.py',), 'ingest': ('ingest.py',), 'memory-compile': ('consolidate.py',), ...}.get
+E        +      where {'embed': ('embedder.py', 'vectors.py'), 'gmd': ('ingest_gmd.py',), 'ingest': ('ingest.py',), 'memory-compile': ('consolidate.py',), ...} = store_mod._DERIVE_PASS_MODULES
+
+tests/test_memory_compile_remedy_r1.py:83: AssertionError
+_ test_stamp_per_scope_a_pattern_apply_leaves_the_memory_scope_needing_compile _
+
+    def test_stamp_per_scope_a_pattern_apply_leaves_the_memory_scope_needing_compile():
+        """THE audit probe (#s-1): an unstamped memory-scope subject, then a pattern-only apply.
+        At HEAD the one shared stamp clears `needs_compile` while the memory subjects stay
+        un-recompiled."""
+        base, root, part, s = _tmp_store()
+        try:
+            _seed_scopes(s, part)
+            _unstamped_memory_subject(s, part)
+            with s.with_partition(part):
+                consolidate.run_compile(s, scope="pattern", dry_run=False, **VP)
+                mc = s.derive_status()["memory_compile"]
+        finally:
+            s.close()
+        scopes = mc.get("scopes")
+>       assert isinstance(scopes, dict) and set(scopes) == {"memory", "pattern"}, mc
+E       AssertionError: {'at': 1794335662.3736992, 'behind_code': False, 'code_hash': 'p1:640308ed7928cc6c41ad2a23eca0167c', 'compiled_subjects': 3, ...}
+E       assert (False)
+E        +  where False = isinstance(None, dict)
+
+tests/test_memory_compile_remedy_r1.py:106: AssertionError
+_______ test_stamp_per_scope_a_memory_apply_stamps_only_the_memory_pass ________
+
+    def test_stamp_per_scope_a_memory_apply_stamps_only_the_memory_pass():
+        """The reverse: a memory apply never stamps (so never clears) the pattern scope."""
+        base, root, part, s = _tmp_store()
+        try:
+            _seed_scopes(s, part)
+            _unstamped_pattern_subject(s, part)
+            with s.with_partition(part):
+                consolidate.run_compile(s, scope="memory", dry_run=False, **VP)
+                mc = s.derive_status()["memory_compile"]
+        finally:
+            s.close()
+        scopes = mc.get("scopes") or {}
+>       assert scopes.get("memory", {}).get("needs_compile") is False, mc
+E       AssertionError: {'at': 1794335662.7607198, 'behind_code': False, 'code_hash': 'p1:640308ed7928cc6c41ad2a23eca0167c', 'compiled_subjects': 3, ...}
+E       assert None is False
+E        +  where None = <built-in method get of dict object at 0x1212ca100>('needs_compile')
+E        +    where <built-in method get of dict object at 0x1212ca100> = {}.get
+E        +      where {} = <built-in method get of dict object at 0x1212c8f80>('memory', {})
+E        +        where <built-in method get of dict object at 0x1212c8f80> = {}.get
+
+tests/test_memory_compile_remedy_r1.py:136: AssertionError
+_ test_stamp_per_scope_daemon_status_still_prints_the_memory_line_after_a_pattern_apply _
+
+spawn = <function spawn.<locals>._make at 0x1214d9640>
+
+    def test_stamp_per_scope_daemon_status_still_prints_the_memory_line_after_a_pattern_apply(
+            spawn):
+        """AC (#rm-stamp-per-scope): through the CLI a user runs — `memory compile --apply --scope
+        pattern`, then `rmx daemon status` still says the memory scope is behind."""
+        ctx = spawn(_seed_scopes, pre=_unstamped_memory_subject)
+        assert _status_lines(_ok("daemon", "status")), "control: the unstamped subject must warn"
+        _ok("memory", "compile", "--apply", "--scope", "pattern", *P)
+        lines = _status_lines(_ok("daemon", "status"))
+        mem = [ln for ln in lines if "--scope pattern" not in ln]
+>       assert mem, f"the memory-scope line vanished after a PATTERN apply: {lines}"
+E       AssertionError: the memory-scope line vanished after a PATTERN apply: []
+E       assert []
+
+tests/test_memory_compile_remedy_r1.py:158: AssertionError
+________ test_stamp_per_scope_a_stale_pattern_scope_prints_its_own_line ________
+
+spawn = <function spawn.<locals>._make at 0x1214d9a60>
+
+    def test_stamp_per_scope_a_stale_pattern_scope_prints_its_own_line(spawn):
+        """One line PER stale scope, each naming its own remedy."""
+        ctx = spawn(_seed_scopes, pre=_unstamped_pattern_subject)
+        _ok("memory", "compile", "--apply", *P)                     # memory scope stamped
+        lines = _status_lines(_ok("daemon", "status"))
+        pat = [ln for ln in lines if "rmx memory compile --apply --scope pattern" in ln]
+>       assert len(pat) == 1, f"no pattern-scope line naming `--scope pattern`: {lines}"
+E       AssertionError: no pattern-scope line naming `--scope pattern`: []
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_memory_compile_remedy_r1.py:170: AssertionError
+_ test_one_corpus_brief_detectors_exclude_impressions_and_pattern_docs_by_default _
+
+briefstore = (<refmatrix.store.Store object at 0x121303230>, 'proj', {'doc_p1': 18, 'doc_p2': 19, 'doc_p3': 20, 'doc_p4': 21, ...})
+
+    def test_one_corpus_brief_detectors_exclude_impressions_and_pattern_docs_by_default(briefstore):
+        """At HEAD `contradicted` and `orphan-concept` read `brief._memory_ids`, which still takes
+        impressions and `tag: pattern` docs — the corpus scope `memory` compile excludes."""
+        s, part, _ids = briefstore
+        with s.with_partition(part):
+            res = brief.compile_briefs(s, classes=["contradicted", "orphan-concept"])
+        orphans = _labels(res, "orphan-concept")
+        assert "mem_only" in orphans, f"control: the memory corpus' own orphan: {orphans}"
+>       assert "imp_only" not in orphans and "pat_only" not in orphans, orphans
+E       AssertionError: {'imp_only', 'mem_only', 'pat_only'}
+E       assert ('imp_only' not in {'imp_only', 'mem_only', 'pat_only'})
+
+tests/test_memory_compile_remedy_r1.py:331: AssertionError
+________________ test_one_corpus_brief_takes_an_explicit_scope _________________
+
+briefstore = (<refmatrix.store.Store object at 0x121302f90>, 'proj', {'doc_p1': 18, 'doc_p2': 19, 'doc_p3': 20, 'doc_p4': 21, ...})
+
+    def test_one_corpus_brief_takes_an_explicit_scope(briefstore):
+        """`brief` takes the compile's scope; scope `pattern` is exactly the impressions minus the
+        `tag: pattern` docs, as in `consolidate`."""
+        s, part, _ids = briefstore
+        with s.with_partition(part):
+>           res = brief.compile_briefs(s, classes=["contradicted", "orphan-concept"],
+                                       scope="pattern")
+E           TypeError: compile_briefs() got an unexpected keyword argument 'scope'. Did you mean 'store'?
+
+tests/test_memory_compile_remedy_r1.py:343: TypeError
+_________ test_one_corpus_brief_and_compile_read_the_same_rows[memory] _________
+
+briefstore = (<refmatrix.store.Store object at 0x1213038c0>, 'proj', {'doc_p1': 18, 'doc_p2': 19, 'doc_p3': 20, 'doc_p4': 21, ...})
+scope = 'memory'
+
+    @pytest.mark.parametrize("scope", ["memory", "pattern"])
+    def test_one_corpus_brief_and_compile_read_the_same_rows(briefstore, scope):
+        """One predicate, two readers: brief's corpus IS the compile's corpus for the same scope
+        (brief additionally drops its own `brief/*` rows, which `EXCLUDE_MTYPES` carries)."""
+        s, part, _ids = briefstore
+        with s.with_partition(part):
+            want = {r["id"] for r in consolidate._memory_rows(
+                s, exclude_mtypes=brief.EXCLUDE_MTYPES, scope=scope)}
+>           res = brief.compile_briefs(s, classes=["orphan-concept"], scope=scope)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: compile_briefs() got an unexpected keyword argument 'scope'. Did you mean 'store'?
+
+tests/test_memory_compile_remedy_r1.py:359: TypeError
+________ test_one_corpus_brief_and_compile_read_the_same_rows[pattern] _________
+
+briefstore = (<refmatrix.store.Store object at 0x121302e40>, 'proj', {'doc_p1': 18, 'doc_p2': 19, 'doc_p3': 20, 'doc_p4': 21, ...})
+scope = 'pattern'
+
+    @pytest.mark.parametrize("scope", ["memory", "pattern"])
+    def test_one_corpus_brief_and_compile_read_the_same_rows(briefstore, scope):
+        """One predicate, two readers: brief's corpus IS the compile's corpus for the same scope
+        (brief additionally drops its own `brief/*` rows, which `EXCLUDE_MTYPES` carries)."""
+        s, part, _ids = briefstore
+        with s.with_partition(part):
+            want = {r["id"] for r in consolidate._memory_rows(
+                s, exclude_mtypes=brief.EXCLUDE_MTYPES, scope=scope)}
+>           res = brief.compile_briefs(s, classes=["orphan-concept"], scope=scope)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: compile_briefs() got an unexpected keyword argument 'scope'. Did you mean 'store'?
+
+tests/test_memory_compile_remedy_r1.py:359: TypeError
+__________ test_status_route_answers_while_a_bg_job_holds_the_bg_pool __________
+
+    def test_status_route_answers_while_a_bg_job_holds_the_bg_pool():
+        """`memory_compile status=True` must not queue behind bulk work: the bg pool has 12
+        workers in production and a reingest or bridge can hold all of them. At HEAD the op is
+        not in `CLI_OPS`, so the status call waits for the bg worker and the verb times out."""
+        base, root, part, s = _tmp_store()
+        d = dm.Daemon(root)
+        d.store = s
+        d._log = lambda m: None
+        cli = ThreadPoolExecutor(max_workers=2, thread_name_prefix="t266-cli")
+        bg = ThreadPoolExecutor(max_workers=1, thread_name_prefix="t266-bg")
+        d._cli_pool, d._bg_pool = cli, bg
+        gate = threading.Event()
+        hold = bg.submit(gate.wait, 30)                 # the one bg worker is occupied
+        srv = _Dispatcher(d, cli, bg)
+        try:
+            probe = bg.submit(lambda: None)
+            time.sleep(0.3)
+            assert not probe.done(), "control: the bg pool must be held"
+            assert dm.ping(root), "control: the dispatcher must answer"
+            box: dict = {}
+    
+            def _status():
+                try:
+                    box["res"] = verbs.memory_compile(root, status=True, partition=part, timeout=3)
+                except Exception as e:        # noqa: BLE001 — asserted below
+                    box["err"] = e
+    
+            t = threading.Thread(target=_status, daemon=True)
+            t.start()
+            t.join(6)
+            assert not t.is_alive(), "the status verb hung past its own 3 s bound"
+>           assert "err" not in box, (
+                f"`memory_compile status=True` queued behind the bg pool: {box.get('err')!r}")
+E               AssertionError: `memory_compile status=True` queued behind the bg pool: VerbBusyError('daemon op memory_compile on /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266r-y5vsyafs/proj/.refmatrix did not answer within 3s (timed out); the daemon is busy')
+E               assert 'err' not in {'err': VerbBusyError('daemon op memory_compile on /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266r-y5vsyafs/proj/.refmatrix did not answer within 3s (timed out); the daemon is busy')}
+
+tests/test_memory_compile_remedy_r1.py:431: AssertionError
+__________ test_subjects_gmd_the_verb_carries_the_text_the_cli_writes __________
+
+spawn = <function spawn.<locals>._make at 0x121297cc0>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-483/test_subjects_gmd_the_verb_car0')
+
+    def test_subjects_gmd_the_verb_carries_the_text_the_cli_writes(spawn, tmp_path):
+        """MCP callers get the same subjects GMD the CLI writes to `--out`: the verb result
+        carries it, the CLI only writes it."""
+        ctx = spawn(_seed_scopes)
+        dest = tmp_path / "subjects.md"
+        _ok("memory", "compile", "--apply", "--out", str(dest), *P)
+        written = dest.read_text()
+        assert "rel: catalogs -> [[m_ops_a]]" in written, written   # control: a real render
+        res = _compile_verb(ctx, apply=True)
+>       assert "subjects_gmd" in res, f"the verb result carries no subjects GMD: {sorted(res)}"
+E       AssertionError: the verb result carries no subjects GMD: ['applied', 'dry_run', 'invoked_by', 'linked', 'partition', 'plan', 'run_id', 'scope', 'stale_new', 'stale_total', 'stale_unmarked', 'started_at', 'subjects', 'unlinked']
+E       assert 'subjects_gmd' in {'applied': True, 'dry_run': False, 'invoked_by': 'mcp', 'linked': 4, ...}
+
+tests/test_memory_compile_remedy_r1.py:455: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_memory_compile_remedy_r1.py::test_twin_daemon_down_bridge_regenerates_the_index_in_an_organised_dir
+PASSED tests/test_memory_compile_remedy_r1.py::test_twin_daemon_down_unreadable_marker_says_not_regenerated_and_saves
+PASSED tests/test_memory_compile_remedy_r1.py::test_twin_daemon_up_unreadable_marker_says_not_regenerated_and_saves
+PASSED tests/test_memory_compile_remedy_r1.py::test_twin_the_global_store_says_it_skips_the_index
+PASSED tests/test_plan7_10_remedy_r4.py::test_cli_gmd_headline_carries_the_memory_count
+PASSED tests/test_plan7_10_remedy_r4.py::test_gmd_fallback_still_fires_when_the_count_is_genuinely_absent
+PASSED tests/test_plan7_10_remedy_r4.py::test_committed_gmd_doc_has_balanced_fences[REPORT.md]
+PASSED tests/test_plan7_10_remedy_r4.py::test_report_next_node_is_visible_to_the_stores_own_parser
+PASSED tests/test_plan7_10_remedy_r4.py::test_lint_scope_covers_every_corpus_root_carrying_gmd
+PASSED tests/test_plan7_10_remedy_r4.py::test_linter_reports_an_unbalanced_fence
+PASSED tests/test_plan7_10_remedy_r4.py::test_cli_memory_compile_out_dash_keeps_its_wikilinks
+PASSED tests/test_plan7_10_remedy_r4.py::test_skipped_by_accounts_for_every_skip
+PASSED tests/test_plan7_10_remedy_r4.py::test_cli_never_prints_a_bare_question_mark_for_skips
+PASSED tests/test_plan7_10_remedy_r4.py::test_workflow_authored_bucket_counts_what_it_drops
+PASSED tests/test_plan7_10_remedy_r4.py::test_operational_bucket_counts_what_it_drops
+PASSED tests/test_plan7_10_remedy_r4.py::test_no_test_reinterprets_a_loaded_code_object_against_an_edited_file
+PASSED tests/test_plan7_10_remedy_r4.py::test_this_guard_names_the_mechanism_it_replaces
+PASSED tests/test_memory_compile_scope.py::test_ac_a_pattern_apply_leaves_every_memory_subject_byte_identical
+PASSED tests/test_memory_compile_scope.py::test_ac_a_memory_apply_leaves_every_pattern_subject_byte_identical
+PASSED tests/test_memory_compile_scope.py::test_ac_a_a_row_without_compiled_scope_belongs_to_scope_memory
+PASSED tests/test_memory_compile_scope.py::test_ac4_a_subject_left_empty_is_marked_stale_kept_protected_and_listed
+PASSED tests/test_memory_compile_scope.py::test_r5_a_stale_subject_that_regains_members_is_unmarked
+PASSED tests/test_memory_compile_scope.py::test_ac4b_one_member_gained_mints_one_subject_and_marks_one_stale
+PASSED tests/test_memory_compile_scope.py::test_verb_dry_run_plans_writes_nothing_and_says_who_invoked_it
+PASSED tests/test_memory_compile_scope.py::test_single_flight_second_call_answers_already_running_and_status_is_lock_free
+PASSED tests/test_memory_compile_scope.py::test_verb_and_cli_twin_are_registered_and_compile_left_legacy
+PASSED tests/test_memory_compile_scope.py::test_ac1_bridge_regenerates_the_index_in_an_organised_dir
+PASSED tests/test_memory_compile_scope.py::test_ac1_the_sessionstart_detached_bridge_regenerates_the_index
+PASSED tests/test_memory_compile_scope.py::test_ac1_a_subdirectory_target_regenerates_the_memory_roots_index
+PASSED tests/test_memory_compile_scope.py::test_ac1_twin_an_unorganised_dir_keeps_its_index_and_sidecar_byte_identical
+PASSED tests/test_memory_compile_scope.py::test_ac6_twin_compile_leaves_an_unorganised_index_byte_identical
+PASSED tests/test_memory_compile_scope.py::test_acd_consolidate_changed_since_the_compile_prints_the_line
+PASSED tests/test_memory_compile_scope.py::test_acd_a_version_bump_with_consolidate_unchanged_prints_nothing
+PASSED tests/test_memory_compile_scope.py::test_acd_compiled_subjects_with_no_stamp_print_the_line
+PASSED tests/test_memory_compile_scope.py::test_acd_no_compiled_subjects_and_no_stamp_print_nothing
+PASSED tests/test_memory_compile_scope.py::test_acd_a_real_apply_stamps_the_pass_and_keeps_the_verdict
+PASSED tests/test_brief_detectors.py::test_a_brief_without_evidence_cannot_be_constructed
+PASSED tests/test_brief_detectors.py::test_a_brief_keeps_its_evidence_ids_and_its_class
+PASSED tests/test_brief_detectors.py::test_corroborated_fires_on_a_subject_spanning_several_dates
+PASSED tests/test_brief_detectors.py::test_corroborated_does_not_fire_when_every_member_lands_on_one_day
+PASSED tests/test_brief_detectors.py::test_corroborated_thresholds_are_real_knobs
+PASSED tests/test_brief_detectors.py::test_singleton_fires_on_a_memory_that_joined_no_cluster
+PASSED tests/test_brief_detectors.py::test_singleton_does_not_fire_on_a_clustered_memory
+PASSED tests/test_brief_detectors.py::test_a_singleton_whose_id_cannot_be_resolved_is_counted_not_emitted
+PASSED tests/test_brief_detectors.py::test_contradicted_fires_on_an_unresolved_pair
+PASSED tests/test_brief_detectors.py::test_contradicted_does_not_fire_when_one_side_is_superseded
+PASSED tests/test_brief_detectors.py::test_contradicted_ignores_operational_rows
+PASSED tests/test_brief_detectors.py::test_orphan_concept_fires_on_a_term_talked_about_but_never_pinned_down
+PASSED tests/test_brief_detectors.py::test_orphan_concept_does_not_fire_when_something_defines_the_term
+PASSED tests/test_brief_detectors.py::test_orphan_concept_threshold_is_a_real_knob
+PASSED tests/test_brief_detectors.py::test_brief_reuses_consolidates_exclusion_constants_rather_than_copying_them
+PASSED tests/test_brief_detectors.py::test_compile_brief_returns_every_class_and_a_reconciled_skip_count
+PASSED tests/test_brief_detectors.py::test_every_emitted_brief_has_evidence_that_resolves_to_a_real_row
+PASSED tests/test_brief_detectors.py::test_operational_memories_never_appear_in_any_class
+FAILED tests/test_memory_compile_remedy_r1.py::test_stamp_per_scope_the_pattern_pass_is_registered_and_kept_out_of_the_verdict
+FAILED tests/test_memory_compile_remedy_r1.py::test_stamp_per_scope_a_pattern_apply_leaves_the_memory_scope_needing_compile
+FAILED tests/test_memory_compile_remedy_r1.py::test_stamp_per_scope_a_memory_apply_stamps_only_the_memory_pass
+FAILED tests/test_memory_compile_remedy_r1.py::test_stamp_per_scope_daemon_status_still_prints_the_memory_line_after_a_pattern_apply
+FAILED tests/test_memory_compile_remedy_r1.py::test_stamp_per_scope_a_stale_pattern_scope_prints_its_own_line
+FAILED tests/test_memory_compile_remedy_r1.py::test_one_corpus_brief_detectors_exclude_impressions_and_pattern_docs_by_default
+FAILED tests/test_memory_compile_remedy_r1.py::test_one_corpus_brief_takes_an_explicit_scope
+FAILED tests/test_memory_compile_remedy_r1.py::test_one_corpus_brief_and_compile_read_the_same_rows[memory]
+FAILED tests/test_memory_compile_remedy_r1.py::test_one_corpus_brief_and_compile_read_the_same_rows[pattern]
+FAILED tests/test_memory_compile_remedy_r1.py::test_status_route_answers_while_a_bg_job_holds_the_bg_pool
+FAILED tests/test_memory_compile_remedy_r1.py::test_subjects_gmd_the_verb_carries_the_text_the_cli_writes
+11 failed, 54 passed in 145.46s (0:02:25)

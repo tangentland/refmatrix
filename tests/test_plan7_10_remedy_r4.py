@@ -154,47 +154,59 @@ def test_linter_reports_an_unbalanced_fence(tmp_path):
 
 # ── #s-1-r4: the `memory compile --out -` sibling has no CLI test at all ───
 
-def _fake_plan():
-    return {
-        "params": {"signal": "fused"},
-        "stats": {"partition": "p", "candidates": 2, "embedded": 2,
-                  "concept_space": 1, "edges": 1, "confirmed": 1,
-                  "bridges": 0, "unembedded": 0},
-        "clusters": [{
-            "label": "daemon", "size": 2,
-            "evidence": [{"concept": "daemon", "lift": 2.0, "df_in": 2}],
-            "members": [{"name": "note-one", "mtype": "project"},
-                        {"name": "note-two", "mtype": "project"}],
-        }],
-        "crosscutting": [],
-        "unclustered": [],
-    }
-
-
-def test_cli_memory_compile_out_dash_keeps_its_wikilinks(monkeypatch):
+def test_cli_memory_compile_out_dash_keeps_its_wikilinks(tmp_path, monkeypatch):
     """The brief site got the `click.echo` fix AND three assertions; the
     compile sibling got the fix and nothing. Reverting it to `console.print`
-    left 95 tests green (mutation M2, ch-bsd r4 #s-1-r4)."""
-    from refmatrix import cli as cli_mod
-    from refmatrix import consolidate
+    left 95 tests green (mutation M2, ch-bsd r4 #s-1-r4).
+
+    Task 26.6 r1 remedy `#rm-real-fallback` (ch-bsd 26.6 r1 #m-2, 2026-11-10):
+    this ran on `_store` -> `object()` with `compile_memories` / `apply_plan`
+    patched, so `run_compile` hit AttributeError on `stamp_derive` and passed
+    THROUGH the `stamp_error` branch; its `daemon_mod.ping` patch was dead (the
+    CLI no longer pings). It now drives the daemon-down fallback on a REAL
+    throwaway store: subjects written, the stamp recorded, no "NOT recorded"
+    line, and the `--out -` wikilinks intact."""
+    import tempfile
+
     from refmatrix import daemon as daemon_mod
+    from refmatrix import discovery
+    from tests.test_memory_compile_scope import P, _seed_scopes
 
-    plan = _fake_plan()
-    monkeypatch.setattr(consolidate, "compile_memories",
-                        lambda *a, **k: plan)
-    monkeypatch.setattr(consolidate, "apply_plan",
-                        lambda *a, **k: {"subjects": [1], "linked": 2,
-                                         "unlinked": 0})
-    monkeypatch.setattr(daemon_mod, "ping", lambda *a, **k: False)
-    monkeypatch.setattr(cli_mod, "_read_store", lambda *a, **k: object())
-    monkeypatch.setattr(cli_mod, "_store", lambda *a, **k: object())
-
-    res = CliRunner().invoke(
-        cli_main, ["memory", "compile", "--apply", "--out", "-"])
-    assert res.exit_code == 0, res.output + str(res.exception)
-    assert "[[note-one]]" in res.output, res.output
-    assert "rel: catalogs -> [[note-two]]" in res.output, res.output
-    assert "-> []" not in res.output, "rich ate the wikilink"
+    base = Path(tempfile.mkdtemp(prefix="r266f-"))
+    root = base / "proj" / ".refmatrix"
+    root.mkdir(parents=True)
+    s = Store(root)
+    s.init()
+    part = discovery.store_name(root)
+    try:
+        _seed_scopes(s, part)
+    finally:
+        s.close()
+    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+    monkeypatch.delenv("RMX_PARTITION", raising=False)
+    try:
+        assert not daemon_mod.ping(root, retries=0), "control: the daemon must be DOWN"
+        res = CliRunner().invoke(
+            cli_main, ["memory", "compile", "--apply", "--out", "-", *P])
+        out = res.output + (getattr(res, "stderr", "") or "")
+        assert res.exit_code == 0, out + str(res.exception)
+        assert "compiling in-process" in out, out
+        assert "NOT recorded" not in out, out
+        assert "[[m_ops_a]]" in out, out
+        assert "rel: catalogs -> [[m_ops_b]]" in out, out
+        assert "-> []" not in out, "rich ate the wikilink"
+        s = Store(root)
+        try:
+            with s.with_partition(part):
+                st = s.derive_status()["memory_compile"]
+                subs = {x["name"] for x in s.list_subjects()}
+        finally:
+            s.close()
+        assert {"subject_daemon_ops", "subject_jetsam"} <= subs, subs
+        assert st["stamped"] is True and st["needs_compile"] is False, st
+    finally:
+        import shutil
+        shutil.rmtree(base, ignore_errors=True)
 
 
 # ── #s-2-r4: skipped_by does not cover the detector that skips ─────────────
