@@ -133,5 +133,16 @@ def test_the_repo_scope_is_clean_under_the_stricter_gate(tmp_path):
     assert Path(env["HOME"]).resolve() != Path(os.environ["RMX_SANDBOX_REAL_HOME"]).resolve()
     r = subprocess.run(["./scripts/lint-gmd.sh"], cwd=str(root),
                        capture_output=True, text=True, env=env)
-    errors = [l for l in (r.stdout + r.stderr).splitlines() if ": error" in l]
+    out = r.stdout + r.stderr
+    # bug-179 audit s1 (2026-11-09): the gate exits 2 on a missing precondition (no linter, no
+    # parity script, no `.venv-eval` dev interpreter) BEFORE lint runs, printing no ": error"
+    # line -- so a test that only counted error lines passed in 0.13 s while nothing was linted.
+    # Exit 2 is the script's and lint's usage/precondition code, never a lint verdict (0/1), so
+    # it means the gate did not run. Assert that FIRST: a gate that did not run is a failure with
+    # its own message, never a clean tree.
+    missing = [l for l in out.splitlines() if "not found at" in l]
+    assert r.returncode != 2 and not missing, (
+        f"scripts/lint-gmd.sh did not run its checks (exit {r.returncode}); a missing "
+        "precondition is a failure, not a clean tree:\n" + out[-2000:])
+    errors = [l for l in out.splitlines() if ": error" in l]
     assert not errors, "in-scope GMD errors:\n" + "\n".join(errors[:20])

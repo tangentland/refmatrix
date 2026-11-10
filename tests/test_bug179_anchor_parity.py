@@ -585,3 +585,141 @@ def test_ac10_a_missing_dev_interpreter_exits_2_and_names_it(gate_roots):
     code, out = _run_gate(root)
     assert code == 2, f"exit {code}:\n{out}"
     assert ".venv-eval" in out, out
+
+
+# ------------------------------------------- audit s3: a crash never passes
+
+def _run_parity(*args: str, script: Path = PARITY, cwd: Path = REPO):
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    p = subprocess.run([sys.executable, str(script), *args], capture_output=True, text=True,
+                       cwd=cwd, env=env, timeout=120)
+    return p.returncode, p.stdout, p.stderr
+
+
+def _non_utf8_gmd(tmp_path: Path) -> Path:
+    """A doc that declares `gmd:` and then carries a Latin-1 byte: both parsers read UTF-8
+    strictly, so each raises UnicodeDecodeError on it."""
+    p = tmp_path / "latin1.md"
+    p.write_bytes(HEAD.encode() + b"Caf\xe9 au lait {#cafe}\n")
+    return p
+
+
+def test_s3_a_non_utf8_gmd_doc_fails_the_parity_script(tmp_path):
+    """bug-179 audit s3 (2026-11-09): mutating `n = len(divergences) + len(failures)` to
+    `n = len(divergences)` left all 38 tests green, so "a crash never passes" was pinned by
+    nothing. A parse failure must exit 1 and name the file, with no divergence to lean on."""
+    _non_utf8_gmd(tmp_path)
+    (tmp_path / "clean.md").write_text(HEAD + "A clean paragraph. {#ok}\n")
+    code, out, err = _run_parity(str(tmp_path))
+    assert code == 1, f"exit {code} on a parse failure:\nstdout:\n{out}\nstderr:\n{err}"
+    fails = [l for l in out.splitlines() if "[parity-parse-fail]" in l]
+    assert len(fails) == 1 and "latin1.md" in fails[0], out
+    assert "0 divergent doc(s), 1 parse failure(s)" in err, err
+
+
+def test_s3_find_divergences_raises_on_a_parse_failure(tmp_path):
+    bad = _non_utf8_gmd(tmp_path)
+    with pytest.raises(RuntimeError, match="parse failures") as ei:
+        _parity_mod().find_divergences([tmp_path])
+    assert str(bad) in str(ei.value), ei.value
+
+
+# ------------------------------------------- audit m5: parity over a memory dir
+
+def _memfile(memdir: Path, stem: str, body: str, *, with_id: bool = True) -> Path:
+    fm = ['---', 'gmd: "0.1"']
+    if with_id:
+        fm.append(f"id: {stem}")
+    fm += [f'title: "{stem}"', "tags: [feedback, test]", "metadata:", "  node_type: memory",
+           "  type: feedback", "  originSessionId: 00000000-0000-0000-0000-000000000000",
+           "  created: 2026-11-09", "  updated: 2026-11-09", "---", "", f"# {stem} {{#root}}",
+           ""]
+    p = memdir / f"{stem}.md"
+    p.write_text("\n".join(fm) + "\n" + body)
+    return p
+
+
+# Memory-shaped bodies: the MEMORY-RULES lead/Why/How paragraphs with inline anchors, a
+# sub-heading, a list item, typed edges between memories by id. One file carries no `id:`, so
+# the ingester names it by its STEM (the `memory_ids=True` fallback) and lint by its stem too.
+MEM_CLEAN = {
+    "feedback_fx_rule": ("The rule lead-line. {#lead}\n\n**Why:** because. {#why}\n\n"
+                         "**How to apply:** do it. {#how}\n\n"
+                         "rel: related-to -> [[project_fx_fact]]\n"),
+    "project_fx_fact": ("## A sub-section {#sub}\n\n- a list item {#li}\n\n"
+                        "rel: amends -> [[feedback_fx_rule#why]]\n"),
+}
+MEM_NOID = ("reference_fx_noid", "A paragraph named by stem. {#para}\n")
+MEM_IDS = {"feedback_fx_rule": {"root", "lead", "why", "how"},
+           "project_fx_fact": {"root", "sub", "li"},
+           "reference_fx_noid": {"root", "para"}}
+
+
+def _clean_memdir(base: Path) -> Path:
+    memdir = base / "memory"
+    memdir.mkdir()
+    for stem, body in MEM_CLEAN.items():
+        _memfile(memdir, stem, body)
+    _memfile(memdir, MEM_NOID[0], MEM_NOID[1], with_id=False)
+    # The flat index: lint exempts it by name, so parity must skip it, not fail on it.
+    (memdir / "MEMORY.md").write_text("- [Fx rule](feedback_fx_rule.md) — hook\n")
+    return memdir
+
+
+def test_m5_a_clean_memory_dir_has_parity_through_the_script(tmp_path):
+    """bug-179 audit m5 (2026-11-09): the sandbox HOME has no memory dir, so the suite never ran
+    the `--memory-dir` branch; it was reached only through bug-155's test, which s1 showed could
+    pass without running. A synthetic dir runs it here, through the real CLI."""
+    memdir = _clean_memdir(tmp_path)
+    code, out, err = _run_parity("--memory-dir", str(memdir))
+    assert code == 0, f"exit {code}:\nstdout:\n{out}\nstderr:\n{err}"
+    assert "gmd parity: 0 divergent doc(s), 0 parse failure(s)" in out, out
+
+
+def test_m5_memory_files_are_parsed_the_way_the_bridge_parses_them(tmp_path, monkeypatch):
+    """0 divergences is also what a skipped dir gives. Pin that every memory file reached the
+    ingester with the bridge's flags (`lenient=True, memory_ids=True`), the scope doc with the
+    strict default, and that both tools registered the expected id set. The recorder is a
+    pass-through spy around the real `parse_gmd` (it substitutes nothing)."""
+    memdir = _clean_memdir(tmp_path)
+    docdir = tmp_path / "docs"
+    docdir.mkdir()
+    (docdir / "scoped.md").write_text(HEAD + "A scoped paragraph. {#sp}\n")
+    mod = _parity_mod()
+    real = mod.parse_gmd
+    calls: dict[str, dict] = {}
+
+    def spy(path, **kw):
+        calls[Path(path).name] = kw
+        return real(path, **kw)
+
+    monkeypatch.setattr(mod, "parse_gmd", spy)
+    assert mod.find_divergences([docdir], memory_dirs=[memdir]) == []
+    want_mem = {f"{s}.md" for s in MEM_IDS}
+    assert set(calls) == want_mem | {"scoped.md"}, sorted(calls)
+    for name in want_mem:
+        assert calls[name] == {"lenient": True, "memory_ids": True}, (name, calls[name])
+    assert calls["scoped.md"] == {}, calls["scoped.md"]
+    for stem, ids in MEM_IDS.items():
+        p = memdir / f"{stem}.md"
+        assert set(_lint_mod().parse_doc(p)[0].node_ids) == ids, stem
+        assert mod._ingest_ids(p, memory=True) == ids, stem
+    # the no-id file is named by its stem in the ingester (memory-id parsing)
+    assert real(memdir / f"{MEM_NOID[0]}.md", lenient=True, memory_ids=True).doc_id == MEM_NOID[0]
+
+
+def test_m5_a_lint_ingester_disagreement_in_a_memory_dir_fails_the_script(gate_roots):
+    """The planted divergence of AC-10 (the base linter registers an id on a `rel:` line, the
+    ingester does not), put in a MEMORY file and found only through `--memory-dir`."""
+    root = _gate_root(lint_src=_base_lint_src(), doc=PLANTED_FIXED)
+    gate_roots.append(root)
+    memdir = _clean_memdir(root)
+    _memfile(memdir, "feedback_fx_planted",
+             "A paragraph.\n\nrel: related-to -> [[feedback_fx_rule]] {#on-rel}\n")
+    script = root / "scripts" / "check-gmd-parity.py"
+    code, out, err = _run_parity("--memory-dir", str(memdir), script=script, cwd=root)
+    assert code == 1, f"exit {code}:\nstdout:\n{out}\nstderr:\n{err}"
+    hits = [l for l in out.splitlines() if "[anchor-parity]" in l]
+    assert len(hits) == 1 and "feedback_fx_planted.md" in hits[0] and "on-rel" in hits[0], out
+    # the clean memory files beside it agree even under the base linter
+    assert "1 divergent doc(s), 0 parse failure(s)" in err, err
