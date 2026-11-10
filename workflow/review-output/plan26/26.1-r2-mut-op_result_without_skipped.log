@@ -1,0 +1,26 @@
+F
+=================================== FAILURES ===================================
+_________ test_s3_daemon_sync_op_returns_the_skip_count_to_the_caller __________
+
+ac2_daemon = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-bo2i99mi'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-bo2i99mi/proj/.refmatrix'))
+
+    def test_s3_daemon_sync_op_returns_the_skip_count_to_the_caller(ac2_daemon):
+        """The `ingest_gmd` op's RESULT carries `skipped` (int) and `skipped_paths` (names), and the
+        CLI that called it prints them -- not only the daemon's stderr log."""
+        base, root = ac2_daemon
+        memdir = _s3_memdir(base)
+        resp = dm.call(root, "ingest_gmd", {"targets": [str(memdir)], "as_memory": True},
+                       timeout=300)
+        assert resp.get("ok"), resp
+        res = resp["result"]
+>       assert res.get("skipped") == 5, f"the op result carries no skipped count of 5: {res}"
+E       AssertionError: the op result carries no skipped count of 5: {'files': 2, 'report': 'ingested 2 doc(s), 2 node(s), 0 rel: edge(s), 12 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage types: lead, part-of\nmemory embed: 2 row(s) now reachable by recall in proj', 'docs': 2, 'nodes': 2, 'rels': 0, 'mentions': 12, 'unresolved': 0, 'stats': {'docs': 2, 'nodes': 2, 'rels': 0, 'mentions': 12, 'unresolved': 0, 'skipped_non_gmd': 0, 'skipped_unparseable': [], 'skipped_index': [], 'doc_drop_failed': []}, 'embed': {'partition': 'proj', 'embedded': 2, 'remaining': 0, 'batches': 1, 'capped': False, 'error': None}, 'job_id': 'f27a4e509fa4'}
+E       assert None == 5
+E        +  where None = <built-in method get of dict object at 0x112c5f840>('skipped')
+E        +    where <built-in method get of dict object at 0x112c5f840> = {'docs': 2, 'embed': {'batches': 1, 'capped': False, 'embedded': 2, 'error': None, ...}, 'files': 2, 'job_id': 'f27a4e509fa4', ...}.get
+
+tests/test_memory_bridge.py:481: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_bridge.py::test_s3_daemon_sync_op_returns_the_skip_count_to_the_caller
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 18 deselected in 5.92s

@@ -110,3 +110,78 @@ empty after every restore. Logs are `workflow/review-output/plan26/26.1-mut-<nam
 - **`.gmd` files in a memdir** are no longer walked on the memory path, because
   `iter_memory_files` yields `.md` only (ADR-0005). The r4 probe found no such files.
 - **No version bump.** The release is 26.8's.
+
+## Remedy r2: ch-bsd 26.1 b-1, s-1, s-2, s-3, m-1 {#remedy-r2}
+
+rel: derives-from -> [[bsd-task26.1-layout-index-walk-8337368]]
+
+TDD GREEN over the remedy RED commits `8fa7b63` (11 tests) and `26d620e` (the legacy cut-line
+test), built from the amended spec (AC-2, AC-5, AC-6, `#rev-bsd-26-1`; `ce140aa`, `4fff5cc`) and
+ADR-0005 `#newest`. Fix commit `238f060`. No test was written or edited in this step.
+
+### What changed {#remedy-r2-changes}
+
+| finding | where | change |
+|---|---|---|
+| b-1 (bug-192) | `memory_index.Entry.line` | never cut inside `](rel)`. The hook is shortened first, which gives HEAD's exact bytes whenever HEAD's cut fell inside the hook, so short-title goldens are unchanged. When the link alone is over `MAX_LINE_CHARS`, the hook is dropped and the title is shortened, keeping at least `TITLE_MIN_CHARS` (40). This changes marker-off bytes for long-title dirs only |
+| b-1 | `memory_index._prose_lines` (organised path only) | any line starting `- [` is an entry, link or no link. HEAD's link-less cut lines are dropped and the memory is rendered again with its link |
+| s-1 | `memory_index._write_organised` | the unreachable lose-any-prose branch is removed |
+| m-1 | `memory_index._write_organised` | a render still over `max_chars` after the renderer's full fold refuses. The index and sidecar are untouched, the reason on `out` names the prose line count, and it returns 0 |
+| s-2 | `memory_layout._SaveKey`, `sort_savestates` | one key, `(date, mtime, name)`, descending. The date is `updated`'s calendar date, or the mtime's local date when `updated` is missing or unreadable. `_cmp_newer` and `functools` are gone |
+| s-3 | `memory_layout.iter_memory_files` | `skipped` also receives a symlinked sub-folder (the folder itself, never followed), a dangling `.md` symlink, any `.gmd`, and `.gmd` files under dot-dirs |
+| s-3 | `ingest_gmd.collect_gmd_files(..., skipped=)`, `render_memory_skip_line` | with `skipped=`, the caller owns the report; without it, the shared line goes to stderr. The line gives the count of every skip and up to 20 names |
+| s-3 | `daemon._skip_fields`, `_run_ingest_gmd_body(..., skipped=)` | the `ingest_gmd` op result, the empty-target result and the `ingest_gmd_start` reply carry `skipped` and `skipped_paths`. The `prestage_hashes` result carries `walk_skipped`, because its own `skipped` key was already taken |
+| s-3 | `cli._ingest_gmd_sync`, `ingest-gmd --detach`, `--prestage` | each branch prints the shared skip line, daemon and in-process alike. `with_stats` gains `skipped`/`skipped_paths`. `--detach` no longer raises `KeyError` when the op returns without starting a job |
+
+New or changed signatures:
+
+- `memory_index.TITLE_MIN_CHARS = 40`
+- `ingest_gmd.collect_gmd_files(targets, *, as_memory: bool = False, skipped: list | None = None) -> list[Path]`
+- `ingest_gmd.render_memory_skip_line(skipped) -> str`
+- `daemon._skip_fields(skipped: list | None) -> dict`
+- `daemon._run_ingest_gmd_body(d, job_id, files, args, *, skipped: list | None = None) -> dict`
+
+### Verification {#remedy-r2-verification}
+
+Every run used `PYTHONPATH=$PWD/src` with the dev interpreter and `-B`.
+
+- `workflow/review-output/plan26/26.1-r2-green.log`: the 12 RED tests plus 4 guards, 16 of 16.
+- `workflow/review-output/plan26/26.1-r2-five-files.log`: `test_memory_layout.py`,
+  `test_memory_index_layout.py`, `test_memory_index.py`, `test_memory_index_char_budget.py` and
+  `test_memory_bridge.py`, 112 of 112.
+- `workflow/review-output/plan26/26.1-r2-family.log`: `tests/test_memory*.py`,
+  `tests/test_ingest_gmd*.py`, `tests/test_save_state*.py` and `tests/test_verb_parity.py`, 436 of
+  436. The full suite was not run (out of scope).
+
+### Mutation table (r2) {#remedy-r2-mutations}
+
+All mutations ran against fix commit `238f060`, one at a time. The driver cleared `__pycache__`,
+applied the mutation, cleared it again and ran with `-x`. Each restore was a `git checkout` in its
+own command, followed by a `__pycache__` clear and a grep confirming the fix text was back.
+`git status --short src` was empty after every restore. Logs are
+`workflow/review-output/plan26/26.1-r2-mut-<name>.log`.
+
+| mutation | killed by |
+|---|---|
+| link cut back to HEAD's whole-line cut | `test_b1_long_title_organised_render_is_stable_over_three_renders` |
+| `- [` rule removed (back to `_is_entry_line`) | `test_b1_a_legacy_link_less_cut_line_is_dropped_and_re_rendered_with_its_link` |
+| sort key back to the datetime rule (timed `updated` decides within the day) | `test_same_date_both_with_time_of_day_mtime_still_decides` |
+| a `.gmd` skip left uncounted | `test_iter_memory_files_puts_every_dropped_shape_on_skipped` |
+| op result without `skipped` | `test_s3_daemon_sync_op_returns_the_skip_count_to_the_caller` |
+| over-budget organised write allowed | `test_m1_organised_write_refuses_when_a_full_fold_cannot_fit` |
+
+All 6 were killed, with no survivors.
+
+### Flags (r2) {#remedy-r2-flags}
+
+- **A dropped hook is not kept in the sidecar.** When the link alone is over the cap, the line
+  carries no hook. The next render then reads an empty hook from the index, and the index wins
+  over the sidecar (`load_hooks`), so the entry's sidecar value becomes its derived prose. At HEAD
+  a cut line had no `](`, so its sidecar hook was never overridden. The index shows no hook either
+  way. The loss only shows if the title is later shortened. This is not fixed, because it would
+  change the precedence for every dir.
+- **An organised dir with zero prose also refuses over budget.** AC-6 says the write "refuses
+  when even a full fold cannot fit", without exception. The reason then names "0 prose lines".
+  Such a dir's index stops updating until feedback entries shrink. Marker-off dirs still write
+  the over-budget index with `STILL OVER`.
+- **bug-192's registry row** lives on `master`. It is left for the orchestrator to flip at merge.

@@ -1,0 +1,34 @@
+...........................F
+=================================== FAILURES ===================================
+_______ test_b1_long_title_organised_render_is_stable_over_three_renders _______
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-1txj1mqi/memory')
+
+    def test_b1_long_title_organised_render_is_stable_over_three_renders(memdir):
+        rels = build_long_title_dir(memdir)
+        organise(memdir)
+        sizes, texts = [], []
+        for n in (1, 2, 3):
+            r = run_entry(memdir)
+            assert r.returncode == 0, r.stderr
+            text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>           assert_every_entry_keeps_its_link(text, rels)
+
+tests/test_memory_index_layout.py:553: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+text = '<!-- carried from the hand-written index; edit freely -->\n# Hand index\nRead the campaign block first.\n## Campaign\...cause the author wanted the index line to say everything: 2026…\n- [Plain](project/project_plain.md) — curated plain\n'
+rels = {'feedback/feedback_long_hook.md': 'Short title', 'feedback/feedback_long_title.md': 'A very long memory title — the k...the author wanted the index line to say everything: 2026-11-09 edition, part two', 'project/project_plain.md': 'Plain'}
+
+    def assert_every_entry_keeps_its_link(text: str, rels: dict) -> None:
+        lines = text.splitlines()
+        cut = [ln for ln in lines if ln.startswith("- [") and "](" not in ln]
+>       assert not cut, f"entry line(s) cut before their link: {cut}"
+E       AssertionError: entry line(s) cut before their link: ['- [A very long memory title — the kind cliquedb really carries, naming the mechanism, the incident, the date and the fix in one breath because the author wanted the index line to say everything: 2026…']
+E       assert not ['- [A very long memory title — the kind cliquedb really carries, naming the mechanism, the incident, the date and the fix in one breath because the author wanted the index line to say everything: 2026…']
+
+tests/test_memory_index_layout.py:537: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_b1_long_title_organised_render_is_stable_over_three_renders
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 27 passed in 2.12s

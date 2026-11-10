@@ -1,0 +1,25 @@
+..............F
+=================================== FAILURES ===================================
+___________ test_same_date_both_with_time_of_day_mtime_still_decides ___________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-lj3bbmub/memory')
+
+    def test_same_date_both_with_time_of_day_mtime_still_decides(memdir):
+        """ADR-0005 #newest, amended 2026-11-09 (ch-bsd 26.1 #s-2): on the same date mtime decides
+        ALWAYS -- a time of day in `updated` is informational only. The earlier rule (both timed ->
+        the datetimes decide) is what let three same-day save-states form a cycle."""
+        _md(memdir / "savestates" / "savestate_ten.md",
+            updated="2026-11-09T10:00:00-08:00", mtime=T0)
+        _md(memdir / "savestates" / "savestate_nine.md",
+            updated="2026-11-09T09:00:00-08:00", mtime=T0 + 100)
+>       assert _order(memdir) == ["savestate_nine", "savestate_ten"]
+E       AssertionError: assert ['savestate_t...vestate_nine'] == ['savestate_n...avestate_ten']
+E         
+E         At index 0 diff: 'savestate_ten' != 'savestate_nine'
+E         Use -v to get more diff
+
+tests/test_memory_layout.py:194: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_layout.py::test_same_date_both_with_time_of_day_mtime_still_decides
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 14 passed in 0.66s
