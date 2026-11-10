@@ -1,0 +1,29 @@
+M8 applied to ingest_gmd.py
+ src/refmatrix/ingest_gmd.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+F
+=================================== FAILURES ===================================
+_ test_ac1_twin_an_unorganised_dir_keeps_its_index_and_sidecar_byte_identical __
+
+spawn = <function spawn.<locals>._make at 0x11a15c720>
+
+    def test_ac1_twin_an_unorganised_dir_keeps_its_index_and_sidecar_byte_identical(spawn):
+        """r2 s2 marker-OFF twin. GREEN at HEAD by design (HEAD's bridge writes no index); it is
+        the guard that fails an UNGATED R2."""
+        ctx = spawn()
+        memdir = _memdir(ctx, organised=False)
+        before = (memdir / "MEMORY.md").read_bytes()
+        (memdir / "new_note.md").write_text(GMD.format(id="new_note", t="project", body="newest"))
+        _ok("ingest-gmd", "--as-memory", str(memdir))
+>       assert (memdir / "MEMORY.md").read_bytes() == before
+E       AssertionError: assert b'- [new_note...ESSIONS.md`\n' == b'- [old_note...x94 pointer\n'
+E         
+E         At index 3 diff: b'n' != b'o'
+E         Use -v to get more diff
+
+tests/test_memory_compile_scope.py:568: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_compile_scope.py::test_ac1_twin_an_unorganised_dir_keeps_its_index_and_sidecar_byte_identical
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 16.66s
+exit=1

@@ -1,0 +1,33 @@
+M2 applied to consolidate.py
+ src/refmatrix/consolidate.py | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+F
+=================================== FAILURES ===================================
+___ test_ac4_a_subject_left_empty_is_marked_stale_kept_protected_and_listed ____
+
+spawn = <function spawn.<locals>._make at 0x109bbc720>
+
+    def test_ac4_a_subject_left_empty_is_marked_stale_kept_protected_and_listed(spawn):
+        ctx = spawn(_seed_plain)
+        _ok("memory", "compile", "--apply", *P)
+        assert _subjects(ctx)["subject_jetsam"]["leaves"] == ["m_jet_a", "m_jet_b"]
+        # m_jet_b is the only `feedback` row: leaving it out empties `jetsam` (a 1-member group is
+        # no cluster). `--exclude-mtype` REPLACES the default globs, so they are restated.
+        out = _ok("memory", "compile", "--apply", "--exclude-mtype", "feedback",
+                  "--exclude-mtype", "session*", "--exclude-mtype", "digest*",
+                  "--exclude-mtype", "subject", *P)
+        m = re.search(r"(\d+) marked stale", out)
+        assert m and int(m.group(1)) == 1, f"R7: the apply must say how many it marked stale:\n{out}"
+    
+        subj = _subjects(ctx)
+        jet = subj.get("subject_jetsam")
+>       assert jet is not None, "compile removed the emptied subject row (R4/R5: never removed)"
+E       AssertionError: compile removed the emptied subject row (R4/R5: never removed)
+E       assert None is not None
+
+tests/test_memory_compile_scope.py:315: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_compile_scope.py::test_ac4_a_subject_left_empty_is_marked_stale_kept_protected_and_listed
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 15.44s
+exit=1

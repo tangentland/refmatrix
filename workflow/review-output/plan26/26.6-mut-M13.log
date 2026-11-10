@@ -1,0 +1,31 @@
+M13 applied to consolidate.py
+ src/refmatrix/consolidate.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+F
+=================================== FAILURES ===================================
+______ test_ac_a_memory_apply_leaves_every_pattern_subject_byte_identical ______
+
+spawn = <function spawn.<locals>._make at 0x134958720>
+
+    def test_ac_a_memory_apply_leaves_every_pattern_subject_byte_identical(spawn):
+        ctx = spawn(_seed_scopes)
+        _ok("memory", "compile", "--apply", "--scope", "pattern", *P)
+        pat = _scoped(_subjects(ctx), "pattern")
+>       assert set(pat) == {"subject_pattern_daemon_ops", "subject_pattern_store_lock"}, pat
+E       AssertionError: {'subject_daemon_ops': {'leaves': ['i_ops_a', 'i_ops_b'], 'metadata': {'compiled_at': 1794323852.0153291, 'compiled_by...': 1794323852.0153291, 'compiled_by': 'memory-compile', 'compiled_scope': 'pattern', 'evidence': ['store_lock'], ...}}}
+E       assert {'subject_dae...t_store_lock'} == {'subject_pat...n_store_lock'}
+E         
+E         Extra items in the left set:
+E         'subject_daemon_ops'
+E         'subject_store_lock'
+E         Extra items in the right set:
+E         'subject_pattern_daemon_ops'
+E         'subject_pattern_store_lock'
+E         Use -v to get more diff
+
+tests/test_memory_compile_scope.py:262: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_compile_scope.py::test_ac_a_memory_apply_leaves_every_pattern_subject_byte_identical
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 63.79s (0:01:03)
+exit=1

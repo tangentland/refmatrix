@@ -1,0 +1,27 @@
+M11 applied to daemon.py
+ src/refmatrix/daemon.py | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+F
+=================================== FAILURES ===================================
+__________ test_ac1_bridge_regenerates_the_index_in_an_organised_dir ___________
+
+spawn = <function spawn.<locals>._make at 0x108e58720>
+
+    def test_ac1_bridge_regenerates_the_index_in_an_organised_dir(spawn):
+        ctx = spawn()
+        memdir = _memdir(ctx, organised=True)
+        (memdir / "new_note.md").write_text(GMD.format(id="new_note", t="project", body="newest"))
+        _ok("ingest-gmd", "--as-memory", str(memdir))
+        idx = (memdir / "MEMORY.md").read_text()          # no sleep, no retry
+>       assert "](new_note.md)" in idx, idx
+E       AssertionError: - [old_note](old_note.md) — older
+E         - [ch-bsd impressions (1)](impressions/) — pointer
+E         
+E       assert '](new_note.md)' in '- [old_note](old_note.md) — older\n- [ch-bsd impressions (1)](impressions/) — pointer\n'
+
+tests/test_memory_compile_scope.py:524: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_compile_scope.py::test_ac1_bridge_regenerates_the_index_in_an_organised_dir
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 9.21s
+exit=1
