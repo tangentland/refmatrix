@@ -1,0 +1,115 @@
+{
+  "asked_docs": 300,
+  "lines": {
+    "n": 300,
+    "base": {
+      "mrr": 0.8902884800384799,
+      "hit1": 0.8333333333333334,
+      "hit10": 0.97,
+      "hit20": 0.9733333333333334
+    },
+    "d2_top1": {
+      "mrr": 0.8605913775766716,
+      "hit1": 0.8333333333333334,
+      "hit10": 0.91,
+      "hit20": 0.9266666666666666,
+      "delta_mrr": -0.029697102461808345,
+      "won": 4,
+      "lost": 25,
+      "sign_p": 0.00010371580719947815,
+      "noop_queries": 5,
+      "queries_all_gold_outside_S": 28,
+      "mean_share_gold_outside_S": 0.09491525423728814,
+      "relevant_in_pool_outside_S": 43
+    },
+    "d2_plur10": {
+      "mrr": 0.5483320499589849,
+      "hit1": 0.5233333333333333,
+      "hit10": 0.59,
+      "hit20": 0.6566666666666666,
+      "delta_mrr": -0.34195643007949506,
+      "won": 9,
+      "lost": 122,
+      "sign_p": 1.872620303580562e-26,
+      "noop_queries": 5,
+      "queries_all_gold_outside_S": 124,
+      "mean_share_gold_outside_S": 0.42033898305084744,
+      "relevant_in_pool_outside_S": 207
+    },
+    "dir_top1": {
+      "mrr": 0.8615529470529472,
+      "hit1": 0.8333333333333334,
+      "hit10": 0.91,
+      "hit20": 0.9333333333333333,
+      "delta_mrr": -0.028735532985532775,
+      "won": 3,
+      "lost": 26,
+      "sign_p": 1.5236437320709229e-05,
+      "noop_queries": 5,
+      "queries_all_gold_outside_S": 29,
+      "mean_share_gold_outside_S": 0.09830508474576272,
+      "relevant_in_pool_outside_S": 44
+    }
+  },
+  "merge": {
+    "n": 300,
+    "base": {
+      "mrr": 0.725263024013024,
+      "hit1": 0.6233333333333333,
+      "hit10": 0.9,
+      "hit20": 0.9066666666666666
+    },
+    "d2_top1": {
+      "mrr": 0.6971413553766495,
+      "hit1": 0.6233333333333333,
+      "hit10": 0.82,
+      "hit20": 0.8566666666666667,
+      "delta_mrr": -0.028121668636374553,
+      "won": 6,
+      "lost": 27,
+      "sign_p": 0.0003240634687244892,
+      "noop_queries": 1,
+      "queries_all_gold_outside_S": 49,
+      "mean_share_gold_outside_S": 0.16387959866220736,
+      "relevant_in_pool_outside_S": 54
+    },
+    "d2_plur10": {
+      "mrr": 0.5482710368979719,
+      "hit1": 0.4766666666666667,
+      "hit10": 0.67,
+      "hit20": 0.7533333333333333,
+      "delta_mrr": -0.17699198711505215,
+      "won": 13,
+      "lost": 74,
+      "sign_p": 1.5938987081347696e-11,
+      "noop_queries": 0,
+      "queries_all_gold_outside_S": 99,
+      "mean_share_gold_outside_S": 0.33,
+      "relevant_in_pool_outside_S": 174
+    },
+    "dir_top1": {
+      "mrr": 0.698986568986569,
+      "hit1": 0.6233333333333333,
+      "hit10": 0.83,
+      "hit20": 0.8666666666666667,
+      "delta_mrr": -0.026276455026455037,
+      "won": 5,
+      "lost": 27,
+      "sign_p": 0.00011307420209050179,
+      "noop_queries": 1,
+      "queries_all_gold_outside_S": 52,
+      "mean_share_gold_outside_S": 0.17391304347826086,
+      "relevant_in_pool_outside_S": 55
+    }
+  },
+  "gold_dir_depth_hist_all_md": {
+    "0": 3,
+    "1": 38,
+    "2": 56,
+    "3": 170,
+    "7": 241,
+    "8": 4
+  },
+  "store_copy": "/Volumes/littlebig/refmatrix-spike-hypertree/m3/cliquedb/.refmatrix",
+  "elapsed_s": 17.9
+}

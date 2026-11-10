@@ -1,0 +1,107 @@
+{
+  "store": "cliquedb",
+  "partition_id": 2,
+  "entities_in_tree": 11445,
+  "excluded_entities": {
+    "no_path": 0,
+    "external": 1,
+    "memory_dir_mapped": 1363
+  },
+  "files": 1087,
+  "max_tree_depth": 4,
+  "df_p99": 479.10999999999694,
+  "all_df_ge_2": {
+    "concepts": 15064,
+    "edges": 511708,
+    "edge_weighted_local": {
+      "depth>=1": 0.02567089042969819,
+      "depth>=2": 0.015401361714102575,
+      "depth>=3": 0.007766147881213504
+    },
+    "unweighted_local": {
+      "depth>=1": 0.2529208709506107,
+      "depth>=2": 0.165493892724376,
+      "depth>=3": 0.09492830589484864
+    },
+    "edge_weighted_single_file": 0.0056164844012600934,
+    "components_depth2_mean": 7.907328730748805,
+    "components_depth2_p50": 3.0,
+    "components_depth2_edge_weighted_mean": 48.39528989189147
+  },
+  "non_keyword": {
+    "concepts": 13890,
+    "edges": 503699,
+    "edge_weighted_local": {
+      "depth>=1": 0.020833871022177926,
+      "depth>=2": 0.013492184816725861,
+      "depth>=3": 0.007679189357135909
+    },
+    "unweighted_local": {
+      "depth>=1": 0.232829373650108,
+      "depth>=2": 0.16313894888408928,
+      "depth>=3": 0.0994240460763139
+    },
+    "edge_weighted_single_file": 0.0053285791712907905,
+    "components_depth2_mean": 8.305399568034558,
+    "components_depth2_p50": 3.0,
+    "components_depth2_edge_weighted_mean": 49.081900103037725
+  },
+  "minus_top1pct_hubs": {
+    "concepts": 14914,
+    "edges": 386548,
+    "edge_weighted_local": {
+      "depth>=1": 0.03398284301044113,
+      "depth>=2": 0.02038815360576177,
+      "depth>=3": 0.010280741330960191
+    },
+    "unweighted_local": {
+      "depth>=1": 0.2554646640740244,
+      "depth>=2": 0.16715837468150732,
+      "depth>=3": 0.09588306289392518
+    },
+    "edge_weighted_single_file": 0.007435040408953092,
+    "components_depth2_mean": 7.005431138527558,
+    "components_depth2_p50": 3.0,
+    "components_depth2_edge_weighted_mean": 28.496005670705838
+  },
+  "null_permuted": {
+    "edge_weighted_local_depth>=2": 0.003595149316928144,
+    "unweighted_local_depth>=2": 0.053151000177022484,
+    "components_depth2_mean": 11.222782793414764
+  },
+  "top10_associates": {
+    "sources": 300,
+    "share_outside_depth2_subtree": 0.6698571428571429,
+    "share_outside_expected_random": 0.8018871606664337,
+    "share_same_file": 0.13347619047619047,
+    "mean_lca_depth": 1.1131269841269842
+  },
+  "association_by_tree_distance": {
+    "same_file": {
+      "pairs": 20000,
+      "mean_wjaccard": 0.01913688405321553,
+      "lift_vs_random": 7.455074348772329
+    },
+    "same_dir_diff_file": {
+      "pairs": 20000,
+      "mean_wjaccard": 0.004043897131875312,
+      "lift_vs_random": 1.5753637683691772
+    },
+    "same_depth2_diff_dir": {
+      "pairs": 20000,
+      "mean_wjaccard": 0.004603375463336305,
+      "lift_vs_random": 1.7933173571545968
+    },
+    "diff_depth2": {
+      "pairs": 16363,
+      "mean_wjaccard": 0.002120318975526745,
+      "lift_vs_random": 0.826003625339864
+    },
+    "random": {
+      "pairs": 20000,
+      "mean_wjaccard": 0.002566960858863455,
+      "lift_vs_random": 1.0
+    }
+  },
+  "elapsed_s": 2.4
+}

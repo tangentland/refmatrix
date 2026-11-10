@@ -264,3 +264,10 @@ Each id resolves here so historical citations stay valid; the content lives at t
   - `imp-measure-the-if` → [[impression_bsd_ledger_2026_11_09#imp-measure-the-if]]. {#imp-measure-the-if}
   - `imp-exactly-head-run-head` → [[impression_bsd_ledger_2026_11_09#imp-exactly-head-run-head]]. {#imp-exactly-head-run-head}
   - `imp-copy-measures-the-copy` → [[impression_bsd_ledger_2026_11_09#imp-copy-measures-the-copy]]. {#imp-copy-measures-the-copy}
+- [[impression_bsd_ledger_2026_10_20]] (2026-10-20, plan-24 spec reviews r1-r5, merged from `wave0-spec-reviews` 2026-11-10) — folded run bullets; each id below keeps the same id inside that memory.
+  - `imp-first-statement-is-after-import` → [[impression_bsd_ledger_2026_10_20#imp-first-statement-is-after-import]]. {#imp-first-statement-is-after-import}
+  - `imp-verbs-only-inherits-exemptions` → [[impression_bsd_ledger_2026_10_20#imp-verbs-only-inherits-exemptions]]. {#imp-verbs-only-inherits-exemptions}
+  - `imp-lifecycle-negative-space` → [[impression_bsd_ledger_2026_10_20#imp-lifecycle-negative-space]]. {#imp-lifecycle-negative-space}
+  - `imp-cap-fix-second-transport` → [[impression_bsd_ledger_2026_10_20#imp-cap-fix-second-transport]]. {#imp-cap-fix-second-transport}
+  - `imp-ledger-outside-txn` → [[impression_bsd_ledger_2026_10_20#imp-ledger-outside-txn]]. {#imp-ledger-outside-txn}
+  - `imp-table-needs-facts-log` → [[impression_bsd_ledger_2026_10_20#imp-table-needs-facts-log]]. {#imp-table-needs-facts-log}

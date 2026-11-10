@@ -1,0 +1,107 @@
+{
+  "store": "orderly",
+  "partition_id": 1,
+  "seed": 20261020,
+  "db": "/Volumes/littlebig/refmatrix-spike-hypertree/orderly/catalog.duckdb",
+  "tokenizers": [
+    "chars/4"
+  ],
+  "per_concept_tokens": 600,
+  "max_entities": 10,
+  "deviations": [
+    "reranker=None (production uses the hub worker when up)",
+    "grep_backstop=False on every bundle (on a copy its root is the spike dir; scan-prompt's content bundle has it off anyway)",
+    "scan-prompt's 2000-token cross-bundle cut not applied: every bundle is rendered in all arms"
+  ],
+  "concepts": {
+    "n_queries": 43,
+    "entities_mean": 9.534883720930232,
+    "est": {
+      "flat": {
+        "tokens_per_entity_mean": 47.98720930232558,
+        "tokens_per_entity_median": 47.5,
+        "aggregate_tokens_per_entity": 47.6609756097561,
+        "aggregate_saving_vs_flat": 0.0,
+        "median_per_query_saving_vs_flat": 0.0,
+        "more_entities_at_fixed_budget": 0.0
+      },
+      "flat_rel": {
+        "tokens_per_entity_mean": 38.647157622739016,
+        "tokens_per_entity_median": 37.6,
+        "aggregate_tokens_per_entity": 38.43170731707317,
+        "aggregate_saving_vs_flat": 0.19364413284888193,
+        "median_per_query_saving_vs_flat": 0.2063789868667918,
+        "more_entities_at_fixed_budget": 0.24014723614901334
+      },
+      "tree_grp": {
+        "tokens_per_entity_mean": 37.76899224806201,
+        "tokens_per_entity_median": 37.2,
+        "aggregate_tokens_per_entity": 37.56341463414634,
+        "aggregate_saving_vs_flat": 0.21186223837060547,
+        "median_per_query_saving_vs_flat": 0.22181146025878007,
+        "more_entities_at_fixed_budget": 0.2688137133952342,
+        "saving_vs_flat_rel": 0.022593133210636496
+      },
+      "tree_one": {
+        "tokens_per_entity_mean": 39.26627906976744,
+        "tokens_per_entity_median": 38.5,
+        "aggregate_tokens_per_entity": 39.09512195121951,
+        "aggregate_saving_vs_flat": 0.17972468143902576,
+        "median_per_query_saving_vs_flat": 0.18669131238447323,
+        "more_entities_at_fixed_budget": 0.2191028760371827,
+        "saving_vs_flat_rel": -0.01726216919464374
+      }
+    },
+    "band": "10-25%: opt-in flag",
+    "pool_size": 44,
+    "sampled": 44,
+    "empty_bundles": 1,
+    "query_sha256_16": [
+      "249215fed826e1cf",
+      "5cde0f1298f41f7d",
+      "4ca303a3bf7ddf7b",
+      "05c2e32770396470",
+      "1bc04b5291c26a46",
+      "0072e6b934945d5b",
+      "238fa28a94976c7d",
+      "3d377ae910dce03a",
+      "39c3be1198a2fddf",
+      "18914b261c3e6ae9",
+      "cf80cd8aed482d5d",
+      "b81791acd5095647",
+      "3f3af1ecebbd1410",
+      "19ed40bf62c399b8",
+      "86f8a694159b712f",
+      "533fd911997fdb41",
+      "72192fa84b0f6376",
+      "4bc74b21357c6cf5",
+      "da7f739f62719846",
+      "423614833cbdcee4",
+      "c7c5c1d70c5dec44",
+      "9bdc1337d7016d58",
+      "3e91a019d31b402a",
+      "f08e7f4a8d5c7b2a",
+      "340f463033e0fd5d",
+      "2e2d5c5649b718b5",
+      "52367a6622b19f08",
+      "0a4ec9d8dce6bbf3",
+      "f89e2d72da00888b",
+      "a77de8a6daa11295",
+      "3ca2ede8bf7b3d78",
+      "a706016085b2165e",
+      "b65d53d97530708c",
+      "17dcbf66dfaf4301",
+      "f29cfc8698e1fb43",
+      "0575f29df888a27e",
+      "5eb2ce291c7d227d",
+      "bf9422a2a04aad21",
+      "6959b4159575d8dd",
+      "cd74053c54816e47",
+      "9859597853197476",
+      "0a465797a15eeb6b",
+      "fa8ed0bdabdd6bcb",
+      "244210e48437b655"
+    ]
+  },
+  "elapsed_s": 3.8
+}

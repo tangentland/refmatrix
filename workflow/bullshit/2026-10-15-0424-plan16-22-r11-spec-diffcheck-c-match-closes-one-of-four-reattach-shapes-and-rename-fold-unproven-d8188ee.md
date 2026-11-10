@@ -241,7 +241,7 @@ rel: depends-on -> [[task-17.4-factslog-backup-snapshot#r6-restore]]
 > A legacy append resolved over the kinds logged up to the vacuum can miss a same-name `concept` logged later; accepted as narrow (d9cb(c)): compaction ends legacy appends, and r11 measured 0 drifts over 66,100 (cliquedb) and 253,023 (refmatrix) legacy appends, every `evidence` append in both logs.
 
 Then add a row to both `#rev-round-10` tables:
-> | d9cb (a) per-op `skipped_live`; (b) re-attach guard; (c) legacy drift accepted; (d) helper raises on an orphan | (a) [[#r5-timeline]]; (b) [[#r5-own-appends]] per r11 s-1; (c) the `c_kind` bullet; (d) [[task-22.2-repair-then-remove#r3]] |
+> | d9cb (a) per-op `skipped_live`; (b) re-attach guard; (c) legacy drift accepted; (d) helper raises on an orphan | (a) [[task-22.6-removal-entry-points#r5-timeline]]; (b) [[task-22.6-removal-entry-points#r5-own-appends]] per r11 s-1; (c) the `c_kind` bullet; (d) [[task-22.2-repair-then-remove#r3]] |
 
 ### MEH m-2: "unresolved" is ambiguous about the revivable filter {#m-2}
 

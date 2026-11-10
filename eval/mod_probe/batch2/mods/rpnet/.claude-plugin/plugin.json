@@ -1,0 +1,1 @@
+{ "name": "rpnet", "version": "0.1.0", "description": "throwaway batch2 probe: http.fetch over unix sockets" }

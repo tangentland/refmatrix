@@ -1,0 +1,136 @@
+{
+  "partition_id": 2,
+  "concepts": 24004,
+  "entities": 10248,
+  "edges": 524411,
+  "concept_df": {
+    "p25": 1.0,
+    "p50": 2.0,
+    "p75": 9.0,
+    "p90": 39.0,
+    "p95": 96.0,
+    "p99": 363.0,
+    "max": 2838,
+    "mean": 21.84681719713381,
+    "share_df_le_1": 0.36306448925179136
+  },
+  "entity_degree": {
+    "p25": 6.0,
+    "p50": 20.0,
+    "p75": 76.0,
+    "p90": 132.0,
+    "p95": 171.0,
+    "p99": 293.0600000000013,
+    "max": 4000,
+    "mean": 51.17203356752537
+  },
+  "powerlaw_concept_df": {
+    "xmin": 4,
+    "alpha": 1.6300174128710283,
+    "ks": 0.03434714722659967,
+    "n_tail": 10014
+  },
+  "top_hubs": [
+    {
+      "name": "adr",
+      "df": 2838
+    },
+    {
+      "name": "one",
+      "df": 2684
+    },
+    {
+      "name": "only",
+      "df": 2272
+    },
+    {
+      "name": "sql",
+      "df": 1833
+    },
+    {
+      "name": "two",
+      "df": 1772
+    },
+    {
+      "name": "cliquedb",
+      "df": 1698
+    },
+    {
+      "name": "does",
+      "df": 1653
+    },
+    {
+      "name": "read",
+      "df": 1637
+    },
+    {
+      "name": "every",
+      "df": 1568
+    },
+    {
+      "name": "row",
+      "df": 1537
+    },
+    {
+      "name": "same",
+      "df": 1482
+    },
+    {
+      "name": "never",
+      "df": 1464
+    }
+  ],
+  "edge_share": {
+    "top_0.1pct": 0.07196454689165559,
+    "top_1pct": 0.31248772432309774,
+    "df_le_1": 0.016618644536441837
+  },
+  "roaring_bytes": {
+    "total": 1846767,
+    "share_top_1pct": 0.1983926505076168,
+    "share_df_le_1": 0.0849430382934068
+  },
+  "reach": {
+    "all_concepts": {
+      "reach1_mean": 0.3413480679156909,
+      "reach2_mean": 0.9006801327088212,
+      "reach2_p50": 0.9473067915690867
+    },
+    "minus_top_0.1pct": {
+      "reach1_mean": 0.2884670179547229,
+      "reach2_mean": 0.8945272248243561,
+      "reach2_p50": 0.9450624512099922
+    },
+    "minus_top_1pct": {
+      "reach1_mean": 0.16254391100702578,
+      "reach2_mean": 0.8457055035128807,
+      "reach2_p50": 0.9211065573770492
+    }
+  },
+  "communities": {
+    "concepts_used": 15049,
+    "df_cap": 363,
+    "projection_edges": 8824426,
+    "louvain_modularity": 0.11512166735504063,
+    "n_communities": 194,
+    "largest": [
+      2309,
+      1684,
+      1644,
+      1603,
+      1126,
+      993,
+      431,
+      207
+    ],
+    "singletons": 180
+  },
+  "compression_bytes": {
+    "today_ids": 1846767,
+    "dense_rank_today_order": 1431714,
+    "path_locality_order": 1431626,
+    "community_order": 1431646,
+    "random_order_control": 1432886
+  },
+  "elapsed_s": 1315.5
+}

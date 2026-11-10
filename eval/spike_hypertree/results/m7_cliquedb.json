@@ -1,0 +1,80 @@
+{
+  "store": "cliquedb",
+  "partition_id": 2,
+  "seed": 20261020,
+  "files_listed": 728,
+  "files_used": 723,
+  "skipped": {
+    "non_text_ext": 2
+  },
+  "sections": 6391,
+  "paragraphs": 25909,
+  "sentences": 252017,
+  "vocab_size": 19097,
+  "terms_indexed": 14277,
+  "postings": 1282936,
+  "chunks_65536": 4,
+  "numberings": {
+    "dewey": {
+      "bytes": 2936724,
+      "containers": 36897,
+      "run_containers": 21,
+      "run_container_share": 0.0005691519635742744,
+      "bytes_by_df_band": {
+        ">100": 2201684,
+        "11-100": 532894,
+        "2-10": 163860,
+        "hapax": 38286
+      }
+    },
+    "random": {
+      "bytes": 3012372,
+      "containers": 44025,
+      "run_containers": 0,
+      "run_container_share": 0.0,
+      "bytes_by_df_band": {
+        ">100": 2220988,
+        "11-100": 555752,
+        "2-10": 197346,
+        "hapax": 38286
+      }
+    },
+    "file_rand_in": {
+      "bytes": 2938206,
+      "containers": 36898,
+      "run_containers": 0,
+      "run_container_share": 0.0,
+      "bytes_by_df_band": {
+        ">100": 2202974,
+        "11-100": 532976,
+        "2-10": 163970,
+        "hapax": 38286
+      }
+    },
+    "rand_file_doc": {
+      "bytes": 2983137,
+      "containers": 40465,
+      "run_containers": 30,
+      "run_container_share": 0.0007413814407512665,
+      "bytes_by_df_band": {
+        ">100": 2220389,
+        "11-100": 545080,
+        "2-10": 179382,
+        "hapax": 38286
+      }
+    }
+  },
+  "saving_vs_random": {
+    "dewey": 0.02511243631264659,
+    "random": 0.0,
+    "file_rand_in": 0.024620465201508956,
+    "rand_file_doc": 0.009704976676187416
+  },
+  "dewey_saving_by_df_band": {
+    ">100": 0.008691627329818985,
+    "11-100": 0.041129856482747695,
+    "2-10": 0.16968167583837523,
+    "hapax": 0.0
+  },
+  "elapsed_s": 2.1
+}

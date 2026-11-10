@@ -1,0 +1,1 @@
+{ "name": "rp", "version": "0.1.0", "description": "throwaway batch2 probe: state, subagent routes, env, clear", "types": "./types/index.d.ts" }

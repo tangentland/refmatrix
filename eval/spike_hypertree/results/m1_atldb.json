@@ -1,0 +1,107 @@
+{
+  "store": "atldb",
+  "partition_id": 2,
+  "entities_in_tree": 3142,
+  "excluded_entities": {
+    "no_path": 0,
+    "external": 99,
+    "memory_dir_mapped": 9
+  },
+  "files": 364,
+  "max_tree_depth": 4,
+  "df_p99": 47.07999999999993,
+  "all_df_ge_2": {
+    "concepts": 2747,
+    "edges": 18515,
+    "edge_weighted_local": {
+      "depth>=1": 0.1726167971914664,
+      "depth>=2": 0.12703213610586012,
+      "depth>=3": 0.0066972724817715365
+    },
+    "unweighted_local": {
+      "depth>=1": 0.35056425191117585,
+      "depth>=2": 0.2661084819803422,
+      "depth>=3": 0.019293775027302514
+    },
+    "edge_weighted_single_file": 0.11979476100459087,
+    "components_depth2_mean": 2.9220968329086277,
+    "components_depth2_p50": 2.0,
+    "components_depth2_edge_weighted_mean": 5.613610586011342
+  },
+  "non_keyword": {
+    "concepts": 2615,
+    "edges": 18141,
+    "edge_weighted_local": {
+      "depth>=1": 0.1652058872168017,
+      "depth>=2": 0.12039027617000166,
+      "depth>=3": 0.004685518990132849
+    },
+    "unweighted_local": {
+      "depth>=1": 0.3391969407265774,
+      "depth>=2": 0.25506692160611855,
+      "depth>=3": 0.0130019120458891
+    },
+    "edge_weighted_single_file": 0.11790970729287249,
+    "components_depth2_mean": 2.990057361376673,
+    "components_depth2_p50": 2.0,
+    "components_depth2_edge_weighted_mean": 5.694834904360289
+  },
+  "minus_top1pct_hubs": {
+    "concepts": 2720,
+    "edges": 16711,
+    "edge_weighted_local": {
+      "depth>=1": 0.18801986715337202,
+      "depth>=2": 0.13751421219555982,
+      "depth>=3": 0.0074202621028065345
+    },
+    "unweighted_local": {
+      "depth>=1": 0.3536764705882353,
+      "depth>=2": 0.26838235294117646,
+      "depth>=3": 0.01948529411764706
+    },
+    "edge_weighted_single_file": 0.12949554185865597,
+    "components_depth2_mean": 2.820955882352941,
+    "components_depth2_p50": 2.0,
+    "components_depth2_edge_weighted_mean": 4.714798635629227
+  },
+  "null_permuted": {
+    "edge_weighted_local_depth>=2": 0.0023404446844900533,
+    "unweighted_local_depth>=2": 0.007766047809731828,
+    "components_depth2_mean": 5.586943332119888
+  },
+  "top10_associates": {
+    "sources": 300,
+    "share_outside_depth2_subtree": 0.6413703703703704,
+    "share_outside_expected_random": 0.9781279847182426,
+    "share_same_file": 0.3141851851851852,
+    "mean_lca_depth": 1.0603968253968254
+  },
+  "association_by_tree_distance": {
+    "same_file": {
+      "pairs": 20000,
+      "mean_wjaccard": 0.007294037001714299,
+      "lift_vs_random": 8.998410881888336
+    },
+    "same_dir_diff_file": {
+      "pairs": 20000,
+      "mean_wjaccard": 0.0021142764482167914,
+      "lift_vs_random": 2.608312542763736
+    },
+    "same_depth2_diff_dir": {
+      "pairs": 2711,
+      "mean_wjaccard": 0.011136231987097204,
+      "lift_vs_random": 13.738399061092883
+    },
+    "diff_depth2": {
+      "pairs": 19425,
+      "mean_wjaccard": 0.0007210765788309078,
+      "lift_vs_random": 0.889568195513934
+    },
+    "random": {
+      "pairs": 20000,
+      "mean_wjaccard": 0.0008105916808483887,
+      "lift_vs_random": 1.0
+    }
+  },
+  "elapsed_s": 1.8
+}

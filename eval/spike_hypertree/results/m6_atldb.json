@@ -1,0 +1,344 @@
+{
+  "store": "atldb",
+  "seed": 20261020,
+  "method": "in-process sync_files on a no-daemon copy",
+  "n_sampled": 100,
+  "arms": {
+    "fused/quiet": {
+      "arm": "quiet",
+      "mode": "fused",
+      "n_files": 100,
+      "t_ingest_ms": {
+        "p50": 51.7308134585619,
+        "p95": 1330.8648727601392
+      },
+      "t_place_ms": {
+        "p50": 2.941332757472992,
+        "p95": 6.073200632818042,
+        "max": 7.794625125825405
+      },
+      "ratio_per_file": {
+        "p50": 0.05765044894932641,
+        "p95": 0.21374940575140539
+      },
+      "ratio_p95_over_p95": 0.004563348809577162,
+      "t_derive_ms": {
+        "p50": 0.5794167518615723,
+        "p95": 0.7461204193532467
+      },
+      "t_write_ms": {
+        "p50": 2.3611453361809254,
+        "p95": 5.378068704158068
+      },
+      "write_only_ratio_per_file": {
+        "p50": 0.04454097780051662,
+        "p95": 0.1721442466883357
+      },
+      "ratio_sum": 0.007891393003969616,
+      "rows_per_file": {
+        "mean": 2.57,
+        "p95": 10.049999999999997,
+        "max": 17
+      },
+      "files_not_touched": 0,
+      "vector_delete_failed": 0,
+      "by_ext": {
+        ".SQL": {
+          "n": 1,
+          "t_ingest_p50_ms": 15.938374679535627,
+          "t_place_p50_ms": 3.2242080196738243,
+          "rows_mean": 1.0
+        },
+        ".md": {
+          "n": 29,
+          "t_ingest_p50_ms": 628.2402076758444,
+          "t_place_p50_ms": 4.153083544224501,
+          "rows_mean": 6.413793103448276
+        },
+        ".py": {
+          "n": 3,
+          "t_ingest_p50_ms": 100.05308268591762,
+          "t_place_p50_ms": 3.065374679863453,
+          "rows_mean": 1.0
+        },
+        ".sh": {
+          "n": 6,
+          "t_ingest_p50_ms": 14.058458153158426,
+          "t_place_p50_ms": 2.5907084345817566,
+          "rows_mean": 1.0
+        },
+        ".sql": {
+          "n": 58,
+          "t_ingest_p50_ms": 34.206062788143754,
+          "t_place_p50_ms": 2.810895908623934,
+          "rows_mean": 1.0
+        },
+        ".txt": {
+          "n": 3,
+          "t_ingest_p50_ms": 13.660166412591934,
+          "t_place_p50_ms": 2.483542077243328,
+          "rows_mean": 1.0
+        }
+      },
+      "placement_rows_total": 283
+    },
+    "fused/loaded": {
+      "arm": "loaded",
+      "mode": "fused",
+      "n_files": 100,
+      "t_ingest_ms": {
+        "p50": 74.67856188304722,
+        "p95": 1464.9042278993868
+      },
+      "t_place_ms": {
+        "p50": 5.089958664029837,
+        "p95": 11.740756616927682,
+        "max": 14.340458903461695
+      },
+      "ratio_per_file": {
+        "p50": 0.05590021419566504,
+        "p95": 0.28597457067370263
+      },
+      "ratio_p95_over_p95": 0.008014692287265394,
+      "t_derive_ms": {
+        "p50": 0.7196874357759953,
+        "p95": 2.2191792028024793
+      },
+      "t_write_ms": {
+        "p50": 4.2437296360731125,
+        "p95": 10.04837704822421
+      },
+      "write_only_ratio_per_file": {
+        "p50": 0.049014345984169996,
+        "p95": 0.2272820773259587
+      },
+      "ratio_sum": 0.012487899125387116,
+      "rows_per_file": {
+        "mean": 2.57,
+        "p95": 10.049999999999997,
+        "max": 17
+      },
+      "files_not_touched": 0,
+      "vector_delete_failed": 0,
+      "by_ext": {
+        ".SQL": {
+          "n": 1,
+          "t_ingest_p50_ms": 23.68604065850377,
+          "t_place_p50_ms": 4.552167374640703,
+          "rows_mean": 1.0
+        },
+        ".md": {
+          "n": 29,
+          "t_ingest_p50_ms": 754.5337085612118,
+          "t_place_p50_ms": 8.147958666086197,
+          "rows_mean": 6.413793103448276
+        },
+        ".py": {
+          "n": 3,
+          "t_ingest_p50_ms": 121.1657514795661,
+          "t_place_p50_ms": 5.0461250357329845,
+          "rows_mean": 1.0
+        },
+        ".sh": {
+          "n": 6,
+          "t_ingest_p50_ms": 22.236438002437353,
+          "t_place_p50_ms": 4.276895895600319,
+          "rows_mean": 1.0
+        },
+        ".sql": {
+          "n": 58,
+          "t_ingest_p50_ms": 50.33012479543686,
+          "t_place_p50_ms": 4.83306311070919,
+          "rows_mean": 1.0
+        },
+        ".txt": {
+          "n": 3,
+          "t_ingest_p50_ms": 15.655208379030228,
+          "t_place_p50_ms": 4.612041637301445,
+          "rows_mean": 1.0
+        }
+      },
+      "placement_rows_total": 283
+    },
+    "separate/quiet": {
+      "arm": "quiet",
+      "mode": "separate",
+      "n_files": 100,
+      "t_ingest_ms": {
+        "p50": 54.676083382219076,
+        "p95": 1404.8270353348921
+      },
+      "t_place_ms": {
+        "p50": 4.404562525451183,
+        "p95": 7.342701731249688,
+        "max": 9.880084078758955
+      },
+      "ratio_per_file": {
+        "p50": 0.07950701503907012,
+        "p95": 0.312394814628676
+      },
+      "ratio_p95_over_p95": 0.005226765677597659,
+      "t_derive_ms": {
+        "p50": 0.635604839771986,
+        "p95": 0.8051687385886908
+      },
+      "t_write_ms": {
+        "p50": 3.759229090064764,
+        "p95": 6.575364363379776
+      },
+      "write_only_ratio_per_file": {
+        "p50": 0.06777882248828987,
+        "p95": 0.26851375725648186
+      },
+      "ratio_sum": 0.011108452227882606,
+      "rows_per_file": {
+        "mean": 2.57,
+        "p95": 10.049999999999997,
+        "max": 17
+      },
+      "files_not_touched": 0,
+      "vector_delete_failed": 0,
+      "by_ext": {
+        ".SQL": {
+          "n": 1,
+          "t_ingest_p50_ms": 14.009458012878895,
+          "t_place_p50_ms": 4.775709006935358,
+          "rows_mean": 1.0
+        },
+        ".md": {
+          "n": 29,
+          "t_ingest_p50_ms": 632.3779998347163,
+          "t_place_p50_ms": 5.789292044937611,
+          "rows_mean": 6.413793103448276
+        },
+        ".py": {
+          "n": 3,
+          "t_ingest_p50_ms": 119.55183371901512,
+          "t_place_p50_ms": 4.2352089658379555,
+          "rows_mean": 1.0
+        },
+        ".sh": {
+          "n": 6,
+          "t_ingest_p50_ms": 14.91560391150415,
+          "t_place_p50_ms": 4.300313303247094,
+          "rows_mean": 1.0
+        },
+        ".sql": {
+          "n": 58,
+          "t_ingest_p50_ms": 38.53722894564271,
+          "t_place_p50_ms": 4.215291468426585,
+          "rows_mean": 1.0
+        },
+        ".txt": {
+          "n": 3,
+          "t_ingest_p50_ms": 14.677624683827162,
+          "t_place_p50_ms": 4.629291128367186,
+          "rows_mean": 1.0
+        }
+      },
+      "placement_rows_total": 283
+    },
+    "separate/loaded": {
+      "arm": "loaded",
+      "mode": "separate",
+      "n_files": 100,
+      "t_ingest_ms": {
+        "p50": 81.30583306774497,
+        "p95": 1700.3886523889375
+      },
+      "t_place_ms": {
+        "p50": 6.673916941508651,
+        "p95": 13.709237379953263,
+        "max": 40.0800839997828
+      },
+      "ratio_per_file": {
+        "p50": 0.08770967303106442,
+        "p95": 0.3161680320610997
+      },
+      "ratio_p95_over_p95": 0.008062414060863474,
+      "t_derive_ms": {
+        "p50": 0.7396875880658627,
+        "p95": 0.942567246966064
+      },
+      "t_write_ms": {
+        "p50": 5.9808543883264065,
+        "p95": 12.63040613848716
+      },
+      "write_only_ratio_per_file": {
+        "p50": 0.0773407863193212,
+        "p95": 0.28855699853722994
+      },
+      "ratio_sum": 0.015949583497202432,
+      "rows_per_file": {
+        "mean": 2.57,
+        "p95": 10.049999999999997,
+        "max": 17
+      },
+      "files_not_touched": 0,
+      "vector_delete_failed": 0,
+      "by_ext": {
+        ".SQL": {
+          "n": 1,
+          "t_ingest_p50_ms": 22.940459195524454,
+          "t_place_p50_ms": 34.738291054964066,
+          "rows_mean": 1.0
+        },
+        ".md": {
+          "n": 29,
+          "t_ingest_p50_ms": 791.9142078608274,
+          "t_place_p50_ms": 9.365375153720379,
+          "rows_mean": 6.413793103448276
+        },
+        ".py": {
+          "n": 3,
+          "t_ingest_p50_ms": 129.95125027373433,
+          "t_place_p50_ms": 5.846874788403511,
+          "rows_mean": 1.0
+        },
+        ".sh": {
+          "n": 6,
+          "t_ingest_p50_ms": 25.540020316839218,
+          "t_place_p50_ms": 6.745791295543313,
+          "rows_mean": 1.0
+        },
+        ".sql": {
+          "n": 58,
+          "t_ingest_p50_ms": 57.32920812442899,
+          "t_place_p50_ms": 6.296895444393158,
+          "rows_mean": 1.0
+        },
+        ".txt": {
+          "n": 3,
+          "t_ingest_p50_ms": 22.742957808077335,
+          "t_place_p50_ms": 6.825167220085859,
+          "rows_mean": 1.0
+        }
+      },
+      "placement_rows_total": 283
+    }
+  },
+  "reported": {
+    "fused": {
+      "p95_of_per_file_ratio": 0.28597457067370263,
+      "arm": "loaded",
+      "band_per_file_ratio": "derive offline only (>20%)",
+      "p95_place_over_p95_ingest": 0.008014692287265394,
+      "arm_p95p95": "loaded",
+      "band_p95p95": "inline (<5%)",
+      "t_place_p95_ms_worst": 11.740756616927682,
+      "write_only_p95_ratio_worst": 0.2272820773259587,
+      "band_write_only": "derive offline only (>20%)"
+    },
+    "separate": {
+      "p95_of_per_file_ratio": 0.3161680320610997,
+      "arm": "loaded",
+      "band_per_file_ratio": "derive offline only (>20%)",
+      "p95_place_over_p95_ingest": 0.008062414060863474,
+      "arm_p95p95": "loaded",
+      "band_p95p95": "inline (<5%)",
+      "t_place_p95_ms_worst": 13.709237379953263,
+      "write_only_p95_ratio_worst": 0.28855699853722994,
+      "band_write_only": "derive offline only (>20%)"
+    }
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "partition_id": 1,
+  "concepts": 7981,
+  "entities": 2357,
+  "edges": 106039,
+  "concept_df": {
+    "p25": 1.0,
+    "p50": 3.0,
+    "p75": 9.0,
+    "p90": 30.0,
+    "p95": 57.0,
+    "p99": 179.19999999999982,
+    "max": 781,
+    "mean": 13.286430271895753,
+    "share_df_le_1": 0.27953890489913547
+  },
+  "entity_degree": {
+    "p25": 10.0,
+    "p50": 34.0,
+    "p75": 61.0,
+    "p90": 96.40000000000009,
+    "p95": 121.0,
+    "p99": 219.8800000000001,
+    "max": 1126,
+    "mean": 44.98896902842596
+  },
+  "powerlaw_concept_df": {
+    "xmin": 4,
+    "alpha": 1.744727972010194,
+    "ks": 0.038491258944386,
+    "n_tail": 3650
+  },
+  "top_hubs": [
+    {
+      "name": "one",
+      "df": 781
+    },
+    {
+      "name": "todd",
+      "df": 625
+    },
+    {
+      "name": "type",
+      "df": 595
+    },
+    {
+      "name": "coordinator",
+      "df": 522
+    },
+    {
+      "name": "adr",
+      "df": 504
+    },
+    {
+      "name": "two",
+      "df": 490
+    },
+    {
+      "name": "does",
+      "df": 489
+    },
+    {
+      "name": "item",
+      "df": 483
+    },
+    {
+      "name": "ruling",
+      "df": 427
+    },
+    {
+      "name": "ruled",
+      "df": 422
+    },
+    {
+      "name": "same",
+      "df": 419
+    },
+    {
+      "name": "rule",
+      "df": 416
+    }
+  ],
+  "edge_share": {
+    "top_0.1pct": 0.03777855317383227,
+    "top_1pct": 0.21321400616754213,
+    "df_le_1": 0.021039428889370892
+  },
+  "roaring_bytes": {
+    "total": 366487,
+    "share_top_1pct": 0.12957621962034124,
+    "share_df_le_1": 0.10957551018180726
+  },
+  "reach": {
+    "all_concepts": {
+      "reach1_mean": 0.49419813322019523,
+      "reach2_mean": 0.9556088247772593,
+      "reach2_p50": 0.9758167161646161
+    },
+    "minus_top_0.1pct": {
+      "reach1_mean": 0.4525413661434026,
+      "reach2_mean": 0.9554624522698344,
+      "reach2_p50": 0.9758167161646161
+    },
+    "minus_top_1pct": {
+      "reach1_mean": 0.302199830292745,
+      "reach2_mean": 0.9495481544336021,
+      "reach2_p50": 0.9707254985150615
+    }
+  },
+  "communities": {
+    "concepts_used": 5670,
+    "df_cap": 179,
+    "projection_edges": 832470,
+    "louvain_modularity": 0.13982687609047817,
+    "n_communities": 22,
+    "largest": [
+      919,
+      673,
+      460,
+      167,
+      73,
+      26,
+      24,
+      1
+    ],
+    "singletons": 15
+  },
+  "compression_bytes": {
+    "today_ids": 366487,
+    "dense_rank_today_order": 339368,
+    "path_locality_order": 339484,
+    "community_order": 339232,
+    "random_order_control": 339774
+  },
+  "elapsed_s": 79.0
+}
