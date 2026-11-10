@@ -36,6 +36,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
 import sys
 import tempfile
 import time
@@ -330,17 +331,37 @@ def _dump_sidecar(data: dict) -> str:
     return json.dumps(data, indent=0, sort_keys=True, ensure_ascii=False)
 
 
+def _sidecar_mode(side: Path) -> int:
+    """The mode the sidecar write must leave: the existing file's permission
+    bits, else what `write_text` would have created -- `0o666 & ~umask`. The
+    umask has no read-only accessor before Python 3.15, so it is read by
+    setting it and restoring it at once (ch-bsd bug-195 r1 m-1, 2026-11-10)."""
+    try:
+        return stat.S_IMODE(side.stat().st_mode)
+    except FileNotFoundError:
+        pass
+    umask = os.umask(0o022)
+    os.umask(umask)
+    return 0o666 & ~umask
+
+
 def _store_sidecar(memdir: Path, data: dict) -> None:
     """Write the sidecar atomically: a temp file in the memdir, then a rename,
     so a crash mid-write never leaves a half sidecar (bug-195 R3, 2026-11-10).
     RAISES on failure, after removing the temp file; callers decide whether
-    that is a warning (`save_hooks`) or a refusal (the repair)."""
+    that is a warning (`save_hooks`) or a refusal (the repair).
+
+    The file keeps its mode (`_sidecar_mode`): `mkstemp` creates 0600 and the
+    rename keeps it, so ccb9398 turned every save-state's sidecar owner-only
+    where `write_text` had left 0644 (ch-bsd bug-195 r1 m-1, 2026-11-10)."""
     side = memdir / HOOKS_SIDECAR
+    mode = _sidecar_mode(side)
     fd, tmp = tempfile.mkstemp(prefix=f"{HOOKS_SIDECAR}.", suffix=".tmp", dir=memdir)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(_dump_sidecar(data))
             fh.flush()
+            os.fchmod(fh.fileno(), mode)
             os.fsync(fh.fileno())
         os.replace(tmp, side)
     except BaseException:
