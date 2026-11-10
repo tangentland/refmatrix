@@ -1,0 +1,791 @@
+pyc-guard: recompiled 32 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug197-198/src/refmatrix as checked-hash (bug-037)
+FFFFFFFFFFFFFFFFFFFFFFF................................................. [ 36%]
+........................................F............................... [ 72%]
+........................................................                 [100%]
+=================================== FAILURES ===================================
+_________ test_derive_status_never_raises_on_an_unknown_compile_scope __________
+
+store = (<refmatrix.store.Store object at 0x1079dd2b0>, 'proj')
+
+    def test_derive_status_never_raises_on_an_unknown_compile_scope(store):
+        s, part = store
+        _unknown_subjects(s, part)
+        with s.with_partition(part):
+>           st = s.derive_status()      # HEAD: ValueError("... unknown compiled_scope ...")
+                 ^^^^^^^^^^^^^^^^^
+
+tests/test_bug197_unknown_compile_scope.py:82: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/store.py:6848: in derive_status
+    out["memory_compile"] = self._memory_compile_status(side)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <refmatrix.store.Store object at 0x1079dd2b0>, side_rows = []
+
+    def _memory_compile_status(self, side_rows: list) -> dict:
+        """The memory compile's own freshness, outside the partition verdict.
+    
+        Task 26.6 R-C (S6), 2026-11-09. `behind_code` means "consolidate.py
+        changed since this compile ran" — its per-pass hash, never the release
+        version, which moves on every bump. `needs_compile` also fires when the
+        partition holds compiled subjects and NO stamp: the 2026-07-31 subjects
+        were compiled before any stamp existed, and a silent "no stamp, no
+        line" is how their junk labels went unnoticed for three months.
+    
+        PER SCOPE (26.6 r1 remedy #rm-stamp-per-scope, ch-bsd r1 #s-1,
+        2026-11-10): `scopes` holds one record per compile scope, keyed by
+        `compiled_scope`, each judged against ITS OWN pass
+        (`MEMORY_COMPILE_SCOPE_PASSES`) and counting only its own subjects. A
+        single shared record let a pattern apply clear the memory scope's
+        warning. The top-level fields are the `memory` scope's record, kept so
+        the callers that read them before scopes existed still read the scope
+        they meant; a renderer that must see every scope reads `scopes`."""
+        from refmatrix.consolidate import subject_scope
+    
+        con = self._connect()
+        compiled: dict = {sc: 0 for sc in MEMORY_COMPILE_SCOPE_PASSES}
+        for r in con.execute(
+            "SELECT mc.metadata FROM entities e "
+            "JOIN memory_content mc ON mc.entity_id = e.id "
+            "WHERE e.partition_id=? AND e.kind='memory' AND mc.mtype='subject'",
+            (self._partition_id,),
+        ).fetchall():
+            meta = json.loads(r[0]) if r[0] else {}
+            sc = subject_scope(meta) if isinstance(meta, dict) else None
+            if sc is None:
+                continue
+            if sc not in compiled:
+                # A scope this code does not know cannot be judged against a
+                # pass; reporting it as "fine" would be the silent state this
+                # record exists to remove.
+>               raise ValueError(
+                    f"compiled subject with unknown compiled_scope {sc!r}; "
+                    f"known scopes: {sorted(MEMORY_COMPILE_SCOPE_PASSES)}")
+E               ValueError: compiled subject with unknown compiled_scope 'future_scope'; known scopes: ['memory', 'pattern']
+
+src/refmatrix/store.py:6980: ValueError
+_______ test_the_known_scopes_are_still_reported_beside_the_unknown_one ________
+
+store = (<refmatrix.store.Store object at 0x126afba10>, 'proj')
+
+    def test_the_known_scopes_are_still_reported_beside_the_unknown_one(store):
+        s, part = store
+        _unknown_subjects(s, part)
+        with s.with_partition(part):
+>           scopes = s.derive_status()["memory_compile"]["scopes"]
+                     ^^^^^^^^^^^^^^^^^
+
+tests/test_bug197_unknown_compile_scope.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/store.py:6848: in derive_status
+    out["memory_compile"] = self._memory_compile_status(side)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <refmatrix.store.Store object at 0x126afba10>, side_rows = []
+
+    def _memory_compile_status(self, side_rows: list) -> dict:
+        """The memory compile's own freshness, outside the partition verdict.
+    
+        Task 26.6 R-C (S6), 2026-11-09. `behind_code` means "consolidate.py
+        changed since this compile ran" — its per-pass hash, never the release
+        version, which moves on every bump. `needs_compile` also fires when the
+        partition holds compiled subjects and NO stamp: the 2026-07-31 subjects
+        were compiled before any stamp existed, and a silent "no stamp, no
+        line" is how their junk labels went unnoticed for three months.
+    
+        PER SCOPE (26.6 r1 remedy #rm-stamp-per-scope, ch-bsd r1 #s-1,
+        2026-11-10): `scopes` holds one record per compile scope, keyed by
+        `compiled_scope`, each judged against ITS OWN pass
+        (`MEMORY_COMPILE_SCOPE_PASSES`) and counting only its own subjects. A
+        single shared record let a pattern apply clear the memory scope's
+        warning. The top-level fields are the `memory` scope's record, kept so
+        the callers that read them before scopes existed still read the scope
+        they meant; a renderer that must see every scope reads `scopes`."""
+        from refmatrix.consolidate import subject_scope
+    
+        con = self._connect()
+        compiled: dict = {sc: 0 for sc in MEMORY_COMPILE_SCOPE_PASSES}
+        for r in con.execute(
+            "SELECT mc.metadata FROM entities e "
+            "JOIN memory_content mc ON mc.entity_id = e.id "
+            "WHERE e.partition_id=? AND e.kind='memory' AND mc.mtype='subject'",
+            (self._partition_id,),
+        ).fetchall():
+            meta = json.loads(r[0]) if r[0] else {}
+            sc = subject_scope(meta) if isinstance(meta, dict) else None
+            if sc is None:
+                continue
+            if sc not in compiled:
+                # A scope this code does not know cannot be judged against a
+                # pass; reporting it as "fine" would be the silent state this
+                # record exists to remove.
+>               raise ValueError(
+                    f"compiled subject with unknown compiled_scope {sc!r}; "
+                    f"known scopes: {sorted(MEMORY_COMPILE_SCOPE_PASSES)}")
+E               ValueError: compiled subject with unknown compiled_scope 'future_scope'; known scopes: ['memory', 'pattern']
+
+src/refmatrix/store.py:6980: ValueError
+______________ test_an_unknown_scope_moves_no_other_verdict_field ______________
+
+store = (<refmatrix.store.Store object at 0x1301906e0>, 'proj')
+
+    def test_an_unknown_scope_moves_no_other_verdict_field(store):
+        """Every field outside the unknown record is what it was before the row
+        landed: the partition verdict, the top-level (memory-scope) compile fields,
+        and each known scope's record."""
+        s, part = store
+        _known_subject(s, part)
+        with s.with_partition(part):
+            before = s.derive_status()
+        _unknown_subjects(s, part)
+        with s.with_partition(part):
+>           after = s.derive_status()
+                    ^^^^^^^^^^^^^^^^^
+
+tests/test_bug197_unknown_compile_scope.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/store.py:6848: in derive_status
+    out["memory_compile"] = self._memory_compile_status(side)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <refmatrix.store.Store object at 0x1301906e0>, side_rows = []
+
+    def _memory_compile_status(self, side_rows: list) -> dict:
+        """The memory compile's own freshness, outside the partition verdict.
+    
+        Task 26.6 R-C (S6), 2026-11-09. `behind_code` means "consolidate.py
+        changed since this compile ran" — its per-pass hash, never the release
+        version, which moves on every bump. `needs_compile` also fires when the
+        partition holds compiled subjects and NO stamp: the 2026-07-31 subjects
+        were compiled before any stamp existed, and a silent "no stamp, no
+        line" is how their junk labels went unnoticed for three months.
+    
+        PER SCOPE (26.6 r1 remedy #rm-stamp-per-scope, ch-bsd r1 #s-1,
+        2026-11-10): `scopes` holds one record per compile scope, keyed by
+        `compiled_scope`, each judged against ITS OWN pass
+        (`MEMORY_COMPILE_SCOPE_PASSES`) and counting only its own subjects. A
+        single shared record let a pattern apply clear the memory scope's
+        warning. The top-level fields are the `memory` scope's record, kept so
+        the callers that read them before scopes existed still read the scope
+        they meant; a renderer that must see every scope reads `scopes`."""
+        from refmatrix.consolidate import subject_scope
+    
+        con = self._connect()
+        compiled: dict = {sc: 0 for sc in MEMORY_COMPILE_SCOPE_PASSES}
+        for r in con.execute(
+            "SELECT mc.metadata FROM entities e "
+            "JOIN memory_content mc ON mc.entity_id = e.id "
+            "WHERE e.partition_id=? AND e.kind='memory' AND mc.mtype='subject'",
+            (self._partition_id,),
+        ).fetchall():
+            meta = json.loads(r[0]) if r[0] else {}
+            sc = subject_scope(meta) if isinstance(meta, dict) else None
+            if sc is None:
+                continue
+            if sc not in compiled:
+                # A scope this code does not know cannot be judged against a
+                # pass; reporting it as "fine" would be the silent state this
+                # record exists to remove.
+>               raise ValueError(
+                    f"compiled subject with unknown compiled_scope {sc!r}; "
+                    f"known scopes: {sorted(MEMORY_COMPILE_SCOPE_PASSES)}")
+E               ValueError: compiled subject with unknown compiled_scope 'future_scope'; known scopes: ['memory', 'pattern']
+
+src/refmatrix/store.py:6980: ValueError
+___________________ test_the_warning_names_the_unknown_scope ___________________
+
+store = (<refmatrix.store.Store object at 0x1301912b0>, 'proj')
+
+    def test_the_warning_names_the_unknown_scope(store):
+        from refmatrix.cli import render_memory_compile_warning
+    
+        s, part = store
+        _known_subject(s, part)
+        _unknown_subjects(s, part)
+        with s.with_partition(part):
+>           st = s.derive_status()
+                 ^^^^^^^^^^^^^^^^^
+
+tests/test_bug197_unknown_compile_scope.py:135: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/store.py:6848: in derive_status
+    out["memory_compile"] = self._memory_compile_status(side)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <refmatrix.store.Store object at 0x1301912b0>, side_rows = []
+
+    def _memory_compile_status(self, side_rows: list) -> dict:
+        """The memory compile's own freshness, outside the partition verdict.
+    
+        Task 26.6 R-C (S6), 2026-11-09. `behind_code` means "consolidate.py
+        changed since this compile ran" — its per-pass hash, never the release
+        version, which moves on every bump. `needs_compile` also fires when the
+        partition holds compiled subjects and NO stamp: the 2026-07-31 subjects
+        were compiled before any stamp existed, and a silent "no stamp, no
+        line" is how their junk labels went unnoticed for three months.
+    
+        PER SCOPE (26.6 r1 remedy #rm-stamp-per-scope, ch-bsd r1 #s-1,
+        2026-11-10): `scopes` holds one record per compile scope, keyed by
+        `compiled_scope`, each judged against ITS OWN pass
+        (`MEMORY_COMPILE_SCOPE_PASSES`) and counting only its own subjects. A
+        single shared record let a pattern apply clear the memory scope's
+        warning. The top-level fields are the `memory` scope's record, kept so
+        the callers that read them before scopes existed still read the scope
+        they meant; a renderer that must see every scope reads `scopes`."""
+        from refmatrix.consolidate import subject_scope
+    
+        con = self._connect()
+        compiled: dict = {sc: 0 for sc in MEMORY_COMPILE_SCOPE_PASSES}
+        for r in con.execute(
+            "SELECT mc.metadata FROM entities e "
+            "JOIN memory_content mc ON mc.entity_id = e.id "
+            "WHERE e.partition_id=? AND e.kind='memory' AND mc.mtype='subject'",
+            (self._partition_id,),
+        ).fetchall():
+            meta = json.loads(r[0]) if r[0] else {}
+            sc = subject_scope(meta) if isinstance(meta, dict) else None
+            if sc is None:
+                continue
+            if sc not in compiled:
+                # A scope this code does not know cannot be judged against a
+                # pass; reporting it as "fine" would be the silent state this
+                # record exists to remove.
+>               raise ValueError(
+                    f"compiled subject with unknown compiled_scope {sc!r}; "
+                    f"known scopes: {sorted(MEMORY_COMPILE_SCOPE_PASSES)}")
+E               ValueError: compiled subject with unknown compiled_scope 'future_scope'; known scopes: ['memory', 'pattern']
+
+src/refmatrix/store.py:6980: ValueError
+_____________ test_the_warning_renders_a_hand_built_unknown_record _____________
+
+    def test_the_warning_renders_a_hand_built_unknown_record():
+        """The renderer contract on its own, as the wire carries it: a daemon that
+        reports the record prints the line even if no store is involved."""
+        from refmatrix.cli import render_memory_compile_warning
+    
+        status = {"memory_compile": {
+            "needs_compile": False, "scopes": {
+                "memory": {"needs_compile": False},
+                UNKNOWN: {"unknown": True, "needs_compile": True}}}}
+        out = render_memory_compile_warning(status)
+>       assert UNKNOWN_LINE in out, out
+E       AssertionError: memory-compile: behind code — rmx memory compile --apply --scope future_scope; scope future_scope: 0 compiled subject(s) and no compile stamp
+E       assert 'scope future_scope: unknown to this rmx' in 'memory-compile: behind code — rmx memory compile --apply --scope future_scope; scope future_scope: 0 compiled subject(s) and no compile stamp'
+
+tests/test_bug197_unknown_compile_scope.py:152: AssertionError
+______________________ test_the_derive_status_op_answers _______________________
+
+spawn = <function spawn.<locals>._make at 0x13017a770>
+
+    def test_the_derive_status_op_answers(spawn):  # noqa: F811
+        ctx = spawn(T._seed_scopes, pre=_pre)
+        r = dm.call(ctx.root, "derive_status", {"all": True}, timeout=30, retries=0)
+>       assert r.get("ok"), r
+E       AssertionError: {'error': "compiled subject with unknown compiled_scope 'future_scope'; known scopes: ['memory', 'pattern']", 'ok': False}
+E       assert False
+E        +  where False = <built-in method get of dict object at 0x13024d200>('ok')
+E        +    where <built-in method get of dict object at 0x13024d200> = {'error': "compiled subject with unknown compiled_scope 'future_scope'; known scopes: ['memory', 'pattern']", 'ok': False}.get
+
+tests/test_bug197_unknown_compile_scope.py:166: AssertionError
+__________________ test_ping_health_keeps_the_derive_verdict ___________________
+
+spawn = <function spawn.<locals>._make at 0x13017aa30>
+
+    def test_ping_health_keeps_the_derive_verdict(spawn):  # noqa: F811
+        ctx = spawn(T._seed_scopes, pre=_pre)
+        r = dm.call(ctx.root, "stats", {"include_health": True}, timeout=60, retries=0)
+        assert r.get("ok"), r
+        h = r["result"]["health"]
+>       assert "derive_error" not in h, h.get("derive_error")
+E       AssertionError: ValueError: compiled subject with unknown compiled_scope 'future_scope'; known scopes: ['memory', 'pattern']
+E       assert 'derive_error' not in {'active_slot': 'A', 'db_file': 'catalog.A.duckdb', 'derive_error': "ValueError: compiled subject with unknown compiled_scope 'future_scope'; known scopes: ['memory', 'pattern']", 'learn_queue_pending': 0, ...}
+
+tests/test_bug197_unknown_compile_scope.py:177: AssertionError
+________ test_daemon_status_prints_the_unknown_line_and_a_known_verdict ________
+
+spawn = <function spawn.<locals>._make at 0x13017b480>
+
+    def test_daemon_status_prints_the_unknown_line_and_a_known_verdict(spawn):  # noqa: F811
+        ctx = spawn(T._seed_scopes, pre=_pre)
+        out = T._ok("daemon", "status")
+        assert "derive: unknown" not in out, out
+>       assert UNKNOWN_LINE in out, out
+E       AssertionError: running pid=62907 root=/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-fm2tyuqt/proj/.refmatrix
+E         code: /Volumes/littlebig/refmatrix-bug197-198/src/refmatrix/__init__.py  [DEV TREE]
+E           code /Volumes/littlebig/refmatrix-bug197-198/src/refmatrix/__init__.py but the venv belongs to None — reinstall the deploy venv from its own tree
+E         supervised: no
+E         
+E       assert 'scope future_scope: unknown to this rmx' in 'running pid=62907 root=/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-fm2tyuqt/proj/.refmatrix\ncode: /Volumes...src/refmatrix/__init__.py but the venv belongs to None — reinstall the deploy venv from its own tree\nsupervised: no\n'
+
+tests/test_bug197_unknown_compile_scope.py:185: AssertionError
+________________________ test_rmx_derive_status_answers ________________________
+
+spawn = <function spawn.<locals>._make at 0x13017ba00>
+
+    def test_rmx_derive_status_answers(spawn):  # noqa: F811
+        ctx = spawn(T._seed_scopes, pre=_pre)
+>       out = T._ok("derive", "status", "--json")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_bug197_unknown_compile_scope.py:190: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+argv = ('derive', 'status', '--json'), code = 1, out = '', @py_assert2 = 0
+
+    def _ok(*argv: str) -> str:
+        code, out = _cli(*argv)
+>       assert code == 0, f"`rmx {' '.join(argv)}` exited {code}:\n{out}"
+E       AssertionError: `rmx derive status --json` exited 1:
+E         
+E       assert 1 == 0
+
+tests/test_memory_compile_scope.py:186: AssertionError
+______________ test_the_memory_verb_has_a_compile_scope_parameter ______________
+
+    def test_the_memory_verb_has_a_compile_scope_parameter():
+        params = inspect.signature(verbs.VERBS["rmx_memory"].fn).parameters
+>       assert "compile_scope" in params, sorted(params)
+E       AssertionError: ['action', 'add', 'cap', 'classes', 'concept', 'content', ...]
+E       assert 'compile_scope' in mappingproxy(OrderedDict({'root': <Parameter "root: 'Path'">, 'action': <Parameter "action: "typing.Literal['recall', ...= False">, 'plan': <Parameter "plan: 'dict | None' = None">, 'timeout': <Parameter "timeout: 'float | None' = None">}))
+
+tests/test_bug198_brief_compile_scope.py:46: AssertionError
+_______________ test_compile_scope_reaches_the_brief_op[memory] ________________
+
+op_calls = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-531/test_compile_scope_reaches_the0/proj/.refmatrix'), [])
+sc = 'memory'
+
+    @pytest.mark.parametrize("sc", ["memory", "pattern"])
+    def test_compile_scope_reaches_the_brief_op(op_calls, sc):
+        root, seen = op_calls
+>       verbs.memory(root, "brief", compile_scope=sc)
+E       TypeError: memory() got an unexpected keyword argument 'compile_scope'
+
+tests/test_bug198_brief_compile_scope.py:75: TypeError
+_______________ test_compile_scope_reaches_the_brief_op[pattern] _______________
+
+op_calls = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-531/test_compile_scope_reaches_the1/proj/.refmatrix'), [])
+sc = 'pattern'
+
+    @pytest.mark.parametrize("sc", ["memory", "pattern"])
+    def test_compile_scope_reaches_the_brief_op(op_calls, sc):
+        root, seen = op_calls
+>       verbs.memory(root, "brief", compile_scope=sc)
+E       TypeError: memory() got an unexpected keyword argument 'compile_scope'
+
+tests/test_bug198_brief_compile_scope.py:75: TypeError
+___________ test_recalls_scope_never_becomes_the_brief_compile_scope ___________
+
+op_calls = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-531/test_recalls_scope_n...proj/.refmatrix'), [('memory_brief', {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj', ...})])
+
+    def test_recalls_scope_never_becomes_the_brief_compile_scope(op_calls):
+        """`scope` is recall's `project|global|both`. Sent with the brief action it
+        must not select the compile corpus — the defect was exactly that it did."""
+        root, seen = op_calls
+        verbs.memory(root, "brief", scope="pattern")
+>       assert _brief_args(seen).get("scope") in (None, consolidate.DEFAULT_SCOPE), seen
+E       AssertionError: [('memory_brief', {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj', ...})]
+E       assert 'pattern' in (None, 'memory')
+E        +  where 'pattern' = <built-in method get of dict object at 0x130127440>('scope')
+E        +    where <built-in method get of dict object at 0x130127440> = {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj', ...}.get
+E        +      where {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj', ...} = _brief_args([('memory_brief', {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj', ...})])
+
+tests/test_bug198_brief_compile_scope.py:84: AssertionError
+______ test_an_invalid_compile_scope_fails_loudly_before_the_daemon[both] ______
+
+op_calls = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-531/test_an_invalid_compile_scope_0/proj/.refmatrix'), [])
+bad = 'both'
+
+    @pytest.mark.parametrize("bad", ["both", "project", "bogus"])
+    def test_an_invalid_compile_scope_fails_loudly_before_the_daemon(op_calls, bad):
+        root, seen = op_calls
+        with pytest.raises(verbs.VerbArgsError) as ei:
+>           verbs.memory(root, "brief", compile_scope=bad)
+E           TypeError: memory() got an unexpected keyword argument 'compile_scope'
+
+tests/test_bug198_brief_compile_scope.py:91: TypeError
+____ test_an_invalid_compile_scope_fails_loudly_before_the_daemon[project] _____
+
+op_calls = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-531/test_an_invalid_compile_scope_1/proj/.refmatrix'), [])
+bad = 'project'
+
+    @pytest.mark.parametrize("bad", ["both", "project", "bogus"])
+    def test_an_invalid_compile_scope_fails_loudly_before_the_daemon(op_calls, bad):
+        root, seen = op_calls
+        with pytest.raises(verbs.VerbArgsError) as ei:
+>           verbs.memory(root, "brief", compile_scope=bad)
+E           TypeError: memory() got an unexpected keyword argument 'compile_scope'
+
+tests/test_bug198_brief_compile_scope.py:91: TypeError
+_____ test_an_invalid_compile_scope_fails_loudly_before_the_daemon[bogus] ______
+
+op_calls = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-531/test_an_invalid_compile_scope_2/proj/.refmatrix'), [])
+bad = 'bogus'
+
+    @pytest.mark.parametrize("bad", ["both", "project", "bogus"])
+    def test_an_invalid_compile_scope_fails_loudly_before_the_daemon(op_calls, bad):
+        root, seen = op_calls
+        with pytest.raises(verbs.VerbArgsError) as ei:
+>           verbs.memory(root, "brief", compile_scope=bad)
+E           TypeError: memory() got an unexpected keyword argument 'compile_scope'
+
+tests/test_bug198_brief_compile_scope.py:91: TypeError
+______________ test_the_mcp_tool_rejects_an_invalid_compile_scope ______________
+
+op_calls = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-531/test_the_mcp_tool_re...n_i0/proj/.refmatrix'), [('memory_brief', {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj'})])
+
+    def test_the_mcp_tool_rejects_an_invalid_compile_scope(op_calls):
+        """The transport path (`Verb.run`, which MCP calls) fails the same way."""
+        root, seen = op_calls
+>       with pytest.raises(verbs.VerbArgsError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'refmatrix.verbs.VerbArgsError'>
+
+tests/test_bug198_brief_compile_scope.py:99: Failed
+_________________ test_the_mcp_schema_describes_compile_scope __________________
+
+    def test_the_mcp_schema_describes_compile_scope():
+        props = _props()
+>       assert "compile_scope" in props, sorted(props)
+E       AssertionError: ['action', 'add', 'cap', 'classes', 'concept', 'content', ...]
+E       assert 'compile_scope' in {'action': {'enum': ['recall', 'add', 'get', 'list', 'search', 'forget', ...], 'type': 'string'}, 'add': {'items': {'t...'string'}, 'type': 'array'}, 'cap': {'type': 'number'}, 'classes': {'items': {'type': 'string'}, 'type': 'array'}, ...}
+
+tests/test_bug198_brief_compile_scope.py:112: AssertionError
+_________________ test_the_mcp_schema_describes_recalls_scope __________________
+
+    def test_the_mcp_schema_describes_recalls_scope():
+        frag = _props()["scope"]
+        desc = frag.get("description") or ""
+>       assert desc, frag
+E       AssertionError: {'type': 'string'}
+E       assert ''
+
+tests/test_bug198_brief_compile_scope.py:123: AssertionError
+_____________ test_cli_brief_defaults_to_the_memory_compile_scope ______________
+
+cli_seen = [{'action': 'brief', 'min_dates': 3, 'min_members': 3, 'min_mentions': 4, ...}]
+
+    def test_cli_brief_defaults_to_the_memory_compile_scope(cli_seen):
+        r = CliRunner().invoke(cli_mod.main, ["memory", "brief", "--json"])
+        assert r.exit_code == 0, r.output
+>       assert cli_seen[-1].get("compile_scope") == consolidate.DEFAULT_SCOPE, cli_seen
+E       AssertionError: [{'action': 'brief', 'min_dates': 3, 'min_members': 3, 'min_mentions': 4, ...}]
+E       assert None == 'memory'
+E        +  where None = <built-in method get of dict object at 0x1303bb7c0>('compile_scope')
+E        +    where <built-in method get of dict object at 0x1303bb7c0> = {'action': 'brief', 'min_dates': 3, 'min_members': 3, 'min_mentions': 4, ...}.get
+E        +  and   'memory' = consolidate.DEFAULT_SCOPE
+
+tests/test_bug198_brief_compile_scope.py:149: AssertionError
+________ test_cli_brief_scope_pattern_reaches_the_verb_as_compile_scope ________
+
+cli_seen = []
+
+    def test_cli_brief_scope_pattern_reaches_the_verb_as_compile_scope(cli_seen):
+        r = CliRunner().invoke(cli_mod.main, ["memory", "brief", "--scope", "pattern", "--json"])
+>       assert r.exit_code == 0, r.output
+E       AssertionError: Usage: main memory brief [OPTIONS]
+E         Try 'main memory brief -h' for help.
+E         
+E         Error: No such option: --scope (Possible options: --compile, --no-compile, --save)
+E         
+E       assert 2 == 0
+E        +  where 2 = <Result SystemExit(2)>.exit_code
+
+tests/test_bug198_brief_compile_scope.py:155: AssertionError
+_________________ test_cli_brief_compile_plans_the_same_scope __________________
+
+cli_seen = []
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x131627a80>
+
+    def test_cli_brief_compile_plans_the_same_scope(cli_seen, monkeypatch):
+        """One corpus for all four detectors: `--compile --scope pattern` plans the
+        pattern corpus and briefs it, never a memory plan under a pattern brief."""
+        planned = []
+    
+        def fake_plan(store, *, scope, **kw):
+            planned.append(scope)
+            return {"clusters": [], "crosscutting": [], "unclustered": [], "stats": {},
+                    "params": {"scope": scope}}
+        monkeypatch.setattr(consolidate, "compile_memories", fake_plan)
+        monkeypatch.setattr(cli_mod, "_read_store", lambda *a, **k: object())
+        r = CliRunner().invoke(cli_mod.main,
+                               ["memory", "brief", "--compile", "--scope", "pattern", "--json"])
+>       assert r.exit_code == 0, r.output
+E       AssertionError: Usage: main memory brief [OPTIONS]
+E         Try 'main memory brief -h' for help.
+E         
+E         Error: No such option: --scope (Possible options: --compile, --no-compile, --save)
+E         
+E       assert 2 == 0
+E        +  where 2 = <Result SystemExit(2)>.exit_code
+
+tests/test_bug198_brief_compile_scope.py:173: AssertionError
+___________________ test_cli_brief_rejects_an_invalid_scope ____________________
+
+cli_seen = []
+
+    def test_cli_brief_rejects_an_invalid_scope(cli_seen):
+        """A click Choice: `both` (recall's vocabulary) is refused BY VALUE. HEAD
+        also exits 2, but for `No such option: --scope` — that is not this check."""
+        r = CliRunner().invoke(cli_mod.main, ["memory", "brief", "--scope", "both", "--json"])
+>       assert "No such option" not in r.output, r.output
+E       AssertionError: Usage: main memory brief [OPTIONS]
+E         Try 'main memory brief -h' for help.
+E         
+E         Error: No such option: --scope (Possible options: --compile, --no-compile, --save)
+E         
+E       assert 'No such option' not in 'Usage: main...e, --save)\n'
+E         
+E         'No such option' is contained here:
+E           .
+E           
+E           Error: No such option: --scope (Possible options: --compile, --no-compile, --save)
+E         ?        ++++++++++++++
+
+tests/test_bug198_brief_compile_scope.py:182: AssertionError
+_________ test_cli_action_twin_calls_its_dispatcher_verb[memory-brief] _________
+
+path = ('memory', 'brief')
+_cli_env = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-531/test_cli_action_twin_calls_its25/proj/.refmatrix')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1302f8910>
+
+    @pytest.mark.parametrize("path", sorted(CLI_ACTION_INVOKE), ids=lambda p: "-".join(p))
+    def test_cli_action_twin_calls_its_dispatcher_verb(path, _cli_env, monkeypatch):
+        """AC-6, the recorder shape of `test_cli_twin_calls_its_verb`: the verb is
+        CALLED with the root, `action=<x>` and the argv's options ARRIVE as the
+        verb's own parameters (bound against the real signature), and the CLI
+        RENDERS the verb's result (canary). The verb is resolved from the local
+        seed, not `verbs.CLI_ACTIONS`, so each twin's wiring is judged on its own."""
+        import inspect
+        argv, canned, expect, canary = CLI_ACTION_INVOKE[path]
+        vname, _action = _ACTIONS_SEED[path]
+        v = verbs.VERBS[vname]
+        sig = inspect.signature(v.fn)
+        seen = []
+    
+        def recorder(root, *a, **kw):
+            bound = sig.bind(root, *a, **kw)      # a wrong kwarg name fails here
+            bound.apply_defaults()
+            seen.append(bound.arguments)
+            return json.loads(json.dumps(canned))
+        monkeypatch.setattr(verbs, v.fn.__name__, recorder)
+        r = CliRunner().invoke(cli_main, argv, catch_exceptions=False)
+>       assert r.exit_code == 0, r.output + (r.stderr or "")
+E       AssertionError: Usage: main memory brief [OPTIONS]
+E         Try 'main memory brief -h' for help.
+E         
+E         Error: No such option: --scope (Possible options: --compile, --no-compile, --save)
+E         Usage: main memory brief [OPTIONS]
+E         Try 'main memory brief -h' for help.
+E         
+E         Error: No such option: --scope (Possible options: --compile, --no-compile, --save)
+E         
+E       assert 2 == 0
+E        +  where 2 = <Result SystemExit(2)>.exit_code
+
+/Volumes/littlebig/refmatrix-bug197-198/tests/test_verb_parity.py:1177: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug197_unknown_compile_scope.py::test_derive_status_never_raises_on_an_unknown_compile_scope
+FAILED tests/test_bug197_unknown_compile_scope.py::test_the_known_scopes_are_still_reported_beside_the_unknown_one
+FAILED tests/test_bug197_unknown_compile_scope.py::test_an_unknown_scope_moves_no_other_verdict_field
+FAILED tests/test_bug197_unknown_compile_scope.py::test_the_warning_names_the_unknown_scope
+FAILED tests/test_bug197_unknown_compile_scope.py::test_the_warning_renders_a_hand_built_unknown_record
+FAILED tests/test_bug197_unknown_compile_scope.py::test_the_derive_status_op_answers
+FAILED tests/test_bug197_unknown_compile_scope.py::test_ping_health_keeps_the_derive_verdict
+FAILED tests/test_bug197_unknown_compile_scope.py::test_daemon_status_prints_the_unknown_line_and_a_known_verdict
+FAILED tests/test_bug197_unknown_compile_scope.py::test_rmx_derive_status_answers
+FAILED tests/test_bug198_brief_compile_scope.py::test_the_memory_verb_has_a_compile_scope_parameter
+FAILED tests/test_bug198_brief_compile_scope.py::test_compile_scope_reaches_the_brief_op[memory]
+FAILED tests/test_bug198_brief_compile_scope.py::test_compile_scope_reaches_the_brief_op[pattern]
+FAILED tests/test_bug198_brief_compile_scope.py::test_recalls_scope_never_becomes_the_brief_compile_scope
+FAILED tests/test_bug198_brief_compile_scope.py::test_an_invalid_compile_scope_fails_loudly_before_the_daemon[both]
+FAILED tests/test_bug198_brief_compile_scope.py::test_an_invalid_compile_scope_fails_loudly_before_the_daemon[project]
+FAILED tests/test_bug198_brief_compile_scope.py::test_an_invalid_compile_scope_fails_loudly_before_the_daemon[bogus]
+FAILED tests/test_bug198_brief_compile_scope.py::test_the_mcp_tool_rejects_an_invalid_compile_scope
+FAILED tests/test_bug198_brief_compile_scope.py::test_the_mcp_schema_describes_compile_scope
+FAILED tests/test_bug198_brief_compile_scope.py::test_the_mcp_schema_describes_recalls_scope
+FAILED tests/test_bug198_brief_compile_scope.py::test_cli_brief_defaults_to_the_memory_compile_scope
+FAILED tests/test_bug198_brief_compile_scope.py::test_cli_brief_scope_pattern_reaches_the_verb_as_compile_scope
+FAILED tests/test_bug198_brief_compile_scope.py::test_cli_brief_compile_plans_the_same_scope
+FAILED tests/test_bug198_brief_compile_scope.py::test_cli_brief_rejects_an_invalid_scope
+FAILED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-brief]
+PASSED tests/test_verb_parity.py::test_tools_and_verbs_are_the_same_set
+PASSED tests/test_verb_parity.py::test_every_tool_dispatches_to_its_verb
+PASSED tests/test_verb_parity.py::test_tool_schemas_are_exactly_the_generated_ones
+PASSED tests/test_verb_parity.py::test_schema_exposes_every_verb_kwarg_and_alias
+PASSED tests/test_verb_parity.py::test_every_verb_names_its_cli_twin
+PASSED tests/test_verb_parity.py::test_pairing_covers_every_cli_twin
+PASSED tests/test_verb_parity.py::test_no_twin_exclusions_are_honest
+PASSED tests/test_verb_parity.py::test_click_defaults_match_verb_defaults
+PASSED tests/test_verb_parity.py::test_every_cli_twin_declares_its_wiring_class
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_archive]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_channels]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_delete]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_history]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_mark_read]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_pub]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_purge]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_read]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_stats]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_unarchive]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_canon]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_change_subject]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_curate]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_curator]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_focus]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_focus_note]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_graph]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_ingest_status]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_locate]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_matrix]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_memory]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_memory_add]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_memory_compile]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_memory_recall]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_projects]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_queues]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_recall_state]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_refine]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_save_state]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_session]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_task]
+PASSED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_taxonomy]
+PASSED tests/test_verb_parity.py::test_cli_memory_compile_writes_the_verbs_subjects_gmd
+PASSED tests/test_verb_parity.py::test_cli_routed_twin_builds_its_payload_through_the_verb_helper[rmx_context]
+PASSED tests/test_verb_parity.py::test_cli_routed_twin_builds_its_payload_through_the_verb_helper[rmx_query]
+PASSED tests/test_verb_parity.py::test_daemon_writer_ingest_uses_the_verb_payload
+PASSED tests/test_verb_parity.py::test_payload_query_uses_expr
+PASSED tests/test_verb_parity.py::test_payload_context_explicitness_tracks_none_sentinels
+PASSED tests/test_verb_parity.py::test_alias_args_reach_the_verb_param
+PASSED tests/test_verb_parity.py::test_every_invocable_cli_path_is_classified_exactly_once
+PASSED tests/test_verb_parity.py::test_a_new_command_in_no_class_fails_naming_it_and_both_remedies
+PASSED tests/test_verb_parity.py::test_removing_an_internal_entry_fails_the_walk
+PASSED tests/test_verb_parity.py::test_internal_cli_is_exactly_the_seeded_set_and_quotes_the_decision
+PASSED tests/test_verb_parity.py::test_a_path_listed_twice_fails_naming_both_classes
+PASSED tests/test_verb_parity.py::test_the_five_maps_have_no_stale_keys
+PASSED tests/test_verb_parity.py::test_a_stale_key_in_any_map_fails_hygiene[CLI_MAP]
+PASSED tests/test_verb_parity.py::test_a_stale_key_in_any_map_fails_hygiene[CLI_ACTIONS]
+PASSED tests/test_verb_parity.py::test_a_stale_key_in_any_map_fails_hygiene[INTERNAL_CLI]
+PASSED tests/test_verb_parity.py::test_a_stale_key_in_any_map_fails_hygiene[HIDDEN_ALIASES]
+PASSED tests/test_verb_parity.py::test_a_stale_key_in_any_map_fails_hygiene[LEGACY_UNPAIRED]
+PASSED tests/test_verb_parity.py::test_a_stale_key_in_any_map_fails_hygiene[HIDDEN_ALIASES-target]
+PASSED tests/test_verb_parity.py::test_cli_actions_are_the_seeded_dispatcher_twins
+PASSED tests/test_verb_parity.py::test_hidden_aliases_are_the_six_alias_copies
+PASSED tests/test_verb_parity.py::test_legacy_unpaired_carries_a_category_and_can_only_shrink
+PASSED tests/test_verb_parity.py::test_every_cli_action_has_a_wiring_row
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[add-entity]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[add-linkage-type]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[canon-link]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[canon-siblings]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[co-occur]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[concept-timeline]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[curator-drain]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[describe]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-clear]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-clear-subject]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-composite]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-detour]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-detours]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-export]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-return]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-show]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-subject]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-subjects]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-tail]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-topics]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[forget]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[link]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[list-entities]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[list-linkages]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[list-queries]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-bulk-forget]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-dedup]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-forget]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-link]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-list]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-promote]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-reclassify]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-retag]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-score]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-search]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[noise]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[recall]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[refine-show]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[run]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[save-query]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[search-dense]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[session-recall]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[session-show]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[stats]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[task-current]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[task-pop]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[task-push]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[task-swap]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[taxonomy-add]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[taxonomy-remove]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[top]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[unlink]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[unnoise]
+PASSED tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[unprotect]
+PASSED tests/test_verb_parity.py::test_every_cli_action_twin_has_an_action_pairing_row
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[add-entity]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[add-linkage-type]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[canon-link]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[canon-siblings]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[co-occur]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[concept-timeline]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[curator-drain]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[describe]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-clear]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-clear-subject]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-composite]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-detour]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-detours]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-export]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-return]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-show]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-subject]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-subjects]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-tail]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-topics]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[forget]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[link]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[list-entities]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[list-linkages]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[list-queries]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[noise]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[recall]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[refine-show]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[run]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[save-query]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[search-dense]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[session-recall]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[session-show]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[stats]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[task-current]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[task-pop]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[task-push]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[task-swap]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[taxonomy-add]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[taxonomy-remove]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[top]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[unlink]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[unnoise]
+PASSED tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[unprotect]
+PASSED tests/test_verb_parity.py::test_action_shape_differences_name_real_click_options
+PASSED tests/test_verb_parity.py::test_legacy_shrinks_by_exactly_the_batched_paths
+PASSED tests/test_brief_surfaces.py::test_brief_is_an_action_on_the_memory_verb
+PASSED tests/test_brief_surfaces.py::test_the_memory_verb_accepts_every_brief_parameter
+PASSED tests/test_brief_surfaces.py::test_the_generated_mcp_schema_exposes_every_brief_parameter
+PASSED tests/test_brief_surfaces.py::test_brief_routes_to_a_daemon_op_that_exists
+PASSED tests/test_brief_surfaces.py::test_cli_and_verb_agree_on_every_brief_default_not_a_subset
+PASSED tests/test_brief_surfaces.py::test_the_cli_defaults_match_the_modules_stated_defaults
+PASSED tests/test_brief_surfaces.py::test_the_cli_command_calls_the_verb_rather_than_reimplementing_it
+PASSED tests/test_brief_surfaces.py::test_the_cli_never_opens_a_write_store_directly
+PASSED tests/test_brief_surfaces.py::test_the_op_derives_briefs_on_the_read_path
+PASSED tests/test_brief_surfaces.py::test_saving_writes_one_memory_row_per_brief_under_the_writer_lock
+PASSED tests/test_brief_surfaces.py::test_not_saving_writes_nothing
+24 failed, 176 passed in 33.97s

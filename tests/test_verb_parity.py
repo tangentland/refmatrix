@@ -922,10 +922,13 @@ CLI_ACTION_INVOKE = {
                            {"action": "search", "query": "foo", "limit": 3}, "CANARY-hit"),
     ("memory", "promote"): (["memory", "promote", "x"], {"id": 4242},
                             {"action": "promote", "name": "x"}, "4242"),
-    ("memory", "brief"): (["memory", "brief", "--json"],
+    # bug-198: the CLI's `--scope` reaches the verb as the brief's own
+    # `compile_scope`, never as recall's `scope`.
+    ("memory", "brief"): (["memory", "brief", "--scope", "pattern", "--json"],
                           {"briefs": [{"class": "singleton", "label": "CANARY-brief",
                                        "finding": "f", "evidence": [1]}], "stats": {}},
-                          {"action": "brief"}, "CANARY-brief"),
+                          {"action": "brief", "compile_scope": "pattern", "scope": None},
+                          "CANARY-brief"),
     ("memory", "forget"): (["memory", "forget", "x", "--yes"], {"forgotten": True},
                            {"action": "forget", "name": "x"}, "forgot"),
     ("memory", "reclassify"): (["memory", "reclassify", "--to", "new", "--like", "a*",
