@@ -1,0 +1,298 @@
+# task 26.2 RED run at HEAD 8a867bc (src unmodified: 0 changed src files), 2026-11-10T19:28:26Z
+# interpreter .venv-eval/bin/python -B -m pytest -p no:cacheprovider, PYTHONPATH=/Volumes/littlebig/refmatrix-plan26-2/src
+## 1. new tests (expected: all RED except the no-gmd_source_path pin, which has a mutation proof below)
+FFFFFFFFFFF.FFFFFFFFFFFF                                                 [100%]
+=================================== FAILURES ===================================
+__________ test_ac1_in_process_move_refreshes_the_row_and_its_anchors __________
+tests/test_bridge_move_safety.py:261: in test_ac1_in_process_move_refreshes_the_row_and_its_anchors
+    _ac1_assert(root, before, new)
+tests/test_bridge_move_safety.py:242: in _ac1_assert
+    assert after["source_path"] == new, \
+E   AssertionError: memory_content.metadata.source_path is '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-qokhiumc/memory/a/x.md', not the moved '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-qokhiumc/memory/b/x.md'
+E   assert '/private/var...memory/a/x.md' == '/private/var...memory/b/x.md'
+E     
+E     Skipping 70 identical leading characters in diff, use -v to show
+E     - mc/memory/b/x.md
+E     ?           ^
+E     + mc/memory/a/x.md
+E     ?           ^
+____________ test_ac1_moved_row_keeps_its_protected_and_noise_flags ____________
+tests/test_bridge_move_safety.py:273: in test_ac1_moved_row_keeps_its_protected_and_noise_flags
+    _ac1_assert(root, before, new)
+tests/test_bridge_move_safety.py:242: in _ac1_assert
+    assert after["source_path"] == new, \
+E   AssertionError: memory_content.metadata.source_path is '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-1ne26ars/memory/a/x.md', not the moved '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-1ne26ars/memory/b/x.md'
+E   assert '/private/var...memory/a/x.md' == '/private/var...memory/b/x.md'
+E     
+E     Skipping 70 identical leading characters in diff, use -v to show
+E     - rs/memory/b/x.md
+E     ?           ^
+E     + rs/memory/a/x.md
+E     ?           ^
+____________ test_ac1_daemon_move_refreshes_the_row_and_its_anchors ____________
+tests/test_bridge_move_safety.py:287: in test_ac1_daemon_move_refreshes_the_row_and_its_anchors
+    _ac1_assert(root, before, new)
+tests/test_bridge_move_safety.py:242: in _ac1_assert
+    assert after["source_path"] == new, \
+E   AssertionError: memory_content.metadata.source_path is '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-tj3gqzr6/memory/a/x.md', not the moved '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-tj3gqzr6/memory/b/x.md'
+E   assert '/private/var...memory/a/x.md' == '/private/var...memory/b/x.md'
+E     
+E     Skipping 70 identical leading characters in diff, use -v to show
+E     - r6/memory/b/x.md
+E     ?           ^
+E     + r6/memory/a/x.md
+E     ?           ^
+___________ test_ac1_symlinked_memdir_move_stores_the_resolved_path ____________
+tests/test_bridge_move_safety.py:300: in test_ac1_symlinked_memdir_move_stores_the_resolved_path
+    _ac1_assert(root, before, str((real / "b" / "x.md").resolve()))
+tests/test_bridge_move_safety.py:242: in _ac1_assert
+    assert after["source_path"] == new, \
+E   AssertionError: memory_content.metadata.source_path is '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-b9b6gfa4/real-memory/a/x.md', not the moved '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-b9b6gfa4/real-memory/b/x.md'
+E   assert '/private/var...memory/a/x.md' == '/private/var...memory/b/x.md'
+E     
+E     Skipping 75 identical leading characters in diff, use -v to show
+E     - al-memory/b/x.md
+E     ?           ^
+E     + al-memory/a/x.md
+E     ?           ^
+_________ test_ac1b_every_row_on_the_old_path_is_refreshed_and_counted _________
+tests/test_bridge_move_safety.py:322: in test_ac1b_every_row_on_the_old_path_is_refreshed_and_counted
+    assert _mem(root, "x")["source_path"] == new
+E   AssertionError: assert '/private/var...memory/a/x.md' == '/private/var...memory/b/x.md'
+E     
+E     Skipping 70 identical leading characters in diff, use -v to show
+E     - 68/memory/b/x.md
+E     ?           ^
+E     + 68/memory/a/x.md
+E     ?           ^
+----------------------------- Captured stderr call -----------------------------
+# rmx: warning: memory-partition probe failed (no daemon for /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-ku6rnu68/proj/.refmatrix, and its catalog could not be read to find the memory partition (BinderException: Binder Error: Unique file handle conflict: Cannot attach "rmx_ro" - the database file "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-ku6rnu68/proj/.refmatrix/catalog.duckdb" is already attached by database "catalog") — another process holds it; retry shortly); assuming the project partition for THIS command only
+________________ test_ac1b_daemon_leg_refreshes_the_legacy_row _________________
+tests/test_bridge_move_safety.py:346: in test_ac1b_daemon_leg_refreshes_the_legacy_row
+    assert _mem(root, "legacy-x")["source_path"] == new
+E   AssertionError: assert '/private/var...memory/a/x.md' == '/private/var...memory/b/x.md'
+E     
+E     Skipping 70 identical leading characters in diff, use -v to show
+E     - 9z/memory/b/x.md
+E     ?           ^
+E     + 9z/memory/a/x.md
+E     ?           ^
+_________________ test_ac1b_marker_off_twin_refreshes_nothing __________________
+tests/test_bridge_move_safety.py:360: in test_ac1b_marker_off_twin_refreshes_nothing
+    assert out.get(k) == 0, f"marker-off bridge result {k}={out.get(k)!r}, expected 0"
+E   AssertionError: marker-off bridge result moved=None, expected 0
+E   assert None == 0
+E    +  where None = <built-in method get of dict object at 0x11e62b240>('moved')
+E    +    where <built-in method get of dict object at 0x11e62b240> = {'doc_drop_failed': [], 'embed': {'batches': 1, 'capped': False, 'embedded': 1, 'error': None, ...}, 'error': None, 'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-sspbdocq/memory', ...}.get
+----------------------------- Captured stderr call -----------------------------
+# rmx: warning: memory-partition probe failed (no daemon for /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-sspbdocq/proj/.refmatrix, and its catalog could not be read to find the memory partition (BinderException: Binder Error: Unique file handle conflict: Cannot attach "rmx_ro" - the database file "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-sspbdocq/proj/.refmatrix/catalog.duckdb" is already attached by database "catalog") — another process holds it; retry shortly); assuming the project partition for THIS command only
+______________ test_ac1b_legacy_refresh_survives_rebuild_from_log ______________
+tests/test_bridge_move_safety.py:369: in test_ac1b_legacy_refresh_survives_rebuild_from_log
+    assert _mem(root, "legacy-x")["source_path"] == new
+E   AssertionError: assert '/private/var...memory/a/x.md' == '/private/var...memory/b/x.md'
+E     
+E     Skipping 70 identical leading characters in diff, use -v to show
+E     - l6/memory/b/x.md
+E     ?           ^
+E     + l6/memory/a/x.md
+E     ?           ^
+_ test_ac1b_symlink_form_id_row_is_stale_before_and_still_counts_its_legacy_row _
+tests/test_bridge_move_safety.py:407: in test_ac1b_symlink_form_id_row_is_stale_before_and_still_counts_its_legacy_row
+    assert _mem(root, "x")["source_path"] == new
+E   AssertionError: assert '/var/folders...memory/a/x.md' == '/private/var...memory/b/x.md'
+E     
+E     - /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-8hdu1cjb/real-memory/b/x.md
+E     ? --------                                                                 -----       ^
+E     + /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-8hdu1cjb/memory/a/x.md
+E     ?                                                                         ^
+----------------------------- Captured stderr call -----------------------------
+# rmx: warning: memory-partition probe failed (no daemon for /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-8hdu1cjb/proj/.refmatrix, and its catalog could not be read to find the memory partition (BinderException: Binder Error: Unique file handle conflict: Cannot attach "rmx_ro" - the database file "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-8hdu1cjb/proj/.refmatrix/catalog.duckdb" is already attached by database "catalog") — another process holds it; retry shortly); assuming the project partition for THIS command only
+________ test_ac2_unchanged_file_is_skipped_counted_and_writes_nothing _________
+tests/test_bridge_move_safety.py:428: in test_ac2_unchanged_file_is_skipped_counted_and_writes_nothing
+    assert out.get("skipped_unchanged") == 2, \
+E   AssertionError: skipped_unchanged=None, expected 2 (x and y)
+E   assert None == 2
+E    +  where None = <built-in method get of dict object at 0x11e4db580>('skipped_unchanged')
+E    +    where <built-in method get of dict object at 0x11e4db580> = {'doc_drop_failed': [], 'embed': {'batches': 1, 'capped': False, 'embedded': 0, 'error': None, ...}, 'error': None, 'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-_c90fpum/memory', ...}.get
+----------------------------- Captured stderr call -----------------------------
+# rmx: warning: memory-partition probe failed (no daemon for /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-_c90fpum/proj/.refmatrix, and its catalog could not be read to find the memory partition (BinderException: Binder Error: Unique file handle conflict: Cannot attach "rmx_ro" - the database file "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-_c90fpum/proj/.refmatrix/catalog.duckdb" is already attached by database "catalog") — another process holds it; retry shortly); assuming the project partition for THIS command only
+______________ test_ac2_symlinked_memdir_unchanged_compares_equal ______________
+tests/test_bridge_move_safety.py:445: in test_ac2_symlinked_memdir_unchanged_compares_equal
+    assert out.get("skipped_unchanged") == 2 and out.get("stale_before") == 0, out
+E   AssertionError: {'doc_drop_failed': [], 'embed': {'batches': 1, 'capped': False, 'embedded': 0, 'error': None, ...}, 'error': None, 'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-bl0qvupe/memory', ...}
+E   assert (None == 2)
+E    +  where None = <built-in method get of dict object at 0x11e605840>('skipped_unchanged')
+E    +    where <built-in method get of dict object at 0x11e605840> = {'doc_drop_failed': [], 'embed': {'batches': 1, 'capped': False, 'embedded': 0, 'error': None, ...}, 'error': None, 'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-bl0qvupe/memory', ...}.get
+----------------------------- Captured stderr call -----------------------------
+# rmx: warning: memory-partition probe failed (no daemon for /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-bl0qvupe/proj/.refmatrix, and its catalog could not be read to find the memory partition (BinderException: Binder Error: Unique file handle conflict: Cannot attach "rmx_ro" - the database file "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-bl0qvupe/proj/.refmatrix/catalog.duckdb" is already attached by database "catalog") — another process holds it; retry shortly); assuming the project partition for THIS command only
+___________________ test_ac2_doc_row_gate_uses_entities_path ___________________
+tests/test_bridge_move_safety.py:481: in test_ac2_doc_row_gate_uses_entities_path
+    assert _with_store(root, _path) == [str((tree / "b" / "d.md").resolve())]
+E   AssertionError: assert ['/private/va.../docs/a/d.md'] == ['/private/va.../docs/b/d.md']
+E     
+E     At index 0 diff: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-y85_7pxd/docs/a/d.md' != '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-y85_7pxd/docs/b/d.md'
+E     Use -v to get more diff
+_______________ test_ac3_missing_source_path_is_reingested_once ________________
+tests/test_bridge_move_safety.py:492: in test_ac3_missing_source_path_is_reingested_once
+    assert _mem(root, "x")["source_path"] == str((memdir / "a" / "x.md").resolve())
+E   AssertionError: assert None == '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-gdh8xy22/memory/a/x.md'
+E    +  where '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-gdh8xy22/memory/a/x.md' = str(PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-gdh8xy22/memory/a/x.md'))
+E    +    where PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-gdh8xy22/memory/a/x.md') = resolve()
+E    +      where resolve = ((PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-gdh8xy22/memory') / 'a') / 'x.md').resolve
+----------------------------- Captured stderr call -----------------------------
+# rmx: warning: memory-partition probe failed (no daemon for /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-gdh8xy22/proj/.refmatrix, and its catalog could not be read to find the memory partition (BinderException: Binder Error: Unique file handle conflict: Cannot attach "rmx_ro" - the database file "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-gdh8xy22/proj/.refmatrix/catalog.duckdb" is already attached by database "catalog") — another process holds it; retry shortly); assuming the project partition for THIS command only
+_________ test_ac3_dry_run_reports_refresh_pending_and_writes_nothing __________
+tests/test_bridge_move_safety.py:510: in test_ac3_dry_run_reports_refresh_pending_and_writes_nothing
+    out = _bridge(memdir, "--dry-run")
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_bridge_move_safety.py:113: in _bridge
+    return _invoke(["ingest-gmd", "--as-memory", *extra, str(memdir)])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_bridge_move_safety.py:107: in _invoke
+    assert r.exit_code == 0, f"rmx {' '.join(map(str, args))}: exit {r.exit_code}\n" \
+E   AssertionError: rmx ingest-gmd --as-memory --dry-run /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-sxb0hgmr/memory: exit 2
+E     Usage: main ingest-gmd [OPTIONS] TARGETS...
+E     Try 'main ingest-gmd -h' for help.
+E     
+E     Error: No such option: --dry-run
+E     
+E     SystemExit(2)
+E   assert 2 == 0
+E    +  where 2 = <Result SystemExit(2)>.exit_code
+____________ test_ac3_dry_run_prints_the_four_pre_registered_terms _____________
+tests/test_bridge_move_safety.py:534: in test_ac3_dry_run_prints_the_four_pre_registered_terms
+    out = _bridge(link, "--dry-run")
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_bridge_move_safety.py:113: in _bridge
+    return _invoke(["ingest-gmd", "--as-memory", *extra, str(memdir)])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_bridge_move_safety.py:107: in _invoke
+    assert r.exit_code == 0, f"rmx {' '.join(map(str, args))}: exit {r.exit_code}\n" \
+E   AssertionError: rmx ingest-gmd --as-memory --dry-run /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-e814s8hf/memory: exit 2
+E     Usage: main ingest-gmd [OPTIONS] TARGETS...
+E     Try 'main ingest-gmd -h' for help.
+E     
+E     Error: No such option: --dry-run
+E     
+E     SystemExit(2)
+E   assert 2 == 0
+E    +  where 2 = <Result SystemExit(2)>.exit_code
+________________ test_ac3_store_snapshot_dry_run_is_daemonless _________________
+tests/test_bridge_move_safety.py:606: in test_ac3_store_snapshot_dry_run_is_daemonless
+    out = _snapshot_run(["-p", part, "ingest-gmd", "--as-memory", "--dry-run",
+tests/test_bridge_move_safety.py:598: in _snapshot_run
+    return _invoke(args)
+           ^^^^^^^^^^^^^
+tests/test_bridge_move_safety.py:107: in _invoke
+    assert r.exit_code == 0, f"rmx {' '.join(map(str, args))}: exit {r.exit_code}\n" \
+E   AssertionError: rmx -p proj ingest-gmd --as-memory --dry-run --store-snapshot /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-pn1ydq7r/snap/catalog.read.duckdb /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-pn1ydq7r/memory: exit 2
+E     Usage: main ingest-gmd [OPTIONS] TARGETS...
+E     Try 'main ingest-gmd -h' for help.
+E     
+E     Error: No such option: --dry-run
+E     
+E     SystemExit(2)
+E   assert 2 == 0
+E    +  where 2 = <Result SystemExit(2)>.exit_code
+____________ test_ac3_relocated_twin_reports_zero_through_path_map _____________
+tests/test_bridge_move_safety.py:620: in test_ac3_relocated_twin_reports_zero_through_path_map
+    raw = _snapshot_run(["-p", part, "ingest-gmd", "--as-memory", "--dry-run",
+tests/test_bridge_move_safety.py:598: in _snapshot_run
+    return _invoke(args)
+           ^^^^^^^^^^^^^
+tests/test_bridge_move_safety.py:107: in _invoke
+    assert r.exit_code == 0, f"rmx {' '.join(map(str, args))}: exit {r.exit_code}\n" \
+E   AssertionError: rmx -p proj ingest-gmd --as-memory --dry-run --store-snapshot /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-skps5ea2/snap/catalog.read.duckdb /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-skps5ea2/twin-memory: exit 2
+E     Usage: main ingest-gmd [OPTIONS] TARGETS...
+E     Try 'main ingest-gmd -h' for help.
+E     
+E     Error: No such option: --dry-run
+E     
+E     SystemExit(2)
+E   assert 2 == 0
+E    +  where 2 = <Result SystemExit(2)>.exit_code
+________ test_ac4_in_process_duplicate_id_is_refused_counted_and_named _________
+tests/test_bridge_move_safety.py:673: in test_ac4_in_process_duplicate_id_is_refused_counted_and_named
+    _assert_dup_reported(out, paths, "in-process bridge")
+tests/test_bridge_move_safety.py:651: in _assert_dup_reported
+    assert dups is not None, f"{where}: bridge result carries no duplicate_ids: {out}"
+E   AssertionError: in-process bridge: bridge result carries no duplicate_ids: {'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-mzem6ms2/memory', 'report': 'ingested 2 doc(s), 2 node(s), 0 rel: edge(s), 7 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nmemory embed: 1 row(s) now reachable by recall in proj', 'error': None, 'skipped_non_gmd': 0, 'skipped_unparseable': [], 'skipped_index': [], 'skipped': 0, 'skipped_paths': [], 'waited': False, 'waited_job': None, 'partition': 'proj', 'embed': {'partition': 'proj', 'embedded': 1, 'remaining': 0, 'batches': 1, 'capped': False, 'error': None}, 'doc_drop_failed': []}
+E   assert None is not None
+----------------------------- Captured stderr call -----------------------------
+# rmx: warning: memory-partition probe failed (no daemon for /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-mzem6ms2/proj/.refmatrix, and its catalog could not be read to find the memory partition (BinderException: Binder Error: Unique file handle conflict: Cannot attach "rmx_ro" - the database file "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-mzem6ms2/proj/.refmatrix/catalog.duckdb" is already attached by database "catalog") — another process holds it; retry shortly); assuming the project partition for THIS command only
+__________________ test_ac4_ingest_stats_carry_duplicate_ids ___________________
+tests/test_bridge_move_safety.py:688: in test_ac4_ingest_stats_carry_duplicate_ids
+    assert [(i, sorted(map(str, ps))) for i, ps in st.duplicate_ids] == [("x", sorted(paths))]
+                                                   ^^^^^^^^^^^^^^^^
+E   AttributeError: 'IngestStats' object has no attribute 'duplicate_ids'
+__________ test_ac4_daemon_duplicate_id_is_refused_counted_and_named ___________
+tests/test_bridge_move_safety.py:704: in test_ac4_daemon_duplicate_id_is_refused_counted_and_named
+    _assert_dup_reported(out, paths, "daemon bridge")
+tests/test_bridge_move_safety.py:651: in _assert_dup_reported
+    assert dups is not None, f"{where}: bridge result carries no duplicate_ids: {out}"
+E   AssertionError: daemon bridge: bridge result carries no duplicate_ids: {'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-5qve2_d5/memory', 'report': 'ingested 2 doc(s), 2 node(s), 0 rel: edge(s), 7 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nmemory embed: 1 row(s) now reachable by recall in proj', 'error': None, 'skipped_non_gmd': 0, 'skipped_unparseable': [], 'skipped_index': [], 'skipped': 0, 'skipped_paths': [], 'waited': False, 'waited_job': None, 'partition': 'proj', 'embed': {'partition': 'proj', 'embedded': 1, 'remaining': 0, 'batches': 1, 'capped': False, 'error': None}, 'doc_drop_failed': []}
+E   assert None is not None
+_______________ test_ac4_waited_job_result_carries_duplicate_ids _______________
+tests/test_bridge_move_safety.py:724: in test_ac4_waited_job_result_carries_duplicate_ids
+    _assert_dup_reported(out, paths, "waited bridge")
+tests/test_bridge_move_safety.py:651: in _assert_dup_reported
+    assert dups is not None, f"{where}: bridge result carries no duplicate_ids: {out}"
+E   AssertionError: waited bridge: bridge result carries no duplicate_ids: {'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-ltt6njjb/memory', 'report': 'ingested 352 doc(s), 352 node(s), 0 rel: edge(s), 1057 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage types: lead, part-of\nmemory embed: 351 row(s) now reachable by recall in proj', 'error': None, 'skipped_non_gmd': 0, 'skipped_unparseable': [], 'skipped_index': [], 'skipped': 0, 'skipped_paths': [], 'waited': True, 'waited_job': 'dbdbafd66ff2', 'partition': 'proj', 'embed': None, 'doc_drop_failed': []}
+E   assert None is not None
+________________ test_ac4_save_state_output_names_the_duplicate ________________
+tests/test_bridge_move_safety.py:739: in test_ac4_save_state_output_names_the_duplicate
+    assert "duplicate_ids" in flat and all(p in flat for p in paths), flat
+E   AssertionError: save-state /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-hknlcbo1/memory/ savestate_s262.md (1 events, session s-262, env) memory bridge /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-hknlcbo1/memory → store: ingested 3 doc(s), 4 node(s), 0 rel: edge(s), 18 mention(s) skipped_non_gmd: 0 skipped_unparseable: 0 skipped_index: 1 (MEMORY.md) new linkage types: lead, part-of, realizes unresolved refs: 4 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-hknlcbo1/memory/savestate_s262.md:21: [[feedback_save_state_means_handoff]] /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-hknlcbo1/memory/savestate_s262.md:21: [[[[feedback_save_state_means_handoff]]]] /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-hknlcbo1/memory/savestate_s262.md:22: [[feedback_recall_state_means_resume]] /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-hknlcbo1/memory/savestate_s262.md:22: [[[[feedback_recall_state_means_resume]]]] memory embed: 2 row(s) now reachable by recall in proj MEMORY.md: 1 -> 3 lines, 191 chars (caps 200 lines / 24000 chars; 3 memories on disk)
+E   assert ('duplicate_ids' in 'save-state /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-hknlcbo1/memory/ savestate_s262.md (1 even... now reachable by recall in proj MEMORY.md: 1 -> 3 lines, 191 chars (caps 200 lines / 24000 chars; 3 memories on disk)')
+______ test_ac5_vacuum_and_sync_after_a_move_keep_the_row_and_its_anchors ______
+tests/test_bridge_move_safety.py:762: in test_ac5_vacuum_and_sync_after_a_move_keep_the_row_and_its_anchors
+    assert set(anchors) == {"x#root", "x#one", "x#two"}, f"anchors after vacuum + sync: {anchors}"
+E   AssertionError: anchors after vacuum + sync: {}
+E   assert set() == {'x#one', 'x#root', 'x#two'}
+E     
+E     Extra items in the right set:
+E     'x#two'
+E     'x#root'
+E     'x#one'
+E     Use -v to get more diff
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_bridge_move_safety.py::test_ac2_no_gmd_source_path_key_is_added
+FAILED tests/test_bridge_move_safety.py::test_ac1_in_process_move_refreshes_the_row_and_its_anchors
+FAILED tests/test_bridge_move_safety.py::test_ac1_moved_row_keeps_its_protected_and_noise_flags
+FAILED tests/test_bridge_move_safety.py::test_ac1_daemon_move_refreshes_the_row_and_its_anchors
+FAILED tests/test_bridge_move_safety.py::test_ac1_symlinked_memdir_move_stores_the_resolved_path
+FAILED tests/test_bridge_move_safety.py::test_ac1b_every_row_on_the_old_path_is_refreshed_and_counted
+FAILED tests/test_bridge_move_safety.py::test_ac1b_daemon_leg_refreshes_the_legacy_row
+FAILED tests/test_bridge_move_safety.py::test_ac1b_marker_off_twin_refreshes_nothing
+FAILED tests/test_bridge_move_safety.py::test_ac1b_legacy_refresh_survives_rebuild_from_log
+FAILED tests/test_bridge_move_safety.py::test_ac1b_symlink_form_id_row_is_stale_before_and_still_counts_its_legacy_row
+FAILED tests/test_bridge_move_safety.py::test_ac2_unchanged_file_is_skipped_counted_and_writes_nothing
+FAILED tests/test_bridge_move_safety.py::test_ac2_symlinked_memdir_unchanged_compares_equal
+FAILED tests/test_bridge_move_safety.py::test_ac2_doc_row_gate_uses_entities_path
+FAILED tests/test_bridge_move_safety.py::test_ac3_missing_source_path_is_reingested_once
+FAILED tests/test_bridge_move_safety.py::test_ac3_dry_run_reports_refresh_pending_and_writes_nothing
+FAILED tests/test_bridge_move_safety.py::test_ac3_dry_run_prints_the_four_pre_registered_terms
+FAILED tests/test_bridge_move_safety.py::test_ac3_store_snapshot_dry_run_is_daemonless
+FAILED tests/test_bridge_move_safety.py::test_ac3_relocated_twin_reports_zero_through_path_map
+FAILED tests/test_bridge_move_safety.py::test_ac4_in_process_duplicate_id_is_refused_counted_and_named
+FAILED tests/test_bridge_move_safety.py::test_ac4_ingest_stats_carry_duplicate_ids
+FAILED tests/test_bridge_move_safety.py::test_ac4_daemon_duplicate_id_is_refused_counted_and_named
+FAILED tests/test_bridge_move_safety.py::test_ac4_waited_job_result_carries_duplicate_ids
+FAILED tests/test_bridge_move_safety.py::test_ac4_save_state_output_names_the_duplicate
+FAILED tests/test_bridge_move_safety.py::test_ac5_vacuum_and_sync_after_a_move_keep_the_row_and_its_anchors
+23 failed, 1 passed in 140.36s (0:02:20)
+## 2. AC-6 + neighbours stay green at HEAD
+pyc-guard: recompiled 37 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+................................................................         [100%]
+64 passed in 248.24s (0:04:08)
+## 3. mutation proof for test_ac2_no_gmd_source_path_key_is_added (passes at HEAD)
+# mutation: _write_content_hash also writes existing['gmd_source_path']='MUTANT'; restored with git checkout
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: a gmd_source_path key was added: ['{"gmd_content_hash": "c6e0cfa37ef416fb1f5b3fee4b18b73c937ffaf1", "gmd_pass2_done": true, "gmd_source_path": "MUTANT"}', '{"gmd_content_hash": "253553978a0f9abdd2874b0de68f8746a41c1aea", "gmd_pass2_done": true, "gmd_source_path": "MUTANT"}']
+    assert not ['{"gmd_content_hash": "c6e0cfa37ef416fb1f5b3fee4b18b73c937ffaf1", "gmd_pass2_done": true, "gmd_source_path": "MUTANT"...{"gmd_content_hash": "253553978a0f9abdd2874b0de68f8746a41c1aea", "gmd_pass2_done": true, "gmd_source_path": "MUTANT"}']
+/Volumes/littlebig/refmatrix-plan26-2/tests/test_bridge_move_safety.py:462: AssertionError: a gmd_source_path key was added: ['{"gmd_content_hash": "c6e0cfa37ef416fb1f5b3fee4b18b73c937ffaf1", "gmd_pass2_done": true, "gmd_source_path": "MUTANT"}', '{"gmd_content_hash": "253553978a0f9abdd2874b0de68f8746a41c1aea", "gmd_pass2_done": true, "gmd_source_path": "MUTANT"}']
+=========================== short test summary info ============================
+FAILED tests/test_bridge_move_safety.py::test_ac2_no_gmd_source_path_key_is_added
+1 failed, 23 deselected in 5.71s
