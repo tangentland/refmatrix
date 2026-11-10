@@ -93,4 +93,32 @@ rel: derives-from -> [[bsd-task21.1-context-usage-r3-cf7e4bb]]
 
 ## Open {#open}
 
-- The AC-6 frozen fixture waits on the user (deferral registry row, cutting command named).
+- The AC-6 frozen fixture is committed (2026-10-19, [[#ac6-fixture]]). AC-6 is RED on bug-196.
+
+## AC-6 fixture measured (2026-10-19, branch `ac6-fixture`) {#ac6-fixture}
+
+rel: derives-from -> [[task-21.1-context-usage-telemetry#rev-round-14]]
+
+The user's cut was recounted with an independent script (`json` + string `ts` compares, no
+report code) over [2026-09-23, 2026-10-07T11:06:35).
+
+- **context-replica: 3.** It matches.
+- **grep-replica: 1,121.** Case (b), another cut. Plan-21's 1,119 is reproduced exactly, with
+  its 837 `dropin` and 21 `index`, by the upper bound `2026-10-07T11:06`, which bsd 3104a81
+  states. The two extra rows are 11:06:04 `dropin` greps inside AC-6's window. The pin and the
+  spec are now 1,121.
+- **memory recall: 34.** Case (a), a report defect, bug-196. The report prints 244: 201
+  `prompt_recall` + 6 `session_start` + 3 `precompact` (all `source=hook`) + 34 `recall`
+  (`source=unknown`, the agent's own calls). The original 34 is the exploration's "(agent)" row,
+  with 68 = 34 start + 34 end. R7's per-channel split is missing on the cli.log leg. The RED test
+  is `test_ac6_cli_log_recalls_are_split_per_channel`. `src/` is not edited here.
+- **Not (c).** `query.log` has no out-of-order rows, and the cut filters by `ts`.
+- **d8f and size.** The first cut leaked four grep patterns that began with `-` as "flag names".
+  It was 24.8 MB in total. The tool now checks flag shape, redacts idempotently, keeps
+  [2026-09-22, cut) and keeps only `memory` rows of cli.log. `--from-fixture` re-cut the user's
+  files (never the live logs). The result is 1.6 MB, with every kept row byte-identical to the
+  user's cut and the re-cut reproducible by sha256. The manifest records `origin_sources`,
+  `fixture_sha256` and the per-channel recall counts.
+- **Tests** (`workflow/review-output/pytest-ac6-r14.log`): 31 passed, 2 failed. The failures are
+  AC-6 (only the 34 assertion: grep 1,121 passes) and the new RED test. Both fail on bug-196.
+
