@@ -6963,6 +6963,8 @@ class Store:
 
         con = self._connect()
         compiled: dict = {sc: 0 for sc in MEMORY_COMPILE_SCOPE_PASSES}
+        # Scopes this code does not know, counted by name (bug-197).
+        unknown: dict = {}
         for r in con.execute(
             "SELECT mc.metadata FROM entities e "
             "JOIN memory_content mc ON mc.entity_id = e.id "
@@ -6976,10 +6978,16 @@ class Store:
             if sc not in compiled:
                 # A scope this code does not know cannot be judged against a
                 # pass; reporting it as "fine" would be the silent state this
-                # record exists to remove.
-                raise ValueError(
-                    f"compiled subject with unknown compiled_scope {sc!r}; "
-                    f"known scopes: {sorted(MEMORY_COMPILE_SCOPE_PASSES)}")
+                # record exists to remove. But fail-closed belongs on THAT
+                # scope's record, not on this function: it runs inside
+                # `derive_status`, and a raise here took the whole partition
+                # verdict with it — ping health set `derive_error`, `rmx
+                # daemon status` printed `derive: unknown`, and `rmx derive
+                # status` failed (bug-197, ch-bsd 26.6 r2 #m-1-r2,
+                # 2026-11-10). Reachable after a rollback from a release that
+                # writes a new scope, or by a hand-edited row.
+                unknown[sc] = unknown.get(sc, 0) + 1
+                continue
             compiled[sc] += 1
         stamps = {r["pass_name"]: r for r in side_rows}
         scopes: dict = {}
@@ -7000,6 +7008,13 @@ class Store:
                 "behind_code": behind,
                 "needs_compile": behind or (stamp is None and compiled[sc] > 0),
             }
+        for sc, n in sorted(unknown.items()):
+            # Never judged, so never current: `needs_compile` is True and the
+            # renderer prints `scope <name>: unknown to this rmx`. The known
+            # scopes' records and the top-level (memory-scope) fields above
+            # are untouched by it.
+            scopes[sc] = {"unknown": True, "needs_compile": True,
+                          "compiled_subjects": n}
         return {**scopes["memory"], "scopes": scopes}
 
     def clear_tracked_stamps(self, *, like: str | None = None) -> dict:

@@ -72,6 +72,8 @@ from rich.table import Table
 
 from refmatrix import __version__
 from refmatrix import brief as brief_mod
+# Already loaded by `brief`; module-level for `memory brief --scope`'s Choice.
+from refmatrix import consolidate as _consolidate_mod
 from refmatrix.handoff import (
     _SS_FOCUS_NOISE, _focus_digest, _ss_clean_focus, _ss_sh,
     compose_recall_state, compose_save_state, finalize_save_state,
@@ -3625,6 +3627,16 @@ def render_memory_compile_warning(status: "dict | None", *,
         st = scopes[scope] or {}
         if not st.get("needs_compile"):
             continue
+        if st.get("unknown"):
+            # bug-197 (2026-11-10): a `compiled_scope` this rmx has no pass for
+            # — a rollback from a release that writes a new scope, or a
+            # hand-edited row. It cannot be judged, so it is said, by name;
+            # there is no `--scope <name>` remedy to print for it here.
+            lines.append(
+                f"memory-compile: scope {scope}: unknown to this rmx{where}; "
+                f"{st.get('compiled_subjects', 0)} compiled subject(s) carry it — "
+                f"run the rmx that wrote them, or recompile")
+            continue
         fix = ("rmx memory compile --apply" if scope == "memory"
                else f"rmx memory compile --apply --scope {scope}")
         if st.get("behind_code"):
@@ -3679,6 +3691,16 @@ def daemon_status():
         try:
             resp = daemon_mod.call(root, "derive_status", {"all": True},
                                    timeout=5.0, retries=1)
+            if not (resp or {}).get("ok"):
+                # The op ANSWERED with an error. Before bug-197's fix this
+                # fell through to an empty result and printed nothing at all —
+                # a status screen silent about the one thing it was asked
+                # (found by the bug-197 RED author, 2026-11-10).
+                err = (resp or {}).get("error") or "derive_status returned no result"
+                console.print(
+                    f"derive: [red]error[/] — {rich_escape(str(err))}  "
+                    f"[yellow][UNVERIFIED][/]", soft_wrap=True)
+                resp = None
             result = (resp or {}).get("result") or {}
             parts = result.get("partitions")
             if parts:
@@ -13392,6 +13414,13 @@ def memory_compile(scope, k, threshold, threshold_pct, mutual, beta, gamma,
               help="Run `memory compile` first so the plan-derived classes "
                    "(corroborated, singleton) can run. Costs the clustering "
                    "pass; without it those two classes are SKIPPED and say so.")
+@click.option("--scope", "compile_scope",
+              type=click.Choice(_consolidate_mod.SCOPES),
+              default=_consolidate_mod.DEFAULT_SCOPE, show_default=True,
+              help="Compile scope whose corpus all four detectors read (and "
+                   "that --compile plans): memory = every memory except "
+                   "impressions and `tag: pattern` docs; pattern = impressions "
+                   "only. Not recall's project|global|both (bug-198).")
 @click.option("--save", is_flag=True,
               help="Persist each brief as a memory row in the brief/<class> "
                    "namespace (daemon-routed). Without it this is a read.")
@@ -13401,7 +13430,7 @@ def memory_compile(scope, k, threshold, threshold_pct, mutual, beta, gamma,
 @click.option("--limit", type=int, default=0,
               help="Show at most N briefs (0 = all).")
 def memory_brief(classes, min_members, min_dates, min_mentions, do_compile,
-                 save, as_gmd, as_json, limit):
+                 compile_scope, save, as_gmd, as_json, limit):
     """What the corpus knows solidly, and where it is thin.
 
     `memory compile` says what the store HAS. This says what it LACKS. Four
@@ -13427,15 +13456,17 @@ def memory_brief(classes, min_members, min_dates, min_mentions, do_compile,
     # ONE corpus for all four detectors (26.6 r1 remedy #rm-one-corpus, ch-bsd
     # r1 #s-3): the plan and the briefs name the same compile scope, so
     # `corroborated`/`singleton` (from the plan) and `contradicted`/
-    # `orphan-concept` (from the op) read the same rows.
-    kw["scope"] = consolidate.DEFAULT_SCOPE
+    # `orphan-concept` (from the op) read the same rows. The scope is the
+    # verb's `compile_scope`, never recall's `scope` (bug-198, 2026-11-10:
+    # before it, this was pinned to DEFAULT_SCOPE and the CLI could not brief
+    # the pattern corpus that MCP could).
+    kw["compile_scope"] = compile_scope
     if do_compile:
         # A PLAN only, on the read replica in this process: briefs are a read,
         # and the `memory_compile` op plans AND applies under the writer lock
         # (#rm-stale-refs: this comment described the removed plan-as-data
         # apply). The plan travels to the brief op as data.
-        kw["plan"] = consolidate.compile_memories(
-            _read_store(), scope=consolidate.DEFAULT_SCOPE)
+        kw["plan"] = consolidate.compile_memories(_read_store(), scope=compile_scope)
     if save:
         kw["save"] = True
 
