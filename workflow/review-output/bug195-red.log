@@ -1,0 +1,307 @@
+FFFFFFFFFFF                                                              [100%]
+=================================== FAILURES ===================================
+______ test_dry_run_classifies_every_cut_value_by_key_and_changes_nothing ______
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_dry_run_classifies_every_0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_dry_run_classifies_every_0/rmxhome')
+
+    def test_dry_run_classifies_every_cut_value_by_key_and_changes_nothing(memdir, rmx_home):
+        before = _sidecar_bytes(memdir)
+        rc, out = _run(memdir)
+        assert rc == 0, out
+>       assert "derived" in _line_naming(out, "feedback_derived.md"), out
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_hook_repair.py:132: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+out = 'MEMORY.md: 0 -> 4 lines, 276 chars (caps 200 lines / 24000 chars; 4 memories on disk)\n'
+key = 'feedback_derived.md'
+
+    def _line_naming(out: str, key: str) -> str:
+        lines = [ln for ln in out.splitlines() if key in ln]
+>       assert lines, f"no output line names {key!r}; output was:\n{out}"
+E       AssertionError: no output line names 'feedback_derived.md'; output was:
+E         MEMORY.md: 0 -> 4 lines, 276 chars (caps 200 lines / 24000 chars; 4 memories on disk)
+E         
+E       assert []
+
+tests/test_memory_hook_repair.py:84: AssertionError
+________ test_apply_drops_derived_and_bare_keeps_the_rest_and_backs_up _________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_apply_drops_derived_and_b0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_apply_drops_derived_and_b0/rmxhome')
+
+    def test_apply_drops_derived_and_bare_keeps_the_rest_and_backs_up(memdir, rmx_home):
+        before = _sidecar_bytes(memdir)
+        old = json.loads(before)
+        rc, out = _run(memdir, "--apply")
+        assert rc == 0, out
+        new = json.loads(_sidecar_bytes(memdir))
+>       assert "feedback_derived.md" not in new, "derived cut must be dropped (mutation: never dropped)"
+E       AssertionError: derived cut must be dropped (mutation: never dropped)
+E       assert 'feedback_derived.md' not in {'feedback_derived.md': 'Fix one condition in a gate and then check…', 'project_bare.md': '…', 'project_curated.md': '...itten hook whose full text is lost because the renderer cut…', 'project_fine.md': 'an intact curated hook with no cut'}
+
+tests/test_memory_hook_repair.py:152: AssertionError
+_________________ test_second_apply_writes_nothing_and_says_so _________________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_second_apply_writes_nothi0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_second_apply_writes_nothi0/rmxhome')
+
+    def test_second_apply_writes_nothing_and_says_so(memdir, rmx_home):
+        rc, out = _run(memdir, "--apply")
+        assert rc == 0, out
+>       assert "feedback_derived.md" not in json.loads(_sidecar_bytes(memdir)), out
+E       AssertionError: MEMORY.md: 0 -> 4 lines, 276 chars (caps 200 lines / 24000 chars; 4 memories on disk)
+E         
+E       assert 'feedback_derived.md' not in {'feedback_derived.md': 'Fix one condition in a gate and then check…', 'project_bare.md': '…', 'project_curated.md': '...itten hook whose full text is lost because the renderer cut…', 'project_fine.md': 'an intact curated hook with no cut'}
+E        +  where {'feedback_derived.md': 'Fix one condition in a gate and then check…', 'project_bare.md': '…', 'project_curated.md': '...itten hook whose full text is lost because the renderer cut…', 'project_fine.md': 'an intact curated hook with no cut'} = <function loads at 0x101246c40>(b'{\n"feedback_derived.md": "Fix one condition in a gate and then check\xe2\x80\xa6",\n"project_bare.md": "\xe2\x80\xa...e full text is lost because the renderer cut\xe2\x80\xa6",\n"project_fine.md": "an intact curated hook with no cut"\n}')
+E        +    where <function loads at 0x101246c40> = json.loads
+E        +    and   b'{\n"feedback_derived.md": "Fix one condition in a gate and then check\xe2\x80\xa6",\n"project_bare.md": "\xe2\x80\xa...e full text is lost because the renderer cut\xe2\x80\xa6",\n"project_fine.md": "an intact curated hook with no cut"\n}' = _sidecar_bytes(PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_second_apply_writes_nothi0/proj-slug/memory'))
+
+tests/test_memory_hook_repair.py:176: AssertionError
+___________ test_after_apply_write_renders_the_full_first_prose_hook ___________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_after_apply_write_renders0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_after_apply_write_renders0/rmxhome')
+
+    def test_after_apply_write_renders_the_full_first_prose_hook(memdir, rmx_home):
+        rc, out = _run(memdir, "--apply")
+        assert rc == 0, out
+>       assert "feedback_derived.md" not in json.loads(_sidecar_bytes(memdir)), out
+E       AssertionError: MEMORY.md: 0 -> 4 lines, 276 chars (caps 200 lines / 24000 chars; 4 memories on disk)
+E         
+E       assert 'feedback_derived.md' not in {'feedback_derived.md': 'Fix one condition in a gate and then check…', 'project_bare.md': '…', 'project_curated.md': '...itten hook whose full text is lost because the renderer cut…', 'project_fine.md': 'an intact curated hook with no cut'}
+E        +  where {'feedback_derived.md': 'Fix one condition in a gate and then check…', 'project_bare.md': '…', 'project_curated.md': '...itten hook whose full text is lost because the renderer cut…', 'project_fine.md': 'an intact curated hook with no cut'} = <function loads at 0x101246c40>(b'{\n"feedback_derived.md": "Fix one condition in a gate and then check\xe2\x80\xa6",\n"project_bare.md": "\xe2\x80\xa...e full text is lost because the renderer cut\xe2\x80\xa6",\n"project_fine.md": "an intact curated hook with no cut"\n}')
+E        +    where <function loads at 0x101246c40> = json.loads
+E        +    and   b'{\n"feedback_derived.md": "Fix one condition in a gate and then check\xe2\x80\xa6",\n"project_bare.md": "\xe2\x80\xa...e full text is lost because the renderer cut\xe2\x80\xa6",\n"project_fine.md": "an intact curated hook with no cut"\n}' = _sidecar_bytes(PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_after_apply_write_renders0/proj-slug/memory'))
+
+tests/test_memory_hook_repair.py:192: AssertionError
+_ test_a_derived_cut_longer_than_its_line_regains_the_full_hook_in_the_sidecar _
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_a_derived_cut_longer_than0')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_a_derived_cut_longer_than0/rmxhome')
+
+    def test_a_derived_cut_longer_than_its_line_regains_the_full_hook_in_the_sidecar(
+            tmp_path, rmx_home):
+        """The live shape: 39 of the 66 cuts were on index lines too short for the prose. The
+        line stays cut (that is the renderer's job); the sidecar must hold the FULL text again."""
+        d = tmp_path / "long" / "memory"
+        d.mkdir(parents=True)
+        prose = "A derived hook " + "that keeps going " * 14 + "until the end."
+        assert len(prose) > mi.MAX_LINE_CHARS
+        _mem(d, "feedback_long", title="Long", body=prose, mtype="feedback")
+        cut = prose[:120].rstrip() + "…"
+        _write_sidecar(d, {"feedback_long.md": cut})
+        rc, out = _run(d, "--apply")
+        assert rc == 0, out
+>       assert "derived" in _line_naming(out, "feedback_long.md"), out
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_hook_repair.py:214: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+out = 'MEMORY.md: 0 -> 1 lines, 151 chars (caps 200 lines / 24000 chars; 1 memories on disk)\n'
+key = 'feedback_long.md'
+
+    def _line_naming(out: str, key: str) -> str:
+        lines = [ln for ln in out.splitlines() if key in ln]
+>       assert lines, f"no output line names {key!r}; output was:\n{out}"
+E       AssertionError: no output line names 'feedback_long.md'; output was:
+E         MEMORY.md: 0 -> 1 lines, 151 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+E         
+E       assert []
+
+tests/test_memory_hook_repair.py:84: AssertionError
+____________ test_nested_path_keys_are_resolved_against_the_memdir _____________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_nested_path_keys_are_reso0')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_nested_path_keys_are_reso0/rmxhome')
+
+    def test_nested_path_keys_are_resolved_against_the_memdir(tmp_path, rmx_home):
+        """`impressions/<x>.md` keys exist in live sidecars; a cut there is classified from its
+        own file, not reported gone."""
+        d = tmp_path / "nest" / "memory"
+        d.mkdir(parents=True)
+        _mem(d, "impressions/impression_one", title="One", body=DERIVED_PROSE, mtype="impression")
+        _write_sidecar(d, {"impressions/impression_one.md": DERIVED_CUT})
+        rc, out = _run(d)
+        assert rc == 0, out
+>       assert "derived" in _line_naming(out, "impressions/impression_one.md"), out
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_hook_repair.py:228: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+out = 'MEMORY.md: 0 -> 1 lines, 119 chars (caps 200 lines / 24000 chars; 1 memories on disk)\n'
+key = 'impressions/impression_one.md'
+
+    def _line_naming(out: str, key: str) -> str:
+        lines = [ln for ln in out.splitlines() if key in ln]
+>       assert lines, f"no output line names {key!r}; output was:\n{out}"
+E       AssertionError: no output line names 'impressions/impression_one.md'; output was:
+E         MEMORY.md: 0 -> 1 lines, 119 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+E         
+E       assert []
+
+tests/test_memory_hook_repair.py:84: AssertionError
+________ test_an_organised_id_keyed_sidecar_is_classified_by_memory_id _________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_an_organised_id_keyed_sid0')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_an_organised_id_keyed_sid0/rmxhome')
+
+    def test_an_organised_id_keyed_sidecar_is_classified_by_memory_id(tmp_path, rmx_home):
+        """An organised dir (`.memory-layout`) keys its sidecar by memory id (task 26.1 AC-4). A
+        derived cut under an id key is dropped; an id with no memory is gone, untouched."""
+        d = tmp_path / "org" / "memory"
+        d.mkdir(parents=True)
+        (d / ".memory-layout").write_text(json.dumps({"layout": 1}), encoding="utf-8")
+        _mem(d, "feedback/feedback_derived", title="Derived", body=DERIVED_PROSE,
+             mtype="feedback")
+        _write_sidecar(d, {"feedback_derived": DERIVED_CUT, "project_vanished": GONE_CUT})
+        rc, out = _run(d, "--apply")
+        assert rc == 0, out
+>       assert "derived" in _line_naming(out, "feedback_derived"), out
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_hook_repair.py:243: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+out = 'MEMORY.md: 0 -> 1 lines, 88 chars (caps 200 lines / 24000 chars; 1 memories on disk)\nMEMORY.md: kept 1 curated hook(s) whose link is dead under their own key in .memory_hooks.json: project_vanished\n'
+key = 'feedback_derived'
+
+    def _line_naming(out: str, key: str) -> str:
+        lines = [ln for ln in out.splitlines() if key in ln]
+>       assert lines, f"no output line names {key!r}; output was:\n{out}"
+E       AssertionError: no output line names 'feedback_derived'; output was:
+E         MEMORY.md: 0 -> 1 lines, 88 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+E         MEMORY.md: kept 1 curated hook(s) whose link is dead under their own key in .memory_hooks.json: project_vanished
+E         
+E       assert []
+
+tests/test_memory_hook_repair.py:84: AssertionError
+__________ test_unwritable_backup_root_refuses_and_leaves_the_sidecar __________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_unwritable_backup_root_re0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_unwritable_backup_root_re0/rmxhome')
+
+    def test_unwritable_backup_root_refuses_and_leaves_the_sidecar(memdir, rmx_home):
+        root = rmx_home / "backups" / "memory-hooks"
+        root.mkdir(parents=True)
+        root.chmod(stat.S_IRUSR | stat.S_IXUSR)
+        try:
+            before = _sidecar_bytes(memdir)
+            rc, out = _run(memdir, "--apply")
+>           assert rc != 0, f"apply must refuse when the backup fails; output was:\n{out}"
+E           AssertionError: apply must refuse when the backup fails; output was:
+E             MEMORY.md: 0 -> 4 lines, 276 chars (caps 200 lines / 24000 chars; 4 memories on disk)
+E             
+E           assert 0 != 0
+
+tests/test_memory_hook_repair.py:259: AssertionError
+_____________ test_restore_sets_exactly_the_value_and_is_backed_up _____________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_restore_sets_exactly_the_0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_restore_sets_exactly_the_0/rmxhome')
+
+    def test_restore_sets_exactly_the_value_and_is_backed_up(memdir, rmx_home):
+        before = _sidecar_bytes(memdir)
+        text = "the full curated text, recovered from ~/.claude git; a=b stays whole"
+        rc, out = _run(memdir, "--apply", restore=[f"project_curated.md={text}"])
+        assert rc == 0, out
+        new = json.loads(_sidecar_bytes(memdir))
+>       assert new["project_curated.md"] == text, "split on the FIRST `=` only"
+E       AssertionError: split on the FIRST `=` only
+E       assert 'A hand-writt...renderer cut…' == 'the full cur...b stays whole'
+E         
+E         - the full curated text, recovered from ~/.claude git; a=b stays whole
+E         + A hand-written hook whose full text is lost because the renderer cut…
+
+tests/test_memory_hook_repair.py:274: AssertionError
+____________ test_unparseable_sidecar_fails_loud_and_writes_nothing ____________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_unparseable_sidecar_fails0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_unparseable_sidecar_fails0/rmxhome')
+
+    def test_unparseable_sidecar_fails_loud_and_writes_nothing(memdir, rmx_home):
+        (memdir / SIDECAR).write_text("{not json", encoding="utf-8")
+        for flags in ((), ("--apply",)):
+            rc, out = _run(memdir, *flags)
+            assert "Traceback" not in out, f"{flags}: a named failure, not a crash:\n{out}"
+>           assert rc != 0, f"{flags}: an unparseable sidecar must exit non-zero:\n{out}"
+E           AssertionError: (): an unparseable sidecar must exit non-zero:
+E             MEMORY.md: hook sidecar unreadable (JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)); folded entries may lose their curated hooks
+E             MEMORY.md: hook sidecar unreadable (JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)); folded entries may lose their curated hooks
+E             MEMORY.md: 0 -> 4 lines, 292 chars (caps 200 lines / 24000 chars; 4 memories on disk)
+E             
+E           assert 0 != 0
+
+tests/test_memory_hook_repair.py:289: AssertionError
+__________ test_unreadable_memory_file_fails_loud_and_writes_nothing ___________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_unreadable_memory_file_fa0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_unreadable_memory_file_fa0/rmxhome')
+
+    def test_unreadable_memory_file_fails_loud_and_writes_nothing(memdir, rmx_home):
+        f = memdir / "feedback_derived.md"
+        f.chmod(0)
+        try:
+            if os.access(f, os.R_OK):
+                pytest.fail("running as a user that ignores file modes; this check is unprovable")
+            before = _sidecar_bytes(memdir)
+            for flags in ((), ("--apply",)):
+                rc, out = _run(memdir, *flags)
+                # A crash is not a printed failure: HEAD's `write()` dies on this file with a
+                # PermissionError traceback, which would satisfy a bare `rc != 0`.
+>               assert "Traceback" not in out, f"{flags}: a named failure, not a crash:\n{out}"
+E               AssertionError: (): a named failure, not a crash:
+E                 MEMORY.md: feedback_derived.md: unreadable ([Errno 13] Permission denied: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_unreadable_memory_file_fa0/proj-slug/memory/feedback_derived.md'); keying its hook by the file stem
+E                 Traceback (most recent call last):
+E                   File "<frozen runpy>", line 203, in _run_module_as_main
+E                   File "<frozen runpy>", line 88, in _run_code
+E                   File "/Volumes/littlebig/refmatrix-bug195/src/refmatrix/memory_index.py", line 830, in <module>
+E                     raise SystemExit(main())
+E                                      ~~~~^^
+E                   File "/Volumes/littlebig/refmatrix-bug195/src/refmatrix/memory_index.py", line 825, in main
+E                     write(memdir)
+E                     ~~~~~^^^^^^^^
+E                   File "/Volumes/littlebig/refmatrix-bug195/src/refmatrix/memory_index.py", line 769, in write
+E                     entries = collect(memdir)
+E                   File "/Volumes/littlebig/refmatrix-bug195/src/refmatrix/memory_index.py", line 503, in collect
+E                     return [Entry(p, memdir, hooks) for p in memory_layout.iter_memory_files(memdir)]
+E                             ~~~~~^^^^^^^^^^^^^^^^^^
+E                   File "/Volumes/littlebig/refmatrix-bug195/src/refmatrix/memory_index.py", line 172, in __init__
+E                     text = path.read_text(errors="replace")
+E                   File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 787, in read_text
+E                     with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+E                          ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 771, in open
+E                     return io.open(self, mode, buffering, encoding, errors, newline)
+E                            ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                 PermissionError: [Errno 13] Permission denied: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-500/test_unreadable_memory_file_fa0/proj-slug/memory/feedback_derived.md'
+E                 
+E               assert 'Traceback' not in "MEMORY.md: ...erived.md'\n"
+E                 
+E                 'Traceback' is contained here:
+E                   file stem
+E                   Traceback (most recent call last):
+E                 ? +++++++++
+E                     File "<frozen runpy>", line 203, in _run_module_as_main
+E                     File "<frozen runpy>", line 88, in _run_code...
+E                 
+E                 ...Full output truncated (20 lines hidden), use '-vv' to show
+
+tests/test_memory_hook_repair.py:306: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_hook_repair.py::test_dry_run_classifies_every_cut_value_by_key_and_changes_nothing
+FAILED tests/test_memory_hook_repair.py::test_apply_drops_derived_and_bare_keeps_the_rest_and_backs_up
+FAILED tests/test_memory_hook_repair.py::test_second_apply_writes_nothing_and_says_so
+FAILED tests/test_memory_hook_repair.py::test_after_apply_write_renders_the_full_first_prose_hook
+FAILED tests/test_memory_hook_repair.py::test_a_derived_cut_longer_than_its_line_regains_the_full_hook_in_the_sidecar
+FAILED tests/test_memory_hook_repair.py::test_nested_path_keys_are_resolved_against_the_memdir
+FAILED tests/test_memory_hook_repair.py::test_an_organised_id_keyed_sidecar_is_classified_by_memory_id
+FAILED tests/test_memory_hook_repair.py::test_unwritable_backup_root_refuses_and_leaves_the_sidecar
+FAILED tests/test_memory_hook_repair.py::test_restore_sets_exactly_the_value_and_is_backed_up
+FAILED tests/test_memory_hook_repair.py::test_unparseable_sidecar_fails_loud_and_writes_nothing
+FAILED tests/test_memory_hook_repair.py::test_unreadable_memory_file_fails_loud_and_writes_nothing
+11 failed in 2.38s
