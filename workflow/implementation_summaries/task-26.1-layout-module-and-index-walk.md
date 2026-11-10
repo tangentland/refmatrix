@@ -283,3 +283,56 @@ All 4 were killed.
   timeout.
 - **A bare `…` with no sidecar value still wins**, which is HEAD's behaviour. With nothing to
   protect, the rule does not apply.
+
+## Follow-up r3, after ch-bsd 26.1 r3 {#followup-r3}
+
+rel: implements -> [[task-26.1-layout-module-and-index-walk#followup-r3]]
+rel: derives-from -> [[bsd-task-26.1-r3-followup-c9a035e]]
+
+This is TDD GREEN on branch `task-26.1-followup`, over RED `dff223d` (20 failing `test_r3_*` tests
+and 136 passing; `workflow/review-output/plan26/26.1-r3-red.log`). Fix commit `d59c1e0`. No test
+was written or edited. All of the changes are in `src/refmatrix/memory_index.py`.
+
+### What changed {#followup-r3-changes}
+
+| spec item | where | behaviour |
+|---|---|---|
+| #r3-dead (r3 #b-1) | `parse_hooks` deleted | `load_hooks` is the only index-hook reader |
+| #r3-room (r3 #s-1) | `_index_hook_records`, `_index_hook_wins(hook, cur, room: int)` | room is `MAX_LINE_CHARS - len(link part) - 3`. A `prefix…` of the existing value, or a bare `…`, keeps that value only when `len(value) > room`. On a line with room the index hook replaces the value, as at HEAD 61b3bde |
+| #r3-derived (r3 #m-1) | `load_hooks` + new `_link_identity(memdir, rel) -> (id, derived)` | the existing value is the sidecar value, else `_first_prose` of the linked file (`""` when the file is gone) |
+| #r3-one-parser (r3 #m-2) | `_parse_index_hooks` | returns `{rel: hook}` built from `_index_hook_records` |
+| #r3-pointers (r3 #m-3) | `_index_hook_records` | lines matching `_SAVES_RE` or `_FOLD_RE` are skipped. The `impressions/` pointer is still kept under its own non-path key |
+
+### Verification {#followup-r3-verification}
+
+Logs are in `workflow/review-output/plan26/`. Every run used `PYTHONPATH=$PWD/src` with the dev
+interpreter and `-B`, after clearing `__pycache__`.
+
+- `26.1-r3-green-index.log`: the four memory-index files, 156 of 156.
+- `26.1-r3-green-family.log`: `tests/test_memory*.py tests/test_save_state*.py
+  tests/test_verb_parity.py`, 494 of 494.
+
+### Mutation table (r3) {#followup-r3-mutations}
+
+The mutations ran one at a time against `d59c1e0`, over the four memory-index files. After each run,
+`git checkout -- src` restored the file. A final restore and `__pycache__` clear followed, and then
+a grep found all 4 fix texts. `git status --short src` was empty. Logs are `26.1-r3-mut-<name>.log`.
+
+| mutation | failed | killed by (first) |
+|---|---|---|
+| room check removed (`cut = True`) | 12 | `test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[edit-organised]` |
+| derived fallback removed (`cur` falls to `""`) | 8 | `test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-edit-organised]` |
+| pointer skip removed | 5 | `test_r3_pointers_the_save_state_pointer_never_replaces_the_savestate_hook[organised]` |
+| `_parse_index_hooks` re-forked, dash not stripped | 2 | `test_ac4_a_dead_link_hook_is_kept_under_its_path_and_reported`, `test_r3_one_parser_parse_index_hooks_is_the_projection_of_the_records` |
+
+All 4 were killed.
+
+### Flags (r3) {#followup-r3-flags}
+
+- **A derived value is looked up only through the link's own path.** When an index link names a
+  path whose file has moved, `_link_identity` finds no file and returns no derived value. The index
+  hook then wins, as it did at HEAD. A moved file's id-keyed sidecar value is still protected.
+- **The lead's family glob `tests/test_handoff*.py` matches no file in this tree.** The family run
+  used `tests/test_save_state*.py` instead.
+- **The restore of the live sidecar is not part of this change.** It is tracked as bug-195
+  (`#r3-restore`).

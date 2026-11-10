@@ -1,0 +1,78 @@
+.....................F.................................................. [ 46%]
+........................................F............................... [ 92%]
+............                                                             [100%]
+=================================== FAILURES ===================================
+________ test_ac4_a_dead_link_hook_is_kept_under_its_path_and_reported _________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-pt5ber19/memory')
+
+    def test_ac4_a_dead_link_hook_is_kept_under_its_path_and_reported(memdir):
+        """B4: "Links that are already dead are kept under their path and reported" -- a curated
+        hook is never silently discarded because its file is gone right now."""
+        for n in ("a", "b", "c"):      # top level, so HEAD's glob sees them and HEAD's write runs
+            mem(memdir, f"feedback_{n}.md", title=n.upper(), mtype="feedback", body=f"derived {n}")
+        (memdir / "MEMORY.md").write_text(
+            "- [A](feedback_a.md) — hook a\n"
+            "- [B](feedback_b.md) — hook b\n"
+            "- [C](feedback_c.md) — hook c\n"
+            "- [Gone](project_gone.md) — the dead link's hook\n", encoding="utf-8")
+        organise(memdir)
+        buf = io.StringIO()
+        mi.write(memdir, out=buf)
+>       assert sidecar(memdir).get("project_gone.md") == "the dead link's hook", sidecar(memdir)
+E       AssertionError: {'feedback_a': 'hook a', 'feedback_b': 'hook b', 'feedback_c': 'hook c', 'project_gone.md': "— the dead link's hook"}
+E       assert "— the dead link's hook" == "the dead link's hook"
+E         
+E         - the dead link's hook
+E         + — the dead link's hook
+E         ? ++
+
+tests/test_memory_index_layout.py:218: AssertionError
+____ test_r3_one_parser_parse_index_hooks_is_the_projection_of_the_records _____
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-r_20emb7/memory')
+
+    def test_r3_one_parser_parse_index_hooks_is_the_projection_of_the_records(memdir):
+        """r3 #m-2: `_parse_index_hooks` (read by `_dead_hooks`) and `_index_hook_records` (read by
+        `load_hooks`) repeated one partition + dash-strip. One parser: the dict is the `{rel:
+        hook}` projection of the records, on every line shape a live index carries. The records
+        carry the NUMERIC room (#r3-room), and skip generated pointers (#r3-pointers)."""
+        long_rel = "feedback_long.md"
+        cut_inside = ("- [" + CUT_TITLE + "](feedback_cut_inside_the_link_aaaa.md)")[
+            :mi.MAX_LINE_CHARS - 1] + "…"
+        lines = {
+            "feedback_a.md": "- [A](feedback_a.md) — curated a",
+            "feedback_dash.md": "- [Gamma — a dashed title](feedback_dash.md) — curated — dash",
+            "feedback_bare.md": "- [Bare](feedback_bare.md) —",
+            long_rel: _cut_line(f"- [Long]({long_rel})", LONG_HOOK),
+            "impressions/": ("- [ch-bsd impressions (2)](impressions/) — cross-run audit "
+                             "memories; full ledger in `workflow/bullshit/IMPRESSIONS.md`"),
+        }
+        pointer = ("- [Save-states (4), newest savestate_aaa111](savestate_aaa111.md) — session "
+                   "handoffs; `rmx recall-state` reads the newest")
+        fold = ("- 9 older project memories folded — `rmx memory list` or "
+                "`rmx memory search <term>` reaches them; nothing was deleted")
+        linkless = "- [" + LONG_TITLE[:mi.MAX_LINE_CHARS - 4] + "…"
+        idx = memdir / "MEMORY.md"
+        idx.write_text("\n".join(["# Hand index", "- [ ] todo: a prose line", *lines.values(),
+                                  pointer, fold, cut_inside, linkless]) + "\n", encoding="utf-8")
+        assert "](" in cut_inside and ")" not in cut_inside.split("](", 1)[1]
+        assert "](" not in linkless
+    
+        records = mi._index_hook_records(idx)
+        parsed = mi._parse_index_hooks(idx)
+>       assert parsed == {rel: hook for rel, (hook, _) in records.items()}, (parsed, records)
+E       AssertionError: ({'feedback_a.md': '— curated a', 'feedback_bare.md': '—', 'feedback_dash.md': '— curated — dash', 'feedback_long.md':...se the human who wrote it wanted the whole story in the index rather than in the memory itself, which is…', 171), ...})
+E       assert {'feedback_a....ich is…', ...} == {'feedback_a....ich is…', ...}
+E         
+E         Differing items:
+E         {'feedback_long.md': '— a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is…'} != {'feedback_long.md': 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is…'}
+E         {'impressions/': '— cross-run audit memories; full ledger in `workflow/bullshit/IMPRESSIONS.md`'} != {'impressions/': 'cross-run audit memories; full ledger in `workf...
+E         
+E         ...Full output truncated (5 lines hidden), use '-vv' to show
+
+tests/test_memory_index_layout.py:1343: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_ac4_a_dead_link_hook_is_kept_under_its_path_and_reported
+FAILED tests/test_memory_index_layout.py::test_r3_one_parser_parse_index_hooks_is_the_projection_of_the_records
+2 failed, 154 passed in 12.21s
