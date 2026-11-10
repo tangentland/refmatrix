@@ -303,3 +303,14 @@ rel: depends-on -> [[task-26.3-savestate-subfolder#inherit-moved-derived]]
 The organiser's moves rely on 26.3's id fallback for derived hooks of moved files; 26.5's move
 tests include a no-sidecar dir with a cut index hook and assert no `…`-ended sidecar value.
 {#inherit-moved-derived-265}
+
+## Inherited from 26.3 GREEN (2026-11-10) {#inherit-263-green}
+
+rel: derives-from -> [[impl-task-26.3-savestate-subfolder]]
+
+**Rollback moves `savestates/` back.** A dir whose marker is moved aside but which still holds
+`savestates/<id>.md` would make a fresh top-level save look "shadowed" by the stale subfolder
+copy (26.3's walk rule), so `recall-state` would resume from the older copy. **AC:** after
+`memory organise --rollback`, no `savestates/` folder remains (its files are back at the top
+level, byte-identical), and a following save + `recall-state` reads the new save. Mutation:
+rollback leaves `savestates/` in place — killed. {#inherit-rollback-savestates}
