@@ -121,6 +121,13 @@ PAIRING = {
                      "mode", "partition", "timeout"}),
     "rmx_refine": (("refine", "list"), {"project_filter": "project"},
                    {"action", "cand_id", "timeout"}),
+    # task 26.6 R-D: `memory compile` leaves LEGACY_UNPAIRED for the 19.4 R1 verb. `apply` is
+    # the click `--apply` flag (dest `do_apply`); `prune` is the inverted `--no-prune`;
+    # `invoked_by` / `status` are op duties (17.2 R2) with no CLI option; `partition` rides
+    # on the `rmx` group (`-p`).
+    "rmx_memory_compile": (("memory", "compile"), {"apply": "do_apply"},
+                           {"exclude_mtypes", "prune", "invoked_by", "status", "partition",
+                            "timeout"}),
 }
 # A no_twin param that DOES have a same-named click option must be one of
 # these declared shape differences (a click `multiple=True` option defaults
@@ -134,6 +141,8 @@ SHAPE_DIFFERENCES = {
     ("rmx_ingest", "path"): "click required argument vs verb default (store parent)",
     ("rmx_graph", "linkage"): "click multiple=True () on `neighbors` vs verb None, resolved "
                               "per action (co_occur / top: \"mentions\")",
+    ("rmx_memory_compile", "exclude_mtypes"): "click multiple=True () vs verb None (None = "
+                                              "consolidate.DEFAULT_EXCLUDE_MTYPES)",
 }
 
 
@@ -361,6 +370,28 @@ CLI_INVOKE = {
                     "total": 1, "shown": 1},
                    {"action": "list", "status": "all", "scope": "project", "project_filter": "p",
                     "limit": 4}, "CANARY-cand"),
+    # task 26.6 R-D: the CLI twin CALLS the verb with the scope, the apply flag and
+    # `invoked_by="cli"`, and renders the verb's plan (canary = a cluster label).
+    "rmx_memory_compile": (["memory", "compile", "--apply", "--scope", "pattern",
+                            "--min-size", "3", "--k", "5"],
+                           {"scope": "pattern", "dry_run": False, "applied": True,
+                            "invoked_by": "cli",
+                            "plan": {"clusters": [{"label": "CANARY-subj", "size": 2,
+                                                   "members": [{"id": 1, "name": "a",
+                                                                "mtype": "impression"},
+                                                               {"id": 2, "name": "b",
+                                                                "mtype": "impression"}],
+                                                   "evidence": []}],
+                                     "crosscutting": [], "unclustered": [],
+                                     "stats": {"candidates": 2, "embedded": 2,
+                                               "unembedded": 0, "partition": "proj"},
+                                     "params": {}},
+                            "subjects": [{"id": 9, "name": "subject_pattern_canary_subj",
+                                          "label": "CANARY-subj", "size": 2}],
+                            "linked": 2, "unlinked": 0, "stale_total": 0, "stale_new": 0,
+                            "stale_unmarked": 0},
+                           {"scope": "pattern", "apply": True, "min_size": 3, "k": 5,
+                            "invoked_by": "cli"}, "CANARY-subj"),
 }
 # payload-class twins: argv + the daemon op the click command must issue with
 # a payload built by the verb's helper (recorded by wrapping the helper).
@@ -657,8 +688,11 @@ _TASK_3_7_BATCH_C = frozenset({
     ('session', 'list'), ('session', 'recall'), ('session', 'show'),
     ('refine', 'list'), ('refine', 'show'),
 })
-LEGACY_BASELINE = _BASELINE_3_4 - _TASK_3_7_BATCH_A - _TASK_3_7_BATCH_B - _TASK_3_7_BATCH_C
-LEGACY_BASELINE_SIZE = 92
+# Task 26.6 R-D: `memory compile` gained the `rmx_memory_compile` verb (19.4 R1's op half).
+_TASK_26_6 = frozenset({('memory', 'compile')})
+LEGACY_BASELINE = (_BASELINE_3_4 - _TASK_3_7_BATCH_A - _TASK_3_7_BATCH_B - _TASK_3_7_BATCH_C
+                   - _TASK_26_6)
+LEGACY_BASELINE_SIZE = 91
 _USER_QUOTE = "internal harness/testing cli only commands"
 
 
@@ -1240,6 +1274,7 @@ def test_action_shape_differences_name_real_click_options():
 
 
 def test_legacy_shrinks_by_exactly_the_batched_paths():
-    """C6 / AC-G5: 140 - 22 - 11 - 15 = 92, nothing else moved."""
+    """C6 / AC-G5: 140 - 22 - 11 - 15 = 92; task 26.6 R-D: - 1 (`memory compile`) = 91,
+    nothing else moved."""
     assert set(verbs.LEGACY_UNPAIRED) == set(LEGACY_BASELINE), sorted(
         set(verbs.LEGACY_UNPAIRED) ^ set(LEGACY_BASELINE))

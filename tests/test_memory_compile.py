@@ -451,3 +451,149 @@ def test_member_derived_label_picks_the_richest_member_deterministically():
     sets = {1: {10}, 2: {10, 11, 12}}
     assert f([1, 2], sets, by_id) == "rich_one_here"
     assert f([2, 1], sets, by_id) == "rich_one_here"
+
+
+# ===================================================== task 26.6 (plan-26) ===
+# Plan-level behaviour of the ONE compile path (`compile_memories` / `apply_plan`), which the
+# `memory_compile` op runs. The end-to-end, daemon-routed tests for the same task live in
+# tests/test_memory_compile_scope.py.
+
+import hashlib  # noqa: E402
+
+
+def _cid(names) -> str:
+    return hashlib.sha256("\n".join(sorted(names)).encode("utf-8")).hexdigest()[:8]
+
+
+def _seed_case(s: Store) -> None:
+    """R-B fixtures. `Guardrail`/`guardrail` are two concept rows (the live store has such
+    pairs); each surface alone is df=1, so only a FOLDED candidate can name the pair. The
+    `Tandem`x3 / `tandem`x2 cluster has both surfaces at df>=2, so unfolded evidence lists the
+    term twice."""
+    with s.with_partition(PART):
+        g_up, g_low = s.add_concept("Guardrail"), s.add_concept("guardrail")
+        t_up, t_low = s.add_concept("Tandem"), s.add_concept("tandem")
+        spec = [
+            ("g1", [g_up], _unit(1.0, 0.02)),
+            ("g2", [g_low], _unit(1.0, 0.03)),
+            ("t1", [t_up], _unit(0, 0, 1.0, 0.02)),
+            ("t2", [t_up], _unit(0, 0, 1.0, 0.03)),
+            ("t3", [t_up, t_low], _unit(0, 0, 1.0, 0.025)),
+            ("t4", [t_low], _unit(0, 0, 1.0, 0.035)),
+        ]
+        ids = {}
+        for name, concepts, _v in spec:
+            ids[name] = s.add_memory(name, f"body {name}", mtype="project")
+            for c in concepts:
+                s.link("mentions", c, ids[name])
+        s.upsert_vector([ids[n] for n, *_ in spec], np.vstack([r[2] for r in spec]),
+                        kind="memory", dim=DIM)
+
+
+def test_r_b_case_variants_are_one_label_candidate(store):
+    _seed_case(store)
+    plan = _plan(store, hub_df_frac=1.0)
+    c = _cluster_of(plan, "g1")
+    assert c is not None and {m["name"] for m in c["members"]} == {"g1", "g2"}, plan["clusters"]
+    assert c["label"].casefold() == "guardrail", c["label"]
+
+
+def test_r_b_label_takes_the_most_frequent_surface_and_evidence_lists_a_term_once(store):
+    _seed_case(store)
+    plan = _plan(store, hub_df_frac=1.0)
+    c = _cluster_of(plan, "t1")
+    assert c is not None and {m["name"] for m in c["members"]} == {"t1", "t2", "t3", "t4"}
+    assert c["label"] == "Tandem", c["label"]                 # 3 mentions beat 2
+    folded = [e["concept"].casefold() for e in c["evidence"]]
+    assert folded.count("tandem") == 1, c["evidence"]
+
+
+def test_ac_c_stoplisted_and_generic_words_never_label_a_cluster(store):
+    """AC-C: the 0.34.0 stoplist fix stays pinned — `_label_candidate_ok` reads
+    `scan._PROMPT_STOPWORDS` (`from`) and the generic list (`existing`, `feedback`), in any
+    case. GREEN at HEAD by design: a regression pin, and the guard against R-B's folding
+    choosing a capitalised surface (`From`) that dodges a lower-case list."""
+    from refmatrix.scan import _PROMPT_STOPWORDS
+    assert "from" in _PROMPT_STOPWORDS
+    with store.with_partition(PART):
+        words = ["from", "From", "existing", "EXISTING", "feedback", "Feedback"]
+        cs = [store.add_concept(w) for w in words]
+        ids = []
+        for i in range(3):
+            mid = store.add_memory(f"junk{i}", f"body {i}", mtype="project")
+            ids.append(mid)
+            for c in cs:
+                store.link("mentions", c, mid)
+        store.upsert_vector(ids, np.vstack([_unit(1.0, 0.01 * (i + 1)) for i in range(3)]),
+                            kind="memory", dim=DIM)
+    plan = _plan(store, hub_df_frac=1.0)
+    c = _cluster_of(plan, "junk0")
+    assert c is not None, plan
+    assert c["label"].casefold() not in {"from", "existing", "feedback"}, c["label"]
+    assert all(e["concept"].casefold() not in {"from", "existing", "feedback"}
+               for e in c["evidence"]), c["evidence"]
+
+
+def _seed_twins(s: Store, *, a_tight: bool) -> None:
+    """Two clusters whose ONLY label is `tandem`. `a_tight` decides which one
+    `cluster_focus` emits first (measured: the tighter pair leads), so flipping it reorders
+    the clusters with the memberships unchanged."""
+    with s.with_partition(PART):
+        t = s.add_concept("tandem")
+        names = ["ta1", "ta2", "tb1", "tb2"]
+        ids = {n: (s.get_memory(n) or {}).get("id") for n in names}
+        for n in names:
+            if ids[n] is None:
+                ids[n] = s.add_memory(n, f"body {n}", mtype="project")
+                s.link("mentions", t, ids[n])
+        if a_tight:
+            vecs = [_unit(1.0, 0.02), _unit(1.0, 0.03), _unit(0, 0, 1.0, 0.3),
+                    _unit(0, 0, 1.0, -0.3)]
+        else:
+            vecs = [_unit(1.0, 0.3), _unit(1.0, -0.3), _unit(0, 0, 1.0, 0.0),
+                    _unit(0, 0, 1.0, 0.001)]
+        s.upsert_vector([ids[n] for n in names], np.vstack(vecs), kind="memory", dim=DIM)
+
+
+def test_r6_duplicate_labels_are_named_by_member_set_not_cluster_order(store):
+    """19.4 R6 + task-26.6 r2 m7 (19.4 AC-5's slug half; its `MEMORY.md --subject` half is
+    26.7's). At HEAD the second `tandem` cluster is `tandem-2` by ORDER, so reordering swaps
+    the two names."""
+    _seed_twins(store, a_tight=True)
+    p1 = _plan(store, hub_df_frac=1.0)
+    _seed_twins(store, a_tight=False)
+    p2 = _plan(store, hub_df_frac=1.0)
+    order1 = [sorted(m["name"] for m in c["members"]) for c in p1["clusters"]]
+    order2 = [sorted(m["name"] for m in c["members"]) for c in p2["clusters"]]
+    assert sorted(order1) == sorted(order2) and order1 != order2, (
+        "fixture precondition: same memberships, different cluster order", order1, order2)
+    want = {tuple(ms): f"tandem-{_cid(ms)}" for ms in order1}
+    for plan in (p1, p2):
+        got = {tuple(sorted(m["name"] for m in c["members"])): c["label"]
+               for c in plan["clusters"]}
+        assert got == want, got
+
+
+def test_r6_reordered_clusters_keep_their_subject_rows(store):
+    _seed_twins(store, a_tight=True)
+    with store.with_partition(PART):
+        consolidate.apply_plan(store, _plan(store, hub_df_frac=1.0))
+        first = {s["name"]: sorted(m["name"] for m in store.subject_leaves(s["id"]))
+                 for s in store.list_subjects()}
+    _seed_twins(store, a_tight=False)
+    with store.with_partition(PART):
+        consolidate.apply_plan(store, _plan(store, hub_df_frac=1.0))
+        second = {s["name"]: sorted(m["name"] for m in store.subject_leaves(s["id"]))
+                  for s in store.list_subjects()}
+    assert second == first, (first, second)
+    assert set(first) == {f"subject_tandem_{_cid(['ta1', 'ta2'])}",
+                          f"subject_tandem_{_cid(['tb1', 'tb2'])}"}
+
+
+def test_r6_cluster_cid_is_the_one_member_set_hash():
+    """19.4 R6 / 19.6 R9 (round-11 #m11-4): ONE helper, `stm.cluster_cid`, with the `\\n` join
+    that keeps {ab, c} and {a, bc} apart; order-independent."""
+    from refmatrix import stm
+    assert hasattr(stm, "cluster_cid"), "stm.cluster_cid is not built (19.4 R6)"
+    assert stm.cluster_cid(["b", "a"]) == _cid(["a", "b"])
+    assert stm.cluster_cid(["ab", "c"]) != stm.cluster_cid(["a", "bc"])
