@@ -82,8 +82,8 @@ is constructing calls it did not intend to, and that is a harness bug, not a fin
 
 Learning is asynchronous: the broker enqueues and the DAEMON drains on its tick. A replay that
 fires N patterns and reads the result immediately measures the queue, not the graph. Each arm must
-drain to empty (bounded, and the drain's own report checked) before the index is scored.
-rel: derives-from -> [[project_grep_learn_wall_and_queue]] {#drain-first}
+drain to empty (bounded, and the drain's own report checked) before the index is scored. {#drain-first}
+rel: derives-from -> [[project_grep_learn_wall_and_queue]]
 
 ## Test strategy {#test-strategy}
 

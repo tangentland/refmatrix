@@ -81,7 +81,12 @@ FRONTMATTER_DELIM = "---"
 #     <!-- not-gmd: flat one-line-per-entry index, see MEMORY-RULES -->
 NOT_GMD_RE = re.compile(r"^<!--\s*not-gmd:\s*(.*?)\s*-->\s*$")
 CODE_FENCE_RE = re.compile(r"^(```|~~~)")
-INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
+# Inline code is matched as CommonMark backtick RUNS: an opening run of N
+# backticks, not adjacent to another backtick, closes at the next run of exactly
+# N. The old single-run pattern read a ``double-backtick`` span as two empty
+# spans and exposed an anchor or wikilink quoted inside it (bug-179 R3b,
+# 2026-11-09). Masking keeps the line length, so column offsets stay valid.
+INLINE_CODE_RE = re.compile(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)")
 
 
 # Project-local additions to RECOMMENDED_VERBS, loaded from `.gmd/config.yml`
@@ -267,8 +272,31 @@ def parse_doc(path: Path) -> tuple[Doc, list[Issue]]:
 
         scan_line = strip_inline_code(line)
 
-        # Extract {#id} anchors (heading or end-of-line on other blocks)
-        for m in ID_RE.finditer(scan_line):
+        # Extract {#id} anchors (heading or end-of-line on other blocks).
+        # bug-179 (2026-11-09): a compaction packed 7-30 ids per line into one
+        # ledger; lint registered every one and passed with 0 errors while the
+        # store ingester registers only the first, so 188 of 200 ids resolved to
+        # nothing. Lint now registers what the store registers: never an id on
+        # a `rel:` line (SPEC §5 gives that `{...}` slot to edge attributes, and
+        # the trigger is the bare prefix, well-formed or not), and only the
+        # first id of any other line, with an error for the rest.
+        id_matches = list(ID_RE.finditer(scan_line))
+        if line.startswith("rel:") and id_matches:
+            issues.append(Issue(
+                path, line_no, "error", "anchor-on-rel",
+                f"{{#{id_matches[0].group(1)}}} on a rel: line — a rel: line is not a "
+                "block; put the id on the paragraph above",
+            ))
+            id_matches = []
+        elif len(id_matches) > 1:
+            ids = ", ".join(m.group(1) for m in id_matches)
+            issues.append(Issue(
+                path, line_no, "error", "multi-anchor",
+                f"{len(id_matches)} block ids on one line ({ids}) — SPEC §3 allows one "
+                "id per block; the store registers only the first",
+            ))
+            id_matches = id_matches[:1]
+        for m in id_matches:
             _shape = id_shape_issue(path, line_no, "bad-id", m.group(1))
             if _shape:
                 issues.append(_shape)

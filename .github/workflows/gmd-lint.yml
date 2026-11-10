@@ -16,6 +16,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # The gate runs lint AND the lint/ingester anchor-parity check (bug-179). Parity imports
+      # refmatrix from src/ and needs pyroaring; the script refuses (exit 2) without .venv-eval
+      # rather than skipping the step, so CI builds it.
+      - name: Build the dev interpreter for the parity step
+        run: |
+          python -m venv .venv-eval
+          .venv-eval/bin/pip install --quiet pyroaring
       - name: Lint GMD docs
         run: |
           ./scripts/lint-gmd.sh

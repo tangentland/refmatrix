@@ -32,7 +32,8 @@ HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 REL_RE = re.compile(
     r"^rel:\s+([a-z][a-z0-9-]*)\s*->\s*(\S+(?:\s+\S+)*?)(?:\s*\{([^}]*)\})?\s*$"
 )
-INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
+# CommonMark backtick RUNS, identical to lint.py's matcher (bug-179 R3b).
+INLINE_CODE_RE = re.compile(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)")
 CODE_FENCE_RE = re.compile(r"^(```|~~~)")
 FRONTMATTER_DELIM = "---"
 TOKEN_RE = re.compile(r"[a-z0-9]{2,}")
@@ -128,11 +129,18 @@ def parse(path: Path) -> tuple[list[str], list[Node], dict[str, Node], int]:
         if hm:
             level = len(hm.group(1))
             heading_rest = hm.group(2)
-            id_match = ID_RE.search(heading_rest)
+            # bug-179 R3 (2026-11-09): read the anchor from the inline-code-
+            # stripped line, as lint does, so a `{#x}` quoted in the title is
+            # not taken for the id. `scan` has the same length as `line`, so the
+            # match maps onto `heading_rest` by the heading-prefix offset, and
+            # the title cuts only that one span — the quoted `{#x}` stays.
+            off = hm.start(2)
+            id_match = ID_RE.search(scan, off)
             if id_match:
                 node_id = id_match.group(1)
                 attrs = parse_attrs(id_match.group(2))
-                title = ID_RE.sub("", heading_rest).strip()
+                a, b = id_match.start() - off, id_match.end() - off
+                title = (heading_rest[:a] + heading_rest[b:]).strip()
             else:
                 auto_idx += 1
                 node_id = f"_h{auto_idx}"

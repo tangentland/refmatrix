@@ -93,8 +93,10 @@ commit is lint, so that is where the check has to live. {#why-second}
      `gql-argument-name-mismatch`, `gql-parameter-name-mismatch`, `stub-handler-pattern`). This is
      the bug-179 incident shape, and 5 of the 6 are already dead in viascope's store. viascope
      vendors nothing: its `scripts/lint-gmd.sh:12` sets the linter to
-     `$HOME/claude_tools/gmd/lint.py`, so it is a LIVE consumer of upstream and goes red the moment
-     R6's upstream commit lands. {#f-c-viascope}
+     `$HOME/claude_tools/gmd/lint.py`, so it is a LIVE consumer of upstream. Corrected 2026-11-09
+     (post-impl audit [[bsd-bug179-postimpl-9a5cd78#m1]]): viascope's gate lints only `CLAUDE.md
+     docs/`, so this line is OUTSIDE the gate and the gate would not have gone red; the line was
+     still split first (viascope `0b443ef69`), then upstream `efb514a` landed. {#f-c-viascope}
   2. cliquedb `docs/architecture/adr/adr-0051-numeric-facet-unit-designation.md:1883`: an
      alias-only line `d-render-b` + `d-render-ruled-b-superseded`. {#f-c-cliquedb-1}
   3. cliquedb `docs/architecture/explorations/first-principles-reconstruction.md:389`: a heading
@@ -136,8 +138,11 @@ commit is lint, so that is where the check has to live. {#why-second}
 - **Gates**: `scripts/lint-gmd.sh` runs the vendored lint over `CLAUDE.md docs/ workflow/ eval/
   .claude/PROJECT_PROFILE.md` plus the memory dir. Its error set is not fixed (13 at `c5f91e4`,
   some from specs other agents are editing), so it is compared as a set of error texts. `.git/hooks`
-  has no pre-commit. The PostToolUse `~/.claude/hooks/lint-memory-gmd.sh` is referenced by no
-  settings file, so it never runs ([[#fu-memory-hook]]). {#f-gates}
+  has no pre-commit. CI runs the same script (`.github/workflows/gmd-lint.yml`, push/PR to main and
+  master), so CI must build the `.venv-eval` the parity step needs (added 2026-11-09, post-impl
+  audit [[bsd-bug179-postimpl-9a5cd78#s2]]). The PostToolUse `~/.claude/hooks/lint-memory-gmd.sh`
+  was unwired when this spec was written; it was wired 2026-11-09 (bug-183) and runs upstream lint
+  on every memory write ([[#fu-memory-hook]]). {#f-gates}
 
 ## Requirements {#requirements}
 
