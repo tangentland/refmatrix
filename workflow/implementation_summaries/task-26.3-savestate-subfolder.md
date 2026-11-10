@@ -130,3 +130,64 @@ confirm `git status --short src` is empty.
 
 No ADR or pseudocode discrepancy found: plan-26 has no `pseudocode/` node for 26.3. ADR-0005
 #newest, #legacy and #marker are followed as written.
+
+## Remedy r1 (2026-11-10) {#remedy-r1}
+
+rel: implements -> [[task-26.3-savestate-subfolder#rm-newer-copy]]
+rel: derives-from -> [[bsd-task-26.3-r1-savestate-subfolder]]
+rel: supersedes -> [[#flag-walk]]
+
+TDD GREEN over RED `994dd96` (7 failing, 13 guards) for ch-bsd 26.3 r1 #s-1. GREEN commit
+`d40ea2d`. No test was written or edited in this step.
+
+### What changed {#remedy-r1-changes}
+
+- `memory_layout.savestate_pair(memdir, name) -> (kept, other) | None` replaces
+  `is_shadowed_savestate`. It keeps the copy that sorts newest under ADR-0005's key: `_SaveKey`'s
+  `(date, mtime, name)`. The path is left out on purpose, so the tie rule is stated in code: a
+  full tie keeps `savestates/`. `iter_memory_files` decides every pair once, before it walks,
+  because the top level is walked before `savestates/`. It yields the kept copy and puts the
+  other on `skipped`. Under #rd-duplicate the folder copy always won. In ch-bsd's orgshadow and
+  flatshadow shapes, that meant reading the STALE copy.
+- `compose_save_state`, in an organised dir, takes `created:` from the KEPT copy of a pair.
+  `SaveStateWriteError` (an `OSError`) makes the folder creation, the move and the write
+  fail-closed: its message names the target and says the top-level copy is kept and nothing
+  was saved. `verbs.save_state` raises it as a `VerbError`, so neither the CLI nor MCP can
+  report a save that did not land. The top-level copy is unlinked only after the write
+  succeeds. If that unlink fails, the error is returned as `remove_failed` and printed. The
+  result carries `kept_copy`.
+- The CLI message no longer mentions a crash. It prints either `removed stale top-level <name>
+  (kept savestates/<name>, the newer copy)` or, when the top-level copy was the newer one,
+  `removed top-level <name> after writing this save to savestates/ (the top-level copy was the
+  newer one; its created: is kept)`.
+- This closes GREEN's #flag-flat-shadow: in a dir without the marker that still has
+  `savestates/`, a fresh top-level save is now the newer copy, so the walk keeps it.
+
+### Results {#remedy-r1-results}
+
+| log | result |
+|---|---|
+| `workflow/review-output/plan26/26.3-r1-green.log` | `test_savestate_subfolder.py` + `test_save_state.py`: 77 passed |
+| `workflow/review-output/plan26/26.3-r1-green-family.log` | family: 633 passed |
+| `workflow/review-output/plan26/26.3-r1-green-adjacent.log` | verbs_migrated, plan2/plan3 remedies, mcp_session_pointer: 116 passed |
+| `workflow/review-output/plan26/26.3-r1-green-post-mutation.log` | after restore: 77 passed |
+
+### Mutations {#remedy-r1-mutations}
+
+Each was applied to `d40ea2d`, with `__pycache__` cleared first. Each was run over the two
+save-state files and then restored in its own command: `git checkout -- src`, clear
+`__pycache__`, grep the fix back, confirm `git status --short src` is empty.
+
+| id | mutation | killed by | log |
+|---|---|---|---|
+| R1 | always prefer `savestates/` (`savestate_pair` never keeps the top level) | 7 failed: every fresh-top case of the walk, reader/pointer/recall-state and bridge (organised + flat), plus the next save's `created:` | `26.3-r1-green-mut-R1.log` |
+| R2 | unlink the top-level copy before the write | 2 failed: removed-only-after-write, next save | `26.3-r1-green-mut-R2.log` |
+
+GREEN's G5 and G6 tested #rd-duplicate's shape. They are superseded by the RED author's MX1
+and MX2 at `994dd96` and by R1 and R2 above.
+
+### Not in this remedy {#remedy-r1-scope}
+
+ch-bsd 26.3 r1 #m-1 (the 26.2 AC for the combined test, and 26.2's `split_claims` docstring)
+and #m-2 (the MEMORY-RULES `updated:` wording, #rm-updated-rule) belong to 26.2's spec and to
+the orchestrator. Neither is a `src/` change in this branch.

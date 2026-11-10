@@ -1,0 +1,74 @@
+.................................................FF..................... [ 93%]
+.....                                                                    [100%]
+=================================== FAILURES ===================================
+_____ test_rm_newer_copy_the_next_save_keeps_the_fresh_top_levels_created ______
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-jwfv5q2d/memory')
+
+    def test_rm_newer_copy_the_next_save_keeps_the_fresh_top_levels_created(memdir):
+        """(a) in an organised dir: the next save writes `savestates/` with the KEPT copy's
+        `created:` (the fresh top-level one), removes the top-level copy, and says which it
+        removed. At #rd-duplicate the folder copy's `created:` was taken."""
+        organise(memdir)
+        top, folder = _pair(memdir, "fresh-top")
+        r = CliRunner().invoke(cli_mod.main, ["save-state", "-s", "sess-dup", "--memory-dir",
+                                              str(memdir), "--no-lint", "--no-promote", "--no-sync",
+                                              "-m", "after the pair"])
+        assert r.exit_code == 0, f"{r.output}\n{r.exception!r}"
+        assert "after the pair" in folder.read_text(encoding="utf-8")
+        assert fm(folder, "created") == "2026-11-05", "the kept (top-level) copy's created: was lost"
+        assert not top.exists(), "the top-level copy survived the next save"
+        assert md_files(memdir) == [f"savestates/{DUP}.md"], md_files(memdir)
+        said = " ".join(r.output.split())
+>       assert "removed" in said and f"{DUP}.md" in said, r.output
+E       AssertionError: save-state 
+E         /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-jwfv5q2d/memory/
+E         savestates/savestate_sessdup.md  (0 events, session sess-dup, explicit)
+E         MEMORY.md: 1 -> 1 lines, 135 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+E         
+E       assert ('removed' in 'save-state /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-jwfv5q2d/memory/ savestates/savestate_sess...nts, session sess-dup, explicit) MEMORY.md: 1 -> 1 lines, 135 chars (caps 200 lines / 24000 chars; 1 memories on disk)')
+
+tests/test_savestate_subfolder.py:665: AssertionError
+_ test_rm_newer_copy_the_top_level_copy_is_removed_only_after_savestates_is_written _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-23133eg6/memory')
+
+    def test_rm_newer_copy_the_top_level_copy_is_removed_only_after_savestates_is_written(memdir):
+        """The top-level copy goes only once `savestates/` holds the save (or holds the top-level
+        copy's content, if it was moved in). With `savestates/` unwritable -- a read-only folder
+        AND a read-only file, so neither a write in place, a temp+rename nor an `os.replace` into
+        it can land -- the save fails, and the fresh top-level copy must still be there: it is the
+        only copy of the newest save."""
+        organise(memdir)
+        top, folder = _pair(memdir, "fresh-top")
+        fresh = top.read_text(encoding="utf-8")
+        os.chmod(folder, 0o444)
+        os.chmod(folder.parent, 0o555)
+        try:
+            r = CliRunner().invoke(cli_mod.main, ["save-state", "-s", "sess-dup", "--memory-dir",
+                                                  str(memdir), "--no-lint", "--no-promote",
+                                                  "--no-sync", "-m", "cannot land"])
+        finally:
+            os.chmod(folder.parent, 0o755)
+            os.chmod(folder, 0o644)
+        landed = folder.read_text(encoding="utf-8")
+        if not top.exists():
+>           assert "cannot land" in landed or landed == fresh, \
+                "the top-level copy was removed before savestates/ held the save"
+E           AssertionError: the top-level copy was removed before savestates/ held the save
+E           assert ('cannot land' in '---\ngmd: "0.1"\nid: savestate_sessdup\ntitle: "Save-state savestate_sessdup"\ntags: ["session:s-savestate_sessdup"]\...0-01\n  updated: 2026-11-01\n---\n\n# Save-state savestate_sessdup {#root}\n\nSTALE folder copy of savestate_sessdup\n' or '---\ngmd: "0...ate_sessdup\n' == '---\ngmd: "0...ate_sessdup\n'
+E             
+E             Skipping 218 identical leading characters in diff, use -v to show
+E             - ed: 2026-11-05
+E             ?           ^  ^
+E             + ed: 2026-10-01
+E             ?           ^  ^
+E             -   updated: 2026-11-10T10:00:00...
+E             
+E             ...Full output truncated (11 lines hidden), use '-vv' to show)
+
+tests/test_savestate_subfolder.py:688: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_savestate_subfolder.py::test_rm_newer_copy_the_next_save_keeps_the_fresh_top_levels_created
+FAILED tests/test_savestate_subfolder.py::test_rm_newer_copy_the_top_level_copy_is_removed_only_after_savestates_is_written
+2 failed, 75 passed in 32.35s
