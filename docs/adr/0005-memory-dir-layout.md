@@ -204,6 +204,14 @@ dir was organised, and the path of the backup archive taken before the moves. On
 so it is never a memory ([[#one-walk]]). `memory_layout.is_organised(memdir)` is the one test of
 it.
 
+**Encoding (pinned 2026-11-09, orchestrator, closing the 26.0 open question so 26.1's reader and
+26.5's writer agree):** one JSON object, UTF-8, written atomically (tmp + rename):
+`{"layout": 1, "organised": "<ISO-8601 datetime with offset>", "backup": "<absolute path>"}`.
+`is_organised` returns True only for a file that parses with `layout == 1`. A marker that
+exists but does not parse, or names another layout version, is a hard error naming the file —
+never read as "not organised" (a silent fallback would re-enable the old renderer over an
+organised dir). Extra keys are ignored, so a later layout can add fields. {#marker-encoding}
+
 **Every NEW on-disk behaviour applies only where the marker is present** (r2 s2):
 
 - save-state writes go into `savestates/`, and a legacy top-level save-state for the same session
