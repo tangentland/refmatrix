@@ -10246,9 +10246,22 @@ def _ts_short(ts: float | None) -> str:
                    "the foreground (one line per file: `[i/n] path`). "
                    "Exits when the job finishes. Mutually exclusive with "
                    "--detach.")
+@click.option("--dry-run", "dry_run", is_flag=True,
+              help="With --as-memory: write nothing; report what the path-aware "
+                   "resume gate would refresh (`refresh_pending` and its four "
+                   "terms), evaluating the organised-dir rule for every file.")
+@click.option("--store-snapshot", "store_snapshot", default=None,
+              type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="With --dry-run: read this COPIED catalog file in-process and "
+                   "read-only instead of the live store -- no daemon, no hub, no "
+                   "store root resolved. Requires -p/--partition.")
+@click.option("--path-map", "path_map", multiple=True, metavar="FROM=TO",
+              help="With --dry-run: rewrite stored paths under FROM to TO before "
+                   "comparing (a relocated copy of the memdir). Repeatable.")
 def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
                as_memory: bool, memory_mtype: str, prestage: bool,
-               detach: bool, progress: bool):
+               detach: bool, progress: bool, dry_run: bool = False,
+               store_snapshot: "Path | None" = None, path_map: tuple = ()):
     """Ingest Graph Markdown (GMD) docs. Walks dirs for *.gmd/*.md files
     that carry `gmd:` frontmatter; non-GMD files are skipped.
 
@@ -10260,6 +10273,15 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
         raise click.ClickException(
             "--detach and --progress are mutually exclusive"
         )
+    if dry_run or store_snapshot or path_map:
+        # Task 26.2 AC-3: the one-time refresh, measured. Branches BEFORE
+        # `_root()` and any daemon import: a `--store-snapshot` run must never
+        # resolve the live root, ping a daemon, or touch the hub.
+        click.echo(_ingest_gmd_dry_run(
+            [Path(t).resolve() for t in targets], as_memory=as_memory,
+            dry_run=dry_run, prestage=prestage, detach=detach or progress,
+            store_snapshot=store_snapshot, path_map=path_map))
+        return
     from refmatrix import daemon as daemon_mod
     from refmatrix.ingest_gmd import (
         collect_gmd_files, ingest_gmd_paths, prestage_hashes,
@@ -10437,6 +10459,87 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
     ))
 
 
+def _ingest_gmd_dry_run(resolved: list[Path], *, as_memory: bool, dry_run: bool,
+                        prestage: bool, detach: bool, store_snapshot: "Path | None",
+                        path_map: tuple) -> str:
+    """`rmx ingest-gmd --as-memory --dry-run [--store-snapshot F -p P] [--path-map A=B]`
+    (task 26.2 AC-3, ch-bsd plan-26 r3 s2 / r4 s2, 2026-11-10): the bridge's
+    one-time path refresh, measured and written nowhere.
+
+    Runs `ingest_gmd.plan_memory_refresh` -- the SAME classifier the bridge's
+    gate runs -- with the organised-dir rule on for every file. The live
+    memdir is walked read-only; the store side is either the live store's
+    lock-free reader (`_read_store`) or, with `--store-snapshot`, a COPIED
+    catalog opened in-process read-only: no `daemon_mod`, no hub, no `_root()`.
+    Every misuse is refused, never guessed: the flags need `--dry-run` and
+    `--as-memory`; a snapshot needs `-p` (it has no root to derive the memory
+    partition from, #rd-snapshot-partition) and must hold that partition."""
+    from refmatrix.ingest_gmd import collect_gmd_files, parse_path_map, \
+        plan_memory_refresh, render_memory_skip_line
+    if not dry_run:
+        raise click.ClickException("--store-snapshot and --path-map only apply to --dry-run "
+                                   "(they never write)")
+    if not as_memory:
+        raise click.ClickException("--dry-run measures the memory bridge's refresh; "
+                                   "pass --as-memory")
+    if prestage or detach:
+        raise click.ClickException("--dry-run cannot be combined with --prestage, "
+                                   "--detach or --progress")
+    try:
+        pmap = parse_path_map(path_map)
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+    skipped: list = []
+    files = collect_gmd_files(resolved, as_memory=True, skipped=skipped)
+
+    def _bound(s: Store, partition: str):
+        row = s._connect().execute("SELECT id FROM partitions WHERE name = ?",
+                                   (partition,)).fetchone()
+        if row is None:
+            raise click.ClickException(
+                f"partition {partition!r} is not in this catalog -- nothing has been "
+                f"bridged there; name the memory partition with -p/--partition")
+        return s.with_partition(partition)
+
+    if store_snapshot is not None:
+        partition = _partition_override
+        if not partition:
+            raise click.ClickException(
+                "--store-snapshot needs -p/--partition: a copied catalog has no store "
+                "root to derive the memory partition from")
+        snap = Path(store_snapshot).resolve()
+        s = Store(snap.parent, partition=partition, read_only=True)
+        s.db_path = snap
+        try:
+            with _bound(s, partition):
+                stats = plan_memory_refresh(s, files, path_map=pmap)
+        finally:
+            s.close()
+    else:
+        if not _partition_override and not os.environ.get("RMX_PARTITION"):
+            partition = _memory_partition_default()
+        else:
+            partition = _resolve_partition()
+        s = _read_store()
+        try:
+            with _bound(s, partition):
+                stats = plan_memory_refresh(s, files, path_map=pmap)
+        finally:
+            s.close()       # a reader left open blocks this process's next open (bug-112)
+    lines = [f"dry-run: {len(files)} file(s) under {', '.join(map(str, resolved))} "
+             f"against partition {partition!r} -- nothing written",
+             *stats.refresh_lines(always=True),
+             f"skipped_unchanged: {stats.skipped_unchanged}",
+             *stats.duplicate_lines()]
+    if stats.skipped_unparseable:
+        lines.append(f"skipped_unparseable: {len(stats.skipped_unparseable)}")
+        lines.extend(f"  {p}: {e}" for p, e in stats.skipped_unparseable)
+    line = render_memory_skip_line(skipped)
+    if line:
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _ingest_gmd_sync(resolved: list[Path], *, as_memory: bool,
                      memory_mtype: str = "curated", verbose: bool = False,
                      partition: str | None = None, with_stats: bool = False):
@@ -10491,6 +10594,28 @@ def _ingest_gmd_sync(resolved: list[Path], *, as_memory: bool,
         st["embed"] = resp["result"].get("embed")
         return rep, st
     s = _store_rw()
+    try:
+        return _ingest_gmd_in_process(s, root, resolved, as_memory=as_memory,
+                                      memory_mtype=memory_mtype, verbose=verbose,
+                                      partition=partition, with_stats=with_stats)
+    finally:
+        # Release the catalog when the in-process ingest is done (task 26.2,
+        # 2026-11-10). The daemon-down bridge also runs inside long-lived
+        # processes (save-state from the MCP server, `handoff`); an open writer
+        # kept DuckDB's exclusive lock and an un-checkpointed WAL until that
+        # process exited, so a daemon could not start and a copy of the catalog
+        # (the AC-3 `--store-snapshot` measurement) missed the rows just
+        # written. `close()` flushes fragments first; the atexit close is then
+        # a no-op.
+        s.close()
+
+
+def _ingest_gmd_in_process(s: Store, root: Path, resolved: list[Path], *, as_memory: bool,
+                           memory_mtype: str, verbose: bool, partition: str,
+                           with_stats: bool):
+    """The daemon-down body of `_ingest_gmd_sync` (the caller owns and closes `s`)."""
+    from refmatrix.ingest_gmd import (collect_gmd_files, ingest_gmd_paths,
+                                      render_memory_skip_line)
     # THE memory walk on the memory path (task 26.1 AC-2, ADR-0005 #one-walk);
     # every skip is counted and named in the report (ch-bsd 26.1 #s-3)
     skipped_paths: list = []
@@ -10571,7 +10696,10 @@ def _sync_memory_dir(memdir: Path) -> dict:
                  # WHICH partition took the rows, and whether those rows got
                  # VECTORS (bug-065) — an as-memory ingest drains the memory
                  # embed queue itself, and its counts come back here.
-                 "partition": None, "embed": None}
+                 "partition": None, "embed": None,
+                 # task 26.2: refresh terms + refused duplicate ids (_bridge_stats)
+                 "moved": 0, "stale_before": 0, "forced": 0, "moved_legacy": 0,
+                 "skipped_unchanged": 0, "duplicate_ids": []}
     if not memdir.is_dir():
         out["error"] = f"memory dir not found: {memdir}"
         return out
@@ -10614,6 +10742,13 @@ def _bridge_stats(out: dict, stats: dict) -> None:
     # bug-111 r1 #2: an --as-memory doc drop that failed (purge or vector delete).
     out["doc_drop_failed"] = [{"path": p, "error": e}
                               for p, e in (stats.get("doc_drop_failed") or [])]
+    # Task 26.2: the path-aware gate's refresh terms (AC-3, the post-apply
+    # comparison reads them structurally) and the refused duplicate ids (AC-4,
+    # ch-bsd r1 #m5: this copy is what the waited-job branch returns too).
+    for k in ("moved", "stale_before", "forced", "moved_legacy", "skipped_unchanged"):
+        out[k] = int(stats.get(k) or 0)
+    out["duplicate_ids"] = [[str(i), [str(p) for p in ps]]
+                            for i, ps in (stats.get("duplicate_ids") or [])]
 
 
 def _bridge_wait_for_active_job(memdir: Path, partition: str, err: str, out: dict) -> None:

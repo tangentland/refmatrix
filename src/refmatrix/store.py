@@ -2569,7 +2569,12 @@ class Store:
             con.execute(
                 "UPDATE entities SET updated_at=? WHERE id=?", (now, eid)
             )
-        con.commit()
+        # `_maybe_commit`, not `con.commit()` (task 26.2, ch-bsd plan-26 r6-lite
+        # n1, 2026-11-10): a bare commit inside an outer `transaction()` ended
+        # it early, so the bridge's move refresh (this id-row write + its
+        # legacy rows' `refresh_memory_source_path`) could not be one write.
+        # Outside a transaction this still commits here.
+        self._maybe_commit(con)
         # Log the body too. upsert_entity above logged the entity row, but the
         # sidecar content was previously unlogged — so log-replay / catch-up /
         # `rebuild --from-log` reconstructed memory entities WITHOUT bodies.
@@ -2579,6 +2584,58 @@ class Store:
             content=content, mtype=mtype, tags=tags, metadata=metadata,
         )
         return eid
+
+    def refresh_memory_source_path(self, eids: "list[int]", source_path: str) -> int:
+        """Point `memory_content.metadata.source_path` of each row in `eids` at
+        `source_path`, changing NOTHING else, and log each as a `memory_content`
+        event. Returns the number of rows refreshed.
+
+        WHY (task 26.2 AC-1b, ch-bsd plan-26 r5 s1, 2026-11-10): a store older
+        than the `sync-disk` alias can hold a second, legacy row for one memory
+        file (`source: memory_sync_disk`, named by `name:`) on the same
+        `source_path`. When the bridge refreshes a moved file it refreshes these
+        rows too; only the path moves -- the id, name, content, vector,
+        `created_at`, flags and edges are untouched, and `updated_at` is NOT
+        bumped (a path refresh is not an edit; 23.1 reads `updated_at` as the
+        authoring time).
+
+        Logged (r6-lite n1): a bare UPDATE emits no event, so `rebuild
+        --from-log` would restore the OLD path. Each event carries the row's
+        full sidecar (replay's `memory_content` branch re-runs `add_memory`
+        with it, last-writer-wins by name) plus its stored `updated_at`
+        (r6 cross-plan note from 23.1). Uses `_maybe_commit`, so inside the
+        bridge's `transaction()` it is one write with the id-row refresh."""
+        con = self._connect()
+        done: list[tuple] = []
+        for eid in eids:
+            row = con.execute(
+                "SELECT e.name, mc.content, mc.mtype, mc.tags, mc.metadata, mc.updated_at "
+                "FROM entities e JOIN memory_content mc ON mc.entity_id = e.id "
+                "WHERE e.id = ? AND e.kind = 'memory'", (int(eid),)).fetchone()
+            if row is None:
+                raise ValueError(f"refresh_memory_source_path: entity {eid} is not a "
+                                 f"memory row with a memory_content sidecar")
+            name, content, mtype, tags_json, meta_json, updated_at = row
+            try:
+                meta = json.loads(meta_json) if meta_json else {}
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"refresh_memory_source_path: memory {name!r} (id {eid}) "
+                                 f"has unreadable metadata JSON: {exc}") from exc
+            if not isinstance(meta, dict):
+                raise ValueError(f"refresh_memory_source_path: memory {name!r} (id {eid}) "
+                                 f"metadata is a {type(meta).__name__}, not an object")
+            meta["source_path"] = source_path
+            con.execute("UPDATE memory_content SET metadata = ? WHERE entity_id = ?",
+                        (json.dumps(meta), int(eid)))
+            tags = json.loads(tags_json) if tags_json else None
+            done.append((name, content, mtype, tags, meta, updated_at))
+        self._maybe_commit(con)
+        for name, content, mtype, tags, meta, updated_at in done:
+            self._log_event(
+                "memory_content", kind="memory", name=name, content=content,
+                mtype=mtype, tags=tags, metadata=meta, updated_at=updated_at,
+            )
+        return len(done)
 
     def get_memory(self, name_or_id: str | int) -> dict | None:
         """Resolve a memory by name (current partition) or id (any partition)

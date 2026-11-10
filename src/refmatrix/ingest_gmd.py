@@ -78,6 +78,12 @@ def _write_content_hash(store: Store, eid: int, content_hash: str) -> None:
         existing = {}
     if not isinstance(existing, dict):
         existing = {}
+    if existing.get("gmd_content_hash") == content_hash and existing.get("gmd_pass2_done") is True:
+        # Already marked with this content: a no-op, so no write -- and no
+        # `updated_at` bump. A moved file re-ingested with unchanged bytes
+        # (task 26.2 AC-1) would otherwise re-stale its vector on every move
+        # (`pending_embeddings` reads vectors_updated_at < updated_at).
+        return
     existing["gmd_content_hash"] = content_hash
     existing["gmd_pass2_done"] = True
     con.execute(
@@ -522,6 +528,34 @@ class IngestStats:
     skipped_index: list[str] = field(default_factory=list)   # MEMORY.md: an index, not a memory
     # --as-memory replaces a prior kind='doc' entity; a purge that failed is counted (bug-111).
     doc_drop_failed: list[tuple[Path, str]] = field(default_factory=list)
+    # Task 26.2 (2026-11-10): the path-aware resume gate's terms. A memory file
+    # whose stored `source_path` disagrees with its resolved path is re-ingested
+    # once and lands in exactly ONE term, by the stored path's shape (spec
+    # #impl-notes-r5 m3): missing or symlink-form -> `stale_before`; a real,
+    # different path -> `moved`. `moved_legacy` is a ROW count: the other rows
+    # (legacy `memory_sync_disk` duplicates) on a moved file's old path,
+    # refreshed with it (AC-1b, r6-lite n2). `forced` counts save-states 26.5
+    # AC-5 forces through the gate; nothing forces yet, so it reads 0 until
+    # 26.5 lands -- it is printed so the post-apply comparison (26.8) has the
+    # same four terms before and after. `skipped_unchanged`: files the gate
+    # skipped (hash match, and in an organised memdir a literal path match).
+    moved: int = 0
+    stale_before: int = 0
+    forced: int = 0
+    moved_legacy: int = 0
+    skipped_unchanged: int = 0
+    # AC-4: an id claimed by two or more files in one walk -- neither is
+    # written; `(id, [paths])`, in walk order.
+    duplicate_ids: list[tuple[str, list[Path]]] = field(default_factory=list)
+    # An unreadable `.memory-layout` met by the gate (the path-aware rule was
+    # applied there; `_OrganisedDirs`), named in the report.
+    marker_errors: list[str] = field(default_factory=list)
+
+    @property
+    def refresh_pending(self) -> int:
+        """AC-3's pre-registered quantity (r6-lite n2): the three file terms +
+        `moved_legacy`. 26.5 AC-8 re-exports the same number."""
+        return self.moved + self.stale_before + self.forced + self.moved_legacy
 
     def as_dict(self) -> dict:
         """The counters, structurally — for the daemon result and the
@@ -531,7 +565,35 @@ class IngestStats:
                 "skipped_non_gmd": self.skipped_non_gmd,
                 "skipped_unparseable": [[str(p), e] for p, e in self.skipped_unparseable],
                 "skipped_index": list(self.skipped_index),
-                "doc_drop_failed": [[str(p), e] for p, e in self.doc_drop_failed]}
+                "doc_drop_failed": [[str(p), e] for p, e in self.doc_drop_failed],
+                "moved": self.moved, "stale_before": self.stale_before,
+                "forced": self.forced, "moved_legacy": self.moved_legacy,
+                "skipped_unchanged": self.skipped_unchanged,
+                "duplicate_ids": [[i, [str(p) for p in ps]]
+                                  for i, ps in self.duplicate_ids],
+                "marker_errors": list(self.marker_errors)}
+
+    def refresh_lines(self, *, always: bool = False) -> list[str]:
+        """`<term>: N` for the four refresh terms (AC-3). The bridge report
+        prints the non-zero ones; `--dry-run` prints all four plus
+        `refresh_pending` (`always=True`)."""
+        terms = [("moved", self.moved), ("stale_before", self.stale_before),
+                 ("forced", self.forced), ("moved_legacy", self.moved_legacy)]
+        lines = [f"{t}: {n}" for t, n in terms if always or n]
+        if always:
+            lines.insert(0, f"refresh_pending: {self.refresh_pending}")
+        return lines
+
+    def duplicate_lines(self) -> list[str]:
+        """AC-4: the refused ids, every claiming path named (never truncated:
+        each one is a memory that did not reach the store)."""
+        if not self.duplicate_ids:
+            return []
+        lines = [f"duplicate_ids: {len(self.duplicate_ids)} (neither file written; "
+                 f"give each memory its own frontmatter id)"]
+        for i, ps in self.duplicate_ids:
+            lines.append(f"  {i}: " + ", ".join(str(p) for p in ps))
+        return lines
 
     def report(self) -> str:
         lines = [
@@ -540,6 +602,12 @@ class IngestStats:
             f"skipped_non_gmd: {self.skipped_non_gmd}",
             f"skipped_unparseable: {len(self.skipped_unparseable)}",
         ]
+        if self.skipped_unchanged:
+            lines.append(f"skipped_unchanged: {self.skipped_unchanged}")
+        lines.extend(self.refresh_lines())
+        lines.extend(self.duplicate_lines())
+        for err in self.marker_errors:
+            lines.append(f"marker_error: {err}")
         if self.skipped_index:
             lines.append(f"skipped_index: {len(self.skipped_index)} "
                          f"({', '.join(self.skipped_index)})")
@@ -765,6 +833,285 @@ def _body_phrases(body_lines: list[str]) -> dict[str, int]:
     return dict(text_phrases(text, stop=_BODY_STOPWORDS))
 
 
+# ---- task 26.2: the path-aware memory gate + the duplicate-id refusal ----------
+#
+# WHY (ch-bsd plan-26 r1, reproduced on the production CLI): the resume gate
+# skipped a memory file when the stored `gmd_content_hash` for its NAME
+# matched, so a file moved with its bytes unchanged was skipped and its row
+# kept `source_path=<old path>` and its `x#anchor` concepts `path=<old path>`.
+# Organising a memdir (26.5) moves every file. The gate below reuses the path
+# the row ALREADY records (no second key, r1 #s5) and is marker-gated (AC-3b):
+# only files under an organised memdir (`memory_layout.is_organised`) get it,
+# so the deploy causes no fleet-wide refresh. ONE classifier serves the bridge
+# and `--dry-run`, so the measured `refresh_pending` is the refresh the bridge
+# then performs.
+
+
+@dataclass
+class _MemRow:
+    """The id row a memory file maps to: its entity id, the stored hash, and
+    the stored `memory_content.metadata.source_path` (None when absent)."""
+    eid: int
+    content_hash: "str | None"
+    source_path: "str | None"
+
+
+def _memory_row(store: Store, name: str) -> "_MemRow | None":
+    con = store._connect()
+    row = con.execute(
+        "SELECT e.id, e.meta, mc.metadata FROM entities e "
+        "LEFT JOIN memory_content mc ON mc.entity_id = e.id "
+        "WHERE e.partition_id = ? AND e.kind = 'memory' AND e.name = ? LIMIT 1",
+        (store._partition_id, name)).fetchone()
+    if row is None:
+        return None
+
+    def _obj(raw) -> dict:
+        try:
+            v = json.loads(raw) if raw else {}
+        except (TypeError, ValueError):
+            return {}
+        return v if isinstance(v, dict) else {}
+    h = _obj(row[1]).get("gmd_content_hash")
+    sp = _obj(row[2]).get("source_path")
+    return _MemRow(int(row[0]), h if isinstance(h, str) and h else None,
+                   sp if isinstance(sp, str) and sp else None)
+
+
+def parse_path_map(specs) -> list[tuple[str, str]]:
+    """`--path-map FROM=TO` specs -> `[(from, to)]`, longest `from` first.
+    Fail-closed: a spec without `=` or with an empty side RAISES (a silently
+    dropped map would report the ~100% relocation it exists to remove)."""
+    out: list[tuple[str, str]] = []
+    for spec in specs or ():
+        frm, sep, to = str(spec).partition("=")
+        frm, to = frm.strip().rstrip("/"), to.strip().rstrip("/")
+        if not sep or not frm or not to:
+            raise ValueError(f"--path-map {spec!r}: expected FROM=TO with both sides non-empty")
+        out.append((frm, to))
+    out.sort(key=lambda ft: len(ft[0]), reverse=True)
+    return out
+
+
+def _map_path(p: "str | None", path_map: "list[tuple[str, str]] | None") -> "str | None":
+    """Rewrite a STORED path through `--path-map` (AC-3 relocated twin): the
+    first `from` that is `p` or a directory prefix of it wins."""
+    if p is None or not path_map:
+        return p
+    for frm, to in path_map:
+        if p == frm or p.startswith(frm + "/"):
+            return to + p[len(frm):]
+    return p
+
+
+class _OrganisedDirs:
+    """Which files are under an organised memdir (AC-3b): the nearest ancestor
+    carrying `.memory-layout`, read by `memory_layout.is_organised`. Cached per
+    directory: one stat per ancestor per run.
+
+    An UNREADABLE marker is never read as 'not organised' (ADR-0005
+    #marker-encoding) and never fails the ingest (task 26.6: the memories are
+    saved, the index is not regenerated). The gate takes the path-aware rule
+    there -- a refresh only re-points provenance, identity is the id -- and the
+    error is kept on `errors` for the report (CLAUDE.md #no-silent-failures)."""
+
+    def __init__(self) -> None:
+        self._cache: dict[Path, bool] = {}
+        self.errors: list[str] = []
+
+    def __call__(self, path: Path) -> bool:
+        from refmatrix.memory_layout import MARKER_NAME, MemoryLayoutError, is_organised
+        seen: list[Path] = []
+        result = False
+        for d in Path(path).resolve().parents:
+            if d in self._cache:
+                result = self._cache[d]
+                break
+            seen.append(d)
+            if (d / MARKER_NAME).exists():
+                try:
+                    result = is_organised(d)
+                except MemoryLayoutError as exc:
+                    self.errors.append(f"{exc} -- the path-aware gate applied under {d}")
+                    result = True
+                break
+        for d in seen:
+            self._cache[d] = result
+        return result
+
+
+class _SourcePathIndex:
+    """Memory rows by RESOLVED stored `source_path` (after `--path-map`), built
+    lazily once per run -- the lookup HEAD never had (AC-1b: HEAD only wrote
+    `source_path`). Kept current as the run refreshes rows."""
+
+    def __init__(self, store: Store, path_map) -> None:
+        self._store = store
+        self._map = path_map
+        self._by_path: "dict[str, list[tuple[int, str]]] | None" = None
+
+    def _load(self) -> dict:
+        if self._by_path is None:
+            self._by_path = {}
+            for eid, name, meta in self._store._connect().execute(
+                    "SELECT e.id, e.name, mc.metadata FROM entities e "
+                    "JOIN memory_content mc ON mc.entity_id = e.id "
+                    "WHERE e.partition_id = ? AND e.kind = 'memory'",
+                    (self._store._partition_id,)).fetchall():
+                try:
+                    sp = (json.loads(meta) if meta else {}).get("source_path")
+                except (TypeError, ValueError, AttributeError):
+                    sp = None
+                if isinstance(sp, str) and sp:
+                    key = str(Path(_map_path(sp, self._map)).resolve())
+                    self._by_path.setdefault(key, []).append((int(eid), str(name)))
+        return self._by_path
+
+    def rows_on(self, resolved_old: str, exclude: "set[int]") -> list[tuple[int, str]]:
+        return [r for r in self._load().get(resolved_old, []) if r[0] not in exclude]
+
+    def moved(self, eids: "list[int]", old: str, new: str) -> None:
+        idx = self._load()
+        gone = set(eids)
+        keep = [r for r in idx.get(old, []) if r[0] not in gone]
+        moved = [r for r in idx.get(old, []) if r[0] in gone]
+        idx[old] = keep
+        idx.setdefault(new, []).extend(moved)
+
+
+@dataclass
+class _GateDecision:
+    """What the memory gate decided for one file. `term` is the ONE refresh
+    term (`moved` / `stale_before`) or None; `legacy` the other rows on a
+    moved file's old path, refreshed with it."""
+    skip: bool
+    term: "str | None" = None
+    legacy: list = field(default_factory=list)
+    old_resolved: "str | None" = None
+
+
+def _memory_gate(row: "_MemRow | None", current_hash: str, resolved: str, *,
+                 path_aware: bool, path_map, index: "_SourcePathIndex",
+                 walk_eids: "set[int]") -> _GateDecision:
+    """THE memory resume gate (bridge and `--dry-run` alike).
+
+    Hash-only (HEAD's gate, un-organised dirs, AC-3b): skip when the stored
+    hash matches. Path-aware (organised dirs, and every `--dry-run`): skip
+    only when the hash matches AND the stored `source_path` EQUALS the
+    resolved file path -- literally (#rd-literal): a stored path that only
+    resolves to it is the symlink form and is refreshed once. A path that
+    disagrees is ONE term by the stored path's shape (#impl-notes-r5 m3):
+    missing, or not equal to its own resolution (symlink form) ->
+    `stale_before`; otherwise -> `moved`. Whenever the file's old path
+    (resolved) differs from its new one, every OTHER memory row on that old
+    path -- not an id row of any file in this walk -- is refreshed with it
+    (AC-1b), whatever term the id row lands in (r6-lite n2)."""
+    if row is None:
+        return _GateDecision(skip=False)
+    hash_match = bool(current_hash) and row.content_hash == current_hash
+    if not path_aware:
+        return _GateDecision(skip=hash_match)
+    stored = _map_path(row.source_path, path_map)
+    if stored == resolved:
+        return _GateDecision(skip=hash_match)
+    if stored is None:
+        return _GateDecision(skip=False, term="stale_before")
+    old_resolved = str(Path(stored).resolve())
+    term = "stale_before" if old_resolved != stored else "moved"
+    legacy = []
+    if old_resolved != resolved:
+        legacy = index.rows_on(old_resolved, walk_eids | {row.eid})
+    return _GateDecision(skip=False, term=term, legacy=legacy, old_resolved=old_resolved)
+
+
+def split_claims(claims: "dict[str, list[Path]]") -> "tuple[set[str], list]":
+    """AC-4: which ids this walk may write. An id claimed by ONE file is
+    written; an id claimed by two or more is refused -- neither file is
+    written, the stored row keeps its prior content, and the claim is
+    returned as `(id, [paths])` to be counted and named (at HEAD the last file
+    walked silently won). Not marker-gated: a silent last-wins is a defect in
+    every dir (#rd-fresh-duplicate).
+
+    THE single place a claim is judged. Task 26.3 (built in parallel) owns the
+    one sanctioned pair -- a save-state at the top level and its
+    `savestates/` copy mid-move (#rd-262-263, 26.3 #rd-duplicate-vs-262);
+    its exemption and its preference between the two belong HERE, so the
+    bridge and `--dry-run` cannot judge a claim two ways."""
+    refused: set[str] = set()
+    dups: list = []
+    for doc_id, ps in claims.items():
+        if len(ps) > 1:
+            refused.add(doc_id)
+            dups.append((doc_id, list(ps)))
+    return refused, dups
+
+
+def _parse_memory_walk(paths: list[Path], stats: "IngestStats", *,
+                       project_root, verbose: bool) -> list:
+    """Parse every memory file once: `[(path, doc, hash)]`, with the index /
+    unparseable / non-GMD skips counted on `stats` exactly as pass 1 counted
+    them, and contested ids (AC-4) removed and recorded. Shared by the bridge
+    and `--dry-run`."""
+    parsed: list = []
+    for path in paths:
+        try:
+            current_hash = _doc_content_hash(path)
+        except Exception:
+            current_hash = ""
+        if path.name in MEMORY_INDEX_FILES:
+            # The flat index is not a memory (ch-bsd plan-5 #b-2).
+            stats.skipped_index.append(path.name)
+            continue
+        try:
+            doc = parse_gmd(path, lenient=True, project_root=project_root, memory_ids=True)
+        except Exception as e:
+            # Counted AND named in the report (plan-5 task 5.1).
+            stats.skipped_unparseable.append((path, f"{type(e).__name__}: {e}"))
+            if verbose:
+                print(f"  skip {path}: {type(e).__name__}: {e}")
+            continue
+        if doc is None:
+            stats.skipped_non_gmd += 1
+            continue
+        parsed.append((path, doc, current_hash))
+    claims: dict[str, list[Path]] = {}
+    for path, doc, _h in parsed:
+        claims.setdefault(doc.doc_id, []).append(path)
+    refused, dups = split_claims(claims)
+    stats.duplicate_ids.extend(dups)
+    return [e for e in parsed if e[1].doc_id not in refused]
+
+
+def _count_term(stats: "IngestStats", decision: _GateDecision) -> None:
+    if decision.term == "moved":
+        stats.moved += 1
+    elif decision.term == "stale_before":
+        stats.stale_before += 1
+    stats.moved_legacy += len(decision.legacy)
+
+
+def plan_memory_refresh(store: Store, paths: list[Path], *,
+                        path_map=None, project_root: "Path | None" = None) -> "IngestStats":
+    """`rmx ingest-gmd --as-memory --dry-run` (AC-3): what the bridge's
+    path-aware gate WOULD refresh, writing nothing. Evaluates the MARKER-ON
+    rule for every file whatever the dir's marker says (r4 s2: it answers
+    "what would organising refresh"); `path_map` rewrites stored paths before
+    comparing (the relocated twin, r3 s2). Read-only: every statement here is
+    a SELECT, so it runs on a `--store-snapshot` copy opened read-only."""
+    stats = IngestStats()
+    entries = _parse_memory_walk(paths, stats, project_root=project_root, verbose=False)
+    rows = {doc.doc_id: _memory_row(store, doc.doc_id) for _p, doc, _h in entries}
+    walk_eids = {r.eid for r in rows.values() if r is not None}
+    index = _SourcePathIndex(store, path_map)
+    for path, doc, h in entries:
+        d = _memory_gate(rows[doc.doc_id], h, str(Path(path).resolve()), path_aware=True,
+                         path_map=path_map, index=index, walk_eids=walk_eids)
+        if d.skip:
+            stats.skipped_unchanged += 1
+        _count_term(stats, d)
+    return stats
+
+
 def ingest_gmd_paths(
     store: Store, paths: list[Path], verbose: bool = False,
     yield_lock: Callable[[], None] | None = None,
@@ -849,34 +1196,73 @@ def ingest_gmd_paths(
     # `eid_by_name` so cross-doc wikilink resolution still finds them.
     skip_docs: set[str] = set()
 
-    for path in paths:
-        # Resume fast path: if an entity for this doc already exists
-        # with a matching gmd_content_hash, skip both passes. The hash
-        # is only set at the END of pass2, so a partial prior ingest
-        # leaves the hash unset and we re-process.
-        try:
-            current_hash = _doc_content_hash(path)
-        except Exception:
-            current_hash = ""
-        if as_memory and path.name in MEMORY_INDEX_FILES:
-            # The flat index is not a memory (ch-bsd plan-5 #b-2: the deleted
-            # walker excluded it; the rewrite ingested `MEMORY` as curated).
-            stats.skipped_index.append(path.name)
-            continue
-        try:
-            doc = parse_gmd(path, lenient=lenient or as_memory,
-                            project_root=project_root, memory_ids=as_memory)
-        except Exception as e:
-            # Counted AND named in the report — a skipped memory file is a
-            # memory that never reaches recall (plan-5 task 5.1).
-            stats.skipped_unparseable.append((path, f"{type(e).__name__}: {e}"))
-            if verbose:
-                print(f"  skip {path}: {type(e).__name__}: {e}")
-            continue
-        if doc is None:
-            stats.skipped_non_gmd += 1
-            continue
-        if current_hash:
+    # Parse first, write second (task 26.2 AC-4): a contested id must be known
+    # before EITHER claimant is written, or the last file walked silently wins.
+    entries: list = []
+    if as_memory:
+        entries = _parse_memory_walk(paths, stats, project_root=project_root,
+                                     verbose=verbose)
+    else:
+        for path in paths:
+            # Resume fast path: if an entity for this doc already exists
+            # with a matching gmd_content_hash, skip both passes. The hash
+            # is only set at the END of pass2, so a partial prior ingest
+            # leaves the hash unset and we re-process.
+            try:
+                current_hash = _doc_content_hash(path)
+            except Exception:
+                current_hash = ""
+            try:
+                doc = parse_gmd(path, lenient=lenient, project_root=project_root)
+            except Exception as e:
+                # Counted AND named in the report (plan-5 task 5.1).
+                stats.skipped_unparseable.append((path, f"{type(e).__name__}: {e}"))
+                if verbose:
+                    print(f"  skip {path}: {type(e).__name__}: {e}")
+                continue
+            if doc is None:
+                stats.skipped_non_gmd += 1
+                continue
+            entries.append((path, doc, current_hash))
+
+    # The memory gate's inputs (task 26.2): each file's id row, read once; the
+    # id rows of the whole walk (never refreshed as some other file's legacy
+    # row); the organised-dir test (AC-3b); the old-path index (AC-1b).
+    mem_rows: dict[str, "_MemRow | None"] = {}
+    walk_eids: set[int] = set()
+    organised = _OrganisedDirs()
+    path_index = _SourcePathIndex(store, None)
+    if as_memory:
+        mem_rows = {doc.doc_id: _memory_row(store, doc.doc_id) for _p, doc, _h in entries}
+        walk_eids = {r.eid for r in mem_rows.values() if r is not None}
+
+    for path, doc, current_hash in entries:
+        gate: "_GateDecision | None" = None
+        path_aware = False
+        resolved_path = str(Path(path).resolve())
+        if as_memory:
+            path_aware = organised(path)
+            gate = _memory_gate(mem_rows.get(doc.doc_id), current_hash, resolved_path,
+                                path_aware=path_aware, path_map=None, index=path_index,
+                                walk_eids=walk_eids)
+            if current_hash:
+                file_hashes[doc.doc_id] = current_hash
+            row = mem_rows.get(doc.doc_id)
+            if gate.skip and row is not None:
+                # Unchanged (hash, and in an organised dir the literal path):
+                # register the id for pass-2 cross-refs and write nothing.
+                stats.skipped_unchanged += 1
+                docs.append(doc)
+                stats.docs += 1
+                eid_by_name[doc.doc_id] = row.eid
+                doc_level_eid[doc.doc_id] = row.eid
+                skip_docs.add(doc.doc_id)
+                pass1_processed += 1
+                if progress_cb is not None:
+                    progress_cb("pass1-skip", pass1_processed, len(paths), path)
+                continue
+            _count_term(stats, gate)
+        elif current_hash:
             file_hashes[doc.doc_id] = current_hash
             existing_hash = _existing_hash_for(
                 store, doc.doc_id, skip_lookup_kinds,
@@ -966,7 +1352,9 @@ def ingest_gmd_paths(
                 mtype = raw_meta["type"]
             mem_metadata = {
                 "source": "ingest_gmd_as_memory",
-                "source_path": str(path),
+                # In an organised dir the RESOLVED path is stored, since the
+                # path-aware gate compares it literally (task 26.2 AC-1/AC-2).
+                "source_path": resolved_path if path_aware else str(path),
                 "gmd_version": doc.gmd_version,
                 "title": doc.title,
             }
@@ -974,13 +1362,22 @@ def ingest_gmd_paths(
                 if k not in mem_metadata:
                     mem_metadata[k] = v
             _mem_content = body or raw_text
-            doc_eid = store.add_memory(
-                name=doc.doc_id,
-                content=_mem_content,
-                mtype=mtype,
-                tags=list(doc.tags) if doc.tags else None,
-                metadata=mem_metadata,
-            )
+            legacy_eids = [eid for eid, _n in (gate.legacy if gate else [])]
+            # The id row and the legacy rows on its old path are ONE store
+            # write (AC-1b, r6-lite n1): an id row is never refreshed without
+            # them. Both writers use `_maybe_commit` inside the transaction.
+            with store.transaction():
+                doc_eid = store.add_memory(
+                    name=doc.doc_id,
+                    content=_mem_content,
+                    mtype=mtype,
+                    tags=list(doc.tags) if doc.tags else None,
+                    metadata=mem_metadata,
+                )
+                if legacy_eids:
+                    store.refresh_memory_source_path(legacy_eids, resolved_path)
+            if legacy_eids and gate is not None and gate.old_resolved:
+                path_index.moved(legacy_eids, gate.old_resolved, resolved_path)
             if _coref_on():
                 # Resolutions are stored against EXACTLY the string that
                 # became memory_content.content -- the embedder re-applies
@@ -1052,7 +1449,9 @@ def ingest_gmd_paths(
                 **node.attrs,
             }
             eid = store.upsert_entity(
-                kind="concept", name=name, path=str(path),
+                kind="concept", name=name,
+                # the moved file's anchors follow it (task 26.2 AC-1)
+                path=resolved_path if path_aware else str(path),
                 tldr=tldr, meta=meta,
             )
             eid_by_name.setdefault(name, eid)
@@ -1066,6 +1465,8 @@ def ingest_gmd_paths(
             # Lock-yield window: daemon releases + reacquires _store_lock so
             # CLI ops queued behind us get a turn. See module docstring.
             yield_lock()
+
+    stats.marker_errors.extend(organised.errors)
 
     # ---- pass 2: hierarchy + rel: + mentions ----------------------------
     _ensure_linkage(store, "part-of", stats)
