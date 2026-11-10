@@ -255,6 +255,11 @@ def test_click_defaults_match_verb_defaults():
 # The kwargs + canary are what turn the recorder from "was called" into "the
 # options arrive and the result is what gets rendered" (ch-bsd plan-3 r2 #s-3:
 # a twin that called the verb and then rendered from the ring passed).
+# The canned `rmx_memory_compile` index text: a distinct marker, so the CLI can only have
+# written it by copying the verb's `subjects_gmd`, never by rendering its own.
+MEMORY_COMPILE_GMD = ('---\ngmd: "0.1"\nid: memory-subjects\ntitle: "CANARY-GMD"\n'
+                      'tags: [memory]\n---\n\n# CANARY-GMD-written-by-the-verb {#root}\n')
+
 CLI_INVOKE = {
     "rmx_memory_add": (["memory", "add", "n", "-c", "body", "--type", "note", "--protect"],
                        {"id": 4242},
@@ -389,7 +394,10 @@ CLI_INVOKE = {
                             "subjects": [{"id": 9, "name": "subject_pattern_canary_subj",
                                           "label": "CANARY-subj", "size": 2}],
                             "linked": 2, "unlinked": 0, "stale_total": 0, "stale_new": 0,
-                            "stale_unmarked": 0},
+                            "stale_unmarked": 0,
+                            # 26.6 r1 remedy #rm-subjects-gmd: the VERB renders the index and
+                            # the CLI only writes it; an applied result without it fails closed.
+                            "subjects_gmd": MEMORY_COMPILE_GMD},
                            {"scope": "pattern", "apply": True, "min_size": 3, "k": 5,
                             "invoked_by": "cli"}, "CANARY-subj"),
 }
@@ -460,6 +468,31 @@ def test_cli_twin_calls_its_verb(vname, _cli_env, monkeypatch):
             got = list(got)
         assert got == val, f"{vname}.{k}: argv gave {got!r}, expected {val!r}"
     assert canary in r.output, f"{vname}: CLI did not render the verb's result ({canary!r})"
+
+
+def test_cli_memory_compile_writes_the_verbs_subjects_gmd(_cli_env, monkeypatch):
+    """26.6 r1 remedy #rm-subjects-gmd: `memory compile --apply` writes the verb's
+    `subjects_gmd` byte-for-byte to the default `--out` path, and renders nothing itself."""
+    from refmatrix import consolidate
+    argv, canned, _expect, _canary = CLI_INVOKE["rmx_memory_compile"]
+    v = verbs.VERBS["rmx_memory_compile"]
+    monkeypatch.setattr(verbs, v.fn.__name__,
+                        lambda root, *a, **kw: json.loads(json.dumps(canned)))
+    dest = consolidate.default_out_path(_cli_env)
+    assert not dest.exists(), dest
+    r = CliRunner().invoke(cli_main, argv, catch_exceptions=False)
+    assert r.exit_code == 0, r.output + (r.stderr or "")
+    assert dest.read_text() == MEMORY_COMPILE_GMD, dest.read_text()
+
+    # Fail-closed: an applied result with no `subjects_gmd` writes nothing and exits non-zero.
+    dest.unlink()
+    bare = {k: val for k, val in canned.items() if k != "subjects_gmd"}
+    monkeypatch.setattr(verbs, v.fn.__name__,
+                        lambda root, *a, **kw: json.loads(json.dumps(bare)))
+    r = CliRunner().invoke(cli_main, argv)
+    assert r.exit_code != 0, r.output
+    assert "subjects_gmd" in r.output, r.output
+    assert not dest.exists(), "the adapter wrote an index the verb never rendered"
 
 
 @pytest.mark.parametrize("vname", sorted(CLI_PAYLOAD_INVOKE))

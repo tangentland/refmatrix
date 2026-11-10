@@ -285,13 +285,16 @@ def test_twin_the_global_store_says_it_skips_the_index(tmp_path, monkeypatch):
 def _seed_brief_corpus(s: Store, part: str) -> dict:
     """Talk and disagreement that lives ONLY in rows scope `memory` must not see: impressions
     mention `imp_only` and contradict each other; a `tag: pattern` doc mentions `pat_only`.
-    The memory corpus has its own orphan (`mem_only`) and its own contradiction, as controls."""
+    The memory corpus has its own orphan (`mem_only`) and its own contradiction, as controls.
+    The two corpora DIFFER in size (5 memory rows, 4 pattern rows) so a brief that ignores its
+    scope cannot match the compile's corpus by count alone (GREEN mutation M3 survived when
+    both were 4)."""
     with s.with_partition(part):
         mem_c = s.add_concept("mem_only")
         imp_c = s.add_concept("imp_only")
         pat_c = s.add_concept("pat_only")
         ids = {}
-        for n in ("note_m1", "note_m2", "note_m3", "note_m4"):
+        for n in ("note_m1", "note_m2", "note_m3", "note_m4", "note_m5"):
             ids[n] = s.add_memory(n, f"body of {n}", mtype="project")
             s.link("mentions", mem_c, ids[n])
         for n in ("obs_i1", "obs_i2", "obs_i3", "obs_i4"):
@@ -332,7 +335,7 @@ def test_one_corpus_brief_detectors_exclude_impressions_and_pattern_docs_by_defa
     contra = _labels(res, "contradicted")
     assert "note_m1 vs note_m2" in contra, f"control: {contra}"
     assert not {c for c in contra if "obs_" in c or "doc_p" in c}, contra
-    assert res["stats"]["memories"] == 4, res["stats"]
+    assert res["stats"]["memories"] == 5, res["stats"]
 
 
 def test_one_corpus_brief_takes_an_explicit_scope(briefstore):
@@ -351,13 +354,25 @@ def test_one_corpus_brief_takes_an_explicit_scope(briefstore):
 @pytest.mark.parametrize("scope", ["memory", "pattern"])
 def test_one_corpus_brief_and_compile_read_the_same_rows(briefstore, scope):
     """One predicate, two readers: brief's corpus IS the compile's corpus for the same scope
-    (brief additionally drops its own `brief/*` rows, which `EXCLUDE_MTYPES` carries)."""
+    (brief additionally drops its own `brief/*` rows, which `EXCLUDE_MTYPES` carries).
+
+    Compared by row IDENTITY, not only by count: every orphan-concept brief's evidence must be
+    a row of the compile's corpus for that scope, and the corpus must be non-trivially
+    evidenced (the fixture's one orphan per corpus)."""
     s, part, _ids = briefstore
     with s.with_partition(part):
         want = {r["id"] for r in consolidate._memory_rows(
             s, exclude_mtypes=brief.EXCLUDE_MTYPES, scope=scope)}
+        other = {r["id"] for r in consolidate._memory_rows(
+            s, exclude_mtypes=brief.EXCLUDE_MTYPES,
+            scope="pattern" if scope == "memory" else "memory")}
         res = brief.compile_briefs(s, classes=["orphan-concept"], scope=scope)
+    assert len(want) != len(other), "control: the fixture corpora must differ in size"
     assert res["stats"]["memories"] == len(want), (scope, res["stats"], sorted(want))
+    seen = {int(e) for b in res["briefs"] for e in b.evidence}
+    assert seen, f"control: scope {scope} must yield an orphan with evidence: {res['briefs']}"
+    assert seen <= want, (
+        f"scope {scope}: brief evidence outside the compile's corpus: {sorted(seen - want)}")
 
 
 # ============================================ #rm-status-route (r1 #m-1) ===
