@@ -1,0 +1,51 @@
+pyc-guard: recompiled 2 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-6/src/refmatrix as checked-hash (bug-037)
+.F.F.                                                                    [100%]
+=================================== FAILURES ===================================
+_ test_stamp_per_scope_a_pattern_apply_leaves_the_memory_scope_needing_compile _
+
+    def test_stamp_per_scope_a_pattern_apply_leaves_the_memory_scope_needing_compile():
+        """THE audit probe (#s-1): an unstamped memory-scope subject, then a pattern-only apply.
+        At HEAD the one shared stamp clears `needs_compile` while the memory subjects stay
+        un-recompiled."""
+        base, root, part, s = _tmp_store()
+        try:
+            _seed_scopes(s, part)
+            _unstamped_memory_subject(s, part)
+            with s.with_partition(part):
+                consolidate.run_compile(s, scope="pattern", dry_run=False, **VP)
+                mc = s.derive_status()["memory_compile"]
+        finally:
+            s.close()
+        scopes = mc.get("scopes")
+        assert isinstance(scopes, dict) and set(scopes) == {"memory", "pattern"}, mc
+        for name, st in scopes.items():
+            for key in ("stamped", "behind_code", "compiled_subjects", "needs_compile"):
+                assert key in st, (name, key, st)
+        mem, pat = scopes["memory"], scopes["pattern"]
+>       assert mem["stamped"] is False, mem
+E       AssertionError: {'at': 1794336765.27491, 'behind_code': False, 'code_hash': 'p1:5758b05cb4025768c238f16e244ad1aa', 'compiled_subjects': 1, ...}
+E       assert True is False
+
+tests/test_memory_compile_remedy_r1.py:111: AssertionError
+_ test_stamp_per_scope_daemon_status_still_prints_the_memory_line_after_a_pattern_apply _
+
+spawn = <function spawn.<locals>._make at 0x11a6975e0>
+
+    def test_stamp_per_scope_daemon_status_still_prints_the_memory_line_after_a_pattern_apply(
+            spawn):
+        """AC (#rm-stamp-per-scope): through the CLI a user runs — `memory compile --apply --scope
+        pattern`, then `rmx daemon status` still says the memory scope is behind."""
+        ctx = spawn(_seed_scopes, pre=_unstamped_memory_subject)
+        assert _status_lines(_ok("daemon", "status")), "control: the unstamped subject must warn"
+        _ok("memory", "compile", "--apply", "--scope", "pattern", *P)
+        lines = _status_lines(_ok("daemon", "status"))
+        mem = [ln for ln in lines if "--scope pattern" not in ln]
+>       assert mem, f"the memory-scope line vanished after a PATTERN apply: {lines}"
+E       AssertionError: the memory-scope line vanished after a PATTERN apply: ['memory-compile: behind code — rmx memory compile --apply --scope pattern (partition proj); scope pattern: 2 compiled subject(s) and no compile stamp']
+E       assert []
+
+tests/test_memory_compile_remedy_r1.py:158: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_compile_remedy_r1.py::test_stamp_per_scope_a_pattern_apply_leaves_the_memory_scope_needing_compile
+FAILED tests/test_memory_compile_remedy_r1.py::test_stamp_per_scope_daemon_status_still_prints_the_memory_line_after_a_pattern_apply
+2 failed, 3 passed, 10 deselected in 13.97s

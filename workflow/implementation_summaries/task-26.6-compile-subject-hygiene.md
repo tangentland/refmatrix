@@ -154,3 +154,83 @@ then restored with `git checkout -- src` + `__pycache__` cleared in a SEPARATE c
 - **`rmx derive status`** leaves the memory-compile row out of its table: `passes` excludes
   it. `--json` carries it under `memory_compile`, and `rmx daemon status` prints its line.
 - **No version bump**: this repo bumps in a separate `release:` commit (`af141c4`).
+
+## Remedy r1 (2026-11-10) {#remedy-r1}
+
+rel: implements -> [[task-26.6-compile-subject-hygiene#remedy-r1]]
+rel: derives-from -> [[bsd-task-26.6-r1-compile-hygiene-290348a]]
+
+TDD GREEN over RED `a170ce9` + `b135c3d` (11 failing in `tests/test_memory_compile_remedy_r1.py`,
+`26.6-r1-red.log`). GREEN commit `a3b8fcb`. The R3 residual ([[task-26.6-compile-subject-hygiene#r3-residual]])
+is still open, so the status stays `in-progress`.
+
+### What changed, per item {#remedy-r1-items}
+
+- **#rm-stamp-per-scope (s-1).** `store.MEMORY_COMPILE_PATTERN_PASS = "memory-compile:pattern"`
+  and `MEMORY_COMPILE_SCOPE_PASSES`. The pattern pass is in `_DERIVE_PASS_MODULES`
+  (`consolidate.py`) and `_DERIVE_VERDICT_EXCLUDED`, and it is not expected.
+  `consolidate.run_compile` stamps only its scope's pass and names it in `stamp_pass`.
+  `Store._memory_compile_status` returns `scopes: {memory, pattern}`; each scope's record has
+  `pass`, `stamped`, `behind_code`, `compiled_subjects` and `needs_compile`, and only that
+  scope's subjects count (`consolidate.subject_scope`). A subject with an unknown
+  `compiled_scope` raises. The top-level fields stay the memory scope's record, because current
+  callers read them. `cli.render_memory_compile_warning` prints one line per stale scope; the
+  pattern line names `rmx memory compile --apply --scope pattern`. Both lines print with
+  `soft_wrap=True`, so the line is never wrapped.
+- **#rm-one-corpus (s-3).** `consolidate.in_corpus(name, mtype, tags, scope, exclude_mtypes)`
+  is the one predicate. `_memory_rows` filters with it, and `brief._memory_ids(store, scope=)`
+  IS `_memory_rows(EXCLUDE_MTYPES, scope)`. `brief.compile_briefs(..., scope="memory")` refuses
+  a plan compiled for another scope and reports `stats.scope`. `_op_memory_brief` and the
+  `rmx_memory brief` payload forward `scope`. `memory brief --compile` plans and briefs the one
+  scope. The dead `brief._excluded_mtype` is removed.
+- **#rm-status-route (m-1).** A new op, `memory_compile_status`, is in `CLI_OPS` and `OPS`, and
+  `verbs.memory_compile(status=True)` asks it. `memory_compile status=True` still answers by
+  delegating, for direct callers.
+- **#rm-subjects-gmd (m-5).** An applied `run_compile` result carries `subjects_gmd`
+  (`render_gmd(plan, partition=...)`). The CLI writes that text to `--out` or stdout. If an
+  applied result has no `subjects_gmd`, the CLI raises a `ClickException`; it never re-renders.
+- **#rm-stale-refs (m-3).** The `_op_memory_brief` docstring and the `cli.py` `memory brief
+  --compile` comment now describe the plan-on-replica read and the plan+apply op.
+- Items 2 and 5 are test-only (RED commits). Item 8 needs no change.
+
+### Results {#remedy-r1-results}
+
+| run | log | result |
+|---|---|---|
+| RED file | `26.6-r1-green-red-file.log` | 15 passed |
+| family (memory*, ingest_gmd*, save_state*, derive*, brief*, verb parity, docs-generated, plan7_10 r4) | `26.6-r1-green-family.log` | 647 passed, 1 failed, 4 skipped |
+| RED file + real-fallback test, after the mutation restores | `26.6-r1-green-post-restore.log` | 16 passed |
+
+The one family failure is `test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_memory_compile]`.
+Its canned verb result (`CLI_INVOKE`, `test_verb_parity.py:375`) has no `subjects_gmd`, so the
+CLI raises, as #rm-subjects-gmd requires. The fix is to add the key to the fixture. That is a
+test change, so it was flagged to the test-engineer and not worked around in `src/`.
+
+### Mutations {#remedy-r1-mutations}
+
+Committed at `a3b8fcb` before mutating. Each mutation was restored in its own command
+(`git checkout -- src`, `__pycache__` cleared, the fix grepped back).
+
+| id | mutation | killed by | log |
+|---|---|---|---|
+| M1 | the pattern scope stamps `memory-compile` | `a_pattern_apply_leaves_the_memory_scope_needing_compile`, `daemon_status_still_prints_the_memory_line…` | `26.6-r1-green-mut-M1.log` |
+| M2 | the scopes are collapsed (one shared stamp and one count) | 4 `stamp_per_scope` tests | `26.6-r1-green-mut-M2.log` |
+| M3 | brief ignores `scope` | `brief_takes_an_explicit_scope` | `26.6-r1-green-mut-M3.log` |
+| M4 | status is routed through `memory_compile` (the bg pool) | `status_route_answers_while_a_bg_job_holds_the_bg_pool` | `26.6-r1-green-mut-M4.log` |
+| M5 | `subjects_gmd` is dropped | `subjects_gmd_the_verb_carries_the_text_the_cli_writes` | `26.6-r1-green-mut-M5.log` |
+
+5 of 5 killed. One note for the test-engineer: under M3,
+`brief_and_compile_read_the_same_rows[pattern]` still passes. Both fixture corpora hold 4 rows,
+so a row count cannot tell the scopes apart.
+
+### Interpretations {#remedy-r1-interpretations}
+
+- The top-level `memory_compile` keys are the memory scope's record. They are not an aggregate
+  across scopes. Every renderer reads `scopes`.
+- Each status line now ends `; scope <name>: <why>`.
+- No `--scope` flag was added to `memory brief`: the CLI passes `memory` explicitly. The
+  `rmx_memory` verb's existing `scope` argument is forwarded for `brief` and validated by
+  `consolidate._check_scope`.
+- An older CLI talking to this daemon still works for `status=True`, because the old op
+  delegates. A new CLI talking to an older daemon gets "unknown op" on status. They deploy
+  together.

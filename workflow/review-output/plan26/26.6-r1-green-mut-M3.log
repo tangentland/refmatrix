@@ -1,0 +1,28 @@
+.F..                                                                     [100%]
+=================================== FAILURES ===================================
+________________ test_one_corpus_brief_takes_an_explicit_scope _________________
+
+briefstore = (<refmatrix.store.Store object at 0x114020440>, 'proj', {'doc_p1': 18, 'doc_p2': 19, 'doc_p3': 20, 'doc_p4': 21, ...})
+
+    def test_one_corpus_brief_takes_an_explicit_scope(briefstore):
+        """`brief` takes the compile's scope; scope `pattern` is exactly the impressions minus the
+        `tag: pattern` docs, as in `consolidate`."""
+        s, part, _ids = briefstore
+        with s.with_partition(part):
+            res = brief.compile_briefs(s, classes=["contradicted", "orphan-concept"],
+                                       scope="pattern")
+        orphans = _labels(res, "orphan-concept")
+>       assert orphans == {"imp_only"}, orphans
+E       AssertionError: {'mem_only'}
+E       assert {'mem_only'} == {'imp_only'}
+E         
+E         Extra items in the left set:
+E         'mem_only'
+E         Extra items in the right set:
+E         'imp_only'
+E         Use -v to get more diff
+
+tests/test_memory_compile_remedy_r1.py:346: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_compile_remedy_r1.py::test_one_corpus_brief_takes_an_explicit_scope
+1 failed, 3 passed, 11 deselected in 1.54s
