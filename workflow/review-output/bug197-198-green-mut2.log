@@ -1,0 +1,22 @@
+...F..........                                                           [100%]
+=================================== FAILURES ===================================
+___________ test_recalls_scope_never_becomes_the_brief_compile_scope ___________
+
+op_calls = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-560/test_recalls_scope_n...proj/.refmatrix'), [('memory_brief', {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj', ...})])
+
+    def test_recalls_scope_never_becomes_the_brief_compile_scope(op_calls):
+        """`scope` is recall's `project|global|both`. Sent with the brief action it
+        must not select the compile corpus — the defect was exactly that it did."""
+        root, seen = op_calls
+        verbs.memory(root, "brief", scope="pattern")
+>       assert _brief_args(seen).get("scope") in (None, consolidate.DEFAULT_SCOPE), seen
+E       AssertionError: [('memory_brief', {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj', ...})]
+E       assert 'pattern' in (None, 'memory')
+E        +  where 'pattern' = <built-in method get of dict object at 0x11525afc0>('scope')
+E        +    where <built-in method get of dict object at 0x11525afc0> = {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj', ...}.get
+E        +      where {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj', ...} = _brief_args([('memory_brief', {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj', ...})])
+
+tests/test_bug198_brief_compile_scope.py:84: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug198_brief_compile_scope.py::test_recalls_scope_never_becomes_the_brief_compile_scope
+1 failed, 13 passed in 0.70s

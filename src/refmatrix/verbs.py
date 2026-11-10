@@ -1728,14 +1728,19 @@ def _memory_payload(action: str, a: dict) -> dict:
     if action == "dedup":
         return {"dry_run": bool(a.get("dry_run", False))}
     if action == "brief":
-        # `scope` here is the COMPILE scope (memory | pattern) whose corpus the
-        # detectors read (26.6 r1 remedy #rm-one-corpus); the op refuses any
-        # other value and a plan compiled for a different scope.
+        # The COMPILE scope (memory | pattern) whose corpus the detectors read
+        # (26.6 r1 remedy #rm-one-corpus) arrives as `compile_scope` and goes
+        # out on the op's wire key `scope`; the op refuses any other value and
+        # a plan compiled for a different scope. Recall's `scope` (project |
+        # global | both) is NEVER forwarded here: one parameter name carrying
+        # two vocabularies let MCP brief the pattern corpus by accident
+        # (bug-198, ch-bsd 26.6 r2 #m-2-r2, 2026-11-10).
         p = {}
-        for k in ("min_members", "min_dates", "min_mentions", "classes",
-                  "plan", "scope"):
+        for k in ("min_members", "min_dates", "min_mentions", "classes", "plan"):
             if a.get(k) is not None:
                 p[k] = a[k]
+        if a.get("compile_scope") is not None:
+            p["scope"] = a["compile_scope"]
         if a.get("save"):
             p["save"] = True
         return p
@@ -1747,7 +1752,20 @@ _RECALL_FORWARD = ("query", "k", "scope", "since", "since_seconds", "recent",
                    "degree", "partition")
 
 
-@verb("rmx_memory", "Full access to the project memory store — parity with the CLI `rmx memory` group. `action` selects the op; pass that op's params alongside.")
+_MEMORY_DESCRIPTIONS = {
+    # bug-198 (2026-11-10): the two scope keys are two vocabularies, so each
+    # says which action reads it and what its values mean.
+    "scope": "recall only — project: this store; global: the shared behavior "
+             "store; both: round-robin merge. Ignored by every other action",
+    "compile_scope": "brief only — the memory-compile scope whose corpus all four "
+                     "detectors read: memory (default; every memory except "
+                     "impressions and `tag: pattern` docs) or pattern (impressions "
+                     "only). Any other value is refused",
+}
+
+
+@verb("rmx_memory", "Full access to the project memory store — parity with the CLI `rmx memory` group. `action` selects the op; pass that op's params alongside.",
+      descriptions=_MEMORY_DESCRIPTIONS)
 def memory(root: Path, action: typing.Literal[
                "recall", "add", "get", "list", "search", "forget", "reclassify",
                "retag", "link", "score", "bulk_forget", "dedup", "promote",
@@ -1773,12 +1791,21 @@ def memory(root: Path, action: typing.Literal[
            min_members: int = 3, min_dates: int = 3, min_mentions: int = 4,
            classes: list[str] | None = None, save: bool = False,
            plan: dict | None = None,
+           compile_scope: typing.Literal["memory", "pattern"] | None = None,
            timeout: float | None = None) -> dict:
     """One dispatcher over the CLI `rmx memory` group. recall/add reuse the
     dedicated verbs (recall forwards every recall knob it accepts); promote
     copies project→global; everything else routes to the daemon's memory_*
     op with the project partition injected."""
     a = {k: v for k, v in locals().items() if k not in ("root", "action", "timeout")}
+    if action == "brief" and compile_scope is not None:
+        # Before ANY daemon call (bug-198): the Literal is a schema hint, not
+        # a check — `Verb.run` (the MCP path) passes whatever the client sent.
+        from refmatrix.consolidate import SCOPES
+        if compile_scope not in SCOPES:
+            raise VerbArgsError(
+                f"memory brief: compile_scope must be one of {'|'.join(SCOPES)}, "
+                f"got {compile_scope!r} (recall's project|global|both is `scope`)")
     if action == "recall":
         kw = {k: v for k, v in a.items()
               if k in _RECALL_FORWARD and v is not None}

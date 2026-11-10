@@ -1,0 +1,59 @@
+....FFFF......                                                           [100%]
+=================================== FAILURES ===================================
+______ test_an_invalid_compile_scope_fails_loudly_before_the_daemon[both] ______
+
+op_calls = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-562/test_an_invalid_comp...proj/.refmatrix'), [('memory_brief', {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj', ...})])
+bad = 'both'
+
+    @pytest.mark.parametrize("bad", ["both", "project", "bogus"])
+    def test_an_invalid_compile_scope_fails_loudly_before_the_daemon(op_calls, bad):
+        root, seen = op_calls
+>       with pytest.raises(verbs.VerbArgsError) as ei:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'refmatrix.verbs.VerbArgsError'>
+
+tests/test_bug198_brief_compile_scope.py:90: Failed
+____ test_an_invalid_compile_scope_fails_loudly_before_the_daemon[project] _____
+
+op_calls = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-562/test_an_invalid_comp...proj/.refmatrix'), [('memory_brief', {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj', ...})])
+bad = 'project'
+
+    @pytest.mark.parametrize("bad", ["both", "project", "bogus"])
+    def test_an_invalid_compile_scope_fails_loudly_before_the_daemon(op_calls, bad):
+        root, seen = op_calls
+>       with pytest.raises(verbs.VerbArgsError) as ei:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'refmatrix.verbs.VerbArgsError'>
+
+tests/test_bug198_brief_compile_scope.py:90: Failed
+_____ test_an_invalid_compile_scope_fails_loudly_before_the_daemon[bogus] ______
+
+op_calls = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-562/test_an_invalid_comp...proj/.refmatrix'), [('memory_brief', {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj', ...})])
+bad = 'bogus'
+
+    @pytest.mark.parametrize("bad", ["both", "project", "bogus"])
+    def test_an_invalid_compile_scope_fails_loudly_before_the_daemon(op_calls, bad):
+        root, seen = op_calls
+>       with pytest.raises(verbs.VerbArgsError) as ei:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'refmatrix.verbs.VerbArgsError'>
+
+tests/test_bug198_brief_compile_scope.py:90: Failed
+______________ test_the_mcp_tool_rejects_an_invalid_compile_scope ______________
+
+op_calls = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-562/test_the_mcp_tool_re...proj/.refmatrix'), [('memory_brief', {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj', ...})])
+
+    def test_the_mcp_tool_rejects_an_invalid_compile_scope(op_calls):
+        """The transport path (`Verb.run`, which MCP calls) fails the same way."""
+        root, seen = op_calls
+>       with pytest.raises(verbs.VerbArgsError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'refmatrix.verbs.VerbArgsError'>
+
+tests/test_bug198_brief_compile_scope.py:99: Failed
+=========================== short test summary info ============================
+FAILED tests/test_bug198_brief_compile_scope.py::test_an_invalid_compile_scope_fails_loudly_before_the_daemon[both]
+FAILED tests/test_bug198_brief_compile_scope.py::test_an_invalid_compile_scope_fails_loudly_before_the_daemon[project]
+FAILED tests/test_bug198_brief_compile_scope.py::test_an_invalid_compile_scope_fails_loudly_before_the_daemon[bogus]
+FAILED tests/test_bug198_brief_compile_scope.py::test_the_mcp_tool_rejects_an_invalid_compile_scope
+4 failed, 10 passed in 0.73s
