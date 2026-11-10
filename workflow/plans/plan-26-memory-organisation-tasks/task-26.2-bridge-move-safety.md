@@ -308,3 +308,10 @@ Taken as the user would (correct first), answering the RED author's points at `2
    concepts. Fixing it is in scope here. {#rd-ac5-defect}
 7. **The save-state mid-move pair** is exempt from AC-4 ([[task-26.3-savestate-subfolder#rd-duplicate-vs-262]]).
    {#rd-262-263}
+
+**Combined AC with 26.3 (ch-bsd 26.3 r1 #m-1, 2026-11-10).** The save-state pair rule lives in
+the walk (`memory_layout.iter_memory_files`, [[task-26.3-savestate-subfolder#rm-newer-copy]]), so
+AC-4's duplicate-id check never sees that pair. **AC-4c:** a memdir holding a save-state pair AND
+one other id claimed twice → `duplicate_ids` names only the other id; the save-state is ingested
+once (the copy the walk keeps); the skip line names the dropped copy. Tested by whichever of
+26.2 / 26.3 merges second. {#ac-4c-combined}
