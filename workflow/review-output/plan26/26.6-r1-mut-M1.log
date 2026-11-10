@@ -1,0 +1,105 @@
+FF.F                                                                     [100%]
+=================================== FAILURES ===================================
+____ test_twin_daemon_down_bridge_regenerates_the_index_in_an_organised_dir ____
+
+downstore = namespace(base=PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266t-u6s3fqj9'), root=PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266t-u6s3fqj9/proj/.refmatrix'))
+
+    def test_twin_daemon_down_bridge_regenerates_the_index_in_an_organised_dir(downstore):
+        ctx = downstore
+        assert not dm.ping(ctx.root, retries=0), "control: no daemon may serve this store"
+        memdir = _memdir(ctx, organised=True)
+        (memdir / "new_note.md").write_text(GMD.format(id="new_note", t="project", body="newest"))
+        code, out = _cli("ingest-gmd", "--as-memory", str(memdir))
+        assert code == 0, out
+        idx = (memdir / "MEMORY.md").read_text()
+>       assert "](new_note.md)" in idx, f"the daemon-down twin wrote no index:\n{idx}\n---\n{out}"
+E       AssertionError: the daemon-down twin wrote no index:
+E         - [old_note](old_note.md) — older
+E         - [ch-bsd impressions (1)](impressions/) — pointer
+E         
+E         ---
+E         ingested 3 doc(s), 3 node(s), 0 rel: edge(s), 12 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         skipped_index: 1 (MEMORY.md)
+E         new linkage types: lead, part-of
+E         memory embed: 3 row(s) now reachable by recall in proj
+E         
+E       assert '](new_note.md)' in '- [old_note](old_note.md) — older\n- [ch-bsd impressions (1)](impressions/) — pointer\n'
+
+tests/test_memory_compile_remedy_r1.py:216: AssertionError
+____ test_twin_daemon_down_unreadable_marker_says_not_regenerated_and_saves ____
+
+downstore = namespace(base=PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266t-ygmwkup1'), root=PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266t-ygmwkup1/proj/.refmatrix'))
+
+    def test_twin_daemon_down_unreadable_marker_says_not_regenerated_and_saves(downstore):
+        ctx = downstore
+        memdir = _memdir(ctx, organised=True)
+        _break_marker(memdir)
+        before = (memdir / "MEMORY.md").read_bytes()
+        (memdir / "third.md").write_text(GMD.format(id="third", t="project", body="3"))
+        code, out = _cli("ingest-gmd", "--as-memory", str(memdir))
+>       _assert_not_regenerated_but_saved(code, out, memdir, before)
+
+tests/test_memory_compile_remedy_r1.py:239: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+code = 0
+out = 'ingested 3 doc(s), 3 node(s), 0 rel: edge(s), 11 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nskipped_index: 1 (MEMORY.md)\nnew linkage types: lead, part-of\nmemory embed: 3 row(s) now reachable by recall in proj\n'
+memdir = PosixPath('/private/tmp/rmx-h5kgb256/h/.claude/projects/-private-var-folders-js-71d0ymjj56b2mbf40rvwk84r0000gn-T-r266t-ygmwkup1-proj/memory')
+before = b'- [old_note](old_note.md) \xe2\x80\x94 older\n- [ch-bsd impressions (1)](impressions/) \xe2\x80\x94 pointer\n'
+
+    def _assert_not_regenerated_but_saved(code: int, out: str, memdir: Path, before: bytes) -> None:
+        assert code == 0, f"an unreadable marker failed an ingest whose rows are saved:\n{out}"
+>       assert "MEMORY.md NOT regenerated" in out, out
+E       AssertionError: ingested 3 doc(s), 3 node(s), 0 rel: edge(s), 11 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         skipped_index: 1 (MEMORY.md)
+E         new linkage types: lead, part-of
+E         memory embed: 3 row(s) now reachable by recall in proj
+E         
+E       assert 'MEMORY.md NOT regenerated' in 'ingested 3 doc(s), 3 node(s), 0 rel: edge(s), 11 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nskipped_index: 1 (MEMORY.md)\nnew linkage types: lead, part-of\nmemory embed: 3 row(s) now reachable by recall in proj\n'
+
+tests/test_memory_compile_remedy_r1.py:227: AssertionError
+______________ test_twin_the_global_store_says_it_skips_the_index ______________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-484/test_twin_the_global_store_say0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11e8e4e20>
+
+    def test_twin_the_global_store_says_it_skips_the_index(tmp_path, monkeypatch):
+        """The global store has no project memory root: the skip is SAID, never silent."""
+        home = Path(tempfile.mkdtemp(prefix="r266g-"))
+        groot = home / ".refmatrix"
+        groot.mkdir()
+        s = Store(groot)
+        s.init()
+        s.close()
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: home))
+        monkeypatch.setenv("REFMATRIX_ROOT", str(groot))
+        monkeypatch.delenv("RMX_PARTITION", raising=False)
+        src = tmp_path / "gmem"
+        src.mkdir()
+        (src / "gnote.md").write_text(GMD.format(id="gnote", t="project", body="global"))
+        try:
+            assert not dm.ping(groot, retries=0), "control: no daemon may serve this store"
+            code, out = _cli("ingest-gmd", "--as-memory", str(src))
+            assert code == 0, out
+>           assert "MEMORY.md not regenerated: the global store has no project memory root" in out, \
+                out
+E               AssertionError: ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 4 mention(s)
+E                 skipped_non_gmd: 0
+E                 skipped_unparseable: 0
+E                 new linkage types: lead, part-of
+E                 memory embed: 1 row(s) now reachable by recall in r266g-7z7yczem
+E                 
+E               assert 'MEMORY.md not regenerated: the global store has no project memory root' in 'ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 4 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage types: lead, part-of\nmemory embed: 1 row(s) now reachable by recall in r266g-7z7yczem\n'
+
+tests/test_memory_compile_remedy_r1.py:276: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_memory_compile_remedy_r1.py::test_twin_daemon_up_unreadable_marker_says_not_regenerated_and_saves
+FAILED tests/test_memory_compile_remedy_r1.py::test_twin_daemon_down_bridge_regenerates_the_index_in_an_organised_dir
+FAILED tests/test_memory_compile_remedy_r1.py::test_twin_daemon_down_unreadable_marker_says_not_regenerated_and_saves
+FAILED tests/test_memory_compile_remedy_r1.py::test_twin_the_global_store_says_it_skips_the_index
+3 failed, 1 passed, 12 deselected in 15.30s

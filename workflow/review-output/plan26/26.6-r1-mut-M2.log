@@ -1,0 +1,78 @@
+.FF.                                                                     [100%]
+=================================== FAILURES ===================================
+____ test_twin_daemon_down_unreadable_marker_says_not_regenerated_and_saves ____
+
+downstore = namespace(base=PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266t-ym_h2uc3'), root=PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266t-ym_h2uc3/proj/.refmatrix'))
+
+    def test_twin_daemon_down_unreadable_marker_says_not_regenerated_and_saves(downstore):
+        ctx = downstore
+        memdir = _memdir(ctx, organised=True)
+        _break_marker(memdir)
+        before = (memdir / "MEMORY.md").read_bytes()
+        (memdir / "third.md").write_text(GMD.format(id="third", t="project", body="3"))
+        code, out = _cli("ingest-gmd", "--as-memory", str(memdir))
+>       _assert_not_regenerated_but_saved(code, out, memdir, before)
+
+tests/test_memory_compile_remedy_r1.py:239: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+code = 0
+out = 'ingested 3 doc(s), 3 node(s), 0 rel: edge(s), 11 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nskipped_index: 1 (MEMORY.md)\nnew linkage types: lead, part-of\nmemory embed: 3 row(s) now reachable by recall in proj\n'
+memdir = PosixPath('/private/tmp/rmx-2b4cr_6u/h/.claude/projects/-private-var-folders-js-71d0ymjj56b2mbf40rvwk84r0000gn-T-r266t-ym-h2uc3-proj/memory')
+before = b'- [old_note](old_note.md) \xe2\x80\x94 older\n- [ch-bsd impressions (1)](impressions/) \xe2\x80\x94 pointer\n'
+
+    def _assert_not_regenerated_but_saved(code: int, out: str, memdir: Path, before: bytes) -> None:
+        assert code == 0, f"an unreadable marker failed an ingest whose rows are saved:\n{out}"
+>       assert "MEMORY.md NOT regenerated" in out, out
+E       AssertionError: ingested 3 doc(s), 3 node(s), 0 rel: edge(s), 11 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         skipped_index: 1 (MEMORY.md)
+E         new linkage types: lead, part-of
+E         memory embed: 3 row(s) now reachable by recall in proj
+E         
+E       assert 'MEMORY.md NOT regenerated' in 'ingested 3 doc(s), 3 node(s), 0 rel: edge(s), 11 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nskipped_index: 1 (MEMORY.md)\nnew linkage types: lead, part-of\nmemory embed: 3 row(s) now reachable by recall in proj\n'
+
+tests/test_memory_compile_remedy_r1.py:227: AssertionError
+_____ test_twin_daemon_up_unreadable_marker_says_not_regenerated_and_saves _____
+
+spawn = <function spawn.<locals>._make at 0x137af9380>
+
+    def test_twin_daemon_up_unreadable_marker_says_not_regenerated_and_saves(spawn):
+        ctx = spawn()
+        memdir = _memdir(ctx, organised=True)
+        _break_marker(memdir)
+        before = (memdir / "MEMORY.md").read_bytes()
+        (memdir / "third.md").write_text(GMD.format(id="third", t="project", body="3"))
+        try:
+            code, out = _cli("ingest-gmd", "--as-memory", str(memdir))
+>           _assert_not_regenerated_but_saved(code, out, memdir, before)
+
+tests/test_memory_compile_remedy_r1.py:251: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+code = 0
+out = 'ingested 3 doc(s), 3 node(s), 0 rel: edge(s), 11 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nskipped_index: 1 (MEMORY.md)\nnew linkage types: lead, part-of\nmemory embed: 3 row(s) now reachable by recall in proj\n'
+memdir = PosixPath('/private/tmp/rmx-2b4cr_6u/h/.claude/projects/-private-var-folders-js-71d0ymjj56b2mbf40rvwk84r0000gn-T-r266-sw6n-m0w-proj/memory')
+before = b'- [old_note](old_note.md) \xe2\x80\x94 older\n- [ch-bsd impressions (1)](impressions/) \xe2\x80\x94 pointer\n'
+
+    def _assert_not_regenerated_but_saved(code: int, out: str, memdir: Path, before: bytes) -> None:
+        assert code == 0, f"an unreadable marker failed an ingest whose rows are saved:\n{out}"
+>       assert "MEMORY.md NOT regenerated" in out, out
+E       AssertionError: ingested 3 doc(s), 3 node(s), 0 rel: edge(s), 11 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         skipped_index: 1 (MEMORY.md)
+E         new linkage types: lead, part-of
+E         memory embed: 3 row(s) now reachable by recall in proj
+E         
+E       assert 'MEMORY.md NOT regenerated' in 'ingested 3 doc(s), 3 node(s), 0 rel: edge(s), 11 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nskipped_index: 1 (MEMORY.md)\nnew linkage types: lead, part-of\nmemory embed: 3 row(s) now reachable by recall in proj\n'
+
+tests/test_memory_compile_remedy_r1.py:227: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_memory_compile_remedy_r1.py::test_twin_daemon_down_bridge_regenerates_the_index_in_an_organised_dir
+PASSED tests/test_memory_compile_remedy_r1.py::test_twin_the_global_store_says_it_skips_the_index
+FAILED tests/test_memory_compile_remedy_r1.py::test_twin_daemon_down_unreadable_marker_says_not_regenerated_and_saves
+FAILED tests/test_memory_compile_remedy_r1.py::test_twin_daemon_up_unreadable_marker_says_not_regenerated_and_saves
+2 failed, 2 passed, 12 deselected in 15.24s
