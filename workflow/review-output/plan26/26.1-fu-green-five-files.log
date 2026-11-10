@@ -1,0 +1,52 @@
+........................................................................ [ 53%]
+..........................................F.......F...........           [100%]
+=================================== FAILURES ===================================
+____________ test_bridge_waits_for_an_active_job_on_the_same_target ____________
+
+live = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-_bgly7ul'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-_bgly7ul/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x105d302f0>
+
+    def test_bridge_waits_for_an_active_job_on_the_same_target(live, monkeypatch):
+        base, root = live
+        memdir = _big_dir(base, "memory", 350)
+        part = verbs.memory_partition(root)
+        resp = dm.call(root, "ingest_gmd_start", {"targets": [str(memdir)], "as_memory": True,
+                                                  "memory_mtype": "curated", "partition": part}, timeout=30)
+        assert resp.get("ok"), resp
+        jid = resp["result"]["job_id"]
+        monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "120")
+        out = cli_mod._sync_memory_dir(memdir)
+>       assert out["error"] is None, out
+E       AssertionError: {'embed': None, 'error': 'waiting for ingest job 7dbb30d0ba23: JSONDecodeError: Unterminated string starting at: line ...r 49071)', 'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-_bgly7ul/memory', 'partition': 'proj', ...}
+E       assert 'waiting for ingest job 7dbb30d0ba23: JSONDecodeError: Unterminated string starting at: line 1 column 49072 (char 49071)' is None
+
+tests/test_memory_bridge.py:110: AssertionError
+___________________ test_save_state_reports_a_waited_bridge ____________________
+
+live = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-4cmxxive'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-4cmxxive/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10606c0c0>
+
+    def test_save_state_reports_a_waited_bridge(live, monkeypatch):
+        """ch-bsd plan-5 #s-8: `waited` / `waited_job` reach the CLI."""
+        base, root = live
+        memdir = _big_dir(base, "memory", 350)
+        (memdir / "MEMORY.md").write_text("")
+        part = verbs.memory_partition(root)
+        resp = dm.call(root, "ingest_gmd_start", {"targets": [str(memdir)], "as_memory": True,
+                                                  "memory_mtype": "curated", "partition": part}, timeout=30)
+        assert resp.get("ok"), resp
+        monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "120")
+        monkeypatch.setenv("RMX_SESSION", "s-ss")
+        from refmatrix import stm as stm_mod
+        stm_mod.Stm(root, "s-ss").record("input", "hi")
+        r = CliRunner().invoke(cli_mod.main, ["save-state", "--memory-dir", str(memdir), "--no-lint", "--no-promote"])
+        assert r.exit_code == 0, r.output + (r.stderr or "")
+>       assert "waited for ingest job " + resp["result"]["job_id"] in r.output
+E       AssertionError: assert ('waited for ingest job ' + '3c8d3d50cae9') in 'save-state \n/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-4cmxxive/memory/sa\nvestate_sss.md  (1 eve...-char budget at 70234 chars — the tail WILL be cut on load; nothing left to fold (feedback entries are never folded)\n'
+E        +  where 'save-state \n/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-4cmxxive/memory/sa\nvestate_sss.md  (1 eve...-char budget at 70234 chars — the tail WILL be cut on load; nothing left to fold (feedback entries are never folded)\n' = <Result okay>.output
+
+tests/test_memory_bridge.py:260: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_bridge.py::test_bridge_waits_for_an_active_job_on_the_same_target
+FAILED tests/test_memory_bridge.py::test_save_state_reports_a_waited_bridge
+2 failed, 132 passed in 882.90s (0:14:42)

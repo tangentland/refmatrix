@@ -10512,6 +10512,8 @@ def _sync_memory_dir(memdir: Path) -> dict:
     save-state."""
     out: dict = {"memdir": str(memdir), "report": None, "error": None,
                  "skipped_non_gmd": 0, "skipped_unparseable": [], "skipped_index": [],
+                 # what the memory walk did not take (ch-bsd 26.1 r2 #m-2)
+                 "skipped": 0, "skipped_paths": [],
                  "waited": False, "waited_job": None,
                  # WHICH partition took the rows, and whether those rows got
                  # VECTORS (bug-065) — an as-memory ingest drains the memory
@@ -10550,6 +10552,12 @@ def _bridge_stats(out: dict, stats: dict) -> None:
     out["skipped_unparseable"] = [{"path": p, "error": e}
                                   for p, e in (stats.get("skipped_unparseable") or [])]
     out["skipped_index"] = list(stats.get("skipped_index") or [])
+    # What the memory walk did not take (dot-paths, symlinked folders, dangling
+    # links, `.gmd`), counted and named for save-state and MCP to return --
+    # `_ingest_gmd_sync` put them in its stats, and this copy was the missing
+    # link (ch-bsd 26.1 r2 #m-2, 2026-11-09).
+    out["skipped"] = int(stats.get("skipped") or 0)
+    out["skipped_paths"] = [str(p) for p in (stats.get("skipped_paths") or [])]
     # bug-111 r1 #2: an --as-memory doc drop that failed (purge or vector delete).
     out["doc_drop_failed"] = [{"path": p, "error": e}
                               for p, e in (stats.get("doc_drop_failed") or [])]
@@ -10609,7 +10617,18 @@ def _bridge_wait_for_active_job(memdir: Path, partition: str, err: str, out: dic
         res = job.get("result") or {}
         out["report"] = str(res.get("report") if isinstance(res, dict) else res)
         if isinstance(res, dict):
-            _bridge_stats(out, res.get("stats") or {})
+            # The job carries its walk skips at the TOP level of its result
+            # (`daemon._skip_fields`), not in `stats`; read them there, and say
+            # them in the report the way the synchronous legs do (ch-bsd 26.1
+            # r2 #m-2, 2026-11-09).
+            st = dict(res.get("stats") or {})
+            st["skipped"] = res.get("skipped") or 0
+            st["skipped_paths"] = list(res.get("skipped_paths") or [])
+            _bridge_stats(out, st)
+            from refmatrix.ingest_gmd import render_memory_skip_line
+            skip_line = render_memory_skip_line(st["skipped_paths"])
+            if skip_line:
+                out["report"] = f"{out['report']}\n{skip_line}"
         return
     if job.get("status") != "done" and covered:
         out["error"] = f"ingest job {jid} over {memdir} ended {job.get('status')}: {job.get('error')}"

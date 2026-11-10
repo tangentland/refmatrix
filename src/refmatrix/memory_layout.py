@@ -169,7 +169,7 @@ _DATE_ONLY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 class _SaveKey:
-    """One save-state's sort key, `(date, mtime, name)` (ADR-0005 #newest,
+    """One save-state's sort key, `(date, mtime, name, path)` (ADR-0005 #newest,
     amended 2026-11-09, ch-bsd 26.1 #s-2).
 
     `date` is the calendar date of `metadata.updated` -- date-only or a full
@@ -184,7 +184,10 @@ class _SaveKey:
         self.path = path
         self.mtime = path.stat().st_mtime
         self.day = _updated_day(path) or date.fromtimestamp(self.mtime)
-        self.key = (self.day, self.mtime, path.name)
+        # The path closes the order: `savestates/x.md` and a top-level `x.md`
+        # (26.4's mid-move window, mtime preserved) tie on everything else
+        # (ch-bsd 26.1 r2, 2026-11-09, spec #fu-order).
+        self.key = (self.day, self.mtime, path.name, str(path))
 
 
 def _updated_day(path: Path) -> "date | None":
@@ -222,7 +225,7 @@ def _frontmatter_updated(path: Path) -> str:
 
 def sort_savestates(paths) -> list:
     """Save-state paths ordered newest-first by the ONE ADR-0005 key,
-    `(date, mtime, name)` descending. `created` is never a key (r2 s3: a
+    `(date, mtime, name, path)` descending. `created` is never a key (r2 s3: a
     session created earlier but saved later wins). The result does not depend
     on the input order (ch-bsd 26.1 #s-2)."""
     keys = [_SaveKey(Path(p)) for p in paths]
