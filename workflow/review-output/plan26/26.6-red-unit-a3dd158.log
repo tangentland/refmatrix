@@ -1,0 +1,148 @@
+.............................FF.FFF......................F.F             [100%]
+=================================== FAILURES ===================================
+________________ test_r_b_case_variants_are_one_label_candidate ________________
+
+store = <refmatrix.store.Store object at 0x1225201a0>
+
+    def test_r_b_case_variants_are_one_label_candidate(store):
+        _seed_case(store)
+        plan = _plan(store, hub_df_frac=1.0)
+        c = _cluster_of(plan, "g1")
+        assert c is not None and {m["name"] for m in c["members"]} == {"g1", "g2"}, plan["clusters"]
+>       assert c["label"].casefold() == "guardrail", c["label"]
+E       AssertionError: g2
+E       assert 'g2' == 'guardrail'
+E         
+E         - guardrail
+E         + g2
+
+tests/test_memory_compile.py:498: AssertionError
+_ test_r_b_label_takes_the_most_frequent_surface_and_evidence_lists_a_term_once _
+
+store = <refmatrix.store.Store object at 0x122520830>
+
+    def test_r_b_label_takes_the_most_frequent_surface_and_evidence_lists_a_term_once(store):
+        _seed_case(store)
+        plan = _plan(store, hub_df_frac=1.0)
+        c = _cluster_of(plan, "t1")
+        assert c is not None and {m["name"] for m in c["members"]} == {"t1", "t2", "t3", "t4"}
+        assert c["label"] == "Tandem", c["label"]                 # 3 mentions beat 2
+        folded = [e["concept"].casefold() for e in c["evidence"]]
+>       assert folded.count("tandem") == 1, c["evidence"]
+E       AssertionError: [{'concept': 'Tandem', 'concept_id': 3, 'df_all': 3, 'df_in': 3, ...}, {'concept': 'tandem', 'concept_id': 4, 'df_all': 2, 'df_in': 2, ...}]
+E       assert 2 == 1
+E        +  where 2 = <built-in method count of list object at 0x1223aa880>('tandem')
+E        +    where <built-in method count of list object at 0x1223aa880> = ['tandem', 'tandem'].count
+
+tests/test_memory_compile.py:508: AssertionError
+______ test_r6_duplicate_labels_are_named_by_member_set_not_cluster_order ______
+
+store = <refmatrix.store.Store object at 0x122520d70>
+
+    def test_r6_duplicate_labels_are_named_by_member_set_not_cluster_order(store):
+        """19.4 R6 + task-26.6 r2 m7 (19.4 AC-5's slug half; its `MEMORY.md --subject` half is
+        26.7's). At HEAD the second `tandem` cluster is `tandem-2` by ORDER, so reordering swaps
+        the two names."""
+        _seed_twins(store, a_tight=True)
+        p1 = _plan(store, hub_df_frac=1.0)
+        _seed_twins(store, a_tight=False)
+        p2 = _plan(store, hub_df_frac=1.0)
+        order1 = [sorted(m["name"] for m in c["members"]) for c in p1["clusters"]]
+        order2 = [sorted(m["name"] for m in c["members"]) for c in p2["clusters"]]
+        assert sorted(order1) == sorted(order2) and order1 != order2, (
+            "fixture precondition: same memberships, different cluster order", order1, order2)
+        want = {tuple(ms): f"tandem-{_cid(ms)}" for ms in order1}
+        for plan in (p1, p2):
+            got = {tuple(sorted(m["name"] for m in c["members"])): c["label"]
+                   for c in plan["clusters"]}
+>           assert got == want, got
+E           AssertionError: {('ta1', 'ta2'): 'tandem', ('tb1', 'tb2'): 'tandem-2'}
+E           assert {('ta1', 'ta2...): 'tandem-2'} == {('ta1', 'ta2...dem-7167fdf5'}
+E             
+E             Differing items:
+E             {('tb1', 'tb2'): 'tandem-2'} != {('tb1', 'tb2'): 'tandem-7167fdf5'}
+E             {('ta1', 'ta2'): 'tandem'} != {('ta1', 'ta2'): 'tandem-566ffcc4'}
+E             Use -v to get more diff
+
+tests/test_memory_compile.py:574: AssertionError
+______________ test_r6_reordered_clusters_keep_their_subject_rows ______________
+
+store = <refmatrix.store.Store object at 0x122521160>
+
+    def test_r6_reordered_clusters_keep_their_subject_rows(store):
+        _seed_twins(store, a_tight=True)
+        with store.with_partition(PART):
+            consolidate.apply_plan(store, _plan(store, hub_df_frac=1.0))
+            first = {s["name"]: sorted(m["name"] for m in store.subject_leaves(s["id"]))
+                     for s in store.list_subjects()}
+        _seed_twins(store, a_tight=False)
+        with store.with_partition(PART):
+            consolidate.apply_plan(store, _plan(store, hub_df_frac=1.0))
+            second = {s["name"]: sorted(m["name"] for m in store.subject_leaves(s["id"]))
+                      for s in store.list_subjects()}
+>       assert second == first, (first, second)
+E       AssertionError: ({'subject_tandem': ['ta1', 'ta2'], 'subject_tandem_2': ['tb1', 'tb2']}, {'subject_tandem': ['tb1', 'tb2'], 'subject_tandem_2': ['ta1', 'ta2']})
+E       assert {'subject_tan...'ta1', 'ta2']} == {'subject_tan...'tb1', 'tb2']}
+E         
+E         Differing items:
+E         {'subject_tandem_2': ['ta1', 'ta2']} != {'subject_tandem_2': ['tb1', 'tb2']}
+E         {'subject_tandem': ['tb1', 'tb2']} != {'subject_tandem': ['ta1', 'ta2']}
+E         Use -v to get more diff
+
+tests/test_memory_compile.py:588: AssertionError
+________________ test_r6_cluster_cid_is_the_one_member_set_hash ________________
+
+    def test_r6_cluster_cid_is_the_one_member_set_hash():
+        """19.4 R6 / 19.6 R9 (round-11 #m11-4): ONE helper, `stm.cluster_cid`, with the `\\n` join
+        that keeps {ab, c} and {a, bc} apart; order-independent."""
+        from refmatrix import stm
+>       assert hasattr(stm, "cluster_cid"), "stm.cluster_cid is not built (19.4 R6)"
+E       AssertionError: stm.cluster_cid is not built (19.4 R6)
+E       assert False
+E        +  where False = hasattr(<module 'refmatrix.stm' from '/Volumes/littlebig/refmatrix-plan26-6/src/refmatrix/stm.py'>, 'cluster_cid')
+
+tests/test_memory_compile.py:597: AssertionError
+___________ test_memory_compile_pass_is_derived_by_consolidate_only ____________
+
+    def test_memory_compile_pass_is_derived_by_consolidate_only():
+        """R-C: `memory-compile -> ("consolidate.py",)`. Unmapped, it falls back to the UNION
+        (ingest.py, ingest_gmd.py, store.py), so an ingest edit would read as a stale compile and
+        a consolidate edit would read as nothing."""
+        from refmatrix import store as store_mod
+>       assert store_mod._DERIVE_PASS_MODULES.get("memory-compile") == ("consolidate.py",)
+E       AssertionError: assert None == ('consolidate.py',)
+E        +  where None = <built-in method get of dict object at 0x106b8e800>('memory-compile')
+E        +    where <built-in method get of dict object at 0x106b8e800> = {'embed': ('embedder.py', 'vectors.py'), 'gmd': ('ingest_gmd.py',), 'ingest': ('ingest.py',), 'pagerank': ('pagerank.py',), ...}.get
+E        +      where {'embed': ('embedder.py', 'vectors.py'), 'gmd': ('ingest_gmd.py',), 'ingest': ('ingest.py',), 'pagerank': ('pagerank.py',), ...} = <module 'refmatrix.store' from '/Volumes/littlebig/refmatrix-plan26-6/src/refmatrix/store.py'>._DERIVE_PASS_MODULES
+
+tests/test_derive_stamp.py:406: AssertionError
+________ test_a_memory_compile_stamp_never_moves_the_partition_verdict _________
+
+store = <refmatrix.store.Store object at 0x122522ba0>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-422/test_a_memory_compile_stamp_ne0')
+
+    def test_a_memory_compile_stamp_never_moves_the_partition_verdict(store, tmp_path):
+        """R-C: a compile stamped by OTHER code (a different version AND a different hash) leaves
+        `stale`, `behind_code`, `oldest_version` and `reason` exactly what they are without it. At HEAD the stamp is just another row: version-mismatched, it marks the whole
+        partition stale."""
+        _track(store, tmp_path)
+        store.stamp_derive("ingest")
+        base = store.derive_status()
+        store.stamp_derive("memory-compile", version="0.0.1", code_hash="p1:" + "0" * 32)
+        got = store.derive_status()
+        for k in ("stale", "behind_code", "oldest_version", "reason", "missing_passes",
+                  "never_stamped", "code_unknown"):
+>           assert got[k] == base[k], (k, base[k], got[k])
+E           AssertionError: ('stale', False, True)
+E           assert True == False
+
+tests/test_derive_stamp.py:429: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_compile.py::test_r_b_case_variants_are_one_label_candidate
+FAILED tests/test_memory_compile.py::test_r_b_label_takes_the_most_frequent_surface_and_evidence_lists_a_term_once
+FAILED tests/test_memory_compile.py::test_r6_duplicate_labels_are_named_by_member_set_not_cluster_order
+FAILED tests/test_memory_compile.py::test_r6_reordered_clusters_keep_their_subject_rows
+FAILED tests/test_memory_compile.py::test_r6_cluster_cid_is_the_one_member_set_hash
+FAILED tests/test_derive_stamp.py::test_memory_compile_pass_is_derived_by_consolidate_only
+FAILED tests/test_derive_stamp.py::test_a_memory_compile_stamp_never_moves_the_partition_verdict
+7 failed, 53 passed in 5.09s

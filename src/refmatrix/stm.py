@@ -1082,6 +1082,22 @@ def subject_slug(label: str) -> str:
     return s[:48] or "subject"
 
 
+def cluster_cid(members: "typing.Iterable[str]") -> str:
+    """THE member-set hash of a cluster: 8 hex chars of sha256 over the sorted
+    member names joined by `\\n`.
+
+    Task 26.6 builds plan-19's 19.4 R6 here (19.6 R9 shares it, d9ca; round-11
+    #m11-4 pinned the bytes), 2026-11-09. `memory compile` named unlabeled and
+    duplicate-label clusters by their ORDER (`unlabeled-3`, `tandem-2`), so a
+    re-compile that only reordered clusters renamed them and a `--subject` line
+    in `MEMORY.md` could name a different group. A name derived from the member
+    SET is independent of order; a changed membership is a different subject.
+    The `\\n` join keeps {`ab`, `c`} and {`a`, `bc`} apart."""
+    import hashlib
+    joined = "\n".join(sorted(str(m) for m in members))
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:8]
+
+
 def _partition_key(session: str, subject: "str | None") -> str:
     """The on-disk key for an STM partition. Bare session when no subject is
     active; `<session>__<subject-slug>` when one is. The `__` separator never

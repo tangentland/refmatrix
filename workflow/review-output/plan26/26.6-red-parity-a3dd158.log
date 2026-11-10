@@ -1,0 +1,106 @@
+.....F.FF......................F.............................F.......... [ 43%]
+........................................................................ [ 87%]
+....................F                                                    [100%]
+=================================== FAILURES ===================================
+______________________ test_pairing_covers_every_cli_twin ______________________
+
+    def test_pairing_covers_every_cli_twin():
+        twins = {n for n, p in verbs.CLI_MAP.items() if p is not None}
+>       assert twins == set(PAIRING), sorted(twins ^ set(PAIRING))
+E       AssertionError: ['rmx_memory_compile']
+E       assert {'rmx_bus_arc...bus_pub', ...} == {'rmx_bus_arc...bus_pub', ...}
+E         
+E         Extra items in the right set:
+E         'rmx_memory_compile'
+E         Use -v to get more diff
+
+tests/test_verb_parity.py:202: AssertionError
+___________________ test_click_defaults_match_verb_defaults ____________________
+
+    def test_click_defaults_match_verb_defaults():
+        mismatches = []
+        for vname, (path, renames, no_twin) in PAIRING.items():
+            if no_twin == "ALL":
+                continue
+>           v = verbs.VERBS[vname]
+                ^^^^^^^^^^^^^^^^^^
+E           KeyError: 'rmx_memory_compile'
+
+tests/test_verb_parity.py:229: KeyError
+________________ test_every_cli_twin_declares_its_wiring_class _________________
+
+    def test_every_cli_twin_declares_its_wiring_class():
+        twins = {n for n, p in verbs.CLI_MAP.items() if p is not None}
+        assert set(verbs.CLI_WIRING) == twins, sorted(set(verbs.CLI_WIRING) ^ twins)
+        assert set(verbs.CLI_WIRING.values()) <= {"calls", "payload"}
+        calls = {n for n, w in verbs.CLI_WIRING.items() if w == "calls"}
+        payload = {n for n, w in verbs.CLI_WIRING.items() if w == "payload"}
+>       assert calls == set(CLI_INVOKE), sorted(calls ^ set(CLI_INVOKE))
+E       AssertionError: ['rmx_memory_compile']
+E       assert {'rmx_bus_arc...bus_pub', ...} == {'rmx_bus_arc...bus_pub', ...}
+E         
+E         Extra items in the right set:
+E         'rmx_memory_compile'
+E         Use -v to get more diff
+
+tests/test_verb_parity.py:412: AssertionError
+_______________ test_cli_twin_calls_its_verb[rmx_memory_compile] _______________
+
+vname = 'rmx_memory_compile'
+_cli_env = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-423/test_cli_twin_calls_its_verb_r22/proj/.refmatrix')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x105b5a890>
+
+    @pytest.mark.parametrize("vname", sorted(CLI_INVOKE))
+    def test_cli_twin_calls_its_verb(vname, _cli_env, monkeypatch):
+        """Three properties per twin: the verb is CALLED (with a root), the argv's
+        options ARRIVE as the verb's own parameters (bound against the real
+        signature), and the CLI RENDERS the verb's result (canary)."""
+        import inspect
+        argv, canned, expect, canary = CLI_INVOKE[vname]
+>       v = verbs.VERBS[vname]
+            ^^^^^^^^^^^^^^^^^^
+E       KeyError: 'rmx_memory_compile'
+
+/Volumes/littlebig/refmatrix-plan26-6/tests/test_verb_parity.py:443: KeyError
+_________ test_legacy_unpaired_carries_a_category_and_can_only_shrink __________
+
+    def test_legacy_unpaired_carries_a_category_and_can_only_shrink():
+        """AC-8: r8 #s-4 item 6 — 140 paths with no rule against growth. Pinned:
+        the set is a subset of the frozen baseline and never larger than it."""
+        assert len(_BASELINE_3_4) == _BASELINE_3_4_SIZE
+        assert _TASK_3_7_BATCH_A <= _BASELINE_3_4 and len(_TASK_3_7_BATCH_A) == 22
+        assert _TASK_3_7_BATCH_B <= _BASELINE_3_4 and len(_TASK_3_7_BATCH_B) == 11
+        assert not (_TASK_3_7_BATCH_A & _TASK_3_7_BATCH_B)
+        assert _TASK_3_7_BATCH_C <= _BASELINE_3_4 and len(_TASK_3_7_BATCH_C) == 15
+        assert not (_TASK_3_7_BATCH_C & (_TASK_3_7_BATCH_A | _TASK_3_7_BATCH_B))
+        assert len(LEGACY_BASELINE) == LEGACY_BASELINE_SIZE
+        legacy = set(verbs.LEGACY_UNPAIRED)
+        grown = sorted(legacy - LEGACY_BASELINE)
+>       assert not grown, f"LEGACY_UNPAIRED grew (verb it or INTERNAL_CLI instead): {grown}"
+E       AssertionError: LEGACY_UNPAIRED grew (verb it or INTERNAL_CLI instead): [('memory', 'compile')]
+E       assert not [('memory', 'compile')]
+
+tests/test_verb_parity.py:861: AssertionError
+_______________ test_legacy_shrinks_by_exactly_the_batched_paths _______________
+
+    def test_legacy_shrinks_by_exactly_the_batched_paths():
+        """C6 / AC-G5: 140 - 22 - 11 - 15 = 92; task 26.6 R-D: - 1 (`memory compile`) = 91,
+        nothing else moved."""
+>       assert set(verbs.LEGACY_UNPAIRED) == set(LEGACY_BASELINE), sorted(
+            set(verbs.LEGACY_UNPAIRED) ^ set(LEGACY_BASELINE))
+E       AssertionError: [('memory', 'compile')]
+E       assert {('audit-same...mpact',), ...} == {('audit-same...mpact',), ...}
+E         
+E         Extra items in the left set:
+E         ('memory', 'compile')
+E         Use -v to get more diff
+
+tests/test_verb_parity.py:1279: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_verb_parity.py::test_pairing_covers_every_cli_twin - Assert...
+FAILED tests/test_verb_parity.py::test_click_defaults_match_verb_defaults - K...
+FAILED tests/test_verb_parity.py::test_every_cli_twin_declares_its_wiring_class
+FAILED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_memory_compile]
+FAILED tests/test_verb_parity.py::test_legacy_unpaired_carries_a_category_and_can_only_shrink
+FAILED tests/test_verb_parity.py::test_legacy_shrinks_by_exactly_the_batched_paths
+6 failed, 159 passed in 7.39s

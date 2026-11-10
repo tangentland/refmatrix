@@ -54,7 +54,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
 
 from refmatrix.scan import _PROMPT_STOPWORDS, _token_shape_score
-from refmatrix.store import _CONCEPT_SHIFT, _ENTITY_MASK
+from refmatrix.store import _CONCEPT_SHIFT, _ENTITY_MASK, MEMORY_COMPILE_PASS
 
 if TYPE_CHECKING:
     from refmatrix.store import Store
@@ -66,18 +66,56 @@ if TYPE_CHECKING:
 DEFAULT_EXCLUDE_MTYPES = ("session", "session/*", "digest", "digest/*", "subject")
 _OPERATIONAL_RE = re.compile(r"(?i)^(session|digest)[-_]")
 
-COMPILED_BY = "memory-compile"
+COMPILED_BY = MEMORY_COMPILE_PASS
+
+# Compile SCOPES (task 26.6 R-A, B3; 2026-11-09). One clusterer, one apply, one
+# `scope` parameter — never a second compile path. Before scopes, a compile run
+# narrowed to impressions (`--exclude-mtype '[!i]*'`) pruned every compiled
+# subject in the partition, so it unlinked all the project subjects' leaves.
+# Every compiled subject now carries `compiled_scope`, and a run prunes, marks
+# and un-marks only its own scope's rows. A pre-26.6 row (`compiled_by` set, no
+# `compiled_scope`) belongs to `memory`, the scope that wrote it.
+#
+#   memory   every memory row minus mtype `impression` and `tag: pattern` docs
+#   pattern  exactly mtype `impression`, minus `tag: pattern` docs (26.9)
+#
+# A `tag: pattern` doc is a WRITTEN pattern, the output of the pattern work;
+# clustering it back in would feed the compiler its own product.
+SCOPES = ("memory", "pattern")
+DEFAULT_SCOPE = "memory"
+PATTERN_MTYPE = "impression"
+PATTERN_TAG = "pattern"
+# The identity namespace per scope: `store.upsert_subject`'s identity is the
+# label slug, so without a prefix a pattern labelled `daemon_ops` IS the memory
+# subject `subject_daemon_ops`.
+SCOPE_SLUG_PREFIX = {"memory": "", "pattern": "pattern_"}
+
+
+def _check_scope(scope: str) -> str:
+    if scope not in SCOPES:
+        raise ValueError(f"compile scope must be one of {'|'.join(SCOPES)}, got {scope!r}")
+    return scope
+
+
+def subject_scope(meta: dict) -> "str | None":
+    """The compile scope a subject row belongs to, or None for a row no compile
+    wrote (hand-declared: never pruned, marked or un-marked by a compile)."""
+    if (meta or {}).get("compiled_by") != COMPILED_BY:
+        return None
+    return meta.get("compiled_scope") or DEFAULT_SCOPE
 
 
 # ---------------------------------------------------------------- corpus ---
 
 def _memory_rows(
-    store: "Store", *, exclude_mtypes: Iterable[str],
+    store: "Store", *, exclude_mtypes: Iterable[str], scope: str = DEFAULT_SCOPE,
 ) -> list[dict]:
-    """Memory rows of the active partition, minus excluded mtypes (globs)."""
+    """Memory rows of the active partition in `scope`'s corpus (R-A), minus
+    excluded mtypes (globs)."""
+    _check_scope(scope)
     store._connect()
     rows = store._read().execute(
-        "SELECT e.id, e.name, mc.mtype FROM entities e "
+        "SELECT e.id, e.name, mc.mtype, mc.tags FROM entities e "
         "JOIN memory_content mc ON mc.entity_id = e.id "
         "WHERE e.partition_id=? AND e.kind='memory' "
         "ORDER BY e.id",
@@ -90,6 +128,11 @@ def _memory_rows(
         if any(fnmatch.fnmatch(mtype, p) for p in pats):
             continue
         if _OPERATIONAL_RE.match(str(r[1])):
+            continue
+        tags = json.loads(r[3]) if r[3] else []
+        if isinstance(tags, list) and PATTERN_TAG in tags:
+            continue
+        if (mtype == PATTERN_MTYPE) != (scope == "pattern"):
             continue
         out.append({"id": int(r[0]), "name": str(r[1]), "mtype": mtype})
     return out
@@ -109,47 +152,72 @@ def _concept_sets(
     it is a hub that would pair all of them. Dropping hubs from the space (not
     merely down-weighting them) also keeps the similarity denominator honest —
     `s` stays a true cosine over the terms that carry signal.
+
+    CASE-FOLDED (task 26.6 R-B, 2026-11-09). Concept rows that differ only by
+    case (`Guardrail`/`guardrail`, `Tandem`/`tandem`; the live store has such
+    pairs) are ONE term: they fold onto the smallest id of their group BEFORE
+    df is counted, so two df=1 surfaces become one df=2 candidate instead of
+    two terms below the floor, and evidence never lists a term twice. The
+    group's name is its most frequent surface across this corpus (ties: the
+    lexically first, for determinism).
     """
     try:
         frag = store._load_fragment("mentions")
     except Exception:
         frag = None
     raw: dict[int, set[int]] = defaultdict(set)
-    df: Counter = Counter()
     if frag is not None:
         for packed in frag:
             eid = packed & _ENTITY_MASK
             if eid not in ids:
                 continue
-            cid = packed >> _CONCEPT_SHIFT
-            if cid in raw[eid]:
-                continue
-            raw[eid].add(int(cid))
-            df[int(cid)] += 1
+            raw[eid].add(int(packed >> _CONCEPT_SHIFT))
+
+    # Names of EVERY mentioned concept, not only the informative ones: whether a
+    # surface is informative is only known after its case variants are folded.
+    surface: dict[int, str] = {}
+    mentioned = sorted({c for cs in raw.values() for c in cs})
+    if mentioned:
+        con = store._connect()
+        for chunk_start in range(0, len(mentioned), 500):
+            chunk = mentioned[chunk_start:chunk_start + 500]
+            ph = ",".join("?" * len(chunk))
+            for r in con.execute(
+                f"SELECT id, name FROM entities WHERE id IN ({ph})", chunk,
+            ).fetchall():
+                surface[int(r[0])] = str(r[1])
+    # Operational card concepts leak in as concept nodes from other partitions'
+    # mention edges; an id with no entity row cannot be named.
+    surface = {c: n for c, n in surface.items() if not _OPERATIONAL_RE.match(n)}
+
+    groups: dict[str, list[int]] = defaultdict(list)
+    for c, n in surface.items():
+        groups[n.casefold()].append(c)
+    canon = {c: min(cs) for cs in groups.values() for c in cs}
+    surface_df: Counter = Counter()
+    for cs in raw.values():
+        for c in cs:
+            if c in canon:
+                surface_df[c] += 1
+    names: dict[int, str] = {}
+    for cs in groups.values():
+        best = min(cs, key=lambda c: (-surface_df[c], surface[c]))
+        names[min(cs)] = surface[best]
+
+    folded: dict[int, set[int]] = {
+        eid: {canon[c] for c in cs if c in canon} for eid, cs in raw.items()}
+    df: Counter = Counter()
+    for cs in folded.values():
+        for c in cs:
+            df[c] += 1
 
     n = max(1, len(ids))
     ceiling = max(min_df, int(hub_df_frac * n))
     keep = {c for c, d in df.items() if min_df <= d <= ceiling}
 
-    # Concept names, and a second filter pass: operational card concepts leak
-    # in as concept nodes from other partitions' mention edges.
-    names: dict[int, str] = {}
-    if keep:
-        con = store._connect()
-        ordered = sorted(keep)
-        for chunk_start in range(0, len(ordered), 500):
-            chunk = ordered[chunk_start:chunk_start + 500]
-            ph = ",".join("?" * len(chunk))
-            for r in con.execute(
-                f"SELECT id, name FROM entities WHERE id IN ({ph})", chunk,
-            ).fetchall():
-                names[int(r[0])] = str(r[1])
-    keep = {c for c in keep
-            if c in names and not _OPERATIONAL_RE.match(names[c])}
-
     idf = {c: math.log(n / df[c]) for c in keep}
-    sets = {eid: (cs & keep) for eid, cs in raw.items()}
-    return sets, idf, names
+    sets = {eid: (cs & keep) for eid, cs in folded.items()}
+    return sets, idf, {c: names[c] for c in keep}
 
 
 # ------------------------------------------------------------ similarity ---
@@ -445,8 +513,12 @@ def compile_memories(
     signal: str = "fused",
     exclude_mtypes: Iterable[str] | None = None,
     max_subjects: int | None = None,
+    scope: str = DEFAULT_SCOPE,
 ) -> dict:
     """Cluster the partition's memories and return a PLAN (no writes).
+
+    `scope` (task 26.6 R-A) picks the corpus — see `SCOPES` — and rides in the
+    plan, so `apply_plan` prunes and marks only that scope's subjects.
 
     `signal` selects the edge weighting — `fused` (default), `dense`, or
     `concept`. The ablation is a first-class flag rather than a branch to
@@ -454,14 +526,15 @@ def compile_memories(
     / `supersedes` edges, which are weak ground truth for scoring the three
     against each other instead of arguing about them.
     """
-    from refmatrix.stm import cluster_focus
+    from refmatrix.stm import cluster_cid, cluster_focus
 
+    _check_scope(scope)
     if signal not in ("fused", "dense", "concept"):
         raise ValueError(f"signal must be fused|dense|concept, got {signal!r}")
 
     excl = tuple(exclude_mtypes) if exclude_mtypes is not None \
         else DEFAULT_EXCLUDE_MTYPES
-    rows = _memory_rows(store, exclude_mtypes=excl)
+    rows = _memory_rows(store, exclude_mtypes=excl, scope=scope)
     by_id = {r["id"]: r for r in rows}
     stats: dict[str, Any] = {
         "candidates": len(rows), "partition": store._partition_name,
@@ -479,6 +552,7 @@ def compile_memories(
 
     if len(ids) < 2:
         return {
+            "scope": scope,
             "clusters": [], "crosscutting": [],
             "unclustered": [r["name"] for r in rows],
             "stats": stats,
@@ -569,12 +643,14 @@ def compile_memories(
         stats["dropped_members"] = sum(len(c) for c in dropped)
 
     # --- label ------------------------------------------------------------
+    from refmatrix.stm import subject_slug
+
     clustered: set[int] = set()
-    out_clusters = []
-    used_labels: Counter = Counter()
-    for ci, members in enumerate(raw_clusters):
+    labelled = []
+    for members in raw_clusters:
         label, evidence = _cluster_label(
             members, sets, idf, cnames, df_all, len(ids), by_id=by_id)
+        cid = cluster_cid(by_id[e]["name"] for e in members)
         if not label:
             # No shared concept survived: dense grouped these but nothing names
             # them. Fall back to the richest member rather than a positional
@@ -582,14 +658,24 @@ def compile_memories(
             # reader can follow back into the corpus.
             label = _member_derived_label(members, sets, by_id)
         if not label:
-            label = f"unlabeled-{ci + 1}"
-        used_labels[label] += 1
-        if used_labels[label] > 1:
-            label = f"{label}-{used_labels[label]}"
+            # 19.4 R6: by member SET, never by cluster order.
+            label = f"unlabeled-{cid}"
+        labelled.append((members, label, evidence, cid))
+    # Duplicate labels (19.4 R6 + task-26.6 r2 m7, 2026-11-09): EVERY cluster
+    # sharing a label is suffixed with its member-set hash. The old `-2`, `-3`
+    # by cluster ORDER renamed both subjects whenever a re-compile reordered
+    # them. Counted on the SLUG, the subject identity: case-folded labels
+    # (R-B) can only add collisions, and `Tandem`/`tandem` are one row.
+    slug_uses = Counter(subject_slug(label) for _m, label, _e, _c in labelled)
+    out_clusters = []
+    for members, label, evidence, cid in labelled:
+        if slug_uses[subject_slug(label)] > 1:
+            label = f"{label}-{cid}"
         clustered.update(members)
         out_clusters.append({
             "label": label,
             "size": len(members),
+            "cluster_cid": cid,
             "members": [{"id": e, "name": by_id[e]["name"],
                          "mtype": by_id[e]["mtype"]} for e in members],
             "evidence": evidence,
@@ -597,6 +683,7 @@ def compile_memories(
 
     unclustered = [by_id[e]["name"] for e in ids if e not in clustered]
     return {
+        "scope": scope,
         "clusters": out_clusters,
         "crosscutting": _crosscutting(raw_clusters, sets, idf, cnames),
         "unclustered": unclustered,
@@ -616,7 +703,32 @@ def _params(k, threshold, threshold_pct, mutual, beta, gamma, bridge_min,
 
 # ----------------------------------------------------------------- apply ---
 
-def apply_plan(store: "Store", plan: dict, *, prune: bool = True) -> dict:
+def _subject_meta(subj: dict) -> dict:
+    meta = subj.get("metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+    return meta if isinstance(meta, dict) else {}
+
+
+def _rewrite_subject_meta(store: "Store", subj: dict, meta: dict) -> None:
+    """Replace ONLY a subject row's metadata: same name, body, mtype and tags,
+    still `protected` (19.4 R5: a stale subject is kept and readable by name).
+    Through `add_memory`, the one memory upsert, so the change is logged like
+    every other memory write."""
+    row = store.get_memory(int(subj["id"]))
+    if row is None:
+        raise RuntimeError(
+            f"compile: subject {subj.get('name')!r} (id {subj['id']}) vanished "
+            f"between listing and marking")
+    store.add_memory(name=row["name"], content=row["content"], mtype="subject",
+                     tags=row.get("tags") or None, metadata=meta, protected=True)
+
+
+def apply_plan(store: "Store", plan: dict, *, prune: bool = True,
+               scope: "str | None" = None) -> dict:
     """Write the plan's subjects + `part-of` edges into the active partition.
 
     Idempotent by construction: subject identity is the slug of its label, and
@@ -624,20 +736,30 @@ def apply_plan(store: "Store", plan: dict, *, prune: bool = True) -> dict:
     Without that a re-run after the corpus shifts ACCRETES — a memory stays
     filed under last week's subject as well as this week's. Hand-declared
     subjects (no `compiled_by` stamp) are never touched.
+
+    Task 26.6 (plan-19's 19.4 R4/R5 + R-A), 2026-11-09:
+
+    - SCOPED. Pruning, stale-marking and un-marking touch only subjects whose
+      `compiled_scope` is this run's scope (`plan["scope"]`, default
+      `memory`); the other scope's rows stay byte-identical.
+    - NEVER LOSES. A compiled subject left with 0 leaves is kept, protected,
+      and marked `metadata.stale = True` with `stale_since`; one that regains
+      members is un-marked (both keys cleared). There is no delete call here:
+      removal is plan-22's audited path only.
+    - LOUD. The result counts `stale_total` (in scope, after this run),
+      `stale_new` and `stale_unmarked`, so the growth R6's hash names cause is
+      visible per run (AC-4b).
     """
+    scope = _check_scope(scope or plan.get("scope") or DEFAULT_SCOPE)
+    prefix = SCOPE_SLUG_PREFIX[scope]
     stamp = time.time()
     labels = {c["label"] for c in plan.get("clusters", [])}
+    before = [s for s in store.list_subjects()
+              if subject_scope(_subject_meta(s)) == scope]
+    was_stale = {int(s["id"]) for s in before if _subject_meta(s).get("stale")}
     unlinked = 0
     if prune:
-        for subj in store.list_subjects():
-            meta = subj.get("metadata") or {}
-            if isinstance(meta, str):
-                try:
-                    meta = json.loads(meta)
-                except (json.JSONDecodeError, TypeError):
-                    meta = {}
-            if meta.get("compiled_by") != COMPILED_BY:
-                continue
+        for subj in before:
             sid = int(subj["id"])
             for leaf in store.subject_leaves(sid):
                 if store.unlink("part-of", sid, int(leaf["id"])):
@@ -645,8 +767,9 @@ def apply_plan(store: "Store", plan: dict, *, prune: bool = True) -> dict:
 
     subjects, linked = [], 0
     for c in plan.get("clusters", []):
-        rec = store.upsert_subject(c["label"], metadata={
+        rec = store.upsert_subject(c["label"], slug_prefix=prefix, metadata={
             "compiled_by": COMPILED_BY,
+            "compiled_scope": scope,
             "compiled_at": stamp,
             "size": c["size"],
             "evidence": [e["concept"] for e in c.get("evidence", [])],
@@ -656,8 +779,75 @@ def apply_plan(store: "Store", plan: dict, *, prune: bool = True) -> dict:
             if store.link_part_of(int(m["id"]), int(rec["id"])):
                 linked += 1
         subjects.append({**rec, "size": c["size"]})
+
+    stale_total = stale_new = stale_unmarked = 0
+    for subj in store.list_subjects():
+        meta = _subject_meta(subj)
+        if subject_scope(meta) != scope:
+            continue
+        stale = bool(meta.get("stale"))
+        if int(subj.get("leaves") or 0) == 0:
+            if not stale:
+                _rewrite_subject_meta(store, subj, {
+                    **meta, "stale": True, "stale_since": stamp})
+                stale_new += 1
+            stale_total += 1
+            continue
+        if stale:
+            # Regained members without being re-upserted (a `--no-prune` run
+            # leaves old leaves in place): clear the mark here.
+            _rewrite_subject_meta(store, subj, {
+                k: v for k, v in meta.items() if k not in ("stale", "stale_since")})
+        if int(subj["id"]) in was_stale:
+            stale_unmarked += 1
     return {"subjects": subjects, "linked": linked, "unlinked": unlinked,
-            "labels": sorted(labels)}
+            "labels": sorted(labels), "scope": scope,
+            "stale_total": stale_total, "stale_new": stale_new,
+            "stale_unmarked": stale_unmarked}
+
+
+# Compile knobs `run_compile` forwards to `compile_memories`; one list, so the
+# daemon op, the verb and the CLI cannot drift on which ones exist.
+COMPILE_PARAMS = ("k", "threshold", "threshold_pct", "mutual", "beta", "gamma",
+                  "bridge_min", "hub_df_frac", "min_size", "signal",
+                  "exclude_mtypes", "max_subjects")
+
+
+def run_compile(store: "Store", *, scope: str = DEFAULT_SCOPE, dry_run: bool = True,
+                prune: bool = True, **params) -> dict:
+    """THE compile run: plan, and unless `dry_run` apply and stamp the
+    `memory-compile` derive pass. Called inside the caller's partition binding
+    (and, in the daemon, inside `_store_lock`).
+
+    Task 26.6 (19.4 R1's op half), 2026-11-09: planning used to run in the CLI
+    and only the apply was a daemon op, so nothing but a human at a terminal
+    could compile. One function now serves the `memory_compile` op and the
+    CLI's daemon-down fallback, so neither carries its own copy.
+
+    The stamp (R-C) records which consolidate.py derived these subjects, so
+    `rmx daemon status` can say when the compile code moved since. A failed
+    stamp is SAID in the result (`stamp_error`) and the apply stands."""
+    unknown = set(params) - set(COMPILE_PARAMS)
+    if unknown:
+        raise ValueError(f"run_compile: unknown compile param(s) {sorted(unknown)}")
+    _check_scope(scope)
+    plan = compile_memories(store, scope=scope, **params)
+    out: dict = {"scope": scope, "dry_run": bool(dry_run), "applied": False,
+                 "plan": plan, "subjects": [], "linked": 0, "unlinked": 0,
+                 "stale_total": 0, "stale_new": 0, "stale_unmarked": 0}
+    if dry_run:
+        return out
+    res = apply_plan(store, plan, prune=prune, scope=scope)
+    out.update({k: v for k, v in res.items() if k != "labels"})
+    out["applied"] = True
+    try:
+        store.stamp_derive(COMPILED_BY)
+    except Exception as exc:  # noqa: BLE001 — said in the result and on stderr
+        import sys as _sys
+        out["stamp_error"] = f"{type(exc).__name__}: {exc}"
+        print(f"warning: derive stamp `{COMPILED_BY}` failed: {out['stamp_error']}",
+              file=_sys.stderr)
+    return out
 
 
 # ------------------------------------------------------------------- gmd ---
