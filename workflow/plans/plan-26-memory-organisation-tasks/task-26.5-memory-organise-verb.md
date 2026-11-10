@@ -295,3 +295,11 @@ rel: derives-from -> [[bsd-plan26-27-spec-review-r5-3ded49e]]
 |---|---|---|
 | s1 (legacy rows on the old path uncounted; `--check` clean over them) | Preview projects `moved_legacy`; apply reports it and must match; `--check` includes it, with a RED case | AC-2, AC-5, AC-8 |
 | m5 (restore branch can restore a dead link) | Restore only when no file was kept at a moved path; else regenerate | [[#impl-notes-r5]] |
+
+## Inherited from ch-bsd 26.1 r4 (2026-11-10) {#inherit-261-r4}
+
+rel: depends-on -> [[task-26.3-savestate-subfolder#inherit-moved-derived]]
+
+The organiser's moves rely on 26.3's id fallback for derived hooks of moved files; 26.5's move
+tests include a no-sidecar dir with a cut index hook and assert no `…`-ended sidecar value.
+{#inherit-moved-derived-265}

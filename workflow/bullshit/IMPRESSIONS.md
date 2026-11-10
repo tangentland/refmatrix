@@ -40,6 +40,8 @@ Window: the newest run bullets. Older bullets are folded VERBATIM, anchor ids un
 - 2026-11-10 (task 26.1 follow-up r3, c9a035e) — EACH REWRITE OF A HELPER ORPHANS ITS PREDECESSOR. The precedence fix is real on live data (cliquedb 83/83 cut hooks kept), but rewriting `load_hooks` on `_index_hook_records` left `parse_hooks` with a test as its only caller. After every refactor, grep the old function's callers. {#imp-rewrite-orphans-predecessor}
 - 2026-11-10 (task 26.1 follow-up r3) — A PRECEDENCE RULE IS A MATRIX, NOT A LIST OF CASES. Empty (r1), cut (r2), then a hand-shortened prefix and the derived/no-sidecar case (r3): test the rule as (curated/derived/none) x (room/no room) x (edit/cut). {#imp-precedence-is-a-matrix}
 - 2026-11-10 (task 26.1 follow-up r3) — A REGISTRY FIX COLUMN CAN PROMISE A REPAIR THE FOLLOW-UP SPEC QUIETLY DROPS. bug-193 promised to restore cut hooks; no AC carried it. Check the registry Fix text against the spec's ACs. {#imp-registry-fix-vs-spec-acs}
+- 2026-11-10 (task 26.1 follow-up r4, 705dbae) — HOOK PRECEDENCE CONVERGED WHEN THE INDEX WENT BYTE-STABLE ON REAL COPIES. Four real memdirs render byte-identical to r3 and only the pointer fix moves the sidecar; the last edge is identity across a move, which belongs to the first task that moves files (26.3). Check it there. {#imp-precedence-converged-byte-stable}
+- 2026-11-10 (task 26.1 follow-up r4) — AN IMPLEMENTER'S FLAG IN A SUMMARY IS HONEST BUT UNANCHORED. When a summary flag documents a gap, require a test or an AC in the consuming task's spec before accepting it. {#imp-flag-needs-an-anchor}
 
 ## Former anchors, restored {#former-anchors}
 

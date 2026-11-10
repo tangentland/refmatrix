@@ -23,3 +23,4 @@
 2026-11-09T20:26:40-0800 commit=9a5cd78 verdict=DIRTY findings=9 (0B/3S/6M) report=2026-11-09-2026-bug179-postimpl-9a5cd78.md
 2026-11-09T21:50:08-0800 commit=7b5ea2f verdict=DIRTY findings=5 (0B/1S/4M) report=2026-11-09-2150-task-26.1-r2-layout-index-walk-7b5ea2f.md
 2026-11-10T10:21:58-0800 commit=c9a035e verdict=DIRTY findings=6 (1B/2S/3M) report=2026-11-10-1021-task-26.1-r3-followup-c9a035e.md
+2026-11-10T10:41:10-0800 commit=705dbae verdict=MEH-only findings=1 (0B/0S/1M) report=2026-11-10-1041-task-26.1-r4-followup-705dbae.md
