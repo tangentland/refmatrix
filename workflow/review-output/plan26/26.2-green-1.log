@@ -1,0 +1,202 @@
+FFFF............F.F......                                                [100%]
+=================================== FAILURES ===================================
+__________ test_ac1_in_process_move_refreshes_the_row_and_its_anchors __________
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-k8kzkwbt'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-k8kzkwbt/proj/.refmatrix'))
+
+    def test_ac1_in_process_move_refreshes_the_row_and_its_anchors(inproc):
+        base, root = inproc
+        memdir = _memdir(base, marker=True)
+        _bridge(memdir)
+        before = _mem(root, "x")
+        assert before["inbound"], "fixture: y's `rel: depends-on -> [[x]]` edge did not land"
+        assert before["vector"] is not None, "fixture: x has no vector to compare"
+        old, new = _move(memdir)
+        assert before["source_path"] == old
+        _bridge(memdir)
+>       _ac1_assert(root, before, new)
+
+tests/test_bridge_move_safety.py:260: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-k8kzkwbt/proj/.refmatrix')
+before = {'content': '# x {#root}\n\nbody of x\n\n## First {#one}\n\nalpha\n\n## Second {#two}\n\nbeta', 'created_at': 1794340082.2799292, 'id': 3, 'inbound': [('depends-on', 'y'), ('depends-on', 'y#root')], ...}
+new = '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-k8kzkwbt/memory/b/x.md'
+
+    def _ac1_assert(root: Path, before: dict, new: str) -> None:
+        after = _mem(root, "x")                      # asserts exactly one `x` memory row
+        assert after["source_path"] == new, \
+            f"memory_content.metadata.source_path is {after['source_path']!r}, not the moved {new!r}"
+        anchors = _anchor_paths(root, "x")
+        assert anchors and set(anchors.values()) == {new}, f"x#anchor paths after the move: {anchors}"
+        for k in ("id", "created_at", "protected", "noise", "vector", "vectors_updated_at",
+                  "inbound", "content"):
+>           assert after[k] == before[k], f"{k} changed across the move: {before[k]!r} -> {after[k]!r}"
+E           AssertionError: vectors_updated_at changed across the move: 1794340085.255706 -> 1794340087.674679
+E           assert 1794340087.674679 == 1794340085.255706
+
+tests/test_bridge_move_safety.py:247: AssertionError
+____________ test_ac1_moved_row_keeps_its_protected_and_noise_flags ____________
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-f8849phd'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-f8849phd/proj/.refmatrix'))
+
+    def test_ac1_moved_row_keeps_its_protected_and_noise_flags(inproc):
+        base, root = inproc
+        memdir = _memdir(base, marker=True)
+        _bridge(memdir)
+        _set_flags(root, "x")
+        before = _mem(root, "x")
+        assert before["protected"] == 1 and before["noise"] == 1
+        _, new = _move(memdir)
+        _bridge(memdir)
+>       _ac1_assert(root, before, new)
+
+tests/test_bridge_move_safety.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-f8849phd/proj/.refmatrix')
+before = {'content': '# x {#root}\n\nbody of x\n\n## First {#one}\n\nalpha\n\n## Second {#two}\n\nbeta', 'created_at': 1794340087.8947442, 'id': 3, 'inbound': [('depends-on', 'y'), ('depends-on', 'y#root')], ...}
+new = '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-f8849phd/memory/b/x.md'
+
+    def _ac1_assert(root: Path, before: dict, new: str) -> None:
+        after = _mem(root, "x")                      # asserts exactly one `x` memory row
+        assert after["source_path"] == new, \
+            f"memory_content.metadata.source_path is {after['source_path']!r}, not the moved {new!r}"
+        anchors = _anchor_paths(root, "x")
+        assert anchors and set(anchors.values()) == {new}, f"x#anchor paths after the move: {anchors}"
+        for k in ("id", "created_at", "protected", "noise", "vector", "vectors_updated_at",
+                  "inbound", "content"):
+>           assert after[k] == before[k], f"{k} changed across the move: {before[k]!r} -> {after[k]!r}"
+E           AssertionError: vectors_updated_at changed across the move: 1794340090.24734 -> 1794340092.738442
+E           assert 1794340092.738442 == 1794340090.24734
+
+tests/test_bridge_move_safety.py:247: AssertionError
+____________ test_ac1_daemon_move_refreshes_the_row_and_its_anchors ____________
+
+daemon = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-dq7o0abo'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-dq7o0abo/proj/.refmatrix'))
+
+    def test_ac1_daemon_move_refreshes_the_row_and_its_anchors(daemon):
+        """The daemon path is the one save-state uses (spec #test-strategy)."""
+        base, root = daemon
+        memdir = _memdir(base, marker=True)
+        _bridge(memdir)
+        dm.stop_daemon(root)
+        before = _mem(root, "x")
+        _, new = _move(memdir)
+        assert dm.spawn_daemon_subprocess(root, watch_root=[]) and dm.ping(root)
+        _bridge(memdir)
+        dm.stop_daemon(root)
+>       _ac1_assert(root, before, new)
+
+tests/test_bridge_move_safety.py:286: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-dq7o0abo/proj/.refmatrix')
+before = {'content': '# x {#root}\n\nbody of x\n\n## First {#one}\n\nalpha\n\n## Second {#two}\n\nbeta', 'created_at': 1794340093.7577448, 'id': 3, 'inbound': [('depends-on', 'y'), ('depends-on', 'y#root')], ...}
+new = '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-dq7o0abo/memory/b/x.md'
+
+    def _ac1_assert(root: Path, before: dict, new: str) -> None:
+        after = _mem(root, "x")                      # asserts exactly one `x` memory row
+        assert after["source_path"] == new, \
+            f"memory_content.metadata.source_path is {after['source_path']!r}, not the moved {new!r}"
+        anchors = _anchor_paths(root, "x")
+        assert anchors and set(anchors.values()) == {new}, f"x#anchor paths after the move: {anchors}"
+        for k in ("id", "created_at", "protected", "noise", "vector", "vectors_updated_at",
+                  "inbound", "content"):
+>           assert after[k] == before[k], f"{k} changed across the move: {before[k]!r} -> {after[k]!r}"
+E           AssertionError: vectors_updated_at changed across the move: 1794340096.26945 -> 1794340101.6815271
+E           assert 1794340101.6815271 == 1794340096.26945
+
+tests/test_bridge_move_safety.py:247: AssertionError
+___________ test_ac1_symlinked_memdir_move_stores_the_resolved_path ____________
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-_89z4j6_'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-_89z4j6_/proj/.refmatrix'))
+
+    def test_ac1_symlinked_memdir_move_stores_the_resolved_path(inproc):
+        """viascope's memdir is a symlink (plan-27): the refresh stores the RESOLVED path."""
+        base, root = inproc
+        real = _memdir(base, marker=True, name="real-memory")
+        link = base / "memory"
+        link.symlink_to(real, target_is_directory=True)
+        _bridge(link)
+        before = _mem(root, "x")
+        os.replace(real / "a" / "x.md", real / "b" / "x.md")
+        _bridge(link)
+>       _ac1_assert(root, before, str((real / "b" / "x.md").resolve()))
+
+tests/test_bridge_move_safety.py:299: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-_89z4j6_/proj/.refmatrix')
+before = {'content': '# x {#root}\n\nbody of x\n\n## First {#one}\n\nalpha\n\n## Second {#two}\n\nbeta', 'created_at': 1794340104.193558, 'id': 3, 'inbound': [('depends-on', 'y'), ('depends-on', 'y#root')], ...}
+new = '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-_89z4j6_/real-memory/b/x.md'
+
+    def _ac1_assert(root: Path, before: dict, new: str) -> None:
+        after = _mem(root, "x")                      # asserts exactly one `x` memory row
+        assert after["source_path"] == new, \
+            f"memory_content.metadata.source_path is {after['source_path']!r}, not the moved {new!r}"
+        anchors = _anchor_paths(root, "x")
+        assert anchors and set(anchors.values()) == {new}, f"x#anchor paths after the move: {anchors}"
+        for k in ("id", "created_at", "protected", "noise", "vector", "vectors_updated_at",
+                  "inbound", "content"):
+>           assert after[k] == before[k], f"{k} changed across the move: {before[k]!r} -> {after[k]!r}"
+E           AssertionError: vectors_updated_at changed across the move: 1794340106.536586 -> 1794340108.936395
+E           assert 1794340108.936395 == 1794340106.536586
+
+tests/test_bridge_move_safety.py:247: AssertionError
+________________ test_ac3_store_snapshot_dry_run_is_daemonless _________________
+
+snapshot_env = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-7563jhey'), PosixPath('/var/folders/js/71d0ymjj56b...-7563jhey/ghost/.refmatrix'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-7563jhey/empty-home'))
+
+    def test_ac3_store_snapshot_dry_run_is_daemonless(snapshot_env):
+        base, memdir, snap, part, ghost, home = snapshot_env
+        _move(memdir)
+        out = _snapshot_run(["-p", part, "ingest-gmd", "--as-memory", "--dry-run",
+                             "--store-snapshot", str(snap), str(memdir)])
+>       assert _term(out, "refresh_pending") == 1 and _term(out, "moved") == 1, out
+E       AssertionError: dry-run: 3 file(s) under /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-7563jhey/memory against partition 'proj' -- nothing written
+E         refresh_pending: 0
+E         moved: 0
+E         stale_before: 0
+E         forced: 0
+E         moved_legacy: 0
+E         skipped_unchanged: 0
+E         
+E       assert (0 == 1)
+E        +  where 0 = _term("dry-run: 3 file(s) under /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-7563jhey/memory against part... -- nothing written\nrefresh_pending: 0\nmoved: 0\nstale_before: 0\nforced: 0\nmoved_legacy: 0\nskipped_unchanged: 0\n", 'refresh_pending')
+
+tests/test_bridge_move_safety.py:611: AssertionError
+____________ test_ac3_relocated_twin_reports_zero_through_path_map _____________
+
+snapshot_env = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-4pidmm5h'), PosixPath('/var/folders/js/71d0ymjj56b...-4pidmm5h/ghost/.refmatrix'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-4pidmm5h/empty-home'))
+
+    def test_ac3_relocated_twin_reports_zero_through_path_map(snapshot_env):
+        """r3 s2: a COPY of the memdir with nothing changed. Without `--path-map` every row looks
+        moved (~100%: the defect this case pins); with it, nothing is pending."""
+        base, memdir, snap, part, ghost, home = snapshot_env
+        twin = base / "twin-memory"
+        shutil.copytree(memdir, twin, symlinks=True)
+        raw = _snapshot_run(["-p", part, "ingest-gmd", "--as-memory", "--dry-run",
+                             "--store-snapshot", str(snap), str(twin)])
+>       assert _term(raw, "refresh_pending") == 3, f"unmapped twin should count all 3 rows:\n{raw}"
+E       AssertionError: unmapped twin should count all 3 rows:
+E         dry-run: 3 file(s) under /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-4pidmm5h/twin-memory against partition 'proj' -- nothing written
+E         refresh_pending: 0
+E         moved: 0
+E         stale_before: 0
+E         forced: 0
+E         moved_legacy: 0
+E         skipped_unchanged: 0
+E         
+E       assert 0 == 3
+E        +  where 0 = _term("dry-run: 3 file(s) under /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-4pidmm5h/twin-memory against... -- nothing written\nrefresh_pending: 0\nmoved: 0\nstale_before: 0\nforced: 0\nmoved_legacy: 0\nskipped_unchanged: 0\n", 'refresh_pending')
+
+tests/test_bridge_move_safety.py:646: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bridge_move_safety.py::test_ac1_in_process_move_refreshes_the_row_and_its_anchors
+FAILED tests/test_bridge_move_safety.py::test_ac1_moved_row_keeps_its_protected_and_noise_flags
+FAILED tests/test_bridge_move_safety.py::test_ac1_daemon_move_refreshes_the_row_and_its_anchors
+FAILED tests/test_bridge_move_safety.py::test_ac1_symlinked_memdir_move_stores_the_resolved_path
+FAILED tests/test_bridge_move_safety.py::test_ac3_store_snapshot_dry_run_is_daemonless
+FAILED tests/test_bridge_move_safety.py::test_ac3_relocated_twin_reports_zero_through_path_map
+6 failed, 19 passed in 148.96s (0:02:28)
