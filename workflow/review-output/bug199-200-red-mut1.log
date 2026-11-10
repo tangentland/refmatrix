@@ -1,0 +1,6 @@
+== M1: cli --compile plans scope memory regardless of --scope
+E       AssertionError: `rmx memory brief --compile --scope pattern --json` exited 1:
+E         
+E       assert 1 == 0
+FAILED tests/test_bug200_brief_compile_real_daemon.py::test_cli_brief_compile_scope_pattern_plans_and_briefs_the_pattern_corpus
+1 failed, 1 passed in 12.20s

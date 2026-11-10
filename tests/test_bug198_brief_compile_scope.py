@@ -76,12 +76,35 @@ def test_compile_scope_reaches_the_brief_op(op_calls, sc):
     assert _brief_args(seen).get("scope") == sc, seen
 
 
-def test_recalls_scope_never_becomes_the_brief_compile_scope(op_calls):
-    """`scope` is recall's `project|global|both`. Sent with the brief action it
-    must not select the compile corpus — the defect was exactly that it did."""
+@pytest.mark.parametrize("old", ["pattern", "memory", "both", "project"])
+def test_brief_refuses_recalls_scope_before_the_daemon(op_calls, old):
+    """bug-200 m-1 (ch-bsd bug-197/198 r1, 2026-11-10): the OLD key `scope=pattern` was
+    silently ignored and answered from the MEMORY corpus. Recall's `scope` sent with the
+    brief action is refused BY NAME, pointing at `compile_scope`, before any daemon call --
+    this replaces the bug-198 test that pinned the silent ignore."""
     root, seen = op_calls
-    verbs.memory(root, "brief", scope="pattern")
-    assert _brief_args(seen).get("scope") in (None, consolidate.DEFAULT_SCOPE), seen
+    with pytest.raises(verbs.VerbArgsError) as ei:
+        verbs.memory(root, "brief", scope=old)
+    assert "compile_scope" in str(ei.value), str(ei.value)
+    assert "scope" in str(ei.value).replace("compile_scope", ""), str(ei.value)
+    assert not seen, f"refused BEFORE any daemon call: {seen}"
+
+
+def test_the_mcp_tool_refuses_recalls_scope_on_brief(op_calls):
+    """The transport path (`Verb.run`, which MCP calls) refuses the old key the same way."""
+    root, seen = op_calls
+    with pytest.raises(verbs.VerbArgsError) as ei:
+        verbs.VERBS["rmx_memory"].run(root, {"action": "brief", "scope": "pattern"})
+    assert "compile_scope" in str(ei.value), str(ei.value)
+    assert not seen, seen
+
+
+def test_brief_with_no_scope_and_a_compile_scope_still_runs(op_calls):
+    """The refusal is for a non-None `scope` only: `scope=None` (every real caller, plan-24
+    task 24.6 included) briefs as before."""
+    root, seen = op_calls
+    verbs.memory(root, "brief", scope=None, compile_scope="pattern")
+    assert _brief_args(seen).get("scope") == "pattern", seen
 
 
 @pytest.mark.parametrize("bad", ["both", "project", "bogus"])
@@ -157,22 +180,9 @@ def test_cli_brief_scope_pattern_reaches_the_verb_as_compile_scope(cli_seen):
     assert "scope" not in cli_seen[-1], cli_seen
 
 
-def test_cli_brief_compile_plans_the_same_scope(cli_seen, monkeypatch):
-    """One corpus for all four detectors: `--compile --scope pattern` plans the
-    pattern corpus and briefs it, never a memory plan under a pattern brief."""
-    planned = []
-
-    def fake_plan(store, *, scope, **kw):
-        planned.append(scope)
-        return {"clusters": [], "crosscutting": [], "unclustered": [], "stats": {},
-                "params": {"scope": scope}}
-    monkeypatch.setattr(consolidate, "compile_memories", fake_plan)
-    monkeypatch.setattr(cli_mod, "_read_store", lambda *a, **k: object())
-    r = CliRunner().invoke(cli_mod.main,
-                           ["memory", "brief", "--compile", "--scope", "pattern", "--json"])
-    assert r.exit_code == 0, r.output
-    assert planned == ["pattern"], planned
-    assert cli_seen[-1].get("compile_scope") == "pattern", cli_seen
+# `--compile --scope pattern` end to end: the faked-plan test that lived here (ch-bsd
+# bug-197/198 r1 #m-2) is replaced by a real-daemon test in
+# `tests/test_bug200_brief_compile_real_daemon.py` (bug-200 m-2).
 
 
 def test_cli_brief_rejects_an_invalid_scope(cli_seen):

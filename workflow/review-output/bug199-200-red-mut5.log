@@ -1,0 +1,4 @@
+== M5: apply re-renders the index from the sidecar alone (index hand edits discarded)
+E       AssertionError: - [Derived](feedback_derived.md) — Fix one condition in a gate and then check every sibling condition too.
+FAILED tests/test_bug199_repair_rewrites_index.py::test_a_hand_edit_on_an_unaffected_line_survives_the_apply_and_the_write
+1 failed, 11 passed in 2.36s
