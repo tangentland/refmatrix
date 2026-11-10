@@ -111,6 +111,7 @@ Rules:
   or namespace grouping. IDs MUST NOT start or end with `/`, and MUST NOT
   contain consecutive `//`.
 - IDs MUST be unique within the document.
+- A block carries at most one ID; more than one `{#id}` on a line is an error.
 - IDs MUST be stable across edits to surrounding content. Renames are breaking changes.
 - IDs MAY appear at end of heading, paragraph, list item, blockquote, code fence info string, or table row.
 - Attribute lists MAY carry additional key/value pairs: `{#s1 kind=store status=draft}`.
@@ -142,6 +143,7 @@ rel: <verb> -> <target> [{attrs}]
 - A `rel:` line attaches the edge to its nearest enclosing block with an ID. If no enclosing block has an ID, the edge attaches to the document root.
 - Multiple `rel:` lines MAY appear consecutively. Order is not significant.
 - A `rel:` line MUST start at column 0 and occupy the entire line.
+- A `rel:` line carries no block ID; `{#…}` there is not an anchor.
 
 Conforming Markdown renderers display `rel:` lines as plain text. GMD-aware tools extract them into the graph index.
 

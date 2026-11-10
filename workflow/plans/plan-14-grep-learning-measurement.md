@@ -46,8 +46,8 @@ pattern, and repeated patterns' later calls run at a 86 ms median against a 171 
 median. **That number is not evidence for learning** and this plan does not treat it as such: the
 page cache, replica warmth and differing flags all confound it, and 67 of 121 repeated patterns
 returned a different cardinality between calls, so the corpus moved too. It is recorded here only
-as the reason to build an instrument instead of arguing from the log we have.
-rel: reinforces -> [[feedback_causal_story_before_evidence]] {#not-evidence}
+as the reason to build an instrument instead of arguing from the log we have. {#not-evidence}
+rel: reinforces -> [[feedback_causal_story_before_evidence]]
 
 ## The finding that shapes the instrument {#eligibility}
 

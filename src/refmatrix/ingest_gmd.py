@@ -153,7 +153,13 @@ _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _REL_RE = re.compile(
     r"^rel:\s+([a-z][a-z0-9-]*)\s*->\s*(\S+(?:\s+\S+)*?)(?:\s*\{([^}]*)\})?\s*$"
 )
-_INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
+# Inline code is matched as CommonMark backtick RUNS — an opening run of N
+# backticks, not adjacent to another, closes at the next run of exactly N. The
+# old single-run pattern read a double-backtick span as two empty spans and
+# exposed an anchor quoted inside it. Same pattern as the vendored
+# tools/gmd/lint.py and slice.py, so the three parsers agree (bug-179 R3b,
+# 2026-11-09). Masking keeps the line length, so column offsets stay valid.
+_INLINE_CODE_RE = re.compile(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)")
 _CODE_FENCE_RE = re.compile(r"^(```|~~~)")
 _FRONTMATTER_DELIM = "---"
 _TITLE_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}")
@@ -352,11 +358,19 @@ def parse_gmd(path: Path, *, lenient: bool = False,
         if hm:
             level = len(hm.group(1))
             rest = hm.group(2)
-            idm = _ID_RE.search(rest)
+            # The anchor is read from `scan`, as the body branch and lint read
+            # it: on the raw heading a backtick-quoted `{#x}` in the title was
+            # taken for the id (bug-179 R3, 2026-11-09). `scan` has the same
+            # length as `line`, so the match maps onto `rest` by the heading-
+            # prefix offset, and the title cuts only that one span — never
+            # `_ID_RE.sub`, which would also delete the quoted `{#x}`.
+            off = hm.start(2)
+            idm = _ID_RE.search(scan, off)
             if idm:
                 nid = idm.group(1)
                 node_attrs, aliases = _parse_attrs(idm.group(2))
-                heading_text = _ID_RE.sub("", rest).strip()
+                a, b = idm.start() - off, idm.end() - off
+                heading_text = (rest[:a] + rest[b:]).strip()
             else:
                 auto += 1
                 nid = f"_h{auto}"
@@ -389,6 +403,13 @@ def parse_gmd(path: Path, *, lenient: bool = False,
 
         current.body_lines.append(line)
 
+        # A `rel:`-prefixed line is never a block, well-formed or not: SPEC §5
+        # gives its trailing `{...}` to edge attributes. A malformed one used to
+        # fall through to the anchor scan below and register its id, while lint
+        # keys the same rule on the bare prefix (bug-179 R2/d8, 2026-11-09).
+        # Its wikilinks are still harvested below, as before.
+        is_rel_line = line.startswith("rel:")
+
         # A `{#id}` on a paragraph or list item is a NODE, not decoration.
         # GMD's primer says an anchor is "a stable node id for any heading,
         # paragraph, or list item"; `tools/gmd/lint.py` implemented that and
@@ -397,7 +418,7 @@ def parse_gmd(path: Path, *, lenient: bool = False,
         # 71 of the 73 anchors in workflow/bullshit/IMPRESSIONS.md — every
         # per-run `{#imp-*}` the audit ledger cites — were invisible here
         # (bug-036). Two parsers, one syntax, never compared.
-        bm = _ID_RE.search(scan)
+        bm = None if is_rel_line else _ID_RE.search(scan)
         if bm and line.strip():
             bid = bm.group(1)
             # Never shadow an existing id: the heading branch owns collisions,
