@@ -9,86 +9,62 @@ metadata:
 
 # Session Handoff for refmatrix {#root}
 
-Date: 2026-10-20 (session 47bc8f5e). Prior handoff archived at
-`workflow/past_handoffs/017-wave1-releases-0801-ac6_2026-10-19.md`.
+Date: 2026-11-10 (session 7aea273d, continued over several compactions). Prior handoff archived
+at `workflow/past_handoffs/018-wave0-plan24-specs-hypertree_2026-10-20.md`. The user is
+restarting the client; this is the resume point.
 
-rel: supersedes -> [[handoff-017-wave1-releases-0801-ac6]]
+rel: supersedes -> [[handoff-018-wave0-plan24-specs-hypertree]]
+rel: depends-on -> [[plan-of-plans#goal-2026-11-10-progress]]
 
 ## State {#state}
 
-- **Deployed: 0.80.1** — unchanged this session. `master` = `origin/main` = deploy = `8824ae2`.
-- **Dev tree** `wave0-spec-reviews`: docs/plan commits only this session (plan-24, explorations,
-  probes); not merged to master, not pushed. Untracked: `tests/fixtures/` (the RAW AC-6 cut, 24 MB —
-  never `git add -A`; move it off the tree once AC-6 merges) and `eval/spike_hypertree/` (the M1-M7
-  spike, in flight).
-- **Background work:** none. The M6 viascope + refmatrix runs finished 2026-10-21 and are committed
-  (all six stores inline at p95÷p95). /Volumes/littlebig UNMOUNTED mid-run: the spike copies under
-  `/Volumes/littlebig/refmatrix-spike-hypertree/` and the 3.7 / AC-6 clones are unreachable until
-  it is remounted.
+- **Deployed: 0.81.2** (hub + 8 daemons). Nothing released since. Do NOT deploy plan-26 work
+  until bug-199/200 and the 26.2/26.3 merges land and a release is cut.
+- **master** is 32+ commits ahead of `origin/main` (`6f593ca`); the user pushes
+  (`git -C /Users/tholley/claude_tools/refmatrix push origin master:main`). gmd upstream pushed
+  (`efb514a`).
+- **Merged today:** 26.1 follow-up r3 (`25af9ca`), ac6-fixture (`69ecb21`, bug-156 fixed;
+  fixture's old bug-137 renumbered bug-196), wave0-spec-reviews (`9eaf00b`, bug-191 fixed, lint
+  gate exit 0), bug-195 cut-hook repair (`102524d`, live repair applied + 29 curated hooks
+  restored), 26.6 compile hygiene (`8a867bc`; still in-progress: R3 residual after 26.7),
+  bug-197/198 (`a0056fc`).
+- **Agents:** `.claude/agents/ch-{implementer,test-engineer,bsd,architect,alignment}.md` now carry
+  `effort: high` (`93086ed`, `2713b0e`). Subagents do not inherit the session's `/effort`.
 
-## Task 3.7 — verb-it backlog {#t37}
+## In flight — three littlebig clones {#in-flight}
 
-Clone `/Volumes/littlebig/refmatrix-task-3.7`, branch `task-3.7-verb-it-backlog`, HEAD `364a90e`
-(+ an uncommitted summary edit by the implementer).
+All three were told to pause, commit WIP with a handoff body, and stop (2026-11-10 ~12:15).
 
-- Spec rewritten into a buildable per-family spec through 6 ch-bsd spec rounds: 45 verbed + 4
-  re-decided of 49; curator queue became a spool dir; stats + focus export verbed.
-- Batches A/B/C built TDD (RED by test engineer, GREEN by implementer): 8 new MCP tools
-  (`rmx_graph`, `rmx_canon`, `rmx_matrix`, `rmx_curate`, `rmx_session`, `rmx_refine`,
-  `rmx_curator`, `rmx_taxonomy`) + `rmx_focus` actions; LEGACY_UNPAIRED 140 → 92; `verb-it`
-  category gone. Final batch suite: 3666 passed / 3 failed, all three identical at base `591a2fb`.
-- Post-build ch-bsd (2B/2S/2M, mutations 16/18) + code review (1H/8M) → **remedy r1** decided in the
-  spec `#remedy-r1`, RED `56a5815` (28 failing), GREEN `68df326`..`364a90e`, summary `4c98e3c`
-  (incl. the user's OBJC fork-safety fix in `HOOK_ENV`). Clone clean at `4c98e3c`.
-  Remedy suite: 3694 passed / 6 failed — 3 known base failures (bug-155 GMD gate, bug-156 AC-6,
-  bug-091 test_watch), 2 load/cold-start flakes (plan4 graceful_stop; 21.1 ac11a), and 1 TEST
-  conflict. **Next, in order:** (1) test engineer: `test_write_spool_is_tmp_fsync_rename` must allow
-  the directory fsync after the rename (R-L), and point `tests/test_concept_timeline.py` at
-  `graphread` so the kept `_concept_files` alias in cli.py can be deleted (R-RM7); (2) ch-bsd
-  re-audit of `6fd9b7c..HEAD`; (3) spec status → completed; merge `--no-ff` to master, release,
-  deploy.
-- **Deploy steps for 3.7:** `rmx install-hooks --apply` (curator hook lines + OBJC env), restart
-  daemons (spool writer), `/mcp` reconnect (8 new tools).
-- Bugs: fixed bug-139..150 + 155-160 range per the summary; OPEN bug-151..154 (refine
-  accept/reject operator paths).
+| clone (`/Volumes/littlebig/…`) | branch | state at save | next step |
+|---|---|---|---|
+| `refmatrix-plan26-2` | `task-26.2-bridge-move-safety` | RED `27e21dc`+`75cd42e` (25 tests); spec decisions `82a5caf`, AC-4c `aff8953`; GREEN was mid-run (src uncommitted at save; expect a `wip(26.2 GREEN)` commit) | read the wip commit body; finish GREEN; ch-bsd r1 |
+| `refmatrix-plan26-3` | `task-26.3-savestate-subfolder` | GREEN `3733dab`/`640e32d`; ch-bsd r1 GO (`56111ce`, report persisted); remedy RED `994dd96` (#rm-newer-copy, 7 failing); remedy GREEN was mid-run (src uncommitted; expect `wip(26.3 remedy-r1 GREEN)`) | finish remedy GREEN (reword the "crash mid-move" message); focused ch-bsd r2; merge |
+| `refmatrix-bug199-200` | `task-bug199-200-repair-index-and-brief-old-scope` | GREEN done `e473610`/`e2a85cd`/`fa16806`, handoff `20b6293`; 13/13 RED pass; mutation M3 (MEMORY.md not backed up) SURVIVED | test-engineer: a test asserting `<backup dir>/MEMORY.md` equals the pre-apply index; then ch-bsd r1 over `771117c..HEAD`; merge; mark bug-199/200 fixed |
 
-## Plan-24 — mod transport (decided, specced) {#p24}
+Merge order between 26.2 and 26.3 is free; the SECOND to merge carries 26.2 AC-4c (save-state
+pair + another duplicate id). 26.3's pair rule lives in the walk (`memory_layout`); 26.2's
+`split_claims` must not add a second exemption.
 
-`workflow/plans/plan-24-mod-transport.md` (drafting). The user decided the move for tighter
-integration (not spawn cost). Specs 24.0-24.8 + 24.2a written and reviewed through ch-bsd r6
-(findings 9 → 17 → 11 → 5 → 3 → 2, last two rounds 0 BULLSHIT). r6's 2 findings are folded
-(24.2 rev-r7, committed with this handoff). **Next:** one confirming ch-bsd round (r7), then ask the user to
-approve plan-24. 24.0 + 24.1 can start in Wave 1; 24.2a/24.2/24.4 need 3.7 merged.
+## Open items {#open}
 
-Probes (two batches, `eval/mod_probe/`, plan `#probes`/`#probes-batch2`): subagents get and call
-mod tools and share `$.state`; `prompt.compose` skips subagents; fetch aborts at 30 s; `/clear`
-wipes `$.state`. Memory: [[reference_claude_code_mod_probe_facts]].
+- **Before the next release:** bug-199, bug-200 (fix in the bug199-200 clone), 26.2, 26.3.
+- **Pre-existing failures (registered):** bug-127/168 (`test_brief_real_daemon` DuckDB lock),
+  bug-170 (hooks-sync test under the sandbox HOME), bug-190 (rerank load flakes), bug-196 (AC-6
+  recall per-channel split), bug-194 (truncated status frame under load).
+- **Plan-26 order after these:** 26.4 → 26.5 (now owns the rollback-moves-`savestates/`-back AC,
+  `b5ed7b3` in the 26.3 clone) → 26.7 → 26.6 R3 residual → 26.8; then bug-185 → 23.2 → 23.1 →
+  23.3 ∥ 23.5; plan-25 (25.1 R10 now splits `rmx_bus_pub`'s `about` field, `d6e0ec1`) and
+  plan-27 after their dependencies.
+- **User-level edits this session (not in the repo):** `~/.claude/statusline.sh` (project | Ctx
+  coloured purple ≥70 / auto-mode rgb(255,204,0) ≥80 / bold rgb(200,0,0) ≥90 with save/HANDOFF
+  words | Tok | Wk | model+version; weekly count fixed); 8 project `.claude/statusline.sh` files
+  are thin wrappers (refmatrix committed `48e6586`; the others uncommitted in their repos);
+  `~/.claude/MEMORY-RULES.md` `#frontmatter` notes save-state `updated:` is an ISO timestamp.
+- **littlebig:** only the three in-flight clones plus four October store-copy scratch dirs
+  (kept by the user's choice) remain.
 
-## Hypertree — associative power {#hypertree}
+## Resume {#resume}
 
-`docs/architecture/explorations/hypertree.md`. The user: the goal is maximum associative power,
-not endorsing an implementation. **M1-M7 spike done** (`5518a87`,
-`docs/measurements/hypertree-spike-2026-10-20.md`): the cross-cutting incidence graph carries the
-association (concepts are not tree-coherent; tree-scoped recall loses hits; tree render saves only
-3.4%); bands imply **Option B scoped** — `gmd` section + `code` def placements written in the
-entity transaction for in-file addressing; no LCA band, tree render, subject tree (except viascope
-in principle) or Dewey ids. Open: whether same-file proximity helps as a RANKING feature (the spike
-measured it only as a scope). Next: walk the exploration's open questions with the user.
-
-## Other explorations this session {#explorations}
-
-- `docs/architecture/explorations/claude-code-mod-transport.md` — the mod exploration (facilities
-  table, HTTP tiers, verb host, distribution).
-
-## Waiting on the user {#user}
-
-- Approve plan-24 (after the r7 fold + confirm round).
-- Hypertree open questions (after the spike).
-- Unchanged: 19.5 R1 (now held for plan-24), 20.1 gold labels, 21.4 question set, 19.6 tables.
-
-## Open bugs / notes {#open}
-
-- AC-6 clone `/Volumes/littlebig/refmatrix-ac6` still waits on its GREEN (renumber its registry row
-  from bug-137 to bug-138 at merge).
-- bug-136 rider on 23.5; IMPRESSIONS.md over its line cap; GMD repo-scope gate (pre-existing
-  errors in an old ch-bsd ledger).
+1. `/recall-state`; read this file and `workflow/plan-of-plans.md#goal-2026-11-10-progress`.
+2. `git -C` each in-flight clone: read the newest commit body (the agent's handoff).
+3. Start fresh agents (they now run at `effort: high`) from those commits, in the order above.
