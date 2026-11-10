@@ -461,23 +461,27 @@ def test_ac2_no_gmd_source_path_key_is_added(inproc):
     assert not leaked, f"a gmd_source_path key was added: {leaked[:3]}"
 
 
-def test_ac2_doc_row_gate_uses_entities_path(inproc):
-    """For doc rows (no --as-memory) the second gate term is `entities.path`. The tree carries
-    the layout marker (AC-3b gates the path-aware rule on it)."""
+def test_ac2_doc_row_keeps_the_hash_only_gate(inproc):
+    """#rd-doc-rows (2026-11-10): doc rows are never path-aware. A doc tree carries no
+    `.memory-layout`, and a doc move is the watcher's `sync` job, so a moved doc with unchanged
+    bytes is skipped by HEAD's hash-only gate and keeps its recorded path. A pin: it passes at
+    HEAD and is proven by a mutation that makes the doc-row gate path-aware."""
     base, root = inproc
     tree = base / "docs"
     (tree / "a").mkdir(parents=True)
     (tree / "b").mkdir()
-    (tree / ".memory-layout").write_text('{"layout": 1}\n', encoding="utf-8")
     (tree / "a" / "d.md").write_text(PLAIN.format(id="d", body="a doc"), encoding="utf-8")
     _invoke(["ingest-gmd", str(tree)])
+    old = str((tree / "a" / "d.md").resolve())
+    size0 = _facts_size(root)
     os.replace(tree / "a" / "d.md", tree / "b" / "d.md")
     _invoke(["ingest-gmd", str(tree)])
 
     def _path(s):
         return [p for (p,) in s._connect().execute(
             "SELECT path FROM entities WHERE kind = 'doc' AND name = 'd'").fetchall()]
-    assert _with_store(root, _path) == [str((tree / "b" / "d.md").resolve())]
+    assert _with_store(root, _path) == [old], "a doc row's gate became path-aware"
+    assert _facts_size(root) == size0, "the hash-only doc gate wrote on an unchanged doc"
 
 
 def test_ac3_missing_source_path_is_reingested_once(inproc):
@@ -608,6 +612,27 @@ def test_ac3_store_snapshot_dry_run_is_daemonless(snapshot_env):
     assert _CONNECTS == [], f"--store-snapshot connected to sockets: {_CONNECTS}"
     assert not ghost.exists(), "--store-snapshot resolved (and created) the live root"
     assert list(home.iterdir()) == [], f"--store-snapshot wrote under RMX_HOME: {list(home.iterdir())}"
+
+
+def test_ac3_store_snapshot_without_a_partition_is_refused(snapshot_env):
+    """#rd-snapshot-partition: a snapshot run has no live root to derive the memory partition
+    from, so `--store-snapshot` without `-p` exits non-zero and names the flag -- and still
+    touches no socket."""
+    base, memdir, snap, part, ghost, home = snapshot_env
+    _CONNECTS.clear()
+    _RECORDING[0] = True
+    try:
+        r = CliRunner().invoke(cli_mod.main, ["ingest-gmd", "--as-memory", "--dry-run",
+                                              "--store-snapshot", str(snap), str(memdir)])
+    finally:
+        _RECORDING[0] = False
+    out = r.output + (str(r.exception) if r.exception else "")
+    assert "No such option" not in out, f"the flags do not exist yet: {out}"
+    assert r.exit_code != 0, f"--store-snapshot without -p ran: {out}"
+    assert re.search(r"(?<![\w-])(-p|--partition)\b", out), \
+        f"the refusal does not name -p/--partition: {out}"
+    assert _CONNECTS == [], f"the refused run connected to sockets: {_CONNECTS}"
+    assert not ghost.exists()
 
 
 def test_ac3_relocated_twin_reports_zero_through_path_map(snapshot_env):
