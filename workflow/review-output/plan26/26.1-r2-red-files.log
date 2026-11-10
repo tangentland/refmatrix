@@ -1,0 +1,307 @@
+pyc-guard: recompiled 37 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26/src/refmatrix as checked-hash (bug-037)
+..........F...FF.F....................................FFF.FF............ [ 64%]
+.....FF................................                                  [100%]
+=================================== FAILURES ===================================
+__________ test_iter_memory_files_puts_every_dropped_shape_on_skipped __________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-pfuj9fnt/memory')
+
+    def test_iter_memory_files_puts_every_dropped_shape_on_skipped(memdir):
+        """CLAUDE.md #no-silent-failures: `skipped` receives every path the walk excluded. At HEAD
+        a symlinked sub-folder, a dangling `.md` symlink and a `.gmd` file were dropped uncounted."""
+        ml = _layout()
+        f = _skip_shapes(memdir)
+        skipped: list = []
+        got = [Path(p) for p in ml.iter_memory_files(memdir, skipped=skipped)]
+        assert got == [f["keep"]], got
+        sk = [Path(p) for p in skipped]
+    
+        def named(target: Path) -> bool:
+            # the path itself, or (for the symlinked folder) a path under it
+            return any(p == target or target in p.parents for p in sk)
+    
+        missing = [k for k in ("linked", "dangling", "gmd", "hidden") if not named(f[k])]
+>       assert not missing, f"dropped without being put on `skipped`: {missing}; skipped={sk}"
+E       AssertionError: dropped without being put on `skipped`: ['linked', 'dangling', 'gmd']; skipped=[PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-pfuj9fnt/memory/.hidden/y.md')]
+E       assert not ['linked', 'dangling', 'gmd']
+
+tests/test_memory_layout.py:145: AssertionError
+___________ test_same_date_both_with_time_of_day_mtime_still_decides ___________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-_mhgtkoe/memory')
+
+    def test_same_date_both_with_time_of_day_mtime_still_decides(memdir):
+        """ADR-0005 #newest, amended 2026-11-09 (ch-bsd 26.1 #s-2): on the same date mtime decides
+        ALWAYS -- a time of day in `updated` is informational only. The earlier rule (both timed ->
+        the datetimes decide) is what let three same-day save-states form a cycle."""
+        _md(memdir / "savestates" / "savestate_ten.md",
+            updated="2026-11-09T10:00:00-08:00", mtime=T0)
+        _md(memdir / "savestates" / "savestate_nine.md",
+            updated="2026-11-09T09:00:00-08:00", mtime=T0 + 100)
+>       assert _order(memdir) == ["savestate_nine", "savestate_ten"]
+E       AssertionError: assert ['savestate_t...vestate_nine'] == ['savestate_n...avestate_ten']
+E         
+E         At index 0 diff: 'savestate_ten' != 'savestate_nine'
+E         Use -v to get more diff
+
+tests/test_memory_layout.py:194: AssertionError
+__ test_three_same_day_save_states_order_the_same_for_every_input_permutation __
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-ayzhts21/memory')
+
+    def test_three_same_day_save_states_order_the_same_for_every_input_permutation(memdir):
+        """ch-bsd 26.1 #s-2: `newest` must not depend on scandir order. 26.3 routes
+        `rmx recall-state` through this ordering; a cycle resumes the wrong session."""
+        import itertools
+        ml = _layout()
+        files = _cycle_set(memdir)
+        want = [files[k] for k in ("d", "c", "b", "a")]
+        got = {}
+        for perm in itertools.permutations(files.values()):
+            got[tuple(p.stem for p in perm)] = [Path(p) for p in ml.sort_savestates(list(perm))]
+        wrong = {k: [p.stem for p in v] for k, v in got.items() if v != want}
+>       assert not wrong, f"order depends on input order (want d,c,b,a): {wrong}"
+E       AssertionError: order depends on input order (want d,c,b,a): {('savestate_a', 'savestate_b', 'savestate_d', 'savestate_c'): ['savestate_d', 'savestate_b', 'savestate_a', 'savestate_c'], ('savestate_a', 'savestate_c', 'savestate_b', 'savestate_d'): ['savestate_d', 'savestate_a', 'savestate_c', 'savestate_b'], ('savestate_a', 'savestate_c', 'savestate_d', 'savestate_b'): ['savestate_d', 'savestate_b', 'savestate_a', 'savestate_c'], ('savestate_a', 'savestate_d', 'savestate_c', 'savestate_b'): ['savestate_d', 'savestate_a', 'savestate_c', 'savestate_b'], ('savestate_b', 'savestate_a', 'savestate_c', 'savestate_d'): ['savestate_d', 'savestate_b', 'savestate_a', 'savestate_c'], ('savestate_b', 'savestate_c', 'savestate_a', 'savestate_d'): ['savestate_d', 'savestate_a', 'savestate_c', 'savestate_b'], ('savestate_b', 'savestate_d', 'savestate_a', 'savestate_c'): ['savestate_d', 'savestate_b', 'savestate_a', 'savestate_c'], ('savestate_b', 'savestate_d', 'savestate_c', 'savestate_a'): ['savestate_d', 'savestate_a', 'savestate_c', 'savestate_b'], ('savestate_c', 'savestate_a', 'savestate_b', 'savestate_d'): ['savestate_d', 'savestate_b', 'savestate_a', 'savestate_c'], ('savestate_c', 'savestate_a', 'savestate_d', 'savestate_b'): ['savestate_d', 'savestate_a', 'savestate_c', 'savestate_b'], ('savestate_c', 'savestate_b', 'savestate_d', 'savestate_a'): ['savestate_d', 'savestate_a', 'savestate_c', 'savestate_b'], ('savestate_c', 'savestate_d', 'savestate_a', 'savestate_b'): ['savestate_d', 'savestate_b', 'savestate_a', 'savestate_c'], ('savestate_d', 'savestate_a', 'savestate_c', 'savestate_b'): ['savestate_d', 'savestate_a', 'savestate_c', 'savestate_b'], ('savestate_d', 'savestate_b', 'savestate_a', 'savestate_c'): ['savestate_d', 'savestate_b', 'savestate_a', 'savestate_c'], ('savestate_d', 'savestate_b', 'savestate_c', 'savestate_a'): ['savestate_d', 'savestate_a', 'savestate_c', 'savestate_b'], ('savestate_d', 'savestate_c', 'savestate_a', 'savestate_b'): ['savestate_d', 'savestate_b', 'savestate_a', 'savestate_c']}
+E       assert not {('savestate_a', 'savestate_b', 'savestate_d', 'savestate_c'): ['savestate_d', 'savestate_b', 'savestate_a', 'savestat...te_a', 'savestate_d', 'savestate_c', 'savestate_b'): ['savestate_d', 'savestate_a', 'savestate_c', 'savestate_b'], ...}
+
+tests/test_memory_layout.py:224: AssertionError
+______________ test_no_updated_is_dated_by_the_mtimes_local_date _______________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-ijvm4n7d/memory')
+
+    def test_no_updated_is_dated_by_the_mtimes_local_date(memdir):
+        """ADR-0005 #newest step 1 (amended): with no `updated`, the key's date is the mtime's LOCAL
+        date -- the same `(date, mtime, name)` key as every other file, so the order stays total.
+        The old rule compared a no-`updated` file by raw mtime against a dated one and skipped the
+        date step: N (no `updated`, mtime 2026-11-08 13:00 local) beat D (`updated` 2026-11-09,
+        mtime 2026-11-08 12:00 local) on mtime alone."""
+        from datetime import datetime
+        m_d = datetime(2026, 11, 8, 12, 0).timestamp()
+        m_n = datetime(2026, 11, 8, 13, 0).timestamp()
+        _md(memdir / "savestates" / "savestate_dated.md", updated="2026-11-09", mtime=m_d)
+        _md(memdir / "savestates" / "savestate_undated.md", mtime=m_n)
+>       assert _order(memdir) == ["savestate_dated", "savestate_undated"]
+E       AssertionError: assert ['savestate_u...estate_dated'] == ['savestate_d...tate_undated']
+E         
+E         At index 0 diff: 'savestate_undated' != 'savestate_dated'
+E         Use -v to get more diff
+
+tests/test_memory_layout.py:252: AssertionError
+_______ test_b1_long_title_organised_render_is_stable_over_three_renders _______
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-jailpqzw/memory')
+
+    def test_b1_long_title_organised_render_is_stable_over_three_renders(memdir):
+        rels = build_long_title_dir(memdir)
+        organise(memdir)
+        sizes, texts = [], []
+        for n in (1, 2, 3):
+            r = run_entry(memdir)
+            assert r.returncode == 0, r.stderr
+            text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>           assert_every_entry_keeps_its_link(text, rels)
+
+tests/test_memory_index_layout.py:553: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+text = '<!-- carried from the hand-written index; edit freely -->\n# Hand index\nRead the campaign block first.\n## Campaign\...cause the author wanted the index line to say everything: 2026…\n- [Plain](project/project_plain.md) — curated plain\n'
+rels = {'feedback/feedback_long_hook.md': 'Short title', 'feedback/feedback_long_title.md': 'A very long memory title — the k...the author wanted the index line to say everything: 2026-11-09 edition, part two', 'project/project_plain.md': 'Plain'}
+
+    def assert_every_entry_keeps_its_link(text: str, rels: dict) -> None:
+        lines = text.splitlines()
+        cut = [ln for ln in lines if ln.startswith("- [") and "](" not in ln]
+>       assert not cut, f"entry line(s) cut before their link: {cut}"
+E       AssertionError: entry line(s) cut before their link: ['- [A very long memory title — the kind cliquedb really carries, naming the mechanism, the incident, the date and the fix in one breath because the author wanted the index line to say everything: 2026…']
+E       assert not ['- [A very long memory title — the kind cliquedb really carries, naming the mechanism, the incident, the date and the fix in one breath because the author wanted the index line to say everything: 2026…']
+
+tests/test_memory_index_layout.py:537: AssertionError
+_________ test_b1_marker_off_then_organised_never_carries_entry_lines __________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-mwtd70je/memory')
+
+    def test_b1_marker_off_then_organised_never_carries_entry_lines(memdir):
+        """The real migration order: the un-organised (HEAD) write runs first, then 26.5 lays the
+        marker and save-state renders again and again. No entry line produced by the marker-off
+        write may come back as carried prose."""
+        rels = build_long_title_dir(memdir)
+        (memdir / "MEMORY.md").write_text("\n".join(B1_PROSE) + "\n", encoding="utf-8")
+        mi.write(memdir, out=io.StringIO())                       # marker-off: HEAD's write
+>       assert_every_entry_keeps_its_link((memdir / "MEMORY.md").read_text(encoding="utf-8"), rels)
+
+tests/test_memory_index_layout.py:573: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+text = '- [Short title](feedback/feedback_long_hook.md) — derived long-hook prose\n- [A very long memory title — the kind cli...the author wanted the index line to say everything: 2026…\n- [Plain](project/project_plain.md) — derived plain prose\n'
+rels = {'feedback/feedback_long_hook.md': 'Short title', 'feedback/feedback_long_title.md': 'A very long memory title — the k...the author wanted the index line to say everything: 2026-11-09 edition, part two', 'project/project_plain.md': 'Plain'}
+
+    def assert_every_entry_keeps_its_link(text: str, rels: dict) -> None:
+        lines = text.splitlines()
+        cut = [ln for ln in lines if ln.startswith("- [") and "](" not in ln]
+>       assert not cut, f"entry line(s) cut before their link: {cut}"
+E       AssertionError: entry line(s) cut before their link: ['- [A very long memory title — the kind cliquedb really carries, naming the mechanism, the incident, the date and the fix in one breath because the author wanted the index line to say everything: 2026…']
+E       assert not ['- [A very long memory title — the kind cliquedb really carries, naming the mechanism, the incident, the date and the fix in one breath because the author wanted the index line to say everything: 2026…']
+
+tests/test_memory_index_layout.py:537: AssertionError
+________________ test_b1_marker_off_a_long_title_keeps_its_link ________________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-vp81ddb5/memory')
+
+    def test_b1_marker_off_a_long_title_keeps_its_link(memdir):
+        """Stated byte change vs HEAD for long-title dirs only: HEAD cut the link off (the memory
+        became unreachable from the index). Short-title dirs stay byte-identical (the goldens)."""
+        mem(memdir, "feedback_long_title.md", title=LONG_TITLE, mtype="feedback",
+            body="derived long-title prose")
+        mem(memdir, "feedback_short.md", title="Short", mtype="feedback", body="derived short")
+        (memdir / "MEMORY.md").write_text(
+            f"- [Short](feedback_short.md) — {LONG_HOOK}\n", encoding="utf-8")
+        assert not (memdir / ".memory-layout").exists()
+        r = run_entry(memdir)
+        assert r.returncode == 0, r.stderr
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert_every_entry_keeps_its_link(
+            text, {"feedback_long_title.md": LONG_TITLE, "feedback_short.md": "Short"})
+
+tests/test_memory_index_layout.py:599: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+text = '- [A very long memory title — the kind cliquedb really carries, naming the mechanism, the incident, the date and the ...e cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which i…\n'
+rels = {'feedback_long_title.md': 'A very long memory title — the kind cliquedb really carries, naming the mechanism, the inc...ecause the author wanted the index line to say everything: 2026-11-09 edition, part two', 'feedback_short.md': 'Short'}
+
+    def assert_every_entry_keeps_its_link(text: str, rels: dict) -> None:
+        lines = text.splitlines()
+        cut = [ln for ln in lines if ln.startswith("- [") and "](" not in ln]
+>       assert not cut, f"entry line(s) cut before their link: {cut}"
+E       AssertionError: entry line(s) cut before their link: ['- [A very long memory title — the kind cliquedb really carries, naming the mechanism, the incident, the date and the fix in one breath because the author wanted the index line to say everything: 2026…']
+E       assert not ['- [A very long memory title — the kind cliquedb really carries, naming the mechanism, the incident, the date and the fix in one breath because the author wanted the index line to say everything: 2026…']
+
+tests/test_memory_index_layout.py:537: AssertionError
+_________ test_m1_organised_write_refuses_when_a_full_fold_cannot_fit __________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-s2xts7i9/memory')
+
+    def test_m1_organised_write_refuses_when_a_full_fold_cannot_fit(memdir):
+        """Feedback is never folded. 8 prose lines (~950 chars, under the 75% the 25% rule allows)
+        plus 10 long feedback entries (~1,600 chars) cannot fit 2,000 chars at any fold: refuse.
+        At HEAD the over-budget render is written and only reported as STILL OVER."""
+        prose = [f"Hand paragraph {i}: " + "p" * 100 for i in range(8)]
+        lines = list(prose)
+        for i in range(10):
+            mem(memdir, f"feedback/feedback_f{i}.md", title=f"F{i}", mtype="feedback", body=f"f{i}")
+            lines.append(f"- [F{i}](feedback/feedback_f{i}.md) — " + "c" * 130)
+        before = "\n".join(lines) + "\n"
+        (memdir / "MEMORY.md").write_text(before, encoding="utf-8")
+        side_before = json.dumps({f"feedback_f{i}": "c" * 130 for i in range(10)})
+        (memdir / mi.HOOKS_SIDECAR).write_text(side_before, encoding="utf-8")
+        organise(memdir)
+        buf = io.StringIO()
+        n = mi.write(memdir, max_chars=2000, out=buf)
+        said = buf.getvalue()
+>       assert (memdir / "MEMORY.md").read_text(encoding="utf-8") == before, \
+            f"an over-budget render was written: {said}"
+E       AssertionError: an over-budget render was written: MEMORY.md: 18 -> 20 lines, 2661 chars (caps 200 lines / 2000 chars; 10 memories on disk)
+E         MEMORY.md: STILL OVER the 2000-char budget at 2661 chars — the tail WILL be cut on load; nothing left to fold (feedback entries are never folded)
+E         MEMORY.md: carried 8 hand-written prose line(s)
+E         
+E       assert '<!-- carried...ccccccccccc\n' == 'Hand paragra...ccccccccccc\n'
+E         
+E         + <!-- carried from the hand-written index; edit freely -->
+E           Hand paragraph 0: pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+E           Hand paragraph 1: pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+E           Hand paragraph 2: pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+E           Hand paragraph 3: pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+E           Hand paragraph 4: ppppppppppppppppp...
+E         
+E         ...Full output truncated (15 lines hidden), use '-vv' to show
+
+tests/test_memory_index_layout.py:648: AssertionError
+_________________ test_m1_entry_point_never_writes_over_budget _________________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-708z_eiv/memory')
+
+    def test_m1_entry_point_never_writes_over_budget(memdir):
+        """The same refusal through the real entry point and the env budget."""
+        prose = [f"Hand paragraph {i}: " + "p" * 100 for i in range(8)]
+        lines = list(prose)
+        for i in range(10):
+            mem(memdir, f"feedback/feedback_f{i}.md", title=f"F{i}", mtype="feedback", body=f"f{i}")
+            lines.append(f"- [F{i}](feedback/feedback_f{i}.md) — " + "c" * 130)
+        before = "\n".join(lines) + "\n"
+        (memdir / "MEMORY.md").write_text(before, encoding="utf-8")
+        organise(memdir)
+        r = run_entry(memdir, env={"RMX_MEMORY_INDEX_CHARS": "2000"})
+        assert r.returncode == 0, r.stderr
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert text == before, \
+            f"a full fold cannot fit, so the write must refuse; wrote {len(text)} chars"
+E       AssertionError: a full fold cannot fit, so the write must refuse; wrote 2661 chars
+E       assert '<!-- carried...ccccccccccc\n' == 'Hand paragra...ccccccccccc\n'
+E         
+E         + <!-- carried from the hand-written index; edit freely -->
+E           Hand paragraph 0: pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+E           Hand paragraph 1: pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+E           Hand paragraph 2: pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+E           Hand paragraph 3: pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+E           Hand paragraph 4: ppppppppppppppppp...
+E         
+E         ...Full output truncated (15 lines hidden), use '-vv' to show
+
+tests/test_memory_index_layout.py:668: AssertionError
+____________ test_s3_in_process_bridge_counts_and_names_every_skip _____________
+
+ac2_inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-gy0rir9c'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-gy0rir9c/proj/.refmatrix'))
+
+    def test_s3_in_process_bridge_counts_and_names_every_skip(ac2_inproc):
+        base, root = ac2_inproc
+        memdir = _s3_memdir(base)
+        assert not dm.ping(root, retries=0)
+        out = _invoke(["ingest-gmd", "--as-memory", str(memdir)])
+>       _assert_names_every_skip(out, "in-process CLI output")
+
+tests/test_memory_bridge.py:466: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+text = 'ingested 2 doc(s), 2 node(s), 0 rel: edge(s), 12 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage ...kipped 2 non-memory .md file(s) (dot-path or README.md, ADR-0005 #one-walk): .hidden/y.md, .organise-rollback-1/x.md\n'
+where = 'in-process CLI output'
+
+    def _assert_names_every_skip(text: str, where: str) -> None:
+        flat = _flat(text)
+>       assert re.search(r"skipped 5\b", flat), f"{where}: no 'skipped 5' count: {flat}"
+E       AssertionError: in-process CLI output: no 'skipped 5' count: ingested 2 doc(s), 2 node(s), 0 rel: edge(s), 12 mention(s) skipped_non_gmd: 0 skipped_unparseable: 0 new linkage types: lead, part-of memory embed: 2 row(s) now reachable by recall in proj ingest-gmd --as-memory: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-gy0rir9c/memory: skipped 2 non-memory .md file(s) (dot-path or README.md, ADR-0005 #one-walk): .hidden/y.md, .organise-rollback-1/x.md
+E       assert None
+E        +  where None = <function search at 0x103447cc0>('skipped 5\\b', 'ingested 2 doc(s), 2 node(s), 0 rel: edge(s), 12 mention(s) skipped_non_gmd: 0 skipped_unparseable: 0 new linkage typ... skipped 2 non-memory .md file(s) (dot-path or README.md, ADR-0005 #one-walk): .hidden/y.md, .organise-rollback-1/x.md')
+E        +    where <function search at 0x103447cc0> = re.search
+
+tests/test_memory_bridge.py:456: AssertionError
+_________ test_s3_daemon_sync_op_returns_the_skip_count_to_the_caller __________
+
+ac2_daemon = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-ux8fx9i4'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-ux8fx9i4/proj/.refmatrix'))
+
+    def test_s3_daemon_sync_op_returns_the_skip_count_to_the_caller(ac2_daemon):
+        """The `ingest_gmd` op's RESULT carries `skipped` (int) and `skipped_paths` (names), and the
+        CLI that called it prints them -- not only the daemon's stderr log."""
+        base, root = ac2_daemon
+        memdir = _s3_memdir(base)
+        resp = dm.call(root, "ingest_gmd", {"targets": [str(memdir)], "as_memory": True},
+                       timeout=300)
+        assert resp.get("ok"), resp
+        res = resp["result"]
+>       assert res.get("skipped") == 5, f"the op result carries no skipped count of 5: {res}"
+E       AssertionError: the op result carries no skipped count of 5: {'files': 2, 'report': 'ingested 2 doc(s), 2 node(s), 0 rel: edge(s), 12 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage types: lead, part-of\nmemory embed: 2 row(s) now reachable by recall in proj', 'docs': 2, 'nodes': 2, 'rels': 0, 'mentions': 12, 'unresolved': 0, 'stats': {'docs': 2, 'nodes': 2, 'rels': 0, 'mentions': 12, 'unresolved': 0, 'skipped_non_gmd': 0, 'skipped_unparseable': [], 'skipped_index': [], 'doc_drop_failed': []}, 'embed': {'partition': 'proj', 'embedded': 2, 'remaining': 0, 'batches': 1, 'capped': False, 'error': None}, 'job_id': '349dac8019d2'}
+E       assert None == 5
+E        +  where None = <built-in method get of dict object at 0x1259011c0>('skipped')
+E        +    where <built-in method get of dict object at 0x1259011c0> = {'docs': 2, 'embed': {'batches': 1, 'capped': False, 'embedded': 2, 'error': None, ...}, 'files': 2, 'job_id': '349dac8019d2', ...}.get
+
+tests/test_memory_bridge.py:481: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_layout.py::test_iter_memory_files_puts_every_dropped_shape_on_skipped
+FAILED tests/test_memory_layout.py::test_same_date_both_with_time_of_day_mtime_still_decides
+FAILED tests/test_memory_layout.py::test_three_same_day_save_states_order_the_same_for_every_input_permutation
+FAILED tests/test_memory_layout.py::test_no_updated_is_dated_by_the_mtimes_local_date
+FAILED tests/test_memory_index_layout.py::test_b1_long_title_organised_render_is_stable_over_three_renders
+FAILED tests/test_memory_index_layout.py::test_b1_marker_off_then_organised_never_carries_entry_lines
+FAILED tests/test_memory_index_layout.py::test_b1_marker_off_a_long_title_keeps_its_link
+FAILED tests/test_memory_index_layout.py::test_m1_organised_write_refuses_when_a_full_fold_cannot_fit
+FAILED tests/test_memory_index_layout.py::test_m1_entry_point_never_writes_over_budget
+FAILED tests/test_memory_bridge.py::test_s3_in_process_bridge_counts_and_names_every_skip
+FAILED tests/test_memory_bridge.py::test_s3_daemon_sync_op_returns_the_skip_count_to_the_caller
+11 failed, 100 passed in 206.65s (0:03:26)

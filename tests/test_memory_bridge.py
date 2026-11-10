@@ -424,3 +424,63 @@ def test_ac2_doc_ingest_keeps_its_own_walk():
         assert got == {"keep_top.md", "keep_nested.md", "x.md", "y.md"}
     finally:
         shutil.rmtree(base, ignore_errors=True)
+
+
+# ---- task 26.1 remedy, ch-bsd 26.1 #s-3: every skip is counted, named, and reaches the caller -
+#
+# The walk dropped a symlinked sub-folder, a dangling `.md` symlink and a `.gmd` file WITHOUT
+# counting them (HEAD's bridge ingested `.gmd`), and on the daemon ops the "skipped N" line went
+# to the daemon's stderr log -- never into the result the hook or CLI receives. CLAUDE.md
+# #no-silent-failures: a skipped file is counted and printed, by the CALLER.
+
+S3_SKIPPED = (".organise-rollback-1/x.md", ".hidden/y.md", "linked", "dangling.md", "notes.gmd")
+
+
+def _s3_memdir(base: Path) -> Path:
+    memdir = _ac2_memdir(base)              # keep_top + feedback/keep_nested; x, y in dot-dirs
+    outside = base / "elsewhere"
+    outside.mkdir()
+    (outside / "far.md").write_text(GMD.format(id="far", body="outside the memdir"))
+    (memdir / "linked").symlink_to(outside, target_is_directory=True)
+    (memdir / "dangling.md").symlink_to(base / "no-such-file.md")
+    (memdir / "notes.gmd").write_text(GMD.format(id="notes", body="a .gmd file in a memdir"))
+    return memdir
+
+
+def _flat(text: str) -> str:
+    return " ".join(str(text).split())
+
+
+def _assert_names_every_skip(text: str, where: str) -> None:
+    flat = _flat(text)
+    assert re.search(r"skipped 5\b", flat), f"{where}: no 'skipped 5' count: {flat}"
+    missing = [n for n in S3_SKIPPED if n not in flat]
+    assert not missing, f"{where}: skipped paths not named: {missing}: {flat}"
+
+
+def test_s3_in_process_bridge_counts_and_names_every_skip(ac2_inproc):
+    base, root = ac2_inproc
+    memdir = _s3_memdir(base)
+    assert not dm.ping(root, retries=0)
+    out = _invoke(["ingest-gmd", "--as-memory", str(memdir)])
+    _assert_names_every_skip(out, "in-process CLI output")
+    got = _rows(root, ["keep_top", "keep_nested", "far", "notes"])
+    assert got["keep_top"] and got["keep_nested"], got
+    assert not got["far"], "the walk followed a symlinked sub-folder out of the memdir"
+
+
+def test_s3_daemon_sync_op_returns_the_skip_count_to_the_caller(ac2_daemon):
+    """The `ingest_gmd` op's RESULT carries `skipped` (int) and `skipped_paths` (names), and the
+    CLI that called it prints them -- not only the daemon's stderr log."""
+    base, root = ac2_daemon
+    memdir = _s3_memdir(base)
+    resp = dm.call(root, "ingest_gmd", {"targets": [str(memdir)], "as_memory": True},
+                   timeout=300)
+    assert resp.get("ok"), resp
+    res = resp["result"]
+    assert res.get("skipped") == 5, f"the op result carries no skipped count of 5: {res}"
+    named = " ".join(str(p) for p in (res.get("skipped_paths") or []))
+    missing = [n for n in S3_SKIPPED if n not in named]
+    assert not missing, f"skipped_paths does not name {missing}: {res.get('skipped_paths')}"
+    out = _invoke(["ingest-gmd", "--as-memory", str(memdir)])
+    _assert_names_every_skip(out, "daemon-backed CLI output")

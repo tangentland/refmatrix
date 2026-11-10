@@ -479,3 +479,192 @@ def test_ac9_nested_marker_off_lists_every_entry_drops_prose_keeps_path_keys(mem
     assert "# one hand-written prose line" not in text, "HEAD's trade: prose is dropped here"
     assert CARRY_HEAD not in text
     assert set(sidecar(memdir)) == {rel for rel, _, _ in VIA_ENTRIES}, sidecar(memdir)
+
+
+# ---- task 26.1 remedy, ch-bsd 26.1 #b-1: an entry line never loses its link ---------------
+#
+# `Entry.line` cut every line at MAX_LINE_CHARS (200). With a long title the cut landed before
+# `](rel)`: the line kept `- [` but lost its link, so the next ORGANISED render read it as prose,
+# carried it, and rendered the same entry again -- the carried block grew every pass (real
+# cliquedb: 8 -> 16 -> ... -> 64 lines, frozen at 40,458 chars). Marker-off, HEAD's cut made the
+# memory unreachable from the index (8 link-less lines in cliquedb's live index today). AC-5
+# (amended): an entry line is never cut inside its link, and a generated entry line is never
+# prose. The HEAD goldens above have short titles and stay byte-identical.
+
+LONG_TITLE = ("A very long memory title — the kind cliquedb really carries, naming the "
+              "mechanism, the incident, the date and the fix in one breath because the "
+              "author wanted the index line to say everything: 2026-11-09 edition, part two")
+LONG_HOOK = ("a curated hook that runs on and on, well past the line cap, because the human "
+             "who wrote it wanted the whole story in the index rather than in the memory "
+             "itself, which is exactly what real indexes look like")
+B1_PROSE = ["# Hand index", "Read the campaign block first.", "## Campaign",
+            "**Goal:** keep every link."]
+
+
+def build_long_title_dir(memdir: Path) -> dict:
+    assert len(LONG_TITLE) > 200 and len(LONG_HOOK) > 200
+    mem(memdir, "feedback/feedback_long_title.md", title=LONG_TITLE, mtype="feedback",
+        body="derived long-title prose")
+    mem(memdir, "feedback/feedback_long_hook.md", title="Short title", mtype="feedback",
+        body="derived long-hook prose")
+    mem(memdir, "project/project_plain.md", title="Plain", mtype="project",
+        body="derived plain prose")
+    (memdir / "MEMORY.md").write_text("\n".join(B1_PROSE + [
+        f"- [Short title](feedback/feedback_long_hook.md) — {LONG_HOOK}",
+        "- [Plain](project/project_plain.md) — curated plain",
+    ]) + "\n", encoding="utf-8")
+    return {"feedback/feedback_long_title.md": LONG_TITLE,
+            "feedback/feedback_long_hook.md": "Short title",
+            "project/project_plain.md": "Plain"}
+
+
+def carried_block(lines: list) -> list:
+    """The carried block's lines: from CARRY_HEAD up to the blank line that closes it."""
+    if CARRY_HEAD not in lines:
+        return []
+    i = lines.index(CARRY_HEAD)
+    out = []
+    for ln in lines[i + 1:]:
+        if not ln.strip():
+            break
+        out.append(ln)
+    return out
+
+
+def assert_every_entry_keeps_its_link(text: str, rels: dict) -> None:
+    lines = text.splitlines()
+    cut = [ln for ln in lines if ln.startswith("- [") and "](" not in ln]
+    assert not cut, f"entry line(s) cut before their link: {cut}"
+    for rel, title in rels.items():
+        hits = [ln for ln in lines if f"]({rel})" in ln]
+        assert len(hits) == 1, f"{rel}: {len(hits)} entry lines carry its link: {hits}"
+        assert hits[0].startswith("- [" + title[:40]), f"{rel}: title not kept: {hits[0]!r}"
+        assert len(hits[0]) <= mi.MAX_LINE_CHARS, (len(hits[0]), hits[0])
+
+
+def test_b1_long_title_organised_render_is_stable_over_three_renders(memdir):
+    rels = build_long_title_dir(memdir)
+    organise(memdir)
+    sizes, texts = [], []
+    for n in (1, 2, 3):
+        r = run_entry(memdir)
+        assert r.returncode == 0, r.stderr
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        assert_every_entry_keeps_its_link(text, rels)
+        block = carried_block(text.splitlines())
+        gen = [ln for ln in block if ln.startswith("- [")]
+        assert not gen, f"render {n}: a generated entry line was carried as prose: {gen}"
+        assert block == B1_PROSE, f"render {n}: carried block is not the hand prose: {block}"
+        sizes.append(len(block))
+        texts.append(text)
+    assert sizes[0] == sizes[1] == sizes[2], f"carried block grew per render: {sizes}"
+    assert texts[0] == texts[1] == texts[2], "re-rendering changed the index"
+    chk = run_entry(memdir, "--check")
+    assert chk.returncode == 0, chk.stdout + chk.stderr
+
+
+def test_b1_marker_off_then_organised_never_carries_entry_lines(memdir):
+    """The real migration order: the un-organised (HEAD) write runs first, then 26.5 lays the
+    marker and save-state renders again and again. No entry line produced by the marker-off
+    write may come back as carried prose."""
+    rels = build_long_title_dir(memdir)
+    (memdir / "MEMORY.md").write_text("\n".join(B1_PROSE) + "\n", encoding="utf-8")
+    mi.write(memdir, out=io.StringIO())                       # marker-off: HEAD's write
+    assert_every_entry_keeps_its_link((memdir / "MEMORY.md").read_text(encoding="utf-8"), rels)
+    organise(memdir)
+    sizes = []
+    for n in (1, 2, 3):
+        r = run_entry(memdir)
+        assert r.returncode == 0, r.stderr
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        assert_every_entry_keeps_its_link(text, rels)
+        block = carried_block(text.splitlines())
+        assert not [ln for ln in block if ln.startswith("- [")], (n, block)
+        sizes.append(len(block))
+    assert sizes[0] == sizes[1] == sizes[2], sizes
+
+
+def test_b1_marker_off_a_long_title_keeps_its_link(memdir):
+    """Stated byte change vs HEAD for long-title dirs only: HEAD cut the link off (the memory
+    became unreachable from the index). Short-title dirs stay byte-identical (the goldens)."""
+    mem(memdir, "feedback_long_title.md", title=LONG_TITLE, mtype="feedback",
+        body="derived long-title prose")
+    mem(memdir, "feedback_short.md", title="Short", mtype="feedback", body="derived short")
+    (memdir / "MEMORY.md").write_text(
+        f"- [Short](feedback_short.md) — {LONG_HOOK}\n", encoding="utf-8")
+    assert not (memdir / ".memory-layout").exists()
+    r = run_entry(memdir)
+    assert r.returncode == 0, r.stderr
+    text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+    assert_every_entry_keeps_its_link(
+        text, {"feedback_long_title.md": LONG_TITLE, "feedback_short.md": "Short"})
+
+
+# ---- task 26.1 remedy, ch-bsd 26.1 #m-1: an organised write never exceeds max_chars --------
+#
+# On cliquedb, marker-on render 1 was 24,378 chars: the carried prose pushed the tail past the
+# budget, the report said "STILL OVER ... the tail WILL be cut on load", and the write went ahead.
+# AC-6 (amended): an organised write folds further, and refuses when even a full fold cannot
+# fit -- index AND sidecar untouched, the reason (with the prose count) on `out`, return 0.
+
+def test_m1_organised_write_folds_further_to_fit_the_budget(memdir):
+    """Guard: when folding project notes CAN make room, the written index fits."""
+    prose = [f"Hand paragraph {i}: " + "p" * 100 for i in range(8)]          # ~950 chars
+    for i in range(3):
+        mem(memdir, f"feedback/feedback_k{i}.md", title=f"K{i}", mtype="feedback", body=f"k{i}")
+    lines = list(prose)
+    for i in range(20):
+        mem(memdir, f"project/project_q{i:02d}.md", title=f"Q{i:02d}", mtype="project",
+            body=f"q{i}", mtime=T0 + i)
+        lines.append(f"- [Q{i:02d}](project/project_q{i:02d}.md) — " + "h" * 120)
+    (memdir / "MEMORY.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    organise(memdir)
+    buf = io.StringIO()
+    n = mi.write(memdir, max_chars=2400, out=buf)
+    text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+    assert n > 0, buf.getvalue()
+    assert len(text) <= 2400, (len(text), buf.getvalue())
+    assert "older project memories folded" in text
+    assert carried_block(text.splitlines()) == prose
+
+
+def test_m1_organised_write_refuses_when_a_full_fold_cannot_fit(memdir):
+    """Feedback is never folded. 8 prose lines (~950 chars, under the 75% the 25% rule allows)
+    plus 10 long feedback entries (~1,600 chars) cannot fit 2,000 chars at any fold: refuse.
+    At HEAD the over-budget render is written and only reported as STILL OVER."""
+    prose = [f"Hand paragraph {i}: " + "p" * 100 for i in range(8)]
+    lines = list(prose)
+    for i in range(10):
+        mem(memdir, f"feedback/feedback_f{i}.md", title=f"F{i}", mtype="feedback", body=f"f{i}")
+        lines.append(f"- [F{i}](feedback/feedback_f{i}.md) — " + "c" * 130)
+    before = "\n".join(lines) + "\n"
+    (memdir / "MEMORY.md").write_text(before, encoding="utf-8")
+    side_before = json.dumps({f"feedback_f{i}": "c" * 130 for i in range(10)})
+    (memdir / mi.HOOKS_SIDECAR).write_text(side_before, encoding="utf-8")
+    organise(memdir)
+    buf = io.StringIO()
+    n = mi.write(memdir, max_chars=2000, out=buf)
+    said = buf.getvalue()
+    assert (memdir / "MEMORY.md").read_text(encoding="utf-8") == before, \
+        f"an over-budget render was written: {said}"
+    assert (memdir / mi.HOOKS_SIDECAR).read_text(encoding="utf-8") == side_before
+    assert n == 0, said
+    assert "untouched" in said and "prose" in said and re.search(r"\b8\b", said), said
+
+
+def test_m1_entry_point_never_writes_over_budget(memdir):
+    """The same refusal through the real entry point and the env budget."""
+    prose = [f"Hand paragraph {i}: " + "p" * 100 for i in range(8)]
+    lines = list(prose)
+    for i in range(10):
+        mem(memdir, f"feedback/feedback_f{i}.md", title=f"F{i}", mtype="feedback", body=f"f{i}")
+        lines.append(f"- [F{i}](feedback/feedback_f{i}.md) — " + "c" * 130)
+    before = "\n".join(lines) + "\n"
+    (memdir / "MEMORY.md").write_text(before, encoding="utf-8")
+    organise(memdir)
+    r = run_entry(memdir, env={"RMX_MEMORY_INDEX_CHARS": "2000"})
+    assert r.returncode == 0, r.stderr
+    text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+    assert text == before, \
+        f"a full fold cannot fit, so the write must refuse; wrote {len(text)} chars"
+    assert "untouched" in (r.stdout + r.stderr), r.stdout + r.stderr
