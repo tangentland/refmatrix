@@ -1,0 +1,45 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_________ test_save_hooks_with_a_failing_rename_keeps_the_old_sidecar __________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-522/test_save_hooks_with_a_failing0/proj-slug/memory')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x105763ce0>
+capsys = <_pytest.capture.CaptureFixture object at 0x106146120>
+
+    def test_save_hooks_with_a_failing_rename_keeps_the_old_sidecar(memdir, monkeypatch, capsys):
+        before = _sidecar_bytes(memdir)
+        entries = mi.collect(memdir)
+        monkeypatch.setattr(os, "replace", _failing_replace)
+        mi.save_hooks(memdir, entries)
+        monkeypatch.undo()
+>       assert _sidecar_bytes(memdir) == before, "a failed rename must leave the old sidecar whole"
+E       AssertionError: a failed rename must leave the old sidecar whole
+E       assert b'{\n"feedbac...th no cut"\n}' == b'{\n"feedbac...2\x80\xa6"\n}'
+E         
+E         At index 252 diff: b'\n' != b','
+E         Use -v to get more diff
+
+tests/test_memory_hook_repair.py:403: AssertionError
+________ test_repair_apply_with_a_failing_rename_keeps_the_old_sidecar _________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-522/test_repair_apply_with_a_faili0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-522/test_repair_apply_with_a_faili0/rmxhome')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1057603e0>
+capsys = <_pytest.capture.CaptureFixture object at 0x1057974d0>
+
+    def test_repair_apply_with_a_failing_rename_keeps_the_old_sidecar(memdir, rmx_home,
+                                                                      monkeypatch, capsys):
+        before = _sidecar_bytes(memdir)
+        monkeypatch.setattr(os, "replace", _failing_replace)
+        rc = mi.repair_cut_hooks(memdir, apply=True)
+        monkeypatch.undo()
+        err = capsys.readouterr().err
+>       assert rc != 0, "a failed write is a refusal"
+E       AssertionError: a failed write is a refusal
+E       assert 0 != 0
+
+tests/test_memory_hook_repair.py:415: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_hook_repair.py::test_save_hooks_with_a_failing_rename_keeps_the_old_sidecar
+FAILED tests/test_memory_hook_repair.py::test_repair_apply_with_a_failing_rename_keeps_the_old_sidecar
+2 failed, 21 deselected in 0.21s

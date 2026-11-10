@@ -1,0 +1,125 @@
+pyc-guard: recompiled 39 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug195/src/refmatrix as checked-hash (bug-037)
+...........FFFFFF......                                                  [100%]
+=================================== FAILURES ===================================
+___________ test_save_hooks_preserves_the_existing_sidecar_mode[420] ___________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-526/test_save_hooks_preserves_the_0/proj-slug/memory')
+mode = 420
+
+    @pytest.mark.parametrize("mode", [0o644, 0o640])
+    def test_save_hooks_preserves_the_existing_sidecar_mode(memdir, mode):
+        side = memdir / SIDECAR
+        side.chmod(mode)
+        mi.save_hooks(memdir, mi.collect(memdir))
+>       assert _mode(side) == mode, f"save_hooks changed {oct(mode)} to {oct(_mode(side))}"
+E       AssertionError: save_hooks changed 0o644 to 0o600
+E       assert 384 == 420
+E        +  where 384 = _mode(PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-526/test_save_hooks_preserves_the_0/proj-slug/memory/.memory_hooks.json'))
+
+tests/test_memory_hook_repair.py:329: AssertionError
+___________ test_save_hooks_preserves_the_existing_sidecar_mode[416] ___________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-526/test_save_hooks_preserves_the_1/proj-slug/memory')
+mode = 416
+
+    @pytest.mark.parametrize("mode", [0o644, 0o640])
+    def test_save_hooks_preserves_the_existing_sidecar_mode(memdir, mode):
+        side = memdir / SIDECAR
+        side.chmod(mode)
+        mi.save_hooks(memdir, mi.collect(memdir))
+>       assert _mode(side) == mode, f"save_hooks changed {oct(mode)} to {oct(_mode(side))}"
+E       AssertionError: save_hooks changed 0o640 to 0o600
+E       assert 384 == 416
+E        +  where 384 = _mode(PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-526/test_save_hooks_preserves_the_1/proj-slug/memory/.memory_hooks.json'))
+
+tests/test_memory_hook_repair.py:329: AssertionError
+__________ test_repair_apply_preserves_the_existing_sidecar_mode[420] __________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-526/test_repair_apply_preserves_th0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-526/test_repair_apply_preserves_th0/rmxhome')
+mode = 420
+
+    @pytest.mark.parametrize("mode", [0o644, 0o640])
+    def test_repair_apply_preserves_the_existing_sidecar_mode(memdir, rmx_home, mode):
+        side = memdir / SIDECAR
+        side.chmod(mode)
+        rc, out = _run(memdir, "--apply")
+        assert rc == 0, out
+        assert "feedback_derived.md" not in json.loads(side.read_bytes()), out
+>       assert _mode(side) == mode, f"--apply changed {oct(mode)} to {oct(_mode(side))}"
+E       AssertionError: --apply changed 0o644 to 0o600
+E       assert 384 == 420
+E        +  where 384 = _mode(PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-526/test_repair_apply_preserves_th0/proj-slug/memory/.memory_hooks.json'))
+
+tests/test_memory_hook_repair.py:339: AssertionError
+__________ test_repair_apply_preserves_the_existing_sidecar_mode[416] __________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-526/test_repair_apply_preserves_th1/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-526/test_repair_apply_preserves_th1/rmxhome')
+mode = 416
+
+    @pytest.mark.parametrize("mode", [0o644, 0o640])
+    def test_repair_apply_preserves_the_existing_sidecar_mode(memdir, rmx_home, mode):
+        side = memdir / SIDECAR
+        side.chmod(mode)
+        rc, out = _run(memdir, "--apply")
+        assert rc == 0, out
+        assert "feedback_derived.md" not in json.loads(side.read_bytes()), out
+>       assert _mode(side) == mode, f"--apply changed {oct(mode)} to {oct(_mode(side))}"
+E       AssertionError: --apply changed 0o640 to 0o600
+E       assert 384 == 416
+E        +  where 384 = _mode(PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-526/test_repair_apply_preserves_th1/proj-slug/memory/.memory_hooks.json'))
+
+tests/test_memory_hook_repair.py:339: AssertionError
+__________________ test_a_new_sidecar_gets_the_umask_mode[18] __________________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-526/test_a_new_sidecar_gets_the_um0/proj-slug/memory')
+umask = 18
+
+    @pytest.mark.parametrize("umask", [0o022, 0o027])
+    def test_a_new_sidecar_gets_the_umask_mode(memdir, umask):
+        (memdir / SIDECAR).unlink()
+        old = os.umask(umask)
+        try:
+            mi.save_hooks(memdir, mi.collect(memdir))
+        finally:
+            os.umask(old)
+        side = memdir / SIDECAR
+        assert side.exists()
+>       assert _mode(side) == 0o666 & ~umask, \
+            f"umask {oct(umask)}: expected {oct(0o666 & ~umask)}, got {oct(_mode(side))}"
+E       AssertionError: umask 0o22: expected 0o644, got 0o600
+E       assert 384 == (438 & ~18)
+E        +  where 384 = _mode(PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-526/test_a_new_sidecar_gets_the_um0/proj-slug/memory/.memory_hooks.json'))
+
+tests/test_memory_hook_repair.py:352: AssertionError
+__________________ test_a_new_sidecar_gets_the_umask_mode[23] __________________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-526/test_a_new_sidecar_gets_the_um1/proj-slug/memory')
+umask = 23
+
+    @pytest.mark.parametrize("umask", [0o022, 0o027])
+    def test_a_new_sidecar_gets_the_umask_mode(memdir, umask):
+        (memdir / SIDECAR).unlink()
+        old = os.umask(umask)
+        try:
+            mi.save_hooks(memdir, mi.collect(memdir))
+        finally:
+            os.umask(old)
+        side = memdir / SIDECAR
+        assert side.exists()
+>       assert _mode(side) == 0o666 & ~umask, \
+            f"umask {oct(umask)}: expected {oct(0o666 & ~umask)}, got {oct(_mode(side))}"
+E       AssertionError: umask 0o27: expected 0o640, got 0o600
+E       assert 384 == (438 & ~23)
+E        +  where 384 = _mode(PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-526/test_a_new_sidecar_gets_the_um1/proj-slug/memory/.memory_hooks.json'))
+
+tests/test_memory_hook_repair.py:352: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_hook_repair.py::test_save_hooks_preserves_the_existing_sidecar_mode[420]
+FAILED tests/test_memory_hook_repair.py::test_save_hooks_preserves_the_existing_sidecar_mode[416]
+FAILED tests/test_memory_hook_repair.py::test_repair_apply_preserves_the_existing_sidecar_mode[420]
+FAILED tests/test_memory_hook_repair.py::test_repair_apply_preserves_the_existing_sidecar_mode[416]
+FAILED tests/test_memory_hook_repair.py::test_a_new_sidecar_gets_the_umask_mode[18]
+FAILED tests/test_memory_hook_repair.py::test_a_new_sidecar_gets_the_umask_mode[23]
+6 failed, 17 passed in 2.79s
