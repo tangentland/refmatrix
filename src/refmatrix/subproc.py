@@ -44,12 +44,18 @@ import sys
 import threading
 import time
 
+from refmatrix.envknob import env_float
+
 _HDR = struct.Struct(">I")
 
 # Cold start is a model load: 5-20s warm cache, up to ~90s on a busy CPU
 # with a cold HF cache. The daemon warms in the background so nobody
 # normally pays it, but the budget has to cover the case where someone does.
-DEFAULT_TIMEOUT_S = float(os.environ.get("RMX_WORKER_TIMEOUT_S", "300") or "300")
+# Parsed by the shared `envknob.env_float` (ch-bsd 3.7 r6 #m-1, 2026-11-09): a typo'd
+# `RMX_WORKER_TIMEOUT_S=300s` is the default plus one warning. Before r6 it was a bare
+# `float()` at import, so the typo made `import refmatrix.subproc` -- and through it
+# `import refmatrix.modelsrv` -- raise, and every daemonless embed call failed.
+DEFAULT_TIMEOUT_S = env_float("RMX_WORKER_TIMEOUT_S", 300.0, logger=__name__)
 
 
 def in_venv() -> bool:

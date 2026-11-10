@@ -335,6 +335,26 @@ def _reprobe_window() -> "tuple[float, float]":
     return base, cap
 
 
+def cold_streak_key(role: str) -> str:
+    """The key, in the caller's `backoff` dict, of `role`'s cold-miss streak: how many
+    CONSECUTIVE re-probes of `role` connected to the hub socket and then timed out on the
+    `info` header.
+
+    Why a marker at all (ch-bsd 3.7 r6 #s-1, 2026-11-09): r5 re-armed at base on EVERY
+    header-timeout miss, so a hub that accepts and never answers (wedged, SIGSTOPped, a
+    hung ModelServer worker) was probed once per base window forever -- measured 22
+    probes / 22.0 s of request-path stall in 25 s at base 1, and a daemon tick paying the
+    full 45 s `PROBE_TIMEOUT_S` per role every 300 s. Only the FIRST header-timeout miss of
+    a run may re-arm at base; the backoff VALUE cannot mark the run, because after
+    `hold_reprobe` it already equals base. Why inside `backoff` rather than a third dict:
+    the streak qualifies the backoff, so it must be reset by every path that resets the
+    throttle -- a success's pop, `_process_embed_client`'s clear on a shared build, a
+    caller (or test rig) that rebinds the dict -- and living in the same dict makes that
+    true by construction rather than by remembering a sibling. The key never collides with
+    a role name (roles are `embed` / `rerank`)."""
+    return f"{role}#cold-streak"
+
+
 def hold_reprobe(role: str, *, next_at: "dict[str, float]", backoff: "dict[str, float]",
                  now: "float | None" = None) -> None:
     """A hub decision was JUST made for `role` and it went private: the next re-probe
@@ -358,6 +378,9 @@ def hold_reprobe(role: str, *, next_at: "dict[str, float]", backoff: "dict[str, 
     now = time.time() if now is None else float(now)
     backoff[role] = base
     next_at[role] = now + base
+    # A fresh decision starts a fresh run of misses (ch-bsd 3.7 r6 #s-1, 2026-11-09): the
+    # next header-timeout miss is the FIRST of its run, so it may re-arm at base.
+    backoff.pop(cold_streak_key(role), None)
 
 
 def reprobe_shared_client(role: str, *, next_at: "dict[str, float]",
@@ -382,7 +405,14 @@ def reprobe_shared_client(role: str, *, next_at: "dict[str, float]",
     A COLD hub is not an absent one (task 3.7 remedy r5, ch-bsd r4 #m-3, 2026-11-09):
     when the socket CONNECTED (`shared_available`) and only the `info` header timed out,
     the hub is alive and our probe has just asked it to load its worker, so the next
-    re-probe is re-armed at the BASE window (`backoff = base`). Before r5 that miss
+    re-probe is re-armed at the BASE window (`backoff = base`) -- but only for the FIRST
+    such miss of a run (ch-bsd 3.7 r6 #s-1, 2026-11-09). A second CONSECUTIVE header
+    timeout doubles like any miss, up to the cap: a worker still silent a full base window
+    after it was asked to load is not loading, it is a mute hub (wedged, SIGSTOPped, a
+    hung worker), and r5's every-miss-at-base probed it at base forever. The run is
+    counted under `cold_streak_key(role)` in `backoff`; any other miss ends the run (a
+    refused or absent socket means that hub is gone, and the next one to come up cold is
+    a new run), and a success or `hold_reprobe` clears it. Before r5 that miss
     doubled like a dead hub's, so a hub that came up cold was adopted only after
     base + 2*base, with a duplicate private worker running beside the hub's. The case is
     told apart by STAGE and exception TYPE, never by message text: the miss must happen
@@ -407,7 +437,8 @@ def reprobe_shared_client(role: str, *, next_at: "dict[str, float]",
     base, cap = _reprobe_window()
     bound = modelsrv.PROBE_TIMEOUT_S if probe_timeout is None else float(probe_timeout)
     client = None
-    cold = False                      # connected, header timed out: re-arm at base (r5 #m-3)
+    cold = False                      # connected, header timed out (r5 #m-3, r6 #s-1)
+    miss: "BaseException | None" = None
     stage = "connect"
     try:
         if modelsrv.shared_available(timeout=0.5):
@@ -423,22 +454,37 @@ def reprobe_shared_client(role: str, *, next_at: "dict[str, float]",
             except Exception as cexc:  # noqa: BLE001 — named; the private worker serves
                 log(f"{role}: closing the unusable shared client failed: {cexc!r}")
         client = None
+        miss = exc
+    if client is None:
+        key = cold_streak_key(role)
+        streak = int(backoff.get(key, 0)) if cold else 0
+        if cold and streak == 0:
+            wait = min(base, cap)         # first cold miss of the run (r5 #m-3)
+        else:
+            wait = min(max(base, backoff.get(role, 0.0) * 2.0), cap)
         if cold:
-            log(f"{role}: shared worker still unusable ({exc!r}): the hub socket "
+            backoff[key] = float(streak + 1)
+        else:
+            backoff.pop(key, None)
+        backoff[role] = wait
+        next_at[role] = now + wait
+        # `miss is None`: `shared_available` was False (no hub listening) -- unlogged, as
+        # before r6, so a machine with no hub does not log every tick.
+        if miss is not None and cold and streak == 0:
+            log(f"{role}: shared worker still unusable ({miss!r}): the hub socket "
                 f"connected but its worker did not answer within {bound}s (cold, loading "
                 f"its model); keeping the private worker, re-probing at the base window "
                 f"{base}s")
-        else:
-            log(f"{role}: shared worker still unusable ({exc!r}); keeping the private "
-                f"worker")
-    if client is None:
-        if cold:
-            wait = min(base, cap)
-        else:
-            wait = min(max(base, backoff.get(role, 0.0) * 2.0), cap)
-        backoff[role] = wait
-        next_at[role] = now + wait
+        elif miss is not None and cold:
+            log(f"{role}: shared worker still unusable ({miss!r}): the hub socket "
+                f"connected but its worker did not answer within {bound}s again "
+                f"({streak + 1} consecutive header timeouts: not loading, the hub is "
+                f"mute); keeping the private worker, re-probing in {wait}s")
+        elif miss is not None:
+            log(f"{role}: shared worker still unusable ({miss!r}); keeping the private "
+                f"worker, re-probing in {wait}s")
         return None
+    backoff.pop(cold_streak_key(role), None)
     backoff.pop(role, None)
     next_at.pop(role, None)
     return client

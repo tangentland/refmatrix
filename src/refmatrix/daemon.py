@@ -34,6 +34,7 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Callable
 
+from refmatrix.envknob import env_float
 from refmatrix.store import Store, version_key
 from refmatrix.subproc import subproc_embed_enabled
 
@@ -58,12 +59,16 @@ def repair_marker_path(root: Path) -> Path:
 # model-worker reconnect, so "busy" and "dead" are distinguishable.
 # How long a supervised start waits for an unsupervised predecessor to stop
 # gracefully before serve_forever's reap escalates (plan-4 task 4.4).
-ADOPT_GRACE_S = float(os.environ.get("RMX_ADOPT_GRACE_S", "20") or "20")
+# Every numeric knob in this module goes through the shared `envknob.env_float` (ch-bsd
+# 3.7 r6 #m-1, 2026-11-09): a typo (`RMX_ADOPT_GRACE_S=20s`) is the default plus one
+# warning naming the variable. Before r6 each was a bare `float()` at import, so one typo
+# made `import refmatrix.daemon` raise and the daemon could not start at all.
+ADOPT_GRACE_S = env_float("RMX_ADOPT_GRACE_S", 20.0, logger=__name__)
 HEARTBEAT_NAME = "heartbeat"
-HEARTBEAT_INTERVAL_S = float(os.environ.get("RMX_HEARTBEAT_S", "5") or "5")
+HEARTBEAT_INTERVAL_S = env_float("RMX_HEARTBEAT_S", 5.0, logger=__name__)
 # Older than this, a heartbeat no longer means "working" — shared by the
 # hub watchdog and the daemon's own adoption/reap decisions (one number).
-HEARTBEAT_STALE_S = float(os.environ.get("RMX_HUB_HEARTBEAT_STALE_S", "60") or "60")
+HEARTBEAT_STALE_S = env_float("RMX_HUB_HEARTBEAT_STALE_S", 60.0, logger=__name__)
 
 
 class DeadlineExceeded(Exception):
@@ -84,7 +89,9 @@ _RECV_POLL_S = 1.0
 def stop_grace_s() -> float:
     """How long a stop order waits before escalating; `RMX_STOP_GRACE_S`
     overrides (tests, an operator in a hurry)."""
-    return float(os.environ.get("RMX_STOP_GRACE_S", str(DEFAULT_STOP_GRACE_S)) or DEFAULT_STOP_GRACE_S)
+    # `env_float` (ch-bsd 3.7 r6 #m-1, 2026-11-09): a typo is the default + one warning,
+    # never a `ValueError` out of a stop order.
+    return env_float("RMX_STOP_GRACE_S", float(DEFAULT_STOP_GRACE_S), logger=__name__)
 
 
 # The daemon's own shutdown budget. Every stage of serve_forever's finally
@@ -142,13 +149,13 @@ class _StopDeadline:
 def flush_budget_ceiling_s() -> float:
     """The most the final fragment flush may ever wait for `_store_lock`.
     `RMX_DAEMON_FLUSH_BUDGET_S` overrides (bug-041 raised it 5 -> 15)."""
-    return float(os.environ.get("RMX_DAEMON_FLUSH_BUDGET_S", "15") or "15")
+    return env_float("RMX_DAEMON_FLUSH_BUDGET_S", 15.0, logger=__name__)  # r6 #m-1
 
 
 def store_close_budget_s() -> float:
     """The bounded `Store.close()` budget; also the reserve every earlier
     stop stage keeps back for it."""
-    return float(os.environ.get("RMX_STORE_CLOSE_TIMEOUT_S", "5") or "5")
+    return env_float("RMX_STORE_CLOSE_TIMEOUT_S", 5.0, logger=__name__)  # r6 #m-1
 
 
 def remaining_flush_budget_s(elapsed_s: float) -> float:
@@ -705,7 +712,9 @@ def _recv_line(s: socket.socket, timeout: float,
 # How long one flush tick may spend draining queued grep-learn work. The drain
 # takes the writer lock PER ENTRY and releases it in between, so this bounds
 # the tick rather than the lock hold; leftovers ride to the next tick (bug-049).
-LEARN_DRAIN_BUDGET_S = float(os.environ.get("RMX_LEARN_DRAIN_BUDGET_S") or 5.0)
+# Parsed by `envknob.env_float` (ch-bsd 3.7 r6 #m-1, 2026-11-09): a typo is the default
+# plus one warning, not a `ValueError` at `import refmatrix.daemon`.
+LEARN_DRAIN_BUDGET_S = env_float("RMX_LEARN_DRAIN_BUDGET_S", 5.0, logger=__name__)
 
 
 class SlotRepairError(RuntimeError):
@@ -832,6 +841,8 @@ class Daemon:
         self._worker_lock = threading.Lock()
         # Shared-worker re-probe bookkeeping (bug-024): when the next
         # probe is allowed per role, and the backoff that produced it.
+        # `_reprobe_backoff` also carries each role's cold-miss streak under
+        # `recall.cold_streak_key(role)` (ch-bsd 3.7 r6 #s-1, 2026-11-09).
         self._reprobe_next: dict[str, float] = {}
         self._reprobe_backoff: dict[str, float] = {}
         # Snapshot-tier state. `_request_snapshot()` sets `_snapshot_dirty`
@@ -942,7 +953,14 @@ class Daemon:
         worker it started with and only the NEXT call sees the new client.
 
         Backs off (doubling to `RMX_SHARED_REPROBE_MAX_S`) so a machine that
-        will never have a hub does not probe at full rate forever. Returns the
+        will never have a hub does not probe at full rate forever. A hub that
+        connects and times out on the header re-arms at the BASE window only
+        for the FIRST such miss of a run (r5 #m-3: a cold hub is adopted one
+        base window later); every consecutive header timeout doubles to the cap
+        too (ch-bsd 3.7 r6 #s-1, 2026-11-09: r5 re-armed a MUTE hub at base
+        forever, so this tick paid the 45 s `PROBE_TIMEOUT_S` per role every
+        300 s). The run is counted in `_reprobe_backoff` under
+        `recall.cold_streak_key(role)`, so it resets with the throttle. Returns the
         roles adopted, for the caller's log and for tests.
 
         The probe and its backoff are `recall.reprobe_shared_client`, the ONE re-probe a
@@ -1107,7 +1125,9 @@ class Daemon:
         the next query then pays a cold model load — worth it on a
         memory-constrained host, not on a busy one.
         """
-        idle_s = float(os.environ.get("RMX_WORKER_IDLE_S", "0") or "0")
+        # The same knob `modelsrv.ModelServer.idle_seconds` reads, through the same
+        # parser (ch-bsd 3.7 r6 #m-1, 2026-11-09): a typo is 0 (never) + one warning.
+        idle_s = env_float("RMX_WORKER_IDLE_S", 0.0, logger=__name__)
         if idle_s <= 0:
             return
         for attr, cache in (("_embed_worker", "_embedder_inst"),
@@ -1253,12 +1273,15 @@ class Daemon:
     def _start_heartbeat(self) -> None:
         """Touch `.refmatrix/heartbeat` every RMX_HEARTBEAT_S (5) from a
         thread that takes NO lock, so the supervisor's liveness signal is
-        independent of every op. Interval is re-read so tests can shorten it."""
+        independent of every op. Interval is re-read so tests can shorten it,
+        through the shared `envknob.env_float` (ch-bsd 3.7 r6 #m-1, 2026-11-09): a
+        typo'd `RMX_HEARTBEAT_S` is the module default plus one warning, where a bare
+        `float()` raised out of the daemon's startup."""
         import threading as _t
         if getattr(self, "_heartbeat_thread", None) and self._heartbeat_thread.is_alive():
             return
         self._heartbeat_stop = _t.Event()
-        interval = float(os.environ.get("RMX_HEARTBEAT_S", str(HEARTBEAT_INTERVAL_S)) or "5")
+        interval = env_float("RMX_HEARTBEAT_S", HEARTBEAT_INTERVAL_S, logger=__name__)
         _touch = self._heartbeat_touch
 
         def _runner():
@@ -1363,7 +1386,7 @@ class Daemon:
         op trips the fast-exit (ch-bsd plan-4 r1 #m-10). RMX_DEGRADE_EXIT_S
         (default 2) lets the reply flush first."""
         import threading as _t
-        delay = float(os.environ.get("RMX_DEGRADE_EXIT_S", "2") or "2")
+        delay = env_float("RMX_DEGRADE_EXIT_S", 2.0, logger=__name__)  # r6 #m-1
 
         def _later():
             time.sleep(delay)
@@ -2171,7 +2194,7 @@ class Daemon:
         Interval defaults to 30s; override via RMX_DAEMON_FLUSH_S env."""
         import threading as _t
         if interval_s is None:
-            interval_s = float(os.environ.get("RMX_DAEMON_FLUSH_S", "30") or "30")
+            interval_s = env_float("RMX_DAEMON_FLUSH_S", 30.0, logger=__name__)  # r6 #m-1
         self._flush_stop = _t.Event()
 
         def _runner():
@@ -4734,10 +4757,9 @@ def _context_rerank_budget_s() -> float:
     """Seconds the context op's rerank may spend (`RMX_CONTEXT_RERANK_S`,
     default 3.0). Measured warm: ~0.1 s for 10 docs on the daemon's worker
     (ch-bsd r8); the hook's shared worker took 1.33 s for 10 (context.py)."""
-    try:
-        v = float(os.environ.get("RMX_CONTEXT_RERANK_S", "3.0"))
-    except ValueError:
-        v = 3.0
+    # `env_float` (ch-bsd 3.7 r6 #m-1, 2026-11-09): before r6 a typo was swallowed by a
+    # bare `except ValueError` with no word; now it is the default plus one warning.
+    v = env_float("RMX_CONTEXT_RERANK_S", 3.0, logger=__name__)
     return v if v > 0 else 3.0
 
 

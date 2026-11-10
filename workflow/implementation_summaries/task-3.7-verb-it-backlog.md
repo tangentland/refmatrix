@@ -216,3 +216,82 @@ re-applies the changed hook commands. {#remedy-r1-behaviour}
     `r1-ac11a-bisect2.log`). It passes when another daemon test warmed the models first.
 - The spec status stays `in-progress` until the fsync test conflict is resolved.
 {#remedy-r1-verify-list}
+
+## Remedy round 6 {#remedy-r6}
+
+Remedy for `@ch-bsd` r6 (`workflow/bullshit/2026-11-09-1058-task-3.7-remedy-r5-e285c1c.md`)
+findings #s-1 and #m-1. The RED tests are `tests/test_task3_7_remedy_r6.py` (37c487f; 9 failed
+at HEAD, `r6-red-at-head.log`). This round changed only `src/`.
+
+rel: implements -> [[bsd-task3.7-remedy-r5-e285c1c#s-1]]
+rel: implements -> [[bsd-task3.7-remedy-r5-e285c1c#m-1]]
+
+### S-1: a mute hub doubles to the cap {#remedy-r6-s1}
+
+r5 re-armed the re-probe at base on every header-timeout miss. A hub that accepts and never
+answers was therefore probed once per base window forever. Now only the FIRST header-timeout
+miss of a run re-arms at base, and each consecutive one doubles up to the cap.
+
+- **Streak marker.** `recall.cold_streak_key(role)` (`"<role>#cold-streak"`) is a counter
+  stored in the caller's own `backoff` dict (`Daemon._reprobe_backoff`,
+  `recall._EMBED_REPROBE_BACKOFF`, or a test's dict). The backoff value cannot mark the run,
+  because after `hold_reprobe` it already equals base. Keeping the counter in the same dict
+  means every path that resets the throttle resets the streak too: a success's pop,
+  `_process_embed_client`'s `.clear()` on a shared build, and a rig that rebinds the dict. A
+  separate dict would need its own reset at each of those sites.
+- **The rule** (`recall.reprobe_shared_client`): when a miss is a header timeout and the streak
+  is 0, the wait is `base`. When the miss is a header timeout and the streak is above 0, or the
+  miss is anything else, the wait is `min(max(base, 2*backoff), cap)`. A header timeout
+  increments the streak. Any other miss (refused, absent, a non-timeout header error) ends it.
+  A success clears it, and so does `hold_reprobe`.
+- **Log.** "re-probing at the base window" is printed only for a miss that actually re-armed at
+  base. A consecutive timeout logs "N consecutive header timeouts: not loading, the hub is mute
+  ... re-probing in Ws". Non-cold misses now name their wait as well.
+- **Docstrings** corrected: `_maybe_adopt_shared`, `Daemon.__init__` bookkeeping, the
+  `modelsrv.REQUEST_PROBE_TIMEOUT_S` comment, and `reprobe_shared_client`.
+
+### M-1: one shared float-knob parser {#remedy-r6-m1}
+
+- **New leaf `src/refmatrix/envknob.py`** (stdlib only) holds THE parser:
+  `env_float(name, default, *, logger=None, warned=None)`. Its contract is unchanged from r5.
+  Unset or empty gives the default silently. A non-finite or negative value, or a typo, gives
+  the default plus ONE warning per `(name, value)`, naming both. `subproc` can import it
+  without a cycle.
+- `modelsrv.env_float` is now a binding to it: it uses this module's logger and the
+  process-wide set (`modelsrv._ENV_WARNED` is the same object as `envknob._ENV_WARNED`, and it
+  is read at call time).
+- **Converted sites:**
+  - `subproc.DEFAULT_TIMEOUT_S` (`RMX_WORKER_TIMEOUT_S`)
+  - `modelsrv.ModelServer.idle_seconds` (`RMX_WORKER_IDLE_S`; the silent
+    `except ValueError: return 0.0` is gone)
+  - `daemon.ADOPT_GRACE_S`, `HEARTBEAT_INTERVAL_S`, `HEARTBEAT_STALE_S`,
+    `LEARN_DRAIN_BUDGET_S`
+  - `Daemon._start_heartbeat`'s re-read of `RMX_HEARTBEAT_S`
+  - The rest of daemon.py's float reads: `stop_grace_s` (`RMX_STOP_GRACE_S`),
+    `flush_budget_ceiling_s`, `store_close_budget_s`, the daemon's `RMX_WORKER_IDLE_S` evict
+    tick, `RMX_DEGRADE_EXIT_S`, `RMX_DAEMON_FLUSH_S`, and `_context_rerank_budget_s`, which
+    had a silent `except ValueError`.
+- **Left as is (outside this diff, own registry row pending):** the hand-rolled reads in
+  `cli.py`, `hub.py`, `search.py`, `launchctl.py`, `context.py`, `scheduler.py`, `stm.py`,
+  `reranker.py`, `assoc.py`, `helix.py`, `ingest.py`, `promote.py`, `scan.py`, and `store.py`'s
+  helper. `reinforcement._env_float` is a second parser.
+
+### Remedy r6 verification {#remedy-r6-verify}
+
+All logs are under `workflow/review-output/task-3.7/`.
+
+- **The r6 RED file is now GREEN** (`r6-green.log`): `tests/test_task3_7_remedy_r6.py`,
+  25 passed.
+- **Related set** (`r6-related.log`): 360 passed, 1 warning. The set is remedy r1, r2, r2_meh,
+  r3, r4, r5 and r6, plus `test_shared_worker_readoption`, `test_verb_parity`,
+  `test_fork_safety_reexec`, `test_docs_generated`, `test_plan12_remedy`,
+  `test_rerank_budget_real_clients`, `test_worker_budget_invariant` and `test_subproc_workers`.
+  The r5 cold-hub tests (one cold miss after `hold_reprobe` re-arms at base) stay green.
+- **The warning** is a `BrokenPipeError` in a stub-hub thread of
+  `test_rerank_budget_real_clients::test_a_header_that_eats_the_budget_sends_no_rerank`. The
+  stub tries to answer after the client gave up, so it is test-side.
+- **`tests/test_task21_1_used_events.py`, run once** (`r6-used-events.log`): 13 passed.
+- **Full suite:** not run here; the orchestrator runs it.
+- **bug-187** filed: the sandbox's "never answered ping" boot failure, fixed test-side in
+  37c487f with monotonic deadlines.
+{#remedy-r6-verify-list}
