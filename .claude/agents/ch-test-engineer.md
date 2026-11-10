@@ -7,6 +7,7 @@ name: "ch-test-engineer"
 description: "Designs test strategy and coverage across unit, integration, e2e, and contract tiers. Enforces mock governance, Docker-only execution, real-auth tests, and contract tests for UI-facing shapes."
 tools: [Read, Write, Edit, Grep, Glob, Bash, Task]
 model: inherit
+effort: high
 enabled: true
 ---
 

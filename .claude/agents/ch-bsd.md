@@ -7,6 +7,7 @@ name: "ch-bsd"
 description: "Cynical runtime-integration auditor — the bullshit detector — with cross-run memory. Checks whether committed code actually executes in production paths. Finds dead code, stubs, unwired components, mock-without-graduation, placeholder data, cheap fixes, and stale deferrals. Accumulates impressions across runs. Triggered at plan/commit completion. Persists findings to workflow/bullshit/."
 tools: [Read, Bash, Grep, Glob, Write, Edit]
 model: inherit
+effort: high
 enabled: true
 ---
 

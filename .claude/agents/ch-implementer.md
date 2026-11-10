@@ -7,6 +7,7 @@ name: "ch-implementer"
 description: "The implementer. Writes production code in src/ (and migrations/schema where the project has them) ONLY to make the test-engineer's already-RED tests pass GREEN, building from pseudocode/ (the ADR-derived ground truth) + the Accepted ADR + the task-spec acceptance criteria. Authors NO tests (separation of duties — no self-tested code; pairs with ch-test-engineer). Fail-closed; defines gaps instead of building around them."
 tools: [Read, Write, Edit, Grep, Glob, Bash, Task]
 model: inherit
+effort: high
 enabled: true
 ---
 
