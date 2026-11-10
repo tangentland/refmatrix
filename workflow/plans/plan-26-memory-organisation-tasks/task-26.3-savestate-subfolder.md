@@ -159,3 +159,10 @@ Taken as the user would (correct first), answering the RED author's ambiguities 
    in its skip line until then. Test both. {#rd-duplicate}
 5. **AC-7's `install-hooks --check` clean** is verified by GREEN (the hook config carries no
    command docs, so it cannot fail RED). {#rd-ac7}
+
+**#rd-duplicate vs 26.2 AC-4 (orchestrator, 2026-11-10).** 26.2 AC-4 refuses BOTH files of a
+duplicate id and keeps the stored row. The one pair this task produces on purpose — a
+`savestate_*` id with one copy at the memdir top level and one under `savestates/` — is the
+exception: the `savestates/` copy is ingested, the top-level copy is skipped, counted and named.
+Every other duplicate id follows 26.2 AC-4. Whichever of 26.2 / 26.3 merges second carries the
+combined test. {#rd-duplicate-vs-262}
