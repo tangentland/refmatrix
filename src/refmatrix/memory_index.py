@@ -42,6 +42,11 @@ from refmatrix import memory_layout
 # that pushes the cap down for everyone else.
 MAX_LINE_CHARS = 200
 
+# When an entry's link alone is over MAX_LINE_CHARS, its title is shortened --
+# but never below this many leading chars, so the entry stays recognisable
+# (bug-192, ch-bsd 26.1 #b-1).
+TITLE_MIN_CHARS = 40
+
 # The cap `MEMORY-RULES.md` names. Advisory: it shapes the index, it does not
 # decide whether the index survives the load -- MAX_INDEX_CHARS does.
 MAX_LINES = 200
@@ -195,12 +200,34 @@ class Entry:
         return "project"
 
     def line(self) -> str:
-        out = f"- [{self.title}]({self.rel})"
+        """The entry's index line: at most MAX_LINE_CHARS, and NEVER cut inside
+        its `](rel)` link (bug-192, ch-bsd 26.1 #b-1, 2026-11-09).
+
+        HEAD cut the whole line at 200 chars. With a long title the cut landed
+        before `](rel)`: the memory became unreachable from the index (cliquedb's
+        live index holds 8 such lines), and an organised render read the cut
+        line as prose, carried it, and rendered the entry again -- the carried
+        block grew 8 lines per render until the index froze over budget.
+
+        Shortened in a fixed order: the hook first (byte-identical to HEAD's
+        cut whenever HEAD's cut fell inside the hook, so short-title indexes
+        do not change), then -- only when the link alone is over the cap -- the
+        hook is dropped and the title is shortened, keeping at least its first
+        TITLE_MIN_CHARS. A link longer than that leaves the line over the cap
+        rather than cutting the link: an over-long line still reaches its file."""
+        link = f"]({self.rel})"
+        out = f"- [{self.title}{link}"
         if self.hook:
-            out = f"{out} — {self.hook}"
-        if len(out) > MAX_LINE_CHARS:
-            out = out[:MAX_LINE_CHARS - 1].rstrip() + "…"
-        return out
+            room = MAX_LINE_CHARS - len(out) - len(" — ")
+            if len(self.hook) <= room:
+                return f"{out} — {self.hook}"
+            if room >= 2:
+                # Same bytes as HEAD's whole-line cut when it fell in the hook.
+                return f"{out} — {self.hook[:room - 1].rstrip()}…"
+        if len(out) <= MAX_LINE_CHARS:
+            return out
+        keep = max(TITLE_MIN_CHARS, MAX_LINE_CHARS - len(f"- [{link}") - 1)
+        return f"- [{self.title[:keep].rstrip()}…{link}"
 
 
 def _is_entry_line(line: str) -> bool:
@@ -385,12 +412,18 @@ def collect(memdir: Path) -> list:
 
 
 def _prose_lines(lines: list) -> list:
-    """Hand-written prose of an index: every non-blank line that is not an
-    entry, a generated pointer or fold line, or the carried block's own header
-    (task 26.1 AC-5). Verbatim, in order."""
+    """Hand-written prose of an index (ORGANISED path only): every non-blank
+    line that is not entry-shaped, a fold line, or the carried block's own
+    header (task 26.1 AC-5). Verbatim, in order.
+
+    Entry-shaped means it starts `- [`, link or no link (AC-5 amended
+    2026-11-09, ch-bsd 26.1 #b-1, bug-192): HEAD's 200-char cut left link-less
+    `- [Long title…` lines in live indexes (cliquedb: 8), and reading those as
+    prose carried them and re-rendered the same entry every pass. They are
+    dropped here and the memory is rendered again WITH its link."""
     return [ln for ln in lines
             if ln.strip() and ln.strip() != CARRY_HEAD
-            and not _is_entry_line(ln) and not _FOLD_RE.match(ln)]
+            and not ln.startswith("- [") and not _FOLD_RE.match(ln)]
 
 
 def _carried_block(prose: list) -> str:
@@ -545,14 +578,21 @@ def _write_organised(memdir: Path, entries: list, *, max_lines: int, max_chars: 
             f"{max_chars}-char budget for entries; move that prose into a memory"))
     text = _render_organised(memdir, entries, prose,
                              max_lines=max_lines, max_chars=max_chars)
+    # AC-6 (#m-1): `_render_entries` has already folded every foldable entry
+    # it could. Still over the budget means the tail WILL be cut on load, and
+    # the carried prose is the margin -- refuse rather than write a render
+    # known to be cut (ch-bsd 26.1 #m-1, 2026-11-09: cliquedb's marker-on
+    # render 1 was 24,378 chars and was written anyway). There is no
+    # "any prose lost" check: the render carries every prose line by
+    # construction (#s-1 removed it as a guard that could never fire).
+    if len(text) > max_chars:
+        return _refuse(out, (
+            f"even with every foldable entry folded the render is {len(text)} chars, "
+            f"over the {max_chars}-char budget; the carried hand-written prose "
+            f"({len(prose)} prose lines, {len(block)} chars) is the margin -- move "
+            f"that prose into a memory"))
     after_lines = text.splitlines()
     # AC-6: the shrink guard counts CONTENT -- entries plus prose -- not links.
-    after_set = set(after_lines)
-    lost = [p for p in prose if p not in after_set]
-    if lost:
-        return _refuse(out, (
-            f"the render would lose {len(lost)} hand-written prose line(s), e.g. "
-            f"{lost[0][:80]!r}"))
     before_content = sum(1 for ln in before_lines if _is_entry_line(ln)) + len(prose)
     after_content = _named_count(after_lines, {e.rel for e in entries}) + len(prose)
     if before_content and after_content < MIN_CONTENT_KEPT * before_content:

@@ -3600,7 +3600,8 @@ def _register_ingest_job(d: Daemon, *, files_total: int, args: dict) -> str:
     return job_id
 
 
-def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict) -> dict:
+def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict, *,
+                         skipped: "list | None" = None) -> dict:
     """Execute one ingest against the daemon's Store. Mutates the job
     record in `d._ingest_jobs` as it goes — `files_done`, `current_file`,
     and an `events` deque every status query can stream from.
@@ -3708,12 +3709,23 @@ def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict) -> dic
         # Structured, not scraped from the report (ch-bsd plan-5 #m-7).
         "embed": emb,
         "job_id": job_id,
+        # What the memory walk did NOT take, returned to the caller rather
+        # than printed to this daemon's stderr log (ch-bsd 26.1 #s-3).
+        **_skip_fields(skipped),
     }
     with d._ingest_jobs_lock:
         job["status"] = "done"
         job["result"] = result
         job["ended_at"] = time.time()
     return result
+
+
+def _skip_fields(skipped: "list | None") -> dict:
+    """`{"skipped": N, "skipped_paths": [...]}` for an op result: every path
+    the memory walk excluded, counted and named for the CALLER to print
+    (ch-bsd 26.1 #s-3, 2026-11-09; CLAUDE.md #no-silent-failures)."""
+    names = [str(p) for p in (skipped or [])]
+    return {"skipped": len(names), "skipped_paths": names}
 
 
 def _op_ingest_gmd(d: Daemon, args: dict) -> dict:
@@ -3729,11 +3741,13 @@ def _op_ingest_gmd(d: Daemon, args: dict) -> dict:
         _refuse_filesystem_ingest(d, "ingest-gmd")
     targets = [Path(p).resolve() for p in (args.get("targets") or [])]
     # The memory path walks a memdir with THE memory walk (task 26.1 AC-2).
-    files = collect_gmd_files(targets, as_memory=bool(args.get("as_memory")))
+    skipped: list = []
+    files = collect_gmd_files(targets, as_memory=bool(args.get("as_memory")),
+                              skipped=skipped)
     if not files:
-        return {"files": 0, "report": "no candidate files found"}
+        return {"files": 0, "report": "no candidate files found", **_skip_fields(skipped)}
     job_id = _register_ingest_job(d, files_total=len(files), args=args)
-    return _run_ingest_gmd_body(d, job_id, files, args)
+    return _run_ingest_gmd_body(d, job_id, files, args, skipped=skipped)
 
 
 def _op_ingest_gmd_start(d: Daemon, args: dict) -> dict:
@@ -3747,14 +3761,16 @@ def _op_ingest_gmd_start(d: Daemon, args: dict) -> dict:
         _refuse_filesystem_ingest(d, "ingest-gmd")
     targets = [Path(p).resolve() for p in (args.get("targets") or [])]
     # The memory path walks a memdir with THE memory walk (task 26.1 AC-2).
-    files = collect_gmd_files(targets, as_memory=bool(args.get("as_memory")))
+    skipped: list = []
+    files = collect_gmd_files(targets, as_memory=bool(args.get("as_memory")),
+                              skipped=skipped)
     if not files:
-        return {"files": 0, "report": "no candidate files found"}
+        return {"files": 0, "report": "no candidate files found", **_skip_fields(skipped)}
     job_id = _register_ingest_job(d, files_total=len(files), args=args)
 
     def _runner() -> None:
         try:
-            _run_ingest_gmd_body(d, job_id, files, args)
+            _run_ingest_gmd_body(d, job_id, files, args, skipped=skipped)
         except Exception as exc:
             d._log(f"detached ingest job {job_id} failed: {exc!r}")
 
@@ -3766,6 +3782,9 @@ def _op_ingest_gmd_start(d: Daemon, args: dict) -> dict:
         "job_id": job_id,
         "files_total": len(files),
         "status": "running",
+        # the start reply carries the skips too, so `--detach` prints them
+        # before it returns (ch-bsd 26.1 #s-3)
+        **_skip_fields(skipped),
     }
 
 
@@ -3858,12 +3877,14 @@ def _op_prestage_hashes(d: Daemon, args: dict) -> dict:
     targets = [Path(p).resolve() for p in (args.get("targets") or [])]
     # Prestage walks the SAME set the bridge ingests, or it stamps hashes on
     # files the bridge then skips (task 26.1 AC-2, plan-26 r2 m1).
-    files = collect_gmd_files(targets, as_memory=bool(args.get("as_memory")))
+    skipped: list = []
+    files = collect_gmd_files(targets, as_memory=bool(args.get("as_memory")),
+                              skipped=skipped)
     partition = args.get("partition") or d._st()._partition_name
     with d._store_lock, d._st().with_partition(partition):
         report = prestage_hashes(d._st(), files)
     d._request_snapshot()
-    return report
+    return {**report, "walk_skipped": _skip_fields(skipped)}
 
 
 def _op_sync_since(d: Daemon, args: dict) -> dict:

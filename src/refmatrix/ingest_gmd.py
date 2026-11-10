@@ -1372,7 +1372,28 @@ def ingest_gmd_paths(
 MEMORY_INDEX_FILES = frozenset({"MEMORY.md"})
 
 
-def collect_gmd_files(targets: list[Path], *, as_memory: bool = False) -> list[Path]:
+# How many skipped names one skip line spells out; the rest are counted.
+MEMORY_SKIP_NAMES_SHOWN = 20
+
+
+def render_memory_skip_line(skipped) -> str:
+    """THE line that says what the memory walk did not take: the count of every
+    skip and the names (ch-bsd 26.1 #s-3, 2026-11-09). One renderer for the
+    in-process bridge, the daemon-backed CLI and the detached-start report, so
+    the three cannot drift. Empty when nothing was skipped."""
+    names = [str(p) for p in skipped]
+    if not names:
+        return ""
+    shown = names[:MEMORY_SKIP_NAMES_SHOWN]
+    more = len(names) - len(shown)
+    return (f"ingest-gmd --as-memory: skipped {len(names)} non-memory path(s) "
+            f"(dot-path, README.md, nested MEMORY.md, symlinked folder, dangling "
+            f"link or .gmd; ADR-0005 #one-walk): {', '.join(shown)}"
+            f"{f' … and {more} more' if more else ''}")
+
+
+def collect_gmd_files(targets: list[Path], *, as_memory: bool = False,
+                      skipped: "list | None" = None) -> list[Path]:
     """Expand a list of files or directories to candidate GMD paths.
 
     `as_memory=True` (task 26.1 AC-2, ADR-0005 #one-walk, 2026-11-09): a
@@ -1388,8 +1409,13 @@ def collect_gmd_files(targets: list[Path], *, as_memory: bool = False) -> list[P
     - the memdir's own top-level `MEMORY.md` is still passed through, so
       `ingest_gmd_paths` keeps COUNTING and naming it as `skipped_index`
       (ch-bsd plan-5 #b-2's report contract);
-    - every other `.md` the walk excluded (dot-paths, `README.md`, a nested
-      `MEMORY.md`) is counted and named on stderr.
+    - every other path the walk excluded (dot-paths, `README.md`, a nested
+      `MEMORY.md`, a symlinked folder, a dangling `.md` link, a `.gmd`) is
+      counted and named. With `skipped=` the caller takes the list and reports
+      it to ITS caller (the daemon ops return it in their result, the CLI
+      prints it); without it, the line goes to stderr here. At HEAD the daemon
+      ops printed it to the daemon's own stderr log, which no caller reads
+      (ch-bsd 26.1 #s-3, 2026-11-09).
     """
     import sys as _sys
     out: list[Path] = []
@@ -1413,11 +1439,10 @@ def collect_gmd_files(targets: list[Path], *, as_memory: bool = False) -> list[P
                     out.append(p)
                     seen.add(p)
             other = [p for p in excluded if p not in index]
-            if other:
-                names = ", ".join(str(p.relative_to(t)) for p in other[:5])
-                print(f"ingest-gmd --as-memory: {t}: skipped {len(other)} non-memory "
-                      f".md file(s) (dot-path or README.md, ADR-0005 #one-walk): "
-                      f"{names}{' …' if len(other) > 5 else ''}", file=_sys.stderr)
+            if skipped is not None:
+                skipped.extend(other)
+            elif other:
+                print(render_memory_skip_line(other), file=_sys.stderr)
         elif t.is_dir():
             for ext in ("*.gmd", "*.md"):
                 for p in sorted(t.rglob(ext)):

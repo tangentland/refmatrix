@@ -1,0 +1,20 @@
+................                                                         [100%]
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_memory_layout.py::test_iter_memory_files_puts_every_dropped_shape_on_skipped
+PASSED tests/test_memory_layout.py::test_same_date_both_with_time_of_day_mtime_still_decides
+PASSED tests/test_memory_layout.py::test_three_same_day_save_states_order_the_same_for_every_input_permutation
+PASSED tests/test_memory_layout.py::test_same_date_same_mtime_the_file_name_breaks_the_tie
+PASSED tests/test_memory_layout.py::test_no_updated_is_dated_by_the_mtimes_local_date
+PASSED tests/test_memory_layout.py::test_same_date_one_side_date_only_mtime_decides_never_midnight
+PASSED tests/test_memory_layout.py::test_no_updated_falls_back_to_mtime
+PASSED tests/test_memory_index_layout.py::test_b1_long_title_organised_render_is_stable_over_three_renders
+PASSED tests/test_memory_index_layout.py::test_b1_marker_off_then_organised_never_carries_entry_lines
+PASSED tests/test_memory_index_layout.py::test_b1_marker_off_a_long_title_keeps_its_link
+PASSED tests/test_memory_index_layout.py::test_m1_organised_write_folds_further_to_fit_the_budget
+PASSED tests/test_memory_index_layout.py::test_m1_organised_write_refuses_when_a_full_fold_cannot_fit
+PASSED tests/test_memory_index_layout.py::test_m1_entry_point_never_writes_over_budget
+PASSED tests/test_memory_index_layout.py::test_b1_a_legacy_link_less_cut_line_is_dropped_and_re_rendered_with_its_link
+PASSED tests/test_memory_bridge.py::test_s3_in_process_bridge_counts_and_names_every_skip
+PASSED tests/test_memory_bridge.py::test_s3_daemon_sync_op_returns_the_skip_count_to_the_caller
+16 passed, 64 deselected in 10.47s

@@ -20,7 +20,6 @@ glob -- that is how the three walks drifted apart (feedback_converge_repeated_sh
 """
 from __future__ import annotations
 
-import functools
 import json
 import os
 import re
@@ -101,11 +100,21 @@ def iter_memory_files(memdir, *, skipped: "list | None" = None) -> Iterator[Path
     each sub-folder by name), so a flat dir's index renders byte-identically
     (task 26.1 AC-8).
 
-    `skipped`, when given, receives every `.md` path the walk excluded, so a
-    caller on a memory path can COUNT and print what it did not take (CLAUDE.md
-    #no-silent-failures) instead of the skip being invisible.
+    `skipped`, when given, receives EVERY path the walk excluded, so a caller
+    on a memory path can COUNT and print what it did not take (CLAUDE.md
+    #no-silent-failures) instead of the skip being invisible: a non-memory
+    `.md` (`MEMORY.md`, `README.md`, a dotfile), every `.md`/`.gmd` under a
+    dot-directory, a symlinked sub-folder (the folder itself -- it is never
+    followed out of the memdir), a dangling `.md` symlink, and any `.gmd` file
+    (HEAD's `rglob` bridge ingested `.gmd`; the memory walk does not, so it is
+    named rather than dropped). ch-bsd 26.1 #s-3, 2026-11-09: the last three
+    shapes were dropped uncounted.
     """
     root = Path(memdir)
+
+    def _skip(p: Path) -> None:
+        if skipped is not None:
+            skipped.append(p)
 
     def _walk(d: Path) -> Iterator[Path]:
         try:
@@ -118,20 +127,34 @@ def iter_memory_files(memdir, *, skipped: "list | None" = None) -> Iterator[Path
             if e.is_dir():
                 dirs.append(e)
                 continue
-            if not e.name.endswith(".md") or not e.is_file():
+            if e.name.endswith(".gmd"):
+                # Never a memory here (the memory walk takes `.md` only) --
+                # but named, never dropped (ch-bsd 26.1 #s-3).
+                _skip(d / e.name)
+                continue
+            if not e.name.endswith(".md"):
+                continue
+            if not e.is_file():
+                # A dangling `.md` symlink (or a non-regular file): nothing to
+                # ingest, and the caller is told so (ch-bsd 26.1 #s-3).
+                _skip(d / e.name)
                 continue
             if _is_memory_name(e.name):
                 yield d / e.name
-            elif skipped is not None:
-                skipped.append(d / e.name)
+            else:
+                _skip(d / e.name)
         for e in dirs:
-            if e.name.startswith("."):
-                if skipped is not None:
-                    skipped.extend(sorted(p for p in Path(e.path).rglob("*.md")))
-                continue
             # A symlinked sub-folder is not followed: the walk stays inside the
             # memdir it was asked about (the same rule as `os.walk` and `rglob`).
+            # The folder itself goes on `skipped` (ch-bsd 26.1 #s-3).
             if e.is_symlink():
+                _skip(d / e.name)
+                continue
+            if e.name.startswith("."):
+                if skipped is not None:
+                    skipped.extend(sorted(
+                        p for p in Path(e.path).rglob("*")
+                        if p.name.endswith((".md", ".gmd"))))
                 continue
             yield from _walk(d / e.name)
 
@@ -146,30 +169,42 @@ _DATE_ONLY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 class _SaveKey:
-    __slots__ = ("path", "day", "when", "mtime")
+    """One save-state's sort key, `(date, mtime, name)` (ADR-0005 #newest,
+    amended 2026-11-09, ch-bsd 26.1 #s-2).
+
+    `date` is the calendar date of `metadata.updated` -- date-only or a full
+    datetime, read in its own offset -- and, with no readable `updated`, the
+    LOCAL date of the mtime. Time of day never decides: the earlier rule let
+    two timed values compare datetimes while a mixed pair compared mtimes, so
+    three same-day save-states formed a cycle and `newest` followed scandir
+    order. One tuple per file is a total order by construction."""
+    __slots__ = ("path", "day", "mtime", "key")
 
     def __init__(self, path: Path):
         self.path = path
         self.mtime = path.stat().st_mtime
-        self.day: "date | None" = None
-        self.when: "datetime | None" = None
-        raw = _frontmatter_updated(path)
-        if not raw:
-            return
-        try:
-            if _DATE_ONLY.fullmatch(raw):
-                # Date-only is never read as midnight (r3 m2): old MCP stdio
-                # servers keep writing date-only values until respawned.
-                self.day = date.fromisoformat(raw)
-            else:
-                self.when = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-                self.day = self.when.date()
-        except ValueError as exc:
-            # Said, never mute: an unreadable `updated:` falls back to mtime,
-            # which is the documented key when `updated` is absent.
-            print(f"memory_layout: {path}: unreadable metadata.updated {raw!r} "
-                  f"({exc}); ordering it by mtime", file=sys.stderr)
-            self.day = self.when = None
+        self.day = _updated_day(path) or date.fromtimestamp(self.mtime)
+        self.key = (self.day, self.mtime, path.name)
+
+
+def _updated_day(path: Path) -> "date | None":
+    """The calendar date of `metadata.updated`, or None when it is absent or
+    unreadable (the caller then dates the file by its mtime)."""
+    raw = _frontmatter_updated(path)
+    if not raw:
+        return None
+    try:
+        if _DATE_ONLY.fullmatch(raw):
+            # Date-only is never read as midnight (r3 m2): it is a date, and
+            # within that date mtime decides.
+            return date.fromisoformat(raw)
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
+    except ValueError as exc:
+        # Said, never mute: an unreadable `updated:` falls back to the mtime's
+        # date, which is the documented key when `updated` is absent.
+        print(f"memory_layout: {path}: unreadable metadata.updated {raw!r} "
+              f"({exc}); dating it by mtime", file=sys.stderr)
+        return None
 
 
 def _frontmatter_updated(path: Path) -> str:
@@ -185,34 +220,13 @@ def _frontmatter_updated(path: Path) -> str:
     return _frontmatter(text).get("updated", "")
 
 
-def _cmp_newer(a: _SaveKey, b: _SaveKey) -> int:
-    """Negative when `a` is NEWER than `b` (so a plain sort is newest-first).
-
-    ADR-0005 #newest: `updated` by calendar date; on the same date, the
-    datetimes only when BOTH carry a time of day; otherwise mtime. `created`
-    is never a key (r2 s3: a session created earlier but saved later wins).
-    """
-    def by(x, y) -> int:
-        return -1 if x > y else (1 if x < y else 0)
-
-    if a.day is not None and b.day is not None:
-        if a.day != b.day:
-            return by(a.day, b.day)
-        if a.when is not None and b.when is not None \
-                and (a.when.tzinfo is None) == (b.when.tzinfo is None):
-            c = by(a.when, b.when)
-            if c:
-                return c
-    c = by(a.mtime, b.mtime)
-    if c:
-        return c
-    return by(a.path.name, b.path.name)
-
-
 def sort_savestates(paths) -> list:
-    """Save-state paths ordered newest-first by the ONE ADR-0005 key."""
+    """Save-state paths ordered newest-first by the ONE ADR-0005 key,
+    `(date, mtime, name)` descending. `created` is never a key (r2 s3: a
+    session created earlier but saved later wins). The result does not depend
+    on the input order (ch-bsd 26.1 #s-2)."""
     keys = [_SaveKey(Path(p)) for p in paths]
-    keys.sort(key=functools.cmp_to_key(_cmp_newer))
+    keys.sort(key=lambda k: k.key, reverse=True)
     return [k.path for k in keys]
 
 
