@@ -28,3 +28,4 @@
 2026-11-10T10:41:10-0800 commit=705dbae verdict=MEH-only findings=1 (0B/0S/1M) report=2026-11-10-1041-task-26.1-r4-followup-705dbae.md
 2026-11-10T11:00:21-0800 commit=39777c6 verdict=MEH-only findings=2 (0B/0S/2M) report=2026-11-10-1100-bug195-r1-cut-hook-repair-39777c6.md
 2026-11-10T11:11:36-0800 commit=315fdc9 verdict=DIRTY findings=3 (0B/0S/3M) report=2026-11-10-1111-task26.6-r2-remedy-315fdc9.md
+2026-11-10T11:48:05-0800 commit=8741db8 verdict=DIRTY findings=2 (0B/0S/2M) report=2026-11-10-1148-bug197-198-r1-8741db8.md

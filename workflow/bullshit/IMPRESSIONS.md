@@ -42,6 +42,8 @@ Window: the newest run bullets. Older bullets are folded VERBATIM, anchor ids un
 - 2026-11-10 (task 26.6 r1) — DAEMON-DOWN TWINS KEEP SHIPPING WITHOUT TESTS. The R2 twin had none and the compile fallback test was mocked to `object()`. For every daemon path, look for its twin and its failure branch. {#imp-daemon-down-twin-untested}
 - 2026-11-10 (task 26.6 r2, 315fdc9) — FAIL-CLOSED BELONGS AT THE NARROWEST SCOPE. An unknown `compiled_scope` raising inside `derive_status` blinds ping health, daemon status and derive status for the whole partition, not just the compile line. {#imp-fail-closed-narrowest-scope}
 - 2026-11-10 (task 26.6 r2) — A REMEDY SPEC THAT NAMES A HELPER MUST NAME ITS ARGUMENTS. R3 pointed at a files-gated helper that silently skips when called with no files. {#imp-name-the-helper-arguments}
+- 2026-11-10 (bug-197/198 r1, 8741db8) — A RENAMED PARAMETER'S OLD SPELLING MUST BE REFUSED, NOT IGNORED. `rmx_memory brief scope=pattern` quietly returned the memory corpus once `compile_scope` took over; the earlier contract's callers get a wrong answer with no error. {#imp-refuse-the-old-spelling}
+- 2026-11-10 (bug-197/198 r1) — AUDITOR SELF-CHECK: NEVER BACKGROUND PYTEST WITH `&` INSIDE A BACKGROUNDED SHELL. Re-parenting to pid 1 failed 7 pid-pointer session tests that pass in the foreground. {#imp-no-ampersand-pytest}
 
 ## Former anchors, restored {#former-anchors}
 
