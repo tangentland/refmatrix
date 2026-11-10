@@ -1,0 +1,123 @@
+pyc-guard: recompiled 39 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug195/src/refmatrix as checked-hash (bug-037)
+.FFFF.F....                                                              [100%]
+=================================== FAILURES ===================================
+________ test_apply_drops_derived_and_bare_keeps_the_rest_and_backs_up _________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-510/test_apply_drops_derived_and_b0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-510/test_apply_drops_derived_and_b0/rmxhome')
+
+    def test_apply_drops_derived_and_bare_keeps_the_rest_and_backs_up(memdir, rmx_home):
+        before = _sidecar_bytes(memdir)
+        old = json.loads(before)
+        rc, out = _run(memdir, "--apply")
+        assert rc == 0, out
+        new = json.loads(_sidecar_bytes(memdir))
+>       assert "feedback_derived.md" not in new, "derived cut must be dropped (mutation: never dropped)"
+E       AssertionError: derived cut must be dropped (mutation: never dropped)
+E       assert 'feedback_derived.md' not in {'feedback_derived.md': 'Fix one condition in a gate and then check…', 'project_curated.md': 'A hand-written hook whos...oject_fine.md': 'an intact curated hook with no cut', 'project_gone.md': 'a hook for a memory whose file was deleted…'}
+
+tests/test_memory_hook_repair.py:152: AssertionError
+_________________ test_second_apply_writes_nothing_and_says_so _________________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-510/test_second_apply_writes_nothi0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-510/test_second_apply_writes_nothi0/rmxhome')
+
+    def test_second_apply_writes_nothing_and_says_so(memdir, rmx_home):
+        rc, out = _run(memdir, "--apply")
+        assert rc == 0, out
+>       assert "feedback_derived.md" not in json.loads(_sidecar_bytes(memdir)), out
+E       AssertionError:   derived      feedback_derived.md
+E           bare         project_bare.md
+E           curated-lost project_curated.md
+E           gone         project_gone.md
+E         4 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-510/test_second_apply_writes_nothi0/proj-slug/memory/.memory_hooks.json: derived: 1  bare: 1  curated-lost: 1  gone: 1
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-510/test_second_apply_writes_nothi0/rmxhome/backups/memory-hooks/proj-slug-20261110T105506-072885000/.memory_hooks.json
+E         applied: dropped 1 key(s), restored 0; 4 hook(s) remain
+E         
+E       assert 'feedback_derived.md' not in {'feedback_derived.md': 'Fix one condition in a gate and then check…', 'project_curated.md': 'A hand-written hook whos...oject_fine.md': 'an intact curated hook with no cut', 'project_gone.md': 'a hook for a memory whose file was deleted…'}
+E        +  where {'feedback_derived.md': 'Fix one condition in a gate and then check…', 'project_curated.md': 'A hand-written hook whos...oject_fine.md': 'an intact curated hook with no cut', 'project_gone.md': 'a hook for a memory whose file was deleted…'} = <function loads at 0x1033e2c40>(b'{\n"feedback_derived.md": "Fix one condition in a gate and then check\xe2\x80\xa6",\n"project_curated.md": "A hand-w... "an intact curated hook with no cut",\n"project_gone.md": "a hook for a memory whose file was deleted\xe2\x80\xa6"\n}')
+E        +    where <function loads at 0x1033e2c40> = json.loads
+E        +    and   b'{\n"feedback_derived.md": "Fix one condition in a gate and then check\xe2\x80\xa6",\n"project_curated.md": "A hand-w... "an intact curated hook with no cut",\n"project_gone.md": "a hook for a memory whose file was deleted\xe2\x80\xa6"\n}' = _sidecar_bytes(PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-510/test_second_apply_writes_nothi0/proj-slug/memory'))
+
+tests/test_memory_hook_repair.py:176: AssertionError
+___________ test_after_apply_write_renders_the_full_first_prose_hook ___________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-510/test_after_apply_write_renders0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-510/test_after_apply_write_renders0/rmxhome')
+
+    def test_after_apply_write_renders_the_full_first_prose_hook(memdir, rmx_home):
+        rc, out = _run(memdir, "--apply")
+        assert rc == 0, out
+>       assert "feedback_derived.md" not in json.loads(_sidecar_bytes(memdir)), out
+E       AssertionError:   derived      feedback_derived.md
+E           bare         project_bare.md
+E           curated-lost project_curated.md
+E           gone         project_gone.md
+E         4 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-510/test_after_apply_write_renders0/proj-slug/memory/.memory_hooks.json: derived: 1  bare: 1  curated-lost: 1  gone: 1
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-510/test_after_apply_write_renders0/rmxhome/backups/memory-hooks/proj-slug-20261110T105506-209960000/.memory_hooks.json
+E         applied: dropped 1 key(s), restored 0; 4 hook(s) remain
+E         
+E       assert 'feedback_derived.md' not in {'feedback_derived.md': 'Fix one condition in a gate and then check…', 'project_curated.md': 'A hand-written hook whos...oject_fine.md': 'an intact curated hook with no cut', 'project_gone.md': 'a hook for a memory whose file was deleted…'}
+E        +  where {'feedback_derived.md': 'Fix one condition in a gate and then check…', 'project_curated.md': 'A hand-written hook whos...oject_fine.md': 'an intact curated hook with no cut', 'project_gone.md': 'a hook for a memory whose file was deleted…'} = <function loads at 0x1033e2c40>(b'{\n"feedback_derived.md": "Fix one condition in a gate and then check\xe2\x80\xa6",\n"project_curated.md": "A hand-w... "an intact curated hook with no cut",\n"project_gone.md": "a hook for a memory whose file was deleted\xe2\x80\xa6"\n}')
+E        +    where <function loads at 0x1033e2c40> = json.loads
+E        +    and   b'{\n"feedback_derived.md": "Fix one condition in a gate and then check\xe2\x80\xa6",\n"project_curated.md": "A hand-w... "an intact curated hook with no cut",\n"project_gone.md": "a hook for a memory whose file was deleted\xe2\x80\xa6"\n}' = _sidecar_bytes(PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-510/test_after_apply_write_renders0/proj-slug/memory'))
+
+tests/test_memory_hook_repair.py:192: AssertionError
+_ test_a_derived_cut_longer_than_its_line_regains_the_full_hook_in_the_sidecar _
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-510/test_a_derived_cut_longer_than0')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-510/test_a_derived_cut_longer_than0/rmxhome')
+
+    def test_a_derived_cut_longer_than_its_line_regains_the_full_hook_in_the_sidecar(
+            tmp_path, rmx_home):
+        """The live shape: 39 of the 66 cuts were on index lines too short for the prose. The
+        line stays cut (that is the renderer's job); the sidecar must hold the FULL text again."""
+        d = tmp_path / "long" / "memory"
+        d.mkdir(parents=True)
+        prose = "A derived hook " + "that keeps going " * 14 + "until the end."
+        assert len(prose) > mi.MAX_LINE_CHARS
+        _mem(d, "feedback_long", title="Long", body=prose, mtype="feedback")
+        cut = prose[:120].rstrip() + "…"
+        _write_sidecar(d, {"feedback_long.md": cut})
+        rc, out = _run(d, "--apply")
+        assert rc == 0, out
+        assert "derived" in _line_naming(out, "feedback_long.md"), out
+        mi.write(d, out=open(os.devnull, "w"))
+>       assert json.loads(_sidecar_bytes(d))["feedback_long.md"] == prose
+E       AssertionError: assert 'A derived ho...ps going tha…' == 'A derived ho...ntil the end.'
+E         
+E         Skipping 110 identical leading characters in diff, use -v to show
+E         -  going that keeps going that keeps going that keeps going that keeps going that keeps going that keeps going that keeps going that keeps going until the end.
+E         +  going tha…
+
+tests/test_memory_hook_repair.py:216: AssertionError
+________ test_an_organised_id_keyed_sidecar_is_classified_by_memory_id _________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-510/test_an_organised_id_keyed_sid0')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-510/test_an_organised_id_keyed_sid0/rmxhome')
+
+    def test_an_organised_id_keyed_sidecar_is_classified_by_memory_id(tmp_path, rmx_home):
+        """An organised dir (`.memory-layout`) keys its sidecar by memory id (task 26.1 AC-4). A
+        derived cut under an id key is dropped; an id with no memory is gone, untouched."""
+        d = tmp_path / "org" / "memory"
+        d.mkdir(parents=True)
+        (d / ".memory-layout").write_text(json.dumps({"layout": 1}), encoding="utf-8")
+        _mem(d, "feedback/feedback_derived", title="Derived", body=DERIVED_PROSE,
+             mtype="feedback")
+        _write_sidecar(d, {"feedback_derived": DERIVED_CUT, "project_vanished": GONE_CUT})
+        rc, out = _run(d, "--apply")
+        assert rc == 0, out
+        assert "derived" in _line_naming(out, "feedback_derived"), out
+        assert "gone" in _line_naming(out, "project_vanished"), out
+        new = json.loads(_sidecar_bytes(d))
+>       assert "feedback_derived" not in new
+E       AssertionError: assert 'feedback_derived' not in {'feedback_derived': 'Fix one condition in a gate and then check…', 'project_vanished': 'a hook for a memory whose file was deleted…'}
+
+tests/test_memory_hook_repair.py:246: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_hook_repair.py::test_apply_drops_derived_and_bare_keeps_the_rest_and_backs_up
+FAILED tests/test_memory_hook_repair.py::test_second_apply_writes_nothing_and_says_so
+FAILED tests/test_memory_hook_repair.py::test_after_apply_write_renders_the_full_first_prose_hook
+FAILED tests/test_memory_hook_repair.py::test_a_derived_cut_longer_than_its_line_regains_the_full_hook_in_the_sidecar
+FAILED tests/test_memory_hook_repair.py::test_an_organised_id_keyed_sidecar_is_classified_by_memory_id
+5 failed, 6 passed in 1.71s

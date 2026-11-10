@@ -1,0 +1,22 @@
+.F.........                                                              [100%]
+=================================== FAILURES ===================================
+________ test_apply_drops_derived_and_bare_keeps_the_rest_and_backs_up _________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-511/test_apply_drops_derived_and_b0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-511/test_apply_drops_derived_and_b0/rmxhome')
+
+    def test_apply_drops_derived_and_bare_keeps_the_rest_and_backs_up(memdir, rmx_home):
+        before = _sidecar_bytes(memdir)
+        old = json.loads(before)
+        rc, out = _run(memdir, "--apply")
+        assert rc == 0, out
+        new = json.loads(_sidecar_bytes(memdir))
+        assert "feedback_derived.md" not in new, "derived cut must be dropped (mutation: never dropped)"
+>       assert "project_bare.md" not in new, "bare `…` must be dropped (mutation: bare kept)"
+E       AssertionError: bare `…` must be dropped (mutation: bare kept)
+E       assert 'project_bare.md' not in {'project_bare.md': '…', 'project_curated.md': 'A hand-written hook whose full text is lost because the renderer cut…'...oject_fine.md': 'an intact curated hook with no cut', 'project_gone.md': 'a hook for a memory whose file was deleted…'}
+
+tests/test_memory_hook_repair.py:153: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_hook_repair.py::test_apply_drops_derived_and_bare_keeps_the_rest_and_backs_up
+1 failed, 10 passed in 2.43s

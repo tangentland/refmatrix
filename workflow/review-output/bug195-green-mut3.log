@@ -1,0 +1,96 @@
+.F.....FF..                                                              [100%]
+=================================== FAILURES ===================================
+________ test_apply_drops_derived_and_bare_keeps_the_rest_and_backs_up _________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-512/test_apply_drops_derived_and_b0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-512/test_apply_drops_derived_and_b0/rmxhome')
+
+    def test_apply_drops_derived_and_bare_keeps_the_rest_and_backs_up(memdir, rmx_home):
+        before = _sidecar_bytes(memdir)
+        old = json.loads(before)
+        rc, out = _run(memdir, "--apply")
+        assert rc == 0, out
+        new = json.loads(_sidecar_bytes(memdir))
+        assert "feedback_derived.md" not in new, "derived cut must be dropped (mutation: never dropped)"
+        assert "project_bare.md" not in new, "bare `…` must be dropped (mutation: bare kept)"
+        assert new.get("project_curated.md") == old["project_curated.md"], \
+            "curated-lost must be kept unchanged (mutation: curated dropped)"
+        assert new.get("project_gone.md") == old["project_gone.md"], "a gone-file key is never touched"
+        assert new.get("project_fine.md") == FINE_HOOK, "an intact hook is never touched"
+        assert set(new) == {"project_curated.md", "project_gone.md", "project_fine.md"}
+    
+        dirs = _backups(rmx_home)
+>       assert len(dirs) == 1, f"one backup dir expected under {rmx_home}, got {dirs}\n{out}"
+E       AssertionError: one backup dir expected under /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-512/test_apply_drops_derived_and_b0/rmxhome, got []
+E           derived      feedback_derived.md
+E           bare         project_bare.md
+E           curated-lost project_curated.md
+E           gone         project_gone.md
+E         4 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-512/test_apply_drops_derived_and_b0/proj-slug/memory/.memory_hooks.json: derived: 1  bare: 1  curated-lost: 1  gone: 1
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-512/test_apply_drops_derived_and_b0/rmxhome/backups/memory-hooks/proj-slug-20261110T105532-114020000/.memory_hooks.json
+E         applied: dropped 2 key(s), restored 0; 3 hook(s) remain
+E         
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_memory_hook_repair.py:161: AssertionError
+__________ test_unwritable_backup_root_refuses_and_leaves_the_sidecar __________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-512/test_unwritable_backup_root_re0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-512/test_unwritable_backup_root_re0/rmxhome')
+
+    def test_unwritable_backup_root_refuses_and_leaves_the_sidecar(memdir, rmx_home):
+        root = rmx_home / "backups" / "memory-hooks"
+        root.mkdir(parents=True)
+        root.chmod(stat.S_IRUSR | stat.S_IXUSR)
+        try:
+            before = _sidecar_bytes(memdir)
+            rc, out = _run(memdir, "--apply")
+>           assert rc != 0, f"apply must refuse when the backup fails; output was:\n{out}"
+E           AssertionError: apply must refuse when the backup fails; output was:
+E               derived      feedback_derived.md
+E               bare         project_bare.md
+E               curated-lost project_curated.md
+E               gone         project_gone.md
+E             4 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-512/test_unwritable_backup_root_re0/proj-slug/memory/.memory_hooks.json: derived: 1  bare: 1  curated-lost: 1  gone: 1
+E             backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-512/test_unwritable_backup_root_re0/rmxhome/backups/memory-hooks/proj-slug-20261110T105533-323768000/.memory_hooks.json
+E             applied: dropped 2 key(s), restored 0; 3 hook(s) remain
+E             
+E           assert 0 != 0
+
+tests/test_memory_hook_repair.py:259: AssertionError
+_____________ test_restore_sets_exactly_the_value_and_is_backed_up _____________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-512/test_restore_sets_exactly_the_0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-512/test_restore_sets_exactly_the_0/rmxhome')
+
+    def test_restore_sets_exactly_the_value_and_is_backed_up(memdir, rmx_home):
+        before = _sidecar_bytes(memdir)
+        text = "the full curated text, recovered from ~/.claude git; a=b stays whole"
+        rc, out = _run(memdir, "--apply", restore=[f"project_curated.md={text}"])
+        assert rc == 0, out
+        new = json.loads(_sidecar_bytes(memdir))
+        assert new["project_curated.md"] == text, "split on the FIRST `=` only"
+        assert new["project_fine.md"] == FINE_HOOK
+        assert new["project_gone.md"] == GONE_CUT
+        dirs = _backups(rmx_home)
+>       assert len(dirs) == 1, f"a restore is backed up like any apply: {dirs}\n{out}"
+E       AssertionError: a restore is backed up like any apply: []
+E           derived      feedback_derived.md
+E           bare         project_bare.md
+E           curated-lost project_curated.md
+E           gone         project_gone.md
+E         4 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-512/test_restore_sets_exactly_the_0/proj-slug/memory/.memory_hooks.json: derived: 1  bare: 1  curated-lost: 1  gone: 1
+E           restore      project_curated.md
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-512/test_restore_sets_exactly_the_0/rmxhome/backups/memory-hooks/proj-slug-20261110T105533-502924000/.memory_hooks.json
+E         applied: dropped 2 key(s), restored 1; 3 hook(s) remain
+E         
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_memory_hook_repair.py:278: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_hook_repair.py::test_apply_drops_derived_and_bare_keeps_the_rest_and_backs_up
+FAILED tests/test_memory_hook_repair.py::test_unwritable_backup_root_refuses_and_leaves_the_sidecar
+FAILED tests/test_memory_hook_repair.py::test_restore_sets_exactly_the_value_and_is_backed_up
+3 failed, 8 passed in 2.45s

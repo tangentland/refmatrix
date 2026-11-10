@@ -1,0 +1,26 @@
+.F.........                                                              [100%]
+=================================== FAILURES ===================================
+________ test_apply_drops_derived_and_bare_keeps_the_rest_and_backs_up _________
+
+memdir = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-513/test_apply_drops_derived_and_b0/proj-slug/memory')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-513/test_apply_drops_derived_and_b0/rmxhome')
+
+    def test_apply_drops_derived_and_bare_keeps_the_rest_and_backs_up(memdir, rmx_home):
+        before = _sidecar_bytes(memdir)
+        old = json.loads(before)
+        rc, out = _run(memdir, "--apply")
+        assert rc == 0, out
+        new = json.loads(_sidecar_bytes(memdir))
+        assert "feedback_derived.md" not in new, "derived cut must be dropped (mutation: never dropped)"
+        assert "project_bare.md" not in new, "bare `…` must be dropped (mutation: bare kept)"
+>       assert new.get("project_curated.md") == old["project_curated.md"], \
+            "curated-lost must be kept unchanged (mutation: curated dropped)"
+E       AssertionError: curated-lost must be kept unchanged (mutation: curated dropped)
+E       assert None == 'A hand-written hook whose full text is lost because the renderer cut…'
+E        +  where None = <built-in method get of dict object at 0x107c11140>('project_curated.md')
+E        +    where <built-in method get of dict object at 0x107c11140> = {'project_fine.md': 'an intact curated hook with no cut', 'project_gone.md': 'a hook for a memory whose file was deleted…'}.get
+
+tests/test_memory_hook_repair.py:154: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_hook_repair.py::test_apply_drops_derived_and_bare_keeps_the_rest_and_backs_up
+1 failed, 10 passed in 2.46s
