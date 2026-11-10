@@ -1,0 +1,32 @@
+F
+=================================== FAILURES ===================================
+___ test_fu_skips_in_process_bridge_result_carries_skipped_and_skipped_paths ___
+
+ac2_inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-6_pgbk60'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-6_pgbk60/proj/.refmatrix'))
+
+    def test_fu_skips_in_process_bridge_result_carries_skipped_and_skipped_paths(ac2_inproc):
+        base, root = ac2_inproc
+        memdir = _s3_memdir(base)
+        assert not dm.ping(root, retries=0), "the in-process leg must run with NO daemon"
+        out = cli_mod._sync_memory_dir(memdir)
+>       _assert_bridge_carries_skips(out, "in-process bridge")
+
+tests/test_memory_bridge.py:509: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+out = {'doc_drop_failed': [], 'embed': {'batches': 1, 'capped': False, 'embedded': 2, 'error': None, ...}, 'error': None, 'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-6_pgbk60/memory', ...}
+where = 'in-process bridge'
+
+    def _assert_bridge_carries_skips(out: dict, where: str) -> None:
+        assert out["error"] is None, f"{where}: {out}"
+>       assert out.get("skipped") == 5, f"{where}: bridge result carries no skipped=5: {out}"
+E       AssertionError: in-process bridge: bridge result carries no skipped=5: {'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-6_pgbk60/memory', 'report': 'ingested 2 doc(s), 2 node(s), 0 rel: edge(s), 12 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage types: lead, part-of\nmemory embed: 2 row(s) now reachable by recall in proj\ningest-gmd --as-memory: skipped 5 non-memory path(s) (dot-path, README.md, nested MEMORY.md, symlinked folder, dangling link or .gmd; ADR-0005 #one-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-6_pgbk60/memory/dangling.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-6_pgbk60/memory/notes.gmd, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-6_pgbk60/memory/.hidden/y.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-6_pgbk60/memory/.organise-rollback-1/x.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-6_pgbk60/memory/linked', 'error': None, 'skipped_non_gmd': 0, 'skipped_unparseable': [], 'skipped_index': [], 'skipped': 0, 'skipped_paths': [], 'waited': False, 'waited_job': None, 'partition': 'proj', 'embed': {'partition': 'proj', 'embedded': 2, 'remaining': 0, 'batches': 1, 'capped': False, 'error': None}, 'doc_drop_failed': []}
+E       assert 0 == 5
+E        +  where 0 = <built-in method get of dict object at 0x1085e7380>('skipped')
+E        +    where <built-in method get of dict object at 0x1085e7380> = {'doc_drop_failed': [], 'embed': {'batches': 1, 'capped': False, 'embedded': 2, 'error': None, ...}, 'error': None, 'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-6_pgbk60/memory', ...}.get
+
+tests/test_memory_bridge.py:498: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_bridge.py::test_fu_skips_in_process_bridge_result_carries_skipped_and_skipped_paths
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 21 deselected in 3.79s

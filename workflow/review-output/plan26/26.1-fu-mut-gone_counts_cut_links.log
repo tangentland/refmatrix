@@ -1,0 +1,54 @@
+...............................................F
+=================================== FAILURES ===================================
+_ test_fu_dropped_a_link_cut_by_head_is_not_reported_as_a_gone_file[organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-0exvqevr/memory')
+organised = True
+
+    @_layouts()
+    def test_fu_dropped_a_link_cut_by_head_is_not_reported_as_a_gone_file(memdir, organised):
+        cut_rel = _rel(organised, "feedback", "feedback_cut_inside_the_link_aaaa")
+        before_rel = _rel(organised, "feedback", "feedback_cut_before_the_link")
+        plain_rel = _rel(organised, "project", "project_plain")
+        gone_rel = _rel(organised, "project", "project_gone")
+        mem(memdir, cut_rel, title=CUT_TITLE, mtype="feedback", body="derived cut prose")
+        mem(memdir, before_rel, title=LONG_TITLE, mtype="feedback", body="derived before prose")
+        mem(memdir, plain_rel, title="Plain", mtype="project", body="derived plain")
+    
+        def head_cut(title, rel, hook):
+            full = f"- [{title}]({rel}) — {hook}"
+            return full[:mi.MAX_LINE_CHARS - 1].rstrip() + "…"          # HEAD's Entry.line cut
+    
+        inside = head_cut(CUT_TITLE, cut_rel, "derived cut prose")
+        before = head_cut(LONG_TITLE, before_rel, "derived before prose")
+        assert "](" in inside and ")" not in inside.split("](", 1)[1], inside   # cut inside link
+        assert "](" not in before, before                                      # cut before link
+        (memdir / "MEMORY.md").write_text("\n".join([
+            inside, before,
+            f"- [Plain]({plain_rel}) — curated plain",
+            f"- [Gone]({gone_rel}) — a memory whose file was deleted",
+        ]) + "\n", encoding="utf-8")
+        if organised:
+            organise(memdir)
+        r = run_entry(memdir)
+        said = r.stdout + r.stderr
+        assert r.returncode == 0, said
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        for rel in (cut_rel, before_rel, plain_rel):
+            _line_for(text, rel)                                     # every memory is linked again
+        dropped = [ln for ln in said.splitlines() if "whose file is gone" in ln]
+        assert len(dropped) == 1, f"a truly gone file must still be reported once: {said}"
+        m = re.search(r"dropped (\d+) entr", dropped[0])
+>       assert m and m.group(1) == "1", \
+            f"a memory re-linked after HEAD's cut was counted as gone: {dropped[0]}"
+E       AssertionError: a memory re-linked after HEAD's cut was counted as gone: MEMORY.md: dropped 2 entries whose file is gone: feedback/feedb…, project/project_gone.md
+E       assert (<re.Match object; span=(11, 25), match='dropped 2 entr'> and '2' == '1'
+E         
+E         - 1
+E         + 2)
+
+tests/test_memory_index_layout.py:1018: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_fu_dropped_a_link_cut_by_head_is_not_reported_as_a_gone_file[organised]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 47 passed in 25.72s

@@ -1,0 +1,33 @@
+...........................F
+=================================== FAILURES ===================================
+_ test_fu_order_a_folder_copy_and_a_top_level_copy_of_one_save_state_order_the_same_both_ways _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-op0r5njl/memory')
+
+    def test_fu_order_a_folder_copy_and_a_top_level_copy_of_one_save_state_order_the_same_both_ways(
+            memdir):
+        """26.4's mid-move window: `savestates/x.md` and a top-level `x.md` carry the same `updated`
+        date and (mtime preserved by the move) the same mtime. Under `(date, mtime, name)` the two
+        keys are equal and the result followed the input order. The key becomes
+        `(date, mtime, name, relative path)`, so either input order gives one answer."""
+        ml = _layout()
+        moved = _md(memdir / "savestates" / "savestate_x.md", mtype="session/recall-state",
+                    updated="2026-11-09T08:00:00-08:00", mtime=T0)
+        legacy = _md(memdir / "savestate_x.md", mtype="session/recall-state",
+                     updated="2026-11-09T08:00:00-08:00", mtime=T0)
+        assert os.stat(moved).st_mtime == os.stat(legacy).st_mtime
+        one = [Path(p) for p in ml.sort_savestates([moved, legacy])]
+        two = [Path(p) for p in ml.sort_savestates([legacy, moved])]
+>       assert one == two, f"order follows input order: {[str(p) for p in one]} vs " \
+                           f"{[str(p) for p in two]}"
+E       AssertionError: order follows input order: ['/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-op0r5njl/memory/savestates/savestate_x.md', '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-op0r5njl/memory/savestate_x.md'] vs ['/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-op0r5njl/memory/savestate_x.md', '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-op0r5njl/memory/savestates/savestate_x.md']
+E       assert [PosixPath('/...estate_x.md')] == [PosixPath('/...estate_x.md')]
+E         
+E         At index 0 diff: PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-op0r5njl/memory/savestates/savestate_x.md') != PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-op0r5njl/memory/savestate_x.md')
+E         Use -v to get more diff
+
+tests/test_memory_layout.py:324: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_layout.py::test_fu_order_a_folder_copy_and_a_top_level_copy_of_one_save_state_order_the_same_both_ways
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 27 passed in 1.30s

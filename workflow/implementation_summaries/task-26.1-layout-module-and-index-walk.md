@@ -221,3 +221,65 @@ The mutations ran against `b35ad71`, with the same restore discipline as above. 
 | refuse-always reverted (refuse whenever over budget, prose or not) | `test_m1_no_prose_over_budget_even_fully_folded_writes_and_says_still_over` |
 
 Both mutations were killed.
+
+## Follow-up after ch-bsd 26.1 r2 {#followup}
+
+rel: implements -> [[task-26.1-layout-module-and-index-walk#followup-r2]]
+
+This is TDD GREEN on branch `task-26.1-followup`, over RED `ab3df86` (17 tests). The RED logs are
+`workflow/review-output/plan26/26.1-fu-red-{index,bridge,files}.log`. Spec: `#followup-r2`
+(`c1bb82f`). Fix commit `85098fe`. No test was written or edited.
+
+### What changed {#followup-changes}
+
+| item | where | change |
+|---|---|---|
+| #fu-hooks (bug-193) | `memory_index.load_hooks`, `_index_hook_records`, `_index_hook_wins` | One decision per memory, written under both the path key and the id key. The index hook replaces the sidecar value except in three cases: (a) it is empty and the link left the line no room for a hook, (b) it is `prefix…` and the prefix starts the sidecar value, (c) it is a bare `…`. An empty hook on a line that had room clears the value, which falls back to `_first_prose`, as at 61b3bde. This supersedes the r3 rule in `b35ad71` ("an empty index hook never erases") |
+| #fu-dropped | `memory_index._link_refs`, both `write` paths | `gone` counts whole links only. A ref with no closing `)`, or one ending in `…`, never counts as a file that is gone |
+| #fu-skips | `cli._bridge_stats`, `_bridge_wait_for_active_job`, `_sync_memory_dir` | The bridge result carries `skipped`/`skipped_paths` on the in-process, daemon and waited legs. The wait path reads them from the job result's top level and adds the shared skip line to `report` |
+| #fu-skips | `memory_index._write_organised` | Every dropped `- [` line without a link is counted and named verbatim: "dropped N entry-shaped line(s) with no link …" |
+| #fu-order | `memory_layout._SaveKey` | The key is now `(date, mtime, name, path)` |
+
+New helpers: `_index_hook_records(idx) -> dict`, `_index_hook_wins(hook, cur, room) -> bool` and
+`_link_refs(lines) -> set` (all in `memory_index`).
+
+### Verification {#followup-verification}
+
+Logs are in `workflow/review-output/plan26/`. Every run used `PYTHONPATH=$PWD/src` with the dev
+interpreter and `-B`.
+
+- `26.1-fu-green-index.log`: the layout and index files, 112 of 112.
+- `26.1-fu-green-bridge.log`: `test_memory_bridge.py`, 22 of 22.
+- `26.1-fu-green-five-files.log`: 132 of 134. `26.1-fu-green-family.log` (including verb parity):
+  457 of 458. Both runs were at load average ~108 from concurrent agent suites, and every failure
+  was a wait-path timeout:
+  - `test_bridge_waits_for_an_active_job_on_the_same_target` failed in both runs. In one the
+    120 s budget ran out at 122 of 350 files. In the other the status JSON was cut off at char
+    49,071.
+  - `test_save_state_reports_a_waited_bridge` failed in the five-files run.
+- `26.1-fu-green-bridge-rerun.log`: those 2 tests reran at load ~50 and passed 2 of 2. They had
+  also passed in `26.1-fu-green-bridge.log` on this same code.
+
+### Mutation table (follow-up) {#followup-mutations}
+
+The mutations ran against `85098fe`, one at a time. Each restore was a `git checkout` in its own
+command, followed by a `__pycache__` clear and a grep confirming the fix text was back.
+`git status --short src` was empty after every restore. Logs are `26.1-fu-mut-<name>.log`.
+
+| mutation | killed by |
+|---|---|
+| the cut of the sidecar value wins (`prefix…` exception removed) | `test_fu_hooks_a_long_curated_hook_keeps_its_full_text_over_three_renders[organised]` |
+| `gone` counts refs from lines cut inside their link | `test_fu_dropped_a_link_cut_by_head_is_not_reported_as_a_gone_file[organised]` |
+| `_bridge_stats` does not copy `skipped`/`skipped_paths` | `test_fu_skips_in_process_bridge_result_carries_skipped_and_skipped_paths` |
+| save-state key without the path | `test_fu_order_a_folder_copy_and_a_top_level_copy_of_one_save_state_order_the_same_both_ways` |
+
+All 4 were killed.
+
+### Flags (follow-up) {#followup-flags}
+
+- **The wait-path bridge tests are sensitive to load.** Under heavy concurrent load they hit
+  their 120 s budget, and once a 10 s status read came back cut off as invalid JSON. The JSON
+  case may deserve a bug row: `daemon.call` returned a partial frame rather than raising a
+  timeout.
+- **A bare `…` with no sidecar value still wins**, which is HEAD's behaviour. With nothing to
+  protect, the rule does not apply.
