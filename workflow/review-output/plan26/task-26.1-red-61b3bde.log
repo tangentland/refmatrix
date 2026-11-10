@@ -1,0 +1,264 @@
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFF..FFFFF.FFFF.......FF...........FFFFF...... [ 72%]
+...........................                                              [100%]
+=================================== FAILURES ===================================
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_layout.py:24: ImportError: cannot import name 'memory_layout' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan26/src/refmatrix/__init__.py)
+E   AssertionError: ['impressions/imp_i1.md', 'reference_top.md']
+    assert ['impressions...rence_top.md'] == ['feedback/fe...t_p2.md', ...]
+      
+      At index 0 diff: 'impressions/imp_i1.md' != 'feedback/feedback_f1.md'
+      Right contains 6 more items, first extra item: 'feedback/feedback_f3.md'
+      Use -v to get more diff
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_index_layout.py:157: AssertionError: ['impressions/imp_i1.md', 'reference_top.md']
+E   AssertionError: ['reference_top.md', 'impressions/imp_i1.md']
+    assert (2 == 8)
+     +  where 2 = len(['reference_top.md', 'impressions/imp_i1.md'])
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_index_layout.py:165: AssertionError: ['reference_top.md', 'impressions/imp_i1.md']
+E   AssertionError: - [Keep](feedback_keep.md) — curated keep hook
+      
+    assert '- [X](project/project_x.md) — the curated x hook, verbatim' in '- [Keep](feedback_keep.md) — curated keep hook\n'
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_index_layout.py:187: AssertionError: - [Keep](feedback_keep.md) — curated keep hook
+E   AssertionError: assert {'feedback_y....decar x hook'} == {'feedback_y'...decar x hook'}
+      
+      Left contains 2 more items:
+      {'feedback_y.md': 'sidecar y hook', 'project_x.md': 'sidecar x hook'}
+      Right contains 2 more items:
+      {'feedback_y': 'sidecar y hook', 'project_x': 'sidecar x hook'}
+      Use -v to get more diff
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_index_layout.py:199: AssertionError: assert {'feedback_y....decar x hook'} == {'feedback_y'...decar x hook'}
+E   AssertionError: {'feedback_a.md': 'hook a', 'feedback_b.md': 'hook b', 'feedback_c.md': 'hook c'}
+    assert None == "the dead link's hook"
+     +  where None = <built-in method get of dict object at 0x11030f040>('project_gone.md')
+     +    where <built-in method get of dict object at 0x11030f040> = {'feedback_a.md': 'hook a', 'feedback_b.md': 'hook b', 'feedback_c.md': 'hook c'}.get
+     +      where {'feedback_a.md': 'hook a', 'feedback_b.md': 'hook b', 'feedback_c.md': 'hook c'} = sidecar(PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-dzciwv93/memory'))
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_index_layout.py:218: AssertionError: {'feedback_a.md': 'hook a', 'feedback_b.md': 'hook b', 'feedback_c.md': 'hook c'}
+E   AssertionError: assert 'derived x prose' == 'id-keyed hook'
+      
+      - id-keyed hook
+      + derived x prose
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_index_layout.py:230: AssertionError: assert 'derived x prose' == 'id-keyed hook'
+E   AssertionError: ['- [Top](reference_top.md) — curated top', '- [ch-bsd impressions (1)](impressions/) — cross-run audit memories; full ledger in `workflow/bullshit/IMPRESSIONS.md`']
+    assert 0 == 1
+     +  where 0 = <built-in method count of list object at 0x110304680>('<!-- carried from the hand-written index; edit freely -->')
+     +    where <built-in method count of list object at 0x110304680> = ['- [Top](reference_top.md) — curated top', '- [ch-bsd impressions (1)](impressions/) — cross-run audit memories; full ledger in `workflow/bullshit/IMPRESSIONS.md`'].count
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_index_layout.py:302: AssertionError: ['- [Top](reference_top.md) — curated top', '- [ch-bsd impressions (1)](impressions/) — cross-run audit memories; full ledger in `workflow/bullshit/IMPRESSIONS.md`']
+E   AssertionError: assert b'<!-- carried from the hand-written index; edit freely -->' in b'- [Top](reference_top.md) \xe2\x80\x94 curated top\n- [ch-bsd impressions (1)](impressions/) \xe2\x80\x94 cross-run audit memories; full ledger in `workflow/bullshit/IMPRESSIONS.md`\n'
+     +  where b'<!-- carried from the hand-written index; edit freely -->' = <built-in method encode of str object at 0x1101e7d00>()
+     +    where <built-in method encode of str object at 0x1101e7d00> = '<!-- carried from the hand-written index; edit freely -->'.encode
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_index_layout.py:324: AssertionError: assert b'<!-- carried from the hand-written index; edit freely -->' in b'- [Top](reference_top.md) \xe2\x80\x94 curated top\n- [ch-bsd impressions (1)](impressions/) \xe2\x80\x94 cross-run audit memories; full ledger in `workflow/bullshit/IMPRESSIONS.md`\n'
+E   AssertionError: the index was rewritten
+    assert '- [Top](refe...ESSIONS.md`\n' == 'Hand-written... curated f1\n'
+      
+      + - [Top](reference_top.md) — derived Top prose
+      + - [ch-bsd impressions (1)](impressions/) — cross-run audit memories; full ledger in `workflow/bullshit/IMPRESSIONS.md`
+      - Hand-written paragraph 0: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      - Hand-written paragraph 1: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      - Hand-written paragraph 2: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
+      
+      ...Full output truncated (9 lines hidden), use '-vv' to show
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_index_layout.py:341: AssertionError: the index was rewritten
+E   AssertionError: MEMORY.md: 11 -> 3 lines, 108 chars (caps 200 lines / 24000 chars; 3 memories on disk)
+      MEMORY.md: dropped 7 entries whose file is gone: feedback_n3.md, feedback_n4.md, feedback_n5.md, feedback_n6.md, feedback_n7.md …
+      
+    assert 3 == 0
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_index_layout.py:364: AssertionError: MEMORY.md: 11 -> 3 lines, 108 chars (caps 200 lines / 24000 chars; 3 memories on disk)
+E   AssertionError: prose lost: '# Hand index'
+    assert '# Hand index' in ['- [Q19](project_q19.md) — a curated hook long enough that thirty of them overflow a small budget a curated hook long...at thirty of them overflow a small budget a curated hook long enough that thirty of them overflow a small budget', ...]
+     +  where ['- [Q19](project_q19.md) — a curated hook long enough that thirty of them overflow a small budget a curated hook long...at thirty of them overflow a small budget a curated hook long enough that thirty of them overflow a small budget', ...] = <built-in method splitlines of str object at 0x146009200>()
+     +    where <built-in method splitlines of str object at 0x146009200> = '- [Q19](project_q19.md) — a curated hook long enough that thirty of them overflow a small budget a curated hook long ...19 older project memories folded — `rmx memory list` or `rmx memory search <term>` reaches them; nothing was deleted\n'.splitlines
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_index_layout.py:390: AssertionError: prose lost: '# Hand index'
+E   AssertionError: assert 'project' == 'feedback'
+      
+      - feedback
+      + project
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_index_layout.py:418: AssertionError: assert 'project' == 'feedback'
+E   AssertionError: assert 'project' == 'reference'
+      
+      - reference
+      + project
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_index_layout.py:418: AssertionError: assert 'project' == 'reference'
+E   AssertionError: assert 'feedback' == 'project'
+      
+      - project
+      + feedback
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_index_layout.py:418: AssertionError: assert 'feedback' == 'project'
+E   AssertionError: assert 'project' == 'savestate'
+      
+      - savestate
+      + project
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_index_layout.py:418: AssertionError: assert 'project' == 'savestate'
+E   AssertionError: assert '<!-- carried from the hand-written index; edit freely -->' in ['- [X](project_x.md) — curated x hook']
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_index_layout.py:455: AssertionError: assert '<!-- carried from the hand-written index; edit freely -->' in ['- [X](project_x.md) — curated x hook']
+E   AssertionError: assert 2 == 8
+     +  where 2 = len([<refmatrix.memory_index.Entry object at 0x11038eb00>, <refmatrix.memory_index.Entry object at 0x11038fd00>])
+     +    where [<refmatrix.memory_index.Entry object at 0x11038eb00>, <refmatrix.memory_index.Entry object at 0x11038fd00>] = <function collect at 0x1076181a0>(PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-j7sx20el/memory'))
+     +      where <function collect at 0x1076181a0> = mi.collect
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_index_layout.py:469: AssertionError: assert 2 == 8
+E   AssertionError: a `.organise-rollback-1/x.md` aside was ingested as a memory
+    assert not True
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_bridge.py:337: AssertionError: a `.organise-rollback-1/x.md` aside was ingested as a memory
+E   AssertionError: a `.organise-rollback-1/x.md` aside was ingested as a memory
+    assert not True
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_bridge.py:337: AssertionError: a `.organise-rollback-1/x.md` aside was ingested as a memory
+E   AssertionError: a `.organise-rollback-1/x.md` aside was ingested as a memory
+    assert not True
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_bridge.py:337: AssertionError: a `.organise-rollback-1/x.md` aside was ingested as a memory
+E   AssertionError: prestaged: considered=4 written=0 skipped=0 missing=4
+      
+    assert 4 == 2
+     +  where 4 = _considered('prestaged: considered=4 written=0 skipped=0 missing=4\n')
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_bridge.py:405: AssertionError: prestaged: considered=4 written=0 skipped=0 missing=4
+E   AssertionError: prestaged: considered=4 written=0 skipped=0 missing=4
+      
+    assert 4 == 2
+     +  where 4 = _considered('prestaged: considered=4 written=0 skipped=0 missing=4\n')
+/Volumes/littlebig/refmatrix-plan26/tests/test_memory_bridge.py:413: AssertionError: prestaged: considered=4 written=0 skipped=0 missing=4
+==================================== PASSES ====================================
+_____________ test_bridge_never_opens_the_slot_under_a_busy_daemon _____________
+----------------------------- Captured stderr call -----------------------------
+# rmx: warning: memory-partition probe failed (daemon busy pid=38434 for /tmp/rmxs-ri4e2_hw/.refmatrix (alive, not answering — starting, rebuilding an index, or holding the store lock); retry shortly); assuming the project partition for THIS command only
+=========================== short test summary info ============================
+PASSED tests/test_memory_index_layout.py::test_ac4_the_reader_still_takes_a_path_keyed_sidecar
+PASSED tests/test_memory_index_layout.py::test_ac5_the_viascope_shape_fixture_is_what_the_spec_names
+PASSED tests/test_memory_index_layout.py::test_ac6_no_guard_in_an_unorganised_dir
+PASSED tests/test_memory_index_layout.py::test_ac7_kind_reads_the_folder_first[impressions/note_e.md-feedback-impression]
+PASSED tests/test_memory_index_layout.py::test_ac7_the_stem_is_the_fallback_in_a_flat_dir[feedback_x-feedback]
+PASSED tests/test_memory_index_layout.py::test_ac7_the_stem_is_the_fallback_in_a_flat_dir[reference_y-reference]
+PASSED tests/test_memory_index_layout.py::test_ac7_the_stem_is_the_fallback_in_a_flat_dir[project_z-project]
+PASSED tests/test_memory_index_layout.py::test_ac7_the_stem_is_the_fallback_in_a_flat_dir[savestate_abc-savestate]
+PASSED tests/test_memory_index_layout.py::test_ac8_a_flat_dir_with_no_prose_renders_byte_identically_to_head
+PASSED tests/test_memory_index_layout.py::test_ac9_flat_marker_off_is_heads_write_byte_for_byte
+PASSED tests/test_memory_bridge.py::test_bridge_ingests_gmd_and_plain_files
+PASSED tests/test_memory_bridge.py::test_bridge_counts_and_names_an_unparseable_file
+PASSED tests/test_memory_bridge.py::test_bridge_waits_for_an_active_job_on_the_same_target
+PASSED tests/test_memory_bridge.py::test_bridge_runs_its_own_ingest_after_a_job_on_another_target
+PASSED tests/test_memory_bridge.py::test_bridge_reports_a_wait_that_ran_out
+PASSED tests/test_memory_bridge.py::test_finalize_save_state_bridges_the_handoff_dir_for_real
+PASSED tests/test_memory_bridge.py::test_finalize_skips_the_bridge_on_sync_false_and_dry_run
+PASSED tests/test_memory_bridge.py::test_bridge_never_opens_the_slot_under_a_busy_daemon
+PASSED tests/test_memory_bridge.py::test_bridge_does_not_take_a_non_memory_job_as_its_report
+PASSED tests/test_memory_bridge.py::test_strict_ingest_counts_non_gmd_files
+PASSED tests/test_memory_bridge.py::test_save_state_reports_a_waited_bridge
+PASSED tests/test_memory_bridge.py::test_ac2_doc_ingest_keeps_its_own_walk
+PASSED tests/test_memory_index.py::test_existing_hooks_are_preserved
+PASSED tests/test_memory_index.py::test_a_new_memory_without_a_hook_gets_one_from_its_title
+PASSED tests/test_memory_index.py::test_no_memory_file_is_dropped
+PASSED tests/test_memory_index.py::test_impressions_collapse_to_one_pointer
+PASSED tests/test_memory_index.py::test_savestates_collapse_to_one_pointer_naming_the_newest
+PASSED tests/test_memory_index.py::test_a_long_hook_is_truncated_not_wrapped
+PASSED tests/test_memory_index.py::test_the_cap_holds_by_folding_the_oldest_projects
+PASSED tests/test_memory_index.py::test_feedback_is_never_folded_away
+PASSED tests/test_memory_index.py::test_render_is_idempotent
+PASSED tests/test_memory_index.py::test_write_reports_what_changed_and_check_detects_drift
+PASSED tests/test_memory_index.py::test_the_index_never_indexes_itself
+PASSED tests/test_memory_index.py::test_save_state_compacts_the_index_it_just_appended_to
+PASSED tests/test_memory_index.py::test_compaction_failure_is_said_not_swallowed
+PASSED tests/test_memory_index.py::test_a_title_containing_an_em_dash_survives_a_round_trip
+PASSED tests/test_memory_index.py::test_the_newest_savestate_is_by_date_not_by_name
+PASSED tests/test_memory_index.py::test_an_empty_memdir_never_wipes_the_index
+PASSED tests/test_memory_index.py::test_an_entry_whose_file_is_gone_is_dropped_and_counted
+PASSED tests/test_memory_index_char_budget.py::test_render_stays_inside_the_char_budget
+PASSED tests/test_memory_index_char_budget.py::test_the_budget_is_counted_in_characters_not_bytes
+PASSED tests/test_memory_index_char_budget.py::test_a_small_index_is_not_folded_at_all
+PASSED tests/test_memory_index_char_budget.py::test_check_agrees_with_the_char_budget
+PASSED tests/test_memory_index_char_budget.py::test_write_reports_to_stderr_not_stdout_by_default
+PASSED tests/test_memory_index_char_budget.py::test_write_empty_dir_notice_also_avoids_stdout
+PASSED tests/test_memory_index_char_budget.py::test_an_explicit_out_still_wins
+PASSED tests/test_memory_index_char_budget.py::test_the_char_budget_is_overridable
+PASSED tests/test_memory_index_char_budget.py::test_a_budget_that_cannot_be_met_is_announced_not_faked
+PASSED tests/test_memory_index_char_budget.py::test_folding_prefers_old_project_notes_over_feedback
+PASSED tests/test_memory_index_char_budget.py::test_render_is_idempotent_once_folding_kicks_in
+PASSED tests/test_memory_index_char_budget.py::test_a_folded_entry_keeps_its_curated_hook
+PASSED tests/test_memory_index_char_budget.py::test_a_missing_sidecar_is_not_fatal
+PASSED tests/test_memory_index_char_budget.py::test_a_corrupt_sidecar_is_reported_not_swallowed
+PASSED tests/test_memory_index_char_budget.py::test_the_sidecar_is_not_indexed_as_a_memory
+FAILED tests/test_memory_layout.py::test_folders_maps_every_adr_0005_folder_to_its_type
+FAILED tests/test_memory_layout.py::test_folder_for_type_inverts_the_table[feedback-feedback]
+FAILED tests/test_memory_layout.py::test_folder_for_type_inverts_the_table[project-project]
+FAILED tests/test_memory_layout.py::test_folder_for_type_inverts_the_table[reference-reference]
+FAILED tests/test_memory_layout.py::test_folder_for_type_inverts_the_table[user-user]
+FAILED tests/test_memory_layout.py::test_folder_for_type_inverts_the_table[guardrail-guardrail]
+FAILED tests/test_memory_layout.py::test_folder_for_type_inverts_the_table[impression-impressions]
+FAILED tests/test_memory_layout.py::test_folder_for_type_inverts_the_table[session/recall-state-savestates]
+FAILED tests/test_memory_layout.py::test_savestate_dir_is_the_savestates_collection
+FAILED tests/test_memory_layout.py::test_iter_memory_files_walks_type_folders_and_skips_dot_paths_and_non_memories
+FAILED tests/test_memory_layout.py::test_iter_savestates_reads_the_folder_and_the_legacy_top_level_only
+FAILED tests/test_memory_layout.py::test_a_later_updated_date_beats_a_newer_mtime
+FAILED tests/test_memory_layout.py::test_created_is_never_part_of_the_key - I...
+FAILED tests/test_memory_layout.py::test_same_date_both_with_time_of_day_the_datetimes_decide
+FAILED tests/test_memory_layout.py::test_same_date_one_side_date_only_mtime_decides_never_midnight
+FAILED tests/test_memory_layout.py::test_no_updated_falls_back_to_mtime - Imp...
+FAILED tests/test_memory_layout.py::test_no_marker_is_not_organised - ImportE...
+FAILED tests/test_memory_layout.py::test_a_layout_1_marker_is_organised_and_extra_keys_are_ignored
+FAILED tests/test_memory_layout.py::test_an_unreadable_or_foreign_marker_is_a_hard_error_naming_the_file[{not json]
+FAILED tests/test_memory_layout.py::test_an_unreadable_or_foreign_marker_is_a_hard_error_naming_the_file[]
+FAILED tests/test_memory_layout.py::test_an_unreadable_or_foreign_marker_is_a_hard_error_naming_the_file[payload2]
+FAILED tests/test_memory_layout.py::test_an_unreadable_or_foreign_marker_is_a_hard_error_naming_the_file[payload3]
+FAILED tests/test_memory_layout.py::test_an_unreadable_or_foreign_marker_is_a_hard_error_naming_the_file[payload4]
+FAILED tests/test_memory_index_layout.py::test_ac3_collect_sees_type_folders_in_an_unorganised_dir
+FAILED tests/test_memory_index_layout.py::test_ac3_collect_skips_dot_dirs_and_the_marker
+FAILED tests/test_memory_index_layout.py::test_ac4_a_moved_file_keeps_its_curated_hook_in_an_organised_dir
+FAILED tests/test_memory_index_layout.py::test_ac4_an_organised_write_converts_a_legacy_path_keyed_sidecar_to_ids
+FAILED tests/test_memory_index_layout.py::test_ac4_a_dead_link_hook_is_kept_under_its_path_and_reported
+FAILED tests/test_memory_index_layout.py::test_ac4_the_reader_takes_an_id_keyed_sidecar_in_an_unorganised_dir
+FAILED tests/test_memory_index_layout.py::test_ac5_every_prose_line_is_carried_verbatim_in_order_before_the_entries
+FAILED tests/test_memory_index_layout.py::test_ac5_re_rendering_a_carried_block_carries_it_once
+FAILED tests/test_memory_index_layout.py::test_ac5_prose_that_leaves_under_a_quarter_of_the_budget_refuses_the_write
+FAILED tests/test_memory_index_layout.py::test_ac6_the_guard_refuses_when_under_half_the_content_would_remain
+FAILED tests/test_memory_index_layout.py::test_ac6_a_fold_is_not_a_loss_content_counting_lets_it_through
+FAILED tests/test_memory_index_layout.py::test_ac7_kind_reads_the_folder_first[feedback/note_a.md-project-feedback]
+FAILED tests/test_memory_index_layout.py::test_ac7_kind_reads_the_folder_first[reference/note_b.md-project-reference]
+FAILED tests/test_memory_index_layout.py::test_ac7_kind_reads_the_folder_first[project/note_c.md-feedback-project]
+FAILED tests/test_memory_index_layout.py::test_ac7_kind_reads_the_folder_first[savestates/session_d.md-project-savestate]
+FAILED tests/test_memory_index_layout.py::test_ac9_flat_marker_on_twin_carries_prose_and_keys_the_sidecar_by_id
+FAILED tests/test_memory_index_layout.py::test_ac9_nested_marker_off_lists_every_entry_drops_prose_keeps_path_keys
+FAILED tests/test_memory_bridge.py::test_ac2_in_process_bridge_skips_dot_dirs
+FAILED tests/test_memory_bridge.py::test_ac2_daemon_sync_op_skips_dot_dirs - ...
+FAILED tests/test_memory_bridge.py::test_ac2_detached_op_skips_dot_dirs - Ass...
+FAILED tests/test_memory_bridge.py::test_ac2_prestage_without_a_daemon_walks_the_same_set
+FAILED tests/test_memory_bridge.py::test_ac2_prestage_through_the_daemon_walks_the_same_set
+45 failed, 54 passed in 190.22s (0:03:10)
