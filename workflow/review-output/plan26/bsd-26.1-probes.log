@@ -1,0 +1,6 @@
+newest across input orders: ['savestate_a.md', 'savestate_b.md', 'savestate_c.md']
+iter_savestates: ['savestate_c.md', 'savestate_b.md', 'savestate_a.md']
+guard condition true in 0 of 48 renders
+ingest-gmd --as-memory: /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/7aea273d-e348-4816-b218-bb57c4e95046/scratchpad/bsd261/probe/tmpsakue1b5/mem: skipped 1 non-memory .md file(s) (dot-path or README.md, ADR-0005 #one-walk): .hidden/y.md
+bridge took: ['feedback_a.md']
+index collect: ['feedback_a.md']

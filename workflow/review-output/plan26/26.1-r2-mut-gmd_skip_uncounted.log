@@ -1,0 +1,30 @@
+..........F
+=================================== FAILURES ===================================
+__________ test_iter_memory_files_puts_every_dropped_shape_on_skipped __________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-qjao8pnm/memory')
+
+    def test_iter_memory_files_puts_every_dropped_shape_on_skipped(memdir):
+        """CLAUDE.md #no-silent-failures: `skipped` receives every path the walk excluded. At HEAD
+        a symlinked sub-folder, a dangling `.md` symlink and a `.gmd` file were dropped uncounted."""
+        ml = _layout()
+        f = _skip_shapes(memdir)
+        skipped: list = []
+        got = [Path(p) for p in ml.iter_memory_files(memdir, skipped=skipped)]
+        assert got == [f["keep"]], got
+        sk = [Path(p) for p in skipped]
+    
+        def named(target: Path) -> bool:
+            # the path itself, or (for the symlinked folder) a path under it
+            return any(p == target or target in p.parents for p in sk)
+    
+        missing = [k for k in ("linked", "dangling", "gmd", "hidden") if not named(f[k])]
+>       assert not missing, f"dropped without being put on `skipped`: {missing}; skipped={sk}"
+E       AssertionError: dropped without being put on `skipped`: ['gmd']; skipped=[PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-qjao8pnm/memory/project_dangling.md'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-qjao8pnm/memory/.hidden/y.md'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-qjao8pnm/memory/linked')]
+E       assert not ['gmd']
+
+tests/test_memory_layout.py:145: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_layout.py::test_iter_memory_files_puts_every_dropped_shape_on_skipped
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 10 passed in 0.66s

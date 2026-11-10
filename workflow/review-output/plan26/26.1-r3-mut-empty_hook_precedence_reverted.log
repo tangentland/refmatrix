@@ -1,0 +1,27 @@
+...................................F
+=================================== FAILURES ===================================
+_ test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_organised _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-664tkcp1/memory')
+
+    def test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_organised(memdir):
+        rel = "feedback/feedback_" + "l" * 190 + ".md"
+        mid = _long_link_memory(memdir, rel)
+        organise(memdir)
+        (memdir / mi.HOOKS_SIDECAR).write_text(json.dumps({mid: CURATED}), encoding="utf-8")
+        for n in (1, 2):
+            r = run_entry(memdir)
+            assert r.returncode == 0, r.stderr
+            side = sidecar(memdir)
+>           assert side.get(mid) == CURATED, f"render {n}: curated hook lost: {side.get(mid)!r}"
+E           AssertionError: render 2: curated hook lost: 'derived prose, not curated'
+E           assert 'derived prose, not curated' == 'the curated ...r this memory'
+E             
+E             - the curated hook a human wrote for this memory
+E             + derived prose, not curated
+
+tests/test_memory_index_layout.py:758: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_organised
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 35 passed in 3.37s

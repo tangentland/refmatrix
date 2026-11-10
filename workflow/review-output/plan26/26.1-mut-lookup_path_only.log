@@ -1,0 +1,36 @@
+applied lookup_path_only -> /Volumes/littlebig/refmatrix-plan26/src/refmatrix/memory_index.py
+.........................F
+=================================== FAILURES ===================================
+_______ test_ac4_a_moved_file_keeps_its_curated_hook_in_an_organised_dir _______
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-ijkxwyal/memory')
+
+    def test_ac4_a_moved_file_keeps_its_curated_hook_in_an_organised_dir(memdir):
+        """The spec's test: index-only dir (no sidecar), curated hook on `project_x.md`, the file
+        moves to `project/project_x.md`, regenerate through the real entry point. At HEAD the hook
+        is keyed by the old path and falls back to `_first_prose` (and HEAD does not even see
+        `project/`)."""
+        mem(memdir, "project_x.md", title="X", mtype="project", body="derived x prose")
+        mem(memdir, "feedback_keep.md", title="Keep", mtype="feedback", body="derived keep prose")
+        (memdir / "MEMORY.md").write_text(
+            "- [Keep](feedback_keep.md) — curated keep hook\n"
+            "- [X](project_x.md) — the curated x hook, verbatim\n", encoding="utf-8")
+        organise(memdir)
+        (memdir / "project").mkdir()
+        (memdir / "project_x.md").rename(memdir / "project" / "project_x.md")
+    
+        r = run_entry(memdir)
+        assert r.returncode == 0, r.stderr
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert "- [X](project/project_x.md) — the curated x hook, verbatim" in text, text
+E       AssertionError: - [Keep](feedback_keep.md) — curated keep hook
+E         - [X](project/project_x.md) — derived x prose
+E         
+E       assert '- [X](project/project_x.md) — the curated x hook, verbatim' in '- [Keep](feedback_keep.md) — curated keep hook\n- [X](project/project_x.md) — derived x prose\n'
+
+tests/test_memory_index_layout.py:187: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_ac4_a_moved_file_keeps_its_curated_hook_in_an_organised_dir
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 25 passed in 1.30s
+pytest exit: 1

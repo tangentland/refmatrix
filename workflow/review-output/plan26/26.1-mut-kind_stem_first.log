@@ -1,0 +1,29 @@
+applied kind_stem_first -> /Volumes/littlebig/refmatrix-plan26/src/refmatrix/memory_index.py
+.....................................F
+=================================== FAILURES ===================================
+__ test_ac7_kind_reads_the_folder_first[feedback/note_a.md-project-feedback] ___
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-tl8xjb2t/memory')
+rel = 'feedback/note_a.md', fm_type = 'project', kind = 'feedback'
+
+    @pytest.mark.parametrize("rel,fm_type,kind", [
+        ("feedback/note_a.md", "project", "feedback"),
+        ("reference/note_b.md", "project", "reference"),
+        ("project/note_c.md", "feedback", "project"),
+        ("savestates/session_d.md", "project", "savestate"),
+        ("impressions/note_e.md", "feedback", "impression"),
+    ])
+    def test_ac7_kind_reads_the_folder_first(memdir, rel, fm_type, kind):
+        p = mem(memdir, rel, title="t", mtype=fm_type, body="b")
+>       assert mi.Entry(p, memdir, {}).kind == kind
+E       AssertionError: assert 'project' == 'feedback'
+E         
+E         - feedback
+E         + project
+
+tests/test_memory_index_layout.py:418: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_ac7_kind_reads_the_folder_first[feedback/note_a.md-project-feedback]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 37 passed in 2.41s
+pytest exit: 1

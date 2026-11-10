@@ -1,0 +1,27 @@
+applied collect_glob -> /Volumes/littlebig/refmatrix-plan26/src/refmatrix/memory_index.py
+.......................F
+=================================== FAILURES ===================================
+___________ test_ac3_collect_sees_type_folders_in_an_unorganised_dir ___________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-pmaa97wd/memory')
+
+    def test_ac3_collect_sees_type_folders_in_an_unorganised_dir(memdir):
+        """r1 #m1: assert on `collect()`, not on rendered lines -- `render` collapses impressions
+        into one pointer line. HEAD's glob sees 2 (the top-level file + the impression)."""
+        build_viascope_shape(memdir)
+        assert not (memdir / ".memory-layout").exists()
+        got = sorted(e.rel for e in mi.collect(memdir))
+>       assert got == sorted(rel for rel, _, _ in VIA_ENTRIES), got
+E       AssertionError: ['impressions/imp_i1.md', 'reference_top.md']
+E       assert ['impressions...rence_top.md'] == ['feedback/fe...t_p2.md', ...]
+E         
+E         At index 0 diff: 'impressions/imp_i1.md' != 'feedback/feedback_f1.md'
+E         Right contains 6 more items, first extra item: 'feedback/feedback_f3.md'
+E         Use -v to get more diff
+
+tests/test_memory_index_layout.py:157: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_ac3_collect_sees_type_folders_in_an_unorganised_dir
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 23 passed in 1.12s
+pytest exit: 1

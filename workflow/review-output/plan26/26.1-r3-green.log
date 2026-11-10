@@ -1,0 +1,10 @@
+......                                                                   [100%]
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_memory_index_layout.py::test_m1_organised_write_folds_further_to_fit_the_budget
+PASSED tests/test_memory_index_layout.py::test_m1_organised_write_refuses_when_a_full_fold_cannot_fit
+PASSED tests/test_memory_index_layout.py::test_m1_entry_point_never_writes_over_budget
+PASSED tests/test_memory_index_layout.py::test_m1_no_prose_over_budget_even_fully_folded_writes_and_says_still_over
+PASSED tests/test_memory_index_layout.py::test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_organised
+PASSED tests/test_memory_index_layout.py::test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_marker_off
+6 passed, 31 deselected in 0.89s

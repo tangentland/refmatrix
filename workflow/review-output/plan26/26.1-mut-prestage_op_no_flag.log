@@ -1,0 +1,24 @@
+applied prestage_op_no_flag -> /Volumes/littlebig/refmatrix-plan26/src/refmatrix/cli.py
+F
+=================================== FAILURES ===================================
+___________ test_ac2_prestage_through_the_daemon_walks_the_same_set ____________
+
+ac2_daemon = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-tjzm8s5e'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-tjzm8s5e/proj/.refmatrix'))
+
+    def test_ac2_prestage_through_the_daemon_walks_the_same_set(ac2_daemon):
+        """The daemon's `prestage_hashes` op (r2 m1)."""
+        base, root = ac2_daemon
+        memdir = _ac2_memdir(base)
+        out = _invoke(["ingest-gmd", "--as-memory", "--prestage", str(memdir)])
+>       assert _considered(out) == 2, out
+E       AssertionError: prestaged: considered=4 written=0 skipped=0 missing=4
+E         
+E       assert 4 == 2
+E        +  where 4 = _considered('prestaged: considered=4 written=0 skipped=0 missing=4\n')
+
+tests/test_memory_bridge.py:413: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_bridge.py::test_ac2_prestage_through_the_daemon_walks_the_same_set
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 6.05s
+pytest exit: 1

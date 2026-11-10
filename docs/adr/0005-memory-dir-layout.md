@@ -244,11 +244,17 @@ not a wipe (the ungated `collect` keeps its ~146 entries). The recovery path unt
 
 There is one ordering of save-states, used by recall-state, recents and the index (r2 s3):
 
-1. frontmatter `updated`, compared by calendar date;
-2. when the dates are equal and BOTH values carry a time of day, the datetimes decide;
-3. when the dates are equal and EITHER value is date-only, mtime decides (r3 m2). A date-only
-   value is never read as midnight;
-4. with no `updated`, mtime.
+1. frontmatter `updated`, compared by calendar date (with no `updated`, the mtime's local date);
+2. when the dates are equal, mtime decides — always, whether or not either value carries a time
+   of day. A date-only value is never read as midnight (r3 m2);
+3. a remaining tie is broken by file name.
+
+This is one sort key per file, `(date, mtime, name)`, so it is a total order. Amended 2026-11-09
+(ch-bsd 26.1 #s-2): the earlier rule let BOTH-timed pairs compare datetimes while mixed pairs
+compared mtimes, so three same-day save-states could form a cycle and each could come out
+"newest" depending on input order — and 26.3 routes `rmx recall-state` through this. A time of
+day in `updated` is therefore informational only; 26.4's rewrite preserves mtime, so mtime is the
+honest same-day signal.
 
 `created` is never a key: a session created earlier but saved later must win.
 
@@ -302,7 +308,7 @@ There is one ordering of save-states, used by recall-state, recents and the inde
 | [[task-26.7-memory-index-by-subject]] | the subject-grouped index (19.3) |
 | [[task-26.8-refmatrix-live-rollout]] | refmatrix organised; the MEMORY-RULES edit applied |
 
-`@ch-alignment` derives the `memory_layout` pseudocode from this ADR before 26.1 goes RED.
+This repo has no `pseudocode/` layer, so 26.1 was built directly from this ADR and its task spec; the waiver is recorded here (ch-bsd 26.1 #m-3, 2026-11-09).
 
 ## Appendix A: proposed MEMORY-RULES text {#appendix-memory-rules}
 

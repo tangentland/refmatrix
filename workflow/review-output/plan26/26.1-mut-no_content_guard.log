@@ -1,0 +1,36 @@
+applied no_content_guard -> /Volumes/littlebig/refmatrix-plan26/src/refmatrix/memory_index.py
+..................................F
+=================================== FAILURES ===================================
+_____ test_ac6_the_guard_refuses_when_under_half_the_content_would_remain ______
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-om9byxqf/memory')
+
+    def test_ac6_the_guard_refuses_when_under_half_the_content_would_remain(memdir):
+        """A partial view of the dir (files the index lists are not visible) must never render:
+        10 entries + 1 prose line before, 3 entries + the carried prose after = 4/11 < 50%."""
+        # Top-level files: at HEAD `collect` must SEE the 3 survivors, or HEAD's empty-dir refusal
+        # ("no memory files found") would leave the index untouched for the wrong reason.
+        lines = ["# hand index"]
+        for i in range(10):
+            lines.append(f"- [N{i}](feedback_n{i}.md) — curated n{i}")
+            if i < 3:
+                mem(memdir, f"feedback_n{i}.md", title=f"N{i}", mtype="feedback", body=f"n{i}")
+        before = "\n".join(lines) + "\n"
+        (memdir / "MEMORY.md").write_text(before, encoding="utf-8")
+        organise(memdir)
+        buf = io.StringIO()
+        n = mi.write(memdir, out=buf)
+>       assert n == 0, buf.getvalue()
+E       AssertionError: MEMORY.md: 11 -> 6 lines, 180 chars (caps 200 lines / 24000 chars; 3 memories on disk)
+E         MEMORY.md: dropped 7 entries whose file is gone: feedback_n3.md, feedback_n4.md, feedback_n5.md, feedback_n6.md, feedback_n7.md …
+E         MEMORY.md: carried 1 hand-written prose line(s)
+E         MEMORY.md: kept 7 curated hook(s) whose link is dead under their own key in .memory_hooks.json: feedback_n3.md, feedback_n4.md, feedback_n5.md, feedback_n6.md, feedback_n7.md …
+E         
+E       assert 6 == 0
+
+tests/test_memory_index_layout.py:364: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_ac6_the_guard_refuses_when_under_half_the_content_would_remain
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 34 passed in 2.17s
+pytest exit: 1

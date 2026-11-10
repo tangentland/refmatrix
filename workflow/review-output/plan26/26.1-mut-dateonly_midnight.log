@@ -1,0 +1,25 @@
+applied dateonly_midnight -> /Volumes/littlebig/refmatrix-plan26/src/refmatrix/memory_layout.py
+..............F
+=================================== FAILURES ===================================
+________ test_same_date_one_side_date_only_mtime_decides_never_midnight ________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-vf58bjqa/memory')
+
+    def test_same_date_one_side_date_only_mtime_decides_never_midnight(memdir):
+        """r3 m2: old MCP stdio servers keep writing date-only `updated:` until respawned. Read as
+        midnight, the 23:00 datetime would win; the rule is that mtime decides."""
+        _md(memdir / "savestates" / "savestate_dateonly.md", updated="2026-11-09", mtime=T0 + 100)
+        _md(memdir / "savestates" / "savestate_late_evening.md",
+            updated="2026-11-09T23:00:00-08:00", mtime=T0)
+>       assert _order(memdir) == ["savestate_dateonly", "savestate_late_evening"]
+E       AssertionError: assert ['savestate_l...ate_dateonly'] == ['savestate_d...late_evening']
+E         
+E         At index 0 diff: 'savestate_late_evening' != 'savestate_dateonly'
+E         Use -v to get more diff
+
+tests/test_memory_layout.py:163: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_layout.py::test_same_date_one_side_date_only_mtime_decides_never_midnight
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 14 passed in 0.82s
+pytest exit: 1

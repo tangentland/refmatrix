@@ -1,0 +1,35 @@
+.................................F
+=================================== FAILURES ===================================
+_ test_b1_a_legacy_link_less_cut_line_is_dropped_and_re_rendered_with_its_link _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-3275v1v7/memory')
+
+    def test_b1_a_legacy_link_less_cut_line_is_dropped_and_re_rendered_with_its_link(memdir):
+        """AC-5 (amended 4fff5cc): any line shaped like an entry (starts `- [`) is never prose,
+        link or no link. HEAD's link-less cut lines already sit in live indexes (cliquedb: 8); an
+        organised render drops them and renders the memory again WITH its link -- never carries
+        them. The legacy line is built with HEAD's own cut formula."""
+        rel = "feedback/feedback_long_title.md"
+        mem(memdir, rel, title=LONG_TITLE, mtype="feedback", body="derived long-title prose")
+        mem(memdir, "project/project_plain.md", title="Plain", mtype="project", body="plain")
+        full = f"- [{LONG_TITLE}]({rel}) — derived long-title prose"
+        legacy = full[:mi.MAX_LINE_CHARS - 1].rstrip() + "…"          # HEAD's Entry.line cut
+        assert legacy.startswith("- [") and "](" not in legacy
+        (memdir / "MEMORY.md").write_text("\n".join(B1_PROSE + [
+            legacy, "- [Plain](project/project_plain.md) — curated plain"]) + "\n",
+            encoding="utf-8")
+        organise(memdir)
+        r = run_entry(memdir)
+        assert r.returncode == 0, r.stderr
+        first = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        lines = first.splitlines()
+        block = carried_block(lines)
+>       assert legacy not in block, f"the legacy cut line was carried as prose: {block}"
+E       AssertionError: the legacy cut line was carried as prose: ['# Hand index', 'Read the campaign block first.', '## Campaign', '**Goal:** keep every link.', '- [A very long memory title — the kind cliquedb really carries, naming the mechanism, the incident, the date and the fix in one breath because the author wanted the index line to say everything: 2026…']
+E       assert '- [A very long memory title — the kind cliquedb really carries, naming the mechanism, the incident, the date and the fix in one breath because the author wanted the index line to say everything: 2026…' not in ['# Hand index', 'Read the campaign block first.', '## Campaign', '**Goal:** keep every link.', '- [A very long memory...m, the incident, the date and the fix in one breath because the author wanted the index line to say everything: 2026…']
+
+tests/test_memory_index_layout.py:693: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_b1_a_legacy_link_less_cut_line_is_dropped_and_re_rendered_with_its_link
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 33 passed in 2.84s

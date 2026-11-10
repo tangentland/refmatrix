@@ -10218,6 +10218,7 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
     from refmatrix import daemon as daemon_mod
     from refmatrix.ingest_gmd import (
         collect_gmd_files, ingest_gmd_paths, prestage_hashes,
+        render_memory_skip_line,
     )
 
     root = _root()
@@ -10243,17 +10244,26 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
             resp = daemon_mod.call(root, "prestage_hashes", {
                 "targets": [str(p) for p in resolved],
                 "partition": ingest_partition,
+                # the op walks a memdir with the memory walk (task 26.1 AC-2)
+                "as_memory": as_memory,
             }, timeout=600.0)
             if not resp.get("ok"):
                 raise click.ClickException(
                     resp.get("error", "daemon error")
                 )
             report = resp["result"]
+            walk_skipped = list((report.get("walk_skipped") or {}).get("skipped_paths") or [])
         else:
             s = _store()
-            files = collect_gmd_files(resolved)
+            # the no-daemon twin of the `prestage_hashes` op: same walk (r3 m7)
+            walk_skipped = []
+            files = collect_gmd_files(resolved, as_memory=as_memory, skipped=walk_skipped)
             with s.with_partition(ingest_partition):
                 report = prestage_hashes(s, files)
+        # what the memory walk did not take, counted and named (ch-bsd 26.1 #s-3)
+        skip_line = render_memory_skip_line(walk_skipped)
+        if skip_line:
+            click.echo(skip_line)
         console.print(
             f"prestaged: considered={report['considered']} "
             f"written={report['written']} skipped={report['skipped']} "
@@ -10350,6 +10360,15 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
                     resp.get("error", "daemon error")
                 )
             job = resp["result"]
+            # The start reply names what the memory walk skipped; print it
+            # here, the only place a `--detach` caller looks (ch-bsd 26.1 #s-3).
+            skip_line = render_memory_skip_line(job.get("skipped_paths") or [])
+            if skip_line:
+                click.echo(skip_line)
+            if "job_id" not in job:
+                # nothing to ingest: the op returned without starting a job
+                click.echo(str(job.get("report") or "no candidate files found"))
+                return
             job_id = job["job_id"]
             files_total = job.get("files_total", 0)
             if detach:
@@ -10384,7 +10403,8 @@ def _ingest_gmd_sync(resolved: list[Path], *, as_memory: bool,
     bridge (`_sync_memory_dir`)."""
     from refmatrix import daemon as daemon_mod
     from refmatrix import verbs as _verbs
-    from refmatrix.ingest_gmd import collect_gmd_files, ingest_gmd_paths
+    from refmatrix.ingest_gmd import (collect_gmd_files, ingest_gmd_paths,
+                                      render_memory_skip_line)
 
     root = _root()
     partition = partition or _resolve_partition()
@@ -10409,18 +10429,33 @@ def _ingest_gmd_sync(resolved: list[Path], *, as_memory: bool,
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         rep = str(resp["result"]["report"])
+        # The op RETURNS what the memory walk skipped; the caller prints it
+        # (ch-bsd 26.1 #s-3: it used to land only in the daemon's stderr log).
+        skipped_paths = list(resp["result"].get("skipped_paths") or [])
+        skip_line = render_memory_skip_line(skipped_paths)
+        if skip_line:
+            rep = f"{rep}\n{skip_line}"
         if not with_stats:
             return rep
         st = dict(resp["result"].get("stats") or {})
+        st["skipped"] = len(skipped_paths)
+        st["skipped_paths"] = skipped_paths
         # The daemon already drained the memory vectors (bug-065); carry its
         # counts STRUCTURALLY rather than scraping them back out of `report`
         # (ch-bsd plan-5 #m-7).
         st["embed"] = resp["result"].get("embed")
         return rep, st
     s = _store_rw()
-    files = collect_gmd_files(resolved)
+    # THE memory walk on the memory path (task 26.1 AC-2, ADR-0005 #one-walk);
+    # every skip is counted and named in the report (ch-bsd 26.1 #s-3)
+    skipped_paths: list = []
+    files = collect_gmd_files(resolved, as_memory=as_memory, skipped=skipped_paths)
+    skip_line = render_memory_skip_line(skipped_paths)
     if not files:
-        return ("no candidate files found", {}) if with_stats else "no candidate files found"
+        rep = "no candidate files found" + (f"\n{skip_line}" if skip_line else "")
+        return (rep, {"skipped": len(skipped_paths),
+                      "skipped_paths": [str(p) for p in skipped_paths]}) \
+            if with_stats else rep
     if verbose:
         for f in files:
             console.print(f"  scan {f}")
@@ -10447,10 +10482,14 @@ def _ingest_gmd_sync(resolved: list[Path], *, as_memory: bool,
         line = render_memory_embed_line(emb)
         if line:
             rep = f"{rep}\n{line}"
+    if skip_line:
+        rep = f"{rep}\n{skip_line}"
     if not with_stats:
         return rep
     st = stats.as_dict()
     st["embed"] = emb
+    st["skipped"] = len(skipped_paths)
+    st["skipped_paths"] = [str(p) for p in skipped_paths]
     return rep, st
 
 

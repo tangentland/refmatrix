@@ -1,0 +1,5 @@
+applied no_lost_prose_guard -> /Volumes/littlebig/refmatrix-plan26/src/refmatrix/memory_index.py
+........................................................................ [ 87%]
+..........                                                               [100%]
+82 passed in 4.72s
+pytest exit: 0

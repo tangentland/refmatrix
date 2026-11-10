@@ -1,0 +1,26 @@
+applied marker_gate_off -> /Volumes/littlebig/refmatrix-plan26/src/refmatrix/memory_index.py
+....................................F
+=================================== FAILURES ===================================
+___________________ test_ac6_no_guard_in_an_unorganised_dir ____________________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-3ejqclb2/memory')
+
+    def test_ac6_no_guard_in_an_unorganised_dir(memdir):
+        """r3 m4: without the marker, HEAD's write runs unguarded (the same partial-view input
+        that the organised guard refuses is written, as at HEAD)."""
+        lines = []
+        for i in range(10):
+            lines.append(f"- [N{i}](feedback_n{i}.md) — curated n{i}")
+            if i < 3:
+                mem(memdir, f"feedback_n{i}.md", title=f"N{i}", mtype="feedback", body=f"n{i}")
+        (memdir / "MEMORY.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        n = mi.write(memdir, out=io.StringIO())
+>       assert n == 3
+E       assert 0 == 3
+
+tests/test_memory_index_layout.py:403: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_ac6_no_guard_in_an_unorganised_dir
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 36 passed in 2.40s
+pytest exit: 1

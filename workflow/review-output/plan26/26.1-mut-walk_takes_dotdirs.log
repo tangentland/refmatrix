@@ -1,0 +1,44 @@
+applied walk_takes_dotdirs -> /Volumes/littlebig/refmatrix-plan26/src/refmatrix/memory_layout.py
+.........F
+=================================== FAILURES ===================================
+_ test_iter_memory_files_walks_type_folders_and_skips_dot_paths_and_non_memories _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-a_ev1gkw/memory')
+
+    def test_iter_memory_files_walks_type_folders_and_skips_dot_paths_and_non_memories(memdir):
+        """ch-bsd r1 #s3: a `.organise-rollback-1/x.md` inside a memdir was ingested as a memory.
+        A dot-dir is never a memory store; MEMORY.md / README.md / dotfiles are never memories."""
+        ml = _layout()
+        keep = [
+            _md(memdir / "project_top.md"),
+            _md(memdir / "feedback" / "feedback_a.md", mtype="feedback"),
+            _md(memdir / "project" / "project_b.md"),
+            _md(memdir / "reference" / "reference_c.md", mtype="reference"),
+            _md(memdir / "impressions" / "imp_d.md", mtype="impression"),
+            _md(memdir / "savestates" / "savestate_e.md", mtype="session/recall-state"),
+        ]
+        (memdir / "MEMORY.md").write_text("- [x](project_top.md) — idx\n", encoding="utf-8")
+        (memdir / "README.md").write_text("# readme\n", encoding="utf-8")
+        _md(memdir / ".draft.md")                                   # a dotfile
+        _md(memdir / ".organise-rollback-1" / "x.md")               # a dot-dir (r1 #s3)
+        _md(memdir / ".hidden" / "y.md")
+        _md(memdir / "feedback" / ".cache" / "z.md")                # a nested dot-dir
+        (memdir / ".memory_hooks.json").write_text("{}", encoding="utf-8")
+        (memdir / ".memory-layout").write_text("{}", encoding="utf-8")
+        (memdir / "notes.txt").write_text("not markdown", encoding="utf-8")
+        (memdir / "feedback" / "side.json").write_text("{}", encoding="utf-8")
+    
+        got = sorted(str(Path(p).relative_to(memdir)) for p in ml.iter_memory_files(memdir))
+>       assert got == sorted(str(p.relative_to(memdir)) for p in keep)
+E       AssertionError: assert ['.hidden/y.m...ct_b.md', ...] == ['feedback/fe...vestate_e.md']
+E         
+E         At index 0 diff: '.hidden/y.md' != 'feedback/feedback_a.md'
+E         Left contains 3 more items, first extra item: 'project_top.md'
+E         Use -v to get more diff
+
+tests/test_memory_layout.py:109: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_layout.py::test_iter_memory_files_walks_type_folders_and_skips_dot_paths_and_non_memories
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 9 passed in 0.61s
+pytest exit: 1

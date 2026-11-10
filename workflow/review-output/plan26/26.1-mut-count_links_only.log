@@ -1,0 +1,34 @@
+applied count_links_only -> /Volumes/littlebig/refmatrix-plan26/src/refmatrix/memory_index.py
+...................................F
+=================================== FAILURES ===================================
+________ test_ac6_a_fold_is_not_a_loss_content_counting_lets_it_through ________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-x8vry6ms/memory')
+
+    def test_ac6_a_fold_is_not_a_loss_content_counting_lets_it_through(memdir):
+        """Folded entries are NAMED by the render (the fold line counts them): content counting
+        sees 30 + 3 prose of 33 remain. Links-only counting would see ~11 of 30 link lines and
+        refuse -- the "count links only" mutation turns this test RED."""
+        hook = "a curated hook long enough that thirty of them overflow a small budget " * 2
+        lines = ["# Hand index", "Kept by hand.", "## Projects"]
+        for i in range(30):
+            # top level, so HEAD's glob sees them: HEAD writes (and folds) and fails on the prose
+            mem(memdir, f"project_q{i:02d}.md", title=f"Q{i:02d}", mtype="project",
+                body=f"q{i}", mtime=T0 + i)
+            lines.append(f"- [Q{i:02d}](project_q{i:02d}.md) — {hook[:150]}")
+        (memdir / "MEMORY.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        organise(memdir)
+        buf = io.StringIO()
+        n = mi.write(memdir, max_chars=2000, out=buf)
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert n > 0, buf.getvalue()
+E       AssertionError: MEMORY.md: the render would keep 9 of 30 content lines (entries + prose; under 50%) -- a partial view of /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-x8vry6ms/memory (30 memories visible); index left untouched
+E         
+E       assert 0 > 0
+
+tests/test_memory_index_layout.py:385: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_ac6_a_fold_is_not_a_loss_content_counting_lets_it_through
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 35 passed in 2.24s
+pytest exit: 1

@@ -1,0 +1,68 @@
+render 1:
+MEMORY.md: 122 -> 125 lines, 24378 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+MEMORY.md: STILL OVER the 24000-char budget at 24378 chars — the tail WILL be cut on load; nothing left to fold (feedback entries are never folded)
+MEMORY.md: carried 8 hand-written prose line(s)
+render 2:
+MEMORY.md: 125 -> 133 lines, 25986 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+MEMORY.md: STILL OVER the 24000-char budget at 25986 chars — the tail WILL be cut on load; nothing left to fold (feedback entries are never folded)
+MEMORY.md: carried 16 hand-written prose line(s)
+render 3:
+MEMORY.md: 133 -> 141 lines, 27594 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+MEMORY.md: STILL OVER the 24000-char budget at 27594 chars — the tail WILL be cut on load; nothing left to fold (feedback entries are never folded)
+MEMORY.md: carried 24 hand-written prose line(s)
+render 4:
+MEMORY.md: 141 -> 149 lines, 29202 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+MEMORY.md: STILL OVER the 24000-char budget at 29202 chars — the tail WILL be cut on load; nothing left to fold (feedback entries are never folded)
+MEMORY.md: carried 32 hand-written prose line(s)
+render 5:
+MEMORY.md: 149 -> 157 lines, 30810 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+MEMORY.md: STILL OVER the 24000-char budget at 30810 chars — the tail WILL be cut on load; nothing left to fold (feedback entries are never folded)
+MEMORY.md: carried 40 hand-written prose line(s)
+render 6:
+MEMORY.md: 157 -> 165 lines, 32418 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+MEMORY.md: STILL OVER the 24000-char budget at 32418 chars — the tail WILL be cut on load; nothing left to fold (feedback entries are never folded)
+MEMORY.md: carried 48 hand-written prose line(s)
+render 7:
+MEMORY.md: 165 -> 173 lines, 34026 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+MEMORY.md: STILL OVER the 24000-char budget at 34026 chars — the tail WILL be cut on load; nothing left to fold (feedback entries are never folded)
+MEMORY.md: carried 56 hand-written prose line(s)
+render 8:
+MEMORY.md: 173 -> 181 lines, 35634 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+MEMORY.md: STILL OVER the 24000-char budget at 35634 chars — the tail WILL be cut on load; nothing left to fold (feedback entries are never folded)
+MEMORY.md: carried 64 hand-written prose line(s)
+render 9:
+MEMORY.md: 181 -> 189 lines, 37242 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+MEMORY.md: STILL OVER the 24000-char budget at 37242 chars — the tail WILL be cut on load; nothing left to fold (feedback entries are never folded)
+MEMORY.md: carried 72 hand-written prose line(s)
+render 10:
+MEMORY.md: 189 -> 197 lines, 38850 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+MEMORY.md: STILL OVER the 24000-char budget at 38850 chars — the tail WILL be cut on load; nothing left to fold (feedback entries are never folded)
+MEMORY.md: carried 80 hand-written prose line(s)
+render 11:
+MEMORY.md: 197 -> 205 lines, 40458 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+MEMORY.md: STILL OVER the 24000-char budget at 40458 chars — the tail WILL be cut on load; nothing left to fold (feedback entries are never folded)
+MEMORY.md: carried 88 hand-written prose line(s)
+render 12:
+MEMORY.md: the carried hand-written prose (96 prose lines, 19355 chars) leaves less than 25% of the 24000-char budget for entries; move that prose into a memory; index left untouched
+render 13:
+MEMORY.md: the carried hand-written prose (96 prose lines, 19355 chars) leaves less than 25% of the 24000-char budget for entries; move that prose into a memory; index left untouched
+render 14:
+MEMORY.md: the carried hand-written prose (96 prose lines, 19355 chars) leaves less than 25% of the 24000-char budget for entries; move that prose into a memory; index left untouched
+render 15:
+MEMORY.md: the carried hand-written prose (96 prose lines, 19355 chars) leaves less than 25% of the 24000-char budget for entries; move that prose into a memory; index left untouched
+render 16:
+MEMORY.md: the carried hand-written prose (96 prose lines, 19355 chars) leaves less than 25% of the 24000-char budget for entries; move that prose into a memory; index left untouched
+== link-preserving truncation probe
+render 1:
+MEMORY.md: 122 -> 122 lines, 23775 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+MEMORY.md: dropped 11 entries whose file is gone: cliquedb-addr-is-a-base-f…, cliquedb-handle-registr…, cliquedb-mutation-duplicate-realization-collate…, c…, feedback-assertion-must-be-ab… …
+MEMORY.md: carried 8 hand-written prose line(s)
+render 2:
+MEMORY.md: 122 -> 122 lines, 23775 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+MEMORY.md: carried 8 hand-written prose line(s)
+render 3:
+MEMORY.md: 122 -> 122 lines, 23775 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+MEMORY.md: carried 8 hand-written prose line(s)
+render 4:
+MEMORY.md: 122 -> 122 lines, 23775 chars (caps 200 lines / 24000 chars; 251 memories on disk)
+MEMORY.md: carried 8 hand-written prose line(s)

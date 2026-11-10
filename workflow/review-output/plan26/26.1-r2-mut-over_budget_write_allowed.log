@@ -1,0 +1,45 @@
+...............................F
+=================================== FAILURES ===================================
+_________ test_m1_organised_write_refuses_when_a_full_fold_cannot_fit __________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-29grnknm/memory')
+
+    def test_m1_organised_write_refuses_when_a_full_fold_cannot_fit(memdir):
+        """Feedback is never folded. 8 prose lines (~950 chars, under the 75% the 25% rule allows)
+        plus 10 long feedback entries (~1,600 chars) cannot fit 2,000 chars at any fold: refuse.
+        At HEAD the over-budget render is written and only reported as STILL OVER."""
+        prose = [f"Hand paragraph {i}: " + "p" * 100 for i in range(8)]
+        lines = list(prose)
+        for i in range(10):
+            mem(memdir, f"feedback/feedback_f{i}.md", title=f"F{i}", mtype="feedback", body=f"f{i}")
+            lines.append(f"- [F{i}](feedback/feedback_f{i}.md) — " + "c" * 130)
+        before = "\n".join(lines) + "\n"
+        (memdir / "MEMORY.md").write_text(before, encoding="utf-8")
+        side_before = json.dumps({f"feedback_f{i}": "c" * 130 for i in range(10)})
+        (memdir / mi.HOOKS_SIDECAR).write_text(side_before, encoding="utf-8")
+        organise(memdir)
+        buf = io.StringIO()
+        n = mi.write(memdir, max_chars=2000, out=buf)
+        said = buf.getvalue()
+>       assert (memdir / "MEMORY.md").read_text(encoding="utf-8") == before, \
+            f"an over-budget render was written: {said}"
+E       AssertionError: an over-budget render was written: MEMORY.md: 18 -> 20 lines, 2661 chars (caps 200 lines / 2000 chars; 10 memories on disk)
+E         MEMORY.md: STILL OVER the 2000-char budget at 2661 chars — the tail WILL be cut on load; nothing left to fold (feedback entries are never folded)
+E         MEMORY.md: carried 8 hand-written prose line(s)
+E         
+E       assert '<!-- carried...ccccccccccc\n' == 'Hand paragra...ccccccccccc\n'
+E         
+E         + <!-- carried from the hand-written index; edit freely -->
+E           Hand paragraph 0: pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+E           Hand paragraph 1: pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+E           Hand paragraph 2: pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+E           Hand paragraph 3: pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+E           Hand paragraph 4: ppppppppppppppppp...
+E         
+E         ...Full output truncated (15 lines hidden), use '-vv' to show
+
+tests/test_memory_index_layout.py:648: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_m1_organised_write_refuses_when_a_full_fold_cannot_fit
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 31 passed in 2.57s

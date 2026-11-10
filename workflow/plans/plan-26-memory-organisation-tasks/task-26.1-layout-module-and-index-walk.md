@@ -95,17 +95,34 @@ viascope2 12, cliquet 8.
    - If the carried prose alone leaves less than 25% of the budget for entries, `write` refuses
      (index untouched, reason printed, return 0). It names the prose line count so the user can
      move the prose into a memory.
-   - Idempotence: re-rendering a carried block re-carries it once. It never duplicates.
+   - Hook precedence: an EMPTY hook in the index never overwrites a non-empty curated hook in the
+     sidecar (an entry whose link alone exceeds the line cap renders without its hook; that must
+     not erase the curated text on the next render). Decided 2026-11-09 at the remedy GREEN.
+   - Idempotence: re-rendering a carried block re-carries it once. It never duplicates. A line
+     shaped like an entry (starts `- [`) is never prose, link or no link — so the link-less lines
+     HEAD's cut already left in live indexes (cliquedb: 8) are dropped and re-rendered with their
+     link, never carried as junk (decided 2026-11-09 at the 26.1 remedy RED; replaces "equal to an
+     entry line this render generates", which a linked render makes vacuous). An entry line is never cut
+     inside its `](rel)` link (ch-bsd 26.1 #b-1: at HEAD `Entry.line` cut every line at 200
+     chars, losing the link of a long title; the next organised render re-carried those lines
+     and doubled the block every pass). Test: a title over 200 chars rendered twice keeps its
+     link and the carried block's size is stable.
    - Test: a fixture copied from viascope's index shape (17 headers plus a session log) keeps
      every prose line. At HEAD all of them are dropped (RED).
 6. **AC-6: the shrink guard counts content (B4). ORGANISED dirs only (r3 m4).** In a dir
    without the marker, HEAD's write runs unguarded, as at HEAD ([[#marker-gate]]). Before
    replacing the index, `write` compares
    the old index's CONTENT lines (entry lines plus prose lines) with the new render's (entries
-   named, inline or folded, plus carried prose). It refuses when fewer than 50% would remain, or
-   when ANY prose line would be lost. The file is left untouched, the reason is printed on the
-   `out` stream, and it returns 0. Test the viascope-copy case: links-only counting passes it,
-   content counting refuses it.
+   named, inline or folded, plus carried prose). It refuses when fewer than 50% would remain. The
+   file is left untouched, the reason is printed on the `out` stream, and it returns 0. There is
+   no separate "any prose line lost" check: the render carries every prose line by construction
+   (AC-5 pins it), so such a check could never fire (ch-bsd 26.1 #s-1 — removed as a dead guard).
+   An organised write folds further to fit `max_chars`. It refuses only when the CARRIED PROSE is
+   what makes it not fit — the same render without the carried block would fit — because then the
+   user can move prose into a memory (#m-1). When even a fold with no carried prose cannot fit, it
+   writes and prints `STILL OVER`, exactly as a marker-off dir does: an index that stops updating
+   is worse than an over-budget one (decided 2026-11-09 at the 26.1 remedy GREEN). Test: a fold is not a loss (links-only counting would refuse it,
+   content counting lets it through).
 7. **AC-7: `Entry.kind` reads the folder first.** The stem is the fallback for flat dirs.
 8. **AC-8: no regression.** `tests/test_memory_index.py` and
    `tests/test_memory_index_char_budget.py` pass unchanged. A flat dir with no prose renders
@@ -226,3 +243,17 @@ rel: derives-from -> [[bsd-plan26-27-spec-review-r5-3ded49e]]
 | finding | change | anchor |
 |---|---|---|
 | m1 (AC-9 "all 8 listed" vs the impressions pointer) | Read as 7 entry links + the pointer; 8 asserted on `collect()` | [[#impl-notes-r5]] |
+
+## Revision after ch-bsd 26.1 post-impl (2026-11-09) {#rev-bsd-26-1}
+
+rel: derives-from -> [[bsd-task26.1-layout-index-walk-8337368]]
+
+| finding | change | anchor |
+|---|---|---|
+| b-1 carried block re-copies cut entry lines | entry lines never lose their link; a generated entry line is never prose; stable-size test | AC-5 |
+| s-1 dead lose-any-prose guard | removed; carried-by-construction stated | AC-6 |
+| s-2 newest ordering cycles | ADR-0005 `#newest` is now one key `(date, mtime, name)` | ADR-0005 |
+| s-3 uncounted skips | the walk counts and names symlinked dirs, dangling links and `.gmd` files; daemon ops return the skipped count to the caller | AC-2 |
+| m-1 organised write over budget | folds further or refuses | AC-6 |
+| m-3 pseudocode sentence | waiver recorded in ADR-0005 | ADR-0005 |
+

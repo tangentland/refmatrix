@@ -1,0 +1,27 @@
+applied drop_carried_block -> /Volumes/littlebig/refmatrix-plan26/src/refmatrix/memory_index.py
+...............................F
+=================================== FAILURES ===================================
+__ test_ac5_every_prose_line_is_carried_verbatim_in_order_before_the_entries ___
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-2i5jk3k3/memory')
+
+    def test_ac5_every_prose_line_is_carried_verbatim_in_order_before_the_entries(memdir):
+        build_viascope_shape(memdir)
+        (memdir / "MEMORY.md").write_text("\n".join(VIA_INDEX) + "\n", encoding="utf-8")
+        organise(memdir)
+        r = run_entry(memdir)
+        assert r.returncode == 0, r.stderr
+        lines = (memdir / "MEMORY.md").read_text(encoding="utf-8").splitlines()
+    
+>       assert lines.count(CARRY_HEAD) == 1, lines
+E       AssertionError: ['# Viascope — project memory index', 'Curated by hand. Read the Active Campaign block first.', '## Active Campaign', ...ship the 3.2 ingest rework before the demo.', "**Blocked on:** the camera vendor's firmware drop.", '## Feedback', ...]
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of list object at 0x1059bf7c0>('<!-- carried from the hand-written index; edit freely -->')
+E        +    where <built-in method count of list object at 0x1059bf7c0> = ['# Viascope — project memory index', 'Curated by hand. Read the Active Campaign block first.', '## Active Campaign', ...ship the 3.2 ingest rework before the demo.', "**Blocked on:** the camera vendor's firmware drop.", '## Feedback', ...].count
+
+tests/test_memory_index_layout.py:302: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_ac5_every_prose_line_is_carried_verbatim_in_order_before_the_entries
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 31 passed in 1.65s
+pytest exit: 1
