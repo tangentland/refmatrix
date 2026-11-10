@@ -45,6 +45,12 @@ Merge order between 26.2 and 26.3 is free; the SECOND to merge carries 26.2 AC-4
 pair + another duplicate id). 26.3's pair rule lives in the walk (`memory_layout`); 26.2's
 `split_claims` must not add a second exemption.
 
+**26.3 merge after `task-user-level-state-commands`** (the handoff pair now installs at user
+level; `.claude/commands/{save,recall}-state.md` are deleted): keep the deletion on the
+modify/delete conflict, take that branch's template recall-state, and drop AC-7's project-copy
+parameter + `test_ac7_the_installed_command_is_the_template`
+([[impl-task-user-level-state-commands#in-flight]]).
+
 ## Open items {#open}
 
 - **Before the next release:** bug-199, bug-200 (fix in the bug199-200 clone), 26.2, 26.3.
