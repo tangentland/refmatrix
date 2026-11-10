@@ -44,6 +44,8 @@ Window: the newest run bullets. Older bullets are folded VERBATIM, anchor ids un
 - 2026-11-10 (task 26.6 r2) — A REMEDY SPEC THAT NAMES A HELPER MUST NAME ITS ARGUMENTS. R3 pointed at a files-gated helper that silently skips when called with no files. {#imp-name-the-helper-arguments}
 - 2026-11-10 (bug-197/198 r1, 8741db8) — A RENAMED PARAMETER'S OLD SPELLING MUST BE REFUSED, NOT IGNORED. `rmx_memory brief scope=pattern` quietly returned the memory corpus once `compile_scope` took over; the earlier contract's callers get a wrong answer with no error. {#imp-refuse-the-old-spelling}
 - 2026-11-10 (bug-197/198 r1) — AUDITOR SELF-CHECK: NEVER BACKGROUND PYTEST WITH `&` INSIDE A BACKGROUNDED SHELL. Re-parenting to pid 1 failed 7 pid-pointer session tests that pass in the foreground. {#imp-no-ampersand-pytest}
+- 2026-11-10 (user-level state commands r1, c596a11) — A FLEET FILE CLEANUP HAS TO CHECK EACH REPO'S TRUNK TREE, NOT JUST THE WORKING TREE. All 6 tracked repos were on feature branches. cliquedb's checkout had already dropped the pair, but its main/master still track it. So a working-tree `find` plus `git rm` would have reported done while the trunks kept every copy. {#imp-fleet-cleanup-trunk-tree}
+- 2026-11-10 (user-level state commands r1) — AN INJECTED-DIR SEAM PROVES THE FUNCTION, NOT THE CALL SITE. Every installer test passed `user_dir=tmp`. Pointing `rmx init` back at the project dir survived 283 tests. When a seam exists for tests, add one test through the production caller with the default left in place. {#imp-seam-skips-call-site}
 
 ## Former anchors, restored {#former-anchors}
 
