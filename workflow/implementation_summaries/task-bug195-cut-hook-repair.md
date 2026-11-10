@@ -76,3 +76,29 @@ then checked that `git status --short src` was empty and grepped for the restore
 
 The live run on the refmatrix memdir and the `workflow/bug_registry.md` row are left to the
 orchestrator. The command has not been run against any real memory dir. {#live-run}
+
+## Remedy r1: the sidecar keeps its file mode {#remedy-r1}
+
+rel: derives-from -> [[bsd-bug195-r1-cut-hook-repair-39777c6#m-1]]
+
+ch-bsd r1 m-1 found that the atomic write changed the sidecar's permissions. `mkstemp` creates the
+temp file as 0600 and `os.replace` keeps that mode, so after `ccb9398` every save-state left
+`.memory_hooks.json` owner-only, where `write_text` had left 0644. RED `6f667e4` added 12 tests,
+6 of them failing on file mode. GREEN is `cace22e`.
+
+- **`_sidecar_mode(side) -> int`** returns the existing file's permission bits. When there is no
+  sidecar yet it returns `0o666 & ~umask`, the mode `write_text` would have created. Python before
+  3.15 cannot read the umask without setting it, so the function sets it and restores it
+  straight away. {#r1-mode}
+- **`_store_sidecar`** calls `os.fchmod` on the temp file with that mode before the fsync and the
+  rename. `save_hooks` and the repair both write through it, so both are fixed. {#r1-store}
+
+Verification: repair file 23/23 (`bug195-green-r1.log`, and again after the mutation in
+`bug195-green-r1-post-mutation.log`). Family run 517/517 (`bug195-green-r1-family.log`).
+
+| Mutation | Result |
+|---|---|
+| `os.fchmod` removed | killed, 6 failed: every mode test (`bug195-green-r1-mut-fchmod.log`) |
+
+After the mutation I ran `git checkout -- src` and cleared `__pycache__` as a separate command,
+then checked that `git status --short src` was empty and grepped for the fchmod line. {#r1-verify}
