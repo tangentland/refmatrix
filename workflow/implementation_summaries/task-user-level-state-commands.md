@@ -87,3 +87,40 @@ Merging it after this lands needs:
 
 Other projects that ran `rmx init` before this still hold project-local copies; their next
 `rmx init` names them (`warn`) and leaves them for the user to remove.
+
+## Deploy step: remove the fleet's project-local copies {#deploy-cleanup}
+
+User, 2026-11-10: "remove the other projects save-state and recall-state versions when we deploy
+the new version of rmx". Not done now: until the release that carries this branch is deployed,
+nothing installs or enforces the user-level pair. Do it right after that deploy is verified.
+
+Inventory taken 2026-11-10 (18 files, 9 projects under `~/github/atollogy/bdep/`; every one
+differs from the old template, in four content groups):
+
+| project | tracked | content |
+|---|---|---|
+| `cat-herder` | yes | cat-herder baseline (the bootstrap source: its `SETUP.md` copies `.claude/commands/*.md` into new projects) |
+| `orderly` | no | cat-herder baseline |
+| `prep_prolific` | yes | cat-herder baseline |
+| `thiquet` | yes | cat-herder baseline |
+| `portal` | yes | baseline save-state; recall-state names trunk `origin/release` (portal `CLAUDE.md:184` already says there is no `main`) |
+| `atldb` | yes | atldb variant |
+| `atlftpd` | no | atldb variant |
+| `viascope` | no | atldb variant |
+| `cliquet` | yes | baseline + GMD frontmatter/anchor only |
+
+Procedure:
+
+1. Re-scan, because the list can change before the deploy:
+   `find ~/github ~/enduris ~/claude_tools -maxdepth 6 -path '*/_frameworks_and_libraries' -prune
+   -o -path '*/.claude/commands/*' \( -name save-state.md -o -name recall-state.md \) -print`
+   (never from `/`; refmatrix and its littlebig clones are not in scope, they get the deletion
+   by merge).
+2. Back up every file to `~/.refmatrix/backups/commands/<project>/` before touching it.
+3. Untracked copies: delete. Tracked copies: before any change, check for another session in that
+   repo and do not switch its branch; then `git -C <repo> rm` the pair (staged; the user commits
+   in their repos unless they say otherwise).
+4. cat-herder: deleting its copies also stops new bootstrapped projects getting them; a project
+   then relies on `rmx init` (user-level install). Say so when reporting.
+5. Verify: `~/.claude/commands/{save,recall}-state.md` equal the deployed templates, and the
+   re-scan prints nothing.

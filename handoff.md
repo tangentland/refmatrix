@@ -54,6 +54,9 @@ parameter + `test_ac7_the_installed_command_is_the_template`
 ## Open items {#open}
 
 - **Before the next release:** bug-199, bug-200 (fix in the bug199-200 clone), 26.2, 26.3.
+- **At the next deploy** (user, 2026-11-10): remove the fleet's project-local
+  `.claude/commands/{save,recall}-state.md` (18 files in 9 projects, 6 git-tracked), backed up
+  first; inventory + procedure in [[impl-task-user-level-state-commands#deploy-cleanup]].
 - **Pre-existing failures (registered):** bug-127/168 (`test_brief_real_daemon` DuckDB lock),
   bug-170 (hooks-sync test under the sandbox HOME), bug-190 (rerank load flakes), bug-196 (AC-6
   recall per-channel split), bug-194 (truncated status frame under load).
