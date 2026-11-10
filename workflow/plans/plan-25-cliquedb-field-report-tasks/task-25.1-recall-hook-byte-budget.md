@@ -354,13 +354,19 @@ mutation is carried (AC-14 maps them) unless a row below says otherwise.
       `rmx_bus_unarchive`, `rmx_bus_purge`, `rmx_bus_stats`. Tools 3.7 / 26.5 add before this
       task's RED inherit it through the same registrar; AC-4 (e) sweeps `mcp.TOOLS` at test time,
       so a later tool is covered without a list edit. {#r10-tools}
-    - **`rmx_bus_pub`'s second meaning.** `project` is also `bus_pub`'s own message field
-      (`verbs.py:1607-1616`); the transport reads the same key first. After R10 a publish with
-      `project="X"` for an unregistered X raises instead of publishing from the cwd store
-      (whose name is the default sender, `_bus_sender`). Accepted: the hub bus is machine-local,
-      and a publish tagged with a project this machine does not know is the same caller mistake.
-      A channel-derived project (`proj:X:…` with no `project=` argument) never reaches
-      `_resolve_root` and is untouched. Splitting the two meanings is out of scope. {#r10-bus}
+    - **`rmx_bus_pub`'s two meanings are split (user decision, 2026-11-10).** `project` was both
+      the MCP transport target and `bus_pub`'s own message field (`verbs.py:1919-1928`), and the
+      transport reads the same key first. The verb's message field becomes `about`
+      (`about: str | None = None`; default: the `X` of a `proj:X:…` channel, as today), and the
+      hub message keeps its `project` key, filled from `about`. `project` on `rmx_bus_pub` is then
+      the transport target only, under R10 like every other tool: an unknown name raises
+      `VerbUnknownProjectError`; a known one publishes from that store (its name is the default
+      sender). The CLI `rmx bus pub` gains `--about`; every in-repo caller that passed `project=`
+      as the message field (hooks, templates, `cli.py`, tests) moves to `about=`. **AC:**
+      `rmx_bus_pub(channel="global:t", body="b", about="Y")` with no store named Y publishes, and
+      the hub row's `project` is `Y`; the same call with `project="Y"` raises; a `proj:X:t` channel
+      with neither still tags `X`; verb parity green. **Mutation:** `about` ignored (row `project`
+      empty) — killed. Supersedes the 2026-11-09 "accepted, splitting out of scope" note. {#r10-bus}
     - **Schema words.** `_TRANSPORT_PROPS["project"]["description"]` changes from "Target another
       project by NAME (any live store)" to say a registered store and that an unknown name is an
       error, never a fallback. {#r10-schema}
