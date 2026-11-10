@@ -27,6 +27,9 @@ Three rules, in the order they fire:
 Run by hand or in a check:
 
     python3 -m refmatrix.memory_index <memdir> [--check]
+    python3 -m refmatrix.memory_index --repair-cut-hooks <memdir> [--apply] [--restore k=text]
+
+The second form is bug-195's one-shot repair of hook values bug-193 cut.
 """
 from __future__ import annotations
 
@@ -34,6 +37,8 @@ import json
 import os
 import re
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 from refmatrix import memory_layout
@@ -295,18 +300,67 @@ def _with_id_aliases(memdir: Path, hooks: dict) -> dict:
 HOOKS_SIDECAR = ".memory_hooks.json"
 
 
+class SidecarError(RuntimeError):
+    """The hook sidecar exists but cannot be read or is not a JSON object."""
+
+
+def _load_sidecar(memdir: Path) -> "tuple[bytes, dict] | None":
+    """THE sidecar reader: `(raw bytes, parsed object)`, or None when there is
+    no sidecar. RAISES `SidecarError` on an unreadable file, unparseable JSON,
+    or a non-object. The render path (`_read_sidecar`) degrades on that with a
+    named warning; the bug-195 repair refuses on it -- one parse, two policies
+    (bug-195 / ch-bsd 26.1 r3 s-2, 2026-11-10)."""
+    side = memdir / HOOKS_SIDECAR
+    if not side.exists():
+        return None
+    try:
+        raw = side.read_bytes()
+        data = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise SidecarError(f"{side}: hook sidecar unreadable "
+                           f"({type(exc).__name__}: {exc})") from exc
+    if not isinstance(data, dict):
+        raise SidecarError(f"{side}: hook sidecar is a JSON {type(data).__name__}, "
+                           f"not an object")
+    return raw, data
+
+
+def _dump_sidecar(data: dict) -> str:
+    """THE sidecar serialisation -- the bytes `save_hooks` has always written."""
+    return json.dumps(data, indent=0, sort_keys=True, ensure_ascii=False)
+
+
+def _store_sidecar(memdir: Path, data: dict) -> None:
+    """Write the sidecar atomically: a temp file in the memdir, then a rename,
+    so a crash mid-write never leaves a half sidecar (bug-195 R3, 2026-11-10).
+    RAISES on failure, after removing the temp file; callers decide whether
+    that is a warning (`save_hooks`) or a refusal (the repair)."""
+    side = memdir / HOOKS_SIDECAR
+    fd, tmp = tempfile.mkstemp(prefix=f"{HOOKS_SIDECAR}.", suffix=".tmp", dir=memdir)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(_dump_sidecar(data))
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, side)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        raise
+
+
 def _read_sidecar(memdir: Path) -> dict:
     hooks: dict = {}
-    side = memdir / HOOKS_SIDECAR
-    if side.exists():
-        try:
-            data = json.loads(side.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                hooks.update({str(k): str(v) for k, v in data.items()})
-        except Exception as exc:  # noqa: BLE001 — named, never mute
-            print(f"{INDEX_NAME}: hook sidecar unreadable ({type(exc).__name__}: "
-                  f"{exc}); folded entries may lose their curated hooks",
-                  file=sys.stderr)
+    try:
+        loaded = _load_sidecar(memdir)
+    except SidecarError as exc:
+        print(f"{INDEX_NAME}: {exc}; folded entries may lose their curated hooks",
+              file=sys.stderr)
+        loaded = None
+    if loaded is not None:
+        hooks.update({str(k): str(v) for k, v in loaded[1].items()})
     return hooks
 
 
@@ -451,15 +505,13 @@ def save_hooks(memdir: Path, entries: list, *, dead: "dict | None" = None) -> No
     Organised dir: keyed by memory id, so a move never loses a hook, plus every
     `dead` hook kept under the key it was found under (task 26.1 AC-4)."""
     memdir = Path(memdir)
-    side = memdir / HOOKS_SIDECAR
     if memory_layout.is_organised(memdir):
         data = dict(dead or {})
         data.update({e.id: e.hook for e in entries if e.hook})
     else:
         data = {e.rel: e.hook for e in entries if e.hook}
     try:
-        side.write_text(json.dumps(data, indent=0, sort_keys=True,
-                                   ensure_ascii=False), encoding="utf-8")
+        _store_sidecar(memdir, data)
     except Exception as exc:  # noqa: BLE001 — named, never mute
         print(f"{INDEX_NAME}: could not write hook sidecar "
               f"({type(exc).__name__}: {exc}); folded entries will lose their "
@@ -809,15 +861,251 @@ def check(memdir: Path, *, max_lines: int = MAX_LINES,
         memdir, max_lines=max_lines, max_chars=max_chars)
 
 
+# ---- bug-195: the one-shot repair of hook values bug-193 cut ------------------
+
+# The classes a `…`-ended sidecar value falls into, in report order.
+REPAIR_CLASSES = ("derived", "bare", "curated-lost", "gone")
+
+# The classes whose key `--apply` drops so the memory's derived hook returns.
+_REPAIR_DROPS = frozenset({"derived", "bare"})
+
+
+class RepairError(RuntimeError):
+    """A repair refusal: printed by name, exit non-zero, nothing written."""
+
+
+def _repair_backup_dir(memdir: Path) -> Path:
+    """`<user_home>/backups/memory-hooks/<memdir-slug>-<timestamp>/` (bug-195 R3).
+    The slug is the project dir's name for a `.../<project>/memory` dir -- the
+    part that tells two projects' backups apart -- else the memdir's own name."""
+    from refmatrix import taxonomy
+
+    m = memdir.resolve()
+    name = m.parent.name if m.name == "memory" and m.parent.name else m.name
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-") or "memdir"
+    stamp = time.strftime("%Y%m%dT%H%M%S") + f"-{time.time_ns() % 1_000_000_000:09d}"
+    return taxonomy.user_home() / "backups" / "memory-hooks" / f"{slug}-{stamp}"
+
+
+def _memory_text(memdir: Path, key: str, path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise RepairError(f"{HOOKS_SIDECAR}: {key}: memory file {path} unreadable "
+                          f"({type(exc).__name__}: {exc}); nothing repaired") from exc
+
+
+def _ids_to_files(memdir: Path) -> dict:
+    """`{memory id: path}` over THE walk (`memory_layout.iter_memory_files`), the
+    same identity `Entry` uses (frontmatter `id`, else the stem). Every file is
+    read: an unreadable one could be the memory an id key names, so it refuses
+    rather than calling that key gone."""
+    out: dict = {}
+    for f in memory_layout.iter_memory_files(memdir):
+        rel = str(f.relative_to(memdir))
+        fid = _frontmatter(_memory_text(memdir, rel, f)).get("id") or f.stem
+        out.setdefault(fid, f)
+    return out
+
+
+def classify_cut_hooks(memdir: Path, data: dict) -> list:
+    """`[(key, class)]` for every sidecar value ending in `…`, in key order
+    (bug-195 / ch-bsd 26.1 r3 s-2, 2026-11-10). Values not ending in `…` are
+    never classified -- they are not cuts.
+
+    - `bare`: the value is exactly `…` (HEAD cuts that ended `.md)…`).
+    - `derived`: the memory's file exists and the cut's prefix starts its
+      `_first_prose` -- a frozen cut of the derived hook (37 on live refmatrix).
+    - `curated-lost`: the file exists and the prefix is not its prose -- the
+      full curated text is gone; kept, and named for the user to rewrite.
+    - `gone`: the key names no current memory -- never touched.
+
+    Key resolution: a path key (`*.md`, including `impressions/x.md`) against
+    the memdir; any other key as a memory id through THE walk (`load_hooks`
+    reads id keys in every dir, so they are resolved in every dir). RAISES
+    `RepairError` naming the key when a memory file cannot be read."""
+    out: list = []
+    ids: "dict | None" = None
+    for key in sorted(data):
+        val = data[key]
+        if not isinstance(val, str) or not val.endswith("…"):
+            continue
+        if _is_path_key(key):
+            f = memdir / key
+            path = f if f.is_file() else None
+        else:
+            if ids is None:
+                ids = _ids_to_files(memdir)
+            path = ids.get(key)
+        if val == "…":
+            # A bare `…` carries nothing to keep, file or no file -- but a key
+            # whose memory is gone is still never touched.
+            out.append((key, "bare" if path is not None else "gone"))
+            continue
+        if path is None:
+            out.append((key, "gone"))
+            continue
+        prefix = val[:-1].rstrip()
+        prose = _first_prose(_memory_text(memdir, key, path))
+        out.append((key, "derived" if prefix and prose.startswith(prefix)
+                    else "curated-lost"))
+    return out
+
+
+def _parse_restores(restores: list) -> dict:
+    """`k=text` pairs, split on the FIRST `=` (the text may hold `=`)."""
+    out: dict = {}
+    for r in restores:
+        key, sep, text = r.partition("=")
+        if not sep or not key:
+            raise RepairError(f"--restore {r!r}: expected <key>=<text>")
+        out[key] = text
+    return out
+
+
+def repair_cut_hooks(memdir: Path, *, apply: bool = False,
+                     restores: "list | None" = None, out=None) -> int:
+    """Classify, and with `apply` repair, the hook values bug-193 froze into the
+    sidecar (bug-195 / ch-bsd 26.1 r3 s-2, 2026-11-10).
+
+    bug-193 saved `Entry.line`'s `prefix…` cut back into `.memory_hooks.json`
+    as if it were curated; the fixed precedence (25af9ca) stops new damage but
+    never heals old values -- live refmatrix held 66 `…`-ended values. Dropping
+    a `derived` or `bare` key lets the full derived hook return on the next
+    render; `curated-lost` and `gone` keys are kept byte-identical. `restores`
+    (`k=text`, R5) set explicit values the operator recovered from git -- the
+    tool never guesses curated text.
+
+    Dry-run by default: prints, writes nothing. `apply` backs the sidecar up
+    under `taxonomy.user_home()` FIRST and refuses if that fails, then writes
+    atomically (`_store_sidecar`). A second apply finds nothing and says so.
+    Every failure is printed by name and returns non-zero; no traceback, no
+    partial write (R4). Returns the exit code."""
+    out = out if out is not None else sys.stdout
+    memdir = Path(memdir)
+    try:
+        if not memdir.is_dir():
+            raise RepairError(f"{memdir}: not a directory")
+        wanted = _parse_restores(restores or [])
+        try:
+            loaded = _load_sidecar(memdir)
+        except SidecarError as exc:
+            raise RepairError(f"{exc}; nothing repaired") from exc
+        if loaded is None:
+            if wanted:
+                raise RepairError(f"{memdir / HOOKS_SIDECAR}: no hook sidecar; "
+                                  f"--restore has nothing to restore into")
+            print(f"{HOOKS_SIDECAR}: no hook sidecar in {memdir}; nothing to repair",
+                  file=out)
+            return 0
+        raw, data = loaded
+        missing = sorted(k for k in wanted if k not in data)
+        if missing:
+            raise RepairError(f"--restore: no such key in {memdir / HOOKS_SIDECAR}: "
+                              f"{', '.join(missing)}")
+        found = classify_cut_hooks(memdir, data)
+    except RepairError as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 1
+
+    for key, cls in found:
+        print(f"  {cls:<12} {key}", file=out)
+    counts = {c: sum(1 for _, k in found if k == c) for c in REPAIR_CLASSES}
+    print(f"{len(found)} cut value(s) in {memdir / HOOKS_SIDECAR}: "
+          + "  ".join(f"{c}: {counts[c]}" for c in REPAIR_CLASSES), file=out)
+
+    new = {k: v for k, v in data.items()
+           if k not in {key for key, cls in found if cls in _REPAIR_DROPS}}
+    for key, text in wanted.items():
+        print(f"  restore      {key}", file=out)
+        new[key] = text
+    if new == data:
+        print("nothing to repair", file=out)
+        return 0
+    dropped = len(data) - len(set(new) & set(data))
+    if not apply:
+        print(f"dry-run: would drop {dropped} key(s) and restore {len(wanted)}; "
+              f"rerun with --apply to write", file=out)
+        return 0
+
+    bak = _repair_backup_dir(memdir) / HOOKS_SIDECAR
+    try:
+        bak.parent.mkdir(parents=True, exist_ok=False)
+        bak.write_bytes(raw)
+        if bak.read_bytes() != raw:
+            raise OSError(f"{bak} does not read back as the sidecar")
+    except OSError as exc:
+        print(f"refused: backup to {bak} failed ({type(exc).__name__}: {exc}); "
+              f"{memdir / HOOKS_SIDECAR} left untouched", file=sys.stderr)
+        return 1
+    print(f"backup: {bak}", file=out)
+    try:
+        _store_sidecar(memdir, new)
+    except OSError as exc:
+        print(f"refused: writing {memdir / HOOKS_SIDECAR} failed "
+              f"({type(exc).__name__}: {exc}); the old sidecar is intact and "
+              f"backed up at {bak}", file=sys.stderr)
+        return 1
+    print(f"applied: dropped {dropped} key(s), restored {len(wanted)}; "
+          f"{len(new)} hook(s) remain", file=out)
+    return 0
+
+
+_USAGE = ("usage: python3 -m refmatrix.memory_index <memdir> [--check]\n"
+          "       python3 -m refmatrix.memory_index --repair-cut-hooks <memdir> "
+          "[--apply] [--restore <key>=<text> ...]")
+
+
 def main(argv: "list[str] | None" = None) -> int:
+    """The module entry. Every `--` flag is a known one or an error: HEAD
+    dropped any `--` arg it did not know and rendered, so a mistyped
+    `--repair-cut-hook` would have REWRITTEN the index it meant to inspect
+    (bug-195, 2026-11-10)."""
     args = list(sys.argv[1:] if argv is None else argv)
-    checking = "--check" in args
-    args = [a for a in args if not a.startswith("--")]
-    if not args:
-        print("usage: python3 -m refmatrix.memory_index <memdir> [--check]",
+    checking = applying = False
+    repair: "str | None" = None
+    restores: list = []
+    pos: list = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in ("--repair-cut-hooks", "--restore"):
+            if i + 1 >= len(args):
+                print(f"{a} needs a value\n{_USAGE}", file=sys.stderr)
+                return 2
+            if a == "--restore":
+                restores.append(args[i + 1])
+            elif repair is not None:
+                print(f"--repair-cut-hooks given twice\n{_USAGE}", file=sys.stderr)
+                return 2
+            else:
+                repair = args[i + 1]
+            i += 2
+            continue
+        if a == "--check":
+            checking = True
+        elif a == "--apply":
+            applying = True
+        elif a.startswith("--"):
+            print(f"unknown flag {a}\n{_USAGE}", file=sys.stderr)
+            return 2
+        else:
+            pos.append(a)
+        i += 1
+    if repair is not None:
+        if pos or checking:
+            print(f"--repair-cut-hooks takes its memdir as its value and no other "
+                  f"argument or --check\n{_USAGE}", file=sys.stderr)
+            return 2
+        return repair_cut_hooks(Path(repair), apply=applying, restores=restores)
+    if applying or restores:
+        print(f"--apply / --restore belong to --repair-cut-hooks\n{_USAGE}",
               file=sys.stderr)
         return 2
-    memdir = Path(args[0])
+    if len(pos) != 1:
+        print(_USAGE, file=sys.stderr)
+        return 2
+    memdir = Path(pos[0])
     if checking:
         ok = check(memdir)
         print(f"{INDEX_NAME}: {'in sync' if ok else 'STALE — run without --check'}")
