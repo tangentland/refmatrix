@@ -772,3 +772,586 @@ def test_hook_precedence_empty_index_hook_keeps_the_curated_sidecar_hook_marker_
         side = sidecar(memdir)
         assert side.get(rel) == CURATED, f"render {n}: curated hook lost: {side.get(rel)!r}"
     assert [e.hook for e in mi.collect(memdir) if e.rel == rel] == [CURATED]
+
+
+# ---- task 26.1 follow-up (ch-bsd 26.1 r2, spec #followup-r2) ------------------------------
+#
+# #fu-hooks (bug-193, r2 #s-1 + #m-1): an index hook replaces the sidecar value EXCEPT when the
+# index could not carry it -- (a) the link alone is over the cap (no hook on the line; the two
+# tests above), (b) the hook is the rendered cut of the sidecar value (`prefix…`), (c) a bare
+# `…`. A hook the user deletes from a line that HAD room is cleared, as at HEAD 61b3bde, in
+# every dir. Supersedes the remedy GREEN's "an empty index hook never erases a curated hook".
+
+HEAD_SHA = "61b3bde"
+REPO = Path(__file__).resolve().parents[1]
+
+
+def _layouts():
+    return pytest.mark.parametrize("organised", [True, False], ids=["organised", "marker-off"])
+
+
+def _key(organised: bool, rel: str) -> str:
+    """The sidecar key a write uses: memory id (organised) or relative path (marker-off)."""
+    return Path(rel).stem if organised else rel
+
+
+def _rel(organised: bool, folder: str, stem: str) -> str:
+    return f"{folder}/{stem}.md" if organised else f"{stem}.md"
+
+
+def _line_for(text: str, rel: str) -> str:
+    hits = [ln for ln in text.splitlines() if f"]({rel})" in ln]
+    assert len(hits) == 1, (rel, hits)
+    return hits[0]
+
+
+@_layouts()
+def test_fu_hooks_a_long_curated_hook_keeps_its_full_text_over_three_renders(memdir, organised):
+    """bug-193: a hand-written hook longer than the line allows renders as `prefix…`. At
+    7b5ea2f the next render read `prefix…` back from the index, it won over the sidecar, and
+    `save_hooks` wrote the cut over the full text: 246 chars survived one render, then 171."""
+    rel = _rel(organised, "feedback", "feedback_long_hook")
+    mem(memdir, rel, title="Short title", mtype="feedback", body="derived prose, not curated")
+    mem(memdir, _rel(organised, "project", "project_plain"), title="Plain", mtype="project",
+        body="derived plain")
+    assert len(f"- [Short title]({rel}) — {LONG_HOOK}") > mi.MAX_LINE_CHARS
+    (memdir / "MEMORY.md").write_text(
+        f"- [Short title]({rel}) — {LONG_HOOK}\n", encoding="utf-8")
+    if organised:
+        organise(memdir)
+    key = _key(organised, rel)
+    lines = []
+    for n in (1, 2, 3):
+        r = run_entry(memdir)
+        assert r.returncode == 0, r.stderr
+        side = sidecar(memdir)
+        assert side.get(key) == LONG_HOOK, \
+            f"render {n}: the sidecar lost the full curated hook: {side.get(key)!r}"
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        ln = _line_for(text, rel)
+        assert ln.endswith("…") and len(ln) <= mi.MAX_LINE_CHARS, (n, ln)
+        lines.append(ln)
+    assert lines[0] == lines[1] == lines[2], f"the cut line moved between renders: {lines}"
+    assert [e.hook for e in mi.collect(memdir) if e.rel == rel] == [LONG_HOOK]
+    chk = run_entry(memdir, "--check")
+    assert chk.returncode == 0, chk.stdout + chk.stderr
+
+
+@_layouts()
+def test_fu_hooks_the_live_cut_state_restores_nothing_lost_from_the_sidecar(memdir, organised):
+    """The state live refmatrix's index is in today: sidecar holds the full hook, the index
+    holds its rendered cut. A render must keep the sidecar's full text, not take the cut."""
+    rel = _rel(organised, "feedback", "feedback_long_hook")
+    mem(memdir, rel, title="Short title", mtype="feedback", body="derived prose, not curated")
+    key = _key(organised, rel)
+    if organised:
+        organise(memdir)
+    (memdir / mi.HOOKS_SIDECAR).write_text(json.dumps({key: LONG_HOOK}), encoding="utf-8")
+    full = f"- [Short title]({rel}) — {LONG_HOOK}"
+    cut = full[:mi.MAX_LINE_CHARS - 1].rstrip() + "…"            # the rendered cut
+    (memdir / "MEMORY.md").write_text(cut + "\n", encoding="utf-8")
+    r = run_entry(memdir)
+    assert r.returncode == 0, r.stderr
+    assert sidecar(memdir).get(key) == LONG_HOOK, sidecar(memdir)
+    assert _line_for((memdir / "MEMORY.md").read_text(encoding="utf-8"), rel) == cut
+
+
+@_layouts()
+def test_fu_hooks_a_bare_ellipsis_index_hook_never_replaces_the_sidecar(memdir, organised):
+    """3 sidecar values across the fleet copies are a bare `…`, left by HEAD cuts that ended
+    `.md)…`. A bare `…` read from a line that could not carry the value is no hook: the
+    curated sidecar text stands.
+
+    Narrowed by r3 (#r3-room, ch-bsd 26.1 r3 #s-1): the keep holds only where the value is
+    longer than the line's room, so this test now uses a value the line cannot carry. A bare
+    `…` on a line that HAD room replaces the value, as at HEAD 61b3bde
+    (`test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value`)."""
+    rel = _rel(organised, "feedback", "feedback_a")
+    mem(memdir, rel, title="A", mtype="feedback", body="derived a prose")
+    key = _key(organised, rel)
+    if organised:
+        organise(memdir)
+    assert len(LONG_HOOK) > _room(f"- [A]({rel})")
+    (memdir / mi.HOOKS_SIDECAR).write_text(json.dumps({key: LONG_HOOK}), encoding="utf-8")
+    (memdir / "MEMORY.md").write_text(f"- [A]({rel}) — …\n", encoding="utf-8")
+    for n in (1, 2):
+        r = run_entry(memdir)
+        assert r.returncode == 0, r.stderr
+        assert sidecar(memdir).get(key) == LONG_HOOK, (n, sidecar(memdir))
+        assert _line_for((memdir / "MEMORY.md").read_text(encoding="utf-8"), rel) == \
+            _cut_line(f"- [A]({rel})", LONG_HOOK), n
+
+
+@_layouts()
+def test_fu_hooks_guard_an_edited_hook_that_is_not_the_cut_still_replaces(memdir, organised):
+    """Guard (GREEN at 7b5ea2f): the exception is NARROW. A hand edit -- even one ending `…` --
+    that is not a prefix of the sidecar value replaces it; the index is what a human last
+    edited."""
+    rel = _rel(organised, "feedback", "feedback_a")
+    mem(memdir, rel, title="A", mtype="feedback", body="derived a prose")
+    key = _key(organised, rel)
+    if organised:
+        organise(memdir)
+    (memdir / mi.HOOKS_SIDECAR).write_text(json.dumps({key: CURATED}), encoding="utf-8")
+    edited = "a fresh hand edit that trails off…"
+    (memdir / "MEMORY.md").write_text(f"- [A]({rel}) — {edited}\n", encoding="utf-8")
+    r = run_entry(memdir)
+    assert r.returncode == 0, r.stderr
+    assert sidecar(memdir).get(key) == edited, sidecar(memdir)
+
+
+def _hook_clear_dir(memdir: Path, organised: bool) -> str:
+    rel = _rel(organised, "feedback", "feedback_a")
+    mem(memdir, rel, title="A", mtype="feedback", body="derived a prose")
+    mem(memdir, _rel(organised, "feedback", "feedback_b"), title="B", mtype="feedback",
+        body="derived b prose")
+    (memdir / "MEMORY.md").write_text(
+        f"- [A]({rel}) — {CURATED}\n"
+        f"- [B]({_rel(organised, 'feedback', 'feedback_b')}) — curated b\n", encoding="utf-8")
+    return rel
+
+
+def _clear_hook(memdir: Path, rel: str) -> None:
+    idx = memdir / "MEMORY.md"
+    text = idx.read_text(encoding="utf-8")
+    line = _line_for(text, rel)
+    assert line.endswith(f" — {CURATED}"), line
+    idx.write_text(text.replace(line, f"- [A]({rel})"), encoding="utf-8")
+
+
+def test_fu_hooks_a_hook_deleted_from_a_line_with_room_is_cleared_organised(memdir):
+    """r2 #m-1: at 7b5ea2f the sidecar brought a deleted hook back. The line had room for it,
+    so the deletion is the user's: the entry falls back to the file's first prose line."""
+    rel = _hook_clear_dir(memdir, organised=True)
+    organise(memdir)
+    assert run_entry(memdir).returncode == 0
+    assert sidecar(memdir).get("feedback_a") == CURATED          # curated, before the clear
+    _clear_hook(memdir, rel)
+    r = run_entry(memdir)
+    assert r.returncode == 0, r.stderr
+    text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+    assert _line_for(text, rel) == f"- [A]({rel}) — derived a prose", text
+    side = sidecar(memdir)
+    assert CURATED not in side.values(), f"the deleted hook survives in the sidecar: {side}"
+    assert side.get("feedback_a") == "derived a prose", side
+    assert [e.hook for e in mi.collect(memdir) if e.rel == rel] == ["derived a prose"]
+
+
+def _head_memory_index():
+    """HEAD 61b3bde's own `memory_index` (stdlib-only), loaded from git -- the reference the
+    marker-off clear must match byte for byte (ADR-0005 #marker)."""
+    import importlib.util
+    src = subprocess.run(["git", "-C", str(REPO), "show",
+                          f"{HEAD_SHA}:src/refmatrix/memory_index.py"],
+                         capture_output=True, text=True, timeout=30)
+    assert src.returncode == 0, f"cannot read {HEAD_SHA}'s memory_index: {src.stderr}"
+    assert "memory_layout" not in src.stdout, "not HEAD's pre-26.1 memory_index"
+    d = Path(tempfile.mkdtemp(prefix="rmxhd-"))
+    f = d / "head_memory_index.py"
+    f.write_text(src.stdout, encoding="utf-8")
+    spec = importlib.util.spec_from_file_location("head_memory_index_61b3bde", f)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    shutil.rmtree(d, ignore_errors=True)
+    return mod
+
+
+def test_fu_hooks_a_hook_deleted_from_a_line_with_room_is_cleared_marker_off_as_at_head(memdir):
+    """Marker-off keeps HEAD 61b3bde's hook-clear exactly: the same two renders (write, user
+    deletes the hook, write) through HEAD's code and through ours give the same index AND the
+    same sidecar bytes."""
+    head = _head_memory_index()
+    twin = memdir.parent / "twin"
+    twin.mkdir()
+    rel = _hook_clear_dir(memdir, organised=False)
+    _hook_clear_dir(twin, organised=False)
+    assert not (memdir / ".memory-layout").exists()
+    assert run_entry(memdir).returncode == 0
+    head.write(twin, out=io.StringIO())
+    _clear_hook(memdir, rel)
+    _clear_hook(twin, rel)
+    r = run_entry(memdir)
+    assert r.returncode == 0, r.stderr
+    head.write(twin, out=io.StringIO())
+    want = (twin / "MEMORY.md").read_text(encoding="utf-8")
+    assert _line_for(want, rel) == f"- [A]({rel}) — derived a prose", want   # HEAD's behaviour
+    assert (memdir / "MEMORY.md").read_text(encoding="utf-8") == want
+    assert (memdir / mi.HOOKS_SIDECAR).read_bytes() == (twin / mi.HOOKS_SIDECAR).read_bytes(), \
+        (sidecar(memdir), json.loads((twin / mi.HOOKS_SIDECAR).read_text(encoding="utf-8")))
+
+
+# #fu-dropped (r2 #m-3): HEAD's whole-line cut left lines cut INSIDE their link (cliquedb: 11)
+# and before it (8). The memories exist; the first render after the fix links them again. The
+# report must not call that "dropped ... whose file is gone" -- only a link to a truly absent
+# file is counted there.
+
+CUT_TITLE = "T" * 180
+
+
+@_layouts()
+def test_fu_dropped_a_link_cut_by_head_is_not_reported_as_a_gone_file(memdir, organised):
+    cut_rel = _rel(organised, "feedback", "feedback_cut_inside_the_link_aaaa")
+    before_rel = _rel(organised, "feedback", "feedback_cut_before_the_link")
+    plain_rel = _rel(organised, "project", "project_plain")
+    gone_rel = _rel(organised, "project", "project_gone")
+    mem(memdir, cut_rel, title=CUT_TITLE, mtype="feedback", body="derived cut prose")
+    mem(memdir, before_rel, title=LONG_TITLE, mtype="feedback", body="derived before prose")
+    mem(memdir, plain_rel, title="Plain", mtype="project", body="derived plain")
+
+    def head_cut(title, rel, hook):
+        full = f"- [{title}]({rel}) — {hook}"
+        return full[:mi.MAX_LINE_CHARS - 1].rstrip() + "…"          # HEAD's Entry.line cut
+
+    inside = head_cut(CUT_TITLE, cut_rel, "derived cut prose")
+    before = head_cut(LONG_TITLE, before_rel, "derived before prose")
+    assert "](" in inside and ")" not in inside.split("](", 1)[1], inside   # cut inside link
+    assert "](" not in before, before                                      # cut before link
+    (memdir / "MEMORY.md").write_text("\n".join([
+        inside, before,
+        f"- [Plain]({plain_rel}) — curated plain",
+        f"- [Gone]({gone_rel}) — a memory whose file was deleted",
+    ]) + "\n", encoding="utf-8")
+    if organised:
+        organise(memdir)
+    r = run_entry(memdir)
+    said = r.stdout + r.stderr
+    assert r.returncode == 0, said
+    text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+    for rel in (cut_rel, before_rel, plain_rel):
+        _line_for(text, rel)                                     # every memory is linked again
+    dropped = [ln for ln in said.splitlines() if "whose file is gone" in ln]
+    assert len(dropped) == 1, f"a truly gone file must still be reported once: {said}"
+    m = re.search(r"dropped (\d+) entr", dropped[0])
+    assert m and m.group(1) == "1", \
+        f"a memory re-linked after HEAD's cut was counted as gone: {dropped[0]}"
+    assert gone_rel in dropped[0], dropped[0]
+    assert "…" not in dropped[0] and Path(cut_rel).stem[:20] not in dropped[0], dropped[0]
+
+
+@_layouts()
+def test_fu_dropped_only_cut_links_no_gone_line_at_all(memdir, organised):
+    """With no truly missing file the report prints no "dropped" line (or says 0)."""
+    cut_rel = _rel(organised, "feedback", "feedback_cut_inside_the_link_aaaa")
+    plain_rel = _rel(organised, "project", "project_plain")
+    mem(memdir, cut_rel, title=CUT_TITLE, mtype="feedback", body="derived cut prose")
+    mem(memdir, plain_rel, title="Plain", mtype="project", body="derived plain")
+    full = f"- [{CUT_TITLE}]({cut_rel}) — derived cut prose"
+    inside = full[:mi.MAX_LINE_CHARS - 1].rstrip() + "…"
+    assert "](" in inside and ")" not in inside.split("](", 1)[1], inside
+    (memdir / "MEMORY.md").write_text(
+        f"{inside}\n- [Plain]({plain_rel}) — curated plain\n", encoding="utf-8")
+    if organised:
+        organise(memdir)
+    r = run_entry(memdir)
+    said = r.stdout + r.stderr
+    assert r.returncode == 0, said
+    for ln in said.splitlines():
+        if "whose file is gone" in ln:
+            m = re.search(r"dropped (\d+) entr", ln)
+            assert m and m.group(1) == "0", f"false 'dropped' report: {ln}"
+
+
+# #fu-skips (r2 #m-2, organised half): `_prose_lines` drops every line that starts `- [`. A
+# hand-written `- [ ] todo` names no memory; dropping it uncounted is a silent loss
+# (CLAUDE.md #no-silent-failures). It is counted and named in the write report.
+
+def test_fu_skips_an_organised_write_counts_and_names_a_dropped_bracket_prose_line(memdir):
+    mem(memdir, "feedback/feedback_a.md", title="A", mtype="feedback", body="derived a")
+    mem(memdir, "project/project_p.md", title="P", mtype="project", body="derived p")
+    todo = "- [ ] todo: rotate the signing keys before the release"
+    (memdir / "MEMORY.md").write_text("\n".join([
+        "# Hand index", todo,
+        "- [A](feedback/feedback_a.md) — curated a",
+        "- [P](project/project_p.md) — curated p",
+    ]) + "\n", encoding="utf-8")
+    organise(memdir)
+    r = run_entry(memdir)
+    said = r.stdout + r.stderr
+    assert r.returncode == 0, said
+    text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+    assert todo not in text                       # dropped, as decided (entry-shaped)
+    assert "rotate the signing keys" in said, \
+        f"the dropped `- [` prose line is not named in the report: {said}"
+    assert "whose file is gone" not in said, said
+    assert re.search(r"\b(dropped|skipped) 1\b", said), \
+        f"the dropped `- [` prose line is not counted ('dropped 1' / 'skipped 1'): {said}"
+
+
+# ---- task 26.1 follow-up r3 (ch-bsd 26.1 r3, spec #followup-r3) ----------------------------
+#
+# #r3-dead (r3 #b-1): `parse_hooks` lost its last production caller; it goes.
+# #r3-room (r3 #s-1): "the rendered cut" means the LINE could not carry the value. Cases (b)
+#   `prefix…` and (c) bare `…` keep the existing value only when `len(value) > room`, room =
+#   `MAX_LINE_CHARS - len(link part) - 3` of that index line. On a line that had room, a
+#   hand-shortened hook replaces the value, as at HEAD 61b3bde.
+# #r3-derived (r3 #m-1): with no sidecar value the existing value is the memory's derived hook
+#   (`_first_prose`), so a cut of derived text is never frozen into the sidecar as curated.
+# #r3-one-parser (r3 #m-2): `_parse_index_hooks` is derived from `_index_hook_records`.
+# #r3-pointers (r3 #m-3): the save-state pointer and fold lines are never hook sources.
+
+def _room(link_part: str) -> int:
+    """The numeric hook room of an index line whose `- [title](rel)` part is `link_part`."""
+    return mi.MAX_LINE_CHARS - len(link_part) - len(" — ")
+
+
+def _cut_line(link_part: str, value: str) -> str:
+    """`Entry.line`'s cut of `value` on a line with `link_part` (the renderer's cut)."""
+    room = _room(link_part)
+    assert len(value) > room >= 2, (len(value), room)
+    return f"{link_part} — {value[:room - 1].rstrip()}…"
+
+
+def test_r3_dead_parse_hooks_is_gone():
+    """r3 #b-1: after 85098fe rebuilt `load_hooks` on `_index_hook_records`, `parse_hooks` had
+    no caller in src/ or the templates -- a helper only a test ran. `load_hooks` is the reader
+    (tests/test_memory_index_char_budget.py::test_a_folded_entry_keeps_its_curated_hook)."""
+    assert not hasattr(mi, "parse_hooks"), \
+        "parse_hooks is still defined in refmatrix.memory_index with no production caller"
+
+
+# The matrix. Values: SHORT fits every line below (room), LONG_HOOK fits none (no room).
+SHORT = CURATED                                        # 46 chars
+_SHAPES = ("edit", "cut", "bare")
+
+
+def _index_hook_for(shape: str, value: str, link_part: str) -> str:
+    """What the index line carries in each shape:
+    edit -- a hand-shortened `prefix…` (the first three words of the value);
+    cut  -- the renderer's cut where the line has no room; on a line WITH room, the
+            near-whole `prefix…` a narrower line would once have produced;
+    bare -- a bare `…`."""
+    if shape == "bare":
+        return "…"
+    if shape == "edit":
+        return " ".join(value.split()[:3]) + "…"
+    if len(value) > _room(link_part):
+        return _cut_line(link_part, value).split(" — ", 1)[1]
+    return value[:len(value) - 8].rstrip() + "…"
+
+
+def _room_case(memdir: Path, organised: bool, source: str, value: str, shape: str):
+    """One matrix cell: memory `A`, the existing value from `source` (`curated` = sidecar,
+    `derived` = first prose with no sidecar, `none` = neither), the index line in `shape`."""
+    rel = _rel(organised, "feedback", "feedback_a")
+    body = value if source == "derived" else "## Notes {#notes}"
+    mem(memdir, rel, title="A", mtype="feedback", body=body)
+    key = _key(organised, rel)
+    if organised:
+        organise(memdir)
+    if source == "curated":
+        (memdir / mi.HOOKS_SIDECAR).write_text(json.dumps({key: value}), encoding="utf-8")
+    link_part = f"- [A]({rel})"
+    hook = _index_hook_for(shape, value, link_part)
+    (memdir / "MEMORY.md").write_text(f"{link_part} — {hook}\n", encoding="utf-8")
+    return rel, key, link_part, hook
+
+
+def _twin_of(memdir: Path) -> Path:
+    twin = memdir.parent / "twin"
+    shutil.copytree(memdir, twin)
+    return twin
+
+
+@_layouts()
+@pytest.mark.parametrize("shape", _SHAPES)
+def test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value(memdir, organised, shape):
+    """r3 #s-1, the auditor's edge_b probe: sidecar value "the curated hook a human wrote for
+    this memory", the user shortens the line to `the curated hook…`. The line had room for
+    the whole value, so the edit is the user's: it replaces the value, as at HEAD 61b3bde. At
+    c9a035e the next write put the old full hook back in the index and the sidecar and said
+    nothing. Marker-off: index AND sidecar bytes equal 61b3bde's own write."""
+    rel, key, link_part, hook = _room_case(memdir, organised, "curated", SHORT, shape)
+    assert len(SHORT) <= _room(link_part)
+    twin = None if organised else _twin_of(memdir)
+    mi.write(memdir, out=io.StringIO())
+    text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+    assert sidecar(memdir).get(key) == hook, \
+        f"{shape}: the hand-shortened hook was reverted to the sidecar value: {sidecar(memdir)}"
+    assert _line_for(text, rel) == f"{link_part} — {hook}", text
+    assert [e.hook for e in mi.collect(memdir) if e.rel == rel] == [hook]
+    if twin is not None:
+        _head_memory_index().write(twin, out=io.StringIO())
+        assert text == (twin / "MEMORY.md").read_text(encoding="utf-8")
+        assert (memdir / mi.HOOKS_SIDECAR).read_bytes() == \
+            (twin / mi.HOOKS_SIDECAR).read_bytes(), \
+            (sidecar(memdir), json.loads((twin / mi.HOOKS_SIDECAR).read_text("utf-8")))
+
+
+@_layouts()
+@pytest.mark.parametrize("shape", _SHAPES)
+@pytest.mark.parametrize("source", ["curated", "derived"])
+def test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value(memdir, organised, source,
+                                                                  shape):
+    """The other half of the rule: the line could not carry the value (`len(value) > room`),
+    so `prefix…` / `…` is the renderer's, not the user's -- the existing value stands, curated
+    (sidecar) or derived (`_first_prose`, r3 #m-1), over two writes. The curated cells are
+    the bug-193 guard (GREEN at c9a035e); the derived cells are r3 #m-1 (RED)."""
+    rel, key, link_part, hook = _room_case(memdir, organised, source, LONG_HOOK, shape)
+    assert len(LONG_HOOK) > _room(link_part)
+    for n in (1, 2):
+        mi.write(memdir, out=io.StringIO())
+        side = sidecar(memdir)
+        assert side.get(key) == LONG_HOOK, \
+            f"write {n}, {source}/{shape}: the index's {hook!r} replaced the value: {side}"
+        assert _line_for((memdir / "MEMORY.md").read_text(encoding="utf-8"), rel) == \
+            _cut_line(link_part, LONG_HOOK), n
+    assert [e.hook for e in mi.collect(memdir) if e.rel == rel] == [LONG_HOOK]
+
+
+@_layouts()
+@pytest.mark.parametrize("shape", _SHAPES)
+@pytest.mark.parametrize("value", [SHORT, LONG_HOOK], ids=["room", "no-room"])
+def test_r3_room_guard_no_existing_value_the_index_hook_is_taken(memdir, organised, value,
+                                                                 shape):
+    """Guard (GREEN at c9a035e): with no sidecar value and no derived prose there is nothing
+    to keep, so the index hook is taken whatever the room. Marker-off equals 61b3bde."""
+    rel, key, link_part, hook = _room_case(memdir, organised, "none", value, shape)
+    twin = None if organised else _twin_of(memdir)
+    mi.write(memdir, out=io.StringIO())
+    text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+    assert sidecar(memdir).get(key) == hook, sidecar(memdir)
+    assert _line_for(text, rel) == f"{link_part} — {hook}", text
+    if twin is not None:
+        _head_memory_index().write(twin, out=io.StringIO())
+        assert text == (twin / "MEMORY.md").read_text(encoding="utf-8")
+        assert (memdir / mi.HOOKS_SIDECAR).read_bytes() == \
+            (twin / mi.HOOKS_SIDECAR).read_bytes()
+
+
+@_layouts()
+@pytest.mark.parametrize("shape", _SHAPES)
+def test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken(memdir, organised,
+                                                                           shape):
+    """Guard (GREEN at c9a035e): a derived value that fits the line, shortened by hand, is the
+    user's edit -- taken, as at HEAD 61b3bde (marker-off bytes equal 61b3bde's write)."""
+    rel, key, link_part, hook = _room_case(memdir, organised, "derived", SHORT, shape)
+    twin = None if organised else _twin_of(memdir)
+    mi.write(memdir, out=io.StringIO())
+    text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+    assert sidecar(memdir).get(key) == hook, sidecar(memdir)
+    assert _line_for(text, rel) == f"{link_part} — {hook}", text
+    if twin is not None:
+        _head_memory_index().write(twin, out=io.StringIO())
+        assert text == (twin / "MEMORY.md").read_text(encoding="utf-8")
+        assert (memdir / mi.HOOKS_SIDECAR).read_bytes() == \
+            (twin / mi.HOOKS_SIDECAR).read_bytes()
+
+
+@_layouts()
+def test_r3_derived_a_cut_of_derived_prose_is_never_frozen_into_the_sidecar(memdir, organised):
+    """r3 #m-1, how the 37 derived cuts in live refmatrix's sidecar arose (bug-195): no sidecar
+    value, the index line holds HEAD's cut of the memory's first prose on a no-room line. At
+    c9a035e `cur` was empty, the cut won, and `save_hooks` wrote it as if it were curated.
+    After the fix: the sidecar holds no cut, and the line is exactly what a render with no
+    index at all gives (the derived render)."""
+    rel, key, link_part, cut = _room_case(memdir, organised, "derived", LONG_HOOK, "cut")
+    fresh = memdir.parent / "fresh"
+    shutil.copytree(memdir, fresh)
+    (fresh / "MEMORY.md").unlink()
+    mi.write(fresh, out=io.StringIO())
+    derived_line = _line_for((fresh / "MEMORY.md").read_text(encoding="utf-8"), rel)
+    assert derived_line == _cut_line(link_part, LONG_HOOK)
+    mi.write(memdir, out=io.StringIO())
+    side = sidecar(memdir)
+    assert cut not in side.values(), f"the cut of derived prose was frozen as a hook: {side}"
+    assert side.get(key) == LONG_HOOK, side
+    assert _line_for((memdir / "MEMORY.md").read_text(encoding="utf-8"), rel) == derived_line
+
+
+def _pointer_dir(memdir: Path, organised: bool, *, curated_save: "str | None") -> tuple:
+    a = _rel(organised, "feedback", "feedback_a")
+    s = _rel(organised, "savestates", "savestate_aaa111")
+    mem(memdir, a, title="A", mtype="feedback", body="derived a prose")
+    mem(memdir, s, title="Save aaa", mtype="session/recall-state", body="handoff prose",
+        created="2026-11-01")
+    if organised:
+        organise(memdir)
+    side = {_key(organised, a): "curated a"}
+    if curated_save is not None:
+        side[_key(organised, s)] = curated_save
+    (memdir / mi.HOOKS_SIDECAR).write_text(json.dumps(side), encoding="utf-8")
+    pointer = (f"- [Save-states (1), newest savestate_aaa111]({s}) — session handoffs; "
+               f"`rmx recall-state` reads the newest")
+    fold = ("- 3 older project memories folded — `rmx memory list` or "
+            "`rmx memory search <term>` reaches them; nothing was deleted")
+    (memdir / "MEMORY.md").write_text(
+        f"- [A]({a}) — curated a\n{pointer}\n{fold}\n", encoding="utf-8")
+    return s, _key(organised, s), pointer
+
+
+@_layouts()
+def test_r3_pointers_the_save_state_pointer_never_replaces_the_savestate_hook(memdir,
+                                                                             organised):
+    """r3 #m-3: the pointer line `- [Save-states (N), newest savestate_X](savestate_X.md) —
+    session handoffs; ...` is path-keyed, so its GENERATED text won over savestate_X's sidecar
+    hook (cliquedb lost '11-08/09: two ruling walks closed…' this way; pre-existing at 61b3bde).
+    A generated pointer is no hook source; neither is the fold line."""
+    curated = "11-08/09: two ruling walks closed"
+    s, key, _ = _pointer_dir(memdir, organised, curated_save=curated)
+    assert mi.load_hooks(memdir).get(key) == curated, mi.load_hooks(memdir)
+    for n in (1, 2):
+        mi.write(memdir, out=io.StringIO())
+        side = sidecar(memdir)
+        assert side.get(key) == curated, \
+            f"write {n}: the pointer's generated text replaced the save-state hook: {side}"
+        assert not any("older project memories folded" in v for v in side.values()), side
+    assert [e.hook for e in mi.collect(memdir) if e.rel == s] == [curated]
+
+
+@_layouts()
+def test_r3_pointers_no_sidecar_value_the_pointer_text_is_never_frozen_as_a_hook(memdir,
+                                                                                 organised):
+    """r3 #m-3, the no-value half: with no curated hook for savestate_X the pointer's generated
+    text must not become its hook either -- the derived prose stands."""
+    s, key, _ = _pointer_dir(memdir, organised, curated_save=None)
+    for n in (1, 2):
+        mi.write(memdir, out=io.StringIO())
+        side = sidecar(memdir)
+        assert "session handoffs" not in side.get(key, ""), (n, side)
+    assert [e.hook for e in mi.collect(memdir) if e.rel == s] == ["handoff prose"]
+
+
+def test_r3_one_parser_parse_index_hooks_is_the_projection_of_the_records(memdir):
+    """r3 #m-2: `_parse_index_hooks` (read by `_dead_hooks`) and `_index_hook_records` (read by
+    `load_hooks`) repeated one partition + dash-strip. One parser: the dict is the `{rel:
+    hook}` projection of the records, on every line shape a live index carries. The records
+    carry the NUMERIC room (#r3-room), and skip generated pointers (#r3-pointers)."""
+    long_rel = "feedback_long.md"
+    cut_inside = ("- [" + CUT_TITLE + "](feedback_cut_inside_the_link_aaaa.md)")[
+        :mi.MAX_LINE_CHARS - 1] + "…"
+    lines = {
+        "feedback_a.md": "- [A](feedback_a.md) — curated a",
+        "feedback_dash.md": "- [Gamma — a dashed title](feedback_dash.md) — curated — dash",
+        "feedback_bare.md": "- [Bare](feedback_bare.md) —",
+        long_rel: _cut_line(f"- [Long]({long_rel})", LONG_HOOK),
+        "impressions/": ("- [ch-bsd impressions (2)](impressions/) — cross-run audit "
+                         "memories; full ledger in `workflow/bullshit/IMPRESSIONS.md`"),
+    }
+    pointer = ("- [Save-states (4), newest savestate_aaa111](savestate_aaa111.md) — session "
+               "handoffs; `rmx recall-state` reads the newest")
+    fold = ("- 9 older project memories folded — `rmx memory list` or "
+            "`rmx memory search <term>` reaches them; nothing was deleted")
+    linkless = "- [" + LONG_TITLE[:mi.MAX_LINE_CHARS - 4] + "…"
+    idx = memdir / "MEMORY.md"
+    idx.write_text("\n".join(["# Hand index", "- [ ] todo: a prose line", *lines.values(),
+                              pointer, fold, cut_inside, linkless]) + "\n", encoding="utf-8")
+    assert "](" in cut_inside and ")" not in cut_inside.split("](", 1)[1]
+    assert "](" not in linkless
+
+    records = mi._index_hook_records(idx)
+    parsed = mi._parse_index_hooks(idx)
+    assert parsed == {rel: hook for rel, (hook, _) in records.items()}, (parsed, records)
+    assert "savestate_aaa111.md" not in records, \
+        f"the save-state pointer is read as a hook source: {records.get('savestate_aaa111.md')}"
+    for rel, ln in lines.items():
+        if rel == "impressions/":
+            continue
+        hook, room = records[rel]
+        link_part = ln.split(" —", 1)[0] if rel != "feedback_dash.md" else \
+            "- [Gamma — a dashed title](feedback_dash.md)"
+        assert type(room) is int and room == _room(link_part), \
+            f"{rel}: room is {room!r}, not the line's numeric hook room {_room(link_part)}"
+    assert records["feedback_dash.md"][0] == "curated — dash"
+    assert records[long_rel][0] == _cut_line(f"- [Long]({long_rel})", LONG_HOOK).split(
+        " — ", 1)[1]
+    assert set(records) - {"impressions/"} == set(lines) - {"impressions/"}, sorted(records)

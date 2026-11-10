@@ -1,0 +1,32 @@
+pyc-guard: recompiled 39 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26/src/refmatrix as checked-hash (bug-037)
+..F..................................................................... [ 15%]
+........................................................................ [ 31%]
+........................................................................ [ 47%]
+........................................................................ [ 62%]
+........................................................................ [ 78%]
+........................................................................ [ 94%]
+..........................                                               [100%]
+=================================== FAILURES ===================================
+____________ test_bridge_waits_for_an_active_job_on_the_same_target ____________
+
+live = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-f9tjh48e'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-f9tjh48e/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x127329910>
+
+    def test_bridge_waits_for_an_active_job_on_the_same_target(live, monkeypatch):
+        base, root = live
+        memdir = _big_dir(base, "memory", 350)
+        part = verbs.memory_partition(root)
+        resp = dm.call(root, "ingest_gmd_start", {"targets": [str(memdir)], "as_memory": True,
+                                                  "memory_mtype": "curated", "partition": part}, timeout=30)
+        assert resp.get("ok"), resp
+        jid = resp["result"]["job_id"]
+        monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "120")
+        out = cli_mod._sync_memory_dir(memdir)
+>       assert out["error"] is None, out
+E       AssertionError: {'embed': None, 'error': 'ingest job 469eb1c5ec40 still running after 120s (122/350 files); the memory dir will be bri.../memory`', 'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-f9tjh48e/memory', 'partition': 'proj', ...}
+E       assert 'ingest job 469eb1c5ec40 still running after 120s (122/350 files); the memory dir will be bridged by the next save-sta...essionStart, or run `rmx ingest-gmd --as-memory /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-f9tjh48e/memory`' is None
+
+tests/test_memory_bridge.py:110: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_bridge.py::test_bridge_waits_for_an_active_job_on_the_same_target
+1 failed, 457 passed in 763.45s (0:12:43)

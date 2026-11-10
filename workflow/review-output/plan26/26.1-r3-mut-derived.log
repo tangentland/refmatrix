@@ -1,0 +1,240 @@
+........................................................................ [ 46%]
+..........FFFFFF..................FF.................................... [ 92%]
+............                                                             [100%]
+=================================== FAILURES ===================================
+_ test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-edit-organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-5y1ya6he/memory')
+organised = True, source = 'derived', shape = 'edit'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("source", ["curated", "derived"])
+    def test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value(memdir, organised, source,
+                                                                      shape):
+        """The other half of the rule: the line could not carry the value (`len(value) > room`),
+        so `prefix…` / `…` is the renderer's, not the user's -- the existing value stands, curated
+        (sidecar) or derived (`_first_prose`, r3 #m-1), over two writes. The curated cells are
+        the bug-193 guard (GREEN at c9a035e); the derived cells are r3 #m-1 (RED)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, source, LONG_HOOK, shape)
+        assert len(LONG_HOOK) > _room(link_part)
+        for n in (1, 2):
+            mi.write(memdir, out=io.StringIO())
+            side = sidecar(memdir)
+>           assert side.get(key) == LONG_HOOK, \
+                f"write {n}, {source}/{shape}: the index's {hook!r} replaced the value: {side}"
+E           AssertionError: write 1, derived/edit: the index's 'a curated hook…' replaced the value: {'feedback_a': 'a curated hook…'}
+E           assert 'a curated hook…' == 'a curated ho...xes look like'
+E             
+E             - a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactly what real indexes look like
+E             + a curated hook…
+
+tests/test_memory_index_layout.py:1194: AssertionError
+_ test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-edit-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-assersw5/memory')
+organised = False, source = 'derived', shape = 'edit'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("source", ["curated", "derived"])
+    def test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value(memdir, organised, source,
+                                                                      shape):
+        """The other half of the rule: the line could not carry the value (`len(value) > room`),
+        so `prefix…` / `…` is the renderer's, not the user's -- the existing value stands, curated
+        (sidecar) or derived (`_first_prose`, r3 #m-1), over two writes. The curated cells are
+        the bug-193 guard (GREEN at c9a035e); the derived cells are r3 #m-1 (RED)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, source, LONG_HOOK, shape)
+        assert len(LONG_HOOK) > _room(link_part)
+        for n in (1, 2):
+            mi.write(memdir, out=io.StringIO())
+            side = sidecar(memdir)
+>           assert side.get(key) == LONG_HOOK, \
+                f"write {n}, {source}/{shape}: the index's {hook!r} replaced the value: {side}"
+E           AssertionError: write 1, derived/edit: the index's 'a curated hook…' replaced the value: {'feedback_a.md': 'a curated hook…'}
+E           assert 'a curated hook…' == 'a curated ho...xes look like'
+E             
+E             - a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactly what real indexes look like
+E             + a curated hook…
+
+tests/test_memory_index_layout.py:1194: AssertionError
+_ test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-cut-organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-eluhxj41/memory')
+organised = True, source = 'derived', shape = 'cut'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("source", ["curated", "derived"])
+    def test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value(memdir, organised, source,
+                                                                      shape):
+        """The other half of the rule: the line could not carry the value (`len(value) > room`),
+        so `prefix…` / `…` is the renderer's, not the user's -- the existing value stands, curated
+        (sidecar) or derived (`_first_prose`, r3 #m-1), over two writes. The curated cells are
+        the bug-193 guard (GREEN at c9a035e); the derived cells are r3 #m-1 (RED)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, source, LONG_HOOK, shape)
+        assert len(LONG_HOOK) > _room(link_part)
+        for n in (1, 2):
+            mi.write(memdir, out=io.StringIO())
+            side = sidecar(memdir)
+>           assert side.get(key) == LONG_HOOK, \
+                f"write {n}, {source}/{shape}: the index's {hook!r} replaced the value: {side}"
+E           AssertionError: write 1, derived/cut: the index's 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which…' replaced the value: {'feedback_a': 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which…'}
+E           assert 'a curated ho...tself, which…' == 'a curated ho...xes look like'
+E             
+E             Skipping 156 identical leading characters in diff, use -v to show
+E             - elf, which is exactly what real indexes look like
+E             + elf, which…
+
+tests/test_memory_index_layout.py:1194: AssertionError
+_ test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-cut-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-447pa5bg/memory')
+organised = False, source = 'derived', shape = 'cut'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("source", ["curated", "derived"])
+    def test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value(memdir, organised, source,
+                                                                      shape):
+        """The other half of the rule: the line could not carry the value (`len(value) > room`),
+        so `prefix…` / `…` is the renderer's, not the user's -- the existing value stands, curated
+        (sidecar) or derived (`_first_prose`, r3 #m-1), over two writes. The curated cells are
+        the bug-193 guard (GREEN at c9a035e); the derived cells are r3 #m-1 (RED)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, source, LONG_HOOK, shape)
+        assert len(LONG_HOOK) > _room(link_part)
+        for n in (1, 2):
+            mi.write(memdir, out=io.StringIO())
+            side = sidecar(memdir)
+>           assert side.get(key) == LONG_HOOK, \
+                f"write {n}, {source}/{shape}: the index's {hook!r} replaced the value: {side}"
+E           AssertionError: write 1, derived/cut: the index's 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactl…' replaced the value: {'feedback_a.md': 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactl…'}
+E           assert 'a curated ho...ch is exactl…' == 'a curated ho...xes look like'
+E             
+E             Skipping 166 identical leading characters in diff, use -v to show
+E             -  is exactly what real indexes look like
+E             +  is exactl…
+
+tests/test_memory_index_layout.py:1194: AssertionError
+_ test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-bare-organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-lcqc1oym/memory')
+organised = True, source = 'derived', shape = 'bare'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("source", ["curated", "derived"])
+    def test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value(memdir, organised, source,
+                                                                      shape):
+        """The other half of the rule: the line could not carry the value (`len(value) > room`),
+        so `prefix…` / `…` is the renderer's, not the user's -- the existing value stands, curated
+        (sidecar) or derived (`_first_prose`, r3 #m-1), over two writes. The curated cells are
+        the bug-193 guard (GREEN at c9a035e); the derived cells are r3 #m-1 (RED)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, source, LONG_HOOK, shape)
+        assert len(LONG_HOOK) > _room(link_part)
+        for n in (1, 2):
+            mi.write(memdir, out=io.StringIO())
+            side = sidecar(memdir)
+>           assert side.get(key) == LONG_HOOK, \
+                f"write {n}, {source}/{shape}: the index's {hook!r} replaced the value: {side}"
+E           AssertionError: write 1, derived/bare: the index's '…' replaced the value: {'feedback_a': '…'}
+E           assert '…' == 'a curated ho...xes look like'
+E             
+E             - a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactly what real indexes look like
+E             + …
+
+tests/test_memory_index_layout.py:1194: AssertionError
+_ test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-bare-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-ztasbpix/memory')
+organised = False, source = 'derived', shape = 'bare'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("source", ["curated", "derived"])
+    def test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value(memdir, organised, source,
+                                                                      shape):
+        """The other half of the rule: the line could not carry the value (`len(value) > room`),
+        so `prefix…` / `…` is the renderer's, not the user's -- the existing value stands, curated
+        (sidecar) or derived (`_first_prose`, r3 #m-1), over two writes. The curated cells are
+        the bug-193 guard (GREEN at c9a035e); the derived cells are r3 #m-1 (RED)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, source, LONG_HOOK, shape)
+        assert len(LONG_HOOK) > _room(link_part)
+        for n in (1, 2):
+            mi.write(memdir, out=io.StringIO())
+            side = sidecar(memdir)
+>           assert side.get(key) == LONG_HOOK, \
+                f"write {n}, {source}/{shape}: the index's {hook!r} replaced the value: {side}"
+E           AssertionError: write 1, derived/bare: the index's '…' replaced the value: {'feedback_a.md': '…'}
+E           assert '…' == 'a curated ho...xes look like'
+E             
+E             - a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactly what real indexes look like
+E             + …
+
+tests/test_memory_index_layout.py:1194: AssertionError
+_ test_r3_derived_a_cut_of_derived_prose_is_never_frozen_into_the_sidecar[organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-35882ea0/memory')
+organised = True
+
+    @_layouts()
+    def test_r3_derived_a_cut_of_derived_prose_is_never_frozen_into_the_sidecar(memdir, organised):
+        """r3 #m-1, how the 37 derived cuts in live refmatrix's sidecar arose (bug-195): no sidecar
+        value, the index line holds HEAD's cut of the memory's first prose on a no-room line. At
+        c9a035e `cur` was empty, the cut won, and `save_hooks` wrote it as if it were curated.
+        After the fix: the sidecar holds no cut, and the line is exactly what a render with no
+        index at all gives (the derived render)."""
+        rel, key, link_part, cut = _room_case(memdir, organised, "derived", LONG_HOOK, "cut")
+        fresh = memdir.parent / "fresh"
+        shutil.copytree(memdir, fresh)
+        (fresh / "MEMORY.md").unlink()
+        mi.write(fresh, out=io.StringIO())
+        derived_line = _line_for((fresh / "MEMORY.md").read_text(encoding="utf-8"), rel)
+        assert derived_line == _cut_line(link_part, LONG_HOOK)
+        mi.write(memdir, out=io.StringIO())
+        side = sidecar(memdir)
+>       assert cut not in side.values(), f"the cut of derived prose was frozen as a hook: {side}"
+E       AssertionError: the cut of derived prose was frozen as a hook: {'feedback_a': 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which…'}
+E       assert 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which…' not in dict_values(['a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which…'])
+E        +  where dict_values(['a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which…']) = <built-in method values of dict object at 0x1129cee40>()
+E        +    where <built-in method values of dict object at 0x1129cee40> = {'feedback_a': 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which…'}.values
+
+tests/test_memory_index_layout.py:1256: AssertionError
+_ test_r3_derived_a_cut_of_derived_prose_is_never_frozen_into_the_sidecar[marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-v955kkbb/memory')
+organised = False
+
+    @_layouts()
+    def test_r3_derived_a_cut_of_derived_prose_is_never_frozen_into_the_sidecar(memdir, organised):
+        """r3 #m-1, how the 37 derived cuts in live refmatrix's sidecar arose (bug-195): no sidecar
+        value, the index line holds HEAD's cut of the memory's first prose on a no-room line. At
+        c9a035e `cur` was empty, the cut won, and `save_hooks` wrote it as if it were curated.
+        After the fix: the sidecar holds no cut, and the line is exactly what a render with no
+        index at all gives (the derived render)."""
+        rel, key, link_part, cut = _room_case(memdir, organised, "derived", LONG_HOOK, "cut")
+        fresh = memdir.parent / "fresh"
+        shutil.copytree(memdir, fresh)
+        (fresh / "MEMORY.md").unlink()
+        mi.write(fresh, out=io.StringIO())
+        derived_line = _line_for((fresh / "MEMORY.md").read_text(encoding="utf-8"), rel)
+        assert derived_line == _cut_line(link_part, LONG_HOOK)
+        mi.write(memdir, out=io.StringIO())
+        side = sidecar(memdir)
+>       assert cut not in side.values(), f"the cut of derived prose was frozen as a hook: {side}"
+E       AssertionError: the cut of derived prose was frozen as a hook: {'feedback_a.md': 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactl…'}
+E       assert 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactl…' not in dict_values(['a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactl…'])
+E        +  where dict_values(['a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactl…']) = <built-in method values of dict object at 0x1302f5980>()
+E        +    where <built-in method values of dict object at 0x1302f5980> = {'feedback_a.md': 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactl…'}.values
+
+tests/test_memory_index_layout.py:1256: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-edit-organised]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-edit-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-cut-organised]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-cut-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-bare-organised]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_with_no_room_keeps_the_value[derived-bare-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_derived_a_cut_of_derived_prose_is_never_frozen_into_the_sidecar[organised]
+FAILED tests/test_memory_index_layout.py::test_r3_derived_a_cut_of_derived_prose_is_never_frozen_into_the_sidecar[marker-off]
+8 failed, 148 passed in 12.25s

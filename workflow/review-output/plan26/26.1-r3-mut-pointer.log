@@ -1,0 +1,141 @@
+........................................................................ [ 46%]
+....................................FFFFF............................... [ 92%]
+............                                                             [100%]
+=================================== FAILURES ===================================
+_ test_r3_pointers_the_save_state_pointer_never_replaces_the_savestate_hook[organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-qcpx5af1/memory')
+organised = True
+
+    @_layouts()
+    def test_r3_pointers_the_save_state_pointer_never_replaces_the_savestate_hook(memdir,
+                                                                                 organised):
+        """r3 #m-3: the pointer line `- [Save-states (N), newest savestate_X](savestate_X.md) —
+        session handoffs; ...` is path-keyed, so its GENERATED text won over savestate_X's sidecar
+        hook (cliquedb lost '11-08/09: two ruling walks closed…' this way; pre-existing at 61b3bde).
+        A generated pointer is no hook source; neither is the fold line."""
+        curated = "11-08/09: two ruling walks closed"
+        s, key, _ = _pointer_dir(memdir, organised, curated_save=curated)
+>       assert mi.load_hooks(memdir).get(key) == curated, mi.load_hooks(memdir)
+E       AssertionError: {'feedback/feedback_a.md': 'curated a', 'feedback_a': 'curated a', 'savestate_aaa111': 'session handoffs; `rmx recall-state` reads the newest', 'savestates/savestate_aaa111.md': 'session handoffs; `rmx recall-state` reads the newest'}
+E       assert 'session hand...ds the newest' == '11-08/09: tw... walks closed'
+E         
+E         - 11-08/09: two ruling walks closed
+E         + session handoffs; `rmx recall-state` reads the newest
+
+tests/test_memory_index_layout.py:1291: AssertionError
+_ test_r3_pointers_the_save_state_pointer_never_replaces_the_savestate_hook[marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-9ob14c8j/memory')
+organised = False
+
+    @_layouts()
+    def test_r3_pointers_the_save_state_pointer_never_replaces_the_savestate_hook(memdir,
+                                                                                 organised):
+        """r3 #m-3: the pointer line `- [Save-states (N), newest savestate_X](savestate_X.md) —
+        session handoffs; ...` is path-keyed, so its GENERATED text won over savestate_X's sidecar
+        hook (cliquedb lost '11-08/09: two ruling walks closed…' this way; pre-existing at 61b3bde).
+        A generated pointer is no hook source; neither is the fold line."""
+        curated = "11-08/09: two ruling walks closed"
+        s, key, _ = _pointer_dir(memdir, organised, curated_save=curated)
+>       assert mi.load_hooks(memdir).get(key) == curated, mi.load_hooks(memdir)
+E       AssertionError: {'feedback_a': 'curated a', 'feedback_a.md': 'curated a', 'savestate_aaa111': 'session handoffs; `rmx recall-state` reads the newest', 'savestate_aaa111.md': 'session handoffs; `rmx recall-state` reads the newest'}
+E       assert 'session hand...ds the newest' == '11-08/09: tw... walks closed'
+E         
+E         - 11-08/09: two ruling walks closed
+E         + session handoffs; `rmx recall-state` reads the newest
+
+tests/test_memory_index_layout.py:1291: AssertionError
+_ test_r3_pointers_no_sidecar_value_the_pointer_text_is_never_frozen_as_a_hook[organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-9wyphms9/memory')
+organised = True
+
+    @_layouts()
+    def test_r3_pointers_no_sidecar_value_the_pointer_text_is_never_frozen_as_a_hook(memdir,
+                                                                                     organised):
+        """r3 #m-3, the no-value half: with no curated hook for savestate_X the pointer's generated
+        text must not become its hook either -- the derived prose stands."""
+        s, key, _ = _pointer_dir(memdir, organised, curated_save=None)
+        for n in (1, 2):
+            mi.write(memdir, out=io.StringIO())
+            side = sidecar(memdir)
+>           assert "session handoffs" not in side.get(key, ""), (n, side)
+E           AssertionError: (1, {'feedback_a': 'curated a', 'savestate_aaa111': 'session handoffs; `rmx recall-state` reads the newest'})
+E           assert 'session handoffs' not in 'session han...s the newest'
+E             
+E             'session handoffs' is contained here:
+E               session handoffs; `rmx recall-state` reads the newest
+E             ? ++++++++++++++++
+
+tests/test_memory_index_layout.py:1310: AssertionError
+_ test_r3_pointers_no_sidecar_value_the_pointer_text_is_never_frozen_as_a_hook[marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-_uop_wma/memory')
+organised = False
+
+    @_layouts()
+    def test_r3_pointers_no_sidecar_value_the_pointer_text_is_never_frozen_as_a_hook(memdir,
+                                                                                     organised):
+        """r3 #m-3, the no-value half: with no curated hook for savestate_X the pointer's generated
+        text must not become its hook either -- the derived prose stands."""
+        s, key, _ = _pointer_dir(memdir, organised, curated_save=None)
+        for n in (1, 2):
+            mi.write(memdir, out=io.StringIO())
+            side = sidecar(memdir)
+>           assert "session handoffs" not in side.get(key, ""), (n, side)
+E           AssertionError: (1, {'feedback_a.md': 'curated a', 'savestate_aaa111.md': 'session handoffs; `rmx recall-state` reads the newest'})
+E           assert 'session handoffs' not in 'session han...s the newest'
+E             
+E             'session handoffs' is contained here:
+E               session handoffs; `rmx recall-state` reads the newest
+E             ? ++++++++++++++++
+
+tests/test_memory_index_layout.py:1310: AssertionError
+____ test_r3_one_parser_parse_index_hooks_is_the_projection_of_the_records _____
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-0_2qunyd/memory')
+
+    def test_r3_one_parser_parse_index_hooks_is_the_projection_of_the_records(memdir):
+        """r3 #m-2: `_parse_index_hooks` (read by `_dead_hooks`) and `_index_hook_records` (read by
+        `load_hooks`) repeated one partition + dash-strip. One parser: the dict is the `{rel:
+        hook}` projection of the records, on every line shape a live index carries. The records
+        carry the NUMERIC room (#r3-room), and skip generated pointers (#r3-pointers)."""
+        long_rel = "feedback_long.md"
+        cut_inside = ("- [" + CUT_TITLE + "](feedback_cut_inside_the_link_aaaa.md)")[
+            :mi.MAX_LINE_CHARS - 1] + "…"
+        lines = {
+            "feedback_a.md": "- [A](feedback_a.md) — curated a",
+            "feedback_dash.md": "- [Gamma — a dashed title](feedback_dash.md) — curated — dash",
+            "feedback_bare.md": "- [Bare](feedback_bare.md) —",
+            long_rel: _cut_line(f"- [Long]({long_rel})", LONG_HOOK),
+            "impressions/": ("- [ch-bsd impressions (2)](impressions/) — cross-run audit "
+                             "memories; full ledger in `workflow/bullshit/IMPRESSIONS.md`"),
+        }
+        pointer = ("- [Save-states (4), newest savestate_aaa111](savestate_aaa111.md) — session "
+                   "handoffs; `rmx recall-state` reads the newest")
+        fold = ("- 9 older project memories folded — `rmx memory list` or "
+                "`rmx memory search <term>` reaches them; nothing was deleted")
+        linkless = "- [" + LONG_TITLE[:mi.MAX_LINE_CHARS - 4] + "…"
+        idx = memdir / "MEMORY.md"
+        idx.write_text("\n".join(["# Hand index", "- [ ] todo: a prose line", *lines.values(),
+                                  pointer, fold, cut_inside, linkless]) + "\n", encoding="utf-8")
+        assert "](" in cut_inside and ")" not in cut_inside.split("](", 1)[1]
+        assert "](" not in linkless
+    
+        records = mi._index_hook_records(idx)
+        parsed = mi._parse_index_hooks(idx)
+        assert parsed == {rel: hook for rel, (hook, _) in records.items()}, (parsed, records)
+>       assert "savestate_aaa111.md" not in records, \
+            f"the save-state pointer is read as a hook source: {records.get('savestate_aaa111.md')}"
+E       AssertionError: the save-state pointer is read as a hook source: ('session handoffs; `rmx recall-state` reads the newest', 132)
+E       assert 'savestate_aaa111.md' not in {'feedback_a.md': ('curated a', 177), 'feedback_bare.md': ('', 171), 'feedback_dash.md': ('curated — dash', 153), 'fee...use the human who wrote it wanted the whole story in the index rather than in the memory itself, which is…', 171), ...}
+
+tests/test_memory_index_layout.py:1344: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_r3_pointers_the_save_state_pointer_never_replaces_the_savestate_hook[organised]
+FAILED tests/test_memory_index_layout.py::test_r3_pointers_the_save_state_pointer_never_replaces_the_savestate_hook[marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_pointers_no_sidecar_value_the_pointer_text_is_never_frozen_as_a_hook[organised]
+FAILED tests/test_memory_index_layout.py::test_r3_pointers_no_sidecar_value_the_pointer_text_is_never_frozen_as_a_hook[marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_one_parser_parse_index_hooks_is_the_projection_of_the_records
+5 failed, 151 passed in 12.18s

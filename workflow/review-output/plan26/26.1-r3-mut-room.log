@@ -1,0 +1,326 @@
+......................................................................FF [ 46%]
+FFFF........................FFFFFF...................................... [ 92%]
+............                                                             [100%]
+=================================== FAILURES ===================================
+_ test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[edit-organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-udkkey6n/memory')
+organised = True, shape = 'edit'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value(memdir, organised, shape):
+        """r3 #s-1, the auditor's edge_b probe: sidecar value "the curated hook a human wrote for
+        this memory", the user shortens the line to `the curated hook…`. The line had room for
+        the whole value, so the edit is the user's: it replaces the value, as at HEAD 61b3bde. At
+        c9a035e the next write put the old full hook back in the index and the sidecar and said
+        nothing. Marker-off: index AND sidecar bytes equal 61b3bde's own write."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "curated", SHORT, shape)
+        assert len(SHORT) <= _room(link_part)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert sidecar(memdir).get(key) == hook, \
+            f"{shape}: the hand-shortened hook was reverted to the sidecar value: {sidecar(memdir)}"
+E       AssertionError: edit: the hand-shortened hook was reverted to the sidecar value: {'feedback_a': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == 'the curated hook…'
+E         
+E         - the curated hook…
+E         + the curated hook a human wrote for this memory
+
+tests/test_memory_index_layout.py:1168: AssertionError
+_ test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[edit-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-qzrtbfsf/memory')
+organised = False, shape = 'edit'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value(memdir, organised, shape):
+        """r3 #s-1, the auditor's edge_b probe: sidecar value "the curated hook a human wrote for
+        this memory", the user shortens the line to `the curated hook…`. The line had room for
+        the whole value, so the edit is the user's: it replaces the value, as at HEAD 61b3bde. At
+        c9a035e the next write put the old full hook back in the index and the sidecar and said
+        nothing. Marker-off: index AND sidecar bytes equal 61b3bde's own write."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "curated", SHORT, shape)
+        assert len(SHORT) <= _room(link_part)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert sidecar(memdir).get(key) == hook, \
+            f"{shape}: the hand-shortened hook was reverted to the sidecar value: {sidecar(memdir)}"
+E       AssertionError: edit: the hand-shortened hook was reverted to the sidecar value: {'feedback_a.md': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == 'the curated hook…'
+E         
+E         - the curated hook…
+E         + the curated hook a human wrote for this memory
+
+tests/test_memory_index_layout.py:1168: AssertionError
+_ test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[cut-organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-55r22gtq/memory')
+organised = True, shape = 'cut'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value(memdir, organised, shape):
+        """r3 #s-1, the auditor's edge_b probe: sidecar value "the curated hook a human wrote for
+        this memory", the user shortens the line to `the curated hook…`. The line had room for
+        the whole value, so the edit is the user's: it replaces the value, as at HEAD 61b3bde. At
+        c9a035e the next write put the old full hook back in the index and the sidecar and said
+        nothing. Marker-off: index AND sidecar bytes equal 61b3bde's own write."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "curated", SHORT, shape)
+        assert len(SHORT) <= _room(link_part)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert sidecar(memdir).get(key) == hook, \
+            f"{shape}: the hand-shortened hook was reverted to the sidecar value: {sidecar(memdir)}"
+E       AssertionError: cut: the hand-shortened hook was reverted to the sidecar value: {'feedback_a': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == 'the curated ...rote for thi…'
+E         
+E         - the curated hook a human wrote for thi…
+E         ?                                       ^
+E         + the curated hook a human wrote for this memory
+E         ?                                       ^^^^^^^^
+
+tests/test_memory_index_layout.py:1168: AssertionError
+_ test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[cut-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-3ifraaqa/memory')
+organised = False, shape = 'cut'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value(memdir, organised, shape):
+        """r3 #s-1, the auditor's edge_b probe: sidecar value "the curated hook a human wrote for
+        this memory", the user shortens the line to `the curated hook…`. The line had room for
+        the whole value, so the edit is the user's: it replaces the value, as at HEAD 61b3bde. At
+        c9a035e the next write put the old full hook back in the index and the sidecar and said
+        nothing. Marker-off: index AND sidecar bytes equal 61b3bde's own write."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "curated", SHORT, shape)
+        assert len(SHORT) <= _room(link_part)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert sidecar(memdir).get(key) == hook, \
+            f"{shape}: the hand-shortened hook was reverted to the sidecar value: {sidecar(memdir)}"
+E       AssertionError: cut: the hand-shortened hook was reverted to the sidecar value: {'feedback_a.md': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == 'the curated ...rote for thi…'
+E         
+E         - the curated hook a human wrote for thi…
+E         ?                                       ^
+E         + the curated hook a human wrote for this memory
+E         ?                                       ^^^^^^^^
+
+tests/test_memory_index_layout.py:1168: AssertionError
+_ test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[bare-organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-nlwtdjdk/memory')
+organised = True, shape = 'bare'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value(memdir, organised, shape):
+        """r3 #s-1, the auditor's edge_b probe: sidecar value "the curated hook a human wrote for
+        this memory", the user shortens the line to `the curated hook…`. The line had room for
+        the whole value, so the edit is the user's: it replaces the value, as at HEAD 61b3bde. At
+        c9a035e the next write put the old full hook back in the index and the sidecar and said
+        nothing. Marker-off: index AND sidecar bytes equal 61b3bde's own write."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "curated", SHORT, shape)
+        assert len(SHORT) <= _room(link_part)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert sidecar(memdir).get(key) == hook, \
+            f"{shape}: the hand-shortened hook was reverted to the sidecar value: {sidecar(memdir)}"
+E       AssertionError: bare: the hand-shortened hook was reverted to the sidecar value: {'feedback_a': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == '…'
+E         
+E         - …
+E         + the curated hook a human wrote for this memory
+
+tests/test_memory_index_layout.py:1168: AssertionError
+_ test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[bare-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-h4ohgb73/memory')
+organised = False, shape = 'bare'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value(memdir, organised, shape):
+        """r3 #s-1, the auditor's edge_b probe: sidecar value "the curated hook a human wrote for
+        this memory", the user shortens the line to `the curated hook…`. The line had room for
+        the whole value, so the edit is the user's: it replaces the value, as at HEAD 61b3bde. At
+        c9a035e the next write put the old full hook back in the index and the sidecar and said
+        nothing. Marker-off: index AND sidecar bytes equal 61b3bde's own write."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "curated", SHORT, shape)
+        assert len(SHORT) <= _room(link_part)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert sidecar(memdir).get(key) == hook, \
+            f"{shape}: the hand-shortened hook was reverted to the sidecar value: {sidecar(memdir)}"
+E       AssertionError: bare: the hand-shortened hook was reverted to the sidecar value: {'feedback_a.md': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == '…'
+E         
+E         - …
+E         + the curated hook a human wrote for this memory
+
+tests/test_memory_index_layout.py:1168: AssertionError
+_ test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[edit-organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-mc2a1a8h/memory')
+organised = True, shape = 'edit'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken(memdir, organised,
+                                                                               shape):
+        """Guard (GREEN at c9a035e): a derived value that fits the line, shortened by hand, is the
+        user's edit -- taken, as at HEAD 61b3bde (marker-off bytes equal 61b3bde's write)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "derived", SHORT, shape)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert sidecar(memdir).get(key) == hook, sidecar(memdir)
+E       AssertionError: {'feedback_a': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == 'the curated hook…'
+E         
+E         - the curated hook…
+E         + the curated hook a human wrote for this memory
+
+tests/test_memory_index_layout.py:1231: AssertionError
+_ test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[edit-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-gcmxzdlf/memory')
+organised = False, shape = 'edit'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken(memdir, organised,
+                                                                               shape):
+        """Guard (GREEN at c9a035e): a derived value that fits the line, shortened by hand, is the
+        user's edit -- taken, as at HEAD 61b3bde (marker-off bytes equal 61b3bde's write)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "derived", SHORT, shape)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert sidecar(memdir).get(key) == hook, sidecar(memdir)
+E       AssertionError: {'feedback_a.md': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == 'the curated hook…'
+E         
+E         - the curated hook…
+E         + the curated hook a human wrote for this memory
+
+tests/test_memory_index_layout.py:1231: AssertionError
+_ test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[cut-organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-cs2y_82e/memory')
+organised = True, shape = 'cut'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken(memdir, organised,
+                                                                               shape):
+        """Guard (GREEN at c9a035e): a derived value that fits the line, shortened by hand, is the
+        user's edit -- taken, as at HEAD 61b3bde (marker-off bytes equal 61b3bde's write)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "derived", SHORT, shape)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert sidecar(memdir).get(key) == hook, sidecar(memdir)
+E       AssertionError: {'feedback_a': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == 'the curated ...rote for thi…'
+E         
+E         - the curated hook a human wrote for thi…
+E         ?                                       ^
+E         + the curated hook a human wrote for this memory
+E         ?                                       ^^^^^^^^
+
+tests/test_memory_index_layout.py:1231: AssertionError
+_ test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[cut-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-v1uyw2iz/memory')
+organised = False, shape = 'cut'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken(memdir, organised,
+                                                                               shape):
+        """Guard (GREEN at c9a035e): a derived value that fits the line, shortened by hand, is the
+        user's edit -- taken, as at HEAD 61b3bde (marker-off bytes equal 61b3bde's write)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "derived", SHORT, shape)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert sidecar(memdir).get(key) == hook, sidecar(memdir)
+E       AssertionError: {'feedback_a.md': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == 'the curated ...rote for thi…'
+E         
+E         - the curated hook a human wrote for thi…
+E         ?                                       ^
+E         + the curated hook a human wrote for this memory
+E         ?                                       ^^^^^^^^
+
+tests/test_memory_index_layout.py:1231: AssertionError
+_ test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[bare-organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-pgyxtx88/memory')
+organised = True, shape = 'bare'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken(memdir, organised,
+                                                                               shape):
+        """Guard (GREEN at c9a035e): a derived value that fits the line, shortened by hand, is the
+        user's edit -- taken, as at HEAD 61b3bde (marker-off bytes equal 61b3bde's write)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "derived", SHORT, shape)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert sidecar(memdir).get(key) == hook, sidecar(memdir)
+E       AssertionError: {'feedback_a': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == '…'
+E         
+E         - …
+E         + the curated hook a human wrote for this memory
+
+tests/test_memory_index_layout.py:1231: AssertionError
+_ test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[bare-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-yy5qaptw/memory')
+organised = False, shape = 'bare'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken(memdir, organised,
+                                                                               shape):
+        """Guard (GREEN at c9a035e): a derived value that fits the line, shortened by hand, is the
+        user's edit -- taken, as at HEAD 61b3bde (marker-off bytes equal 61b3bde's write)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "derived", SHORT, shape)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert sidecar(memdir).get(key) == hook, sidecar(memdir)
+E       AssertionError: {'feedback_a.md': 'the curated hook a human wrote for this memory'}
+E       assert 'the curated ...r this memory' == '…'
+E         
+E         - …
+E         + the curated hook a human wrote for this memory
+
+tests/test_memory_index_layout.py:1231: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[edit-organised]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[edit-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[cut-organised]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[cut-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[bare-organised]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[bare-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[edit-organised]
+FAILED tests/test_memory_index_layout.py::test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[edit-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[cut-organised]
+FAILED tests/test_memory_index_layout.py::test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[cut-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[bare-organised]
+FAILED tests/test_memory_index_layout.py::test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[bare-marker-off]
+12 failed, 144 passed in 12.60s

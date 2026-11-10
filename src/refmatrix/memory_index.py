@@ -234,31 +234,28 @@ def _is_entry_line(line: str) -> bool:
     return line.startswith("- [") and "](" in line
 
 
+def _link_refs(lines: list) -> set:
+    """The link targets of an index's entry lines -- WHOLE links only. A line
+    HEAD cut inside its link (`](feedback/feedback_cut_ins…`, no closing `)`)
+    names no file, so it never counts as a memory "whose file is gone": the
+    memory exists and the next render links it again (task 26.1 spec
+    #fu-dropped; ch-bsd 26.1 r2, bug-193, 2026-11-09)."""
+    refs = set()
+    for ln in lines:
+        if not _is_entry_line(ln):
+            continue
+        rel, sep, _ = ln.split("](", 1)[1].partition(")")
+        if sep and rel and not rel.endswith("…"):
+            refs.add(rel)
+    return refs
+
+
 def _parse_index_hooks(idx: Path) -> dict:
-    """`{relative path: hook}` exactly as written in an existing index."""
-    hooks: dict = {}
-    if not idx.exists():
-        return hooks
-    for line in idx.read_text(errors="replace").splitlines():
-        if not line.startswith("- ["):
-            continue
-        # Split at the LINK, not at the first em dash: titles contain " — "
-        # themselves ("Capture reasoning deliberately — extended-thinking is
-        # redacted"), so partitioning on the dash stole half the title into the
-        # hook and the next render shifted it again — a generator that was not
-        # idempotent on its own output. Caught on the real index, not in a
-        # fixture, because the fixture titles had no dashes (2026-09-16).
-        head, sep, rest = line.partition("](")
-        if not sep:
-            continue
-        rel, sep, tail = rest.partition(")")
-        if not sep:
-            continue
-        hook = tail.lstrip()
-        if hook.startswith("—"):
-            hook = hook[1:]
-        hooks[rel] = hook.strip()
-    return hooks
+    """`{relative path: hook}` exactly as written in an existing index -- the
+    `{rel: hook}` projection of `_index_hook_records`, never a second parser
+    (ch-bsd 26.1 r3 #m-2, 2026-11-10: `_dead_hooks` and `load_hooks` read the
+    index through two copies of one partition + dash-strip, free to drift)."""
+    return {rel: hook for rel, (hook, _room) in _index_hook_records(idx).items()}
 
 
 def _is_path_key(key: str) -> bool:
@@ -295,20 +292,6 @@ def _with_id_aliases(memdir: Path, hooks: dict) -> dict:
     return out
 
 
-def parse_hooks(idx: Path) -> dict:
-    """Curated hooks read back from an existing index -- hand-written text,
-    so it is read back rather than regenerated.
-
-    Keyed by the link's relative path (the pre-ADR key) AND by the memory id
-    the link points at (task 26.1 AC-4, ADR-0005 #hooks, 2026-11-09): a hook
-    keyed only by path was lost the moment its file moved into a type folder."""
-    idx = Path(idx)
-    raw = _parse_index_hooks(idx)
-    out = dict(raw)
-    out.update({_id_of_link(idx.parent, k): v for k, v in raw.items() if _is_path_key(k)})
-    return out
-
-
 HOOKS_SIDECAR = ".memory_hooks.json"
 
 
@@ -331,7 +314,7 @@ def load_hooks(memdir: Path) -> dict:
     """Curated hooks: the index PLUS the sidecar of hooks for folded entries.
 
     Without the sidecar the generator is not idempotent on its own output
-    (bug-050). `parse_hooks` can only see entries the index still lists, so a
+    (bug-050). The index alone only shows entries it still lists, so a
     folded entry loses its curated hook, falls back to derived prose — usually
     LONGER — which grows the render and folds two more. Rendering the live
     index from itself moved the fold 56 -> 58 with no memory added, and
@@ -343,19 +326,120 @@ def load_hooks(memdir: Path) -> dict:
     writes) and one keyed by memory id (an organised write) are both read, and
     every path key is also aliased to its id. A reader writes no file.
 
-    Precedence (decided 2026-11-09 at the 26.1 remedy GREEN, AC-5): the
-    index wins -- it is what a human last edited by hand -- EXCEPT that an
-    EMPTY index hook never replaces a non-empty sidecar hook, under the id key
-    or the path alias, in every dir. An entry whose link alone exceeds the
-    line cap renders with no hook (bug-192, ch-bsd 26.1 #b-1); letting that
-    empty read win erased the curated text on the very next render.
+    Precedence, every dir (task 26.1 spec #fu-hooks; ch-bsd 26.1 r2, bug-193,
+    2026-11-09 -- narrows the remedy GREEN's "an empty index hook never erases a
+    curated hook"): the index hook replaces the sidecar value, because the
+    index is what a human last edited -- EXCEPT where the index could not carry
+    the hook (`_index_hook_wins`). A hook deleted from a line that had room
+    for it is CLEARED, as at HEAD 61b3bde, so a marker-off dir keeps HEAD's
+    hook-clear byte for byte (ADR-0005 #marker).
     """
     memdir = Path(memdir)
-    hooks = _with_id_aliases(memdir, _read_sidecar(memdir))
-    for k, v in parse_hooks(memdir / INDEX_NAME).items():
-        if v or not hooks.get(k):
-            hooks[k] = v
+    side = _with_id_aliases(memdir, _read_sidecar(memdir))
+    hooks = dict(side)
+    for rel, (hook, room) in _index_hook_records(memdir / INDEX_NAME).items():
+        if not _is_path_key(rel):
+            hooks[rel] = hook                  # a generated pointer (`impressions/`)
+            continue
+        mid, derived = _link_identity(memdir, rel)
+        # ONE decision per memory, written under both keys: `Entry` looks the
+        # path up first, so a path key the sidecar never had (an organised,
+        # id-keyed sidecar) must not let the cut win by the back door.
+        # The existing value is the sidecar's, else the memory's DERIVED hook
+        # (ch-bsd 26.1 r3 #m-1, 2026-11-10): with `cur` empty a cut of derived
+        # prose won and `save_hooks` froze it into the sidecar as if curated --
+        # how live refmatrix's sidecar came to hold 37 derived cuts (bug-195).
+        cur = side.get(rel) or side.get(mid) or derived
+        val = hook if _index_hook_wins(hook, cur, room) else cur
+        hooks[rel] = val
+        hooks[mid] = val
     return hooks
+
+
+def _link_identity(memdir: Path, rel: str) -> tuple:
+    """`(memory id, derived hook)` of the file an index link names: the id as
+    `_id_of_link` gives it, and `_first_prose` of the file ("" when the link's
+    file is gone, so a dead link has no derived value to keep)."""
+    p = memdir / rel
+    if p.is_file():
+        try:
+            text = p.read_text(errors="replace")
+        except OSError as exc:
+            print(f"{INDEX_NAME}: {rel}: unreadable ({exc}); keying its hook by "
+                  f"the file stem, no derived hook", file=sys.stderr)
+            return Path(rel).stem, ""
+        return _frontmatter(text).get("id") or Path(rel).stem, _first_prose(text)
+    return Path(rel).stem, ""
+
+
+def _index_hook_records(idx: Path) -> dict:
+    """`{rel: (hook, room)}` for every linked entry line of an index -- THE
+    index-line parser (`_parse_index_hooks` is its projection; ch-bsd 26.1 r3
+    #m-2, 2026-11-10). `room` is the line's NUMERIC hook room, `MAX_LINE_CHARS
+    - len(link part) - len(" — ")`, the same arithmetic `Entry.line` cuts with
+    (ch-bsd 26.1 r3 #s-1: a yes/no "had room" could not tell a value the line
+    carried whole from one it cut).
+
+    Generated pointer lines are no hook source (ch-bsd 26.1 r3 #m-3): the
+    save-state pointer (`_SAVES_RE`) links `savestate_X.md`, so its generated
+    "session handoffs; ..." text won over savestate_X's curated hook (cliquedb
+    lost one that way, pre-existing at 61b3bde); the fold line carries no link
+    and is skipped by name all the same. The `impressions/` pointer is kept --
+    `load_hooks` stores it under its own non-path key."""
+    out: dict = {}
+    if not idx.exists():
+        return out
+    for line in idx.read_text(errors="replace").splitlines():
+        if not line.startswith("- [") or _SAVES_RE.match(line) or _FOLD_RE.match(line):
+            continue
+        # Split at the LINK, not at the first em dash: titles contain " — "
+        # themselves ("Capture reasoning deliberately — extended-thinking is
+        # redacted"), so partitioning on the dash stole half the title into the
+        # hook and the next render shifted it again — a generator that was not
+        # idempotent on its own output. Caught on the real index, not in a
+        # fixture, because the fixture titles had no dashes (2026-09-16).
+        head, sep, rest = line.partition("](")
+        if not sep:
+            continue
+        rel, sep, tail = rest.partition(")")
+        if not sep:
+            continue
+        hook = tail.lstrip()
+        if hook.startswith("—"):
+            hook = hook[1:]
+        link_part = f"{head}]({rel})"
+        out[rel] = (hook.strip(), MAX_LINE_CHARS - len(link_part) - len(" — "))
+    return out
+
+
+def _index_hook_wins(hook: str, cur: str, room: int) -> bool:
+    """Whether an index hook replaces the existing value `cur` -- the sidecar
+    value, else the memory's derived hook (task 26.1 spec #fu-hooks; ch-bsd 26.1
+    r2, bug-193, 2026-11-09; narrowed by ch-bsd 26.1 r3 #s-1, 2026-11-10). It
+    does, except when the index line could not carry `cur`:
+
+    (a) the hook is empty and the link alone left under 2 chars of room --
+        `Entry.line` dropped the hook, so the empty read is the renderer's;
+    (b) the hook is `prefix…`, the prefix a prefix of `cur`, AND `len(cur) >
+        room` -- the renderer's cut (bug-193: taking it wrote the cut over the
+        full text, 246 chars became 171 in two renders);
+    (c) the hook is a bare `…` AND `len(cur) > room` (HEAD cuts that ended
+        `.md)…`).
+
+    On a line that HAD room for `cur`, a `prefix…` or `…` is the user's own
+    shortening and replaces, as at HEAD 61b3bde -- r3's probe: c9a035e reverted
+    "the curated hook…" to the full sidecar value and said nothing. A hand edit
+    that is not a prefix of `cur` always replaces."""
+    if not cur or hook == cur:
+        return True
+    cut = len(cur) > room
+    if hook == "…":
+        return not cut
+    if hook.endswith("…") and cur.startswith(hook[:-1].rstrip()):
+        return not cut
+    if not hook and room < 2:
+        return False
+    return True
 
 
 def save_hooks(memdir: Path, entries: list, *, dead: "dict | None" = None) -> None:
@@ -617,17 +701,27 @@ def _write_organised(memdir: Path, entries: list, *, max_lines: int, max_chars: 
             f"the render would keep {after_content} of {before_content} content lines "
             f"(entries + prose; under {int(MIN_CONTENT_KEPT * 100)}%) -- a partial "
             f"view of {memdir} ({len(entries)} memories visible)"))
-    before_refs = {l.split("](", 1)[1].split(")", 1)[0]
-                   for l in before_lines if _is_entry_line(l)}
-    after_refs = {l.split("](", 1)[1].split(")", 1)[0]
-                  for l in after_lines if _is_entry_line(l)}
+    before_refs = _link_refs(before_lines)
+    after_refs = _link_refs(after_lines)
     gone = sorted(r for r in before_refs - after_refs if not (memdir / r).exists())
+    # Entry-shaped lines with no link are never prose (AC-5) and never carried:
+    # each one is COUNTED and NAMED verbatim, so a hand-written `- [ ] todo` is
+    # not lost in silence (CLAUDE.md #no-silent-failures; task 26.1 spec
+    # #fu-skips; ch-bsd 26.1 r2, 2026-11-09).
+    unlinked = [ln for ln in before_lines if ln.startswith("- [") and not _is_entry_line(ln)]
     dead = _dead_hooks(memdir, entries)
     idx.write_text(text)
     save_hooks(memdir, entries, dead=dead)
     _report(out, before_lines, after_lines, text, entries, max_lines, max_chars, gone)
     if prose:
         print(f"{INDEX_NAME}: carried {len(prose)} hand-written prose line(s)", file=out)
+    if unlinked:
+        shown = unlinked[:20]
+        print(f"{INDEX_NAME}: dropped {len(unlinked)} entry-shaped line(s) with no link "
+              f"(a line starting '- [' is never carried as prose; a memory among them is "
+              f"rendered again with its link): " + " | ".join(shown)
+              + (f" … and {len(unlinked) - len(shown)} more" if len(unlinked) > 20 else ""),
+              file=out)
     if dead:
         names = sorted(dead)
         print(f"{INDEX_NAME}: kept {len(dead)} curated hook(s) whose link is dead "
@@ -686,12 +780,10 @@ def write(memdir: Path, *, max_lines: int = MAX_LINES,
         return _write_organised(memdir, entries, max_lines=max_lines,
                                 max_chars=max_chars, out=out)
     before_lines = idx.read_text(errors="replace").splitlines() if idx.exists() else []
-    before_refs = {l.split("](", 1)[1].split(")", 1)[0]
-                   for l in before_lines if l.startswith("- [") and "](" in l}
+    before_refs = _link_refs(before_lines)
     text = render(memdir, max_lines=max_lines, max_chars=max_chars)
     after_lines = text.splitlines()
-    after_refs = {l.split("](", 1)[1].split(")", 1)[0]
-                  for l in after_lines if l.startswith("- [") and "](" in l}
+    after_refs = _link_refs(after_lines)
     # An entry can legitimately disappear: it was collapsed into a pointer, or
     # its file is gone (the forget flow deletes both). Either way the count is
     # PRINTED — a memory index that quietly loses rows is the failure this

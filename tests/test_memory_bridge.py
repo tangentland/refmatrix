@@ -484,3 +484,56 @@ def test_s3_daemon_sync_op_returns_the_skip_count_to_the_caller(ac2_daemon):
     assert not missing, f"skipped_paths does not name {missing}: {res.get('skipped_paths')}"
     out = _invoke(["ingest-gmd", "--as-memory", str(memdir)])
     _assert_names_every_skip(out, "daemon-backed CLI output")
+
+
+# ---- task 26.1 follow-up #fu-skips (ch-bsd 26.1 r2 #m-2): the skip fields reach the caller --
+#
+# `_ingest_gmd_sync` puts `skipped` / `skipped_paths` in its stats on both legs, but its only
+# stats consumer, `_bridge_stats`, never copied them: the structured `sync` dict save-state and
+# MCP return had no skip count (plan-5 #m-7: no report scraping). Driven through the bridge
+# itself, `_sync_memory_dir`, on the in-process leg, the daemon leg and the wait path.
+
+def _assert_bridge_carries_skips(out: dict, where: str) -> None:
+    assert out["error"] is None, f"{where}: {out}"
+    assert out.get("skipped") == 5, f"{where}: bridge result carries no skipped=5: {out}"
+    named = " ".join(str(p) for p in (out.get("skipped_paths") or []))
+    missing = [n for n in S3_SKIPPED if n not in named]
+    assert not missing, f"{where}: skipped_paths does not name {missing}: {out}"
+
+
+def test_fu_skips_in_process_bridge_result_carries_skipped_and_skipped_paths(ac2_inproc):
+    base, root = ac2_inproc
+    memdir = _s3_memdir(base)
+    assert not dm.ping(root, retries=0), "the in-process leg must run with NO daemon"
+    out = cli_mod._sync_memory_dir(memdir)
+    _assert_bridge_carries_skips(out, "in-process bridge")
+
+
+def test_fu_skips_daemon_bridge_result_carries_skipped_and_skipped_paths(ac2_daemon):
+    base, root = ac2_daemon
+    memdir = _s3_memdir(base)
+    out = cli_mod._sync_memory_dir(memdir)
+    assert out["waited"] is False, out
+    _assert_bridge_carries_skips(out, "daemon-backed bridge")
+
+
+def test_fu_skips_a_bridge_that_waited_on_a_covering_job_carries_its_skips(ac2_daemon,
+                                                                         monkeypatch):
+    """The save-state-under-SessionStart overlap: the bridge waits for the covering job and
+    takes ITS result. The job carries `skipped_paths` at the top level of its result
+    (`_skip_fields`); the wait path must read them, not only `res["stats"]`."""
+    base, root = ac2_daemon
+    memdir = _s3_memdir(base)
+    for i in range(350):                      # long enough that the bridge meets it running
+        (memdir / f"doc{i:04d}.md").write_text(GMD.format(id=f"fu_doc{i:04d}", body="x " * 400))
+    part = verbs.memory_partition(root)
+    resp = dm.call(root, "ingest_gmd_start", {"targets": [str(memdir)], "as_memory": True,
+                                              "memory_mtype": "curated", "partition": part},
+                   timeout=30)
+    assert resp.get("ok"), resp
+    monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "300")
+    out = cli_mod._sync_memory_dir(memdir)
+    assert out["waited"] is True and out["waited_job"] == resp["result"]["job_id"], out
+    _assert_bridge_carries_skips(out, "waited bridge")
+    flat = _flat(out["report"] or "")
+    assert re.search(r"skipped 5\b", flat), f"waited bridge report has no skip line: {flat}"

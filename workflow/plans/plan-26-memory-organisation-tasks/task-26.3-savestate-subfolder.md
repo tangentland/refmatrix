@@ -126,3 +126,15 @@ Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
 |---|---|---|
 | m1 (stale "`updated`, then `created`" text) | Fixed to `updated`, then mtime | AC-3 |
 | m2 (mixed date-only/datetime on the same date) | Mixed case added, decided by mtime; midnight mutation | AC-3 |
+
+## Inherited from ch-bsd 26.1 r4 (2026-11-10) {#inherit-261-r4}
+
+rel: derives-from -> [[bsd-task-26.1-r4-followup-705dbae#m-1]]
+
+26.3 is the first task that moves memory files, so it owns this edge. **R:** when an index link's
+path no longer exists, `memory_index.load_hooks` resolves the memory's derived hook by id through
+one `{id: path}` map built from `memory_layout.iter_memory_files(memdir)`, so a cut of derived
+prose on a moved file is never frozen into the sidecar. **AC:** the r4 probe shape (organised dir,
+no sidecar, index line at `feedback_a.md`, file at `feedback/feedback_a.md`, a cut `prefix…` hook)
+writes no `…`-ended sidecar value and renders the derived hook; mutation "no id fallback" is
+killed. 26.5 inherits the fix (it moves files too). {#inherit-moved-derived}

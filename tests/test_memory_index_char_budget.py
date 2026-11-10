@@ -27,6 +27,7 @@ already used stderr; only the success path was wrong.
 from __future__ import annotations
 
 import io
+import json
 import sys
 
 import pytest
@@ -224,12 +225,21 @@ def test_a_folded_entry_keeps_its_curated_hook(tmp_path):
     d = _memdir(tmp_path, 400)
     mi.write(d, out=io.StringIO())
 
+    # `load_hooks` is THE production reader (task 26.1 #r3-dead, ch-bsd r3 #b-1: the
+    # `parse_hooks` this test used to call had no production caller left). The listed set
+    # is read straight off the index text, so the test leans on no second parser.
     hooks = mi.load_hooks(d)
-    listed = set(mi.parse_hooks(d / mi.INDEX_NAME))
-    folded = [rel for rel in hooks if rel not in listed]
+    text = (d / mi.INDEX_NAME).read_text(encoding="utf-8")
+    listed = {ln.split("](", 1)[1].split(")", 1)[0]
+              for ln in text.splitlines() if ln.startswith("- [") and "](" in ln}
+    rels = {e.rel for e in mi.collect(d)}
+    folded = sorted(rels - listed)
     assert folded, "nothing folded; the test corpus is too small"
-    assert all(hooks[rel] for rel in folded), (
-        "a folded entry lost its hook — the sidecar did not persist it")
+    assert all(hooks.get(rel) for rel in folded), (
+        "a folded entry lost its hook — load_hooks did not read it back from the sidecar")
+    side = json.loads((d / mi.HOOKS_SIDECAR).read_text(encoding="utf-8"))
+    assert all(hooks[rel] == side[rel] for rel in folded), (
+        "load_hooks returned a folded entry's hook that is not the sidecar's")
 
 
 def test_a_missing_sidecar_is_not_fatal(tmp_path):

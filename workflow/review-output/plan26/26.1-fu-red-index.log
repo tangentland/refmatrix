@@ -1,0 +1,472 @@
+F..FFFFFF..FFFFFFF                                                       [100%]
+=================================== FAILURES ===================================
+_ test_fu_order_a_folder_copy_and_a_top_level_copy_of_one_save_state_order_the_same_both_ways _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-iku8yakj/memory')
+
+    def test_fu_order_a_folder_copy_and_a_top_level_copy_of_one_save_state_order_the_same_both_ways(
+            memdir):
+        """26.4's mid-move window: `savestates/x.md` and a top-level `x.md` carry the same `updated`
+        date and (mtime preserved by the move) the same mtime. Under `(date, mtime, name)` the two
+        keys are equal and the result followed the input order. The key becomes
+        `(date, mtime, name, relative path)`, so either input order gives one answer."""
+        ml = _layout()
+        moved = _md(memdir / "savestates" / "savestate_x.md", mtype="session/recall-state",
+                    updated="2026-11-09T08:00:00-08:00", mtime=T0)
+        legacy = _md(memdir / "savestate_x.md", mtype="session/recall-state",
+                     updated="2026-11-09T08:00:00-08:00", mtime=T0)
+        assert os.stat(moved).st_mtime == os.stat(legacy).st_mtime
+        one = [Path(p) for p in ml.sort_savestates([moved, legacy])]
+        two = [Path(p) for p in ml.sort_savestates([legacy, moved])]
+>       assert one == two, f"order follows input order: {[str(p) for p in one]} vs " \
+                           f"{[str(p) for p in two]}"
+E       AssertionError: order follows input order: ['/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-iku8yakj/memory/savestates/savestate_x.md', '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-iku8yakj/memory/savestate_x.md'] vs ['/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-iku8yakj/memory/savestate_x.md', '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-iku8yakj/memory/savestates/savestate_x.md']
+E       assert [PosixPath('/...estate_x.md')] == [PosixPath('/...estate_x.md')]
+E         
+E         At index 0 diff: PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-iku8yakj/memory/savestates/savestate_x.md') != PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-iku8yakj/memory/savestate_x.md')
+E         Use -v to get more diff
+
+tests/test_memory_layout.py:324: AssertionError
+_ test_fu_hooks_a_long_curated_hook_keeps_its_full_text_over_three_renders[organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-dhwf3zss/memory')
+organised = True
+
+    @_layouts()
+    def test_fu_hooks_a_long_curated_hook_keeps_its_full_text_over_three_renders(memdir, organised):
+        """bug-193: a hand-written hook longer than the line allows renders as `prefix…`. At
+        7b5ea2f the next render read `prefix…` back from the index, it won over the sidecar, and
+        `save_hooks` wrote the cut over the full text: 246 chars survived one render, then 171."""
+        rel = _rel(organised, "feedback", "feedback_long_hook")
+        mem(memdir, rel, title="Short title", mtype="feedback", body="derived prose, not curated")
+        mem(memdir, _rel(organised, "project", "project_plain"), title="Plain", mtype="project",
+            body="derived plain")
+        assert len(f"- [Short title]({rel}) — {LONG_HOOK}") > mi.MAX_LINE_CHARS
+        (memdir / "MEMORY.md").write_text(
+            f"- [Short title]({rel}) — {LONG_HOOK}\n", encoding="utf-8")
+        if organised:
+            organise(memdir)
+        key = _key(organised, rel)
+        lines = []
+        for n in (1, 2, 3):
+            r = run_entry(memdir)
+            assert r.returncode == 0, r.stderr
+            side = sidecar(memdir)
+>           assert side.get(key) == LONG_HOOK, \
+                f"render {n}: the sidecar lost the full curated hook: {side.get(key)!r}"
+E           AssertionError: render 2: the sidecar lost the full curated hook: 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the mem…'
+E           assert 'a curated ho...n in the mem…' == 'a curated ho...xes look like'
+E             
+E             Skipping 139 identical leading characters in diff, use -v to show
+E             - in the memory itself, which is exactly what real indexes look like
+E             + in the mem…
+
+tests/test_memory_index_layout.py:828: AssertionError
+_ test_fu_hooks_a_long_curated_hook_keeps_its_full_text_over_three_renders[marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-m4mmzw0p/memory')
+organised = False
+
+    @_layouts()
+    def test_fu_hooks_a_long_curated_hook_keeps_its_full_text_over_three_renders(memdir, organised):
+        """bug-193: a hand-written hook longer than the line allows renders as `prefix…`. At
+        7b5ea2f the next render read `prefix…` back from the index, it won over the sidecar, and
+        `save_hooks` wrote the cut over the full text: 246 chars survived one render, then 171."""
+        rel = _rel(organised, "feedback", "feedback_long_hook")
+        mem(memdir, rel, title="Short title", mtype="feedback", body="derived prose, not curated")
+        mem(memdir, _rel(organised, "project", "project_plain"), title="Plain", mtype="project",
+            body="derived plain")
+        assert len(f"- [Short title]({rel}) — {LONG_HOOK}") > mi.MAX_LINE_CHARS
+        (memdir / "MEMORY.md").write_text(
+            f"- [Short title]({rel}) — {LONG_HOOK}\n", encoding="utf-8")
+        if organised:
+            organise(memdir)
+        key = _key(organised, rel)
+        lines = []
+        for n in (1, 2, 3):
+            r = run_entry(memdir)
+            assert r.returncode == 0, r.stderr
+            side = sidecar(memdir)
+>           assert side.get(key) == LONG_HOOK, \
+                f"render {n}: the sidecar lost the full curated hook: {side.get(key)!r}"
+E           AssertionError: render 2: the sidecar lost the full curated hook: 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itsel…'
+E           assert 'a curated ho...memory itsel…' == 'a curated ho...xes look like'
+E             
+E             Skipping 148 identical leading characters in diff, use -v to show
+E             - mory itself, which is exactly what real indexes look like
+E             + mory itsel…
+
+tests/test_memory_index_layout.py:828: AssertionError
+_ test_fu_hooks_the_live_cut_state_restores_nothing_lost_from_the_sidecar[organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-9ipyggf7/memory')
+organised = True
+
+    @_layouts()
+    def test_fu_hooks_the_live_cut_state_restores_nothing_lost_from_the_sidecar(memdir, organised):
+        """The state live refmatrix's index is in today: sidecar holds the full hook, the index
+        holds its rendered cut. A render must keep the sidecar's full text, not take the cut."""
+        rel = _rel(organised, "feedback", "feedback_long_hook")
+        mem(memdir, rel, title="Short title", mtype="feedback", body="derived prose, not curated")
+        key = _key(organised, rel)
+        if organised:
+            organise(memdir)
+        (memdir / mi.HOOKS_SIDECAR).write_text(json.dumps({key: LONG_HOOK}), encoding="utf-8")
+        full = f"- [Short title]({rel}) — {LONG_HOOK}"
+        cut = full[:mi.MAX_LINE_CHARS - 1].rstrip() + "…"            # the rendered cut
+        (memdir / "MEMORY.md").write_text(cut + "\n", encoding="utf-8")
+        r = run_entry(memdir)
+        assert r.returncode == 0, r.stderr
+>       assert sidecar(memdir).get(key) == LONG_HOOK, sidecar(memdir)
+E       AssertionError: {'feedback_long_hook': 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the mem…'}
+E       assert 'a curated ho...n in the mem…' == 'a curated ho...xes look like'
+E         
+E         Skipping 139 identical leading characters in diff, use -v to show
+E         - in the memory itself, which is exactly what real indexes look like
+E         + in the mem…
+
+tests/test_memory_index_layout.py:855: AssertionError
+_ test_fu_hooks_the_live_cut_state_restores_nothing_lost_from_the_sidecar[marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-ws17kklz/memory')
+organised = False
+
+    @_layouts()
+    def test_fu_hooks_the_live_cut_state_restores_nothing_lost_from_the_sidecar(memdir, organised):
+        """The state live refmatrix's index is in today: sidecar holds the full hook, the index
+        holds its rendered cut. A render must keep the sidecar's full text, not take the cut."""
+        rel = _rel(organised, "feedback", "feedback_long_hook")
+        mem(memdir, rel, title="Short title", mtype="feedback", body="derived prose, not curated")
+        key = _key(organised, rel)
+        if organised:
+            organise(memdir)
+        (memdir / mi.HOOKS_SIDECAR).write_text(json.dumps({key: LONG_HOOK}), encoding="utf-8")
+        full = f"- [Short title]({rel}) — {LONG_HOOK}"
+        cut = full[:mi.MAX_LINE_CHARS - 1].rstrip() + "…"            # the rendered cut
+        (memdir / "MEMORY.md").write_text(cut + "\n", encoding="utf-8")
+        r = run_entry(memdir)
+        assert r.returncode == 0, r.stderr
+>       assert sidecar(memdir).get(key) == LONG_HOOK, sidecar(memdir)
+E       AssertionError: {'feedback_long_hook.md': 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itsel…'}
+E       assert 'a curated ho...memory itsel…' == 'a curated ho...xes look like'
+E         
+E         Skipping 148 identical leading characters in diff, use -v to show
+E         - mory itself, which is exactly what real indexes look like
+E         + mory itsel…
+
+tests/test_memory_index_layout.py:855: AssertionError
+_ test_fu_hooks_a_bare_ellipsis_index_hook_never_replaces_the_sidecar[organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-l_fpukes/memory')
+organised = True
+
+    @_layouts()
+    def test_fu_hooks_a_bare_ellipsis_index_hook_never_replaces_the_sidecar(memdir, organised):
+        """3 sidecar values across the fleet copies are a bare `…`, left by HEAD cuts that ended
+        `.md)…`. A bare `…` read from the index is no hook: the curated sidecar text stands."""
+        rel = _rel(organised, "feedback", "feedback_a")
+        mem(memdir, rel, title="A", mtype="feedback", body="derived a prose")
+        key = _key(organised, rel)
+        if organised:
+            organise(memdir)
+        (memdir / mi.HOOKS_SIDECAR).write_text(json.dumps({key: CURATED}), encoding="utf-8")
+        (memdir / "MEMORY.md").write_text(f"- [A]({rel}) — …\n", encoding="utf-8")
+        for n in (1, 2):
+            r = run_entry(memdir)
+            assert r.returncode == 0, r.stderr
+>           assert sidecar(memdir).get(key) == CURATED, (n, sidecar(memdir))
+E           AssertionError: (1, {'feedback_a': '…'})
+E           assert '…' == 'the curated ...r this memory'
+E             
+E             - the curated hook a human wrote for this memory
+E             + …
+
+tests/test_memory_index_layout.py:873: AssertionError
+_ test_fu_hooks_a_bare_ellipsis_index_hook_never_replaces_the_sidecar[marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-93a0m6sp/memory')
+organised = False
+
+    @_layouts()
+    def test_fu_hooks_a_bare_ellipsis_index_hook_never_replaces_the_sidecar(memdir, organised):
+        """3 sidecar values across the fleet copies are a bare `…`, left by HEAD cuts that ended
+        `.md)…`. A bare `…` read from the index is no hook: the curated sidecar text stands."""
+        rel = _rel(organised, "feedback", "feedback_a")
+        mem(memdir, rel, title="A", mtype="feedback", body="derived a prose")
+        key = _key(organised, rel)
+        if organised:
+            organise(memdir)
+        (memdir / mi.HOOKS_SIDECAR).write_text(json.dumps({key: CURATED}), encoding="utf-8")
+        (memdir / "MEMORY.md").write_text(f"- [A]({rel}) — …\n", encoding="utf-8")
+        for n in (1, 2):
+            r = run_entry(memdir)
+            assert r.returncode == 0, r.stderr
+>           assert sidecar(memdir).get(key) == CURATED, (n, sidecar(memdir))
+E           AssertionError: (1, {'feedback_a.md': '…'})
+E           assert '…' == 'the curated ...r this memory'
+E             
+E             - the curated hook a human wrote for this memory
+E             + …
+
+tests/test_memory_index_layout.py:873: AssertionError
+___ test_fu_hooks_a_hook_deleted_from_a_line_with_room_is_cleared_organised ____
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-t2ztacs5/memory')
+
+    def test_fu_hooks_a_hook_deleted_from_a_line_with_room_is_cleared_organised(memdir):
+        """r2 #m-1: at 7b5ea2f the sidecar brought a deleted hook back. The line had room for it,
+        so the deletion is the user's: the entry falls back to the file's first prose line."""
+        rel = _hook_clear_dir(memdir, organised=True)
+        organise(memdir)
+        assert run_entry(memdir).returncode == 0
+        assert sidecar(memdir).get("feedback_a") == CURATED          # curated, before the clear
+        _clear_hook(memdir, rel)
+        r = run_entry(memdir)
+        assert r.returncode == 0, r.stderr
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+>       assert _line_for(text, rel) == f"- [A]({rel}) — derived a prose", text
+E       AssertionError: - [A](feedback/feedback_a.md) — the curated hook a human wrote for this memory
+E         - [B](feedback/feedback_b.md) — curated b
+E         
+E       assert '- [A](feedba...r this memory' == '- [A](feedba...rived a prose'
+E         
+E         - - [A](feedback/feedback_a.md) — derived a prose
+E         + - [A](feedback/feedback_a.md) — the curated hook a human wrote for this memory
+
+tests/test_memory_index_layout.py:926: AssertionError
+_ test_fu_hooks_a_hook_deleted_from_a_line_with_room_is_cleared_marker_off_as_at_head _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-3_07rm4l/memory')
+
+    def test_fu_hooks_a_hook_deleted_from_a_line_with_room_is_cleared_marker_off_as_at_head(memdir):
+        """Marker-off keeps HEAD 61b3bde's hook-clear exactly: the same two renders (write, user
+        deletes the hook, write) through HEAD's code and through ours give the same index AND the
+        same sidecar bytes."""
+        head = _head_memory_index()
+        twin = memdir.parent / "twin"
+        twin.mkdir()
+        rel = _hook_clear_dir(memdir, organised=False)
+        _hook_clear_dir(twin, organised=False)
+        assert not (memdir / ".memory-layout").exists()
+        assert run_entry(memdir).returncode == 0
+        head.write(twin, out=io.StringIO())
+        _clear_hook(memdir, rel)
+        _clear_hook(twin, rel)
+        r = run_entry(memdir)
+        assert r.returncode == 0, r.stderr
+        head.write(twin, out=io.StringIO())
+        want = (twin / "MEMORY.md").read_text(encoding="utf-8")
+        assert _line_for(want, rel) == f"- [A]({rel}) — derived a prose", want   # HEAD's behaviour
+>       assert (memdir / "MEMORY.md").read_text(encoding="utf-8") == want
+E       AssertionError: assert '- [A](feedba...— curated b\n' == '- [A](feedba...— curated b\n'
+E         
+E         - - [A](feedback_a.md) — derived a prose
+E         + - [A](feedback_a.md) — the curated hook a human wrote for this memory
+E           - [B](feedback_b.md) — curated b
+
+tests/test_memory_index_layout.py:971: AssertionError
+_ test_fu_dropped_a_link_cut_by_head_is_not_reported_as_a_gone_file[organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-fi_830sh/memory')
+organised = True
+
+    @_layouts()
+    def test_fu_dropped_a_link_cut_by_head_is_not_reported_as_a_gone_file(memdir, organised):
+        cut_rel = _rel(organised, "feedback", "feedback_cut_inside_the_link_aaaa")
+        before_rel = _rel(organised, "feedback", "feedback_cut_before_the_link")
+        plain_rel = _rel(organised, "project", "project_plain")
+        gone_rel = _rel(organised, "project", "project_gone")
+        mem(memdir, cut_rel, title=CUT_TITLE, mtype="feedback", body="derived cut prose")
+        mem(memdir, before_rel, title=LONG_TITLE, mtype="feedback", body="derived before prose")
+        mem(memdir, plain_rel, title="Plain", mtype="project", body="derived plain")
+    
+        def head_cut(title, rel, hook):
+            full = f"- [{title}]({rel}) — {hook}"
+            return full[:mi.MAX_LINE_CHARS - 1].rstrip() + "…"          # HEAD's Entry.line cut
+    
+        inside = head_cut(CUT_TITLE, cut_rel, "derived cut prose")
+        before = head_cut(LONG_TITLE, before_rel, "derived before prose")
+        assert "](" in inside and ")" not in inside.split("](", 1)[1], inside   # cut inside link
+        assert "](" not in before, before                                      # cut before link
+        (memdir / "MEMORY.md").write_text("\n".join([
+            inside, before,
+            f"- [Plain]({plain_rel}) — curated plain",
+            f"- [Gone]({gone_rel}) — a memory whose file was deleted",
+        ]) + "\n", encoding="utf-8")
+        if organised:
+            organise(memdir)
+        r = run_entry(memdir)
+        said = r.stdout + r.stderr
+        assert r.returncode == 0, said
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        for rel in (cut_rel, before_rel, plain_rel):
+            _line_for(text, rel)                                     # every memory is linked again
+        dropped = [ln for ln in said.splitlines() if "whose file is gone" in ln]
+        assert len(dropped) == 1, f"a truly gone file must still be reported once: {said}"
+        m = re.search(r"dropped (\d+) entr", dropped[0])
+>       assert m and m.group(1) == "1", \
+            f"a memory re-linked after HEAD's cut was counted as gone: {dropped[0]}"
+E       AssertionError: a memory re-linked after HEAD's cut was counted as gone: MEMORY.md: dropped 2 entries whose file is gone: feedback/feedb…, project/project_gone.md
+E       assert (<re.Match object; span=(11, 25), match='dropped 2 entr'> and '2' == '1'
+E         
+E         - 1
+E         + 2)
+
+tests/test_memory_index_layout.py:1018: AssertionError
+_ test_fu_dropped_a_link_cut_by_head_is_not_reported_as_a_gone_file[marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-d3y6qaej/memory')
+organised = False
+
+    @_layouts()
+    def test_fu_dropped_a_link_cut_by_head_is_not_reported_as_a_gone_file(memdir, organised):
+        cut_rel = _rel(organised, "feedback", "feedback_cut_inside_the_link_aaaa")
+        before_rel = _rel(organised, "feedback", "feedback_cut_before_the_link")
+        plain_rel = _rel(organised, "project", "project_plain")
+        gone_rel = _rel(organised, "project", "project_gone")
+        mem(memdir, cut_rel, title=CUT_TITLE, mtype="feedback", body="derived cut prose")
+        mem(memdir, before_rel, title=LONG_TITLE, mtype="feedback", body="derived before prose")
+        mem(memdir, plain_rel, title="Plain", mtype="project", body="derived plain")
+    
+        def head_cut(title, rel, hook):
+            full = f"- [{title}]({rel}) — {hook}"
+            return full[:mi.MAX_LINE_CHARS - 1].rstrip() + "…"          # HEAD's Entry.line cut
+    
+        inside = head_cut(CUT_TITLE, cut_rel, "derived cut prose")
+        before = head_cut(LONG_TITLE, before_rel, "derived before prose")
+        assert "](" in inside and ")" not in inside.split("](", 1)[1], inside   # cut inside link
+        assert "](" not in before, before                                      # cut before link
+        (memdir / "MEMORY.md").write_text("\n".join([
+            inside, before,
+            f"- [Plain]({plain_rel}) — curated plain",
+            f"- [Gone]({gone_rel}) — a memory whose file was deleted",
+        ]) + "\n", encoding="utf-8")
+        if organised:
+            organise(memdir)
+        r = run_entry(memdir)
+        said = r.stdout + r.stderr
+        assert r.returncode == 0, said
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        for rel in (cut_rel, before_rel, plain_rel):
+            _line_for(text, rel)                                     # every memory is linked again
+        dropped = [ln for ln in said.splitlines() if "whose file is gone" in ln]
+        assert len(dropped) == 1, f"a truly gone file must still be reported once: {said}"
+        m = re.search(r"dropped (\d+) entr", dropped[0])
+>       assert m and m.group(1) == "1", \
+            f"a memory re-linked after HEAD's cut was counted as gone: {dropped[0]}"
+E       AssertionError: a memory re-linked after HEAD's cut was counted as gone: MEMORY.md: dropped 2 entries whose file is gone: feedback_cut_i…, project_gone.md
+E       assert (<re.Match object; span=(11, 25), match='dropped 2 entr'> and '2' == '1'
+E         
+E         - 1
+E         + 2)
+
+tests/test_memory_index_layout.py:1018: AssertionError
+________ test_fu_dropped_only_cut_links_no_gone_line_at_all[organised] _________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-0zoofuga/memory')
+organised = True
+
+    @_layouts()
+    def test_fu_dropped_only_cut_links_no_gone_line_at_all(memdir, organised):
+        """With no truly missing file the report prints no "dropped" line (or says 0)."""
+        cut_rel = _rel(organised, "feedback", "feedback_cut_inside_the_link_aaaa")
+        plain_rel = _rel(organised, "project", "project_plain")
+        mem(memdir, cut_rel, title=CUT_TITLE, mtype="feedback", body="derived cut prose")
+        mem(memdir, plain_rel, title="Plain", mtype="project", body="derived plain")
+        full = f"- [{CUT_TITLE}]({cut_rel}) — derived cut prose"
+        inside = full[:mi.MAX_LINE_CHARS - 1].rstrip() + "…"
+        assert "](" in inside and ")" not in inside.split("](", 1)[1], inside
+        (memdir / "MEMORY.md").write_text(
+            f"{inside}\n- [Plain]({plain_rel}) — curated plain\n", encoding="utf-8")
+        if organised:
+            organise(memdir)
+        r = run_entry(memdir)
+        said = r.stdout + r.stderr
+        assert r.returncode == 0, said
+        for ln in said.splitlines():
+            if "whose file is gone" in ln:
+                m = re.search(r"dropped (\d+) entr", ln)
+>               assert m and m.group(1) == "0", f"false 'dropped' report: {ln}"
+E               AssertionError: false 'dropped' report: MEMORY.md: dropped 1 entry whose file is gone: feedback/feedb…
+E               assert (<re.Match object; span=(11, 25), match='dropped 1 entr'> and '1' == '0'
+E                 
+E                 - 0
+E                 + 1)
+
+tests/test_memory_index_layout.py:1044: AssertionError
+________ test_fu_dropped_only_cut_links_no_gone_line_at_all[marker-off] ________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-9t68ceda/memory')
+organised = False
+
+    @_layouts()
+    def test_fu_dropped_only_cut_links_no_gone_line_at_all(memdir, organised):
+        """With no truly missing file the report prints no "dropped" line (or says 0)."""
+        cut_rel = _rel(organised, "feedback", "feedback_cut_inside_the_link_aaaa")
+        plain_rel = _rel(organised, "project", "project_plain")
+        mem(memdir, cut_rel, title=CUT_TITLE, mtype="feedback", body="derived cut prose")
+        mem(memdir, plain_rel, title="Plain", mtype="project", body="derived plain")
+        full = f"- [{CUT_TITLE}]({cut_rel}) — derived cut prose"
+        inside = full[:mi.MAX_LINE_CHARS - 1].rstrip() + "…"
+        assert "](" in inside and ")" not in inside.split("](", 1)[1], inside
+        (memdir / "MEMORY.md").write_text(
+            f"{inside}\n- [Plain]({plain_rel}) — curated plain\n", encoding="utf-8")
+        if organised:
+            organise(memdir)
+        r = run_entry(memdir)
+        said = r.stdout + r.stderr
+        assert r.returncode == 0, said
+        for ln in said.splitlines():
+            if "whose file is gone" in ln:
+                m = re.search(r"dropped (\d+) entr", ln)
+>               assert m and m.group(1) == "0", f"false 'dropped' report: {ln}"
+E               AssertionError: false 'dropped' report: MEMORY.md: dropped 1 entry whose file is gone: feedback_cut_i…
+E               assert (<re.Match object; span=(11, 25), match='dropped 1 entr'> and '1' == '0'
+E                 
+E                 - 0
+E                 + 1)
+
+tests/test_memory_index_layout.py:1044: AssertionError
+_ test_fu_skips_an_organised_write_counts_and_names_a_dropped_bracket_prose_line _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-5yyxeknc/memory')
+
+    def test_fu_skips_an_organised_write_counts_and_names_a_dropped_bracket_prose_line(memdir):
+        mem(memdir, "feedback/feedback_a.md", title="A", mtype="feedback", body="derived a")
+        mem(memdir, "project/project_p.md", title="P", mtype="project", body="derived p")
+        todo = "- [ ] todo: rotate the signing keys before the release"
+        (memdir / "MEMORY.md").write_text("\n".join([
+            "# Hand index", todo,
+            "- [A](feedback/feedback_a.md) — curated a",
+            "- [P](project/project_p.md) — curated p",
+        ]) + "\n", encoding="utf-8")
+        organise(memdir)
+        r = run_entry(memdir)
+        said = r.stdout + r.stderr
+        assert r.returncode == 0, said
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        assert todo not in text                       # dropped, as decided (entry-shaped)
+>       assert "rotate the signing keys" in said, \
+            f"the dropped `- [` prose line is not named in the report: {said}"
+E       AssertionError: the dropped `- [` prose line is not named in the report: MEMORY.md: 4 -> 5 lines, 154 chars (caps 200 lines / 24000 chars; 2 memories on disk)
+E         MEMORY.md: carried 1 hand-written prose line(s)
+E         
+E       assert 'rotate the signing keys' in 'MEMORY.md: 4 -> 5 lines, 154 chars (caps 200 lines / 24000 chars; 2 memories on disk)\nMEMORY.md: carried 1 hand-written prose line(s)\n'
+
+tests/test_memory_index_layout.py:1066: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_layout.py::test_fu_order_a_folder_copy_and_a_top_level_copy_of_one_save_state_order_the_same_both_ways
+FAILED tests/test_memory_index_layout.py::test_fu_hooks_a_long_curated_hook_keeps_its_full_text_over_three_renders[organised]
+FAILED tests/test_memory_index_layout.py::test_fu_hooks_a_long_curated_hook_keeps_its_full_text_over_three_renders[marker-off]
+FAILED tests/test_memory_index_layout.py::test_fu_hooks_the_live_cut_state_restores_nothing_lost_from_the_sidecar[organised]
+FAILED tests/test_memory_index_layout.py::test_fu_hooks_the_live_cut_state_restores_nothing_lost_from_the_sidecar[marker-off]
+FAILED tests/test_memory_index_layout.py::test_fu_hooks_a_bare_ellipsis_index_hook_never_replaces_the_sidecar[organised]
+FAILED tests/test_memory_index_layout.py::test_fu_hooks_a_bare_ellipsis_index_hook_never_replaces_the_sidecar[marker-off]
+FAILED tests/test_memory_index_layout.py::test_fu_hooks_a_hook_deleted_from_a_line_with_room_is_cleared_organised
+FAILED tests/test_memory_index_layout.py::test_fu_hooks_a_hook_deleted_from_a_line_with_room_is_cleared_marker_off_as_at_head
+FAILED tests/test_memory_index_layout.py::test_fu_dropped_a_link_cut_by_head_is_not_reported_as_a_gone_file[organised]
+FAILED tests/test_memory_index_layout.py::test_fu_dropped_a_link_cut_by_head_is_not_reported_as_a_gone_file[marker-off]
+FAILED tests/test_memory_index_layout.py::test_fu_dropped_only_cut_links_no_gone_line_at_all[organised]
+FAILED tests/test_memory_index_layout.py::test_fu_dropped_only_cut_links_no_gone_line_at_all[marker-off]
+FAILED tests/test_memory_index_layout.py::test_fu_skips_an_organised_write_counts_and_names_a_dropped_bracket_prose_line
+14 failed, 4 passed, 62 deselected in 3.36s
