@@ -1,0 +1,10 @@
+refused: writing /private/tmp/claude-501/tmp6g4iq4o7/p/memory/MEMORY.md failed (OSError: [Errno 5] I/O error); and putting /private/tmp/claude-501/tmp6g4iq4o7/p/memory/.memory_hooks.json back to its original bytes failed too (OSError: [Errno 5] I/O error) -- the sidecar is REPAIRED while the index is stale, and the next write would let the stale lines win: copy /private/tmp/claude-501/tmp6g4iq4o7/home/backups/memory-hooks/p-20261110T170957-775030000/.memory_hooks.json to /private/tmp/claude-501/tmp6g4iq4o7/p/memory/.memory_hooks.json before it. Backup: /private/tmp/claude-501/tmp6g4iq4o7/home/backups/memory-hooks/p-20261110T170957-775030000
+  derived      project_a.md
+1 cut value(s) in /private/tmp/claude-501/tmp6g4iq4o7/p/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 0  gone: 0
+  restore      project_a.md
+  rewrite MEMORY.md line project_a.md
+backup: /private/tmp/claude-501/tmp6g4iq4o7/home/backups/memory-hooks/p-20261110T170957-775030000/.memory_hooks.json
+backup: /private/tmp/claude-501/tmp6g4iq4o7/home/backups/memory-hooks/p-20261110T170957-775030000/MEMORY.md
+rc 1 ['.memory_hooks.json', 'MEMORY.md', '.memory_hooks.json'] {
+"project_a.md": "restored text"
+}

@@ -166,3 +166,74 @@ across `test_bug199_r2_remedy.py`, `test_bug199_repair_rewrites_index.py` and
 
 That copy was a scratchpad check only, never committed. The not-covered item: a rollback that
 itself fails, which the auditor asked to have named, has no test.
+
+## Remedy r1 GREEN: hand edits, sidecar rollback, old-path restore {#remedy-r1-green}
+
+rel: implements -> [[#remedy-r1-red]]
+rel: derives-from -> [[bsd-bug199-200-r1-30c35a9#s-1]]
+rel: derives-from -> [[bsd-bug199-200-r1-30c35a9#s-2]]
+rel: derives-from -> [[bsd-bug199-200-r1-30c35a9#m-1]]
+
+Source commit `c0e4d61`, `src/refmatrix/memory_index.py` only. No test was written or changed
+in this step.
+
+### What changed {#remedy-r1-green-changes}
+
+- **#s-1:** `_repaired_index(memdir, old, new, changed, restored) -> RepairedIndex | None`.
+  `RepairedIndex` is a `NamedTuple` with these fields: `raw`, `text`, `rewritten`, `replaced`,
+  `kept`, and the property `written`, which is `rewritten + replaced`. An affected line is
+  compared with what the OLD sidecar value renders to: path key, then id, then derived, placed
+  by `_with_hook`, which is the renderer's own cut.
+  - A line that is the old render is rewritten, as before.
+  - A line that is not the old render is a hand edit. On a drop it is kept, and the output
+    says `kept MEMORY.md line <rel>: a hand edit, ...`. If the memory is in `restored` (the
+    restore keys plus the ids behind them), the restore replaces the hand edit, and the
+    output says `replaced the hand edit on MEMORY.md line <rel> ...`.
+  - A line that already equals the new render is left alone and not reported.
+  - The index backup is taken whenever `written` is non-empty, so a replaced hand edit can
+    be recovered from it.
+  - Dry-run prints `would keep` / `would replace`. The summary lines count the replaced and
+    the kept lines.
+- **#s-2:** `_roll_back_sidecar(memdir, raw, bakdir, exc) -> int` always returns 1. It runs
+  when the `MEMORY.md` write fails after the sidecar write. It writes the sidecar's original
+  bytes back through `_atomic_write_text`, which keeps the mode and removes its own tmp file
+  on failure. It then prints `refused: writing <index> failed (...); <sidecar> was put back to
+  its original bytes, so nothing was changed ... Backup: <bakdir>`.
+  - If the rollback fails too, the message names that as a second failure. It says the
+    sidecar is REPAIRED while the index is stale, and gives the backup sidecar to copy back.
+    It never claims that nothing changed. This path has no test. It was exercised by hand once
+    (scratch script, tmp `RMX_HOME`), and that run returned 1 with the second failure named
+    (`bug199-r2-double-failure.log`).
+  - The `repair_cut_hooks` docstring no longer claims a flat "no partial write (R4)". It now
+    states the rollback, and that the only partial state left is a failed rollback, which is
+    named.
+- **#m-1:** `_with_link_ids(memdir, keys) -> set` returns `keys` plus `_id_of_link` of every
+  path key. It is applied to `changed`, which is the auditor's `changed |= {_id_of_link(...)}`,
+  and to the restore keys passed as `restored`. A `--restore` keyed by a moved file's OLD path
+  therefore reaches the line that links the new path.
+
+### Verification {#remedy-r1-green-verification}
+
+- `bug199-r2-green.log`: **68 passed**. The files are `test_bug199_r2_remedy.py` (11/11),
+  `test_bug199_repair_rewrites_index.py`, `test_memory_hook_repair.py`,
+  `test_bug198_brief_compile_scope.py` and `test_bug200_brief_compile_real_daemon.py`.
+- `bug199-r2-green-wide.log`: **612 passed, 0 failed** (8 min 3 s). The files are
+  `tests/test_memory*.py`, `tests/test_bug19*.py`, `tests/test_save_state*.py` and
+  `tests/test_verb_parity.py`. The known bug-127/168 `test_brief_real_daemon` DuckDB
+  "Conflicting lock" failure did not occur in this run.
+
+### Mutations {#remedy-r1-green-mutations}
+
+All five ran against `c0e4d61`, using `tests/test_bug199_r2_remedy.py`. Each was restored in
+its own command with `git checkout -- src/refmatrix/memory_index.py`. After each restore,
+`__pycache__` was cleared, the fixed line was grepped back (count 1), and
+`git status --short src` was empty. After the last restore the 48-test core was green again.
+Log: `bug199-r2-mutations.log`.
+
+| # | Mutation | Failed |
+|---|----------|--------|
+| a | a drop always overwrites a hand edit (`if rel not in restored ...` -> `if False`) | 4 (s1 drop x2, s1 rendered-beside-kept x2) |
+| b | a restore keeps the hand edit (`... -> if True`) | 2 (s1 restore-replaces x2) |
+| c | no sidecar rollback (the rollback write removed; the message kept) | 4 (s2 real x2, s2 injected x2) |
+| d | the id behind an old path key not added (`_with_link_ids` -> `set(keys)`) | 1 (m1) |
+| e | the old-render check removed (every affected line rewritten, as at 30c35a9) | 6 (all s1) |
