@@ -769,6 +769,12 @@ class Daemon:
         )
         self.watch_debounce_ms = watch_debounce_ms
         self.watch_semantic = watch_semantic
+        # The LAST watch flush that failed, `{"at": epoch, "error": str}`, until
+        # a later flush succeeds (task 26.2 r1, user requirement 2026-11-10: a
+        # sync that stops in an error fails loudly on the console, not just in
+        # logs). The watcher has no terminal; `ping` carries this and `rmx
+        # daemon status` prints it -- before, it lived only in rmxd.log.
+        self.last_watch_flush_error: "dict | None" = None
         self.store: Store | None = None
         self._stop = False
         self.log_fh = None
@@ -3174,8 +3180,14 @@ class Daemon:
                     len(paths), total_added, total_updated, total_purged,
                     tail + cancel_tail + repair_tail + roots_tail,
                     total_vec_failed))
+                # a successful flush clears the recorded failure (26.2 r1)
+                self.last_watch_flush_error = None
             except Exception as exc:
                 self._log(f"watch flush failed: {exc!r}")
+                # Recorded for `rmx daemon status` until a later flush succeeds
+                # (26.2 r1, 2026-11-10): the log line alone reached no human.
+                self.last_watch_flush_error = {
+                    "at": time.time(), "error": f"{type(exc).__name__}: {exc}"}
                 self._fast_exit_if_invalidated(exc, "watch flush")
 
         debouncer = Debouncer(self.watch_debounce_ms, _flush)
@@ -3384,6 +3396,13 @@ def _op_ping(d: Daemon, args: dict) -> dict:
     # (bsd-plan1-r4 #b-1: the readers existed, the producer dropped it).
     if ident.get("identity_error"):
         out["identity_error"] = ident["identity_error"]
+    # The last failed watch flush, until a successful one clears it (26.2 r1,
+    # 2026-11-10): `rmx daemon status` renders it from here. Read with getattr:
+    # ping is the liveness probe and must answer for any daemon-shaped object
+    # (the identity fields above follow the same never-fail rule).
+    wfe = getattr(d, "last_watch_flush_error", None)
+    if wfe:
+        out["watch_flush_error"] = dict(wfe)
     return out
 
 

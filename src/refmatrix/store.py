@@ -609,6 +609,18 @@ class RepairAbort(RuntimeError):
     or silently drop data. Operator surgery is required."""
 
 
+class MemoryOwnershipError(ValueError):
+    """`purge_path` cannot decide whether a memory owns the anchors at a path:
+    the memory row's metadata does not parse to an object (task 26.2 r1 #b-1,
+    2026-11-10). Raised, never guessed -- deleting would lose the anchors for
+    good, keeping silently would hide a corrupt row.
+
+    Its own class (a ValueError, so existing handlers still see it) so the
+    sync CLI can turn exactly THIS refusal into a clean `Error:` line while
+    every other failure keeps its traceback (user requirement 2026-11-10: a
+    sync that stops in an error fails loudly on the command line)."""
+
+
 @dataclass
 class Entity:
     id: int
@@ -6401,7 +6413,8 @@ class Store:
         Resolved as well as literal: callers purge the resolved path (`sync`
         resolves `ap`, `-i` resolves its argument), while a hash-only (marker-
         off) row stores the path the bridge was handed, which may be a symlink
-        form. A memory row whose metadata does not parse RAISES: ownership
+        form. A memory row whose metadata does not parse RAISES
+        `MemoryOwnershipError`: ownership
         cannot be decided, and neither deleting nor keeping silently is
         acceptable on a memory path (CLAUDE.md #no-silent-failures)."""
         by_doc: dict[str, list[int]] = {}
@@ -6422,12 +6435,12 @@ class Store:
                 try:
                     meta = json.loads(meta_json) if meta_json else {}
                 except (TypeError, ValueError) as exc:
-                    raise ValueError(
+                    raise MemoryOwnershipError(
                         f"purge_path({abs_path!r}): memory {name!r} has unreadable "
                         f"metadata JSON ({exc}); cannot tell whether it owns the "
                         f"anchors at this path") from exc
                 if not isinstance(meta, dict):
-                    raise ValueError(
+                    raise MemoryOwnershipError(
                         f"purge_path({abs_path!r}): memory {name!r} metadata is a "
                         f"{type(meta).__name__}, not an object; cannot tell whether it "
                         f"owns the anchors at this path")

@@ -404,6 +404,25 @@ def _say_vector_delete_failures(result, what: str) -> None:
                    err=True)
 
 
+def render_watch_flush_error(wfe) -> "str | None":
+    """The `rmx daemon status` line for the daemon's last failed watch flush
+    (`ping`'s `watch_flush_error`), or None when the last flush succeeded.
+
+    WHY (task 26.2 r1, user requirement 2026-11-10: "if the sync stops in an
+    error, it needs to fail loudly on the commandline or console, not just
+    logs"): the watcher has no terminal, and its failure was one `rmxd.log`
+    line. Status is the console a human reads; the line stays until a later
+    successful flush clears it on the daemon."""
+    if not wfe:
+        return None
+    at = wfe.get("at")
+    when = (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(at))
+            if isinstance(at, (int, float)) else "?")
+    return (f"watch flush FAILED at {when}: {wfe.get('error')} "
+            f"(the watcher's sync stopped; cleared by the next successful flush; "
+            f"trace in rmxd.log)")
+
+
 def _say_memory_anchors_kept(result) -> None:
     """Put the memory-bridge anchors a sync purge DECLINED on the caller's
     terminal (task 26.2, ch-bsd r1 #b-1, 2026-11-10). `Store.purge_path` keeps
@@ -3686,6 +3705,9 @@ def daemon_status():
             else:
                 console.print("code: [yellow]unknown[/] (ping carries no code path; "
                               "pre-0.66.3 daemon?)  [yellow][UNVERIFIED][/]")
+            wline = render_watch_flush_error(r.get("watch_flush_error"))
+            if wline:
+                console.print(f"[red]{rich_escape(wline)}[/]", soft_wrap=True)
         except Exception as e:  # noqa: BLE001 — diagnostic line, must not raise
             console.print(f"code: [dim]unknown ({e})[/]  [yellow][UNVERIFIED][/]")
         # Is the GRAPH as current as the code? `stale_files` cannot answer that
@@ -8683,6 +8705,26 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
 
     s = _store()
     proot = (project_root or Path.cwd()).resolve()
+
+    from refmatrix.store import MemoryOwnershipError
+    try:
+        _sync_in_process(s, proot, files=files, since=since, flush_queue=flush_queue,
+                         invalidate=invalidate, semantic=semantic)
+    except MemoryOwnershipError as exc:
+        # A CLEAN failure, the shape the daemon route already gives (`Error: daemon
+        # sync_since failed: ...`): exit 1, one `Error:` line on stderr naming the
+        # memory and the cause (task 26.2 r1, user requirement 2026-11-10: "if the
+        # sync stops in an error, it needs to fail loudly on the commandline or
+        # console, not just logs"). ONLY this refusal class: any other exception
+        # keeps its traceback, so a real crash still reads as one.
+        raise click.ClickException(f"sync failed: {exc}") from exc
+
+
+def _sync_in_process(s, proot: Path, *, files, since, flush_queue, invalidate,
+                     semantic: bool) -> None:
+    """The in-process body of `rmx sync` (no daemon answered), split out so the
+    command can put a clean CLI boundary around it (task 26.2 r1, 2026-11-10)."""
+    from refmatrix import sync as syncmod
 
     kept0 = getattr(s, "memory_anchors_kept", 0)
     for p in invalidate:
