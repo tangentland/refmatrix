@@ -1,0 +1,56 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_ac3_same_day_two_sessions_the_session_saved_last_wins[legacy-date-only] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-gn80_10m/memory')
+fmt = 'date-only', folder = ''
+
+    @pytest.mark.parametrize("fmt", ["date-only", "datetime"])
+    @pytest.mark.parametrize("folder", ["savestates/", ""], ids=["new", "legacy"])
+    def test_ac3_same_day_two_sessions_the_session_saved_last_wins(memdir, fmt, folder):
+        """r2 s3: A was created 11-07 and re-saved 11-08 at 23:00; B was created and saved 11-08 at
+        15:00. A is the newest save. Mutation: `created` before mtime in the key turns this RED."""
+        ua, ub = (("2026-11-08", "2026-11-08") if fmt == "date-only"
+                  else ("2026-11-08T23:00:00", "2026-11-08T15:00:00"))
+        ss(memdir, f"{folder}savestate_a.md", created="2026-11-07", updated=ua,
+           mtime=at(2026, 11, 8, 23))
+        ss(memdir, f"{folder}savestate_b.md", created="2026-11-08", updated=ub,
+           mtime=at(2026, 11, 8, 15))
+>       assert latest(memdir) == "savestate_a"
+E       AssertionError: assert 'savestate_b' == 'savestate_a'
+E         
+E         - savestate_a
+E         ?           ^
+E         + savestate_b
+E         ?           ^
+
+tests/test_savestate_subfolder.py:314: AssertionError
+_ test_ac3_same_day_two_sessions_the_session_saved_last_wins[legacy-datetime] __
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-4gw_a3z2/memory')
+fmt = 'datetime', folder = ''
+
+    @pytest.mark.parametrize("fmt", ["date-only", "datetime"])
+    @pytest.mark.parametrize("folder", ["savestates/", ""], ids=["new", "legacy"])
+    def test_ac3_same_day_two_sessions_the_session_saved_last_wins(memdir, fmt, folder):
+        """r2 s3: A was created 11-07 and re-saved 11-08 at 23:00; B was created and saved 11-08 at
+        15:00. A is the newest save. Mutation: `created` before mtime in the key turns this RED."""
+        ua, ub = (("2026-11-08", "2026-11-08") if fmt == "date-only"
+                  else ("2026-11-08T23:00:00", "2026-11-08T15:00:00"))
+        ss(memdir, f"{folder}savestate_a.md", created="2026-11-07", updated=ua,
+           mtime=at(2026, 11, 8, 23))
+        ss(memdir, f"{folder}savestate_b.md", created="2026-11-08", updated=ub,
+           mtime=at(2026, 11, 8, 15))
+>       assert latest(memdir) == "savestate_a"
+E       AssertionError: assert 'savestate_b' == 'savestate_a'
+E         
+E         - savestate_a
+E         ?           ^
+E         + savestate_b
+E         ?           ^
+
+tests/test_savestate_subfolder.py:314: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_savestate_subfolder.py::test_ac3_same_day_two_sessions_the_session_saved_last_wins[legacy-date-only]
+FAILED tests/test_savestate_subfolder.py::test_ac3_same_day_two_sessions_the_session_saved_last_wins[legacy-datetime]
+2 failed, 33 deselected in 0.26s

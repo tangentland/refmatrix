@@ -24,8 +24,10 @@ never `cli`, so it is safe to import from the MCP process.
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 # Shell/path tokens that pollute the STM focus graph (Bash hooks extract them
@@ -97,12 +99,21 @@ def _ss_git_facts(repo: Path, since: str | None) -> dict:
 
 
 def _ss_recent_memories(memdir: Path, exclude: str, limit: int = 8) -> list[tuple[str, str]]:
-    """(id, title) for the most-recently-touched memory files, newest first."""
+    """(id, title) for the most-recently-touched memory files, newest first.
+
+    Walks `memory_layout.iter_memory_files` -- THE walk of a memdir, so a memory
+    in `feedback/` is a recent memory (task 26.3 AC-4, 2026-11-10). Save-states
+    and impressions are not: a save-state is recalled through
+    `_latest_savestate`, and at HEAD 8a867bc the top-level `*.md` glob here
+    listed it as a "recent memory" while never seeing a type folder."""
+    from refmatrix import memory_layout
     if not memdir.is_dir():
         return []
     files = []
-    for p in memdir.glob("*.md"):
-        if p.name == "MEMORY.md" or p.stem == exclude:
+    for p in memory_layout.iter_memory_files(memdir):
+        rel = p.relative_to(memdir).parts
+        if p.stem == exclude or memory_layout.is_savestate_path(memdir, p) or \
+                (len(rel) > 1 and memory_layout.FOLDERS.get(rel[0]) == "impression"):
             continue
         try:
             files.append((p.stat().st_mtime, p))
@@ -134,10 +145,20 @@ def _ss_frozen_created(path: Path, today: str) -> str:
     return today
 
 
+def _ss_updated_stamp(today: str) -> str:
+    """`metadata.updated` for a save written now: `today` plus the wall clock's
+    time of day and offset (`2026-11-09T14:03:22-08:00`; task 26.3 AC-1, ch-bsd
+    plan-26 r2 s3). The date is the caller's `today`, so the stamp and the
+    frozen `created:` of a first save agree on the day. The time of day is
+    informational: ADR-0005 #newest orders by the DATE of `updated`, then mtime."""
+    return today + datetime.now().astimezone().isoformat(timespec="seconds")[10:]
+
+
 def _ss_render(*, mem_id: str, session: str, repo: Path, message: str | None,
                git: dict, focus: dict, tasks: list, recents: list,
-               created: str, today: str) -> str:
-    """Render the handoff as a GMD memory doc (MEMORY-RULES shape)."""
+               created: str, today: str, updated: str | None = None) -> str:
+    """Render the handoff as a GMD memory doc (MEMORY-RULES shape). `updated`
+    defaults to `_ss_updated_stamp(today)`; `created` stays a frozen date."""
     head_sha = (git["head"].split() or ["?"])[0]
     headline = message or f"{repo.name} @ {head_sha}"
     L: list[str] = []
@@ -151,7 +172,7 @@ def _ss_render(*, mem_id: str, session: str, repo: Path, message: str | None,
     L.append("  type: session/recall-state")
     L.append(f"  originSessionId: {session}")
     L.append(f"  created: {created}")
-    L.append(f"  updated: {today}")
+    L.append(f"  updated: {updated or _ss_updated_stamp(today)}")
     L.append("---")
     L.append("")
     L.append(f"# Save-state {today}: {headline} {{#root}}")
@@ -222,18 +243,37 @@ def _ss_render(*, mem_id: str, session: str, repo: Path, message: str | None,
 
 
 def _ss_update_index(memdir: Path, mem_id: str, title: str, hook: str) -> None:
-    """Add/refresh the one-line MEMORY.md index entry for this memory."""
+    """Add/refresh the one-line MEMORY.md index entry for this save-state.
+
+    In an organised dir (task 26.3 AC-5) the link is `](savestates/<id>.md)`,
+    and the needle also matches the legacy `](<id>.md)` line so a moved
+    save-state's old link is REPLACED, never left beside the new one; every
+    matching line collapses into the one entry. An un-organised dir keeps
+    HEAD's link, needle and per-line replacement byte for byte (ADR-0005
+    #marker, 26.1 AC-9)."""
+    from refmatrix import memory_layout
     idx = memdir / "MEMORY.md"
-    line = f"- [{title}]({mem_id}.md) — {hook}"
+    legacy = f"]({mem_id}.md)"
+    organised = memory_layout.is_organised(memdir)
+    if organised:
+        rel = f"{memory_layout.SAVESTATE_FOLDER}/{mem_id}.md"
+        needles = (f"]({rel})", legacy)
+    else:
+        rel = f"{mem_id}.md"
+        needles = (legacy,)
+    line = f"- [{title}]({rel}) — {hook}"
     try:
         lines = idx.read_text().splitlines() if idx.exists() else []
     except OSError:
         lines = []
     out, replaced = [], False
-    needle = f"]({mem_id}.md)"
     for ln in lines:
-        if needle in ln:
-            out.append(line); replaced = True
+        if any(n in ln for n in needles):
+            # Organised: the legacy line and the `savestates/` line are ONE
+            # entry, so a second match is dropped, not duplicated.
+            if not (organised and replaced):
+                out.append(line)
+            replaced = True
         else:
             out.append(ln)
     if not replaced:
@@ -352,6 +392,15 @@ def _promote_digest(root: Path, s) -> dict:
 # ---- save-state core -------------------------------------------------------
 
 
+class SaveStateWriteError(OSError):
+    """The handoff file could not be written (task 26.3 remedy-r1, 2026-11-10).
+
+    Raised, never reported as a save: a save-state that returned a `target`
+    it never wrote told the next session to resume from a file that does not
+    hold this handoff. The message names the path and what was left in place,
+    so the caller can say it; `verbs.save_state` turns it into a VerbError."""
+
+
 def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
                        message: str | None = None, promote: bool = True,
                        dry_run: bool = False) -> dict:
@@ -369,13 +418,29 @@ def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
 
     sess_slug = re.sub(r"[^A-Za-z0-9]+", "", s.session)[:12] or "default"
     mem_id = f"savestate_{sess_slug}"
-    target = memdir / f"{mem_id}.md"
-    created = _ss_frozen_created(target, today)
+    # Task 26.3 AC-1/AC-2 (ADR-0005 #marker): an ORGANISED dir keeps its
+    # save-states in `savestates/`; a dir without the marker is written exactly
+    # as at HEAD 8a867bc, at the top level. `legacy` is the top-level path.
+    from refmatrix import memory_layout
+    legacy = memdir / f"{mem_id}.md"
+    organised = memory_layout.is_organised(memdir)
+    target = memory_layout.savestate_dir(memdir) / f"{mem_id}.md" if organised else legacy
+    # The frozen `created:` comes from the copy the walk keeps: of a top-level
+    # / `savestates/` pair, the NEWER one (`memory_layout.savestate_pair`,
+    # #rm-newer-copy); else the `savestates/` file when it exists, else the
+    # legacy file it replaces.
+    pair = memory_layout.savestate_pair(memdir, legacy.name) if organised else None
+    if pair:
+        created_from = pair[0]
+    else:
+        created_from = target if target.exists() or not legacy.exists() else legacy
+    created = _ss_frozen_created(created_from, today)
     recents = _ss_recent_memories(memdir, exclude=mem_id)
 
     doc = _ss_render(mem_id=mem_id, session=s.session, repo=repo,
                      message=message, git=git, focus=focus, tasks=tasks,
-                     recents=recents, created=created, today=today)
+                     recents=recents, created=created, today=today,
+                     updated=_ss_updated_stamp(today))
 
     head_sha = (git["head"].split() or ["?"])[0]
     result = {
@@ -384,12 +449,44 @@ def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
         "branch": git["branch"], "head": git["head"],
         "dirty": bool(git["dirty"]), "promoted": None,
         "memdir": str(memdir),
+        "moved_legacy": None,
+        # #rm-newer-copy: the top-level copy of a pair this save removed, the
+        # copy whose `created:` it kept, and a removal that failed (said).
+        "removed_duplicate": None, "kept_copy": str(pair[0]) if pair else None,
+        "remove_failed": None,
     }
     if dry_run:
         return result
 
-    memdir.mkdir(parents=True, exist_ok=True)
-    target.write_text(doc)
+    try:
+        memdir.mkdir(parents=True, exist_ok=True)
+        if organised:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if legacy.exists() and not target.exists():
+                # AC-2: MOVE the legacy file in (os.replace keeps its mtime)
+                # BEFORE the write, so no instant holds two copies of one id
+                # for 26.2's duplicate-id refusal to fire on.
+                os.replace(legacy, target)
+                result["moved_legacy"] = str(legacy)
+        target.write_text(doc)
+    except OSError as exc:
+        kept = (f"; the top-level {legacy.name} is kept" if organised and legacy.exists()
+                else "")
+        raise SaveStateWriteError(
+            f"save-state could not write {target} ({type(exc).__name__}: {exc})"
+            f"{kept}; nothing was saved") from exc
+    if organised and legacy.exists():
+        # #rm-newer-copy: another writer left a top-level copy beside the
+        # folder copy. Removed only NOW, after `savestates/` holds this save
+        # (which carries the kept copy's `created:`), so a failed write above
+        # never costs the only copy of the newest save.
+        try:
+            legacy.unlink()
+            result["removed_duplicate"] = str(legacy)
+        except OSError as exc:
+            # The save landed; the stale copy stays and the walk keeps naming
+            # it as skipped. Said, never mute.
+            result["remove_failed"] = f"{legacy}: {type(exc).__name__}: {exc}"
     hook = (message or f"{repo.name} @ {head_sha}")[:90]
     title = f"Save-state {today}: {message or repo.name + ' @ ' + head_sha}"
     _ss_update_index(memdir, mem_id, title, hook)
@@ -485,11 +582,18 @@ def _latest_savestate(memdir: Path, *, head_chars: int = 1800) -> dict | None:
     file, so recall-state stays a thin resume signal instead of re-dumping a
     multi-KB (and growing) handoff inline every time (cliquedb UX report
     2026-07-09). `truncated` flags when the tail was elided; full via
-    `rmx memory get <id>`."""
+    `rmx memory get <id>`.
+
+    "Most recent" is `memory_layout.iter_savestates`' ONE ordering across
+    `savestates/` and the legacy top level (task 26.3 AC-3, ADR-0005 #newest:
+    `updated` date, then mtime, never `created`), the same answer the MEMORY.md
+    pointer gives. At HEAD 8a867bc this globbed the top level only and took the
+    newest MTIME, which in cliquedb was a file a later copy had touched, not
+    its newest save (ch-bsd plan-26 r1 #s2)."""
+    from refmatrix import memory_layout
     if not memdir.is_dir():
         return None
-    cands = sorted(memdir.glob("savestate_*.md"),
-                   key=lambda p: p.stat().st_mtime, reverse=True)
+    cands = memory_layout.iter_savestates(memdir)
     if not cands:
         return None
     p = cands[0]

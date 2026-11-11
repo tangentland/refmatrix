@@ -1,0 +1,32 @@
+pyc-guard: recompiled 24 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-3/src/refmatrix as checked-hash (bug-037)
+P1 exit 0 save-state 
+/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-wat5jn0t/memory/
+savestate_sessdup.md  (0 events, session sess-dup, explicit)
+MEMORY.md: 1 -> 1 lines, 124 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+
+P1 walk kept before save: /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-wat5jn0t/memory/savestates/savestate_sessdup.md created kept: 2026-11-05
+P1 top created after flat save: 2026-10-01
+P1 folder still there: True
+P1 iter_savestates: [PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-wat5jn0t/memory/savestate_sessdup.md')]
+.P2 exit 1 out: Error: save-state could not write /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-babkvvhg/memory/savestates/savestate_sessdup.md (PermissionError: [Errno 13] Permission denied: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-babkvvhg/memory/savestates/savestate_sessdup.md'); nothing was saved
+
+P2 legacy exists: False folder: True
+.P3 exit 1 out:  PermissionError(13, 'Permission denied')
+P3 top exists: True
+.P4 fresh-folder exit 1 out: Error: save-state could not write /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-9soqawwu/memory/savestates/savestate_sessdup.md (OSError: [Errno 28] No space left on device); the top-level savestate_sessdup.md is kept; nothing was saved
+
+P4 iter_savestates: [PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-9soqawwu/memory/savestates/savestate_sessdup.md')]
+P4 latest path: /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-9soqawwu/memory/savestates/savestate_sessdup.md body has FRESH: False len body: 160
+.P4 fresh-top exit 1 out: Error: save-state could not write /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-ua6zli9v/memory/savestates/savestate_sessdup.md (OSError: [Errno 28] No space left on device); the top-level savestate_sessdup.md is kept; nothing was saved
+
+P4 iter_savestates: [PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-ua6zli9v/memory/savestates/savestate_sessdup.md')]
+P4 latest path: /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-ua6zli9v/memory/savestates/savestate_sessdup.md body has FRESH: False len body: 160
+.P5 VerbError: save-state could not write /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-ublrk7lk/memory/savestates/savestate_sessdup.md (PermissionError: [Errno 13] Permission denied: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-ublrk7lk/memory/savestates/savestate_sessdup.md'); the top-level savestate_sessdup.md is kept; nothing was saved
+.
+6 passed in 0.95s
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-3/src/refmatrix as checked-hash (bug-037)
+P6 exit 0 out: save-state /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-iteyomq4/memory/ savestates/savestate_sessdup.md (0 events, session sess-dup, explicit) could not remove the top-level save-state copy: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-iteyomq4/memory/ savestate_sessdup.md: PermissionError: [Errno 1] Operation not permitted: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-iteyomq4/memory /savestate_sessdup.md' -- the walk keeps naming it as skipped MEMORY.md: 1 -> 1 lines, 135 chars (caps 200 lines / 24000 chars; 1 memories on disk) None
+P6 walk: [PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-iteyomq4/memory/savestates/savestate_sessdup.md')]
+P6 latest has probe msg: True /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-iteyomq4/memory/savestates/savestate_sessdup.md
+.
+1 passed, 6 deselected in 0.39s

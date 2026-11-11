@@ -138,3 +138,52 @@ prose on a moved file is never frozen into the sidecar. **AC:** the r4 probe sha
 no sidecar, index line at `feedback_a.md`, file at `feedback/feedback_a.md`, a cut `prefix…` hook)
 writes no `…`-ended sidecar value and renders the derived hook; mutation "no id fallback" is
 killed. 26.5 inherits the fix (it moves files too). {#inherit-moved-derived}
+
+## RED-round decisions (orchestrator, 2026-11-10) {#red-decisions}
+
+Taken as the user would (correct first), answering the RED author's ambiguities at `4349154`:
+
+1. **Ordering stays the 26.1 key.** `_SaveKey` = (updated DATE, mtime, name, path); the
+   time of day that AC-1 writes into `updated:` is informational and never orders saves. ADR-0005
+   `#newest` stands. {#rd-key}
+2. **One "newest" in every dir.** The `MEMORY.md` save-state pointer and the reader both use
+   `memory_layout.sort_savestates`, organised or not. Where HEAD's pointer ordering (created,
+   mtime) disagrees with it (the cliquedb mixed-format shape), the flat-dir pointer changes: an
+   accepted, named exception to 26.1 AC-9's byte-identity, because two answers to "newest" is the
+   defect. Test: a flat cliquedb-shaped dir, pointer == reader. {#rd-one-newest}
+3. **The r4 id fallback is ungated.** It applies only when an index link's path is gone, which a
+   flat dir reaches only by hand; behaviour there is the same fix. {#rd-fallback-ungated}
+4. **A crash mid-move (both a top-level and a `savestates/` copy of one id):** the reader takes
+   the `savestates/` copy; the next save of that id writes `savestates/` and removes the top-level
+   copy, printing `removed duplicate top-level <name>`; the bridge counts and names the duplicate
+   in its skip line until then. Test both. {#rd-duplicate}
+5. **AC-7's `install-hooks --check` clean** is verified by GREEN (the hook config carries no
+   command docs, so it cannot fail RED). {#rd-ac7}
+
+**#rd-duplicate vs 26.2 AC-4 (orchestrator, 2026-11-10).** 26.2 AC-4 refuses BOTH files of a
+duplicate id and keeps the stored row. The one pair this task produces on purpose — a
+`savestate_*` id with one copy at the memdir top level and one under `savestates/` — is the
+exception: the `savestates/` copy is ingested, the top-level copy is skipped, counted and named.
+Every other duplicate id follows 26.2 AC-4. Whichever of 26.2 / 26.3 merges second carries the
+combined test. {#rd-duplicate-vs-262}
+
+## Remedy after ch-bsd 26.3 r1 (2026-11-10) {#remedy-r1}
+
+rel: derives-from -> [[bsd-task-26.3-r1-savestate-subfolder]]
+rel: supersedes -> [[#rd-duplicate]]
+
+**s-1: a pair keeps the NEWER copy, not the folder copy.** `#rd-duplicate` assumed a crash
+mid-move, which the writer's replace-first order cannot produce. A real pair forms only when
+another writer (an MCP server not yet respawned after the deploy, or a flat dir that still has
+`savestates/`) puts a fresh top-level copy beside an older folder copy. Rule, in the one walk
+(`memory_layout`): of the two copies of one save-state id, keep the one that sorts newest under
+ADR-0005's key (`sort_savestates`); on a full tie keep `savestates/`. The other copy is skipped,
+counted and named; the next save in an organised dir writes `savestates/` with the kept copy's
+`created:` and removes the top-level copy, printing which one it removed. **ACs:** (a) fresh
+top-level + stale folder copy → reader, pointer and recall-state use the top-level copy;
+(b) fresh folder + stale top-level → the folder copy; (c) a full tie → the folder copy; each in
+an organised and a flat dir. **Mutation:** always prefer `savestates/` — killed by (a).
+{#rm-newer-copy}
+
+**m-2:** `updated:` carries an ISO timestamp for save-states; `~/.claude/MEMORY-RULES.md`
+`#frontmatter` is amended to say so (orchestrator, 2026-11-10). {#rm-updated-rule}

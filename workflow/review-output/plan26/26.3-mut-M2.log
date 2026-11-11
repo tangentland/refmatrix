@@ -1,0 +1,36 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+___________________ test_ac3_only_legacy_files_still_resume ____________________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-dedeyevm/memory')
+
+    def test_ac3_only_legacy_files_still_resume(memdir):
+        """Every other project today: a flat dir, no marker. It must keep resuming."""
+        ss(memdir, "savestate_a.md", updated="2026-11-08", mtime=at(2026, 11, 8))
+        ss(memdir, "savestate_b.md", updated="2026-11-09", mtime=at(2026, 11, 9))
+>       assert latest(memdir) == "savestate_b"
+E       AssertionError: assert None == 'savestate_b'
+E        +  where None = latest(PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-dedeyevm/memory'))
+
+tests/test_savestate_subfolder.py:276: AssertionError
+_____________________ test_ac3_mixed_the_newest_is_legacy ______________________
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-0ssisb1s/memory')
+
+    def test_ac3_mixed_the_newest_is_legacy(memdir):
+        organise(memdir)
+        ss(memdir, "savestates/savestate_n.md", updated="2026-11-07", mtime=at(2026, 11, 7))
+        ss(memdir, "savestate_l.md", updated="2026-11-09", mtime=at(2026, 11, 9))
+>       assert latest(memdir) == "savestate_l"
+E       AssertionError: assert 'savestate_n' == 'savestate_l'
+E         
+E         - savestate_l
+E         ?           ^
+E         + savestate_n
+E         ?           ^
+
+tests/test_savestate_subfolder.py:283: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_savestate_subfolder.py::test_ac3_only_legacy_files_still_resume
+FAILED tests/test_savestate_subfolder.py::test_ac3_mixed_the_newest_is_legacy
+2 failed in 0.31s

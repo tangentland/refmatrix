@@ -1299,10 +1299,15 @@ def save_state(root: Path, *, message: str | None = None,
     s = stm_mod.Stm(root, sess)
     memdir = (Path(memory_dir).resolve() if memory_dir
               else handoff.default_memory_dir(repo))
-    res = handoff.compose_save_state(
-        s, root, repo=repo, memdir=memdir,
-        today=_time.strftime("%Y-%m-%d"), message=message,
-        promote=promote, dry_run=dry_run)
+    try:
+        res = handoff.compose_save_state(
+            s, root, repo=repo, memdir=memdir,
+            today=_time.strftime("%Y-%m-%d"), message=message,
+            promote=promote, dry_run=dry_run)
+    except handoff.SaveStateWriteError as exc:
+        # A save that could not write is an error to EVERY caller, never a
+        # result with a `target` (task 26.3 remedy-r1).
+        raise VerbError(str(exc)) from exc
     res["session"] = sess
     res["session_source"] = session_source
     res["memory_dir"] = str(memdir)

@@ -1,0 +1,316 @@
+.....................................FF....FF....F.FF................... [ 93%]
+.....                                                                    [100%]
+=================================== FAILURES ===================================
+_ test_rm_newer_copy_the_walk_keeps_the_newer_copy_and_skips_the_other[fresh-top-organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-6gun4qpx/memory')
+case = 'fresh-top', organised = True
+
+    @pytest.mark.parametrize("organised", [True, False], ids=["organised", "flat"])
+    @pytest.mark.parametrize("case", PAIR_CASES)
+    def test_rm_newer_copy_the_walk_keeps_the_newer_copy_and_skips_the_other(memdir, case,
+                                                                            organised):
+        if organised:
+            organise(memdir)
+        kept, other = _pair(memdir, case)
+        skipped: list = []
+        walked = [Path(p) for p in memory_layout.iter_memory_files(memdir, skipped=skipped)]
+>       assert kept in walked and other not in walked, (case, walked)
+E       AssertionError: ('fresh-top', [PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-6gun4qpx/memory/savestates/savestate_sessdup.md')])
+E       assert (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-6gun4qpx/memory/savestate_sessdup.md') in [PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-6gun4qpx/memory/savestates/savestate_sessdup.md')])
+
+tests/test_savestate_subfolder.py:625: AssertionError
+_ test_rm_newer_copy_the_walk_keeps_the_newer_copy_and_skips_the_other[fresh-top-flat] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-5k7lkx2f/memory')
+case = 'fresh-top', organised = False
+
+    @pytest.mark.parametrize("organised", [True, False], ids=["organised", "flat"])
+    @pytest.mark.parametrize("case", PAIR_CASES)
+    def test_rm_newer_copy_the_walk_keeps_the_newer_copy_and_skips_the_other(memdir, case,
+                                                                            organised):
+        if organised:
+            organise(memdir)
+        kept, other = _pair(memdir, case)
+        skipped: list = []
+        walked = [Path(p) for p in memory_layout.iter_memory_files(memdir, skipped=skipped)]
+>       assert kept in walked and other not in walked, (case, walked)
+E       AssertionError: ('fresh-top', [PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-5k7lkx2f/memory/savestates/savestate_sessdup.md')])
+E       assert (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-5k7lkx2f/memory/savestate_sessdup.md') in [PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-5k7lkx2f/memory/savestates/savestate_sessdup.md')])
+
+tests/test_savestate_subfolder.py:625: AssertionError
+_ test_rm_newer_copy_reader_pointer_and_recall_state_use_the_kept_copy[fresh-top-organised] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-cc6rbtat/memory')
+case = 'fresh-top', organised = True
+
+    @pytest.mark.parametrize("organised", [True, False], ids=["organised", "flat"])
+    @pytest.mark.parametrize("case", PAIR_CASES)
+    def test_rm_newer_copy_reader_pointer_and_recall_state_use_the_kept_copy(memdir, case,
+                                                                            organised):
+        if organised:
+            organise(memdir)
+        kept, other = _pair(memdir, case)
+        note(memdir, "feedback_x.md", mtype="feedback", mtime=at(2026, 11, 1))
+        r = handoff._latest_savestate(memdir)
+>       assert r and r["path"] == str(kept), (case, r and r["path"])
+E       AssertionError: ('fresh-top', '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-cc6rbtat/memory/savestates/savestate_sessdup.md')
+E       assert ({'body': '# Save-state savestate_sessdup {#root}\n\nSTALE folder copy of savestate_sessdup', 'id': 'savestate_sessdup'...olders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-cc6rbtat/memory/savestates/savestate_sessdup.md', 'truncated': False} and '/var/folders...te_sessdup.md' == '/var/folders...te_sessdup.md'
+E         
+E         Skipping 71 identical leading characters in diff, use -v to show
+E         - /savestate_sessdup.md
+E         + /savestates/savestate_sessdup.md
+E         ? +++++++++++)
+
+tests/test_savestate_subfolder.py:639: AssertionError
+_ test_rm_newer_copy_reader_pointer_and_recall_state_use_the_kept_copy[fresh-top-flat] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-xdyx8sab/memory')
+case = 'fresh-top', organised = False
+
+    @pytest.mark.parametrize("organised", [True, False], ids=["organised", "flat"])
+    @pytest.mark.parametrize("case", PAIR_CASES)
+    def test_rm_newer_copy_reader_pointer_and_recall_state_use_the_kept_copy(memdir, case,
+                                                                            organised):
+        if organised:
+            organise(memdir)
+        kept, other = _pair(memdir, case)
+        note(memdir, "feedback_x.md", mtype="feedback", mtime=at(2026, 11, 1))
+        r = handoff._latest_savestate(memdir)
+>       assert r and r["path"] == str(kept), (case, r and r["path"])
+E       AssertionError: ('fresh-top', '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-xdyx8sab/memory/savestates/savestate_sessdup.md')
+E       assert ({'body': '# Save-state savestate_sessdup {#root}\n\nSTALE folder copy of savestate_sessdup', 'id': 'savestate_sessdup'...olders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-xdyx8sab/memory/savestates/savestate_sessdup.md', 'truncated': False} and '/var/folders...te_sessdup.md' == '/var/folders...te_sessdup.md'
+E         
+E         Skipping 71 identical leading characters in diff, use -v to show
+E         - /savestate_sessdup.md
+E         + /savestates/savestate_sessdup.md
+E         ? +++++++++++)
+
+tests/test_savestate_subfolder.py:639: AssertionError
+_____ test_rm_newer_copy_the_next_save_keeps_the_fresh_top_levels_created ______
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-bushzv42/memory')
+
+    def test_rm_newer_copy_the_next_save_keeps_the_fresh_top_levels_created(memdir):
+        """(a) in an organised dir: the next save writes `savestates/` with the KEPT copy's
+        `created:` (the fresh top-level one), removes the top-level copy, and says which it
+        removed. At #rd-duplicate the folder copy's `created:` was taken."""
+        organise(memdir)
+        top, folder = _pair(memdir, "fresh-top")
+        r = CliRunner().invoke(cli_mod.main, ["save-state", "-s", "sess-dup", "--memory-dir",
+                                              str(memdir), "--no-lint", "--no-promote", "--no-sync",
+                                              "-m", "after the pair"])
+        assert r.exit_code == 0, f"{r.output}\n{r.exception!r}"
+        assert "after the pair" in folder.read_text(encoding="utf-8")
+>       assert fm(folder, "created") == "2026-11-05", "the kept (top-level) copy's created: was lost"
+E       AssertionError: the kept (top-level) copy's created: was lost
+E       assert '2026-10-01' == '2026-11-05'
+E         
+E         - 2026-11-05
+E         ?       ^  ^
+E         + 2026-10-01
+E         ?       ^  ^
+
+tests/test_savestate_subfolder.py:661: AssertionError
+_ test_rm_newer_copy_the_bridge_skips_and_names_the_other_copy[fresh-top-organised] _
+
+inproc_store = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-wi0vv7ln/proj/.refmatrix')
+base = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-wi0vv7ln')
+case = 'fresh-top', organised = True
+
+    @pytest.mark.parametrize("organised", [True, False], ids=["organised", "flat"])
+    @pytest.mark.parametrize("case", PAIR_CASES)
+    def test_rm_newer_copy_the_bridge_skips_and_names_the_other_copy(inproc_store, base, case,
+                                                                    organised):
+        root = inproc_store
+        memdir = base / "memory"
+        memdir.mkdir()
+        if organised:
+            organise(memdir)
+        kept, other = _pair(memdir, case)
+        note(memdir, "feedback/feedback_x.md", mtype="feedback", mtime=at(2026, 11, 1))
+        assert not dm.ping(root, retries=0), "the in-process leg must run with NO daemon"
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["error"] is None, out
+        assert out.get("skipped") == 1, f"the other copy is not counted as a skip: {out}"
+        named = [str(p) for p in (out.get("skipped_paths") or [])]
+        rel = str(other.relative_to(memdir))
+        spellings = {str(other), str(memdir.resolve() / rel), rel}
+>       assert any(n in spellings for n in named), (case, named)
+E       AssertionError: ('fresh-top', ['/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-wi0vv7ln/memory/savestate_sessdup.md'])
+E       assert False
+E        +  where False = any(<generator object test_rm_newer_copy_the_bridge_skips_and_names_the_other_copy.<locals>.<genexpr> at 0x1192ffd80>)
+
+tests/test_savestate_subfolder.py:724: AssertionError
+_ test_rm_newer_copy_the_bridge_skips_and_names_the_other_copy[fresh-top-flat] _
+
+inproc_store = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-ipnvx52z/proj/.refmatrix')
+base = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-ipnvx52z')
+case = 'fresh-top', organised = False
+
+    @pytest.mark.parametrize("organised", [True, False], ids=["organised", "flat"])
+    @pytest.mark.parametrize("case", PAIR_CASES)
+    def test_rm_newer_copy_the_bridge_skips_and_names_the_other_copy(inproc_store, base, case,
+                                                                    organised):
+        root = inproc_store
+        memdir = base / "memory"
+        memdir.mkdir()
+        if organised:
+            organise(memdir)
+        kept, other = _pair(memdir, case)
+        note(memdir, "feedback/feedback_x.md", mtype="feedback", mtime=at(2026, 11, 1))
+        assert not dm.ping(root, retries=0), "the in-process leg must run with NO daemon"
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["error"] is None, out
+        assert out.get("skipped") == 1, f"the other copy is not counted as a skip: {out}"
+        named = [str(p) for p in (out.get("skipped_paths") or [])]
+        rel = str(other.relative_to(memdir))
+        spellings = {str(other), str(memdir.resolve() / rel), rel}
+>       assert any(n in spellings for n in named), (case, named)
+E       AssertionError: ('fresh-top', ['/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-ipnvx52z/memory/savestate_sessdup.md'])
+E       assert False
+E        +  where False = any(<generator object test_rm_newer_copy_the_bridge_skips_and_names_the_other_copy.<locals>.<genexpr> at 0x11d21b060>)
+
+tests/test_savestate_subfolder.py:724: AssertionError
+==================================== PASSES ====================================
+__ test_ac1_compose_writes_savestates_in_an_organised_dir_creating_the_folder __
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 1 lines, 135 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+____ test_ac1_compose_writes_the_top_level_in_an_unorganised_dir_as_at_head ____
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 1 lines, 124 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+________ test_ac1_the_mcp_verb_writes_where_the_layout_says[organised] _________
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 1 lines, 135 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+_______ test_ac1_the_mcp_verb_writes_where_the_layout_says[unorganised] ________
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 1 lines, 124 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+___ test_ac1_updated_is_a_datetime_with_time_of_day_and_created_stays_a_date ___
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 1 lines, 128 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+___ test_ac2_a_legacy_file_is_moved_into_savestates_and_its_created_survives ___
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 1 lines, 135 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+______________ test_ac2_a_resave_in_savestates_keeps_its_created _______________
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 1 lines, 135 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+_______ test_ac2_an_unorganised_dir_overwrites_the_legacy_file_in_place ________
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 1 lines, 124 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+_____ test_ac5_update_index_links_savestates_and_replaces_the_legacy_line ______
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: no memory files found under /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-87n45j7a/memory; index left untouched
+_____________ test_ac5_update_index_in_an_unorganised_dir_is_heads _____________
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: no memory files found under /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-1q5rhk9i/memory; index left untouched
+_________ test_ac5_a_save_in_an_organised_dir_leaves_no_top_level_link _________
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 2 -> 2 lines, 188 chars (caps 200 lines / 24000 chars; 2 memories on disk)
+__ test_ac6_save_state_lints_the_savestates_path_and_recall_finds_the_handoff __
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 2 lines, 205 chars (caps 200 lines / 24000 chars; 2 memories on disk)
+__________________ test_update_index_replaces_not_duplicates ___________________
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: no memory files found under /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-605/test_update_index_replaces_not0; index left untouched
+_______________ test_compose_save_state_writes_handoff_and_index _______________
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 1 lines, 132 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+___________ test_compose_save_state_writes_updated_with_time_of_day ____________
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 1 lines, 124 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+=========================== short test summary info ============================
+PASSED tests/test_savestate_subfolder.py::test_ac1_compose_writes_savestates_in_an_organised_dir_creating_the_folder
+PASSED tests/test_savestate_subfolder.py::test_ac1_compose_writes_the_top_level_in_an_unorganised_dir_as_at_head
+PASSED tests/test_savestate_subfolder.py::test_ac1_dry_run_in_an_organised_dir_names_the_new_path_and_writes_nothing
+PASSED tests/test_savestate_subfolder.py::test_ac1_the_mcp_verb_writes_where_the_layout_says[organised]
+PASSED tests/test_savestate_subfolder.py::test_ac1_the_mcp_verb_writes_where_the_layout_says[unorganised]
+PASSED tests/test_savestate_subfolder.py::test_ac1_the_cli_writes_where_the_layout_says[organised]
+PASSED tests/test_savestate_subfolder.py::test_ac1_the_cli_writes_where_the_layout_says[unorganised]
+PASSED tests/test_savestate_subfolder.py::test_ac1_updated_is_a_datetime_with_time_of_day_and_created_stays_a_date
+PASSED tests/test_savestate_subfolder.py::test_ac2_a_legacy_file_is_moved_into_savestates_and_its_created_survives
+PASSED tests/test_savestate_subfolder.py::test_ac2_a_resave_in_savestates_keeps_its_created
+PASSED tests/test_savestate_subfolder.py::test_ac2_an_unorganised_dir_overwrites_the_legacy_file_in_place
+PASSED tests/test_savestate_subfolder.py::test_ac3_only_new_files
+PASSED tests/test_savestate_subfolder.py::test_ac3_only_legacy_files_still_resume
+PASSED tests/test_savestate_subfolder.py::test_ac3_mixed_the_newest_is_legacy
+PASSED tests/test_savestate_subfolder.py::test_ac3_mixed_the_newest_is_new
+PASSED tests/test_savestate_subfolder.py::test_ac3_cliquedb_shape_a_newer_mtime_with_an_older_updated_loses[mixed]
+PASSED tests/test_savestate_subfolder.py::test_ac3_cliquedb_shape_a_newer_mtime_with_an_older_updated_loses[legacy-only]
+PASSED tests/test_savestate_subfolder.py::test_ac3_same_day_two_sessions_the_session_saved_last_wins[new-date-only]
+PASSED tests/test_savestate_subfolder.py::test_ac3_same_day_two_sessions_the_session_saved_last_wins[new-datetime]
+PASSED tests/test_savestate_subfolder.py::test_ac3_same_day_two_sessions_the_session_saved_last_wins[legacy-date-only]
+PASSED tests/test_savestate_subfolder.py::test_ac3_same_day_two_sessions_the_session_saved_last_wins[legacy-datetime]
+PASSED tests/test_savestate_subfolder.py::test_ac3_mixed_formats_on_one_date_the_later_mtime_wins
+PASSED tests/test_savestate_subfolder.py::test_ac3_recall_state_cli_and_mcp_return_the_same_newest_from_savestates
+PASSED tests/test_savestate_subfolder.py::test_ac4_recents_walk_every_folder_and_exclude_savestates_and_impressions
+PASSED tests/test_savestate_subfolder.py::test_ac4_recall_state_recents_carry_no_savestate
+PASSED tests/test_savestate_subfolder.py::test_ac5_update_index_links_savestates_and_replaces_the_legacy_line
+PASSED tests/test_savestate_subfolder.py::test_ac5_update_index_in_an_unorganised_dir_is_heads
+PASSED tests/test_savestate_subfolder.py::test_ac5_the_pointer_line_and_recall_state_name_the_same_newest
+PASSED tests/test_savestate_subfolder.py::test_ac5_a_save_in_an_organised_dir_leaves_no_top_level_link
+PASSED tests/test_savestate_subfolder.py::test_ac6_save_state_lints_the_savestates_path_and_recall_finds_the_handoff
+PASSED tests/test_savestate_subfolder.py::test_ac7_recall_state_docs_name_the_savestates_source[src/refmatrix/templates/commands/recall-state.md]
+PASSED tests/test_savestate_subfolder.py::test_ac7_recall_state_docs_name_the_savestates_source[.claude/commands/recall-state.md]
+PASSED tests/test_savestate_subfolder.py::test_ac7_the_installed_command_is_the_template
+PASSED tests/test_savestate_subfolder.py::test_r4_a_moved_files_derived_cut_is_never_frozen_into_the_sidecar
+PASSED tests/test_savestate_subfolder.py::test_r4_load_hooks_resolves_a_moved_files_derived_hook_by_id
+PASSED tests/test_savestate_subfolder.py::test_rd_one_newest_a_flat_dirs_pointer_names_the_readers_newest[created-vs-mtime]
+PASSED tests/test_savestate_subfolder.py::test_rd_one_newest_a_flat_dirs_pointer_names_the_readers_newest[mixed-format]
+PASSED tests/test_savestate_subfolder.py::test_rm_newer_copy_the_walk_keeps_the_newer_copy_and_skips_the_other[fresh-folder-organised]
+PASSED tests/test_savestate_subfolder.py::test_rm_newer_copy_the_walk_keeps_the_newer_copy_and_skips_the_other[fresh-folder-flat]
+PASSED tests/test_savestate_subfolder.py::test_rm_newer_copy_the_walk_keeps_the_newer_copy_and_skips_the_other[tie-organised]
+PASSED tests/test_savestate_subfolder.py::test_rm_newer_copy_the_walk_keeps_the_newer_copy_and_skips_the_other[tie-flat]
+PASSED tests/test_savestate_subfolder.py::test_rm_newer_copy_reader_pointer_and_recall_state_use_the_kept_copy[fresh-folder-organised]
+PASSED tests/test_savestate_subfolder.py::test_rm_newer_copy_reader_pointer_and_recall_state_use_the_kept_copy[fresh-folder-flat]
+PASSED tests/test_savestate_subfolder.py::test_rm_newer_copy_reader_pointer_and_recall_state_use_the_kept_copy[tie-organised]
+PASSED tests/test_savestate_subfolder.py::test_rm_newer_copy_reader_pointer_and_recall_state_use_the_kept_copy[tie-flat]
+PASSED tests/test_savestate_subfolder.py::test_rm_newer_copy_the_top_level_copy_is_removed_only_after_savestates_is_written
+PASSED tests/test_savestate_subfolder.py::test_rm_newer_copy_the_bridge_skips_and_names_the_other_copy[fresh-folder-organised]
+PASSED tests/test_savestate_subfolder.py::test_rm_newer_copy_the_bridge_skips_and_names_the_other_copy[fresh-folder-flat]
+PASSED tests/test_savestate_subfolder.py::test_rm_newer_copy_the_bridge_skips_and_names_the_other_copy[tie-organised]
+PASSED tests/test_savestate_subfolder.py::test_rm_newer_copy_the_bridge_skips_and_names_the_other_copy[tie-flat]
+PASSED tests/test_save_state.py::test_clean_focus_drops_shell_noise_keeps_code
+PASSED tests/test_save_state.py::test_frozen_created_preserves_existing
+PASSED tests/test_save_state.py::test_frozen_created_defaults_today_when_absent
+PASSED tests/test_save_state.py::test_render_has_gmd_frontmatter_and_sections
+PASSED tests/test_save_state.py::test_update_index_replaces_not_duplicates
+PASSED tests/test_save_state.py::test_last_assistant_text_extracts_latest
+PASSED tests/test_save_state.py::test_last_assistant_text_missing_file
+PASSED tests/test_save_state.py::test_stop_hook_template_records_say
+PASSED tests/test_save_state.py::test_git_milestone_detects_mutating_ops
+PASSED tests/test_save_state.py::test_tool_output_text_flattens
+PASSED tests/test_save_state.py::test_focus_digest_has_sections
+PASSED tests/test_save_state.py::test_compose_save_state_writes_handoff_and_index
+PASSED tests/test_save_state.py::test_compose_save_state_writes_updated_with_time_of_day
+PASSED tests/test_save_state.py::test_compose_save_state_dry_run_writes_nothing
+PASSED tests/test_save_state.py::test_compose_recall_state_pulls_latest_handoff
+PASSED tests/test_save_state.py::test_latest_savestate_head_caps_long_body
+PASSED tests/test_save_state.py::test_latest_savestate_short_body_untouched
+PASSED tests/test_save_state.py::test_compose_recall_state_no_handoff
+PASSED tests/test_save_state.py::test_sync_memory_dir_reports_missing_dir_not_raises
+PASSED tests/test_save_state.py::test_save_state_templates_never_install_the_dev_tree_into_deploy
+FAILED tests/test_savestate_subfolder.py::test_rm_newer_copy_the_walk_keeps_the_newer_copy_and_skips_the_other[fresh-top-organised]
+FAILED tests/test_savestate_subfolder.py::test_rm_newer_copy_the_walk_keeps_the_newer_copy_and_skips_the_other[fresh-top-flat]
+FAILED tests/test_savestate_subfolder.py::test_rm_newer_copy_reader_pointer_and_recall_state_use_the_kept_copy[fresh-top-organised]
+FAILED tests/test_savestate_subfolder.py::test_rm_newer_copy_reader_pointer_and_recall_state_use_the_kept_copy[fresh-top-flat]
+FAILED tests/test_savestate_subfolder.py::test_rm_newer_copy_the_next_save_keeps_the_fresh_top_levels_created
+FAILED tests/test_savestate_subfolder.py::test_rm_newer_copy_the_bridge_skips_and_names_the_other_copy[fresh-top-organised]
+FAILED tests/test_savestate_subfolder.py::test_rm_newer_copy_the_bridge_skips_and_names_the_other_copy[fresh-top-flat]
+7 failed, 70 passed in 32.14s
+
+==== 26.3 remedy-r1 RED (#rm-newer-copy, supersedes #rd-duplicate) at HEAD 56111ce ====
+Run above: test_savestate_subfolder.py + test_save_state.py -> 7 failed, 70 passed.
+Replaced the 4 #rd-duplicate tests (reader x2, next save, bridge) with 20 #rm-newer-copy tests:
+  walk x6, reader+pointer+recall-state x6, bridge x6  (cases fresh-top/fresh-folder/tie x organised/flat)
+  next save keeps the kept copy's created: (1), top-level removed only after savestates/ is written (1)
+RED at HEAD (7), for the right reason -- HEAD keeps the STALE folder copy and skips the fresh top-level one:
+  walk[fresh-top-*]   top-level copy not in the walk (only savestates/ yielded)
+  reader[fresh-top-*] path savestates/..., body "STALE folder copy"
+  bridge[fresh-top-*] skipped_paths names the TOP-LEVEL copy (the fresh one)
+  next save           created: '2026-10-01' (folder's) != '2026-11-05' (kept top-level's)
+GREEN at HEAD (13), each killed by a logged mutation applied to HEAD src, restored by git checkout:
+  MX1 the walk always keeps the top-level copy (skip the folder twin)  -> 12 FAILED
+      (walk/reader/bridge x fresh-folder/tie x organised/flat)          26.3-r1-mut-MX1.log
+  MX2 the top-level copy is unlinked BEFORE the savestates/ write       -> 1 FAILED
+      (removed_only_after_savestates_is_written)                         26.3-r1-mut-MX2.log
+Spec mutation "always prefer savestates/" == HEAD: killed by the 7 fresh-top RED tests.

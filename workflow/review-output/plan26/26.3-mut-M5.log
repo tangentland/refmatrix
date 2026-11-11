@@ -1,0 +1,16 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________________ test_ac7_the_installed_command_is_the_template ________________
+
+    def test_ac7_the_installed_command_is_the_template():
+        a = (_REPO / "src/refmatrix/templates/commands/recall-state.md").read_bytes()
+        b = (_REPO / ".claude/commands/recall-state.md").read_bytes()
+>       assert a == b
+E       AssertionError: assert b'---\ndescri...n$ARGUMENTS\n' == b'---\ndescri...MUTATION M5\n'
+E         
+E         Use -v to get more diff
+
+tests/test_savestate_subfolder.py:481: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_savestate_subfolder.py::test_ac7_the_installed_command_is_the_template
+1 failed in 0.19s

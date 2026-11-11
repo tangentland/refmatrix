@@ -1,0 +1,76 @@
+.....................................FF.F....................            [100%]
+=================================== FAILURES ===================================
+______ test_rd_duplicate_the_reader_takes_the_savestates_copy[organised] _______
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-9lsrf5cn/memory')
+organised = True
+
+    @pytest.mark.parametrize("organised", [True, False], ids=["organised", "unorganised"])
+    def test_rd_duplicate_the_reader_takes_the_savestates_copy(memdir, organised):
+        if organised:
+            organise(memdir)
+        new, _old = _duplicate(memdir)
+        r = handoff._latest_savestate(memdir)
+>       assert r and r["path"] == str(new), r
+E       AssertionError: {'body': '# Save-state savestate_sessdup {#root}
+E         
+E         the stale top-level copy of savestate_sessdup', 'id': 'savestate_s...h': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-9lsrf5cn/memory/savestate_sessdup.md', 'truncated': False}
+E       assert ({'body': '# Save-state savestate_sessdup {#root}\n\nthe stale top-level copy of savestate_sessdup', 'id': 'savestate_s...h': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-9lsrf5cn/memory/savestate_sessdup.md', 'truncated': False} and '/var/folders...te_sessdup.md' == '/var/folders...te_sessdup.md'
+E         
+E         Skipping 71 identical leading characters in diff, use -v to show
+E         - /savestates/savestate_sessdup.md
+E         ? -----------
+E         + /savestate_sessdup.md)
+
+tests/test_savestate_subfolder.py:595: AssertionError
+_____ test_rd_duplicate_the_reader_takes_the_savestates_copy[unorganised] ______
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-r54cutsp/memory')
+organised = False
+
+    @pytest.mark.parametrize("organised", [True, False], ids=["organised", "unorganised"])
+    def test_rd_duplicate_the_reader_takes_the_savestates_copy(memdir, organised):
+        if organised:
+            organise(memdir)
+        new, _old = _duplicate(memdir)
+        r = handoff._latest_savestate(memdir)
+>       assert r and r["path"] == str(new), r
+E       AssertionError: {'body': '# Save-state savestate_sessdup {#root}
+E         
+E         the stale top-level copy of savestate_sessdup', 'id': 'savestate_s...h': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-r54cutsp/memory/savestate_sessdup.md', 'truncated': False}
+E       assert ({'body': '# Save-state savestate_sessdup {#root}\n\nthe stale top-level copy of savestate_sessdup', 'id': 'savestate_s...h': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-r54cutsp/memory/savestate_sessdup.md', 'truncated': False} and '/var/folders...te_sessdup.md' == '/var/folders...te_sessdup.md'
+E         
+E         Skipping 71 identical leading characters in diff, use -v to show
+E         - /savestates/savestate_sessdup.md
+E         ? -----------
+E         + /savestate_sessdup.md)
+
+tests/test_savestate_subfolder.py:595: AssertionError
+_ test_rd_duplicate_the_bridge_counts_and_names_the_duplicate_before_the_save __
+
+inproc_store = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-ecpis_kn/proj/.refmatrix')
+base = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-ecpis_kn')
+
+    def test_rd_duplicate_the_bridge_counts_and_names_the_duplicate_before_the_save(
+            inproc_store, base):
+        root = inproc_store
+        memdir = base / "memory"
+        memdir.mkdir()
+        organise(memdir)
+        _duplicate(memdir)
+        note(memdir, "feedback/feedback_x.md", mtype="feedback", mtime=at(2026, 11, 1))
+        assert not dm.ping(root, retries=0), "the in-process leg must run with NO daemon"
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["error"] is None, out
+>       assert out.get("skipped") == 1, f"the duplicate is not counted as a skip: {out}"
+E       AssertionError: the duplicate is not counted as a skip: {'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-ecpis_kn/memory', 'report': 'ingested 3 doc(s), 3 node(s), 0 rel: edge(s), 25 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage types: lead, part-of\nmemory embed: 2 row(s) now reachable by recall in proj', 'error': None, 'skipped_non_gmd': 0, 'skipped_unparseable': [], 'skipped_index': [], 'skipped': 0, 'skipped_paths': [], 'waited': False, 'waited_job': None, 'partition': 'proj', 'embed': {'partition': 'proj', 'embedded': 2, 'remaining': 0, 'batches': 1, 'capped': False, 'error': None}, 'doc_drop_failed': []}
+E       assert 0 == 1
+E        +  where 0 = <built-in method get of dict object at 0x10566c7c0>('skipped')
+E        +    where <built-in method get of dict object at 0x10566c7c0> = {'doc_drop_failed': [], 'embed': {'batches': 1, 'capped': False, 'embedded': 2, 'error': None, ...}, 'error': None, 'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx263-ecpis_kn/memory', ...}.get
+
+tests/test_savestate_subfolder.py:635: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_savestate_subfolder.py::test_rd_duplicate_the_reader_takes_the_savestates_copy[organised]
+FAILED tests/test_savestate_subfolder.py::test_rd_duplicate_the_reader_takes_the_savestates_copy[unorganised]
+FAILED tests/test_savestate_subfolder.py::test_rd_duplicate_the_bridge_counts_and_names_the_duplicate_before_the_save
+3 failed, 58 passed in 15.70s

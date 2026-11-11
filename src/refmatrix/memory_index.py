@@ -459,11 +459,12 @@ def load_hooks(memdir: Path) -> dict:
     memdir = Path(memdir)
     side = _with_id_aliases(memdir, _read_sidecar(memdir))
     hooks = dict(side)
+    moved: dict = {}       # the `{id: path}` map, built once, on the first dead link
     for rel, (hook, room) in _index_hook_records(memdir / INDEX_NAME).items():
         if not _is_path_key(rel):
             hooks[rel] = hook                  # a generated pointer (`impressions/`)
             continue
-        mid, derived = _link_identity(memdir, rel)
+        mid, derived = _link_identity(memdir, rel, moved)
         # ONE decision per memory, written under both keys: `Entry` looks the
         # path up first, so a path key the sidecar never had (an organised,
         # id-keyed sidecar) must not let the cut win by the back door.
@@ -478,11 +479,44 @@ def load_hooks(memdir: Path) -> dict:
     return hooks
 
 
-def _link_identity(memdir: Path, rel: str) -> tuple:
+# Marks `load_hooks`' `{id: [rel]}` map as built (no stem contains a NUL).
+_MOVED_BUILT = "\0built"
+
+
+def _ids_on_disk(memdir: Path) -> dict:
+    """`{id: [rel, ...]}` over `memory_layout.iter_memory_files` (THE walk), the
+    id being the stem MEMORY-RULES requires it to equal. A list, so a stem two
+    folders share is seen as ambiguous rather than resolved to either."""
+    out: dict = {}
+    for p in memory_layout.iter_memory_files(memdir):
+        out.setdefault(p.stem, []).append(str(p.relative_to(memdir)))
+    return out
+
+
+def _link_identity(memdir: Path, rel: str, moved: "dict | None" = None) -> tuple:
     """`(memory id, derived hook)` of the file an index link names: the id as
-    `_id_of_link` gives it, and `_first_prose` of the file ("" when the link's
-    file is gone, so a dead link has no derived value to keep)."""
+    `_id_of_link` gives it, and `_first_prose` of the file.
+
+    When the link's path is gone, the memory is looked up BY ID in `moved`
+    (an `{id: [rel]}` map `load_hooks` builds once from the walk; task 26.3
+    #inherit-261-r4, ch-bsd 26.1 r4 #m-1, 2026-11-10): a file moved into a type
+    folder keeps its derived hook, so a HEAD cut of that prose on the stale
+    line can never win and be frozen into the sidecar as if curated -- bug-195's
+    shape by the move door. Only a link whose id is on disk NOWHERE (or in two
+    places, which is said) has no derived value."""
     p = memdir / rel
+    if not p.is_file() and moved is not None:
+        if _MOVED_BUILT not in moved:
+            moved.update(_ids_on_disk(memdir))
+            moved[_MOVED_BUILT] = []
+        stem = Path(rel).stem
+        found = moved.get(stem) or []
+        if len(found) == 1:
+            return _link_identity(memdir, found[0])
+        if len(found) > 1:
+            print(f"{INDEX_NAME}: {rel}: the link's file is gone and id {stem!r} is at "
+                  f"{len(found)} paths ({', '.join(found)}); no derived hook",
+                  file=sys.stderr)
     if p.is_file():
         try:
             text = p.read_text(errors="replace")
@@ -637,8 +671,7 @@ def _index_lines(memdir: Path) -> list:
     return idx.read_text(errors="replace").splitlines() if idx.exists() else []
 
 
-def _render_entries(memdir: Path, entries: list, *, max_lines: int, max_chars: int,
-                    organised: bool) -> str:
+def _render_entries(memdir: Path, entries: list, *, max_lines: int, max_chars: int) -> str:
     by = {}
     for e in entries:
         by.setdefault(e.kind, []).append(e)
@@ -655,18 +688,14 @@ def _render_entries(memdir: Path, entries: list, *, max_lines: int, max_chars: i
             f"memories; full ledger in `workflow/bullshit/IMPRESSIONS.md`")
     saves = by.get("savestate", [])
     if saves:
-        if organised:
-            # ADR-0005 #newest: the ONE ordering (`updated`, then mtime;
-            # never `created`), shared with recall-state (task 26.1 AC-1).
-            first = memory_layout.sort_savestates([e.path for e in saves])[0]
-            newest = next(e for e in saves if e.path == first)
-        else:
-            # Un-organised: HEAD's ordering, kept byte-for-byte (ADR-0005
-            # #marker). By DATE, not by stem: save-state ids are session
-            # hashes (`savestate_fd45323ccbb8`), so sorting the names picked
-            # an arbitrary one and called it newest. `created` comes from the
-            # frontmatter, mtime is the tiebreak.
-            newest = sorted(saves, key=lambda e: (e.created, e.mtime))[-1]
+        # ADR-0005 #newest: the ONE ordering (`updated` date, then mtime;
+        # never `created`), shared with recall-state (task 26.1 AC-1), in
+        # EVERY dir (task 26.3 #rd-one-newest, 2026-11-10). Un-organised dirs
+        # used HEAD's (created, mtime) here while recall-state took the newest
+        # mtime: two answers to "newest" -- the defect. The flat pointer
+        # changing is the named exception to 26.1 AC-9's byte-identity.
+        first = memory_layout.sort_savestates([e.path for e in saves])[0]
+        newest = next(e for e in saves if e.path == first)
         lines.append(
             f"- [Save-states ({len(saves)}), newest {newest.path.stem}]"
             f"({newest.rel}) — session handoffs; `rmx recall-state` reads the newest")
@@ -715,7 +744,7 @@ def _render_organised(memdir: Path, entries: list, prose: list, *, max_lines: in
     budgets -- the prose's characters count against `MAX_INDEX_CHARS`."""
     block = _carried_block(prose)
     return block + _render_entries(
-        memdir, entries, organised=True,
+        memdir, entries,
         max_lines=max(1, max_lines - block.count("\n")),
         max_chars=max_chars - len(block))
 
@@ -730,7 +759,7 @@ def render(memdir: Path, *, max_lines: int = MAX_LINES,
     if memory_layout.is_organised(memdir):
         return _render_organised(memdir, entries, _prose_lines(_index_lines(memdir)),
                                  max_lines=max_lines, max_chars=max_chars)
-    return _render_entries(memdir, entries, organised=False,
+    return _render_entries(memdir, entries,
                            max_lines=max_lines, max_chars=max_chars)
 
 
@@ -790,7 +819,7 @@ def _write_organised(memdir: Path, entries: list, *, max_lines: int, max_chars: 
     # folded), write it and let `_report` say STILL OVER, as a marker-off dir
     # does: an index that stops updating is worse than an over-budget one.
     if len(text) > max_chars and prose:
-        bare = _render_entries(memdir, entries, organised=True,
+        bare = _render_entries(memdir, entries,
                                max_lines=max_lines, max_chars=max_chars)
         if len(bare) <= max_chars:
             return _refuse(out, (
