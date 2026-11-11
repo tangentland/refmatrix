@@ -1,0 +1,55 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug199-200/src/refmatrix as checked-hash (bug-037)
+..........F                                                              [100%]
+=================================== FAILURES ===================================
+_____ test_m1_a_restore_keyed_by_a_moved_files_old_path_rewrites_its_line ______
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-720/test_m1_a_restore_keyed_by_a_m0')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-720/test_m1_a_restore_keyed_by_a_m0/rmxhome')
+
+    def test_m1_a_restore_keyed_by_a_moved_files_old_path_rewrites_its_line(tmp_path, rmx_home):
+        """Probe D: the sidecar keys the memory by `project_curated.md`; the file has since moved
+        to `sub/project_curated.md` and its index line links the new path (the 26.4/26.5
+        migration window). The old-path key aliases to the memory's id, so the restore must reach
+        that line too -- otherwise the next `write` puts the cut back (bug-199 via the move)."""
+        d = tmp_path / "moved" / "memory"
+        d.mkdir(parents=True)
+        _mem(d, "project_curated", title="Curated", body="Prose unrelated to the curated hook.")
+        _mem(d, "project_fine", title="Fine", body="Prose of the fine one.")
+        _write_sidecar(d, {"project_curated.md": CURATED_CUT,
+                           "project_fine.md": "an intact curated hook with no cut"})
+        mi.write(d, out=_quiet())
+        (d / "sub").mkdir()
+        shutil.move(d / "project_curated.md", d / "sub" / "project_curated.md")
+        idx = d / mi.INDEX_NAME
+        idx.write_text(_index(d).replace("](project_curated.md)", "](sub/project_curated.md)"),
+                       encoding="utf-8")
+        link = "sub/project_curated.md"
+        assert _hook_of(d, link) == CURATED_CUT, "precondition: the moved line carries the cut"
+        assert len(RESTORED) <= _room(d, link), "precondition: the moved line has room"
+    
+        rc, out = _run(d, "--apply", restore=[f"project_curated.md={RESTORED}"])
+        assert rc == 0, out
+>       assert _hook_of(d, link) == RESTORED, (
+            f"a restore keyed by the moved file's OLD path left its line stale (#m-1):\n"
+            f"{_index(d)}\n--- output ---\n{out}")
+E       AssertionError: a restore keyed by the moved file's OLD path left its line stale (#m-1):
+E         - [Curated](sub/project_curated.md) — A hand-written hook whose full text is lost because the renderer cut…
+E         - [Fine](project_fine.md) — an intact curated hook with no cut
+E         
+E         --- output ---
+E           gone         project_curated.md
+E         1 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-720/test_m1_a_restore_keyed_by_a_m0/moved/memory/.memory_hooks.json: derived: 0  bare: 0  curated-lost: 0  gone: 1
+E           restore      project_curated.md
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-720/test_m1_a_restore_keyed_by_a_m0/rmxhome/backups/memory-hooks/moved-20261110T172209-744768000/.memory_hooks.json
+E         applied: dropped 0 key(s), restored 1, rewrote 0 MEMORY.md line(s) (0 replacing a hand edit), kept 0 hand-edited line(s); 2 hook(s) remain
+E         
+E       assert 'A hand-writt...renderer cut…' == 'A hand-writt... whole of it.'
+E         
+E         Skipping 58 identical leading characters in diff, use -v to show
+E         - nderer cut it short, and git still had the whole of it.
+E         + nderer cut…
+
+tests/test_bug199_r2_remedy.py:263: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug199_r2_remedy.py::test_m1_a_restore_keyed_by_a_moved_files_old_path_rewrites_its_line
+1 failed, 10 passed in 1.42s

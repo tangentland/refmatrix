@@ -1,0 +1,253 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug199-200/src/refmatrix as checked-hash (bug-037)
+......FFFF.                                                              [100%]
+=================================== FAILURES ===================================
+________ test_s2_a_real_index_write_failure_puts_the_sidecar_back[flat] ________
+
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index..., {'curated': ('project_curated.md', 'project_curated.md'), 'derived': ('feedback_derived.md', 'feedback_derived.md')})
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai0/rmxhome')
+
+    def test_s2_a_real_index_write_failure_puts_the_sidecar_back(stale, rmx_home):
+        """REAL fault, real entry point (child process): MEMORY.md is immutable, so the index
+        rename fails with EPERM while reading the index for the rewrite and its backup works."""
+        d, keys = stale
+        before = _snapshot(d)
+        idx = d / mi.INDEX_NAME
+        os.chflags(idx, stat.UF_IMMUTABLE)
+        try:
+            rc, out = _run(d, "--apply", restore=[f"{keys['curated'][1]}={RESTORED}"])
+        finally:
+            os.chflags(idx, 0)
+>       _assert_rolled_back(d, rmx_home, before, rc, out)
+
+tests/test_bug199_r2_remedy.py:209: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+d = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai0/flat/memory')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai0/rmxhome')
+before = {'index': b'- [Derived](feedback_derived.md) \xe2\x80\x94 Fix one condition in a gate and then check\xe2\x80\xa6\n- [C... full text is lost because the renderer cut\xe2\x80\xa6",\n"project_fine.md": "an intact curated hook with no cut"\n}'}
+rc = 1
+out = "  derived      feedback_derived.md\n  curated-lost project_curated.md\n2 cut value(s) in /private/var/folders/js/71d0...71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai0/flat/memory/MEMORY.md'\n"
+
+    def _assert_rolled_back(d: Path, home: Path, before: dict, rc: int, out: str) -> None:
+        assert rc != 0, f"an index-write failure must exit non-zero:\n{out}"
+>       assert _sidecar_bytes(d) == before["side"], (
+            f"the sidecar was left repaired while the index stayed stale -- the bug-199 state, "
+            f"which the next automated write turns back into the cuts (#s-2):\n"
+            f"now:    {_sidecar_bytes(d)[:300]!r}\nbefore: {before['side'][:300]!r}\n"
+            f"--- output ---\n{out}")
+E       AssertionError: the sidecar was left repaired while the index stayed stale -- the bug-199 state, which the next automated write turns back into the cuts (#s-2):
+E         now:    b'{\n"project_curated.md": "A hand-written hook whose full text is lost because the renderer cut it short, and git still had the whole of it.",\n"project_fine.md": "an intact curated hook with no cut"\n}'
+E         before: b'{\n"feedback_derived.md": "Fix one condition in a gate and then check\xe2\x80\xa6",\n"project_curated.md": "A hand-written hook whose full text is lost because the renderer cut\xe2\x80\xa6",\n"project_fine.md": "an intact curated hook with no cut"\n}'
+E         --- output ---
+E           derived      feedback_derived.md
+E           curated-lost project_curated.md
+E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai0/flat/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
+E           restore      project_curated.md
+E           rewrite MEMORY.md line feedback_derived.md
+E           rewrite MEMORY.md line project_curated.md
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai0/rmxhome/backups/memory-hooks/flat-20261110T172159-114620000/.memory_hooks.json
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai0/rmxhome/backups/memory-hooks/flat-20261110T172159-114620000/MEMORY.md
+E         refused: [Errno 1] Operation not permitted: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai0/flat/memory/MEMORY.md.hupa4igm.tmp' -> '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai0/flat/memory/MEMORY.md'
+E         
+E       assert b'{\n"project...th no cut"\n}' == b'{\n"feedbac...th no cut"\n}'
+E         
+E         At index 3 diff: b'p' != b'f'
+E         Use -v to get more diff
+
+tests/test_bug199_r2_remedy.py:173: AssertionError
+_____ test_s2_a_real_index_write_failure_puts_the_sidecar_back[organised] ______
+
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai1/rmxhome')
+
+    def test_s2_a_real_index_write_failure_puts_the_sidecar_back(stale, rmx_home):
+        """REAL fault, real entry point (child process): MEMORY.md is immutable, so the index
+        rename fails with EPERM while reading the index for the rewrite and its backup works."""
+        d, keys = stale
+        before = _snapshot(d)
+        idx = d / mi.INDEX_NAME
+        os.chflags(idx, stat.UF_IMMUTABLE)
+        try:
+            rc, out = _run(d, "--apply", restore=[f"{keys['curated'][1]}={RESTORED}"])
+        finally:
+            os.chflags(idx, 0)
+>       _assert_rolled_back(d, rmx_home, before, rc, out)
+
+tests/test_bug199_r2_remedy.py:209: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+d = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai1/org/memory')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai1/rmxhome')
+before = {'index': b'- [Derived](feedback/feedback_derived.md) \xe2\x80\x94 Fix one condition in a gate and then check\xe2\x80\...2\x80\xa6",\n"project_curated": "A hand-written hook whose full text is lost because the renderer cut\xe2\x80\xa6"\n}'}
+rc = 1
+out = "  derived      feedback_derived\n  curated-lost project_curated\n2 cut value(s) in /private/var/folders/js/71d0ymjj56.../71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai1/org/memory/MEMORY.md'\n"
+
+    def _assert_rolled_back(d: Path, home: Path, before: dict, rc: int, out: str) -> None:
+        assert rc != 0, f"an index-write failure must exit non-zero:\n{out}"
+>       assert _sidecar_bytes(d) == before["side"], (
+            f"the sidecar was left repaired while the index stayed stale -- the bug-199 state, "
+            f"which the next automated write turns back into the cuts (#s-2):\n"
+            f"now:    {_sidecar_bytes(d)[:300]!r}\nbefore: {before['side'][:300]!r}\n"
+            f"--- output ---\n{out}")
+E       AssertionError: the sidecar was left repaired while the index stayed stale -- the bug-199 state, which the next automated write turns back into the cuts (#s-2):
+E         now:    b'{\n"project_curated": "A hand-written hook whose full text is lost because the renderer cut it short, and git still had the whole of it."\n}'
+E         before: b'{\n"feedback_derived": "Fix one condition in a gate and then check\xe2\x80\xa6",\n"project_curated": "A hand-written hook whose full text is lost because the renderer cut\xe2\x80\xa6"\n}'
+E         --- output ---
+E           derived      feedback_derived
+E           curated-lost project_curated
+E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai1/org/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
+E           restore      project_curated
+E           rewrite MEMORY.md line feedback/feedback_derived.md
+E           rewrite MEMORY.md line project/project_curated.md
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai1/rmxhome/backups/memory-hooks/org-20261110T172159-263066000/.memory_hooks.json
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai1/rmxhome/backups/memory-hooks/org-20261110T172159-263066000/MEMORY.md
+E         refused: [Errno 1] Operation not permitted: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai1/org/memory/MEMORY.md.jtu3gbxp.tmp' -> '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_a_real_index_write_fai1/org/memory/MEMORY.md'
+E         
+E       assert b'{\n"project...le of it."\n}' == b'{\n"feedbac...2\x80\xa6"\n}'
+E         
+E         At index 3 diff: b'p' != b'f'
+E         Use -v to get more diff
+
+tests/test_bug199_r2_remedy.py:173: AssertionError
+_____ test_s2_an_injected_index_write_failure_puts_the_sidecar_back[flat] ______
+
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_an_injected_..., {'curated': ('project_curated.md', 'project_curated.md'), 'derived': ('feedback_derived.md', 'feedback_derived.md')})
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_an_injected_index_writ0/rmxhome')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x102a3a990>
+capsys = <_pytest.capture.CaptureFixture object at 0x1051dc2f0>
+
+    def test_s2_an_injected_index_write_failure_puts_the_sidecar_back(stale, rmx_home,
+                                                                      monkeypatch, capsys):
+        """Probe C, in-process: `_atomic_write_text` fails with ENOSPC for the index ONLY; the
+        sidecar write -- and a sidecar rollback through the same helper -- run for real."""
+        d, keys = stale
+        before = _snapshot(d)
+        real = mi._atomic_write_text
+        calls: list = []
+    
+        def index_write_fails(memdir, name, text):
+            calls.append(name)
+            if name == mi.INDEX_NAME:
+                raise OSError(errno.ENOSPC, "No space left on device")
+            return real(memdir, name, text)
+    
+        monkeypatch.setattr(mi, "_atomic_write_text", index_write_fails)
+        buf = io.StringIO()
+        rc = mi.repair_cut_hooks(d, apply=True, restores=[f"{keys['curated'][1]}={RESTORED}"],
+                                 out=buf)
+        cap = capsys.readouterr()
+        out = buf.getvalue() + cap.out + cap.err
+        assert mi.INDEX_NAME in calls, (
+            f"precondition: the apply reached the index write through the seam: {calls}\n{out}")
+>       _assert_rolled_back(d, rmx_home, before, rc, out)
+
+tests/test_bug199_r2_remedy.py:235: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+d = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_an_injected_index_writ0/flat/memory')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_an_injected_index_writ0/rmxhome')
+before = {'index': b'- [Derived](feedback_derived.md) \xe2\x80\x94 Fix one condition in a gate and then check\xe2\x80\xa6\n- [C... full text is lost because the renderer cut\xe2\x80\xa6",\n"project_fine.md": "an intact curated hook with no cut"\n}'}
+rc = 1
+out = '  derived      feedback_derived.md\n  curated-lost project_curated.md\n2 cut value(s) in /private/var/folders/js/71d0...0/rmxhome/backups/memory-hooks/flat-20261110T172159-325626000/MEMORY.md\nrefused: [Errno 28] No space left on device\n'
+
+    def _assert_rolled_back(d: Path, home: Path, before: dict, rc: int, out: str) -> None:
+        assert rc != 0, f"an index-write failure must exit non-zero:\n{out}"
+>       assert _sidecar_bytes(d) == before["side"], (
+            f"the sidecar was left repaired while the index stayed stale -- the bug-199 state, "
+            f"which the next automated write turns back into the cuts (#s-2):\n"
+            f"now:    {_sidecar_bytes(d)[:300]!r}\nbefore: {before['side'][:300]!r}\n"
+            f"--- output ---\n{out}")
+E       AssertionError: the sidecar was left repaired while the index stayed stale -- the bug-199 state, which the next automated write turns back into the cuts (#s-2):
+E         now:    b'{\n"project_curated.md": "A hand-written hook whose full text is lost because the renderer cut it short, and git still had the whole of it.",\n"project_fine.md": "an intact curated hook with no cut"\n}'
+E         before: b'{\n"feedback_derived.md": "Fix one condition in a gate and then check\xe2\x80\xa6",\n"project_curated.md": "A hand-written hook whose full text is lost because the renderer cut\xe2\x80\xa6",\n"project_fine.md": "an intact curated hook with no cut"\n}'
+E         --- output ---
+E           derived      feedback_derived.md
+E           curated-lost project_curated.md
+E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_an_injected_index_writ0/flat/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
+E           restore      project_curated.md
+E           rewrite MEMORY.md line feedback_derived.md
+E           rewrite MEMORY.md line project_curated.md
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_an_injected_index_writ0/rmxhome/backups/memory-hooks/flat-20261110T172159-325626000/.memory_hooks.json
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_an_injected_index_writ0/rmxhome/backups/memory-hooks/flat-20261110T172159-325626000/MEMORY.md
+E         refused: [Errno 28] No space left on device
+E         
+E       assert b'{\n"project...th no cut"\n}' == b'{\n"feedbac...th no cut"\n}'
+E         
+E         At index 3 diff: b'p' != b'f'
+E         Use -v to get more diff
+
+tests/test_bug199_r2_remedy.py:173: AssertionError
+___ test_s2_an_injected_index_write_failure_puts_the_sidecar_back[organised] ___
+
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_an_injected_...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_an_injected_index_writ1/rmxhome')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x105141d30>
+capsys = <_pytest.capture.CaptureFixture object at 0x102ac6350>
+
+    def test_s2_an_injected_index_write_failure_puts_the_sidecar_back(stale, rmx_home,
+                                                                      monkeypatch, capsys):
+        """Probe C, in-process: `_atomic_write_text` fails with ENOSPC for the index ONLY; the
+        sidecar write -- and a sidecar rollback through the same helper -- run for real."""
+        d, keys = stale
+        before = _snapshot(d)
+        real = mi._atomic_write_text
+        calls: list = []
+    
+        def index_write_fails(memdir, name, text):
+            calls.append(name)
+            if name == mi.INDEX_NAME:
+                raise OSError(errno.ENOSPC, "No space left on device")
+            return real(memdir, name, text)
+    
+        monkeypatch.setattr(mi, "_atomic_write_text", index_write_fails)
+        buf = io.StringIO()
+        rc = mi.repair_cut_hooks(d, apply=True, restores=[f"{keys['curated'][1]}={RESTORED}"],
+                                 out=buf)
+        cap = capsys.readouterr()
+        out = buf.getvalue() + cap.out + cap.err
+        assert mi.INDEX_NAME in calls, (
+            f"precondition: the apply reached the index write through the seam: {calls}\n{out}")
+>       _assert_rolled_back(d, rmx_home, before, rc, out)
+
+tests/test_bug199_r2_remedy.py:235: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+d = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_an_injected_index_writ1/org/memory')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_an_injected_index_writ1/rmxhome')
+before = {'index': b'- [Derived](feedback/feedback_derived.md) \xe2\x80\x94 Fix one condition in a gate and then check\xe2\x80\...2\x80\xa6",\n"project_curated": "A hand-written hook whose full text is lost because the renderer cut\xe2\x80\xa6"\n}'}
+rc = 1
+out = '  derived      feedback_derived\n  curated-lost project_curated\n2 cut value(s) in /private/var/folders/js/71d0ymjj56...t1/rmxhome/backups/memory-hooks/org-20261110T172159-373848000/MEMORY.md\nrefused: [Errno 28] No space left on device\n'
+
+    def _assert_rolled_back(d: Path, home: Path, before: dict, rc: int, out: str) -> None:
+        assert rc != 0, f"an index-write failure must exit non-zero:\n{out}"
+>       assert _sidecar_bytes(d) == before["side"], (
+            f"the sidecar was left repaired while the index stayed stale -- the bug-199 state, "
+            f"which the next automated write turns back into the cuts (#s-2):\n"
+            f"now:    {_sidecar_bytes(d)[:300]!r}\nbefore: {before['side'][:300]!r}\n"
+            f"--- output ---\n{out}")
+E       AssertionError: the sidecar was left repaired while the index stayed stale -- the bug-199 state, which the next automated write turns back into the cuts (#s-2):
+E         now:    b'{\n"project_curated": "A hand-written hook whose full text is lost because the renderer cut it short, and git still had the whole of it."\n}'
+E         before: b'{\n"feedback_derived": "Fix one condition in a gate and then check\xe2\x80\xa6",\n"project_curated": "A hand-written hook whose full text is lost because the renderer cut\xe2\x80\xa6"\n}'
+E         --- output ---
+E           derived      feedback_derived
+E           curated-lost project_curated
+E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_an_injected_index_writ1/org/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
+E           restore      project_curated
+E           rewrite MEMORY.md line feedback/feedback_derived.md
+E           rewrite MEMORY.md line project/project_curated.md
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_an_injected_index_writ1/rmxhome/backups/memory-hooks/org-20261110T172159-373848000/.memory_hooks.json
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-719/test_s2_an_injected_index_writ1/rmxhome/backups/memory-hooks/org-20261110T172159-373848000/MEMORY.md
+E         refused: [Errno 28] No space left on device
+E         
+E       assert b'{\n"project...le of it."\n}' == b'{\n"feedbac...2\x80\xa6"\n}'
+E         
+E         At index 3 diff: b'p' != b'f'
+E         Use -v to get more diff
+
+tests/test_bug199_r2_remedy.py:173: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug199_r2_remedy.py::test_s2_a_real_index_write_failure_puts_the_sidecar_back[flat]
+FAILED tests/test_bug199_r2_remedy.py::test_s2_a_real_index_write_failure_puts_the_sidecar_back[organised]
+FAILED tests/test_bug199_r2_remedy.py::test_s2_an_injected_index_write_failure_puts_the_sidecar_back[flat]
+FAILED tests/test_bug199_r2_remedy.py::test_s2_an_injected_index_write_failure_puts_the_sidecar_back[organised]
+4 failed, 7 passed in 1.39s
