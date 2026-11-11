@@ -44,7 +44,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; ( rmx sync --flush-queue --async >/dev/null 2>&1 || true ) & disown"
+            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx sync --flush-queue --async >/dev/null"
           },
           {
             "type": "command",
@@ -62,7 +62,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; ( rmx sync --flush-queue --async >/dev/null 2>&1 || true ) & disown"
+            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx sync --flush-queue --async >/dev/null"
           }
         ]
       }
@@ -73,7 +73,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; ( rmx sync --flush-queue --async >/dev/null 2>&1 || true ; rmx primer --out '/Users/tholley/claude_tools/refmatrix/.refmatrix/PRIMER.md' >/dev/null 2>&1 || true ) & disown ; rmx curator status || true"
+            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; ( rmx primer --out '/Users/tholley/claude_tools/refmatrix/.refmatrix/PRIMER.md' >/dev/null 2>&1 || true ) & disown ; rmx curator status || true"
+          },
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx sync --flush-queue --async >/dev/null"
           }
         ]
       },

@@ -2981,12 +2981,37 @@ class Store:
         Returns True if a row was removed, False if nothing matched.
         Defers all the bitmap/forward-index housekeeping to purge_entity;
         purge_entity also drops the memory_content row via the explicit
-        DELETE we added in that path."""
-        m = self.get_memory(name_or_id)
-        if m is None:
+        DELETE we added in that path.
+
+        Resolves the row WITHOUT reading its sidecar (task 26.2 r2, 2026-11-10):
+        `get_memory` parses `metadata`, so a memory whose metadata does not
+        parse -- the row `purge_path` refuses over (`MemoryOwnershipError`) --
+        could not be forgotten, and the audited remedy for that refusal raised
+        the same JSON error."""
+        eid = self._memory_entity_id(name_or_id)
+        if eid is None:
             return False
-        self.purge_entity(m["id"])
+        self.purge_entity(eid)
         return True
+
+    def _memory_entity_id(self, name_or_id: str | int) -> "int | None":
+        """The id of the `kind=memory` row `get_memory` would resolve (by id in
+        any partition, by name in the active one), reading no sidecar."""
+        self._connect()
+        if isinstance(name_or_id, int) or (
+            isinstance(name_or_id, str) and name_or_id.isdigit()
+        ):
+            row = self._read().execute(
+                "SELECT id FROM entities WHERE id=? AND kind='memory'",
+                (int(name_or_id),),
+            ).fetchone()
+        else:
+            row = self._read().execute(
+                "SELECT id FROM entities WHERE partition_id=? AND kind='memory' "
+                "AND name=?",
+                (self._partition_id, name_or_id),
+            ).fetchone()
+        return int(row["id"]) if row is not None else None
 
     def memory_facets(self) -> dict:
         """Distinct mtypes + tags (with counts) for memories in the active

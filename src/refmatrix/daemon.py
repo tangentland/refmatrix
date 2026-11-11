@@ -769,12 +769,16 @@ class Daemon:
         )
         self.watch_debounce_ms = watch_debounce_ms
         self.watch_semantic = watch_semantic
-        # The LAST watch flush that failed, `{"at": epoch, "error": str}`, until
-        # a later flush succeeds (task 26.2 r1, user requirement 2026-11-10: a
-        # sync that stops in an error fails loudly on the console, not just in
-        # logs). The watcher has no terminal; `ping` carries this and `rmx
-        # daemon status` prints it -- before, it lived only in rmxd.log.
-        self.last_watch_flush_error: "dict | None" = None
+        # The last failed sync PER ROUTE (`watch`, `async-flush`), each
+        # `{"route", "at", "error"}`, until that route's next clean flush
+        # clears it (task 26.2 r1 + ch-bsd r2 #b2-1, user requirement
+        # 2026-11-10: "if the sync stops in an error, it needs to fail loudly
+        # on the commandline or console, not just logs"). Both routes run on
+        # daemon threads with no terminal; `ping` carries the records, `rmx
+        # daemon status` prints them, and the next `rmx sync --flush-queue
+        # --async` (the Stop / SubagentStop / SessionStart hook) prints them and
+        # exits 1. See `record_sync_error` / `clear_sync_error`.
+        self._sync_errors: dict[str, dict] = {}
         self.store: Store | None = None
         self._stop = False
         self.log_fh = None
@@ -783,6 +787,8 @@ class Daemon:
         # Coalesces multiple fire-and-forget flush requests: if a flush is
         # already pending, additional `flush_async` calls are no-ops.
         import threading
+        # guards `_sync_errors` (written by the watcher / async-flush threads)
+        self._sync_errors_lock = threading.Lock()
         # FIFO lock — see `_FairLock`. The ingest yield (release+sleep+
         # acquire) is only useful if waiters are guaranteed a turn; the
         # built-in `threading.Lock` doesn't promise that and the ingest
@@ -891,6 +897,24 @@ class Daemon:
         st = self.store
         assert st is not None  # opened in serve_forever() before dispatch
         return st
+
+    def record_sync_error(self, route: str, error: str) -> None:
+        """Record a failed sync on `route` (26.2 r2 #b2-1), replacing that
+        route's previous record. The caller has already logged it."""
+        with self._sync_errors_lock:
+            self._sync_errors[route] = {"route": route, "at": time.time(),
+                                        "error": error}
+
+    def clear_sync_error(self, route: str) -> None:
+        """A clean flush on `route` clears its record; other routes keep theirs."""
+        with self._sync_errors_lock:
+            self._sync_errors.pop(route, None)
+
+    def sync_errors(self) -> "list[dict]":
+        """The recorded sync errors, oldest first (copies)."""
+        with self._sync_errors_lock:
+            return sorted((dict(e) for e in self._sync_errors.values()),
+                          key=lambda e: e["at"])
 
     def _log(self, msg: str) -> None:
         if self.log_fh is None:
@@ -3080,7 +3104,7 @@ class Daemon:
             self._log(f"watchdog not installed; watcher disabled: {exc}")
             return
         from refmatrix.watch import Debouncer, is_relevant, is_curator_relevant
-        from refmatrix.sync import sync_files
+        from refmatrix.sync import refusal_summary, sync_files
 
         self._watch_stop = threading.Event()
         def _enqueue_curator(paths: list[str]) -> int:
@@ -3180,14 +3204,23 @@ class Daemon:
                     len(paths), total_added, total_updated, total_purged,
                     tail + cancel_tail + repair_tail + roots_tail,
                     total_vec_failed))
-                # a successful flush clears the recorded failure (26.2 r1)
-                self.last_watch_flush_error = None
+                # Paths refused per path (26.2 r2 #s2-1) fail the flush
+                # loudly; the rest of the batch is synced. The watcher has no
+                # queue: a refused path is retried on its next fs event.
+                refused = [e for r in reports
+                           for e in (r.get("memory_ownership_errors") or [])]
+                if refused:
+                    msg = refusal_summary(refused)
+                    self._log(f"watch flush failed: {msg}")
+                    self.record_sync_error("watch", msg)
+                elif not cancelled:
+                    # a clean flush clears the route's record (26.2 r1)
+                    self.clear_sync_error("watch")
             except Exception as exc:
                 self._log(f"watch flush failed: {exc!r}")
                 # Recorded for `rmx daemon status` until a later flush succeeds
                 # (26.2 r1, 2026-11-10): the log line alone reached no human.
-                self.last_watch_flush_error = {
-                    "at": time.time(), "error": f"{type(exc).__name__}: {exc}"}
+                self.record_sync_error("watch", f"{type(exc).__name__}: {exc}")
                 self._fast_exit_if_invalidated(exc, "watch flush")
 
         debouncer = Debouncer(self.watch_debounce_ms, _flush)
@@ -3396,13 +3429,16 @@ def _op_ping(d: Daemon, args: dict) -> dict:
     # (bsd-plan1-r4 #b-1: the readers existed, the producer dropped it).
     if ident.get("identity_error"):
         out["identity_error"] = ident["identity_error"]
-    # The last failed watch flush, until a successful one clears it (26.2 r1,
-    # 2026-11-10): `rmx daemon status` renders it from here. Read with getattr:
-    # ping is the liveness probe and must answer for any daemon-shaped object
-    # (the identity fields above follow the same never-fail rule).
-    wfe = getattr(d, "last_watch_flush_error", None)
-    if wfe:
-        out["watch_flush_error"] = dict(wfe)
+    # The recorded sync errors per route, until each route's next clean flush
+    # clears it (26.2 r1 + r2 #b2-1): `rmx daemon status` renders them from
+    # here. Read with getattr: ping is the liveness probe and must answer for
+    # any daemon-shaped object (the identity fields above follow the same
+    # never-fail rule).
+    errs = getattr(d, "sync_errors", None)
+    if callable(errs):
+        recorded = errs()
+        if recorded:
+            out["sync_errors"] = recorded
     return out
 
 
@@ -3444,6 +3480,10 @@ def _op_flush_queue(d: Daemon, args: dict) -> dict:
             cancel_check=d._shutdown_event.is_set,
         )
     d._request_snapshot()
+    # Refused paths fail the op AFTER the batch committed: the healthy paths
+    # are synced, and the reply is ok:false naming every refused one, which
+    # the CLI prints as `Error: daemon <op> failed: ...` (26.2 r2 #s2-1).
+    syncmod.raise_if_refused(report)
     return report
 
 
@@ -3458,26 +3498,44 @@ def _op_flush_queue_async(d: Daemon, args: dict) -> dict:
 
     with d._async_lock:
         if d._async_flush_pending:
-            return {"queued": False, "reason": "flush already pending"}
+            return {"queued": False, "reason": "flush already pending",
+                    "sync_errors": d.sync_errors()}
         d._async_flush_pending = True
+
+    # What has failed so far goes back on THIS ack (26.2 r2 #b2-1): the hook
+    # that ran the previous flush had no way to hear about it, the one running
+    # now does. Read before the new flush starts, so it is the PREVIOUS outcome.
+    recorded = d.sync_errors()
 
     def _runner():
         try:
             with d._store_lock:
-                syncmod.flush_queue(
+                report = syncmod.flush_queue(
                     d._st(), project_root=proot, semantic=semantic,
                     cancel_check=d._shutdown_event.is_set,
                 )
             d._request_snapshot()
+            # Refused paths are back on the queue (`flush_queue`); the flush
+            # FAILED for them and says so (26.2 r2 #b2-1, #s2-1).
+            refused = report.get("memory_ownership_errors") or []
+            if refused:
+                msg = syncmod.refusal_summary(refused)
+                d._log(f"async flush failed: {msg}")
+                d.record_sync_error("async-flush", msg)
+            elif not report.get("cancelled"):
+                d.clear_sync_error("async-flush")
         except Exception as exc:
+            # Was log-only: the hook that queued this flush had already been
+            # told "flush queued" and exited 0 (ch-bsd r2 #b2-1).
             d._log(f"async flush failed: {exc!r}")
+            d.record_sync_error("async-flush", f"{type(exc).__name__}: {exc}")
         finally:
             with d._async_lock:
                 d._async_flush_pending = False
 
     t = threading.Thread(target=_runner, name="rmxd-async-flush", daemon=True)
     t.start()
-    return {"queued": True}
+    return {"queued": True, "sync_errors": recorded}
 
 
 def _refuse_filesystem_ingest(d: Daemon, op: str) -> None:
@@ -3531,6 +3589,10 @@ def _op_sync_files(d: Daemon, args: dict) -> dict:
             cancel_check=d._shutdown_event.is_set,
         )
     d._request_snapshot()
+    # Refused paths fail the op AFTER the batch committed: the healthy paths
+    # are synced, and the reply is ok:false naming every refused one, which
+    # the CLI prints as `Error: daemon <op> failed: ...` (26.2 r2 #s2-1).
+    syncmod.raise_if_refused(report)
     return report
 
 
@@ -3946,6 +4008,10 @@ def _op_sync_since(d: Daemon, args: dict) -> dict:
             cancel_check=d._shutdown_event.is_set,
         )
     d._request_snapshot()
+    # Refused paths fail the op AFTER the batch committed: the healthy paths
+    # are synced, and the reply is ok:false naming every refused one, which
+    # the CLI prints as `Error: daemon <op> failed: ...` (26.2 r2 #s2-1).
+    syncmod.raise_if_refused(report)
     return report
 
 

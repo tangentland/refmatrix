@@ -26,7 +26,7 @@ from refmatrix.ingest import (
     _is_adr_file,
     should_ignore,
 )
-from refmatrix.store import Store
+from refmatrix.store import MemoryOwnershipError, Store
 
 
 _GMD_SNIFF_BYTES = 512
@@ -138,10 +138,97 @@ def sync_since(s: Store, git_ref: str, project_root: Path | None = None,
 def flush_queue(s: Store, project_root: Path | None = None,
                 semantic: bool = False,
                 cancel_check: Callable[[], bool] | None = None) -> dict:
+    """Drain `dirty.queue` and sync it. Nothing drained is lost (task 26.2,
+    ch-bsd r2 #s2-1, 2026-11-10): `drain_queue` unlinks the queue BEFORE the
+    sync, so a path refused per path (`memory_ownership_errors`) goes back on
+    the queue for the next flush to retry -- the healthy paths of the batch do
+    not -- and a batch that raises outright puts EVERY drained path back
+    (its one transaction rolled them all back) before re-raising."""
     raws = drain_queue(s.root)
     paths = [Path(p) for p in raws]
-    return _sync_paths(s, paths, project_root, semantic,
-                       cancel_check=cancel_check)
+    try:
+        report = _sync_paths(s, paths, project_root, semantic,
+                             cancel_check=cancel_check)
+    except BaseException:
+        if raws:
+            enqueue(s.root, raws)
+        raise
+    refused = [path for path, _msg in report.get("memory_ownership_errors") or []]
+    if refused:
+        enqueue(s.root, refused)
+    report["requeued"] = len(refused)
+    return report
+
+
+def refusal_summary(refused: "list") -> str:
+    """One line naming every path a sync refused and why (the memory and the
+    cause, from `MemoryOwnershipError`). Shared by the CLI's `Error:` line, the
+    daemon's error reply and the recorded daemon sync error, so every surface
+    says the same thing (26.2 r2 #s2-1)."""
+    parts = [f"{path}: {msg}" for path, msg in refused]
+    return (f"{len(refused)} path(s) refused, their entities kept: " + " | ".join(parts))
+
+
+def raise_if_refused(report: dict) -> None:
+    """Fail loudly AFTER the batch committed (26.2 r2 #s2-1, user requirement
+    2026-11-10: "if the sync stops in an error, it needs to fail loudly on the
+    commandline or console, not just logs"): the healthy paths are synced, and
+    the caller still sees a `MemoryOwnershipError` naming every refused path."""
+    refused = report.get("memory_ownership_errors") or []
+    if refused:
+        raise MemoryOwnershipError(refusal_summary(refused))
+
+
+def _sync_one(s: Store, ap: Path, project_root: Path, gmd_paths: list) -> str:
+    """One path of `_sync_paths`' batch; returns what happened to it: `purged`,
+    `none` (nothing to purge / not indexable), `skipped_unchanged`, `gmd`
+    (queued on `gmd_paths` for the batch GMD ingest), `added` or `updated`.
+
+    Split out of the loop (task 26.2, ch-bsd r2 #s2-1, 2026-11-10) so a
+    `MemoryOwnershipError` from any of its `purge_path` calls is refused for
+    THIS path only. Every write here follows its purge, so a refused path has
+    written nothing."""
+    # Honor .refmatrix_ignore (+ built-in dir rules). A path that is or
+    # became ignored — e.g. content moved under workflow/ — is purged
+    # from the index and skipped, so the concept graph self-cleans on
+    # the next sync rather than retaining stale operational nodes.
+    if should_ignore(ap, project_root):
+        return "purged" if s.purge_path(str(ap)) > 0 else "none"
+    ext = ap.suffix.lower()
+    is_supported = ext in CODE_EXTS or ext in DOC_EXTS or ext == ".gmd"
+    if not ap.exists() or not is_supported:
+        return "purged" if s.purge_path(str(ap)) > 0 else "none"
+
+    # Skip unchanged: if the file's on-disk mtime matches what we
+    # already indexed, the previous ingest's output is still
+    # current and re-extraction would be wasted work.
+    try:
+        disk_mtime = ap.stat().st_mtime
+    except OSError:
+        disk_mtime = None
+    if disk_mtime is not None:
+        cached_mtime = s.get_tracked_mtime(str(ap))
+        if (cached_mtime is not None and disk_mtime == cached_mtime
+                and not _gmd_route_pending(s, ap, ext)):
+            return "skipped_unchanged"
+
+    # GMD dispatch: .gmd extension, or .md with gmd: frontmatter
+    if ext == ".gmd" or (ext == ".md" and _is_gmd_file(ap)):
+        if s.get_entity("doc", _relpath(ap, project_root)) is not None:
+            s.purge_path(str(ap))
+        gmd_paths.append(ap)
+        return "gmd"
+
+    kind = "code" if ext in CODE_EXTS else "doc"
+    rel = _relpath(ap, project_root)
+    existed_before = s.get_entity(kind, rel) is not None
+    # purge before re-add: drops stale per-function entities and any
+    # linkages (semantic mentions, etc.) tied to the previous version.
+    if existed_before:
+        s.purge_path(str(ap))
+    s.upsert_entity(kind=kind, name=rel, path=str(ap))
+    s.mark_tracked(str(ap), ap.stat().st_mtime)
+    return "updated" if existed_before else "added"
 
 
 def _sync_paths(
@@ -171,6 +258,8 @@ def _sync_paths(
     kept0 = getattr(s, "memory_anchors_kept", 0)
     touched_existing: list[Path] = []
     gmd_paths: list[Path] = []
+    # [path, error] per path refused by `MemoryOwnershipError` (26.2 r2 #s2-1)
+    refused: list[list[str]] = []
     cancelled = False
 
     def _cancelled() -> bool:
@@ -200,57 +289,27 @@ def _sync_paths(
             # Resolve so symlinked roots like /tmp -> /private/tmp on macOS
             # don't break relative_to() against the resolved project_root.
             ap = (p if p.is_absolute() else project_root / p).resolve()
-            # Honor .refmatrix_ignore (+ built-in dir rules). A path that is or
-            # became ignored — e.g. content moved under workflow/ — is purged
-            # from the index and skipped, so the concept graph self-cleans on
-            # the next sync rather than retaining stale operational nodes.
-            if should_ignore(ap, project_root):
-                if s.purge_path(str(ap)) > 0:
-                    purged += 1
-                continue
-            ext = ap.suffix.lower()
-            is_supported = ext in CODE_EXTS or ext in DOC_EXTS or ext == ".gmd"
-            if not ap.exists() or not is_supported:
-                n = s.purge_path(str(ap))
-                if n > 0:
-                    purged += 1
-                continue
-
-            # Skip unchanged: if the file's on-disk mtime matches what we
-            # already indexed, the previous ingest's output is still
-            # current and re-extraction would be wasted work.
             try:
-                disk_mtime = ap.stat().st_mtime
-            except OSError:
-                disk_mtime = None
-            if disk_mtime is not None:
-                cached_mtime = s.get_tracked_mtime(str(ap))
-                if (cached_mtime is not None and disk_mtime == cached_mtime
-                        and not _gmd_route_pending(s, ap, ext)):
-                    skipped_unchanged += 1
-                    continue
-
-            # GMD dispatch: .gmd extension, or .md with gmd: frontmatter
-            if ext == ".gmd" or (ext == ".md" and _is_gmd_file(ap)):
-                if s.get_entity("doc", _relpath(ap, project_root)) is not None:
-                    s.purge_path(str(ap))
-                gmd_paths.append(ap)
+                outcome = _sync_one(s, ap, project_root, gmd_paths)
+            except MemoryOwnershipError as exc:
+                # Refused PER PATH (task 26.2, ch-bsd r2 #s2-1, 2026-11-10):
+                # `purge_path` raises before it deletes anything, so this
+                # path's entities are intact; recording it and going on keeps
+                # one unreadable memory row from rolling back every other path
+                # in the batch. Named in the report; every caller fails loudly
+                # on it (`raise_if_refused`, the daemon's recorded sync error).
+                refused.append([str(ap), str(exc)])
                 continue
-
-            kind = "code" if ext in CODE_EXTS else "doc"
-            rel = _relpath(ap, project_root)
-            existed_before = s.get_entity(kind, rel) is not None
-            # purge before re-add: drops stale per-function entities and any
-            # linkages (semantic mentions, etc.) tied to the previous version.
-            if existed_before:
-                s.purge_path(str(ap))
-            s.upsert_entity(kind=kind, name=rel, path=str(ap))
-            s.mark_tracked(str(ap), ap.stat().st_mtime)
-            if existed_before:
-                updated += 1
-            else:
-                added += 1
-            touched_existing.append(ap)
+            if outcome == "purged":
+                purged += 1
+            elif outcome == "skipped_unchanged":
+                skipped_unchanged += 1
+            elif outcome in ("added", "updated"):
+                if outcome == "added":
+                    added += 1
+                else:
+                    updated += 1
+                touched_existing.append(ap)
 
         # Batch GMD ingest so cross-doc refs in the same sync resolve correctly.
         if gmd_paths and not _cancelled():
@@ -338,13 +397,15 @@ def _sync_paths(
     report = {"added": added, "updated": updated, "purged": purged,
               "touched": len(touched_existing), "cancelled": cancelled,
               "vector_delete_failed": vector_delete_failed,
-              "memory_anchors_kept": memory_anchors_kept}
+              "memory_anchors_kept": memory_anchors_kept,
+              "memory_ownership_errors": refused}
     s.append_sync_log(
         f"{time.strftime('%Y-%m-%dT%H:%M:%S')} "
         f"paths={len(paths)} +{added} ~{updated} -{purged} touched={len(touched_existing)} "
         f"semantic={semantic}"
         + (f" vector_delete_failed={vector_delete_failed}" if vector_delete_failed else "")
         + (f" memory_anchors_kept={memory_anchors_kept}" if memory_anchors_kept else "")
+        + (f" memory_ownership_refused={len(refused)}" if refused else "")
     )
     return report
 

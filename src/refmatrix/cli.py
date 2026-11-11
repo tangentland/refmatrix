@@ -404,22 +404,23 @@ def _say_vector_delete_failures(result, what: str) -> None:
                    err=True)
 
 
-def render_watch_flush_error(wfe) -> "str | None":
-    """The `rmx daemon status` line for the daemon's last failed watch flush
-    (`ping`'s `watch_flush_error`), or None when the last flush succeeded.
+def render_sync_error(err: dict) -> str:
+    """One line for a sync error the daemon recorded (`ping`'s / the async
+    ACK's `sync_errors`): which route stopped, when, and the error -- the
+    memory it names included.
 
-    WHY (task 26.2 r1, user requirement 2026-11-10: "if the sync stops in an
-    error, it needs to fail loudly on the commandline or console, not just
-    logs"): the watcher has no terminal, and its failure was one `rmxd.log`
-    line. Status is the console a human reads; the line stays until a later
-    successful flush clears it on the daemon."""
-    if not wfe:
-        return None
-    at = wfe.get("at")
+    WHY (task 26.2 r1 + ch-bsd r2 #b2-1, user requirement 2026-11-10: "if the
+    sync stops in an error, it needs to fail loudly on the commandline or
+    console, not just logs"): the watcher and the async flush run on daemon
+    threads with no terminal; each failure was one `rmxd.log` line. `rmx daemon
+    status` prints every recorded route, and the next `rmx sync --flush-queue
+    --async` prints them and exits 1. A route's record stays until that
+    route's next clean flush clears it on the daemon."""
+    at = err.get("at")
     when = (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(at))
             if isinstance(at, (int, float)) else "?")
-    return (f"watch flush FAILED at {when}: {wfe.get('error')} "
-            f"(the watcher's sync stopped; cleared by the next successful flush; "
+    return (f"sync FAILED on the {err.get('route', '?')} route at {when}: "
+            f"{err.get('error')} (cleared by that route's next clean flush; "
             f"trace in rmxd.log)")
 
 
@@ -3705,9 +3706,9 @@ def daemon_status():
             else:
                 console.print("code: [yellow]unknown[/] (ping carries no code path; "
                               "pre-0.66.3 daemon?)  [yellow][UNVERIFIED][/]")
-            wline = render_watch_flush_error(r.get("watch_flush_error"))
-            if wline:
-                console.print(f"[red]{rich_escape(wline)}[/]", soft_wrap=True)
+            for err in r.get("sync_errors") or []:
+                console.print(f"[red]{rich_escape(render_sync_error(err))}[/]",
+                              soft_wrap=True)
         except Exception as e:  # noqa: BLE001 — diagnostic line, must not raise
             console.print(f"code: [dim]unknown ({e})[/]  [yellow][UNVERIFIED][/]")
         # Is the GRAPH as current as the code? `stale_files` cannot answer that
@@ -8661,6 +8662,18 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
             if op == "flush_queue_async":
                 tag = "queued" if r.get("queued") else "coalesced"
                 console.print(f"[green]flush {tag}[/] [daemon]")
+                # The async flush runs on a daemon thread with no terminal. Its
+                # failure is recorded on the daemon and handed back on the NEXT
+                # invocation's ACK, which the Stop / SubagentStop / SessionStart
+                # hooks run: this flush is still queued (it retries the refused
+                # paths), and the recorded error goes to stderr with exit 1
+                # (task 26.2, ch-bsd r2 #b2-1, user requirement 2026-11-10: "if
+                # the sync stops in an error, it needs to fail loudly on the
+                # commandline or console, not just logs").
+                errs = r.get("sync_errors") or []
+                if errs:
+                    raise click.ClickException(" || ".join(
+                        render_sync_error(e) for e in errs))
             else:
                 console.print(
                     f"[green]synced[/] +{r['added']} ~{r['updated']} "
@@ -8726,11 +8739,19 @@ def _sync_in_process(s, proot: Path, *, files, since, flush_queue, invalidate,
     command can put a clean CLI boundary around it (task 26.2 r1, 2026-11-10)."""
     from refmatrix import sync as syncmod
 
+    from refmatrix.store import MemoryOwnershipError
     kept0 = getattr(s, "memory_anchors_kept", 0)
+    # `-i` refuses per path like `_sync_paths` (26.2 r2 #s2-1): one unreadable
+    # memory row does not stop the other invalidations; it is named after them.
+    refused_i: list = []
     for p in invalidate:
-        s.purge_path(str(Path(p).resolve()))
+        ap = str(Path(p).resolve())
+        try:
+            s.purge_path(ap)
+        except MemoryOwnershipError as exc:
+            refused_i.append([ap, str(exc)])
     if invalidate:
-        console.print(f"[yellow]purged[/] {len(invalidate)} paths")
+        console.print(f"[yellow]purged[/] {len(invalidate) - len(refused_i)} paths")
         # `-i` purges directly; the bridge-owned anchors it declined are counted
         # on the store and reported like the sync's own (26.2 r1 #b-1).
         _say_memory_anchors_kept(
@@ -8763,13 +8784,19 @@ def _sync_in_process(s, proot: Path, *, files, since, flush_queue, invalidate,
         if not invalidate:
             raise click.ClickException(
                 "give one of --files / --since / --flush-queue / --invalidate")
-        report = {"added": 0, "updated": 0, "purged": len(invalidate), "touched": 0}
+        report = {"added": 0, "updated": 0, "purged": len(invalidate) - len(refused_i),
+                  "touched": 0}
 
     console.print(
         f"[green]synced[/] +{report['added']} ~{report['updated']} "
         f"-{report['purged']} (touched={report['touched']})"
     )
     _say_memory_anchors_kept(report)
+    # After the batch: the healthy paths are synced, and every refused one is
+    # named on stderr with exit 1 (the `sync` command's boundary turns this
+    # into `Error: sync failed: ...`; 26.2 r2 #s2-1).
+    syncmod.raise_if_refused({"memory_ownership_errors":
+                              refused_i + list(report.get("memory_ownership_errors") or [])})
 
 
 @main.group("queue", invoke_without_command=True)
