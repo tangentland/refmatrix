@@ -1,0 +1,79 @@
+=== bug-212 mutations against b6357ca ===
+=== (g) hook gate back to [ -d $ROOT/.refmatrix ] ===
+mutation g applied to hooks.py
+ src/refmatrix/hooks.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert add.returncode == 0, f"worktree add failed: {add.stdout}{add.stderr}"
+            assert commit.wait(timeout=120) == 0, "the commit in the worktree failed"
+        assert rm.returncode == 0, f"worktree remove failed: {rm.stdout}{rm.stderr}"
+        failed = [k for k, v in errs.items() if FAILED_LINE in v]
+>       assert not failed, \
+            f"a hook reported a failed sync during {failed} (there was no store to sync)\n{dump}"
+E       AssertionError: a hook reported a failed sync during ['commit'] (there was no store to sync)
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_a_checkout_without_a_store_of_its_own_runs_no_sync[post-checkout-worktree]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_a_checkout_without_a_store_of_its_own_runs_no_sync[post-checkout-clone]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_a_checkout_without_a_store_of_its_own_runs_no_sync[post-commit-worktree]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_a_checkout_without_a_store_of_its_own_runs_no_sync[post-commit-clone]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_a_checkout_without_a_store_of_its_own_runs_no_sync[post-merge-worktree]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_a_checkout_without_a_store_of_its_own_runs_no_sync[post-merge-clone]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_a_checkout_without_a_store_of_its_own_runs_no_sync[post-rewrite-worktree]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_a_checkout_without_a_store_of_its_own_runs_no_sync[post-rewrite-clone]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_worktree_add_commit_remove_prints_no_traceback_and_leaves_the_main_store_alone
+9 failed, 10 passed in 22.23s
+--- (g) restored: git checkout -- src/refmatrix/hooks.py; __pycache__ cleared
+grep fix back:
+73:    return f"{tests} || exit 0"
+git status --short src: []
+=== (z) post-checkout null-sha skip removed ===
+mutation z applied to hooks.py
+ src/refmatrix/hooks.py | 1 -
+ 1 file changed, 1 deletion(-)
+E       AssertionError: post-checkout with a null previous HEAD ran rmx: [('/private/tmp/b212-i4trv3j8/proj', 'sync --since 0000000000000000000000000000000000000000..1ecc4b145e6a25c4db7355b22cb7e6285db96201')]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_post_checkout_with_a_null_previous_head_runs_no_sync_and_prints_nothing
+1 failed, 18 passed in 20.40s
+--- (z) restored: git checkout -- src/refmatrix/hooks.py; __pycache__ cleared
+grep fix back:
+103:case "$1" in *[!0]*) ;; *) exit 0 ;; esac
+git status --short src: []
+=== (c) changed_since lets CalledProcessError escape (check=True, no GitRefError) ===
+mutation c applied to sync.py
+ src/refmatrix/sync.py | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+E       AssertionError: [in-process] `rmx sync --since no-such-ref-bug212` failed as a raw traceback
+E       AssertionError: [in-process] `rmx sync --since 0000000000000000000000000000000000000000..HEAD` failed as a raw traceback
+E       AssertionError: [daemon] no `Error:` line naming the ref 'no-such-ref-bug212' and git's message "ambiguous argument 'no-such-ref-bug212': unknown revision or path not in the working tree."
+E       AssertionError: [daemon] no `Error:` line naming the ref '0000000000000000000000000000000000000000..HEAD' and git's message 'Invalid revision range 0000000000000000000000000000000000000000..HEAD'
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_sync_since_a_ref_git_rejects_is_a_clean_error_in_process[no-such-ref-bug212]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_sync_since_a_ref_git_rejects_is_a_clean_error_in_process[0000000000000000000000000000000000000000..HEAD]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_sync_since_a_ref_git_rejects_is_a_clean_error_through_the_daemon[no-such-ref-bug212]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_sync_since_a_ref_git_rejects_is_a_clean_error_through_the_daemon[0000000000000000000000000000000000000000..HEAD]
+4 failed, 15 passed in 21.10s
+--- (c) restored: git checkout -- src/refmatrix/sync.py; __pycache__ cleared
+grep fix back:
+156:        raise GitRefError(git_ref, out.returncode, out.stderr)
+git status --short src: []
+=== (w) vanished-cwd guard removed (_cwd returns Path.cwd() unguarded) ===
+mutation w applied to cli.py
+ src/refmatrix/cli.py | 7 +------
+ 1 file changed, 1 insertion(+), 6 deletions(-)
+E       AssertionError: `rmx sync --since HEAD~1` in a vanished cwd crashed with a raw traceback
+E       AssertionError: `rmx stats` in a vanished cwd crashed with a raw traceback
+E       AssertionError: `rmx version` in a vanished cwd crashed with a raw traceback
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_rmx_started_in_a_vanished_cwd_is_a_clean_error[sync-since]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_rmx_started_in_a_vanished_cwd_is_a_clean_error[stats]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_rmx_started_in_a_vanished_cwd_is_a_clean_error[version]
+3 failed, 16 passed in 18.32s
+--- (w) restored: git checkout -- src/refmatrix/cli.py; __pycache__ cleared
+grep fix back:
+113:        raise click.ClickException(_cwd_gone_message()) from exc
+git status --short src: []
+=== post-restore: the bug-212 file at b6357ca ===
+19 passed in 18.62s

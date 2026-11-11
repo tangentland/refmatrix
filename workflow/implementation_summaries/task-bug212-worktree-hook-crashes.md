@@ -1,11 +1,11 @@
 ---
 gmd: "0.1"
 id: impl-task-bug212-worktree-hook-crashes
-title: "bug-212: the git hooks crash in throwaway worktrees -- RED (GREEN appended by the implementer)"
+title: "bug-212: the git hooks crash in throwaway worktrees -- RED and GREEN"
 tags: [implementation-summary, bug-212, hooks, git, worktree, sync, loud-failure]
 metadata:
   node_type: implementation-summary
-  status: red
+  status: green
   created: 2026-11-11
 ---
 
@@ -93,4 +93,150 @@ store. The GREEN fix to `changed_since` covers it by construction; say so in GRE
 
 ## GREEN {#green}
 
-(appended by the implementer)
+Fix commit `b6357ca` (src only, by pathspec). The RED file is 19/19 green; no test was edited
+by the implementer (the test engineer's `591e8c5` relaxed the `version` case of contract 4 to
+"may succeed or fail cleanly" while GREEN was in progress, and it is in the run).
+
+### What changed {#green-changes}
+
+- `src/refmatrix/store.py` -- `WRITER_CATALOG_FILES: tuple[str, ...] = ("catalog.A.duckdb",
+  "catalog.B.duckdb", "catalog.duckdb", "catalog.db")`: THE definition of "this `.refmatrix/`
+  is a store" (a file a writer may hold). Reader files (`catalog.read.duckdb`,
+  `read_only.duckdb`) never make a store alone. `verbs._writer_catalog_files(root)` now reads
+  it (was the same four names retyped), and the hook gate is rendered from it, so the shell and
+  Python cannot disagree.
+- `src/refmatrix/hooks.py` -- `_store_gate() -> str` renders
+  `[ -e "$ROOT/.refmatrix/<name>" ] || ... || exit 0` over `WRITER_CATALOG_FILES`;
+  `GIT_HOOK_SCRIPTS: dict[str, str]` substitutes it (`@STORE_GATE@`) into all four bodies in
+  place of `[ -d "$ROOT/.refmatrix" ] || exit 0` (contract 1). post-checkout adds
+  `case "$1" in *[!0]*) ;; *) exit 0 ;; esac` after the `$3` check: an all-zeros (or empty)
+  previous HEAD exits 0 silently; the pattern also covers a SHA-256 repo's 64 zeros
+  (contract 2).
+- `src/refmatrix/sync.py` -- `class GitRefError(RuntimeError)` with
+  `__init__(self, git_ref: str, returncode: int, stderr: str)` (attributes `git_ref`,
+  `returncode`, `stderr`); message `sync --since <ref> failed: git diff exited <N>: <git's
+  stderr on one line>`. `changed_since(project_root: Path, git_ref: str) -> list[Path]` (same
+  signature) runs git without `check=True` and raises `GitRefError` on a non-zero exit
+  (contract 3).
+- `src/refmatrix/cli.py` -- `_cwd_gone_message() -> str`; `_cwd() -> Path` (`Path.cwd()`, or a
+  `click.ClickException` naming `$PWD` when `os.getcwd()` itself fails: FileNotFoundError with
+  no filename; any other FileNotFoundError re-raises); every former `Path.cwd()` in cli.py (7
+  sites, including `_root()` and the four in `sync`) goes through it.
+  `_root_without_cwd() -> Path` (`REFMATRIX_ROOT`, else the global store) files ONLY the
+  telemetry row of a cwd-less run. `cli_entry()` records `cwd: null` + `cwd_error` instead of
+  crashing, then runs the command: one that needs a project fails at its first `_cwd()` with
+  `Error: the working directory no longer exists (<PWD>); cd to a project, or set
+  REFMATRIX_ROOT` (exit 1); `rmx version` prints the version (exit 0). The in-process `sync`
+  adds `except syncmod.GitRefError` -> `ClickException(str(exc))` beside the
+  `MemoryOwnershipError` handler (contract 4).
+- `src/refmatrix/telemetry.py` -- `log_cli_invocation(..., cwd: "str | None", ...,
+  cwd_error: "str | None" = None)`; the row carries `cwd_error` when set.
+
+### The three `--since` routes {#green-since-routes}
+
+In-process: `GitRefError` -> `Error: sync --since <ref> failed: git diff exited 128: fatal:
+...`. Daemon: `_op_sync_since` raises it, the op dispatcher replies `ok:false` with its text
+(the daemon logs `op sync_since raised` and keeps serving; the test pings it after), the CLI
+prints `Error: daemon sync_since failed: sync --since <ref> failed: ...`. Daemon down but
+launchd-installed: that branch catches `RuntimeError` and `GitRefError` IS one, so it prints the
+same line with no new handler -- covered by construction, not driven by a test (it needs a
+supervised store; see [[#red-gaps]]).
+
+### Runs {#green-runs}
+
+- `workflow/review-output/bug212-green.log` -- the RED file + `test_sync_fails_loudly_r1/r2`,
+  `test_hooks*.py`, `test_repo_hooks_in_sync`, `test_sync*.py`, `test_docs_generated`,
+  `test_cli*.py`: **110 passed, 1 skipped**.
+- `workflow/review-output/bug212-green-wide.log` -- the above plus `test_bridge_move_safety_r1`,
+  the telemetry files, `test_verb_parity`, `test_verbs_migrated`, task 3.7 infra/remedy/graph,
+  `test_sandbox_redirect`, `test_v2_features`, `test_memory_bridge`, `test_task_cli_session`,
+  `test_task4_6_r5_remedy`, `test_plan5_remedy`, `test_bug162_163_worker_qos_hook_path`:
+  **592 passed, 1 skipped** in 530 s.
+- The one skip in both is `test_repo_hooks_in_sync::test_installed_hooks_match_generated`
+  ("hooks belong to another checkout of this commit"), and the SkipGate reports it UNPINNED:
+  this clone's `.venv-eval` is a symlink to the main tree's, so `conftest.ALLOWED_SKIPS` treats
+  the clone as the main tree and drops `_CLONE_ONLY_SKIPS`. A clone-environment artifact, not
+  this change (`hooks.check` compares `.claude/settings.json`, not git hooks). No other failure:
+  the known bug-170/127/168/196 rows did not reproduce in these files.
+
+### Mutations {#green-mutations}
+
+Against `b6357ca`, log `workflow/review-output/bug212-mutations.log`, RED file per mutation;
+each restored with `git checkout -- <file>` in its own command, `__pycache__` cleared, the fix
+grepped back, `git status --short src` empty. Post-restore the file is 19 passed.
+
+| id | mutation | failed |
+|----|----------|--------|
+| g | `_store_gate` returns `[ -d "$ROOT/.refmatrix" ] \|\| exit 0` | 9: all 8 contract-1 cases + the end-to-end |
+| z | post-checkout's null-sha `case` line removed | 1: the null-previous-HEAD test |
+| c | `changed_since` back to `check=True` (CalledProcessError escapes) | 4: both refs x in-process + daemon |
+| w | `_cwd()` returns `Path.cwd()` unguarded | 3: sync-since, stats, version (vanished cwd) |
+
+### The new hook bodies {#green-hook-bodies}
+
+What `rmx install-hooks --apply --force` writes from `b6357ca` (the release re-installs them
+fleet-wide). Nothing generated pins the old text (`scripts/gen-cli-tree.py` renders no hook
+bodies; no doc quotes the gate).
+
+```bash
+# post-commit
+#!/usr/bin/env bash
+# refmatrix: refresh after each commit
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+# no store of its own (a worktree or clone with only the tracked .refmatrix/CLAUDE.md): nothing to sync
+[ -e "$ROOT/.refmatrix/catalog.A.duckdb" ] || [ -e "$ROOT/.refmatrix/catalog.B.duckdb" ] || [ -e "$ROOT/.refmatrix/catalog.duckdb" ] || [ -e "$ROOT/.refmatrix/catalog.db" ] || exit 0
+( cd "$ROOT" && rmx sync --since HEAD~1 >/dev/null || echo "refmatrix: post-commit rmx sync FAILED (exit $?); its error is above" >&2 ) &
+disown
+
+# post-merge
+#!/usr/bin/env bash
+# refmatrix: refresh after merge
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+# no store of its own (a worktree or clone with only the tracked .refmatrix/CLAUDE.md): nothing to sync
+[ -e "$ROOT/.refmatrix/catalog.A.duckdb" ] || [ -e "$ROOT/.refmatrix/catalog.B.duckdb" ] || [ -e "$ROOT/.refmatrix/catalog.duckdb" ] || [ -e "$ROOT/.refmatrix/catalog.db" ] || exit 0
+( cd "$ROOT" && rmx sync --since ORIG_HEAD >/dev/null || echo "refmatrix: post-merge rmx sync FAILED (exit $?); its error is above" >&2 ) &
+disown
+
+# post-checkout
+#!/usr/bin/env bash
+# refmatrix: refresh after checkout (only branch switches, $3==1)
+set -e
+[ "$3" = "1" ] || exit 0
+# an initial checkout (git clone, git worktree add) has a null previous HEAD: not a branch switch
+case "$1" in *[!0]*) ;; *) exit 0 ;; esac
+ROOT="$(git rev-parse --show-toplevel)"
+# no store of its own (a worktree or clone with only the tracked .refmatrix/CLAUDE.md): nothing to sync
+[ -e "$ROOT/.refmatrix/catalog.A.duckdb" ] || [ -e "$ROOT/.refmatrix/catalog.B.duckdb" ] || [ -e "$ROOT/.refmatrix/catalog.duckdb" ] || [ -e "$ROOT/.refmatrix/catalog.db" ] || exit 0
+( cd "$ROOT" && rmx sync --since "$1..$2" >/dev/null || echo "refmatrix: post-checkout rmx sync FAILED (exit $?); its error is above" >&2 ) &
+disown
+
+# post-rewrite
+#!/usr/bin/env bash
+# refmatrix: refresh after rebase/amend
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+# no store of its own (a worktree or clone with only the tracked .refmatrix/CLAUDE.md): nothing to sync
+[ -e "$ROOT/.refmatrix/catalog.A.duckdb" ] || [ -e "$ROOT/.refmatrix/catalog.B.duckdb" ] || [ -e "$ROOT/.refmatrix/catalog.duckdb" ] || [ -e "$ROOT/.refmatrix/catalog.db" ] || exit 0
+# Read rewritten oid pairs from stdin; sync from the oldest old-oid.
+OLD=$(awk '{print $1; exit}')
+[ -z "$OLD" ] && exit 0
+( cd "$ROOT" && rmx sync --since "$OLD" >/dev/null || echo "refmatrix: post-rewrite rmx sync FAILED (exit $?); its error is above" >&2 ) &
+disown
+```
+
+### For the reviewers {#green-flags}
+
+- A project whose `.refmatrix/` holds only a `partition` file and whose store is a shared one
+  named by `REFMATRIX_ROOT` no longer syncs from its git hooks: it has no store of its own. That
+  is the lead's contract 1 as decided; no such project is known in the fleet, but it is a
+  behaviour change.
+- `docs/INTEGRATION.md#git-integration` describes the hooks (table + "All hooks run `rmx` in
+  the background") without the store gate or the null-sha skip; left for the doc writer.
+- A cwd-less run's telemetry row goes to `REFMATRIX_ROOT` or the global store's `cli.log`. One
+  manual probe of `rmx version` in a deleted scratch dir appended one such row (`cwd: null`,
+  `cwd_error` set) to `~/.refmatrix/cli.log` -- a JSONL append, no store open.
+- The pre-existing `except Exception: pass` around `log_cli_invocation` in `cli_entry` is
+  unchanged (accounting never fails the command); the cwd-less case no longer reaches it.
+- The bug-212 registry row is still `open`; flipping it is for the commit that merges this.
