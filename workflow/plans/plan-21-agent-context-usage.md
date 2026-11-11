@@ -7,7 +7,7 @@ metadata:
   node_type: plan
   status: approved
   created: 2026-10-07
-  updated: 2026-10-15
+  updated: 2026-11-11
 ---
 
 # Plan 21: agent context usage {#root}
@@ -53,6 +53,7 @@ hand-off, so the replay says nothing about reranked ranking (bsd #s-8). Once gre
 | 21.2 | 3 | precise identifier context: `path:line` on DEFINED BY, one id form, labels checked against emission direction, TESTED BY defined, no helix on code anchors, `--brief` | the frozen 9-name replay goes from the recorded baseline to ≥ 8 of 9 gold `path:line` hits | 21.1, 23.0 |
 | 21.3 | 3 | PostToolUse nudge for an identifier-shaped grep naming an indexed symbol with callers/tests, built per the band R0's measured hook wall time lands in | R0's band recorded before code; one line on indexed symbols, none on others; usage per session before/after | 16.1, 16.2, 21.1, 21.2, 23.0 |
 | 21.4 | 3 | the frozen NL question set (code + doc strata; the ONE ranking-eval harness, C9), both routes measured, ranking fixes kept only on a pre-registered win, then one rule on all five surfaces | the R2 table; every shipped change wins by the pre-registered margin; generated surfaces agree | 21.1, 21.2, 23.0 |
+| 21.5 | now (user, 2026-11-11) | a tool-level `used` signal: each session's `delivered` events joined at REPORT time with its STM tool events (Read/Edit/Write/Grep/Glob/Bash/Agent inputs naming the item's path or name), never emitted by a hook; `path` on delivered events (`v: 2`); `--agent-usage` prints used per channel per evidence and `rate_any = used_any / eligible`, with a retrieved-not-delivered control and every exclusion counted ([[task-21.5-tool-used-signal]]) | AC-3 end-to-end Read credited under its delivering channel; reads before delivery and beyond `W = 2` prompts never credit; the exclusion identity holds; no `recall-events.jsonl` line from a hook (AC-13); one real-data run (AC-15); 19.2 counts nothing until R12's precision band | 21.1, 23.0 |
 
 Task specs: `workflow/plans/plan-21-agent-context-usage-tasks/`. Waves follow
 [[plan-review-2026-10-14#t8-wave1]] (21.1 needs only 23.0) and the 2026-10-07 order
