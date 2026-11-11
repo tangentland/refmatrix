@@ -110,3 +110,52 @@ rel: evidence-for -> [[#mutations]]
   spawned daemon under a short mkdtemp root. A plan/brief scope disagreement makes it exit 1
   (`bug199-200-red-mut1.log`, `-mut2.log`). The routing recorders left in
   `test_bug198_brief_compile_scope.py` had no mock-registry row, so one was added.
+
+## Remedy r1 RED: ch-bsd r1 #s-1, #s-2, #m-1 {#remedy-r1-red}
+
+rel: derives-from -> [[bsd-bug199-200-r1-30c35a9#s-1]]
+rel: derives-from -> [[bsd-bug199-200-r1-30c35a9#s-2]]
+rel: derives-from -> [[bsd-bug199-200-r1-30c35a9#m-1]]
+
+The tests are in `tests/test_bug199_r2_remedy.py`. They rebuild the setups of the auditor's
+probe B on the shared fixtures; they do not import the probe. `stale` runs every case in both
+layouts (flat and organised). No `src/` change is in this commit.
+`bug199-r2-red.log` shows 11 failed at HEAD `40be640`, each for the reason the finding names.
+
+- **#s-1:** a line is rewritten only when its current hook is what the OLD sidecar value
+  renders to. Otherwise it is kept, and the output names it with `kept` and `hand`.
+  - `test_s1_a_drop_keeps_a_hand_edit_on_the_affected_line_and_says_so`: the drop keeps the
+    hand edit and does not report the line as rewritten. The hand edit also survives the
+    next `write`.
+  - `test_s1_a_restore_keeps_a_hand_edit_on_the_affected_line_and_says_so`: the same
+    contract for a `--restore`, as the team-lead brief sets it. The auditor's alternative
+    (replace and say so) would fail this test.
+  - `test_s1_a_rendered_line_is_still_rewritten_beside_a_kept_hand_edit`: in one apply the
+    hand-edited line is kept and the rendered line is rewritten to the restore. Both survive
+    the next `write`. A fix that stops rewriting fails here.
+- **#s-2:** on an index-write failure the sidecar goes back to its original bytes. Exit is
+  non-zero. Sidecar and index both equal their pre-apply bytes. The sidecar keeps its mode, and
+  no stray file is left in the memdir. The message says nothing was changed and names the one
+  backup dir.
+  - `test_s2_a_real_index_write_failure_puts_the_sidecar_back`: a real fault. The tmp
+    `MEMORY.md` gets `UF_IMMUTABLE`, so the rename fails with EPERM. The test runs the real
+    entry point in a child process.
+  - `test_s2_an_injected_index_write_failure_puts_the_sidecar_back`: in-process. The
+    `_atomic_write_text` wrapper raises ENOSPC for `INDEX_NAME` only. It is registered in
+    `workflow/test_mock_registry.md` as a permanent fault injection.
+- **#m-1:** a `--restore` keyed by a moved file's OLD path rewrites the line that links the
+  new path. The restore survives the next `write`, and no sidecar value is left holding the
+  cut.
+  - `test_m1_a_restore_keyed_by_a_moved_files_old_path_rewrites_its_line`. The id-keyed form
+    is already covered by the organised cases in `test_bug199_repair_rewrites_index.py`.
+
+**Can be passed.** A scratch copy of `src/` with the auditor's three fixes passed all 48 tests
+across `test_bug199_r2_remedy.py`, `test_bug199_repair_rewrites_index.py` and
+`test_memory_hook_repair.py` (`bug199-r2-fixsim.log`). The three fixes are:
+
+- the old-render check in `_repaired_index`;
+- `changed |= {_id_of_link(...)}`;
+- writing `raw` back on an index-write failure.
+
+That copy was a scratchpad check only, never committed. The not-covered item: a rollback that
+itself fails, which the auditor asked to have named, has no test.
