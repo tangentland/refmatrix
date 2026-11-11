@@ -1,0 +1,50 @@
+base c0e4d61
+=== (a) a drop always overwrites a hand edit
+mutation a: applied
+FAILED tests/test_bug199_r2_remedy.py::test_s1_a_drop_keeps_a_hand_edit_on_the_affected_line_and_says_so[flat]
+FAILED tests/test_bug199_r2_remedy.py::test_s1_a_drop_keeps_a_hand_edit_on_the_affected_line_and_says_so[organised]
+FAILED tests/test_bug199_r2_remedy.py::test_s1_a_rendered_line_is_still_rewritten_beside_a_kept_hand_edit[flat]
+FAILED tests/test_bug199_r2_remedy.py::test_s1_a_rendered_line_is_still_rewritten_beside_a_kept_hand_edit[organised]
+4 failed, 7 passed in 2.24s
+restore (a): git status --short src = []
+1
+=== (b) a restore keeps the hand edit
+mutation b: applied
+FAILED tests/test_bug199_r2_remedy.py::test_s1_a_restore_replaces_a_hand_edit_and_says_so[flat]
+FAILED tests/test_bug199_r2_remedy.py::test_s1_a_restore_replaces_a_hand_edit_and_says_so[organised]
+2 failed, 9 passed in 1.72s
+restore (b): git status --short src = []
+1
+=== (c) no sidecar rollback on an index-write failure
+mutation c: applied
+E         refused: writing /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-712/test_s2_a_real_index_write_fai0/flat/memory/MEMORY.md failed (PermissionError: [Errno 1] Operation not permitted: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-712/test_s2_a_real_index_write_fai0/flat/memory/MEMORY.md.bh415uf1.tmp' -> '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-712/test_s2_a_real_index_write_fai0/flat/memory/MEMORY.md'); /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-712/test_s2_a_real_index_write_fai0/flat/memory/.memory_hooks.json was put back to its original bytes, so nothing was changed -- both files are as they were before the apply. Backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-712/test_s2_a_real_index_write_fai0/rmxhome/backups/memory-hooks/flat-20261110T171908-195290000
+E         refused: writing /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-712/test_s2_a_real_index_write_fai1/org/memory/MEMORY.md failed (PermissionError: [Errno 1] Operation not permitted: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-712/test_s2_a_real_index_write_fai1/org/memory/MEMORY.md.qmeul2ya.tmp' -> '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-712/test_s2_a_real_index_write_fai1/org/memory/MEMORY.md'); /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-712/test_s2_a_real_index_write_fai1/org/memory/.memory_hooks.json was put back to its original bytes, so nothing was changed -- both files are as they were before the apply. Backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-712/test_s2_a_real_index_write_fai1/rmxhome/backups/memory-hooks/org-20261110T171908-344017000
+E         refused: writing /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-712/test_s2_an_injected_index_writ0/flat/memory/MEMORY.md failed (OSError: [Errno 28] No space left on device); /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-712/test_s2_an_injected_index_writ0/flat/memory/.memory_hooks.json was put back to its original bytes, so nothing was changed -- both files are as they were before the apply. Backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-712/test_s2_an_injected_index_writ0/rmxhome/backups/memory-hooks/flat-20261110T171908-409407000
+E         refused: writing /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-712/test_s2_an_injected_index_writ1/org/memory/MEMORY.md failed (OSError: [Errno 28] No space left on device); /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-712/test_s2_an_injected_index_writ1/org/memory/.memory_hooks.json was put back to its original bytes, so nothing was changed -- both files are as they were before the apply. Backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-712/test_s2_an_injected_index_writ1/rmxhome/backups/memory-hooks/org-20261110T171908-458487000
+FAILED tests/test_bug199_r2_remedy.py::test_s2_a_real_index_write_failure_puts_the_sidecar_back[flat]
+FAILED tests/test_bug199_r2_remedy.py::test_s2_a_real_index_write_failure_puts_the_sidecar_back[organised]
+FAILED tests/test_bug199_r2_remedy.py::test_s2_an_injected_index_write_failure_puts_the_sidecar_back[flat]
+FAILED tests/test_bug199_r2_remedy.py::test_s2_an_injected_index_write_failure_puts_the_sidecar_back[organised]
+4 failed, 7 passed in 1.89s
+restore (c): git status --short src = []
+1
+=== (d) the id behind an old path key not added
+mutation d: applied
+FAILED tests/test_bug199_r2_remedy.py::test_m1_a_restore_keyed_by_a_moved_files_old_path_rewrites_its_line
+1 failed, 10 passed in 1.75s
+restore (d): git status --short src = []
+1
+=== (e) the old-render check removed (every affected line rewritten, as 30c35a9)
+mutation e: applied
+FAILED tests/test_bug199_r2_remedy.py::test_s1_a_drop_keeps_a_hand_edit_on_the_affected_line_and_says_so[flat]
+FAILED tests/test_bug199_r2_remedy.py::test_s1_a_drop_keeps_a_hand_edit_on_the_affected_line_and_says_so[organised]
+FAILED tests/test_bug199_r2_remedy.py::test_s1_a_restore_replaces_a_hand_edit_and_says_so[flat]
+FAILED tests/test_bug199_r2_remedy.py::test_s1_a_restore_replaces_a_hand_edit_and_says_so[organised]
+FAILED tests/test_bug199_r2_remedy.py::test_s1_a_rendered_line_is_still_rewritten_beside_a_kept_hand_edit[flat]
+FAILED tests/test_bug199_r2_remedy.py::test_s1_a_rendered_line_is_still_rewritten_beside_a_kept_hand_edit[organised]
+6 failed, 5 passed in 2.09s
+restore (e): git status --short src = []
+1
+=== post-restore at c0e4d61
+................................................                         [100%]
+48 passed in 6.14s

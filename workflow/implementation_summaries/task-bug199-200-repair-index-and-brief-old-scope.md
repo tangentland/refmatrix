@@ -110,3 +110,130 @@ rel: evidence-for -> [[#mutations]]
   spawned daemon under a short mkdtemp root. A plan/brief scope disagreement makes it exit 1
   (`bug199-200-red-mut1.log`, `-mut2.log`). The routing recorders left in
   `test_bug198_brief_compile_scope.py` had no mock-registry row, so one was added.
+
+## Remedy r1 RED: ch-bsd r1 #s-1, #s-2, #m-1 {#remedy-r1-red}
+
+rel: derives-from -> [[bsd-bug199-200-r1-30c35a9#s-1]]
+rel: derives-from -> [[bsd-bug199-200-r1-30c35a9#s-2]]
+rel: derives-from -> [[bsd-bug199-200-r1-30c35a9#m-1]]
+
+The tests are in `tests/test_bug199_r2_remedy.py`. They rebuild the setups of the auditor's
+probe B on the shared fixtures; they do not import the probe. `stale` runs every case in both
+layouts (flat and organised). No `src/` change is in this commit.
+`bug199-r2-red.log` shows 11 failed at HEAD `40be640`, each for the reason the finding names.
+
+- **#s-1:** a line is rewritten only when its current hook is what the OLD sidecar value
+  renders to. On a drop, a hand-edited line is kept, and the output names it with `kept` and
+  `hand`. On a `--restore`, the restore replaces the hand edit and the output says so. That
+  is the team-lead decision of 2026-11-10: the restore is the newer, explicit instruction
+  for that key. Keeping the hand edit would let the next `write` read it as a hand edit that
+  wins, which reverts the restore (bug-199 again).
+  - `test_s1_a_drop_keeps_a_hand_edit_on_the_affected_line_and_says_so`: the drop keeps the
+    hand edit and does not report the line as rewritten. The hand edit also survives the
+    next `write`.
+  - `test_s1_a_restore_replaces_a_hand_edit_and_says_so`: the line holds the restored text
+    after the apply and after the next `write`. The output has a line naming the link with
+    `replac` and `hand`. The backup dir's `MEMORY.md` still holds the hand-edited line, so
+    the replaced edit can be recovered. HEAD already replaces the hand edit, but silently, so
+    this test fails at HEAD on the missing "replaced … hand" output line.
+  - `test_s1_a_rendered_line_is_still_rewritten_beside_a_kept_hand_edit`: in one apply the
+    hand-edited line is kept and the rendered line is rewritten to the restore. Both survive
+    the next `write`. A fix that stops rewriting fails here.
+- **#s-2:** on an index-write failure the sidecar goes back to its original bytes. Exit is
+  non-zero. Sidecar and index both equal their pre-apply bytes. The sidecar keeps its mode, and
+  no stray file is left in the memdir. The message says nothing was changed and names the one
+  backup dir.
+  - `test_s2_a_real_index_write_failure_puts_the_sidecar_back`: a real fault. The tmp
+    `MEMORY.md` gets `UF_IMMUTABLE`, so the rename fails with EPERM. The test runs the real
+    entry point in a child process.
+  - `test_s2_an_injected_index_write_failure_puts_the_sidecar_back`: in-process. The
+    `_atomic_write_text` wrapper raises ENOSPC for `INDEX_NAME` only. It is registered in
+    `workflow/test_mock_registry.md` as a permanent fault injection.
+- **#m-1:** a `--restore` keyed by a moved file's OLD path rewrites the line that links the
+  new path. The restore survives the next `write`, and no sidecar value is left holding the
+  cut.
+  - `test_m1_a_restore_keyed_by_a_moved_files_old_path_rewrites_its_line`. The id-keyed form
+    is already covered by the organised cases in `test_bug199_repair_rewrites_index.py`.
+
+**Can be passed.** A scratch copy of `src/` with these fixes passed all 48 tests
+across `test_bug199_r2_remedy.py`, `test_bug199_repair_rewrites_index.py` and
+`test_memory_hook_repair.py` (`bug199-r2-fixsim.log`). The three fixes are:
+
+- the old-render check in `_repaired_index`: on a drop the line is kept and named; on a
+  restore it is replaced and named;
+- `changed |= {_id_of_link(...)}`;
+- writing `raw` back on an index-write failure.
+
+That copy was a scratchpad check only, never committed. The not-covered item: a rollback that
+itself fails, which the auditor asked to have named, has no test.
+
+## Remedy r1 GREEN: hand edits, sidecar rollback, old-path restore {#remedy-r1-green}
+
+rel: implements -> [[#remedy-r1-red]]
+rel: derives-from -> [[bsd-bug199-200-r1-30c35a9#s-1]]
+rel: derives-from -> [[bsd-bug199-200-r1-30c35a9#s-2]]
+rel: derives-from -> [[bsd-bug199-200-r1-30c35a9#m-1]]
+
+Source commit `c0e4d61`, `src/refmatrix/memory_index.py` only. No test was written or changed
+in this step.
+
+### What changed {#remedy-r1-green-changes}
+
+- **#s-1:** `_repaired_index(memdir, old, new, changed, restored) -> RepairedIndex | None`.
+  `RepairedIndex` is a `NamedTuple` with these fields: `raw`, `text`, `rewritten`, `replaced`,
+  `kept`, and the property `written`, which is `rewritten + replaced`. An affected line is
+  compared with what the OLD sidecar value renders to: path key, then id, then derived, placed
+  by `_with_hook`, which is the renderer's own cut.
+  - A line that is the old render is rewritten, as before.
+  - A line that is not the old render is a hand edit. On a drop it is kept, and the output
+    says `kept MEMORY.md line <rel>: a hand edit, ...`. If the memory is in `restored` (the
+    restore keys plus the ids behind them), the restore replaces the hand edit, and the
+    output says `replaced the hand edit on MEMORY.md line <rel> ...`.
+  - A line that already equals the new render is left alone and not reported.
+  - The index backup is taken whenever `written` is non-empty, so a replaced hand edit can
+    be recovered from it.
+  - Dry-run prints `would keep` / `would replace`. The summary lines count the replaced and
+    the kept lines.
+- **#s-2:** `_roll_back_sidecar(memdir, raw, bakdir, exc) -> int` always returns 1. It runs
+  when the `MEMORY.md` write fails after the sidecar write. It writes the sidecar's original
+  bytes back through `_atomic_write_text`, which keeps the mode and removes its own tmp file
+  on failure. It then prints `refused: writing <index> failed (...); <sidecar> was put back to
+  its original bytes, so nothing was changed ... Backup: <bakdir>`.
+  - If the rollback fails too, the message names that as a second failure. It says the
+    sidecar is REPAIRED while the index is stale, and gives the backup sidecar to copy back.
+    It never claims that nothing changed. This path has no test. It was exercised by hand once
+    (scratch script, tmp `RMX_HOME`), and that run returned 1 with the second failure named
+    (`bug199-r2-double-failure.log`).
+  - The `repair_cut_hooks` docstring no longer claims a flat "no partial write (R4)". It now
+    states the rollback, and that the only partial state left is a failed rollback, which is
+    named.
+- **#m-1:** `_with_link_ids(memdir, keys) -> set` returns `keys` plus `_id_of_link` of every
+  path key. It is applied to `changed`, which is the auditor's `changed |= {_id_of_link(...)}`,
+  and to the restore keys passed as `restored`. A `--restore` keyed by a moved file's OLD path
+  therefore reaches the line that links the new path.
+
+### Verification {#remedy-r1-green-verification}
+
+- `bug199-r2-green.log`: **68 passed**. The files are `test_bug199_r2_remedy.py` (11/11),
+  `test_bug199_repair_rewrites_index.py`, `test_memory_hook_repair.py`,
+  `test_bug198_brief_compile_scope.py` and `test_bug200_brief_compile_real_daemon.py`.
+- `bug199-r2-green-wide.log`: **612 passed, 0 failed** (8 min 3 s). The files are
+  `tests/test_memory*.py`, `tests/test_bug19*.py`, `tests/test_save_state*.py` and
+  `tests/test_verb_parity.py`. The known bug-127/168 `test_brief_real_daemon` DuckDB
+  "Conflicting lock" failure did not occur in this run.
+
+### Mutations {#remedy-r1-green-mutations}
+
+All five ran against `c0e4d61`, using `tests/test_bug199_r2_remedy.py`. Each was restored in
+its own command with `git checkout -- src/refmatrix/memory_index.py`. After each restore,
+`__pycache__` was cleared, the fixed line was grepped back (count 1), and
+`git status --short src` was empty. After the last restore the 48-test core was green again.
+Log: `bug199-r2-mutations.log`.
+
+| # | Mutation | Failed |
+|---|----------|--------|
+| a | a drop always overwrites a hand edit (`if rel not in restored ...` -> `if False`) | 4 (s1 drop x2, s1 rendered-beside-kept x2) |
+| b | a restore keeps the hand edit (`... -> if True`) | 2 (s1 restore-replaces x2) |
+| c | no sidecar rollback (the rollback write removed; the message kept) | 4 (s2 real x2, s2 injected x2) |
+| d | the id behind an old path key not added (`_with_link_ids` -> `set(keys)`) | 1 (m1) |
+| e | the old-render check removed (every affected line rewritten, as at 30c35a9) | 6 (all s1) |
