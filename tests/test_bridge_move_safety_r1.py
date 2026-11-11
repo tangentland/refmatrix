@@ -129,9 +129,16 @@ def _assert_anchors_at(root: Path, path: str, when: str) -> None:
 
 def _assert_next_bridge_skips(memdir: Path, root: Path, path: str) -> None:
     """The bridge after the sync: still `skipped_unchanged` for both files (x and y), and x's
-    anchors still where they were -- the gate is not what puts them back."""
+    anchors still where they were -- the gate is not what puts them back.
+
+    The post-commit legs run this bridge on a restarted daemon, which holds the catalog's
+    writer lock: it is stopped before the rows are read with `Store` (green-262r1 hit the
+    `Could not set lock on file` IOException here; RED never reached this leg)."""
     out = _bridge(memdir)
     assert _term(out, "skipped_unchanged") == 2, f"next bridge did not skip x and y:\n{out}"
+    if dm.ping(root):
+        dm.stop_daemon(root)
+        assert not dm.ping(root), "the daemon still answers after stop_daemon"
     _assert_anchors_at(root, path, "after the next bridge")
     assert _mem(root, "x")["source_path"] == path
 
