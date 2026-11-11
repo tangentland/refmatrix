@@ -1,0 +1,32 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+F..                                                                      [100%]
+=================================== FAILURES ===================================
+_________ test_m3_ancestor_marker_does_not_turn_on_the_path_aware_gate _________
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-esd5lvzr'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-esd5lvzr/proj/.refmatrix'))
+
+    def test_m3_ancestor_marker_does_not_turn_on_the_path_aware_gate(inproc):
+        """ADR-0005 #marker: the marker is `<memdir>/.memory-layout`. One in `projects/` (an
+        ancestor shared by every memdir below it) leaves this un-marked memdir on HEAD's hash-only
+        rule: a moved unchanged file is skipped and its row keeps the old path."""
+        base, root = inproc
+        memdir = _memdir(base, marker=False, name="projects/slug/memory")
+        (base / "projects" / ".memory-layout").write_text('{"layout": 1}\n', encoding="utf-8")
+        _bridge(memdir)
+        old, new = _move(memdir)
+        out = _bridge(memdir)
+>       assert not _term(out, "moved"), f"an ancestor's marker turned the path-aware gate on:\n{out}"
+E       AssertionError: an ancestor's marker turned the path-aware gate on:
+E         ingested 2 doc(s), 3 node(s), 0 rel: edge(s), 6 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         skipped_unchanged: 1
+E         moved: 1
+E         
+E       assert not 1
+E        +  where 1 = _term('ingested 2 doc(s), 3 node(s), 0 rel: edge(s), 6 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nskipped_unchanged: 1\nmoved: 1\n', 'moved')
+
+tests/test_bridge_move_safety_r1.py:268: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bridge_move_safety_r1.py::test_m3_ancestor_marker_does_not_turn_on_the_path_aware_gate
+1 failed, 2 passed, 36 deselected in 15.35s

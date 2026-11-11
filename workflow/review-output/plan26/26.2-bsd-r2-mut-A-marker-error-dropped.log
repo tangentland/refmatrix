@@ -1,0 +1,35 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+F..                                                                      [100%]
+=================================== FAILURES ===================================
+______ test_s1_unreadable_marker_refreshes_the_move_and_names_the_marker _______
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-c44w6a_z'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-c44w6a_z/proj/.refmatrix'))
+
+    def test_s1_unreadable_marker_refreshes_the_move_and_names_the_marker(inproc):
+        base, root = inproc
+        memdir = _memdir(base, marker=False)
+        marker = memdir / ".memory-layout"
+        marker.write_text('{"layout": 1,\n', encoding="utf-8")      # invalid JSON
+        _bridge(memdir)
+        old, new = _move(memdir)
+        r = CliRunner().invoke(cli_mod.main, ["ingest-gmd", "--as-memory", str(memdir)])
+        out = r.output
+        assert r.exit_code == 0, f"an unreadable marker failed the bridge: {r.exit_code}\n{out}" \
+                                 f"\n{r.exception!r}"
+        assert _term(out, "moved") == 1, f"the move under an unreadable marker was not refreshed " \
+                                         f"(read as not-organised?):\n{out}"
+        errs = [ln for ln in out.splitlines() if ln.strip().startswith("marker_error:")]
+>       assert errs, f"no `marker_error:` line in the bridge report:\n{out}"
+E       AssertionError: no `marker_error:` line in the bridge report:
+E         ingested 2 doc(s), 3 node(s), 0 rel: edge(s), 6 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         skipped_unchanged: 1
+E         moved: 1
+E         
+E       assert []
+
+tests/test_bridge_move_safety_r1.py:247: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bridge_move_safety_r1.py::test_s1_unreadable_marker_refreshes_the_move_and_names_the_marker
+1 failed, 2 passed, 11 deselected in 13.46s
