@@ -1,0 +1,9 @@
+applied E-cli-user-dir-project to cli.py
+== E-cli-user-dir-project
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-665/test_rmx_init_installs_the_pai0/home/.claude/commands/save-state.md'
+FAILED tests/test_install_commands_user_level.py::test_rmx_init_installs_the_pair_at_user_level
+1 failed, 38 passed in 2.44s
+applied S3-swap-order to save-state.md
+== S3-swap-order
+FAILED tests/test_install_commands_user_level.py::test_the_status_file_falls_back_to_an_existing_handoff_md[save-state.md]
+1 failed, 38 passed in 2.49s

@@ -45,9 +45,18 @@ Merge order between 26.2 and 26.3 is free; the SECOND to merge carries 26.2 AC-4
 pair + another duplicate id). 26.3's pair rule lives in the walk (`memory_layout`); 26.2's
 `split_claims` must not add a second exemption.
 
+**26.3 merge after `task-user-level-state-commands`** (the handoff pair now installs at user
+level; `.claude/commands/{save,recall}-state.md` are deleted): keep the deletion on the
+modify/delete conflict, take that branch's template recall-state, and drop AC-7's project-copy
+parameter + `test_ac7_the_installed_command_is_the_template`
+([[impl-task-user-level-state-commands#in-flight]]).
+
 ## Open items {#open}
 
 - **Before the next release:** bug-199, bug-200 (fix in the bug199-200 clone), 26.2, 26.3.
+- **At the next deploy** (user, 2026-11-10): remove the fleet's project-local
+  `.claude/commands/{save,recall}-state.md` (18 files in 9 projects, 6 git-tracked), backed up
+  first; inventory + procedure in [[impl-task-user-level-state-commands#deploy-cleanup]].
 - **Pre-existing failures (registered):** bug-127/168 (`test_brief_real_daemon` DuckDB lock),
   bug-170 (hooks-sync test under the sandbox HOME), bug-190 (rerank load flakes), bug-196 (AC-6
   recall per-channel split), bug-194 (truncated status frame under load).

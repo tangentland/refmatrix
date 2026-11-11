@@ -842,10 +842,14 @@ def main(partition: str | None):
                    "PreCompact recent-recall. Templates documented at "
                    "docs/hooks/intuition-style-hooks.md.")
 @click.option("--agents/--no-agents", default=True,
-              help="Place packaged subagent descriptions (e.g. gmd-curator) "
-                   "into .claude/agents/ for project-local invocation.")
+              help="Place packaged subagent descriptions (e.g. gmd-curator) into "
+                   ".claude/agents/ and slash commands into .claude/commands/ for "
+                   "project-local invocation; /save-state and /recall-state go to "
+                   "~/.claude/commands/ (user level, shared by every project).")
 @click.option("--force", is_flag=True,
-              help="Overwrite existing hook / agent / briefing files.")
+              help="Overwrite existing hook / agent / briefing / command files. A "
+                   "user-level command (~/.claude/commands/save-state.md, recall-state.md) "
+                   "is backed up before it is replaced.")
 def init(path: Path | None, hooks: bool, memory_hooks: bool, agents: bool,
          force: bool):
     """Initialize a refmatrix in the given directory (default: cwd).
@@ -890,8 +894,9 @@ def init(path: Path | None, hooks: bool, memory_hooks: bool, agents: bool,
         from refmatrix.init_agents import install_agents, install_commands
         for line in install_agents(project_root=project_root, force=force):
             console.print(line)
-        # Slash commands (/stash, /stash-list, /stash-pop, /save-state,
-        # /recall-state) — the standardized workflow rituals.
+        # Slash commands — the standardized workflow rituals. /stash, /detour,
+        # /commit-state ... go to the project; /save-state and /recall-state go to
+        # ~/.claude/commands/ once for every project (2026-11-10, user).
         for line in install_commands(project_root=project_root, force=force):
             console.print(line)
 

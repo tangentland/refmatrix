@@ -1,0 +1,213 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/7efc36ce-3694-46b6-b30c-31160ae25396/scratchpad/redmaster/src/refmatrix as checked-hash (bug-037)
+FFFFFFFFF.FF                                                             [100%]
+=================================== FAILURES ===================================
+__________ test_handoff_commands_go_to_the_user_dir_and_nowhere_else ___________
+
+dirs = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_handoff_command...var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_handoff_commands_go_to_th0/backups'))
+
+    def test_handoff_commands_go_to_the_user_dir_and_nowhere_else(dirs):
+        proj, user, _ = dirs
+>       _install(dirs)
+
+tests/test_install_commands_user_level.py:47: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+dirs = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_handoff_command...var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_handoff_commands_go_to_th0/backups'))
+force = False
+
+    def _install(dirs, force=False):
+        proj, user, backup = dirs
+>       return install_commands(proj, force=force, user_dir=user, backup_dir=backup)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: install_commands() got an unexpected keyword argument 'user_dir'
+
+tests/test_install_commands_user_level.py:42: TypeError
+__________ test_the_default_user_dir_is_the_home_claude_commands_dir ___________
+
+    def test_the_default_user_dir_is_the_home_claude_commands_dir():
+>       assert init_agents.user_commands_dir() == Path.home() / ".claude" / "commands"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'refmatrix.init_agents' has no attribute 'user_commands_dir'
+
+tests/test_install_commands_user_level.py:57: AttributeError
+_________ test_the_default_backup_dir_is_under_the_refmatrix_user_home _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10aad67b0>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_the_default_backup_dir_is0')
+
+    def test_the_default_backup_dir_is_under_the_refmatrix_user_home(monkeypatch, tmp_path):
+        monkeypatch.setenv("RMX_HOME", str(tmp_path / "rmxhome"))
+>       assert init_agents.command_backup_dir() == tmp_path / "rmxhome" / "backups" / "commands"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'refmatrix.init_agents' has no attribute 'command_backup_dir'
+
+tests/test_install_commands_user_level.py:62: AttributeError
+____________ test_a_current_user_copy_is_reported_and_not_rewritten ____________
+
+dirs = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_a_current_user_...var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_a_current_user_copy_is_re0/backups'))
+
+    def test_a_current_user_copy_is_reported_and_not_rewritten(dirs):
+        _, user, backup = dirs
+        user.mkdir(parents=True)
+        target = user / "save-state.md"
+        target.write_text(_template("save-state.md"), encoding="utf-8")
+        before = target.stat().st_mtime_ns
+>       out = _install(dirs, force=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_install_commands_user_level.py:71: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+dirs = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_a_current_user_...var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_a_current_user_copy_is_re0/backups'))
+force = True
+
+    def _install(dirs, force=False):
+        proj, user, backup = dirs
+>       return install_commands(proj, force=force, user_dir=user, backup_dir=backup)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: install_commands() got an unexpected keyword argument 'user_dir'
+
+tests/test_install_commands_user_level.py:42: TypeError
+_______________ test_a_differing_user_copy_is_kept_without_force _______________
+
+dirs = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_a_differing_use...var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_a_differing_user_copy_is_0/backups'))
+
+    def test_a_differing_user_copy_is_kept_without_force(dirs):
+        _, user, backup = dirs
+        user.mkdir(parents=True)
+        target = user / "recall-state.md"
+        target.write_text("my own recall-state\n", encoding="utf-8")
+>       out = _install(dirs)
+              ^^^^^^^^^^^^^^
+
+tests/test_install_commands_user_level.py:82: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+dirs = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_a_differing_use...var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_a_differing_user_copy_is_0/backups'))
+force = False
+
+    def _install(dirs, force=False):
+        proj, user, backup = dirs
+>       return install_commands(proj, force=force, user_dir=user, backup_dir=backup)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: install_commands() got an unexpected keyword argument 'user_dir'
+
+tests/test_install_commands_user_level.py:42: TypeError
+_________ test_force_backs_up_a_differing_user_copy_before_overwriting _________
+
+dirs = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_force_backs_up_...var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_force_backs_up_a_differin0/backups'))
+
+    def test_force_backs_up_a_differing_user_copy_before_overwriting(dirs):
+        _, user, backup = dirs
+        user.mkdir(parents=True)
+        target = user / "recall-state.md"
+        target.write_text("my own recall-state\n", encoding="utf-8")
+>       out = _install(dirs, force=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_install_commands_user_level.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+dirs = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_force_backs_up_...var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_force_backs_up_a_differin0/backups'))
+force = True
+
+    def _install(dirs, force=False):
+        proj, user, backup = dirs
+>       return install_commands(proj, force=force, user_dir=user, backup_dir=backup)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: install_commands() got an unexpected keyword argument 'user_dir'
+
+tests/test_install_commands_user_level.py:42: TypeError
+_____________ test_a_failed_backup_leaves_the_user_copy_untouched ______________
+
+dirs = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_a_failed_backup...var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_a_failed_backup_leaves_th0/backups'))
+
+    def test_a_failed_backup_leaves_the_user_copy_untouched(dirs):
+        _, user, backup = dirs
+        user.mkdir(parents=True)
+        target = user / "save-state.md"
+        target.write_text("mine\n", encoding="utf-8")
+        backup.write_text("a file where the backup dir should be\n", encoding="utf-8")
+        with pytest.raises(OSError):
+>           _install(dirs, force=True)
+
+tests/test_install_commands_user_level.py:109: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+dirs = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_a_failed_backup...var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_a_failed_backup_leaves_th0/backups'))
+force = True
+
+    def _install(dirs, force=False):
+        proj, user, backup = dirs
+>       return install_commands(proj, force=force, user_dir=user, backup_dir=backup)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: install_commands() got an unexpected keyword argument 'user_dir'
+
+tests/test_install_commands_user_level.py:42: TypeError
+_____________ test_a_project_local_copy_is_named_and_never_deleted _____________
+
+dirs = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_a_project_local...var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_a_project_local_copy_is_n0/backups'))
+
+    def test_a_project_local_copy_is_named_and_never_deleted(dirs):
+        proj, _, _ = dirs
+        local = proj / ".claude" / "commands" / "save-state.md"
+        local.parent.mkdir(parents=True)
+        local.write_text("old project copy\n", encoding="utf-8")
+>       out = _install(dirs, force=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_install_commands_user_level.py:118: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+dirs = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_a_project_local...var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_a_project_local_copy_is_n0/backups'))
+force = True
+
+    def _install(dirs, force=False):
+        proj, user, backup = dirs
+>       return install_commands(proj, force=force, user_dir=user, backup_dir=backup)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: install_commands() got an unexpected keyword argument 'user_dir'
+
+tests/test_install_commands_user_level.py:42: TypeError
+________ test_recall_state_names_the_savestates_source_and_the_one_shot ________
+
+    def test_recall_state_names_the_savestates_source_and_the_one_shot():
+        text = _template("recall-state.md")
+>       assert RECALL_SOURCE in text
+E       assert 'newest save-state (`savestates/`, legacy top-level)' in '---\ndescription: Recall state — orient on the prior session before doing anything\n---\n\n"Recall state" is a resume...its, daemon on stale version).\n5. **Wait** for direction. Do not start the next action automatically.\n\n$ARGUMENTS\n'
+
+tests/test_install_commands_user_level.py:127: AssertionError
+______ test_save_state_states_the_layout_rules_and_the_commit_all_caveat _______
+
+    def test_save_state_states_the_layout_rules_and_the_commit_all_caveat():
+        text = _template("save-state.md")
+        for needle in ("savestates/", ".memory-layout", "rmx memory organise", "git add -A"):
+>           assert needle in text, needle
+E           AssertionError: savestates/
+E           assert 'savestates/' in '---\ndescription: Save state — handoff the session (commit, promote STM, memory, report)\n---\n\n"Save state" is a ha...loose ends,\n   the concrete next action, and whether the push is still pending (the user\n   pushes).\n\n$ARGUMENTS\n'
+
+tests/test_install_commands_user_level.py:142: AssertionError
+______________ test_install_commands_writes_stash_slash_commands _______________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-645/test_install_commands_writes_s0')
+
+    def test_install_commands_writes_stash_slash_commands(tmp_path):
+        from refmatrix.init_agents import install_commands
+>       out = install_commands(tmp_path, force=True, user_dir=tmp_path / "user-commands",
+                               backup_dir=tmp_path / "backups")
+E       TypeError: install_commands() got an unexpected keyword argument 'user_dir'
+
+tests/test_hooks.py:135: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_install_commands_user_level.py::test_handoff_commands_go_to_the_user_dir_and_nowhere_else
+FAILED tests/test_install_commands_user_level.py::test_the_default_user_dir_is_the_home_claude_commands_dir
+FAILED tests/test_install_commands_user_level.py::test_the_default_backup_dir_is_under_the_refmatrix_user_home
+FAILED tests/test_install_commands_user_level.py::test_a_current_user_copy_is_reported_and_not_rewritten
+FAILED tests/test_install_commands_user_level.py::test_a_differing_user_copy_is_kept_without_force
+FAILED tests/test_install_commands_user_level.py::test_force_backs_up_a_differing_user_copy_before_overwriting
+FAILED tests/test_install_commands_user_level.py::test_a_failed_backup_leaves_the_user_copy_untouched
+FAILED tests/test_install_commands_user_level.py::test_a_project_local_copy_is_named_and_never_deleted
+FAILED tests/test_install_commands_user_level.py::test_recall_state_names_the_savestates_source_and_the_one_shot
+FAILED tests/test_install_commands_user_level.py::test_save_state_states_the_layout_rules_and_the_commit_all_caveat
+FAILED tests/test_hooks.py::test_install_commands_writes_stash_slash_commands
+11 failed, 1 passed in 0.63s

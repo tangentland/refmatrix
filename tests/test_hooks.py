@@ -132,11 +132,14 @@ def test_force_reinstall_overwrites_not_duplicates(tmp_path):
 
 def test_install_commands_writes_stash_slash_commands(tmp_path):
     from refmatrix.init_agents import install_commands
-    out = install_commands(tmp_path, force=True)
+    out = install_commands(tmp_path, force=True, user_dir=tmp_path / "user-commands",
+                           backup_dir=tmp_path / "backups")
     cmds_dir = tmp_path / ".claude" / "commands"
     names = {p.name for p in cmds_dir.glob("*.md")}
     assert {"stash.md", "stash-list.md", "stash-pop.md",
-            "save-state.md", "recall-state.md", "detour.md", "return.md", "commit-state.md"} <= names
+            "detour.md", "return.md", "commit-state.md"} <= names
+    # 2026-11-10: the handoff pair is user-level, never a project copy
+    assert not {"save-state.md", "recall-state.md"} & names
     # the stash command pairs git + focus
     body = (cmds_dir / "stash.md").read_text()
     assert "git stash push" in body and "rmx task push" in body

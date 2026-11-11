@@ -1,0 +1,14 @@
+== M1-no-skip
+FAILED tests/test_install_commands_user_level.py::test_handoff_commands_go_to_the_user_dir_and_nowhere_else
+FAILED tests/test_install_commands_user_level.py::test_a_project_local_copy_is_named_and_never_deleted
+FAILED tests/test_hooks.py::test_install_commands_writes_stash_slash_commands
+3 failed, 9 passed in 0.72s
+== M2-no-backup
+FAILED tests/test_install_commands_user_level.py::test_force_backs_up_a_differing_user_copy_before_overwriting
+1 failed, 11 passed in 0.70s
+== M3-no-warn
+FAILED tests/test_install_commands_user_level.py::test_a_project_local_copy_is_named_and_never_deleted
+1 failed, 11 passed in 0.66s
+== M4-no-current-check
+FAILED tests/test_install_commands_user_level.py::test_a_current_user_copy_is_reported_and_not_rewritten
+1 failed, 11 passed in 0.63s
