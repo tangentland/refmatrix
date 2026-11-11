@@ -1,0 +1,555 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Users/tholley/claude_tools/refmatrix/src/refmatrix as checked-hash (bug-037)
+........................................................................ [  1%]
+...............................................................F........ [  3%]
+........................................................................ [  5%]
+........................................................................ [  6%]
+........................................................................ [  8%]
+........................................................................ [ 10%]
+........................................................................ [ 11%]
+........................................................................ [ 13%]
+........................................................................ [ 15%]
+........................................................................ [ 16%]
+........................................................................ [ 18%]
+........................................................................ [ 20%]
+........................................................................ [ 21%]
+........................................................................ [ 23%]
+.........................................................F.............. [ 25%]
+........................................................................ [ 26%]
+........................................................................ [ 28%]
+........................................................................ [ 30%]
+........................................................................ [ 31%]
+........................................................................ [ 33%]
+........................................................................ [ 35%]
+........................................................................ [ 37%]
+........................................................................ [ 38%]
+........................................................................ [ 40%]
+........................................................................ [ 42%]
+........................................................................ [ 43%]
+........................................................................ [ 45%]
+........................................................................ [ 47%]
+........................................................................ [ 48%]
+........................................................................ [ 50%]
+........................................................................ [ 52%]
+........................................................................ [ 53%]
+........................................................................ [ 55%]
+........................................................................ [ 57%]
+........................................................................ [ 58%]
+........................................................................ [ 60%]
+....................................................F................... [ 62%]
+........................................................................ [ 63%]
+........................................................................ [ 65%]
+........................................................................ [ 67%]
+........................................................................ [ 68%]
+................................................FFFFFFFF.....F.......... [ 70%]
+........................................................................ [ 72%]
+........................................................................ [ 74%]
+........................................................................ [ 75%]
+......................................................................FF [ 77%]
+........................................................................ [ 79%]
+........................................................................ [ 80%]
+........................................................................ [ 82%]
+........................................................................ [ 84%]
+........................................................................ [ 85%]
+........................................................................ [ 87%]
+........................................................................ [ 89%]
+........................................................................ [ 90%]
+........................................................................ [ 92%]
+........................................................................ [ 94%]
+........................................................................ [ 95%]
+........................................................................ [ 97%]
+........................................................................ [ 99%]
+...............................                                          [100%]
+=================================== FAILURES ===================================
+____________ test_an_unknown_class_fails_loudly_through_the_daemon _____________
+
+daemon_root = (PosixPath('/tmp/bd.6k9enmr0/.refmatrix'), {'AI_AGENT': 'claude-code_2-1-319_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_DEPRECATION_WARNING': '1', 'CLAUDECODE': '1', ...})
+
+    def test_an_unknown_class_fails_loudly_through_the_daemon(daemon_root):
+        """#m-17: the MCP schema has no enum, so this path is reachable."""
+        root, env = daemon_root
+        # click.Choice already rejects this, so exit!=0 proved nothing about the
+        # ValueError (ch-bsd r2). Assert the LIBRARY raises, where MCP reaches it.
+        from refmatrix import brief as brief_mod
+        from refmatrix.store import Store
+        s = Store(root)
+>       with s.with_partition(root.parent.name):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_brief_real_daemon.py:146: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+src/refmatrix/store.py:2100: in _scope
+    self._connect()
+src/refmatrix/store.py:1374: in _connect
+    con = self._backend.connect(self.db_path)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:788: in connect
+    return DuckDBConnection(open_duckdb(db_path, read_only=read_only))
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:371: in open_duckdb
+    return _open_write(p, key)
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+p = '/private/tmp/bd.6k9enmr0/.refmatrix/catalog.A.duckdb'
+key = '/private/tmp/bd.6k9enmr0/.refmatrix/catalog.A.duckdb'
+
+    def _open_write(p: str, key: str):
+        import time as _time
+        for _ in range(_OPEN_RETRIES):
+            closed = _close_stale_holders(key, p)
+            before = _file_id(key)
+            deadline = _time.monotonic() + (_CONFLICT_WAIT_S if closed else 0.0)
+            while True:
+                try:
+>                   con = duckdb.connect(p)
+                          ^^^^^^^^^^^^^^^^^
+E                   _duckdb.IOException: IO Error: Could not set lock on file "/private/tmp/bd.6k9enmr0/.refmatrix/catalog.A.duckdb": Conflicting lock is held in /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python (PID 20198) by user tholley. See also https://duckdb.org/docs/stable/connect/concurrency
+
+src/refmatrix/backend.py:337: IOException
+_____________ test_the_repo_scope_is_clean_under_the_stricter_gate _____________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-801/test_the_repo_scope_is_clean_u0')
+
+    def test_the_repo_scope_is_clean_under_the_stricter_gate(tmp_path):
+        """The gate is only worth having if the tree it guards passes it. Runs the
+        real `scripts/lint-gmd.sh`, which is what the commit gate invokes."""
+        root = Path(__file__).resolve().parents[1]
+        # 23.0 R6: the script adds `$HOME/.claude/projects/<slug>/memory` to its scope (the ledger
+        # cites memory ids). The child gets a DECOY home holding a COPY of exactly that one memory
+        # dir -- never the real `HOME` (ch-bsd r1 m3, 2026-10-15: handing the child the real home
+        # was a documented way out of the sandbox). No memory dir for this checkout's slug (a
+        # clone) -> none is copied, and the refs surface as dangling-doc, as the script intends.
+        import shutil
+        slug = str(root).replace("/", "-").replace("_", "-")
+        real_mem = (Path(os.environ["RMX_SANDBOX_REAL_HOME"]) / ".claude" / "projects" / slug
+                    / "memory")
+        home = tmp_path / "home"
+        home.mkdir()
+        if real_mem.is_dir():
+            shutil.copytree(real_mem, home / ".claude" / "projects" / slug / "memory")
+        env = dict(os.environ, HOME=str(home))
+        assert Path(env["HOME"]).resolve() != Path(os.environ["RMX_SANDBOX_REAL_HOME"]).resolve()
+        r = subprocess.run(["./scripts/lint-gmd.sh"], cwd=str(root),
+                           capture_output=True, text=True, env=env)
+        out = r.stdout + r.stderr
+        # bug-179 audit s1 (2026-11-09): the gate exits 2 on a missing precondition (no linter, no
+        # parity script, no `.venv-eval` dev interpreter) BEFORE lint runs, printing no ": error"
+        # line -- so a test that only counted error lines passed in 0.13 s while nothing was linted.
+        # Exit 2 is the script's and lint's usage/precondition code, never a lint verdict (0/1), so
+        # it means the gate did not run. Assert that FIRST: a gate that did not run is a failure with
+        # its own message, never a clean tree.
+        missing = [l for l in out.splitlines() if "not found at" in l]
+        assert r.returncode != 2 and not missing, (
+            f"scripts/lint-gmd.sh did not run its checks (exit {r.returncode}); a missing "
+            "precondition is a failure, not a clean tree:\n" + out[-2000:])
+        errors = [l for l in out.splitlines() if ": error" in l]
+>       assert not errors, "in-scope GMD errors:\n" + "\n".join(errors[:20])
+E       AssertionError: in-scope GMD errors:
+E         workflow/bullshit/2026-11-10-1021-task26.6-r1-compile-hygiene-290348a.md:95: error: [dangling-doc] [[refmatrix-claude-md#plans-pre-written]] — no doc with id `refmatrix-claude-md` in scanned set
+E         workflow/bullshit/2026-11-10-1021-task26.6-r1-compile-hygiene-290348a.md:139: error: [dangling-doc] [[refmatrix-claude-md#no-silent-failures]] — no doc with id `refmatrix-claude-md` in scanned set
+E         workflow/bullshit/2026-11-10-1021-task26.6-r1-compile-hygiene-290348a.md:207: error: [dangling-doc] [[refmatrix-claude-md#plans-pre-written]] — no doc with id `refmatrix-claude-md` in scanned set
+E       assert not ['workflow/bullshit/2026-11-10-1021-task26.6-r1-compile-hygiene-290348a.md:95: error: [dangling-doc] [[refmatrix-claud...error: [dangling-doc] [[refmatrix-claude-md#plans-pre-written]] — no doc with id `refmatrix-claude-md` in scanned set']
+
+tests/test_gmd_lint_requires_version.py:148: AssertionError
+_____________________ test_installed_hooks_match_generated _____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x4026bdd30>
+
+    @pytest.mark.skipif(not (REPO / ".claude" / "rmx-hooks.json").exists(),
+                        reason="not an rmx-hooks-managed checkout")
+    @pytest.mark.skipif(_OWNER is not None and _OWNER != REPO,
+                        reason="hooks belong to another checkout of this commit")
+    def test_installed_hooks_match_generated(monkeypatch):
+        # This test checks the REAL checkout against the REAL ~/.claude/hooks
+        # (read-only); undo the conftest redirect that isolates every other test.
+        monkeypatch.delenv("RMX_CLAUDE_HOOKS_DIR", raising=False)
+        ok, diff = hooks_mod.check(REPO)
+>       assert ok, "hooks drift — run `rmx install-hooks --apply --force`:\n" + diff
+E       AssertionError: hooks drift — run `rmx install-hooks --apply --force`:
+E         - PostToolUse/Grep: {"command": "/Users/tholley/.claude/hooks/grep-tool-teach.sh", "timeout": 5000, "type": "command"}
+E         + PostToolUse/Grep: {"command": "/private/tmp/rmx-2nw2bwyr/h/.claude/hooks/grep-tool-teach.sh", "timeout": 5000, "type": "command"}
+E         - PreToolUse/Bash: {"command": "/Users/tholley/.claude/hooks/grep-rewrite-guard.sh", "type": "command"}
+E         + PreToolUse/Bash: {"command": "/private/tmp/rmx-2nw2bwyr/h/.claude/hooks/grep-rewrite-guard.sh", "type": "command"}
+E         - SessionStart/startup|resume|clear: {"command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx ingest-gmd --as-memory --detach '/Users/tholley/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory'", "type": "command"}
+E         + SessionStart/startup|resume|clear: {"command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx ingest-gmd --as-memory --detach '/private/tmp/rmx-2nw2bwyr/h/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory'", "type": "command"}
+E         - script grep-rewrite-guard.sh differs from the generator's render (rmx install-hooks --apply --force)
+E         - script rmxgrep-rewrite.py differs from the generator's render (rmx install-hooks --apply --force)
+E         - script grep-tool-teach.sh differs from the generator's render (rmx install-hooks --apply --force)
+E       assert False
+
+tests/test_repo_hooks_in_sync.py:31: AssertionError
+___________ test_rewriter_catches_dodges[grep -rn pat src/-rmxgrep] ____________
+
+env_hooks = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-801/test_rewriter_catches_dodges_g0/hooks')
+cmd = 'grep -rn pat src/', expect_tool = 'rmxgrep'
+
+    @pytest.mark.parametrize("cmd,expect_tool", [
+        ("grep -rn pat src/", "rmxgrep"),
+        ("/usr/bin/grep -n foo bar.py", "rmxgrep"),
+        ("lint | /opt/local/bin/rg -c error", "rmxrg"),
+        ("command grep -c error f.txt", "rmxgrep"),
+        ("command -p grep foo", "rmxgrep"),
+        ("env HF_HUB_OFFLINE=1 grep -n pat f.py", "rmxgrep"),
+        ("env A=1 B=2 rg TODO", "rmxrg"),
+        ("command /usr/bin/grep -n foo", "rmxgrep"),
+    ])
+    def test_rewriter_catches_dodges(env_hooks, cmd, expect_tool):
+        out = _rewrite(env_hooks, cmd)
+>       assert expect_tool in out, (cmd, out)
+E       AssertionError: ('grep -rn pat src/', '')
+E       assert 'rmxgrep' in ''
+
+tests/test_search_hooks.py:90: AssertionError
+______ test_rewriter_catches_dodges[/usr/bin/grep -n foo bar.py-rmxgrep] _______
+
+env_hooks = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-801/test_rewriter_catches_dodges__0/hooks')
+cmd = '/usr/bin/grep -n foo bar.py', expect_tool = 'rmxgrep'
+
+    @pytest.mark.parametrize("cmd,expect_tool", [
+        ("grep -rn pat src/", "rmxgrep"),
+        ("/usr/bin/grep -n foo bar.py", "rmxgrep"),
+        ("lint | /opt/local/bin/rg -c error", "rmxrg"),
+        ("command grep -c error f.txt", "rmxgrep"),
+        ("command -p grep foo", "rmxgrep"),
+        ("env HF_HUB_OFFLINE=1 grep -n pat f.py", "rmxgrep"),
+        ("env A=1 B=2 rg TODO", "rmxrg"),
+        ("command /usr/bin/grep -n foo", "rmxgrep"),
+    ])
+    def test_rewriter_catches_dodges(env_hooks, cmd, expect_tool):
+        out = _rewrite(env_hooks, cmd)
+>       assert expect_tool in out, (cmd, out)
+E       AssertionError: ('/usr/bin/grep -n foo bar.py', '')
+E       assert 'rmxgrep' in ''
+
+tests/test_search_hooks.py:90: AssertionError
+____ test_rewriter_catches_dodges[lint | /opt/local/bin/rg -c error-rmxrg] _____
+
+env_hooks = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-801/test_rewriter_catches_dodges_l0/hooks')
+cmd = 'lint | /opt/local/bin/rg -c error', expect_tool = 'rmxrg'
+
+    @pytest.mark.parametrize("cmd,expect_tool", [
+        ("grep -rn pat src/", "rmxgrep"),
+        ("/usr/bin/grep -n foo bar.py", "rmxgrep"),
+        ("lint | /opt/local/bin/rg -c error", "rmxrg"),
+        ("command grep -c error f.txt", "rmxgrep"),
+        ("command -p grep foo", "rmxgrep"),
+        ("env HF_HUB_OFFLINE=1 grep -n pat f.py", "rmxgrep"),
+        ("env A=1 B=2 rg TODO", "rmxrg"),
+        ("command /usr/bin/grep -n foo", "rmxgrep"),
+    ])
+    def test_rewriter_catches_dodges(env_hooks, cmd, expect_tool):
+        out = _rewrite(env_hooks, cmd)
+>       assert expect_tool in out, (cmd, out)
+E       AssertionError: ('lint | /opt/local/bin/rg -c error', '')
+E       assert 'rmxrg' in ''
+
+tests/test_search_hooks.py:90: AssertionError
+______ test_rewriter_catches_dodges[command grep -c error f.txt-rmxgrep] _______
+
+env_hooks = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-801/test_rewriter_catches_dodges_c0/hooks')
+cmd = 'command grep -c error f.txt', expect_tool = 'rmxgrep'
+
+    @pytest.mark.parametrize("cmd,expect_tool", [
+        ("grep -rn pat src/", "rmxgrep"),
+        ("/usr/bin/grep -n foo bar.py", "rmxgrep"),
+        ("lint | /opt/local/bin/rg -c error", "rmxrg"),
+        ("command grep -c error f.txt", "rmxgrep"),
+        ("command -p grep foo", "rmxgrep"),
+        ("env HF_HUB_OFFLINE=1 grep -n pat f.py", "rmxgrep"),
+        ("env A=1 B=2 rg TODO", "rmxrg"),
+        ("command /usr/bin/grep -n foo", "rmxgrep"),
+    ])
+    def test_rewriter_catches_dodges(env_hooks, cmd, expect_tool):
+        out = _rewrite(env_hooks, cmd)
+>       assert expect_tool in out, (cmd, out)
+E       AssertionError: ('command grep -c error f.txt', '')
+E       assert 'rmxgrep' in ''
+
+tests/test_search_hooks.py:90: AssertionError
+__________ test_rewriter_catches_dodges[command -p grep foo-rmxgrep] ___________
+
+env_hooks = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-801/test_rewriter_catches_dodges_c1/hooks')
+cmd = 'command -p grep foo', expect_tool = 'rmxgrep'
+
+    @pytest.mark.parametrize("cmd,expect_tool", [
+        ("grep -rn pat src/", "rmxgrep"),
+        ("/usr/bin/grep -n foo bar.py", "rmxgrep"),
+        ("lint | /opt/local/bin/rg -c error", "rmxrg"),
+        ("command grep -c error f.txt", "rmxgrep"),
+        ("command -p grep foo", "rmxgrep"),
+        ("env HF_HUB_OFFLINE=1 grep -n pat f.py", "rmxgrep"),
+        ("env A=1 B=2 rg TODO", "rmxrg"),
+        ("command /usr/bin/grep -n foo", "rmxgrep"),
+    ])
+    def test_rewriter_catches_dodges(env_hooks, cmd, expect_tool):
+        out = _rewrite(env_hooks, cmd)
+>       assert expect_tool in out, (cmd, out)
+E       AssertionError: ('command -p grep foo', '')
+E       assert 'rmxgrep' in ''
+
+tests/test_search_hooks.py:90: AssertionError
+_ test_rewriter_catches_dodges[env HF_HUB_OFFLINE=1 grep -n pat f.py-rmxgrep] __
+
+env_hooks = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-801/test_rewriter_catches_dodges_e0/hooks')
+cmd = 'env HF_HUB_OFFLINE=1 grep -n pat f.py', expect_tool = 'rmxgrep'
+
+    @pytest.mark.parametrize("cmd,expect_tool", [
+        ("grep -rn pat src/", "rmxgrep"),
+        ("/usr/bin/grep -n foo bar.py", "rmxgrep"),
+        ("lint | /opt/local/bin/rg -c error", "rmxrg"),
+        ("command grep -c error f.txt", "rmxgrep"),
+        ("command -p grep foo", "rmxgrep"),
+        ("env HF_HUB_OFFLINE=1 grep -n pat f.py", "rmxgrep"),
+        ("env A=1 B=2 rg TODO", "rmxrg"),
+        ("command /usr/bin/grep -n foo", "rmxgrep"),
+    ])
+    def test_rewriter_catches_dodges(env_hooks, cmd, expect_tool):
+        out = _rewrite(env_hooks, cmd)
+>       assert expect_tool in out, (cmd, out)
+E       AssertionError: ('env HF_HUB_OFFLINE=1 grep -n pat f.py', '')
+E       assert 'rmxgrep' in ''
+
+tests/test_search_hooks.py:90: AssertionError
+___________ test_rewriter_catches_dodges[env A=1 B=2 rg TODO-rmxrg] ____________
+
+env_hooks = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-801/test_rewriter_catches_dodges_e1/hooks')
+cmd = 'env A=1 B=2 rg TODO', expect_tool = 'rmxrg'
+
+    @pytest.mark.parametrize("cmd,expect_tool", [
+        ("grep -rn pat src/", "rmxgrep"),
+        ("/usr/bin/grep -n foo bar.py", "rmxgrep"),
+        ("lint | /opt/local/bin/rg -c error", "rmxrg"),
+        ("command grep -c error f.txt", "rmxgrep"),
+        ("command -p grep foo", "rmxgrep"),
+        ("env HF_HUB_OFFLINE=1 grep -n pat f.py", "rmxgrep"),
+        ("env A=1 B=2 rg TODO", "rmxrg"),
+        ("command /usr/bin/grep -n foo", "rmxgrep"),
+    ])
+    def test_rewriter_catches_dodges(env_hooks, cmd, expect_tool):
+        out = _rewrite(env_hooks, cmd)
+>       assert expect_tool in out, (cmd, out)
+E       AssertionError: ('env A=1 B=2 rg TODO', '')
+E       assert 'rmxrg' in ''
+
+tests/test_search_hooks.py:90: AssertionError
+______ test_rewriter_catches_dodges[command /usr/bin/grep -n foo-rmxgrep] ______
+
+env_hooks = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-801/test_rewriter_catches_dodges_c2/hooks')
+cmd = 'command /usr/bin/grep -n foo', expect_tool = 'rmxgrep'
+
+    @pytest.mark.parametrize("cmd,expect_tool", [
+        ("grep -rn pat src/", "rmxgrep"),
+        ("/usr/bin/grep -n foo bar.py", "rmxgrep"),
+        ("lint | /opt/local/bin/rg -c error", "rmxrg"),
+        ("command grep -c error f.txt", "rmxgrep"),
+        ("command -p grep foo", "rmxgrep"),
+        ("env HF_HUB_OFFLINE=1 grep -n pat f.py", "rmxgrep"),
+        ("env A=1 B=2 rg TODO", "rmxrg"),
+        ("command /usr/bin/grep -n foo", "rmxgrep"),
+    ])
+    def test_rewriter_catches_dodges(env_hooks, cmd, expect_tool):
+        out = _rewrite(env_hooks, cmd)
+>       assert expect_tool in out, (cmd, out)
+E       AssertionError: ('command /usr/bin/grep -n foo', '')
+E       assert 'rmxgrep' in ''
+
+tests/test_search_hooks.py:90: AssertionError
+____________________ test_env_assignments_survive_in_place _____________________
+
+env_hooks = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-801/test_env_assignments_survive_i0/hooks')
+
+    def test_env_assignments_survive_in_place(env_hooks):
+        out = _rewrite(env_hooks, "env HF_HUB_OFFLINE=1 grep -n pat f.py")
+>       assert out.startswith("env HF_HUB_OFFLINE=1 ")
+E       AssertionError: assert False
+E        +  where False = <built-in method startswith of str object at 0x1058a76f0>('env HF_HUB_OFFLINE=1 ')
+E        +    where <built-in method startswith of str object at 0x1058a76f0> = ''.startswith
+
+tests/test_search_hooks.py:107: AssertionError
+_______________ test_ac6_frozen_fixture_prints_the_exact_counts ________________
+
+R = PosixPath('/private/tmp/rmx-2nw2bwyr/r/3311/.refmatrix')
+
+    def test_ac6_frozen_fixture_prints_the_exact_counts(R):
+        """AC-6. The fixture (cut by the user 2026-10-19 with `tools/cut_agent_usage_fixture.py`,
+        trimmed by its `--from-fixture` re-cut, spec round 14): `--since 2026-09-23 --until
+        2026-10-07T11:06:35` prints EXACTLY 3 context calls (context-replica), 1,121 grep-replica
+        greps, 34 memory recalls (R11 channel `recall`: the agent's own `memory recall`, not the
+        hooks' 210; not 68: phase=start excluded) and `excluded_test_rows=0 legacy_fixture_rows=0
+        legacy_unattributed=<L>` (L from the manifest). Count lines matched tolerantly (the spec
+        fixes no per-route format): a line naming the surface and holding the number as a word.
+    
+        1,121, not plan-21's 1,119 (round 14, measured on the fixture): 1,119 was counted with the
+        upper bound `2026-10-07T11:06` (minute precision; bsd 3104a81 "to 2026-10-07T11:06", 837
+        dropin + 21 index), which drops the two grep-replica rows at 11:06:04. This AC's own window
+        ends at 11:06:35 and holds them (839 dropin + 21 index). Same rows, a different cut."""
+        manifest = FIXTURE / "manifest.json"
+        assert manifest.is_file(), (
+            "AC-6 BLOCKED: the redacted fixture is not committed; run "
+            "`python3 tools/cut_agent_usage_fixture.py` (reads this project's .refmatrix logs, "
+            "writes tests/fixtures/agent_usage/)")
+        L = json.loads(manifest.read_text())["L"]
+        for name in ("query.log", "cli.log"):
+            (R / name).write_bytes((FIXTURE / name).read_bytes())
+        code, out = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+        assert f"excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed={L}" in out, out
+        assert [ln for ln in _line_with(out, "context-replica") if re.search(r"\b3\b", ln)], out
+        assert [ln for ln in _line_with(out, "grep-replica")
+                if re.search(r"\b1,?121\b", ln)], out
+        rec = [ln for ln in out.splitlines() if "recall" in ln.lower()]
+>       assert [ln for ln in rec if re.search(r"\b34\b", ln)], out
+E       AssertionError: agent usage · window 2026-09-23 .. 2026-10-07T11:06:35 (since inclusive, until exclusive)
+E         excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed=4709
+E         query.log: counted=4709 unparseable=0 internal_excluded=0
+E         totals:
+E           context context-replica: 3
+E           grep grep-replica: 1121
+E           grep grep-stdin: 3330
+E           memory_recall rows: 0
+E           recall_unflagged=0
+E         by invocation:
+E           invocation=unknown
+E             context context-replica: 3 p50=792ms p95=808ms
+E             grep grep-replica: 1121 p50=8ms p95=48ms
+E             grep grep-replica answered_by=dropin: 839 p50=9ms p95=26ms
+E             grep grep-replica answered_by=floor: 4 p50=64ms p95=71ms
+E             grep grep-replica answered_by=index: 21 p50=55ms p95=267ms
+E             grep grep-replica answered_by=none: 5 p50=16ms p95=105ms
+E             grep grep-replica answered_by=unknown: 252 p50=6ms p95=89ms
+E             grep grep-stdin: 3330 p50=0ms p95=0ms
+E             grep grep-stdin answered_by=stdin: 3330 p50=0ms p95=0ms
+E         outcomes:
+E           context: ok=3 skipped_budget=0 error=0
+E         expired_reads: unavailable (daemon down)
+E         used_lookup_cap_hits=0 used_no_session=0
+E         cli.log: memory recall commands=244 excluded_test_rows=0 unparseable=0
+E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_rows=0
+E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
+E         
+E       assert []
+
+tests/test_task21_1_agent_usage_report.py:392: AssertionError
+________________ test_ac6_cli_log_recalls_are_split_per_channel ________________
+
+R = PosixPath('/private/tmp/rmx-2nw2bwyr/r/3312/.refmatrix')
+
+    def test_ac6_cli_log_recalls_are_split_per_channel(R):
+        """AC-6 / R7 (round 14, RED at 246efb8): R7 prints recall "per invocation" and "per recall
+        channel (R11's `recall_channel`, recomputed from the row)". A pre-21.1 store has no
+        `kind=recall` query.log rows, so its recalls exist only in cli.log; the report lumps them
+        into ONE `cli.log: memory recall commands=<n>` line, so the frozen fixture prints 244
+        (201 prompt_recall + 6 session_start + 3 precompact hook calls + 34 agent calls) and the 34
+        AC-6 pins is printed nowhere. The channel is recomputable from a cli.log row: the flag NAMES
+        survive redaction (`--session-start`, `--stdin-json`, `--recent`) and `source` is the
+        invocation (`hook` / `unknown`). Here: 5 prompt_recall, 2 session_start, 3 precompact
+        (hook `--recent`), 4 recall (3 agent queries + 1 agent `--recent`, which R11 files as
+        `recall`, not `precompact`), each with its phase=start row (never counted)."""
+        def pair(ts, argv, source):
+            return [_cli_row(ts, argv, phase="start", source=source), _cli_row(ts, argv, source=source)]
+        cli = []
+        for i in range(5):
+            cli += pair(f"2026-10-01T10:0{i}:00",
+                        ["memory", "recall", "--stdin-json", "--k", "sha256:" + "a" * 64,
+                         "--scope", "sha256:" + "b" * 64, "--json"], "hook")
+        for i in range(2):
+            cli += pair(f"2026-10-02T10:0{i}:00",
+                        ["memory", "recall", "--session-start", "--json"], "hook")
+        for i in range(3):
+            cli += pair(f"2026-10-03T10:0{i}:00",
+                        ["memory", "recall", "--recent", "--scope", "sha256:" + "c" * 64], "hook")
+        for i in range(3):
+            cli += pair(f"2026-10-04T10:0{i}:00",
+                        ["memory", "recall", "sha256:" + "d" * 64, "--k", "sha256:" + "e" * 64],
+                        "unknown")
+        cli += pair("2026-10-05T10:00:00", ["memory", "recall", "--recent"], "unknown")
+        _write_jsonl(R / "query.log", [])
+        _write_jsonl(R / "cli.log", cli)
+        code, out = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+        assert code == 0, out
+    
+        def chan(name: str, n: int) -> list:
+            word = re.compile(rf"(?<![\w-]){name}(?![\w-])")
+            return [ln for ln in out.splitlines() if word.search(ln) and re.search(rf"\b{n}\b", ln)]
+>       assert chan("prompt_recall", 5), out
+E       AssertionError: agent usage · window 2026-09-23 .. 2026-10-07T11:06:35 (since inclusive, until exclusive)
+E         excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed=0
+E         query.log: counted=0 unparseable=0 internal_excluded=0
+E         totals:
+E           memory_recall rows: 0
+E           recall_unflagged=0
+E         by invocation:
+E         outcomes:
+E         expired_reads: unavailable (daemon down)
+E         used_lookup_cap_hits=0 used_no_session=0
+E         cli.log: memory recall commands=14 excluded_test_rows=0 unparseable=0
+E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_rows=0
+E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
+E         
+E       assert []
+E        +  where [] = <function test_ac6_cli_log_recalls_are_split_per_channel.<locals>.chan at 0x4027685c0>('prompt_recall', 5)
+
+tests/test_task21_1_agent_usage_report.py:434: AssertionError
+=============================== warnings summary ===============================
+tests/test_cctree_web.py:17
+  /Users/tholley/claude_tools/refmatrix/tests/test_cctree_web.py:17: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient  # noqa: E402
+
+tests/test_grep_stdin_dialect.py:11
+  /Users/tholley/claude_tools/refmatrix/tests/test_grep_stdin_dialect.py:11: SyntaxWarning: "\|" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\|"? A raw string is also an option.
+    present, and GNU BRE escapes (`a\|b`) fail loud (exit 2 → wrapper falls back
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/lance/__init__.py:298: UserWarning: lance is not fork-safe. If you are using multiprocessing, use spawn or forkserver instead.
+    warnings.warn(
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Users/tholley/claude_tools/refmatrix/tests/test_bug129_hub_pidfile.py:227: DeprecationWarning: This process (pid=9450) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    pid = os.fork()
+
+tests/test_rerank_budget_real_clients.py::test_a_header_that_eats_the_budget_sends_no_rerank
+  /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-370 (one)
+  
+  Traceback (most recent call last):
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Users/tholley/claude_tools/refmatrix/tests/test_rerank_budget_real_clients.py", line 361, in one
+      send_frame(rw, {"ok": True, "model": "stub/ce",
+      ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      "cost_s_per_doc": None, "queue_depth": 0})
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Users/tholley/claude_tools/refmatrix/src/refmatrix/subproc.py", line 126, in send_frame
+      fh.flush()
+      ~~~~~~~~^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 747, in write
+      return self._sock.send(b)
+             ~~~~~~~~~~~~~~~^^^
+  BrokenPipeError: [Errno 32] Broken pipe
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon
+FAILED tests/test_gmd_lint_requires_version.py::test_the_repo_scope_is_clean_under_the_stricter_gate
+FAILED tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated
+FAILED tests/test_search_hooks.py::test_rewriter_catches_dodges[grep -rn pat src/-rmxgrep]
+FAILED tests/test_search_hooks.py::test_rewriter_catches_dodges[/usr/bin/grep -n foo bar.py-rmxgrep]
+FAILED tests/test_search_hooks.py::test_rewriter_catches_dodges[lint | /opt/local/bin/rg -c error-rmxrg]
+FAILED tests/test_search_hooks.py::test_rewriter_catches_dodges[command grep -c error f.txt-rmxgrep]
+FAILED tests/test_search_hooks.py::test_rewriter_catches_dodges[command -p grep foo-rmxgrep]
+FAILED tests/test_search_hooks.py::test_rewriter_catches_dodges[env HF_HUB_OFFLINE=1 grep -n pat f.py-rmxgrep]
+FAILED tests/test_search_hooks.py::test_rewriter_catches_dodges[env A=1 B=2 rg TODO-rmxrg]
+FAILED tests/test_search_hooks.py::test_rewriter_catches_dodges[command /usr/bin/grep -n foo-rmxgrep]
+FAILED tests/test_search_hooks.py::test_env_assignments_survive_in_place - As...
+FAILED tests/test_task21_1_agent_usage_report.py::test_ac6_frozen_fixture_prints_the_exact_counts
+FAILED tests/test_task21_1_agent_usage_report.py::test_ac6_cli_log_recalls_are_split_per_channel
+14 failed, 4265 passed, 5 warnings in 2492.90s (0:41:32)
