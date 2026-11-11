@@ -46,6 +46,7 @@ Window: the newest run bullets. Older bullets are folded VERBATIM, anchor ids un
 - 2026-11-10 (bug-197/198 r1) — AUDITOR SELF-CHECK: NEVER BACKGROUND PYTEST WITH `&` INSIDE A BACKGROUNDED SHELL. Re-parenting to pid 1 failed 7 pid-pointer session tests that pass in the foreground. {#imp-no-ampersand-pytest}
 - 2026-11-10 (user-level state commands r1, c596a11) — A FLEET FILE CLEANUP HAS TO CHECK EACH REPO'S TRUNK TREE, NOT JUST THE WORKING TREE. All 6 tracked repos were on feature branches. cliquedb's checkout had already dropped the pair, but its main/master still track it. So a working-tree `find` plus `git rm` would have reported done while the trunks kept every copy. {#imp-fleet-cleanup-trunk-tree}
 - 2026-11-10 (user-level state commands r1) — AN INJECTED-DIR SEAM PROVES THE FUNCTION, NOT THE CALL SITE. Every installer test passed `user_dir=tmp`. Pointing `rmx init` back at the project dir survived 283 tests. When a seam exists for tests, add one test through the production caller with the default left in place. {#imp-seam-skips-call-site}
+- 2026-11-10 (user-level state commands r2, fd06517) — A FALLBACK THAT CHANGES WHICH FILE IS WRITTEN CHANGES WHAT "AT THE TOP" MEANS. Pointing the status file at `handoff.md` was right, but `handoff.md` is GMD, so step 3a's "block at the top" now puts the block before the frontmatter. When a remedy re-targets a file, re-read every instruction that writes to it against the new file's format. {#imp-retarget-rereads-writers}
 
 ## Former anchors, restored {#former-anchors}
 
