@@ -164,6 +164,31 @@ Logs are in `workflow/review-output/plan26/`: `26.2-r1-red.log`,
 green again after the restores). This RED makes [[#o-ac5-window]] obsolete: b-1 (iii) pins the
 current-path sync. {#r1-red-logs}
 
+**Follow-up: tests that kill the GREEN survivors.** Mutations b and b2 of the `purge_path`
+guard survived the tests above ([[#r1-green-survivors]]). Three tests were added to
+`tests/test_bridge_move_safety_r1.py` to kill them. All three pass on `497f7f0` (11/11 in
+`26.2-r1-guard-green.log`). {#r1-red-survivor-kills}
+
+- (b) `test_b1_guard_keeps_anchors_whose_source_path_is_a_symlink_form_of_the_purged_path`.
+  The bridge writes the anchor path and `source_path` from one string, so the test seeds the
+  older-store shape with `_set_source_path`: a `source_path` in the symlink form of the memdir,
+  as viascope's pre-26.2 rows hold it. It then runs `sync -f <resolved path>`. Mutation b (the
+  guard compares paths literally only) is killed with ``x's anchors after `sync -f <resolved
+  path>` with source_path in symlink form: []`` (`26.2-r1-mut-b-guard-unresolved-killed.log`).
+- (b2) `test_b1_guard_purges_a_dropped_anchor_left_on_the_old_path`. This is a bridge-only
+  history in an un-organised dir: x is moved, and the edit drops `{#two}`. The re-ingest leaves
+  x#two on the old path while `source_path` names the new one, and `sync -f <old>` must purge
+  it. It is a real case where the anchor path and `source_path` differ without any seeding.
+- (b2) `test_b1_guard_purges_a_project_docs_anchors_that_share_a_memory_id`. A project doc
+  with GMD id `x` re-points the `x#...` concepts. After the doc is deleted and its path is
+  synced, the concepts must go.
+- Mutation b2 (`if True:`, so any memory with the id keeps the anchors) is killed by both b2
+  tests: `the stranded x#two on <old> survived the purge` and `the deleted doc's anchors
+  survived the purge` (`26.2-r1-mut-b2-guard-ignores-source-path-killed.log`).
+- Each mutation was applied at `store.py:6435` and restored in its own `git checkout`.
+  `__pycache__` was cleared, the guard line was grepped back, `git status --short src` was
+  empty, and `git diff 497f7f0 -- src` was empty.
+
 ## Remedy r1 GREEN: purge keeps bridge-owned anchors; marker walk bounded {#remedy-r1-green}
 
 rel: implements -> [[bsd-task-26.2-r1-bridge-move-safety-90abc72#b-1]]

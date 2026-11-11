@@ -42,7 +42,8 @@ from refmatrix import cli as cli_mod
 from refmatrix import daemon as dm
 from refmatrix.store import Store
 from tests.test_bridge_move_safety import (  # noqa: F401 -- fixtures are used by name
-    X_MD, _anchor_paths, _bridge, _invoke, _mem, _memdir, _move, _term, inproc, snapshot_env,
+    X_MD, _anchor_paths, _bridge, _invoke, _mem, _memdir, _move, _set_source_path, _term, inproc,
+    snapshot_env,
 )
 
 ANCHORS = {"x#root", "x#one", "x#two"}
@@ -269,3 +270,79 @@ def test_m4_store_snapshot_with_an_absent_partition_is_refused(snapshot_env):
     assert isinstance(r.exception, SystemExit), f"not a clean refusal: {r.exception!r}\n{out}"
     assert absent in out, f"the refusal does not name the partition:\n{out}"
     assert not ghost.exists()
+
+
+# =============================================================================================
+# r1 GREEN survivors (b) and (b2): the guard in `Store.purge_path` decides ownership by the
+# memory row's `source_path`, RESOLVED as well as literal, and ONLY by it
+# (`#r1-green-survivors`: mutations b and b2 passed 8/8 and 33/33)
+# =============================================================================================
+
+def test_b1_guard_keeps_anchors_whose_source_path_is_a_symlink_form_of_the_purged_path(
+        gitproj_inproc):
+    """(b). The bridge writes the anchor path and `source_path` from one string, so a bridge-only
+    history never makes them differ. A store row written before 26.2 can: viascope's memdir is a
+    symlink, and its rows hold `source_path` in that symlink form (AC-1b's stale_before case),
+    while every sync purges the RESOLVED path. Seeded here on the throwaway store, as
+    `_set_source_path` seeds the older shapes in the 26.2 file. The anchors must survive."""
+    base, proj, root = gitproj_inproc
+    memdir = _proj_memdir(proj, marker=False)
+    link = base / "memlink"
+    link.symlink_to(memdir, target_is_directory=True)
+    _bridge(memdir)
+    real = str((memdir / "a" / "x.md").resolve())
+    via_link = str(link / "a" / "x.md")
+    assert via_link != real and os.path.realpath(via_link) == real, "fixture: not a symlink form"
+    _assert_anchors_at(root, real, "after the bridge (fixture)")
+    _set_source_path(root, "x", via_link)
+    _invoke(["sync", "--project-root", str(proj), "-f", real])
+    _assert_anchors_at(root, real, "after `sync -f <resolved path>` with source_path in "
+                                   "symlink form")
+
+
+def test_b1_guard_purges_a_dropped_anchor_left_on_the_old_path(gitproj_inproc):
+    """(b2), the natural form. Un-organised dir: x moves AND loses its `## Second {#two}`
+    heading. The bridge re-ingests (the hash changed), re-points x#root / x#one to the new
+    path, and leaves x#two on the OLD path -- an anchor no memory's `source_path` names. Syncing
+    the old (deleted) path must purge it; x's live anchors stay."""
+    base, proj, root = gitproj_inproc
+    memdir = _proj_memdir(proj, marker=False)
+    _bridge(memdir)
+    old = str((memdir / "a" / "x.md").resolve())
+    new = str((memdir / "b" / "x.md").resolve())
+    (memdir / "b" / "x.md").write_text(
+        X_MD.format(id="x", body="body of x").split("## Second")[0], encoding="utf-8")
+    os.remove(old)
+    _bridge(memdir)
+    assert _mem(root, "x")["source_path"] == new, "fixture: the edited move was not re-ingested"
+    got = _anchor_paths(root, "x")
+    assert got.get("x#two") == old and {got.get("x#root"), got.get("x#one")} == {new}, \
+        f"fixture: expected x#two stranded on the old path, x#root/x#one on the new: {got}"
+    _invoke(["sync", "--project-root", str(proj), "-f", old])
+    got = _anchor_paths(root, "x")
+    assert "x#two" not in got, f"the stranded x#two on {old} survived the purge: {got}"
+    assert got == {"x#root": new, "x#one": new}, f"x's live anchors after the purge: {got}"
+
+
+def test_b1_guard_purges_a_project_docs_anchors_that_share_a_memory_id(gitproj_inproc):
+    """(b2), the id-collision form. A project doc (not a memory) with GMD id `x` re-points the
+    `x#...` concepts to its own path. A memory named x exists, but its `source_path` names the
+    memdir file, so it does not own them: deleting the doc and syncing its path purges them, as
+    before 26.2."""
+    base, proj, root = gitproj_inproc
+    memdir = _proj_memdir(proj, marker=False)
+    _bridge(memdir)
+    docs = proj / ".claude" / "docs"
+    docs.mkdir(parents=True)
+    doc = docs / "x.md"
+    doc.write_text(X_MD.format(id="x", body="a project doc that reuses the id x"),
+                   encoding="utf-8")
+    dpath = str(doc.resolve())
+    _invoke(["ingest-gmd", dpath])
+    assert set(_anchor_paths(root, "x").values()) == {dpath}, \
+        f"fixture: the doc ingest did not re-point x's concepts: {_anchor_paths(root, 'x')}"
+    assert _mem(root, "x")["source_path"] != dpath
+    doc.unlink()
+    _invoke(["sync", "--project-root", str(proj), "-f", dpath])
+    got = _anchor_paths(root, "x")
+    assert dpath not in got.values(), f"the deleted doc's anchors survived the purge: {got}"
