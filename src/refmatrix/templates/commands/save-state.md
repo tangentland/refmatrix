@@ -45,7 +45,8 @@ Do all of this, in this order:
    - A red `memory bridge FAILED` line, a duplicate-id refusal, a skipped-file count or a
      `remove_failed` line is a loose end — fix or report it, never skip it.
 3a. **Active goal (MANDATORY if a `/goal` is active)** — a goal does not survive the session on
-   its own. Write/refresh the `{#active-goal}` block at the top of the status file (and
+   its own. Write/refresh the `{#active-goal}` block at the top of the status file's body (after any
+   frontmatter and its H1; and
    commit it) with ALL of:
    - the goal text **verbatim**, exactly as the user typed it after `/goal`;
    - what the goal's scope means concretely (the slot/phase list it covers, from the
@@ -59,7 +60,7 @@ Do all of this, in this order:
      dispatch, to `<agent brief dir>/<name>.md` so a fresh agent can be re-dispatched from it verbatim;
    - the restore instruction: *"re-issue `/goal <verbatim text>` to resume"*.
    If no goal is active, the block says so (`no active goal`) — never leave a stale one.
-   If the project has no status file yet, create it with this block at the top.
+   If the project has no status file yet, create it with this block at the top of its body.
 4. **Deploy if code landed** — only if this repo ships a tool that runs from a separate live
    install: promote dev → live and restart any affected daemon. Otherwise skip. refmatrix:
    fast-forward the deploy tree to the committed sha (`git -C ~/refmatrix pull --ff-only origin

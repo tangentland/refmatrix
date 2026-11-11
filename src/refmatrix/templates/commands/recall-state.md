@@ -30,7 +30,8 @@ step, then WAIT for direction — the orient pass is the whole job.
    how far ahead of the trunk (`git rev-list --count <trunk>..HEAD`).
 3. **Daemon/hub state** — `rmx daemon status` (+ `rmx hub status` if used);
    compare the running version against the latest shipped.
-3a. **Active goal** — read the `{#active-goal}` block at the top of the status file. If it
+3a. **Active goal** — read the `{#active-goal}` block at the top of the status file's body (after any
+   frontmatter and its H1). If it
    records an active goal, report it first: the verbatim goal text, its position, the pending user
    decisions, and the exact restore command (`/goal <verbatim text>`) for the user to re-issue —
    the agent cannot re-arm a goal itself.

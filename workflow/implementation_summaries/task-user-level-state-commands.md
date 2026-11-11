@@ -100,6 +100,17 @@ Round 1 (`fa38500`): DIRTY 6 (0B/3S/3M), merge GO, #deploy-cleanup NO-GO as writ
 - **#m-3** `rmx init --agents` help now says commands go to `.claude/commands/` and the handoff
   pair to `~/.claude/commands/`.
 
+## ch-bsd r2 {#r2}
+
+rel: derives-from -> [[bsd-user-level-state-commands-r2-fd06517]]
+
+Round 2 (`9cdee69`): MEH-only 3, all six r1 findings closed or anchored, merge GO. Fixed before
+the merge: #m-1-r2 the `{#active-goal}` block goes at the top of the status file's BODY (after any
+frontmatter and its H1; the status files are GMD); #m-2-r2 #deploy-cleanup's trunk rule resolves
+`origin/HEAD`, else local `main`/`master`, else CLAUDE.md, else refuses, and the printed commit
+carries the pathspec and is printed only for a clean tree; #m-3-r2 the project memory's #why and
+its `MEMORY.md` hook no longer carry the rejected procedure or the precedence claim.
+
 ## Consequences for in-flight work {#in-flight}
 
 The 26.3 branch (`/Volumes/littlebig/refmatrix-plan26-3`) edits both copies of recall-state.
@@ -149,8 +160,11 @@ Procedure (revised after ch-bsd r1 #s-2/#s-3):
 
 1. **Inventory per repo, not per working tree.** For every git repo under `~/github`,
    `~/enduris`, `~/claude_tools` (never from `/`; refmatrix and its littlebig clones are out of
-   scope, they get the deletion by merge): its trunk (`origin/HEAD`, else the line its CLAUDE.md
-   names, e.g. portal's), `git ls-tree --name-only <trunk> -- .claude/commands/` for the pair, the
+   scope, they get the deletion by merge): its trunk — `origin/HEAD`; else the local `main` or
+   `master` that exists; else the line its CLAUDE.md names; refuse that repo if none resolves
+   (ch-bsd r2 #m-2-r2: cat-herder, cliquet, prep_prolific and thiquet have no `origin/HEAD`,
+   prep_prolific's CLAUDE.md says `main` but only `master` exists, portal's `origin/HEAD` is
+   `origin/master`) — `git ls-tree --name-only <trunk> -- .claude/commands/` for the pair, the
    current branch's `git ls-files`, and each `git worktree list` entry's copies. Untracked copies
    come from the `find` scan (`-maxdepth 9` reaches cliquedb's worktrees).
 2. **Carry over before deleting (#s-3).** Diff each content group against the user-level pair and
@@ -164,7 +178,8 @@ Procedure (revised after ch-bsd r1 #s-2/#s-3):
    delete is swept into another session's next pathspec-less commit, and it would land on a
    feature branch. Print per-repo commands for the user to run on each repo's trunk
    (`git -C <repo> switch <trunk> && git rm .claude/commands/{save,recall}-state.md &&
-   git commit -m ...`, plus `git worktree` copies), and never switch another repo's branch.
+   git commit -m ... -- .claude/commands/{save,recall}-state.md`, plus `git worktree` copies),
+   printed only for a repo whose tree is clean, and never switch another repo's branch.
 5. **Verify against the trunk trees**, not the working trees: `git ls-tree <trunk>` shows no pair
    in every repo the user has committed, the `find` re-scan shows no untracked copy, and
    `~/.claude/commands/{save,recall}-state.md` equal the deployed templates. Report what is still
