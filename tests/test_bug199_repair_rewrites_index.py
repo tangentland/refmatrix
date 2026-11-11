@@ -207,3 +207,35 @@ def test_a_hand_edit_on_an_unaffected_line_survives_the_apply_and_the_write(tmp_
     mi.write(d, out=_quiet())
     assert _hook_of(d, "project_fine.md") == edit, _index(d)
     assert json.loads(_sidecar_bytes(d))["project_fine.md"] == edit
+
+
+# ---- the index backup (implementer mutation M3 survived, 2026-11-10) ------------------
+
+def test_apply_backs_the_pre_apply_index_up_beside_the_sidecar(stale, rmx_home):
+    """`--apply` rewrites MEMORY.md, so it must first copy the index AS IT WAS into the same
+    backup dir as the sidecar (bug-199 Fix column). The GREEN mutation table's M3 -- drop the
+    MEMORY.md backup write -- survived every other test: an operator whose index rewrite went
+    wrong had the old sidecar back but no old index to restore."""
+    d, keys = stale
+    idx_before = (d / mi.INDEX_NAME).read_bytes()
+    side_before = _sidecar_bytes(d)
+    rc, out = _run(d, "--apply", restore=[f"{keys['curated'][1]}={RESTORED}"])
+    assert rc == 0, out
+    assert (d / mi.INDEX_NAME).read_bytes() != idx_before, (
+        f"precondition: the apply rewrote the index, so there was something to back up:\n{out}")
+
+    root = rmx_home / "backups" / "memory-hooks"
+    dirs = sorted(root.iterdir()) if root.is_dir() else []
+    assert len(dirs) == 1, f"one backup dir expected under {root}, got {dirs}\n{out}"
+    bakdir = dirs[0]
+    assert bakdir.name.startswith(f"{d.parent.name}-"), (
+        f"the backup dir is named for the project dir (`_repair_backup_dir`): {bakdir.name}")
+    bak_index = bakdir / mi.INDEX_NAME
+    assert bak_index.is_file(), (
+        f"the pre-apply {mi.INDEX_NAME} must be backed up into {bakdir}; it holds "
+        f"{sorted(p.name for p in bakdir.iterdir())}\n{out}")
+    assert bak_index.read_bytes() == idx_before, (
+        "the index backup must be byte-equal to the index BEFORE the apply")
+    assert (bakdir / mi.HOOKS_SIDECAR).read_bytes() == side_before, (
+        "the sidecar backup sits in the SAME dir, byte-equal to the pre-apply sidecar")
+    assert f"backup: {bak_index}" in out, f"the index backup path must be printed:\n{out}"
