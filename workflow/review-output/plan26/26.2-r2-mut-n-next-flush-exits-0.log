@@ -1,0 +1,93 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+.F.FF...                                                                 [100%]
+=================================== FAILURES ===================================
+__ test_b21b_next_async_flush_cli_prints_the_recorded_error_and_exits_nonzero __
+
+gitproj = (PosixPath('/private/tmp/r1-7916y9td'), PosixPath('/private/tmp/r1-7916y9td/proj'), PosixPath('/private/tmp/r1-7916y9td/proj/.refmatrix'))
+
+    def test_b21b_next_async_flush_cli_prints_the_recorded_error_and_exits_nonzero(gitproj):
+        base, proj, root, memdir, x, d = _failed_async_flush(gitproj)
+        r = _rmx(proj, root, "sync", "--flush-queue", "--async", "--project-root", str(proj))
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert r.returncode != 0, \
+            f"`rmx sync --flush-queue --async` exited 0 while a failed async flush is recorded\n{text}"
+E       AssertionError: `rmx sync --flush-queue --async` exited 0 while a failed async flush is recorded
+E         exit 0
+E         stdout:
+E         flush queued 
+E         
+E         stderr:
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '-m', 'refmatrix.cli', 'sync', '...eue', '--async', '--project-root', '/private/tmp/r1-7916y9td/proj'], returncode=0, stdout='flush queued \n', stderr='').returncode
+
+tests/test_sync_fails_loudly_r2.py:183: AssertionError
+_ test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it[Stop] _
+
+gitproj = (PosixPath('/private/tmp/r1-8zthevq7'), PosixPath('/private/tmp/r1-8zthevq7/proj'), PosixPath('/private/tmp/r1-8zthevq7/proj/.refmatrix'))
+event = 'Stop'
+
+    @pytest.mark.parametrize("event", ["Stop", "SessionStart"])
+    def test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it(gitproj, event):
+        """The hook command as generated, run by bash the way Claude Code runs it, with `$HOME/bin/rmx`
+        (HOOK_ENV puts it first on PATH) a launcher that execs this checkout's CLI."""
+        base, proj, root, memdir, x, d = _failed_async_flush(gitproj)
+        cmd = _flush_hook_commands(root)[event]
+        home = base / "home"
+        (home / "bin").mkdir(parents=True)
+        shim = home / "bin" / "rmx"
+        shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m refmatrix.cli "$@"\n',
+                        encoding="utf-8")
+        shim.chmod(0o755)
+        env = {**_cli_env(root), "HOME": str(home)}
+        r = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, cwd=str(proj),
+                           env=env, timeout=240)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert r.returncode != 0, f"the {event} hook exited 0 over a recorded async-flush error\n{text}"
+E       AssertionError: the Stop hook exited 0 over a recorded async-flush error
+E         exit 0
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; expor...; export TOKENIZERS_PARALLELISM=false; rmx sync --flush-queue --async >/dev/null'], returncode=0, stdout='', stderr='').returncode
+
+tests/test_sync_fails_loudly_r2.py:235: AssertionError
+_ test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it[SessionStart] _
+
+gitproj = (PosixPath('/private/tmp/r1-b1_e5tju'), PosixPath('/private/tmp/r1-b1_e5tju/proj'), PosixPath('/private/tmp/r1-b1_e5tju/proj/.refmatrix'))
+event = 'SessionStart'
+
+    @pytest.mark.parametrize("event", ["Stop", "SessionStart"])
+    def test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it(gitproj, event):
+        """The hook command as generated, run by bash the way Claude Code runs it, with `$HOME/bin/rmx`
+        (HOOK_ENV puts it first on PATH) a launcher that execs this checkout's CLI."""
+        base, proj, root, memdir, x, d = _failed_async_flush(gitproj)
+        cmd = _flush_hook_commands(root)[event]
+        home = base / "home"
+        (home / "bin").mkdir(parents=True)
+        shim = home / "bin" / "rmx"
+        shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m refmatrix.cli "$@"\n',
+                        encoding="utf-8")
+        shim.chmod(0o755)
+        env = {**_cli_env(root), "HOME": str(home)}
+        r = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, cwd=str(proj),
+                           env=env, timeout=240)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert r.returncode != 0, f"the {event} hook exited 0 over a recorded async-flush error\n{text}"
+E       AssertionError: the SessionStart hook exited 0 over a recorded async-flush error
+E         exit 0
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; expor...; export TOKENIZERS_PARALLELISM=false; rmx sync --flush-queue --async >/dev/null'], returncode=0, stdout='', stderr='').returncode
+
+tests/test_sync_fails_loudly_r2.py:235: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21b_next_async_flush_cli_prints_the_recorded_error_and_exits_nonzero
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it[Stop]
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it[SessionStart]
+3 failed, 5 passed in 59.20s

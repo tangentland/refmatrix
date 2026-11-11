@@ -530,3 +530,133 @@ The tests pin behaviour, not field names. The run is `26.2-r2-red.log`: all thre
     pass. They could not pass on any tree but `440d816`'s GREEN.
 - The loud-r1 docstring's false claim, "Four surfaces carry a sync", now names the fifth surface
   and points to the r2 file.
+
+## Remedy r2 GREEN: the async flush fails loudly; one refused memory no longer takes the batch {#remedy-r2-green}
+
+rel: implements -> [[#remedy-r2-red]]
+rel: implements -> [[bsd-task-26.2-r2-remedy-9204814#b2-1]]
+rel: implements -> [[bsd-task-26.2-r2-remedy-9204814#s2-1]]
+
+There are three commits, each made by pathspec, and no tests were authored in this step:
+
+- `e47ddb8` is the fix. It changes `sync.py`, `cli.py`, `daemon.py`, `store.py` and
+  `hooks.py`, and regenerates `.claude/settings.json`. It also corrects one line in
+  `docs/hooks/intuition-style-hooks.md`.
+- `0047054` regenerates README's hooks table with `scripts/gen-cli-tree.py`. src is unchanged
+  from `e47ddb8`.
+- The summary and the logs follow.
+
+All of it meets the user's rule of 2026-11-10: "if the sync stops in an error, it needs to fail
+loudly on the commandline or console, not just logs". {#r2-green-scope}
+
+### s2-1: refusal per path {#r2-green-s21}
+
+- `sync._sync_one(s, ap, project_root, gmd_paths) -> str` is the old loop body, moved out
+  unchanged. `_sync_paths` catches `MemoryOwnershipError` per path. `purge_path` raises before it
+  deletes anything, so the refused path keeps its entities. The refusal is recorded as
+  `[path, error]` under the new report key `memory_ownership_errors`, and the batch goes on.
+  The sync log line carries `memory_ownership_refused=N`.
+- `sync.flush_queue` puts the refused paths back on `dirty.queue` and reports `requeued`. The
+  healthy paths are not re-queued. If the batch raises outright, every drained path goes back
+  on the queue before the re-raise, because the one transaction rolled them all back and the
+  drain had already unlinked the queue.
+- `sync.refusal_summary(refused) -> str` is one line naming every path and its error.
+- `sync.raise_if_refused(report) -> None` raises `MemoryOwnershipError(summary)` AFTER the batch
+  has committed. The callers are:
+  - the in-process CLI. `_sync_in_process` refuses `-i` per path the same way, then exits 1
+    with `Error: sync failed: N path(s) refused, their entities kept: <path>: <error>`;
+  - the daemon ops `sync_files`, `sync_since` and `flush_queue`. Each replies `ok: false`
+    naming the refused paths, and the healthy paths are already synced.
+- The watcher batch refuses per path too. With no queue to return to, a refused path is
+  retried on its next fs event. {#r2-green-s21-watch}
+
+### b2-1: one per-route daemon sync-error record {#r2-green-b21}
+
+- `Daemon.record_sync_error(route, error)`, `clear_sync_error(route)` and
+  `sync_errors() -> list[dict]` keep `{"route", "at", "error"}` per route. A lock guards them.
+  They replace r1's watcher-only `last_watch_flush_error`.
+- There are two routes, `watch` and `async-flush`. The daemon has no other drain of
+  `dirty.queue`: the `flush_queue` op is synchronous and replies loudly, and no startup or tick
+  drain exists.
+- Each route sets its record on a failed or refusing flush. The `rmxd.log` line is kept. That
+  route's next clean flush, not cancelled, clears it. Other routes keep their records.
+- `ping` carries `sync_errors`. `rmx daemon status` prints each record in red through
+  `cli.render_sync_error(err) -> str`:
+  `sync FAILED on the <route> route at <time>: <error> (cleared by that route's next clean flush; trace in rmxd.log)`.
+- The `flush_queue_async` ACK, both queued and coalesced, carries `sync_errors` as they stood
+  BEFORE this flush started. `rmx sync --flush-queue --async` prints `flush queued`; when the
+  ACK has errors, the CLI then raises `ClickException`. That is exit 1, the recorded error(s)
+  on stderr, and no traceback. The new flush is still queued and retries the refused paths.
+  {#r2-green-b21-record}
+- `store.forget_memory` now resolves the row through `_memory_entity_id`, which reads no
+  sidecar. `get_memory` parses `metadata`, so the very memory a refusal names could not be
+  forgotten: `rmx memory forget x` failed with the same JSON error. The b2-1 (a) test forgets x
+  to clear the record, and it hit this. {#r2-green-forget}
+
+### b2-1: the generated Claude hooks {#r2-green-hooks}
+
+The queue flush is now its OWN foreground hook entry, `rmx sync --flush-queue --async >/dev/null`
+behind the `HOOK_ENV` prefix. It quiets only stdout; its stderr and exit status reach the
+session.
+
+- Stop has three entries: the flush, `rmx focus hook --event say 2>/dev/null || true`, and
+  `rmx focus summarize --promote --timeout 5`. Only the first changed.
+- SubagentStop has one entry, the flush.
+- SessionStart `startup|resume` has two entries:
+  `( rmx primer --out '<root>/.refmatrix/PRIMER.md' >/dev/null 2>&1 || true ) & disown ; rmx curator status || true`,
+  and then the flush.
+
+The flush is never chained into a command that prints context. Claude Code drops a SessionStart
+hook's stdout when that hook exits non-zero, so recall, curator status and the focus
+session-start line stay in their own entries. A recorded sync error therefore fails only the
+flush entry. {#r2-green-hook-entries}
+
+Hook config is generated, so the generated artifacts were regenerated:
+
+- `.claude/settings.json` was rewritten in the clone, with no write to any real repo. The new
+  managed-entry multiset equals `render_managed(<main checkout>, recorded flags)` exactly, using
+  `check()`'s own `_entry_multiset`, which reports no generated-only and no installed-only
+  entries. The diff is the 2 flush commands plus 1 split SessionStart entry.
+- README's hooks table was regenerated by `scripts/gen-cli-tree.py`.
+
+The fleet needs `rmx install-hooks --apply --force` to receive these entries. {#r2-green-regen}
+
+Behaviour change: with no daemon and no launchd install, `--async` already fell through to an
+in-process synchronous flush. The flush hook now runs in the foreground, so in such a store the
+Stop hook waits for that flush, where before it ran in the background. With a daemon running,
+the hook costs one ACK round trip. {#r2-green-foreground}
+
+### Verification {#r2-green-verify}
+
+- `26.2-r2-green.log` passes 56/56: r2 (8), loud-r1 (9), bridge-r1 (14) and the 25-test file.
+- `26.2-r2-green-family.log` covers 71 files: the 68-file set, the r2 file, and every test file
+  naming `forget_memory`, `flush_queue`, `sync_errors`, `_sync_paths` or `drain_queue`. Result:
+  1260 passed, 2 failed, 1 skipped.
+  - The 2 failures were `test_docs_generated` (hooks-table and check-mode). README's generated
+    hooks table still showed the old commands, and `0047054` regenerates it. After that,
+    `26.2-r2-green-docs-generated.log` passes 7/7.
+  - The skip is the clone guard on `test_installed_hooks_match_generated` (bug-054).
+- GMD lint shows 0 errors on this summary and on the hook doc. The repo-scope `lint-gmd.sh`
+  errors are the known pre-existing `docs/INDEX.md` row.
+
+### Mutations against `e47ddb8` (`26.2-r2-mutations.log`) {#r2-green-mutations}
+
+All five were killed. Each was restored with its own `git checkout`. After each restore,
+`__pycache__` was cleared, the fix line was grepped back, and `git status --short src` was
+confirmed empty.
+
+| # | Mutation | Result |
+|---|----------|--------|
+| w | async `_runner` no longer records the refusal (`record_sync_error` -> `pass`) | KILLED, 4: status (b2-1 a), next CLI (b), Stop and SessionStart hook runs (c) |
+| n | the next `--flush-queue --async` exits 0 over a recorded error (`if False and errs`) | KILLED, 3: next CLI, Stop and SessionStart hook runs |
+| g | `flush_cmd` back to `( ... >/dev/null 2>&1 \|\| true ) & disown` | KILLED, 3: the static discard check, Stop and SessionStart hook runs |
+| b | per-path refusal reverted to a whole-batch `raise` | KILLED, 2: both s2-1 legs (`docs/d.py was not synced`) |
+| q | a refused path not re-queued | KILLED, 1: `x.md was not put back on the queue` |
+
+### Left open {#r2-green-open}
+
+- The watcher does not re-queue a refused path; the next fs event of that path retries it.
+- `rmx sync --stale` reads a refusing `sync_files` chunk as "daemon stopped" and re-enqueues the
+  remainder. It is loud, but its wording is wrong.
+- s2-2 (fleet route for the hooks) and bug-209 (`--check` blind to `.git/hooks`) are not in
+  this scope.

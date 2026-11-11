@@ -1,0 +1,92 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+..FFF...                                                                 [100%]
+=================================== FAILURES ===================================
+_______ test_b21c_generated_flush_hooks_do_not_discard_the_flush_failure _______
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-790/test_b21c_generated_flush_hook0')
+
+    def test_b21c_generated_flush_hooks_do_not_discard_the_flush_failure(tmp_path):
+        cmds = _flush_hook_commands(tmp_path / ".refmatrix")
+        assert set(cmds) == {"Stop", "SubagentStop", "SessionStart"}, f"flush hooks found: {cmds}"
+        bad = {}
+        for event, cmd in cmds.items():
+            # the flush invocation up to the next command separator / group close
+            segs = [m.group(0) for m in re.finditer(r"rmx sync --flush-queue[^;)]*", cmd)]
+            assert segs, f"{event}: no flush invocation in {cmd!r}"
+            hits = [sg for sg in segs if _DISCARD.search(sg)]
+            if hits:
+                bad[event] = hits
+>       assert not bad, f"generated hooks discard the flush's failure: {bad}"
+E       AssertionError: generated hooks discard the flush's failure: {'Stop': ['rmx sync --flush-queue --async >/dev/null 2>&1 || true '], 'SubagentStop': ['rmx sync --flush-queue --async >/dev/null 2>&1 || true '], 'SessionStart': ['rmx sync --flush-queue --async >/dev/null 2>&1 || true ']}
+E       assert not {'SessionStart': ['rmx sync --flush-queue --async >/dev/null 2>&1 || true '], 'Stop': ['rmx sync --flush-queue --async >/dev/null 2>&1 || true '], 'SubagentStop': ['rmx sync --flush-queue --async >/dev/null 2>&1 || true ']}
+
+tests/test_sync_fails_loudly_r2.py:216: AssertionError
+_ test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it[Stop] _
+
+gitproj = (PosixPath('/private/tmp/r1-eeho34hu'), PosixPath('/private/tmp/r1-eeho34hu/proj'), PosixPath('/private/tmp/r1-eeho34hu/proj/.refmatrix'))
+event = 'Stop'
+
+    @pytest.mark.parametrize("event", ["Stop", "SessionStart"])
+    def test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it(gitproj, event):
+        """The hook command as generated, run by bash the way Claude Code runs it, with `$HOME/bin/rmx`
+        (HOOK_ENV puts it first on PATH) a launcher that execs this checkout's CLI."""
+        base, proj, root, memdir, x, d = _failed_async_flush(gitproj)
+        cmd = _flush_hook_commands(root)[event]
+        home = base / "home"
+        (home / "bin").mkdir(parents=True)
+        shim = home / "bin" / "rmx"
+        shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m refmatrix.cli "$@"\n',
+                        encoding="utf-8")
+        shim.chmod(0o755)
+        env = {**_cli_env(root), "HOME": str(home)}
+        r = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, cwd=str(proj),
+                           env=env, timeout=240)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert r.returncode != 0, f"the {event} hook exited 0 over a recorded async-flush error\n{text}"
+E       AssertionError: the Stop hook exited 0 over a recorded async-flush error
+E         exit 0
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; expor...ELISM=false; ( rmx sync --flush-queue --async >/dev/null 2>&1 || true ) & disown'], returncode=0, stdout='', stderr='').returncode
+
+tests/test_sync_fails_loudly_r2.py:235: AssertionError
+_ test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it[SessionStart] _
+
+gitproj = (PosixPath('/private/tmp/r1-4xju4n2r'), PosixPath('/private/tmp/r1-4xju4n2r/proj'), PosixPath('/private/tmp/r1-4xju4n2r/proj/.refmatrix'))
+event = 'SessionStart'
+
+    @pytest.mark.parametrize("event", ["Stop", "SessionStart"])
+    def test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it(gitproj, event):
+        """The hook command as generated, run by bash the way Claude Code runs it, with `$HOME/bin/rmx`
+        (HOOK_ENV puts it first on PATH) a launcher that execs this checkout's CLI."""
+        base, proj, root, memdir, x, d = _failed_async_flush(gitproj)
+        cmd = _flush_hook_commands(root)[event]
+        home = base / "home"
+        (home / "bin").mkdir(parents=True)
+        shim = home / "bin" / "rmx"
+        shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m refmatrix.cli "$@"\n',
+                        encoding="utf-8")
+        shim.chmod(0o755)
+        env = {**_cli_env(root), "HOME": str(home)}
+        r = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, cwd=str(proj),
+                           env=env, timeout=240)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert r.returncode != 0, f"the {event} hook exited 0 over a recorded async-flush error\n{text}"
+E       AssertionError: the SessionStart hook exited 0 over a recorded async-flush error
+E         exit 0
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; expor...ELISM=false; ( rmx sync --flush-queue --async >/dev/null 2>&1 || true ) & disown'], returncode=0, stdout='', stderr='').returncode
+
+tests/test_sync_fails_loudly_r2.py:235: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21c_generated_flush_hooks_do_not_discard_the_flush_failure
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it[Stop]
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it[SessionStart]
+3 failed, 5 passed in 58.35s
