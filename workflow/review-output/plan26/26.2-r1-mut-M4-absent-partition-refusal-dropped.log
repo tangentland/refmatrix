@@ -1,0 +1,31 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________ test_m4_store_snapshot_with_an_absent_partition_is_refused __________
+
+snapshot_env = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-xmcfb3gw'), PosixPath('/var/folders/js/71d0ymjj56b...-xmcfb3gw/ghost/.refmatrix'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-xmcfb3gw/empty-home'))
+
+    def test_m4_store_snapshot_with_an_absent_partition_is_refused(snapshot_env):
+        base, memdir, snap, part, ghost, home = snapshot_env
+        absent = "no-such-partition-r1"
+        r = CliRunner().invoke(cli_mod.main, ["-p", absent, "ingest-gmd", "--as-memory",
+                                              "--dry-run", "--store-snapshot", str(snap),
+                                              str(memdir)])
+        out = r.output
+>       assert r.exit_code != 0, f"--store-snapshot -p {absent} ran:\n{out}"
+E       AssertionError: --store-snapshot -p no-such-partition-r1 ran:
+E         dry-run: 3 file(s) under /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-xmcfb3gw/memory against partition 'no-such-partition-r1' -- nothing written
+E         refresh_pending: 0
+E         moved: 0
+E         stale_before: 0
+E         forced: 0
+E         moved_legacy: 0
+E         skipped_unchanged: 3
+E         
+E       assert 0 != 0
+E        +  where 0 = <Result okay>.exit_code
+
+tests/test_bridge_move_safety_r1.py:260: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bridge_move_safety_r1.py::test_m4_store_snapshot_with_an_absent_partition_is_refused
+1 failed in 3.50s
