@@ -373,3 +373,102 @@ pass, and the CLI and daemon resolve their targets. {#r1-green-survivors}
 - Pre-existing, not changed here: with a daemon up, `rmx sync -i` calls `purge_path` on the
   `_DaemonWriter` proxy. That proxy has no `purge_path`, so `__getattr__` sends the call to the
   lock-free READER Store. The `-i` daemon route is a separate defect and needs its own row.
+
+## Remedy r1 loud GREEN: a sync that stops in an error fails loudly {#remedy-r1-loud-green}
+
+rel: implements -> [[#r1-red-loud]]
+
+This section meets the user requirement of 2026-11-10: "if the sync stops in an error, it needs
+to fail loudly on the commandline or console, not just logs". Fix commit `440d816` changes
+`store.py`, `cli.py`, `hooks.py` and `daemon.py`. No tests were authored in this
+step. {#r1-loud-scope}
+
+### What changed {#r1-loud-changes}
+
+- **The refusal has its own class.** `purge_path`'s fail-closed raise is now
+  `store.MemoryOwnershipError(ValueError)`. Because it subclasses `ValueError`, existing
+  handlers still catch it. The CLI can name exactly this refusal and nothing
+  else. {#r1-loud-class}
+- **The CLI has a clean boundary.** The in-process body of `rmx sync` moved into
+  `cli._sync_in_process(s, proot, *, files, since, flush_queue, invalidate, semantic) -> None`.
+  The `sync` command turns a `MemoryOwnershipError` into
+  `click.ClickException("sync failed: <error>")`. The result is exit 1 and one
+  `Error: sync failed: purge_path(...): memory 'x' has unreadable metadata JSON (...)` line on
+  stderr, with no traceback. That is the same shape as the daemon route's
+  `Error: daemon sync_since failed: ...`. Every other exception class still propagates with its
+  traceback. `main` is untouched. {#r1-loud-cli}
+- **The generated git hooks stay loud.** In `hooks.GIT_HOOK_SCRIPTS`, all four hooks
+  (post-commit, post-merge, post-checkout, post-rewrite) now run
+  `( cd "$ROOT" && rmx sync --since <ref> >/dev/null || echo "refmatrix: <hook> rmx sync FAILED (exit $?); its error is above" >&2 ) &`
+  followed by `disown`. Only stdout is quieted. The sync's own stderr (the `Error:` line)
+  reaches the committing terminal, and a non-zero exit adds the `FAILED (exit N)` line under
+  it. The job is still backgrounded and disowned, so the commit neither waits on the sync nor
+  fails because of it, and the error can print after the prompt returns. The module docstring
+  says why. {#r1-loud-hooks}
+- **A failed watch flush shows in `rmx daemon status`.**
+  - On failure, `Daemon.last_watch_flush_error` is set to `{"at": epoch, "error": "<Type>: <msg>"}`.
+    The `rmxd.log` line and `_fast_exit_if_invalidated` are kept.
+  - A successful flush resets the field to `None`.
+  - `_op_ping` carries it as `watch_flush_error`. The read uses `getattr`, because ping is the
+    liveness probe and must answer for any daemon-shaped object.
+  - `rmx daemon status` prints `cli.render_watch_flush_error(wfe) -> str | None` in red, and it
+    stays there until a later flush clears it:
+    `watch flush FAILED at <local time>: <error> (the watcher's sync stopped; cleared by the next successful flush; trace in rmxd.log)`.
+  {#r1-loud-watch}
+
+### What the committer sees {#r1-loud-hook-surface}
+
+A probe on a throwaway repo used the installed post-commit hook, the PATH launcher from the
+test, and x's metadata set to `'{not json'`. `git commit` exited 0, and its stderr was:
+
+```text
+Error: sync failed: purge_path('<proj>/.claude/projects/slug/memory/a/x.md'): memory 'x' has unreadable metadata JSON (Expecting property name enclosed in double quotes: line 1 column 2 (char 1)); cannot tell whether it owns the anchors at this path
+refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+```
+
+With a daemon up, the first line is the daemon route's `Error: daemon sync_since failed: ...`.
+
+Hooks already installed in a project's `.git/hooks/` keep the old silent line until someone runs
+`rmx install-hooks --apply --force` there. That step writes the git hooks and the Claude
+settings block. `rmx install-hooks --check` and `tests/test_repo_hooks_in_sync.py` compare
+only the Claude settings block, never `.git/hooks/`, so no repo-side artifact needed
+regenerating, and no generated doc pins the hook text. A release has to reinstall the hooks
+across the fleet, or old installs stay silent. {#r1-loud-reinstall}
+
+### Verification {#r1-loud-verify}
+
+- `26.2-r1-loud-green.log`: 48 passed. That is `test_sync_fails_loudly_r1.py` (9),
+  `test_bridge_move_safety_r1.py` (14) and `test_bridge_move_safety.py` (25).
+- `26.2-r1-loud-green-family.log` covers 68 files, at `440d816`:
+  - the earlier 54-file family;
+  - `tests/test_hooks*.py`, `tests/test_repo_hooks_in_sync.py` and the loud file
+    (`tests/test_daemon_status*.py` matches no file);
+  - every test file that names `_op_ping`, `daemon status`, `GIT_HOOK_SCRIPTS` or
+    `install_hooks`.
+
+  Result: 1210 passed, 1 skipped. The skip is `test_installed_hooks_match_generated`, which
+  reports "hooks belong to another checkout of this commit". That is the clone guard (bug-054),
+  and it appears in `26.2-r1-loud-repo-hooks-skip.log`. None of the known pre-existing rows fell
+  in this set.
+- GMD lint on this summary shows 0 errors.
+
+### Mutations against `440d816` (`26.2-r1-loud-mutations.log`) {#r1-loud-mutations}
+
+All four were killed. Each was restored with its own `git checkout`. After each restore,
+`__pycache__` was cleared, the fix line was grepped back, and `git status --short src` was
+confirmed empty.
+
+| # | Mutation | Result |
+|---|----------|--------|
+| h | post-commit line back to `>/dev/null 2>&1 \|\| true` | KILLED: `generated_git_hook...[post-commit]` and `installed_post_commit_hook...` (`the post-commit sync failed silently`) |
+| s | status no longer prints the recorded watch error (`pass`) | KILLED: `` `rmx daemon status` does not print the failed watch flush naming memory x `` |
+| k | a successful flush no longer clears it | KILLED: `` `rmx daemon status` still prints the old failure after a good flush `` |
+| e | the CLI boundary re-raises (`raise`) | KILLED: both in-process tests (`failed as a raw traceback, not a clean error`) |
+
+The tests need an ABSOLUTE PYTHONPATH. The in-process test's subprocess and the hook's PATH
+launcher both run `python -m refmatrix.cli` from inside the throwaway project. A relative
+`PYTHONPATH=src` therefore imported the venv's own tree, which has no guard, and the
+in-process tests failed with `exited 0`. That first h run is discarded and was re-run with the
+absolute path. The test reads `sys.executable` and the inherited PYTHONPATH, so a runner that
+sets a relative path gets a false RED. A test could pin `PYTHONPATH` to the checkout's `src`
+itself. {#r1-loud-pythonpath}

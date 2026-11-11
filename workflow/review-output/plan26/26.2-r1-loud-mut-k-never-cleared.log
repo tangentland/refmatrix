@@ -1,0 +1,62 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+........F                                                                [100%]
+=================================== FAILURES ===================================
+____ test_failed_watch_flush_is_printed_by_daemon_status_until_a_good_flush ____
+
+gitproj = (PosixPath('/private/tmp/r1-o43voi1f'), PosixPath('/private/tmp/r1-o43voi1f/proj'), PosixPath('/private/tmp/r1-o43voi1f/proj/.refmatrix'))
+
+    @pytest.mark.timeout(300)
+    def test_failed_watch_flush_is_printed_by_daemon_status_until_a_good_flush(gitproj):
+        """The narrowest real trigger the watcher can reach (it drops hidden segments, so not the
+        memdir): a project doc `docs/x.md` with GMD id `x` holds the `x#...` concepts while memory
+        x's metadata is unreadable. Re-syncing the doc purges its path first, and the guard raises.
+    
+        Setup goes through the fixture's NON-watching daemon: an in-process `rmx sync` leaves this
+        process holding the catalog (the command never closes its store), and the watching daemon
+        then cannot start."""
+        base, proj, root = gitproj
+        _bridge(_proj_memdir(proj, marker=False))
+        docs = proj / "docs"
+        docs.mkdir()
+        doc = docs / "x.md"
+        doc.write_text(X_MD.format(id="x", body="a project doc that reuses the id x"),
+                       encoding="utf-8")
+        _invoke(["sync", "--project-root", str(proj), "-f", str(doc.resolve())])
+        dm.stop_daemon(root)
+        _set_metadata_raw(root, "x", "{not json")
+        assert dm.spawn_daemon_subprocess(root, watch_root=[proj]) and dm.ping(root)
+        try:
+            failed = _poll_log(
+                root, lambda ln: "watch flush failed" in ln,
+                lambda n: doc.write_text(X_MD.format(id="x", body=f"doc rev {n}"), encoding="utf-8"))
+            assert MEMORY_X.search(failed[-1]), f"fixture: the flush failed for another reason: {failed}"
+            out = _status()
+            assert re.search(r"watch|flush", out, re.I) and MEMORY_X.search(out), \
+                f"`rmx daemon status` does not print the failed watch flush naming memory x:\n{out}"
+            # a later successful flush clears it: wait until the NEWEST flush line is a success
+            ok = docs / "ok.md"
+    
+            def _good(_ln: str) -> bool:
+                flushes = [x for x in _log_lines(root) if "watch flush" in x]
+                return bool(flushes) and "watch flush failed" not in flushes[-1]
+            _poll_log(root, _good, lambda n: ok.write_text(f"# ok\n\nrev {n}\n", encoding="utf-8"))
+            out = _status()
+>           assert not MEMORY_X.search(out), \
+                f"`rmx daemon status` still prints the old failure after a good flush:\n{out}"
+E               AssertionError: `rmx daemon status` still prints the old failure after a good flush:
+E                 running pid=50327 root=/private/tmp/r1-o43voi1f/proj/.refmatrix
+E                 code: /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/__init__.py  [DEV 
+E                 TREE]
+E                   code /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/__init__.py but the 
+E                 venv belongs to None — reinstall the deploy venv from its own tree
+E                 watch flush FAILED at 2026-11-10 18:48:01: MemoryOwnershipError: purge_path('/private/tmp/r1-o43voi1f/proj/docs/x.md'): memory 'x' has unreadable metadata JSON (Expecting property name enclosed in double quotes: line 1 column 2 (char 1)); cannot tell whether it owns the anchors at this path (the watcher's sync stopped; cleared by the next successful flush; trace in rmxd.log)
+E                 supervised: no
+E                 
+E               assert not <re.Match object; span=(414, 424), match="memory 'x'">
+E                +  where <re.Match object; span=(414, 424), match="memory 'x'"> = <built-in method search of re.Pattern object at 0x10713e480>("running pid=50327 root=/private/tmp/r1-o43voi1f/proj/.refmatrix\ncode: /Volumes/littlebig/refmatrix-plan26-2/src/refm...s at this path (the watcher's sync stopped; cleared by the next successful flush; trace in rmxd.log)\nsupervised: no\n")
+E                +    where <built-in method search of re.Pattern object at 0x10713e480> = re.compile('memory\\W{0,3}x\\W').search
+
+tests/test_sync_fails_loudly_r1.py:236: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sync_fails_loudly_r1.py::test_failed_watch_flush_is_printed_by_daemon_status_until_a_good_flush
+1 failed, 8 passed in 30.95s

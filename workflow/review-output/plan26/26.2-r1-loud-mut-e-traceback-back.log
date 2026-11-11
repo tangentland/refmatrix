@@ -1,0 +1,189 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+FF.......                                                                [100%]
+=================================== FAILURES ===================================
+_____ test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr[-f] ______
+
+gitproj_inproc = (PosixPath('/private/tmp/r1-q6h22wki'), PosixPath('/private/tmp/r1-q6h22wki/proj'), PosixPath('/private/tmp/r1-q6h22wki/proj/.refmatrix'))
+flag = '-f'
+
+    @pytest.mark.parametrize("flag", ["-f", "-i"])
+    def test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr(gitproj_inproc, flag):
+        base, proj, root = gitproj_inproc
+        memdir, p = _broken_x(proj, root, daemon_up=False)
+        assert not dm.ping(root), "fixture: a daemon is up; this is the in-process leg"
+        r = subprocess.run([sys.executable, "-m", "refmatrix.cli", "sync", "--project-root",
+                            str(proj), flag, p], capture_output=True, text=True, cwd=str(proj),
+                           env=_cli_env(root), timeout=180)
+        assert r.returncode != 0, \
+            f"`rmx sync {flag} P` exited 0 over a failed purge\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert MEMORY_X.search(r.stderr), \
+            f"`rmx sync {flag} P`: stderr does not name memory x\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        # A CLEAN failure, as the daemon route gives (`Error: daemon sync_since failed: ...`): a raw
+        # traceback reads like a crash, not a refusal (team-lead, 2026-11-10).
+>       assert "Traceback (most recent call last)" not in r.stderr, \
+            f"`rmx sync {flag} P` failed as a raw traceback, not a clean error\nstderr:\n{r.stderr}"
+E       AssertionError: `rmx sync -f P` failed as a raw traceback, not a clean error
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/store.py", line 6436, in _memory_owned_anchor_ids
+E             meta = json.loads(meta_json) if meta_json else {}
+E                    ~~~~~~~~~~^^^^^^^^^^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 352, in loads
+E             return _default_decoder.decode(s)
+E                    ~~~~~~~~~~~~~~~~~~~~~~~^^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 345, in decode
+E             obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+E                        ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 361, in raw_decode
+E             obj, end = self.scan_once(s, idx)
+E                        ~~~~~~~~~~~~~~^^^^^^^^
+E         json.decoder.JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+E         
+E         The above exception was the direct cause of the following exception:
+E         
+E         Traceback (most recent call last):
+E           File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/cli.py", line 14955, in <module>
+E             cli_entry()
+E             ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/cli.py", line 14913, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/cli.py", line 8711, in sync
+E             _sync_in_process(s, proot, files=files, since=since, flush_queue=flush_queue,
+E             ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                              invalidate=invalidate, semantic=semantic)
+E                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/cli.py", line 8760, in _sync_in_process
+E             report = syncmod.sync_files(s, [str(p) for p in files],
+E                                         project_root=proot, semantic=semantic)
+E           File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/sync.py", line 111, in sync_files
+E             return _sync_paths(s, [Path(p) for p in paths], project_root, semantic,
+E                                cancel_check=cancel_check)
+E           File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/sync.py", line 208, in _sync_paths
+E             if s.purge_path(str(ap)) > 0:
+E                ~~~~~~~~~~~~^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/store.py", line 6369, in purge_path
+E             kept = self._memory_owned_anchor_ids(abs_path, found)
+E           File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/store.py", line 6438, in _memory_owned_anchor_ids
+E             raise MemoryOwnershipError(
+E             ...<2 lines>...
+E                 f"anchors at this path") from exc
+E         refmatrix.store.MemoryOwnershipError: purge_path('/private/tmp/r1-q6h22wki/proj/.claude/projects/slug/memory/a/x.md'): memory 'x' has unreadable metadata JSON (Expecting property name enclosed in double quotes: line 1 column 2 (char 1)); cannot tell whether it owns the anchors at this path
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... this path\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/store.py", line 6436, in _memory_owned_anchor_ids
+E               meta = json.loads(meta_json) if meta_json else {}
+E                      ~~~~~~~~~~^^^^^^^^^^^
+E             File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 352, in loads...
+E         
+E         ...Full output truncated (53 lines hidden), use '-vv' to show
+
+tests/test_sync_fails_loudly_r1.py:89: AssertionError
+_____ test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr[-i] ______
+
+gitproj_inproc = (PosixPath('/private/tmp/r1-l8a4b8z8'), PosixPath('/private/tmp/r1-l8a4b8z8/proj'), PosixPath('/private/tmp/r1-l8a4b8z8/proj/.refmatrix'))
+flag = '-i'
+
+    @pytest.mark.parametrize("flag", ["-f", "-i"])
+    def test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr(gitproj_inproc, flag):
+        base, proj, root = gitproj_inproc
+        memdir, p = _broken_x(proj, root, daemon_up=False)
+        assert not dm.ping(root), "fixture: a daemon is up; this is the in-process leg"
+        r = subprocess.run([sys.executable, "-m", "refmatrix.cli", "sync", "--project-root",
+                            str(proj), flag, p], capture_output=True, text=True, cwd=str(proj),
+                           env=_cli_env(root), timeout=180)
+        assert r.returncode != 0, \
+            f"`rmx sync {flag} P` exited 0 over a failed purge\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert MEMORY_X.search(r.stderr), \
+            f"`rmx sync {flag} P`: stderr does not name memory x\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        # A CLEAN failure, as the daemon route gives (`Error: daemon sync_since failed: ...`): a raw
+        # traceback reads like a crash, not a refusal (team-lead, 2026-11-10).
+>       assert "Traceback (most recent call last)" not in r.stderr, \
+            f"`rmx sync {flag} P` failed as a raw traceback, not a clean error\nstderr:\n{r.stderr}"
+E       AssertionError: `rmx sync -i P` failed as a raw traceback, not a clean error
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/store.py", line 6436, in _memory_owned_anchor_ids
+E             meta = json.loads(meta_json) if meta_json else {}
+E                    ~~~~~~~~~~^^^^^^^^^^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 352, in loads
+E             return _default_decoder.decode(s)
+E                    ~~~~~~~~~~~~~~~~~~~~~~~^^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 345, in decode
+E             obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+E                        ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 361, in raw_decode
+E             obj, end = self.scan_once(s, idx)
+E                        ~~~~~~~~~~~~~~^^^^^^^^
+E         json.decoder.JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+E         
+E         The above exception was the direct cause of the following exception:
+E         
+E         Traceback (most recent call last):
+E           File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/cli.py", line 14955, in <module>
+E             cli_entry()
+E             ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/cli.py", line 14913, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/cli.py", line 8711, in sync
+E             _sync_in_process(s, proot, files=files, since=since, flush_queue=flush_queue,
+E             ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                              invalidate=invalidate, semantic=semantic)
+E                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/cli.py", line 8731, in _sync_in_process
+E             s.purge_path(str(Path(p).resolve()))
+E             ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/store.py", line 6369, in purge_path
+E             kept = self._memory_owned_anchor_ids(abs_path, found)
+E           File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/store.py", line 6438, in _memory_owned_anchor_ids
+E             raise MemoryOwnershipError(
+E             ...<2 lines>...
+E                 f"anchors at this path") from exc
+E         refmatrix.store.MemoryOwnershipError: purge_path('/private/tmp/r1-l8a4b8z8/proj/.claude/projects/slug/memory/a/x.md'): memory 'x' has unreadable metadata JSON (Expecting property name enclosed in double quotes: line 1 column 2 (char 1)); cannot tell whether it owns the anchors at this path
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... this path\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/store.py", line 6436, in _memory_owned_anchor_ids
+E               meta = json.loads(meta_json) if meta_json else {}
+E                      ~~~~~~~~~~^^^^^^^^^^^
+E             File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 352, in loads...
+E         
+E         ...Full output truncated (47 lines hidden), use '-vv' to show
+
+tests/test_sync_fails_loudly_r1.py:89: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sync_fails_loudly_r1.py::test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr[-f]
+FAILED tests/test_sync_fails_loudly_r1.py::test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr[-i]
+2 failed, 7 passed in 31.31s
