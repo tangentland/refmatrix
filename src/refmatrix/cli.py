@@ -10819,7 +10819,10 @@ def _sync_memory_dir(memdir: Path) -> dict:
                  "partition": None, "embed": None,
                  # task 26.2: refresh terms + refused duplicate ids (_bridge_stats)
                  "moved": 0, "stale_before": 0, "forced": 0, "moved_legacy": 0,
-                 "skipped_unchanged": 0, "duplicate_ids": []}
+                 "skipped_unchanged": 0, "duplicate_ids": [],
+                 # task 26.4 AC-1: save-states stored as session/recall-state
+                 # against their frontmatter, `[id, from, to]` (_bridge_stats)
+                 "mtype_normalised": []}
     if not memdir.is_dir():
         out["error"] = f"memory dir not found: {memdir}"
         return out
@@ -10869,6 +10872,12 @@ def _bridge_stats(out: dict, stats: dict) -> None:
         out[k] = int(stats.get(k) or 0)
     out["duplicate_ids"] = [[str(i), [str(p) for p in ps]]
                             for i, ps in (stats.get("duplicate_ids") or [])]
+    # Task 26.4 AC-1 (ADR-0005 #authority, 2026-11-11): every save-state the
+    # bridge stored as `session/recall-state` against its frontmatter. One copy
+    # here serves all three legs -- in-process, daemon (`stats` = `as_dict()`)
+    # and the waited job (ch-bsd r1 #m5) -- so none can drop it.
+    out["mtype_normalised"] = [[str(i), str(f), str(t)]
+                               for i, f, t in (stats.get("mtype_normalised") or [])]
 
 
 def _bridge_wait_for_active_job(memdir: Path, partition: str, err: str, out: dict) -> None:
