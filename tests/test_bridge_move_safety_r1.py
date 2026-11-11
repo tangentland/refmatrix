@@ -384,7 +384,12 @@ def test_b1_guard_purges_anchors_when_the_memorys_source_path_names_another_file
 def test_b1_forgetting_the_memory_releases_its_anchors_to_the_purge(gitproj_inproc):
     """(b2), form 2: the property the `source_path` design is justified by -- ownership ends
     with the memory. After `rmx memory forget x`, `sync -f <its path>` leaves no x#anchor
-    there."""
+    there.
+
+    Forget hard-deletes the memory row and its sidecar (`purge_entity`) but leaves the anchor
+    concepts, so the precondition below proves the SYNC releases them, through the guard. A
+    stamp read off the anchors themselves would survive the forget and protect these orphans
+    forever (the guard's docstring); this pin is what kills that design."""
     base, proj, root = gitproj_inproc
     memdir = _proj_memdir(proj, marker=False)
     _bridge(memdir)
@@ -392,6 +397,11 @@ def test_b1_forgetting_the_memory_releases_its_anchors_to_the_purge(gitproj_inpr
     _assert_anchors_at(root, p, "after the bridge (fixture)")
     out = _invoke(["memory", "forget", "x", "--yes"])
     assert "forgot" in out, f"fixture: memory x was not forgotten:\n{out}"
+    gone = _with_store(root, lambda s: s._connect().execute(
+        "SELECT count(*) FROM entities WHERE kind = 'memory' AND name = 'x'").fetchone()[0])
+    assert gone == 0, f"fixture: {gone} memory row(s) named x after the forget"
+    _assert_anchors_at(root, p, "after the forget, before the sync (fixture: the forget itself "
+                                "must not be what removes them)")
     _invoke(["sync", "--project-root", str(proj), "-f", p])
     got = _anchor_paths(root, "x")
     assert p not in got.values(), f"orphaned anchors at {p} survived the purge: {got}"

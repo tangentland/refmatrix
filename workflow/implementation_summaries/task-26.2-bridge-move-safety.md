@@ -197,6 +197,13 @@ tests in `tests/test_bridge_move_safety_r1.py` cover the implementer's remaining
   `source_path` to y.md. After `sync -f a/x.md`, x's anchors are gone.
 - `test_b1_forgetting_the_memory_releases_its_anchors_to_the_purge` runs
   `rmx memory forget x`, then `sync -f`. The orphaned anchors are purged.
+  - `forget_memory` hard-deletes the row and its sidecar through `purge_entity`, so no
+    forgotten row is left for the guard to match. The anchors do remain, and the test asserts
+    that before the sync, so it is the sync that releases them.
+  - Mutation fg reads ownership off the anchor rows alone, as a stamp would, and protects the
+    orphans. It is killed with `orphaned anchors at <P> survived the purge`
+    (`26.2-r1-mut-fg-forgotten-memory-keeps-anchors.log`). This pins the property the
+    `source_path` design rests on.
 - `test_b1_guard_fails_closed_on_unreadable_memory_metadata` sets x's metadata to
   `'{not json'`. `sync -f` then exits non-zero, names memory x, and the anchors are still there.
 - All three pass on `497f7f0`. Mutation fc changes the parse-error `raise` to `continue`. It
