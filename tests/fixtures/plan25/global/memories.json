@@ -1,0 +1,57 @@
+[
+ {
+  "name": "gx_mem_0",
+  "mtype": "feedback",
+  "content": "GLOBAL-COPY gx_mem_0 — cross-project rule 0 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 0.\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\n"
+ },
+ {
+  "name": "gx_mem_1",
+  "mtype": "feedback",
+  "content": "GLOBAL-COPY gx_mem_1 — cross-project rule 1 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 1.\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\n"
+ },
+ {
+  "name": "gx_mem_2",
+  "mtype": "feedback",
+  "content": "GLOBAL-COPY gx_mem_2 — cross-project rule 2 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 2.\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\n"
+ },
+ {
+  "name": "gx_mem_3",
+  "mtype": "feedback",
+  "content": "GLOBAL-COPY gx_mem_3 — cross-project rule 3 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 3.\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\n"
+ },
+ {
+  "name": "gx_mem_4",
+  "mtype": "feedback",
+  "content": "GLOBAL-COPY gx_mem_4 — cross-project rule 4 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 4.\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\n"
+ },
+ {
+  "name": "gx_mem_5",
+  "mtype": "feedback",
+  "content": "GLOBAL-COPY gx_mem_5 — cross-project rule 5 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 5.\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\n"
+ },
+ {
+  "name": "gx_mem_6",
+  "mtype": "feedback",
+  "content": "GLOBAL-COPY gx_mem_6 — cross-project rule 6 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 6.\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\n"
+ },
+ {
+  "name": "gx_mem_7",
+  "mtype": "feedback",
+  "content": "GLOBAL-COPY gx_mem_7 — cross-project rule 7 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 7.\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\n"
+ },
+ {
+  "name": "gx_mem_8",
+  "mtype": "feedback",
+  "content": "GLOBAL-COPY gx_mem_8 — cross-project rule 8 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 8.\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\n"
+ },
+ {
+  "name": "gx_mem_9",
+  "mtype": "feedback",
+  "content": "GLOBAL-COPY gx_mem_9 — cross-project rule 9 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 9.\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\nglobal detail line — → — →\n"
+ },
+ {
+  "name": "fx_dup_x",
+  "mtype": "feedback",
+  "content": "GLOBAL-COPY fx_dup_x — the global row → how does the quasar ledger reconcile flux batches across zorbulate shards — →\n"
+ }
+]

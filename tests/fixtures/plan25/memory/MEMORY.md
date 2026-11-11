@@ -1,0 +1,31 @@
+- [Quasar ledger note 00 — flux batch → shard 0](fx_mem_00.md) — HOOK-fx_mem_00 — curated: reconcile flux batch → ledger → shard 0 — owner note
+- [Quasar ledger note 01 — shard merge → shard 1](fx_mem_01.md) — HOOK-fx_mem_01 — curated: reconcile shard merge → ledger → shard 1 — owner note
+- [Quasar ledger note 02 — ledger close → shard 2](fx_mem_02.md) — HOOK-fx_mem_02 — curated: reconcile ledger close → ledger → shard 2 — owner note
+- [Quasar ledger note 03 — reconcile pass → shard 3](fx_mem_03.md) — HOOK-fx_mem_03 — curated: reconcile reconcile pass → ledger → shard 3 — owner note
+- [Quasar ledger note 04 — quasar audit → shard 4](fx_mem_04.md) — HOOK-fx_mem_04 — curated: reconcile quasar audit → ledger → shard 4 — owner note
+- [Quasar ledger note 05 — batch fence → shard 5](fx_mem_05.md) — HOOK-fx_mem_05 — curated: reconcile batch fence → ledger → shard 5 — owner note
+- [Quasar ledger note 06 — zorbulate split → shard 6](fx_mem_06.md) — HOOK-fx_mem_06 — curated: reconcile zorbulate split → ledger → shard 6 — owner note
+- [Quasar ledger note 07 — settlement window → shard 7](fx_mem_07.md) — HOOK-fx_mem_07 — curated: reconcile settlement window → ledger → shard 7 — owner note
+- [Quasar ledger note 08 — drift check → shard 8](fx_mem_08.md) — HOOK-fx_mem_08 — curated: reconcile drift check → ledger → shard 8 — owner note
+- [Quasar ledger note 09 — replay → shard 9](fx_mem_09.md) — HOOK-fx_mem_09 — curated: reconcile replay → ledger → shard 9 — owner note
+- [Quasar ledger note 10 — flux batch → shard 10](fx_mem_10.md) — HOOK-fx_mem_10 — curated: reconcile flux batch → ledger → shard 10 — owner note
+- [Quasar ledger note 11 — shard merge → shard 11](fx_mem_11.md) — HOOK-fx_mem_11 — curated: reconcile shard merge → ledger → shard 11 — owner note
+- [Quasar ledger note 12 — ledger close → shard 12](fx_mem_12.md) — HOOK-fx_mem_12 — curated: reconcile ledger close → ledger → shard 12 — owner note
+- [Quasar ledger note 13 — reconcile pass → shard 13](fx_mem_13.md) — HOOK-fx_mem_13 — curated: reconcile reconcile pass → ledger → shard 13 — owner note
+- [Quasar ledger note 14 — quasar audit → shard 14](fx_mem_14.md) — HOOK-fx_mem_14 — curated: reconcile quasar audit → ledger → shard 14 — owner note
+- [Quasar ledger note 15 — batch fence → shard 15](fx_mem_15.md) — HOOK-fx_mem_15 — curated: reconcile batch fence → ledger → shard 15 — owner note
+- [Quasar ledger note 16 — zorbulate split → shard 16](fx_mem_16.md) — HOOK-fx_mem_16 — curated: reconcile zorbulate split → ledger → shard 16 — owner note
+- [Quasar ledger note 17 — settlement window → shard 17](fx_mem_17.md) — HOOK-fx_mem_17 — curated: reconcile settlement window → ledger → shard 17 — owner note
+- [Quasar ledger note 18 — drift check → shard 18](fx_mem_18.md) — HOOK-fx_mem_18 — curated: reconcile drift check → ledger → shard 18 — owner note
+- [Quasar ledger note 19 — replay → shard 19](fx_mem_19.md) — HOOK-fx_mem_19 — curated: reconcile replay → ledger → shard 19 — owner note
+- [Quasar ledger note 20 — flux batch → shard 20](fx_mem_20.md) — HOOK-fx_mem_20 — curated: reconcile flux batch → ledger → shard 20 — owner note
+- [Quasar ledger note 21 — shard merge → shard 21](fx_mem_21.md) — HOOK-fx_mem_21 — curated: reconcile shard merge → ledger → shard 21 — owner note
+- [Quasar ledger note 22 — ledger close → shard 22](fx_mem_22.md) — HOOK-fx_mem_22 — curated: reconcile ledger close → ledger → shard 22 — owner note
+- [Quasar ledger note 23 — reconcile pass → shard 23](fx_mem_23.md) — HOOK-fx_mem_23 — curated: reconcile reconcile pass → ledger → shard 23 — owner note
+- [Quasar ledger note 24 — quasar audit → shard 24](fx_mem_24.md) — HOOK-fx_mem_24 — curated: reconcile quasar audit → ledger → shard 24 — owner note
+- [Quasar ledger note 25 — batch fence → shard 25](fx_mem_25.md) — HOOK-fx_mem_25 — curated: reconcile batch fence → ledger → shard 25 — owner note
+- [Quasar ledger note 26 — zorbulate split → shard 26](fx_mem_26.md) — HOOK-fx_mem_26 — curated: reconcile zorbulate split → ledger → shard 26 — owner note
+- [Quasar ledger note 27 — settlement window → shard 27](fx_mem_27.md) — HOOK-fx_mem_27 — curated: reconcile settlement window → ledger → shard 27 — owner note
+- [Quasar ledger note 28 — drift check → shard 28](fx_mem_28.md) — HOOK-fx_mem_28 — curated: reconcile drift check → ledger → shard 28 — owner note
+- [Quasar ledger note 29 — replay → shard 29](fx_mem_29.md) — HOOK-fx_mem_29 — curated: reconcile replay → ledger → shard 29 — owner note
+- [Duplicate name — project copy → AC-11](fx_dup_x.md) — HOOK-fx_dup_x — curated: the project copy → not the global one → —
