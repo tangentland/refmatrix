@@ -89,3 +89,24 @@ wins, not by the hand-edit guard.
 - bug-200 m-2 (the faked `--compile` test / mock registry) belongs to the test side and the
   RED commit. This GREEN does not touch it.
 - `workflow/bug_registry.md` statuses for bug-199/200 are left for after ch-bsd.
+
+## Test pass: M3 closed, bug-200 m-2 confirmed {#tests-m3}
+
+rel: evidence-for -> [[#mutations]]
+
+- **M3 killed.** `tests/test_bug199_repair_rewrites_index.py::test_apply_backs_the_pre_apply_index_up_beside_the_sidecar`
+  (flat + organised) runs the real `--repair-cut-hooks --apply` with `RMX_HOME` at tmp.
+  It asserts that the one dir under `backups/memory-hooks/` (named `<project>-<ts>` by
+  `_repair_backup_dir`) holds a `MEMORY.md` byte-equal to the pre-apply index, next to a
+  byte-equal sidecar, and that the path is printed. Under M3 (the `backups.append` of
+  `INDEX_NAME` dropped) 2 failed and 35 passed: only the new test fails
+  (`bug199-200-m3-red.log`). The source was restored by `git checkout`, `__pycache__`
+  cleared, the fix grepped back at `memory_index.py:1150`, and `git status --short src` was
+  empty. Green: 57 passed across the four bug-198/199/200 files plus
+  `test_memory_hook_repair.py` (`bug199-200-m3-green.log`).
+- **bug-200 m-2 was already closed at the RED commit (771117c), using the real-store option.**
+  The scope-blind fakes (`compile_memories` and `_read_store` -> `object()`) were deleted.
+  `tests/test_bug200_brief_compile_real_daemon.py` drives the real CLI, plan, verb and a
+  spawned daemon under a short mkdtemp root. A plan/brief scope disagreement makes it exit 1
+  (`bug199-200-red-mut1.log`, `-mut2.log`). The routing recorders left in
+  `test_bug198_brief_compile_scope.py` had no mock-registry row, so one was added.
