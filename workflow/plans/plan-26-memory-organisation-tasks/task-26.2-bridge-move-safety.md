@@ -5,7 +5,7 @@ title: "Task 26.2: a moved memory file is refreshed through the existing source_
 tags: [task, plan-26, bridge, ingest-gmd, memory, identity, move]
 metadata:
   node_type: task
-  status: pending
+  status: completed
   plan: plan-26-memory-organisation
   updated: 2026-11-09
 ---
@@ -13,7 +13,7 @@ metadata:
 # Task 26.2: bridge move-safety {#root}
 
 > Plan: [[plan-26-memory-organisation]]
-> Status: Pending
+> Status: Completed — merged `05164ce` (2026-11-10) after ch-bsd r1 NO-GO, r2 NO-GO, r3 MEH-only GO; follow-ups bug-210; AC-4c combined test on master after the merge.
 > Depends on: [[task-26.1-layout-module-and-index-walk]]
 
 rel: part-of -> [[plan-26-memory-organisation]]

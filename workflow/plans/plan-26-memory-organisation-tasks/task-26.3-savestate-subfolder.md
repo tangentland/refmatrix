@@ -5,7 +5,7 @@ title: "Task 26.3: save-state writes savestates/<id>.md; recall-state, recents a
 tags: [task, plan-26, save-state, recall-state, handoff, memory-dir]
 metadata:
   node_type: task
-  status: pending
+  status: completed
   plan: plan-26-memory-organisation
   updated: 2026-11-09
 ---
@@ -13,7 +13,7 @@ metadata:
 # Task 26.3: save-states live in savestates/ {#root}
 
 > Plan: [[plan-26-memory-organisation]]
-> Status: Pending
+> Status: Completed — merged `fdc6359` (2026-11-10) after ch-bsd r1 GO + remedy-r1, r2 GO; bug-208 (non-atomic fail-closed write) due before 26.5.
 > Depends on: [[task-26.1-layout-module-and-index-walk]]
 
 rel: part-of -> [[plan-26-memory-organisation]]
