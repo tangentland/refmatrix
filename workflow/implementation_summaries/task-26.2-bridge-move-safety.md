@@ -660,3 +660,15 @@ confirmed empty.
   remainder. It is loud, but its wording is wrong.
 - s2-2 (fleet route for the hooks) and bug-209 (`--check` blind to `.git/hooks`) are not in
   this scope.
+
+## AC-4c, the combined 26.2 + 26.3 test {#ac-4c}
+
+Owed by whichever of 26.2 / 26.3 merged second; 26.2 did (`05164ce`). Written on a branch from that
+merge, `tests/test_bridge_move_safety_ac4c.py` (`6a25bb7`, merged `078c951`): a memdir holding a
+save-state pair and another id claimed twice → `duplicate_ids` names only the other id, the
+save-state is ingested once from the newer (kept) copy, and the skip line names the dropped copy.
+Organised and flat, either copy newer, plus a daemon leg: 5 passed on master. Mutations (a) pair
+rule off, (b) no duplicate detection, (b2) a save-state exemption that also hides the other id:
+all 5 cases fail under each (`workflow/review-output/plan26/26.2-ac4c-*.log`).
+
+rel: specified-by -> [[task-26.2-bridge-move-safety#ac-4c-combined]]
