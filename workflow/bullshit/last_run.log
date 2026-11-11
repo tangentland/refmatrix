@@ -38,3 +38,4 @@
 2026-11-10T16:47:00-0800 commit=39bfc4a verdict=DIRTY findings=4 (0B/1S/3M) report=2026-11-10-1647-task-26.3-r2-remedy-39bfc4a.md
 2026-11-10T19:15:37-0800 commit=9204814 verdict=DIRTY findings=5 (1B/2S/2M) report=2026-11-10-1915-task26.2-r2-remedy-9204814.md
 2026-11-10T20:33:13-0800 commit=b8f920a verdict=MEH-only findings=5 (0B/0S/5M) report=2026-11-10-2033-task26.2-r3-remedy-b8f920a.md
+2026-11-11T13:12:16-0800 commit=15e8f64 verdict=DIRTY findings=18 (3B/7S/8M) +addendum 4 (0B/3S/1M) report=2026-11-11-1312-task-21.5-spec-r1-15e8f64.md

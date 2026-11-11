@@ -16,6 +16,10 @@ deployed 0.82.0. Prior handoff archived at
 rel: supersedes -> [[handoff-018-wave0-plan24-specs-hypertree]]
 rel: depends-on -> [[plan-of-plans#goal-2026-11-10-progress]]
 
+## Active goal {#active-goal}
+
+No active goal (no `/goal` was set this session).
+
 ## State {#state}
 
 - **Deployed: 0.82.0** (release `9432b83`; hub + 8 daemons verified 0.82.0 from `~/refmatrix`,
@@ -35,6 +39,27 @@ rel: depends-on -> [[plan-of-plans#goal-2026-11-10-progress]]
   `hooks29-draft.json`; after a write: 0 `…` values, 9/9 restores intact, "nothing to repair".
 
 rel: depends-on -> [[impl-task-user-level-state-commands#deploy-cleanup]]
+
+## In flight at save (2026-11-11) {#in-flight}
+
+Four agents were running in littlebig clones (each cloned from dev `master` `f7c0d39`; `.venv-eval`
+is a symlink to the dev tree's). Their next artifact is a commit on the clone's branch; ch-bsd
+reports may come back as text for the lead to persist ([[reference_subagent_reports_returned_as_text]]).
+
+| agent · type | clone (`/Volumes/littlebig/…`) · branch | state at save | next |
+|---|---|---|---|
+| `green-bug212` · ch-implementer (DONE) | `refmatrix-bug212` · `task-bug212-worktree-hook-crashes` | GREEN src `b6357ca` + summary/logs `b024a95`: RED file 19/19, family 110, wide 592; mutations g/z/c/w killed. One store definition `store.WRITER_CATALOG_FILES` (hooks render the gate from it); post-checkout skips a null old sha; `sync.GitRefError` → clean `Error:` (in-process + daemon); `cli._cwd()` → clean error, `rmx version` still works. Flags: a project whose `.refmatrix/` has only `partition` (store via `REFMATRIX_ROOT`) no longer syncs from git hooks; `docs/INTEGRATION.md#git-integration` not updated; one manual probe appended a row to the live `~/.refmatrix/cli.log`; clones' symlinked `.venv-eval` makes the SkipGate call `test_repo_hooks_in_sync`'s skip UNPINNED (log a row) | NOT YET DISPATCHED: ch-bsd r1 over `f7c0d39..b024a95`; update INTEGRATION.md; then merge |
+| `green-264` · ch-implementer | `refmatrix-plan26-4` · `task-26.4-savestate-mtype-normalisation` | RED `bbd706d`+`c55afc8` (17 RED), deferral row `bf33236`; GREEN mid-run (uncommitted src) | lead decision: ADR-0005 wins (top-level `savestate_*` + `savestates/` only); mutations o/s/t/u/f; ch-bsd; merge BEFORE 25.1 |
+| `red-251` · ch-test-engineer | `refmatrix-plan25-1` · `task-25.1-recall-hook-byte-budget` | R0 measured `d748196` (outcome A: per hook, 10,000 UTF-16 units → 9,000 B per command); RED so far `36bfaa7` (fixture), `71e7797` (AC-1..AC-13), `e09454d` (AC-6 legs); spec rev 6 `f4061aa` adds **R11/AC-15** (user, 2026-11-11): a SessionStart `compact|clear` entry runs `rmx recall-state --max-bytes N` as its own hook command, so a compacted or cleared session re-orients automatically — RED for AC-15 requested | then GREEN, ch-bsd, merge AFTER 26.4 |
+| `bsd-215` · ch-bsd (DONE) | `refmatrix-plan21-5` · `task-21.5-tool-used-signal` | spec r1 DIRTY 18 (3B/7S/8M) + addendum vs 24.6 r5 (3S/1M); NOT approval-ready; report persisted by the lead `d8ae624` (`workflow/bullshit/2026-11-11-1312-task-21.5-spec-r1-15e8f64.md`). B: `v: 2` is malformed to `row_provenance` (+2 tests pin it); memories have no `Entity.path` (use `metadata.source_path`); Agent/mcp legs unreachable (hook matcher is 8 tools) | architect revision r1, deciding as the user would: keep Agent/mcp legs "live from 24.6 R4" + 24.6 AC-3 adds an Agent and an mcp call; credit per (tool call, file); R1 records `tool_use_id` + one origin field (`origin` per 19.0 R2), the labeller records origin from the transcript; headline excludes prior-touch (both printed); OD-4 signature `(tool_name, tool_input, cwd)` + ring adapter; OD-5 after s-1/s-6; 24.6 r6 for x-1..x-3. Then spec r2. Ledger lines still to land on master: INDEX/last_run (in the report) + 2 IMPRESSIONS bullets AFTER folding the oldest (IMPRESSIONS has 49 run bullets) |
+
+If an agent is gone on resume: read its clone's newest commit body and `git status`, then start a
+fresh agent of the same type with the task's spec, the bug row or summary stub, and "resume from
+<branch>@<tip>; inspect any uncommitted work first". Release plan: one 0.83.0 for bug-212 + 26.4 +
+25.1 (+ 21.5 if ready), then one fleet `install-hooks --apply --force` (bug-212 and 25.1 change the
+generated hooks), verifying `.git/hooks` by reading them (bug-209).
+
+rel: related-to -> [[project_0820_release_fleet_hooks]]
 
 ## Open items {#open}
 
@@ -65,8 +90,13 @@ rel: depends-on -> [[impl-task-user-level-state-commands#deploy-cleanup]]
 - **Plan-26 order:** 26.4 → 26.5 (rollback-moves-`savestates/`-back AC, `b5ed7b3`) → 26.7 →
   26.6 R3 residual → 26.8; then bug-185 → 23.2 → 23.1 → 23.3 ∥ 23.5; plan-25 and plan-27
   (now carries the fleet-hook exception, `9780579`) after their dependencies.
-- **littlebig:** the plan26-2, plan26-3 and bug199-200 clones are merged and can be retired at
-  the user's word; four October store-copy scratch dirs kept by the user's choice.
+- **littlebig (2026-11-11):** merged clones plan26-2, plan26-3, bug199-200, plan26-6 removed
+  (each verified: no uncommitted work, no stashes, every branch in dev `master`). Active:
+  `refmatrix-bug212`, `refmatrix-plan26-4`, `refmatrix-plan25-1`, `refmatrix-plan21-5`. Kept by
+  the user's earlier choice: the October scratch dirs (`refmatrix-bug105-probe`,
+  `refmatrix-spike-hypertree`, and the store copies).
+- **plan-24 24.6 amended (r5, `99d96c7`):** the mod's tool observe writes 21.5's ring fields and
+  emits no `used` (user decision on 21.5 OD-1).
 
 ## Resume {#resume}
 

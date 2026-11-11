@@ -85,7 +85,7 @@ never fired (unprobed). {#event-map-lead}
 | d4b | Session-start recall, the resume focus and the curator line go in a `prompt.context` block, not the system prompt | conversation facts that change per session; the engine re-reads that block on compaction and `/clear`, exactly when they must be rebuilt |
 | d4c | Core's own sections (`memory` and the rest) are never rewritten: the mod's `prompt.section` hook matches only `refmatrix:memory` | Claude Code's auto-memory index is the user's file |
 | d5 | `refmatrix.injected = { session, shas }` (21.1's `block_sha`s delivered this session, cap 500) is passed to `rmx_scan_prompt` as `skip_block_shas`; the VERB omits them and emits `unchanged: true` | the composite is not re-sent every turn, and delivered events stay true because the daemon decides what was delivered |
-| d6 | `refmatrix.delivered = { session, items: [{ name, kind, query_id }] }` (cap 2,000) from scan / recall answers; `tool.call` finds those names in `ran.text` and sends them as `mentions`; the daemon checks each against `delivered_in_session` (authoritative) and emits `used` with evidence `tool_result` | exact `used` detection from the result the agent saw (21.x); `$.state` is the prefilter, the store is the record |
+| d6 | `refmatrix.delivered = { session, items: [{ name, kind, query_id }] }` (cap 2,000) from scan / recall answers; `tool.call` finds those names in `ran.text` and sends them as `mentions`; the daemon records them on the tool's STM ring event as `result_mentions` (with 21.5's ring fields) and emits NO `used` — amended 2026-11-11 ([[#rev-r5]]) | `used` evidence of tool use is derived at report time by [[task-21.5-tool-used-signal]], never emitted by a hook or the mod; a result-text leg (`match_on: tool_result`) over `result_mentions` joins 21.5's matcher only after its precision is measured |
 | d7 | STM events go to the daemon on every call, never buffered in `$.state`; concurrent `$.state` updates use `update` (`ifVersion`); a failed engine write goes to 24.5's outbox | 24.5 d7: `$.state` is not a system of record |
 | d8 | Stand-down marker: `$.env.set("RMX_MOD_LIVE", "<epoch s>")` and `$.env.set("RMX_MOD_EVENTS", "<classes>")` are set SYNCHRONOUSLY as the first statements of 24.5's `session.start` handler (before the discovery await), and refreshed by a timer of their own, `$.clock.every(10_000)`, independent of `health_interval_s`; the guard window is 45 s (four refreshes); the timer survives `session.end` reason `clear` (24.5 d1) | r2 s1(a)(b) and b1: a marker refreshed only by the configurable health tick, or stopped at `/clear`, lets the shell resume beside the mod |
 | d9 | ONE class list for the whole process (`$.env` is one value per process, shared by the main loop and its subagents): `start,prompt,tool,stop,compact`. Instead of per-context lists, a generated entry carries the guard only when the mod's equivalent is shown to fire in EVERY loop that entry fires in; SubagentStop's entry is now guarded too (batch 2: `turn.complete` fires with `agentId`) | r2 s1(c): per-context lists cannot be expressed in one process-wide variable |
@@ -122,10 +122,15 @@ never fired (unprobed). {#event-map-lead}
    the delivered names found in `ran.text` by whole-identifier match. A failed observe is an outbox
    entry, never a failed tool call. No command is rewritten (the grep rewrite stays on its shell
    hook; 24.8 lists its mod form as a candidate). {#r3}
-4. **R4 — the `used` evidence (Python).** `rmx_focus_observe(tool, mentions=...)` checks each
-   mention against `telemetry.delivered_in_session(session)` and emits a `used` event (evidence
-   `tool_result`, `ref_query_id` = the delivering call's `query_id`) per verified name, once per
-   name per turn. `tool_result` joins the evidence enum; 21.1's schema tests extend. {#r4}
+4. **R4 — the observation, never a `used` event (Python; amended 2026-11-11, [[#rev-r5]]).**
+   `rmx_focus_observe(tool, mentions=...)` writes the tool's STM ring event through `Stm.record`
+   with [[task-21.5-tool-used-signal]]'s ring fields (`t`, `t_start` from the awaited `tool-pre`,
+   `tool`, `cwd`, and the tool's input path / pattern / command) plus `result_mentions` = the
+   mentions verified against `telemetry.delivered_in_session(session)`. It emits NO `used` event
+   and adds no evidence kind: 21.1 R12's "no `used` from a hook" holds for the mod as well, and
+   tool use of a delivered item is derived at report time by 21.5. A `match_on: tool_result` leg
+   over `result_mentions` may join 21.5's matcher only after it is measured against 21.5's
+   pre-registered precision bands. {#r4}
 5. **R5 — the stop and reasoning capture (d13, d14).** `session.append` matched `{ door:
    "response" }`, main loop: hold the row's text and `e.uuid`; when the next response row of the
    same turn arrives, send the held one as `reason`; return `next(e)` with `e`. At `turn.complete`
@@ -187,8 +192,9 @@ never fired (unprobed). {#event-map-lead}
 2. **AC-2 (d5).** Two prompts in one session: the second scan request carries the first's block
    shas in `skip_block_shas`; a new session id resets `injected`. {#ac-2}
 3. **AC-3 (R3, R4, d6).** A Read whose result names a delivered memory sends it in `mentions`; the
-   Python test of R4 emits one `used` event (evidence `tool_result`, the delivering `query_id`) and
-   none for a name never delivered in that session. The tool's result reaches the model unchanged.
+   Python test of R4 finds ONE ring event for that tool call carrying 21.5's ring fields and
+   `result_mentions` = [that name] (a name never delivered in that session is not in it), and
+   ZERO `used` events written to `recall-events.jsonl` by the observe. The tool's result reaches the model unchanged.
    A subagent's tool call is observed with its `agent_id`. {#ac-3}
 4. **AC-4 (R1, d3).** `classic.SessionStart` with `source: "clear"` rebuilds the context block (a
    new recall request); `prompt.compose` appends `refmatrix:memory` after the shared sections;
@@ -236,7 +242,7 @@ TS: `mod/tests/context.test.ts`, `observe.test.ts`, `standdown.test.ts`, `append
 `compact.test.ts` (answering `http.fetch` beneath the plugin with recorded host bodies, as 24.5;
 those doubles and `mock.clock` are registered in `workflow/test_mock_registry.md`). Python:
 `tests/test_task24_6_hooks_standdown.py` (AC-5, AC-6, AC-8 over `hooks.py` / `search_hooks.py`
-renders, plus `bash -c` runs of the guard), `tests/test_task24_6_used_evidence.py` (R4). AC-10's
+renders, plus `bash -c` runs of the guard), `tests/test_task24_6_observe_ring.py` (R4: the ring event, no `used`). AC-10's
 engine half runs in a scratch project with `--plugin-dir`. The existing hook suites
 (`test_hooks.py`, `test_hook_wiring.py`, `test_hooks_reproducible.py`, `test_repo_hooks_in_sync.py`,
 `test_search_hooks.py`) are updated for the guard and loudness, never skipped. Re-applying the live
@@ -251,9 +257,9 @@ RED first, logged to `workflow/review-output/task24_6-red.log`. {#test-strategy-
 | `mod/tests/context.test.ts`, `observe.test.ts`, `standdown.test.ts`, `append.test.ts`, `compact.test.ts` | AC-1..AC-5, AC-9..AC-12 |
 | `src/refmatrix/hooks.py` | `MOD_GUARD`, guarded entries, loudness, no `--drain` (R6, R8) |
 | `src/refmatrix/cli.py` | hook twins' exit codes (R8) |
-| `src/refmatrix/verbs.py`, `src/refmatrix/telemetry.py` | `mentions` → `used` with `tool_result` (R4) |
+| `src/refmatrix/verbs.py`, `src/refmatrix/stm.py` | `mentions` → the ring event's `result_mentions` + 21.5's ring fields through `Stm.record`; no `used` (R4) |
 | `.claude/settings.json` | regenerated by `rmx install-hooks --apply` (never hand-edited) |
-| `tests/test_task24_6_hooks_standdown.py`, `tests/test_task24_6_used_evidence.py`, the existing hook suites | AC-5, AC-6, AC-8, R4 |
+| `tests/test_task24_6_hooks_standdown.py`, `tests/test_task24_6_observe_ring.py`, the existing hook suites | AC-5, AC-6, AC-8, R4 |
 | `workflow/test_mock_registry.md` | the TS host doubles |
 | `eval/mod_probe/` | R7 |
 
@@ -290,3 +296,20 @@ RED first, logged to `workflow/review-output/task24_6-red.log`. {#test-strategy-
 | s1 how R11's 30 s applies to a submitted save-state | R11: a write job with a 30 s job deadline and a key; `NotConfirmed` at expiry is a transcript line and compaction proceeds; AC-11 |
 | s7 AC-5 still said SubagentStop is unguarded | AC-5 aligned with d9: SubagentStop's entry carries the guard |
 
+## Revision r5 (2026-11-11, user decision on 21.5 OD-1) {#rev-r5}
+
+rel: depends-on -> [[task-21.5-tool-used-signal]]
+rel: amends -> [[task-21.1-context-usage-telemetry#req-schema]]
+
+The user approved the recommendation of [[task-21.5-tool-used-signal]]'s open decision OD-1
+(2026-11-11): the mod's `tool.call` observe must not emit `used`. Emitting it from result text
+would be a second tool-evidence kind, would credit mere re-exposure (a name appearing in output the
+agent did not act on), and would put an unmeasured matcher into plan-19 19.2's never-decaying
+counters; 21.5 instead derives tool use at report time from the STM ring.
+
+| change | anchor |
+|---|---|
+| d6: `mentions` are recorded on the ring event as `result_mentions`; no `used` | [[#decisions]] |
+| R4: the observe writes 21.5's ring fields + `result_mentions` through `Stm.record`; no `used`, no new evidence kind | [[#r4]] |
+| AC-3: one ring event with `result_mentions`, zero `used` events | [[#ac-3]] |
+| test + files: `tests/test_task24_6_observe_ring.py`; `verbs.py` / `stm.py` | [[#test-strategy]], [[#files]] |
