@@ -373,6 +373,26 @@ mutation is carried (AC-14 maps them) unless a row below says otherwise.
     - Not touched: the channel bridge's `_resolve_root({})` (`mcp.py:259`, no project) and the
       CLI's own resolver (`cli._hub_resolve_root`, `cli.py:2705`). {#r10-scope}
 
+12. **R11 Recall-state after compaction and `/clear`** (user, 2026-11-11, [[#rev-round-6]]). Today
+    nothing re-orients a session after compaction: only `rmx focus hook --event session-start`
+    listens on SessionStart `compact`, and `rmx recall-state` runs on no source. The generator
+    emits ONE new SessionStart entry, matcher `compact|clear`, as its OWN hook command (per-hook
+    cap, R0 outcome (A)): `rmx recall-state --max-bytes N`, N = `hook_budget.budget("recall_state")`
+    (≤ 9,000 B, a `CHANNEL_BUDGET_BYTES` entry like every other producer). Rules:
+    - the `max_bytes` parameter lives on the `recall_state` VERB (CLI and MCP both expose it; verb
+      parity), and the rendered text is fitted by `hook_budget.fit_blocks`, whole blocks only, in
+      this order: handoff head, anomalies, git, daemon, recent memories, STM digest; a trailer
+      names `rmx recall-state` for the full output when anything was cut;
+    - never chained into another SessionStart command, so a failure cannot suppress the other
+      entries' stdout (the 26.2 r2 lesson); `startup|resume` keep their entries unchanged, and on
+      `clear` it runs beside `memory recall --session-start`;
+    - PreCompact's `save-state --no-promote` checkpoint is written before compaction, so the
+      compact-time recall-state resumes from that fresh checkpoint (the ADR-0005 #newest order);
+    - hook mode with no daemon still prints the file-based blocks (handoff, git) and counts the
+      missing daemon leg (d8's spirit); a real failure exits non-zero with ONE clean `Error:` line
+      and no traceback (the user's 2026-11-10 rule: "fail loudly on the commandline or console");
+    - counted as producer `recall_state` in `rmx telemetry --context`. {#r11}
+
 ## Acceptance criteria {#acceptance}
 
 All ACs run in 23.0's sandbox on the frozen fixture ([[#fixture]]) through the GENERATED hook
@@ -533,6 +553,21 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
     `$REFMATRIX_ROOT` / the cwd store when `project` resolves nothing: AC-4 (e) R10 legs (1)-(3)
     fail, (2) by returning A's rows).
 
+15. **AC-15 Recall-state on compact and clear (R11).** (a) The generated config has exactly one
+    SessionStart entry whose matcher covers `compact` and `clear` and whose command is
+    `rmx recall-state --max-bytes N`, N = `hook_budget.budget("recall_state")` ≤ 9,000, in its own
+    entry (not chained); `rmx install-hooks --check` is clean after `--apply`. (b) Run through
+    `bash -c` with a SessionStart `{"source": "compact"}` stdin on a fixture store whose newest
+    save-state is an `auto: pre-compact checkpoint`: stdout ≤ N bytes, it names that checkpoint
+    as the handoff, exit 0. (c) A fixture whose full recall-state exceeds N: whole blocks only,
+    the handoff head kept, a trailer naming `rmx recall-state`. (d) No daemon: exit 0, the
+    file-based blocks printed, the daemon leg counted. (e) A forced failure (an unreadable
+    memdir): exit != 0, one `Error:` line, no `Traceback`. (f) `--max-bytes` is a parameter of
+    the `recall_state` verb (MCP schema carries it; verb parity). Mutations that must FAIL a test:
+    the entry chained into another SessionStart command (a); the matcher dropping `compact` (a);
+    output not fitted or no `--max-bytes` (b, c); a traceback on failure (e); the CLI flag not on
+    the verb (f). RED at HEAD: no such entry and no `--max-bytes`. {#ac-15}
+
 ## Fixture and measurement {#fixture}
 
 - `tests/fixtures/plan25/memory/`: 30 synthetic GMD memory files, bodies sized to cliquedb's
@@ -687,3 +722,16 @@ rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720#n5]]
 | mutation | HEAD's silent fallback restored fails AC-4 (e) R10 legs (1)-(3) | AC-14 |
 | d12 | closed as decided by the user | [[#open-decisions]] |
 | files | `mcp.py` resolver, `verbs.py` error class + transport description, the routing test, bug-181's registry row closes at merge | [[#files-to-modify]] |
+
+## Revision round 6 (2026-11-11) {#rev-round-6}
+
+The user, 2026-11-11, asked whether a post-compaction event calls recall-state ("is there a
+post-compaction action/event that would call recall-state?") and, on learning none does, said "yes
+add it" to this task. SessionStart fires with source `compact` after compaction and `clear` after
+`/clear`; this task already owns the SessionStart producers and their byte budgets (R0, R1, d11).
+
+| change | anchor |
+|---|---|
+| R11: a SessionStart `compact|clear` entry runs `rmx recall-state --max-bytes N` as its own command, fitted to `hook_budget.budget("recall_state")` | [[#r11]] |
+| AC-15: the generated entry, the fitted output, the no-daemon and failure paths, verb parity; mutations | [[#ac-15]] |
+| R0's measured cap (`d748196`, outcome (A), 10,000 UTF-16 units per hook) sets N ≤ 9,000 B | [[#r0]] |
