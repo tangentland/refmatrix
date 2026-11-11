@@ -120,6 +120,27 @@ def test_a_project_local_copy_is_named_and_never_deleted(dirs):
     assert any(str(local) in line and "user-level" in line for line in out), out
 
 
+def test_rmx_init_installs_the_pair_at_user_level(tmp_path, monkeypatch):
+    """The production path (ch-bsd r1 #s-1): `rmx init` passes no user_dir, so the pair must
+    land under the HOME it runs with and never in the project it initialises."""
+    from click.testing import CliRunner
+
+    from refmatrix.cli import main
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    r = CliRunner().invoke(main, ["init", "--path", str(proj), "--no-hooks"])
+    assert r.exit_code == 0, r.output
+    for name in USER_LEVEL:
+        assert (home / ".claude" / "commands" / name).read_text(encoding="utf-8") \
+            == _template(name), name
+        assert not (proj / ".claude" / "commands" / name).exists(), name
+    assert (proj / ".claude" / "commands" / "stash.md").is_file()
+
+
 # ---- the packaged text carries the memory-dir layout (ADR-0005) -------------------------------
 
 def test_recall_state_names_the_savestates_source_and_the_one_shot():
@@ -140,3 +161,15 @@ def test_save_state_states_the_layout_rules_and_the_commit_all_caveat():
     text = _template("save-state.md")
     for needle in ("savestates/", ".memory-layout", "rmx memory organise", "git add -A"):
         assert needle in text, needle
+
+
+@pytest.mark.parametrize("name", USER_LEVEL)
+def test_the_status_file_falls_back_to_an_existing_handoff_md(name):
+    """ch-bsd r1 #s-3 (user decision 2026-11-10): refmatrix and 9 of 10 fleet projects keep
+    `handoff.md` and no `workflow/STATUS.md`; a bare STATUS.md default made /save-state start a
+    second session file in each. The chain is: CLAUDE.md's file, else handoff.md, else STATUS.md."""
+    text = _template(name)
+    start = text.index("**Status file**")
+    line = text[start:text.index("**Agent brief dir**", start)]
+    assert "CLAUDE.md" in line and "`handoff.md` if it exists" in line, line
+    assert line.index("handoff.md") < line.index("workflow/STATUS.md"), line

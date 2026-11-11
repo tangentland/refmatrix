@@ -7,7 +7,8 @@ exit, or pickup by another instance. Not just a summary. **Save state =
 promote** — the working memory graduates to durable memory.
 
 **Project conventions** (use the project's own if its CLAUDE.md names different ones):
-- **Status file** — `workflow/STATUS.md` (the navigable current-state header + save-state chain).
+- **Status file** — the one the project's CLAUDE.md names; else `handoff.md` if it exists; else
+  `workflow/STATUS.md` (the navigable current-state header + save-state chain).
 - **Agent brief dir** — `workflow/agents/`.
 - **Memory dir** — `~/.claude/projects/<slug>/memory/` (layout: refmatrix ADR-0005).
 

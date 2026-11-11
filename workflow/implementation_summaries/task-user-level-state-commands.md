@@ -71,6 +71,35 @@ session (a small direct request, not a plan task); a ch-bsd round over the branc
   `test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon`, DuckDB
   `Conflicting lock`: bug-127/168, the same E line as the bug-199/200 clone's at-red log.
 
+## ch-bsd r1 remedy {#remedy-r1}
+
+rel: derives-from -> [[bsd-user-level-state-commands-r1-c596a11]]
+
+Round 1 (`fa38500`): DIRTY 6 (0B/3S/3M), merge GO, #deploy-cleanup NO-GO as written.
+
+- **#s-1** `rmx init` → user level was untested (ch-bsd's mutation E, init passing the project's
+  `.claude/commands` as `user_dir`, survived 283 tests). New
+  `test_rmx_init_installs_the_pair_at_user_level` (CliRunner `init --path <tmp> --no-hooks`,
+  `HOME` set to a tmp dir): passes on the branch, fails under mutation E
+  (`user-level-cmds-r1-s1-mutE.log`), restored by `git checkout -- src/refmatrix/cli.py`.
+- **#s-2** #deploy-cleanup rewritten: per-repo trunk inventory (cliquedb tracks the pair on
+  `main`/`master`), worktrees, never a staged delete, per-repo trunk commands for the user,
+  verification against trunk trees.
+- **#s-3** user decision 2026-11-10, "fallback chain": both templates' status file is now
+  "the one the project's CLAUDE.md names; else `handoff.md` if it exists; else
+  `workflow/STATUS.md`", so /save-state no longer starts a `workflow/STATUS.md` beside an existing
+  `handoff.md` (refmatrix and 9 of 10 fleet projects). Pinned by
+  `test_the_status_file_falls_back_to_an_existing_handoff_md`. The carry-over step is in
+  #deploy-cleanup step 2.
+- **#m-1** accepted and anchored: the live user-level text describes 26.2/26.3 behaviour
+  (duplicate-id refusal, `savestates/`, `remove_failed`, the ADR-0005 order) ahead of master and
+  0.81.2. Harmless while no live dir has a `.memory-layout` marker or `savestates/`. **No release
+  is cut between this merge and 26.2 + 26.3.**
+- **#m-2** the warn line and docstring no longer claim which copy Claude Code runs; they say the
+  command is defined twice and ask for the project copy's removal.
+- **#m-3** `rmx init --agents` help now says commands go to `.claude/commands/` and the handoff
+  pair to `~/.claude/commands/`.
+
 ## Consequences for in-flight work {#in-flight}
 
 The 26.3 branch (`/Volumes/littlebig/refmatrix-plan26-3`) edits both copies of recall-state.
@@ -109,18 +138,36 @@ differs from the old template, in four content groups):
 | `viascope` | no | atldb variant |
 | `cliquet` | yes | baseline + GMD frontmatter/anchor only |
 
-Procedure:
+Missed by the working-tree scan above (ch-bsd r1 #s-2): **cliquedb** tracks the pair on `main`
+and `master` (only its `debitmap-finish` branch dropped it, `4f0f7bc`) and has 5 worktrees, 2
+holding copies at depth 8. All 6 tracked fleet repos were on feature branches on 2026-11-10
+(atldb `cycle_query_5.0`, portal `datamart`, cat-herder/cliquet/prep_prolific
+`gmd-conformance-sweep`, thiquet `nr-native-recast`), so a `git rm` in place would only drop the
+pair from those branches.
 
-1. Re-scan, because the list can change before the deploy:
-   `find ~/github ~/enduris ~/claude_tools -maxdepth 6 -path '*/_frameworks_and_libraries' -prune
-   -o -path '*/.claude/commands/*' \( -name save-state.md -o -name recall-state.md \) -print`
-   (never from `/`; refmatrix and its littlebig clones are not in scope, they get the deletion
-   by merge).
-2. Back up every file to `~/.refmatrix/backups/commands/<project>/` before touching it.
-3. Untracked copies: delete. Tracked copies: before any change, check for another session in that
-   repo and do not switch its branch; then `git -C <repo> rm` the pair (staged; the user commits
-   in their repos unless they say otherwise).
-4. cat-herder: deleting its copies also stops new bootstrapped projects getting them; a project
-   then relies on `rmx init` (user-level install). Say so when reporting.
-5. Verify: `~/.claude/commands/{save,recall}-state.md` equal the deployed templates, and the
-   re-scan prints nothing.
+Procedure (revised after ch-bsd r1 #s-2/#s-3):
+
+1. **Inventory per repo, not per working tree.** For every git repo under `~/github`,
+   `~/enduris`, `~/claude_tools` (never from `/`; refmatrix and its littlebig clones are out of
+   scope, they get the deletion by merge): its trunk (`origin/HEAD`, else the line its CLAUDE.md
+   names, e.g. portal's), `git ls-tree --name-only <trunk> -- .claude/commands/` for the pair, the
+   current branch's `git ls-files`, and each `git worktree list` entry's copies. Untracked copies
+   come from the `find` scan (`-maxdepth 9` reaches cliquedb's worktrees).
+2. **Carry over before deleting (#s-3).** Diff each content group against the user-level pair and
+   list every project-specific line. Known on 2026-11-10: "refresh/read `handoff.md`" (covered by
+   the status-file chain: CLAUDE.md's file, else `handoff.md`, else `workflow/STATUS.md`, user
+   decision 2026-11-10); portal's `origin/release` trunk (already in portal `CLAUDE.md:184`); the
+   atldb group's `~/.gstack` checkpoint read (obsolete: gstack checkpoints are gone since
+   2026-09-14). Anything else goes into that project's CLAUDE.md, shown to the user first.
+3. **Back up** every file to `~/.refmatrix/backups/commands/<project>/` before touching it.
+4. **Untracked copies: delete.** **Tracked copies: never stage a delete from here** — a staged
+   delete is swept into another session's next pathspec-less commit, and it would land on a
+   feature branch. Print per-repo commands for the user to run on each repo's trunk
+   (`git -C <repo> switch <trunk> && git rm .claude/commands/{save,recall}-state.md &&
+   git commit -m ...`, plus `git worktree` copies), and never switch another repo's branch.
+5. **Verify against the trunk trees**, not the working trees: `git ls-tree <trunk>` shows no pair
+   in every repo the user has committed, the `find` re-scan shows no untracked copy, and
+   `~/.claude/commands/{save,recall}-state.md` equal the deployed templates. Report what is still
+   pending the user's commits.
+6. cat-herder is the bootstrap source: once its trunk drops the pair, new projects rely on
+   `rmx init`'s user-level install. Say so when reporting.

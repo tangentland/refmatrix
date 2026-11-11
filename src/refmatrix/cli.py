@@ -842,8 +842,10 @@ def main(partition: str | None):
                    "PreCompact recent-recall. Templates documented at "
                    "docs/hooks/intuition-style-hooks.md.")
 @click.option("--agents/--no-agents", default=True,
-              help="Place packaged subagent descriptions (e.g. gmd-curator) "
-                   "into .claude/agents/ for project-local invocation.")
+              help="Place packaged subagent descriptions (e.g. gmd-curator) into "
+                   ".claude/agents/ and slash commands into .claude/commands/ for "
+                   "project-local invocation; /save-state and /recall-state go to "
+                   "~/.claude/commands/ (user level, shared by every project).")
 @click.option("--force", is_flag=True,
               help="Overwrite existing hook / agent / briefing / command files. A "
                    "user-level command (~/.claude/commands/save-state.md, recall-state.md) "

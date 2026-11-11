@@ -67,7 +67,8 @@ def install_commands(project_root: Path, force: bool = False, *,
     silently: an identical copy is left alone, a differing copy is kept unless `force`, and
     `force` writes the old copy to `backup_dir` first (a failed backup raises and replaces
     nothing). A project-local copy of a user-level command is named, never deleted: it is the
-    user's file, and it would run instead of the user-level one in that project."""
+    user's file, and while it exists that project defines the command twice (which one Claude
+    Code runs was not probed; ch-bsd r1 #m-2), so the line asks for its removal."""
     user_dir = user_dir if user_dir is not None else user_commands_dir()
     backup_dir = backup_dir if backup_dir is not None else command_backup_dir()
     project_dir = project_root / ".claude" / "commands"
@@ -82,7 +83,7 @@ def install_commands(project_root: Path, force: bool = False, *,
         if local.exists():
             out.append(
                 f"[yellow]warn[/] {local} is a project-local copy of the user-level "
-                f"/{name[:-3]}; remove it so {user_dir / name} is the one that runs here"
+                f"/{name[:-3]} ({user_dir / name}); remove it so the command is defined once"
             )
     return out
 

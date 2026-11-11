@@ -7,7 +7,8 @@ orient before taking any other action. The mirror of "save state." Do every
 step, then WAIT for direction — the orient pass is the whole job.
 
 **Project conventions** (use the project's own if its CLAUDE.md names different ones):
-- **Status file** — `workflow/STATUS.md`. **Agent brief dir** — `workflow/agents/`.
+- **Status file** — the one the project's CLAUDE.md names; else `handoff.md` if it exists; else
+  `workflow/STATUS.md`. **Agent brief dir** — `workflow/agents/`.
 - **Trunk** — `origin/main` unless the repo's default branch differs.
 - **Memory dir** — `~/.claude/projects/<slug>/memory/` (layout: refmatrix ADR-0005).
 

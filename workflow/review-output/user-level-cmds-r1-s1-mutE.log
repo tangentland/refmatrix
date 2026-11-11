@@ -1,0 +1,53 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Users/tholley/claude_tools/refmatrix/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________________ test_rmx_init_installs_the_pair_at_user_level _________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-658/test_rmx_init_installs_the_pai0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11bbc28b0>
+
+    def test_rmx_init_installs_the_pair_at_user_level(tmp_path, monkeypatch):
+        """The production path (ch-bsd r1 #s-1): `rmx init` passes no user_dir, so the pair must
+        land under the HOME it runs with and never in the project it initialises."""
+        from click.testing import CliRunner
+    
+        from refmatrix.cli import main
+    
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setenv("HOME", str(home))
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        r = CliRunner().invoke(main, ["init", "--path", str(proj), "--no-hooks"])
+        assert r.exit_code == 0, r.output
+        for name in USER_LEVEL:
+>           assert (home / ".claude" / "commands" / name).read_text(encoding="utf-8") \
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                == _template(name), name
+
+tests/test_install_commands_user_level.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py:787: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-658/test_rmx_init_installs_the_pai0/home/.claude/commands/save-state.md')
+mode = 'r', buffering = -1, encoding = 'utf-8', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-658/test_rmx_init_installs_the_pai0/home/.claude/commands/save-state.md'
+
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py:771: FileNotFoundError
+=========================== short test summary info ============================
+FAILED tests/test_install_commands_user_level.py::test_rmx_init_installs_the_pair_at_user_level
+1 failed in 0.20s
