@@ -16,6 +16,10 @@ deployed 0.82.0. Prior handoff archived at
 rel: supersedes -> [[handoff-018-wave0-plan24-specs-hypertree]]
 rel: depends-on -> [[plan-of-plans#goal-2026-11-10-progress]]
 
+## Active goal {#active-goal}
+
+No active goal (no `/goal` was set this session).
+
 ## State {#state}
 
 - **Deployed: 0.82.0** (release `9432b83`; hub + 8 daemons verified 0.82.0 from `~/refmatrix`,
@@ -35,6 +39,27 @@ rel: depends-on -> [[plan-of-plans#goal-2026-11-10-progress]]
   `hooks29-draft.json`; after a write: 0 `…` values, 9/9 restores intact, "nothing to repair".
 
 rel: depends-on -> [[impl-task-user-level-state-commands#deploy-cleanup]]
+
+## In flight at save (2026-11-11) {#in-flight}
+
+Four agents were running in littlebig clones (each cloned from dev `master` `f7c0d39`; `.venv-eval`
+is a symlink to the dev tree's). Their next artifact is a commit on the clone's branch; ch-bsd
+reports may come back as text for the lead to persist ([[reference_subagent_reports_returned_as_text]]).
+
+| agent · type | clone (`/Volumes/littlebig/…`) · branch | state at save | next |
+|---|---|---|---|
+| `green-bug212` · ch-implementer | `refmatrix-bug212` · `task-bug212-worktree-hook-crashes` | RED `defd9e3`+`ccd1e45`+`591e8c5` (17 RED, 2 guards); GREEN src `b6357ca` landing | mutations g/z/c/w, #green; then ch-bsd r1; merge |
+| `green-264` · ch-implementer | `refmatrix-plan26-4` · `task-26.4-savestate-mtype-normalisation` | RED `bbd706d`+`c55afc8` (17 RED), deferral row `bf33236`; GREEN mid-run (uncommitted src) | lead decision: ADR-0005 wins (top-level `savestate_*` + `savestates/` only); mutations o/s/t/u/f; ch-bsd; merge BEFORE 25.1 |
+| `red-251` · ch-test-engineer | `refmatrix-plan25-1` · `task-25.1-recall-hook-byte-budget` | R0 measured `d748196` (outcome A, per hook, 10,000 UTF-16 units → 9,000 B per command); RED mid-run | then GREEN, ch-bsd, merge after 26.4 |
+| `bsd-215` · ch-bsd | `refmatrix-plan21-5` · `task-21.5-tool-used-signal` | spec `15e8f64` (derive at report time); spec review r1 running; OD-1 decided (24.6 r5 `99d96c7`), OD-2..5 on the architect's recommendations unless the review objects | persist the report; RED/GREEN for 21.5 |
+
+If an agent is gone on resume: read its clone's newest commit body and `git status`, then start a
+fresh agent of the same type with the task's spec, the bug row or summary stub, and "resume from
+<branch>@<tip>; inspect any uncommitted work first". Release plan: one 0.83.0 for bug-212 + 26.4 +
+25.1 (+ 21.5 if ready), then one fleet `install-hooks --apply --force` (bug-212 and 25.1 change the
+generated hooks), verifying `.git/hooks` by reading them (bug-209).
+
+rel: related-to -> [[project_0820_release_fleet_hooks]]
 
 ## Open items {#open}
 
