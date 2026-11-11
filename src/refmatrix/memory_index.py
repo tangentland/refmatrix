@@ -223,17 +223,54 @@ class Entry:
         rather than cutting the link: an over-long line still reaches its file."""
         link = f"]({self.rel})"
         out = f"- [{self.title}{link}"
-        if self.hook:
-            room = MAX_LINE_CHARS - len(out) - len(" — ")
-            if len(self.hook) <= room:
-                return f"{out} — {self.hook}"
-            if room >= 2:
-                # Same bytes as HEAD's whole-line cut when it fell in the hook.
-                return f"{out} — {self.hook[:room - 1].rstrip()}…"
+        placed = _with_hook(out, self.hook)
+        if placed is not None:
+            return placed
         if len(out) <= MAX_LINE_CHARS:
             return out
         keep = max(TITLE_MIN_CHARS, MAX_LINE_CHARS - len(f"- [{link}") - 1)
         return f"- [{self.title[:keep].rstrip()}…{link}"
+
+
+def _with_hook(link_part: str, hook: str) -> "str | None":
+    """`link_part — hook`, the hook cut to the line's room -- THE hook placement,
+    shared by `Entry.line` and the bug-199 repair's line rewrite so the two can
+    never cut a hook differently. None when there is no hook or under 2 chars
+    of room (the caller decides what the hook-less line looks like)."""
+    if not hook:
+        return None
+    room = MAX_LINE_CHARS - len(link_part) - len(" — ")
+    if len(hook) <= room:
+        return f"{link_part} — {hook}"
+    if room >= 2:
+        # Same bytes as HEAD's whole-line cut when it fell in the hook.
+        return f"{link_part} — {hook[:room - 1].rstrip()}…"
+    return None
+
+
+def _split_entry_line(line: str) -> "tuple[str, str, str] | None":
+    """`(link part, rel, hook)` of one linked entry line, or None for any other
+    line (a generated save-state pointer or fold line included) -- THE index-line
+    split, read by `_index_hook_records` and by the bug-199 repair's rewrite.
+
+    Split at the LINK, not at the first em dash: titles contain " — "
+    themselves ("Capture reasoning deliberately — extended-thinking is
+    redacted"), so partitioning on the dash stole half the title into the
+    hook and the next render shifted it again — a generator that was not
+    idempotent on its own output. Caught on the real index, not in a
+    fixture, because the fixture titles had no dashes (2026-09-16)."""
+    if not line.startswith("- [") or _SAVES_RE.match(line) or _FOLD_RE.match(line):
+        return None
+    head, sep, rest = line.partition("](")
+    if not sep:
+        return None
+    rel, sep, tail = rest.partition(")")
+    if not sep:
+        return None
+    hook = tail.lstrip()
+    if hook.startswith("—"):
+        hook = hook[1:]
+    return f"{head}]({rel})", rel, hook.strip()
 
 
 def _is_entry_line(line: str) -> bool:
@@ -354,16 +391,25 @@ def _store_sidecar(memdir: Path, data: dict) -> None:
     The file keeps its mode (`_sidecar_mode`): `mkstemp` creates 0600 and the
     rename keeps it, so ccb9398 turned every save-state's sidecar owner-only
     where `write_text` had left 0644 (ch-bsd bug-195 r1 m-1, 2026-11-10)."""
-    side = memdir / HOOKS_SIDECAR
-    mode = _sidecar_mode(side)
-    fd, tmp = tempfile.mkstemp(prefix=f"{HOOKS_SIDECAR}.", suffix=".tmp", dir=memdir)
+    _atomic_write_text(memdir, HOOKS_SIDECAR, _dump_sidecar(data))
+
+
+def _atomic_write_text(memdir: Path, name: str, text: str) -> None:
+    """THE atomic memdir write: temp file beside the target, fsync, rename,
+    the target's mode kept (`_sidecar_mode` reads any file's bits). Shared by
+    the sidecar and the bug-199 repair's MEMORY.md rewrite (2026-11-10), so
+    the index rewrite is no less crash-safe than the sidecar one. RAISES on
+    failure, after removing the temp file."""
+    target = memdir / name
+    mode = _sidecar_mode(target)
+    fd, tmp = tempfile.mkstemp(prefix=f"{name}.", suffix=".tmp", dir=memdir)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(_dump_sidecar(data))
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
             fh.flush()
             os.fchmod(fh.fileno(), mode)
             os.fsync(fh.fileno())
-        os.replace(tmp, side)
+        os.replace(tmp, target)
     except BaseException:
         try:
             os.unlink(tmp)
@@ -465,25 +511,11 @@ def _index_hook_records(idx: Path) -> dict:
     if not idx.exists():
         return out
     for line in idx.read_text(errors="replace").splitlines():
-        if not line.startswith("- [") or _SAVES_RE.match(line) or _FOLD_RE.match(line):
+        split = _split_entry_line(line)
+        if split is None:
             continue
-        # Split at the LINK, not at the first em dash: titles contain " — "
-        # themselves ("Capture reasoning deliberately — extended-thinking is
-        # redacted"), so partitioning on the dash stole half the title into the
-        # hook and the next render shifted it again — a generator that was not
-        # idempotent on its own output. Caught on the real index, not in a
-        # fixture, because the fixture titles had no dashes (2026-09-16).
-        head, sep, rest = line.partition("](")
-        if not sep:
-            continue
-        rel, sep, tail = rest.partition(")")
-        if not sep:
-            continue
-        hook = tail.lstrip()
-        if hook.startswith("—"):
-            hook = hook[1:]
-        link_part = f"{head}]({rel})"
-        out[rel] = (hook.strip(), MAX_LINE_CHARS - len(link_part) - len(" — "))
+        link_part, rel, hook = split
+        out[rel] = (hook, MAX_LINE_CHARS - len(link_part) - len(" — "))
     return out
 
 
@@ -984,6 +1016,56 @@ def _parse_restores(restores: list) -> dict:
     return out
 
 
+def _repaired_index(memdir: Path, new: dict, changed: set) -> "tuple[bytes, str, list] | None":
+    """`(old index bytes, new index text, [rel, ...])` with the HOOK part of
+    every index line whose memory a repair changed rewritten to the repaired
+    value, or None when there is no index (bug-199, 2026-11-10).
+
+    Why: the repair wrote only the sidecar, and the stale `prefix…` left on a
+    line WITH room is, to `_index_hook_wins`, the user's own shortening -- so
+    the next `write` put 26 of 29 live restores back to their cuts. Only the
+    hook part of the affected lines changes (the link part, every other line,
+    and the line endings stay byte-identical): a whole-index re-render would
+    also re-render hand edits elsewhere away, and `write`'s own guards would
+    refuse it on an index that carries prose.
+
+    A line is affected when its link, or the memory id the link points at, is
+    a `changed` key. Its new hook is what `Entry` reads from the NEW sidecar
+    alone -- path key, then id, then the memory's derived hook -- placed by
+    `_with_hook`, the renderer's own cut. RAISES `RepairError` on an index
+    that cannot be read as UTF-8: rewriting it with replacement chars would
+    corrupt the user's file."""
+    idx = memdir / INDEX_NAME
+    if not idx.exists():
+        return None
+    try:
+        raw = idx.read_bytes()
+        text = raw.decode("utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise RepairError(f"{idx}: unreadable ({type(exc).__name__}: {exc}); "
+                          f"nothing repaired") from exc
+    side = _with_id_aliases(memdir, {str(k): str(v) for k, v in new.items()})
+    lines = text.splitlines(keepends=True)
+    rewritten: list = []
+    for i, full in enumerate(lines):
+        body = full.rstrip("\r\n")
+        split = _split_entry_line(body)
+        if split is None:
+            continue
+        link_part, rel, _old = split
+        if not _is_path_key(rel):
+            continue                           # a generated pointer (`impressions/`)
+        mid, derived = _link_identity(memdir, rel)
+        if rel not in changed and mid not in changed:
+            continue
+        hook = side.get(rel) or side.get(mid) or derived
+        line = _with_hook(link_part, hook) or link_part
+        if line != body:
+            lines[i] = line + full[len(body):]
+            rewritten.append(rel)
+    return raw, "".join(lines), rewritten
+
+
 def repair_cut_hooks(memdir: Path, *, apply: bool = False,
                      restores: "list | None" = None, out=None) -> int:
     """Classify, and with `apply` repair, the hook values bug-193 froze into the
@@ -1000,6 +1082,12 @@ def repair_cut_hooks(memdir: Path, *, apply: bool = False,
     Dry-run by default: prints, writes nothing. `apply` backs the sidecar up
     under `taxonomy.user_home()` FIRST and refuses if that fails, then writes
     atomically (`_store_sidecar`). A second apply finds nothing and says so.
+
+    The index is repaired with it (bug-199, 2026-11-10): every MEMORY.md line
+    of a dropped or restored key gets the repaired hook (`_repaired_index`),
+    backed up into the SAME backup dir before anything is written, and written
+    atomically after the sidecar -- otherwise the stale cut on the line wins
+    the next `write` and undoes the repair. Each rewritten line is printed.
     Every failure is printed by name and returns non-zero; no traceback, no
     partial write (R4). Returns the exit code."""
     out = out if out is not None else sys.stdout
@@ -1025,6 +1113,11 @@ def repair_cut_hooks(memdir: Path, *, apply: bool = False,
             raise RepairError(f"--restore: no such key in {memdir / HOOKS_SIDECAR}: "
                               f"{', '.join(missing)}")
         found = classify_cut_hooks(memdir, data)
+        new = {k: v for k, v in data.items()
+               if k not in {key for key, cls in found if cls in _REPAIR_DROPS}}
+        new.update(wanted)
+        changed = {k for k in set(data) | set(new) if data.get(k) != new.get(k)}
+        index = _repaired_index(memdir, new, changed) if changed else None
     except RepairError as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 1
@@ -1035,40 +1128,59 @@ def repair_cut_hooks(memdir: Path, *, apply: bool = False,
     print(f"{len(found)} cut value(s) in {memdir / HOOKS_SIDECAR}: "
           + "  ".join(f"{c}: {counts[c]}" for c in REPAIR_CLASSES), file=out)
 
-    new = {k: v for k, v in data.items()
-           if k not in {key for key, cls in found if cls in _REPAIR_DROPS}}
-    for key, text in wanted.items():
+    for key in wanted:
         print(f"  restore      {key}", file=out)
-        new[key] = text
     if new == data:
         print("nothing to repair", file=out)
         return 0
     dropped = len(data) - len(set(new) & set(data))
+    rewritten = index[2] if index is not None else []
+    for rel in rewritten:
+        print(f"  {'would rewrite' if not apply else 'rewrite'} {INDEX_NAME} line {rel}",
+              file=out)
     if not apply:
-        print(f"dry-run: would drop {dropped} key(s) and restore {len(wanted)}; "
-              f"rerun with --apply to write", file=out)
+        print(f"dry-run: would drop {dropped} key(s), restore {len(wanted)} and "
+              f"rewrite {len(rewritten)} {INDEX_NAME} line(s); rerun with --apply "
+              f"to write", file=out)
         return 0
 
-    bak = _repair_backup_dir(memdir) / HOOKS_SIDECAR
+    bakdir = _repair_backup_dir(memdir)
+    backups = [(bakdir / HOOKS_SIDECAR, raw)]
+    if rewritten:
+        backups.append((bakdir / INDEX_NAME, index[0]))
     try:
-        bak.parent.mkdir(parents=True, exist_ok=False)
-        bak.write_bytes(raw)
-        if bak.read_bytes() != raw:
-            raise OSError(f"{bak} does not read back as the sidecar")
+        bakdir.mkdir(parents=True, exist_ok=False)
+        for bak, content in backups:
+            bak.write_bytes(content)
+            if bak.read_bytes() != content:
+                raise OSError(f"{bak} does not read back as the original")
     except OSError as exc:
-        print(f"refused: backup to {bak} failed ({type(exc).__name__}: {exc}); "
-              f"{memdir / HOOKS_SIDECAR} left untouched", file=sys.stderr)
+        print(f"refused: backup to {bakdir} failed ({type(exc).__name__}: {exc}); "
+              f"{memdir / HOOKS_SIDECAR} and {memdir / INDEX_NAME} left untouched",
+              file=sys.stderr)
         return 1
-    print(f"backup: {bak}", file=out)
+    for bak, _content in backups:
+        print(f"backup: {bak}", file=out)
     try:
         _store_sidecar(memdir, new)
     except OSError as exc:
         print(f"refused: writing {memdir / HOOKS_SIDECAR} failed "
-              f"({type(exc).__name__}: {exc}); the old sidecar is intact and "
-              f"backed up at {bak}", file=sys.stderr)
+              f"({type(exc).__name__}: {exc}); the old sidecar and index are "
+              f"intact and backed up in {bakdir}", file=sys.stderr)
         return 1
-    print(f"applied: dropped {dropped} key(s), restored {len(wanted)}; "
-          f"{len(new)} hook(s) remain", file=out)
+    if rewritten:
+        try:
+            _atomic_write_text(memdir, INDEX_NAME, index[1])
+        except OSError as exc:
+            # The sidecar is already repaired; the stale index lines would win
+            # the next `write` back (bug-199), so this is a failure, by name.
+            print(f"refused: {memdir / HOOKS_SIDECAR} was repaired but writing "
+                  f"{memdir / INDEX_NAME} failed ({type(exc).__name__}: {exc}); the "
+                  f"old index is intact -- copy {bakdir / HOOKS_SIDECAR} back "
+                  f"before the next write, which would let the stale lines win", file=sys.stderr)
+            return 1
+    print(f"applied: dropped {dropped} key(s), restored {len(wanted)}, rewrote "
+          f"{len(rewritten)} {INDEX_NAME} line(s); {len(new)} hook(s) remain", file=out)
     return 0
 
 

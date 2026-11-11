@@ -1,0 +1,535 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/7efc36ce-3694-46b6-b30c-31160ae25396/scratchpad/sim3/src/refmatrix as checked-hash (bug-037)
+........................................................................ [ 30%]
+........................................................................ [ 60%]
+...........F.......F.F.F.............F.F.F.F.F.F.F.F.F.................. [ 90%]
+........................                                                 [100%]
+=================================== FAILURES ===================================
+_ test_fu_hooks_a_hook_deleted_from_a_line_with_room_is_cleared_marker_off_as_at_head _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-k0bexsaa/memory')
+
+    def test_fu_hooks_a_hook_deleted_from_a_line_with_room_is_cleared_marker_off_as_at_head(memdir):
+        """Marker-off keeps HEAD 61b3bde's hook-clear exactly: the same two renders (write, user
+        deletes the hook, write) through HEAD's code and through ours give the same index AND the
+        same sidecar bytes."""
+>       head = _head_memory_index()
+               ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_index_layout.py:963: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _head_memory_index():
+        """HEAD 61b3bde's own `memory_index` (stdlib-only), loaded from git -- the reference the
+        marker-off clear must match byte for byte (ADR-0005 #marker)."""
+        import importlib.util
+        src = subprocess.run(["git", "-C", str(REPO), "show",
+                              f"{HEAD_SHA}:src/refmatrix/memory_index.py"],
+                             capture_output=True, text=True, timeout=30)
+>       assert src.returncode == 0, f"cannot read {HEAD_SHA}'s memory_index: {src.stderr}"
+E       AssertionError: cannot read 61b3bde's memory_index: fatal: not a git repository (or any of the parent directories): .git
+E         
+E       assert 128 == 0
+E        +  where 128 = CompletedProcess(args=['git', '-C', '/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/7efc36ce-3694-46b6-...index.py'], returncode=128, stdout='', stderr='fatal: not a git repository (or any of the parent directories): .git\n').returncode
+
+tests/test_memory_index_layout.py:947: AssertionError
+_ test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[edit-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-l9mwmcp1/memory')
+organised = False, shape = 'edit'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value(memdir, organised, shape):
+        """r3 #s-1, the auditor's edge_b probe: sidecar value "the curated hook a human wrote for
+        this memory", the user shortens the line to `the curated hook…`. The line had room for
+        the whole value, so the edit is the user's: it replaces the value, as at HEAD 61b3bde. At
+        c9a035e the next write put the old full hook back in the index and the sidecar and said
+        nothing. Marker-off: index AND sidecar bytes equal 61b3bde's own write."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "curated", SHORT, shape)
+        assert len(SHORT) <= _room(link_part)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        assert sidecar(memdir).get(key) == hook, \
+            f"{shape}: the hand-shortened hook was reverted to the sidecar value: {sidecar(memdir)}"
+        assert _line_for(text, rel) == f"{link_part} — {hook}", text
+        assert [e.hook for e in mi.collect(memdir) if e.rel == rel] == [hook]
+        if twin is not None:
+>           _head_memory_index().write(twin, out=io.StringIO())
+            ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_index_layout.py:1173: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _head_memory_index():
+        """HEAD 61b3bde's own `memory_index` (stdlib-only), loaded from git -- the reference the
+        marker-off clear must match byte for byte (ADR-0005 #marker)."""
+        import importlib.util
+        src = subprocess.run(["git", "-C", str(REPO), "show",
+                              f"{HEAD_SHA}:src/refmatrix/memory_index.py"],
+                             capture_output=True, text=True, timeout=30)
+>       assert src.returncode == 0, f"cannot read {HEAD_SHA}'s memory_index: {src.stderr}"
+E       AssertionError: cannot read 61b3bde's memory_index: fatal: not a git repository (or any of the parent directories): .git
+E         
+E       assert 128 == 0
+E        +  where 128 = CompletedProcess(args=['git', '-C', '/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/7efc36ce-3694-46b6-...index.py'], returncode=128, stdout='', stderr='fatal: not a git repository (or any of the parent directories): .git\n').returncode
+
+tests/test_memory_index_layout.py:947: AssertionError
+_ test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[cut-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-0icinedd/memory')
+organised = False, shape = 'cut'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value(memdir, organised, shape):
+        """r3 #s-1, the auditor's edge_b probe: sidecar value "the curated hook a human wrote for
+        this memory", the user shortens the line to `the curated hook…`. The line had room for
+        the whole value, so the edit is the user's: it replaces the value, as at HEAD 61b3bde. At
+        c9a035e the next write put the old full hook back in the index and the sidecar and said
+        nothing. Marker-off: index AND sidecar bytes equal 61b3bde's own write."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "curated", SHORT, shape)
+        assert len(SHORT) <= _room(link_part)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        assert sidecar(memdir).get(key) == hook, \
+            f"{shape}: the hand-shortened hook was reverted to the sidecar value: {sidecar(memdir)}"
+        assert _line_for(text, rel) == f"{link_part} — {hook}", text
+        assert [e.hook for e in mi.collect(memdir) if e.rel == rel] == [hook]
+        if twin is not None:
+>           _head_memory_index().write(twin, out=io.StringIO())
+            ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_index_layout.py:1173: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _head_memory_index():
+        """HEAD 61b3bde's own `memory_index` (stdlib-only), loaded from git -- the reference the
+        marker-off clear must match byte for byte (ADR-0005 #marker)."""
+        import importlib.util
+        src = subprocess.run(["git", "-C", str(REPO), "show",
+                              f"{HEAD_SHA}:src/refmatrix/memory_index.py"],
+                             capture_output=True, text=True, timeout=30)
+>       assert src.returncode == 0, f"cannot read {HEAD_SHA}'s memory_index: {src.stderr}"
+E       AssertionError: cannot read 61b3bde's memory_index: fatal: not a git repository (or any of the parent directories): .git
+E         
+E       assert 128 == 0
+E        +  where 128 = CompletedProcess(args=['git', '-C', '/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/7efc36ce-3694-46b6-...index.py'], returncode=128, stdout='', stderr='fatal: not a git repository (or any of the parent directories): .git\n').returncode
+
+tests/test_memory_index_layout.py:947: AssertionError
+_ test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[bare-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-lqsgg8q4/memory')
+organised = False, shape = 'bare'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value(memdir, organised, shape):
+        """r3 #s-1, the auditor's edge_b probe: sidecar value "the curated hook a human wrote for
+        this memory", the user shortens the line to `the curated hook…`. The line had room for
+        the whole value, so the edit is the user's: it replaces the value, as at HEAD 61b3bde. At
+        c9a035e the next write put the old full hook back in the index and the sidecar and said
+        nothing. Marker-off: index AND sidecar bytes equal 61b3bde's own write."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "curated", SHORT, shape)
+        assert len(SHORT) <= _room(link_part)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        assert sidecar(memdir).get(key) == hook, \
+            f"{shape}: the hand-shortened hook was reverted to the sidecar value: {sidecar(memdir)}"
+        assert _line_for(text, rel) == f"{link_part} — {hook}", text
+        assert [e.hook for e in mi.collect(memdir) if e.rel == rel] == [hook]
+        if twin is not None:
+>           _head_memory_index().write(twin, out=io.StringIO())
+            ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_index_layout.py:1173: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _head_memory_index():
+        """HEAD 61b3bde's own `memory_index` (stdlib-only), loaded from git -- the reference the
+        marker-off clear must match byte for byte (ADR-0005 #marker)."""
+        import importlib.util
+        src = subprocess.run(["git", "-C", str(REPO), "show",
+                              f"{HEAD_SHA}:src/refmatrix/memory_index.py"],
+                             capture_output=True, text=True, timeout=30)
+>       assert src.returncode == 0, f"cannot read {HEAD_SHA}'s memory_index: {src.stderr}"
+E       AssertionError: cannot read 61b3bde's memory_index: fatal: not a git repository (or any of the parent directories): .git
+E         
+E       assert 128 == 0
+E        +  where 128 = CompletedProcess(args=['git', '-C', '/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/7efc36ce-3694-46b6-...index.py'], returncode=128, stdout='', stderr='fatal: not a git repository (or any of the parent directories): .git\n').returncode
+
+tests/test_memory_index_layout.py:947: AssertionError
+_ test_r3_room_guard_no_existing_value_the_index_hook_is_taken[room-edit-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-4s1biyqb/memory')
+organised = False, value = 'the curated hook a human wrote for this memory'
+shape = 'edit'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("value", [SHORT, LONG_HOOK], ids=["room", "no-room"])
+    def test_r3_room_guard_no_existing_value_the_index_hook_is_taken(memdir, organised, value,
+                                                                     shape):
+        """Guard (GREEN at c9a035e): with no sidecar value and no derived prose there is nothing
+        to keep, so the index hook is taken whatever the room. Marker-off equals 61b3bde."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "none", value, shape)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        assert sidecar(memdir).get(key) == hook, sidecar(memdir)
+        assert _line_for(text, rel) == f"{link_part} — {hook}", text
+        if twin is not None:
+>           _head_memory_index().write(twin, out=io.StringIO())
+            ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_index_layout.py:1215: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _head_memory_index():
+        """HEAD 61b3bde's own `memory_index` (stdlib-only), loaded from git -- the reference the
+        marker-off clear must match byte for byte (ADR-0005 #marker)."""
+        import importlib.util
+        src = subprocess.run(["git", "-C", str(REPO), "show",
+                              f"{HEAD_SHA}:src/refmatrix/memory_index.py"],
+                             capture_output=True, text=True, timeout=30)
+>       assert src.returncode == 0, f"cannot read {HEAD_SHA}'s memory_index: {src.stderr}"
+E       AssertionError: cannot read 61b3bde's memory_index: fatal: not a git repository (or any of the parent directories): .git
+E         
+E       assert 128 == 0
+E        +  where 128 = CompletedProcess(args=['git', '-C', '/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/7efc36ce-3694-46b6-...index.py'], returncode=128, stdout='', stderr='fatal: not a git repository (or any of the parent directories): .git\n').returncode
+
+tests/test_memory_index_layout.py:947: AssertionError
+_ test_r3_room_guard_no_existing_value_the_index_hook_is_taken[room-cut-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-f0k9lhkt/memory')
+organised = False, value = 'the curated hook a human wrote for this memory'
+shape = 'cut'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("value", [SHORT, LONG_HOOK], ids=["room", "no-room"])
+    def test_r3_room_guard_no_existing_value_the_index_hook_is_taken(memdir, organised, value,
+                                                                     shape):
+        """Guard (GREEN at c9a035e): with no sidecar value and no derived prose there is nothing
+        to keep, so the index hook is taken whatever the room. Marker-off equals 61b3bde."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "none", value, shape)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        assert sidecar(memdir).get(key) == hook, sidecar(memdir)
+        assert _line_for(text, rel) == f"{link_part} — {hook}", text
+        if twin is not None:
+>           _head_memory_index().write(twin, out=io.StringIO())
+            ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_index_layout.py:1215: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _head_memory_index():
+        """HEAD 61b3bde's own `memory_index` (stdlib-only), loaded from git -- the reference the
+        marker-off clear must match byte for byte (ADR-0005 #marker)."""
+        import importlib.util
+        src = subprocess.run(["git", "-C", str(REPO), "show",
+                              f"{HEAD_SHA}:src/refmatrix/memory_index.py"],
+                             capture_output=True, text=True, timeout=30)
+>       assert src.returncode == 0, f"cannot read {HEAD_SHA}'s memory_index: {src.stderr}"
+E       AssertionError: cannot read 61b3bde's memory_index: fatal: not a git repository (or any of the parent directories): .git
+E         
+E       assert 128 == 0
+E        +  where 128 = CompletedProcess(args=['git', '-C', '/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/7efc36ce-3694-46b6-...index.py'], returncode=128, stdout='', stderr='fatal: not a git repository (or any of the parent directories): .git\n').returncode
+
+tests/test_memory_index_layout.py:947: AssertionError
+_ test_r3_room_guard_no_existing_value_the_index_hook_is_taken[room-bare-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-4l0592oc/memory')
+organised = False, value = 'the curated hook a human wrote for this memory'
+shape = 'bare'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("value", [SHORT, LONG_HOOK], ids=["room", "no-room"])
+    def test_r3_room_guard_no_existing_value_the_index_hook_is_taken(memdir, organised, value,
+                                                                     shape):
+        """Guard (GREEN at c9a035e): with no sidecar value and no derived prose there is nothing
+        to keep, so the index hook is taken whatever the room. Marker-off equals 61b3bde."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "none", value, shape)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        assert sidecar(memdir).get(key) == hook, sidecar(memdir)
+        assert _line_for(text, rel) == f"{link_part} — {hook}", text
+        if twin is not None:
+>           _head_memory_index().write(twin, out=io.StringIO())
+            ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_index_layout.py:1215: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _head_memory_index():
+        """HEAD 61b3bde's own `memory_index` (stdlib-only), loaded from git -- the reference the
+        marker-off clear must match byte for byte (ADR-0005 #marker)."""
+        import importlib.util
+        src = subprocess.run(["git", "-C", str(REPO), "show",
+                              f"{HEAD_SHA}:src/refmatrix/memory_index.py"],
+                             capture_output=True, text=True, timeout=30)
+>       assert src.returncode == 0, f"cannot read {HEAD_SHA}'s memory_index: {src.stderr}"
+E       AssertionError: cannot read 61b3bde's memory_index: fatal: not a git repository (or any of the parent directories): .git
+E         
+E       assert 128 == 0
+E        +  where 128 = CompletedProcess(args=['git', '-C', '/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/7efc36ce-3694-46b6-...index.py'], returncode=128, stdout='', stderr='fatal: not a git repository (or any of the parent directories): .git\n').returncode
+
+tests/test_memory_index_layout.py:947: AssertionError
+_ test_r3_room_guard_no_existing_value_the_index_hook_is_taken[no-room-edit-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-xhx29k3c/memory')
+organised = False
+value = 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactly what real indexes look like'
+shape = 'edit'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("value", [SHORT, LONG_HOOK], ids=["room", "no-room"])
+    def test_r3_room_guard_no_existing_value_the_index_hook_is_taken(memdir, organised, value,
+                                                                     shape):
+        """Guard (GREEN at c9a035e): with no sidecar value and no derived prose there is nothing
+        to keep, so the index hook is taken whatever the room. Marker-off equals 61b3bde."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "none", value, shape)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        assert sidecar(memdir).get(key) == hook, sidecar(memdir)
+        assert _line_for(text, rel) == f"{link_part} — {hook}", text
+        if twin is not None:
+>           _head_memory_index().write(twin, out=io.StringIO())
+            ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_index_layout.py:1215: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _head_memory_index():
+        """HEAD 61b3bde's own `memory_index` (stdlib-only), loaded from git -- the reference the
+        marker-off clear must match byte for byte (ADR-0005 #marker)."""
+        import importlib.util
+        src = subprocess.run(["git", "-C", str(REPO), "show",
+                              f"{HEAD_SHA}:src/refmatrix/memory_index.py"],
+                             capture_output=True, text=True, timeout=30)
+>       assert src.returncode == 0, f"cannot read {HEAD_SHA}'s memory_index: {src.stderr}"
+E       AssertionError: cannot read 61b3bde's memory_index: fatal: not a git repository (or any of the parent directories): .git
+E         
+E       assert 128 == 0
+E        +  where 128 = CompletedProcess(args=['git', '-C', '/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/7efc36ce-3694-46b6-...index.py'], returncode=128, stdout='', stderr='fatal: not a git repository (or any of the parent directories): .git\n').returncode
+
+tests/test_memory_index_layout.py:947: AssertionError
+_ test_r3_room_guard_no_existing_value_the_index_hook_is_taken[no-room-cut-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-aa5qezol/memory')
+organised = False
+value = 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactly what real indexes look like'
+shape = 'cut'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("value", [SHORT, LONG_HOOK], ids=["room", "no-room"])
+    def test_r3_room_guard_no_existing_value_the_index_hook_is_taken(memdir, organised, value,
+                                                                     shape):
+        """Guard (GREEN at c9a035e): with no sidecar value and no derived prose there is nothing
+        to keep, so the index hook is taken whatever the room. Marker-off equals 61b3bde."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "none", value, shape)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        assert sidecar(memdir).get(key) == hook, sidecar(memdir)
+        assert _line_for(text, rel) == f"{link_part} — {hook}", text
+        if twin is not None:
+>           _head_memory_index().write(twin, out=io.StringIO())
+            ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_index_layout.py:1215: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _head_memory_index():
+        """HEAD 61b3bde's own `memory_index` (stdlib-only), loaded from git -- the reference the
+        marker-off clear must match byte for byte (ADR-0005 #marker)."""
+        import importlib.util
+        src = subprocess.run(["git", "-C", str(REPO), "show",
+                              f"{HEAD_SHA}:src/refmatrix/memory_index.py"],
+                             capture_output=True, text=True, timeout=30)
+>       assert src.returncode == 0, f"cannot read {HEAD_SHA}'s memory_index: {src.stderr}"
+E       AssertionError: cannot read 61b3bde's memory_index: fatal: not a git repository (or any of the parent directories): .git
+E         
+E       assert 128 == 0
+E        +  where 128 = CompletedProcess(args=['git', '-C', '/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/7efc36ce-3694-46b6-...index.py'], returncode=128, stdout='', stderr='fatal: not a git repository (or any of the parent directories): .git\n').returncode
+
+tests/test_memory_index_layout.py:947: AssertionError
+_ test_r3_room_guard_no_existing_value_the_index_hook_is_taken[no-room-bare-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-80fc5ixv/memory')
+organised = False
+value = 'a curated hook that runs on and on, well past the line cap, because the human who wrote it wanted the whole story in the index rather than in the memory itself, which is exactly what real indexes look like'
+shape = 'bare'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    @pytest.mark.parametrize("value", [SHORT, LONG_HOOK], ids=["room", "no-room"])
+    def test_r3_room_guard_no_existing_value_the_index_hook_is_taken(memdir, organised, value,
+                                                                     shape):
+        """Guard (GREEN at c9a035e): with no sidecar value and no derived prose there is nothing
+        to keep, so the index hook is taken whatever the room. Marker-off equals 61b3bde."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "none", value, shape)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        assert sidecar(memdir).get(key) == hook, sidecar(memdir)
+        assert _line_for(text, rel) == f"{link_part} — {hook}", text
+        if twin is not None:
+>           _head_memory_index().write(twin, out=io.StringIO())
+            ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_index_layout.py:1215: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _head_memory_index():
+        """HEAD 61b3bde's own `memory_index` (stdlib-only), loaded from git -- the reference the
+        marker-off clear must match byte for byte (ADR-0005 #marker)."""
+        import importlib.util
+        src = subprocess.run(["git", "-C", str(REPO), "show",
+                              f"{HEAD_SHA}:src/refmatrix/memory_index.py"],
+                             capture_output=True, text=True, timeout=30)
+>       assert src.returncode == 0, f"cannot read {HEAD_SHA}'s memory_index: {src.stderr}"
+E       AssertionError: cannot read 61b3bde's memory_index: fatal: not a git repository (or any of the parent directories): .git
+E         
+E       assert 128 == 0
+E        +  where 128 = CompletedProcess(args=['git', '-C', '/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/7efc36ce-3694-46b6-...index.py'], returncode=128, stdout='', stderr='fatal: not a git repository (or any of the parent directories): .git\n').returncode
+
+tests/test_memory_index_layout.py:947: AssertionError
+_ test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[edit-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-ib_lbkl5/memory')
+organised = False, shape = 'edit'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken(memdir, organised,
+                                                                               shape):
+        """Guard (GREEN at c9a035e): a derived value that fits the line, shortened by hand, is the
+        user's edit -- taken, as at HEAD 61b3bde (marker-off bytes equal 61b3bde's write)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "derived", SHORT, shape)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        assert sidecar(memdir).get(key) == hook, sidecar(memdir)
+        assert _line_for(text, rel) == f"{link_part} — {hook}", text
+        if twin is not None:
+>           _head_memory_index().write(twin, out=io.StringIO())
+            ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_index_layout.py:1234: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _head_memory_index():
+        """HEAD 61b3bde's own `memory_index` (stdlib-only), loaded from git -- the reference the
+        marker-off clear must match byte for byte (ADR-0005 #marker)."""
+        import importlib.util
+        src = subprocess.run(["git", "-C", str(REPO), "show",
+                              f"{HEAD_SHA}:src/refmatrix/memory_index.py"],
+                             capture_output=True, text=True, timeout=30)
+>       assert src.returncode == 0, f"cannot read {HEAD_SHA}'s memory_index: {src.stderr}"
+E       AssertionError: cannot read 61b3bde's memory_index: fatal: not a git repository (or any of the parent directories): .git
+E         
+E       assert 128 == 0
+E        +  where 128 = CompletedProcess(args=['git', '-C', '/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/7efc36ce-3694-46b6-...index.py'], returncode=128, stdout='', stderr='fatal: not a git repository (or any of the parent directories): .git\n').returncode
+
+tests/test_memory_index_layout.py:947: AssertionError
+_ test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[cut-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-fwkhdyai/memory')
+organised = False, shape = 'cut'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken(memdir, organised,
+                                                                               shape):
+        """Guard (GREEN at c9a035e): a derived value that fits the line, shortened by hand, is the
+        user's edit -- taken, as at HEAD 61b3bde (marker-off bytes equal 61b3bde's write)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "derived", SHORT, shape)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        assert sidecar(memdir).get(key) == hook, sidecar(memdir)
+        assert _line_for(text, rel) == f"{link_part} — {hook}", text
+        if twin is not None:
+>           _head_memory_index().write(twin, out=io.StringIO())
+            ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_index_layout.py:1234: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _head_memory_index():
+        """HEAD 61b3bde's own `memory_index` (stdlib-only), loaded from git -- the reference the
+        marker-off clear must match byte for byte (ADR-0005 #marker)."""
+        import importlib.util
+        src = subprocess.run(["git", "-C", str(REPO), "show",
+                              f"{HEAD_SHA}:src/refmatrix/memory_index.py"],
+                             capture_output=True, text=True, timeout=30)
+>       assert src.returncode == 0, f"cannot read {HEAD_SHA}'s memory_index: {src.stderr}"
+E       AssertionError: cannot read 61b3bde's memory_index: fatal: not a git repository (or any of the parent directories): .git
+E         
+E       assert 128 == 0
+E        +  where 128 = CompletedProcess(args=['git', '-C', '/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/7efc36ce-3694-46b6-...index.py'], returncode=128, stdout='', stderr='fatal: not a git repository (or any of the parent directories): .git\n').returncode
+
+tests/test_memory_index_layout.py:947: AssertionError
+_ test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[bare-marker-off] _
+
+memdir = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-zsgtdej9/memory')
+organised = False, shape = 'bare'
+
+    @_layouts()
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken(memdir, organised,
+                                                                               shape):
+        """Guard (GREEN at c9a035e): a derived value that fits the line, shortened by hand, is the
+        user's edit -- taken, as at HEAD 61b3bde (marker-off bytes equal 61b3bde's write)."""
+        rel, key, link_part, hook = _room_case(memdir, organised, "derived", SHORT, shape)
+        twin = None if organised else _twin_of(memdir)
+        mi.write(memdir, out=io.StringIO())
+        text = (memdir / "MEMORY.md").read_text(encoding="utf-8")
+        assert sidecar(memdir).get(key) == hook, sidecar(memdir)
+        assert _line_for(text, rel) == f"{link_part} — {hook}", text
+        if twin is not None:
+>           _head_memory_index().write(twin, out=io.StringIO())
+            ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_memory_index_layout.py:1234: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _head_memory_index():
+        """HEAD 61b3bde's own `memory_index` (stdlib-only), loaded from git -- the reference the
+        marker-off clear must match byte for byte (ADR-0005 #marker)."""
+        import importlib.util
+        src = subprocess.run(["git", "-C", str(REPO), "show",
+                              f"{HEAD_SHA}:src/refmatrix/memory_index.py"],
+                             capture_output=True, text=True, timeout=30)
+>       assert src.returncode == 0, f"cannot read {HEAD_SHA}'s memory_index: {src.stderr}"
+E       AssertionError: cannot read 61b3bde's memory_index: fatal: not a git repository (or any of the parent directories): .git
+E         
+E       assert 128 == 0
+E        +  where 128 = CompletedProcess(args=['git', '-C', '/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/7efc36ce-3694-46b6-...index.py'], returncode=128, stdout='', stderr='fatal: not a git repository (or any of the parent directories): .git\n').returncode
+
+tests/test_memory_index_layout.py:947: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_index_layout.py::test_fu_hooks_a_hook_deleted_from_a_line_with_room_is_cleared_marker_off_as_at_head
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[edit-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[cut-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_a_prefix_on_a_line_that_had_room_replaces_the_value[bare-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[room-edit-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[room-cut-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[room-bare-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[no-room-edit-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[no-room-cut-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_guard_no_existing_value_the_index_hook_is_taken[no-room-bare-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[edit-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[cut-marker-off]
+FAILED tests/test_memory_index_layout.py::test_r3_room_guard_derived_on_a_line_with_room_the_index_hook_is_taken[bare-marker-off]
+13 failed, 227 passed in 54.54s

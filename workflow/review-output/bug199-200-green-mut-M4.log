@@ -1,0 +1,89 @@
+...FFFFF..........                                                       [100%]
+=================================== FAILURES ===================================
+_________ test_brief_refuses_recalls_scope_before_the_daemon[pattern] __________
+
+op_calls = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-617/test_brief_refuses_r...sco0/proj/.refmatrix'), [('memory_brief', {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj'})])
+old = 'pattern'
+
+    @pytest.mark.parametrize("old", ["pattern", "memory", "both", "project"])
+    def test_brief_refuses_recalls_scope_before_the_daemon(op_calls, old):
+        """bug-200 m-1 (ch-bsd bug-197/198 r1, 2026-11-10): the OLD key `scope=pattern` was
+        silently ignored and answered from the MEMORY corpus. Recall's `scope` sent with the
+        brief action is refused BY NAME, pointing at `compile_scope`, before any daemon call --
+        this replaces the bug-198 test that pinned the silent ignore."""
+        root, seen = op_calls
+>       with pytest.raises(verbs.VerbArgsError) as ei:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'refmatrix.verbs.VerbArgsError'>
+
+tests/test_bug198_brief_compile_scope.py:86: Failed
+__________ test_brief_refuses_recalls_scope_before_the_daemon[memory] __________
+
+op_calls = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-617/test_brief_refuses_r...sco1/proj/.refmatrix'), [('memory_brief', {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj'})])
+old = 'memory'
+
+    @pytest.mark.parametrize("old", ["pattern", "memory", "both", "project"])
+    def test_brief_refuses_recalls_scope_before_the_daemon(op_calls, old):
+        """bug-200 m-1 (ch-bsd bug-197/198 r1, 2026-11-10): the OLD key `scope=pattern` was
+        silently ignored and answered from the MEMORY corpus. Recall's `scope` sent with the
+        brief action is refused BY NAME, pointing at `compile_scope`, before any daemon call --
+        this replaces the bug-198 test that pinned the silent ignore."""
+        root, seen = op_calls
+>       with pytest.raises(verbs.VerbArgsError) as ei:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'refmatrix.verbs.VerbArgsError'>
+
+tests/test_bug198_brief_compile_scope.py:86: Failed
+___________ test_brief_refuses_recalls_scope_before_the_daemon[both] ___________
+
+op_calls = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-617/test_brief_refuses_r...sco2/proj/.refmatrix'), [('memory_brief', {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj'})])
+old = 'both'
+
+    @pytest.mark.parametrize("old", ["pattern", "memory", "both", "project"])
+    def test_brief_refuses_recalls_scope_before_the_daemon(op_calls, old):
+        """bug-200 m-1 (ch-bsd bug-197/198 r1, 2026-11-10): the OLD key `scope=pattern` was
+        silently ignored and answered from the MEMORY corpus. Recall's `scope` sent with the
+        brief action is refused BY NAME, pointing at `compile_scope`, before any daemon call --
+        this replaces the bug-198 test that pinned the silent ignore."""
+        root, seen = op_calls
+>       with pytest.raises(verbs.VerbArgsError) as ei:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'refmatrix.verbs.VerbArgsError'>
+
+tests/test_bug198_brief_compile_scope.py:86: Failed
+_________ test_brief_refuses_recalls_scope_before_the_daemon[project] __________
+
+op_calls = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-617/test_brief_refuses_r...sco3/proj/.refmatrix'), [('memory_brief', {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj'})])
+old = 'project'
+
+    @pytest.mark.parametrize("old", ["pattern", "memory", "both", "project"])
+    def test_brief_refuses_recalls_scope_before_the_daemon(op_calls, old):
+        """bug-200 m-1 (ch-bsd bug-197/198 r1, 2026-11-10): the OLD key `scope=pattern` was
+        silently ignored and answered from the MEMORY corpus. Recall's `scope` sent with the
+        brief action is refused BY NAME, pointing at `compile_scope`, before any daemon call --
+        this replaces the bug-198 test that pinned the silent ignore."""
+        root, seen = op_calls
+>       with pytest.raises(verbs.VerbArgsError) as ei:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'refmatrix.verbs.VerbArgsError'>
+
+tests/test_bug198_brief_compile_scope.py:86: Failed
+_______________ test_the_mcp_tool_refuses_recalls_scope_on_brief _______________
+
+op_calls = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-617/test_the_mcp_tool_re...eca0/proj/.refmatrix'), [('memory_brief', {'min_dates': 3, 'min_members': 3, 'min_mentions': 4, 'partition': 'proj'})])
+
+    def test_the_mcp_tool_refuses_recalls_scope_on_brief(op_calls):
+        """The transport path (`Verb.run`, which MCP calls) refuses the old key the same way."""
+        root, seen = op_calls
+>       with pytest.raises(verbs.VerbArgsError) as ei:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'refmatrix.verbs.VerbArgsError'>
+
+tests/test_bug198_brief_compile_scope.py:96: Failed
+=========================== short test summary info ============================
+FAILED tests/test_bug198_brief_compile_scope.py::test_brief_refuses_recalls_scope_before_the_daemon[pattern]
+FAILED tests/test_bug198_brief_compile_scope.py::test_brief_refuses_recalls_scope_before_the_daemon[memory]
+FAILED tests/test_bug198_brief_compile_scope.py::test_brief_refuses_recalls_scope_before_the_daemon[both]
+FAILED tests/test_bug198_brief_compile_scope.py::test_brief_refuses_recalls_scope_before_the_daemon[project]
+FAILED tests/test_bug198_brief_compile_scope.py::test_the_mcp_tool_refuses_recalls_scope_on_brief
+5 failed, 13 passed in 1.09s

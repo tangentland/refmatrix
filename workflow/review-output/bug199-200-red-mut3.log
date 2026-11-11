@@ -1,0 +1,8 @@
+== M3: --restore value never written
+E       AssertionError: assert 'A hand-writt...renderer cut…' == 'A hand-writt... whole of it.'
+E         
+E         Skipping 58 identical leading characters in diff, use -v to show
+E         - nderer cut it short, and git still had the whole of it.
+E         + nderer cut…
+FAILED tests/test_bug199_repair_rewrites_index.py::test_a_restore_on_a_key_with_no_index_line_still_survives_the_write
+1 failed in 0.31s

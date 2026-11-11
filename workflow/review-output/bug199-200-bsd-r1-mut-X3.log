@@ -1,0 +1,92 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug199-200/src/refmatrix as checked-hash (bug-037)
+FFFF..........                                                           [100%]
+=================================== FAILURES ===================================
+__________ test_restore_rewrites_the_stale_index_line_on_apply[flat] ___________
+
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-690/test_restore_rewrite..., {'curated': ('project_curated.md', 'project_curated.md'), 'derived': ('feedback_derived.md', 'feedback_derived.md')})
+
+    def test_restore_rewrites_the_stale_index_line_on_apply(stale):
+        d, keys = stale
+        link, key = keys["curated"]
+        rc, out = _run(d, "--apply", restore=[f"{key}={RESTORED}"])
+        assert rc == 0, out
+>       assert _hook_of(d, link) == RESTORED, (
+            f"after --apply the index line must carry the restored hook, not the stale cut "
+            f"that the next write reads as a hand edit:\n{_index(d)}")
+E       AssertionError: after --apply the index line must carry the restored hook, not the stale cut that the next write reads as a hand edit:
+E         - [Derived](feedback_derived.md) — Fix one condition in a gate and then check every sibling condition too.
+E         - [Curated](project_curated.md) — Prose unrelated to the curated hook.
+E         - [Fine](project_fine.md) — an intact curated hook with no cut
+E         
+E       assert 'Prose unrela...curated hook.' == 'A hand-writt... whole of it.'
+E         
+E         - A hand-written hook whose full text is lost because the renderer cut it short, and git still had the whole of it.
+E         + Prose unrelated to the curated hook.
+
+tests/test_bug199_repair_rewrites_index.py:123: AssertionError
+________ test_restore_rewrites_the_stale_index_line_on_apply[organised] ________
+
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-690/test_restore_rewrite...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
+
+    def test_restore_rewrites_the_stale_index_line_on_apply(stale):
+        d, keys = stale
+        link, key = keys["curated"]
+        rc, out = _run(d, "--apply", restore=[f"{key}={RESTORED}"])
+        assert rc == 0, out
+>       assert _hook_of(d, link) == RESTORED, (
+            f"after --apply the index line must carry the restored hook, not the stale cut "
+            f"that the next write reads as a hand edit:\n{_index(d)}")
+E       AssertionError: after --apply the index line must carry the restored hook, not the stale cut that the next write reads as a hand edit:
+E         - [Derived](feedback/feedback_derived.md) — Fix one condition in a gate and then check every sibling condition too.
+E         - [Curated](project/project_curated.md) — Prose unrelated to the curated hook.
+E         
+E       assert 'Prose unrela...curated hook.' == 'A hand-writt... whole of it.'
+E         
+E         - A hand-written hook whose full text is lost because the renderer cut it short, and git still had the whole of it.
+E         + Prose unrelated to the curated hook.
+
+tests/test_bug199_repair_rewrites_index.py:123: AssertionError
+__________________ test_restore_survives_the_next_write[flat] __________________
+
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-690/test_restore_survive..., {'curated': ('project_curated.md', 'project_curated.md'), 'derived': ('feedback_derived.md', 'feedback_derived.md')})
+
+    def test_restore_survives_the_next_write(stale):
+        d, keys = stale
+        link, key = keys["curated"]
+        rc, out = _run(d, "--apply", restore=[f"{key}={RESTORED}"])
+        assert rc == 0, out
+        mi.write(d, out=_quiet())
+>       assert json.loads(_sidecar_bytes(d))[key] == RESTORED, (
+            "the next write reverted the restored value to the stale index cut (bug-199)")
+E       AssertionError: the next write reverted the restored value to the stale index cut (bug-199)
+E       assert 'Prose unrela...curated hook.' == 'A hand-writt... whole of it.'
+E         
+E         - A hand-written hook whose full text is lost because the renderer cut it short, and git still had the whole of it.
+E         + Prose unrelated to the curated hook.
+
+tests/test_bug199_repair_rewrites_index.py:135: AssertionError
+_______________ test_restore_survives_the_next_write[organised] ________________
+
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-690/test_restore_survive...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
+
+    def test_restore_survives_the_next_write(stale):
+        d, keys = stale
+        link, key = keys["curated"]
+        rc, out = _run(d, "--apply", restore=[f"{key}={RESTORED}"])
+        assert rc == 0, out
+        mi.write(d, out=_quiet())
+>       assert json.loads(_sidecar_bytes(d))[key] == RESTORED, (
+            "the next write reverted the restored value to the stale index cut (bug-199)")
+E       AssertionError: the next write reverted the restored value to the stale index cut (bug-199)
+E       assert 'Prose unrela...curated hook.' == 'A hand-writt... whole of it.'
+E         
+E         - A hand-written hook whose full text is lost because the renderer cut it short, and git still had the whole of it.
+E         + Prose unrelated to the curated hook.
+
+tests/test_bug199_repair_rewrites_index.py:135: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug199_repair_rewrites_index.py::test_restore_rewrites_the_stale_index_line_on_apply[flat]
+FAILED tests/test_bug199_repair_rewrites_index.py::test_restore_rewrites_the_stale_index_line_on_apply[organised]
+FAILED tests/test_bug199_repair_rewrites_index.py::test_restore_survives_the_next_write[flat]
+FAILED tests/test_bug199_repair_rewrites_index.py::test_restore_survives_the_next_write[organised]
+4 failed, 10 passed in 2.06s

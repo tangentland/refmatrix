@@ -1,0 +1,131 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug199-200/src/refmatrix as checked-hash (bug-037)
+.F.F.F.F.....F                                                           [100%]
+=================================== FAILURES ===================================
+________ test_restore_rewrites_the_stale_index_line_on_apply[organised] ________
+
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-689/test_restore_rewrite...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
+
+    def test_restore_rewrites_the_stale_index_line_on_apply(stale):
+        d, keys = stale
+        link, key = keys["curated"]
+        rc, out = _run(d, "--apply", restore=[f"{key}={RESTORED}"])
+        assert rc == 0, out
+>       assert _hook_of(d, link) == RESTORED, (
+            f"after --apply the index line must carry the restored hook, not the stale cut "
+            f"that the next write reads as a hand edit:\n{_index(d)}")
+E       AssertionError: after --apply the index line must carry the restored hook, not the stale cut that the next write reads as a hand edit:
+E         - [Derived](feedback/feedback_derived.md) — Fix one condition in a gate and then check…
+E         - [Curated](project/project_curated.md) — A hand-written hook whose full text is lost because the renderer cut…
+E         
+E       assert 'A hand-writt...renderer cut…' == 'A hand-writt... whole of it.'
+E         
+E         Skipping 58 identical leading characters in diff, use -v to show
+E         - nderer cut it short, and git still had the whole of it.
+E         + nderer cut…
+
+tests/test_bug199_repair_rewrites_index.py:123: AssertionError
+_______________ test_restore_survives_the_next_write[organised] ________________
+
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-689/test_restore_survive...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
+
+    def test_restore_survives_the_next_write(stale):
+        d, keys = stale
+        link, key = keys["curated"]
+        rc, out = _run(d, "--apply", restore=[f"{key}={RESTORED}"])
+        assert rc == 0, out
+        mi.write(d, out=_quiet())
+>       assert json.loads(_sidecar_bytes(d))[key] == RESTORED, (
+            "the next write reverted the restored value to the stale index cut (bug-199)")
+E       AssertionError: the next write reverted the restored value to the stale index cut (bug-199)
+E       assert 'A hand-writt...renderer cut…' == 'A hand-writt... whole of it.'
+E         
+E         Skipping 58 identical leading characters in diff, use -v to show
+E         - nderer cut it short, and git still had the whole of it.
+E         + nderer cut…
+
+tests/test_bug199_repair_rewrites_index.py:135: AssertionError
+_ test_dropped_derived_key_rewrites_its_line_to_the_full_derived_hook_on_apply[organised] _
+
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-689/test_dropped_derived...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
+
+    def test_dropped_derived_key_rewrites_its_line_to_the_full_derived_hook_on_apply(stale):
+        d, keys = stale
+        link, key = keys["derived"]
+        rc, out = _run(d, "--apply")
+        assert rc == 0, out
+        # Not pinned: whether the sidecar key stays absent or comes back holding the FULL derived
+        # text -- a fix that renders the index after the sidecar write re-saves it (bug-199 Fix
+        # column, option 2). Either way it must not hold the cut.
+        assert json.loads(_sidecar_bytes(d)).get(key) in (None, DERIVED_PROSE), out
+>       assert _hook_of(d, link) == DERIVED_PROSE, (
+            f"after --apply a dropped key's line must carry its derived hook:\n{_index(d)}")
+E       AssertionError: after --apply a dropped key's line must carry its derived hook:
+E         - [Derived](feedback/feedback_derived.md) — Fix one condition in a gate and then check…
+E         - [Curated](project/project_curated.md) — A hand-written hook whose full text is lost because the renderer cut…
+E         
+E       assert 'Fix one cond...d then check…' == 'Fix one cond...ondition too.'
+E         
+E         - Fix one condition in a gate and then check every sibling condition too.
+E         + Fix one condition in a gate and then check…
+
+tests/test_bug199_repair_rewrites_index.py:152: AssertionError
+_ test_dropped_derived_key_regains_the_full_hook_after_the_next_write[organised] _
+
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-689/test_dropped_derived...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
+
+    def test_dropped_derived_key_regains_the_full_hook_after_the_next_write(stale):
+        d, keys = stale
+        link, key = keys["derived"]
+        rc, out = _run(d, "--apply")
+        assert rc == 0, out
+        mi.write(d, out=_quiet())
+>       assert _hook_of(d, link) == DERIVED_PROSE, (
+            f"the next write put the stale derived cut back (bug-199):\n{_index(d)}")
+E       AssertionError: the next write put the stale derived cut back (bug-199):
+E         - [Derived](feedback/feedback_derived.md) — Fix one condition in a gate and then check…
+E         - [Curated](project/project_curated.md) — A hand-written hook whose full text is lost because the renderer cut…
+E         
+E       assert 'Fix one cond...d then check…' == 'Fix one cond...ondition too.'
+E         
+E         - Fix one condition in a gate and then check every sibling condition too.
+E         + Fix one condition in a gate and then check…
+
+tests/test_bug199_repair_rewrites_index.py:163: AssertionError
+____ test_apply_backs_the_pre_apply_index_up_beside_the_sidecar[organised] _____
+
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-689/test_apply_backs_the...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-689/test_apply_backs_the_pre_apply1/rmxhome')
+
+    def test_apply_backs_the_pre_apply_index_up_beside_the_sidecar(stale, rmx_home):
+        """`--apply` rewrites MEMORY.md, so it must first copy the index AS IT WAS into the same
+        backup dir as the sidecar (bug-199 Fix column). The GREEN mutation table's M3 -- drop the
+        MEMORY.md backup write -- survived every other test: an operator whose index rewrite went
+        wrong had the old sidecar back but no old index to restore."""
+        d, keys = stale
+        idx_before = (d / mi.INDEX_NAME).read_bytes()
+        side_before = _sidecar_bytes(d)
+        rc, out = _run(d, "--apply", restore=[f"{keys['curated'][1]}={RESTORED}"])
+        assert rc == 0, out
+>       assert (d / mi.INDEX_NAME).read_bytes() != idx_before, (
+            f"precondition: the apply rewrote the index, so there was something to back up:\n{out}")
+E       AssertionError: precondition: the apply rewrote the index, so there was something to back up:
+E           derived      feedback_derived
+E           curated-lost project_curated
+E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-689/test_apply_backs_the_pre_apply1/org/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
+E           restore      project_curated
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-689/test_apply_backs_the_pre_apply1/rmxhome/backups/memory-hooks/org-20261110T165425-077451000/.memory_hooks.json
+E         applied: dropped 1 key(s), restored 1, rewrote 0 MEMORY.md line(s); 1 hook(s) remain
+E         
+E       assert b'- [Derived](feedback/feedback_derived.md) \xe2\x80\x94 Fix one condition in a gate and then check\xe2\x80\xa6\n- [Cu...ct/project_curated.md) \xe2\x80\x94 A hand-written hook whose full text is lost because the renderer cut\xe2\x80\xa6\n' != b'- [Derived](feedback/feedback_derived.md) \xe2\x80\x94 Fix one condition in a gate and then check\xe2\x80\xa6\n- [Cu...ct/project_curated.md) \xe2\x80\x94 A hand-written hook whose full text is lost because the renderer cut\xe2\x80\xa6\n'
+E        +  where b'- [Derived](feedback/feedback_derived.md) \xe2\x80\x94 Fix one condition in a gate and then check\xe2\x80\xa6\n- [Cu...ct/project_curated.md) \xe2\x80\x94 A hand-written hook whose full text is lost because the renderer cut\xe2\x80\xa6\n' = read_bytes()
+E        +    where read_bytes = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-689/test_apply_backs_the_pre_apply1/org/memory') / 'MEMORY.md').read_bytes
+E        +      where 'MEMORY.md' = mi.INDEX_NAME
+
+tests/test_bug199_repair_rewrites_index.py:224: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug199_repair_rewrites_index.py::test_restore_rewrites_the_stale_index_line_on_apply[organised]
+FAILED tests/test_bug199_repair_rewrites_index.py::test_restore_survives_the_next_write[organised]
+FAILED tests/test_bug199_repair_rewrites_index.py::test_dropped_derived_key_rewrites_its_line_to_the_full_derived_hook_on_apply[organised]
+FAILED tests/test_bug199_repair_rewrites_index.py::test_dropped_derived_key_regains_the_full_hook_after_the_next_write[organised]
+FAILED tests/test_bug199_repair_rewrites_index.py::test_apply_backs_the_pre_apply_index_up_beside_the_sidecar[organised]
+5 failed, 9 passed in 2.10s

@@ -1,0 +1,94 @@
+== M3: MEMORY.md NOT backed up before the repair apply (backups.append of INDEX_NAME dropped)
+pyc-guard: recompiled 4 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug199-200/src/refmatrix as checked-hash (bug-037)
+............FF.......................                                    [100%]
+=================================== FAILURES ===================================
+_______ test_apply_backs_the_pre_apply_index_up_beside_the_sidecar[flat] _______
+
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-670/test_apply_backs_the..., {'curated': ('project_curated.md', 'project_curated.md'), 'derived': ('feedback_derived.md', 'feedback_derived.md')})
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-670/test_apply_backs_the_pre_apply0/rmxhome')
+
+    def test_apply_backs_the_pre_apply_index_up_beside_the_sidecar(stale, rmx_home):
+        """`--apply` rewrites MEMORY.md, so it must first copy the index AS IT WAS into the same
+        backup dir as the sidecar (bug-199 Fix column). The GREEN mutation table's M3 -- drop the
+        MEMORY.md backup write -- survived every other test: an operator whose index rewrite went
+        wrong had the old sidecar back but no old index to restore."""
+        d, keys = stale
+        idx_before = (d / mi.INDEX_NAME).read_bytes()
+        side_before = _sidecar_bytes(d)
+        rc, out = _run(d, "--apply", restore=[f"{keys['curated'][1]}={RESTORED}"])
+        assert rc == 0, out
+        assert (d / mi.INDEX_NAME).read_bytes() != idx_before, (
+            f"precondition: the apply rewrote the index, so there was something to back up:\n{out}")
+    
+        root = rmx_home / "backups" / "memory-hooks"
+        dirs = sorted(root.iterdir()) if root.is_dir() else []
+        assert len(dirs) == 1, f"one backup dir expected under {root}, got {dirs}\n{out}"
+        bakdir = dirs[0]
+        assert bakdir.name.startswith(f"{d.parent.name}-"), (
+            f"the backup dir is named for the project dir (`_repair_backup_dir`): {bakdir.name}")
+        bak_index = bakdir / mi.INDEX_NAME
+>       assert bak_index.is_file(), (
+            f"the pre-apply {mi.INDEX_NAME} must be backed up into {bakdir}; it holds "
+            f"{sorted(p.name for p in bakdir.iterdir())}\n{out}")
+E       AssertionError: the pre-apply MEMORY.md must be backed up into /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-670/test_apply_backs_the_pre_apply0/rmxhome/backups/memory-hooks/flat-20261110T164045-160357000; it holds ['.memory_hooks.json']
+E           derived      feedback_derived.md
+E           curated-lost project_curated.md
+E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-670/test_apply_backs_the_pre_apply0/flat/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
+E           restore      project_curated.md
+E           rewrite MEMORY.md line feedback_derived.md
+E           rewrite MEMORY.md line project_curated.md
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-670/test_apply_backs_the_pre_apply0/rmxhome/backups/memory-hooks/flat-20261110T164045-160357000/.memory_hooks.json
+E         applied: dropped 1 key(s), restored 1, rewrote 2 MEMORY.md line(s); 2 hook(s) remain
+E         
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-670/test_apply_backs_the_pre_apply0/rmxhome/backups/memory-hooks/flat-20261110T164045-160357000/MEMORY.md').is_file
+
+tests/test_bug199_repair_rewrites_index.py:234: AssertionError
+____ test_apply_backs_the_pre_apply_index_up_beside_the_sidecar[organised] _____
+
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-670/test_apply_backs_the...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-670/test_apply_backs_the_pre_apply1/rmxhome')
+
+    def test_apply_backs_the_pre_apply_index_up_beside_the_sidecar(stale, rmx_home):
+        """`--apply` rewrites MEMORY.md, so it must first copy the index AS IT WAS into the same
+        backup dir as the sidecar (bug-199 Fix column). The GREEN mutation table's M3 -- drop the
+        MEMORY.md backup write -- survived every other test: an operator whose index rewrite went
+        wrong had the old sidecar back but no old index to restore."""
+        d, keys = stale
+        idx_before = (d / mi.INDEX_NAME).read_bytes()
+        side_before = _sidecar_bytes(d)
+        rc, out = _run(d, "--apply", restore=[f"{keys['curated'][1]}={RESTORED}"])
+        assert rc == 0, out
+        assert (d / mi.INDEX_NAME).read_bytes() != idx_before, (
+            f"precondition: the apply rewrote the index, so there was something to back up:\n{out}")
+    
+        root = rmx_home / "backups" / "memory-hooks"
+        dirs = sorted(root.iterdir()) if root.is_dir() else []
+        assert len(dirs) == 1, f"one backup dir expected under {root}, got {dirs}\n{out}"
+        bakdir = dirs[0]
+        assert bakdir.name.startswith(f"{d.parent.name}-"), (
+            f"the backup dir is named for the project dir (`_repair_backup_dir`): {bakdir.name}")
+        bak_index = bakdir / mi.INDEX_NAME
+>       assert bak_index.is_file(), (
+            f"the pre-apply {mi.INDEX_NAME} must be backed up into {bakdir}; it holds "
+            f"{sorted(p.name for p in bakdir.iterdir())}\n{out}")
+E       AssertionError: the pre-apply MEMORY.md must be backed up into /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-670/test_apply_backs_the_pre_apply1/rmxhome/backups/memory-hooks/org-20261110T164045-314732000; it holds ['.memory_hooks.json']
+E           derived      feedback_derived
+E           curated-lost project_curated
+E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-670/test_apply_backs_the_pre_apply1/org/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
+E           restore      project_curated
+E           rewrite MEMORY.md line feedback/feedback_derived.md
+E           rewrite MEMORY.md line project/project_curated.md
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-670/test_apply_backs_the_pre_apply1/rmxhome/backups/memory-hooks/org-20261110T164045-314732000/.memory_hooks.json
+E         applied: dropped 1 key(s), restored 1, rewrote 2 MEMORY.md line(s); 1 hook(s) remain
+E         
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-670/test_apply_backs_the_pre_apply1/rmxhome/backups/memory-hooks/org-20261110T164045-314732000/MEMORY.md').is_file
+
+tests/test_bug199_repair_rewrites_index.py:234: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug199_repair_rewrites_index.py::test_apply_backs_the_pre_apply_index_up_beside_the_sidecar[flat]
+FAILED tests/test_bug199_repair_rewrites_index.py::test_apply_backs_the_pre_apply_index_up_beside_the_sidecar[organised]
+2 failed, 35 passed in 4.90s

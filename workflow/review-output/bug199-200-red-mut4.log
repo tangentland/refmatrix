@@ -1,0 +1,9 @@
+== M4: dry-run rewrites the affected index lines (sidecar untouched)
+E       AssertionError: a dry-run must not touch the index
+E       assert b'- [Derived]...with no cut\n' == b'- [Derived]...with no cut\n'
+E         
+E         At index 187 diff: b' ' != b'\xe2'
+E         Use -v to get more diff
+E       AssertionError: a dry-run must not touch the index
+E       assert b'- [Derived]...hole of it.\n' == b'- [Derived]...xe2\x80\xa6\n'
+E         

@@ -1,0 +1,6 @@
+== M2: brief sent the default compile scope under a --scope pattern plan
+E       AssertionError: `rmx memory brief --compile --scope pattern --json` exited 1:
+E         
+E       assert 1 == 0
+FAILED tests/test_bug200_brief_compile_real_daemon.py::test_cli_brief_compile_scope_pattern_plans_and_briefs_the_pattern_corpus
+1 failed, 1 passed in 12.49s
