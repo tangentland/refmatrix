@@ -910,12 +910,21 @@ def test_ac5_mistyped_savestate_not_named_on_the_packed_argv(fx, monkeypatch):
 
 
 def test_ac6_no_subject_rows_on_the_per_prompt_argv(fx):
-    """AC-6 (R2): 0 subject rows on the per-prompt argv. HEAD records ≥ 1."""
-    r = _q(fx)
-    _ok(r, "per-prompt argv")
-    named = s.names_in_payload(r.stdout)
-    assert not set(named) & set(s.SUBJECTS), f"AC-6: subjects named: {named}"
-    _pack(r, "per-prompt argv")
+    """AC-6 (R2): 0 subject rows on the per-prompt argv, on BOTH legs: the replica leg (a real
+    shared worker, the live default whenever the hub is up) and the daemon RPC leg. HEAD record
+    (f7c0d39): the replica leg names subject_quasar_ledger_0 FIRST; the RPC leg's project half
+    of the `--scope both` merge (6 of 12 at GREEN, 3 of 5 at HEAD) held none."""
+    w = s.SharedWorker(fx.base, home=fx.home)
+    try:
+        legs = {"replica": _q(fx, RMX_MODEL_SOCK=str(w.sock))}
+    finally:
+        w.stop()
+    legs["rpc"] = _q(fx, RMX_MODEL_SOCK=str(fx.base / "none.sock"))
+    for leg, r in legs.items():
+        _ok(r, f"per-prompt argv ({leg} leg)")
+        named = s.names_in_payload(r.stdout)
+        assert not set(named) & set(s.SUBJECTS), f"AC-6 ({leg} leg): subjects named: {named}"
+        _pack(r, f"per-prompt argv ({leg} leg)")
 
 
 def test_ac6_include_subjects_brings_live_subjects_back_never_the_stale_one(fx):
