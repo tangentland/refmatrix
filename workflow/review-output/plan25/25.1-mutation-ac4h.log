@@ -1,0 +1,12 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: AC-4 (h): replica leg [] != rpc leg ['fx_mem_26', 'fx_mem_20', 'fx_mem_24', 'fx_mem_21', 'fx_mem_22']
+    assert [] == ['fx_mem_26',..., 'fx_mem_22']
+      
+      Right contains 5 more items, first extra item: 'fx_mem_26'
+      Use -v to get more diff
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:881: AssertionError: AC-4 (h): replica leg [] != rpc leg ['fx_mem_26', 'fx_mem_20', 'fx_mem_24', 'fx_mem_21', 'fx_mem_22']
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac4h_legacy_memory_partition_replica_and_rpc_agree
+1 failed in 12.41s

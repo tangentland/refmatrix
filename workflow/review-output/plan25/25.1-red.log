@@ -1,0 +1,687 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF.FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF [ 57%]
+FFFFFFFFF.FFFFFFF.FFFFFFFFFFFFFFFFFFFFFFFFFFFF....F...                   [100%]
+=================================== FAILURES ===================================
+E   AssertionError: R1: refmatrix.hook_budget is not built
+    assert None is not None
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:143: AssertionError: R1: refmatrix.hook_budget is not built
+E   AssertionError: R1: refmatrix.hook_budget is not built
+    assert None is not None
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:164: AssertionError: R1: refmatrix.hook_budget is not built
+E   AssertionError: R1: refmatrix.hook_budget is not built
+    assert None is not None
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:174: AssertionError: R1: refmatrix.hook_budget is not built
+E   AssertionError: R0b: refmatrix.hook_budget.fit_blocks is not built
+    assert None is not None
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:195: AssertionError: R0b: refmatrix.hook_budget.fit_blocks is not built
+E   AssertionError: R0b: refmatrix.hook_budget.fit_blocks is not built
+    assert None is not None
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:195: AssertionError: R0b: refmatrix.hook_budget.fit_blocks is not built
+E   AssertionError: R0b: refmatrix.hook_budget.fit_blocks is not built
+    assert None is not None
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:195: AssertionError: R0b: refmatrix.hook_budget.fit_blocks is not built
+E   AssertionError: R0b: refmatrix.hook_budget.fit_blocks is not built
+    assert None is not None
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:213: AssertionError: R0b: refmatrix.hook_budget.fit_blocks is not built
+E   ImportError: cannot import name 'recall_pack' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/__init__.py)
+
+During handling of the above exception, another exception occurred:
+E   Failed: R4: refmatrix.recall_pack is not built
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:242: Failed: R4: refmatrix.recall_pack is not built
+E   ImportError: cannot import name 'recall_pack' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/__init__.py)
+
+During handling of the above exception, another exception occurred:
+E   Failed: R4: refmatrix.recall_pack is not built
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:242: Failed: R4: refmatrix.recall_pack is not built
+E   ImportError: cannot import name 'recall_pack' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/__init__.py)
+
+During handling of the above exception, another exception occurred:
+E   Failed: R4: refmatrix.recall_pack is not built
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:242: Failed: R4: refmatrix.recall_pack is not built
+E   ImportError: cannot import name 'recall_pack' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/__init__.py)
+
+During handling of the above exception, another exception occurred:
+E   Failed: R4: refmatrix.recall_pack is not built
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:242: Failed: R4: refmatrix.recall_pack is not built
+E   ImportError: cannot import name 'recall_pack' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/__init__.py)
+
+During handling of the above exception, another exception occurred:
+E   Failed: R4: refmatrix.recall_pack is not built
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:242: Failed: R4: refmatrix.recall_pack is not built
+E   ImportError: cannot import name 'recall_pack' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/__init__.py)
+
+During handling of the above exception, another exception occurred:
+E   Failed: R4: refmatrix.recall_pack is not built
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:242: Failed: R4: refmatrix.recall_pack is not built
+E   ImportError: cannot import name 'recall_pack' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/__init__.py)
+
+During handling of the above exception, another exception occurred:
+E   Failed: R4: refmatrix.recall_pack is not built
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:242: Failed: R4: refmatrix.recall_pack is not built
+E   ImportError: cannot import name 'recall_pack' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/__init__.py)
+
+During handling of the above exception, another exception occurred:
+E   Failed: R4: refmatrix.recall_pack is not built
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:242: Failed: R4: refmatrix.recall_pack is not built
+E   ImportError: cannot import name 'recall_pack' from 'refmatrix' (/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/__init__.py)
+
+During handling of the above exception, another exception occurred:
+E   Failed: R4: refmatrix.recall_pack is not built
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:242: Failed: R4: refmatrix.recall_pack is not built
+E   AssertionError: AC-1 per-prompt argv (question): printed 18867 B; R1 `refmatrix.hook_budget` is not built, so budget('prompt_recall') does not exist
+/Volumes/littlebig/refmatrix-plan25-1/tests/task25_1_support.py:88: AssertionError: AC-1 per-prompt argv (question): printed 18867 B; R1 `refmatrix.hook_budget` is not built, so budget('prompt_recall') does not exist
+E   AssertionError: AC-1 per-prompt argv (ack): printed 34366 B; R1 `refmatrix.hook_budget` is not built, so budget('prompt_recall') does not exist
+/Volumes/littlebig/refmatrix-plan25-1/tests/task25_1_support.py:88: AssertionError: AC-1 per-prompt argv (ack): printed 34366 B; R1 `refmatrix.hook_budget` is not built, so budget('prompt_recall') does not exist
+E   AssertionError: AC-1 SessionStart argv: printed 10073 B; R1 `refmatrix.hook_budget` is not built, so budget('session_start') does not exist
+/Volumes/littlebig/refmatrix-plan25-1/tests/task25_1_support.py:88: AssertionError: AC-1 SessionStart argv: printed 10073 B; R1 `refmatrix.hook_budget` is not built, so budget('session_start') does not exist
+E   AssertionError: AC-1 PreCompact argv: printed 67100 B; R1 `refmatrix.hook_budget` is not built, so budget('precompact') does not exist
+/Volumes/littlebig/refmatrix-plan25-1/tests/task25_1_support.py:88: AssertionError: AC-1 PreCompact argv: printed 67100 B; R1 `refmatrix.hook_budget` is not built, so budget('precompact') does not exist
+E   AssertionError: prompt_recall --max-bytes 2000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+      Try 'rmx memory recall -h' for help.
+      
+      Error: No such option: --max-bytes
+      
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...ge: rmx memory recall [OPTIONS] [QUERY]\nTry 'rmx memory recall -h' for help.\n\nError: No such option: --max-bytes\n").returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:116: AssertionError: prompt_recall --max-bytes 2000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+E   AssertionError: prompt_recall --max-bytes 4000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+      Try 'rmx memory recall -h' for help.
+      
+      Error: No such option: --max-bytes
+      
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...ge: rmx memory recall [OPTIONS] [QUERY]\nTry 'rmx memory recall -h' for help.\n\nError: No such option: --max-bytes\n").returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:116: AssertionError: prompt_recall --max-bytes 4000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+E   AssertionError: prompt_recall --max-bytes 9000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+      Try 'rmx memory recall -h' for help.
+      
+      Error: No such option: --max-bytes
+      
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...ge: rmx memory recall [OPTIONS] [QUERY]\nTry 'rmx memory recall -h' for help.\n\nError: No such option: --max-bytes\n").returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:116: AssertionError: prompt_recall --max-bytes 9000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+E   AssertionError: session_start --max-bytes 2000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+      Try 'rmx memory recall -h' for help.
+      
+      Error: No such option: --max-bytes
+      
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...ge: rmx memory recall [OPTIONS] [QUERY]\nTry 'rmx memory recall -h' for help.\n\nError: No such option: --max-bytes\n").returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:116: AssertionError: session_start --max-bytes 2000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+E   AssertionError: session_start --max-bytes 4000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+      Try 'rmx memory recall -h' for help.
+      
+      Error: No such option: --max-bytes
+      
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...ge: rmx memory recall [OPTIONS] [QUERY]\nTry 'rmx memory recall -h' for help.\n\nError: No such option: --max-bytes\n").returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:116: AssertionError: session_start --max-bytes 4000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+E   AssertionError: session_start --max-bytes 9000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+      Try 'rmx memory recall -h' for help.
+      
+      Error: No such option: --max-bytes
+      
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...ge: rmx memory recall [OPTIONS] [QUERY]\nTry 'rmx memory recall -h' for help.\n\nError: No such option: --max-bytes\n").returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:116: AssertionError: session_start --max-bytes 9000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+E   AssertionError: precompact --max-bytes 2000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+      Try 'rmx memory recall -h' for help.
+      
+      Error: No such option: --max-bytes
+      
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...ge: rmx memory recall [OPTIONS] [QUERY]\nTry 'rmx memory recall -h' for help.\n\nError: No such option: --max-bytes\n").returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:116: AssertionError: precompact --max-bytes 2000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+E   AssertionError: precompact --max-bytes 4000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+      Try 'rmx memory recall -h' for help.
+      
+      Error: No such option: --max-bytes
+      
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...ge: rmx memory recall [OPTIONS] [QUERY]\nTry 'rmx memory recall -h' for help.\n\nError: No such option: --max-bytes\n").returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:116: AssertionError: precompact --max-bytes 4000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+E   AssertionError: precompact --max-bytes 9000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+      Try 'rmx memory recall -h' for help.
+      
+      Error: No such option: --max-bytes
+      
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...ge: rmx memory recall [OPTIONS] [QUERY]\nTry 'rmx memory recall -h' for help.\n\nError: No such option: --max-bytes\n").returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:116: AssertionError: precompact --max-bytes 9000: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+E   AssertionError: scan_prompt --max-bytes 2000: exit 2; stderr: Usage: rmx scan-prompt [OPTIONS] [QUERY]
+      Try 'rmx scan-prompt -h' for help.
+      
+      Error: No such option: --max-bytes (Possible options: --max-concepts, --max-tokens)
+      
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...mx scan-prompt -h' for help.\n\nError: No such option: --max-bytes (Possible options: --max-concepts, --max-tokens)\n").returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:116: AssertionError: scan_prompt --max-bytes 2000: exit 2; stderr: Usage: rmx scan-prompt [OPTIONS] [QUERY]
+E   AssertionError: scan_prompt --max-bytes 4000: exit 2; stderr: Usage: rmx scan-prompt [OPTIONS] [QUERY]
+      Try 'rmx scan-prompt -h' for help.
+      
+      Error: No such option: --max-bytes (Possible options: --max-concepts, --max-tokens)
+      
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...mx scan-prompt -h' for help.\n\nError: No such option: --max-bytes (Possible options: --max-concepts, --max-tokens)\n").returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:116: AssertionError: scan_prompt --max-bytes 4000: exit 2; stderr: Usage: rmx scan-prompt [OPTIONS] [QUERY]
+E   AssertionError: scan_prompt --max-bytes 9000: exit 2; stderr: Usage: rmx scan-prompt [OPTIONS] [QUERY]
+      Try 'rmx scan-prompt -h' for help.
+      
+      Error: No such option: --max-bytes (Possible options: --max-concepts, --max-tokens)
+      
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...mx scan-prompt -h' for help.\n\nError: No such option: --max-bytes (Possible options: --max-concepts, --max-tokens)\n").returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:116: AssertionError: scan_prompt --max-bytes 9000: exit 2; stderr: Usage: rmx scan-prompt [OPTIONS] [QUERY]
+E   AssertionError: focus_context --max-bytes 2000: exit 2; stderr: Usage: rmx focus context [OPTIONS]
+      Try 'rmx focus context -h' for help.
+      
+      Error: No such option: --max-bytes
+      
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...rr=b"Usage: rmx focus context [OPTIONS]\nTry 'rmx focus context -h' for help.\n\nError: No such option: --max-bytes\n").returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:116: AssertionError: focus_context --max-bytes 2000: exit 2; stderr: Usage: rmx focus context [OPTIONS]
+E   AssertionError: focus_context --max-bytes 4000: exit 2; stderr: Usage: rmx focus context [OPTIONS]
+      Try 'rmx focus context -h' for help.
+      
+      Error: No such option: --max-bytes
+      
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...rr=b"Usage: rmx focus context [OPTIONS]\nTry 'rmx focus context -h' for help.\n\nError: No such option: --max-bytes\n").returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:116: AssertionError: focus_context --max-bytes 4000: exit 2; stderr: Usage: rmx focus context [OPTIONS]
+E   AssertionError: focus_context --max-bytes 9000: exit 2; stderr: Usage: rmx focus context [OPTIONS]
+      Try 'rmx focus context -h' for help.
+      
+      Error: No such option: --max-bytes
+      
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...rr=b"Usage: rmx focus context [OPTIONS]\nTry 'rmx focus context -h' for help.\n\nError: No such option: --max-bytes\n").returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:116: AssertionError: focus_context --max-bytes 9000: exit 2; stderr: Usage: rmx focus context [OPTIONS]
+E   AssertionError: AC-3: the model receives 0 distinct memories ([]) from a 18867 B payload
+    assert 0 >= 8
+     +  where 0 = len(set())
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:471: AssertionError: AC-3: the model receives 0 distinct memories ([]) from a 18867 B payload
+E   refmatrix.verbs.VerbAbsentError: daemon not running for /private/tmp/rmx-1exw9jw6/p25b-dz_qht4b/fxb/.refmatrix
+
+During handling of the above exception, another exception occurred:
+E   Failed: AC-4 (b): the verb raised VerbAbsentError: daemon not running for /private/tmp/rmx-1exw9jw6/p25b-dz_qht4b/fxb/.refmatrix with a replica and a live shared worker at /private/tmp/rmx-1exw9jw6/p25o-zkiay2lw/m.sock
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:500: Failed: AC-4 (b): the verb raised VerbAbsentError: daemon not running for /private/tmp/rmx-1exw9jw6/p25b-dz_qht4b/fxb/.refmatrix with a replica and a live shared worker at /private/tmp/rmx-1exw9jw6/p25o-zkiay2lw/m.sock
+E   AssertionError: AC-4 (c): exit 1: Error: rmx memory recall needs the daemon up (dense embedder lives there) or a replica + shared model workers
+    assert 1 == 0
+     +  where 1 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...aemon up (dense embedder lives there) or a replica + shared model workers\nimport time:        36 |         36 | gc\n').returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:527: AssertionError: AC-4 (c): exit 1: Error: rmx memory recall needs the daemon up (dense embedder lives there) or a replica + shared model workers
+E   AssertionError: daemon not running for /private/tmp/rmx-1exw9jw6/p25b-dz_qht4b/fxb/.refmatrix
+    assert 'daemon not r...xb/.refmatrix' == 'memory recal...model workers'
+      
+      - memory recall needs the daemon up (dense embedder lives there) or a replica + shared model workers
+      + daemon not running for /private/tmp/rmx-1exw9jw6/p25b-dz_qht4b/fxb/.refmatrix
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:545: AssertionError: daemon not running for /private/tmp/rmx-1exw9jw6/p25b-dz_qht4b/fxb/.refmatrix
+E   AssertionError: {"error": "daemon not running for /private/tmp/rmx-1exw9jw6/p25b-dz_qht4b/fxb/.refmatrix"}
+    assert (not True)
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:567: AssertionError: {"error": "daemon not running for /private/tmp/rmx-1exw9jw6/p25b-dz_qht4b/fxb/.refmatrix"}
+E   Failed: R10: project='charlie' names no store, yet _resolve_root returned /private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refmatrix (bug-181 silent fallback)
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:637: Failed: R10: project='charlie' names no store, yet _resolve_root returned /private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refmatrix (bug-181 silent fallback)
+E   AssertionError: {"error": "daemon not running for /private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refmatrix"}
+    assert False
+     +  where False = <built-in method startswith of str object at 0x1126f52f0>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126f52f0> = '{"error": "daemon not running for /private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refmatrix"}'.startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:663: AssertionError: {"error": "daemon not running for /private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refmatrix"}
+E   AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "hub not running \\u2014 `bus_archive` needs it (`rmx hub start`)"}'}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1046f60d0>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1046f60d0> = '{"error": "hub not running \\u2014 `bus_archive` needs it (`rmx hub start`)"}'.startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "hub not running \\u2014 `bus_archive` needs it (`rmx hub start`)"}'}
+E   AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "hub not running \\u2014 `bus_channels` needs it (`rmx hub start`)"}'}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x107c0a8b0>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x107c0a8b0> = '{"error": "hub not running \\u2014 `bus_channels` needs it (`rmx hub start`)"}'.startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "hub not running \\u2014 `bus_channels` needs it (`rmx hub start`)"}'}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: bus_delete requires 'id'"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126c4c60>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126c4c60> = "VerbArgsError: bus_delete requires 'id'".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: bus_delete requires 'id'"}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: bus_history requires 'channel'"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x107c354d0>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x107c354d0> = "VerbArgsError: bus_history requires 'channel'".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: bus_history requires 'channel'"}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: bus_mark_read requires 'channel'"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x107c37150>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x107c37150> = "VerbArgsError: bus_mark_read requires 'channel'".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: bus_mark_read requires 'channel'"}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: bus_pub requires 'channel', 'body'"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x107c35b90>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x107c35b90> = "VerbArgsError: bus_pub requires 'channel', 'body'".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: bus_pub requires 'channel', 'body'"}
+E   AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "hub not running \\u2014 `bus_purge` needs it (`rmx hub start`)"}'}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x107c0aa60>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x107c0aa60> = '{"error": "hub not running \\u2014 `bus_purge` needs it (`rmx hub start`)"}'.startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "hub not running \\u2014 `bus_purge` needs it (`rmx hub start`)"}'}
+E   AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "hub not running \\u2014 `bus_read` needs it (`rmx hub start`)"}'}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x107c0a5e0>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x107c0a5e0> = '{"error": "hub not running \\u2014 `bus_read` needs it (`rmx hub start`)"}'.startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "hub not running \\u2014 `bus_read` needs it (`rmx hub start`)"}'}
+E   AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "hub not running \\u2014 `bus_stats` needs it (`rmx hub start`)"}'}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x107c0a550>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x107c0a550> = '{"error": "hub not running \\u2014 `bus_stats` needs it (`rmx hub start`)"}'.startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "hub not running \\u2014 `bus_stats` needs it (`rmx hub start`)"}'}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: bus_unarchive requires 'id'"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126f29d0>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126f29d0> = "VerbArgsError: bus_unarchive requires 'id'".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: bus_unarchive requires 'id'"}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: canon requires 'action'"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126c4bc0>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126c4bc0> = "VerbArgsError: canon requires 'action'".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: canon requires 'action'"}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: change_subject requires 'label' (alias: 'subject')"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126c9300>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126c9300> = "VerbArgsError: change_subject requires 'label' (alias: 'subject')".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: change_subject requires 'label' (alias: 'subject')"}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: context requires 'ref'"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126c4c10>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126c4c10> = "VerbArgsError: context requires 'ref'".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: context requires 'ref'"}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: curate requires 'action'"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126c4cb0>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126c4cb0> = "VerbArgsError: curate requires 'action'".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: curate requires 'action'"}
+E   AssertionError: {'connects': [], 'isError': False, 'text': '{"entries": [], "token": [], "spool": {"files": 0, "bytes": 0, "remaining_files": 0}, "warnings": [], "missing": []}'}
+    assert (False is True)
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': False, 'text': '{"entries": [], "token": [], "spool": {"files": 0, "bytes": 0, "remaining_files": 0}, "warnings": [], "missing": []}'}
+E   AssertionError: {'connects': [], 'isError': False, 'text': '{"graph": {"session": "default", "turn": 0, "events": 0, "nodes": [], "edg...alogue": [], "milestones": [], "last_line": {}, "events_total": 0, "session": "default", "session_source": "default"}'}
+    assert (False is True)
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': False, 'text': '{"graph": {"session": "default", "turn": 0, "events": 0, "nodes": [], "edg...alogue": [], "milestones": [], "last_line": {}, "events_total": 0, "session": "default", "session_source": "default"}'}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: focus_note requires 'text' (alias: 'note')"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126c93e0>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126c93e0> = "VerbArgsError: focus_note requires 'text' (alias: 'note')".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: focus_note requires 'text' (alias: 'note')"}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: graph requires 'action'"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126c4b20>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126c4b20> = "VerbArgsError: graph requires 'action'".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: graph requires 'action'"}
+E   AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "daemon not running for /private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refmatrix"}'}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126f40d0>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126f40d0> = '{"error": "daemon not running for /private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refmatrix"}'.startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "daemon not running for /private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refmatrix"}'}
+E   AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "daemon not running for /private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refmatrix"}'}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126f5250>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126f5250> = '{"error": "daemon not running for /private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refmatrix"}'.startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "daemon not running for /private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refmatrix"}'}
+E   AssertionError: {'connects': [], 'isError': False, 'text': '{"results": [], "skipped": [{"project": "alpha", "root": "/private/tmp/rmx...vate/tmp/rmx-1exw9jw6/r10-9z61i2mh/bravo/.refmatrix", "reason": "daemon not running"}, {"project": "global", "root": '}
+    assert (False is True)
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': False, 'text': '{"results": [], "skipped": [{"project": "alpha", "root": "/private/tmp/rmx...vate/tmp/rmx-1exw9jw6/r10-9z61i2mh/bravo/.refmatrix", "reason": "daemon not running"}, {"project": "global", "root": '}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: matrix requires 'action'"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126c49e0>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126c49e0> = "VerbArgsError: matrix requires 'action'".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: matrix requires 'action'"}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: memory requires 'action'"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126c4d00>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126c4d00> = "VerbArgsError: memory requires 'action'".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: memory requires 'action'"}
+E   AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "memory_add requires \'name\', \'content\'"}'}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126c8dc0>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126c8dc0> = '{"error": "memory_add requires \'name\', \'content\'"}'.startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "memory_add requires \'name\', \'content\'"}'}
+E   AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "daemon not running for /private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refmatrix"}'}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126f4fd0>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126f4fd0> = '{"error": "daemon not running for /private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refmatrix"}'.startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "daemon not running for /private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refmatrix"}'}
+E   AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "daemon not running for /private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refmatrix"}'}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126f54d0>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126f54d0> = '{"error": "daemon not running for /private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refmatrix"}'.startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "daemon not running for /private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refmatrix"}'}
+E   AssertionError: {'connects': [], 'isError': False, 'text': '{"projects": [{"root": "/private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refm..., "launchd": {"installed": false, "loaded": false, "label": "com.refmatrix.daemon.alpha-0ed23ff15ef5"}}, {"root": "/p'}
+    assert (False is True)
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': False, 'text': '{"projects": [{"root": "/private/tmp/rmx-1exw9jw6/r10-9z61i2mh/alpha/.refm..., "launchd": {"installed": false, "loaded": false, "label": "com.refmatrix.daemon.alpha-0ed23ff15ef5"}}, {"root": "/p'}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: query requires 'dsl'"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126c4760>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126c4760> = "VerbArgsError: query requires 'dsl'".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: query requires 'dsl'"}
+E   AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "hub not running \\u2014 `queues` needs it (`rmx hub start`)"}'}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126c0db0>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126c0db0> = '{"error": "hub not running \\u2014 `queues` needs it (`rmx hub start`)"}'.startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "hub not running \\u2014 `queues` needs it (`rmx hub start`)"}'}
+E   AssertionError: {'connects': [], 'isError': False, 'text': '{"session": "default", "events": 0, "git": {"branch": "", "head": "", "dir...t_memories": [], "daemon": {"running": false, "busy": false, "pid": null}, "anomalies": ["3 session-pointer failure(s'}
+    assert (False is True)
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': False, 'text': '{"session": "default", "events": 0, "git": {"branch": "", "head": "", "dir...t_memories": [], "daemon": {"running": false, "busy": false, "pid": null}, "anomalies": ["3 session-pointer failure(s'}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: refine requires 'action'"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126c4d50>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126c4d50> = "VerbArgsError: refine requires 'action'".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: refine requires 'action'"}
+E   AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "SessionUnresolved: no session for this write (tried explicit ses...MX_SESSION, pid pointer for owner 94204); pass --session / set RMX_SESSION, or let the input hook write the pointer"}'}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x107c70a30>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x107c70a30> = '{"error": "SessionUnresolved: no session for this write (tried explicit session, hook envelope, $RMX_SESSION, pid pointer for owner 94204); pass --session / set RMX_SESSION, or let the input hook write the pointer"}'.startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': '{"error": "SessionUnresolved: no session for this write (tried explicit ses...MX_SESSION, pid pointer for owner 94204); pass --session / set RMX_SESSION, or let the input hook write the pointer"}'}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: search requires 'dsl'"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126c4b70>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126c4b70> = "VerbArgsError: search requires 'dsl'".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: search requires 'dsl'"}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: session requires 'action'"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126f1fb0>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126f1fb0> = "VerbArgsError: session requires 'action'".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: session requires 'action'"}
+E   AssertionError: {'connects': [], 'isError': False, 'text': '{"tasks": []}'}
+    assert (False is True)
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': False, 'text': '{"tasks": []}'}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: taxonomy requires 'action'"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126f2d30>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126f2d30> = "VerbArgsError: taxonomy requires 'action'".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: taxonomy requires 'action'"}
+E   AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: where requires 'query'"}
+    assert (True is True and False)
+     +  where False = <built-in method startswith of str object at 0x1126c4df0>('VerbUnknownProjectError:')
+     +    where <built-in method startswith of str object at 0x1126c4df0> = "VerbArgsError: where requires 'query'".startswith
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:735: AssertionError: {'connects': [], 'isError': True, 'text': "VerbArgsError: where requires 'query'"}
+E   AssertionError: {'connects': [], 'isError': False, 'text': '{"id": 3}'}
+    assert (False is True)
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:743: AssertionError: {'connects': [], 'isError': False, 'text': '{"id": 3}'}
+E   AssertionError: target another project by name (any live store)
+    assert ('registered' in 'target another project by name (any live store)')
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:764: AssertionError: target another project by name (any live store)
+E   AssertionError: per-prompt argv (replica-on): not a --pack payload (R3): 3977 B starting b'[\n  {\n    "id": 1570,\n    "name": "subject_quasar_ledger_0",\n    "partition_id": 1,\n    "partition": "fxproj",\n    "content": "how does the quasar ledger reconc'
+    assert (False)
+     +  where False = <tests.task25_1_support.Pack object at 0x107d11940>.is_pack
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:123: AssertionError: per-prompt argv (replica-on): not a --pack payload (R3): 3977 B starting b'[\n  {\n    "id": 1570,\n    "name": "subject_quasar_ledger_0",\n    "partition_id": 1,\n    "partition": "fxproj",\n    "content": "how does the quasar ledger reconc'
+E   AssertionError: per-prompt argv (replica-first-0): not a --pack payload (R3): 18867 B starting b'[\n  {\n    "id": 267,\n    "name": "savestate_fx01",\n    "partition_id": 1,\n    "partition": "fxproj",\n    "content": "# Save-state fx01 {#root}\\n\\nSAVESTATE-fx01'
+    assert (False)
+     +  where False = <tests.task25_1_support.Pack object at 0x107c716d0>.is_pack
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:123: AssertionError: per-prompt argv (replica-first-0): not a --pack payload (R3): 18867 B starting b'[\n  {\n    "id": 267,\n    "name": "savestate_fx01",\n    "partition_id": 1,\n    "partition": "fxproj",\n    "content": "# Save-state fx01 {#root}\\n\\nSAVESTATE-fx01'
+E   AssertionError: per-prompt argv (no-worker): not a --pack payload (R3): 18867 B starting b'[\n  {\n    "id": 267,\n    "name": "savestate_fx01",\n    "partition_id": 1,\n    "partition": "fxproj",\n    "content": "# Save-state fx01 {#root}\\n\\nSAVESTATE-fx01'
+    assert (False)
+     +  where False = <tests.task25_1_support.Pack object at 0x107c72710>.is_pack
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:123: AssertionError: per-prompt argv (no-worker): not a --pack payload (R3): 18867 B starting b'[\n  {\n    "id": 267,\n    "name": "savestate_fx01",\n    "partition_id": 1,\n    "partition": "fxproj",\n    "content": "# Save-state fx01 {#root}\\n\\nSAVESTATE-fx01'
+E   AssertionError: (['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_06', 'fx_mem_16', ...], ['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_03', 'fx_mem_23', ...])
+    assert ['savestate_f..._mem_16', ...] == ['savestate_f..._mem_23', ...]
+      
+      At index 4 diff: 'fx_mem_06' != 'fx_mem_03'
+      Use -v to get more diff
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:807: AssertionError: (['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_06', 'fx_mem_16', ...], ['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_03', 'fx_mem_23', ...])
+E   AssertionError: AC-4 (g): exit 1: Error: rmx memory recall needs the daemon up (dense embedder lives there) or a replica + shared model workers
+      
+    assert 1 == 0
+     +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', 'how does the q...derr='Error: rmx memory recall needs the daemon up (dense embedder lives there) or a replica + shared model workers\n').returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:825: AssertionError: AC-4 (g): exit 1: Error: rmx memory recall needs the daemon up (dense embedder lives there) or a replica + shared model workers
+E   AssertionError: {"error": "daemon not running for /private/tmp/rmx-1exw9jw6/p25b-dz_qht4b/fxb/.refmatrix"}
+    assert (not True)
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:837: AssertionError: {"error": "daemon not running for /private/tmp/rmx-1exw9jw6/p25b-dz_qht4b/fxb/.refmatrix"}
+E   AssertionError: per-prompt argv: not a --pack payload (R3): 18867 B starting b'[\n  {\n    "id": 267,\n    "name": "savestate_fx01",\n    "partition_id": 1,\n    "partition": "fxproj",\n    "content": "# Save-state fx01 {#root}\\n\\nSAVESTATE-fx01'
+    assert (False)
+     +  where False = <tests.task25_1_support.Pack object at 0x107db3950>.is_pack
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:123: AssertionError: per-prompt argv: not a --pack payload (R3): 18867 B starting b'[\n  {\n    "id": 267,\n    "name": "savestate_fx01",\n    "partition_id": 1,\n    "partition": "fxproj",\n    "content": "# Save-state fx01 {#root}\\n\\nSAVESTATE-fx01'
+E   AssertionError: AC-6 (replica leg): subjects named: ['subject_quasar_ledger_0', 'fx_dup_x', 'subject_quasar_ledger_1', 'gx_mem_9', 'subject_quasar_ledger_2']
+    assert not ({'fx_dup_x', 'gx_mem_9', 'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2'} & {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3', 'subject_quasar_ledger_4'})
+     +  where {'fx_dup_x', 'gx_mem_9', 'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2'} = set(['subject_quasar_ledger_0', 'fx_dup_x', 'subject_quasar_ledger_1', 'gx_mem_9', 'subject_quasar_ledger_2'])
+     +  and   {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3', 'subject_quasar_ledger_4'} = set(['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3', 'subject_quasar_ledger_4'])
+     +    where ['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3', 'subject_quasar_ledger_4'] = s.SUBJECTS
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:928: AssertionError: AC-6 (replica leg): subjects named: ['subject_quasar_ledger_0', 'fx_dup_x', 'subject_quasar_ledger_1', 'gx_mem_9', 'subject_quasar_ledger_2']
+E   AssertionError: per-prompt argv --include-subjects: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+      Try 'rmx memory recall -h' for help.
+      
+      Error: No such option: --include-subjects (Possible options: --include-session, --subject)
+      
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ... recall -h' for help.\n\nError: No such option: --include-subjects (Possible options: --include-session, --subject)\n").returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:116: AssertionError: per-prompt argv --include-subjects: exit 2; stderr: Usage: rmx memory recall [OPTIONS] [QUERY]
+E   AssertionError: ('', ['subject_quasar_ledger_4', 'fx_dup_x', 'subject_quasar_ledger_3', 'gx_mem_9', 'subject_quasar_ledger_2', 'gx_mem_8', ...])
+    assert 'subject_quasar_ledger_4' not in ['subject_quasar_ledger_4', 'fx_dup_x', 'subject_quasar_ledger_3', 'gx_mem_9', 'subject_quasar_ledger_2', 'gx_mem_8', ...]
+     +  where 'subject_quasar_ledger_4' = s.STALE_SUBJECT
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:945: AssertionError: ('', ['subject_quasar_ledger_4', 'fx_dup_x', 'subject_quasar_ledger_3', 'gx_mem_9', 'subject_quasar_ledger_2', 'gx_mem_8', ...])
+E   AssertionError: ['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_03', 'fx_mem_23', ...]
+    assert ({'fx_mem_00', 'fx_mem_01', 'fx_mem_03', 'fx_mem_06', 'fx_mem_10', 'fx_mem_13', ...} & {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'})
+     +  where {'fx_mem_00', 'fx_mem_01', 'fx_mem_03', 'fx_mem_06', 'fx_mem_10', 'fx_mem_13', ...} = set(['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_03', 'fx_mem_23', ...])
+     +  and   {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'} = set(['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'])
+     +    where ['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'] = s.LIVE_SUBJECTS
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:958: AssertionError: ['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_03', 'fx_mem_23', ...]
+E   AssertionError: AC-7: pack=True returned no `text`: keys ['memories', 'mode', 'since_seconds', 'warnings', 'widened']
+    assert 'text' in {'memories': [{'content': '# Save-state fx01 {#root}\n\nSAVESTATE-fx01 — handoff → next → reconcile.\n\nhow does the q...': 1794432039.164646, 'id': 9, 'metadata': {}, ...}, ...], 'mode': 'dense', 'since_seconds': None, 'warnings': [], ...}
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:974: AssertionError: AC-7: pack=True returned no `text`: keys ['memories', 'mode', 'since_seconds', 'warnings', 'widened']
+E   AssertionError: ['degree', 'exclude_mtype', 'fuse', 'include_session', 'k', 'kinds', ...]
+    assert {'include_sub...ytes', 'pack'} <= {'degree', 'e... 'kinds', ...}
+      
+      Extra items in the left set:
+      'pack'
+      'include_subjects'
+      'max_bytes'
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:983: AssertionError: ['degree', 'exclude_mtype', 'fuse', 'include_session', 'k', 'kinds', ...]
+E   AssertionError: {"error": "daemon not running for /private/tmp/rmx-1exw9jw6/p25b-dz_qht4b/fxb/.refmatrix"}
+    assert (not True)
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:997: AssertionError: {"error": "daemon not running for /private/tmp/rmx-1exw9jw6/p25b-dz_qht4b/fxb/.refmatrix"}
+E   AssertionError: AC-8 unset: printed 18867 B; R1 `refmatrix.hook_budget` is not built, so budget('prompt_recall') does not exist
+/Volumes/littlebig/refmatrix-plan25-1/tests/task25_1_support.py:88: AssertionError: AC-8 unset: printed 18867 B; R1 `refmatrix.hook_budget` is not built, so budget('prompt_recall') does not exist
+E   AssertionError: AC-8 per-prompt: 18867 B > 3000
+    assert 18867 <= 3000
+     +  where 18867 = len(b'[\n  {\n    "id": 267,\n    "name": "savestate_fx01",\n    "partition_id": 1,\n    "partition": "fxproj",\n    "cont....985484800885388,\n    "distance": null,\n    "fused": false,\n    "reranked": true,\n    "scope": "project"\n  }\n]\n')
+     +    where b'[\n  {\n    "id": 267,\n    "name": "savestate_fx01",\n    "partition_id": 1,\n    "partition": "fxproj",\n    "cont....985484800885388,\n    "distance": null,\n    "fused": false,\n    "reranked": true,\n    "scope": "project"\n  }\n]\n' = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...388,\n    "distance": null,\n    "fused": false,\n    "reranked": true,\n    "scope": "project"\n  }\n]\n', stderr=b'').stdout
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1014: AssertionError: AC-8 per-prompt: 18867 B > 3000
+E   AssertionError: AC-8: RMX_HOOK_BUDGET_BYTES=abc exited 0 (18867 B)
+    assert 0 != 0
+     +  where 0 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...388,\n    "distance": null,\n    "fused": false,\n    "reranked": true,\n    "scope": "project"\n  }\n]\n', stderr=b'').returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1019: AssertionError: AC-8: RMX_HOOK_BUDGET_BYTES=abc exited 0 (18867 B)
+E   AssertionError: per-prompt argv: not a --pack payload (R3): 18867 B starting b'[\n  {\n    "id": 267,\n    "name": "savestate_fx01",\n    "partition_id": 1,\n    "partition": "fxproj",\n    "content": "# Save-state fx01 {#root}\\n\\nSAVESTATE-fx01'
+    assert (False)
+     +  where False = <tests.task25_1_support.Pack object at 0x107c14d60>.is_pack
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:123: AssertionError: per-prompt argv: not a --pack payload (R3): 18867 B starting b'[\n  {\n    "id": 267,\n    "name": "savestate_fx01",\n    "partition_id": 1,\n    "partition": "fxproj",\n    "content": "# Save-state fx01 {#root}\\n\\nSAVESTATE-fx01'
+E   AssertionError: SessionStart argv: not a --pack payload (R3): 10073 B starting b'[\n  {\n    "id": 1574,\n    "name": "subject_quasar_ledger_4",\n    "partition": "fxproj",\n    "content": "Subject 4: how does the quasar ledger reconcile flux bat'
+    assert (False)
+     +  where False = <tests.task25_1_support.Pack object at 0x107c6b2f0>.is_pack
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:123: AssertionError: SessionStart argv: not a --pack payload (R3): 10073 B starting b'[\n  {\n    "id": 1574,\n    "name": "subject_quasar_ledger_4",\n    "partition": "fxproj",\n    "content": "Subject 4: how does the quasar ledger reconcile flux bat'
+E   AssertionError: SessionStart argv: not a --pack payload (R3): 10073 B starting b'[\n  {\n    "id": 1574,\n    "name": "subject_quasar_ledger_4",\n    "partition": "fxproj",\n    "content": "Subject 4: how does the quasar ledger reconcile flux bat'
+    assert (False)
+     +  where False = <tests.task25_1_support.Pack object at 0x107ddce20>.is_pack
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:123: AssertionError: SessionStart argv: not a --pack payload (R3): 10073 B starting b'[\n  {\n    "id": 1574,\n    "name": "subject_quasar_ledger_4",\n    "partition": "fxproj",\n    "content": "Subject 4: how does the quasar ledger reconcile flux bat'
+E   AssertionError: AC-11: exit 2: Usage: rmx memory get [OPTIONS] NAME_OR_ID
+      Try 'rmx memory get -h' for help.
+      
+      Error: No such option: --scope
+      
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'get', 'fx_dup_x', '--sco...rr="Usage: rmx memory get [OPTIONS] NAME_OR_ID\nTry 'rmx memory get -h' for help.\n\nError: No such option: --scope\n").returncode
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1095: AssertionError: AC-11: exit 2: Usage: rmx memory get [OPTIONS] NAME_OR_ID
+E   AssertionError: per-prompt argv: not a --pack payload (R3): 18867 B starting b'[\n  {\n    "id": 267,\n    "name": "savestate_fx01",\n    "partition_id": 1,\n    "partition": "fxproj",\n    "content": "# Save-state fx01 {#root}\\n\\nSAVESTATE-fx01'
+    assert (False)
+     +  where False = <tests.task25_1_support.Pack object at 0x107c257b0>.is_pack
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:123: AssertionError: per-prompt argv: not a --pack payload (R3): 18867 B starting b'[\n  {\n    "id": 267,\n    "name": "savestate_fx01",\n    "partition_id": 1,\n    "partition": "fxproj",\n    "content": "# Save-state fx01 {#root}\\n\\nSAVESTATE-fx01'
+E   AssertionError: AC-12 scan-prompt argv: printed 6660 B; R1 `refmatrix.hook_budget` is not built, so budget('scan_prompt') does not exist
+/Volumes/littlebig/refmatrix-plan25-1/tests/task25_1_support.py:88: AssertionError: AC-12 scan-prompt argv: printed 6660 B; R1 `refmatrix.hook_budget` is not built, so budget('scan_prompt') does not exist
+E   AssertionError: AC-12 curator status: printed 1885 B; R1 `refmatrix.hook_budget` is not built, so budget('curator_status') does not exist
+/Volumes/littlebig/refmatrix-plan25-1/tests/task25_1_support.py:88: AssertionError: AC-12 curator status: printed 1885 B; R1 `refmatrix.hook_budget` is not built, so budget('curator_status') does not exist
+E   AssertionError: R1 not built; 'rmx scan-prompt --composite-every 3 --max-tokens 2000 --time' printed 8545 B
+    assert None is not None
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1149: AssertionError: R1 not built; 'rmx scan-prompt --composite-every 3 --max-tokens 2000 --time' printed 8545 B
+E   AssertionError: AC-12b focus context: printed 3300 B; R1 `refmatrix.hook_budget` is not built, so budget('focus_context') does not exist
+/Volumes/littlebig/refmatrix-plan25-1/tests/task25_1_support.py:88: AssertionError: AC-12b focus context: printed 3300 B; R1 `refmatrix.hook_budget` is not built, so budget('focus_context') does not exist
+E   AssertionError: R1 not built; "( rmx primer --out '/private/tmp/rmx-1exw9jw6/p25-1x6pfbgh/f" printed 1885 B
+    assert None is not None
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1179: AssertionError: R1 not built; "( rmx primer --out '/private/tmp/rmx-1exw9jw6/p25-1x6pfbgh/f" printed 1885 B
+E   AssertionError: ('UserPromptSubmit', 'rmx memory recall --stdin-json --k 5 --scope both --json --timeout 5')
+    assert ('--pack' in 'rmx memory recall --stdin-json --k 5 --scope both --json --timeout 5')
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1203: AssertionError: ('UserPromptSubmit', 'rmx memory recall --stdin-json --k 5 --scope both --json --timeout 5')
+E   AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+    assert 0 == 1
+     +  where 0 = len([])
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1249: AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+E   AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+    assert 0 == 1
+     +  where 0 = len([])
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1249: AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+E   AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+    assert 0 == 1
+     +  where 0 = len([])
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1249: AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+E   AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+    assert 0 == 1
+     +  where 0 = len([])
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1249: AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+E   AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+    assert 0 == 1
+     +  where 0 = len([])
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1249: AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+E   AssertionError: ['memory_dir', 'project', 'root', 'session']
+    assert 'max_bytes' in {'memory_dir': {'type': 'string'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type...path to a project or its .refmatrix); default: the server's project", 'type': 'string'}, 'session': {'type': 'string'}}
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1335: AssertionError: ['memory_dir', 'project', 'root', 'session']
+E   Failed: DID NOT RAISE <class 'refmatrix.verbs.VerbArgsError'>
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_mcp_memory_recall_routing.py:100: Failed: DID NOT RAISE <class 'refmatrix.verbs.VerbArgsError'>
+==================================== PASSES ====================================
+________________ test_recall_uses_dense_op_on_memory_partition _________________
+----------------------------- Captured stderr call -----------------------------
+rmx: recall events: partition_unresolved=2 item(s) (no partition or no name) not logged
+____________ test_recall_falls_back_to_project_partition_post_merge ____________
+----------------------------- Captured stderr call -----------------------------
+rmx: recall events: partition_unresolved=2 item(s) (no partition or no name) not logged
+_______________ test_empty_query_uses_recent_on_memory_partition _______________
+----------------------------- Captured stderr call -----------------------------
+rmx: recall events: partition_unresolved=2 item(s) (no partition or no name) not logged
+=========================== short test summary info ============================
+PASSED tests/test_task25_1_recall_budget.py::test_ac2_fixture_density_precheck
+PASSED tests/test_task25_1_recall_budget.py::test_ac4e_r10_no_project_and_explicit_root_are_unchanged
+PASSED tests/test_task25_1_recall_budget.py::test_ac4h_legacy_memory_partition_replica_and_rpc_agree
+PASSED tests/test_mcp_memory_recall_routing.py::test_recall_uses_dense_op_on_memory_partition
+PASSED tests/test_mcp_memory_recall_routing.py::test_recall_falls_back_to_project_partition_post_merge
+PASSED tests/test_mcp_memory_recall_routing.py::test_resolve_root_targets_project_by_name
+PASSED tests/test_mcp_memory_recall_routing.py::test_resolve_root_explicit_root_beats_project
+PASSED tests/test_mcp_memory_recall_routing.py::test_empty_query_uses_recent_on_memory_partition
+PASSED tests/test_mcp_memory_recall_routing.py::test_root_decodes_projects_slug_to_project_store
+PASSED tests/test_mcp_memory_recall_routing.py::test_root_from_projects_slug_no_match_returns_none
+FAILED tests/test_task25_1_recall_budget.py::test_r1_hook_budget_table_names_every_channel_event_and_command
+FAILED tests/test_task25_1_recall_budget.py::test_r1_non_rmx_reserve_is_per_event_and_covers_the_measured_hooks
+FAILED tests/test_task25_1_recall_budget.py::test_r1_env_override_and_non_integer
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_fit_blocks_whole_blocks_in_order_bytes_and_trailer[2000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_fit_blocks_whole_blocks_in_order_bytes_and_trailer[4000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_fit_blocks_whole_blocks_in_order_bytes_and_trailer[9000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_fit_blocks_everything_fits_has_no_trailer
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_pack_hook_lines_first_whole_bodies_arithmetic_and_bytes[2000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_pack_hook_lines_first_whole_bodies_arithmetic_and_bytes[4000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_pack_hook_lines_first_whole_bodies_arithmetic_and_bytes[9000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_pack_curated_hook_else_first_sentence_and_scope_correct_fetch
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_pack_trailer_quotes_a_multiline_query
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_pack_loud_overflow_never_empty_never_over
+FAILED tests/test_task25_1_recall_budget.py::test_ac10_pack_spans_are_utf8_byte_ranges
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_pack_prints_curated_hooks_from_load_hooks[path-keyed]
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_pack_prints_curated_hooks_from_load_hooks[id-keyed]
+FAILED tests/test_task25_1_recall_budget.py::test_ac1_ac4a_per_prompt_argv_within_prompt_recall_budget
+FAILED tests/test_task25_1_recall_budget.py::test_ac1_ac4a_ack_prompt_within_budget
+FAILED tests/test_task25_1_recall_budget.py::test_ac1_ac4a_session_start_argv_within_budget
+FAILED tests/test_task25_1_recall_budget.py::test_ac1_ac4a_precompact_argv_within_budget_or_dropped
+FAILED tests/test_task25_1_recall_budget.py::test_ac2_max_bytes_bounds_every_channel[prompt_recall-2000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac2_max_bytes_bounds_every_channel[prompt_recall-4000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac2_max_bytes_bounds_every_channel[prompt_recall-9000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac2_max_bytes_bounds_every_channel[session_start-2000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac2_max_bytes_bounds_every_channel[session_start-4000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac2_max_bytes_bounds_every_channel[session_start-9000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac2_max_bytes_bounds_every_channel[precompact-2000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac2_max_bytes_bounds_every_channel[precompact-4000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac2_max_bytes_bounds_every_channel[precompact-9000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac2_max_bytes_bounds_every_channel[scan_prompt-2000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac2_max_bytes_bounds_every_channel[scan_prompt-4000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac2_max_bytes_bounds_every_channel[scan_prompt-9000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac2_max_bytes_bounds_every_channel[focus_context-2000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac2_max_bytes_bounds_every_channel[focus_context-4000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac2_max_bytes_bounds_every_channel[focus_context-9000]
+FAILED tests/test_task25_1_recall_budget.py::test_ac3_reach_at_least_8_distinct_memories
+FAILED tests/test_task25_1_recall_budget.py::test_ac4b_verb_reads_the_replica_with_a_shared_worker_and_no_daemon
+FAILED tests/test_task25_1_recall_budget.py::test_ac4c_hook_mode_no_daemon_no_worker_exits_0_silent_and_counted
+FAILED tests/test_task25_1_recall_budget.py::test_ac4c_verb_hub_only_raises_the_r5_absent_error
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_mcp_cross_project_reads_the_named_stores_replica
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_resolve_root_unknown_project_raises
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_recall_tool_answers_iserror_without_cwd_rows
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_bus_archive]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_bus_channels]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_bus_delete]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_bus_history]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_bus_mark_read]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_bus_pub]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_bus_purge]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_bus_read]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_bus_stats]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_bus_unarchive]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_canon]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_change_subject]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_context]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_curate]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_curator]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_focus]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_focus_note]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_graph]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_ingest]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_ingest_status]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_locate]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_matrix]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_memory]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_memory_add]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_memory_compile]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_memory_recall]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_projects]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_query]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_queues]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_recall_state]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_refine]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_save_state]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_search]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_session]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_task]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_taxonomy]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_every_tool_refuses_an_unknown_project[rmx_where]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_memory_add_never_bootstraps_into_the_cwd_store
+FAILED tests/test_task25_1_recall_budget.py::test_r10_schema_says_registered_only
+FAILED tests/test_task25_1_recall_budget.py::test_ac4d_rows_parity_replica_on_and_off[replica-on]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4d_rows_parity_replica_on_and_off[replica-first-0]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4d_rows_parity_replica_on_and_off[no-worker]
+FAILED tests/test_task25_1_recall_budget.py::test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc
+FAILED tests/test_task25_1_recall_budget.py::test_ac4g_interactive_no_daemon_no_hub_uses_shared_embedder
+FAILED tests/test_task25_1_recall_budget.py::test_ac4g_mcp_no_daemon_no_hub_uses_shared_embedder
+FAILED tests/test_task25_1_recall_budget.py::test_ac5_mistyped_savestate_not_named_on_the_packed_argv
+FAILED tests/test_task25_1_recall_budget.py::test_ac6_no_subject_rows_on_the_per_prompt_argv
+FAILED tests/test_task25_1_recall_budget.py::test_ac6_include_subjects_brings_live_subjects_back_never_the_stale_one
+FAILED tests/test_task25_1_recall_budget.py::test_ac6_session_start_argv_has_no_subject_and_no_stale_subject
+FAILED tests/test_task25_1_recall_budget.py::test_ac6_verb_hides_subjects_and_the_stale_one_even_with_the_opt_in
+FAILED tests/test_task25_1_recall_budget.py::test_ac7_cli_prints_the_verbs_text_byte_for_byte
+FAILED tests/test_task25_1_recall_budget.py::test_ac7_schema_has_pack_params_and_never_embedder_policy
+FAILED tests/test_task25_1_recall_budget.py::test_ac7_mcp_embedder_policy_argument_is_dropped
+FAILED tests/test_task25_1_recall_budget.py::test_ac8_env_unset_within_the_table
+FAILED tests/test_task25_1_recall_budget.py::test_ac8_env_3000_caps_every_recall_argv
+FAILED tests/test_task25_1_recall_budget.py::test_ac8_env_non_integer_fails_naming_the_variable
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_prompt_recall_is_pointers_only_and_arithmetic_holds
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_session_start_carries_bodies_after_all_hook_lines
+FAILED tests/test_task25_1_recall_budget.py::test_ac10_delivered_events_slice_the_payload_by_bytes
+FAILED tests/test_task25_1_recall_budget.py::test_ac11_memory_get_scope_global_returns_the_global_row
+FAILED tests/test_task25_1_recall_budget.py::test_ac11_the_packs_global_fetch_pointer_returns_the_global_row
+FAILED tests/test_task25_1_recall_budget.py::test_ac12_scan_prompt_alone_within_its_budget
+FAILED tests/test_task25_1_recall_budget.py::test_ac12_curator_status_alone_within_its_budget
+FAILED tests/test_task25_1_recall_budget.py::test_ac12_each_user_prompt_submit_command_within_its_command_budget
+FAILED tests/test_task25_1_recall_budget.py::test_ac12b_focus_context_within_its_budget
+FAILED tests/test_task25_1_recall_budget.py::test_ac12b_each_session_start_command_within_its_budget
+FAILED tests/test_task25_1_recall_budget.py::test_ac13_generator_emits_pack_raised_k_and_no_variable
+FAILED tests/test_task25_1_recall_budget.py::test_ac15a_generator_emits_one_unchained_compact_clear_recall_state_entry
+FAILED tests/test_task25_1_recall_budget.py::test_ac15b_compact_runs_recall_state_naming_the_checkpoint_within_n
+FAILED tests/test_task25_1_recall_budget.py::test_ac15c_recall_state_over_n_keeps_whole_blocks_head_and_a_trailer
+FAILED tests/test_task25_1_recall_budget.py::test_ac15d_no_daemon_prints_the_file_blocks_and_exits_0
+FAILED tests/test_task25_1_recall_budget.py::test_ac15e_unreadable_memdir_fails_with_one_error_line
+FAILED tests/test_task25_1_recall_budget.py::test_ac15f_max_bytes_is_a_recall_state_verb_parameter
+FAILED tests/test_mcp_memory_recall_routing.py::test_resolve_root_unknown_project_raises
+116 failed, 10 passed in 100.97s (0:01:40)
