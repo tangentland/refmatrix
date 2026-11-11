@@ -65,8 +65,13 @@ rel: depends-on -> [[impl-task-user-level-state-commands#deploy-cleanup]]
 - **Plan-26 order:** 26.4 → 26.5 (rollback-moves-`savestates/`-back AC, `b5ed7b3`) → 26.7 →
   26.6 R3 residual → 26.8; then bug-185 → 23.2 → 23.1 → 23.3 ∥ 23.5; plan-25 and plan-27
   (now carries the fleet-hook exception, `9780579`) after their dependencies.
-- **littlebig:** the plan26-2, plan26-3 and bug199-200 clones are merged and can be retired at
-  the user's word; four October store-copy scratch dirs kept by the user's choice.
+- **littlebig (2026-11-11):** merged clones plan26-2, plan26-3, bug199-200, plan26-6 removed
+  (each verified: no uncommitted work, no stashes, every branch in dev `master`). Active:
+  `refmatrix-bug212`, `refmatrix-plan26-4`, `refmatrix-plan25-1`, `refmatrix-plan21-5`. Kept by
+  the user's earlier choice: the October scratch dirs (`refmatrix-bug105-probe`,
+  `refmatrix-spike-hypertree`, and the store copies).
+- **plan-24 24.6 amended (r5, `99d96c7`):** the mod's tool observe writes 21.5's ring fields and
+  emits no `used` (user decision on 21.5 OD-1).
 
 ## Resume {#resume}
 
