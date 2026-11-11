@@ -1,0 +1,62 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+________ test_ac4_in_process_duplicate_id_is_refused_counted_and_named _________
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-porn_1n4'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-porn_1n4/proj/.refmatrix'))
+
+    def test_ac4_in_process_duplicate_id_is_refused_counted_and_named(inproc):
+        base, root = inproc
+        d, paths = _dup_memdir(base)
+        _bridge(d)
+        _add_dup(d)
+        out = cli_mod._sync_memory_dir(d)
+>       _assert_dup_reported(out, paths, "in-process bridge")
+
+tests/test_bridge_move_safety.py:697: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+out = {'doc_drop_failed': [], 'duplicate_ids': [], 'embed': {'batches': 1, 'capped': False, 'embedded': 1, 'error': None, ...}, 'error': None, ...}
+paths = ['/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-porn_1n4/memory/a/x.md', '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-porn_1n4/memory/b/dup.md']
+where = 'in-process bridge'
+
+    def _assert_dup_reported(out: dict, paths: list[str], where: str) -> None:
+        assert out["error"] is None, f"{where}: {out}"
+        dups = out.get("duplicate_ids")
+        assert dups is not None, f"{where}: bridge result carries no duplicate_ids: {out}"
+        norm = {(i, tuple(sorted(str(Path(p).resolve()) for p in ps))) for i, ps in dups}
+>       assert norm == {("x", tuple(sorted(paths)))}, f"{where}: duplicate_ids={dups!r}"
+E       AssertionError: in-process bridge: duplicate_ids=[]
+E       assert set() == {('x', ('/pri...y/b/dup.md'))}
+E         
+E         Extra items in the right set:
+E         ('x', ('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-porn_1n4/memory/a/x.md', '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-porn_1n4/memory/b/dup.md'))
+E         Use -v to get more diff
+
+tests/test_bridge_move_safety.py:677: AssertionError
+__________________ test_ac4_ingest_stats_carry_duplicate_ids ___________________
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-wh1p9h3k'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-wh1p9h3k/proj/.refmatrix'))
+
+    def test_ac4_ingest_stats_carry_duplicate_ids(inproc):
+        from refmatrix.ingest_gmd import collect_gmd_files, ingest_gmd_paths
+        base, root = inproc
+        d, paths = _dup_memdir(base)
+        _add_dup(d)
+        s = Store(root)
+        try:
+            st = ingest_gmd_paths(s, collect_gmd_files([d.resolve()], as_memory=True),
+                                  as_memory=True)
+        finally:
+            s.close()
+>       assert [(i, sorted(map(str, ps))) for i, ps in st.duplicate_ids] == [("x", sorted(paths))]
+E       AssertionError: assert [] == [('x', ['/pri...y/b/dup.md'])]
+E         
+E         Right contains one more item: ('x', ['/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-wh1p9h3k/memory/a/x.md', '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-wh1p9h3k/memory/b/dup.md'])
+E         Use -v to get more diff
+
+tests/test_bridge_move_safety.py:712: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bridge_move_safety.py::test_ac4_in_process_duplicate_id_is_refused_counted_and_named
+FAILED tests/test_bridge_move_safety.py::test_ac4_ingest_stats_carry_duplicate_ids
+2 failed, 23 deselected in 5.80s
