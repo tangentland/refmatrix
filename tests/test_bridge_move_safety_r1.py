@@ -30,6 +30,7 @@ in that root. Nothing in the bridge or the sync is mocked.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -42,8 +43,8 @@ from refmatrix import cli as cli_mod
 from refmatrix import daemon as dm
 from refmatrix.store import Store
 from tests.test_bridge_move_safety import (  # noqa: F401 -- fixtures are used by name
-    X_MD, _anchor_paths, _bridge, _invoke, _mem, _memdir, _move, _set_source_path, _term, inproc,
-    snapshot_env,
+    X_MD, _anchor_paths, _bridge, _invoke, _mem, _memdir, _move, _set_source_path, _term,
+    _with_store, inproc, snapshot_env,
 )
 
 ANCHORS = {"x#root", "x#one", "x#two"}
@@ -116,6 +117,21 @@ def _post_commit_sync(proj: Path, root: Path) -> str:
     the CLI's own report is eaten by rich markup and cannot be read back)."""
     assert dm.ping(root), "the daemon is not up: the sync would run in-process"
     return _invoke(["sync", "--project-root", str(proj), "--since", "HEAD~1"])
+
+
+def _set_metadata_raw(root: Path, name: str, raw: str) -> None:
+    """Overwrite one memory row's `memory_content.metadata` TEXT verbatim (the column is TEXT,
+    so `'{not json'` is storable) -- on the THROWAWAY store only, daemon stopped."""
+    def _w(s):
+        con = s._connect()
+        eid = con.execute("SELECT id FROM entities WHERE kind = 'memory' AND name = ?",
+                          (name,)).fetchone()[0]
+        con.execute("UPDATE memory_content SET metadata = ? WHERE entity_id = ?", (raw, eid))
+        con.commit()
+    _with_store(root, _w)
+
+
+MEMORY_X = re.compile(r"memory\W{0,3}x\W")    # the error names the memory x
 
 
 def _restart(root: Path) -> None:
@@ -346,3 +362,52 @@ def test_b1_guard_purges_a_project_docs_anchors_that_share_a_memory_id(gitproj_i
     _invoke(["sync", "--project-root", str(proj), "-f", dpath])
     got = _anchor_paths(root, "x")
     assert dpath not in got.values(), f"the deleted doc's anchors survived the purge: {got}"
+
+
+def test_b1_guard_purges_anchors_when_the_memorys_source_path_names_another_file(
+        gitproj_inproc):
+    """(b2), form 1 (#r1-green-survivors): memory x's `source_path` names an existing OTHER file
+    (y.md), so x does not own the anchors at a/x.md. `sync -f a/x.md` purges them."""
+    base, proj, root = gitproj_inproc
+    memdir = _proj_memdir(proj, marker=False)
+    _bridge(memdir)
+    p = str((memdir / "a" / "x.md").resolve())
+    q = str((memdir / "y.md").resolve())
+    _assert_anchors_at(root, p, "after the bridge (fixture)")
+    _set_source_path(root, "x", q)
+    _invoke(["sync", "--project-root", str(proj), "-f", p])
+    got = _anchor_paths(root, "x")
+    assert p not in got.values(), \
+        f"anchors at {p} survived although memory x's source_path names {q}: {got}"
+
+
+def test_b1_forgetting_the_memory_releases_its_anchors_to_the_purge(gitproj_inproc):
+    """(b2), form 2: the property the `source_path` design is justified by -- ownership ends
+    with the memory. After `rmx memory forget x`, `sync -f <its path>` leaves no x#anchor
+    there."""
+    base, proj, root = gitproj_inproc
+    memdir = _proj_memdir(proj, marker=False)
+    _bridge(memdir)
+    p = str((memdir / "a" / "x.md").resolve())
+    _assert_anchors_at(root, p, "after the bridge (fixture)")
+    out = _invoke(["memory", "forget", "x", "--yes"])
+    assert "forgot" in out, f"fixture: memory x was not forgotten:\n{out}"
+    _invoke(["sync", "--project-root", str(proj), "-f", p])
+    got = _anchor_paths(root, "x")
+    assert p not in got.values(), f"orphaned anchors at {p} survived the purge: {got}"
+
+
+def test_b1_guard_fails_closed_on_unreadable_memory_metadata(gitproj_inproc):
+    """The guard cannot tell whether x owns the anchors when x's metadata does not parse:
+    neither deleting nor keeping silently is acceptable on a memory path (CLAUDE.md
+    #no-silent-failures). `sync -f P` fails naming x, and the anchors are still there."""
+    base, proj, root = gitproj_inproc
+    memdir = _proj_memdir(proj, marker=False)
+    _bridge(memdir)
+    p = str((memdir / "a" / "x.md").resolve())
+    _set_metadata_raw(root, "x", "{not json")
+    r = CliRunner().invoke(cli_mod.main, ["sync", "--project-root", str(proj), "-f", p])
+    text = f"{r.output}\n{r.exception!r}"
+    assert r.exit_code != 0, f"the sync succeeded over unreadable metadata:\n{text}"
+    assert MEMORY_X.search(text), f"the failure does not name memory x:\n{text}"
+    _assert_anchors_at(root, p, "after the refused sync")

@@ -189,6 +189,49 @@ guard survived the tests above ([[#r1-green-survivors]]). Three tests were added
   `__pycache__` was cleared, the guard line was grepped back, `git status --short src` was
   empty, and `git diff 497f7f0 -- src` was empty.
 
+**Follow-up: the rest of the implementer's scenarios, and the fail-closed branch.** Three more
+tests in `tests/test_bridge_move_safety_r1.py` cover the implementer's remaining scenarios.
+{#r1-red-addendum}
+
+- `test_b1_guard_purges_anchors_when_the_memorys_source_path_names_another_file` sets x's
+  `source_path` to y.md. After `sync -f a/x.md`, x's anchors are gone.
+- `test_b1_forgetting_the_memory_releases_its_anchors_to_the_purge` runs
+  `rmx memory forget x`, then `sync -f`. The orphaned anchors are purged.
+- `test_b1_guard_fails_closed_on_unreadable_memory_metadata` sets x's metadata to
+  `'{not json'`. `sync -f` then exits non-zero, names memory x, and the anchors are still there.
+- All three pass on `497f7f0`. Mutation fc changes the parse-error `raise` to `continue`. It
+  kills the fail-closed test (`the sync succeeded over unreadable metadata`) and the three
+  passing loud tests below (`26.2-r1-mut-fc-parse-error-swallowed.log`, 4 failed).
+
+**RED: a sync that stops in an error fails loudly.** This is a user requirement from
+2026-11-10: "if the sync stops in an error, it needs to fail loudly on the commandline or
+console, not just logs". The tests are in `tests/test_sync_fails_loudly_r1.py` and use the
+fail-closed raise above as the error. Log: `26.2-r1-loud-red.log` (6 failed, 17 passed at
+`497f7f0`). {#r1-red-loud}
+
+| Surface | Test | At `497f7f0` |
+|---------|------|--------------|
+| in-process CLI `sync -f` / `-i` | `test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr[-f,-i]` | passes: an uncaught traceback ending in `ValueError: ... memory 'x' ...` on stderr, exit 1; killed by fc |
+| daemon-routed `sync --since` | `test_daemon_routed_sync_error_is_an_error_reply_and_a_loud_cli_exit` | passes: the reply is `ok: false`, and the CLI prints `Error: daemon sync_since failed: ... memory 'x' ...`, exit 1; killed by fc |
+| generated git hooks (4) | `test_generated_git_hook_does_not_discard_the_sync_failure[*]` | RED: `post-commit discards the sync's error: ['( cd "$ROOT" && rmx sync --since HEAD~1 >/dev/null 2>&1 \|\| true ) &']`, and the same for post-merge, post-checkout and post-rewrite |
+| installed post-commit | `test_installed_post_commit_hook_leaves_a_failing_sync_on_the_terminal` | RED: `the post-commit sync failed silently: nothing naming memory x on the terminal` (the commit's stderr is empty) |
+| daemon watcher | `test_failed_watch_flush_is_printed_by_daemon_status_until_a_good_flush` | RED: `` `rmx daemon status` does not print the failed watch flush naming memory x `` (the `rmxd.log` line exists and names x) |
+
+{#r1-red-loud-table}
+
+Notes for GREEN. {#r1-red-loud-notes}
+
+- The installed-hook test puts a launcher named `rmx` on PATH that execs this checkout's CLI.
+  It is a PATH shim around the real sync, not a mock, so no mock-registry row is needed. The
+  test reads the committing terminal's stderr. If the channel records the error elsewhere
+  instead, the test's oracle has to change with it.
+- The watcher test cannot use the memdir, because the watcher drops hidden segments. Its
+  trigger is a project doc `docs/x.md` with GMD id `x`. Its setup runs through a non-watching
+  daemon: an in-process `rmx sync` never closes its store, so the test process keeps the
+  catalog and the watching daemon cannot start. This is a pre-existing CLI handle leak.
+- The in-process surface is already loud, but only as a raw traceback. If the user wants a
+  clean `Error:` line rather than a traceback, that is a separate pin.
+
 ## Remedy r1 GREEN: purge keeps bridge-owned anchors; marker walk bounded {#remedy-r1-green}
 
 rel: implements -> [[bsd-task-26.2-r1-bridge-move-safety-90abc72#b-1]]

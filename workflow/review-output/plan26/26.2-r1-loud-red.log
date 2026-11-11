@@ -1,0 +1,167 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+.................FFFFFF                                                  [100%]
+=================================== FAILURES ===================================
+___ test_generated_git_hook_does_not_discard_the_sync_failure[post-checkout] ___
+
+name = 'post-checkout'
+
+    @pytest.mark.parametrize("name", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_generated_git_hook_does_not_discard_the_sync_failure(name):
+        """Every hook line that runs `rmx sync` keeps its stderr and its exit status: no
+        `2>/dev/null`, no `>/dev/null 2>&1`, no `&>/dev/null`, no `|| true`. (stdout may be
+        quieted with `>/dev/null`; the job may stay backgrounded.)"""
+        lines = [ln for ln in hooks_mod.GIT_HOOK_SCRIPTS[name].splitlines() if "rmx sync" in ln]
+        assert lines, f"{name}: no `rmx sync` line"
+        bad = [ln for ln in lines if _DISCARD.search(ln)]
+>       assert not bad, f"{name} discards the sync's error: {bad}"
+E       AssertionError: post-checkout discards the sync's error: ['( cd "$ROOT" && rmx sync --since "$1..$2" >/dev/null 2>&1 || true ) &']
+E       assert not ['( cd "$ROOT" && rmx sync --since "$1..$2" >/dev/null 2>&1 || true ) &']
+
+tests/test_sync_fails_loudly_r1.py:128: AssertionError
+____ test_generated_git_hook_does_not_discard_the_sync_failure[post-commit] ____
+
+name = 'post-commit'
+
+    @pytest.mark.parametrize("name", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_generated_git_hook_does_not_discard_the_sync_failure(name):
+        """Every hook line that runs `rmx sync` keeps its stderr and its exit status: no
+        `2>/dev/null`, no `>/dev/null 2>&1`, no `&>/dev/null`, no `|| true`. (stdout may be
+        quieted with `>/dev/null`; the job may stay backgrounded.)"""
+        lines = [ln for ln in hooks_mod.GIT_HOOK_SCRIPTS[name].splitlines() if "rmx sync" in ln]
+        assert lines, f"{name}: no `rmx sync` line"
+        bad = [ln for ln in lines if _DISCARD.search(ln)]
+>       assert not bad, f"{name} discards the sync's error: {bad}"
+E       AssertionError: post-commit discards the sync's error: ['( cd "$ROOT" && rmx sync --since HEAD~1 >/dev/null 2>&1 || true ) &']
+E       assert not ['( cd "$ROOT" && rmx sync --since HEAD~1 >/dev/null 2>&1 || true ) &']
+
+tests/test_sync_fails_loudly_r1.py:128: AssertionError
+____ test_generated_git_hook_does_not_discard_the_sync_failure[post-merge] _____
+
+name = 'post-merge'
+
+    @pytest.mark.parametrize("name", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_generated_git_hook_does_not_discard_the_sync_failure(name):
+        """Every hook line that runs `rmx sync` keeps its stderr and its exit status: no
+        `2>/dev/null`, no `>/dev/null 2>&1`, no `&>/dev/null`, no `|| true`. (stdout may be
+        quieted with `>/dev/null`; the job may stay backgrounded.)"""
+        lines = [ln for ln in hooks_mod.GIT_HOOK_SCRIPTS[name].splitlines() if "rmx sync" in ln]
+        assert lines, f"{name}: no `rmx sync` line"
+        bad = [ln for ln in lines if _DISCARD.search(ln)]
+>       assert not bad, f"{name} discards the sync's error: {bad}"
+E       AssertionError: post-merge discards the sync's error: ['( cd "$ROOT" && rmx sync --since ORIG_HEAD >/dev/null 2>&1 || true ) &']
+E       assert not ['( cd "$ROOT" && rmx sync --since ORIG_HEAD >/dev/null 2>&1 || true ) &']
+
+tests/test_sync_fails_loudly_r1.py:128: AssertionError
+___ test_generated_git_hook_does_not_discard_the_sync_failure[post-rewrite] ____
+
+name = 'post-rewrite'
+
+    @pytest.mark.parametrize("name", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_generated_git_hook_does_not_discard_the_sync_failure(name):
+        """Every hook line that runs `rmx sync` keeps its stderr and its exit status: no
+        `2>/dev/null`, no `>/dev/null 2>&1`, no `&>/dev/null`, no `|| true`. (stdout may be
+        quieted with `>/dev/null`; the job may stay backgrounded.)"""
+        lines = [ln for ln in hooks_mod.GIT_HOOK_SCRIPTS[name].splitlines() if "rmx sync" in ln]
+        assert lines, f"{name}: no `rmx sync` line"
+        bad = [ln for ln in lines if _DISCARD.search(ln)]
+>       assert not bad, f"{name} discards the sync's error: {bad}"
+E       AssertionError: post-rewrite discards the sync's error: ['( cd "$ROOT" && rmx sync --since "$OLD" >/dev/null 2>&1 || true ) &']
+E       assert not ['( cd "$ROOT" && rmx sync --since "$OLD" >/dev/null 2>&1 || true ) &']
+
+tests/test_sync_fails_loudly_r1.py:128: AssertionError
+____ test_installed_post_commit_hook_leaves_a_failing_sync_on_the_terminal _____
+
+gitproj_inproc = (PosixPath('/private/tmp/r1-5tmxcj06'), PosixPath('/private/tmp/r1-5tmxcj06/proj'), PosixPath('/private/tmp/r1-5tmxcj06/proj/.refmatrix'))
+
+    @pytest.mark.timeout(300)
+    def test_installed_post_commit_hook_leaves_a_failing_sync_on_the_terminal(gitproj_inproc):
+        base, proj, root = gitproj_inproc
+        _init_repo(proj)
+        memdir = _proj_memdir(proj, marker=False)
+        _commit(proj, "c0")
+        memdir, p = _broken_x(proj, root, daemon_up=False, memdir=memdir)
+        out = hooks_mod._install_git_hooks(proj, apply=True, force=True)
+        assert (proj / ".git" / "hooks" / "post-commit").exists(), f"hook not installed: {out}"
+        bindir = base / "bin"
+        bindir.mkdir()
+        shim = bindir / "rmx"
+        shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m refmatrix.cli "$@"\n',
+                        encoding="utf-8")
+        shim.chmod(0o755)
+        _edit_x(memdir)
+        _git(proj, "add", "-A")
+        env = {**_cli_env(root), "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
+               "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        # hooks ON for this one commit. capture waits for EOF, i.e. for the backgrounded sync too.
+        r = subprocess.run(["git", "-C", str(proj), "commit", "-q", "-m", "c1: edit a/x.md"],
+                           capture_output=True, text=True, env=env, timeout=240)
+        assert r.returncode == 0, f"the commit itself failed: {r.stdout}{r.stderr}"
+>       assert MEMORY_X.search(r.stderr), \
+            f"the post-commit sync failed silently: nothing naming memory x on the terminal\n" \
+            f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+E       AssertionError: the post-commit sync failed silently: nothing naming memory x on the terminal
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert None
+E        +  where None = <built-in method search of re.Pattern object at 0x1051c6480>('')
+E        +    where <built-in method search of re.Pattern object at 0x1051c6480> = re.compile('memory\\W{0,3}x\\W').search
+E        +    and   '' = CompletedProcess(args=['git', '-C', '/private/tmp/r1-5tmxcj06/proj', 'commit', '-q', '-m', 'c1: edit a/x.md'], returncode=0, stdout='', stderr='').stderr
+
+tests/test_sync_fails_loudly_r1.py:155: AssertionError
+____ test_failed_watch_flush_is_printed_by_daemon_status_until_a_good_flush ____
+
+gitproj = (PosixPath('/private/tmp/r1-tsz_ppym'), PosixPath('/private/tmp/r1-tsz_ppym/proj'), PosixPath('/private/tmp/r1-tsz_ppym/proj/.refmatrix'))
+
+    @pytest.mark.timeout(300)
+    def test_failed_watch_flush_is_printed_by_daemon_status_until_a_good_flush(gitproj):
+        """The narrowest real trigger the watcher can reach (it drops hidden segments, so not the
+        memdir): a project doc `docs/x.md` with GMD id `x` holds the `x#...` concepts while memory
+        x's metadata is unreadable. Re-syncing the doc purges its path first, and the guard raises.
+    
+        Setup goes through the fixture's NON-watching daemon: an in-process `rmx sync` leaves this
+        process holding the catalog (the command never closes its store), and the watching daemon
+        then cannot start."""
+        base, proj, root = gitproj
+        _bridge(_proj_memdir(proj, marker=False))
+        docs = proj / "docs"
+        docs.mkdir()
+        doc = docs / "x.md"
+        doc.write_text(X_MD.format(id="x", body="a project doc that reuses the id x"),
+                       encoding="utf-8")
+        _invoke(["sync", "--project-root", str(proj), "-f", str(doc.resolve())])
+        dm.stop_daemon(root)
+        _set_metadata_raw(root, "x", "{not json")
+        assert dm.spawn_daemon_subprocess(root, watch_root=[proj]) and dm.ping(root)
+        try:
+            failed = _poll_log(
+                root, lambda ln: "watch flush failed" in ln,
+                lambda n: doc.write_text(X_MD.format(id="x", body=f"doc rev {n}"), encoding="utf-8"))
+            assert MEMORY_X.search(failed[-1]), f"fixture: the flush failed for another reason: {failed}"
+            out = _status()
+>           assert re.search(r"watch|flush", out, re.I) and MEMORY_X.search(out), \
+                f"`rmx daemon status` does not print the failed watch flush naming memory x:\n{out}"
+E               AssertionError: `rmx daemon status` does not print the failed watch flush naming memory x:
+E                 running pid=32928 root=/private/tmp/r1-tsz_ppym/proj/.refmatrix
+E                 code: /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/__init__.py  [DEV 
+E                 TREE]
+E                   code /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/__init__.py but the 
+E                 venv belongs to None — reinstall the deploy venv from its own tree
+E                 supervised: no
+E                 
+E               assert (None)
+E                +  where None = <function search at 0x100b57cc0>('watch|flush', 'running pid=32928 root=/private/tmp/r1-tsz_ppym/proj/.refmatrix\ncode: /Volumes/littlebig/refmatrix-plan26-2/src/refm...c/refmatrix/__init__.py but the \nvenv belongs to None — reinstall the deploy venv from its own tree\nsupervised: no\n', re.IGNORECASE)
+E                +    where <function search at 0x100b57cc0> = re.search
+E                +    and   re.IGNORECASE = re.I
+
+tests/test_sync_fails_loudly_r1.py:218: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sync_fails_loudly_r1.py::test_generated_git_hook_does_not_discard_the_sync_failure[post-checkout]
+FAILED tests/test_sync_fails_loudly_r1.py::test_generated_git_hook_does_not_discard_the_sync_failure[post-commit]
+FAILED tests/test_sync_fails_loudly_r1.py::test_generated_git_hook_does_not_discard_the_sync_failure[post-merge]
+FAILED tests/test_sync_fails_loudly_r1.py::test_generated_git_hook_does_not_discard_the_sync_failure[post-rewrite]
+FAILED tests/test_sync_fails_loudly_r1.py::test_installed_post_commit_hook_leaves_a_failing_sync_on_the_terminal
+FAILED tests/test_sync_fails_loudly_r1.py::test_failed_watch_flush_is_printed_by_daemon_status_until_a_good_flush
+6 failed, 17 passed in 110.87s (0:01:50)
