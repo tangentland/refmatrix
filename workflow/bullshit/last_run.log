@@ -34,3 +34,5 @@
 2026-11-10T16:56:42-0800 commit=30c35a9 verdict=DIRTY findings=4 (0B/2S/2M) report=2026-11-10-1656-bug199-200-r1-30c35a9.md
 2026-11-10T17:08:46-0800 commit=90abc72 verdict=DIRTY findings=6 (1B/1S/4M) report=2026-11-10-1708-task26.2-r1-bridge-move-safety-90abc72.md
 2026-11-10T17:31:13-0800 commit=d6dd8d8 verdict=MEH-only findings=1 (0B/0S/1M) report=2026-11-10-1731-bug199-200-r2-d6dd8d8.md
+2026-11-10T12:03:00-0800 commit=b5ed7b3 verdict=DIRTY findings=3 (0B/1S/2M) report=2026-11-10-1203-task-26.3-r1-savestate-subfolder-b5ed7b3.md
+2026-11-10T16:47:00-0800 commit=39bfc4a verdict=DIRTY findings=4 (0B/1S/3M) report=2026-11-10-1647-task-26.3-r2-remedy-39bfc4a.md

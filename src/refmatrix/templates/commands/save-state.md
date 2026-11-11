@@ -43,7 +43,7 @@ Do all of this, in this order:
    - In an organised dir the handoff lands in `savestates/<id>.md`; a top-level copy of the
      same save-state is moved in or removed, and the output says which.
    - A red `memory bridge FAILED` line, a duplicate-id refusal, a skipped-file count or a
-     `remove_failed` line is a loose end — fix or report it, never skip it.
+     "could not remove the top-level save-state copy" line (`remove_failed` in the MCP result) is a loose end — fix or report it, never skip it.
 3a. **Active goal (MANDATORY if a `/goal` is active)** — a goal does not survive the session on
    its own. Write/refresh the `{#active-goal}` block at the top of the status file's body (after any
    frontmatter and its H1; and
