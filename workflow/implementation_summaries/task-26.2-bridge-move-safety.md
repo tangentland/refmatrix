@@ -163,3 +163,134 @@ Logs are in `workflow/review-output/plan26/`: `26.2-r1-red.log`,
 `26.2-r1-mut-M4-absent-partition-refusal-dropped.log`, and `26.2-r1-restored.log` (s-1 and m-4
 green again after the restores). This RED makes [[#o-ac5-window]] obsolete: b-1 (iii) pins the
 current-path sync. {#r1-red-logs}
+
+## Remedy r1 GREEN: purge keeps bridge-owned anchors; marker walk bounded {#remedy-r1-green}
+
+rel: implements -> [[bsd-task-26.2-r1-bridge-move-safety-90abc72#b-1]]
+rel: implements -> [[bsd-task-26.2-r1-bridge-move-safety-90abc72#m-3]]
+
+Fix commit `497f7f0` on `task-26.2-bridge-move-safety`. It changes `store.py`, `sync.py`,
+`cli.py`, `ingest_gmd.py` and `daemon.py`, and corrects `plan-26-memory-organisation.md`'s
+watcher-only premise for `purge_path`. No tests were authored in this step. {#r1-green-scope}
+
+### b-1: the mechanism and why {#r1-green-b1}
+
+`Store.purge_path(abs_path)` now keeps the anchor concepts that the memory bridge owns. An
+anchor is owned when it is a `kind=concept` row named `<doc_id>#<anchor>` at `abs_path`, and a
+`kind=memory` row named `<doc_id>` in the active partition has a
+`memory_content.metadata.source_path` that equals `abs_path`. The comparison is made both
+literally and after `os.path.realpath`. Kept ids are counted on `Store.memory_anchors_kept`.
+The memory row itself has a NULL `path`, so `purge_path` never selected it. {#r1-green-mechanism}
+
+The guard reads `source_path` instead of stamping the anchors, for four reasons, each tied to a
+`purge_path` caller: {#r1-green-why}
+
+- **Live stores.** Every memory already bridged has a `source_path`, so its anchors are
+  protected as soon as this code is deployed. A stamp would leave every existing anchor
+  unprotected, and the gate never re-bridges an unchanged file to add one.
+- **Forget still works.** `rmx forget` (`forget_by_selector`) and `forget_memory` both go
+  through `purge_entity` / `_bulk_purge_ids`, which this guard does not touch. Once a memory is
+  forgotten, its row no longer claims the path, so the next path purge (`sync -f/-i`, the
+  missing-path branch) removes the orphaned anchors. A stamp would protect orphans forever.
+- **The guard sits in `purge_path` itself.** Every per-path purge goes through it:
+  - the four `_sync_paths` sites, which serve the watcher, `--since`, `-f` and `--flush-queue`;
+  - `sync -i`, which calls `purge_path` directly at the CLI;
+  - `ingest.py`'s legacy-doc purge.
+
+  `vacuum` and `untrack_by_path` purge through `_purge_paths` / `_bulk_purge_ids` and are left
+  as they were. The bridge never calls `mark_tracked`, so vacuum never reaches a memory file.
+- **The memory decides.** A row whose `source_path` names another file does not own anchors at
+  this path, so a project doc's anchors are purged as before.
+
+If the metadata of a memory row named like an anchor's doc id cannot be parsed, the purge
+RAISES. Ownership cannot be decided in that case, and on a memory path neither a silent delete
+nor a silent keep is acceptable. {#r1-green-fail-closed}
+
+The declined anchors are reported (#no-silent-failures): {#r1-green-report}
+
+- `_sync_paths` takes the delta of `memory_anchors_kept` and adds it to its report as
+  `memory_anchors_kept`. The daemon `sync_*` ops return that report unchanged, and the sync
+  log line carries ` memory_anchors_kept=N`.
+- `cli._say_memory_anchors_kept(result)` prints `memory_anchors_kept: N (...)` at the daemon
+  `synced` line, the in-process `synced` line and `rmx watch`'s batch line.
+- `-i` prints its own delta.
+- In the b-1 probes each sync printed `memory_anchors_kept: 3`.
+
+### m-3: bounded marker walk {#r1-green-m3}
+
+`_OrganisedDirs(roots)` now stops at the bridge's target dir, because ADR-0005 puts the marker
+at `<memdir>/.memory-layout`. Each file is bounded by the deepest target dir that contains it. A
+file under no target dir is bounded by its own directory. That covers a file target and a
+direct `ingest_gmd_paths` call with no roots. As a result, a target that is a subdir of an
+organised memdir does not see the memdir's marker, and it keeps the hash-only rule. That is
+the pre-26.2 behaviour, so the bound never causes a wrong refresh. The cache key is
+`(dir, bound)`. `ingest_gmd_paths(..., marker_roots=)` is passed by three callers:
+`_ingest_gmd_in_process` (`resolved`), `daemon._run_ingest_gmd_body` (`args["targets"]`,
+resolved) and the sessions ingest (`[cards_dir]`). {#r1-green-m3-bound}
+
+### Signatures {#r1-green-signatures}
+
+- `Store.purge_path(self, abs_path: str) -> int` keeps its signature and return value (the
+  number of entities removed). It now also increments `self.memory_anchors_kept`.
+- `Store._memory_owned_anchor_ids(self, abs_path: str, found: list[tuple[int, str, str]]) -> set[int]`
+  is new.
+- `ingest_gmd_paths(..., marker_roots: Iterable[Path] | None = None) -> IngestStats` gains the
+  `marker_roots` argument.
+- `_OrganisedDirs.__init__(self, roots: Iterable[Path] | None = None)` is new, and
+  `_OrganisedDirs._bound(self, rp: Path) -> Path` is new.
+- `cli._say_memory_anchors_kept(result) -> None` is new.
+- The `_sync_paths` report gains `memory_anchors_kept: int`.
+
+### Verification {#r1-green-verify}
+
+- `26.2-r1-green.log`: `tests/test_bridge_move_safety_r1.py` and `tests/test_bridge_move_safety.py`
+  pass 33/33 (8 + 25).
+- `26.2-r1-green-run1-lockflake.log` is the first run, before `__pycache__` was cleared: 3 failed /
+  30 passed. The three daemon-leg b-1 tests passed their post-sync anchor assertion. They then
+  failed in `_assert_next_bridge_skips`, where `Store(root)` hit `Conflicting lock is held ...
+  (PID <the restarted daemon>)`. The family run failed the same way. Three later runs of the r1
+  file did not, so the flake is intermittent and its cause was not measured. The test reads the
+  store while the restarted daemon is up. That read is fragile and was reported to the lead for
+  the test engineer. {#r1-green-flake}
+- `26.2-r1-green-family.log` covers 54 files: the family globs plus every `tests/test_*.py` that
+  names `purge_path`, `forget` or `vacuum`. Result: 1009 passed, 3 failed. All 3 failures are the
+  flake above, with the identical `E` line. None of the known pre-existing rows fell in this set.
+- GMD lint on this summary and on plan-26 shows 0 errors.
+
+### Mutations against `497f7f0` (`26.2-r1-mutations.log`) {#r1-green-mutations}
+
+Each mutation was restored with its own `git checkout`. After each restore, `__pycache__` was
+cleared, the fix line was grepped back, and `git status --short src` was confirmed empty.
+
+| # | Mutation | Result |
+|---|----------|--------|
+| a | `purge_path`: `kept = set()` (guard removed) | KILLED: 5 b-1 tests, `x's anchors after ...: []` |
+| b | guard compares `sp == abs_path` only (resolution dropped) | SURVIVED: 8/8 |
+| b2 | guard keeps the anchors whenever a memory row with that doc id exists, ignoring `source_path` | SURVIVED: 33/33 |
+| c | `_OrganisedDirs`: `if d == bound: break` removed (walk unbounded) | KILLED: `test_m3_...`, `an ancestor's marker turned the path-aware gate on` |
+
+b and b2 survive because no history the bridge writes can separate them from the fix. The
+bridge writes the anchors' `path` and the row's `source_path` from the same string in the same
+pass, and the CLI and daemon resolve their targets. {#r1-green-survivors}
+
+- **b.** Literal and resolved forms differ only when another writer has re-pointed the anchors.
+  One case is a non-memory GMD ingest of a file with the same id. Another is a pre-26.2 row in
+  symlink form whose anchors were later rewritten in resolved form.
+- **b2.** `source_path` names another file only in an id collision between a memory and a
+  project doc.
+- **Tests that would kill them** (for the test engineer):
+  - (b): bridge, then set the row's `source_path` to a symlink form of the same file and run
+    `sync -f <resolved path>`. The anchors must survive.
+  - (b2): bridge, then point the row's `source_path` at another file and run `sync -f
+    <anchor path>`. The anchors must go.
+  - (b2), second form: `rmx memory forget x`, then `sync -f <path>`. The orphaned anchors must
+    go. b2 does not change that outcome on its own, but it pins the forget path.
+
+### Open {#r1-green-open}
+
+- A `bug_registry` row is still owed for the pre-existing EDIT loss: marker-off edit, bridge,
+  commit, `sync --since` left the anchors at `[]`. This fix covers it, and the marker-off test
+  pins it.
+- Pre-existing, not changed here: with a daemon up, `rmx sync -i` calls `purge_path` on the
+  `_DaemonWriter` proxy. That proxy has no `purge_path`, so `__getattr__` sends the call to the
+  lock-free READER Store. The `-i` daemon route is a separate defect and needs its own row.
