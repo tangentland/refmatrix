@@ -245,16 +245,18 @@ resolved) and the sessions ingest (`[cards_dir]`). {#r1-green-m3-bound}
 
 - `26.2-r1-green.log`: `tests/test_bridge_move_safety_r1.py` and `tests/test_bridge_move_safety.py`
   pass 33/33 (8 + 25).
-- `26.2-r1-green-run1-lockflake.log` is the first run, before `__pycache__` was cleared: 3 failed /
-  30 passed. The three daemon-leg b-1 tests passed their post-sync anchor assertion. They then
-  failed in `_assert_next_bridge_skips`, where `Store(root)` hit `Conflicting lock is held ...
-  (PID <the restarted daemon>)`. The family run failed the same way. Three later runs of the r1
-  file did not, so the flake is intermittent and its cause was not measured. The test reads the
-  store while the restarted daemon is up. That read is fragile and was reported to the lead for
-  the test engineer. {#r1-green-flake}
+- `26.2-r1-green-run1-pre-lockfix.log` is the first run (17:24), against the RED test file as
+  it stood before `41048a5`: 3 failed / 30 passed. The three daemon-leg b-1 tests passed their
+  post-sync anchor assertion. They then failed in `_assert_next_bridge_skips`, where `Store(root)`
+  hit `Conflicting lock is held ... (PID <the restarted daemon>)`, because the test read the
+  store while the restarted daemon was still up. The family run collected the same pre-fix file
+  and failed the same way. `41048a5` (17:27, test side) stops the daemon before that read. Every
+  run after it, including `26.2-r1-green.log` and `26.2-r1-green-rerun.log`, passes those three
+  tests. This was a test defect fixed in the test, not a flake. {#r1-green-flake}
 - `26.2-r1-green-family.log` covers 54 files: the family globs plus every `tests/test_*.py` that
   names `purge_path`, `forget` or `vacuum`. Result: 1009 passed, 3 failed. All 3 failures are the
-  flake above, with the identical `E` line. None of the known pre-existing rows fell in this set.
+  pre-`41048a5` lock defect above, with the identical `E` line, and they pass at `497f7f0` in
+  `26.2-r1-green.log`. None of the known pre-existing rows fell in this set.
 - GMD lint on this summary and on plan-26 shows 0 errors.
 
 ### Mutations against `497f7f0` (`26.2-r1-mutations.log`) {#r1-green-mutations}
