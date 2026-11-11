@@ -129,8 +129,10 @@ def _pack(r, what) -> "s.Pack":
 # ---- R1: the budget module (pure) -----------------------------------------------------------------
 
 
+# R1's seven channels plus rev 6's `recall_state` (R11: "a CHANNEL_BUDGET_BYTES entry like every
+# other producer").
 CHANNELS = {"prompt_recall", "scan_prompt", "curator_status", "focus_input", "session_start",
-            "focus_context", "precompact"}
+            "focus_context", "precompact", "recall_state"}
 EVENTS = {"UserPromptSubmit", "SessionStart"}
 
 
@@ -1208,3 +1210,128 @@ def test_ac13_generator_emits_pack_raised_k_and_no_variable(tmp_path):
     c = subprocess.run([h.rmx_bin(), "install-hooks", "--check"], cwd=str(root.parent),
                        env=env, capture_output=True, text=True, timeout=300)
     assert c.returncode == 0, (c.stdout[-800:], c.stderr[-800:])
+
+
+# ---- AC-15 (rev 6, R11): recall-state after compaction and /clear -----------------------------------
+
+
+@pytest.fixture(scope="module")
+def rs():
+    """A sandbox store (no daemon) whose newest save-state is written by the GENERATED PreCompact
+    checkpoint command (`rmx save-state --no-promote --no-sync -m "auto: pre-compact
+    checkpoint"`), plus an STM ring, so recall-state has a handoff, git, STM and memories."""
+    from refmatrix.memory_layout import iter_savestates
+    base = s.short_base("p25r")
+    home = base / "g" / ".refmatrix"
+    s.build_global(home)
+    proj = base / "fxrs"
+    fx = s.Fixture(base, proj, home)
+    s._init_store(fx.root)
+    s.copy_memdir(proj, include={f"fx_mem_{i:02d}" for i in range(0, 4)})
+    s.seed_ring(fx.root, n=12)
+    ck = [c for _e, _m, c in h.hook_entries(fx.root, "PreCompact") if "save-state" in c]
+    assert len(ck) == 1, ck
+    # The checkpoint resolves its session from $RMX_SESSION here: the generated command reads no
+    # envelope, and a sandbox child has no Claude pid pointer (measured: SessionUnresolved).
+    r = s.run_cmd(fx, ck[0], env_in=s.envelope("", event="PreCompact"), RMX_SESSION=s.SESSION)
+    assert r.returncode == 0, r.stderr.decode("utf-8", "replace")[-1500:]
+    saves = iter_savestates(fx.memdir)
+    assert saves, f"the PreCompact checkpoint wrote no save-state under {fx.memdir}"
+    fx.checkpoint = Path(saves[0]).stem
+    assert "auto: pre-compact checkpoint" in Path(saves[0]).read_text(encoding="utf-8")
+    yield fx
+    import rmx_sandbox
+    rmx_sandbox.remove_tree(base)
+
+
+def _rs_entry(root: Path) -> "tuple[str | None, str]":
+    hits = [(m, c) for _e, m, c in h.hook_entries(root, "SessionStart") if "recall-state" in c]
+    assert len(hits) == 1, f"R11: expected ONE SessionStart entry running recall-state; got {hits}"
+    return hits[0]
+
+
+def test_ac15a_generator_emits_one_unchained_compact_clear_recall_state_entry(tmp_path):
+    """AC-15 (a): exactly one SessionStart entry whose matcher covers compact AND clear, whose
+    command is `rmx recall-state --max-bytes N` (N = budget("recall_state") ≤ 9,000), alone
+    (not chained to another command); startup|resume keep their entries."""
+    root = tmp_path / "proj" / ".refmatrix"
+    root.mkdir(parents=True)
+    matcher, cmd = _rs_entry(root)
+    assert {"compact", "clear"} <= set((matcher or "").split("|")), matcher
+    tail = s.after_env(cmd)
+    n = s.budget_or_none("recall_state")
+    assert n is not None and n <= 9000, f"R1 recall_state budget: {n}"
+    assert tail == f"rmx recall-state --max-bytes {n}", tail
+    entries = [e for e in h.hook_block(root)["hooks"]["SessionStart"]
+               if any("recall-state" in x["command"] for x in e["hooks"])]
+    assert len(entries) == 1 and len(entries[0]["hooks"]) == 1, entries
+    starts = [e for e in h.hook_block(root)["hooks"]["SessionStart"]
+              if "startup" in (e.get("matcher") or "")]
+    assert starts, "startup|resume entries vanished"
+
+
+def test_ac15b_compact_runs_recall_state_naming_the_checkpoint_within_n(rs):
+    """AC-15 (b): run through bash -c with a SessionStart {"source": "compact"} envelope: stdout
+    ≤ N bytes, it names the PreCompact checkpoint as the handoff, exit 0."""
+    _m, cmd = _rs_entry(rs.root)
+    r = s.run_cmd(rs, cmd, env_in=s.envelope("", event="SessionStart", source="compact"))
+    _ok(r, "recall-state entry (compact)")
+    n = s.budget_or_none("recall_state")
+    assert n is not None and len(r.stdout) <= n, (len(r.stdout), n)
+    assert rs.checkpoint.encode() in r.stdout, (rs.checkpoint, r.stdout[:600])
+
+
+def test_ac15c_recall_state_over_n_keeps_whole_blocks_head_and_a_trailer(rs):
+    """AC-15 (c): a recall-state larger than N: whole blocks only, the head kept, a trailer
+    naming `rmx recall-state`. N is forced below the full size by appending a smaller
+    `--max-bytes` (click keeps the last); the full size is measured first."""
+    full = s.run_cmd(rs, s.HOOK_ENV + "rmx recall-state")
+    _ok(full, "rmx recall-state (full)")
+    n = 700
+    assert len(full.stdout) > n, f"fixture: full recall-state is only {len(full.stdout)} B"
+    _m, cmd = _rs_entry(rs.root)
+    r = s.run_cmd(rs, cmd + f" --max-bytes {n}",
+                  env_in=s.envelope("", event="SessionStart", source="compact"))
+    _ok(r, f"recall-state --max-bytes {n}")
+    out = r.stdout.decode("utf-8")
+    assert 0 < len(r.stdout) <= n, len(r.stdout)
+    assert out.splitlines()[0] == full.stdout.decode("utf-8").splitlines()[0]
+    assert "rmx recall-state" in out.rstrip("\n").splitlines()[-1], out[-300:]
+
+
+def test_ac15d_no_daemon_prints_the_file_blocks_and_exits_0(rs):
+    """AC-15 (d): no daemon: exit 0 and the file-based blocks (the handoff, git) printed; the
+    missing daemon leg is SAID (the spec's "counted" names no recorder; see the summary)."""
+    _m, cmd = _rs_entry(rs.root)
+    r = s.run_cmd(rs, cmd, env_in=s.envelope("", event="SessionStart", source="clear"))
+    _ok(r, "recall-state entry (clear, no daemon)")
+    out = r.stdout.decode("utf-8")
+    assert rs.checkpoint in out and "git" in out, out[:600]
+    said = (out + r.stderr.decode("utf-8", "replace")).lower()
+    assert "daemon" in said, said[-600:]
+
+
+def test_ac15e_unreadable_memdir_fails_with_one_error_line(rs):
+    """AC-15 (e): a forced failure (the memdir unreadable): exit != 0, ONE `Error:` line, no
+    Traceback (the user's 2026-11-10 rule)."""
+    _m, cmd = _rs_entry(rs.root)
+    mode = rs.memdir.stat().st_mode
+    os.chmod(rs.memdir, 0)
+    try:
+        r = s.run_cmd(rs, cmd, env_in=s.envelope("", event="SessionStart", source="compact"))
+    finally:
+        os.chmod(rs.memdir, mode)
+    err = r.stderr.decode("utf-8", "replace")
+    assert r.returncode != 0, f"exit 0 on an unreadable memdir: {r.stdout[:300]!r}"
+    assert "Traceback" not in err, err[-1200:]
+    assert len([ln for ln in err.splitlines() if ln.startswith("Error:")]) == 1, err[-600:]
+
+
+def test_ac15f_max_bytes_is_a_recall_state_verb_parameter():
+    """AC-15 (f): `max_bytes` is a parameter of the recall_state VERB (MCP schema) and the CLI
+    flag `--max-bytes` (verb parity)."""
+    from refmatrix import cli, mcp
+    props = mcp.TOOLS["rmx_recall_state"]["schema"]["properties"]
+    assert "max_bytes" in props, sorted(props)
+    opts = {o for p_ in cli.recall_state.params for o in getattr(p_, "opts", [])}
+    assert "--max-bytes" in opts, sorted(opts)
