@@ -403,6 +403,21 @@ def _say_vector_delete_failures(result, what: str) -> None:
                    f"working `import lance` (cause in daemon.stderr.log)",
                    err=True)
 
+
+def _say_memory_anchors_kept(result) -> None:
+    """Put the memory-bridge anchors a sync purge DECLINED on the caller's
+    terminal (task 26.2, ch-bsd r1 #b-1, 2026-11-10). `Store.purge_path` keeps
+    a memory file's `x#anchor` concepts (the bridge owns them; the bridge's
+    gate would never put them back) and counts them; the count rides back in
+    the sync result from the daemon or in-process leg, and is printed here so
+    a sync that touched a memory file says what it left in place
+    (CLAUDE.md #no-silent-failures)."""
+    n = (result or {}).get("memory_anchors_kept") if isinstance(result, dict) else None
+    if n:
+        console.print(f"memory_anchors_kept: {n} (anchor concepts of bridged memory "
+                      f"files, owned by the bridge; forgetting the memory releases them)")
+
+
 def _store(write: bool = True) -> "Store":
     """THE catalog accessor. The `write` flag signals intent at the call site.
 
@@ -8629,6 +8644,7 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
                     f"[green]synced[/] +{r['added']} ~{r['updated']} "
                     f"-{r['purged']} (touched={r['touched']}) [daemon]"
                 )
+                _say_memory_anchors_kept(r)
                 _say_vector_delete_failures(r, "sync")
             return
         # Daemon-managed store but the daemon isn't reachable (down or
@@ -8668,10 +8684,15 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
     s = _store()
     proot = (project_root or Path.cwd()).resolve()
 
+    kept0 = getattr(s, "memory_anchors_kept", 0)
     for p in invalidate:
         s.purge_path(str(Path(p).resolve()))
     if invalidate:
         console.print(f"[yellow]purged[/] {len(invalidate)} paths")
+        # `-i` purges directly; the bridge-owned anchors it declined are counted
+        # on the store and reported like the sync's own (26.2 r1 #b-1).
+        _say_memory_anchors_kept(
+            {"memory_anchors_kept": getattr(s, "memory_anchors_kept", 0) - kept0})
 
     if since:
         report = syncmod.sync_since(s, since, project_root=proot, semantic=semantic)
@@ -8706,6 +8727,7 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
         f"[green]synced[/] +{report['added']} ~{report['updated']} "
         f"-{report['purged']} (touched={report['touched']})"
     )
+    _say_memory_anchors_kept(report)
 
 
 @main.group("queue", invoke_without_command=True)
@@ -9560,6 +9582,7 @@ def watch(path, semantic, debounce):
             f"[cyan]synced[/] {len(paths)} path(s) "
             f"+{report['added']} ~{report['updated']} -{report['purged']}"
         )
+        _say_memory_anchors_kept(report)
 
     try:
         run_watcher(s, project_root, semantic=semantic,
@@ -10635,6 +10658,7 @@ def _ingest_gmd_in_process(s: Store, root: Path, resolved: list[Path], *, as_mem
         stats = ingest_gmd_paths(
             s, files, verbose=verbose,
             as_memory=as_memory, memory_mtype_default=memory_mtype,
+            marker_roots=resolved,
         )
     rep = stats.report()
     emb = None
@@ -14155,6 +14179,7 @@ def session_ingest_cmd(targets, all_projects, force, verbose, no_index):
             stats = ingest_gmd_paths(
                 s, files, verbose=verbose,
                 as_memory=True, memory_mtype_default="session",
+                marker_roots=[cards_dir],
             )
     finally:
         # Close the in-process writer HERE, not at interpreter exit (task 3.7): a

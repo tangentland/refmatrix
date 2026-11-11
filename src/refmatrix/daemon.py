@@ -3677,6 +3677,8 @@ def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict, *,
                     as_memory=bool(args.get("as_memory")),
                     memory_mtype_default=args.get("memory_mtype") or "curated",
                     progress_cb=_progress,
+                    # the marker lookup stops at the bridge's targets (26.2 r1 #m-3)
+                    marker_roots=[Path(p).resolve() for p in (args.get("targets") or [])],
                 )
         finally:
             d._store_lock.release()

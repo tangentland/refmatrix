@@ -24,7 +24,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 
 from refmatrix.store import Store
 
@@ -906,8 +906,20 @@ def _map_path(p: "str | None", path_map: "list[tuple[str, str]] | None") -> "str
 
 class _OrganisedDirs:
     """Which files are under an organised memdir (AC-3b): the nearest ancestor
-    carrying `.memory-layout`, read by `memory_layout.is_organised`. Cached per
-    directory: one stat per ancestor per run.
+    carrying `.memory-layout`, read by `memory_layout.is_organised`, looked for
+    no higher than the memdir the bridge was pointed at. Cached per
+    (directory, bound): one stat per ancestor per run.
+
+    Bounded (task 26.2, ch-bsd r1 #m-3, 2026-11-10): ADR-0005 #marker puts the
+    marker at `<memdir>/.memory-layout`. The walk used to climb to `/`, so a
+    `.memory-layout` in an ancestor (`~/.claude/projects/`, shared by every
+    memdir below it) turned the path-aware gate on for dirs that were never
+    organised. `roots` are the bridge's targets (resolved); a file is bounded by
+    the deepest target DIR that contains it, and a file under none (a file
+    target, or a direct caller that names no dir) by its own directory -- the
+    only dir the call named. A target that is a SUBDIR of an organised memdir
+    therefore does not see the memdir's marker and keeps the hash-only rule,
+    which is the pre-26.2 behaviour, never a wrong refresh.
 
     An UNREADABLE marker is never read as 'not organised' (ADR-0005
     #marker-encoding) and never fails the ingest (task 26.6: the memories are
@@ -915,17 +927,29 @@ class _OrganisedDirs:
     there -- a refresh only re-points provenance, identity is the id -- and the
     error is kept on `errors` for the report (CLAUDE.md #no-silent-failures)."""
 
-    def __init__(self) -> None:
-        self._cache: dict[Path, bool] = {}
+    def __init__(self, roots: "Iterable[Path] | None" = None) -> None:
+        self._cache: dict[tuple[Path, Path], bool] = {}
         self.errors: list[str] = []
+        # Deepest first, so a nested target bounds its own files.
+        self._roots = sorted({Path(r).resolve() for r in (roots or ())
+                              if Path(r).is_dir()},
+                             key=lambda r: len(r.parts), reverse=True)
+
+    def _bound(self, rp: Path) -> Path:
+        for r in self._roots:
+            if rp.is_relative_to(r):
+                return r
+        return rp.parent
 
     def __call__(self, path: Path) -> bool:
         from refmatrix.memory_layout import MARKER_NAME, MemoryLayoutError, is_organised
+        rp = Path(path).resolve()
+        bound = self._bound(rp)
         seen: list[Path] = []
         result = False
-        for d in Path(path).resolve().parents:
-            if d in self._cache:
-                result = self._cache[d]
+        for d in rp.parents:
+            if (d, bound) in self._cache:
+                result = self._cache[(d, bound)]
                 break
             seen.append(d)
             if (d / MARKER_NAME).exists():
@@ -935,8 +959,10 @@ class _OrganisedDirs:
                     self.errors.append(f"{exc} -- the path-aware gate applied under {d}")
                     result = True
                 break
+            if d == bound:
+                break
         for d in seen:
-            self._cache[d] = result
+            self._cache[(d, bound)] = result
         return result
 
 
@@ -1123,6 +1149,7 @@ def ingest_gmd_paths(
     progress_cb: Callable[[str, int, int, Path], None] | None = None,
     lenient: bool = False,
     project_root: "Path | None" = None,
+    marker_roots: "Iterable[Path] | None" = None,
 ) -> IngestStats:
     """Two-pass ingest: parse all docs first (build id table), then link.
 
@@ -1143,6 +1170,10 @@ def ingest_gmd_paths(
     `kind=concept` regardless — they're still graph-citation points,
     not memory bodies. The frontmatter's `metadata.type` becomes the
     memory mtype (falls back to `memory_mtype_default`).
+
+    `marker_roots`: the bridge's targets -- the memdirs it was pointed at. The
+    `.memory-layout` lookup stops there (task 26.2 r1 #m-3, ADR-0005 #marker);
+    see `_OrganisedDirs`. Only read when `as_memory`.
     """
     stats = IngestStats()
 
@@ -1232,7 +1263,7 @@ def ingest_gmd_paths(
     # row); the organised-dir test (AC-3b); the old-path index (AC-1b).
     mem_rows: dict[str, "_MemRow | None"] = {}
     walk_eids: set[int] = set()
-    organised = _OrganisedDirs()
+    organised = _OrganisedDirs(marker_roots)
     path_index = _SourcePathIndex(store, None)
     if as_memory:
         mem_rows = {doc.doc_id: _memory_row(store, doc.doc_id) for _p, doc, _h in entries}

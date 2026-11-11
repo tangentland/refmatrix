@@ -6334,14 +6334,30 @@ class Store:
     def purge_path(self, abs_path: str) -> int:
         """Remove every entity (file + per-function) anchored at abs_path.
         Returns the number of *entities* removed. Scoped to the active
-        partition so two partitions tracking the same path stay isolated."""
+        partition so two partitions tracking the same path stay isolated.
+
+        EXCEPT the anchor concepts the memory bridge owns (task 26.2, ch-bsd r1
+        #b-1, 2026-11-10): a memory file's `x#anchor` rows are kept, counted on
+        `memory_anchors_kept`, and every caller that reports a purge reports
+        that count. A memdir inside a git project under `.claude/` reaches this
+        through the post-commit `rmx sync --since`, `sync -f` and `sync -i`
+        (`should_ignore` is True for any dot-segment); purging the anchors there
+        was permanent, because the bridge's gate then sees the file unchanged
+        and never re-creates them. Ownership is read, not stamped: see
+        `_memory_owned_anchor_ids`. The memory's own row has no `path` and is
+        never selected here; forgetting a memory goes through `forget_memory`
+        / `forget_by_selector`, which this guard does not touch."""
         con = self._connect()
-        rows = [
-            (r[0], r[1]) for r in con.execute(
-                "SELECT id, kind FROM entities WHERE partition_id=? AND path=?",
+        found = [
+            (r[0], r[1], r[2]) for r in con.execute(
+                "SELECT id, kind, name FROM entities WHERE partition_id=? AND path=?",
                 (self._partition_id, abs_path),
             )
         ]
+        kept = self._memory_owned_anchor_ids(abs_path, found)
+        if kept:
+            self.memory_anchors_kept = getattr(self, "memory_anchors_kept", 0) + len(kept)
+        rows = [(eid, kind) for eid, kind, _name in found if eid not in kept]
         ids = [eid for eid, _kind in rows]
         # ONE Lance delete per kind, not per entity (bug-085). Each Lance
         # delete is a full commit; on a `code.lance` carrying 60,944 versions
@@ -6360,6 +6376,66 @@ class Store:
         con.commit()
         self._log_event("untrack", path=abs_path)
         return len(ids)
+
+    def _memory_owned_anchor_ids(
+        self, abs_path: str, found: "list[tuple[int, str, str]]"
+    ) -> "set[int]":
+        """The ids in `found` (`(id, kind, name)` rows at `abs_path`) that are
+        anchors the memory bridge owns: a `kind=concept` row named
+        `<doc_id>#<anchor>` where a `kind=memory` row named `<doc_id>` in the
+        ACTIVE partition records `memory_content.metadata.source_path` = this
+        path, compared literally AND resolved (task 26.2 r1 #b-1, 2026-11-10).
+
+        WHY `source_path` and not a stamp on the anchors: `source_path` is the
+        record the bridge already keeps and its gate already reads (26.2), so
+        the anchors of every memory already in a live store are protected
+        without a re-bridge -- a stamp would leave every existing anchor
+        unprotected, and the gate never re-bridges an unchanged file to add it.
+        It also ends with the memory: once a memory row is forgotten through
+        its audited path (`forget_memory`, `forget_by_selector`), its anchors
+        are no longer owned and the next purge of that path removes them, where
+        a stamp would protect orphans forever. A memory whose `source_path`
+        names another file does not own these rows (a project doc with the same
+        GMD id is purged as before).
+
+        Resolved as well as literal: callers purge the resolved path (`sync`
+        resolves `ap`, `-i` resolves its argument), while a hash-only (marker-
+        off) row stores the path the bridge was handed, which may be a symlink
+        form. A memory row whose metadata does not parse RAISES: ownership
+        cannot be decided, and neither deleting nor keeping silently is
+        acceptable on a memory path (CLAUDE.md #no-silent-failures)."""
+        by_doc: dict[str, list[int]] = {}
+        for eid, kind, name in found:
+            if kind == "concept" and "#" in (name or ""):
+                by_doc.setdefault(name.partition("#")[0], []).append(int(eid))
+        if not by_doc:
+            return set()
+        target = os.path.realpath(abs_path)
+        con = self._connect()
+        owned: set[int] = set()
+        for doc_id, eids in by_doc.items():
+            for name, meta_json in con.execute(
+                    "SELECT e.name, mc.metadata FROM entities e "
+                    "JOIN memory_content mc ON mc.entity_id = e.id "
+                    "WHERE e.partition_id = ? AND e.kind = 'memory' AND e.name = ?",
+                    (self._partition_id, doc_id)).fetchall():
+                try:
+                    meta = json.loads(meta_json) if meta_json else {}
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        f"purge_path({abs_path!r}): memory {name!r} has unreadable "
+                        f"metadata JSON ({exc}); cannot tell whether it owns the "
+                        f"anchors at this path") from exc
+                if not isinstance(meta, dict):
+                    raise ValueError(
+                        f"purge_path({abs_path!r}): memory {name!r} metadata is a "
+                        f"{type(meta).__name__}, not an object; cannot tell whether it "
+                        f"owns the anchors at this path")
+                sp = meta.get("source_path")
+                if sp and (sp == abs_path or os.path.realpath(sp) == target):
+                    owned.update(eids)
+                    break
+        return owned
 
     # -- protected / noise flag CRUD + forget -------------------------------
     #

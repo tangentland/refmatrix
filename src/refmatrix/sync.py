@@ -165,6 +165,10 @@ def _sync_paths(
     project_root = (project_root or Path.cwd()).resolve()
     added = updated = purged = skipped_unchanged = 0
     failed0 = getattr(s, "vector_delete_failures", 0)
+    # Memory-bridge anchors a purge below DECLINED (task 26.2 r1 #b-1,
+    # 2026-11-10): `Store.purge_path` keeps them and counts them on the store;
+    # the delta is this sync's, reported and logged like a vector-delete failure.
+    kept0 = getattr(s, "memory_anchors_kept", 0)
     touched_existing: list[Path] = []
     gmd_paths: list[Path] = []
     cancelled = False
@@ -330,14 +334,17 @@ def _sync_paths(
                 bulk_apply_records(s, records)
 
     vector_delete_failed = getattr(s, "vector_delete_failures", 0) - failed0
+    memory_anchors_kept = getattr(s, "memory_anchors_kept", 0) - kept0
     report = {"added": added, "updated": updated, "purged": purged,
               "touched": len(touched_existing), "cancelled": cancelled,
-              "vector_delete_failed": vector_delete_failed}
+              "vector_delete_failed": vector_delete_failed,
+              "memory_anchors_kept": memory_anchors_kept}
     s.append_sync_log(
         f"{time.strftime('%Y-%m-%dT%H:%M:%S')} "
         f"paths={len(paths)} +{added} ~{updated} -{purged} touched={len(touched_existing)} "
         f"semantic={semantic}"
         + (f" vector_delete_failed={vector_delete_failed}" if vector_delete_failed else "")
+        + (f" memory_anchors_kept={memory_anchors_kept}" if memory_anchors_kept else "")
     )
     return report
 
