@@ -1,0 +1,45 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+___ test_s21_in_process_sync_refuses_x_and_still_syncs_the_rest_of_the_batch ___
+
+gitproj_inproc = (PosixPath('/private/tmp/r1-k0p3cdwp'), PosixPath('/private/tmp/r1-k0p3cdwp/proj'), PosixPath('/private/tmp/r1-k0p3cdwp/proj/.refmatrix'))
+
+    def test_s21_in_process_sync_refuses_x_and_still_syncs_the_rest_of_the_batch(gitproj_inproc):
+        base, proj, root = gitproj_inproc
+        memdir, x, d = _setup(base, proj, root, daemon_up=False)
+        r = _rmx(proj, root, "sync", "--project-root", str(proj), "-f", x, "-f", d)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode != 0, f"`rmx sync -f x.md -f d.py` exited 0 over a refused path\n{text}"
+        assert any(MEMORY_X.search(ln + " ") for ln in r.stderr.splitlines()
+                   if ln.startswith("Error:")), f"no `Error:` line naming memory x\n{text}"
+>       assert _entities_at(root, d) >= 1, f"docs/d.py was not synced: x's refusal took the batch\n{text}"
+E       AssertionError: docs/d.py was not synced: x's refusal took the batch
+E         exit 1
+E         stdout:
+E         
+E         stderr:
+E         Error: sync failed: purge_path('/private/tmp/r1-k0p3cdwp/.claude/projects/slug/memory/a/x.md'): memory 'x' has unreadable metadata JSON (Expecting property name enclosed in double quotes: line 1 column 2 (char 1)); cannot tell whether it owns the anchors at this path
+E         
+E       assert 0 >= 1
+E        +  where 0 = _entities_at(PosixPath('/private/tmp/r1-k0p3cdwp/proj/.refmatrix'), '/private/tmp/r1-k0p3cdwp/proj/docs/d.py')
+
+tests/test_sync_fails_loudly_r2.py:251: AssertionError
+__________ test_s21_async_flush_refuses_x_requeues_it_and_syncs_d_py ___________
+
+gitproj = (PosixPath('/private/tmp/r1-b58fq3l4'), PosixPath('/private/tmp/r1-b58fq3l4/proj'), PosixPath('/private/tmp/r1-b58fq3l4/proj/.refmatrix'))
+
+    def test_s21_async_flush_refuses_x_requeues_it_and_syncs_d_py(gitproj):
+        base, proj, root, memdir, x, d = _failed_async_flush(gitproj)
+        dm.stop_daemon(root)
+>       assert _entities_at(root, d) >= 1, \
+            f"docs/d.py was not synced: x's refusal took the async batch (queue now {_queued(root)})"
+E       AssertionError: docs/d.py was not synced: x's refusal took the async batch (queue now ['/private/tmp/r1-b58fq3l4/.claude/projects/slug/memory/a/x.md', '/private/tmp/r1-b58fq3l4/proj/docs/d.py'])
+E       assert 0 >= 1
+E        +  where 0 = _entities_at(PosixPath('/private/tmp/r1-b58fq3l4/proj/.refmatrix'), '/private/tmp/r1-b58fq3l4/proj/docs/d.py')
+
+tests/test_sync_fails_loudly_r2.py:259: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sync_fails_loudly_r2.py::test_s21_in_process_sync_refuses_x_and_still_syncs_the_rest_of_the_batch
+FAILED tests/test_sync_fails_loudly_r2.py::test_s21_async_flush_refuses_x_requeues_it_and_syncs_d_py
+2 failed, 6 deselected in 14.70s
