@@ -27,7 +27,8 @@ The contracts (team-lead, 2026-11-11):
 3. a real git failure under `rmx sync --since` is a clean error -- non-zero exit, an `Error:`
    line naming the ref and git's own message, no traceback -- on the in-process route and the
    daemon route;
-4. a vanished working directory is a clean error for any `rmx` command;
+4. a vanished working directory is never a traceback: a project command fails as a clean
+   `Error:` naming the directory; `rmx version` may instead succeed and print the version;
 5. end to end: worktree add + commit + remove, generated hooks installed, a store in the main
    checkout: no traceback anywhere, no `rmx sync FAILED` line, and the main store holds no path
    of the worktree's.
@@ -52,6 +53,7 @@ checkout's `.refmatrix/` holds exactly what git checked out". A store in the mai
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -393,7 +395,9 @@ def test_sync_since_a_ref_git_rejects_is_a_clean_error_through_the_daemon(gitpro
                          ids=["sync-since", "stats", "version"])
 def test_rmx_started_in_a_vanished_cwd_is_a_clean_error(argv):
     """The shape of the backgrounded post-commit that outlives `git worktree remove`: the shell
-    `cd`s into the dir, the dir goes, then `rmx` starts. No `REFMATRIX_ROOT` (a hook has none)."""
+    `cd`s into the dir, the dir goes, then `rmx` starts. No `REFMATRIX_ROOT` (a hook has none).
+    A project command fails as a clean `Error:` naming the directory; `version` may also
+    succeed (it needs no project) -- either way, never a traceback."""
     base = Path(tempfile.mkdtemp(prefix="b212v-", dir="/tmp")).resolve()
     try:
         gone = base / "gone"
@@ -406,10 +410,19 @@ def test_rmx_started_in_a_vanished_cwd_is_a_clean_error(argv):
     finally:
         shutil.rmtree(base, ignore_errors=True)
     text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
-    assert r.returncode != 0, f"`rmx {' '.join(argv)}` in a vanished cwd exited 0\n{text}"
     assert TRACEBACK not in r.stderr, \
         f"`rmx {' '.join(argv)}` in a vanished cwd crashed with a raw traceback\n{text}"
     err = [ln for ln in r.stderr.splitlines() if ln.startswith("Error:")]
+    if argv == ["version"]:
+        # team-lead, 2026-11-11: `rmx version` needs no project, so it MAY succeed in a vanished
+        # cwd -- then it must really print the version. Otherwise it fails as a clean `Error:`.
+        if r.returncode == 0:
+            assert re.search(r"^refmatrix \S+", r.stdout, re.M), \
+                f"`rmx version` exited 0 in a vanished cwd without printing the version\n{text}"
+        else:
+            assert err, f"`rmx version` failed in a vanished cwd with no `Error:` line\n{text}"
+        return
+    assert r.returncode != 0, f"`rmx {' '.join(argv)}` in a vanished cwd exited 0\n{text}"
     assert any("director" in ln.lower() or "cwd" in ln.lower() for ln in err), \
         f"`rmx {' '.join(argv)}`: no `Error:` line saying the working directory is gone\n{text}"
 
