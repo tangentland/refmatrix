@@ -36,6 +36,21 @@ from refmatrix.edge_records import edge_event, edge_fields, resolve_legacy_kind
 
 _CONCEPT_WORD_SPLIT_RE = re.compile(r"[\s_\-]+")
 
+# THE definition of "this `.refmatrix/` dir is a store": it holds a file a WRITER may hold --
+# a rotation slot (`catalog.A.duckdb` / `catalog.B.duckdb`, named by the `active` marker), the
+# pre-rotation `catalog.duckdb` (`DuckDBBackend.db_filename`), or the legacy SQLite
+# `catalog.db` (`SQLiteBackend.db_filename`). Reader files (`catalog.read.duckdb`,
+# `read_only.duckdb`) are copies of a writer's file and never make a store alone.
+#
+# Named once here (bug-212, 2026-11-11) because two places need the same facts: the verb-layer
+# reader refuses a replica that IS one of these files (`verbs._writer_catalog_files`), and the
+# generated git hooks (`hooks._store_gate`) render this tuple into their shell gate. The hooks
+# used to gate on `[ -d "$ROOT/.refmatrix" ]`, which passes in a fresh worktree or clone of a
+# fleet repo that TRACKS `.refmatrix/CLAUDE.md` although no store exists there -- and the hook
+# then ran `rmx sync` in that non-store dir, creating a store in it.
+WRITER_CATALOG_FILES: tuple[str, ...] = (
+    "catalog.A.duckdb", "catalog.B.duckdb", "catalog.duckdb", "catalog.db")
+
 
 def _canonical_for_kind(kind: str, name: str) -> str | None:
     """Compute the canonical_name column value for an entities row.

@@ -21,6 +21,13 @@ logs"). Until then every line ended `>/dev/null 2>&1 || true`, so a sync that
 refused -- the fail-closed anchor guard, a daemon error reply -- vanished. The
 job is still backgrounded and disowned, so the commit never waits on it and
 never fails because of it; the error may print after the prompt returns.
+
+Loud is for REAL failures only (bug-212, 2026-11-11). Two things the hooks used
+to treat as work are not: a checkout with no store of its own (a worktree or a
+clone of a fleet repo that tracks `.refmatrix/CLAUDE.md`) has nothing to sync,
+and an initial checkout (`git clone`, `git worktree add`: post-checkout's `$1`
+is the null sha) is not a branch switch. Both exit 0 silently; see
+`_store_gate` and the post-checkout body.
 """
 from __future__ import annotations
 
@@ -28,6 +35,8 @@ import json
 import os
 import stat
 from pathlib import Path
+
+from refmatrix.store import WRITER_CATALOG_FILES
 
 # Prefix for every Claude-hook command so cli.log tags the invocation form as
 # `hook` (telemetry "by form" axis). Exported so it reaches every rmx in a
@@ -49,43 +58,66 @@ HOOK_ENV = ('export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:
             "export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; "
             "export TOKENIZERS_PARALLELISM=false; ")
 
+def _store_gate() -> str:
+    """The shell line every generated git hook gates on: exit 0 unless THIS checkout holds a
+    store of its own -- one of `store.WRITER_CATALOG_FILES` under `$ROOT/.refmatrix/`.
+
+    Why (bug-212, 2026-11-11): the gate was `[ -d "$ROOT/.refmatrix" ] || exit 0`. Fleet repos
+    (cliquet, atldb, viascope) TRACK `.refmatrix/CLAUDE.md`, so every worktree and clone of
+    them has the dir and no store; the hook ran `rmx sync` there, which created a store in the
+    non-store dir, and in a removed worktree crashed on the vanished cwd. No store, no sync:
+    the hook exits 0 and prints nothing. The file list is rendered from the ONE definition in
+    `store.py`, never retyped here, so the shell and Python cannot disagree on what a store
+    is."""
+    tests = " || ".join(f'[ -e "$ROOT/.refmatrix/{name}" ]' for name in WRITER_CATALOG_FILES)
+    return f"{tests} || exit 0"
+
+
+_NO_STORE_COMMENT = ("# no store of its own (a worktree or clone with only the tracked "
+                     ".refmatrix/CLAUDE.md): nothing to sync")
+
 GIT_HOOK_SCRIPTS: dict[str, str] = {
-    "post-commit": r"""#!/usr/bin/env bash
+    name: body.replace("@STORE_GATE@", f"{_NO_STORE_COMMENT}\n{_store_gate()}")
+    for name, body in {
+        "post-commit": r"""#!/usr/bin/env bash
 # refmatrix: refresh after each commit
 set -e
 ROOT="$(git rev-parse --show-toplevel)"
-[ -d "$ROOT/.refmatrix" ] || exit 0
+@STORE_GATE@
 ( cd "$ROOT" && rmx sync --since HEAD~1 >/dev/null || echo "refmatrix: post-commit rmx sync FAILED (exit $?); its error is above" >&2 ) &
 disown
 """,
-    "post-merge": r"""#!/usr/bin/env bash
+        "post-merge": r"""#!/usr/bin/env bash
 # refmatrix: refresh after merge
 set -e
 ROOT="$(git rev-parse --show-toplevel)"
-[ -d "$ROOT/.refmatrix" ] || exit 0
+@STORE_GATE@
 ( cd "$ROOT" && rmx sync --since ORIG_HEAD >/dev/null || echo "refmatrix: post-merge rmx sync FAILED (exit $?); its error is above" >&2 ) &
 disown
 """,
-    "post-checkout": r"""#!/usr/bin/env bash
+        "post-checkout": r"""#!/usr/bin/env bash
 # refmatrix: refresh after checkout (only branch switches, $3==1)
 set -e
 [ "$3" = "1" ] || exit 0
+# an initial checkout (git clone, git worktree add) has a null previous HEAD: not a branch switch
+case "$1" in *[!0]*) ;; *) exit 0 ;; esac
 ROOT="$(git rev-parse --show-toplevel)"
-[ -d "$ROOT/.refmatrix" ] || exit 0
+@STORE_GATE@
 ( cd "$ROOT" && rmx sync --since "$1..$2" >/dev/null || echo "refmatrix: post-checkout rmx sync FAILED (exit $?); its error is above" >&2 ) &
 disown
 """,
-    "post-rewrite": r"""#!/usr/bin/env bash
+        "post-rewrite": r"""#!/usr/bin/env bash
 # refmatrix: refresh after rebase/amend
 set -e
 ROOT="$(git rev-parse --show-toplevel)"
-[ -d "$ROOT/.refmatrix" ] || exit 0
+@STORE_GATE@
 # Read rewritten oid pairs from stdin; sync from the oldest old-oid.
 OLD=$(awk '{print $1; exit}')
 [ -z "$OLD" ] && exit 0
 ( cd "$ROOT" && rmx sync --since "$OLD" >/dev/null || echo "refmatrix: post-rewrite rmx sync FAILED (exit $?); its error is above" >&2 ) &
 disown
 """,
+    }.items()
 }
 
 

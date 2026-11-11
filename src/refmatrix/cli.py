@@ -87,6 +87,32 @@ from refmatrix import graphread as _graphread
 console = Console()
 
 
+def _cwd_gone_message() -> str:
+    """The one wording of "this process's working directory no longer exists". `$PWD` is
+    the shell's record of the dir it `cd`ed into -- the kernel cannot name a deleted cwd --
+    so it is quoted as the shell's claim, or said to be unknown."""
+    where = os.environ.get("PWD") or "(unknown: $PWD is unset)"
+    return (f"the working directory no longer exists ({where}); "
+            f"cd to a project, or set REFMATRIX_ROOT")
+
+
+def _cwd() -> Path:
+    """`Path.cwd()`, or a clean `Error:` (exit 1) when the working directory was deleted.
+
+    Why (bug-212, 2026-11-11): the backgrounded post-commit `rmx sync` outlived
+    `git worktree remove`, and `Path.cwd()` raised a raw `FileNotFoundError` traceback on the
+    committing terminal. Only `os.getcwd()`'s own failure is translated -- ENOENT with no
+    filename -- so a missing FILE elsewhere is never reported as a missing cwd. Every cwd read
+    in this module goes through here, so a command that needs a project fails on the first
+    one, before it can resolve the wrong store."""
+    try:
+        return Path.cwd()
+    except FileNotFoundError as exc:
+        if exc.filename is not None:
+            raise
+        raise click.ClickException(_cwd_gone_message()) from exc
+
+
 def _root() -> Path:
     """Resolve the active store root.
 
@@ -97,7 +123,7 @@ def _root() -> Path:
     env = os.environ.get("REFMATRIX_ROOT")
     if env:
         return Path(env)
-    cur = Path.cwd().resolve()
+    cur = _cwd().resolve()
     # A `~/.claude/projects/<slug>/` cwd (e.g. a curated-memory dir) encodes the
     # project in its slug. Resolve THAT project's store FIRST — before the
     # generic ancestor walk, which would otherwise climb past it and hit the
@@ -111,6 +137,18 @@ def _root() -> Path:
             return p / ".refmatrix"
     from refmatrix.taxonomy import user_home
     return user_home()  # global/home store; never auto-create cwd/.refmatrix
+
+
+def _root_without_cwd() -> Path:
+    """`_root()` for a process whose working directory is gone: `REFMATRIX_ROOT`, else the
+    global store -- `_root()`'s own answer when the walk finds no project. Used ONLY to file
+    the telemetry row of such a run (bug-212, 2026-11-11); a command never resolves its store
+    this way, because syncing a project's paths into the global store is worse than failing."""
+    env = os.environ.get("REFMATRIX_ROOT")
+    if env:
+        return Path(env)
+    from refmatrix.taxonomy import user_home
+    return user_home()
 
 
 def _root_from_projects_slug(cwd: Path) -> "Path | None":
@@ -893,7 +931,7 @@ def init(path: Path | None, hooks: bool, memory_hooks: bool, agents: bool,
     the project is fully wired on first run. Pass --no-hooks / --no-agents
     to opt out.
     """
-    project_root = (path or Path.cwd()).resolve()
+    project_root = (path or _cwd()).resolve()
     target = project_root / ".refmatrix"
     s = Store(target, partition=_resolve_partition())
     # If a daemon already owns this catalog, skip Store.init() — it would
@@ -7188,7 +7226,7 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
 
     _grep_rg_fallback(
         pattern=pattern, regex=regex, gf=gf, limit=limit,
-        paths=paths, _tlog=_tlog, project_root=Path.cwd(),
+        paths=paths, _tlog=_tlog, project_root=_cwd(),
         learn_broker=broker,
     )
 
@@ -8563,7 +8601,7 @@ def _sync_stale(project_root, semantic, *, batch: int) -> None:
     if not paths:
         console.print("[green]no stale files to sync[/]")
         return
-    proot = str((project_root or Path.cwd()).resolve())
+    proot = str((project_root or _cwd()).resolve())
     total = len(paths)
     added = updated = purged = done = 0
     def _bail(i, why):
@@ -8665,7 +8703,7 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
         from refmatrix import daemon as daemon_mod
         root = _root()
         if daemon_mod.ping(root):
-            proot = (project_root or Path.cwd()).resolve()
+            proot = (project_root or _cwd()).resolve()
             args: dict = {"project_root": str(proot), "semantic": semantic}
             if async_flag and flush_queue:
                 op = "flush_queue_async"
@@ -8724,11 +8762,13 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
                     "the daemon restarts"
                 )
                 return
-            proot = (project_root or Path.cwd()).resolve()
+            proot = (project_root or _cwd()).resolve()
             try:
                 paths = ([str(p) for p in files] if files
                          else [str(p) for p in syncmod.changed_since(proot, since)])
             except RuntimeError as e:
+                # `git` missing, or `syncmod.GitRefError` (a RuntimeError: the ref and
+                # git's stderr, bug-212 2026-11-11) -- one clean `Error:` line, exit 1.
                 raise click.ClickException(str(e))
             if paths:
                 syncmod.enqueue(root, paths)
@@ -8744,7 +8784,7 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
             pass
 
     s = _store()
-    proot = (project_root or Path.cwd()).resolve()
+    proot = (project_root or _cwd()).resolve()
 
     from refmatrix.store import MemoryOwnershipError
     try:
@@ -8755,9 +8795,14 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
         # sync_since failed: ...`): exit 1, one `Error:` line on stderr naming the
         # memory and the cause (task 26.2 r1, user requirement 2026-11-10: "if the
         # sync stops in an error, it needs to fail loudly on the commandline or
-        # console, not just logs"). ONLY this refusal class: any other exception
-        # keeps its traceback, so a real crash still reads as one.
+        # console, not just logs"). ONLY the named refusal classes: any other
+        # exception keeps its traceback, so a real crash still reads as one.
         raise click.ClickException(f"sync failed: {exc}") from exc
+    except syncmod.GitRefError as exc:
+        # A `--since` ref git rejects (bug-212, 2026-11-11): `Error: sync --since <ref>
+        # failed: git diff exited N: <git's stderr>`, exit 1 -- the line the daemon
+        # route and the daemon-down enqueue branch print for the same failure.
+        raise click.ClickException(str(exc)) from exc
 
 
 def _sync_in_process(s, proot: Path, *, files, since, flush_queue, invalidate,
@@ -14974,7 +15019,16 @@ def cli_entry() -> None:
 
     t0 = _time.monotonic()
     argv = list(sys.argv[1:])
-    cwd = str(Path.cwd())
+    # A deleted working directory is not a crash here (bug-212, 2026-11-11: a backgrounded
+    # post-commit outlived `git worktree remove`). It is recorded -- the telemetry row carries
+    # `cwd: null` and the reason -- and the command runs: one that needs a project fails at
+    # its first `_cwd()` with a clean `Error:` line; one that does not (`rmx version`) works.
+    cwd: "str | None"
+    cwd_error: "str | None" = None
+    try:
+        cwd = str(_cwd())
+    except click.ClickException as exc:
+        cwd, cwd_error = None, exc.message
     pid = os.getpid()
     exit_code = 0
     error: str | None = None
@@ -15018,9 +15072,12 @@ def cli_entry() -> None:
             out_bytes = None          # accounting never fails the command
         try:
             _tel.log_cli_invocation(
-                _root(),
+                # No cwd, no walk: the row goes where `_root()` sends a cwd with no project
+                # (`REFMATRIX_ROOT`, else the global store), marked with why.
+                _root() if cwd is not None else _root_without_cwd(),
                 argv=argv,
                 cwd=cwd,
+                cwd_error=cwd_error,
                 exit_code=exit_code,
                 latency_ms=latency_ms,
                 error=error,

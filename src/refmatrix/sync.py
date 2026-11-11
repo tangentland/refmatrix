@@ -112,17 +112,48 @@ def sync_files(s: Store, paths: list[str], project_root: Path | None = None,
                        cancel_check=cancel_check)
 
 
+class GitRefError(RuntimeError):
+    """`git diff --name-only <ref>` refused: a ref git does not know, a null sha, a range
+    with a bad end. Carries the ref, git's exit status and git's own stderr.
+
+    Why (bug-212, 2026-11-11): `changed_since` ran git with `check=True` and let
+    `subprocess.CalledProcessError` escape, whose text is the argv and the exit status --
+    never git's message. A post-checkout on `git worktree add` (null previous HEAD) printed a
+    raw traceback on the committing terminal. The user asked for loud sync failures
+    (2026-11-10: "if the sync stops in an error, it needs to fail loudly on the commandline or
+    console, not just logs"); loud means one clean line naming the ref and what git said.
+
+    A RuntimeError, so the CLI's daemon-down `--since` branch (which turns RuntimeError into
+    a ClickException) needs no second handler; the in-process route names it explicitly; the
+    daemon's op dispatcher turns it into `ok:false` with this text, which the CLI prints as
+    `Error: daemon sync_since failed: ...`."""
+
+    def __init__(self, git_ref: str, returncode: int, stderr: str):
+        self.git_ref = git_ref
+        self.returncode = returncode
+        self.stderr = stderr
+        # One line: an `Error:` line that names the ref and git's message on the SAME line.
+        said = " ".join(ln.strip() for ln in stderr.splitlines() if ln.strip())
+        super().__init__(f"sync --since {git_ref} failed: git diff exited {returncode}: "
+                         f"{said or '(git printed nothing)'}")
+
+
 def changed_since(project_root: Path, git_ref: str) -> list[Path]:
     """Absolute paths of files changed since `git_ref`
     (`git diff --name-only`). No Store needed, so the CLI can resolve a
-    `--since` set to enqueue for the daemon without opening the catalog."""
+    `--since` set to enqueue for the daemon without opening the catalog.
+
+    A ref git rejects raises `GitRefError` (ref + git's stderr), never a bare
+    `CalledProcessError` (bug-212, 2026-11-11)."""
     project_root = Path(project_root).resolve()
     if shutil.which("git") is None:
         raise RuntimeError("git not on PATH")
     out = subprocess.run(
         ["git", "-C", str(project_root), "diff", "--name-only", git_ref],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True,
     )
+    if out.returncode != 0:
+        raise GitRefError(git_ref, out.returncode, out.stderr)
     return [project_root / f for f in out.stdout.splitlines() if f.strip()]
 
 

@@ -461,9 +461,11 @@ def project_partition(root: Path) -> str:
 
 def _writer_catalog_files(root: Path) -> "list[Path]":
     """Every file a WRITER may hold for this store: the rotation slots and the pre-rotation
-    `catalog.duckdb` / `catalog.db`. `snapshot_read` refuses a replica that is any of them."""
-    return [p for p in (root / "catalog.A.duckdb", root / "catalog.B.duckdb",
-                        root / "catalog.duckdb", root / "catalog.db") if p.exists()]
+    `catalog.duckdb` / `catalog.db`. `snapshot_read` refuses a replica that is any of them.
+    The names are `store.WRITER_CATALOG_FILES`, the one list the git hooks' store gate is
+    rendered from too (bug-212, 2026-11-11)."""
+    from refmatrix.store import WRITER_CATALOG_FILES
+    return [p for p in (root / name for name in WRITER_CATALOG_FILES) if p.exists()]
 
 
 def snapshot_read(root: Path, fn: "Callable[[Any], dict]", *, partition: str) -> dict:
