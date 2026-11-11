@@ -50,6 +50,28 @@ from tests.test_bridge_move_safety import (  # noqa: F401 -- fixtures are used b
 ANCHORS = {"x#root", "x#one", "x#two"}
 
 
+# ---- every child imports THIS checkout (ch-bsd 26.2 r2 #m2-1) -------------------------------
+
+CHECKOUT_SRC = str(Path(__file__).resolve().parents[1] / "src")
+
+
+def absolute_pythonpath(pp: "str | None") -> str:
+    """`PYTHONPATH` for a child: this checkout's `src`, ABSOLUTE, first; other absolute entries
+    kept (the sandbox's `tests/sandbox_site` rides here); relative entries DROPPED. The conftest
+    guards only this process's import. A child run in a throwaway cwd resolves a caller's
+    relative `PYTHONPATH=src` against that cwd, finds nothing, and imports the venv's editable
+    tree instead -- a false RED or a false GREEN on code the run never meant to test."""
+    keep = [e for e in (pp or "").split(os.pathsep)
+            if e and os.path.isabs(e) and os.path.normpath(e) != CHECKOUT_SRC]
+    return os.pathsep.join([CHECKOUT_SRC, *keep])
+
+
+def _pin_child_pythonpath(monkeypatch) -> None:
+    """Set before any daemon spawn: `spawn_daemon_subprocess` and every CLI / hook subprocess
+    copy `os.environ`."""
+    monkeypatch.setenv("PYTHONPATH", absolute_pythonpath(os.environ.get("PYTHONPATH")))
+
+
 # ---- a git project with its memdir under `.claude/`, store under a short resolved root ------
 
 def _git_project(spawn: bool):
@@ -69,6 +91,7 @@ def _git_project(spawn: bool):
 
 @pytest.fixture
 def gitproj(monkeypatch):
+    _pin_child_pythonpath(monkeypatch)
     base, proj, root = _git_project(spawn=True)
     monkeypatch.setenv("REFMATRIX_ROOT", str(root))
     monkeypatch.delenv("RMX_PARTITION", raising=False)
@@ -79,6 +102,7 @@ def gitproj(monkeypatch):
 
 @pytest.fixture
 def gitproj_inproc(monkeypatch):
+    _pin_child_pythonpath(monkeypatch)
     base, proj, root = _git_project(spawn=False)
     monkeypatch.setenv("REFMATRIX_ROOT", str(root))
     monkeypatch.delenv("RMX_PARTITION", raising=False)

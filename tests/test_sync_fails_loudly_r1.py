@@ -4,9 +4,11 @@ or console, not just logs").
 
 WHY. 26.2 r1 GREEN (497f7f0) made `Store.purge_path` fail closed: when the memory that may own
 the anchors at a path has unreadable metadata, it RAISES rather than deleting or keeping them
-silently. A raise is only fail-closed if someone sees it. Four surfaces carry a sync, and each one
-is pinned here with that real raise as the error (x's `memory_content.metadata` = `'{not json'`
-on a throwaway store):
+silently. A raise is only fail-closed if someone sees it. Four of the surfaces that carry a
+sync are pinned here with that real raise as the error (x's `memory_content.metadata` =
+`'{not json'` on a throwaway store). The fifth, the hooks' `rmx sync --flush-queue --async`
+(ch-bsd 26.2 r2 #b2-1: "Four surfaces" was false), and the per-path refusal (#s2-1) are in
+`tests/test_sync_fails_loudly_r2.py`:
 
 1. the in-process CLI (`rmx sync -f|-i P`, no daemon): non-zero exit, error naming x on STDERR;
 2. the daemon-routed CLI (`rmx sync --since HEAD~1`): the daemon replies ok:false, and the CLI
@@ -39,8 +41,8 @@ from refmatrix import daemon as dm
 from refmatrix import hooks as hooks_mod
 from tests.test_bridge_move_safety import X_MD, _bridge, _invoke
 from tests.test_bridge_move_safety_r1 import (  # noqa: F401 -- fixtures are used by name
-    MEMORY_X, _commit, _git, _init_repo, _proj_memdir, _restart, _set_metadata_raw, gitproj,
-    gitproj_inproc,
+    MEMORY_X, _commit, _git, _init_repo, _proj_memdir, _restart, _set_metadata_raw,
+    absolute_pythonpath, gitproj, gitproj_inproc,
 )
 
 
@@ -65,7 +67,10 @@ def _edit_x(memdir: Path, n: int = 1) -> None:
 
 
 def _cli_env(root: Path) -> dict:
-    return {**os.environ, "REFMATRIX_ROOT": str(root)}
+    """The env every subprocess / PATH-shim leg runs with: the throwaway root, and THIS
+    checkout's `src` as an absolute PYTHONPATH (ch-bsd 26.2 r2 #m2-1)."""
+    return {**os.environ, "REFMATRIX_ROOT": str(root),
+            "PYTHONPATH": absolute_pythonpath(os.environ.get("PYTHONPATH"))}
 
 
 # =============================================================================================

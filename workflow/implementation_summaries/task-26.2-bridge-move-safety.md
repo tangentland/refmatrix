@@ -472,3 +472,61 @@ in-process tests failed with `exited 0`. That first h run is discarded and was r
 absolute path. The test reads `sys.executable` and the inherited PYTHONPATH, so a runner that
 sets a relative path gets a false RED. A test could pin `PYTHONPATH` to the checkout's `src`
 itself. {#r1-loud-pythonpath}
+
+## Remedy r2 RED: the async flush fails loudly; one bad memory no longer takes the batch {#remedy-r2-red}
+
+rel: derives-from -> [[bsd-task-26.2-r2-remedy-9204814#b2-1]]
+rel: derives-from -> [[bsd-task-26.2-r2-remedy-9204814#s2-1]]
+rel: derives-from -> [[bsd-task-26.2-r2-remedy-9204814#m2-1]]
+
+ch-bsd r2 returned DIRTY 5, merge NO-GO on b2-1. The RED tests for b2-1, s2-1 and m2-1 are in
+`tests/test_sync_fails_loudly_r2.py`, and they follow the lead's contract of 2026-11-10. The
+setup is the auditor's probe:
+- the memdir is OUTSIDE the project, at `<base>/.claude/projects/slug/memory`;
+- x's metadata is `'{not json'`;
+- x.md and `docs/d.py` are enqueued together;
+- a throwaway daemon, with no watcher, runs `rmx sync --flush-queue --async`.
+
+The tests pin behaviour, not field names. The run is `26.2-r2-red.log`: all three files at src
+`440d816`, with a RELATIVE `PYTHONPATH=src`, gave 7 failed and 24 passed. {#r2-red-scope}
+
+| Finding | Test | RED at src `440d816` |
+|---------|------|----------------------|
+| b2-1 (a) | `test_b21a_failed_async_flush_is_printed_by_daemon_status_until_a_clean_flush` | `` `rmx daemon status` does not print the failed async flush naming memory x `` (rmxd.log has `async flush failed: MemoryOwnershipError(... memory 'x' ...)`) |
+| b2-1 (b) | `test_b21b_next_async_flush_cli_prints_the_recorded_error_and_exits_nonzero` | `` `rmx sync --flush-queue --async` exited 0 while a failed async flush is recorded `` |
+| b2-1 (c) | `test_b21c_generated_flush_hooks_do_not_discard_the_flush_failure` | `generated hooks discard the flush's failure`: Stop, SubagentStop and SessionStart all have `rmx sync --flush-queue --async >/dev/null 2>&1 \|\| true` |
+| b2-1 (c) | `test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it[Stop,SessionStart]` | `the Stop hook exited 0 over a recorded async-flush error` (same for SessionStart) |
+| s2-1 | `test_s21_in_process_sync_refuses_x_and_still_syncs_the_rest_of_the_batch` | `docs/d.py was not synced: x's refusal took the batch` (exit 1 and the `Error:` line naming x already hold) |
+| s2-1 | `test_s21_async_flush_refuses_x_requeues_it_and_syncs_d_py` | `docs/d.py was not synced: x's refusal took the async batch (queue now [])` |
+| m2-1 | `test_m21_child_env_imports_this_checkout_under_a_relative_pythonpath` | passes; mutation m21 kills it |
+
+{#r2-red-table}
+
+- **b2-1 (a).** After the failure line, the test clears the record. It forgets x through the
+  daemon, re-enqueues x.md and `d.py`, and queues one more flush through the
+  `flush_queue_async` op. Status must then stop naming x. {#r2-red-a}
+- **b2-1 (b).** The test does not check that the loud invocation still queues its flush. Doing
+  so would need a completion signal that `440d816` does not expose. {#r2-red-b}
+- **b2-1 (c).** The behavioural leg runs the generated command with `bash -c`. `$HOME/bin/rmx`
+  is a launcher that execs this checkout's CLI; `HOOK_ENV` puts it first on PATH. This is a
+  PATH shim around the real CLI, not a mock. {#r2-red-c}
+- **s2-1.** Both legs then require x's anchors to be kept. On the queue route they also require
+  x.md to be back on the queue and `d.py` not to be. The tests do not pin how the refusal is
+  carried. {#r2-red-s}
+- **m2-1.** `absolute_pythonpath` in `tests/test_bridge_move_safety_r1.py` puts the checkout's
+  `src` first and absolute, keeps the other absolute entries (the sandbox site), and drops
+  relative ones. Two places apply it: {#r2-red-m}
+  - the `gitproj` / `gitproj_inproc` fixtures, before any daemon spawn;
+  - `_cli_env` in `tests/test_sync_fails_loudly_r1.py`, which every subprocess and shim leg in
+    both loud files uses.
+- **m2-1 verification.**
+  - The guard test sets the caller's PYTHONPATH to `src` alone (relative) and runs a child in a
+    throwaway cwd. The child must import `<checkout>/src/refmatrix`.
+  - Mutation m21 makes `_cli_env` pass the caller's PYTHONPATH through. It is killed with
+    `the child imported /Users/tholley/claude_tools/refmatrix/src/refmatrix/__init__.py, not
+    this checkout` (`26.2-r2-mut-m21-relative-pythonpath-passed-through.log`). The test file
+    was restored from a scratch copy, and the fix was grepped back.
+  - In the relative-PYTHONPATH run, the r1 bridge file (14) and the loud-r1 file (9) all
+    pass. They could not pass on any tree but `440d816`'s GREEN.
+- The loud-r1 docstring's false claim, "Four surfaces carry a sync", now names the fifth surface
+  and points to the r2 file.
