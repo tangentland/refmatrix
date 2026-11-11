@@ -218,7 +218,7 @@ fail-closed raise above as the error. Log: `26.2-r1-loud-red.log` (6 failed, 17 
 
 | Surface | Test | At `497f7f0` |
 |---------|------|--------------|
-| in-process CLI `sync -f` / `-i` | `test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr[-f,-i]` | passes: an uncaught traceback ending in `ValueError: ... memory 'x' ...` on stderr, exit 1; killed by fc |
+| in-process CLI `sync -f` / `-i` | `test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr[-f,-i]` | RED (tightened): ``rmx sync -f P` failed as a raw traceback, not a clean error``, and the same for `-i`. Exit 1 and the name x were already met; fc also kills it (`exited 0`) |
 | daemon-routed `sync --since` | `test_daemon_routed_sync_error_is_an_error_reply_and_a_loud_cli_exit` | passes: the reply is `ok: false`, and the CLI prints `Error: daemon sync_since failed: ... memory 'x' ...`, exit 1; killed by fc |
 | generated git hooks (4) | `test_generated_git_hook_does_not_discard_the_sync_failure[*]` | RED: `post-commit discards the sync's error: ['( cd "$ROOT" && rmx sync --since HEAD~1 >/dev/null 2>&1 \|\| true ) &']`, and the same for post-merge, post-checkout and post-rewrite |
 | installed post-commit | `test_installed_post_commit_hook_leaves_a_failing_sync_on_the_terminal` | RED: `the post-commit sync failed silently: nothing naming memory x on the terminal` (the commit's stderr is empty) |
@@ -236,8 +236,10 @@ Notes for GREEN. {#r1-red-loud-notes}
   trigger is a project doc `docs/x.md` with GMD id `x`. Its setup runs through a non-watching
   daemon: an in-process `rmx sync` never closes its store, so the test process keeps the
   catalog and the watching daemon cannot start. This is a pre-existing CLI handle leak.
-- The in-process surface is already loud, but only as a raw traceback. If the user wants a
-  clean `Error:` line rather than a traceback, that is a separate pin.
+- The in-process surface is now pinned to a clean failure, matching the daemon route. Stderr
+  must have an `Error:` line that names memory x and its metadata, and no
+  `Traceback (most recent call last)`. At `497f7f0` it fails as a raw traceback
+  (`26.2-r1-loud-clean-error-red.log`). {#r1-red-loud-clean}
 
 ## Remedy r1 GREEN: purge keeps bridge-owned anchors; marker walk bounded {#remedy-r1-green}
 

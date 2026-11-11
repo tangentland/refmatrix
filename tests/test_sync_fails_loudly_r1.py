@@ -84,6 +84,14 @@ def test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr(gitproj_inpr
         f"`rmx sync {flag} P` exited 0 over a failed purge\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
     assert MEMORY_X.search(r.stderr), \
         f"`rmx sync {flag} P`: stderr does not name memory x\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    # A CLEAN failure, as the daemon route gives (`Error: daemon sync_since failed: ...`): a raw
+    # traceback reads like a crash, not a refusal (team-lead, 2026-11-10).
+    assert "Traceback (most recent call last)" not in r.stderr, \
+        f"`rmx sync {flag} P` failed as a raw traceback, not a clean error\nstderr:\n{r.stderr}"
+    err = [ln for ln in r.stderr.splitlines() if ln.startswith("Error:")]
+    assert any(MEMORY_X.search(ln + " ") and "metadata" in ln for ln in err), \
+        f"`rmx sync {flag} P`: no `Error:` line naming memory x and its metadata\n" \
+        f"stderr:\n{r.stderr}"
 
 
 # =============================================================================================
