@@ -1,0 +1,71 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug212/src/refmatrix as checked-hash (bug-037)
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_________ test_the_main_checkout_with_a_store_still_syncs[post-commit] _________
+
+repo = <test_bug212_hooks_in_worktrees.Repo object at 0x1148056a0>
+hook = 'post-commit'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("hook", ["post-commit", "post-checkout"])
+    def test_the_main_checkout_with_a_store_still_syncs(repo, hook):
+        """Passes at HEAD; proven by the mutation `[ -d "$ROOT/.refmatrix" ] || exit 0` -> `exit 0`
+        in every GIT_HOOK_SCRIPTS body. A bug-212 fix that silences the hooks everywhere fails it."""
+        if hook == "post-commit":
+            path = repo.proj / "main_new.py"
+            path.write_text("def main_new():\n    return 3\n", encoding="utf-8")
+            _quiet(repo.proj, repo, "add", "-A")
+            r = _hooked(repo.proj, repo, "commit", "-q", "-m", "commit in the main checkout")
+        else:
+            path = repo.proj / "other.py"
+            r = _hooked(repo.proj, repo, "checkout", "-q", "other")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert TRACEBACK not in r.stderr, f"{hook} in the main checkout crashed\n{text}"
+        syncs = [c for c in _calls(repo) if c[1].startswith("sync")]
+>       assert syncs and all(Path(pwd).resolve() == repo.proj for pwd, _ in syncs), \
+            f"{hook} in the main checkout (store present) ran no sync there: {_calls(repo)}\n{text}"
+E       AssertionError: post-commit in the main checkout (store present) ran no sync there: []
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert ([])
+
+tests/test_bug212_hooks_in_worktrees.py:317: AssertionError
+________ test_the_main_checkout_with_a_store_still_syncs[post-checkout] ________
+
+repo = <test_bug212_hooks_in_worktrees.Repo object at 0x110917110>
+hook = 'post-checkout'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("hook", ["post-commit", "post-checkout"])
+    def test_the_main_checkout_with_a_store_still_syncs(repo, hook):
+        """Passes at HEAD; proven by the mutation `[ -d "$ROOT/.refmatrix" ] || exit 0` -> `exit 0`
+        in every GIT_HOOK_SCRIPTS body. A bug-212 fix that silences the hooks everywhere fails it."""
+        if hook == "post-commit":
+            path = repo.proj / "main_new.py"
+            path.write_text("def main_new():\n    return 3\n", encoding="utf-8")
+            _quiet(repo.proj, repo, "add", "-A")
+            r = _hooked(repo.proj, repo, "commit", "-q", "-m", "commit in the main checkout")
+        else:
+            path = repo.proj / "other.py"
+            r = _hooked(repo.proj, repo, "checkout", "-q", "other")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert TRACEBACK not in r.stderr, f"{hook} in the main checkout crashed\n{text}"
+        syncs = [c for c in _calls(repo) if c[1].startswith("sync")]
+>       assert syncs and all(Path(pwd).resolve() == repo.proj for pwd, _ in syncs), \
+            f"{hook} in the main checkout (store present) ran no sync there: {_calls(repo)}\n{text}"
+E       AssertionError: post-checkout in the main checkout (store present) ran no sync there: []
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert ([])
+
+tests/test_bug212_hooks_in_worktrees.py:317: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_the_main_checkout_with_a_store_still_syncs[post-commit]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_the_main_checkout_with_a_store_still_syncs[post-checkout]
+2 failed in 0.85s
