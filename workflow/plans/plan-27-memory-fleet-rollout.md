@@ -133,7 +133,12 @@ Round 1 added these rules (see [[#rev-round-1]]):
   tombstone README plus unsupervising, and the user decides on deletion.
 - No hook regeneration in other repos. 27.6 REPORTS drift (`rmx install-hooks --check` per
   project). Regenerating is the user's call, and plan-24's mod replaces the shell hooks anyway
-  (Q3).
+  (Q3). **Exception, user decision 2026-11-10:** the 0.82.0 deploy re-installs hooks in all 8
+  fleet projects (`rmx install-hooks --apply --force`, each project's `.claude/settings*.json` and
+  `.git/hooks` backed up first, the Claude block diffed, every `.git/hooks` file read back) so the
+  26.2 loud-failure hook bodies reach the fleet ([[bsd-task-26.2-r2-remedy-9204814#s2-2]]).
+  `--check` cannot see `.git/hooks` drift until bug-209 lands, so 27.1 / 27.6 must read the hook
+  files themselves.
 - No move or deletion of the viascope2 checkout. Archiving it IS in scope (Q2, decided by the
   user 2026-11-09): after 27.2 verifies the fold, 27.2 AC-8 writes a backup tarball plus a
   tombstone and leaves the checkout in place. Moving or deleting it needs a further explicit go.
