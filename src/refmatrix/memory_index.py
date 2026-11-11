@@ -41,6 +41,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 from refmatrix import memory_layout
 
@@ -1016,10 +1017,26 @@ def _parse_restores(restores: list) -> dict:
     return out
 
 
-def _repaired_index(memdir: Path, new: dict, changed: set) -> "tuple[bytes, str, list] | None":
-    """`(old index bytes, new index text, [rel, ...])` with the HOOK part of
-    every index line whose memory a repair changed rewritten to the repaired
-    value, or None when there is no index (bug-199, 2026-11-10).
+class RepairedIndex(NamedTuple):
+    """What `_repaired_index` decided for MEMORY.md (bug-199, 2026-11-10; the
+    three line lists split by ch-bsd bug-199 r1 #s-1, 2026-11-10)."""
+    raw: bytes               # the index's bytes before the repair (the backup)
+    text: str                # the index text to write
+    rewritten: list          # rels whose line was the old render, now the new one
+    replaced: list           # rels whose HAND EDIT a `--restore` replaced
+    kept: list               # rels whose hand edit a drop left alone
+
+    @property
+    def written(self) -> list:
+        """Every rel whose line changes on disk."""
+        return self.rewritten + self.replaced
+
+
+def _repaired_index(memdir: Path, old: dict, new: dict, changed: set,
+                    restored: set) -> "RepairedIndex | None":
+    """MEMORY.md with the HOOK part of every index line whose memory a repair
+    changed rewritten to the repaired value, or None when there is no index
+    (bug-199, 2026-11-10).
 
     Why: the repair wrote only the sidecar, and the stale `prefix…` left on a
     line WITH room is, to `_index_hook_wins`, the user's own shortening -- so
@@ -1032,9 +1049,21 @@ def _repaired_index(memdir: Path, new: dict, changed: set) -> "tuple[bytes, str,
     A line is affected when its link, or the memory id the link points at, is
     a `changed` key. Its new hook is what `Entry` reads from the NEW sidecar
     alone -- path key, then id, then the memory's derived hook -- placed by
-    `_with_hook`, the renderer's own cut. RAISES `RepairError` on an index
-    that cannot be read as UTF-8: rewriting it with replacement chars would
-    corrupt the user's file."""
+    `_with_hook`, the renderer's own cut.
+
+    A line is rewritten only when it still IS what the OLD sidecar value
+    renders to (ch-bsd bug-199 r1 #s-1, 2026-11-10): anything else is a hand
+    edit made after the last `write`, which base fb0f35e kept and 30c35a9
+    overwrote while printing a plain `rewrite`. On a DROP the hand edit is
+    KEPT (`kept`) -- it is what `load_hooks` lets win anyway. On a `--restore`
+    of that memory (`restored`: the restore keys and the ids behind them) it is
+    REPLACED (`replaced`; team-lead decision, 2026-11-10): the restore is the
+    newer, explicit instruction, and a kept hand edit would win the next
+    `write` and revert the restore -- bug-199 again. The caller backs the old
+    bytes up, so a replaced edit stays recoverable.
+
+    RAISES `RepairError` on an index that cannot be read as UTF-8: rewriting it
+    with replacement chars would corrupt the user's file."""
     idx = memdir / INDEX_NAME
     if not idx.exists():
         return None
@@ -1044,9 +1073,12 @@ def _repaired_index(memdir: Path, new: dict, changed: set) -> "tuple[bytes, str,
     except (OSError, UnicodeDecodeError) as exc:
         raise RepairError(f"{idx}: unreadable ({type(exc).__name__}: {exc}); "
                           f"nothing repaired") from exc
+    old_side = _with_id_aliases(memdir, {str(k): str(v) for k, v in old.items()})
     side = _with_id_aliases(memdir, {str(k): str(v) for k, v in new.items()})
     lines = text.splitlines(keepends=True)
     rewritten: list = []
+    replaced: list = []
+    kept: list = []
     for i, full in enumerate(lines):
         body = full.rstrip("\r\n")
         split = _split_entry_line(body)
@@ -1058,12 +1090,28 @@ def _repaired_index(memdir: Path, new: dict, changed: set) -> "tuple[bytes, str,
         mid, derived = _link_identity(memdir, rel)
         if rel not in changed and mid not in changed:
             continue
-        hook = side.get(rel) or side.get(mid) or derived
-        line = _with_hook(link_part, hook) or link_part
-        if line != body:
-            lines[i] = line + full[len(body):]
+        line = _with_hook(link_part, side.get(rel) or side.get(mid) or derived) or link_part
+        if line == body:
+            continue
+        old_hook = old_side.get(rel) or old_side.get(mid) or derived
+        if body != (_with_hook(link_part, old_hook) or link_part):
+            if rel not in restored and mid not in restored:
+                kept.append(rel)
+                continue
+            replaced.append(rel)
+        else:
             rewritten.append(rel)
-    return raw, "".join(lines), rewritten
+        lines[i] = line + full[len(body):]
+    return RepairedIndex(raw, "".join(lines), rewritten, replaced, kept)
+
+
+def _with_link_ids(memdir: Path, keys: set) -> set:
+    """`keys` plus the memory id behind every path key -- `_id_of_link`, the
+    alias `load_hooks` and `Entry` resolve a moved file's hook through (ch-bsd
+    bug-199 r1 #m-1, 2026-11-10). Without it a `--restore` keyed by a moved
+    file's OLD path matched no line (the line links the NEW path), the apply
+    printed `restored 1, rewrote 0`, and the next `write` put the cut back."""
+    return set(keys) | {_id_of_link(memdir, k) for k in keys if _is_path_key(k)}
 
 
 def repair_cut_hooks(memdir: Path, *, apply: bool = False,
@@ -1087,9 +1135,19 @@ def repair_cut_hooks(memdir: Path, *, apply: bool = False,
     of a dropped or restored key gets the repaired hook (`_repaired_index`),
     backed up into the SAME backup dir before anything is written, and written
     atomically after the sidecar -- otherwise the stale cut on the line wins
-    the next `write` and undoes the repair. Each rewritten line is printed.
-    Every failure is printed by name and returns non-zero; no traceback, no
-    partial write (R4). Returns the exit code."""
+    the next `write` and undoes the repair. Each rewritten line is printed; a
+    line that is not the old sidecar value's render is a hand edit, KEPT on a
+    drop and REPLACED by a `--restore`, and printed as such (ch-bsd bug-199 r1
+    #s-1, 2026-11-10). A `--restore` keyed by a moved file's old path reaches
+    its line through the id behind that path (#m-1).
+
+    Every failure is printed by name and returns non-zero, with no traceback
+    (R4). No partial write: a failure before the sidecar write writes nothing,
+    and an index-write failure AFTER it puts the sidecar back to its original
+    bytes (`_roll_back_sidecar`, #s-2) -- 30c35a9 left the repaired sidecar
+    beside the stale index, which is the bug-199 state. The one partial state
+    left is a rollback that fails too; it is named as a second failure, with
+    the backup to copy back. Returns the exit code."""
     out = out if out is not None else sys.stdout
     memdir = Path(memdir)
     try:
@@ -1116,8 +1174,10 @@ def repair_cut_hooks(memdir: Path, *, apply: bool = False,
         new = {k: v for k, v in data.items()
                if k not in {key for key, cls in found if cls in _REPAIR_DROPS}}
         new.update(wanted)
-        changed = {k for k in set(data) | set(new) if data.get(k) != new.get(k)}
-        index = _repaired_index(memdir, new, changed) if changed else None
+        changed = _with_link_ids(
+            memdir, {k for k in set(data) | set(new) if data.get(k) != new.get(k)})
+        index = (_repaired_index(memdir, data, new, changed, _with_link_ids(memdir, set(wanted)))
+                 if changed else None)
     except RepairError as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 1
@@ -1134,20 +1194,31 @@ def repair_cut_hooks(memdir: Path, *, apply: bool = False,
         print("nothing to repair", file=out)
         return 0
     dropped = len(data) - len(set(new) & set(data))
-    rewritten = index[2] if index is not None else []
+    rewritten = index.rewritten if index is not None else []
+    replaced = index.replaced if index is not None else []
+    kept = index.kept if index is not None else []
     for rel in rewritten:
         print(f"  {'would rewrite' if not apply else 'rewrite'} {INDEX_NAME} line {rel}",
               file=out)
+    for rel in replaced:
+        print(f"  {'would replace' if not apply else 'replaced'} the hand edit on "
+              f"{INDEX_NAME} line {rel} with its --restore value (the hand-edited line "
+              f"is in the backup)", file=out)
+    for rel in kept:
+        print(f"  {'would keep' if not apply else 'kept'} {INDEX_NAME} line {rel}: a hand "
+              f"edit, not the old sidecar value's render", file=out)
+    written = index.written if index is not None else []
     if not apply:
         print(f"dry-run: would drop {dropped} key(s), restore {len(wanted)} and "
-              f"rewrite {len(rewritten)} {INDEX_NAME} line(s); rerun with --apply "
+              f"rewrite {len(written)} {INDEX_NAME} line(s) ({len(replaced)} replacing a "
+              f"hand edit), keep {len(kept)} hand-edited line(s); rerun with --apply "
               f"to write", file=out)
         return 0
 
     bakdir = _repair_backup_dir(memdir)
     backups = [(bakdir / HOOKS_SIDECAR, raw)]
-    if rewritten:
-        backups.append((bakdir / INDEX_NAME, index[0]))
+    if written:
+        backups.append((bakdir / INDEX_NAME, index.raw))
     try:
         bakdir.mkdir(parents=True, exist_ok=False)
         for bak, content in backups:
@@ -1168,20 +1239,45 @@ def repair_cut_hooks(memdir: Path, *, apply: bool = False,
               f"({type(exc).__name__}: {exc}); the old sidecar and index are "
               f"intact and backed up in {bakdir}", file=sys.stderr)
         return 1
-    if rewritten:
+    if written:
         try:
-            _atomic_write_text(memdir, INDEX_NAME, index[1])
+            _atomic_write_text(memdir, INDEX_NAME, index.text)
         except OSError as exc:
-            # The sidecar is already repaired; the stale index lines would win
-            # the next `write` back (bug-199), so this is a failure, by name.
-            print(f"refused: {memdir / HOOKS_SIDECAR} was repaired but writing "
-                  f"{memdir / INDEX_NAME} failed ({type(exc).__name__}: {exc}); the "
-                  f"old index is intact -- copy {bakdir / HOOKS_SIDECAR} back "
-                  f"before the next write, which would let the stale lines win", file=sys.stderr)
-            return 1
+            return _roll_back_sidecar(memdir, raw, bakdir, exc)
     print(f"applied: dropped {dropped} key(s), restored {len(wanted)}, rewrote "
-          f"{len(rewritten)} {INDEX_NAME} line(s); {len(new)} hook(s) remain", file=out)
+          f"{len(written)} {INDEX_NAME} line(s) ({len(replaced)} replacing a hand edit), "
+          f"kept {len(kept)} hand-edited line(s); {len(new)} hook(s) remain", file=out)
     return 0
+
+
+def _roll_back_sidecar(memdir: Path, raw: bytes, bakdir: Path, exc: OSError) -> int:
+    """The MEMORY.md write failed AFTER the sidecar write: put the sidecar back
+    to its ORIGINAL bytes, atomically and with its mode kept (THE atomic write,
+    `_atomic_write_text`), and refuse -- returns the exit code, always 1
+    (ch-bsd bug-199 r1 #s-2, 2026-11-10).
+
+    Why: 30c35a9 left a repaired sidecar beside the stale index -- the bug-199
+    state itself, so the next automated `write` (every save-state runs one)
+    read the stale cuts as hand edits and reverted the repair -- and printed
+    `refused` after it had written. `raw` decoded as UTF-8 when `_load_sidecar`
+    read it, so the text round-trips to the same bytes. A rollback that fails
+    too is named as a SECOND failure, with the backup to copy back by hand:
+    never a silent pass, never a message claiming nothing changed."""
+    side, idx = memdir / HOOKS_SIDECAR, memdir / INDEX_NAME
+    first = f"writing {idx} failed ({type(exc).__name__}: {exc})"
+    try:
+        _atomic_write_text(memdir, HOOKS_SIDECAR, raw.decode("utf-8"))
+    except (OSError, UnicodeDecodeError) as rb:
+        print(f"refused: {first}; and putting {side} back to its original bytes failed "
+              f"too ({type(rb).__name__}: {rb}) -- the sidecar is REPAIRED while the index "
+              f"is stale, and the next write would let the stale lines win: copy "
+              f"{bakdir / HOOKS_SIDECAR} to {side} before it. Backup: {bakdir}",
+              file=sys.stderr)
+        return 1
+    print(f"refused: {first}; {side} was put back to its original bytes, so nothing "
+          f"was changed -- both files are as they were before the apply. Backup: {bakdir}",
+          file=sys.stderr)
+    return 1
 
 
 _USAGE = ("usage: python3 -m refmatrix.memory_index <memdir> [--check]\n"
