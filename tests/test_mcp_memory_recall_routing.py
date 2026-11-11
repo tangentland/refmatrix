@@ -87,11 +87,20 @@ def test_resolve_root_explicit_root_beats_project(tmp_path, monkeypatch):
     assert got == tmp_path / ".refmatrix"
 
 
-def test_resolve_root_unknown_project_falls_through(tmp_path, monkeypatch):
+def test_resolve_root_unknown_project_raises(tmp_path, monkeypatch):
+    """Inverted by task 25.1 R10 (bug-181): this test used to PIN the silent fallback --
+    an unknown project name fell through to `REFMATRIX_ROOT` (then the cwd store), so a
+    caller naming a store that does not exist quietly read another one. A name that resolves
+    nothing is now `VerbUnknownProjectError` (a `VerbArgsError`), even with REFMATRIX_ROOT
+    set; the real-registry legs are tests/test_task25_1_recall_budget.py::test_ac4e_r10_*."""
+    import pytest
+    from refmatrix import verbs
     monkeypatch.setattr("refmatrix.discovery.discover_roots", lambda: [])
     monkeypatch.setenv("REFMATRIX_ROOT", str(tmp_path / ".refmatrix"))
-    # Unknown project name → no match → next precedence (REFMATRIX_ROOT).
-    assert mcp._resolve_root({"project": "nope"}) == tmp_path / ".refmatrix"
+    with pytest.raises(verbs.VerbArgsError) as ei:
+        mcp._resolve_root({"project": "nope"})
+    assert type(ei.value).__name__ == "VerbUnknownProjectError"
+    assert "'nope'" in str(ei.value)
 
 
 def test_empty_query_uses_recent_on_memory_partition(tmp_path, monkeypatch):
