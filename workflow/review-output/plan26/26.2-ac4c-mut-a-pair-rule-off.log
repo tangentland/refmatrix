@@ -1,0 +1,227 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+_ test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused[organised-top] __
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-0e4dl6co'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-0e4dl6co/proj/.refmatrix'))
+marker = True, newer = 'top'
+
+    @pytest.mark.parametrize("newer", ["top", "folder"])
+    @pytest.mark.parametrize("marker", [True, False], ids=["organised", "flat"])
+    def test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused(inproc, marker, newer):
+        base, root = inproc
+        fx = _memdir_ac4c(base, marker=marker, newer=newer)
+        out = _bridge(fx["memdir"])
+>       _assert_ac4c(root, out, fx, f"in-process, {'organised' if marker else 'flat'}, "
+                                    f"{newer} newer")
+
+tests/test_bridge_move_safety_ac4c.py:119: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-0e4dl6co/proj/.refmatrix')
+out = 'ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 2 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nduplicate_ids...262-0e4dl6co/memory/b/z.md\nnew linkage types: lead, part-of\nmemory embed: 1 row(s) now reachable by recall in proj\n'
+fx = {'dropped': PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-0e4dl6co/memory/savestates/savestate_ab...0e4dl6co/memory/a/z.md'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-0e4dl6co/memory/b/z.md')]}
+leg = 'in-process, organised, top newer'
+
+    def _assert_ac4c(root: Path, out: str, fx: dict, leg: str) -> None:
+        flat = " ".join(out.split())
+        block = _dup_block(out)
+        assert block, f"{leg}: no duplicate_ids report -- z's two claims were not refused:\n{out}"
+        ids = [ln.split(":", 1)[0].strip() for ln in block[1:]]
+>       assert block[0].startswith("duplicate_ids: 1 ") and ids == ["z"], \
+            f"{leg}: duplicate_ids must name ONLY z, got header {block[0]!r}, ids {ids}:\n{out}"
+E       AssertionError: in-process, organised, top newer: duplicate_ids must name ONLY z, got header 'duplicate_ids: 2 (neither file written; give each memory its own frontmatter id)', ids ['savestate_abc', 'z']:
+E         ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 2 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         duplicate_ids: 2 (neither file written; give each memory its own frontmatter id)
+E           savestate_abc: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-0e4dl6co/memory/savestate_abc.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-0e4dl6co/memory/savestates/savestate_abc.md
+E           z: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-0e4dl6co/memory/a/z.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-0e4dl6co/memory/b/z.md
+E         new linkage types: lead, part-of
+E         memory embed: 1 row(s) now reachable by recall in proj
+E         
+E       assert (False)
+E        +  where False = <built-in method startswith of str object at 0x10c1a4b30>('duplicate_ids: 1 ')
+E        +    where <built-in method startswith of str object at 0x10c1a4b30> = 'duplicate_ids: 2 (neither file written; give each memory its own frontmatter id)'.startswith
+
+tests/test_bridge_move_safety_ac4c.py:89: AssertionError
+_ test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused[organised-folder] _
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-maq9nuy0'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-maq9nuy0/proj/.refmatrix'))
+marker = True, newer = 'folder'
+
+    @pytest.mark.parametrize("newer", ["top", "folder"])
+    @pytest.mark.parametrize("marker", [True, False], ids=["organised", "flat"])
+    def test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused(inproc, marker, newer):
+        base, root = inproc
+        fx = _memdir_ac4c(base, marker=marker, newer=newer)
+        out = _bridge(fx["memdir"])
+>       _assert_ac4c(root, out, fx, f"in-process, {'organised' if marker else 'flat'}, "
+                                    f"{newer} newer")
+
+tests/test_bridge_move_safety_ac4c.py:119: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-maq9nuy0/proj/.refmatrix')
+out = 'ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 2 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nduplicate_ids...262-maq9nuy0/memory/b/z.md\nnew linkage types: lead, part-of\nmemory embed: 1 row(s) now reachable by recall in proj\n'
+fx = {'dropped': PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-maq9nuy0/memory/savestate_abc.md'), 'ke...maq9nuy0/memory/a/z.md'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-maq9nuy0/memory/b/z.md')]}
+leg = 'in-process, organised, folder newer'
+
+    def _assert_ac4c(root: Path, out: str, fx: dict, leg: str) -> None:
+        flat = " ".join(out.split())
+        block = _dup_block(out)
+        assert block, f"{leg}: no duplicate_ids report -- z's two claims were not refused:\n{out}"
+        ids = [ln.split(":", 1)[0].strip() for ln in block[1:]]
+>       assert block[0].startswith("duplicate_ids: 1 ") and ids == ["z"], \
+            f"{leg}: duplicate_ids must name ONLY z, got header {block[0]!r}, ids {ids}:\n{out}"
+E       AssertionError: in-process, organised, folder newer: duplicate_ids must name ONLY z, got header 'duplicate_ids: 2 (neither file written; give each memory its own frontmatter id)', ids ['savestate_abc', 'z']:
+E         ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 2 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         duplicate_ids: 2 (neither file written; give each memory its own frontmatter id)
+E           savestate_abc: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-maq9nuy0/memory/savestate_abc.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-maq9nuy0/memory/savestates/savestate_abc.md
+E           z: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-maq9nuy0/memory/a/z.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-maq9nuy0/memory/b/z.md
+E         new linkage types: lead, part-of
+E         memory embed: 1 row(s) now reachable by recall in proj
+E         
+E       assert (False)
+E        +  where False = <built-in method startswith of str object at 0x11a51e4b0>('duplicate_ids: 1 ')
+E        +    where <built-in method startswith of str object at 0x11a51e4b0> = 'duplicate_ids: 2 (neither file written; give each memory its own frontmatter id)'.startswith
+
+tests/test_bridge_move_safety_ac4c.py:89: AssertionError
+____ test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused[flat-top] ____
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-imq508ry'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-imq508ry/proj/.refmatrix'))
+marker = False, newer = 'top'
+
+    @pytest.mark.parametrize("newer", ["top", "folder"])
+    @pytest.mark.parametrize("marker", [True, False], ids=["organised", "flat"])
+    def test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused(inproc, marker, newer):
+        base, root = inproc
+        fx = _memdir_ac4c(base, marker=marker, newer=newer)
+        out = _bridge(fx["memdir"])
+>       _assert_ac4c(root, out, fx, f"in-process, {'organised' if marker else 'flat'}, "
+                                    f"{newer} newer")
+
+tests/test_bridge_move_safety_ac4c.py:119: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-imq508ry/proj/.refmatrix')
+out = 'ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 2 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nduplicate_ids...262-imq508ry/memory/b/z.md\nnew linkage types: lead, part-of\nmemory embed: 1 row(s) now reachable by recall in proj\n'
+fx = {'dropped': PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-imq508ry/memory/savestates/savestate_ab...imq508ry/memory/a/z.md'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-imq508ry/memory/b/z.md')]}
+leg = 'in-process, flat, top newer'
+
+    def _assert_ac4c(root: Path, out: str, fx: dict, leg: str) -> None:
+        flat = " ".join(out.split())
+        block = _dup_block(out)
+        assert block, f"{leg}: no duplicate_ids report -- z's two claims were not refused:\n{out}"
+        ids = [ln.split(":", 1)[0].strip() for ln in block[1:]]
+>       assert block[0].startswith("duplicate_ids: 1 ") and ids == ["z"], \
+            f"{leg}: duplicate_ids must name ONLY z, got header {block[0]!r}, ids {ids}:\n{out}"
+E       AssertionError: in-process, flat, top newer: duplicate_ids must name ONLY z, got header 'duplicate_ids: 2 (neither file written; give each memory its own frontmatter id)', ids ['savestate_abc', 'z']:
+E         ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 2 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         duplicate_ids: 2 (neither file written; give each memory its own frontmatter id)
+E           savestate_abc: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-imq508ry/memory/savestate_abc.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-imq508ry/memory/savestates/savestate_abc.md
+E           z: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-imq508ry/memory/a/z.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-imq508ry/memory/b/z.md
+E         new linkage types: lead, part-of
+E         memory embed: 1 row(s) now reachable by recall in proj
+E         
+E       assert (False)
+E        +  where False = <built-in method startswith of str object at 0x10c1a5ab0>('duplicate_ids: 1 ')
+E        +    where <built-in method startswith of str object at 0x10c1a5ab0> = 'duplicate_ids: 2 (neither file written; give each memory its own frontmatter id)'.startswith
+
+tests/test_bridge_move_safety_ac4c.py:89: AssertionError
+__ test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused[flat-folder] ___
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-jfrq3hmo'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-jfrq3hmo/proj/.refmatrix'))
+marker = False, newer = 'folder'
+
+    @pytest.mark.parametrize("newer", ["top", "folder"])
+    @pytest.mark.parametrize("marker", [True, False], ids=["organised", "flat"])
+    def test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused(inproc, marker, newer):
+        base, root = inproc
+        fx = _memdir_ac4c(base, marker=marker, newer=newer)
+        out = _bridge(fx["memdir"])
+>       _assert_ac4c(root, out, fx, f"in-process, {'organised' if marker else 'flat'}, "
+                                    f"{newer} newer")
+
+tests/test_bridge_move_safety_ac4c.py:119: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-jfrq3hmo/proj/.refmatrix')
+out = 'ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 2 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nduplicate_ids...262-jfrq3hmo/memory/b/z.md\nnew linkage types: lead, part-of\nmemory embed: 1 row(s) now reachable by recall in proj\n'
+fx = {'dropped': PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-jfrq3hmo/memory/savestate_abc.md'), 'ke...jfrq3hmo/memory/a/z.md'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-jfrq3hmo/memory/b/z.md')]}
+leg = 'in-process, flat, folder newer'
+
+    def _assert_ac4c(root: Path, out: str, fx: dict, leg: str) -> None:
+        flat = " ".join(out.split())
+        block = _dup_block(out)
+        assert block, f"{leg}: no duplicate_ids report -- z's two claims were not refused:\n{out}"
+        ids = [ln.split(":", 1)[0].strip() for ln in block[1:]]
+>       assert block[0].startswith("duplicate_ids: 1 ") and ids == ["z"], \
+            f"{leg}: duplicate_ids must name ONLY z, got header {block[0]!r}, ids {ids}:\n{out}"
+E       AssertionError: in-process, flat, folder newer: duplicate_ids must name ONLY z, got header 'duplicate_ids: 2 (neither file written; give each memory its own frontmatter id)', ids ['savestate_abc', 'z']:
+E         ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 2 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         duplicate_ids: 2 (neither file written; give each memory its own frontmatter id)
+E           savestate_abc: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-jfrq3hmo/memory/savestate_abc.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-jfrq3hmo/memory/savestates/savestate_abc.md
+E           z: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-jfrq3hmo/memory/a/z.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-jfrq3hmo/memory/b/z.md
+E         new linkage types: lead, part-of
+E         memory embed: 1 row(s) now reachable by recall in proj
+E         
+E       assert (False)
+E        +  where False = <built-in method startswith of str object at 0x10c1a5330>('duplicate_ids: 1 ')
+E        +    where <built-in method startswith of str object at 0x10c1a5330> = 'duplicate_ids: 2 (neither file written; give each memory its own frontmatter id)'.startswith
+
+tests/test_bridge_move_safety_ac4c.py:89: AssertionError
+_____________________________ test_ac4c_daemon_leg _____________________________
+
+daemon = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-fvgl0j07'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-fvgl0j07/proj/.refmatrix'))
+
+    def test_ac4c_daemon_leg(daemon):
+        base, root = daemon
+        fx = _memdir_ac4c(base, marker=True, newer="top")
+        out = _bridge(fx["memdir"])
+        dm.stop_daemon(root)
+>       _assert_ac4c(root, out, fx, "daemon, organised, top newer")
+
+tests/test_bridge_move_safety_ac4c.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-fvgl0j07/proj/.refmatrix')
+out = 'ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 2 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nduplicate_ids...262-fvgl0j07/memory/b/z.md\nnew linkage types: lead, part-of\nmemory embed: 1 row(s) now reachable by recall in proj\n'
+fx = {'dropped': PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-fvgl0j07/memory/savestates/savestate_ab...fvgl0j07/memory/a/z.md'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-fvgl0j07/memory/b/z.md')]}
+leg = 'daemon, organised, top newer'
+
+    def _assert_ac4c(root: Path, out: str, fx: dict, leg: str) -> None:
+        flat = " ".join(out.split())
+        block = _dup_block(out)
+        assert block, f"{leg}: no duplicate_ids report -- z's two claims were not refused:\n{out}"
+        ids = [ln.split(":", 1)[0].strip() for ln in block[1:]]
+>       assert block[0].startswith("duplicate_ids: 1 ") and ids == ["z"], \
+            f"{leg}: duplicate_ids must name ONLY z, got header {block[0]!r}, ids {ids}:\n{out}"
+E       AssertionError: daemon, organised, top newer: duplicate_ids must name ONLY z, got header 'duplicate_ids: 2 (neither file written; give each memory its own frontmatter id)', ids ['savestate_abc', 'z']:
+E         ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 2 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         duplicate_ids: 2 (neither file written; give each memory its own frontmatter id)
+E           savestate_abc: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-fvgl0j07/memory/savestate_abc.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-fvgl0j07/memory/savestates/savestate_abc.md
+E           z: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-fvgl0j07/memory/a/z.md, /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-fvgl0j07/memory/b/z.md
+E         new linkage types: lead, part-of
+E         memory embed: 1 row(s) now reachable by recall in proj
+E         
+E       assert (False)
+E        +  where False = <built-in method startswith of str object at 0x11a51d430>('duplicate_ids: 1 ')
+E        +    where <built-in method startswith of str object at 0x11a51d430> = 'duplicate_ids: 2 (neither file written; give each memory its own frontmatter id)'.startswith
+
+tests/test_bridge_move_safety_ac4c.py:89: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bridge_move_safety_ac4c.py::test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused[organised-top]
+FAILED tests/test_bridge_move_safety_ac4c.py::test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused[organised-folder]
+FAILED tests/test_bridge_move_safety_ac4c.py::test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused[flat-top]
+FAILED tests/test_bridge_move_safety_ac4c.py::test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused[flat-folder]
+FAILED tests/test_bridge_move_safety_ac4c.py::test_ac4c_daemon_leg - Assertio...
+5 failed in 16.53s

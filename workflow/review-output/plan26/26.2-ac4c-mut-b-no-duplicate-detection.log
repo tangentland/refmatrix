@@ -1,0 +1,192 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+_ test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused[organised-top] __
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-yed93fsv'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-yed93fsv/proj/.refmatrix'))
+marker = True, newer = 'top'
+
+    @pytest.mark.parametrize("newer", ["top", "folder"])
+    @pytest.mark.parametrize("marker", [True, False], ids=["organised", "flat"])
+    def test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused(inproc, marker, newer):
+        base, root = inproc
+        fx = _memdir_ac4c(base, marker=marker, newer=newer)
+        out = _bridge(fx["memdir"])
+>       _assert_ac4c(root, out, fx, f"in-process, {'organised' if marker else 'flat'}, "
+                                    f"{newer} newer")
+
+tests/test_bridge_move_safety_ac4c.py:119: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-yed93fsv/proj/.refmatrix')
+out = 'ingested 4 doc(s), 4 node(s), 0 rel: edge(s), 15 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage ...e-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-yed93fsv/memory/savestates/savestate_abc.md\n'
+fx = {'dropped': PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-yed93fsv/memory/savestates/savestate_ab...yed93fsv/memory/a/z.md'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-yed93fsv/memory/b/z.md')]}
+leg = 'in-process, organised, top newer'
+
+    def _assert_ac4c(root: Path, out: str, fx: dict, leg: str) -> None:
+        flat = " ".join(out.split())
+        block = _dup_block(out)
+>       assert block, f"{leg}: no duplicate_ids report -- z's two claims were not refused:\n{out}"
+E       AssertionError: in-process, organised, top newer: no duplicate_ids report -- z's two claims were not refused:
+E         ingested 4 doc(s), 4 node(s), 0 rel: edge(s), 15 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         new linkage types: lead, part-of
+E         memory embed: 3 row(s) now reachable by recall in proj
+E         ingest-gmd --as-memory: skipped 1 non-memory path(s) (dot-path, README.md, nested MEMORY.md, symlinked folder, dangling link, .gmd, or a top-level save-state shadowed by its savestates/ copy; ADR-0005 #one-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-yed93fsv/memory/savestates/savestate_abc.md
+E         
+E       assert []
+
+tests/test_bridge_move_safety_ac4c.py:87: AssertionError
+_ test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused[organised-folder] _
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-kc_dh70g'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-kc_dh70g/proj/.refmatrix'))
+marker = True, newer = 'folder'
+
+    @pytest.mark.parametrize("newer", ["top", "folder"])
+    @pytest.mark.parametrize("marker", [True, False], ids=["organised", "flat"])
+    def test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused(inproc, marker, newer):
+        base, root = inproc
+        fx = _memdir_ac4c(base, marker=marker, newer=newer)
+        out = _bridge(fx["memdir"])
+>       _assert_ac4c(root, out, fx, f"in-process, {'organised' if marker else 'flat'}, "
+                                    f"{newer} newer")
+
+tests/test_bridge_move_safety_ac4c.py:119: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-kc_dh70g/proj/.refmatrix')
+out = 'ingested 4 doc(s), 4 node(s), 0 rel: edge(s), 15 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage ...DR-0005 #one-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-kc_dh70g/memory/savestate_abc.md\n'
+fx = {'dropped': PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-kc_dh70g/memory/savestate_abc.md'), 'ke...kc_dh70g/memory/a/z.md'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-kc_dh70g/memory/b/z.md')]}
+leg = 'in-process, organised, folder newer'
+
+    def _assert_ac4c(root: Path, out: str, fx: dict, leg: str) -> None:
+        flat = " ".join(out.split())
+        block = _dup_block(out)
+>       assert block, f"{leg}: no duplicate_ids report -- z's two claims were not refused:\n{out}"
+E       AssertionError: in-process, organised, folder newer: no duplicate_ids report -- z's two claims were not refused:
+E         ingested 4 doc(s), 4 node(s), 0 rel: edge(s), 15 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         new linkage types: lead, part-of
+E         memory embed: 3 row(s) now reachable by recall in proj
+E         ingest-gmd --as-memory: skipped 1 non-memory path(s) (dot-path, README.md, nested MEMORY.md, symlinked folder, dangling link, .gmd, or a top-level save-state shadowed by its savestates/ copy; ADR-0005 #one-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-kc_dh70g/memory/savestate_abc.md
+E         
+E       assert []
+
+tests/test_bridge_move_safety_ac4c.py:87: AssertionError
+____ test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused[flat-top] ____
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-490610l5'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-490610l5/proj/.refmatrix'))
+marker = False, newer = 'top'
+
+    @pytest.mark.parametrize("newer", ["top", "folder"])
+    @pytest.mark.parametrize("marker", [True, False], ids=["organised", "flat"])
+    def test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused(inproc, marker, newer):
+        base, root = inproc
+        fx = _memdir_ac4c(base, marker=marker, newer=newer)
+        out = _bridge(fx["memdir"])
+>       _assert_ac4c(root, out, fx, f"in-process, {'organised' if marker else 'flat'}, "
+                                    f"{newer} newer")
+
+tests/test_bridge_move_safety_ac4c.py:119: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-490610l5/proj/.refmatrix')
+out = 'ingested 4 doc(s), 4 node(s), 0 rel: edge(s), 15 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage ...e-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-490610l5/memory/savestates/savestate_abc.md\n'
+fx = {'dropped': PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-490610l5/memory/savestates/savestate_ab...490610l5/memory/a/z.md'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-490610l5/memory/b/z.md')]}
+leg = 'in-process, flat, top newer'
+
+    def _assert_ac4c(root: Path, out: str, fx: dict, leg: str) -> None:
+        flat = " ".join(out.split())
+        block = _dup_block(out)
+>       assert block, f"{leg}: no duplicate_ids report -- z's two claims were not refused:\n{out}"
+E       AssertionError: in-process, flat, top newer: no duplicate_ids report -- z's two claims were not refused:
+E         ingested 4 doc(s), 4 node(s), 0 rel: edge(s), 15 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         new linkage types: lead, part-of
+E         memory embed: 3 row(s) now reachable by recall in proj
+E         ingest-gmd --as-memory: skipped 1 non-memory path(s) (dot-path, README.md, nested MEMORY.md, symlinked folder, dangling link, .gmd, or a top-level save-state shadowed by its savestates/ copy; ADR-0005 #one-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-490610l5/memory/savestates/savestate_abc.md
+E         
+E       assert []
+
+tests/test_bridge_move_safety_ac4c.py:87: AssertionError
+__ test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused[flat-folder] ___
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-rxtywjew'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-rxtywjew/proj/.refmatrix'))
+marker = False, newer = 'folder'
+
+    @pytest.mark.parametrize("newer", ["top", "folder"])
+    @pytest.mark.parametrize("marker", [True, False], ids=["organised", "flat"])
+    def test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused(inproc, marker, newer):
+        base, root = inproc
+        fx = _memdir_ac4c(base, marker=marker, newer=newer)
+        out = _bridge(fx["memdir"])
+>       _assert_ac4c(root, out, fx, f"in-process, {'organised' if marker else 'flat'}, "
+                                    f"{newer} newer")
+
+tests/test_bridge_move_safety_ac4c.py:119: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-rxtywjew/proj/.refmatrix')
+out = 'ingested 4 doc(s), 4 node(s), 0 rel: edge(s), 15 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage ...DR-0005 #one-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-rxtywjew/memory/savestate_abc.md\n'
+fx = {'dropped': PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-rxtywjew/memory/savestate_abc.md'), 'ke...rxtywjew/memory/a/z.md'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-rxtywjew/memory/b/z.md')]}
+leg = 'in-process, flat, folder newer'
+
+    def _assert_ac4c(root: Path, out: str, fx: dict, leg: str) -> None:
+        flat = " ".join(out.split())
+        block = _dup_block(out)
+>       assert block, f"{leg}: no duplicate_ids report -- z's two claims were not refused:\n{out}"
+E       AssertionError: in-process, flat, folder newer: no duplicate_ids report -- z's two claims were not refused:
+E         ingested 4 doc(s), 4 node(s), 0 rel: edge(s), 15 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         new linkage types: lead, part-of
+E         memory embed: 3 row(s) now reachable by recall in proj
+E         ingest-gmd --as-memory: skipped 1 non-memory path(s) (dot-path, README.md, nested MEMORY.md, symlinked folder, dangling link, .gmd, or a top-level save-state shadowed by its savestates/ copy; ADR-0005 #one-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-rxtywjew/memory/savestate_abc.md
+E         
+E       assert []
+
+tests/test_bridge_move_safety_ac4c.py:87: AssertionError
+_____________________________ test_ac4c_daemon_leg _____________________________
+
+daemon = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-4fw3fh95'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-4fw3fh95/proj/.refmatrix'))
+
+    def test_ac4c_daemon_leg(daemon):
+        base, root = daemon
+        fx = _memdir_ac4c(base, marker=True, newer="top")
+        out = _bridge(fx["memdir"])
+        dm.stop_daemon(root)
+>       _assert_ac4c(root, out, fx, "daemon, organised, top newer")
+
+tests/test_bridge_move_safety_ac4c.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-4fw3fh95/proj/.refmatrix')
+out = 'ingested 4 doc(s), 4 node(s), 0 rel: edge(s), 15 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage ...e-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-4fw3fh95/memory/savestates/savestate_abc.md\n'
+fx = {'dropped': PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-4fw3fh95/memory/savestates/savestate_ab...4fw3fh95/memory/a/z.md'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-4fw3fh95/memory/b/z.md')]}
+leg = 'daemon, organised, top newer'
+
+    def _assert_ac4c(root: Path, out: str, fx: dict, leg: str) -> None:
+        flat = " ".join(out.split())
+        block = _dup_block(out)
+>       assert block, f"{leg}: no duplicate_ids report -- z's two claims were not refused:\n{out}"
+E       AssertionError: daemon, organised, top newer: no duplicate_ids report -- z's two claims were not refused:
+E         ingested 4 doc(s), 4 node(s), 0 rel: edge(s), 15 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         new linkage types: lead, part-of
+E         memory embed: 3 row(s) now reachable by recall in proj
+E         ingest-gmd --as-memory: skipped 1 non-memory path(s) (dot-path, README.md, nested MEMORY.md, symlinked folder, dangling link, .gmd, or a top-level save-state shadowed by its savestates/ copy; ADR-0005 #one-walk): /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-4fw3fh95/memory/savestates/savestate_abc.md
+E         
+E       assert []
+
+tests/test_bridge_move_safety_ac4c.py:87: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bridge_move_safety_ac4c.py::test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused[organised-top]
+FAILED tests/test_bridge_move_safety_ac4c.py::test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused[organised-folder]
+FAILED tests/test_bridge_move_safety_ac4c.py::test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused[flat-top]
+FAILED tests/test_bridge_move_safety_ac4c.py::test_ac4c_pair_is_kept_once_and_only_the_other_id_is_refused[flat-folder]
+FAILED tests/test_bridge_move_safety_ac4c.py::test_ac4c_daemon_leg - Assertio...
+5 failed in 16.75s
