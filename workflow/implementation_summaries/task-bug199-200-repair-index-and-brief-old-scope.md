@@ -123,13 +123,19 @@ layouts (flat and organised). No `src/` change is in this commit.
 `bug199-r2-red.log` shows 11 failed at HEAD `40be640`, each for the reason the finding names.
 
 - **#s-1:** a line is rewritten only when its current hook is what the OLD sidecar value
-  renders to. Otherwise it is kept, and the output names it with `kept` and `hand`.
+  renders to. On a drop, a hand-edited line is kept, and the output names it with `kept` and
+  `hand`. On a `--restore`, the restore replaces the hand edit and the output says so. That
+  is the team-lead decision of 2026-11-10: the restore is the newer, explicit instruction
+  for that key. Keeping the hand edit would let the next `write` read it as a hand edit that
+  wins, which reverts the restore (bug-199 again).
   - `test_s1_a_drop_keeps_a_hand_edit_on_the_affected_line_and_says_so`: the drop keeps the
     hand edit and does not report the line as rewritten. The hand edit also survives the
     next `write`.
-  - `test_s1_a_restore_keeps_a_hand_edit_on_the_affected_line_and_says_so`: the same
-    contract for a `--restore`, as the team-lead brief sets it. The auditor's alternative
-    (replace and say so) would fail this test.
+  - `test_s1_a_restore_replaces_a_hand_edit_and_says_so`: the line holds the restored text
+    after the apply and after the next `write`. The output has a line naming the link with
+    `replac` and `hand`. The backup dir's `MEMORY.md` still holds the hand-edited line, so
+    the replaced edit can be recovered. HEAD already replaces the hand edit, but silently, so
+    this test fails at HEAD on the missing "replaced … hand" output line.
   - `test_s1_a_rendered_line_is_still_rewritten_beside_a_kept_hand_edit`: in one apply the
     hand-edited line is kept and the rendered line is rewritten to the restore. Both survive
     the next `write`. A fix that stops rewriting fails here.
@@ -149,11 +155,12 @@ layouts (flat and organised). No `src/` change is in this commit.
   - `test_m1_a_restore_keyed_by_a_moved_files_old_path_rewrites_its_line`. The id-keyed form
     is already covered by the organised cases in `test_bug199_repair_rewrites_index.py`.
 
-**Can be passed.** A scratch copy of `src/` with the auditor's three fixes passed all 48 tests
+**Can be passed.** A scratch copy of `src/` with these fixes passed all 48 tests
 across `test_bug199_r2_remedy.py`, `test_bug199_repair_rewrites_index.py` and
 `test_memory_hook_repair.py` (`bug199-r2-fixsim.log`). The three fixes are:
 
-- the old-render check in `_repaired_index`;
+- the old-render check in `_repaired_index`: on a drop the line is kept and named; on a
+  restore it is replaced and named;
 - `changed |= {_id_of_link(...)}`;
 - writing `raw` back on an index-write failure.
 

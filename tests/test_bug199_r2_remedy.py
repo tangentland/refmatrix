@@ -7,10 +7,12 @@ the shared fixtures, they do not import it.
 Contracts (team-lead RED brief, 2026-11-10):
 
   * #s-1 -- an affected MEMORY.md line is rewritten only when its current hook is what the OLD
-    sidecar value renders to. A line the user edited by hand is KEPT, on a drop and on a
-    restore, and the output names it as kept (hand edit). The hand edit survives in the live
+    sidecar value renders to. A line the user edited by hand is KEPT on a drop, and the
+    output names it as kept (hand edit). The hand edit survives in the live
     index, not only in the backup. Base `fb0f35e` kept it; the branch overwrote it and printed
-    only `rewrite MEMORY.md line X`.
+    only `rewrite MEMORY.md line X`. A `--restore` over a hand edit is the exception
+    (team-lead decision, 2026-11-10): the explicit restore REPLACES it, the output names the
+    replacement, and the backup's MEMORY.md still holds the hand-edited line.
   * #s-2 -- when the MEMORY.md write fails AFTER the sidecar write, the sidecar is put back to
     its original bytes before the command exits non-zero. After it, sidecar and index both
     equal their pre-apply bytes, and the message says nothing was changed and still names the
@@ -71,6 +73,15 @@ def _kept_line(out: str, link: str) -> "str | None":
     return None
 
 
+def _replaced_line(out: str, link: str) -> "str | None":
+    """The output line that names `link` as a hand edit the restore replaced."""
+    for ln in out.splitlines():
+        low = ln.lower()
+        if link in ln and "replac" in low and "hand" in low:
+            return ln
+    return None
+
+
 def _rewrite_line(out: str, link: str) -> "str | None":
     for ln in out.splitlines():
         if re.search(rf"\brewrite\b.*{re.escape(mi.INDEX_NAME)} line {re.escape(link)}\s*$",
@@ -105,20 +116,34 @@ def test_s1_a_drop_keeps_a_hand_edit_on_the_affected_line_and_says_so(stale):
     assert _hook_of(d, link) == HAND, f"the next write lost the hand edit:\n{_index(d)}"
 
 
-def test_s1_a_restore_keeps_a_hand_edit_on_the_affected_line_and_says_so(stale):
+def test_s1_a_restore_replaces_a_hand_edit_and_says_so(stale, rmx_home):
     """Probe B2: the operator restores a key whose line the user retyped by hand after the
-    last write. The line is not what the old value renders to, so it is kept and named."""
+    last write. `--restore k=text` is the newer, explicit instruction for that key, so it
+    REPLACES the hand edit -- keeping it would let the next `write` read it as a hand edit
+    that wins, reverting the restore (bug-199 again). The replacement is named in the output
+    (not printed as a plain rewrite), and the hand edit stays recoverable from the backup
+    (team-lead decision, 2026-11-10)."""
     d, keys = stale
     link, key = keys["curated"]
     _hand_edit(d, CURATED_CUT, HAND)
+    hand_line = next(ln for ln in _index(d).splitlines() if f"]({link})" in ln)
     rc, out = _run(d, "--apply", restore=[f"{key}={RESTORED}"])
     assert rc == 0, out
-    assert _hook_of(d, link) == HAND, (
-        f"the restore overwrote a hand-edited hook on its line (#s-1, B2):\n{_index(d)}"
-        f"\n--- output ---\n{out}")
-    assert _kept_line(out, link), (
-        f"the output must name {link} as kept (hand edit):\n{out}")
-    assert _rewrite_line(out, link) is None, f"{link} is reported as rewritten:\n{out}"
+    assert _hook_of(d, link) == RESTORED, (
+        f"the restore must replace the hand edit on its line:\n{_index(d)}\n{out}")
+    assert _replaced_line(out, link), (
+        f"the output must name {link} as a REPLACED hand edit, not as a plain rewrite "
+        f"(#s-1, B2):\n{out}")
+    dirs = _backup_dirs(rmx_home)
+    assert len(dirs) == 1, f"one backup dir expected, got {dirs}\n{out}"
+    bak = dirs[0] / mi.INDEX_NAME
+    assert bak.is_file() and hand_line in bak.read_text(encoding="utf-8").splitlines(), (
+        f"the replaced hand edit must be recoverable from the index backup {bak}:\n"
+        f"{bak.read_text(encoding='utf-8') if bak.is_file() else '(missing)'}")
+    mi.write(d, out=_quiet())
+    assert _hook_of(d, link) == RESTORED, (
+        f"the next write reverted the restore:\n{_index(d)}")
+    assert json.loads(_sidecar_bytes(d))[key] == RESTORED
 
 
 def test_s1_a_rendered_line_is_still_rewritten_beside_a_kept_hand_edit(stale):

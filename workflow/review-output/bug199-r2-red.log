@@ -1,9 +1,8 @@
-pyc-guard: recompiled 21 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug199-200/src/refmatrix as checked-hash (bug-037)
 FFFFFFFFFFF                                                              [100%]
 =================================== FAILURES ===================================
 ___ test_s1_a_drop_keeps_a_hand_edit_on_the_affected_line_and_says_so[flat] ____
 
-stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_drop_keeps..., {'curated': ('project_curated.md', 'project_curated.md'), 'derived': ('feedback_derived.md', 'feedback_derived.md')})
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_drop_keeps..., {'curated': ('project_curated.md', 'project_curated.md'), 'derived': ('feedback_derived.md', 'feedback_derived.md')})
 
     def test_s1_a_drop_keeps_a_hand_edit_on_the_affected_line_and_says_so(stale):
         """Probe B1: the derived key is dropped, but its line no longer carries the cut the
@@ -25,10 +24,10 @@ E
 E         --- output ---
 E           derived      feedback_derived.md
 E           curated-lost project_curated.md
-E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_drop_keeps_a_hand_ed0/flat/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
+E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_drop_keeps_a_hand_ed0/flat/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
 E           rewrite MEMORY.md line feedback_derived.md
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_drop_keeps_a_hand_ed0/rmxhome/backups/memory-hooks/flat-20261110T170256-168898000/.memory_hooks.json
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_drop_keeps_a_hand_ed0/rmxhome/backups/memory-hooks/flat-20261110T170256-168898000/MEMORY.md
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_drop_keeps_a_hand_ed0/rmxhome/backups/memory-hooks/flat-20261110T170533-423396000/.memory_hooks.json
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_drop_keeps_a_hand_ed0/rmxhome/backups/memory-hooks/flat-20261110T170533-423396000/MEMORY.md
 E         applied: dropped 1 key(s), restored 0, rewrote 1 MEMORY.md line(s); 2 hook(s) remain
 E         
 E       assert 'Fix one cond...ondition too.' == 'MY OWN HAND-...he last write'
@@ -36,10 +35,10 @@ E
 E         - MY OWN HAND-WRITTEN HOOK, typed into MEMORY.md after the last write
 E         + Fix one condition in a gate and then check every sibling condition too.
 
-tests/test_bug199_r2_remedy.py:98: AssertionError
+tests/test_bug199_r2_remedy.py:109: AssertionError
 _ test_s1_a_drop_keeps_a_hand_edit_on_the_affected_line_and_says_so[organised] _
 
-stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_drop_keeps...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_drop_keeps...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
 
     def test_s1_a_drop_keeps_a_hand_edit_on_the_affected_line_and_says_so(stale):
         """Probe B1: the derived key is dropped, but its line no longer carries the cut the
@@ -60,10 +59,10 @@ E
 E         --- output ---
 E           derived      feedback_derived
 E           curated-lost project_curated
-E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_drop_keeps_a_hand_ed1/org/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
+E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_drop_keeps_a_hand_ed1/org/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
 E           rewrite MEMORY.md line feedback/feedback_derived.md
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_drop_keeps_a_hand_ed1/rmxhome/backups/memory-hooks/org-20261110T170256-315387000/.memory_hooks.json
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_drop_keeps_a_hand_ed1/rmxhome/backups/memory-hooks/org-20261110T170256-315387000/MEMORY.md
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_drop_keeps_a_hand_ed1/rmxhome/backups/memory-hooks/org-20261110T170533-577264000/.memory_hooks.json
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_drop_keeps_a_hand_ed1/rmxhome/backups/memory-hooks/org-20261110T170533-577264000/MEMORY.md
 E         applied: dropped 1 key(s), restored 0, rewrote 1 MEMORY.md line(s); 1 hook(s) remain
 E         
 E       assert 'Fix one cond...ondition too.' == 'MY OWN HAND-...he last write'
@@ -71,83 +70,86 @@ E
 E         - MY OWN HAND-WRITTEN HOOK, typed into MEMORY.md after the last write
 E         + Fix one condition in a gate and then check every sibling condition too.
 
-tests/test_bug199_r2_remedy.py:98: AssertionError
-__ test_s1_a_restore_keeps_a_hand_edit_on_the_affected_line_and_says_so[flat] __
+tests/test_bug199_r2_remedy.py:109: AssertionError
+___________ test_s1_a_restore_replaces_a_hand_edit_and_says_so[flat] ___________
 
-stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_restore_ke..., {'curated': ('project_curated.md', 'project_curated.md'), 'derived': ('feedback_derived.md', 'feedback_derived.md')})
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_restore_re..., {'curated': ('project_curated.md', 'project_curated.md'), 'derived': ('feedback_derived.md', 'feedback_derived.md')})
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_restore_replaces_a_h0/rmxhome')
 
-    def test_s1_a_restore_keeps_a_hand_edit_on_the_affected_line_and_says_so(stale):
+    def test_s1_a_restore_replaces_a_hand_edit_and_says_so(stale, rmx_home):
         """Probe B2: the operator restores a key whose line the user retyped by hand after the
-        last write. The line is not what the old value renders to, so it is kept and named."""
+        last write. `--restore k=text` is the newer, explicit instruction for that key, so it
+        REPLACES the hand edit -- keeping it would let the next `write` read it as a hand edit
+        that wins, reverting the restore (bug-199 again). The replacement is named in the output
+        (not printed as a plain rewrite), and the hand edit stays recoverable from the backup
+        (team-lead decision, 2026-11-10)."""
         d, keys = stale
         link, key = keys["curated"]
         _hand_edit(d, CURATED_CUT, HAND)
+        hand_line = next(ln for ln in _index(d).splitlines() if f"]({link})" in ln)
         rc, out = _run(d, "--apply", restore=[f"{key}={RESTORED}"])
         assert rc == 0, out
->       assert _hook_of(d, link) == HAND, (
-            f"the restore overwrote a hand-edited hook on its line (#s-1, B2):\n{_index(d)}"
-            f"\n--- output ---\n{out}")
-E       AssertionError: the restore overwrote a hand-edited hook on its line (#s-1, B2):
-E         - [Derived](feedback_derived.md) — Fix one condition in a gate and then check every sibling condition too.
-E         - [Curated](project_curated.md) — A hand-written hook whose full text is lost because the renderer cut it short, and git still had the whole of it.
-E         - [Fine](project_fine.md) — an intact curated hook with no cut
-E         
-E         --- output ---
+        assert _hook_of(d, link) == RESTORED, (
+            f"the restore must replace the hand edit on its line:\n{_index(d)}\n{out}")
+>       assert _replaced_line(out, link), (
+            f"the output must name {link} as a REPLACED hand edit, not as a plain rewrite "
+            f"(#s-1, B2):\n{out}")
+E       AssertionError: the output must name project_curated.md as a REPLACED hand edit, not as a plain rewrite (#s-1, B2):
 E           derived      feedback_derived.md
 E           curated-lost project_curated.md
-E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_restore_keeps_a_hand0/flat/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
+E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_restore_replaces_a_h0/flat/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
 E           restore      project_curated.md
 E           rewrite MEMORY.md line feedback_derived.md
 E           rewrite MEMORY.md line project_curated.md
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_restore_keeps_a_hand0/rmxhome/backups/memory-hooks/flat-20261110T170256-443799000/.memory_hooks.json
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_restore_keeps_a_hand0/rmxhome/backups/memory-hooks/flat-20261110T170256-443799000/MEMORY.md
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_restore_replaces_a_h0/rmxhome/backups/memory-hooks/flat-20261110T170533-717981000/.memory_hooks.json
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_restore_replaces_a_h0/rmxhome/backups/memory-hooks/flat-20261110T170533-717981000/MEMORY.md
 E         applied: dropped 1 key(s), restored 1, rewrote 2 MEMORY.md line(s); 2 hook(s) remain
 E         
-E       assert 'A hand-writt... whole of it.' == 'MY OWN HAND-...he last write'
-E         
-E         - MY OWN HAND-WRITTEN HOOK, typed into MEMORY.md after the last write
-E         + A hand-written hook whose full text is lost because the renderer cut it short, and git still had the whole of it.
+E       assert None
+E        +  where None = _replaced_line('  derived      feedback_derived.md\n  curated-lost project_curated.md\n2 cut value(s) in /private/var/folders/js/71d0...110T170533-717981000/MEMORY.md\napplied: dropped 1 key(s), restored 1, rewrote 2 MEMORY.md line(s); 2 hook(s) remain\n', 'project_curated.md')
 
-tests/test_bug199_r2_remedy.py:116: AssertionError
-_ test_s1_a_restore_keeps_a_hand_edit_on_the_affected_line_and_says_so[organised] _
+tests/test_bug199_r2_remedy.py:134: AssertionError
+________ test_s1_a_restore_replaces_a_hand_edit_and_says_so[organised] _________
 
-stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_restore_ke...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_restore_re...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_restore_replaces_a_h1/rmxhome')
 
-    def test_s1_a_restore_keeps_a_hand_edit_on_the_affected_line_and_says_so(stale):
+    def test_s1_a_restore_replaces_a_hand_edit_and_says_so(stale, rmx_home):
         """Probe B2: the operator restores a key whose line the user retyped by hand after the
-        last write. The line is not what the old value renders to, so it is kept and named."""
+        last write. `--restore k=text` is the newer, explicit instruction for that key, so it
+        REPLACES the hand edit -- keeping it would let the next `write` read it as a hand edit
+        that wins, reverting the restore (bug-199 again). The replacement is named in the output
+        (not printed as a plain rewrite), and the hand edit stays recoverable from the backup
+        (team-lead decision, 2026-11-10)."""
         d, keys = stale
         link, key = keys["curated"]
         _hand_edit(d, CURATED_CUT, HAND)
+        hand_line = next(ln for ln in _index(d).splitlines() if f"]({link})" in ln)
         rc, out = _run(d, "--apply", restore=[f"{key}={RESTORED}"])
         assert rc == 0, out
->       assert _hook_of(d, link) == HAND, (
-            f"the restore overwrote a hand-edited hook on its line (#s-1, B2):\n{_index(d)}"
-            f"\n--- output ---\n{out}")
-E       AssertionError: the restore overwrote a hand-edited hook on its line (#s-1, B2):
-E         - [Derived](feedback/feedback_derived.md) — Fix one condition in a gate and then check every sibling condition too.
-E         - [Curated](project/project_curated.md) — A hand-written hook whose full text is lost because the renderer cut it short, and git still had the whole of it.
-E         
-E         --- output ---
+        assert _hook_of(d, link) == RESTORED, (
+            f"the restore must replace the hand edit on its line:\n{_index(d)}\n{out}")
+>       assert _replaced_line(out, link), (
+            f"the output must name {link} as a REPLACED hand edit, not as a plain rewrite "
+            f"(#s-1, B2):\n{out}")
+E       AssertionError: the output must name project/project_curated.md as a REPLACED hand edit, not as a plain rewrite (#s-1, B2):
 E           derived      feedback_derived
 E           curated-lost project_curated
-E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_restore_keeps_a_hand1/org/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
+E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_restore_replaces_a_h1/org/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
 E           restore      project_curated
 E           rewrite MEMORY.md line feedback/feedback_derived.md
 E           rewrite MEMORY.md line project/project_curated.md
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_restore_keeps_a_hand1/rmxhome/backups/memory-hooks/org-20261110T170256-580209000/.memory_hooks.json
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_restore_keeps_a_hand1/rmxhome/backups/memory-hooks/org-20261110T170256-580209000/MEMORY.md
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_restore_replaces_a_h1/rmxhome/backups/memory-hooks/org-20261110T170533-851736000/.memory_hooks.json
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_restore_replaces_a_h1/rmxhome/backups/memory-hooks/org-20261110T170533-851736000/MEMORY.md
 E         applied: dropped 1 key(s), restored 1, rewrote 2 MEMORY.md line(s); 1 hook(s) remain
 E         
-E       assert 'A hand-writt... whole of it.' == 'MY OWN HAND-...he last write'
-E         
-E         - MY OWN HAND-WRITTEN HOOK, typed into MEMORY.md after the last write
-E         + A hand-written hook whose full text is lost because the renderer cut it short, and git still had the whole of it.
+E       assert None
+E        +  where None = _replaced_line('  derived      feedback_derived\n  curated-lost project_curated\n2 cut value(s) in /private/var/folders/js/71d0ymjj56...110T170533-851736000/MEMORY.md\napplied: dropped 1 key(s), restored 1, rewrote 2 MEMORY.md line(s); 1 hook(s) remain\n', 'project/project_curated.md')
 
-tests/test_bug199_r2_remedy.py:116: AssertionError
+tests/test_bug199_r2_remedy.py:134: AssertionError
 ___ test_s1_a_rendered_line_is_still_rewritten_beside_a_kept_hand_edit[flat] ___
 
-stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_rendered_l..., {'curated': ('project_curated.md', 'project_curated.md'), 'derived': ('feedback_derived.md', 'feedback_derived.md')})
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_rendered_l..., {'curated': ('project_curated.md', 'project_curated.md'), 'derived': ('feedback_derived.md', 'feedback_derived.md')})
 
     def test_s1_a_rendered_line_is_still_rewritten_beside_a_kept_hand_edit(stale):
         """One apply, two affected lines: the hand-edited derived line is kept, the curated line
@@ -167,12 +169,12 @@ E         - [Fine](project_fine.md) — an intact curated hook with no cut
 E         
 E           derived      feedback_derived.md
 E           curated-lost project_curated.md
-E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_rendered_line_is_sti0/flat/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
+E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_rendered_line_is_sti0/flat/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
 E           restore      project_curated.md
 E           rewrite MEMORY.md line feedback_derived.md
 E           rewrite MEMORY.md line project_curated.md
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_rendered_line_is_sti0/rmxhome/backups/memory-hooks/flat-20261110T170256-719451000/.memory_hooks.json
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_rendered_line_is_sti0/rmxhome/backups/memory-hooks/flat-20261110T170256-719451000/MEMORY.md
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_rendered_line_is_sti0/rmxhome/backups/memory-hooks/flat-20261110T170533-985213000/.memory_hooks.json
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_rendered_line_is_sti0/rmxhome/backups/memory-hooks/flat-20261110T170533-985213000/MEMORY.md
 E         applied: dropped 1 key(s), restored 1, rewrote 2 MEMORY.md line(s); 2 hook(s) remain
 E         
 E       assert 'Fix one cond...ondition too.' == 'MY OWN HAND-...he last write'
@@ -180,10 +182,10 @@ E
 E         - MY OWN HAND-WRITTEN HOOK, typed into MEMORY.md after the last write
 E         + Fix one condition in a gate and then check every sibling condition too.
 
-tests/test_bug199_r2_remedy.py:134: AssertionError
+tests/test_bug199_r2_remedy.py:159: AssertionError
 _ test_s1_a_rendered_line_is_still_rewritten_beside_a_kept_hand_edit[organised] _
 
-stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_rendered_l...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_rendered_l...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
 
     def test_s1_a_rendered_line_is_still_rewritten_beside_a_kept_hand_edit(stale):
         """One apply, two affected lines: the hand-edited derived line is kept, the curated line
@@ -202,12 +204,12 @@ E         - [Curated](project/project_curated.md) — A hand-written hook whose 
 E         
 E           derived      feedback_derived
 E           curated-lost project_curated
-E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_rendered_line_is_sti1/org/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
+E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_rendered_line_is_sti1/org/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
 E           restore      project_curated
 E           rewrite MEMORY.md line feedback/feedback_derived.md
 E           rewrite MEMORY.md line project/project_curated.md
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_rendered_line_is_sti1/rmxhome/backups/memory-hooks/org-20261110T170256-856279000/.memory_hooks.json
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s1_a_rendered_line_is_sti1/rmxhome/backups/memory-hooks/org-20261110T170256-856279000/MEMORY.md
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_rendered_line_is_sti1/rmxhome/backups/memory-hooks/org-20261110T170534-117285000/.memory_hooks.json
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s1_a_rendered_line_is_sti1/rmxhome/backups/memory-hooks/org-20261110T170534-117285000/MEMORY.md
 E         applied: dropped 1 key(s), restored 1, rewrote 2 MEMORY.md line(s); 1 hook(s) remain
 E         
 E       assert 'Fix one cond...ondition too.' == 'MY OWN HAND-...he last write'
@@ -215,11 +217,11 @@ E
 E         - MY OWN HAND-WRITTEN HOOK, typed into MEMORY.md after the last write
 E         + Fix one condition in a gate and then check every sibling condition too.
 
-tests/test_bug199_r2_remedy.py:134: AssertionError
+tests/test_bug199_r2_remedy.py:159: AssertionError
 ________ test_s2_a_real_index_write_failure_puts_the_sidecar_back[flat] ________
 
-stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index..., {'curated': ('project_curated.md', 'project_curated.md'), 'derived': ('feedback_derived.md', 'feedback_derived.md')})
-rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai0/rmxhome')
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index..., {'curated': ('project_curated.md', 'project_curated.md'), 'derived': ('feedback_derived.md', 'feedback_derived.md')})
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai0/rmxhome')
 
     def test_s2_a_real_index_write_failure_puts_the_sidecar_back(stale, rmx_home):
         """REAL fault, real entry point (child process): MEMORY.md is immutable, so the index
@@ -234,14 +236,14 @@ rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/p
             os.chflags(idx, 0)
 >       _assert_rolled_back(d, rmx_home, before, rc, out)
 
-tests/test_bug199_r2_remedy.py:184: 
+tests/test_bug199_r2_remedy.py:209: 
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
 
-d = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai0/flat/memory')
-home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai0/rmxhome')
+d = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai0/flat/memory')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai0/rmxhome')
 before = {'index': b'- [Derived](feedback_derived.md) \xe2\x80\x94 Fix one condition in a gate and then check\xe2\x80\xa6\n- [C... full text is lost because the renderer cut\xe2\x80\xa6",\n"project_fine.md": "an intact curated hook with no cut"\n}'}
 rc = 1
-out = '  derived      feedback_derived.md\n  curated-lost project_curated.md\n2 cut value(s) in /private/var/folders/js/71d0...ks/flat-20261110T170256-999080000/.memory_hooks.json back before the next write, which would let the stale lines win\n'
+out = '  derived      feedback_derived.md\n  curated-lost project_curated.md\n2 cut value(s) in /private/var/folders/js/71d0...ks/flat-20261110T170534-248195000/.memory_hooks.json back before the next write, which would let the stale lines win\n'
 
     def _assert_rolled_back(d: Path, home: Path, before: dict, rc: int, out: str) -> None:
         assert rc != 0, f"an index-write failure must exit non-zero:\n{out}"
@@ -256,24 +258,24 @@ E         before: b'{\n"feedback_derived.md": "Fix one condition in a gate and t
 E         --- output ---
 E           derived      feedback_derived.md
 E           curated-lost project_curated.md
-E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai0/flat/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
+E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai0/flat/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
 E           restore      project_curated.md
 E           rewrite MEMORY.md line feedback_derived.md
 E           rewrite MEMORY.md line project_curated.md
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai0/rmxhome/backups/memory-hooks/flat-20261110T170256-999080000/.memory_hooks.json
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai0/rmxhome/backups/memory-hooks/flat-20261110T170256-999080000/MEMORY.md
-E         refused: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai0/flat/memory/.memory_hooks.json was repaired but writing /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai0/flat/memory/MEMORY.md failed (PermissionError: [Errno 1] Operation not permitted: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai0/flat/memory/MEMORY.md.ch07464m.tmp' -> '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai0/flat/memory/MEMORY.md'); the old index is intact -- copy /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai0/rmxhome/backups/memory-hooks/flat-20261110T170256-999080000/.memory_hooks.json back before the next write, which would let the stale lines win
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai0/rmxhome/backups/memory-hooks/flat-20261110T170534-248195000/.memory_hooks.json
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai0/rmxhome/backups/memory-hooks/flat-20261110T170534-248195000/MEMORY.md
+E         refused: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai0/flat/memory/.memory_hooks.json was repaired but writing /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai0/flat/memory/MEMORY.md failed (PermissionError: [Errno 1] Operation not permitted: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai0/flat/memory/MEMORY.md.w7qj846r.tmp' -> '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai0/flat/memory/MEMORY.md'); the old index is intact -- copy /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai0/rmxhome/backups/memory-hooks/flat-20261110T170534-248195000/.memory_hooks.json back before the next write, which would let the stale lines win
 E         
 E       assert b'{\n"project...th no cut"\n}' == b'{\n"feedbac...th no cut"\n}'
 E         
 E         At index 3 diff: b'p' != b'f'
 E         Use -v to get more diff
 
-tests/test_bug199_r2_remedy.py:148: AssertionError
+tests/test_bug199_r2_remedy.py:173: AssertionError
 _____ test_s2_a_real_index_write_failure_puts_the_sidecar_back[organised] ______
 
-stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
-rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai1/rmxhome')
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai1/rmxhome')
 
     def test_s2_a_real_index_write_failure_puts_the_sidecar_back(stale, rmx_home):
         """REAL fault, real entry point (child process): MEMORY.md is immutable, so the index
@@ -288,14 +290,14 @@ rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/p
             os.chflags(idx, 0)
 >       _assert_rolled_back(d, rmx_home, before, rc, out)
 
-tests/test_bug199_r2_remedy.py:184: 
+tests/test_bug199_r2_remedy.py:209: 
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
 
-d = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai1/org/memory')
-home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai1/rmxhome')
+d = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai1/org/memory')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai1/rmxhome')
 before = {'index': b'- [Derived](feedback/feedback_derived.md) \xe2\x80\x94 Fix one condition in a gate and then check\xe2\x80\...2\x80\xa6",\n"project_curated": "A hand-written hook whose full text is lost because the renderer cut\xe2\x80\xa6"\n}'}
 rc = 1
-out = '  derived      feedback_derived\n  curated-lost project_curated\n2 cut value(s) in /private/var/folders/js/71d0ymjj56...oks/org-20261110T170257-141023000/.memory_hooks.json back before the next write, which would let the stale lines win\n'
+out = '  derived      feedback_derived\n  curated-lost project_curated\n2 cut value(s) in /private/var/folders/js/71d0ymjj56...oks/org-20261110T170534-373861000/.memory_hooks.json back before the next write, which would let the stale lines win\n'
 
     def _assert_rolled_back(d: Path, home: Path, before: dict, rc: int, out: str) -> None:
         assert rc != 0, f"an index-write failure must exit non-zero:\n{out}"
@@ -310,26 +312,26 @@ E         before: b'{\n"feedback_derived": "Fix one condition in a gate and then
 E         --- output ---
 E           derived      feedback_derived
 E           curated-lost project_curated
-E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai1/org/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
+E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai1/org/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
 E           restore      project_curated
 E           rewrite MEMORY.md line feedback/feedback_derived.md
 E           rewrite MEMORY.md line project/project_curated.md
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai1/rmxhome/backups/memory-hooks/org-20261110T170257-141023000/.memory_hooks.json
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai1/rmxhome/backups/memory-hooks/org-20261110T170257-141023000/MEMORY.md
-E         refused: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai1/org/memory/.memory_hooks.json was repaired but writing /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai1/org/memory/MEMORY.md failed (PermissionError: [Errno 1] Operation not permitted: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai1/org/memory/MEMORY.md.7x9m3cq0.tmp' -> '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai1/org/memory/MEMORY.md'); the old index is intact -- copy /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_a_real_index_write_fai1/rmxhome/backups/memory-hooks/org-20261110T170257-141023000/.memory_hooks.json back before the next write, which would let the stale lines win
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai1/rmxhome/backups/memory-hooks/org-20261110T170534-373861000/.memory_hooks.json
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai1/rmxhome/backups/memory-hooks/org-20261110T170534-373861000/MEMORY.md
+E         refused: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai1/org/memory/.memory_hooks.json was repaired but writing /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai1/org/memory/MEMORY.md failed (PermissionError: [Errno 1] Operation not permitted: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai1/org/memory/MEMORY.md.e4zf54en.tmp' -> '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai1/org/memory/MEMORY.md'); the old index is intact -- copy /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_a_real_index_write_fai1/rmxhome/backups/memory-hooks/org-20261110T170534-373861000/.memory_hooks.json back before the next write, which would let the stale lines win
 E         
 E       assert b'{\n"project...le of it."\n}' == b'{\n"feedbac...2\x80\xa6"\n}'
 E         
 E         At index 3 diff: b'p' != b'f'
 E         Use -v to get more diff
 
-tests/test_bug199_r2_remedy.py:148: AssertionError
+tests/test_bug199_r2_remedy.py:173: AssertionError
 _____ test_s2_an_injected_index_write_failure_puts_the_sidecar_back[flat] ______
 
-stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_..., {'curated': ('project_curated.md', 'project_curated.md'), 'derived': ('feedback_derived.md', 'feedback_derived.md')})
-rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ0/rmxhome')
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1113224e0>
-capsys = <_pytest.capture.CaptureFixture object at 0x11148c830>
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_..., {'curated': ('project_curated.md', 'project_curated.md'), 'derived': ('feedback_derived.md', 'feedback_derived.md')})
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ0/rmxhome')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1132863f0>
+capsys = <_pytest.capture.CaptureFixture object at 0x1131e8ad0>
 
     def test_s2_an_injected_index_write_failure_puts_the_sidecar_back(stale, rmx_home,
                                                                       monkeypatch, capsys):
@@ -356,14 +358,14 @@ capsys = <_pytest.capture.CaptureFixture object at 0x11148c830>
             f"precondition: the apply reached the index write through the seam: {calls}\n{out}")
 >       _assert_rolled_back(d, rmx_home, before, rc, out)
 
-tests/test_bug199_r2_remedy.py:210: 
+tests/test_bug199_r2_remedy.py:235: 
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
 
-d = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ0/flat/memory')
-home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ0/rmxhome')
+d = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ0/flat/memory')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ0/rmxhome')
 before = {'index': b'- [Derived](feedback_derived.md) \xe2\x80\x94 Fix one condition in a gate and then check\xe2\x80\xa6\n- [C... full text is lost because the renderer cut\xe2\x80\xa6",\n"project_fine.md": "an intact curated hook with no cut"\n}'}
 rc = 1
-out = '  derived      feedback_derived.md\n  curated-lost project_curated.md\n2 cut value(s) in /private/var/folders/js/71d0...ks/flat-20261110T170257-207334000/.memory_hooks.json back before the next write, which would let the stale lines win\n'
+out = '  derived      feedback_derived.md\n  curated-lost project_curated.md\n2 cut value(s) in /private/var/folders/js/71d0...ks/flat-20261110T170534-432261000/.memory_hooks.json back before the next write, which would let the stale lines win\n'
 
     def _assert_rolled_back(d: Path, home: Path, before: dict, rc: int, out: str) -> None:
         assert rc != 0, f"an index-write failure must exit non-zero:\n{out}"
@@ -378,26 +380,26 @@ E         before: b'{\n"feedback_derived.md": "Fix one condition in a gate and t
 E         --- output ---
 E           derived      feedback_derived.md
 E           curated-lost project_curated.md
-E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ0/flat/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
+E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ0/flat/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
 E           restore      project_curated.md
 E           rewrite MEMORY.md line feedback_derived.md
 E           rewrite MEMORY.md line project_curated.md
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ0/rmxhome/backups/memory-hooks/flat-20261110T170257-207334000/.memory_hooks.json
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ0/rmxhome/backups/memory-hooks/flat-20261110T170257-207334000/MEMORY.md
-E         refused: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ0/flat/memory/.memory_hooks.json was repaired but writing /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ0/flat/memory/MEMORY.md failed (OSError: [Errno 28] No space left on device); the old index is intact -- copy /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ0/rmxhome/backups/memory-hooks/flat-20261110T170257-207334000/.memory_hooks.json back before the next write, which would let the stale lines win
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ0/rmxhome/backups/memory-hooks/flat-20261110T170534-432261000/.memory_hooks.json
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ0/rmxhome/backups/memory-hooks/flat-20261110T170534-432261000/MEMORY.md
+E         refused: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ0/flat/memory/.memory_hooks.json was repaired but writing /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ0/flat/memory/MEMORY.md failed (OSError: [Errno 28] No space left on device); the old index is intact -- copy /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ0/rmxhome/backups/memory-hooks/flat-20261110T170534-432261000/.memory_hooks.json back before the next write, which would let the stale lines win
 E         
 E       assert b'{\n"project...th no cut"\n}' == b'{\n"feedbac...th no cut"\n}'
 E         
 E         At index 3 diff: b'p' != b'f'
 E         Use -v to get more diff
 
-tests/test_bug199_r2_remedy.py:148: AssertionError
+tests/test_bug199_r2_remedy.py:173: AssertionError
 ___ test_s2_an_injected_index_write_failure_puts_the_sidecar_back[organised] ___
 
-stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
-rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ1/rmxhome')
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x111572430>
-capsys = <_pytest.capture.CaptureFixture object at 0x111794190>
+stale = (PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_...': ('project/project_curated.md', 'project_curated'), 'derived': ('feedback/feedback_derived.md', 'feedback_derived')})
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ1/rmxhome')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1131749f0>
+capsys = <_pytest.capture.CaptureFixture object at 0x11326c050>
 
     def test_s2_an_injected_index_write_failure_puts_the_sidecar_back(stale, rmx_home,
                                                                       monkeypatch, capsys):
@@ -424,14 +426,14 @@ capsys = <_pytest.capture.CaptureFixture object at 0x111794190>
             f"precondition: the apply reached the index write through the seam: {calls}\n{out}")
 >       _assert_rolled_back(d, rmx_home, before, rc, out)
 
-tests/test_bug199_r2_remedy.py:210: 
+tests/test_bug199_r2_remedy.py:235: 
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
 
-d = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ1/org/memory')
-home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ1/rmxhome')
+d = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ1/org/memory')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ1/rmxhome')
 before = {'index': b'- [Derived](feedback/feedback_derived.md) \xe2\x80\x94 Fix one condition in a gate and then check\xe2\x80\...2\x80\xa6",\n"project_curated": "A hand-written hook whose full text is lost because the renderer cut\xe2\x80\xa6"\n}'}
 rc = 1
-out = '  derived      feedback_derived\n  curated-lost project_curated\n2 cut value(s) in /private/var/folders/js/71d0ymjj56...oks/org-20261110T170257-256055000/.memory_hooks.json back before the next write, which would let the stale lines win\n'
+out = '  derived      feedback_derived\n  curated-lost project_curated\n2 cut value(s) in /private/var/folders/js/71d0ymjj56...oks/org-20261110T170534-477862000/.memory_hooks.json back before the next write, which would let the stale lines win\n'
 
     def _assert_rolled_back(d: Path, home: Path, before: dict, rc: int, out: str) -> None:
         assert rc != 0, f"an index-write failure must exit non-zero:\n{out}"
@@ -446,24 +448,24 @@ E         before: b'{\n"feedback_derived": "Fix one condition in a gate and then
 E         --- output ---
 E           derived      feedback_derived
 E           curated-lost project_curated
-E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ1/org/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
+E         2 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ1/org/memory/.memory_hooks.json: derived: 1  bare: 0  curated-lost: 1  gone: 0
 E           restore      project_curated
 E           rewrite MEMORY.md line feedback/feedback_derived.md
 E           rewrite MEMORY.md line project/project_curated.md
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ1/rmxhome/backups/memory-hooks/org-20261110T170257-256055000/.memory_hooks.json
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ1/rmxhome/backups/memory-hooks/org-20261110T170257-256055000/MEMORY.md
-E         refused: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ1/org/memory/.memory_hooks.json was repaired but writing /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ1/org/memory/MEMORY.md failed (OSError: [Errno 28] No space left on device); the old index is intact -- copy /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_s2_an_injected_index_writ1/rmxhome/backups/memory-hooks/org-20261110T170257-256055000/.memory_hooks.json back before the next write, which would let the stale lines win
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ1/rmxhome/backups/memory-hooks/org-20261110T170534-477862000/.memory_hooks.json
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ1/rmxhome/backups/memory-hooks/org-20261110T170534-477862000/MEMORY.md
+E         refused: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ1/org/memory/.memory_hooks.json was repaired but writing /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ1/org/memory/MEMORY.md failed (OSError: [Errno 28] No space left on device); the old index is intact -- copy /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_s2_an_injected_index_writ1/rmxhome/backups/memory-hooks/org-20261110T170534-477862000/.memory_hooks.json back before the next write, which would let the stale lines win
 E         
 E       assert b'{\n"project...le of it."\n}' == b'{\n"feedbac...2\x80\xa6"\n}'
 E         
 E         At index 3 diff: b'p' != b'f'
 E         Use -v to get more diff
 
-tests/test_bug199_r2_remedy.py:148: AssertionError
+tests/test_bug199_r2_remedy.py:173: AssertionError
 _____ test_m1_a_restore_keyed_by_a_moved_files_old_path_rewrites_its_line ______
 
-tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_m1_a_restore_keyed_by_a_m0')
-rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_m1_a_restore_keyed_by_a_m0/rmxhome')
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_m1_a_restore_keyed_by_a_m0')
+rmx_home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_m1_a_restore_keyed_by_a_m0/rmxhome')
 
     def test_m1_a_restore_keyed_by_a_moved_files_old_path_rewrites_its_line(tmp_path, rmx_home):
         """Probe D: the sidecar keys the memory by `project_curated.md`; the file has since moved
@@ -497,9 +499,9 @@ E         - [Fine](project_fine.md) — an intact curated hook with no cut
 E         
 E         --- output ---
 E           gone         project_curated.md
-E         1 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_m1_a_restore_keyed_by_a_m0/moved/memory/.memory_hooks.json: derived: 0  bare: 0  curated-lost: 0  gone: 1
+E         1 cut value(s) in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_m1_a_restore_keyed_by_a_m0/moved/memory/.memory_hooks.json: derived: 0  bare: 0  curated-lost: 0  gone: 1
 E           restore      project_curated.md
-E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-696/test_m1_a_restore_keyed_by_a_m0/rmxhome/backups/memory-hooks/moved-20261110T170257-384771000/.memory_hooks.json
+E         backup: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-699/test_m1_a_restore_keyed_by_a_m0/rmxhome/backups/memory-hooks/moved-20261110T170534-591220000/.memory_hooks.json
 E         applied: dropped 0 key(s), restored 1, rewrote 0 MEMORY.md line(s); 2 hook(s) remain
 E         
 E       assert 'A hand-writt...renderer cut…' == 'A hand-writt... whole of it.'
@@ -508,12 +510,12 @@ E         Skipping 58 identical leading characters in diff, use -v to show
 E         - nderer cut it short, and git still had the whole of it.
 E         + nderer cut…
 
-tests/test_bug199_r2_remedy.py:238: AssertionError
+tests/test_bug199_r2_remedy.py:263: AssertionError
 =========================== short test summary info ============================
 FAILED tests/test_bug199_r2_remedy.py::test_s1_a_drop_keeps_a_hand_edit_on_the_affected_line_and_says_so[flat]
 FAILED tests/test_bug199_r2_remedy.py::test_s1_a_drop_keeps_a_hand_edit_on_the_affected_line_and_says_so[organised]
-FAILED tests/test_bug199_r2_remedy.py::test_s1_a_restore_keeps_a_hand_edit_on_the_affected_line_and_says_so[flat]
-FAILED tests/test_bug199_r2_remedy.py::test_s1_a_restore_keeps_a_hand_edit_on_the_affected_line_and_says_so[organised]
+FAILED tests/test_bug199_r2_remedy.py::test_s1_a_restore_replaces_a_hand_edit_and_says_so[flat]
+FAILED tests/test_bug199_r2_remedy.py::test_s1_a_restore_replaces_a_hand_edit_and_says_so[organised]
 FAILED tests/test_bug199_r2_remedy.py::test_s1_a_rendered_line_is_still_rewritten_beside_a_kept_hand_edit[flat]
 FAILED tests/test_bug199_r2_remedy.py::test_s1_a_rendered_line_is_still_rewritten_beside_a_kept_hand_edit[organised]
 FAILED tests/test_bug199_r2_remedy.py::test_s2_a_real_index_write_failure_puts_the_sidecar_back[flat]
@@ -521,4 +523,4 @@ FAILED tests/test_bug199_r2_remedy.py::test_s2_a_real_index_write_failure_puts_t
 FAILED tests/test_bug199_r2_remedy.py::test_s2_an_injected_index_write_failure_puts_the_sidecar_back[flat]
 FAILED tests/test_bug199_r2_remedy.py::test_s2_an_injected_index_write_failure_puts_the_sidecar_back[organised]
 FAILED tests/test_bug199_r2_remedy.py::test_m1_a_restore_keyed_by_a_moved_files_old_path_rewrites_its_line
-11 failed in 1.40s
+11 failed in 1.35s
