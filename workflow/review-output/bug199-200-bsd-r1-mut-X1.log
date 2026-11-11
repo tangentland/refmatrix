@@ -1,0 +1,28 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug199-200/src/refmatrix as checked-hash (bug-037)
+F...................                                                     [100%]
+=================================== FAILURES ===================================
+___ test_cli_brief_compile_scope_pattern_plans_and_briefs_the_pattern_corpus ___
+
+spawn = <function spawn.<locals>._make at 0x109955220>
+
+    def test_cli_brief_compile_scope_pattern_plans_and_briefs_the_pattern_corpus(spawn):
+        spawn(_seed_brief_corpus)
+>       res = _brief("--compile", "--scope", "pattern")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_bug200_brief_compile_real_daemon.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+argv = ('--compile', '--scope', 'pattern'), code = 1, out = '', @py_assert2 = 0
+
+    def _brief(*argv: str) -> dict:
+        code, out = _cli("memory", "brief", *argv, "--json")
+>       assert code == 0, f"`rmx memory brief {' '.join(argv)} --json` exited {code}:\n{out}"
+E       AssertionError: `rmx memory brief --compile --scope pattern --json` exited 1:
+E         
+E       assert 1 == 0
+
+tests/test_bug200_brief_compile_real_daemon.py:26: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug200_brief_compile_real_daemon.py::test_cli_brief_compile_scope_pattern_plans_and_briefs_the_pattern_corpus
+1 failed, 19 passed in 13.68s
