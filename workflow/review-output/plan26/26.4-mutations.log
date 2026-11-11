@@ -1,0 +1,81 @@
+# 26.4 mutations against 1a1f189 (tests/test_savestate_mtype.py)
+=== mutation o: bridge override removed ===
+mutation o applied to ingest_gmd.py
+E       AssertionError: {'doc_drop_failed': [], 'duplicate_ids': [], 'embed': {'batches': 1, 'capped': False, 'embedded': 5, 'error': None, ...}, 'error': None, ...}
+E       AssertionError: {'doc_drop_failed': [], 'duplicate_ids': [], 'embed': {'batches': 1, 'capped': False, 'embedded': 2, 'error': None, ...}, 'error': None, ...}
+FAILED tests/test_savestate_mtype.py::test_ac1_top_level_hand_typed_savestate_is_stored_as_recall_state
+FAILED tests/test_savestate_mtype.py::test_ac1_savestates_folder_file_ignores_its_frontmatter_type[project]
+FAILED tests/test_savestate_mtype.py::test_ac1_savestates_folder_file_ignores_its_frontmatter_type[feedback]
+FAILED tests/test_savestate_mtype.py::test_ac1_savestates_folder_file_ignores_its_frontmatter_type[None]
+FAILED tests/test_savestate_mtype.py::test_ac1_ingest_stats_count_every_override_and_only_overrides
+FAILED tests/test_savestate_mtype.py::test_ac1_bridge_report_prints_the_count_and_names_each_id
+FAILED tests/test_savestate_mtype.py::test_ac1_in_process_bridge_result_carries_mtype_normalised
+FAILED tests/test_savestate_mtype.py::test_ac1_daemon_bridge_result_carries_mtype_normalised
+FAILED tests/test_savestate_mtype.py::test_ac1_waited_job_result_carries_mtype_normalised
+FAILED tests/test_savestate_mtype.py::test_ac2_hook_mode_recall_hides_the_hand_typed_savestate_and_include_session_keeps_it
+FAILED tests/test_savestate_mtype.py::test_ac3_after_the_rewrite_disk_and_store_agree_and_the_next_bridge_counts_zero
+FAILED tests/test_savestate_mtype.py::test_ac3b_unorganised_unchanged_file_keeps_its_row_until_its_next_touch
+FAILED tests/test_savestate_mtype.py::test_ac4_a_project_file_in_feedback_is_not_retyped_by_bridge_or_correction
+13 failed, 5 passed in 71.32s (0:01:11)
+restore check before s1: git status --short src empty; fix grep:
+1
+1
+=== mutation s1: count dropped on the daemon leg only (_ingest_gmd_sync daemon branch pops it) ===
+mutation s1 applied to cli.py
+FAILED tests/test_savestate_mtype.py::test_ac1_daemon_bridge_result_carries_mtype_normalised
+1 failed, 17 passed in 77.46s (0:01:17)
+restore check before s2: git status --short src empty; fix grep:
+1
+1
+=== mutation s2: count dropped on the waited-job leg only (_bridge_wait_for_active_job pops it) ===
+mutation s2 applied to cli.py
+FAILED tests/test_savestate_mtype.py::test_ac1_waited_job_result_carries_mtype_normalised
+1 failed, 17 passed in 71.30s (0:01:11)
+restore check before t: git status --short src empty; fix grep:
+1
+1
+=== mutation t: the rewrite lets mtime move (os.utime removed) ===
+mutation t applied to memory_layout.py
+FAILED tests/test_savestate_mtype.py::test_ac3_apply_rewrites_only_the_type_line_and_restores_mtime
+FAILED tests/test_savestate_mtype.py::test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[False]
+FAILED tests/test_savestate_mtype.py::test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[True]
+3 failed, 15 passed in 71.58s (0:01:11)
+restore check before u: git status --short src empty; fix grep:
+1
+1
+=== mutation u: the rewrite also stamps updated: 2026-11-11 (mtime still restored) ===
+mutation u applied to memory_layout.py
+FAILED tests/test_savestate_mtype.py::test_ac3_apply_rewrites_only_the_type_line_and_restores_mtime
+FAILED tests/test_savestate_mtype.py::test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[False]
+FAILED tests/test_savestate_mtype.py::test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[True]
+3 failed, 15 passed in 72.10s (0:01:12)
+restore check before f2: git status --short src empty; fix grep:
+1
+1
+=== mutation f2: bridge override widened to every file in any folder ===
+mutation f2 applied to ingest_gmd.py
+FAILED tests/test_savestate_mtype.py::test_ac1_top_level_hand_typed_savestate_is_stored_as_recall_state
+FAILED tests/test_savestate_mtype.py::test_ac1_ingest_stats_count_every_override_and_only_overrides
+FAILED tests/test_savestate_mtype.py::test_ac1_waited_job_result_carries_mtype_normalised
+FAILED tests/test_savestate_mtype.py::test_ac2_hook_mode_recall_hides_the_hand_typed_savestate_and_include_session_keeps_it
+FAILED tests/test_savestate_mtype.py::test_ac4_a_project_file_in_feedback_is_not_retyped_by_bridge_or_correction
+5 failed, 13 passed in 70.96s (0:01:10)
+restore check before f1: git status --short src empty; fix grep:
+1
+1
+=== mutation f1: bridge override widened to a savestate_* id in ANY folder (AC-1 literal text; the reading the lead ruled out) ===
+mutation f1 applied to ingest_gmd.py
+18 passed in 75.07s (0:01:15)
+SURVIVED: no test places a savestate_* file outside the top level / savestates/ (RED left it unpinned; lead decision 2026-11-11 now pins it -- test gap for ch-test-engineer)
+restore check before f3: git status --short src empty; fix grep:
+1
+1
+=== mutation f3: file correction widened to every memory file in any folder ===
+mutation f3 applied to memory_layout.py
+FAILED tests/test_savestate_mtype.py::test_ac4_a_project_file_in_feedback_is_not_retyped_by_bridge_or_correction
+1 failed, 17 passed in 73.04s (0:01:13)
+=== final restore check ===
+git status --short src: []
+1
+1
+1

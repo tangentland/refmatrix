@@ -18,6 +18,7 @@ metadata:
 
 rel: part-of -> [[plan-26-memory-organisation]]
 rel: related-to -> [[plan-25-cliquedb-field-report]]
+rel: depends-on -> [[refmatrix/adr-0005-memory-dir-layout#authority]]
 
 ## Requirements {#requirements}
 
@@ -28,6 +29,10 @@ fix for bug-164 stays with plan-25.
 
 1. **AC-1: the bridge rule.**
    - Applies to a file under `savestates/`, or a file whose `id` starts with `savestate_`.
+     - **Clarified (team-lead decision 2026-11-11, ADR-0005 #authority wins):** the `savestate_`
+       case is a legacy TOP-LEVEL file only, as `memory_layout.is_savestate_path` says; a
+       `savestate_*` file in any other folder is misfiled, not re-typed (26.5 `organise --check`
+       reports it).
    - The bridge stores `mtype = session/recall-state`. The frontmatter `type` is ignored for that
      file.
    - Every override is counted in `stats.mtype_normalised: [(id, from, to)]`.

@@ -1,12 +1,13 @@
 ---
 gmd: "0.1"
 id: impl-task-26.4-savestate-mtype-normalisation
-title: "Task 26.4: a save-state's type is session/recall-state wherever it came from (RED stub)"
+title: "Task 26.4: a save-state's type is session/recall-state wherever it came from"
 tags: [implementation-summary, plan-26, save-state, mtype, bridge, recall, bug-164]
 metadata:
   node_type: implementation-summary
-  status: red
+  status: green
   created: 2026-11-11
+  updated: 2026-11-11
 ---
 
 # Task 26.4: save-state mtype normalisation {#root}
@@ -81,3 +82,99 @@ AC-1 applies the rule to "a file whose id starts with `savestate_`". ADR-0005 #a
 
 The only patch is `cli._root`, pointed at the throwaway store in the daemon legs. Its existing
 `external` row in `workflow/test_mock_registry.md` now lists this file. No fake implementations.
+
+## GREEN {#green}
+
+TDD GREEN on the same branch. The `src/` commit is `1a1f189`, on top of the RED commits and
+the deferral row `bf33236`. No test was authored or edited in this step.
+
+### Lead decision applied {#green-decision}
+
+The ADR wins over AC-1's wording (team-lead decision 2026-11-11). The bridge override applies
+to the files `memory_layout.is_savestate_path` accepts and nothing else: files directly under
+`savestates/`, and legacy top-level `savestate_*.md` files. A `savestate_*` file in another
+folder is misfiled. 26.5's `organise --check` reports it, and the bridge does not re-type it.
+No second predicate was added. The spec's AC-1 now carries a one-line clarification citing this
+decision.
+
+rel: depends-on -> [[refmatrix/adr-0005-memory-dir-layout#authority]]
+
+### Signatures {#green-signatures}
+
+- `ingest_gmd.IngestStats.mtype_normalised: list[tuple[str, str, str]]`, each entry
+  `(id, from, to)`. `from` is the type the row would have carried: the frontmatter's value, or
+  the bridge default (`curated`) when the file has none.
+- `IngestStats.as_dict()["mtype_normalised"]` is `[[id, from, to]]`.
+- `IngestStats.mtype_normalised_lines() -> list[str]` returns `mtype_normalised: N` plus one
+  `  <id>: <from> -> <to>` line per override. It is never truncated. `report()` includes it.
+- `ingest_gmd._OrganisedDirs.is_savestate(path) -> bool` is
+  `memory_layout.is_savestate_path(memdir, path)`. `memdir` is the deepest bridge target that
+  holds the file, which is the same bound the marker lookup uses. The walked path is judged
+  before the resolved one.
+- `memory_layout.SAVESTATE_MTYPE = FOLDERS["savestates"]`, which is `session/recall-state`.
+- `memory_layout.normalise_savestate_types(memdir, *, apply: bool) -> list[dict]` returns one
+  `{id, path, from, to, error}` per mis-typed save-state, in walk order.
+- `cli._sync_memory_dir(...)["mtype_normalised"]` is copied by `_bridge_stats`. That one copy
+  serves the in-process, daemon and waited-job legs.
+
+### Where each AC lands {#green-acs}
+
+| AC | code | test |
+|---|---|---|
+| AC-1 | `ingest_gmd_paths` as-memory pass 1, after the `metadata.type` read: override + count | 9 `test_ac1_*` |
+| AC-1 legs | `_bridge_stats` (in-process, daemon `as_dict()`, waited-job `res["stats"]`) | `test_ac1_{in_process,daemon,waited_job}_*` |
+| AC-2 | the stored mtype `session/recall-state` meets hook-mode's existing `session/*` exclusion | `test_ac2_*` |
+| AC-3 | `normalise_savestate_types`: only the `type:` line changes (replace-first), atime/mtime restored | `test_ac3_*` (5) |
+| AC-3b | unchanged file is skipped by the hash gate; its next touch re-ingests it and the rule lands | `test_ac3b_*` |
+| AC-4 | neither the bridge nor the correction touches a non-save-state file | `test_ac4_*` |
+
+In `normalise_savestate_types`:
+
+- A file whose metadata block has no `type:` line gets one, added at the top of the block.
+- Each of these comes back as a named `error` entry, never a skip: an unreadable file, a file
+  with no frontmatter or no `metadata:` block, a symlink, a failed write, and an mtime that
+  could not be restored.
+- The row's metadata mirror keeps the file's own `type`, so the row records the disagreement
+  until the file is corrected.
+
+### Runs {#green-runs}
+
+| run | result | log |
+|---|---|---|
+| RED file | 18 passed (17 formerly RED + the fixture proof) | `workflow/review-output/plan26/26.4-green.log` |
+| 26.x families | 694 passed, 0 failed | `workflow/review-output/plan26/26.4-green-family.log` |
+| RED file after the mutation restores | 18 passed | `workflow/review-output/plan26/26.4-green-postmut.log` |
+
+The known pre-existing failures (bug-127/168, bug-196 x2, bug-170) did not occur in this family
+run, so there was no E line to compare.
+
+### Mutations {#green-mutations}
+
+Each mutation was applied against `1a1f189` and restored with `git checkout` in its own command,
+with `__pycache__` cleared. The final check found `git status --short src` empty and the fix
+grep matching. Log: `workflow/review-output/plan26/26.4-mutations.log`.
+
+| id | mutation | result |
+|---|---|---|
+| o | bridge override removed | 13 failed |
+| s1 | count dropped on the daemon leg only | 1 failed (`test_ac1_daemon_*`) |
+| s2 | count dropped on the waited-job leg only | 1 failed (`test_ac1_waited_job_*`) |
+| t | rewrite lets mtime move | 3 failed (AC-3 type-line + recall-state x2) |
+| u | rewrite also stamps `updated:` | 3 failed (same three) |
+| f2 | override widened to every file in any folder | 5 failed |
+| f3 | file correction widened to every memory file | 1 failed (`test_ac4_*`) |
+| f1 | override widened to a `savestate_*` id in ANY folder | **SURVIVED** |
+
+f1 survives because no fixture puts a `savestate_*` file outside the top level and
+`savestates/`. The RED file left that case unpinned on purpose, before the lead decision. Now
+that the decision pins it, a test is owed by `ch-test-engineer`: `feedback/savestate_x.md`
+typed `project` keeps `project` and is not counted.
+
+### Flags {#green-flags}
+
+- **No production caller yet.** `normalise_savestate_types` stays registered as
+  `scaffold-no-caller` (row `bf33236`) until 26.5's `organise --apply` calls it.
+- **Direct callers that pass no `marker_roots`.** They bound a file by its own directory, as
+  the marker lookup does. A `feedback/savestate_x.md` file passed that way would be read as a
+  top-level save-state. No production as-memory caller does this: the CLI, the daemon and the
+  session-card indexer all pass roots.
