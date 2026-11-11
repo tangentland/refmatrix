@@ -284,3 +284,34 @@ rel: related-to -> [[task-23.1-queue-and-drain#rev-round-13]]
 | finding | change | anchor |
 |---|---|---|
 | 23.1 s1 (cross-plan note from 23.1: the authoring time must survive replay) | The n1 legacy-row `memory_content` event carries `updated_at`, the stored value | [[#impl-notes-r6]] |
+
+## RED-round decisions (orchestrator, 2026-11-10) {#red-decisions}
+
+Taken as the user would (correct first), answering the RED author's points at `27e21dc`:
+
+1. **The unchanged-skip compares literally (a).** A row is skipped only when its stored
+   `source_path` equals the resolved file path; `resolve(stored)` is used only to tell a
+   symlink-form path (`stale_before`) from a move and to match legacy rows. The later rows
+   (r5 m3, r6-lite n2) win over AC-2's "resolved on both sides" wording. {#rd-literal}
+2. **Doc rows are never path-aware (b).** The path-aware gate is for memory rows in an organised
+   memdir (AC-3b); doc trees carry no marker, and a doc move is the watcher's `sync` job. AC-2's
+   doc-row case becomes a pin that a doc row keeps HEAD's hash-only gate; a test that plants
+   `.memory-layout` in a doc tree tests code nothing runs and is replaced. {#rd-doc-rows}
+3. **`--store-snapshot` requires `-p` (c);** without it the command exits non-zero naming the
+   flag. {#rd-snapshot-partition}
+4. **"The store write counter" is the facts.log byte size (d),** since every mutation logs.
+   {#rd-write-counter}
+5. **Two claimants on a store with no prior row (e):** neither is written; both are named in
+   `duplicate_ids`. AC-4 is not marker-gated: a silent last-wins is a defect in every dir.
+   {#rd-fresh-duplicate}
+6. **AC-5 is a real defect at HEAD:** `sync` of the old path purges the moved memory's anchor
+   concepts. Fixing it is in scope here. {#rd-ac5-defect}
+7. **The save-state mid-move pair** is exempt from AC-4 ([[task-26.3-savestate-subfolder#rd-duplicate-vs-262]]).
+   {#rd-262-263}
+
+**Combined AC with 26.3 (ch-bsd 26.3 r1 #m-1, 2026-11-10).** The save-state pair rule lives in
+the walk (`memory_layout.iter_memory_files`, [[task-26.3-savestate-subfolder#rm-newer-copy]]), so
+AC-4's duplicate-id check never sees that pair. **AC-4c:** a memdir holding a save-state pair AND
+one other id claimed twice → `duplicate_ids` names only the other id; the save-state is ingested
+once (the copy the walk keeps); the skip line names the dropped copy. Tested by whichever of
+26.2 / 26.3 merges second. {#ac-4c-combined}

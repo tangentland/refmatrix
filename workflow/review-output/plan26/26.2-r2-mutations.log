@@ -1,0 +1,42 @@
+# 26.2 r2 GREEN mutations against e47ddb8 (+0047054 README regen; src identical). Run: tests/test_sync_fails_loudly_r2.py, absolute PYTHONPATH. Each restored by git checkout in its own command; __pycache__ cleared; fix line grepped back; git status --short src empty.
+
+## w-async-not-recorded  (26.2-r2-mut-w-async-not-recorded.log)
+E       AssertionError: `rmx daemon status` does not print the failed async flush naming memory x (rmxd.log has it: ["2026-11-10T20:00:49 async flush failed: 1 path(s) refused, their entities kept: /private/tmp/r1-i_f4tt
+E       AssertionError: `rmx sync --flush-queue --async` exited 0 while a failed async flush is recorded
+E       AssertionError: the Stop hook exited 0 over a recorded async-flush error
+E       AssertionError: the SessionStart hook exited 0 over a recorded async-flush error
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21a_failed_async_flush_is_printed_by_daemon_status_until_a_clean_flush
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21b_next_async_flush_cli_prints_the_recorded_error_and_exits_nonzero
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it[Stop]
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it[SessionStart]
+4 failed, 4 passed in 58.91s
+
+## n-next-flush-exits-0  (26.2-r2-mut-n-next-flush-exits-0.log)
+E       AssertionError: `rmx sync --flush-queue --async` exited 0 while a failed async flush is recorded
+E       AssertionError: the Stop hook exited 0 over a recorded async-flush error
+E       AssertionError: the SessionStart hook exited 0 over a recorded async-flush error
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21b_next_async_flush_cli_prints_the_recorded_error_and_exits_nonzero
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it[Stop]
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it[SessionStart]
+3 failed, 5 passed in 59.20s
+
+## g-flush-hook-discards  (26.2-r2-mut-g-flush-hook-discards.log)
+E       AssertionError: generated hooks discard the flush's failure: {'Stop': ['rmx sync --flush-queue --async >/dev/null 2>&1 || true '], 'SubagentStop': ['rmx sync --flush-queue --async >/dev/null 2>&1 || true '], 'Ses
+E       AssertionError: the Stop hook exited 0 over a recorded async-flush error
+E       AssertionError: the SessionStart hook exited 0 over a recorded async-flush error
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21c_generated_flush_hooks_do_not_discard_the_flush_failure
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it[Stop]
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21c_generated_flush_hook_run_over_a_recorded_error_fails_naming_it[SessionStart]
+3 failed, 5 passed in 58.35s
+
+## b-whole-batch-raise  (26.2-r2-mut-b-whole-batch-raise.log)
+E       AssertionError: docs/d.py was not synced: x's refusal took the batch
+E       AssertionError: docs/d.py was not synced: x's refusal took the async batch (queue now ['/private/tmp/r1-zwjtheck/.claude/projects/slug/memory/a/x.md', '/private/tmp/r1-zwjtheck/proj/docs/d.py'])
+FAILED tests/test_sync_fails_loudly_r2.py::test_s21_in_process_sync_refuses_x_and_still_syncs_the_rest_of_the_batch
+FAILED tests/test_sync_fails_loudly_r2.py::test_s21_async_flush_refuses_x_requeues_it_and_syncs_d_py
+2 failed, 6 passed in 58.43s
+
+## q-refused-not-requeued  (26.2-r2-mut-q-refused-not-requeued.log)
+E       AssertionError: x.md was not put back on the queue (the next flush must retry it): []
+FAILED tests/test_sync_fails_loudly_r2.py::test_s21_async_flush_refuses_x_requeues_it_and_syncs_d_py
+1 failed, 7 passed in 58.41s

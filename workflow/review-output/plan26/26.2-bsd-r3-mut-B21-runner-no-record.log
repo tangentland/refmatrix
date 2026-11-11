@@ -1,0 +1,53 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_b21a_failed_async_flush_is_printed_by_daemon_status_until_a_clean_flush _
+
+gitproj = (PosixPath('/private/tmp/r1-wr_7ecwl'), PosixPath('/private/tmp/r1-wr_7ecwl/proj'), PosixPath('/private/tmp/r1-wr_7ecwl/proj/.refmatrix'))
+
+    def test_b21a_failed_async_flush_is_printed_by_daemon_status_until_a_clean_flush(gitproj):
+        base, proj, root, memdir, x, d = _failed_async_flush(gitproj)
+        log = [ln for ln in _async_lines(root) if MEMORY_X.search(ln)]
+        out = _status()
+>       assert re.search(r"async", out, re.I) and MEMORY_X.search(out), \
+            f"`rmx daemon status` does not print the failed async flush naming memory x " \
+            f"(rmxd.log has it: {log}):\n{out}"
+E       AssertionError: `rmx daemon status` does not print the failed async flush naming memory x (rmxd.log has it: ["2026-11-10T20:14:23 async flush failed: 1 path(s) refused, their entities kept: /private/tmp/r1-wr_7ecwl/.claude/projects/slug/memory/a/x.md: purge_path('/private/tmp/r1-wr_7ecwl/.claude/projects/slug/memory/a/x.md'): memory 'x' has unreadable metadata JSON (Expecting property name enclosed in double quotes: line 1 column 2 (char 1)); cannot tell whether it owns the anchors at this path"]):
+E         running pid=53124 root=/private/tmp/r1-wr_7ecwl/proj/.refmatrix
+E         code: /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/__init__.py  [DEV 
+E         TREE]
+E           code /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/__init__.py but the 
+E         venv belongs to None — reinstall the deploy venv from its own tree
+E         supervised: no
+E         
+E       assert (None)
+E        +  where None = <function search at 0x10272bcc0>('async', 'running pid=53124 root=/private/tmp/r1-wr_7ecwl/proj/.refmatrix\ncode: /Volumes/littlebig/refmatrix-plan26-2/src/refm...c/refmatrix/__init__.py but the \nvenv belongs to None — reinstall the deploy venv from its own tree\nsupervised: no\n', re.IGNORECASE)
+E        +    where <function search at 0x10272bcc0> = re.search
+E        +    and   re.IGNORECASE = re.I
+
+tests/test_sync_fails_loudly_r2.py:150: AssertionError
+__ test_b21b_next_async_flush_cli_prints_the_recorded_error_and_exits_nonzero __
+
+gitproj = (PosixPath('/private/tmp/r1-lh0oupnm'), PosixPath('/private/tmp/r1-lh0oupnm/proj'), PosixPath('/private/tmp/r1-lh0oupnm/proj/.refmatrix'))
+
+    def test_b21b_next_async_flush_cli_prints_the_recorded_error_and_exits_nonzero(gitproj):
+        base, proj, root, memdir, x, d = _failed_async_flush(gitproj)
+        r = _rmx(proj, root, "sync", "--flush-queue", "--async", "--project-root", str(proj))
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert r.returncode != 0, \
+            f"`rmx sync --flush-queue --async` exited 0 while a failed async flush is recorded\n{text}"
+E       AssertionError: `rmx sync --flush-queue --async` exited 0 while a failed async flush is recorded
+E         exit 0
+E         stdout:
+E         flush queued 
+E         
+E         stderr:
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '-m', 'refmatrix.cli', 'sync', '...eue', '--async', '--project-root', '/private/tmp/r1-lh0oupnm/proj'], returncode=0, stdout='flush queued \n', stderr='').returncode
+
+tests/test_sync_fails_loudly_r2.py:183: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21a_failed_async_flush_is_printed_by_daemon_status_until_a_clean_flush
+FAILED tests/test_sync_fails_loudly_r2.py::test_b21b_next_async_flush_cli_prints_the_recorded_error_and_exits_nonzero
+2 failed, 6 deselected in 21.94s

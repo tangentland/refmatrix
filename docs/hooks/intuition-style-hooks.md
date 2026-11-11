@@ -123,8 +123,9 @@ observations intact.
 
 ## Stop — STM promote (shipped 0.67.0) {#stop-auto-capture-phase-c4-deferred}
 
-The generator emits three Stop entries: a background `rmx sync --flush-queue --async`, a
-`rmx focus hook --event say` capture of the assistant's last message into STM, and
+The generator emits three Stop entries: a foreground `rmx sync --flush-queue --async >/dev/null`
+(the daemon's ACK; it prints any sync error the daemon has recorded on stderr and exits 1, task
+26.2 r2 #b2-1), a `rmx focus hook --event say` capture of the assistant's last message into STM, and
 `rmx focus summarize --promote --timeout 5`, which condenses the session's STM (topics,
 milestones, intent arc, top symbols) into a `session/digest` memory through the daemon —
 upserted by name, so it never grows the store. `--timeout 5` bounds the daemon write: on a busy

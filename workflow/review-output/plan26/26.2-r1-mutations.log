@@ -1,0 +1,25 @@
+# 26.2 r1 GREEN mutations against 497f7f0 (each restored by git checkout in its own command; __pycache__ cleared; fix line grepped back; git status --short src empty)
+
+## a-guard-removed  (26.2-r1-mut-a-guard-removed.log)
+E       AssertionError: x's anchors after the post-commit sync of the move: [] (expected ['x#one', 'x#root', 'x#two'])
+E       AssertionError: x's anchors after the post-commit sync of the edit: [] (expected ['x#one', 'x#root', 'x#two'])
+E       AssertionError: x's anchors after the post-commit sync of the edit: [] (expected ['x#one', 'x#root', 'x#two'])
+E       AssertionError: x's anchors after `rmx sync -i <current path>`: [] (expected ['x#one', 'x#root', 'x#two'])
+E       AssertionError: x's anchors after `rmx sync -f <current path>`: [] (expected ['x#one', 'x#root', 'x#two'])
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_post_commit_sync_since_after_a_move_keeps_the_new_anchors
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_post_commit_sync_since_after_an_edit_keeps_the_anchors[marker-on]
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_post_commit_sync_since_after_an_edit_keeps_the_anchors[marker-off]
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_sync_of_the_current_path_keeps_the_anchors[-i]
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_sync_of_the_current_path_keeps_the_anchors[-f]
+5 failed, 3 passed in 40.57s
+
+## b-guard-unresolved  (26.2-r1-mut-b-guard-unresolved.log)
+8 passed in 61.90s (0:01:01)
+
+## b2-guard-ignores-source-path  (26.2-r1-mut-b2-guard-ignores-source-path.log)
+33 passed in 195.80s (0:03:15)
+
+## c-walk-unbounded  (26.2-r1-mut-c-walk-unbounded.log)
+E       AssertionError: an ancestor's marker turned the path-aware gate on:
+FAILED tests/test_bridge_move_safety_r1.py::test_m3_ancestor_marker_does_not_turn_on_the_path_aware_gate
+1 failed, 7 passed in 59.90s

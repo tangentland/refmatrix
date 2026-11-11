@@ -1,0 +1,42 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Users/tholley/claude_tools/refmatrix/src/refmatrix as checked-hash (bug-037)
+........................................................................ [  8%]
+........................................................................ [ 17%]
+........................................................................ [ 26%]
+........................................................................ [ 34%]
+........................................................................ [ 43%]
+........................................................................ [ 52%]
+........................................................................ [ 61%]
+........................................................................ [ 69%]
+........................................................................ [ 78%]
+........................................................................ [ 87%]
+..................................F..................................... [ 96%]
+................................                                         [100%]
+=================================== FAILURES ===================================
+_____________________ test_installed_hooks_match_generated _____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1410e6f20>
+
+    @pytest.mark.skipif(not (REPO / ".claude" / "rmx-hooks.json").exists(),
+                        reason="not an rmx-hooks-managed checkout")
+    @pytest.mark.skipif(_OWNER is not None and _OWNER != REPO,
+                        reason="hooks belong to another checkout of this commit")
+    def test_installed_hooks_match_generated(monkeypatch):
+        # This test checks the REAL checkout against the REAL ~/.claude/hooks
+        # (read-only); undo the conftest redirect that isolates every other test.
+        monkeypatch.delenv("RMX_CLAUDE_HOOKS_DIR", raising=False)
+        ok, diff = hooks_mod.check(REPO)
+>       assert ok, "hooks drift — run `rmx install-hooks --apply --force`:\n" + diff
+E       AssertionError: hooks drift — run `rmx install-hooks --apply --force`:
+E         - PostToolUse/Grep: {"command": "/Users/tholley/.claude/hooks/grep-tool-teach.sh", "timeout": 5000, "type": "command"}
+E         + PostToolUse/Grep: {"command": "/private/tmp/rmx-_ad6iiyh/h/.claude/hooks/grep-tool-teach.sh", "timeout": 5000, "type": "command"}
+E         - PreToolUse/Bash: {"command": "/Users/tholley/.claude/hooks/grep-rewrite-guard.sh", "type": "command"}
+E         + PreToolUse/Bash: {"command": "/private/tmp/rmx-_ad6iiyh/h/.claude/hooks/grep-rewrite-guard.sh", "type": "command"}
+E         - SessionStart/startup|resume|clear: {"command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx ingest-gmd --as-memory --detach '/Users/tholley/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory'", "type": "command"}
+E         + SessionStart/startup|resume|clear: {"command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx ingest-gmd --as-memory --detach '/private/tmp/rmx-_ad6iiyh/h/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory'", "type": "command"}
+E         - script grep-rewrite-guard.sh differs from the generator's render (rmx install-hooks --apply --force)
+E         - script rmxgrep-rewrite.py differs from the generator's render (rmx install-hooks --apply --force)
+E         - script grep-tool-teach.sh differs from the generator's render (rmx install-hooks --apply --force)
+E       assert False
+
+tests/test_repo_hooks_in_sync.py:31: AssertionError
+1 failed, 823 passed in 797.75s (0:13:17)

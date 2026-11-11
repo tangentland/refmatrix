@@ -1,0 +1,25 @@
+# 26.2 r1 loud GREEN mutations against 440d816 (run: tests/test_sync_fails_loudly_r1.py, absolute PYTHONPATH=<clone>/src; each restored by git checkout in its own command; __pycache__ cleared; fix line grepped back; git status --short src empty)
+
+## h-hook-discards  (26.2-r1-loud-mut-h-hook-discards.log)
+E       AssertionError: post-commit discards the sync's error: ['( cd "$ROOT" && rmx sync --since HEAD~1 >/dev/null 2>&1 || true ) &']
+E       AssertionError: the post-commit sync failed silently: nothing naming memory x on the terminal
+FAILED tests/test_sync_fails_loudly_r1.py::test_generated_git_hook_does_not_discard_the_sync_failure[post-commit]
+FAILED tests/test_sync_fails_loudly_r1.py::test_installed_post_commit_hook_leaves_a_failing_sync_on_the_terminal
+2 failed, 7 passed in 31.33s
+
+## s-status-silent  (26.2-r1-loud-mut-s-status-silent.log)
+E               AssertionError: `rmx daemon status` does not print the failed watch flush naming memory x:
+FAILED tests/test_sync_fails_loudly_r1.py::test_failed_watch_flush_is_printed_by_daemon_status_until_a_good_flush
+1 failed, 8 passed in 31.34s
+
+## k-never-cleared  (26.2-r1-loud-mut-k-never-cleared.log)
+E               AssertionError: `rmx daemon status` still prints the old failure after a good flush:
+FAILED tests/test_sync_fails_loudly_r1.py::test_failed_watch_flush_is_printed_by_daemon_status_until_a_good_flush
+1 failed, 8 passed in 30.95s
+
+## e-traceback-back  (26.2-r1-loud-mut-e-traceback-back.log)
+E       AssertionError: `rmx sync -f P` failed as a raw traceback, not a clean error
+E       AssertionError: `rmx sync -i P` failed as a raw traceback, not a clean error
+FAILED tests/test_sync_fails_loudly_r1.py::test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr[-f]
+FAILED tests/test_sync_fails_loudly_r1.py::test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr[-i]
+2 failed, 7 passed in 31.31s

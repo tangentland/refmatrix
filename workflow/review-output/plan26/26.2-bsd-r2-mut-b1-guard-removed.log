@@ -1,0 +1,283 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+FFFFF...F....FENQUEUE: 0 enqueued 2 paths
+ASYNC FLUSH CLI: 0 'flush queued' ''
+RMXD.LOG async lines: []
+DAEMON STATUS mentions failure: False | []
+QUEUE FILE after flush: False 
+PROJECT FILE d.py entities after flush: 1
+x ANCHORS after flush: []
+.
+=================================== FAILURES ===================================
+______ test_b1_post_commit_sync_since_after_a_move_keeps_the_new_anchors _______
+
+gitproj = (PosixPath('/private/tmp/r1-d_wakub2'), PosixPath('/private/tmp/r1-d_wakub2/proj'), PosixPath('/private/tmp/r1-d_wakub2/proj/.refmatrix'))
+
+    def test_b1_post_commit_sync_since_after_a_move_keeps_the_new_anchors(gitproj):
+        base, proj, root = gitproj
+        _init_repo(proj)
+        memdir = _proj_memdir(proj, marker=True)
+        _commit(proj, "c0: the memory, before the move")
+        _bridge(memdir)
+        old, new = _move(memdir)
+        out = _bridge(memdir)
+        assert _term(out, "moved") == 1, f"fixture: the move was not refreshed:\n{out}"
+        _commit(proj, "c1: move a/x.md -> b/x.md")
+        # git post-commit, as viascope's hook runs it -- through the REAL CLI, on the daemon
+        _post_commit_sync(proj, root)
+        dm.stop_daemon(root)
+>       _assert_anchors_at(root, new, "after the post-commit sync of the move")
+
+tests/test_bridge_move_safety_r1.py:180: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/r1-d_wakub2/proj/.refmatrix')
+path = '/private/tmp/r1-d_wakub2/proj/.claude/projects/slug/memory/b/x.md'
+when = 'after the post-commit sync of the move'
+
+    def _assert_anchors_at(root: Path, path: str, when: str) -> None:
+        got = _anchor_paths(root, "x")
+>       assert set(got) == ANCHORS, f"x's anchors {when}: {sorted(got)} (expected {sorted(ANCHORS)})"
+E       AssertionError: x's anchors after the post-commit sync of the move: [] (expected ['x#one', 'x#root', 'x#two'])
+E       assert set() == {'x#one', 'x#root', 'x#two'}
+E         
+E         Extra items in the right set:
+E         'x#root'
+E         'x#one'
+E         'x#two'
+E         Use -v to get more diff
+
+tests/test_bridge_move_safety_r1.py:143: AssertionError
+__ test_b1_post_commit_sync_since_after_an_edit_keeps_the_anchors[marker-on] ___
+
+gitproj = (PosixPath('/private/tmp/r1-iiionnfm'), PosixPath('/private/tmp/r1-iiionnfm/proj'), PosixPath('/private/tmp/r1-iiionnfm/proj/.refmatrix'))
+marker = True
+
+    @pytest.mark.parametrize("marker", [True, False], ids=["marker-on", "marker-off"])
+    def test_b1_post_commit_sync_since_after_an_edit_keeps_the_anchors(gitproj, marker):
+        base, proj, root = gitproj
+        _init_repo(proj)
+        memdir = _proj_memdir(proj, marker=marker)
+        _commit(proj, "c0: the memory, before the edit")
+        _bridge(memdir)
+        x = memdir / "a" / "x.md"
+        x.write_text(X_MD.format(id="x", body="edited body of x"), encoding="utf-8")
+        _bridge(memdir)
+        _commit(proj, "c1: edit a/x.md")
+        _post_commit_sync(proj, root)
+        dm.stop_daemon(root)
+        path = str(x.resolve())
+>       _assert_anchors_at(root, path, "after the post-commit sync of the edit")
+
+tests/test_bridge_move_safety_r1.py:204: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/r1-iiionnfm/proj/.refmatrix')
+path = '/private/tmp/r1-iiionnfm/proj/.claude/projects/slug/memory/a/x.md'
+when = 'after the post-commit sync of the edit'
+
+    def _assert_anchors_at(root: Path, path: str, when: str) -> None:
+        got = _anchor_paths(root, "x")
+>       assert set(got) == ANCHORS, f"x's anchors {when}: {sorted(got)} (expected {sorted(ANCHORS)})"
+E       AssertionError: x's anchors after the post-commit sync of the edit: [] (expected ['x#one', 'x#root', 'x#two'])
+E       assert set() == {'x#one', 'x#root', 'x#two'}
+E         
+E         Extra items in the right set:
+E         'x#root'
+E         'x#one'
+E         'x#two'
+E         Use -v to get more diff
+
+tests/test_bridge_move_safety_r1.py:143: AssertionError
+__ test_b1_post_commit_sync_since_after_an_edit_keeps_the_anchors[marker-off] __
+
+gitproj = (PosixPath('/private/tmp/r1-2mzigq0w'), PosixPath('/private/tmp/r1-2mzigq0w/proj'), PosixPath('/private/tmp/r1-2mzigq0w/proj/.refmatrix'))
+marker = False
+
+    @pytest.mark.parametrize("marker", [True, False], ids=["marker-on", "marker-off"])
+    def test_b1_post_commit_sync_since_after_an_edit_keeps_the_anchors(gitproj, marker):
+        base, proj, root = gitproj
+        _init_repo(proj)
+        memdir = _proj_memdir(proj, marker=marker)
+        _commit(proj, "c0: the memory, before the edit")
+        _bridge(memdir)
+        x = memdir / "a" / "x.md"
+        x.write_text(X_MD.format(id="x", body="edited body of x"), encoding="utf-8")
+        _bridge(memdir)
+        _commit(proj, "c1: edit a/x.md")
+        _post_commit_sync(proj, root)
+        dm.stop_daemon(root)
+        path = str(x.resolve())
+>       _assert_anchors_at(root, path, "after the post-commit sync of the edit")
+
+tests/test_bridge_move_safety_r1.py:204: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/r1-2mzigq0w/proj/.refmatrix')
+path = '/private/tmp/r1-2mzigq0w/proj/.claude/projects/slug/memory/a/x.md'
+when = 'after the post-commit sync of the edit'
+
+    def _assert_anchors_at(root: Path, path: str, when: str) -> None:
+        got = _anchor_paths(root, "x")
+>       assert set(got) == ANCHORS, f"x's anchors {when}: {sorted(got)} (expected {sorted(ANCHORS)})"
+E       AssertionError: x's anchors after the post-commit sync of the edit: [] (expected ['x#one', 'x#root', 'x#two'])
+E       assert set() == {'x#one', 'x#root', 'x#two'}
+E         
+E         Extra items in the right set:
+E         'x#root'
+E         'x#one'
+E         'x#two'
+E         Use -v to get more diff
+
+tests/test_bridge_move_safety_r1.py:143: AssertionError
+____________ test_b1_sync_of_the_current_path_keeps_the_anchors[-i] ____________
+
+gitproj_inproc = (PosixPath('/private/tmp/r1-60q90gok'), PosixPath('/private/tmp/r1-60q90gok/proj'), PosixPath('/private/tmp/r1-60q90gok/proj/.refmatrix'))
+flag = '-i'
+
+    @pytest.mark.parametrize("flag", ["-i", "-f"])
+    def test_b1_sync_of_the_current_path_keeps_the_anchors(gitproj_inproc, flag):
+        """AC-5's test syncs only the OLD path with the memdir outside the project; this one names
+        the moved file's CURRENT path, inside the project under `.claude/`."""
+        base, proj, root = gitproj_inproc
+        memdir = _proj_memdir(proj, marker=True)
+        _bridge(memdir)
+        old, new = _move(memdir)
+        _bridge(memdir)
+        _invoke(["sync", "--project-root", str(proj), flag, new])
+>       _assert_anchors_at(root, new, f"after `rmx sync {flag} <current path>`")
+
+tests/test_bridge_move_safety_r1.py:224: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/r1-60q90gok/proj/.refmatrix')
+path = '/private/tmp/r1-60q90gok/proj/.claude/projects/slug/memory/b/x.md'
+when = 'after `rmx sync -i <current path>`'
+
+    def _assert_anchors_at(root: Path, path: str, when: str) -> None:
+        got = _anchor_paths(root, "x")
+>       assert set(got) == ANCHORS, f"x's anchors {when}: {sorted(got)} (expected {sorted(ANCHORS)})"
+E       AssertionError: x's anchors after `rmx sync -i <current path>`: [] (expected ['x#one', 'x#root', 'x#two'])
+E       assert set() == {'x#one', 'x#root', 'x#two'}
+E         
+E         Extra items in the right set:
+E         'x#root'
+E         'x#one'
+E         'x#two'
+E         Use -v to get more diff
+
+tests/test_bridge_move_safety_r1.py:143: AssertionError
+____________ test_b1_sync_of_the_current_path_keeps_the_anchors[-f] ____________
+
+gitproj_inproc = (PosixPath('/private/tmp/r1-_mschncu'), PosixPath('/private/tmp/r1-_mschncu/proj'), PosixPath('/private/tmp/r1-_mschncu/proj/.refmatrix'))
+flag = '-f'
+
+    @pytest.mark.parametrize("flag", ["-i", "-f"])
+    def test_b1_sync_of_the_current_path_keeps_the_anchors(gitproj_inproc, flag):
+        """AC-5's test syncs only the OLD path with the memdir outside the project; this one names
+        the moved file's CURRENT path, inside the project under `.claude/`."""
+        base, proj, root = gitproj_inproc
+        memdir = _proj_memdir(proj, marker=True)
+        _bridge(memdir)
+        old, new = _move(memdir)
+        _bridge(memdir)
+        _invoke(["sync", "--project-root", str(proj), flag, new])
+>       _assert_anchors_at(root, new, f"after `rmx sync {flag} <current path>`")
+
+tests/test_bridge_move_safety_r1.py:224: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/r1-_mschncu/proj/.refmatrix')
+path = '/private/tmp/r1-_mschncu/proj/.claude/projects/slug/memory/b/x.md'
+when = 'after `rmx sync -f <current path>`'
+
+    def _assert_anchors_at(root: Path, path: str, when: str) -> None:
+        got = _anchor_paths(root, "x")
+>       assert set(got) == ANCHORS, f"x's anchors {when}: {sorted(got)} (expected {sorted(ANCHORS)})"
+E       AssertionError: x's anchors after `rmx sync -f <current path>`: [] (expected ['x#one', 'x#root', 'x#two'])
+E       assert set() == {'x#one', 'x#root', 'x#two'}
+E         
+E         Extra items in the right set:
+E         'x#root'
+E         'x#one'
+E         'x#two'
+E         Use -v to get more diff
+
+tests/test_bridge_move_safety_r1.py:143: AssertionError
+_ test_b1_guard_keeps_anchors_whose_source_path_is_a_symlink_form_of_the_purged_path _
+
+gitproj_inproc = (PosixPath('/private/tmp/r1-x84qfb0y'), PosixPath('/private/tmp/r1-x84qfb0y/proj'), PosixPath('/private/tmp/r1-x84qfb0y/proj/.refmatrix'))
+
+    def test_b1_guard_keeps_anchors_whose_source_path_is_a_symlink_form_of_the_purged_path(
+            gitproj_inproc):
+        """(b). The bridge writes the anchor path and `source_path` from one string, so a bridge-only
+        history never makes them differ. A store row written before 26.2 can: viascope's memdir is a
+        symlink, and its rows hold `source_path` in that symlink form (AC-1b's stale_before case),
+        while every sync purges the RESOLVED path. Seeded here on the throwaway store, as
+        `_set_source_path` seeds the older shapes in the 26.2 file. The anchors must survive."""
+        base, proj, root = gitproj_inproc
+        memdir = _proj_memdir(proj, marker=False)
+        link = base / "memlink"
+        link.symlink_to(memdir, target_is_directory=True)
+        _bridge(memdir)
+        real = str((memdir / "a" / "x.md").resolve())
+        via_link = str(link / "a" / "x.md")
+        assert via_link != real and os.path.realpath(via_link) == real, "fixture: not a symlink form"
+        _assert_anchors_at(root, real, "after the bridge (fixture)")
+        _set_source_path(root, "x", via_link)
+        _invoke(["sync", "--project-root", str(proj), "-f", real])
+>       _assert_anchors_at(root, real, "after `sync -f <resolved path>` with source_path in "
+                                       "symlink form")
+
+tests/test_bridge_move_safety_r1.py:315: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/r1-x84qfb0y/proj/.refmatrix')
+path = '/private/tmp/r1-x84qfb0y/proj/.claude/projects/slug/memory/a/x.md'
+when = 'after `sync -f <resolved path>` with source_path in symlink form'
+
+    def _assert_anchors_at(root: Path, path: str, when: str) -> None:
+        got = _anchor_paths(root, "x")
+>       assert set(got) == ANCHORS, f"x's anchors {when}: {sorted(got)} (expected {sorted(ANCHORS)})"
+E       AssertionError: x's anchors after `sync -f <resolved path>` with source_path in symlink form: [] (expected ['x#one', 'x#root', 'x#two'])
+E       assert set() == {'x#one', 'x#root', 'x#two'}
+E         
+E         Extra items in the right set:
+E         'x#root'
+E         'x#one'
+E         'x#two'
+E         Use -v to get more diff
+
+tests/test_bridge_move_safety_r1.py:143: AssertionError
+___________ test_b1_guard_fails_closed_on_unreadable_memory_metadata ___________
+
+gitproj_inproc = (PosixPath('/private/tmp/r1-bqrbwxzp'), PosixPath('/private/tmp/r1-bqrbwxzp/proj'), PosixPath('/private/tmp/r1-bqrbwxzp/proj/.refmatrix'))
+
+    def test_b1_guard_fails_closed_on_unreadable_memory_metadata(gitproj_inproc):
+        """The guard cannot tell whether x owns the anchors when x's metadata does not parse:
+        neither deleting nor keeping silently is acceptable on a memory path (CLAUDE.md
+        #no-silent-failures). `sync -f P` fails naming x, and the anchors are still there."""
+        base, proj, root = gitproj_inproc
+        memdir = _proj_memdir(proj, marker=False)
+        _bridge(memdir)
+        p = str((memdir / "a" / "x.md").resolve())
+        _set_metadata_raw(root, "x", "{not json")
+        r = CliRunner().invoke(cli_mod.main, ["sync", "--project-root", str(proj), "-f", p])
+        text = f"{r.output}\n{r.exception!r}"
+>       assert r.exit_code != 0, f"the sync succeeded over unreadable metadata:\n{text}"
+E       AssertionError: the sync succeeded over unreadable metadata:
+E         synced +0 ~0 -1 (touched=0)
+E         
+E         None
+E       assert 0 != 0
+E        +  where 0 = <Result okay>.exit_code
+
+tests/test_bridge_move_safety_r1.py:421: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_post_commit_sync_since_after_a_move_keeps_the_new_anchors
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_post_commit_sync_since_after_an_edit_keeps_the_anchors[marker-on]
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_post_commit_sync_since_after_an_edit_keeps_the_anchors[marker-off]
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_sync_of_the_current_path_keeps_the_anchors[-i]
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_sync_of_the_current_path_keeps_the_anchors[-f]
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_guard_keeps_anchors_whose_source_path_is_a_symlink_form_of_the_purged_path
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_guard_fails_closed_on_unreadable_memory_metadata
+7 failed, 8 passed in 128.59s (0:02:08)

@@ -1,0 +1,112 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+___________ test_b1_guard_fails_closed_on_unreadable_memory_metadata ___________
+
+gitproj_inproc = (PosixPath('/private/tmp/r1-xce_99t4'), PosixPath('/private/tmp/r1-xce_99t4/proj'), PosixPath('/private/tmp/r1-xce_99t4/proj/.refmatrix'))
+
+    def test_b1_guard_fails_closed_on_unreadable_memory_metadata(gitproj_inproc):
+        """The guard cannot tell whether x owns the anchors when x's metadata does not parse:
+        neither deleting nor keeping silently is acceptable on a memory path (CLAUDE.md
+        #no-silent-failures). `sync -f P` fails naming x, and the anchors are still there."""
+        base, proj, root = gitproj_inproc
+        memdir = _proj_memdir(proj, marker=False)
+        _bridge(memdir)
+        p = str((memdir / "a" / "x.md").resolve())
+        _set_metadata_raw(root, "x", "{not json")
+        r = CliRunner().invoke(cli_mod.main, ["sync", "--project-root", str(proj), "-f", p])
+        text = f"{r.output}\n{r.exception!r}"
+>       assert r.exit_code != 0, f"the sync succeeded over unreadable metadata:\n{text}"
+E       AssertionError: the sync succeeded over unreadable metadata:
+E         synced +0 ~0 -1 (touched=0)
+E         
+E         None
+E       assert 0 != 0
+E        +  where 0 = <Result okay>.exit_code
+
+tests/test_bridge_move_safety_r1.py:411: AssertionError
+_____ test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr[-f] ______
+
+gitproj_inproc = (PosixPath('/private/tmp/r1-ld7b2u6s'), PosixPath('/private/tmp/r1-ld7b2u6s/proj'), PosixPath('/private/tmp/r1-ld7b2u6s/proj/.refmatrix'))
+flag = '-f'
+
+    @pytest.mark.parametrize("flag", ["-f", "-i"])
+    def test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr(gitproj_inproc, flag):
+        base, proj, root = gitproj_inproc
+        memdir, p = _broken_x(proj, root, daemon_up=False)
+        assert not dm.ping(root), "fixture: a daemon is up; this is the in-process leg"
+        r = subprocess.run([sys.executable, "-m", "refmatrix.cli", "sync", "--project-root",
+                            str(proj), flag, p], capture_output=True, text=True, cwd=str(proj),
+                           env=_cli_env(root), timeout=180)
+>       assert r.returncode != 0, \
+            f"`rmx sync {flag} P` exited 0 over a failed purge\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+E       AssertionError: `rmx sync -f P` exited 0 over a failed purge
+E         stdout:
+E         synced +0 ~0 -1 (touched=0)
+E         
+E         stderr:
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '-m', 'refmatrix.cli', 'sync', '...1-ld7b2u6s/proj/.claude/projects/slug/memory/a/x.md'], returncode=0, stdout='synced +0 ~0 -1 (touched=0)\n', stderr='').returncode
+
+tests/test_sync_fails_loudly_r1.py:83: AssertionError
+_____ test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr[-i] ______
+
+gitproj_inproc = (PosixPath('/private/tmp/r1-pcez7gd2'), PosixPath('/private/tmp/r1-pcez7gd2/proj'), PosixPath('/private/tmp/r1-pcez7gd2/proj/.refmatrix'))
+flag = '-i'
+
+    @pytest.mark.parametrize("flag", ["-f", "-i"])
+    def test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr(gitproj_inproc, flag):
+        base, proj, root = gitproj_inproc
+        memdir, p = _broken_x(proj, root, daemon_up=False)
+        assert not dm.ping(root), "fixture: a daemon is up; this is the in-process leg"
+        r = subprocess.run([sys.executable, "-m", "refmatrix.cli", "sync", "--project-root",
+                            str(proj), flag, p], capture_output=True, text=True, cwd=str(proj),
+                           env=_cli_env(root), timeout=180)
+>       assert r.returncode != 0, \
+            f"`rmx sync {flag} P` exited 0 over a failed purge\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+E       AssertionError: `rmx sync -i P` exited 0 over a failed purge
+E         stdout:
+E         purged 1 paths
+E         synced +0 ~0 -1 (touched=0)
+E         
+E         stderr:
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '-m', 'refmatrix.cli', 'sync', '....claude/projects/slug/memory/a/x.md'], returncode=0, stdout='purged 1 paths\nsynced +0 ~0 -1 (touched=0)\n', stderr='').returncode
+
+tests/test_sync_fails_loudly_r1.py:83: AssertionError
+_____ test_daemon_routed_sync_error_is_an_error_reply_and_a_loud_cli_exit ______
+
+gitproj = (PosixPath('/private/tmp/r1-0oop7gj7'), PosixPath('/private/tmp/r1-0oop7gj7/proj'), PosixPath('/private/tmp/r1-0oop7gj7/proj/.refmatrix'))
+
+    def test_daemon_routed_sync_error_is_an_error_reply_and_a_loud_cli_exit(gitproj):
+        base, proj, root = gitproj
+        _init_repo(proj)
+        memdir = _proj_memdir(proj, marker=False)
+        _commit(proj, "c0")
+        memdir, p = _broken_x(proj, root, daemon_up=True, memdir=memdir)
+        _edit_x(memdir)
+        _commit(proj, "c1: edit a/x.md")
+        assert dm.ping(root), "fixture: the daemon is down; this is the daemon-routed leg"
+        r = CliRunner().invoke(cli_mod.main, ["sync", "--project-root", str(proj),
+                                              "--since", "HEAD~1"])
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}\nexception: {r.exception!r}"
+>       assert r.exit_code != 0, f"`rmx sync --since HEAD~1` exited 0 over a failed purge\n{text}"
+E       AssertionError: `rmx sync --since HEAD~1` exited 0 over a failed purge
+E         stdout:
+E         synced +0 ~0 -1 (touched=0) 
+E         
+E         stderr:
+E         
+E         exception: None
+E       assert 0 != 0
+E        +  where 0 = <Result okay>.exit_code
+
+tests/test_sync_fails_loudly_r1.py:105: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_guard_fails_closed_on_unreadable_memory_metadata
+FAILED tests/test_sync_fails_loudly_r1.py::test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr[-f]
+FAILED tests/test_sync_fails_loudly_r1.py::test_in_process_sync_error_exits_nonzero_and_names_it_on_stderr[-i]
+FAILED tests/test_sync_fails_loudly_r1.py::test_daemon_routed_sync_error_is_an_error_reply_and_a_loud_cli_exit
+4 failed in 20.17s

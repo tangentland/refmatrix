@@ -1,0 +1,7 @@
+pyc-guard: recompiled 11 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+s                                                                        [100%]SkipGate: 1 skip(s) not in the pinned list (tests/conftest.py ALLOWED_SKIPS); a skip is a test that stopped running:
+  SKIPPED-UNPINNED tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated: Skipped: hooks belong to another checkout of this commit
+
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_repo_hooks_in_sync.py:22: hooks belong to another checkout of this commit
+1 skipped in 0.02s

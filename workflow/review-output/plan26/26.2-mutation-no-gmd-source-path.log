@@ -1,0 +1,8 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: a gmd_source_path key was added: ['{"gmd_content_hash": "c6e0cfa37ef416fb1f5b3fee4b18b73c937ffaf1", "gmd_pass2_done": true, "gmd_source_path": "MUTANT"}', '{"gmd_content_hash": "253553978a0f9abdd2874b0de68f8746a41c1aea", "gmd_pass2_done": true, "gmd_source_path": "MUTANT"}']
+    assert not ['{"gmd_content_hash": "c6e0cfa37ef416fb1f5b3fee4b18b73c937ffaf1", "gmd_pass2_done": true, "gmd_source_path": "MUTANT"...{"gmd_content_hash": "253553978a0f9abdd2874b0de68f8746a41c1aea", "gmd_pass2_done": true, "gmd_source_path": "MUTANT"}']
+/Volumes/littlebig/refmatrix-plan26-2/tests/test_bridge_move_safety.py:462: AssertionError: a gmd_source_path key was added: ['{"gmd_content_hash": "c6e0cfa37ef416fb1f5b3fee4b18b73c937ffaf1", "gmd_pass2_done": true, "gmd_source_path": "MUTANT"}', '{"gmd_content_hash": "253553978a0f9abdd2874b0de68f8746a41c1aea", "gmd_pass2_done": true, "gmd_source_path": "MUTANT"}']
+=========================== short test summary info ============================
+FAILED tests/test_bridge_move_safety.py::test_ac2_no_gmd_source_path_key_is_added
+1 failed, 23 deselected in 5.71s

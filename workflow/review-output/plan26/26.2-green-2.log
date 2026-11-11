@@ -1,0 +1,90 @@
+..............F..........                                                [100%]
+=================================== FAILURES ===================================
+_________ test_ac3_dry_run_reports_refresh_pending_and_writes_nothing __________
+
+p = '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-yj4r62aa/proj/.refmatrix/catalog.duckdb'
+key = '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-yj4r62aa/proj/.refmatrix/catalog.duckdb'
+
+    def _open_write(p: str, key: str):
+        import time as _time
+        for _ in range(_OPEN_RETRIES):
+            closed = _close_stale_holders(key, p)
+            before = _file_id(key)
+            deadline = _time.monotonic() + (_CONFLICT_WAIT_S if closed else 0.0)
+            while True:
+                try:
+>                   con = duckdb.connect(p)
+                          ^^^^^^^^^^^^^^^^^
+E                   _duckdb.BinderException: Binder Error: Unique file handle conflict: Cannot attach "catalog" - the database file "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-yj4r62aa/proj/.refmatrix/catalog.duckdb" is already attached by database "rmx_ro"
+
+src/refmatrix/backend.py:337: BinderException
+
+The above exception was the direct cause of the following exception:
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-yj4r62aa'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-yj4r62aa/proj/.refmatrix'))
+
+    def test_ac3_dry_run_reports_refresh_pending_and_writes_nothing(inproc):
+        """The dry-run evaluates the MARKER-ON rule whatever the dir's marker says (r4 s2): this
+        dir has no marker, and the moved file still counts."""
+        base, root = inproc
+        memdir = _memdir(base, marker=False)
+        _bridge(memdir)
+        old, _ = _move(memdir)
+        size0 = _facts_size(root)
+        out = _bridge(memdir, "--dry-run")
+        assert _term(out, "refresh_pending") == 1, out
+        assert _term(out, "moved") == 1 and _term(out, "stale_before") == 0, out
+        assert _term(out, "forced") == 0 and _term(out, "moved_legacy") == 0, out
+        assert _facts_size(root) == size0, "--dry-run wrote to the store"
+>       assert _mem(root, "x")["source_path"] == old, "--dry-run refreshed a row"
+               ^^^^^^^^^^^^^^^
+
+tests/test_bridge_move_safety.py:518: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_bridge_move_safety.py:177: in _mem
+    return _with_store(root, _read)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_bridge_move_safety.py:138: in _with_store
+    part = _bridged_partition(s)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests/test_bridge_move_safety.py:129: in _bridged_partition
+    row = s._connect().execute(
+          ^^^^^^^^^^^^
+src/refmatrix/store.py:1362: in _connect
+    con = self._backend.connect(self.db_path)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:788: in connect
+    return DuckDBConnection(open_duckdb(db_path, read_only=read_only))
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:371: in open_duckdb
+    return _open_write(p, key)
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+p = '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-yj4r62aa/proj/.refmatrix/catalog.duckdb'
+key = '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-yj4r62aa/proj/.refmatrix/catalog.duckdb'
+
+    def _open_write(p: str, key: str):
+        import time as _time
+        for _ in range(_OPEN_RETRIES):
+            closed = _close_stale_holders(key, p)
+            before = _file_id(key)
+            deadline = _time.monotonic() + (_CONFLICT_WAIT_S if closed else 0.0)
+            while True:
+                try:
+                    con = duckdb.connect(p)
+                    break
+                except duckdb.Error as exc:
+                    if not _is_path_conflict(exc):
+                        raise
+                    if _time.monotonic() >= deadline:
+>                       raise StaleDuckDBInstanceError(
+                            f"{p}: another connection in this process still holds this path "
+                            f"({closed} stale holder(s) closed first); DuckDB refused the open "
+                            f"({exc}) — close every holder before reopening (bug-112)") from exc
+E                       refmatrix.backend.StaleDuckDBInstanceError: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-yj4r62aa/proj/.refmatrix/catalog.duckdb: another connection in this process still holds this path (0 stale holder(s) closed first); DuckDB refused the open (Binder Error: Unique file handle conflict: Cannot attach "catalog" - the database file "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-yj4r62aa/proj/.refmatrix/catalog.duckdb" is already attached by database "rmx_ro") — close every holder before reopening (bug-112)
+
+src/refmatrix/backend.py:343: StaleDuckDBInstanceError
+=========================== short test summary info ============================
+FAILED tests/test_bridge_move_safety.py::test_ac3_dry_run_reports_refresh_pending_and_writes_nothing
+1 failed, 24 passed in 151.52s (0:02:31)

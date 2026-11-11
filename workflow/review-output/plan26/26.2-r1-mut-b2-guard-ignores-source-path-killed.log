@@ -1,0 +1,68 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+.........FF                                                              [100%]
+=================================== FAILURES ===================================
+__________ test_b1_guard_purges_a_dropped_anchor_left_on_the_old_path __________
+
+gitproj_inproc = (PosixPath('/private/tmp/r1-p3yrl2pc'), PosixPath('/private/tmp/r1-p3yrl2pc/proj'), PosixPath('/private/tmp/r1-p3yrl2pc/proj/.refmatrix'))
+
+    def test_b1_guard_purges_a_dropped_anchor_left_on_the_old_path(gitproj_inproc):
+        """(b2), the natural form. Un-organised dir: x moves AND loses its `## Second {#two}`
+        heading. The bridge re-ingests (the hash changed), re-points x#root / x#one to the new
+        path, and leaves x#two on the OLD path -- an anchor no memory's `source_path` names. Syncing
+        the old (deleted) path must purge it; x's live anchors stay."""
+        base, proj, root = gitproj_inproc
+        memdir = _proj_memdir(proj, marker=False)
+        _bridge(memdir)
+        old = str((memdir / "a" / "x.md").resolve())
+        new = str((memdir / "b" / "x.md").resolve())
+        (memdir / "b" / "x.md").write_text(
+            X_MD.format(id="x", body="body of x").split("## Second")[0], encoding="utf-8")
+        os.remove(old)
+        _bridge(memdir)
+        assert _mem(root, "x")["source_path"] == new, "fixture: the edited move was not re-ingested"
+        got = _anchor_paths(root, "x")
+        assert got.get("x#two") == old and {got.get("x#root"), got.get("x#one")} == {new}, \
+            f"fixture: expected x#two stranded on the old path, x#root/x#one on the new: {got}"
+        _invoke(["sync", "--project-root", str(proj), "-f", old])
+        got = _anchor_paths(root, "x")
+>       assert "x#two" not in got, f"the stranded x#two on {old} survived the purge: {got}"
+E       AssertionError: the stranded x#two on /private/tmp/r1-p3yrl2pc/proj/.claude/projects/slug/memory/a/x.md survived the purge: {'x#two': '/private/tmp/r1-p3yrl2pc/proj/.claude/projects/slug/memory/a/x.md', 'x#root': '/private/tmp/r1-p3yrl2pc/proj/.claude/projects/slug/memory/b/x.md', 'x#one': '/private/tmp/r1-p3yrl2pc/proj/.claude/projects/slug/memory/b/x.md'}
+E       assert 'x#two' not in {'x#one': '/private/tmp/r1-p3yrl2pc/proj/.claude/projects/slug/memory/b/x.md', 'x#root': '/private/tmp/r1-p3yrl2pc/proj/.claude/projects/slug/memory/b/x.md', 'x#two': '/private/tmp/r1-p3yrl2pc/proj/.claude/projects/slug/memory/a/x.md'}
+
+tests/test_bridge_move_safety_r1.py:323: AssertionError
+______ test_b1_guard_purges_a_project_docs_anchors_that_share_a_memory_id ______
+
+gitproj_inproc = (PosixPath('/private/tmp/r1-g489pdff'), PosixPath('/private/tmp/r1-g489pdff/proj'), PosixPath('/private/tmp/r1-g489pdff/proj/.refmatrix'))
+
+    def test_b1_guard_purges_a_project_docs_anchors_that_share_a_memory_id(gitproj_inproc):
+        """(b2), the id-collision form. A project doc (not a memory) with GMD id `x` re-points the
+        `x#...` concepts to its own path. A memory named x exists, but its `source_path` names the
+        memdir file, so it does not own them: deleting the doc and syncing its path purges them, as
+        before 26.2."""
+        base, proj, root = gitproj_inproc
+        memdir = _proj_memdir(proj, marker=False)
+        _bridge(memdir)
+        docs = proj / ".claude" / "docs"
+        docs.mkdir(parents=True)
+        doc = docs / "x.md"
+        doc.write_text(X_MD.format(id="x", body="a project doc that reuses the id x"),
+                       encoding="utf-8")
+        dpath = str(doc.resolve())
+        _invoke(["ingest-gmd", dpath])
+        assert set(_anchor_paths(root, "x").values()) == {dpath}, \
+            f"fixture: the doc ingest did not re-point x's concepts: {_anchor_paths(root, 'x')}"
+        assert _mem(root, "x")["source_path"] != dpath
+        doc.unlink()
+        _invoke(["sync", "--project-root", str(proj), "-f", dpath])
+        got = _anchor_paths(root, "x")
+>       assert dpath not in got.values(), f"the deleted doc's anchors survived the purge: {got}"
+E       AssertionError: the deleted doc's anchors survived the purge: {'x#root': '/private/tmp/r1-g489pdff/proj/.claude/docs/x.md', 'x#one': '/private/tmp/r1-g489pdff/proj/.claude/docs/x.md', 'x#two': '/private/tmp/r1-g489pdff/proj/.claude/docs/x.md'}
+E       assert '/private/tmp/r1-g489pdff/proj/.claude/docs/x.md' not in dict_values(['/private/tmp/r1-g489pdff/proj/.claude/docs/x.md', '/private/tmp/r1-g489pdff/proj/.claude/docs/x.md', '/private/tmp/r1-g489pdff/proj/.claude/docs/x.md'])
+E        +  where dict_values(['/private/tmp/r1-g489pdff/proj/.claude/docs/x.md', '/private/tmp/r1-g489pdff/proj/.claude/docs/x.md', '/private/tmp/r1-g489pdff/proj/.claude/docs/x.md']) = <built-in method values of dict object at 0x135b65b00>()
+E        +    where <built-in method values of dict object at 0x135b65b00> = {'x#one': '/private/tmp/r1-g489pdff/proj/.claude/docs/x.md', 'x#root': '/private/tmp/r1-g489pdff/proj/.claude/docs/x.md', 'x#two': '/private/tmp/r1-g489pdff/proj/.claude/docs/x.md'}.values
+
+tests/test_bridge_move_safety_r1.py:348: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_guard_purges_a_dropped_anchor_left_on_the_old_path
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_guard_purges_a_project_docs_anchors_that_share_a_memory_id
+2 failed, 9 passed in 73.62s (0:01:13)

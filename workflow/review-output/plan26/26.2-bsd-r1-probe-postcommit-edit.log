@@ -1,0 +1,10 @@
+marker: False (EDIT variant)
+1 bridge: ingested 1 doc(s), 3 node(s), 0 rel: edge(s), 6 mention(s) | skipped_non_gmd: 0 | skipped_unparseable: 0 | new linkage types: lead, part-of
+1 anchors: [('x#one', '/proj/.claude/projects/slug/memory/a/x.md'), ('x#root', '/proj/.claude/projects/slug/memory/a/x.md'), ('x#two', '/proj/.claude/projects/slug/memory/a/x.md')]
+2 after edit bridge: ingested 1 doc(s), 3 node(s), 0 rel: edge(s), 7 mention(s) | skipped_non_gmd: 0 | skipped_unparseable: 0
+2 anchors: [('x#one', '/proj/.claude/projects/slug/memory/a/x.md'), ('x#root', '/proj/.claude/projects/slug/memory/a/x.md'), ('x#two', '/proj/.claude/projects/slug/memory/a/x.md')]
+3 changed: ['/proj/.claude/projects/slug/memory/a/x.md']
+3 sync --since HEAD~1: {'purged': 1, 'added': 0, 'updated': 0}
+3 anchors: []
+4 bridge: ingested 1 doc(s), 0 node(s), 0 rel: edge(s), 0 mention(s) | skipped_non_gmd: 0 | skipped_unparseable: 0 | skipped_unchanged: 1
+4 anchors: []

@@ -1,0 +1,2 @@
+bridged memories with on-disk anchors: 349; ALL anchors missing: 2; some missing: 10
+examples: ['guardrail-coordinator-lane-dispatch', 'guardrail-two-writers-one-logical-db']

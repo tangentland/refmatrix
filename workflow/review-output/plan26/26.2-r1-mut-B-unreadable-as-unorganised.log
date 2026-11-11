@@ -1,0 +1,34 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_s1_unreadable_marker_refreshes_the_move_and_names_the_marker _______
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-gxap0pcj'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-gxap0pcj/proj/.refmatrix'))
+
+    def test_s1_unreadable_marker_refreshes_the_move_and_names_the_marker(inproc):
+        base, root = inproc
+        memdir = _memdir(base, marker=False)
+        marker = memdir / ".memory-layout"
+        marker.write_text('{"layout": 1,\n', encoding="utf-8")      # invalid JSON
+        _bridge(memdir)
+        old, new = _move(memdir)
+        r = CliRunner().invoke(cli_mod.main, ["ingest-gmd", "--as-memory", str(memdir)])
+        out = r.output
+        assert r.exit_code == 0, f"an unreadable marker failed the bridge: {r.exit_code}\n{out}" \
+                                 f"\n{r.exception!r}"
+>       assert _term(out, "moved") == 1, f"the move under an unreadable marker was not refreshed " \
+                                         f"(read as not-organised?):\n{out}"
+E       AssertionError: the move under an unreadable marker was not refreshed (read as not-organised?):
+E         ingested 2 doc(s), 0 node(s), 0 rel: edge(s), 0 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         skipped_unchanged: 2
+E         marker_error: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-gxap0pcj/memory/.memory-layout: the .memory-layout marker is unreadable (JSONDecodeError: Expecting property name enclosed in double quotes: line 2 column 1 (char 14)); fix or move it aside -- it is never read as 'not organised' -- the path-aware gate applied under /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-gxap0pcj/memory
+E         
+E       assert None == 1
+E        +  where None = _term("ingested 2 doc(s), 0 node(s), 0 rel: edge(s), 0 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nskipped_uncha...-- the path-aware gate applied under /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-gxap0pcj/memory\n", 'moved')
+
+tests/test_bridge_move_safety_r1.py:220: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bridge_move_safety_r1.py::test_s1_unreadable_marker_refreshes_the_move_and_names_the_marker
+1 failed in 5.71s

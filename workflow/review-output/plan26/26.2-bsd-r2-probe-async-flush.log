@@ -1,0 +1,17 @@
+pyc-guard: recompiled 10 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+ENQUEUE: 0 enqueued 2 paths
+ASYNC FLUSH CLI: 0 'flush queued' ''
+RMXD.LOG async lines: ['2026-11-10T18:54:57 async flush failed: MemoryOwnershipError("purge_path(\'/private/tmp/r1-uc0lb8co/.claude/projects/slug/memory/a/x.md\'): memory \'x\' has unreadable metadata JSON (Expecting property name enclosed in double quotes: line 1 column 2 (char 1)); cannot tell whether it owns the anchors at this path")']
+DAEMON STATUS mentions failure: False | []
+QUEUE FILE after flush: False 
+PROJECT FILE d.py entities after flush: 0
+x ANCHORS after flush: ['x#one', 'x#root', 'x#two']
+.ENQUEUE: 0 enqueued 2 paths
+ASYNC FLUSH CLI: 0 'flush queued' ''
+RMXD.LOG async lines: []
+DAEMON STATUS mentions failure: False | []
+QUEUE FILE after flush: False 
+PROJECT FILE d.py entities after flush: 1
+x ANCHORS after flush: ['x#one', 'x#root', 'x#two']
+.
+2 passed in 80.31s (0:01:20)

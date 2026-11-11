@@ -1,0 +1,26 @@
+# mutation: the doc-row resume gate also requires entities.path == str(path) (doc rows made path-aware); restored with git checkout
+diff --git a/src/refmatrix/ingest_gmd.py b/src/refmatrix/ingest_gmd.py
+index b3fe02c..0f3fa33 100644
+--- a/src/refmatrix/ingest_gmd.py
++++ b/src/refmatrix/ingest_gmd.py
+@@ -881,7 +881,8 @@ def ingest_gmd_paths(
+             existing_hash = _existing_hash_for(
+                 store, doc.doc_id, skip_lookup_kinds,
+             )
+-            if existing_hash == current_hash:
++            _mut_e = None if as_memory else store.get_entity('doc', doc.doc_id)  # MUTANT
++            if existing_hash == current_hash and (as_memory or _mut_e is None or _mut_e.path == str(path)):
+                 # Lookup the entity id once and stash it for pass2
+                 # cross-ref resolution. Skip all writes for this file.
+                 row = store._connect().execute(
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: a doc row's gate became path-aware
+    assert ['/private/va.../docs/b/d.md'] == ['/private/va.../docs/a/d.md']
+      
+      At index 0 diff: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-_z7p62ck/docs/b/d.md' != '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-_z7p62ck/docs/a/d.md'
+      Use -v to get more diff
+/Volumes/littlebig/refmatrix-plan26-2/tests/test_bridge_move_safety.py:483: AssertionError: a doc row's gate became path-aware
+=========================== short test summary info ============================
+FAILED tests/test_bridge_move_safety.py::test_ac2_doc_row_keeps_the_hash_only_gate
+1 failed, 24 deselected in 0.49s

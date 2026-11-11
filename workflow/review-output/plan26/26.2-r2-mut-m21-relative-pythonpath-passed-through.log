@@ -1,0 +1,33 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_m21_child_env_imports_this_checkout_under_a_relative_pythonpath _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x106f98d60>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-779/test_m21_child_env_imports_thi0')
+
+    def test_m21_child_env_imports_this_checkout_under_a_relative_pythonpath(monkeypatch, tmp_path):
+        """The caller ran pytest with `PYTHONPATH=src` (relative). A child in a throwaway cwd must
+        still import `<checkout>/src/refmatrix`, through the env the tests hand down."""
+        # ONLY the relative entry for the checkout: the caller's absolute one is removed, or it
+        # would mask the defect (the sandbox's own absolute entries stay).
+        monkeypatch.setenv("PYTHONPATH", os.pathsep.join(
+            ["src", *[e for e in os.environ.get("PYTHONPATH", "").split(os.pathsep)
+                      if e and os.path.normpath(e) != CHECKOUT_SRC]]))
+        env = _cli_env(tmp_path / ".refmatrix")
+        r = subprocess.run([sys.executable, "-c", "import refmatrix; print(refmatrix.__file__)"],
+                           capture_output=True, text=True, cwd=str(tmp_path), env=env, timeout=60)
+        assert r.returncode == 0, r.stderr
+        got = Path(r.stdout.strip()).resolve()
+>       assert got == Path(CHECKOUT_SRC, "refmatrix", "__init__.py").resolve(), \
+            f"the child imported {got}, not this checkout ({CHECKOUT_SRC}); env PYTHONPATH=" \
+            f"{env.get('PYTHONPATH')!r}"
+E       AssertionError: the child imported /Users/tholley/claude_tools/refmatrix/src/refmatrix/__init__.py, not this checkout (/Volumes/littlebig/refmatrix-plan26-2/src); env PYTHONPATH='src:/Volumes/littlebig/refmatrix-plan26-2/tests/sandbox_site'
+E       assert PosixPath('/Users/tholley/claude_tools/refmatrix/src/refmatrix/__init__.py') == PosixPath('/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/__init__.py')
+E        +  where PosixPath('/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/__init__.py') = resolve()
+E        +    where resolve = PosixPath('/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/__init__.py').resolve
+E        +      where PosixPath('/Volumes/littlebig/refmatrix-plan26-2/src/refmatrix/__init__.py') = Path('/Volumes/littlebig/refmatrix-plan26-2/src', 'refmatrix', '__init__.py')
+
+tests/test_sync_fails_loudly_r2.py:285: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sync_fails_loudly_r2.py::test_m21_child_env_imports_this_checkout_under_a_relative_pythonpath
+1 failed in 0.18s

@@ -12,6 +12,15 @@ overwrite an existing file unless `force=True`.
 
 The git hook scripts are intentionally minimal: they just `cd` to the project
 root and shell out to `rmx`. They background the call so commits stay snappy.
+
+They quiet the sync's STDOUT only. Its stderr stays on the committing
+terminal, and a non-zero exit adds one `refmatrix: <hook> rmx sync FAILED
+(exit N)` line (task 26.2 r1, user requirement 2026-11-10: "if the sync stops
+in an error, it needs to fail loudly on the commandline or console, not just
+logs"). Until then every line ended `>/dev/null 2>&1 || true`, so a sync that
+refused -- the fail-closed anchor guard, a daemon error reply -- vanished. The
+job is still backgrounded and disowned, so the commit never waits on it and
+never fails because of it; the error may print after the prompt returns.
 """
 from __future__ import annotations
 
@@ -46,7 +55,7 @@ GIT_HOOK_SCRIPTS: dict[str, str] = {
 set -e
 ROOT="$(git rev-parse --show-toplevel)"
 [ -d "$ROOT/.refmatrix" ] || exit 0
-( cd "$ROOT" && rmx sync --since HEAD~1 >/dev/null 2>&1 || true ) &
+( cd "$ROOT" && rmx sync --since HEAD~1 >/dev/null || echo "refmatrix: post-commit rmx sync FAILED (exit $?); its error is above" >&2 ) &
 disown
 """,
     "post-merge": r"""#!/usr/bin/env bash
@@ -54,7 +63,7 @@ disown
 set -e
 ROOT="$(git rev-parse --show-toplevel)"
 [ -d "$ROOT/.refmatrix" ] || exit 0
-( cd "$ROOT" && rmx sync --since ORIG_HEAD >/dev/null 2>&1 || true ) &
+( cd "$ROOT" && rmx sync --since ORIG_HEAD >/dev/null || echo "refmatrix: post-merge rmx sync FAILED (exit $?); its error is above" >&2 ) &
 disown
 """,
     "post-checkout": r"""#!/usr/bin/env bash
@@ -63,7 +72,7 @@ set -e
 [ "$3" = "1" ] || exit 0
 ROOT="$(git rev-parse --show-toplevel)"
 [ -d "$ROOT/.refmatrix" ] || exit 0
-( cd "$ROOT" && rmx sync --since "$1..$2" >/dev/null 2>&1 || true ) &
+( cd "$ROOT" && rmx sync --since "$1..$2" >/dev/null || echo "refmatrix: post-checkout rmx sync FAILED (exit $?); its error is above" >&2 ) &
 disown
 """,
     "post-rewrite": r"""#!/usr/bin/env bash
@@ -74,7 +83,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 # Read rewritten oid pairs from stdin; sync from the oldest old-oid.
 OLD=$(awk '{print $1; exit}')
 [ -z "$OLD" ] && exit 0
-( cd "$ROOT" && rmx sync --since "$OLD" >/dev/null 2>&1 || true ) &
+( cd "$ROOT" && rmx sync --since "$OLD" >/dev/null || echo "refmatrix: post-rewrite rmx sync FAILED (exit $?); its error is above" >&2 ) &
 disown
 """,
 }
@@ -168,22 +177,28 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
         HOOK_ENV + "rmx focus hook --event say 2>/dev/null || true"
     )
 
-    # --async hands the actual sync work to the daemon and returns
-    # immediately. With no daemon up, the flag is a silent no-op so the
-    # hook stays cheap.
-    flush_cmd = (
-        HOOK_ENV
-        + "( rmx sync --flush-queue --async >/dev/null 2>&1 || true ) & disown"
-    )
+    # The queue flush: its OWN hook entry on Stop, SubagentStop and
+    # SessionStart, in the FOREGROUND, stdout quieted, stderr and exit status
+    # kept. `--async` hands the sync to the daemon and returns at once (the
+    # ACK), so the foreground costs one round trip. That ACK carries any sync
+    # error the daemon has recorded since (a previous async flush, the
+    # watcher); the CLI prints it on stderr and exits 1, so the hook fails
+    # loudly where the session shows it (task 26.2, ch-bsd r2 #b2-1, user
+    # requirement 2026-11-10: "if the sync stops in an error, it needs to fail
+    # loudly on the commandline or console, not just logs"). It used to run
+    # `( ... >/dev/null 2>&1 || true ) & disown`, which hid every failure.
+    # Its own entry, never chained: Claude Code drops a SessionStart hook's
+    # stdout (recall, curator status) when that hook exits non-zero, so a
+    # recorded sync error must not share a command with context output.
+    flush_cmd = HOOK_ENV + "rmx sync --flush-queue --async >/dev/null"
 
-    # SessionStart: flush + (optionally) regenerate primer in the
-    # background, then EMIT (synchronously, foreground) the curator-queue
-    # status so any pending curator-relevant changes surface as context
-    # for Claude to act on. The status command is sub-second and silent
-    # when the queue is empty, so it doesn't slow down session startup.
-    bg_parts = [
-        "rmx sync --flush-queue --async >/dev/null 2>&1 || true"
-    ]
+    # SessionStart: (optionally) regenerate the primer in the background,
+    # then EMIT (synchronously, foreground) the curator-queue status so any
+    # pending curator-relevant changes surface as context for Claude to act
+    # on. The status command is sub-second and silent when the queue is
+    # empty, so it doesn't slow down session startup. The flush is a
+    # separate entry beside it (`flush_cmd`, above).
+    bg_parts: list[str] = []
     if primer:
         bg_parts.append(
             "rmx primer --out '"
@@ -192,11 +207,11 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
         )
     sess_cmd = (
         HOOK_ENV
-        + "( " + " ; ".join(bg_parts) + " ) & disown ; "
+        + ("( " + " ; ".join(bg_parts) + " ) & disown ; " if bg_parts else "")
         # stderr is NOT discarded (task 3.7, CLAUDE.md#no-silent-failures), and the hook
         # does NOT drain (remedy r1 R-B1): the line is the reminder until the gmd-curator
         # drains by token. `|| true` keeps the hook from failing the session.
-        "rmx curator status || true"
+        + "rmx curator status || true"
     )
 
     block = {
@@ -227,7 +242,8 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
             "SessionStart": [
                 {
                     "matcher": "startup|resume",
-                    "hooks": [{"type": "command", "command": sess_cmd}],
+                    "hooks": [{"type": "command", "command": sess_cmd},
+                              {"type": "command", "command": flush_cmd}],
                 },
                 # Task 21.1 D4: re-point this Claude process's session pointer on every
                 # session start, BEFORE the first prompt (after /clear the input hook was the

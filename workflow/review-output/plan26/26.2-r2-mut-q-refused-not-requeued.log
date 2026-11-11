@@ -1,0 +1,23 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+......F.                                                                 [100%]
+=================================== FAILURES ===================================
+__________ test_s21_async_flush_refuses_x_requeues_it_and_syncs_d_py ___________
+
+gitproj = (PosixPath('/private/tmp/r1-ucjfba4i'), PosixPath('/private/tmp/r1-ucjfba4i/proj'), PosixPath('/private/tmp/r1-ucjfba4i/proj/.refmatrix'))
+
+    def test_s21_async_flush_refuses_x_requeues_it_and_syncs_d_py(gitproj):
+        base, proj, root, memdir, x, d = _failed_async_flush(gitproj)
+        dm.stop_daemon(root)
+        assert _entities_at(root, d) >= 1, \
+            f"docs/d.py was not synced: x's refusal took the async batch (queue now {_queued(root)})"
+        assert set(_anchor_paths(root, "x")) == ANCHORS, \
+            f"x's anchors after the refused flush: {_anchor_paths(root, 'x')}"
+        q = _queued(root)
+>       assert x in q, f"x.md was not put back on the queue (the next flush must retry it): {q}"
+E       AssertionError: x.md was not put back on the queue (the next flush must retry it): []
+E       assert '/private/tmp/r1-ucjfba4i/.claude/projects/slug/memory/a/x.md' in []
+
+tests/test_sync_fails_loudly_r2.py:264: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sync_fails_loudly_r2.py::test_s21_async_flush_refuses_x_requeues_it_and_syncs_d_py
+1 failed, 7 passed in 58.41s

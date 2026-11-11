@@ -118,6 +118,11 @@ Naming rules:
 - `Store.vacuum` purges dead `tracked_files` rows, but the bridge never calls `mark_tracked`.
 - `sync.purge_path` comes from the watcher, and the watcher drops every hidden segment
   (`watch.is_relevant`, which excludes `.claude`).
+- **Corrected 2026-11-10 (ch-bsd 26.2 r1 #b-1):** the watcher is not the only caller. A memdir
+  inside a git project under `.claude/` reaches `purge_path` through the post-commit
+  `rmx sync --since`, `sync -f` and `sync -i`, and that purge deleted the memory's anchor
+  concepts for good. 26.2's remedy makes `purge_path` keep the anchors a memory row's
+  `source_path` owns ([[bsd-task-26.2-r1-bridge-move-safety-90abc72#b-1]]).
 - No daemon plist points a watch root at a memory dir (all 8 checked).
 - So the load-bearing risk is stale state, described next, not loss.
 

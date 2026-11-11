@@ -1,0 +1,207 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-2/src/refmatrix as checked-hash (bug-037)
+FFF..............................                                        [100%]
+=================================== FAILURES ===================================
+______ test_b1_post_commit_sync_since_after_a_move_keeps_the_new_anchors _______
+
+gitproj = (PosixPath('/private/tmp/r1-0xxqfr3s'), PosixPath('/private/tmp/r1-0xxqfr3s/proj'), PosixPath('/private/tmp/r1-0xxqfr3s/proj/.refmatrix'))
+
+    def test_b1_post_commit_sync_since_after_a_move_keeps_the_new_anchors(gitproj):
+        base, proj, root = gitproj
+        _init_repo(proj)
+        memdir = _proj_memdir(proj, marker=True)
+        _commit(proj, "c0: the memory, before the move")
+        _bridge(memdir)
+        old, new = _move(memdir)
+        out = _bridge(memdir)
+        assert _term(out, "moved") == 1, f"fixture: the move was not refreshed:\n{out}"
+        _commit(proj, "c1: move a/x.md -> b/x.md")
+        # git post-commit, as viascope's hook runs it -- through the REAL CLI, on the daemon
+        _post_commit_sync(proj, root)
+        dm.stop_daemon(root)
+        _assert_anchors_at(root, new, "after the post-commit sync of the move")
+        assert _mem(root, "x")["source_path"] == new
+        _restart(root)
+>       _assert_next_bridge_skips(memdir, root, new)
+
+tests/test_bridge_move_safety_r1.py:159: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_bridge_move_safety_r1.py:135: in _assert_next_bridge_skips
+    _assert_anchors_at(root, path, "after the next bridge")
+tests/test_bridge_move_safety_r1.py:125: in _assert_anchors_at
+    got = _anchor_paths(root, "x")
+          ^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_bridge_move_safety.py:185: in _anchor_paths
+    return _with_store(root, _read)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_bridge_move_safety.py:138: in _with_store
+    part = _bridged_partition(s)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests/test_bridge_move_safety.py:129: in _bridged_partition
+    row = s._connect().execute(
+          ^^^^^^^^^^^^
+src/refmatrix/store.py:1362: in _connect
+    con = self._backend.connect(self.db_path)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:788: in connect
+    return DuckDBConnection(open_duckdb(db_path, read_only=read_only))
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:371: in open_duckdb
+    return _open_write(p, key)
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+p = '/private/tmp/r1-0xxqfr3s/proj/.refmatrix/catalog.A.duckdb'
+key = '/private/tmp/r1-0xxqfr3s/proj/.refmatrix/catalog.A.duckdb'
+
+    def _open_write(p: str, key: str):
+        import time as _time
+        for _ in range(_OPEN_RETRIES):
+            closed = _close_stale_holders(key, p)
+            before = _file_id(key)
+            deadline = _time.monotonic() + (_CONFLICT_WAIT_S if closed else 0.0)
+            while True:
+                try:
+>                   con = duckdb.connect(p)
+                          ^^^^^^^^^^^^^^^^^
+E                   _duckdb.IOException: IO Error: Could not set lock on file "/private/tmp/r1-0xxqfr3s/proj/.refmatrix/catalog.A.duckdb": Conflicting lock is held in /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python (PID 62706) by user tholley. See also https://duckdb.org/docs/stable/connect/concurrency
+
+src/refmatrix/backend.py:337: IOException
+__ test_b1_post_commit_sync_since_after_an_edit_keeps_the_anchors[marker-on] ___
+
+gitproj = (PosixPath('/private/tmp/r1-qkt_uzui'), PosixPath('/private/tmp/r1-qkt_uzui/proj'), PosixPath('/private/tmp/r1-qkt_uzui/proj/.refmatrix'))
+marker = True
+
+    @pytest.mark.parametrize("marker", [True, False], ids=["marker-on", "marker-off"])
+    def test_b1_post_commit_sync_since_after_an_edit_keeps_the_anchors(gitproj, marker):
+        base, proj, root = gitproj
+        _init_repo(proj)
+        memdir = _proj_memdir(proj, marker=marker)
+        _commit(proj, "c0: the memory, before the edit")
+        _bridge(memdir)
+        x = memdir / "a" / "x.md"
+        x.write_text(X_MD.format(id="x", body="edited body of x"), encoding="utf-8")
+        _bridge(memdir)
+        _commit(proj, "c1: edit a/x.md")
+        _post_commit_sync(proj, root)
+        dm.stop_daemon(root)
+        path = str(x.resolve())
+        _assert_anchors_at(root, path, "after the post-commit sync of the edit")
+        assert "edited body of x" in _mem(root, "x")["content"]
+        _restart(root)
+>       _assert_next_bridge_skips(memdir, root, path)
+
+tests/test_bridge_move_safety_r1.py:183: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_bridge_move_safety_r1.py:135: in _assert_next_bridge_skips
+    _assert_anchors_at(root, path, "after the next bridge")
+tests/test_bridge_move_safety_r1.py:125: in _assert_anchors_at
+    got = _anchor_paths(root, "x")
+          ^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_bridge_move_safety.py:185: in _anchor_paths
+    return _with_store(root, _read)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_bridge_move_safety.py:138: in _with_store
+    part = _bridged_partition(s)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests/test_bridge_move_safety.py:129: in _bridged_partition
+    row = s._connect().execute(
+          ^^^^^^^^^^^^
+src/refmatrix/store.py:1362: in _connect
+    con = self._backend.connect(self.db_path)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:788: in connect
+    return DuckDBConnection(open_duckdb(db_path, read_only=read_only))
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:371: in open_duckdb
+    return _open_write(p, key)
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+p = '/private/tmp/r1-qkt_uzui/proj/.refmatrix/catalog.A.duckdb'
+key = '/private/tmp/r1-qkt_uzui/proj/.refmatrix/catalog.A.duckdb'
+
+    def _open_write(p: str, key: str):
+        import time as _time
+        for _ in range(_OPEN_RETRIES):
+            closed = _close_stale_holders(key, p)
+            before = _file_id(key)
+            deadline = _time.monotonic() + (_CONFLICT_WAIT_S if closed else 0.0)
+            while True:
+                try:
+>                   con = duckdb.connect(p)
+                          ^^^^^^^^^^^^^^^^^
+E                   _duckdb.IOException: IO Error: Could not set lock on file "/private/tmp/r1-qkt_uzui/proj/.refmatrix/catalog.A.duckdb": Conflicting lock is held in /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python (PID 63203) by user tholley. See also https://duckdb.org/docs/stable/connect/concurrency
+
+src/refmatrix/backend.py:337: IOException
+__ test_b1_post_commit_sync_since_after_an_edit_keeps_the_anchors[marker-off] __
+
+gitproj = (PosixPath('/private/tmp/r1-t1hokqku'), PosixPath('/private/tmp/r1-t1hokqku/proj'), PosixPath('/private/tmp/r1-t1hokqku/proj/.refmatrix'))
+marker = False
+
+    @pytest.mark.parametrize("marker", [True, False], ids=["marker-on", "marker-off"])
+    def test_b1_post_commit_sync_since_after_an_edit_keeps_the_anchors(gitproj, marker):
+        base, proj, root = gitproj
+        _init_repo(proj)
+        memdir = _proj_memdir(proj, marker=marker)
+        _commit(proj, "c0: the memory, before the edit")
+        _bridge(memdir)
+        x = memdir / "a" / "x.md"
+        x.write_text(X_MD.format(id="x", body="edited body of x"), encoding="utf-8")
+        _bridge(memdir)
+        _commit(proj, "c1: edit a/x.md")
+        _post_commit_sync(proj, root)
+        dm.stop_daemon(root)
+        path = str(x.resolve())
+        _assert_anchors_at(root, path, "after the post-commit sync of the edit")
+        assert "edited body of x" in _mem(root, "x")["content"]
+        _restart(root)
+>       _assert_next_bridge_skips(memdir, root, path)
+
+tests/test_bridge_move_safety_r1.py:183: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_bridge_move_safety_r1.py:135: in _assert_next_bridge_skips
+    _assert_anchors_at(root, path, "after the next bridge")
+tests/test_bridge_move_safety_r1.py:125: in _assert_anchors_at
+    got = _anchor_paths(root, "x")
+          ^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_bridge_move_safety.py:185: in _anchor_paths
+    return _with_store(root, _read)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_bridge_move_safety.py:138: in _with_store
+    part = _bridged_partition(s)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests/test_bridge_move_safety.py:129: in _bridged_partition
+    row = s._connect().execute(
+          ^^^^^^^^^^^^
+src/refmatrix/store.py:1362: in _connect
+    con = self._backend.connect(self.db_path)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:788: in connect
+    return DuckDBConnection(open_duckdb(db_path, read_only=read_only))
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:371: in open_duckdb
+    return _open_write(p, key)
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+p = '/private/tmp/r1-t1hokqku/proj/.refmatrix/catalog.A.duckdb'
+key = '/private/tmp/r1-t1hokqku/proj/.refmatrix/catalog.A.duckdb'
+
+    def _open_write(p: str, key: str):
+        import time as _time
+        for _ in range(_OPEN_RETRIES):
+            closed = _close_stale_holders(key, p)
+            before = _file_id(key)
+            deadline = _time.monotonic() + (_CONFLICT_WAIT_S if closed else 0.0)
+            while True:
+                try:
+>                   con = duckdb.connect(p)
+                          ^^^^^^^^^^^^^^^^^
+E                   _duckdb.IOException: IO Error: Could not set lock on file "/private/tmp/r1-t1hokqku/proj/.refmatrix/catalog.A.duckdb": Conflicting lock is held in /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python (PID 64501) by user tholley. See also https://duckdb.org/docs/stable/connect/concurrency
+
+src/refmatrix/backend.py:337: IOException
+=========================== short test summary info ============================
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_post_commit_sync_since_after_a_move_keeps_the_new_anchors
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_post_commit_sync_since_after_an_edit_keeps_the_anchors[marker-on]
+FAILED tests/test_bridge_move_safety_r1.py::test_b1_post_commit_sync_since_after_an_edit_keeps_the_anchors[marker-off]
+3 failed, 30 passed in 212.29s (0:03:32)

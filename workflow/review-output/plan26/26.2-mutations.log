@@ -1,0 +1,57 @@
+=== m1a_gate_never_path_aware  -k 'test_ac1_in_process_move or test_ac1b_every_row'
+applied m1a_gate_never_path_aware to ingest_gmd.py
+E       AssertionError: memory_content.metadata.source_path is '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-p6mslrkw/memory/a/x.md', not the moved '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-p6mslrkw/memory/b/x.md'
+E       AssertionError: assert '/private/var...memory/a/x.md' == '/private/var...memory/b/x.md'
+FAILED tests/test_bridge_move_safety.py::test_ac1_in_process_move_refreshes_the_row_and_its_anchors
+FAILED tests/test_bridge_move_safety.py::test_ac1b_every_row_on_the_old_path_is_refreshed_and_counted
+2 failed, 23 deselected in 11.37s
+=== m1b_gate_always_path_aware  -k 'test_ac1b_marker_off_twin'
+applied m1b_gate_always_path_aware to ingest_gmd.py
+E       AssertionError: assert '/private/var...memory/b/x.md' == '/private/var...memory/a/x.md'
+FAILED tests/test_bridge_move_safety.py::test_ac1b_marker_off_twin_refreshes_nothing
+1 failed, 24 deselected in 5.72s
+=== m2_duplicate_check_dropped  -k 'test_ac4_in_process or test_ac4_ingest_stats'
+applied m2_duplicate_check_dropped to ingest_gmd.py
+out = {'doc_drop_failed': [], 'duplicate_ids': [], 'embed': {'batches': 1, 'capped': False, 'embedded': 1, 'error': None, ...}, 'error': None, ...}
+E       AssertionError: in-process bridge: duplicate_ids=[]
+E       AssertionError: assert [] == [('x', ['/pri...y/b/dup.md'])]
+FAILED tests/test_bridge_move_safety.py::test_ac4_in_process_duplicate_id_is_refused_counted_and_named
+FAILED tests/test_bridge_move_safety.py::test_ac4_ingest_stats_carry_duplicate_ids
+2 failed, 23 deselected in 5.85s
+=== m3_waited_drops_duplicate_ids  -k 'test_ac4_waited_job'
+applied m3_waited_drops_duplicate_ids to cli.py
+out = {'doc_drop_failed': [], 'duplicate_ids': [], 'embed': None, 'error': None, ...}
+E       AssertionError: waited bridge: duplicate_ids=[]
+FAILED tests/test_bridge_move_safety.py::test_ac4_waited_job_result_carries_duplicate_ids
+1 failed, 24 deselected in 26.34s
+=== m4_anchor_keeps_old_path  -k 'test_ac5'
+applied m4_anchor_keeps_old_path to ingest_gmd.py
+E       AssertionError: anchors after vacuum + sync: {}
+FAILED tests/test_bridge_move_safety.py::test_ac5_vacuum_and_sync_after_a_move_keep_the_row_and_its_anchors
+1 failed, 24 deselected in 5.72s
+=== m5_snapshot_opens_live_store  -k 'test_ac3_store_snapshot_dry_run_is_daemonless or test_ac3_relocated_twin'
+applied m5_snapshot_opens_live_store to cli.py
+E           AssertionError: rmx -p proj ingest-gmd --as-memory --dry-run --store-snapshot /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-0t87piv8/snap/catalog.read.duckdb /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-0t87piv8/memory: exit 1
+E           AssertionError: rmx -p proj ingest-gmd --as-memory --dry-run --store-snapshot /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-hx3da65s/snap/catalog.read.duckdb /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-hx3da65s/twin-memory: exit 1
+FAILED tests/test_bridge_move_safety.py::test_ac3_store_snapshot_dry_run_is_daemonless
+FAILED tests/test_bridge_move_safety.py::test_ac3_relocated_twin_reports_zero_through_path_map
+2 failed, 23 deselected in 5.92s
+=== m6_id_row_only  -k 'test_ac1b_every_row'
+applied m6_id_row_only to ingest_gmd.py
+E       AssertionError: legacy-x still names '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-uthxr3dd/memory/a/x.md' after its file moved to '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-uthxr3dd/memory/b/x.md'
+FAILED tests/test_bridge_move_safety.py::test_ac1b_every_row_on_the_old_path_is_refreshed_and_counted
+1 failed, 24 deselected in 6.33s
+=== m7_legacy_event_dropped  -k 'test_ac1b_legacy_refresh_survives'
+applied m7_legacy_event_dropped to store.py
+E       AssertionError: no memory_content event logs legacy-x at '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-f_9qw4va/memory/b/x.md': [{'content': 'the legacy body of x', 'kind': 'memory', 'metadata': {'source': 'memory_sync_disk', 'source_path': '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-f_9qw4va/memory/a/x.md'}, 'mtype': 'feedback', 'name': 'legacy-x', 'op': 'memory_content', 'tags': None, 'ts': 1794342107.133642}]
+FAILED tests/test_bridge_move_safety.py::test_ac1b_legacy_refresh_survives_rebuild_from_log
+1 failed, 24 deselected in 6.12s
+=== m8_gate_drops_path_term  -k 'test_ac1_in_process_move or test_ac3_missing_source_path or test_ac3_dry_run_reports'
+applied m8_gate_drops_path_term to ingest_gmd.py
+E       AssertionError: memory_content.metadata.source_path is '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-4jd18zko/memory/a/x.md', not the moved '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-4jd18zko/memory/b/x.md'
+E       AssertionError: assert None == '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-x8l4pc0y/memory/a/x.md'
+E       AssertionError: dry-run: 2 file(s) under /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-dqzw452f/memory against partition 'proj' -- nothing written
+FAILED tests/test_bridge_move_safety.py::test_ac1_in_process_move_refreshes_the_row_and_its_anchors
+FAILED tests/test_bridge_move_safety.py::test_ac3_missing_source_path_is_reingested_once
+FAILED tests/test_bridge_move_safety.py::test_ac3_dry_run_reports_refresh_pending_and_writes_nothing
+3 failed, 22 deselected in 13.31s
