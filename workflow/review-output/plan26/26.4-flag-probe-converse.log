@@ -1,0 +1,91 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /Volumes/littlebig/refmatrix-plan26-4
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collecting ... collected 3 items
+
+tests/test_zz_probe_264_flag2.py::test_probe2[file] FAILED               [ 33%]
+tests/test_zz_probe_264_flag2.py::test_probe2[subdir] FAILED             [ 66%]
+tests/test_zz_probe_264_flag2.py::test_probe2[memdir] PASSED             [100%]
+
+=================================== FAILURES ===================================
+______________________________ test_probe2[file] _______________________________
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-94yjx_di'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-94yjx_di/proj/.refmatrix'))
+target = 'file'
+
+    @pytest.mark.parametrize("target", ["file", "subdir", "memdir"])
+    def test_probe2(inproc, target):
+        base, root = inproc
+        memdir = base / "memory"
+        memdir.mkdir()
+        organise(memdir)
+        p = savestate(memdir, "savestates/handoff_cq.md", mtype="project",
+                      created="2026-07-07", updated="2026-07-08", mtime=at(2026, 7, 8))
+        t = {"file": p, "subdir": p.parent, "memdir": memdir}[target]
+        out = _invoke(["ingest-gmd", "--as-memory", str(t)]).output
+>       assert _mtypes(root)["handoff_cq"] == RS, out
+E       AssertionError: ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 11 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         new linkage types: lead, part-of
+E         memory embed: 1 row(s) now reachable by recall in proj
+E         
+E       assert 'project' == 'session/recall-state'
+E         
+E         - session/recall-state
+E         + project
+
+tests/test_zz_probe_264_flag2.py:17: AssertionError
+_____________________________ test_probe2[subdir] ______________________________
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-hachap3m'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-hachap3m/proj/.refmatrix'))
+target = 'subdir'
+
+    @pytest.mark.parametrize("target", ["file", "subdir", "memdir"])
+    def test_probe2(inproc, target):
+        base, root = inproc
+        memdir = base / "memory"
+        memdir.mkdir()
+        organise(memdir)
+        p = savestate(memdir, "savestates/handoff_cq.md", mtype="project",
+                      created="2026-07-07", updated="2026-07-08", mtime=at(2026, 7, 8))
+        t = {"file": p, "subdir": p.parent, "memdir": memdir}[target]
+        out = _invoke(["ingest-gmd", "--as-memory", str(t)]).output
+>       assert _mtypes(root)["handoff_cq"] == RS, out
+E       AssertionError: ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 11 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         new linkage types: lead, part-of
+E         memory embed: 1 row(s) now reachable by recall in proj
+E         
+E       assert 'project' == 'session/recall-state'
+E         
+E         - session/recall-state
+E         + project
+
+tests/test_zz_probe_264_flag2.py:17: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_zz_probe_264_flag2.py::test_probe2[file] - AssertionError: ...
+FAILED tests/test_zz_probe_264_flag2.py::test_probe2[subdir] - AssertionError...
+========================= 2 failed, 1 passed in 8.63s ==========================
+
+==== probe source (tests/test_zz_probe_264_flag2.py, throwaway, not committed; run at 3831499) ====
+"""THROWAWAY probe (not committed): the converse -- a non-prefixed file in savestates/."""
+import pytest
+from tests.test_savestate_mtype import (inproc, organise, savestate, at, _mtypes, _invoke,  # noqa: F401
+                                        RS)
+
+
+@pytest.mark.parametrize("target", ["file", "subdir", "memdir"])
+def test_probe2(inproc, target):
+    base, root = inproc
+    memdir = base / "memory"
+    memdir.mkdir()
+    organise(memdir)
+    p = savestate(memdir, "savestates/handoff_cq.md", mtype="project",
+                  created="2026-07-07", updated="2026-07-08", mtime=at(2026, 7, 8))
+    t = {"file": p, "subdir": p.parent, "memdir": memdir}[target]
+    out = _invoke(["ingest-gmd", "--as-memory", str(t)]).output
+    assert _mtypes(root)["handoff_cq"] == RS, out

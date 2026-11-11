@@ -582,3 +582,71 @@ def test_ac4_a_project_file_in_feedback_is_not_retyped_by_bridge_or_correction(i
     assert [e["id"] for e in res] == ["savestate_cq_0707"], res
     assert (fb.read_text(encoding="utf-8"), fb.stat().st_mtime_ns) == fb0, \
         "a feedback/ file was rewritten"
+
+
+# =============================================================================================
+# AC-1 clarified (team-lead decision 2026-11-11, ADR-0005 #authority): a `savestate_*` stem in
+# any folder other than the top level and `savestates/` is MISFILED, not a save-state
+# =============================================================================================
+
+@pytest.mark.parametrize("leg", ["inproc", "daemon"])
+@pytest.mark.parametrize("marker", [True, False])
+def test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten(
+        request, leg, marker):
+    """`feedback/savestate_misfiled.md` typed `project` stays `project` in the store, is not in
+    `mtype_normalised`, and `normalise_savestate_types` neither lists nor rewrites it (26.5's
+    `organise --check` reports it as misfiled). A real `savestates/` save-state in the same dir
+    is the positive control: the rule ran, on the right file only. Through the save-state /
+    SessionStart bridge (`cli._sync_memory_dir`), both legs, the memdir as its target.
+
+    Kills ch-bsd 26.4 mutation f1 (the override widened to any `savestate_*` id): the misfiled
+    file is counted and stored as `session/recall-state`."""
+    base, root = request.getfixturevalue(leg)
+    memdir = base / "memory"
+    memdir.mkdir()
+    if marker:
+        organise(memdir)
+    mis = savestate(memdir, "feedback/savestate_misfiled.md", mtype="project",
+                    created="2026-07-07", updated="2026-07-08", mtime=at(2026, 7, 8))
+    real = "savestates/savestate_cq_0707.md" if marker else "savestate_cq_0707.md"
+    savestate(memdir, real, mtype="project", created="2026-07-07", updated="2026-07-08",
+              mtime=at(2026, 7, 8))
+    mis0 = (mis.read_bytes(), mis.stat().st_mtime_ns)
+    out = cli_mod._sync_memory_dir(memdir)
+    assert out["error"] is None, out
+    assert _norm(out["mtype_normalised"]) == [("savestate_cq_0707", "project", RS)], \
+        f"{leg} bridge counted a misfiled savestate_* stem: {out['mtype_normalised']}"
+    assert "savestate_misfiled" not in (out["report"] or ""), out["report"]
+    if leg == "daemon":
+        dm.stop_daemon(root)
+    got = _mtypes(root)
+    assert got["savestate_misfiled"] == "project", \
+        f"misfiled feedback/savestate_misfiled.md stored as {got['savestate_misfiled']!r}"
+    assert got["savestate_cq_0707"] == RS, got
+    res = memory_layout.normalise_savestate_types(memdir, apply=True)
+    assert [e["id"] for e in res] == ["savestate_cq_0707"], res
+    assert (mis.read_bytes(), mis.stat().st_mtime_ns) == mis0, "the misfiled file was rewritten"
+
+
+def test_every_production_memory_bridge_call_names_its_marker_roots():
+    """The predicate's memdir is the bridge's DIR target (`_OrganisedDirs.is_savestate`); a
+    direct `ingest_gmd_paths(..., as_memory=...)` caller that names no `marker_roots` bounds
+    each file by its own folder, so `feedback/savestate_x.md` would read as a top-level
+    save-state (green-264's flag). Pins that every such call in `src/` passes `marker_roots`
+    -- the three today: the in-process CLI leg, the daemon's ingest op, `sessions index`."""
+    import ast
+    src = Path(__file__).resolve().parent.parent / "src" / "refmatrix"
+    calls, bare = [], []
+    for f in sorted(src.rglob("*.py")):
+        for node in ast.walk(ast.parse(f.read_text(encoding="utf-8"))):
+            if not (isinstance(node, ast.Call) and getattr(node.func, "id", None)
+                    == "ingest_gmd_paths"):
+                continue
+            kw = {k.arg for k in node.keywords}
+            if "as_memory" not in kw:
+                continue                     # a doc ingest: no memory rows, no save-state rule
+            calls.append(f"{f.name}:{node.lineno}")
+            if "marker_roots" not in kw:
+                bare.append(f"{f.name}:{node.lineno}")
+    assert len(calls) >= 3, f"expected the CLI, daemon and sessions callers, found {calls}"
+    assert not bare, f"as-memory ingest_gmd_paths calls with no marker_roots: {bare}"

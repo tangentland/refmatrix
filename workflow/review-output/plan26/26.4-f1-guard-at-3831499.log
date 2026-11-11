@@ -1,0 +1,14 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /Volumes/littlebig/refmatrix-plan26-4
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collecting ... collected 23 items / 18 deselected / 5 selected
+
+tests/test_savestate_mtype.py::test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[True-inproc] PASSED [ 20%]
+tests/test_savestate_mtype.py::test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[True-daemon] PASSED [ 40%]
+tests/test_savestate_mtype.py::test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[False-inproc] PASSED [ 60%]
+tests/test_savestate_mtype.py::test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[False-daemon] PASSED [ 80%]
+tests/test_savestate_mtype.py::test_every_production_memory_bridge_call_names_its_marker_roots PASSED [100%]
+
+====================== 5 passed, 18 deselected in 18.34s =======================
