@@ -18,6 +18,7 @@ rel: depends-on -> [[refmatrix/adr-0005-memory-dir-layout#newest]]
 rel: depends-on -> [[task-26.1-layout-module-and-index-walk]]
 rel: depends-on -> [[task-26.2-bridge-move-safety]]
 rel: related-to -> [[task-26.5-memory-organise-verb]]
+rel: related-to -> [[deferral_registry]]
 
 TDD RED only, on branch `task-26.4-savestate-mtype-normalisation` in the clone
 `/Volumes/littlebig/refmatrix-plan26-4`, base `f7c0d39`. No `src/` change. One new file,
@@ -67,6 +68,8 @@ that answers the same prompt is the control. Task 25.1 depends on this test.
 - AC-4's `organise --check` line `folder/type mismatch`. That is 26.5 AC-2.
 
 Both need the organise verb, and 26.5 depends on 26.4.
+
+Until 26.5's organise calls it, `normalise_savestate_types` has no production caller. It is registered as `scaffold-no-caller` in `workflow/deferral_registry.md`. The row graduates when 26.5's `rmx memory organise --apply` calls it and prints its list. Owner: plan-26 26.5. The team lead approved this seam on 2026-11-11.
 
 ## Spec ambiguity left unpinned {#ambiguity}
 
