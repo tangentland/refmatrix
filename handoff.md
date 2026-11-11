@@ -38,15 +38,17 @@ rel: depends-on -> [[impl-task-user-level-state-commands#deploy-cleanup]]
 
 ## Open items {#open}
 
-- **User to run:** the fleet command cleanup for the 7 repos that TRACK `/save-state` +
-  `/recall-state` — script `/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/7efc36ce-3694-46b6-b30c-31160ae25396/scratchpad/fleet-command-cleanup.sh`
-  (trunk commits in throwaway worktrees for cat-herder, cliquedb, cliquet, prep_prolific,
-  thiquet; on the current branch for atldb, portal). The 6 untracked copies (atlftpd, orderly,
-  viascope) are deleted; all 40 copies backed up in `~/.refmatrix/backups/commands/fleet-0.82.0/`.
-- **User to commit** in the fleet repos: the hook install's `.claude/settings.json`,
-  `.claude/rmx-hooks.json`, `.refmatrix/CLAUDE.md` (and viascope's `settings.local.json`).
-- **Recount** `…` values in the refmatrix memdir sidecar after the next save-state (bug-199).
-- **`/mcp` reconnect** in every open client to load 0.82.0's MCP server.
+- **Release items closed (2026-11-11):** fleet command cleanup committed in the 7 tracking repos
+  (trunks: cat-herder `09a4997`, cliquedb `e946d0d`, cliquet `d5a4bc7`, prep_prolific `1d48803`,
+  thiquet `c74f571`; current branch: atldb `fc8ee67`, portal `4b104b1c`); hook-install files
+  committed by pathspec (cliquedb `b4a66e2`, atldb `83fcc1e`, viascope `5244c8720`, cliquet
+  `41aa6db`); `/mcp` reconnected here; bug-199 re-counted after a save-state (0 `…`, 9/9 held).
+- **Not pushed** in any fleet repo — the user pushes. cliquedb's `origin/main` still carries the
+  pair until `e946d0d` is pushed; the feature branches (gmd-conformance-sweep x3, nr-native-recast,
+  cliquedb's 10 agent worktrees) drop it when they merge their trunk.
+- **Left uncommitted on purpose:** orderly's hook files (the repo has no commits yet) and
+  viascope's `.claude/settings.local.json` (it carried someone else's uncommitted edits).
+- **Other open clients** still need `/mcp` reconnect for 0.82.0's MCP server.
 - **Store derive (done 2026-11-11):** no force reingest — only pagerank's code had moved
   (ingest/semantic/embed are version-label drift; gmd re-derived at 0.82.0). `rmx pagerank`:
   85,400 -> 101,784 scored nodes (graph grew 86.9k -> 112.4k entities since 0.77.1).
