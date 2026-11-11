@@ -47,8 +47,13 @@ rel: depends-on -> [[impl-task-user-level-state-commands#deploy-cleanup]]
   `.claude/rmx-hooks.json`, `.refmatrix/CLAUDE.md` (and viascope's `settings.local.json`).
 - **Recount** `…` values in the refmatrix memdir sidecar after the next save-state (bug-199).
 - **`/mcp` reconnect** in every open client to load 0.82.0's MCP server.
-- **Store derive:** `rmx daemon status` here says gmd/pagerank are behind code
-  (`rmx reingest --force`) and memory-compile has no stamp — pre-existing, not run.
+- **Store derive (done 2026-11-11):** no force reingest — only pagerank's code had moved
+  (ingest/semantic/embed are version-label drift; gmd re-derived at 0.82.0). `rmx pagerank`:
+  85,400 -> 101,784 scored nodes (graph grew 86.9k -> 112.4k entities since 0.77.1).
+  `rmx memory compile --apply`: 57 subjects (0 unlabeled, 262 of 278 memories), 30 July-era
+  subjects marked stale (15 `unlabeled-N` + junk labels; rows kept), declared subject untouched.
+  A few new labels are weak (`github-0e9e309f`, `github-bca1c694`, `allowed`, `cwd`, `store`) —
+  rename via `focus change-subject` if wanted.
 - **Open rows:** bug-201 (rich eats `[daemon]`), 203 (`sync -i` purges on the replica), 206
   (in-place dropped heading's anchor lingers), 207 (in-process sync never closes its Store), 208
   (non-atomic save-state write — before 26.5), 209 (`--check` blind to `.git/hooks`), 210 (26.2

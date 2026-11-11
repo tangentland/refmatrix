@@ -1,0 +1,115 @@
+scope memory · 278 candidates · 278 embedded · 971 informative concepts · 581 
+edges (318 concept-confirmed, 20 bridges)
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ subject                          ┃ size ┃ evidence (concept, lift)           ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ bridge                           │ 14   │ bridge×19.857, digest×19.857,      │
+│                                  │      │ handoff×19.857                     │
+│ CodeRankEmbed                    │ 14   │ CodeRankEmbed×19.857,              │
+│                                  │      │ benchmark×19.857,                  │
+│                                  │      │ csn_typescript×19.857              │
+│ testing                          │ 14   │ testing×19.857, tdd×19.857,        │
+│                                  │      │ accuracy×19.857                    │
+│ index_corruption                 │ 13   │ index_corruption×21.385,           │
+│                                  │      │ poisoned×21.385, held×14.256       │
+│ composite                        │ 13   │ composite×21.385, snippets×21.385, │
+│                                  │      │ workflow×21.385                    │
+│ negative_results                 │ 12   │ negative_results×23.167,           │
+│                                  │      │ Multi_word×23.167,                 │
+│                                  │      │ content_rank×23.167                │
+│ Tandem                           │ 11   │ Tandem×25.273, claude_code×25.273, │
+│                                  │      │ user_level×25.273                  │
+│ drop_in                          │ 9    │ drop_in×30.889, contract×30.889,   │
+│                                  │      │ learning×30.889                    │
+│ launchctl                        │ 8    │ launchctl×23.167, launchd×17.375,  │
+│                                  │      │ kickstart×17.375                   │
+│ semantic                         │ 7    │ semantic×39.714,                   │
+│                                  │      │ sub_Claude×26.476, bulk×26.476     │
+│ 0001_intuition_lance_integration │ 7    │ 0001_intuition_lance_integration×… │
+│                                  │      │ details×39.714, init×39.714        │
+│ bsd                              │ 7    │ bsd×39.714, Plan_12×39.714,        │
+│                                  │      │ plans×39.714                       │
+│ Editable                         │ 7    │ Editable×39.714, separate×19.857,  │
+│                                  │      │ venv×14.893                        │
+│ clustering                       │ 7    │ clustering×39.714, compile×39.714, │
+│                                  │      │ dotfile×39.714                     │
+│ ltm                              │ 7    │ ltm×39.714, edge_time×39.714,      │
+│                                  │      │ helix×30.889                       │
+│ Snapshot_tier                    │ 6    │ Snapshot_tier×46.333,              │
+│                                  │      │ architecture×23.167, single×15.444 │
+│ gmd                              │ 6    │ gmd×15.444, index×8.424,           │
+│                                  │      │ root×8.424                         │
+│ ingest_gmd                       │ 6    │ ingest_gmd×46.333,                 │
+│                                  │      │ reingest×46.333, rotation×10.296   │
+│ model_workers                    │ 5    │ model_workers×55.6, workers×41.7,  │
+│                                  │      │ model×33.36                        │
+│ channel                          │ 5    │ channel×55.6, channels×55.6,       │
+│                                  │      │ push×44.48                         │
+│ global_store                     │ 4    │ global_store×69.5,                 │
+│                                  │      │ memory_only×69.5, Global×39.714    │
+│ Dual_write                       │ 4    │ Dual_write×46.333, lance×26.062,   │
+│                                  │      │ duckdb×8.176                       │
+│ plane                            │ 3    │ plane×92.667, control×61.778,      │
+│                                  │      │ save_state×30.889                  │
+│ mcp                              │ 3    │ mcp×13.238                         │
+│ kickstart                        │ 3    │ kickstart×46.333, hub×16.353,      │
+│                                  │      │ start×15.444                       │
+│ RMXGREP_MODE                     │ 3    │ RMXGREP_MODE×92.667,               │
+│                                  │      │ escape×92.667, plain×92.667        │
+│ lint                             │ 3    │ lint×92.667, scope×61.778,         │
+│                                  │      │ get×26.476                         │
+│ egg_info_untracked               │ 3    │ —                                  │
+│ deploy_viascope_rmx              │ 2    │ —                                  │
+│ daemon_index_drift               │ 2    │ —                                  │
+│ stale_files                      │ 2    │ stale_files×92.667, jetsam×55.6,   │
+│                                  │      │ stale×34.75                        │
+│ daemon_shutdown_lock             │ 2    │ —                                  │
+│ daemon_signal_hang               │ 2    │ —                                  │
+│ daemon_sigabrt_diagnosed         │ 2    │ —                                  │
+│ store                            │ 2    │ store×10.296                       │
+│ no_silent_failures               │ 2    │ —                                  │
+│ identifier_expansion             │ 2    │ —                                  │
+│ cli_telemetry                    │ 2    │ —                                  │
+│ github-bca1c694                  │ 2    │ github×55.6, dev×34.75             │
+│ dense                            │ 2    │ dense×39.714                       │
+│ capture                          │ 2    │ capture×55.6                       │
+│ Cross_doc                        │ 2    │ Cross_doc×139.0, coref×139.0       │
+│ binding                          │ 2    │ binding×69.5, partition×15.444     │
+│ fork_safety                      │ 2    │ fork_safety×139.0                  │
+│ isolation                        │ 2    │ isolation×69.5                     │
+│ cwd                              │ 2    │ cwd×69.5, root×25.273,             │
+│                                  │      │ partition×15.444                   │
+│ measurement                      │ 2    │ measurement×39.714                 │
+│ hooks                            │ 2    │ hooks×23.167                       │
+│ collaboration                    │ 2    │ collaboration×139.0, screen×139.0, │
+│                                  │      │ tooling×55.6                       │
+│ git                              │ 2    │ git×25.273                         │
+│ planning                         │ 2    │ planning×139.0, measure×92.667,    │
+│                                  │      │ measurement×39.714                 │
+│ hard_deny                        │ 2    │ hard_deny×139.0, Guardrail×92.667  │
+│ approvals                        │ 2    │ approvals×139.0                    │
+│ allowed                          │ 2    │ allowed×92.667,                    │
+│                                  │      │ permissions×92.667, command×21.385 │
+│ reuse_shared_stoplist            │ 2    │ —                                  │
+│ cache                            │ 2    │ cache×69.5, local×46.333,          │
+│                                  │      │ only×19.857                        │
+│ github-0e9e309f                  │ 2    │ github×55.6, search×55.6           │
+└──────────────────────────────────┴──────┴────────────────────────────────────┘
+
+crosscutting (bridge score = df × idf ÷ spread):
+  save_state — 2 subjects, 6 memories (score 23.015)
+  mutation — 2 subjects, 5 memories (score 20.091)
+  push — 2 subjects, 5 memories (score 20.091)
+  rounds — 2 subjects, 5 memories (score 20.091)
+  save — 2 subjects, 5 memories (score 20.091)
+  harness — 2 subjects, 5 memories (score 19.179)
+  defect — 2 subjects, 4 memories (score 16.965)
+  kickstart — 2 subjects, 4 memories (score 16.965)
+  means — 2 subjects, 4 memories (score 16.965)
+  workers — 2 subjects, 4 memories (score 16.965)
+  helix — 3 subjects, 9 memories (score 15.437)
+  performance — 3 subjects, 8 memories (score 14.193)
+
+16 memory(ies) unclustered
+
+preview only — re-run with --apply to write subjects + part-of edges
