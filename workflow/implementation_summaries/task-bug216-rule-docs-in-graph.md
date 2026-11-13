@@ -470,6 +470,64 @@ command, the fix grepped back; `__pycache__` cleared after the batch (src clean 
    .claude/PROJECT_PROFILE.md --json` (it copies the catalog it is given again before opening).
    `bound_via_denotes` needs the derive op first. {#green-flag-ac6}
 
+### GREEN rev 5-6: R13, R14, R6b, R2 base {#green-rev6}
+
+Commits: `c44233b` (R13), `87b2ec3` (R13 on the rebuild only — d9bu retired
+`apply_log_delta` / `_apply_event_body`; the four branches `c44233b` added there are removed),
+`e26f0c9` (R14 + R6b + R2 base), `b556bf3` (regenerated CLI tree in docs/ARCHITECTURE.md). RED
+built against: `f79dab1`, `fa71087`, `4b4b96e`. {#green-rev6-commits}
+
+rel: implements -> [[task-bug216-rule-docs-in-graph#r13]]
+rel: implements -> [[task-bug216-rule-docs-in-graph#r14]]
+rel: implements -> [[task-bug216-rule-docs-in-graph#r6b]]
+rel: implements -> [[task-bug216-rule-docs-in-graph#r2-base]]
+
+- **R13.** `Store.clear_rel_evidence` logs `rel_evidence_clear{partition, file}`;
+  `add_pending_ref` / `delete_pending_ref` log `pending_ref` / `pending_ref_delete{partition,
+  s_kind, s, linkage, target_name, file, line[, ref, weight, detail]}` (source by kind + name,
+  never id, via `_log_pending`); `clear_pending_refs_for_file` logs `pending_refs_clear{partition,
+  file}`. `rebuild_index_from_log` applies the clear in log order against the `evidence` events
+  (same predicate: partition, file, `rel: ` detail) and folds pending ops with source
+  `tombstone`s in log order (purge_entity's pending delete), writing the survivors whose source
+  survives (`pending_refs`, `pending_refs_skipped_dead` in its counts). `dump_catalog_to_log`
+  re-emits live pending rows, so a facts.log compaction keeps them. The `pending_refs` schema
+  comment (both DDLs) now says the rows are rebuilt from facts.log. {#green-r13}
+- **R14.** `verbs.derive_denotes(root, *, partition=None, timeout=None)` = verb
+  `rmx_derive_denotes` over the `denotes_link` op (one attempt, `write=True`,
+  `DERIVE_DENOTES_TIMEOUT_S = 600`); CLI twin `rmx derive denotes` (partition from `rmx -p` or
+  `RMX_PARTITION`, else the daemon's) prints `added=… concepts=… targets=… multi_target=…`;
+  daemon down → `ClickException` naming the daemon, exit 1, nothing written; the MCP tool is
+  generated from the verb and returns `{"error": …}`. `CLI_MAP` entry, wiring `calls`. {#green-r14}
+- **R6b.** `_op_prestage_hashes` passes `ignored=` and returns `ignored` / `ignored_paths`; both
+  CLI prestage branches pass `ignored=` and print `render_ignored_line` on stdout. {#green-r6b}
+- **R2 base (AC-17).** `ignore_reason`'s segment rules read the parts below `base`, which now
+  DEFAULTS to `root`: every walker (watcher, sync, `ingest_path`, the tldr / semantic passes)
+  judges a project under `<x>/.hidden/` or `<x>/build/` by its own paths; `ingest-gmd <dir>` still
+  passes the target as `base`. {#green-r2-base}
+
+Results (logs in `workflow/review-output/bug216/`): R13 file at `4b4b96e` 4 passed
+(`r13-green-4b4b96e.log`); R14 / R6b / AC-17 + verb parity + docs-generated + replay: 198 passed
+(`r14-iter1.log`); full suite at `b556bf3`: **4 failed, 4435 passed, 1 skipped**
+(`rev6-full.log`) — `test_brief_real_daemon` and `test_task21_1_agent_usage_report` ×2 with the
+release-0.82.0 E lines, and `test_gmd_lint_requires_version` (clone directory name; 9 passed on a
+copy named `refmatrix`, `gmd-lint-requires-version-copy-rev6.log`). `lint-gmd.sh` exit 0 on that
+copy (`lint-gmd-rev6.log`). The earlier `#green-results` runs predate these commits. {#green-rev6-results}
+
+| mutation | killed by | log |
+|---|---|---|
+| R13: drop the `rel_evidence_clear` event | 2 (AC-14 changed doc, binds identically) | `mut-R13-clear.log` |
+| R13: drop the pending events | 3 (+ purged citer) | `mut-R13-pending.log` |
+| R13: the rebuild ignores the new ops | 3 | `mut-R13-rebuild.log` |
+| R2 base: no default `base` (absolute parts) | 8 (AC-17) | `mut-R2base.log` |
+| R14: the CLI swallows the daemon-down error | 1 | `mut-R14-cli-swallow.log` |
+| R14: the verb drops the counts | 3 (verb, CLI, MCP) | `mut-R14-verb-counts.log` |
+| R6b: the op does not collect `ignored` | 2 (op result, CLI daemon-up) | `mut-R6b-prestage-op.log` |
+
+{#green-rev6-mutations}
+
+Flags 5 and 6 of [[#green-flags]] are closed by R14 and R6b; flag 9 by R13. The R13 mutation run
+that hit red-216's in-flight test edits was discarded and re-run at `4b4b96e`. {#green-rev6-flags}
+
 ## AC-6 (live) {#ac6}
 
 (lead, after deploy and R4)
