@@ -5,7 +5,7 @@ title: "Task T0: the suite-trust sweep: nine instrument bugs and the plan-6/7/8/
 tags: [task, t0, tests, instrument, skipgate, flaky, plan-6, plan-7, plan-8, plan-15, bug-215, bug-170, bug-168, bug-155, bug-127, bug-130, bug-190, bug-091, bug-196]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   created: 2026-11-13
   updated: 2026-11-13
 ---
@@ -15,9 +15,10 @@ metadata:
 > Plan: the consolidated queue, track **T0 Instrument trust** ([[plan-review-2026-11-13#p1]]),
 > queue item 2, run in parallel with 26.5 ([[plan-review-2026-11-13#queue-body]]). Spec gap G5
 > ([[plan-review-2026-11-13#spec-gaps]]).
-> Status: **Drafting.** It is approved only after a clean ch-bsd spec round (the d9co route,
-> [[plan-review-2026-11-13#goal-horizon]]). The lead ruled on the five choices the first draft
-> raised, and on the r1 spec review's findings; [[#rulings]] and [[#rev-r1]] record them.
+> Status: **Approved** (2026-11-13) by the lead on the user's pattern (the d9co route,
+> [[plan-review-2026-11-13#goal-horizon]]) after ch-bsd r3 came back MEH-only; the MEH is folded
+> ([[#decision-approved]]). The lead's rulings on the first draft's choices and on each review
+> round are in [[#rulings]], [[#rev-r1]], [[#rev-r2]] and [[#rev-r3]].
 > Depends on: queue item 1 merged to `master` (bug-212, bug-216, 25.1 rev 7). Their branches
 > edit `src/refmatrix/store.py` and `src/refmatrix/hooks.py`, which T0.4 also edits. Every T0
 > branch starts from the `master` sha that holds those merges.
@@ -384,7 +385,19 @@ written ([[feedback_go_no_go_ranges_not_predrop]]). {#t0-3-lead}
   `T` is the R0 summed duration of the files that trial's processes run (the target's file
   included). Hitting the cap counts as a **failure**, recorded as `hang`, with `ps -o
   pid,etime,time,command` and `lsof -p <pid>` of every still-running process taken before it is
-  killed. A hang in the base trials counts toward the reproducer. {#t0-3-cap}
+  killed.
+
+  **A trial's outcome is the TARGET test's own** (r3 m-1):
+  - pass or fail is the target test's result, with its E line;
+  - a cap hit counts as the row's failure (`hang`) only if the target test had **not** finished,
+    as the `ps` record shows. A hang counted this way counts toward the reproducer in the base
+    trials and fails a fix attempt, like any failure;
+  - if the target test finished and only a background load process hung, the trial is **void**.
+    It is recorded (with the `ps`/`lsof` record), it is not counted, and it is re-run;
+  - at most 3 voids per load level. A fourth void at that level stops the level: it is reported
+    as **noisy** in the summary, with all its trial records, and the row stays at its prior status
+    (no reproducer is declared from that level, and a fix attempt run there neither passes nor
+    fails). {#t0-3-cap}
 - **Reproducer found:** ≥ 3 failures in 10 trials at base, each with the row's E line. If fewer
   than 3 fail, raise the load to 5 and then 8 concurrent processes. The first level that reaches
   3 out of 10 is the reproducer. {#t0-3-band-found}
@@ -992,9 +1005,12 @@ rel: derives-from -> [[bsd-spec-t0-7e67551]]
 
 ## Revision round r2 (2026-11-13) {#rev-r2}
 
-The ch-bsd spec review r2 of `7e67551..772803a` (`bsd-spec-t0-r2-772803a`, DIRTY 0B/2S/4M; all 16
-r1 findings closed, the 19-pin count confirmed) and the lead's rulings, all as recommended,
-folded:
+The ch-bsd spec review r2 of `7e67551..772803a` (DIRTY 0B/2S/4M; all 16 r1 findings closed, the
+19-pin count confirmed; persisted as `workflow/bullshit/2026-11-13-2335-spec-t0-r2-772803a.md`)
+and the lead's rulings, all as recommended, folded:
+
+rel: derives-from -> [[bsd-spec-t0-r2-772803a]]
+
 
 | finding | resolution | where |
 |---|---|---|
@@ -1006,6 +1022,28 @@ folded:
 | m-4 no GMD-gate precondition | R7.4 precondition: `./scripts/lint-gmd.sh` exits 0, else gate drift (never bug-155); AC-1.5 relies on it | [[#r7-4]], [[#ac-1-5]], [[#r7-6]] |
 
 {#rev-r2-body}
+
+## Revision round r3 (2026-11-13) {#rev-r3}
+
+The ch-bsd spec review r3 (confirm-lite) of `772803a..efe618c` came back MEH-only (0B/0S/1M),
+persisted as `workflow/bullshit/2026-11-13-2340-spec-t0-r3-efe618c.md`. Its one MEH, folded as
+the lead ruled:
+
+rel: derives-from -> [[bsd-spec-t0-r3-efe618c]]
+
+| finding | resolution | where |
+|---|---|---|
+| m-1 a background-process hang is charged to the row | a trial's outcome is the target test's own; a cap hit is the row's `hang` only if the target had not finished; a background-only hang voids the trial (recorded, re-run), at most 3 voids per load level, then the level is reported noisy and the row keeps its prior status | [[#t0-3-cap]] |
+
+{#rev-r3-body}
+
+## Decision {#decision}
+
+| date | decision | by | basis |
+|---|---|---|---|
+| 2026-11-13 | `metadata.status: approved` | the lead | Approved by the lead on the user's pattern (d9co route) after ch-bsd r3 MEH-only, `bsd-spec-t0-r3-efe618c`, MEH folded ([[#rev-r3]]) |
+
+{#decision-approved}
 
 ## Q8 note {#q8-b}
 
