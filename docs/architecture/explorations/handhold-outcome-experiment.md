@@ -77,8 +77,8 @@ profile, never hand-edited (generated, per [[constitution#no-workarounds]] and t
 
 ### Units and assignment {#assignment}
 
-- **Session-level randomisation for a fixed period** (user decision, Q-4: randomised, not opt-in)
-  across real work sessions in refmatrix and cliquedb (Q-5), arm drawn at SessionStart and
+- **Session-level randomisation for a fixed period** (user decision, Q4: randomised, not opt-in)
+  across real work sessions in refmatrix and cliquedb (Q5), arm drawn at SessionStart and
   recorded in the session's telemetry, so the comparison is within the same projects and weeks.
 - **Paired re-entry tasks** as a second, controlled leg: a task that a prior session left
   mid-flight (a real handoff), resumed after `/clear` under each arm by fresh agents on isolated
@@ -90,7 +90,7 @@ profile, never hand-edited (generated, per [[constitution#no-workarounds]] and t
 Each is a proxy for the backtrack-to-rebuild tax, read from transcripts and telemetry:
 
 1. **Orientation cost:** tool calls, tokens and wall time from a session (re)start — a new session
-   or a `/clear`, one measure with two triggers (user decision, Q-3: both are relevant) — to the
+   or a `/clear`, one measure with two triggers (user decision, Q3: both are relevant) — to the
    first productive edit or the first correct statement of the resume point.
 2. **Exploratory churn:** Read / Grep / Glob / `rmx grep` calls that touch a file and are not
    followed by an edit or a citation of that file within W prompts.
@@ -135,7 +135,7 @@ moved prompt_recall to pointers).
 
 ## Decisions (user, 2026-11-13) {#open}
 
-Asked as Q-3 to Q-5 in [[open-questions]]: the primary outcome is orientation cost at a session
+Asked as Q3 to Q5 in [[open-questions]]: the primary outcome is orientation cost at a session
 (re)start, new session and `/clear` alike; real sessions are randomised into arms for a fixed
 period; the projects are refmatrix and cliquedb.
 

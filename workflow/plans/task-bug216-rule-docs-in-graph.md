@@ -107,7 +107,7 @@ stays out. {#why-consistent}
 Every fleet store's `.refmatrix_ignore` carries the same `.claude` / `CLAUDE.md` lines (cliquedb,
 viascope, cliquet, atldb checked 2026-11-13). Changing them is a fleet action and the user's call;
 this task ships the mechanism (R1-R3) and a recommendation, not the edits.
-**Decided (user, Q-2): after bug-216 deploys, the `CLAUDE.md` ignore line is removed fleet-wide** (announced
+**Decided (user, Q2): after bug-216 deploys, the `CLAUDE.md` ignore line is removed fleet-wide** (announced
 first, each store's ignore file backed up), and each store's recount is reported.
 
 ## Out of scope {#out-of-scope}
