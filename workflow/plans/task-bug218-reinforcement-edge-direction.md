@@ -389,6 +389,7 @@ rel: related-to -> [[project_fleet_hooks_found_by_marker_not_hub]]
 | r2 M5 (R4's ambiguous count needs `facts.log`) | [[#r0b]] copies `facts.log`; [[#r4]] the `#`-in-name hint as a cross-check only, demoting to `ambiguous`, never promoting |
 | r2 M6 (the flag matrix) | [[#r4]] flag matrix; [[#ac-9]] flag rows + mutation |
 | lead: bug-185 AC-15's fixture | [[#files]] row; [[#done]] |
+| lead (spec-t4 `b13c611`): remove bug-185's `UNOWNED_REL_PRODUCERS` entry for `memory_link` and re-run AC-14/AC-15 | [[#files]] `ingest_gmd.py` row; [[#done]] |
 
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
@@ -412,6 +413,7 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 | `eval/reinforcement_bench.py`, `eval/reinforcement_csn_bench.py` | seed through the writers (R5); AC-7 runs |
 | `scripts/census_on_copy.py` (16.6's) or a scratch census script | R0b (read-only, copies only) |
 | `workflow/measurements/bug218-direction-census-<date>.md` (new) | AC-8 |
+| `src/refmatrix/ingest_gmd.py` (`UNOWNED_REL_PRODUCERS`, bug-185's, spec-wave-t4) | REMOVE the entry `("*", "concept", "memory", "bug-218")`. bug-185 pinned it to `memory_link`'s pre-R1 shape (concept side = the concept, entity side = the memory) with this task as owner. After R1, `memory_link` writes the GMD orientation and its own `memory link:` evidence row, so it is no longer an unowned producer |
 | `tests/` (bug-185's AC-15 test, spec-wave-t4 at `4133f35`) | bug-185 merges first and writes a `memory_link`-shaped edge through `Store.link` + `Store.add_evidence`; this task switches that fixture to the real `Store.memory_link` ([[#r1]]) and re-runs bug-185 AC-15 |
 | `workflow/bug_registry.md` | bug-218 row: premise corrected (two writers), status, fix sha; bug-223 row: fix sha; any sibling silent guard R7 finds, as its own row |
 
@@ -419,7 +421,8 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
 - RED run (AC-1) and GREEN run recorded under `workflow/review-output/`, mutation check noted.
 - Implementation summary at `workflow/implementation_summaries/task-bug218-reinforcement-edge-direction.md`.
-- bug-185's AC-15 fixture uses `Store.memory_link`, and bug-185 AC-15 re-run green after the
-  switch (log cited).
+- bug-185's AC-15 fixture uses `Store.memory_link`. bug-185's `UNOWNED_REL_PRODUCERS` entry for
+  `memory_link` is removed, and bug-185 AC-14 (every `rel:`-verb producer writes evidence, with
+  the unowned skip) and AC-15 are re-run green after both changes (logs cited).
 - Committed on branch `task-bug218-reinforcement-edge-direction`; merged `--no-ff` to `master`;
   the bug-218 row updated with the sha.
