@@ -1,18 +1,19 @@
 ---
 gmd: "0.1"
 id: task-bug216-rule-docs-in-graph
-title: "Task bug-216: the project's rule docs (CLAUDE.md, the project profile) reach the graph, and the gate fails when lint scope and ingest scope disagree"
+title: "Task bug-216: GMD rel: edges bind to the doc they cite — bare doc-id targets resolve doc-first, the rule docs reach the graph, and the gate checks both"
 tags: [task, bug-216, gmd, ingest, ignore, linkages, graph]
 metadata:
   node_type: task
   status: approved
   created: 2026-11-13
   updated: 2026-11-13
+  revision: 2
 ---
 
 # Task bug-216: the rule docs reach the graph {#root}
 
-> Status: Approved by the lead on the user's direction (2026-11-13: "lets fix 216"); decisions
+> Status: Approved by the lead on the user's direction (2026-11-13: "lets fix 216"); revision 2 ([[#rev-2]]) widens it to the misbound bare doc-id class; decisions
 > taken as the user would, with reasons. Fleet ignore files are NOT changed by this task
 > ([[#fleet]]); that is the user's decision.
 > Depends on: none.
@@ -123,3 +124,52 @@ this task ships the mechanism (R1-R3) and a recommendation, not the edits.
 | `scripts/check-gmd-parity.py` | the scope-parity check (R3) |
 | `scripts/check-rel-landing.py` (new) | R5 |
 | `docs/INTEGRATION.md` (ignore-file section) | document `!path` |
+
+## Revision 2 (2026-11-13, after ch-bsd `bsd-215m1`) {#rev-2}
+
+`bsd-215m1` showed the lead's first diagnosis was incomplete. The 66.9% the probe reported is real:
+of 5,431 `rel:` evidence rows in refmatrix, 3,662 (67.4%) land on a target with NO path, and at least
+1,909 of those cite a doc that IS ingested under exactly that id. Every such target doc has two
+entities of the same name — a `doc` with a path and a `concept` with none — and a bare doc-id link
+binds the concept. Anchored links (`[[doc#id]]`) bind correctly. The rule-doc exclusion (R1-R4) is a
+real but much smaller part. {#rev-2-finding}
+
+(Source: the ch-bsd report `bsd-215m1`, 2026-11-13; linked once persisted.)
+
+**Mechanism (code, `ingest_gmd._resolve_target_eid`):** after the batch dict, it tries
+`store.get_entity(kind, name)` for `("concept", "doc", "memory")` in that order. Concept-first is
+right for an anchor (`doc#id` is a concept node) and wrong for a bare doc id: a same-named concept
+(minted by the plain-wikilink `mentions` branch, `store.add_concept(target_doc)`, or by extraction)
+wins over the doc. The edge then reaches only other docs citing the same id, so 2-hop GMD metapaths
+measured co-citation, not item → cited doc. {#rev-2-mechanism}
+
+6. **R6 Bare doc-id targets bind the doc.** For a target with no `#anchor`, resolution order is
+   `doc`, `memory`, then `concept` (a concept only when no doc or memory of that name exists — a
+   GMD id that is only a concept). Anchored targets keep concept-first. The batch dict
+   (`eid_by_name`) obeys the same rule (it must not cache a concept id under a bare doc id that a
+   later file in the batch defines as a doc). Applies to `rel:` edges and to plain wikilinks'
+   resolution step alike. {#r6}
+7. **R7 Repair existing edges.** A re-ingest of a GMD doc rewrites its `rel:` edges to the bound
+   doc and removes its rows to the path-less same-named concept (evidence rows too). After deploy
+   the lead runs a forced GMD re-ingest of `docs/`, `workflow/` and the memory bridge (announced,
+   backed up, through the daemon), then the recount. No direct DB surgery. {#r7}
+8. **R8 The recount classifies binding.** `check-rel-landing.py` (R5) also classifies every landed
+   row by its target: doc / memory with a path, anchor node with a path, path-less concept that
+   shares its name with an ingested doc (MISBOUND), other path-less concept. {#r8}
+
+**Acceptance (rev 2):**
+
+- **AC-7 (R6).** Throwaway store: doc A carries `rel: derives-from -> [[b-doc]]` and a plain
+  `[[b-doc]]` mention; doc B has `id: b-doc`. Ingest A before B, B before A, and both in one batch:
+  in every order the `derives-from` row's `entity_id` is B's `doc` entity (kind `doc`, B's path),
+  never a path-less concept. An anchored `[[b-doc#sec]]` still binds B's `sec` node. A memory
+  target (`--as-memory`) binds the memory. Mutations: restore concept-first for bare ids; let the
+  batch dict cache the concept. {#ac-7}
+- **AC-8 (R7).** A store holding a misbound row (built at HEAD), re-ingested with the fix: the row
+  to the path-less concept and its evidence are gone; the row to B's doc exists. {#ac-8}
+- **AC-9 (R8).** On a fixture catalog the recount's binding classes equal hand-computed values,
+  including a MISBOUND row. {#ac-9}
+- **AC-6 (live) amended:** after the forced re-ingest, MISBOUND rows fall to 0 (or each remaining
+  one is listed with why), and the rule-doc groups fall from 209 / 38 to 0. {#ac-6-rev}
+
+Out of scope stays as written; the reinforcement direction is bug-218.

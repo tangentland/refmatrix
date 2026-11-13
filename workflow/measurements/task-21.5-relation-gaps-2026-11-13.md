@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: measurement-task-21.5-relation-gaps-2026-11-13
-title: "Relation gaps for relevance matching (2026-11-13): code-structure 2-hop and GMD-provenance combos beat chance; GMD rel: gap corrected to the rule docs (bug-216)"
+title: "Relation gaps for relevance matching (2026-11-13): code-structure 2-hop and GMD-provenance combos beat chance; GMD rel: gap = bare doc-id targets bound to a same-named concept (bug-216)"
 tags: [measurement, plan-21, task-21.5, graph, linkages, gmd, relevance]
 metadata:
   node_type: measurement
@@ -69,11 +69,15 @@ Files not already reachable by the ≤ 2-hop graph.
 
 ## GMD rel: edges missing from entity_links {#gmd-gap}
 
-> **Correction (lead, 2026-11-13): the 66.9% / 80.8% below is a probe artefact.** The ingester stores
-> `rel: X verb -> Y` as `entity_links(entity_id = Y, concept_id = X)`; this probe looked source → target. Recounted
-> against the ingester's own evidence rows (`linkage_evidence` file + line): 90.2% of 4,490 authored wikilink `rel:`
-> lines landed. The real gap (bug-216) is 247 lines into CLAUDE.md and the project profile, which the ingest scope
-> excludes. The metapath and combo results above were computed in the store's own direction and are unaffected.
+> **Correction (2026-11-13, after ch-bsd `bsd-215m1`; supersedes the lead's first note).** The 66.9% / 80.8%
+> is real. Edges are stored `rel: X verb -> Y` as `entity_links(entity_id = Y, concept_id = X)`, but this probe
+> already walked both directions, so direction is not the cause. The cause: a bare doc-id target binds a
+> path-less CONCEPT with the doc's name instead of the doc (`ingest_gmd._resolve_target_eid` tries concept
+> first): 67.4% of 5,431 `rel:` evidence rows land path-less, ≥ 1,909 of them on a doc that IS ingested.
+> Consequence for this measurement: the 2-hop GMD-provenance combos below (derives-from< + related-to< /
+> part-of>) largely measure CO-CITATION of the same id, not item → cited doc; their "strongest precision"
+> reading and the "highest leverage, cheap" derive line in [[#shortlist]] are withdrawn until bug-216 is
+> fixed and phase 2 re-run. The code-structure metapaths (defines / called_by) are unaffected.
 > {#gmd-gap-correction}
 
 refmatrix: 3,376 cross-file `rel:` lines resolve; 2,257 (66.9%) have no `entity_links` edge from
