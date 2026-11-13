@@ -1,4 +1,14 @@
-## contra-b: context delivery (T3)   (files read: 31)
+---
+gmd: "0.1"
+id: pop-2026-11-13-contra-b
+title: "contra-b: context delivery (T3)   (files read: 31)"
+tags: [plan-review, pop-2026-11-13, report]
+metadata:
+  node_type: report
+  created: 2026-11-13
+---
+
+## contra-b: context delivery (T3)   (files read: 31) {#root}
 
 Sources: dev master `0d2a270`. Plan-10 rev 5 is read from the plan-10 clone, branch `task-plan10-revival` (`c04c9b9`), cited below as `[p10]`. 25.1 rev 8 is read from the 25.1 clone, branch `task-25.1-recall-hook-byte-budget` (`69da299`), cited as `[p25]`. The clones have their own commit histories: neither `c04c9b9` nor `4f95c23` exists in the dev repo.
 
@@ -29,7 +39,7 @@ Sources: dev master `0d2a270`. Plan-10 rev 5 is read from the plan-10 clone, bra
 
 ### CB-5 [K3] Rev 8 relies on 10.6 and 10.3, which come after it; the draft queue leaves out 10.3 and 10.5
 - side A: `[p25] :804` "Kind labels (10.6) apply at every tier". `:808` spill page "removed at compaction". `:820` AC-18 "the page is gone after a compaction marker". `rmx grep`/`grep` finds no `last_marker` or `compact-marker` anywhere in `src/refmatrix/`, so the marker is not built.
-- side B: `[p10] task-10.6:18` "Depends on: [[task-25.1…]] merged". `[p10] plan-10:178` "10.3 | **Compaction marker** — 19.6 R8a's writer". 25.1 has no edge to 10.3.
+- side B: `[p10] task-10.6:18` "Depends on: `task-25.1…` merged". `[p10] plan-10:178` "10.3 | **Compaction marker** — 19.6 R8a's writer". 25.1 has no edge to 10.3.
 - also: draft `:149` "25.1 rev 8 → 10.6 → 10.4 → 10.2 → handhold" omits 10.3 and 10.5. But `[p10] task-10.6:19-20` needs 10.3 for the composite, and `[p10] plan-10:191` "10.2 starts only on 10.5's GO". `[p10] task-10.2:18-19` "the 50-probe read-back test is still to run".
 - proposed resolution: 10.3 goes first (plan-10 `:183` already says it "can start now"). 25.1 rev 8 gains `depends-on 10.3`, and its label clause is restated so 10.6 adds labels later. The queue line becomes 10.3 ∥ 10.5 probe → 25.1 rev 8 → 10.6 → 10.4 → 10.2.
 

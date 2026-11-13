@@ -1,4 +1,14 @@
-## contra-e: cross-cutting governance   (files read: ~32, plus the frontmatter of ~70 task specs and `git log --merges master`)
+---
+gmd: "0.1"
+id: pop-2026-11-13-contra-e
+title: "contra-e: cross-cutting governance   (files read: ~32, plus the frontmatter of ~70 task specs and `git log --merges master`)"
+tags: [plan-review, pop-2026-11-13, report]
+metadata:
+  node_type: report
+  created: 2026-11-13
+---
+
+## contra-e: cross-cutting governance   (files read: ~32, plus the frontmatter of ~70 task specs and `git log --merges master`) {#root}
 
 Repo state when I read it: master = origin/main = `0d2a270`. Everything was read-only; this file is the only write.
 
@@ -22,7 +32,7 @@ Repo state when I read it: master = origin/main = `0d2a270`. Everything was read
 - proposed resolution: split 23.5 R9/AC-9 out to run after 26.7, or move 26.7 ahead of item 3.
 
 ### Ce-4 [K3] 25.1 is built and merging first, ahead of its recorded dependencies 26.7 and plan-27
-- side A: `workflow/plans/plan-25-cliquedb-field-report.md:134` "3.7 ──► plan-26 ──► plan-27 ──► 25.1 ──► 25.2 ──► 25.3 ──► (plan-24)". `:379-381` "the build order stays [[#ordering]] (3.7, plan-26, plan-27, then 25.1-25.5, before plan-24), and every task still records RED at HEAD after its dependencies merge". `workflow/plans/plan-25-cliquedb-field-report-tasks/task-25.1-recall-hook-byte-budget.md:22-24` "plan-26 merged (… its 26.7 regroups `MEMORY.md`, which R3's curated-hook lookup reads)", and `:34` `rel: depends-on -> [[task-26.7-memory-index-by-subject]]`.
+- side A: `workflow/plans/plan-25-cliquedb-field-report.md:134` "3.7 ──► plan-26 ──► plan-27 ──► 25.1 ──► 25.2 ──► 25.3 ──► (plan-24)". `:379-381` "the build order stays `#ordering` (3.7, plan-26, plan-27, then 25.1-25.5, before plan-24), and every task still records RED at HEAD after its dependencies merge". `workflow/plans/plan-25-cliquedb-field-report-tasks/task-25.1-recall-hook-byte-budget.md:22-24` "plan-26 merged (… its 26.7 regroups `MEMORY.md`, which R3's curated-hook lookup reads)", and `:34` `rel: depends-on -> [[task-26.7-memory-index-by-subject]]`.
 - side B: `plan-review-2026-11-13.md:107` puts T1 ("25.1 rev 7") at queue position 1 (`:146`), and `:151` puts 26.7 and plan-27 at position 5. `handoff.md:49` "25.1: GREEN `16ace00`; rev 7 … GREEN in flight".
 - I found no recorded decision relaxing this, in `workflow/open-questions.md`, the 25.1 spec, `handoff.md` or `workflow/past_handoffs/019-0830-pipeline-paused_2026-11-11.md`.
 - why it matters: R3's curated-hook lookup was built against a MEMORY.md layout that 26.7 will change. The cliquedb after-check assumes plan-27 migrated cliquedb's dir first (`plan-25…md:141`).

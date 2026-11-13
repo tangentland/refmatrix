@@ -1,4 +1,14 @@
-# spec-t2 report: T2 memory organisation (G4, G6, G15, G19)
+---
+gmd: "0.1"
+id: pop-2026-11-13-spec-t2
+title: "spec-t2 report: T2 memory organisation (G4, G6, G15, G19)"
+tags: [plan-review, pop-2026-11-13, report]
+metadata:
+  node_type: report
+  created: 2026-11-13
+---
+
+# spec-t2 report: T2 memory organisation (G4, G6, G15, G19) {#root}
 
 ## Commits
 
