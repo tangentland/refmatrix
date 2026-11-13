@@ -12,7 +12,8 @@ metadata:
 
 Every question the lead asks the user gets an id here before it is asked: `Q<n>`, a simple counter
 that starts at 1 in each session and increments by one, never reused within the session (user,
-2026-11-13). Rows are grouped by session, so `(session, Q<n>)` is unique across sessions. Each reply that asks anything ends with the ids still open. The user answers by id
+2026-11-13). Rows are grouped by session, so `(session, Q<n>)` is unique across sessions. A question is shown
+with its id the first time it is asked (`**Q9** — <question>`); later mentions use the id. Each reply that asks anything ends with the ids still open. The user answers by id
 ("Q3: b") at any time; an unqualified "yes" answers only the single question it follows, and
 when several are open the lead asks which. An answer the lead had to INTERPRET is recorded as
 `assumed` and stays open until confirmed. Answered rows keep the user's answer and what was done.
