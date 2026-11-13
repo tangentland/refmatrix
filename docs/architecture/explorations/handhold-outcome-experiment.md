@@ -19,11 +19,13 @@ measurements refute one delivery mechanism (ambient push injection) and one meas
 (attribution by term or clique overlap), not the charter. The user: "add the exploration". This
 document designs the experiment that COULD confirm or refute the premise.
 
-rel: derives-from -> [[measurement-task-21.5-r12-pilot-2026-11-13]]
-rel: derives-from -> [[measurement-task-21.5-term-clique-2026-11-13]]
-rel: derives-from -> [[measurement-task-21.5-relation-gaps-2026-11-13]]
-rel: related-to -> [[task-21.5-tool-used-signal]]
 rel: related-to -> [[project_refmatrix_mission_charter]]
+
+Sources (on the `task-21.5-tool-used-signal` branch in `/Volumes/littlebig/refmatrix-plan21-5` until 21.5 lands on master; the
+`rel:` edges to them are added at that merge): the task 21.5 spec, and the measurements
+`workflow/measurements/task-21.5-r12-pilot-2026-11-13.md` (`6725801`),
+`task-21.5-term-clique-2026-11-13.md` (`6af0d92`, `e73e28f`) and
+`task-21.5-relation-gaps-2026-11-13.md` (`05bdad8`). {#sources}
 rel: related-to -> [[exploration-session-phased-context]]
 rel: related-to -> [[plan-25-cliquedb-field-report]]
 
@@ -41,16 +43,16 @@ not the claim; it is one weak proxy for it. {#question-note}
 
 - **Push injection is mostly unused.** R12 pilot: of `scan_prompt` headline pairs, 8 of 113
   CAUSED+INFORMED (0.07); 90% of headline credits are touches the agent would have made anyway, or
-  coincidences ([[measurement-task-21.5-r12-pilot-2026-11-13#verdict]]). `scan_prompt` is most of
+  coincidences (R12 pilot `#verdict`). `scan_prompt` is most of
   the ~8,000 delivered units in three weeks.
 - **Pulled and boundary handholds look better, on tiny samples:** prompt_recall 2/4, context 1/3,
-  session_start 1/1 CAUSED+INFORMED ([[measurement-task-21.5-r12-pilot-2026-11-13#breakdowns]]).
+  session_start 1/1 CAUSED+INFORMED (R12 pilot `#breakdowns`).
 - **Topical overlap is not use.** Term and clique overlap (three clique sources) add nothing over
   the control after stratification, and a placebo from an unrelated session scores as high
-  ([[measurement-task-21.5-term-clique-2026-11-13#not-signal]]).
+  (term/clique `#not-signal`).
 - **Typed structure predicts relevance; vocabulary does not.** Code-structure 2-hop paths and
   GMD-provenance combos beat chance 2-5×; co-mention reach sits at chance
-  ([[measurement-task-21.5-relation-gaps-2026-11-13#shortlist]]). Most authored GMD `rel:` edges
+  (relation gaps `#shortlist`). Most authored GMD `rel:` edges
   never reach the graph (bug-216).
 - **Not measured at all:** cross-session continuity (save-state / recall-state / focus), behaviour
   a feedback memory changes without being named, and any outcome (time, tokens, re-derivation,
