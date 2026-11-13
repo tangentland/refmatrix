@@ -211,6 +211,18 @@ mints a same-named concept. {#rev-3-decision}
   (R8) reports misbound rows that now reach a doc via `denotes` as BOUND-VIA-DENOTES, and rows
   reaching nothing fall to the unresolved residue; the rule-doc groups fall to 0 after R4. {#ac-6-rev3}
 
+**Contracts confirmed (lead, 2026-11-13, from `red-216` rev 2/3 RED `4c28cbb`):** the derive op is
+`OPS["denotes_link"]` returning `{"added": n}`; `denotes` is stored like `rel:` edges (concept side =
+the concept, entity side = the doc) and covers the concept's `same_as` group (`b-doc`, `b_doc`,
+`b doc`); the recount's `--json` adds `stale` and `binding` {`doc_or_memory`, `anchor_node`,
+`misbound`, `bound_via_denotes`, `other_concept`} with `sum(binding) == landed` and `authored =
+landed + landed_other_line + stale + file_not_ingested + target_unresolved`; AC-10 observes the walk
+via `store.content_rank`, neighbours via `graphread.neighbors_payload(…, depth=1)`, PageRank via
+`pagerank.build_adjacency`. **Finding:** a GMD doc whose TITLE spells its hyphenated id mints the
+same-named path-less concept by itself (title terms) — a second producer of misbound concepts;
+R7's `denotes` link covers it, and the live recount (AC-6) reports how many concepts came from
+titles. {#rev-3-contracts}
+
 ## Revision 4 (2026-11-13, lead decisions on red-216's RED ambiguities) {#rev-4}
 
 `red-216` committed RED for AC-1..AC-5 (`a08d80b`, `05628d2`; 40 failed, 18 guards pass; a scratch
