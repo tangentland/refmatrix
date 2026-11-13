@@ -227,7 +227,9 @@ document, and its per-document hold has the same cause: 29 s for one session car
    - (a) **the same catalog**: the canonical dump ([[#ac-2]]) of `entities`, `entity_links`,
      `linkage_evidence`, `bitmap_fragments`, `memory_content` and (round 2) bug-216's
      `pending_refs`, keyed by name. Also the same `IngestStats` (round 2: its `as_dict()` carries
-     bug-216's `pending_recorded`, `pending_resolved`, `pending_dropped` and `denotes_added`),
+     bug-216's `pending_recorded`, `pending_resolved`, `pending_dropped` and `denotes_added`;
+     the new `rel_unlink_skipped_unowned` ([[#r10]]) is 0 on every golden fixture, and HEAD's
+     golden has no such key, so the comparison takes an absent key as 0),
      the same `gmd_content_hash` stamps once the call returns. Resume behaviour: a hash is
      written only after that document's pass 2 INCLUDING its tail (R2 steps 8-9; round 2, lead
      ruling, [[#open-finish-stop]]), so a stamped document is always complete
@@ -423,12 +425,28 @@ document, and its per-document hold has the same cause: 29 s for one session car
     - **Both contexts.** On the sync path `purge_path` has already removed the doc's node
       entities and their links, so the replace finds nothing to do and is a no-op there. On the
       job path (no purge) it is what removes the stale edge.
-    - **The limit, and the census that bounds it.** An edge with the same key that another
-      producer wrote WITHOUT an evidence row cannot be told apart from a stale `rel:` edge, so
-      it would be unlinked. At RED the implementer walks every `link` / `bulk_link` caller in
-      `src/` whose linkage can equal a GMD `rel:` verb, records which ones write evidence, and
-      lists them in the implementation summary. One that writes no evidence is reported to the
-      user before GREEN, and R10 is not narrowed silently to fit it.
+    - **Every producer of a `rel:`-verb edge writes evidence (lead decision, 2026-11-13;
+      [[#rev-round-2-lead]]).** An edge with the same key that another producer wrote WITHOUT
+      an evidence row cannot be told apart from a stale `rel:` edge. So the rule is that no
+      such producer exists, the same fix bug-218 S3 applies to `memory_link`. There is no
+      user stop:
+      - **Census, at RED.** The implementer walks every `link` / `bulk_link` / `link_batch`
+        caller in `src/` whose linkage can equal a GMD `rel:` verb, literal or computed. Each
+        call site is classified as writes-evidence / no-evidence-in-reach /
+        no-evidence-unowned and listed in the implementation summary with its path, symbol
+        and sha.
+      - **In reach: fixed here.** A no-evidence producer is in reach when its code has no
+        other open owning plan or task. Each one gains an evidence write as part of this task
+        ([[#ac-14]] (a): a test per producer, plus a mutation).
+      - **Unowned: skipped and counted.** A no-evidence producer that another plan or task
+        owns (for example `memory_link`, owned by bug-218) gets its own bug row in
+        `workflow/bug_registry.md`. It is also entered in
+        `ingest_gmd.UNOWNED_REL_PRODUCERS`, a list of signatures:
+        `(linkage, source kind, target kind)` plus the owning bug id. Until that bug is fixed,
+        R10 does not unlink an otherwise-stale key whose edge matches a listed signature. It
+        counts it in a new `IngestStats.rel_unlink_skipped_unowned`, printed in the report
+        whenever it is nonzero ([[#ac-14]] (b)). When the owning fix lands, its row is removed
+        from the list.
     - **Out of scope:** stale edges already in live stores from earlier re-ingests. Each one
       has no evidence row, so no key names it. Their census and repair belong with plan-22's
       dangling classes, next to bug-219's census input (plan review L6). This task stops new
@@ -766,6 +784,26 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
       - the stamps deferred to `gmd_finish` (option 2's shape). After the mid-batch stop `d1`
         and `d2` are unstamped, and the re-run re-processes them (`skipped_unchanged == 0`).
     {#ac-13}
+14. **AC-14 (every `rel:`-verb producer writes evidence; the unowned skip; round 2, lead
+    decision).**
+    - (a) **Per in-reach producer** that [[#r10]]'s census found writing no evidence: run it on
+      a throwaway store, and its edge has an evidence row naming its producer. Mutation per
+      producer: remove its evidence write → FAILS. If the census finds none, the
+      implementation summary says so, and (a) is the census record. It is not a vacuous pass,
+      because (b) below and AC-11 still exercise R10.
+    - (b) **Unowned skip.** The test adds a signature to `UNOWNED_REL_PRODUCERS` for its own
+      run, through the test-side fixture, not a production default. It writes an edge
+      matching that signature, with a key that doc `a`'s v1 `rel:` line states and v2 drops.
+      After v2 the edge is still linked and `rel_unlink_skipped_unowned == 1`. An edge with the
+      same key but a signature not in the list is unlinked. Mutations, each FAILS: the
+      signature check removed (the edge is unlinked); the counter not incremented (the count
+      is 0); the signature matched on linkage alone (the non-listed edge is kept).
+    - (c) **The census is recorded.** The implementation summary's census table lists every
+      call site with its class. Each `no-evidence-unowned` site has a bug-row id that exists
+      in `workflow/bug_registry.md` and an entry in `UNOWNED_REL_PRODUCERS`. A unit test
+      asserts that every entry's bug id has a registry row whose status is not `fixed`, so a
+      fixed owner's entry cannot linger.
+    {#ac-14}
 
 ## Merge order {#merge-order}
 
@@ -800,9 +838,12 @@ rel: depends-on -> [[plan-review-2026-11-13#queue]]
   `idx_evidence_file`, ONLY if R9's band calls for it.
   - (`add_memory`'s switch is 26.2 n1's, already merged per the dependency.)
 - New `tests/test_bug185_bulk_gmd_ingest.py`, `tests/test_bug186_replay_link_weight.py` and
-  (round 2) `tests/test_bug221_rel_replace.py` (AC-11, AC-12),
+  (round 2) `tests/test_bug221_rel_replace.py` (AC-11, AC-12, AC-14),
   plus `tests/fixtures/bug185_*` (generated fixtures and the HEAD golden).
-- `workflow/bug_registry.md` (the bug-185, bug-186 and bug-221 rows), and the implementation summary
+- `src/refmatrix/ingest_gmd.py` (round 2): `UNOWNED_REL_PRODUCERS` and the R10 skip + counter;
+  each in-reach no-evidence producer's file gains its evidence write ([[#ac-14]] (a)).
+- `workflow/bug_registry.md` (the bug-185, bug-186 and bug-221 rows, plus one row per unowned
+  no-evidence producer the census finds), and the implementation summary
   `workflow/implementation_summaries/bug-185-bulk-gmd-ingest.md`, which records AC-4's table
   and the RED sha. {#files-list}
 
@@ -1059,6 +1100,8 @@ rel: implements -> [[bug_registry]] {bug: "bug-221"}
 | d9bu wins over bug-216 R13's "both replay paths": rebuild only | [[#r3]] (c), [[#r6]], [[#ac-8]], [[#ac-11]] | `apply_log_delta` has no caller in `src/`; no spec extends a retired path |
 | R9's 50 ms band accepted | [[#r9]] | pre-registered before any run |
 | `#open-finish-stop` = option 1 (the first ruling, option 2, withdrawn) | [[#open-finish-stop]], [[#r2]] steps 8-9, [[#r7]], [[#ac-13]] | a stamped document is always complete; per-document progress survives every stop; option 2 livelocks under 23.3's `budget_s` |
+| r1 S4 wording: `stamp_derive("gmd")` is the LAST WRITE of `gmd_finish`, not a step of its own | [[#r7]]; [[task-23.3-sync-between-file-yield#r1]] (`N + A + 1`) | the ruling text "its own step inside gmd_finish" was contradictory; the writer's reading stands |
+| r1 S2 census: no user stop. Every producer of a `rel:`-verb edge writes an evidence row; an in-reach producer is fixed here; an unowned one gets a bug row and is skipped by signature, counted `rel_unlink_skipped_unowned` | [[#r10]], [[#ac-14]], [[#r3]] (a), [[#files-list]] | evidence is the only provenance R10 can read. Making it universal removes the ambiguity, matches bug-218 S3's `memory_link` fix, and the counted skip keeps an unowned edge from being unlinked silently before its owner lands |
 
 **Two further lead rulings, 2026-11-13** (the decision table above records them):
 - **d9bu wins** over R13's "both replay paths". `apply_log_delta` has no caller in `src/`.
