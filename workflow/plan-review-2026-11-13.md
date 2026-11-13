@@ -182,6 +182,7 @@ it gets used. Three more are fallout from shipping plan-26 to the fleet. {#detou
 | L45 | R4, R12 | user gates are taken from the specs, not only from `#queue`: the horizon restores the catch-all, and `#queue` marks 17.3, 22.5 R4 (the no-owner forget, d9b), the experiment start (randomises live sessions ≥ 14 days in refmatrix and cliquedb), 18.3's per-store announcements and 27.2's viascope2 archive go |
 | L46 | spec-t4 early flag (missed by the sweep and five ch-bsd rounds) | bug-216's GREEN (`2fc5554`) adds unlogged GMD-path writes: `clear_rel_evidence` deletes with no facts.log event, and `pending_refs` add/delete/clear are never logged, so a replay diverges from the catalog (duplicate evidence, lost pending rows). Lead decision on the user's pattern (no silent loss on memory paths; decay never loses knowledge): bug-216 gains **R13** before merge. Both are facts.log events that both replay paths apply; RED by `red-216`, GREEN by `green-216`. "Pending refs outside replay" is rejected. bug-185's revision consumes R13 (its batched writes emit the same events) |
 | L47 | spec-t2 open items T2-O1..O5 (`workflow/review-output/pop-2026-11-13/spec-t2.md`) | lead rulings on the user's pattern: O1 bug-220's reroute writes through the memdir's OWN store (ADR-0005 `#store-resolution`); O2 bug-202's re-bridge (if the files are found) uses `organise --apply --force-rebridge <id>`; O3 R-208b/R-208c stay in 26.5; O4 the reroute is ungated (store-side, writes no file); O5 the forget step stays a user decision at 26.8 AC-8. spec-t2's 7 contradictions are fixed in its branch (`db2aa9b`) |
+| L48 | spec-t0 open items O1..O5 (`a3b1979`) | O1 bug-196 joins T0 as T0.8, because W1-e's clean-suite gate cannot pass while it sits in the backlog; O2 `brief.parse_gmd` is deleted (no production caller, plan-6 Q1 rule); O3 plan-8 deferral rows 43/44 move to T3, held with the frozen 19.2, and T0.6 re-takes the symbolic rows on the same build; O4 master's repo-scope GMD gate, red on the lead's own artifacts, is fixed at `35e1e0d`; O5 a failure no T0 row owns stops T0's closure and goes to the lead. bug-215 = the SkipGate UNPINNED row (one item). bug-222 (`rmx grep -- '-x'`) is logged and owned by 16.5 R2 |
 
 ## Revised proposal {#proposal}
 
@@ -268,7 +269,7 @@ by a user decision carries its id, and a line placed by an L-row carries that ro
 L17's Table A; L34's 25.2 scoring; L29's `denotes` fold evaluation (after bug-216 is live).
 **Install windows** are batched where they fall together (C11).
 
-**Backlog (outside the goal; it ends listing them):** T2 206, 210; T3 196 (+ 165 if L43 fires); T4 097,
+**Backlog (outside the goal; it ends listing them):** T2 206, 210; T3 165 only if L43 fires (196 moved to T0, L48); T4 097,
 207; T5 180; T6 119, 121, 124; plan-7 W4-a deferrals with the plan-20 evals; G11 `--like`
 selector (L33); 25.5 R4 re-measure (L42). {#queue-body}
 
