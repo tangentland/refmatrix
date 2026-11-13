@@ -35,28 +35,50 @@ def _resolve_project_root(project: str) -> "Path | None":
     discovered stores. Lets an MCP caller target a store explicitly instead of
     relying on the server process's cwd — the read-side twin of passing an
     explicit `root`. Matches on the store's default partition name (its parent
-    dir basename), so 'cliquedb' resolves regardless of where `rmx mcp` runs."""
+    dir basename), so 'cliquedb' resolves regardless of where `rmx mcp` runs.
+
+    No per-root `except Exception: continue` (task 25.1 R10 #r10-no-skip):
+    `discovery.store_name` absorbs its own failures, so that clause could only
+    hide a defect on a memory path."""
     from refmatrix import discovery
     for root in discovery.discover_roots():
-        try:
-            if discovery.store_name(root) == project:
-                return root
-        except Exception:
-            continue
+        if discovery.store_name(root) == project:
+            return root
     return None
 
 
+def _unknown_project(project: str) -> Exception:
+    """R10 #r10-words: the error for a `project` that names no registered store,
+    listing the discovered store names (sorted) from the same walk the lookup used."""
+    from refmatrix import discovery
+    from refmatrix.verbs import VerbUnknownProjectError
+    known = sorted({discovery.store_name(r) for r in discovery.discover_roots()})
+    return VerbUnknownProjectError(
+        f"project {project!r} names no registered refmatrix store (known: "
+        f"{', '.join(known)}); pass a registered project name or root=<path>")
+
+
 def _resolve_root(args: dict) -> Path:
-    # Explicit target wins — `root` (path) or `project` (name). This is the
-    # cwd-independent path: an MCP server serving one project can still be asked
-    # to read another store's memory when a caller (e.g. a subagent) names it.
+    """The store an MCP call targets (task 25.1 R10, bug-181, user decision 2026-11-09):
+
+    - `root` given → that store (it wins; `project` is not consulted);
+    - `project` given (truthy) → the registered store of that name, else
+      `VerbUnknownProjectError` — NEVER `$REFMATRIX_ROOT` or the cwd store. Before this,
+      a name that resolved nothing fell through to the server's own store, so a typo
+      read (and `rmx_memory_add` wrote) another project's memory with no error;
+    - neither → `$REFMATRIX_ROOT`, then the nearest `.refmatrix` above the cwd.
+
+    Every tool resolves through here before its verb runs, so the error reaches the
+    caller before anything is dialled."""
     if args.get("root"):
         r = Path(args["root"])
         return r if r.name == ".refmatrix" else r / ".refmatrix"
     if args.get("project"):
-        pr = _resolve_project_root(str(args["project"]))
-        if pr is not None:
-            return pr
+        project = str(args["project"])
+        pr = _resolve_project_root(project)
+        if pr is None:
+            raise _unknown_project(project)
+        return pr
     env = os.environ.get("REFMATRIX_ROOT")
     if env:
         return Path(env)
@@ -80,8 +102,12 @@ def _resolve_root(args: dict) -> Path:
 def _verb_tool(name: str):
     def fn(args: dict) -> dict:
         from refmatrix.verbs import VERBS, VerbArgsError, VerbError
+        # Resolved BEFORE the verb runs, outside the VerbError net: an unknown `project`
+        # (VerbUnknownProjectError, a VerbArgsError) is the dispatcher's isError, never a
+        # verb answer against some other store (task 25.1 R10).
+        root = _resolve_root(args)
         try:
-            return VERBS[name].run(_resolve_root(args), args)
+            return VERBS[name].run(root, args)
         except VerbArgsError:
             raise          # caller bug: the dispatcher reports it as isError
         except VerbError as e:

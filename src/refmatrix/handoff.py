@@ -721,3 +721,70 @@ def compose_recall_state(s, root: Path, *, repo: Path, memdir: Path,
         "daemon": daemon_info,
         "anomalies": anomalies,
     }
+
+
+# ---- the recall-state text (task 25.1 R11) -------------------------------------------------
+
+NEWEST_RING_LABEL = "(newest ring; not resolved)"
+
+
+def recall_state_blocks(rep: dict, *, handoff_lines: int = 24,
+                        recent_limit: int = 8) -> "list[str]":
+    """`rmx recall-state`'s report as WHOLE text blocks, in the order a byte budget keeps them
+    (task 25.1 R11, user 2026-11-11): the handoff head (the session line and which save-state
+    is the handoff), the handoff's body head, anomalies, git, daemon, recent memories, the STM
+    digest. Each block ends with a newline.
+
+    ONE renderer for the CLI and the `recall_state` verb's `text` (`max_bytes`), so a hook's
+    fitted output and an interactive run start with the same lines. Plain text: a hook's
+    stdout is not a terminal, and rich markup in a payload is bytes the model pays for."""
+    sess = rep.get("session") or "?"
+    if rep.get("session_source") == "latest":
+        sess = f"{sess} {NEWEST_RING_LABEL}"
+    ss = rep.get("savestate")
+    head = [f"recall-state · session {sess} ({rep.get('events', 0)} STM events)"]
+    if ss:
+        head.append(f"handoff {ss['id']} {ss['path']}")
+    else:
+        head.append("no prior save-state handoff found")
+    blocks = ["\n".join(head) + "\n"]
+    if ss and ss.get("body"):
+        excerpt = "\n".join(str(ss["body"]).splitlines()[:handoff_lines])
+        blocks.append(excerpt.rstrip("\n") + "\n")
+    anomalies = rep.get("anomalies") or []
+    if anomalies:
+        blocks.append("anomalies\n" + "".join(f"  ! {a}\n" for a in anomalies))
+    git = rep.get("git") or {}
+    gl = [f"git branch {git.get('branch') or '?'} · HEAD {git.get('head') or '?'}"]
+    if git.get("ahead_base"):
+        n = len([x for x in str(git.get("ahead") or "").splitlines() if x.strip()])
+        gl.append(f"     {n} commit(s) ahead of {git['ahead_base']}" + ("" if n else " — in sync"))
+    gl.append("     working tree: " + ("dirty" if git.get("dirty") else "clean"))
+    blocks.append("\n".join(gl) + "\n")
+    d = rep.get("daemon") or {}
+    state = (f"running pid={d.get('pid')}" if d.get("running")
+             else (f"busy pid {d.get('pid')}" if d.get("busy")
+                   else (f"stale pid {d.get('pid')}" if d.get("pid") else "not running")))
+    blocks.append(f"daemon {state}\n")
+    recents = rep.get("recent_memories") or []
+    if recents:
+        blocks.append("recent memories\n" + "".join(
+            f"  {mid} — {title}\n" for mid, title in recents[:recent_limit]))
+    if rep.get("stm_digest"):
+        blocks.append("STM digest (live session)\n" + str(rep["stm_digest"]).rstrip("\n") + "\n")
+    return blocks
+
+
+def fit_recall_state(rep: dict, max_bytes: "int | None") -> "tuple[str, int]":
+    """The report fitted to `max_bytes` UTF-8 bytes (None = everything): whole blocks in
+    `recall_state_blocks` order, and a trailer naming `rmx recall-state` for the full output
+    when any block was cut. Returns (text, dropped)."""
+    from refmatrix import hook_budget
+    blocks = recall_state_blocks(rep)
+    if max_bytes is None:
+        return "".join(blocks), 0
+    f = hook_budget.fit_blocks(
+        blocks, int(max_bytes),
+        trailer=lambda n: f"+{n} block(s) omitted to fit {int(max_bytes)} B; "
+                          f"full: rmx recall-state")
+    return f.text, f.dropped

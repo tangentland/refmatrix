@@ -320,10 +320,14 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
             "hooks": [
                 {
                     "type": "command",
+                    # Task 25.1 R7 (bug-164, 2026-11-11): `--pack`, not `--json` -- a
+                    # pointer per hit under hook_budget's session_start bytes (R0: Claude
+                    # Code previews any one hook over 10,000 UTF-16 units). No budget
+                    # variable in the argv: the CLI resolves its own default.
                     "command": (
                         HOOK_ENV
                         + "rmx memory recall --session-start "
-                        "--k 10 --scope both --json --timeout 10"
+                        "--k 30 --scope both --pack --timeout 10"
                     ),
                 },
                 {
@@ -335,6 +339,23 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                     ),
                 },
             ],
+        })
+        # Task 25.1 R11 (user, 2026-11-11): after compaction and after /clear, re-orient
+        # from the save-state handoff -- PreCompact's `save-state --no-promote` checkpoint
+        # (below) is the newest one when compaction fires. Its OWN entry and command, never
+        # chained: Claude Code drops a SessionStart command's stdout when it exits non-zero
+        # (the 26.2 r2 lesson), and R0 caps each command separately. N is
+        # hook_budget's recall_state TABLE entry, baked as a literal: no `$` in a generated
+        # argv, and never the RMX_HOOK_BUDGET_BYTES override, so the generated text (and
+        # `install-hooks --check`) does not depend on the installing shell's environment.
+        from refmatrix.hook_budget import CHANNEL_BUDGET_BYTES
+        block["hooks"]["SessionStart"].append({
+            "matcher": "compact|clear",
+            "hooks": [{
+                "type": "command",
+                "command": HOOK_ENV
+                + f"rmx recall-state --max-bytes {int(CHANNEL_BUDGET_BYTES['recall_state'])}",
+            }],
         })
         if resume_focus:
             # The prior session's live STM threads, on resume only.
@@ -356,9 +377,12 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                 # --timeout 5: the hook fires on EVERY prompt and held the
                 # turn ~20 s p50 unbounded on 2026-09-14 (bsd-plan2-r5
                 # #b-1); past the budget it warns, answers [], exits 0.
+                # Task 25.1 R7: `--pack` (12 pointer lines under hook_budget's
+                # prompt_recall bytes, d3) replaces 5 whole JSON rows that printed
+                # 15-59 kB, i.e. a 2 kB preview of the first row.
                 "command": (
                     HOOK_ENV
-                    + "rmx memory recall --stdin-json --k 5 --scope both --json "
+                    + "rmx memory recall --stdin-json --k 12 --scope both --pack "
                     "--timeout 5"
                 ),
             }],
@@ -383,10 +407,12 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                 },
                 {
                     "type": "command",
+                    # Task 25.1 R7: PreCompact stdout reaches the agent (R0: cut at the
+                    # same 10,000-unit cap, head kept), so the recall stays, packed.
                     "command": (
                         HOOK_ENV
                         + "rmx memory recall --recent --since 1h "
-                        "--k 20 --scope both --json --timeout 30"
+                        "--k 30 --scope both --pack --timeout 30"
                     ),
                 },
                 # Pre-compact checkpoint: the handoff file for the next

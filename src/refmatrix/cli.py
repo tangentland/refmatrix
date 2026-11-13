@@ -1120,7 +1120,8 @@ def _resolve_stm_session_source(explicit: str | None = None, *,
 
 # The label a read surface prints when its ring is the newest one on disk, not a resolved
 # session (task 21.1 R9: the `read` tail).
-_NEWEST_RING_LABEL = "(newest ring; not resolved)"
+# One string, owned by the recall-state renderer (`handoff.recall_state_blocks`, task 25.1).
+from refmatrix.handoff import NEWEST_RING_LABEL as _NEWEST_RING_LABEL  # noqa: E402
 
 
 def _stm(session: str | None = None, *, prefer_latest: bool = False, purpose: str = "read"):
@@ -1184,9 +1185,19 @@ def focus_tail(n, session):
 @click.option("--top", type=int, default=20, show_default=True)
 @click.option("-s", "--session", default=None,
               help="Session id to read. Default: active Claude session.")
-def focus_context(top, session):
+@click.option("--max-bytes", "max_bytes", type=int, default=None,
+              help="UTF-8 byte cap of the output, whole lines only in render order, with a "
+                   "one-line omitted trailer. Default: refmatrix.hook_budget's "
+                   "focus_context entry (the SessionStart resume hook passes no flag).")
+def focus_context(top, session, max_bytes):
     """Show the current focus mini-graph (recency-weighted)."""
-    from refmatrix import verbs as _verbs
+    from rich.markup import escape as _esc
+    from rich.text import Text as _Text
+    from refmatrix import hook_budget as _hb, verbs as _verbs
+    try:
+        cap = _hb.resolve("focus_context", max_bytes)
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
     sess = _resolve_stm_session(session, prefer_latest=True)
     s = _stm(sess)
     # Pull a wider slice, then drop shell-token noise at render time so a graph
@@ -1201,9 +1212,13 @@ def focus_context(top, session):
     if not nodes:
         console.print("[yellow]no focus yet[/]")
         return
-    console.print(f"[bold]focus[/] · {g['events']} events · session {g['session']}")
-    console.print("[dim]L<n> = line in the full log; `rmx focus show <n>` for "
-                  "depth[/]")
+    # Task 25.1 R0b (2026-11-11): every line below is one BLOCK of markup, fitted as plain
+    # text to `cap` UTF-8 bytes in render order (the resume hook printed 3,300 B uncapped on
+    # the fixture's ring, beside the recall and the curator line on the same SessionStart).
+    lines: list[str] = [
+        f"[bold]focus[/] · {g['events']} events · session {_esc(str(g['session']))}",
+        "[dim]L<n> = line in the full log; `rmx focus show <n>` for depth[/]",
+    ]
     # Everything below renders the VERB's result (what rmx_focus returns), so
     # an MCP caller and this command see the same dialogue / milestones /
     # L<n> provenance (ch-bsd plan-3 r2 #s-3).
@@ -1214,7 +1229,7 @@ def focus_context(top, session):
     # its "why" and makes a bare "yes" legible against what I'd just proposed.
     dialogue = fres.get("dialogue") or []
     if dialogue:
-        console.print("[bold]intent[/] [dim](dialogue + reasoning)[/]")
+        lines.append("[bold]intent[/] [dim](dialogue + reasoning)[/]")
         _marks = {"input": "[magenta]▸[/]", "say": "[green]◂[/]",
                   "reason": "[blue]✎[/]"}
         for d in dialogue[-7:]:
@@ -1222,13 +1237,13 @@ def focus_context(top, session):
             mark = _marks.get(k, " ")
             dim = "" if k == "input" else "[dim]"
             undim = "" if k == "input" else "[/]"
-            console.print(f"  {mark} {dim}{d['terse'][:84]}{undim} [dim]L{d['line']}[/]")
+            lines.append(f"  {mark} {dim}{_esc(d['terse'][:84])}{undim} [dim]L{d['line']}[/]")
     # Milestones — git ops captured with their output (commit/push/merge/...).
     gits = fres.get("milestones") or []
     if gits:
-        console.print("[bold]milestones[/] [dim](git)[/]")
+        lines.append("[bold]milestones[/] [dim](git)[/]")
         for m in gits[-6:]:
-            console.print(f"  [yellow]⎇[/] [dim]{m['terse'][:84]}[/] [dim]L{m['line']}[/]")
+            lines.append(f"  [yellow]⎇[/] [dim]{_esc(m['terse'][:84])}[/] [dim]L{m['line']}[/]")
     # Per-row +1 neighbors from the focus edges (co-occurrence within the
     # rolling window) — the graph structure, not just the ranked list. Noise
     # neighbors are dropped so a row points only at real symbols.
@@ -1239,14 +1254,29 @@ def focus_context(top, session):
             nbr.setdefault(a, []).append((w, b))
         if a.lower() not in _SS_FOCUS_NOISE:
             nbr.setdefault(b, []).append((w, a))
-    console.print("[bold]graph[/]")
+    lines.append("[bold]graph[/]")
     for nd in nodes:
         tops = sorted(nbr.get(nd["name"], []), reverse=True)[:3]
-        arrow = ("  [dim]→[/] " + ", ".join(n for _, n in tops)) if tops else ""
+        arrow = ("  [dim]→[/] " + ", ".join(_esc(n) for _, n in tops)) if tops else ""
         ln = last_line.get(nd["name"])
         lref = f"  [dim]L{ln}[/]" if ln else ""
-        console.print(f"  {nd['weight']:>5.2f}  [cyan]{nd['name']}[/] "
-                      f"[dim]{nd['kind']} ×{nd['count']}[/]{arrow}{lref}")
+        lines.append(f"  {nd['weight']:>5.2f}  [cyan]{_esc(nd['name'])}[/] "
+                     f"[dim]{_esc(str(nd['kind']))} ×{nd['count']}[/]{arrow}{lref}")
+    plain = [_Text.from_markup(ln).plain + "\n" for ln in lines]
+    # One byte held back for the newline written after a trailer: the cap is on what is
+    # PRINTED (2026-11-13).
+    f = _hb.fit_blocks(plain, max(1, cap - 1), trailer=lambda n: f"+{n} line(s) omitted to fit {cap} B; "
+                                                     f"`rmx focus context --max-bytes N` "
+                                                     f"for more")
+    if console.is_terminal:
+        for ln in lines[:f.kept]:
+            console.print(ln, soft_wrap=True)
+        if f.dropped:
+            console.print(f"[dim]{_esc(f.text.rstrip(chr(10)).splitlines()[-1])}[/]")
+        return
+    click.echo(f.text, nl=False)
+    if not f.text.endswith("\n"):
+        click.echo("")
 
 
 @focus.command("export")
@@ -9187,8 +9217,12 @@ def _curator_verb(**kw) -> dict:
                    "`rmx curator drain --token @<file>` takes back.")
 @click.option("--max-entries", default=500, type=int, show_default=True,
               help="Read whole spool files, oldest first, up to this many entries.")
+@click.option("--max-bytes", "max_bytes", type=int, default=None,
+              help="UTF-8 byte cap of the summary line, whole paths only (render only). "
+                   "Default: refmatrix.hook_budget's curator_status entry (it shares the "
+                   "UserPromptSubmit scan command's budget with scan-prompt).")
 def curator_status(drain: bool, quiet_when_empty: bool, limit: int, as_json: bool,
-                   max_entries: int):
+                   max_entries: int, max_bytes: "int | None"):
     """Summarize the curator queue for hook injection.
 
     Prints a single short paragraph suitable for SessionStart /
@@ -9214,23 +9248,39 @@ def curator_status(drain: bool, quiet_when_empty: bool, limit: int, as_json: boo
             return p
     rels = sorted({_rel(e["path"]) for e in out.get("entries") or [] if e.get("path")})
     shown = set(rels[:limit])
+    cap: "int | None" = None
     if as_json:
         click.echo(json.dumps(out))
     elif not rels:
         if not quiet_when_empty:
             console.print("curator queue: empty")
     else:
+        from refmatrix import hook_budget as _hb
+        try:
+            cap = _hb.resolve("curator_status", max_bytes)
+        except ValueError as e:
+            raise click.ClickException(str(e)) from e
         overflow = max(0, len(rels) - limit)
         left = (out.get("spool") or {}).get("remaining_files") or 0
-        # Plain stdout — hook surfaces this as additional Claude context.
-        click.echo(
-            f"curator-queue: {len(rels)} curator-relevant file change(s) since "
-            f"last drain. Spawn `gmd-curator` (ingest mode) to cross-link, "
-            f"surface drift, and crystallize. Paths: "
-            + ", ".join(rels[:limit])
-            + (f", +{overflow} more" if overflow else "")
-            + (f" ({left} more spool file(s) not read yet)" if left else "")
-        )
+        spool = f" ({left} more spool file(s) not read yet)" if left else ""
+        # Plain stdout — hook surfaces this as additional Claude context. Task 25.1 R0b: the
+        # line is fitted to `cap` bytes, WHOLE paths only, in its existing order (it printed
+        # 1,885 B with 30 queued long paths, every prompt, inside the scan command).
+        paths = [("" if i == 0 else ", ") + r for i, r in enumerate(rels[:limit])]
+        paths[0] = (f"curator-queue: {len(rels)} curator-relevant file change(s) since "
+                    f"last drain. Spawn `gmd-curator` (ingest mode) to cross-link, "
+                    f"surface drift, and crystallize. Paths: ") + paths[0]
+        tail = (f", +{overflow} more" if overflow else "") + spool
+        blocks = paths + ([tail] if tail else [])
+
+        def _trailer(dropped: int) -> str:
+            not_shown = dropped - (1 if tail else 0) + overflow
+            return (f"+{not_shown} more path(s) not shown within {cap} B{spool}; "
+                    f"`rmx curator status --json` lists all")
+        # One byte held back for click.echo's newline: the cap is on what is PRINTED.
+        f = _hb.fit_blocks(blocks, max(1, cap - 1), trailer=_trailer)
+        shown = set(rels[:min(f.kept, len(paths))])
+        click.echo(f.text)
     if drain and out.get("token"):
         if as_json:
             done = list(out["token"])
@@ -9245,7 +9295,8 @@ def curator_status(drain: bool, quiet_when_empty: bool, limit: int, as_json: boo
                 # so the hook's stdout context line is unchanged.
                 click.echo(
                     f"rmx curator: kept {kept} spool file(s) not fully shown within "
-                    f"--limit {limit}; raise --limit or drain with "
+                    f"--limit {limit}{f' / {cap} B' if cap else ''}; raise --limit or "
+                    f"drain with "
                     f"`rmx curator drain --token @<status.json>`", err=True)
         if done:
             _curator_verb(action="drain", token=done)
@@ -9507,12 +9558,16 @@ def _resolve_query_env(
               help="Budget in seconds for the shared-worker rerank of the content "
                    "bundle (probe 1 s, score the rest); past it the BM25 order "
                    "stands. The generated UserPromptSubmit hook passes 5.")
+@click.option("--max-bytes", "max_bytes", type=int, default=None,
+              help="UTF-8 byte cap of the text output, whole blocks only, with a one-line "
+                   "omitted trailer. Default: refmatrix.hook_budget's scan_prompt entry "
+                   "(RMX_HOOK_BUDGET_BYTES overrides). Text format only.")
 def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
                     exclude_namespace, include_noise, fmt, stdin_json, rank,
                     degree,
                     composite, composite_max_tokens, composite_k,
                     composite_no_expand, composite_every,
-                    composite_intra_edges, content, content_tokens, timeout):
+                    composite_intra_edges, content, content_tokens, timeout, max_bytes):
     """Read a prompt; emit context bundles for symbols it mentions.
 
     Designed for the Claude Code UserPromptSubmit hook. Output goes to stdout,
@@ -9525,8 +9580,21 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
     autoscaling token budget, so it never robs the prompt-symbol context.
     """
     from refmatrix.scan import scan_prompt
-    from refmatrix import stm as stm_mod, telemetry as _tel
+    from refmatrix import hook_budget as _hb, stm as stm_mod, telemetry as _tel
     from refmatrix.context import annotate_items
+
+    # Task 25.1 R0b: the text render is byte-capped (a JSON render is a structured answer, not
+    # a hook payload, so a cap is refused there rather than silently ignored).
+    if fmt == "json":
+        if max_bytes is not None:
+            raise click.ClickException("--max-bytes caps the text format; drop it or "
+                                       "use --format text")
+        cap = None
+    else:
+        try:
+            cap = _hb.resolve("scan_prompt", max_bytes)
+        except ValueError as e:
+            raise click.ClickException(str(e)) from e
 
     # Positional QUERY > --text > stdin (JSON envelope auto-detected).
     prompt, envelope = _resolve_query_env(query, text, stdin_json=stdin_json,
@@ -9563,6 +9631,10 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
                 composite_intra_edges=composite_intra_edges,
                 rerank_timeout=timeout,
                 trace=trace,
+                # One byte held back for the newline click.echo writes below: the cap is
+                # on what the hook PRINTS (2026-11-13: a text of exactly `cap` bytes was
+                # cap+1 on the wire).
+                max_bytes=None if cap is None else max(1, cap - 1),
             )
             tlog.cardinality = result.count("=== context for") if result else 0
         # The item rows' partitions, read on the store that served them (R10).
@@ -11519,133 +11591,19 @@ def _memory_intent(op: str, *, partition_timeout: "float | None" = None) -> None
 # (so `<project>/.refmatrix/` -> partition `memory-<project>`).
 # User-supplied -p / RMX_PARTITION / .refmatrix/partition still win,
 # matching _resolve_partition's chain.
-# A rerank on the shared worker is worth waiting for only with this much of
-# the budget left; below it the hits go out unreranked and the skip is said
-# (bsd-plan2-r6 #b-1: `info` 6.3 s + `rerank` 6.2 s at the worker's 300 s
-# default were the 12.5 s of a 12.8 s hook).
-RERANK_MIN_S = float(os.environ.get("RMX_RERANK_MIN_S", "2") or "2")
-# The `info` probe of the shared rerank worker gets at most this long: a
-# worker that is loading or broken (bug-014: `info` → BrokenPipe, 6 s) must
-# cost the hook one second, not the whole remainder (live 2026-09-15: the
-# probe ate 4 of 5 s and the global leg then found no budget).
-RERANK_PROBE_S = float(os.environ.get("RMX_RERANK_PROBE_S", "1") or "1")
+# The replica recall leg's rerank knobs live with the leg in `recall.py` (task 25.1 R5 moved
+# it out of this module); re-exported because they are CLI vocabulary in the hook docs.
+from refmatrix.recall import (RERANK_DOC_CHARS, RERANK_MIN_S,  # noqa: E402,F401
+                              RERANK_PROBE_S)
 # In the hook modes, how long the recent/subject recall waits on the daemon
 # before the lock-free replica answers instead (only when a replica exists).
 RECALL_DAEMON_SLICE_S = float(os.environ.get("RMX_RECALL_DAEMON_SLICE_S", "1.5") or "1.5")
-# Rerank doc cap for the hook's replica leg. Measured 2026-09-15 on the
-# shared worker (10 memory docs, loaded machine): the pool as extracted
-# (28.7k chars, max 4.2k) scored in 4.8 s and timed out the 5 s hook every
-# time — and the worker kept scoring after the client left, so the NEXT
-# hook's 1 s probe queued behind it and read "unavailable". 768 chars → 3.4 s,
-# 512 → 2–3 s. 700 keeps a memory's title + lead, which is what the
-# cross-encoder ranks on.
-RERANK_DOC_CHARS = int(os.environ.get("RMX_RERANK_DOC_CHARS", "700") or "700")
 # `memory get --degree N`: the context bundle is a tail on a command whose
 # body has already been printed, so it gets its own bound rather than the
 # bundle op's 120 s × 3 (ch-bsd plan-3 r6 #b-1). Under 120 s
 # `verbs.attach_context` also drops the library's two retries.
 MEMORY_CONTEXT_TAIL_S = float(
     os.environ.get("RMX_MEMORY_CONTEXT_TAIL_S", "30") or "30")
-
-
-def _replica_memory_recall(query: str, *, k: int, kinds: list,
-                           fuse: bool, rerank: "bool | None",
-                           left=None, warnings: "list[str] | None" = None):
-    """Writer-independent recall: replica catalog slot + lock-free Lance +
-    the hub's shared model workers. Returns RPC-shaped hits or None.
-
-    `left(default)` is the caller's deadline (seconds remaining, capped);
-    every worker socket — the availability probe, the embed call, the rerank
-    `info` + `rerank` — is bounded by it, and a rerank that cannot fit in
-    RERANK_MIN_S is skipped and said in `warnings`. None = unbounded.
-
-    The always-on prompt hooks are the target. They used to RPC into the
-    daemon (`memory_recall`), which queues behind whatever the writer is
-    doing — a partition merge or fat ingest starved prompt injection into
-    "Output too large"/timeout territory. Every leg here is lock-free: the
-    replica slot never touches the writer catalog, Lance reads are plain
-    files, and the query embedding (plus rerank, when enabled) comes from the
-    hub's shared workers, never a locally spawned model.
-
-    None on ANY missing leg or failure — caller falls back to the daemon RPC
-    unchanged, so this can only remove a wait, never a result. Set
-    RMX_RECALL_REPLICA_FIRST=0 to force the RPC path for an A/B."""
-    if os.environ.get("RMX_RECALL_REPLICA_FIRST", "1") in ("0", "false", "False"):
-        return None
-    from refmatrix import verbs as _verbs
-    ws = warnings if warnings is not None else []
-
-    def _l(default: float) -> float:
-        return left(default) if left is not None else default
-
-    try:
-        from refmatrix import modelsrv
-        if not (modelsrv.shared_enabled()
-                and modelsrv.shared_available(timeout=min(0.5, _l(0.5)))):
-            return None
-        s = _reader_store()
-        if s is None:
-            return None
-        from refmatrix import recall as _recall
-        from refmatrix import reranker as _reranker
-        from refmatrix.embedder import RemoteEmbedder
-        # the socket timeout on the shared worker is the remaining budget —
-        # the worker's own default is 300 s
-        emb = RemoteEmbedder(modelsrv.SharedWorkerClient("embed", timeout=_l(30.0)))
-        want_rerank = _reranker.rerank_enabled() if rerank is None else bool(rerank)
-        retrieve_k = (min(max(k, k * _reranker.DEFAULT_POOL_MULT), _reranker.MAX_POOL)
-                      if want_rerank else k)
-        with s.with_partition(_resolve_partition()):
-            if fuse:
-                hits = _recall.hybrid_memory_recall(
-                    s, emb, query, k=retrieve_k, kinds=kinds)
-            else:
-                hits = _recall.dense_recall(
-                    s, emb, query, k=retrieve_k, kinds=kinds)
-            if want_rerank and hits:
-                rem = _l(30.0)
-                if rem < RERANK_MIN_S:
-                    ws.append(f"rerank skipped: {rem:.1f}s of the budget left "
-                              f"(< {RERANK_MIN_S:g}s); hits unreranked")
-                else:
-                    rr_why: list[str] = []
-                    rr = _reranker.shared_reranker(timeout=rem,
-                                                   probe_timeout=min(rem, RERANK_PROBE_S),
-                                                   why=rr_why)
-                    if rr is None:
-                        # The cause, when the worker was reached and failed
-                        # (ch-bsd r7 #s-1: a ModelNotCached read as "unavailable").
-                        cause = "; ".join(rr_why) or "shared worker unavailable"
-                        ws.append(f"rerank skipped: {cause}; hits unreranked")
-                    else:
-                        try:
-                            docs = _reranker.collect_rerank_docs(
-                                s, hits, k=k, doc_chars=RERANK_DOC_CHARS,
-                                query=query)
-                            ranked = _reranker.apply_rerank(rr, query, *docs, k=k)
-                            return [{"id": eid, "score": sc, "fused": bool(fuse),
-                                     "reranked": True, "replica": True}
-                                    for eid, sc in ranked]
-                        except _reranker.RerankSkipped as e:
-                            # NOT a failure: the pool could not fit the budget,
-                            # and now we know that BEFORE burning it (bug-025).
-                            # 7/7 deployed runs used to discover this by timing
-                            # out after 5 s with 0 rows reranked.
-                            ws.append(f"rerank skipped: {e.reason}; hits unreranked")
-                        except Exception as e:  # noqa: BLE001 — said, never mute
-                            ws.append(f"rerank failed ({type(e).__name__}: {e}); "
-                                      f"hits unreranked")
-        hits = hits[:k]
-        if fuse:
-            return [{"id": eid, "score": sc, "fused": True, "replica": True}
-                    for eid, sc in hits]
-        return [{"id": eid, "distance": dist, "replica": True}
-                for eid, dist in hits]
-    except _verbs.VerbBusyError:
-        raise                       # the deadline itself: the caller degrades
-    except Exception as e:  # noqa: BLE001 — a missing leg: the daemon RPC serves
-        ws.append(f"replica recall unavailable ({type(e).__name__}: {e}); daemon RPC")
-        return None
 
 
 # Canonical in `store.py` (task 15.4): `derive_status` classifies a partition
@@ -11876,8 +11834,15 @@ def memory_add(name, content, mtype, tags, meta, protect, is_global):
                    "(anchor + one-hop neighbors + their bodies). Same shape "
                    "as `rmx context`. Lets a single `memory get` call return "
                    "body + graph instead of forcing two commands.")
-def memory_get(name_or_id, degree):
+@click.option("--scope", type=click.Choice(["project", "global"]), default="project",
+              show_default=True,
+              help="global: read the shared behavior store (the pointer a packed recall "
+                   "prints for a global hit); never returns a same-named project row.")
+def memory_get(name_or_id, degree, scope):
     """Fetch a memory by name (current partition) or id (any partition)."""
+    if scope == "global":
+        _memory_get_global(name_or_id, degree)
+        return
     # ONE budget over the partition probe and the read (bsd-plan3-r4 #b-2:
     # the probe and the verb's own probe stacked to 20 s on a held writer
     # before the replica fallthrough below was reached).
@@ -11912,17 +11877,7 @@ def memory_get(name_or_id, degree):
         raise click.ClickException(str(e))
     if m is None:
         raise click.ClickException(f"no memory matching {name_or_id!r}")
-    console.print(f"[bold]{m['name']}[/]  id={m['id']}  mtype={m['mtype']}")
-    if m["tags"]:
-        console.print(f"  tags: {', '.join(m['tags'])}")
-    if m["metadata"]:
-        console.print(f"  meta: {m['metadata']}")
-    console.print()
-    # `click.echo` here, NOT `console.print`: Rich's markup parser
-    # consumes `[[name]]` patterns (interpreting `[name]` as a tag)
-    # and strips them to `[]`, mangling every GMD `rel:` wikilink in
-    # the body. `click.echo` writes the raw bytes verbatim.
-    click.echo(m["content"] or "")
+    _render_memory_row(m)
     if degree > 0:
         # Render the context bundle alongside the body so a `memory get
         # --degree 1` call covers both surfaces in one shot. THE bundle is a
@@ -11962,6 +11917,38 @@ def memory_get(name_or_id, degree):
                     _entities_explicit=False, _tokens_explicit=False,
                 )
             ))
+
+
+def _render_memory_row(m: dict) -> None:
+    console.print(f"[bold]{m['name']}[/]  id={m['id']}  mtype={m['mtype']}")
+    if m["tags"]:
+        console.print(f"  tags: {', '.join(m['tags'])}")
+    if m["metadata"]:
+        console.print(f"  meta: {m['metadata']}")
+    console.print()
+    # `click.echo`, NOT `console.print`: Rich's markup parser eats `[[name]]` wikilinks.
+    click.echo(m["content"] or "")
+
+
+def _memory_get_global(name_or_id: str, degree: int) -> None:
+    """`rmx memory get X --scope global` (task 25.1 R6, AC-11): the GLOBAL store's row through
+    the `rmx_memory` verb's get action, which routes to the global daemon. No replica
+    fall-through and no project fallback: a global pointer that cannot be served says why."""
+    from refmatrix import verbs as _verbs
+    _memory_intent("memory_get", partition_timeout=min(5.0, _verbs.MEMORY_READ_BUDGET_S))
+    if degree > 0:
+        raise click.ClickException("--degree reads the project graph; it does not combine "
+                                   "with --scope global")
+    target = int(name_or_id) if name_or_id.isdigit() else name_or_id
+    try:
+        m = _verbs.memory(_root(), action="get", scope="global",
+                          **({"id": target} if isinstance(target, int)
+                             else {"name": target}))["memory"]
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e))
+    if m is None:
+        raise click.ClickException(f"no global memory matching {name_or_id!r}")
+    _render_memory_row(m)
 
 
 @memory_grp.command("promote")
@@ -12410,6 +12397,18 @@ def _parse_duration(text: str) -> float:
                    "session/recall-state + session/digest in one value. "
                    "Filter is applied client-side after the recall RPC "
                    "returns.")
+@click.option("--include-subjects", "include_subjects", is_flag=True, default=False,
+              help="Opt back into live subject rows (a subject is a compile artefact: "
+                   "its members are the hits, so it is hidden by default). A subject "
+                   "marked stale stays hidden.")
+@click.option("--pack", "pack", is_flag=True, default=False,
+              help="Emit the pointer-first pack (task 25.1): a header, one "
+                   "`- <name> — <title> — <hook>  (rmx memory get …)` line per hit, whole "
+                   "bodies while they fit, and a `+N more: <cmd>` trailer, within "
+                   "--max-bytes UTF-8 bytes. What the generated hooks print.")
+@click.option("--max-bytes", "max_bytes", type=int, default=None,
+              help="UTF-8 byte budget of --pack. Default: the hook channel's entry in "
+                   "refmatrix.hook_budget (RMX_HOOK_BUDGET_BYTES overrides every channel).")
 @click.option("--include-session", is_flag=True, default=False,
               help="Opt back into session/* memories (save-state handoffs, "
                    "STM digests) in the always-on hook modes (--session-start / "
@@ -12457,6 +12456,7 @@ def _parse_duration(text: str) -> float:
                    "hook may shout, it may not hold the turn for the store.")
 def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                   session_start, as_json, as_gmd, kinds, exclude_mtype,
+                  include_subjects, pack, max_bytes,
                   include_session, degree, fuse, scope, subject, rerank, timeout):
     """Memory retrieval. Three modes:
 
@@ -12489,7 +12489,8 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
             _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
                                 session_start, as_json, as_gmd, kinds, exclude_mtype,
                                 include_session, degree, fuse, scope, subject, rerank,
-                                timeout, rec=rec)
+                                timeout, rec=rec, include_subjects=include_subjects,
+                                pack=pack, max_bytes=max_bytes)
         finally:
             rec.close_row()
     rec.emit()
@@ -12498,7 +12499,8 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
 def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
                         session_start, as_json, as_gmd, kinds, exclude_mtype,
                         include_session, degree, fuse, scope, subject, rerank, timeout,
-                        *, rec: "_RecallCall"):
+                        *, rec: "_RecallCall", include_subjects: bool = False,
+                        pack: bool = False, max_bytes: "int | None" = None):
     """The body of `rmx memory recall`; `rec` records the query, the payload, the retrieved
     and delivered items and a degrade for the wrapper's row and events."""
     # The budget clock starts HERE, before the partition probe: the probe
@@ -12508,12 +12510,33 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
     budget = float(timeout)
     _t_start = _time.monotonic()
     _memory_intent("memory_recall", partition_timeout=min(5.0, budget))
-    if as_json and as_gmd:
+    if sum(bool(x) for x in (as_json, as_gmd, pack)) > 1:
         raise click.ClickException(
-            "--json and --gmd are mutually exclusive"
+            "--json, --gmd and --pack are mutually exclusive"
         )
     if session_start:
         recent = True
+    # The 21.1 channel this call serves, and (task 25.1 R1) the pack's byte budget resolved
+    # NOW, before any leg can degrade: a non-integer RMX_HOOK_BUDGET_BYTES is a configuration
+    # error that exits non-zero naming the variable, never a silent `[]`.
+    from refmatrix import telemetry as _tel_mod
+    rec_channel = _tel_mod.recall_channel(session_start=bool(session_start),
+                                          stdin_json=bool(stdin_json), recent=bool(recent),
+                                          invocation=rec.invocation)
+    pack_bytes = None
+    if pack:
+        from refmatrix import hook_budget as _hb
+        _mode = ("session-start" if session_start else "recent" if recent else
+                 "subject" if subject else "dense")
+        _key = rec_channel if rec_channel in _hb.CHANNEL_BUDGET_BYTES else \
+            {"session-start": "session_start", "recent": "precompact"}.get(_mode,
+                                                                          "prompt_recall")
+        try:
+            pack_bytes = _hb.resolve(_key, max_bytes)
+        except ValueError as e:
+            raise click.ClickException(str(e)) from e
+    elif max_bytes is not None:
+        raise click.ClickException("--max-bytes bounds the --pack payload; pass --pack")
     # Uniform resolution: positional query > --text > --prompt > --stdin-json
     # envelope. read_stdin=False so --recent doesn't consume an unrelated pipe;
     # an explicit --stdin-json still reads + parses (raising on bad JSON).
@@ -12525,6 +12548,8 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
         # /clear, /resume etc): non-fatal — emit a parseable empty artifact so
         # the hook can detect "no recall" deterministically, and exit 0.
         rec.nothing_asked = True
+        if pack:
+            return              # a pack of nothing is nothing: the hook injects no context
         if as_json:
             click.echo("[]")
         elif as_gmd:
@@ -12558,6 +12583,12 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
                      or os.environ.get("RMX_INVOCATION_SOURCE") == "hook")
     if hook_mode and not include_session:
         exclude_mtypes.add("session/*")
+    # Task 25.1 R2 (19.1 R2): a subject row is not a hit unless asked for; the patterns the
+    # replica fall-through below filters with are the verb's own.
+    from refmatrix import verbs as _verbs_mod
+    _filter_patterns = _verbs_mod.recall_patterns(sorted(exclude_mtypes),
+                                                  include_session=True,
+                                                  include_subjects=include_subjects)
     verb_include_session = include_session or not hook_mode
     verb_exclude = sorted(exclude_mtypes) or None
     # The budget (ch-bsd plan-2 r5 #b-1: the per-prompt hook held the turn
@@ -12588,9 +12619,15 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
             raise click.ClickException(f"{c}")
         # R4 (21.1): classified by exception TYPE under the hook's budget (a refused or reset
         # connection degrades too, and is an `error`, not a budget skip). The recorder gets the
-        # RAW exception; the words are the classifier's (plan-3 task 3.6 S2).
-        rec.degraded(e)
+        # RAW exception; the words are the classifier's (plan-3 task 3.6 S2). Since task 25.1
+        # R5 the dial happens inside the verb, so the raw exception is the transport CAUSE of
+        # the verb's typed error (`raise … from e`): a refused connect stays
+        # `ConnectionRefusedError` and a mid-answer close `JSONDecodeError` (both `error`),
+        # never the busy wrapper's `skipped_budget` (2026-11-13).
+        rec.degraded(_raw_transport_cause(e))
         click.echo(f"# rmx: warning: recall skipped: {c}", err=True)
+        if pack:
+            return              # d8: nothing on stdout -- the hook injects no context
         if as_json:
             click.echo("[]")
         elif as_gmd:
@@ -12600,9 +12637,6 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
             console.print(f"[yellow]recall skipped[/] ({_escape(str(c))})")
 
     from refmatrix import verbs as _verbs
-
-    def _mt_excluded(mtype: "str | None") -> bool:
-        return _verbs.mt_excluded(mtype, exclude_mtypes)
 
     def _warn(msg: str) -> None:
         click.echo(f"# rmx: warning: {msg}", err=True)
@@ -12627,7 +12661,7 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
                 raise click.ClickException(str(e))
             _warn(f"global rows omitted: {e}")
             grows = []
-        return [r for r in grows if not _mt_excluded(r.get("mtype"))]
+        return _verbs.recall_rows_filter(grows, _filter_patterns)
 
     def _attach_context(rows: list[dict]) -> list[dict]:
         """--degree>0: context bundle per row. Daemon up → the shared
@@ -12683,10 +12717,13 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
                 exclude_mtype=verb_exclude, include_session=verb_include_session,
                 # the REMAINING budget: the verb starts its own clock, and the
                 # probe above already spent part of ours (r7: 2× budget)
-                subject=subject, degree=degree, timeout=_verb_timeout,
+                subject=subject, degree=0 if pack else degree, timeout=_verb_timeout,
                 # resolved once above, under this budget (bsd-plan3-r5 #m-4)
-                partition=_resolve_partition())
+                partition=_resolve_partition(),
+                include_subjects=include_subjects, pack=pack, max_bytes=pack_bytes,
+                channel=rec_channel)
             rows = res["memories"]
+            packed = res if pack else None
             rec.retrieved = list(_recall_trace) or list(rows)
             widened = bool(res.get("widened"))
             for w in res.get("warnings") or []:
@@ -12707,15 +12744,15 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
                 7 * 86400.0 if session_start else None)
             click.echo(f"# rmx: {e}; reading the replica", err=True)
             if subject:
-                rows = [r for r in rs.subject_leaves(subject)
-                        if not _mt_excluded(r.get("mtype"))][:k]
+                rows = _verbs.recall_rows_filter(rs.subject_leaves(subject),
+                                                 _filter_patterns)[:k]
             else:
                 # The SAME rule as the verb (verbs.recent_rows): over-fetch,
                 # filter, widen a DEFAULT window when empty.
                 rows, widened = _verbs.recent_rows(
-                    lambda since_secs, limit: rs.recent_memories(
-                        since_seconds=since_secs, limit=limit),
-                    k=k, patterns=sorted(exclude_mtypes), since_seconds=since_s,
+                    lambda since_secs, limit: _verbs.recall_rows_filter(
+                        rs.recent_memories(since_seconds=since_secs, limit=limit), []),
+                    k=k, patterns=_filter_patterns, since_seconds=since_s,
                     widen_if_empty=bool(session_start and since is None))
                 if widened:
                     since_s = None
@@ -12723,11 +12760,24 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
             if scope != "project":
                 rows = _merge_scope(rows, _global_rows(None, recent_flag=True, since=since_s),
                                     k, scope)
-            rows = _attach_context(rows)
+            packed = None
+            if pack:
+                # The verb's packer on the fall-through's final rows (R4: once, after the
+                # merge and the exclusion) -- never a CLI renderer of its own.
+                packed = {"memories": rows, **_verbs.pack_recall(
+                    _root(), rows, k=k, query=None, max_bytes=pack_bytes,
+                    channel=rec_channel, since=since, subject=subject,
+                    mode=("subject" if subject else
+                          "session-start" if session_start else "recent"))}
+            else:
+                rows = _attach_context(rows)
         except _verbs.VerbError as e:
             raise click.ClickException(str(e))
         if widened:
             click.echo("# rmx: nothing in the 7d window; widened to newest", err=True)
+        if packed is not None:
+            _echo_pack(rec, packed)
+            return
         rec.delivered = rows
         if as_json:
             import json as _json
@@ -12754,14 +12804,15 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
             name_col=2, ctx_rows=rows if degree > 0 else [])
         return
 
-    # Hybrid path. _memory_daemon_call injects the active partition so
-    # the daemon (bound to whatever partition it was started on) can
-    # still serve recall against the project's memory partition.
-    from refmatrix import daemon as daemon_mod
+    # Dense / hybrid: the rows are the VERB's (task 25.1 R5, d6, 2026-11-11). This branch used
+    # to run its own replica-first leg, its own daemon RPC, its own per-hit fetch and its own
+    # `kind=doc` leg -- a second "which rows" beside `verbs._memory_recall_rows`, so the hook,
+    # MCP and the interactive CLI could answer the same question differently (bug-164's sixth
+    # sighting). It now resolves the partition under the budget, calls the verb, and renders.
     root = _root()
     kinds_list = list(kinds) if kinds else ["memory"]
     # Resolve the memory partition ONCE under the budget (the legacy probe
-    # takes the writer lock daemon-side) and pin it on every call below.
+    # takes the writer lock daemon-side) and pin it on the verb call.
     try:
         if not _partition_override and not os.environ.get("RMX_PARTITION"):
             _dense_partition = _memory_partition_default(timeout=_left(10.0))
@@ -12770,75 +12821,30 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
     except _verbs.VerbBusyError as e:
         _degrade_or_raise(e)
         return
-    # Over-fetch when mtype filter is active so the surviving list still
-    # has k rows after exclusion. 3× covers most pollution levels; user
-    # can raise -k for partitions with denser noise.
-    ann_k = k * 3 if exclude_mtypes else k
-    # The daemon op payload comes from the verb's helper — the one place its
-    # arg names exist (ch-bsd plan-3 #sk-4). rerank=None lets the daemon
-    # apply its RMX_RERANK default.
-    args = _verbs.payload_memory_recall(q, k=ann_k, kinds=kinds_list, fuse=fuse,
-                                        rerank=rerank)
-    # Replica-first: serve the recall off the snapshot slot + shared model
-    # workers so a busy writer (partition merge, fat ingest) can never stall
-    # the always-on hooks. Falls back to the daemon RPC on any missing leg.
-    _replica_ws: list[str] = []
+    _trace: list = []
     try:
-        hits = _replica_memory_recall(
-            q, k=ann_k, kinds=kinds_list, fuse=fuse, rerank=rerank,
-            left=_left, warnings=_replica_ws)
-    except _verbs.VerbBusyError as e:
-        for w in _replica_ws:
-            _warn(w)
+        res = _verbs.memory_recall(
+            root, query=q, k=k, scope=scope, kinds=kinds_list, fuse=fuse, rerank=rerank,
+            exclude_mtype=verb_exclude, include_session=verb_include_session,
+            include_subjects=include_subjects, degree=0, partition=_dense_partition,
+            pack=pack, max_bytes=pack_bytes, timeout=_left(budget), trace=_trace,
+            # d10: a hook cannot spawn a private worker or load a model (6-33 s against
+            # 5 s); an interactive call may, but only when no daemon answers.
+            embedder_policy="hub_only" if hook_mode else "shared", channel=rec_channel)
+    except (_verbs.VerbBusyError, _verbs.VerbAbsentError) as e:
+        rec.retrieved = list(_trace)
         _degrade_or_raise(e)
         return
-    for w in _replica_ws:
+    except _verbs.VerbError as e:
+        raise click.ClickException(str(e))
+    rec.retrieved = list(_trace)
+    for w in res.get("warnings") or []:
         _warn(w)
-    replica_used = hits is not None
-    if hits is None:
-        try:
-            st = _verbs.require_daemon(root, retries=0 if hook_mode else 2)
-        except _verbs.VerbBusyError as e:
-            _degrade_or_raise(e)
-            return
-        except _verbs.VerbAbsentError:
-            raise click.ClickException(
-                "rmx memory recall needs the daemon up (dense embedder "
-                "lives there) or a replica + shared model workers"
-            )
-        # 180s covers worst-case embedder cold-start (sentence-transformers
-        # model load on a busy CPU takes 30-90s) — bounded by the budget in
-        # the hook modes. Steady-state recall is sub-second once warm.
-        import socket as _socket
-        try:
-            resp = _memory_daemon_call("memory_recall", {**args, "partition": _dense_partition},
-                                       timeout=_left(180.0), retries=0 if hook_mode else 2)
-        except (_verbs.VerbBusyError, TimeoutError, _socket.timeout, OSError,
-                json.JSONDecodeError) as e:
-            # json.JSONDecodeError (task 21.1 round-10 #s10-2): a peer that closes
-            # mid-answer makes `daemon.call` parse an empty line — a ValueError this
-            # tuple missed, so the hook died with a traceback instead of degrading.
-            _degrade_or_raise(e)
-            return
-        if not resp.get("ok"):
-            raise click.ClickException(resp.get("error", "daemon error"))
-        hits = resp["result"].get("hits", [])
-        # An unreranked answer says so on stderr (ch-bsd r7 #s-1).
-        for w in resp["result"].get("warnings") or []:
-            click.echo(f"rmx memory recall: {w}", err=True)
-    # Best-first by ascending L2 distance so the displayed `score` (cosine
-    # similarity, higher = better) decreases monotonically with rank — the
-    # column and the row order cannot disagree. The daemon already sorts
-    # ascending; this makes the invariant explicit and robust to hit shape.
-    hits = sorted(
-        hits,
-        key=lambda h: (
-            h["distance"] if h.get("distance") is not None
-            else -(h.get("score") or 0.0)
-        ),
-    )
-    rec.retrieved = _hits_with_meta(hits)
-    if not hits:
+    rows = res["memories"]
+    if pack:
+        _echo_pack(rec, res)
+        return
+    if not rows:
         if as_gmd:
             click.echo(_render_memory_gmd(
                 [], query=q, mode="hybrid",
@@ -12851,90 +12857,7 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
         console.print("[yellow]no recall hits[/] (have memories been embedded? "
                       "rmx embed --kinds memory)")
         return
-    # Route name/content lookup through the daemon so we read the live
-    # rotation slot (catalog.A/B). _store() opens the legacy
-    # `catalog.duckdb` file, which the daemon does NOT keep in sync after
-    # rotation — looking ids up there returns None for valid memories and
-    # silently produces `[]` from the JSON branch. The daemon's own slot
-    # has the truth.
-    def _fetch_memory(eid: int) -> dict | None:
-        # Replica-served hits resolve bodies from the same replica —
-        # falling back to a per-hit daemon RPC here would reintroduce the
-        # writer wait the replica path just removed.
-        if replica_used:
-            try:
-                s = _reader_store()
-                if s is not None:
-                    m = s.get_memory(int(eid))
-                    if m is not None:
-                        return m
-            except Exception:
-                pass
-        try:
-            resp = _memory_daemon_call("memory_get", {"id": eid, "partition": _dense_partition},
-                                       timeout=_left(30.0), retries=0 if hook_mode else 2)
-        except (_verbs.VerbBusyError, TimeoutError, OSError) as e:
-            if hook_mode:
-                _warn(f"memory_get {eid} skipped: {e}")
-                return None
-            raise click.ClickException(str(e))
-        if not resp.get("ok"):
-            return None
-        return resp["result"].get("memory")
-
     if as_json or as_gmd:
-        rows: list[dict] = []
-        for h in hits:
-            if len(rows) >= k:
-                break
-            eid = h.get("entity_id") or h.get("id")
-            if eid is None:
-                continue
-            m = _fetch_memory(eid)
-            if m is None and "doc" in kinds_list:
-                # Non-memory hit (kind=doc/code/concept). For these we
-                # still need a direct entity row + file body. Use the
-                # replica reader so the read bypasses the daemon's write
-                # lock on the active slot; fall back to _store() only if
-                # no replica is up yet.
-                s = _reader_store() or _store()
-                ent = s._read().execute(
-                    "SELECT id, kind, name, path, tldr "
-                    "FROM entities WHERE id=?", (eid,),
-                ).fetchone()
-                if ent is not None:
-                    row_path = ent["path"] if "path" in ent.keys() else None
-                    body = ""
-                    if row_path:
-                        try:
-                            body = Path(row_path).read_text(
-                                encoding="utf-8", errors="replace"
-                            )
-                            if len(body) > 4000:
-                                body = body[:4000].rstrip() + " …"
-                        except OSError:
-                            body = ent["tldr"] or ""
-                    m = {
-                        "id": ent["id"],
-                        "name": ent["name"],
-                        "content": body or ent["tldr"] or "",
-                        "mtype": ent["kind"],
-                        "tags": [],
-                        "metadata": {"source_path": row_path or None},
-                        "partition_id": None,
-                        "created_at": None,
-                        "updated_at": None,
-                    }
-            if m:
-                if _mt_excluded(m.get("mtype")):
-                    continue
-                # Honest fields, higher = better, agreeing with rank order —
-                # the same annotation MCP rows carry (verbs.annotate_hit).
-                rows.append(_verbs.annotate_hit(m, h))
-        if scope != "project":
-            _grows = _global_rows(q, recent_flag=False, since=None)
-            rec.retrieved = list(rec.retrieved) + list(_grows)
-            rows = _merge_scope(rows, _grows, k, scope)
         rows = _attach_context(rows)
         rec.delivered = rows
         if as_gmd:
@@ -12946,39 +12869,46 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
             rec.echo(_json.dumps(rows, indent=2), json_mode=True)
         return
     cells: "list[tuple[list[str], dict | None]]" = []
-    table_rows: list[dict] = []
-    shown = 0
-    for h in hits:
-        if shown >= k:
-            break
-        eid = h.get("entity_id") or h.get("id")
-        if eid is None:
-            continue
-        score = _recall_display_score(h)
-        m = _fetch_memory(eid)
-        if m and _mt_excluded(m.get("mtype")):
-            continue
-        name = m["name"] if m else "?"
-        shown += 1
-        cells.append(([str(shown), f"{score:.4f}" if isinstance(score, float) else str(score),
-                       str(eid), name], m))
-        if m is not None:
-            table_rows.append(m)
-    if scope != "project":
-        seen_names = {m.get("name") for m in table_rows}
-        for gr in _global_rows(q, recent_flag=False, since=None):
-            if shown >= k:
-                break
-            if gr.get("name") in seen_names:
-                continue
-            shown += 1
-            cells.append(([str(shown), "—", str(gr.get("id")), gr["name"]], gr))
-            table_rows.append(gr)
+    for i, m in enumerate(rows, 1):
+        score = m.get("score") if m.get("scope") != "global" else None
+        cells.append(([str(i), f"{score:.4f}" if isinstance(score, float) else "—",
+                       str(m.get("id")), str(m.get("name"))], m))
     # 21.1 ch-bsd r1 #b3 (spec rev round 13, 2026-10-19): the table is the agent's default
     # `recall` channel, so it goes through THE recall table path (`_echo_recall_table`).
     _echo_recall_table(rec, ("rank", "score", "id", "name"), cells, name_col=3,
-                       ctx_rows=(_attach_context(table_rows)
-                                 if degree > 0 and table_rows else []))
+                       ctx_rows=(_attach_context(list(rows)) if degree > 0 else []))
+
+
+def _raw_transport_cause(e: BaseException) -> BaseException:
+    """The first NON-verb exception in `e`'s `__cause__` chain (the socket / JSON error a
+    `daemon.call` raised under `verbs.classify_transport_error`), else `e` itself. A verb error
+    with no transport cause (a spent deadline, a busy or absent daemon found by `ping`, d8's
+    no-daemon refusal) is recorded as itself."""
+    from refmatrix import verbs as _verbs
+    cur: "BaseException | None" = e
+    seen: set = set()
+    while cur is not None and id(cur) not in seen:
+        if not isinstance(cur, _verbs.VerbError):
+            return cur
+        seen.add(id(cur))
+        cur = cur.__cause__
+    return e
+
+
+def _echo_pack(rec: "_RecallCall", res: dict) -> None:
+    """THE `--pack` output (task 25.1 R3/R9): the verb's `text`, written once, with the pack's
+    own per-named-hit byte spans (hook line + body) for 21.1's single `delivered` emitter. The
+    delivered rows are exactly the NAMED ones (a prefix of the verb's rows): a hit the budget
+    trimmed is never logged as delivered."""
+    named = list(res.get("named") or [])
+    rows = list(res.get("memories") or [])
+    if [r.get("name") for r in rows[:len(named)]] != named:
+        raise click.ClickException(
+            f"recall pack names {named} but the verb's rows begin "
+            f"{[r.get('name') for r in rows[:len(named)]]}; refusing to log spans for rows "
+            f"the payload does not carry")
+    rec.delivered = rows[:len(named)]
+    rec.echo(res["text"], spans=list(res.get("spans") or []), nl=False)
 
 
 def _one_line(text: str) -> str:
@@ -13103,13 +13033,15 @@ class _RecallCall:
                                                                        budgeted=True)
 
     def echo(self, text: str, *, json_mode: bool = False,
-             spans: "list[tuple[int, int] | None] | None" = None) -> None:
+             spans: "list[tuple[int, int] | dict | None] | None" = None,
+             nl: bool = True) -> None:
         """Write the payload and keep its exact bytes (R10's one unit). A JSON payload is
         spanned by its `"name"` members (`context.name_spans`); a text payload (the table,
         GMD) brings `spans`, one per delivered row, recorded by its renderer (21.1 r2 #m1:
-        text is never searched)."""
-        click.echo(text)
-        self.payload = (text + "\n").encode("utf-8")
+        text is never searched). `nl=False` writes `text` byte for byte (a `--pack`, task 25.1
+        AC-7 / R8: its budget counted every byte, so the wire carries no extra one)."""
+        click.echo(text, nl=nl)
+        self.payload = (text + ("\n" if nl else "")).encode("utf-8")
         self.json_mode = json_mode
         self.spans = spans
 
@@ -13151,37 +13083,19 @@ class _RecallCall:
             spans = self.spans if self.spans is not None and \
                 len(self.spans) == len(delivered) else [None] * len(delivered)
             for it, sp in zip(delivered, spans):
+                if isinstance(sp, dict):
+                    # A `--pack` span (task 25.1 R9): the hook line's bytes and, when the
+                    # pack carried it whole, the body's -- the packer's layout, never a search.
+                    it["offset_bytes"], it["bytes"] = sp["offset_bytes"], sp["bytes"]
+                    it["body_offset_bytes"] = sp.get("body_offset_bytes")
+                    it["body_bytes"] = sp.get("body_bytes")
+                    continue
                 it["offset_bytes"], it["bytes"] = sp if sp else (None, None)
                 it["body_offset_bytes"] = it["body_bytes"] = None
         _tel.emit_call(root, channel=channel, invocation=self.invocation,
                        session=self.session, query_id=self.tlog.query_id,
                        retrieved=retrieved, delivered=delivered, payload=self.payload,
                        block_id=_tel.RECALL_BLOCK_IDS[channel], phase=phase)
-
-
-def _hits_with_meta(hits: list) -> list:
-    """Recall hits carry their row's name / kind / partition / mtype when the daemon served
-    them (`_op_memory_recall`); replica-served hits get them here from the same lock-free
-    reader that answered, in one query (task 21.1 R10), merged by THE item-meta merge
-    `context.apply_item_meta` (21.1 r1 #s5: one merge, not three)."""
-    from refmatrix.context import apply_item_meta
-    out = [dict(h) for h in hits]
-    missing = [int(h.get("id") or h.get("entity_id")) for h in out
-               if h.get("name") is None and (h.get("id") or h.get("entity_id")) is not None]
-    if not missing:
-        return out
-    try:
-        rs = _reader_store()
-        if rs is None:
-            click.echo("# rmx: warning: recall hit metadata unavailable (no replica reader); "
-                       f"{len(missing)} retrieved event(s) not logged", err=True)
-            return out
-        meta = rs.item_meta(missing)
-    except Exception as e:  # noqa: BLE001 — said; the events for these hits are skipped
-        click.echo(f"# rmx: warning: recall hit metadata unavailable ({e}); their "
-                   f"retrieved events are not logged", err=True)
-        return out
-    return apply_item_meta(out, meta)
 
 
 @memory_grp.command("link")
@@ -14023,7 +13937,12 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
               default=None, help="Override the curated-memory dir.")
 @click.option("--json", "as_json", is_flag=True,
               help="Emit the structured resume payload as JSON.")
-def recall_state(session, memory_dir, as_json):
+@click.option("--max-bytes", "max_bytes", type=int, default=None,
+              help="Fit the report into N UTF-8 bytes, whole blocks only (handoff head, "
+                   "anomalies, git, daemon, recent memories, STM digest), with a trailer "
+                   "naming `rmx recall-state` when anything was cut. The SessionStart "
+                   "compact|clear hook passes hook_budget's recall_state entry.")
+def recall_state(session, memory_dir, as_json, max_bytes):
     """Pull the prior session's handoff and orient — the mirror of save-state.
 
     Read-only. PULLS and reports, so the next instance starts warm instead of
@@ -14043,63 +13962,31 @@ def recall_state(session, memory_dir, as_json):
     `--json` emits the raw payload (what the `rmx_recall_state` MCP tool
     returns). After this, decide the next action — recall-state does not start
     work on its own.
+
+    The text report is `handoff.recall_state_blocks`, the renderer the verb's `text` uses
+    (task 25.1 R11, 2026-11-11), so the compact|clear hook's fitted output and an
+    interactive run begin with the same lines. A failure is ONE `Error:` line and a non-zero
+    exit, never a traceback (the user's 2026-11-10 rule).
     """
     root = _root()
-    from refmatrix import verbs as _verbs
+    from refmatrix import handoff as _handoff, verbs as _verbs
     # The verb resolves (bug-109 r2 #s-2: a CLI-resolved session reached it as `explicit`),
     # after it has read the pointer-error clauses (task 21.1 D6).
-    rep = _verbs.recall_state(root, session=session,
-                              memory_dir=str(memory_dir) if memory_dir else None)
-    sess = rep.get("session") or session
-    if rep.get("session_source") == "latest":
-        sess = f"{sess} {_NEWEST_RING_LABEL}"
+    try:
+        rep = _verbs.recall_state(root, session=session,
+                                  memory_dir=str(memory_dir) if memory_dir else None,
+                                  max_bytes=max_bytes)
+    except _verbs.VerbError as e:
+        raise click.ClickException(" ".join(str(e).split())) from e
 
     if as_json:
         import json as _json
         click.echo(_json.dumps(rep, default=str, indent=2))
         return
-
-    git = rep["git"]
-    console.print(f"[bold]recall-state[/] · session {sess} "
-                  f"[dim]({rep['events']} STM events)[/]")
-    console.print(f"[bold]git[/] branch [cyan]{git['branch'] or '?'}[/] · "
-                  f"HEAD {git['head'] or '?'}")
-    if git["ahead_base"]:
-        n = len([x for x in git["ahead"].splitlines() if x.strip()])
-        console.print(f"     {n} commit(s) ahead of {git['ahead_base']}"
-                      + ("" if n else " — in sync"))
-    console.print(f"     working tree: "
-                  + ("[yellow]dirty[/]" if git["dirty"] else "clean"))
-
-    d = rep["daemon"]
-    state = (f"[green]running[/] pid={d['pid']}" if d["running"]
-             else (f"[yellow]busy pid {d['pid']}[/]" if d.get("busy")
-                   else (f"[yellow]stale pid {d['pid']}[/]" if d["pid"]
-                         else "[dim]not running[/]")))
-    console.print(f"[bold]daemon[/] {state}")
-
-    ss = rep["savestate"]
-    if ss:
-        console.print(f"[bold]handoff[/] [cyan]{ss['id']}[/] [dim]{ss['path']}[/]")
-        body = ss["body"]
-        excerpt = "\n".join(body.splitlines()[:24])
-        console.print(excerpt)
-    else:
-        console.print("[yellow]no prior save-state handoff found[/]")
-
-    if rep["recent_memories"]:
-        console.print("[bold]recent memories[/]")
-        for mid, title in rep["recent_memories"][:8]:
-            console.print(f"  [cyan]{mid}[/] — {title}")
-
-    if rep["stm_digest"]:
-        console.print("[bold]STM digest (live session)[/]")
-        console.print(rep["stm_digest"])
-
-    if rep["anomalies"]:
-        console.print("[bold yellow]anomalies[/]")
-        for a in rep["anomalies"]:
-            console.print(f"  [yellow]![/] {a}")
+    if max_bytes is not None:
+        click.echo(rep["text"], nl=False)
+        return
+    click.echo(_handoff.fit_recall_state(rep, None)[0], nl=False)
 
 
 @main.group("session")
