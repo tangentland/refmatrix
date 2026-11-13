@@ -206,7 +206,8 @@ document, and its per-document hold has the same cause: 29 s for one session car
      the NEW code's own catalog dump (minus the excluded columns), `pending_refs` included.
      **Round 2:** this holds on the post-bug-216 tree because bug-216 R13 logs its per-file
      `rel:`-evidence clear and its pending-ref add / delete / per-file-clear writes as facts.log
-     events, and both replay paths apply them
+     events, and `rebuild_index_from_log` applies them (the one replay path, d9bu; R13 as
+     amended by the lead's 2026-11-13 ruling)
      ([[task-bug216-rule-docs-in-graph]] R13, `#r13` on its branch until it merges; [[#open-replay-216]]). This task's batched forms
      of those writes emit the SAME events ([[#r8]] (e)). [[#r10]]'s unlinks are ordinary
      `unlink` events. The v1 → v2 fixture is where (c) is proven ([[#ac-11]]).
@@ -240,8 +241,9 @@ document, and its per-document hold has the same cause: 29 s for one session car
      weight included) applies the catalog's conflict rule: a later `link` event with weight
      `None` for a key whose previous state is a `link` keeps the previous weight. `unlink` still
      resets. Last-event-wins stays the rule for everything else. The per-event replay
-     (`_apply_event_body`) already calls `link()`, which keeps a stored weight on `None`, so it
-     is unchanged; AC-8 runs both replays.
+     (`_apply_event_body`) has no caller in `src/`. d9bu retired it and 16.6 R1f deletes it, so
+     this task adds nothing to it and AC-8 replays through `rebuild_index_from_log` only. That
+     changed in round 2, by the lead's d9bu ruling; round 1 ran both replays.
    {#r6}
 7. **R7 Per-document entry points (decided here, for 23.3).** This task cuts the seam 23.3 R1
    needs ([[task-23.3-sync-between-file-yield#r1]]), because it rewrites both loops anyway and
@@ -258,9 +260,10 @@ document, and its per-document hold has the same cause: 29 s for one session car
        ([[#r8]] (c)).
 
      `GmdBatch` carries both name sets. Pass 2 adds the concept names it mints to the
-     `denotes` set, in memory, as bug-216's loop does. The tail is batch-level and not
-     per-document, because a per-document tail would miss the names of skipped documents. It
-     would also change the order of resolution against HEAD, which [[#r3]] (a) pins.
+     `denotes` set, in memory, as bug-216's loop does. This is the post-bug-216 HEAD
+     placement: the tail runs once, after every pass 2. Whether it moves into
+     `gmd_pass2_document` (with only the skipped-document residue left here) is
+     [[#open-finish-stop]]; the recommendation there is option 1.
 
    `ingest_gmd_paths` becomes `gmd_prepare` + every `gmd_pass1_document` + every
    `gmd_pass2_document` + `gmd_finish` + `stamp_derive("gmd")`, with its resume gate and yields
@@ -317,7 +320,7 @@ document, and its per-document hold has the same cause: 29 s for one session car
      `entity_id`, for [[#r10]] and the R13 event) and ONE delete on the same predicate. It may
      be one `DELETE … RETURNING` where both backends support it. Bug-216's count-then-delete,
      which is two scans plus the delete, is replaced. Constant per document, as R1 requires.
-   - **Measured, with a pre-registered band** ([[#ac-4]]). On AC-4's clone, each run records
+   - **Measured, with a pre-registered band** ([[#ac-4]]; accepted by the lead, 2026-11-13). On AC-4's clone, each run records
      the clear's wall time for the pinned file and the clone's `linkage_evidence` row count:
      - median clear ≤ 50 ms: no schema change; the figures are recorded;
      - median clear > 50 ms: this task adds `CREATE INDEX IF NOT EXISTS idx_evidence_file ON
@@ -545,20 +548,18 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
 8. **AC-8 (bug-186: replay keeps link weights; RED at HEAD).**
    - The r1 probe shape, direct context: node `findings` with body
      `Findings findings here. See [[#findings]]`. Catalog `mentions findings → d1#findings` weight 3.0; a fresh-store replay
-     of the call's facts.log gives 3.0 (HEAD: `None`), through both `rebuild_index_from_log` and
-     the per-event replay.
+     of the call's facts.log gives 3.0 (HEAD: `None`), through `rebuild_index_from_log`
+     (round 2: the per-event replay leg is dropped, d9bu).
    - `bulk_link` unit: a bit set with weight `None`, then `bulk_link([(…, 2.5)],
      update_weight=True)` → facts.log gains one event with 2.5; replay gives 2.5. First-wins
      mode on the same bit logs nothing.
    - Fold unit: `link(…, weight=2.0)` then `link(…, weight=None)` → catalog 2.0, replay 2.0;
      `link(2.0)`, `unlink`, `link(None)` → replay `None`, as the catalog.
    - Mutations, each FAILS: drop R6 (a)'s existing-bit logging; revert R6 (b)'s fold rule.
-   - **The per-event half is its own test function** (round 2, L31). In
-     `tests/test_bug186_replay_link_weight.py`, `test_ac8_per_event_replay_keeps_weight` holds
-     every `_apply_event_body` call; no other test function calls it. Task 16.6 R1f deletes
-     `_apply_event_body` (d9bu: the rebuild is the one replay path), and it deletes that
-     function with it ([[task-16.6-learned-row-validation#rev-round-15]]). The
-     `rebuild_index_from_log` half stays and guards R6 (b) through 16.6's row-pass rewrite.
+   - **No test calls `_apply_event_body` or `apply_log_delta`** (round 2, lead ruling: d9bu
+     wins). The `rebuild_index_from_log` tests guard R6 (b) through 16.6's row-pass rewrite
+     ([[task-16.6-learned-row-validation#rev-round-15]]), and 16.6 R1f has nothing of this
+     task's to delete.
    {#ac-8}
 9. **AC-9 (per-document entry points).** For a two-document fixture whose documents link each
    other (both new), calling `gmd_prepare`, then `gmd_pass1_document` for each document, then
@@ -611,9 +612,8 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
       - skip the "still supported" check (the duplicate-line edge goes);
       - `bulk_unlink` without its `unlink` events (replay holds the old edge).
 
-    The per-event replay leg (`apply_log_delta(0)` / `_apply_event_body`) is a separate test
-    function, `test_ac11_per_event_replay`. It is kept out of the main test, as AC-8's is, so
-    16.6 R1f deletes it with the path ([[task-16.6-learned-row-validation#rev-round-15]]).
+    Replay is through `rebuild_index_from_log` only. There is no per-event leg (d9bu; lead
+    ruling, round 2).
     {#ac-11}
 12. **AC-12 (R8 (e) events and R9's shape; round 2).**
     - For one re-ingest, the facts.log events of the batched path equal, as a multiset of op
@@ -751,13 +751,14 @@ rel: amends -> [[#rev-round-1]]
 | L3: bug-216 gains an order edge to bug-185 | not here | that edge belongs in [[task-bug216-rule-docs-in-graph]], which is not this spec owner's file. Handed to the lead. This spec carries the reverse `depends-on` |
 | L4 / Cc-7: "plan-26 merged" gate over-broad | header (26.1 + 26.2 merged, satisfied), [[#merge-order]] | only 26.1 and 26.2 edit what this task rewrites. 26.3/26.4/26.6 were checked ([[#rev-round-2-facts]]) |
 | L31 / N17: 23.3 consumes R7's entry points | [[#r7]] (`gmd_finish`, the fourth entry point), [[#ac-9]]; [[task-23.3-sync-between-file-yield#rev-round-8]] | bug-216's tail runs once per batch after pass 2. If no entry point held it, 23.3's per-step wrapping would either drop it or run it unbounded |
-| L31 / N7: 16.6 deletes `_apply_event_body`, which AC-8 replays | [[#ac-8]] (the per-event half isolated in one named test function); [[task-16.6-learned-row-validation#rev-round-15]] | this task lands first (queue item 5, before item 8). 16.6's AC-12 scan would fail on a surviving caller, so the caller is made deletable as one unit |
+| L31 / N7: 16.6 deletes `_apply_event_body`, which AC-8 replayed | [[#ac-8]] (the per-event leg dropped; rebuild only); [[task-16.6-learned-row-validation#rev-round-15]] | this task lands first (queue item 5, before item 8). First drafted as an isolated, deletable test function; replaced by the lead's d9bu ruling ([[#rev-round-2-lead]]): no new caller of a retired path |
 
 ### Resolved: replay fidelity after bug-216 (bug-216 R13) {#open-replay-216}
 
 **Resolved by the lead, 2026-11-13: bug-216 gains R13 before it merges**
 ([[task-bug216-rule-docs-in-graph]] R13 and AC-14, anchors `#r13` / `#ac-14` on its branch, RED at `f79dab1`; the wikilink is doc-level until that branch merges). The per-file evidence clear
-and every pending-ref write become facts.log events that both replay paths apply. "Pending refs
+and every pending-ref write become facts.log events that `rebuild_index_from_log` applies (R13
+as amended by the lead's d9bu ruling: rebuild only). "Pending refs
 outside replay" was rejected: it would be a silent knowledge loss on rebuild. So [[#r3]] (c)
 holds on the post-bug-216 tree. This task's batched writes emit the same events ([[#r8]] (e)),
 and [[#ac-11]] proves (c) on the v1 → v2 fixture. The problem and the options as first written
@@ -788,21 +789,102 @@ The options as first written:
 
 ### Open item: a stop between the last pass-2 step and `gmd_finish` {#open-finish-stop}
 
-At post-bug-216 HEAD, each document's `gmd_content_hash` is stamped at the end of its pass 2.
-The batch tail runs after that. Under 23.3's steps, and in the direct context when a yield
-falls there (`RMX_INGEST_YIELD_EVERY`), a stop after the last pass-2 step leaves every
-document hash-stamped with no tail. The next sync skips them. Their pending rows stay unresolved
-until a later batch names the target, and their `denotes` links wait for the derive op. That
-contradicts 23.3 R1's "a stop between steps … the next sync's resume gate re-ingests it". The
-options:
-1. **(recommended) The hash stamps move into `gmd_finish`**, after the pending resolution and
-   `denotes`, as one batched write. A stop anywhere before the end leaves the documents
-   unstamped, so they re-ingest. The final catalog is unchanged (R3 (a)'s golden holds). Cost:
-   one more batched statement per batch, and R2 step 8 moves.
-2. The tail's inputs are persisted (a pending-names marker per batch), and the next ingest
-   replays a marker it finds. Cost: a new table and a recovery path.
-3. Accept and report it: the gap is counted, and the documented recovery is the derive op plus
-   the next batch that names the target. Cost: a silent-until-counted loss on a memory path.
+**The window.** At post-bug-216 HEAD, `ingest_gmd_paths` stamps each document's
+`gmd_content_hash` at the end of that document's pass 2. bug-216's batch tail runs only after
+the LAST document's pass 2:
+- `resolve_pending_refs(batch_names)` binds pending `rel:` rows whose target this batch
+  registered;
+- `link_denotes(denotes_names)` links path-less concepts to the doc or memory they name.
+
+A stop after any pass-2 document and before the tail therefore leaves that document
+hash-stamped while the tail has not run for its names. The stop can be a crash, a daemon
+fast-exit, 23.3's `cancel`, or 23.3's `budget_s`. The next sync's resume gate sees a matching
+hash and skips the document. Its target names never reach `resolve_pending_refs` again, unless
+a later batch happens to carry that document. Its own and its minted names never reach
+`link_denotes` again, unless the one-time derive op is re-run.
+
+**Where it can happen.**
+- In the **direct context** (the job path) between documents, because `_op_ingest_gmd` yields
+  the lock after every document (`RMX_INGEST_YIELD_EVERY` default 1) and a daemon exit can fall
+  in any yield.
+- Under **23.3** at every step boundary of the GMD phase. 23.3 R1 promises that "a stop
+  between steps leaves a document without its hash, so the next sync's resume gate re-ingests
+  it", and 23.3 R4 states the rule that "a file's stamp is written in the same transaction as
+  the LAST step that still owes it work". With the tail in a separate `gmd_finish` step, every
+  pass-2 step stamps a document that `gmd_finish` still owes work, which breaks R4's rule.
+
+**Options (recommendation first).**
+
+1. **(recommended) The tail runs per document, inside `gmd_pass2_document`, before that
+   document's hash stamp. `gmd_finish` keeps only the residue for skipped documents.**
+   - **Per document, at the end of pass 2.** First, pending resolution for the names THIS
+     document registered in pass 1 (its doc id, its node names, its ADR slash alias). Then
+     `link_denotes` for this document's id and the concept names its pass 2 minted (tags,
+     title tokens, mention concepts). Last, the hash stamp. All of it goes in the same
+     transaction, so the stamp is in the last step that owes the document work (23.3 R4's
+     rule).
+   - **`gmd_finish`** keeps only the names of documents that had NO pass 2 in this batch
+     (skipped as unchanged): pending resolution and `link_denotes` for those names. Both are
+     idempotent. A stop before it loses only that residue, and the residue is re-offered by
+     the next batch that carries those documents.
+   - **Why the final catalog is the same as the batch-level tail's.**
+     - Pass 1 registers every document of the batch before any pass 2. So a pending row whose
+       target is document D resolves at D's own pass 2 with the same precedence and the same
+       `eid_by_name`.
+     - A concept that a later document D2 mints, naming D, is in D2's minted set, so it is
+       linked at D2's step. The `denotes` link set is the same once the batch ends.
+     - R3 (a) compares the catalog dump, not the event order. So AC-2's golden holds, and
+       AC-9 shows it for the per-document entry points.
+   - **Statement cost.** Per document it adds one `pending_refs_for` read, ≤ 1 batched
+     resolution write set ([[#r8]] (b)) and one `link_denotes` (chunked reads, one
+     `bulk_link`). That is constant per document, as [[#r1]] requires, and AC-3 covers it.
+   - **Resume granularity is unchanged.** Every finished document stays finished, so 23.3's
+     budget stops always make progress.
+   - **Spec changes if adopted:**
+     - [[#r7]]'s `gmd_pass2_document` absorbs the per-document tail before R2 step 8.
+     - `gmd_finish` shrinks to the skipped-document residue.
+     - [[#ac-9]] gains a stop injected after one document's pass 2. The next call re-offers
+       nothing for that document, because its tail already committed with its stamp.
+       Mutation: the tail moved back after the stamp FAILS.
+     - 23.3 R1's "stop between steps" sentence holds again. Its `gmd_finish` step stays, for
+       the residue.
+   - **Residual risk:** a stop before `gmd_finish` can still delay the residue, which affects
+     only names of unchanged documents. A pending row can target such a document only if its
+     target existed when the citer was ingested but went unresolved, for example after an
+     ignore-rule change. The derive op and the next batch carrying that document recover it.
+     The residue counts are reported (`pending_resolved` / `denotes_added` in the batch's
+     report).
+
+2. **The hash stamps move into `gmd_finish`, as one batched write after the tail.**
+   - Closes the window completely: a stop anywhere leaves every document of the batch
+     unstamped, so all of them re-ingest.
+   - **Cost: a stop now throws away the whole batch's progress, not one document's.** Under
+     23.3's `budget_s`, a GMD batch larger than one budget never reaches `gmd_finish`, so it
+     is re-ingested in full on every sync and never stamps: a livelock. The memory bridge's
+     batches (hundreds of files, a yield per document) re-do all of them after any daemon
+     exit.
+   - R2 step 8 moves, and R3 (a)'s "a hash is written only after pass 2 completes" becomes
+     "after `gmd_finish` completes".
+   - The final catalog is unchanged.
+
+3. **The tail's inputs are persisted.** A per-batch marker row holds the names the tail still
+   owes. It is written in the first pass-2 step, cleared by `gmd_finish`, and replayed by the
+   next ingest that finds it.
+   - Closes the window and keeps per-document progress.
+   - **Cost:** a new table with its own R13-style facts.log events, a recovery path at ingest
+     start, and a 16.6 row-pass entry. It is a second mechanism for what option 1 gets by
+     placing existing writes.
+
+4. **Accept and report.** The batch tail stays as it is. A stop before it is counted (the
+   batch report names the documents whose tail did not run), and recovery is the derive op
+   plus the next batch that names each target.
+   - **Cost:** knowledge on a memory path stays missing until someone acts on a report. That
+     goes against `feedback_no_silent_failures` and `feedback_decay_never_loses_knowledge`'s
+     intent, even when the gap is counted.
+
+**This revision picks none.** The draft first recommended option 2. I revised the
+recommendation to option 1 after reading 23.3 R4's stamp rule and its `budget_s` stop, under
+which option 2 can livelock.
 
 ### Lead inputs folded the same day {#rev-round-2-lead}
 
@@ -816,8 +898,12 @@ rel: implements -> [[bug_registry]] {bug: "bug-221"}
 | bug-216 GREEN flag 7: `clear_rel_evidence` scans `linkage_evidence` by `file` with no index, once per re-processed doc | [[#r9]], [[#ac-4]], [[#ac-12]], [[#files-list]] | the scan grows with the store, not the document, so it is a per-hold cost this task owns. A pre-registered band decides between index and no index; the count-then-delete double scan goes either way |
 | bug-221 (owner: this revision): a changed `rel:` line leaves its old edge with no evidence | [[#r10]], [[#ac-11]], [[#files-list]] | replace semantics keyed by the evidence the clear removes, so hierarchy and extraction edges sharing a verb are never touched. Logged as `unlink` events, so replay reproduces the removal. Existing stale edges are a plan-22 census item, not repaired here |
 
-The per-event replay path these inputs mention (`apply_log_delta` / `_apply_event_body`) is
-retired by d9bu and deleted by 16.6 R1f. This task's per-event legs are each one named test
-function ([[#ac-8]], [[#ac-11]]), so that deletion removes them as a unit
-([[task-16.6-learned-row-validation#rev-round-15]]).
+**Two further lead rulings, 2026-11-13:**
+- **d9bu wins** over R13's "both replay paths". `apply_log_delta` has no caller in `src/`.
+  bug-216 R13 is amended to apply its events in `rebuild_index_from_log` only. This task
+  therefore has NO per-event replay leg: AC-8's, which round 1 had, and AC-11's are dropped,
+  and nothing here extends `_apply_event_body`. 16.6 R1f's deletion list is unchanged by this
+  task ([[task-16.6-learned-row-validation#rev-round-15]]).
+- **[[#r9]]'s pre-registered band** (median clear ≤ 50 ms, else `idx_evidence_file`) is
+  accepted as written.
 
