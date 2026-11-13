@@ -582,3 +582,11 @@ rel: derives-from -> [[bsd-spec-t2-b5fe2d3]]
 | s1, s2, s3, m1, m2, m3, m6, m7 | 26.5's bug-220 reroute is rewritten: both path forms; collected, then dispatched outside the writer lock; full `--as-memory` path; loud failure branch; home memdir held per plan-27 Q4. ADR-0005 is made self-consistent | [[task-26.5-memory-organise-verb#rev-round-7]], [[refmatrix/adr-0005-memory-dir-layout#amendments]] |
 | s4 | bug-202's live restore moves to 27.5 AC-5; 26.5 keeps the existence check | [[task-26.5-memory-organise-verb#r-202b]], [[#user-gates]] |
 | m4, m5 | 26.8 AC bodies state rules; the forget-step false-premise branch | [[task-26.8-refmatrix-live-rollout#rev-round-7]] |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-spec-t2-r8-e3cd4c7.md` (over `spec-wave-t2` up to `e3cd4c7`; r1-r7 in the same ledger) | `metadata.status` stays `approved` |
+
+rel: derives-from -> [[bsd-spec-t2-r8-e3cd4c7]]

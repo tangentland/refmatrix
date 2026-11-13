@@ -1203,3 +1203,11 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 |---|---|---|
 | M1 (the `rmx watch` flush runs on the Debouncer thread; `_safe_fire` swallows errors) | `run_watcher`'s flush opens and drains an invocation unconditionally on every flush. "If long-lived" and the root-drain claim are dropped from the routes table. `_safe_fire` re-raises `NoInvocationError`. AC-220 (u) with two mutations; `watch.py` in Files | [[#r-220c]], [[#reroute-routes]], [[#ac-220]], [[#files]] |
 | M2 ((t)'s "afterwards" check cannot fail on a generator fixture) | (t) is a fixture-less test asserting `memory_reroute.current() is None` (autouse fixtures apply to it), plus a `pytester` must-fail case with a planted `with invocation(): yield` autouse fixture. The AST leg is dropped | [[#ac-220]] |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-spec-t2-r8-e3cd4c7.md` (over `spec-wave-t2` up to `e3cd4c7`; r1-r7 in the same ledger) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t2-r8-e3cd4c7]]

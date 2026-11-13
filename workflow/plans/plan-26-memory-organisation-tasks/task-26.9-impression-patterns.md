@@ -251,3 +251,11 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 | G19 (counts re-read) | The `#why-state` figures are as of `2f4a1df`. Re-read 2026-11-13: `IMPRESSIONS.md` 307 lines / 56 KB, and `memory/impressions/` holds 80. AC-3's cap is pre-measured on a ledger copy at run time, as R3 already requires, so no AC value changes | [[#why-state]] |
 | L45 (user gates) | Unchanged: the user approves each pattern doc (R2), and AC-5 is live | [[#ac-5]] |
 | Q8 open (brief rule) | No line here changes under Q8 b: impressions are memories, not save-states | none |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-spec-t2-r8-e3cd4c7.md` (over `spec-wave-t2` up to `e3cd4c7`; r1-r7 in the same ledger) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t2-r8-e3cd4c7]]

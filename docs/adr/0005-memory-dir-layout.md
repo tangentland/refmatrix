@@ -420,3 +420,11 @@ out at ingest), three things change:
 
 The first two lose their store side, because no save-state row is written. The file-side rewrite
 by `organise --apply` stays.
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-spec-t2-r8-e3cd4c7.md` (over `spec-wave-t2` up to `e3cd4c7`; r1-r7 in the same ledger) | the document's own status is unchanged; the revised records above are approved |
+
+rel: derives-from -> [[bsd-spec-t2-r8-e3cd4c7]]

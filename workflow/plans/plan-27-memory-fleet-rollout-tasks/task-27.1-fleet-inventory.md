@@ -171,3 +171,11 @@ Ca-8; spec gap G19). Status is unchanged (`pending`).
 |---|---|---|
 | L13 / Ca-8 (the survey's hook column is stale after the 0.82.0 re-install; fleet found by hub, not by marker) | AC-0 refreshes `#survey` and `#facts` before AC-1, and finds repos by their hook marker | [[#ac-0]] |
 | Q8 open (brief rule) | Under Q8 b, AC-1's mis-typed save-state count and AC-6's `refresh_pending` lose their store side; the file counts stay | [[plan-27-memory-fleet-rollout#q8-b]] |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-spec-t2-r8-e3cd4c7.md` (over `spec-wave-t2` up to `e3cd4c7`; r1-r7 in the same ledger) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t2-r8-e3cd4c7]]

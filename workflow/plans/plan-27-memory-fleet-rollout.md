@@ -358,3 +358,11 @@ rel: derives-from -> [[bsd-spec-t2-b5fe2d3]]
 |---|---|---|
 | s4 | 27.5 AC-5 hosts bug-202's live restore: only the two named files, single-file bridge, the same session window, a cross-store row stops it | [[task-27.5-cliquedb-at-session-boundary#r-202b-live]], [[#user-gates]] |
 | m7 | Q4 also holds 26.5's home-memdir reroute until 27.1 reports | [[#open-questions]] |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-spec-t2-r8-e3cd4c7.md` (over `spec-wave-t2` up to `e3cd4c7`; r1-r7 in the same ledger) | `metadata.status` stays `approved` |
+
+rel: derives-from -> [[bsd-spec-t2-r8-e3cd4c7]]

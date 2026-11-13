@@ -295,3 +295,11 @@ rel: derives-from -> [[bsd-spec-t2-b5fe2d3]]
 |---|---|---|
 | m4 (AC bodies still asserted the 2026-11-09 numbers) | AC-2's table, AC-3, AC-4, AC-5 and AC-6 state rules that are re-read at run time; the old figures remain only as dated history | AC-2-AC-6, [[#counts-reread]] |
 | m5 (no branch for a false premise in the forget-step re-check) | If the bridge forgets deleted files by then, A.2 is withdrawn and the user is told why | AC-8 |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-spec-t2-r8-e3cd4c7.md` (over `spec-wave-t2` up to `e3cd4c7`; r1-r7 in the same ledger) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t2-r8-e3cd4c7]]
