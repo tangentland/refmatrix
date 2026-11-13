@@ -169,17 +169,26 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
    - **The run is the handhold experiment's run (L20).** The A/B is not a serial step and has no
      period of its own. It is a declared factor of the experiment: arm A (push on) splits into
      `A+dedupe` / `A+full`, arm B (no push) has no dedupe factor, and arm C (bare, opt-in) is never
-     drawn. The experiment's spec owns the period (≥ 14 days, and ≥ 40 sessions per cell per
-     store, whichever is later, written before the start), its salt and its user-gated start.
-     That spec is [[plan-28-handhold-outcome-experiment]], from
-     [[exploration-handhold-outcome-experiment#assignment]].
-   - **One arm table, built here:** 10.2 is built before the experiment starts, so it creates
-     `arms.SESSION_ARMS` (new, tiny, pure) holding the experiment's full cell table (`A+dedupe`,
-     `A+full`, `B`, and `C` at weight 0), plus `arms.draw(session_id) -> str`, a pure function of
-     `sha256(session_id + period salt)` with no state file. The SessionStart focus hook records
-     the arm once (`session_arm` on a `cli.log` row). The verb and scan-prompt ask `arms.draw` for
-     the dedupe factor. The experiment wires arm B's push-off to the same draw.
-     `session_arm` is not 21.1's per-prompt `arm`.
+     drawn. The experiment's spec owns the period values (≥ 14 days, and ≥ 40 sessions per cell
+     per store, whichever is later, frozen before the start by
+     [[task-28.4-preregistration-freeze]]), its salt, and its user-gated start
+     ([[task-28.5-run-and-report]]). That spec is [[plan-28-handhold-outcome-experiment]], from
+     [[exploration-handhold-outcome-experiment#assignment]]. Ownership is split per
+     [[task-28.1-session-arms-and-push-switch#ownership]].
+   - **One arm table, built here, store-scoped:** 10.2 is built before the experiment starts, so
+     it creates `src/refmatrix/arms.py`. It holds `arms.SESSION_ARMS`, the experiment's full cell
+     table (`A+dedupe`, `A+full`, `B`, and `C` at weight 0). It also holds the period records:
+     each record carries `id`, `salt`, `start`, `end`, `scope` (project slugs) and `cells` with
+     weights. 10.2 ships with NO active period. `arms.draw(session_id, *, root, now=None) -> str`
+     is a pure function with no state file. Its inputs are `sha256(session_id + salt)`, the slug
+     of `root` and `now` in `[start, end)`. It returns `A+dedupe` when `root`'s slug is outside
+     the active period's `scope`, or when no period is active at `now`. The scope matters because
+     `arms.py` ships in the deployed code to every store: a store-blind draw would randomise the
+     whole fleet. The SessionStart focus hook records the arm once (`session_arm` on a `cli.log`
+     row). The verb and scan-prompt ask `arms.draw` for the dedupe factor. The experiment's
+     [[task-28.1-session-arms-and-push-switch]] adds only `arms.push_on` (arm B's push-off), its
+     own inert period records and `arm_period` on the SessionStart row. `session_arm` is not
+     21.1's per-prompt `arm`.
    - **Outcomes, counts only (L27, h14):** injected bytes per human prompt (all per-prompt
      bytes of the session, non-human turns included, divided by its human prompts); used items per
      100 human prompts, where "used" is ONLY a 21.1 R12 explicit `used` event or a
@@ -187,14 +196,14 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
      apart from over-budget ones; and the handhold experiment's orientation proxies where its
      scorer exists (recorded, not a band). 21.5's legs (`tool`, `bash_name` and the rest) are NOT
      an outcome: they are unbuilt and frozen (D-Q3, D-Q4). `cited_in_answer` comes from the
-     experiment's transcript scorer, the one the experiment uses for its own outcome, with no
-     10.2 copy.
+     experiment's ONE transcript scorer ([[task-28.3-outcome-scorer#r7]]), and 10.2 has no copy.
    - **Bands, written here before the run:** `dedupe` cuts bytes per human prompt ≥ 30% and its
      used rate is within −5% of `full` (or above) → keep; used rate 5-15% below → the user decides;
      more than 15% below → the user decides whether the names line needs more than names.
    - **The switch is for measurement only:** `arms.py` and its branches are deleted after the
      experiment's period, by the experiment's close-out (a row in `workflow/deferral_registry.md`
-     with the end date). Outside the period `draw` returns `A+dedupe` (push on, dedupe on).
+     with the end date), as [[task-28.5-run-and-report#r8]] specifies. Outside every active
+     period, and for every out-of-scope store, `draw` returns `A+dedupe` (push on, dedupe on).
      Correctness never depends on it.
    - **Future arm (Q13), not built:** `4+3b` — baseline-delivered non-held rows first, then new
      candidates, then held rows into leftover budget, the rest on the names line. A later A/B adds
@@ -260,10 +269,12 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
    `prompt_family: "agent-message"`.
 10. **AC-10 State failures.** An unreadable channel file → everything full, one stderr line,
     `held_error` on the row, exit 0; an unreadable marker → full (10.3's reset).
-11. **AC-11 The arm draw.** `arms.draw` is deterministic per session id and salt; 400 synthetic
+11. **AC-11 The arm draw.** `arms.draw` is deterministic per session id, salt, root and `now`; 400 synthetic
     ids split between `A+dedupe` and `A+full` within ± 30 of their table share; a `full` session's payloads equal the no-dedupe render; the SessionStart
-    entry records one `session_arm` row; outside the period every session is `A+dedupe`; inside
-    it the four cells are drawn at their table weights and C never is.
+    entry records one `session_arm` row. As shipped (no active period), every session on every
+    root is `A+dedupe`. With a test period scoped to one slug, an in-scope root at `now` inside
+    `[start, end)` draws the four cells at their table weights, and C is never drawn. An
+    out-of-scope root draws `A+dedupe`, and so does an in-scope root at `now` = `end`.
 12. **AC-12 Offline parity** (R8): the replay with `src/` imports reproduces 10.5's v3 figures on
     the same clones.
 13. **AC-13 Mutations that must FAIL a test:** a held item dropped without a name (AC-2); a
@@ -273,7 +284,8 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
     fitter (AC-6); `(+N)` items given `delivered` events (AC-6); `session_start` naming (AC-8); `rmx
     context` deduped (AC-8); an unreadable state file read as "all held" (AC-10); the scan filter
     keyed by name instead of `telemetry.item_key` (a same-name pair in two files, AC-2);
-    `arms.draw` using a random source (AC-11); a non-held row promoted into freed bytes (AC-2,
+    `arms.draw` using a random source (AC-11); `draw` ignoring `scope` (AC-11: the out-of-scope
+    root is randomised); `end` treated as inclusive (AC-11); a non-held row promoted into freed bytes (AC-2,
     tier pinning); held removal applied BEFORE the ladder (AC-2: the 40-row fixture shows a
     promotion); held members printed on a second, 10.2-owned line (AC-14); a held member recorded
     with 25.1b's over-budget `form` (AC-7); the tier ignored in `HeldSet.covers` (AC-2, the
@@ -296,7 +308,7 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
 | `src/refmatrix/cli.py` (`_memory_recall_impl`, `_RecallCall`, `scan-prompt`, `focus hook --event session-start`) | the dedupe context; `record_full` after the print; event fields; the `session_arm` row |
 | `src/refmatrix/scan.py` | the held filter through `shown`, the names block |
 | `src/refmatrix/context.py` (`render_text_spans`) | `omit_anchor=` |
-| `src/refmatrix/arms.py` (new, measurement only; deleted after R7's period) | `SESSION_ARMS`, `draw()` |
+| `src/refmatrix/arms.py` (new, measurement only; deleted by 28.5 R8 after the period) | `SESSION_ARMS`, period records (`id`, `salt`, `start`, `end`, `scope`, `cells`), none active; `draw(session_id, *, root, now=None)` |
 | `tests/test_task10_2_names_only.py` (new) | AC-1..AC-14 |
 | `workflow/measurements/names-only-2026-11.md` (new) | R7's live run and R8's parity |
 
@@ -332,6 +344,7 @@ rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 | Tier-pinned: the ladder runs over every row first; held rows then leave their tiers; non-held rows never take freed bytes | h9 applied to the ladder (CB-1 asks for the order) | h9, h13, R3, AC-2 |
 | Every held row's body goes to 25.1b's spill page (k3 step 4); held overflow is counted `(+N)` | L15 | R3, AC-6 |
 | One rank order across both member kinds (10.6 p2); held members marked `·held` | 25.1b k2; lead ruling on [[#open-held-mark]] (a) | h16, R3, R4, AC-1, AC-14 |
+| `arms.draw(session_id, *, root, now=None)` store-scoped: period records carry `scope`; ships with no active period; out of scope or out of period → `A+dedupe` | spec-t3c, plan-28 handshake (`5ac42e5`): arms.py ships to every store | R7, AC-11 |
 | Tier-aware held: held only at the tier shown and poorer ones | lead ruling on [[#open-held-tier]] (a) | h1, h4, h15, R1, R2, R3, R4, AC-2 |
 | `form: "held"` is distinct from 25.1b's over-budget form | CB-2's resolution in 25.1b | R6, AC-7 |
 | R8 parity target = 10.5 v3 (tier-pinned on 25.1b's pack), not v2 | L15 | R8, AC-12 |
