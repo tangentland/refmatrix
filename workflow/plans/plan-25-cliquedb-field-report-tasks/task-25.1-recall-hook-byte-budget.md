@@ -760,3 +760,11 @@ the implementation summary's `#lead-judge-table`.
 
 rel: amends -> [[task-25.1-recall-hook-byte-budget#r7]]
 rel: amends -> [[task-25.1-recall-hook-byte-budget#r2]]
+
+**Rev 7 follow-up (2026-11-13, lead, on `red-251b`'s `#red-rev7-ambiguities`).** a-j5: accepted —
+at `--k 12` the SessionStart pack carries whole bodies greedily in rank order, and on the fixture
+those are global (project bodies ≥ 4.9 KB do not fit after them); AC-9 counts bodies of any scope.
+Whether SessionStart should prefer PROJECT bodies is an orientation question for the handhold
+outcome experiment and 19.6, not 25.1 scope. a-f1, a-f2 (producer count shape), a-f3 (AC-4 (i) a
+guard), a-f4, a-f6 (`--verbose`), a-j3, a-j4 (subject index = its `rerank=False` index): accepted
+as written. {#rev-round-7-followup}
