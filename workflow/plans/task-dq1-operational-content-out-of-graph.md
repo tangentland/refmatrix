@@ -390,8 +390,10 @@ sandbox.
    with `_DERIVE_SRC_DIR` pointing at a copy of the module tree (as AC-4), `cached_adjacency`
    writes an `adjacency.cache.npz` / `.json` pair, and the test records the pair's key. Then
    `is_operational`'s prefix list is edited in the COPY, with no other change, which moves
-   `derive_code_hash("pagerank")`. The next `cached_adjacency` call (in a fresh process, so no
-   instance cache) does not serve the old pair: it rebuilds and rewrites it under a new key that
+   `derive_code_hash("pagerank")`. The next `cached_adjacency` call runs in the same process, with
+   the instance cache dropped by a new `Store` on the same root, while `_DERIVE_SRC_DIR` still
+   points at the copy (L74: a fresh process cannot see that module global and would hash the real
+   tree). It does not serve the old pair: it rebuilds and rewrites it under a new key that
    carries the new hash. The test asserts the key change and the rewrite only. It does not assert
    the new rule's effect, because the running code still imports the unedited predicate, and no new
    mock is added (L71). Mutation: leave the code hash out of the disk key: FAILS, because the old
@@ -490,7 +492,9 @@ R5's commit.
 ## Revision 8 (2026-11-14, ch-bsd r6 + L71) {#rev-8}
 
 The lead's ruling L71 (dev master `43ddd38`) adopts both fixes; for M1 it picks the
-rebuild-only assertion, with no new mock.
+rebuild-only assertion, with no new mock. L74 (dev master `5119c65`) closes r7's residue: AC-6's
+on-disk leg runs in the same process, with the instance cache dropped by a new `Store` on the same
+root while `_DERIVE_SRC_DIR` still points at the copy.
 
 | finding | answered in |
 |---|---|
