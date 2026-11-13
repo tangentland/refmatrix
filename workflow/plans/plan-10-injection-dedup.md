@@ -5,7 +5,7 @@ title: "Names-only dedupe of the per-prompt payloads: an item the session alread
 tags: [plan, scan-prompt, memory-recall, context, hooks, injection, dedupe]
 metadata:
   node_type: plan
-  status: drafting
+  status: approved
   created: 2026-09-15
   updated: 2026-11-13
 ---
@@ -13,12 +13,13 @@ metadata:
 # Proposed Plan: names-only dedupe of the per-prompt payloads {#root}
 
 **Date:** 2026-09-15; reopened 2026-11-13.
-**Status:** DRAFTING (reopened). 10.1 (2026-09-15) measured consecutive-call overlap at median
+**Status:** APPROVED 2026-11-14 ([[#approval]]), not started. The build order is [[#order]]: 10.3
+early, the rest after T4. Reopened 2026-11-13. 10.1 (2026-09-15) measured consecutive-call overlap at median
 **0.000** and stopped the plan; that result stands as history. The 2026-11-13 re-measurement
 ([[measurement-injection-already-held-2026-11-13]]) found **48.0%** of delivered items already
 held by the session, almost all by re-delivery. A pre-registered replay of five designs chose
 names-only (Q13); non-human turns get the same dedupe, no separate gate (Q10). The specs go
-through a ch-bsd spec review before this plan moves to `approved`. Revision round 6 (2026-11-13,
+through a ch-bsd spec review, which came back CLEAN at r4 ([[#approval]]). Revision round 6 (2026-11-13,
 spec wave, [[#rev-round-6]]) re-specs 10.2 against 25.1b, which owns the `still in play` line
 (L15). It also gates 10.6's composite part on Table A (L17), sets the build order (L30) and marks
 Q7 and Q11 superseded (L23).
@@ -195,6 +196,7 @@ but never dedupes; PreCompact and explicit pulls neither.
 | L27 | The A/B's outcome (plan review, lead) | only R12 explicit uses + `cited_in_answer`, never 21.5's unbuilt legs | 2026-11-13 |
 | h15 | Which 25.1b tier makes an item held (lead ruling on 10.2 `#open-held-tier`) | (a) tier-aware: held only at the tier shown and poorer ones; the richest tier since the marker counts | 2026-11-13 |
 | h16 | Held names on the line (lead ruling on 10.2 `#open-held-mark`) | (a) marked `·held`, inside the line's bytes; one rank order with over-budget members | 2026-11-13 |
+| A1 | Plan approval | approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14); 10.2-10.6 approved to build; 10.1 stays complete ([[#approval]]) | 2026-11-14 |
 | L30 | Build order (plan review, lead) | only 10.3 builds early; 10.5 probe → 10.6 → 10.4 → 10.2 after T4, ahead of the experiment | 2026-11-13 |
 
 ## Task Breakdown {#task-breakdown}
@@ -278,6 +280,35 @@ then to "G22's ingest exclusion" (bsd-spec-t3ab S6). Q9 / L60 superseded the exc
 ranking changes.
 
 rel: depends-on -> [[plan-review-2026-11-13#d-q1]]
+
+## Approval (2026-11-14) {#approval}
+
+`metadata.status: approved` per CLAUDE.md `#plans-pre-written`. Gate checked at `5a2e6e2`: every
+task in [[#task-breakdown]] has its spec under `workflow/plans/plan-10-injection-dedup-tasks/`.
+That is task-10.1-plan-10-injection-dedup (`complete`, history), task-10.2-plan-10-injection-dedup,
+task-10.3-plan-10-injection-dedup, task-10.4-non-human-prompt-gate,
+task-10.5-versioned-block-gate and task-10.6-injection-presentation (each `pending`): 6 of 6, and
+each frontmatter `id` equals its file stem. {#approval-gate}
+
+- **Review basis:** the joint ch-bsd spec review of spec-wave-t3a and spec-wave-t3b. r1 was DIRTY
+  1B/10S/10M, r2 DIRTY 0B/2S/8M and r3 DIRTY 0B/3S/3M; r4 (confirm-lite) was final CLEAN at
+  `97dc7fa` / `5a2e6e2` (0B/0S/0M). The report is persisted as
+  `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md`. {#approval-basis}
+- **Who approved:** the lead, on the user's pattern (d9co: a CLEAN ch-bsd round over the spec,
+  then `approved` set by the orchestrator with the decision row written), 2026-11-13/14; decision
+  row A1. {#approval-who}
+- **What approval does not change:**
+  - the build order stays [[#order]] (L30): 10.3 early, after the revival branch merges (L23);
+    10.5 probe → 10.6 → 10.4 → 10.2 after T4, ahead of the handhold experiment;
+  - 10.2 still builds only on 10.5's GO (v3 PASSED and the probe GO), and 10.6 R3 only on R0's
+    Table A band;
+  - every user-gated step in the specs stays with the user: the install windows for 10.3 (with
+    25.1b) and 10.4, 10.5's FAIL route, and the experiment's start (plan-28);
+  - every task still records RED at its base before GREEN ([[tdd-governance]]).
+  {#approval-unchanged}
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]
+rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
 
 ## Revision round 6 (2026-11-13, spec wave, spec-t3b) {#rev-round-6}
 
