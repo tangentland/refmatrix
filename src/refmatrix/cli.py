@@ -8847,12 +8847,12 @@ def _refuse_in_process_write_to_tracked_catalog(root: Path, target: Path) -> Non
         tracked = _store_mod.git_tracked_catalogs(root)
     except _store_mod.TrackedCatalogCheckError as exc:
         raise click.ClickException(
-            f"refusing an in-process write to {target}: {exc}; untrack the catalog "
+            f"refusing to open {target} read-write in-process: {exc}; untrack the catalog "
             f"(git rm --cached) if git tracks it, or {remedy}") from exc
     if not tracked:
         return
     raise click.ClickException(
-        f"refusing an in-process write to {target}: git tracks this store's catalog "
+        f"refusing to open {target} read-write in-process: git tracks this store's catalog "
         f"({', '.join(tracked)}), and the write would modify a committed file. Untrack it "
         f"(git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or "
         f"{remedy}")

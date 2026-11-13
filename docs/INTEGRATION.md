@@ -167,20 +167,33 @@ never fails because of it.
 - A non-zero exit adds `refmatrix: <hook> rmx sync FAILED (exit N); its error is above`.
 - Both lines can print after the shell prompt returns.
 
-### `rmx sync` never writes a tracked catalog in-process {#sync-tracked-catalog}
+### No command opens a tracked catalog read-write in-process {#sync-tracked-catalog}
 
-When no daemon answers, `rmx sync` (`--files`, `--since`, `--flush-queue`, `-i`) writes the
-catalog itself. Before it opens the catalog it asks git (`store.git_tracked_catalogs`), and it
-refuses if a writer catalog is tracked:
+When no daemon answers, a writer opens the catalog read-write in its own process. Every such
+open goes through one control point, `cli._store_rw()`, so the rule covers every writer:
+`rmx sync` (`--files`, `--since`, `--flush-queue`, `-i`), `rmx ingest`, `rmx memory add`,
+`rmx ingest-gmd --as-memory` (the memory bridge), `rmx tldr-warm`, and the daemon-down repair
+commands. Before the catalog opens, `_store_rw()` asks git (`store.git_tracked_catalogs`) and
+refuses if a writer catalog is tracked (bug-212 r2/r3):
 
-- one `Error: refusing an in-process sync into <file>: git tracks this store's catalog (...)`
-  line that names both remedies (untrack it with `git rm --cached`, or start the daemon);
+- one `Error: refusing to open <full path of the catalog> read-write in-process: git tracks
+  this store's catalog (...)` line that names both remedies (untrack it with
+  `git rm --cached`, or start the daemon);
 - exit 1, with the catalog bytes unchanged.
 
+A read can reach the same control point. `_read_store()` serves reads from a reader file:
+`catalog.read.duckdb`, then `read_only.duckdb`, then the inactive slot, then the legacy
+`catalog.duckdb`. Only when none of those exists and no daemon runs does a read fall to
+`_store_rw()`. On a tracked store it gets the same refusal, which is worded as an open, not a
+write. A tracked store that has a reader file is served read-only and not refused.
+
 A socket file that a crashed daemon left behind passes the hook gate, and this refusal is what
-then stops the write. A store outside any git repository, or one whose catalog git ignores,
-still syncs in-process. If `git ls-files` fails inside a repository, the sync is refused too:
-an unknown answer counts as tracked.
+then stops the write. With a live daemon nothing opens in-process, so nothing is refused, and
+the daemon writes the catalog itself. A store outside any git repository, or one whose catalog
+git ignores, is still written in-process. If `git ls-files` fails inside a repository, the open
+is refused too: an unknown answer counts as tracked, and the line reads `refusing to open
+<path> read-write in-process: cannot tell whether git tracks the catalog under <store>: git
+ls-files exited N: ...`.
 
 ### A vanished working directory {#vanished-cwd}
 
