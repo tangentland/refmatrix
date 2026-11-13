@@ -14,7 +14,7 @@ metadata:
 # Task 21.7: behavioural use without naming {#root}
 
 > Plan: [[plan-21-agent-context-usage]]
-> Status: Drafting. The user asked for the task row on 2026-11-13 (Q-6 in [[open-questions]]); the
+> Status: Drafting. The user asked for the task row on 2026-11-13 (Q6 in [[open-questions]]); the
 > spec is not written yet.
 > Depends on: 21.5 (the delivered-event join, the control, the labelling rubric), 19.6 (its
 > transcript scorer is the sibling instrument).
