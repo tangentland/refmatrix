@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: measurement-task-21.5-relation-gaps-2026-11-13
-title: "Relation gaps for relevance matching (2026-11-13): code-structure 2-hop and GMD-provenance combos beat chance; 67-81% of resolved GMD rel: lines never reach entity_links"
+title: "Relation gaps for relevance matching (2026-11-13): code-structure 2-hop and GMD-provenance combos beat chance; GMD rel: gap corrected to the rule docs (bug-216)"
 tags: [measurement, plan-21, task-21.5, graph, linkages, gmd, relevance]
 metadata:
   node_type: measurement
@@ -68,6 +68,13 @@ Files not already reachable by the ≤ 2-hop graph.
 | embedding similarity | not measurable (no vectors in the copy; no model loads) | | |
 
 ## GMD rel: edges missing from entity_links {#gmd-gap}
+
+> **Correction (lead, 2026-11-13): the 66.9% / 80.8% below is a probe artefact.** The ingester stores
+> `rel: X verb -> Y` as `entity_links(entity_id = Y, concept_id = X)`; this probe looked source → target. Recounted
+> against the ingester's own evidence rows (`linkage_evidence` file + line): 90.2% of 4,490 authored wikilink `rel:`
+> lines landed. The real gap (bug-216) is 247 lines into CLAUDE.md and the project profile, which the ingest scope
+> excludes. The metapath and combo results above were computed in the store's own direction and are unaffected.
+> {#gmd-gap-correction}
 
 refmatrix: 3,376 cross-file `rel:` lines resolve; 2,257 (66.9%) have no `entity_links` edge from
 any entity of the source file to the target file (top verbs: contradicts 542, derives-from 434,
