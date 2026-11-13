@@ -26,13 +26,14 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session f0521bff (2026-11-13) {#session-f0521bff}
 
-Next id: **Q13**.
+Next id: **Q14**.
 
 ### Open {#open}
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
-| Q10 | 2026-11-13 | Non-human gate (10.4): with the gate 62% of prompt-channel injections go, 0 labelled uses lost, 10 explicit R12 uses (2 near-term) rode agent-message turns with no other delivery — rule trips. Now a single policy table in 10.4 (none / delta / full per family and surface); a live A/B (arms nested in the handhold experiment, ≥14 days, ≥40 sessions/arm/store, bands pre-written) follows ship. | (b) full gate (none for every family), shipped inside the live A/B; (c) none for task-notifications only, full for agent messages; (a) delta on non-human turns — needs 10.2's block state even if Q11 says no 10.2, and that state holds little, so it cuts far less than 57.5% | on hold until dd-10r's replay scores the non-human policies |
+| Q10 | 2026-11-13 | Non-human turns. The design replay shows the full gate loses 10 R12 uses (fails the band again); applying the dedupe on those turns keeps every use. | (a) no separate gate: non-human turns get the same dedupe as human prompts (10.4 keeps the focus-graph change and curator silence, Q9); (b) full injection on non-human turns; (c) gate anyway (fails the band) | open |
+| Q13 | 2026-11-13 | The replay rejects 4+3 (Q11): it hides 1 of 11 labelled uses (new candidates took a used item's budget) and saves ~2% of bytes for ~2 new items/call. Names-only (design 3) is the pre-registered winner: ~53% fewer payload bytes, 0 uses lost. A post-hoc 4+3b passes. | (a) design 3 now; 4+3b later as a live A/B arm if refill is wanted; (b) design 3 only; (c) 4+3b (post hoc) | open |
 
 ### Answered {#answered}
 

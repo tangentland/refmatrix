@@ -106,3 +106,29 @@ agent-message 257, task-notification 77; cliquedb 274 / 286 / 143. {#gate-setup}
   of 10 are lead sessions, where agent-message turns are teammate reports read by the main loop.
 - **Removed deliveries:** 57.5% were already held; 42.5% (242,668 B) were not.
 - **Verdict:** 10 lost > 1 → the user decides (Q10). Near-term only: 2 lost, still > 1. {#gate-verdict}
+
+## Addendum: dedupe design replay (Q11, Q12) {#design-replay}
+
+Pre-registered 13:22 (`dd/PREREG_designs.txt`): held = delivered FULL on a hook channel on an
+earlier prompt, after the last compaction; candidates = the call's retrieved + delivered events in
+rank order; ACCEPTABLE = every labelled use stays visible and ≤ 1 R12 explicit use lost; rank by
+novelty density. 1,472 prompt calls; 15,713 baseline items; 28,779 candidates; 11 labelled and 16
+R12 uses on prompt channels. Item-line bytes (the registered unit) are 4-8% of a payload and
+cannot rank designs; a block-bytes arm (deviation: an item's span to the next item, ~95% of the
+payload) is reported, and the bands do not depend on bytes. {#design-setup}
+
+| design | block bytes vs baseline | new items / call | labelled visible | R12 visible | verdict |
+|---|---|---|---|---|---|
+| 0 baseline | 1.000 (10,311 B/call) | 0 | 11/11 | 16/16 | — |
+| 1 pointer | 0.477 | 0 | 11/11 | 16/16 | acceptable |
+| 3 names-only (cap 15) | 0.469 | 0 | 11/11 | 16/16 | acceptable, ranked first |
+| 4+3 novelty rank | 0.977 | 1.98 | 10/11 | 16/16 | NOT acceptable |
+| 4+3b (post hoc: baseline-delivered non-held first) | 0.984 | 1.87 | 11/11 | 16/16 | passes, post hoc only |
+| 5 diff + keyframe K = 8 | 0.524 | 0 | 7/11 | 10/16 | NOT acceptable |
+
+4+3's lost use: a non-held prompt_recall item at candidate 6 of 15 lost its budget to
+higher-ranked candidates that were retrieved but never delivered at baseline.
+
+**Non-human turns** (847 calls; human calls under 4+3): `none` (the gate) loses the same 10 R12
+uses (fails); `4+3` keeps 1/1 labelled and 10/10 R12 at 0.982 bytes; `full` keeps all. Applying
+the dedupe there keeps every use; the gate does not. {#design-verdict}
