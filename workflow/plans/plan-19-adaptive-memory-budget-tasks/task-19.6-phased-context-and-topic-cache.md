@@ -351,9 +351,9 @@ pays is unmeasured; this task measures first and builds against pre-registered r
     the frozen session sets of R1 records, for every prompt, how many of the session's live STM
     clusters its terms hit under [[#ranges-thresholds]]'s warm threshold: 0, 1, or ≥ 2. Table D
     decides single-expand vs expand-top-2. This is a NEW measurement: the near-zero overlap
-    figure (median carried 0.000) is plan-10's, between CONSECUTIVE scan-prompt content hits
-    ([[plan-10-injection-dedup]]), not between STM clusters, and is not cited as an STM-cluster
-    number here.
+    figure (median carried 0.000) is plan-10 task 10.1's (2026-09-15, history), between
+    CONSECUTIVE scan-prompt content hits ([[plan-10-injection-dedup]]), not between STM
+    clusters, and is not cited as an STM-cluster number here.
 
 ## Pre-registered go/no-go ranges, CONFIRMED (d9v) {#ranges}
 
@@ -681,9 +681,10 @@ the warm threshold):** {#ranges-d}
 
 - **Expanding a subject hit into its members** (d8a): not planned. `rmx memory recall --subject
   <slug>` is the expansion; recall excludes subject rows (19.1 R2).
-- Dedup of scan-prompt's RANKED entries across turns: measured and closed by plan-10 (median
-  carried 0.000 against 0.40, [[plan-10-injection-dedup]]). That number is consecutive
-  scan-prompt CONTENT overlap; it says nothing about overlap between STM clusters (R10).
+- Dedup of the per-prompt payloads' items across turns: owned by plan-10, reopened 2026-11-13
+  (48.0% of delivered items already held), built as names-only dedupe (Q13), not with this task's
+  block diff (Q11; [[#split-plan-10]]). Plan-10's 2026-09 figure (consecutive overlap 0.000) is
+  history and says nothing about STM clusters (R10).
 - Retracting or replacing earlier context: a hook can only append (#vi-premise).
 
 ## Revision (2026-10-14 decision log) {#rev-2026-10-14}
@@ -851,3 +852,26 @@ rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r12-34f72b3]]
 | finding | answered at |
 |---|---|
 | r12 #m12-3 (the cap's no-candidate rule had no leg: a mutant evicting outside the candidate set, or dropping the over-cap count, survived) | AC-7i2 over-cap leg (66 records, the 58 outside the 8 newest all `expanded` → 66 kept, `topic-cache-evicted` = 0, `topic-cache-over-cap=2`, `topic_hubs` unchanged); mutation (round 12, #m12-3) |
+
+## Split: R8a's writer moves to plan-10; the per-prompt payloads are not versioned (2026-11-13) {#split-plan-10}
+
+Plan-10 reopened item dedupe of the two per-prompt payloads (`prompt-recall`, `scan-prompt`). It
+first planned this task's R5 / R6 for them; a provisional replay put that block diff at NO-GO
+under Tables A and B as confirmed (Table A 0.00-3.32%; Table B median delta / full 1.000, the
+half-block rule firing on ~87% of revs; plan-10 10.5 `#history`), and the user chose not to use
+the block diff for these payloads (Q11). Plan-10 builds names-only dedupe instead (Q13). No
+interface of this task changes.
+
+rel: related-to -> [[plan-10-injection-dedup]]
+rel: related-to -> [[task-10.2-plan-10-injection-dedup]]
+rel: related-to -> [[task-10.3-plan-10-injection-dedup]]
+rel: related-to -> [[task-10.5-versioned-block-gate]]
+
+| part | built by | what 19.6 keeps |
+|---|---|---|
+| R8a's writer (`focus hook --event compact-marker`, the `session-start` dispatch) | [[task-10.3-plan-10-injection-dedup]], which also writes on `clear`; the marker is `stm/<session>.emitted/marker.json`, read by `stm.last_marker` | R8a's definition of "in the window"; 19.6 reads the marker through `stm.last_marker` |
+| R5 / R6 for `prompt-recall`, `scan-prompt` | nobody: not used for these payloads (Q11); the NO-GO above stands | R5 / R6 for the composite blocks and the topic-cache `re-activate` line, R1-R4, R7, R9, R10, Tables A-D |
+| "last-emitted state" directory | `stm/<session>.emitted/` holds 10.3's marker and plan-10's per-channel held files (`scan_prompt.json`, `prompt_recall.json`, `session_start.json`) | 19.6's block state files go in the same directory, one writer per file |
+
+21.1's `block_id` stays as its emitters fill it; `rev` and `unchanged` stay null on the two
+per-prompt payloads; plan-10 adds the nullable event field `form` (`full` / `names`).
