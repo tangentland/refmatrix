@@ -244,6 +244,18 @@ rel: derives-from -> [[agent-brief-arch-10r]]
 | live A/B `dedupe` vs `full`; 4+3b a later arm | [[#ab]] |
 | 10.5 = replay (passed) + read-back probe | [[#task-breakdown]] |
 
+## Q8 {#q8}
+
+Plan-10 holds under Q8 a and c. No spec line changes under b either. Per-prompt recall already
+excludes `session/*` in hook modes (25.1 R2/R2b), so no save-state is ever held, named or spilled.
+`session_start` records only what it rendered. {#q8-body}
+
+**Under Q8 b (`workflow/` excluded at ingest), the figures move but the rules do not.**
+scan-prompt would stop surfacing `workflow/` docs. The 2026-11-13 held share (48.0%), the v1/v2
+replay and 10.5's v3 were all computed on stores that ingest `workflow/`. v3 and R7's live run
+measure whichever store state exists when they run. If b lands first, v3 is re-run on that state
+and the figures are not carried over. {#q8-b}
+
 ## Revision round 6 (2026-11-13, spec wave, spec-t3b) {#rev-round-6}
 
 This round is driven by [[plan-review-2026-11-13#spec-gaps]] G11 and by the lead rows L15, L17,
