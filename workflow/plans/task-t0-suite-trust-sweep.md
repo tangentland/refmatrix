@@ -23,8 +23,10 @@ metadata:
 > branch starts from the `master` sha that holds those merges.
 > Closes: bug-215, 170, 168, 155, 127, 130, 190, 091 and 196 ([[#ruling-o1]]).
 > It also closes the recorded closure gates of plans 6, 7, 8 and 15 (D-Q6).
-> User gates: none. No step opens a live store, starts a fleet daemon, or needs a hook install
-> window ([[#rules]] R0.7).
+> User gates: none of T0's own. No step opens a live store, starts a fleet daemon, or needs a
+> hook install window ([[#rules]] R0.7). But T0 can be **held** by one: a hook-drift stop at R7.4
+> ([[#r7-4]]) is cleared only by a G31 install window, which is user-gated. A gate-drift stop
+> (master's GMD gate red) is cleared by whoever owns the failing file.
 
 rel: derives-from -> [[plan-review-2026-11-13#d-q6]]
 rel: derives-from -> [[plan-review-2026-11-13#f8]]
@@ -192,19 +194,35 @@ reasons the tests actually skip with. Those are:
 3. **R1.3 The GMD id namespace does not depend on the checkout's directory name.**
    `.gmd/config.yml` declares `project: refmatrix`. `tools/gmd/lint.py` is not changed: the config
    key already exists for this purpose (`project_name()` docstring). {#r1-3}
-4. **R1.4 A clone lints against its origin's memory dir ([[#ruling-o6]]).**
-   - `scripts/lint-gmd.sh` resolves the memory dir as today, from the checkout's own slug. If that
-     dir does not exist, it reads `git remote get-url origin`. If that is a local directory, it
-     uses that path's slug (`tr '/_' '--'`, as now). If that dir exists, it adds it to the lint
-     scope and to the parity `--memory-dir`.
-   - Whenever the fallback is taken, the script prints one line to **stderr** naming the
-     checkout's own slug, the origin path, and the memory dir used.
-   - If neither dir exists (no origin, a non-local origin, or no dir under the origin's slug),
-     it prints one stderr line saying so and that memory-id refs will surface as `dangling-doc`.
-   - The resolution lives in ONE place that both the script and the test use (a
-     `--print-memdir` mode of the script, or a helper both call). The test copies exactly the
-     dir the resolver names into its decoy HOME, under the slug the resolver will look up there.
-     It never hands the child the real `HOME`. {#r1-4}
+4. **R1.4 A clone lints against its origin's memory dir ([[#ruling-o6]], r2 s-1/m-2).**
+   - **One resolver.** A stdlib-only Python helper, `resolve_memdir(root, home)`, in a new
+     `scripts/gmd_memdir.py`, takes the checkout root AND the home dir as explicit arguments and
+     returns the chosen dir (or none) plus the one-line note to print. `scripts/lint-gmd.sh`
+     calls it with its own `$HOME`. The repo-scope test imports it and calls it **in-process**
+     with `RMX_SANDBOX_REAL_HOME` (a read-only existence check). No child process is ever given
+     the real `HOME`.
+   - **"Present" means populated.** The own-slug dir `<home>/.claude/projects/<own slug>/memory`
+     counts only if it holds at least one `*.md` file. Claude Code creates an empty `memory/` for
+     any session whose cwd was the checkout, so an empty dir is not a memory dir.
+   - **Fallback.** If the own-slug dir is absent or empty, the resolver reads
+     `git remote get-url origin` and canonicalises it before slugging:
+     - a URL with a scheme or an scp-style `host:path` (`ssh://`, `https://`, `file://`,
+       `git@…:`) is non-local, and no fallback is taken;
+     - a relative path is resolved against `root`;
+     - the path is `resolve()`d (symlinks, `..`, trailing `/`), and a trailing `.git` component
+       or suffix is stripped.
+
+     The canonical path is slugged as today (`/` and `_` → `-`). If that path's memory dir holds
+     at least one `*.md`, it is used for the lint scope and the parity `--memory-dir`.
+   - **Loud.** Whenever the fallback is taken, the script prints one stderr line naming the own
+     slug, why it was skipped (`absent` or `empty`), the canonical origin path, and the dir used:
+     for example `own memory dir <path> is empty; using origin <path>`. If no dir qualifies (no
+     origin, a non-local origin, or an absent or empty dir under the origin's slug), it prints one
+     stderr line saying so and that memory-id refs will surface as `dangling-doc`.
+   - **The test copies what the resolver names.** It copies exactly that dir into its decoy HOME,
+     under the slug the child's own resolution will reach there (the own slug if that was
+     chosen, else the origin's slug), so the child, running with the decoy HOME, resolves the same
+     content. {#r1-4}
 5. **R1.5 Exit codes are part of every recorded run.** `workflow/TDD_GOVERNANCE.md`
    `#rules` gains one bullet: "A recorded run (RED, GREEN, suite) quotes the pytest exit code and
    the collected count; counts without the exit code are not a record." This is the second half
@@ -237,29 +255,44 @@ reasons the tests actually skip with. Those are:
     32 namespace errors plus the memory-id `dangling-doc` errors (about 1,046), which R0.2 quotes
     by count and first lines.
   - After R1.3 and R1.4, `./scripts/lint-gmd.sh` prints the fallback stderr line, and its error
-    count **equals the main tree's at the same sha**. The base holds `35e1e0d`, where the
-    main-tree gate is green ([[#ruling-o4]]), so both are 0 and the test passes.
+    count and E lines **equal the main tree's at the same sha**. The test passes when the main
+    tree's gate exits 0 at that sha, which is the same precondition R7.4 states. Dev master's gate
+    was green at `35e1e0d` ([[#ruling-o4]]), red again on two forward-linked anchors, and green at
+    `b816a08`. If the main tree is red at the T0.1 base, equality is still asserted, the failing
+    E lines are reported as gate drift, and they are not T0.1's.
   - Any other E line is a new finding, not an assumed residue.
 
   {#ac-1-5}
-- **AC-1.6 (fallback is loud and bounded).** In a fixture checkout whose origin is not a local
-  path, the script prints the "no memory dir" stderr line, and the memory-id refs surface as
-  `dangling-doc` (exit 1). In a fixture whose own slug has a memory dir, no fallback line is
-  printed. {#ac-1-6}
+- **AC-1.6 (the resolver's cases).** A unit test of `resolve_memdir` with a tmp home and fixture
+  checkouts covers:
+  - own-slug dir holding ≥ 1 `*.md`: own dir chosen, no fallback line;
+  - own-slug dir **empty** (exists, no `*.md`): falls back to the origin's dir, and the line says
+    `empty`;
+  - own-slug dir absent, origin local with a populated dir: fallback taken, and the line says
+    `absent`;
+  - origin given as a relative path, as a path with a trailing `/`, and as `<path>/.git`: all
+    resolve to the same canonical origin and slug;
+  - origin non-local (`git@host:repo`, `https://…`, `file://…`): no fallback, the "no memory dir"
+    line, and through the script the memory-id refs surface as `dangling-doc` (exit 1).
+
+  {#ac-1-6}
 - **Mutations (each FAILS):**
   - M1.1: restore the single `is_dir()` switch (AC-1.1 and AC-1.2 red);
   - M1.2: match by nodeid only, or by substring (AC-1.3 red);
   - M1.3: delete `project:` from `.gmd/config.yml` (AC-1.5 red with the 32 namespace errors);
   - M1.4: drop the origin fallback (AC-1.5 red with the memory-id errors);
-  - M1.5: silence the fallback's stderr line (AC-1.6 red). {#t0-1-mutations}
+  - M1.5: silence the fallback's stderr line (AC-1.6 red);
+  - M1.6: treat an existing own-slug dir as present whatever it holds (AC-1.6's empty case red);
+  - M1.7: skip origin canonicalisation (AC-1.6's relative and `.git` cases red).
+  {#t0-1-mutations}
 
 ### Files {#t0-1-files}
 
 `tests/conftest.py`, `tests/sandbox_site/rmx_sandbox.py` (`SkipGate`), a new
 `tests/test_t0_skip_gate.py`, the seven test files in [[#t0-1-skip-reasons]] (only if a
 `reason=` must change; the pins follow the tests, not the reverse), `.gmd/config.yml`,
-`scripts/lint-gmd.sh`, `tests/test_gmd_lint_requires_version.py`, a new
-`tests/test_lint_gmd_memdir_fallback.py`, `workflow/TDD_GOVERNANCE.md`,
+`scripts/lint-gmd.sh`, a new `scripts/gmd_memdir.py`, `tests/test_gmd_lint_requires_version.py`,
+a new `tests/test_lint_gmd_memdir_fallback.py`, `workflow/TDD_GOVERNANCE.md`,
 `workflow/bug_registry.md` (rows bug-215, bug-155),
 `workflow/implementation_summaries/task-t0.1-skip-gate-checkout-identity.md`.
 
@@ -341,23 +374,37 @@ written ([[feedback_go_no_go_ranges_not_predrop]]). {#t0-3-lead}
 ### The load harness and bands (pre-registered) {#t0-3-bands}
 
 - **R0 builds the harness.** No committed full-suite log carries durations (the 0.82.0 log has
-  none). So T0.3's first step is one full-suite run in its clone with `--durations=25`, logged
-  per R0.3. Its 25 slowest files, by summed duration, are written into the summary before trial 1
-  and do not change afterwards. {#t0-3-r0}
+  none). So T0.3's first step is one full-suite run in its clone with `--durations=0` (every
+  setup, call and teardown phase), logged per R0.3. The phases are summed by file, and the 25
+  files with the largest totals, each with its total, are written into the summary before trial
+  1 and do not change afterwards. {#t0-3-r0}
 - **Harness.** The target test runs in the clone while 3 concurrent `pytest` processes run those
   files. Each process is sandboxed as usual. One harness run gives one trial. {#t0-3-harness}
+- **Per-trial wall cap.** Every trial runs under a cap derived from R0: `max(3 × T, 300 s)`, where
+  `T` is the R0 summed duration of the files that trial's processes run (the target's file
+  included). Hitting the cap counts as a **failure**, recorded as `hang`, with `ps -o
+  pid,etime,time,command` and `lsof -p <pid>` of every still-running process taken before it is
+  killed. A hang in the base trials counts toward the reproducer. {#t0-3-cap}
 - **Reproducer found:** ≥ 3 failures in 10 trials at base, each with the row's E line. If fewer
   than 3 fail, raise the load to 5 and then 8 concurrent processes. The first level that reaches
   3 out of 10 is the reproducer. {#t0-3-band-found}
 - **Fix proven:** **45 consecutive passes** on the same harness at the same level. A 3/10
   reproducer's 95% Clopper-Pearson lower bound on the failure rate is 0.067. At that rate,
   0.933^45 ≈ 0.044 < 0.05, so 45 straight passes is unlikely by luck even at the weakest rate
-  the reproducer admits. Any failure in the 45 means the fix did not hold. {#t0-3-band-fixed}
+  the reproducer admits. Any failure in the 45, a hang included, means that fix attempt did not
+  hold. {#t0-3-band-fixed}
+- **At most two fix attempts.** Each attempt gets its own fresh run of 45. If the first attempt
+  fails, one second attempt is allowed. If the second also fails, T0.3 keeps only R3.4's
+  diagnostic for that test, reverts the rest of both attempts (the revert commit names them), and
+  sets the row to `open / diagnosed-loud` with both runs' counts. No third attempt is made inside
+  T0. {#t0-3-attempts}
 - **Not reproduced:** fewer than 3 failures in 10 at every level. The test gains only R3.4's
   diagnostic. The row stays `open` with status `diagnosed-loud`, with the trial counts. It does
   not count as closed. In T0.7's suite it is handled by [[#ruling-o7]]. {#t0-3-band-none}
-- **Bounded by count.** Per bug, at most 30 base trials (3 levels × 10) and 45 post-fix trials,
-  plus the one R0 durations run. The summary records each trial's wall time. {#t0-3-bound}
+- **Bounded by count and by time.** Per bug, at most 30 base trials (3 levels × 10) and 90
+  post-fix trials (2 attempts × 45), plus the one shared R0 durations run, each trial under its
+  wall cap. The summary records each trial's wall time and outcome (pass, fail, hang).
+  {#t0-3-bound}
 - **Live-socket exposure.** Concurrent suites multiply the suite's reach to live rmx sockets
   (bug-088, deferred by the user). T0.3 adds no mitigation. It records the conftest live-socket
   recorder's count for the R0 run and for one trial at each load level, so the multiplication is
@@ -391,8 +438,9 @@ written ([[feedback_go_no_go_ranges_not_predrop]]). {#t0-3-lead}
 ### Acceptance {#t0-3-acceptance}
 
 - **AC-3.1.** For each bug, the summary records: the reproducer level, the base failure count out
-  of 10 with E lines, and the post-fix run of 45, or the `not reproduced` band with all the
-  counts. {#ac-3-1}
+  of 10 with E lines (hangs marked), each fix attempt's run of 45, and the outcome (fixed, or
+  `diagnosed-loud` after two failed attempts with the revert commit), or the `not reproduced`
+  band with all the counts. {#ac-3-1}
 - **AC-3.2.** Mutations (each FAILS, within its deadline, never hangs):
   - M3.1: the bug-130 test indexes before its `failed` check (red on a forced failed store);
   - M3.2: the bug-190 skip path spawns (red);
@@ -723,6 +771,10 @@ Source: [[bsd-r1-remedy-r13-dcf7115]] (DIRTY 3: 1 SKETCHY, 2 MEH), plus plan-15'
 4. **R7.4 The clean full suite (plan-15's gate).** This is one run of the full suite, in the
    **main tree** (`~/claude_tools/refmatrix`) at a committed `master` sha that holds T0.1 to T0.6,
    T0.8 and T0.7's own merge. Preconditions:
+   - **GMD gate green.** `./scripts/lint-gmd.sh` exits 0 at the run sha, in the main tree, before
+     the run. If it does not, the failing E lines are reported to the lead as **gate drift** (a
+     file that is not T0's, such as a report forward-linking an unmerged anchor), and R7.4 does not
+     start until the gate is green. It is never filed as bug-155;
    - **Hooks in sync.** `rmx install-hooks --check` (the deployed build) reads clean before the
      run. A mismatch means the installed hooks drifted from the deployed render (a deploy or
      install window not yet done, G31). It is reported to the lead as **hook drift**, not as
@@ -769,7 +821,7 @@ Source: [[bsd-r1-remedy-r13-dcf7115]] (DIRTY 3: 1 SKETCHY, 2 MEH), plus plan-15'
    - **A match to any other T0 row** means that sub-task's fix did not hold. It reopens and takes
      the O5 path below.
    - **Anything else**, including a `diagnosed-loud` nodeid that fails its isolated re-run, a
-     hook-drift failure ([[#r7-4]]), or a failure with no matching row, is handled per
+     hook-drift or gate-drift failure ([[#r7-4]]), or a failure with no matching row, is handled per
      [[#ruling-o5]]. It is logged as a row (or the existing row is updated), T0's closure stops
      there (plan-15 stays `in-progress`), and it is raised to the lead. The goal continues with
      its other items, and T0 does not fix it without a spec.
@@ -911,8 +963,11 @@ folded into the sections each one names. {#rulings-lead}
 
 ## Revision round r1 (2026-11-13) {#rev-r1}
 
-The ch-bsd spec review of `1cf3b9f..7e67551` (`bsd-spec-t0-7e67551`, DIRTY 1B/6S/9M; persisted by
-the lead) and the lead's rulings on it, folded:
+The ch-bsd spec review of `1cf3b9f..7e67551` (DIRTY 1B/6S/9M, persisted as
+`workflow/bullshit/2026-11-13-2305-spec-t0-r1-7e67551.md`) and the lead's rulings on it, folded:
+
+rel: derives-from -> [[bsd-spec-t0-7e67551]]
+
 
 | finding | resolution | where |
 |---|---|---|
@@ -934,6 +989,23 @@ the lead) and the lead's rulings on it, folded:
 | m-9 rows by line number | rows cited by title | [[#r5-6]], [[#r7-8]] |
 
 {#rev-r1-body}
+
+## Revision round r2 (2026-11-13) {#rev-r2}
+
+The ch-bsd spec review r2 of `7e67551..772803a` (`bsd-spec-t0-r2-772803a`, DIRTY 0B/2S/4M; all 16
+r1 findings closed, the 19-pin count confirmed) and the lead's rulings, all as recommended,
+folded:
+
+| finding | resolution | where |
+|---|---|---|
+| s-1 an empty auto-created own-slug memory dir defeats the fallback | own-slug dir counts only with ≥ 1 `*.md`; empty → origin fallback, with the stderr line; AC case + mutation M1.6; AC-1.6's second case corrected | [[#r1-4]], [[#ac-1-6]], [[#t0-1-mutations]] |
+| s-2 no branch for a failed fix; no trial timeout | at most 2 fix attempts × 45 per bug, then keep only the diagnostic, revert the rest, `diagnosed-loud`; per-trial cap `max(3 × T, 300 s)` from R0, a timeout is a failure recorded as `hang` | [[#t0-3-cap]], [[#t0-3-attempts]], [[#t0-3-bound]], [[#ac-3-1]] |
+| m-1 `--durations=25` is phases, not files | `--durations=0`, summed by file, top 25 | [[#t0-3-r0]] |
+| m-2 resolver vs the real HOME; origin canonicalisation | in-process `resolve_memdir(root, home)` in `scripts/gmd_memdir.py`; origin resolved, trailing `.git` stripped, schemes and scp-style non-local; mutation M1.7 | [[#r1-4]], [[#ac-1-6]], [[#t0-1-files]] |
+| m-3 "User gates: none" vs a hook-drift stop | header names the G31 install window that clears a hook-drift stop | [[#root]] |
+| m-4 no GMD-gate precondition | R7.4 precondition: `./scripts/lint-gmd.sh` exits 0, else gate drift (never bug-155); AC-1.5 relies on it | [[#r7-4]], [[#ac-1-5]], [[#r7-6]] |
+
+{#rev-r2-body}
 
 ## Q8 note {#q8-b}
 
