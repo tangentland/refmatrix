@@ -1477,7 +1477,8 @@ when it is built; this task does not build it.
      signature takes Claude Code's own input, so the scorer needs no ring); the evidence is
      named `tool` everywhere; a memory's path is its `memory_content.metadata.source_path`
      (memories have no `Entity.path`); 21.1 R12's reservation names `tool` (owned here) and
-     `cited_in_answer` (still 19.6's, transcript-only). The definition's wording does not
+     `cited_in_answer` (then 19.6's, transcript-only; since L56 it is hosted by plan-28's
+     [[task-28.3-outcome-scorer#r7]], lifted from the frozen 19.6 and kept to its memory scope). The definition's wording does not
      change beyond the evidence's name; its source and owner do. The rename is applied in the
      same change to 19.6's read-back paragraph, 21.1 R12's reservation and 19.2 R1's mention.
    - **The kernel does not reach 19.6.** 19.6's clause is "later in the same session", with no
@@ -1565,8 +1566,10 @@ read ([[#kernel-for-user]]).
 
 ## Non-goals {#non-goals}
 
-- `cited_in_answer`: a delivered name in the assistant's reply. It stays 19.6's
-  transcript-only evidence.
+- `cited_in_answer`: a delivered name in the assistant's reply. It is not this task's. It is
+  transcript-only evidence, defined by 19.6 and, per L56, implemented and owned by plan-28's
+  [[task-28.3-outcome-scorer#r7]], lifted from the frozen 19.6 (D-Q3) and kept to 19.6's
+  memory scope. 19.6 imports it when unfrozen.
 - Any change to R12's three explicit evidences, their lookup, or their destination.
 - Any change to what is delivered. That is 19.1's and 25.1's business; this task is the
   instrument they will be judged by.
@@ -1754,3 +1757,4 @@ The user is told and may overturn any of them, which would be a dated revision b
 | m4 a second implementation of R6's attribution | `attribute_explicit_use` in 28.3 is canonical; phase B imports it | [[#r6]] |
 | m10 the user's spot-check is unmarked as a user step | marked, under L45's catch-all | [[#r14-labels]] |
 | m8 plan-21's row says rev 3 | it says rev 4 | [[plan-21-agent-context-usage#tasks]] |
+| joint t3a/t3b review m8 (L56): "`cited_in_answer` stays 19.6's" | the owner is plan-28's 28.3 R7, lifted from the frozen 19.6; 21.1's twin line is the lead's (master-only) | [[#non-goals]], [[#od-4]] |
