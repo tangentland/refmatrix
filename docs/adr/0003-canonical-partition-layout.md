@@ -146,7 +146,8 @@ currently says. {#amend-sessions-durability}
   `is_operational` (by mtype, name prefix and path) and `is_session_card`, which keeps
   `context`'s `--include-sessions` filter. `workflow/` stays in the project partition, as the user
   put it: "as long as it is useful and doesn't skew whats returned". Derivations exclude
-  operational content from their inputs, and output lists rank it last. Its statistical effect is
+  operational content from their inputs; graph walks read that excluding adjacency and never reach
+  it; name-matched lists rank it last and never remove it (L67, amending L61). Its statistical effect is
   measured by the DOESN'T SKEW gate of [[task-dq1-operational-content-out-of-graph#r4]], not
   assumed away by a partition. [[#isolate]]'s rule still governs session cards. This ADR's
   `depends-on` moves to the superseding memory when that memory is written (the task's R5).
