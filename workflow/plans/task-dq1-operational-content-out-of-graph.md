@@ -9,6 +9,7 @@ metadata:
   created: 2026-11-13
   updated: 2026-11-13
   revision: 4
+  updated_by: "rev 4 reconciled with L60 (dev master 1356a06)"
 ---
 
 # Task D-Q1: operational content stays in the partition, out of the skew {#root}
@@ -141,13 +142,14 @@ skew whats returned". So:
    - **The sets, drawn without looking at results.** A committed script,
      `eval/dq1/draw_queries.py`, draws with seed `20261113` and reads entity names, paths and
      headings only, never a ranking:
-     - CODE/DOC set, drawn from `N`: 80 queries. These are 40 `kind=code` symbol names of at
-       least 4 characters from `src/`, 20 GMD doc ids or headings under `docs/`, and 20
-       three-word phrases (the rarest three body terms of 20 sampled `docs/` sections).
-     - WORKFLOW set, drawn from `W`'s `workflow/` paths: 60 queries. These are 20 doc ids (plans,
-       task specs, and at least 4 ch-bsd report ids), 20 `<id>#<anchor>` refs, 10 `rel:` edges
-       from a non-`workflow/` doc into a `workflow/` doc, and 10 three-word phrases from plan
-       titles.
+     - CODE/DOC set, drawn from `N` only: 40 `kind=code` symbol names of at least 4 characters
+       from `src/`, 20 GMD doc ids under `docs/`, and 20 three-word phrases (the rarest three body
+       terms of 20 sampled `docs/` sections).
+     - WORKFLOW set: 20 doc ids (plans, task specs, ch-bsd reports), 20 `<id>#<anchor>` refs, 10
+       `rel:` edges from a non-`workflow/` doc into a `workflow/` doc, and 10 three-word
+       rarest-term phrases from sampled `workflow/` sections. This set is read from `W`'s
+       `workflow/` paths, the only place they exist, by the same seeded script, which still never
+       reads a ranking.
      Both sets and the script are committed in the RED commit before any `src/` change, and that
      sha is cited in the summary.
    - **DOESN'T SKEW.** For each CODE/DOC query, compute the Jaccard of the top-10 entity names of
@@ -166,12 +168,12 @@ skew whats returned". So:
 
      | gate | result | action |
      |---|---|---|
-     | DOESN'T SKEW | mean ≥ 0.90 AND no query < 0.60, on both surfaces | pass |
-     | DOESN'T SKEW | fails, with mean ≥ 0.80 on every surface | re-tune ONCE: extend R1's filter to BM25's corpus statistics (`_mentions_bm25_stats` N and avgdl, and the per-term df `content_rank` reads), the only change that touches skew outside R2/R3; re-measure on the same sets; the pass row decides, otherwise report |
-     | DOESN'T SKEW | mean < 0.80 on a surface | report to the user with every per-query value; no tuning |
-     | USEFUL | every bar met and no drop from BEFORE | pass |
-     | USEFUL | only the BM25 bar missed, at 6/10 or 7/10 | re-tune ONCE: the exemption also matches a query equal (case-folded) to a workflow doc's title; re-measure; the pass row decides, otherwise report |
-     | USEFUL | a name, anchor or `rel:` miss, any drop from BEFORE, or BM25 below 6/10 | report to the user with every miss; no tuning (a name, anchor or `rel:` miss is a defect, not a band) |
+     | DOESN'T SKEW | mean ≥ 0.90 AND no query < 0.60, on each surface | pass |
+     | DOESN'T SKEW | otherwise, with every mean ≥ 0.80 and every query ≥ 0.45 (a mean in 0.80-0.90 or a query in 0.45-0.60) | re-tune ONCE: extend R1's filter to BM25's corpus statistics (`_mentions_bm25_stats` N and avgdl, and the per-term df `content_rank` reads), the only change that touches skew outside R2/R3; re-measure on the same sets; the pass row decides, otherwise report |
+     | DOESN'T SKEW | a mean < 0.80 or a query < 0.45, or still failing after the re-tune | report to the user with every per-query value |
+     | USEFUL | name 20/20, anchor 20/20, `rel:` 10/10, BM25 phrase ≥ 8/10, and no count lower than BEFORE | pass |
+     | USEFUL | any bar missed | re-tune ONCE: the exemption also matches a query equal to a workflow doc's exact title; re-measure on the same sets; the pass row decides |
+     | USEFUL | still failing after the re-tune | report to the user with every miss |
 
      A re-tune is one pre-registered change, measured once; the sets never change.
    - **Report.** `workflow/measurements/dq1-skew-useful-<date>.md` (GMD): the sets' sizes and
@@ -264,13 +266,20 @@ skew whats returned". So:
    search's output and, per store, the three derive stamps and the user's go (date) or `held`.
    {#ac-8}
 
-## Rulings folded (lead, 2026-11-13) {#rulings}
+## Rulings folded (lead, 2026-11-13; plan-review L60 on dev master `1356a06`) {#rulings}
 
-- The exemption covers the named entity only: accepted.
-- The memory supersedes `feedback_operational_content_not_in_graph`, not amends.
-- Bands: mean Jaccard ≥ 0.90 with no query below 0.60; name 20/20, anchor 20/20, `rel:` 10/10,
-  BM25 ≥ 8/10, no drop from BEFORE. They freeze at approval.
-- The pass / re-tune-once / report actions follow the lead's Q9 direction.
+- L60 accepted revision 2's direction. Revision 4 keeps revision 3's additions:
+  - the predicate's location (`memory_layout.is_operational` and `operational_ids`, accepted over
+    `pagerank.py`);
+  - R2/R3's coverage;
+  - AC-3, AC-4 and AC-5;
+  - the re-tune-ONCE action bands.
+- It restores L60's stricter gates and set sizes: DOESN'T SKEW is a mean ≥ 0.90 AND no query below
+  0.60 per surface, and USEFUL is judged channel by channel.
+- The exemption covers the named entity only (accepted).
+- The memory SUPERSEDES `feedback_operational_content_not_in_graph` (a reversed mechanism, per
+  MEMORY-RULES), not amends.
+- Every band freezes at approval.
 
 ## Files {#files}
 
@@ -306,8 +315,10 @@ skew whats returned". So:
   `memory_layout.is_operational`, BM25 is untouched (filtering its statistics is now only the
   DOESN'T-SKEW re-tune), the recall pack is ranked, the gates have pre-registered actions, and
   there is no ignore line, purge or 22.6 dependency.
-- **Revision 4** folds the lead's rulings on revision 2's open items ([[#rulings]]): `supersedes`,
-  and revision 2's accepted bands and sets, mapped onto revision 3's action table.
+- **Revision 4** reconciles revision 3, which crossed the lead's L60 acceptance of revision 2
+  ([[#rulings]]). It keeps revision 3's predicate location, coverage, AC-3/4/5 and re-tune-once
+  bands, and restores L60's stricter gates (Jaccard floor 0.60, re-tune band 0.80-0.90 or
+  0.45-0.60; USEFUL by channel), revision 2's set sizes, and `supersedes` for the memory.
 {#history-revs}
 
 ## Appendix: the amendment memory's text {#appendix-memory}
