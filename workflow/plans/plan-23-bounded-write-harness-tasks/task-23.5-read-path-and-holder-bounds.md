@@ -7,13 +7,16 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-15
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 23.5: the read path and the non-harness lock holders {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: Pending. **Revision round 13 (2026-11-09):** freshness fold of
+> Status: Pending. **Revision round 14 (2026-11-13):** R9/AC-9 wait for the 26.6 R3 residual
+> (after 26.7), not for "26.6 merged" (plan review L1); d9bn is CONFIRMED, so round 8's
+> PROVISIONAL mark is cleared (Cc-9); see [[#rev-round-14]].
+> **Revision round 13 (2026-11-09):** freshness fold of
 > [[bsd-plan23-3-5-freshness-62a2465]] (s2, m2, m3).
 > - R1.3 re-walks the `CLI_OPS` set on the merged 3.7 tree at RED and records it with its sha.
 > - `recall.ann_search` takes a `lock_cm` factory, and the daemon passes `_cli_writer_lock(d)`.
@@ -24,8 +27,8 @@ metadata:
 > non-harness `_store_lock` holders and the heartbeat's coupling to the cli pool
 > ([[plan-23-bounded-write-harness#scope-d9az]]). Revision round 8 (2026-10-15): first review
 > [[bsd-plan23-17-spec-rereview-r8-23ad703]] (nb23-r8-1, ns23-r8-1..3, nm23-r8-1..4) answered
-> under d9bn ([[plan-review-2026-10-14#t12-approvals]], PROVISIONAL until its ch-bsd loop is
-> clean); see [[#rev-round-8]]. Revision round 9 (2026-10-15): diff check
+> under d9bn ([[plan-review-2026-10-14#t12-approvals]]; PROVISIONAL at round 8, CONFIRMED
+> since "plan-23/17 r10", round 14); see [[#rev-round-8]]. Revision round 9 (2026-10-15): diff check
 > [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d]] (nb23-r9-1/2, ns23-r9-1/2, nm23-r9-1..3); see
 > [[#rev-round-9]]. Revision round 10 (2026-10-15): diff check
 > [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3]] (nm23-r10-1..5, all MEH); see [[#rev-round-10]].
@@ -48,6 +51,10 @@ metadata:
 > is at `:219` ([[bsd-plan23-3-5-freshness-62a2465#p-bug112]]). The implementation summary still
 > records the `git merge-base --is-ancestor` command and its output, run at RED. Round 9's gate
 > text (OPEN, branch `bugs-112-113-118` at `7c38c46` / `0fed0d5` / `462bd0b`) is history.
+> **R9/AC-9 also wait for the 26.6 R3 residual merged** (round 14, L1;
+> [[task-26.6-compile-subject-hygiene#r3-residual]], which is built after 26.7): R9's hold
+> includes R3's in-hold `MEMORY.md` render, which only exists after that residual. R1-R8 and
+> the riders do not wait for it.
 > Runs in parallel with 23.3 after 23.1. Blocks nothing in Wave 1; 17.3's hold bound
 > ([[task-17.3-fleet-rollout#r2-measure]]) cites the same coupling.
 > **Stands alone (ns23-r9-1).** 23.5 is Wave 1; plan-18 is Wave 4. Nothing here waits on 18.2 or
@@ -642,7 +649,12 @@ maintenance holds (17.1 / 17.3), plan-18's catalog maintenance and its swap (18.
      RATCHET over code 23.5 does not change ([[#ac-9]] says which of AC-9's clauses are RED).
    - **Order.** AC-9 is written and registered after 26.6 merges (the merge order puts plan-26
      before 23.x), so K counts the apply WITH 26.6's hygiene; a later change that adds per-row
-     writes to the apply fails AC-9 instead of lengthening the hold silently.
+     writes to the apply fails AC-9 instead of lengthening the hold silently. **Round 14 (L1):
+     "26.6 merges" means 26.6's R3 residual merged** ([[task-26.6-compile-subject-hygiene#r3-residual]],
+     after 26.7). 26.6's GREEN (`8a867bc`) is merged, but its R3 render is not built, so a K
+     measured on it equals `K_off` and the ratchet would fail, or be re-measured, the day the
+     render lands (contra-c Cc-2). R9 and AC-9 are therefore built after that residual; the
+     rest of 23.5 does not wait.
 
 ## Cross-plan obligations for plan-18 (ns23-r9-1) {#cross-plan-18}
 
@@ -1103,3 +1115,21 @@ enabler stays. This task owns it because it owns the read path.
   replica yet". {#bug136-req}
 - **AC-bug136.** In one process: a read-only read of a snapshot-less store, then an in-process
   write, succeeds; a mutation that caches the read-only attach fails the test. {#bug136-ac}
+
+## Revision round 14 (2026-11-13) {#rev-round-14}
+
+Source: [[plan-review-2026-11-13#lead]] L1 (contra-c Cc-2: "23.5 R9/AC-9 measures a hold that
+only exists after 26.7") and L25's status sweep (contra-c Cc-9: this header's "PROVISIONAL
+until its ch-bsd loop is clean"). Facts read on dev master `1cf3b9f`: 26.6 is merged
+(`8a867bc`); `daemon.py` registers `memory_compile` and `memory_compile_status`, and no
+`memory_compile_apply` op survives, so R9's RED read is expected to list `memory_compile` only
+(the RED read stays the authority). Requirements otherwise unchanged.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: depends-on -> [[task-26.6-compile-subject-hygiene#r3-residual]]
+
+| finding | answered at | rationale |
+|---|---|---|
+| L1 / Cc-2: R9/AC-9 gated on "26.6 merged", but the in-hold render is 26.6's R3 residual, after 26.7 | header, [[#r9-compile-apply]] (Order bullet) | K is a ratchet; measured before the render exists it equals `K_off` and breaks when the render lands |
+| Cc-9: d9bn shown as PROVISIONAL | header | d9bn is CONFIRMED (`plan-review-2026-10-14`, "plan-23/17 r10") |
+

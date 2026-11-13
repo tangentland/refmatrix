@@ -7,13 +7,15 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 23.2: the lock-hold and write-count fixture {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: **BUILD-READY** (revision round 4, 2026-11-09: the narrow confirm
+> Status: **BUILD-READY** (revision round 5, 2026-11-13: merge order only, the "plan-26" gate
+> narrowed to 26.1 + 26.2 (plan review L4) and bug-216 → bug-185 placed ahead (L3); see
+> [[#rev-round-5]]. Earlier: revision round 4, 2026-11-09: the narrow confirm
 > [[bsd-plan23-fold-additions-a9147d5]] reproduced round 3's census exactly and rates 23.2
 > build-ready; no change to R6 or AC-6; one re-run caveat recorded, see [[#rev-round-4]].)
 > Earlier: (revision round 3, 2026-11-09: the freshness confirm
@@ -23,8 +25,10 @@ metadata:
 > [[#rev-round-3]]. Merge gate unchanged: bug-178 merges first. Round 2: freshness fold of
 > [[bsd-plan23-1-2-freshness-9bcf464]] (s3, m1, m2, m3, m6), re-cited against HEAD `9901589`; see
 > [[#rev-round-2]]. Earlier: the 2026-10-14 decision log)
-> Depends on: 23.0 (test sandbox). **Merge order (m6):** 3.7 → bug-178 → plan-26 → **23.2** →
-> 23.1. 23.2 is written after bug-178 merges, so R3's proxy is built against its `bulk_write`.
+> Depends on: 23.0 (test sandbox). **Merge order (m6; round 5):** 3.7 → bug-178 → 26.1 + 26.2
+> (merged) → bug-216 → bug-185 → **23.2** → 23.1 ([[plan-23-bounded-write-harness#merge-order]]).
+> 23.2 is written after bug-178 merges, so R3's proxy is built against its `bulk_write`.
+> Neither 23.2 nor bug-185 needs the other; the order is the queue's, not a code dependency.
 > Blocks: 23.1 (its ACs count holds and writes with this recorder), 23.3, and the consumers' tests
 > (16.6, 17.1, 19.2, 22.2)
 
@@ -265,3 +269,13 @@ read a false zero. The round-3 table above is unchanged history.
 
 rel: derives-from -> [[bsd-plan23-fold-additions-a9147d5#q5]]
 rel: derives-from -> [[bsd-plan23-fold-additions-a9147d5#readiness]]
+
+## Revision round 5 (2026-11-13) {#rev-round-5}
+
+Source: [[plan-review-2026-11-13#lead]] L4 (contra-c Cc-7: "the 'plan-26 merged' gate … 23.2's
+merge order (m6)") and L3. Header only; no requirement or AC changed. The gate 23.2 needs from
+plan-26 is none: its R3 proxy is built on bug-178's `bulk_write`, and 26.1 + 26.2 (`9b2c4ac`,
+`05164ce`) are merged.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+

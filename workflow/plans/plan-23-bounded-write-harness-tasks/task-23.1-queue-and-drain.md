@@ -7,13 +7,16 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 23.1: queue, tail, bounded steps, and the tick registry {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: **BUILD-READY** (revision round 14, 2026-11-09: wording-only fold of
+> Status: **BUILD-READY** (revision round 15, 2026-11-13: [[#merge-order]] only: the
+> "plan-26" gate narrowed to 26.1 + 26.2, bug-216 placed before bug-185, 23.5 R9 after the
+> 26.6 R3 residual (plan review L1, L3, L4); no requirement changed; see [[#rev-round-15]].
+> Earlier: revision round 14, 2026-11-09: wording-only fold of
 > [[bsd-plan23-3-5-freshness-62a2465]]. The bug-177 holder named in [[#facts]] round 11 is
 > corrected, and [[#merge-order]] gains bug-185 and 23.3 ∥ 23.5. No requirement changed; see
 > [[#rev-round-14]]. Earlier: revision round 13, 2026-11-09: narrow confirm
@@ -1290,14 +1293,18 @@ Added in round 11 (m6), from [[bsd-plan23-1-2-freshness-9bcf464#overlap]]:
 2. **bug-178** (`fix-bug178-bulk-write`): `store.py` bulk paths (no function 23.1 edits) and
    `replica_merge.py`'s remap fill (R8 builds on top); 23.2 R3 is written against its
    `bulk_write`.
-3. **plan-26**: 26.2's `add_memory` → `_maybe_commit` (R11.3's precondition) and its bridge
-   `store.transaction()` (R1.6 item 4's census); 26.6's `memory_compile` apply.
-4. **bug-185** ([[task-bug185-bulk-gmd-ingest]], round 14): `ingest_gmd_paths` writes nodes and
-   anchor concepts in bulk. It touches `ingest_gmd.py` after plan-26 and no 23.1 function. It is
-   the largest single cut in live hold time, so the hook writes R11 queues wait on shorter holds.
+3. **26.1 + 26.2** (round 15, L4: narrowed from "plan-26"; both merged, `9b2c4ac`, `05164ce`;
+   26.6's `memory_compile` op is merged too, `8a867bc`): 26.2's `add_memory` → `_maybe_commit`
+   (R11.3's precondition) and its bridge `store.transaction()` (R1.6 item 4's census); 26.6's
+   `memory_compile` apply. The plan-26 tasks still to come (26.5, 26.7-26.9) do not gate 23.1.
+4. **bug-216** then **bug-185** ([[task-bug185-bulk-gmd-ingest]], round 14; bug-216 placed
+   ahead of it in round 15, L3): `ingest_gmd_paths` writes nodes and anchor concepts in bulk,
+   on bug-216's resolver. It touches `ingest_gmd.py` and no 23.1 function. It is the largest
+   single cut in live hold time, so the hook writes R11 queues wait on shorter holds.
 5. **23.2** (the recorder 23.1's ACs count with).
 6. **23.1** with R11.
-7. **23.3 ∥ 23.5** after 23.1 ([[plan-23-bounded-write-harness#merge-order]]; 23.5 R9 after 26.6).
+7. **23.3 ∥ 23.5** after 23.1 ([[plan-23-bounded-write-harness#merge-order]]; 23.5 R9/AC-9
+   after the 26.6 R3 residual, which follows 26.7, round 15, L1).
 
 **Holder census addition (m6; owner fixed in round 12, b-n1).** `daemon.py::_op_memory_compile_apply`
 (the same symbol at `77c9f04`, on 3.7 at `e4faf32` and on bug-178 at `ae7c0c7`) holds
@@ -2067,3 +2074,18 @@ None of its findings is 23.1's. Two edits here follow from b1. No requirement or
 
 rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465]]
 rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465#b1]]
+
+## Revision round 15 (2026-11-13) {#rev-round-15}
+
+Source: [[plan-review-2026-11-13#lead]] L1, L3, L4 (contra-c Cc-2, Cc-1, Cc-7). Only
+[[#merge-order]] changed; no requirement, AC or file changed. 23.1's own Depends-on line already
+named the narrow gate ("plan-26 task 26.2 MERGED"), which L4 adopts for the build order.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | answered at |
+|---|---|
+| L4 / Cc-7 ("plan-26 merged" read literally blocks 23.x until 26.9) | [[#merge-order]] item 3 |
+| L3 / Cc-1 (bug-185 follows bug-216) | [[#merge-order]] item 4 |
+| L1 / Cc-2 (23.5 R9 needs the 26.6 R3 residual) | [[#merge-order]] item 7; [[task-23.5-read-path-and-holder-bounds#rev-round-14]] |
+
