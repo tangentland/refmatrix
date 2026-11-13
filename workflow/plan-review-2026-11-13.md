@@ -329,7 +329,7 @@ L-row first; **new** = no spec yet; **review** = written but not through ch-bsd.
 | G10 | 8 | 16.6 Wave-1 slice, 17.1 | rev | 16.6 freshness vs revised bug-185 (L31); 17.1 ok; moved by L2 |
 | G11 | 4 | 10.3, 10.5 probe, 10.6, 10.4, 10.2 | review | plan-10 rev 5 ch-bsd spec review + branch merge (L23); 10.3 early (L30); 10.2 re-spec vs 25.1b (L15) with L27's outcome; L17 Table A before 10.6 |
 | G12 | 4 | 25.1b | **new** | task spec from rev 8's R12-R14/AC-16-18 + L15 amends + `depends-on 10.3` + R15 bug-182 wall bound under L44's band (L39) + plan-2 #s-2/#m-4 riders (D-Q6) |
-| G13 | 4 | 25.2, 25.3 | rev | 25.2: L34 scoring with L43's else-branch; 25.3: R7 reset on 10.3's marker (L16), independence from 25.2 checked (L43) |
+| G13 | 4 | 25.2, 25.3 | rev | 25.2: L34 scoring with L43's else-branch; 25.3: R7 reset on 10.3's marker (L16); its STM half is independent of 25.2 and its helix half follows 25.2 (L43, from task-25.3:21-22) |
 | G15 | 2 | bug-220 | rev | folded into 26.5 as its own requirement + AC (L37) |
 | G16 | 7 | 21.5 rev 4 | rev | fold the pilot's seven matcher changes; R12 re-measure with the spec's bands (L35); decision row "no build until the experiment reports" (D-Q4) |
 | G17 | 7 | handhold outcome experiment | **new** | plan + task specs from the exploration (arms, outcomes, bands, the arm-B switch, Q3 fully folded per L20, 10.2's nested arm) |
