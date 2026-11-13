@@ -7,7 +7,7 @@ metadata:
   node_type: exploration
   status: in-progress
   created: 2026-10-14
-  updated: 2026-10-14
+  updated: 2026-11-13
 ---
 
 # Exploration: session-phased context injection {#root}
@@ -181,6 +181,30 @@ the previous rev of the same id, over a frozen set of real sessions. The event s
 `block_id`, `rev`, `unchanged: bool` so the saving is a count, not a story. {#vi-evidence}
 
 rel: related-to -> [[plan-10-injection-dedup]]
+
+**Revised 2026-11-13 (L17, contra-b CB-7).** The 2026-11-13 numbers refute two claims in the
+paragraph above. That paragraph stays as the 2026-10-14 record. {#vi-evidence-2026-11-13}
+
+- **"Dedup of scan-prompt's ranked entries does not pay."** This is wrong at the item level. 48.0%
+  of delivered items (46.9% of item bytes) were already held by the session when they were
+  delivered, and re-delivery alone accounts for 46.7%. 10.1's 0.000 measured CONSECUTIVE-call
+  overlap. That is a different statistic, and it misses repeats spread across the session.
+  {#vi-evidence-held}
+- **"Recall packs … near-identical across turns by design."** This is also wrong. Table A's
+  statistic, computed on the same two windows, reads `prompt-recall` 0.00% / 3.32% and
+  `scan-prompt` 0.00% / 0.00%. That is NO-GO for both ids under 19.6's confirmed bands, where the
+  worse window decides. The per-prompt payloads repeat ITEMS inside blocks whose whole content
+  changes every prompt. Plan-10 dedupes them by name, and 19.6's block diff is not used for them.
+  {#vi-evidence-blocks}
+- **The STM composite is still unmeasured.** Table A was computed on the two per-prompt ids only.
+  10.6 R0 now measures Table A's statistic on the composite before 10.6 versions it. The
+  confirmed bands decide whether that part ships. {#vi-evidence-composite}
+
+rel: amends -> [[#vi-evidence]]
+rel: derives-from -> [[measurement-injection-already-held-2026-11-13#result]]
+rel: derives-from -> [[plan-10-injection-dedup#context-table-a]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: related-to -> [[task-10.6-injection-presentation#r0]]
 
 ## What must come first {#prereqs}
 

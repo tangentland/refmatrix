@@ -14,10 +14,13 @@ metadata:
 # Task 10.3: the compaction marker {#root}
 
 > Plan: [[plan-10-injection-dedup]]
-> Status: Pending (rewritten 2026-11-13; unchanged in substance by Q13; ch-bsd spec review next)
-> Depends on: nothing beyond `master`. Lands before [[task-10.2-plan-10-injection-dedup]].
-> Builds: [[task-19.6-phased-context-and-topic-cache]] R8a's writer, as 19.6 names it; 19.6 and
-> 10.2 are its readers.
+> Status: Pending (rewritten 2026-11-13; unchanged in substance by Q13; revision round 6
+> 2026-11-13, [[#rev-round-6]]; ch-bsd spec review next)
+> Depends on: nothing beyond `master`. It is the ONLY plan-10 task that builds early (L30). It
+> follows the revival merge in queue item 4 and lands before 25.1b and 25.3, which read its
+> marker. The rest of plan-10 builds after T4.
+> Builds: [[task-19.6-phased-context-and-topic-cache]] R8a's writer, as 19.6 names it. Its readers
+> are listed in R2.
 
 rel: part-of -> [[plan-10-injection-dedup]]
 rel: realizes -> [[task-19.6-phased-context-and-topic-cache]]
@@ -62,8 +65,11 @@ session-start` (matcher `startup|resume|clear|compact`, `hooks.py:255-258`, 21.1
      (today's entry; its matcher already covers both).
 2. **R2 The reader.** `stm.last_marker(root, session) -> Marker | None`: None when the file does
    not exist; `Marker(ts=now, source="unreadable")` plus one stderr line when it exists but cannot
-   be read or parsed (f5). 10.2's `held_items` and, later, 19.6's "in the window" call it; nothing
-   else reads the file. {#r2}
+   be read or parsed (f5). Every reader calls this function, and nothing opens the file directly.
+   The readers are: 10.2's `held_items`; 10.4 R4's curator change-only check; 10.6 R3's composite
+   rev; 25.1b R14's spill page (a page older than the marker is gone); 25.3 R7's helix
+   once-per-session reset (L16); and, later, 19.6's "in the window". The writer deletes nothing.
+   Each reader decides what the marker resets in its own state. {#r2}
 3. **R3 Nothing else moves.** The marker is not a ring event and not a focus-graph field: the ring,
    `focus.json`, the topic cache, `pre.json` and the STM turn are untouched by it (19.6 R3's "one
    writer, one home" for the cache stays true). {#r3}
@@ -118,3 +124,15 @@ such tests exist only in addition. {#acceptance-lead}
 - RED run recorded, GREEN run recorded, mutation table in the implementation summary.
 - Implementation summary at `workflow/implementation_summaries/task-10.3-plan-10-injection-dedup.md`.
 - Committed on branch `task-10.3-plan-10-injection-dedup`; merged `--no-ff` to `master`.
+
+## Revision round 6 (2026-11-13, spec wave, spec-t3b) {#rev-round-6}
+
+Driven by G11 and L15, L16 and L30 ([[plan-review-2026-11-13#lead]]), and by contra-b CB-5 and
+CB-6. 10.3 is the only plan-10 task that builds early (queue item 4), because 25.1b (its spill
+page "removed at compaction") and 25.3 R7 (the helix reset, L16) read its marker. R2 used to say
+that only 10.2 and 19.6 read the file, while 10.4 R4 and 10.6 R3 already read it in rev 5. R2 now
+lists every reader, and each reads through `stm.last_marker`. Nothing in the writer changes.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: motivates -> [[task-25.1b-hook-output-ladder]]
+rel: motivates -> [[task-25.3-stm-ref-admission-and-helix-repeat#r7]]

@@ -16,12 +16,15 @@ metadata:
 > Status: Pending (drafted 2026-11-13 on presentation rules the user agreed the same day; ch-bsd
 > spec review next)
 > Depends on: [[task-25.1-recall-hook-byte-budget]] merged (the pack and its hook lines);
+> [[task-25.1b-hook-output-ladder]] merged (the ladder's tiers and the `still in play` line, which R1 labels; L15);
 > [[task-10.3-plan-10-injection-dedup]] (the `.emitted` directory and the marker, for the composite
-> part). Lands before [[task-10.2-plan-10-injection-dedup]], which labels its names line with this
-> task's function.
+> part). R3 is built only if R0 says GO (L17). Built after T4 and after 10.5's probe (L30). Lands
+> before [[task-10.2-plan-10-injection-dedup]], whose held members are labelled by this task's
+> function. Revision round 6: [[#rev-round-6]].
 
 rel: part-of -> [[plan-10-injection-dedup]]
 rel: depends-on -> [[task-25.1-recall-hook-byte-budget]]
+rel: depends-on -> [[task-25.1b-hook-output-ladder]]
 rel: depends-on -> [[task-10.3-plan-10-injection-dedup]]
 rel: implements -> [[exploration-session-phased-context#vi-unchanged]]
 rel: realizes -> [[task-19.6-phased-context-and-topic-cache]]
@@ -32,10 +35,14 @@ rel: depends-on -> [[feedback_converge_repeated_shapes]]
 An injected item today says what it is only by its name; a feedback rule and a stray code symbol
 look alike, and the headers ("refmatrix content matches for prompt", "=== context for …") say
 nothing. Agreed rules (user, 2026-11-13): label every item by kind, label the headers, keep the
-most important item first. And the STM composite is re-sent near-identical on every scan-prompt
-that carries it: whole-block versioning fits it, although it failed for the per-prompt lists —
-10.5's Table A reading (0.00-3.32%) was measured on the two per-prompt ids only
-([[plan-10-injection-dedup#context-table-a]]), never on the composite. {#why-lead}
+most important item first. The STM composite is re-sent on every scan-prompt that carries it, and
+whole-block versioning may fit it, although it failed for the per-prompt lists. 10.5's Table A
+reading (0.00-3.32%) was measured on the two per-prompt ids only
+([[plan-10-injection-dedup#context-table-a]]), never on the composite. Whether the composite is
+stable enough is therefore MEASURED first (R0, L17). It is not assumed. {#why-lead}
+
+rel: derives-from -> [[exploration-session-phased-context#vi-evidence-2026-11-13]]
+rel: depends-on -> [[task-19.6-phased-context-and-topic-cache#ranges-a]]
 
 ## Decisions {#decisions}
 
@@ -50,7 +57,31 @@ that carries it: whole-block versioning fits it, although it failed for the per-
 
 ## Requirements {#requirements}
 
-1. **R1 Item labels.** 25.1's hook line becomes `- [<label>] <name> — <title> — <hook>  (<fetch>)`;
+0. **R0 Table A on the composite, before R3 (L17, CB-7).** This is an offline measurement lane
+   item, read-only, with counts only. It runs before R3 is built. It uses the two windows
+   [[measurement-injection-already-held-2026-11-13]] used (refmatrix, cliquedb; local transcript
+   clones). For every scan-prompt delivery it extracts the `stm-topic-composite` block. It removes
+   that block's `metadata: {turn: N}` line (p5, the normalisation R3 keys on) and computes 19.6
+   R1's statistic: the share of the composite's emitted bytes that are byte-identical to the
+   previous emitted composite of the same session. A transcript compaction or `/clear` boundary
+   starts a new chain (10.3's marker did not exist yet). It records the raw share (turn line kept)
+   beside it. One block is measured, the composite as it renders today (p6). 19.6 R9's two-block
+   split is unbuilt. {#r0}
+   - **Bands.** These are 19.6's CONFIRMED Table A bands (d9v, [[task-19.6-phased-context-and-topic-cache#ranges-a]]),
+     applied as written, with the worse window deciding (19.6 `#ranges`). The table names no new
+     number. ≥ 30% (GO) or 10-30% (GO, gated: "R5 only for the composite and the session-start
+     pack") → R3 is built. 3-10% (NOT YET) or < 3% (NO-GO) → R3, AC-4, AC-5 and R4's composite
+     fields are NOT built in 10.6, and the composite keeps rendering in full. R1 and R2 still
+     build. The figure is recorded, and Table A's NOT YET follow-up (Table B, or one re-measure
+     ≥ 30 days later) belongs to 19.6, which D-Q3 has frozen.
+   - **Order.** The bands above sit in a commit older than the first commit holding a result
+     (AC-0). The result goes to `workflow/measurements/composite-table-a-2026-11.md` (GMD, counts
+     and hashes only, [[feedback_no_raw_prompts_in_public_repo]]).
+1. **R1 Item labels, at every tier (L15).** Every tier of 25.1b's ladder carries the label: the
+   full body's hook line, the excerpt, the pointer, and each member of the `still in play` line,
+   held or over budget, grouped by label with rank order kept inside each group. 25.1b's renderers
+   call `telemetry.kind_label`, and 25.1b owns the tiers' shapes. 25.1's hook line becomes
+   `- [<label>] <name> — <title> — <hook>  (<fetch>)`;
    scan-prompt's entry line `  [<label>] <name>  [<kind>]…` and anchor line `anchor: [<label>]
    <name>`; the pack and the scan render fit as before (labels count in the budget). {#r1}
 2. **R2 Headers.** scan-prompt's content header becomes `# prompt matches: <n> rule · <n> memory ·
@@ -66,15 +97,22 @@ that carries it: whole-block versioning fits it, although it failed for the per-
 4. **R4 Counted.** scan-prompt's row carries `composite: "full" | "unchanged" | null`,
    `composite_rev`, and the labelled item counts; `rmx telemetry --context` shows the composite's
    unchanged share. After deploy, that share is recorded against 19.6 Table A's bands as a check
-   (a share under 3% means the line rarely fires; recorded, nothing reverted). {#r4}
+   (a share under 3% means the line rarely fires; recorded, nothing reverted). R0 is the gate.
+   This post-deploy reading is a check against R0's figure, not a second gate. {#r4}
 
 ## Acceptance criteria {#acceptance}
 
 Through the GENERATED UserPromptSubmit commands in 23.0's sandbox on 25.1's fixture. {#acceptance-lead}
 
+0. **AC-0 R0 before R3.** R0's bands are in a commit older than the first commit holding its
+   result. The result names the band row it falls in. AC-4, AC-5 and AC-7's composite mutations
+   are written only when that row is GO or GO-gated. Otherwise the implementation summary records
+   them as not built, with R0's figure.
 1. **AC-1 Labels.** A fixture with one feedback, one guardrail, one decision memory, one ADR doc,
    one project memory, a doc and a code symbol: each line carries `rule`, `rule`, `decision`,
-   `decision`, `memory`, `doc`, `code`; the order equals the unlabelled run's.
+   `decision`, `memory`, `doc`, `code`; the order equals the unlabelled run's. On 25.1b AC-17's fixture (40 rows,
+   20 KB) at 4,000 B, every tier present (full, excerpt, pointer, line member)
+   carries its label, and the line's members are grouped by label in rank order.
 2. **AC-2 Headers.** scan-prompt's output has no `refmatrix content matches for prompt` and no
    `=== context for`; `rmx context X` still prints `=== context for` and its row's `cardinality` is
    unchanged.
@@ -85,7 +123,8 @@ Through the GENERATED UserPromptSubmit commands in 23.0's sandbox on 25.1's fixt
 5. **AC-5 Composite state.** Missing → full; holding `{` → full plus one stderr line, exit 0.
 6. **AC-6 One label map.** A structural test: the label literals live only in `telemetry.kind_label`;
    `composite._kind_of_type` calls it.
-7. **AC-7 Mutations that must FAIL a test:** labels reorder items (AC-1); `rule` missing for
+7. **AC-7 Mutations that must FAIL a test:** a ladder tier left unlabelled (AC-1, the ladder
+   fixture); labels reorder items (AC-1); `rule` missing for
    `guardrail` (AC-1); `rmx context`'s header changed (AC-2); the turn line kept in the hash (AC-4:
    never unchanged); the marker ignored (AC-4); an unreadable state read as unchanged (AC-5).
 
@@ -100,9 +139,23 @@ Through the GENERATED UserPromptSubmit commands in 23.0's sandbox on 25.1's fixt
 | `src/refmatrix/composite.py` | `_kind_of_type` → `telemetry.kind_label`; the rev in its header |
 | `src/refmatrix/stm.py` | composite state read / write in `.emitted/` (10.3's helper) |
 | `tests/test_task10_6_presentation.py` (new) | AC-1..AC-7 |
+| `workflow/measurements/composite-table-a-2026-11.md` (new) | R0's bands (committed first), then its result |
+| `eval/production/composite_table_a.py` (new, read-only) | R0's extraction and share. R3 does not exist when R0 runs, so the script holds p5's normalisation. If R3 is built, R3 moves that function into `src/refmatrix/composite.py`, and the script is switched to import it in the same commit, so one definition remains |
 
 ## Definition of done {#done}
 
 - RED run recorded, GREEN run recorded, mutation table in the implementation summary.
 - Implementation summary at `workflow/implementation_summaries/task-10.6-injection-presentation.md`.
 - Committed on branch `task-10.6-injection-presentation`; merged `--no-ff` to `master`.
+
+## Revision round 6 (2026-11-13, spec wave, spec-t3b) {#rev-round-6}
+
+Driven by G11 and L15, L17 and L30 ([[plan-review-2026-11-13#lead]]), and by contra-b CB-5 and
+CB-7. Rev 5 built 19.6 R5's `unchanged` line for the composite without Table A, on an exploration
+premise that the 2026-11-13 numbers refute. R0 now measures Table A on the composite first, and
+the CONFIRMED bands decide whether R3 ships (L17). L15 restates 25.1b's kind-label clause so that
+10.6 labels every tier later. R1 therefore covers the excerpt, the pointer and the line, and 10.6
+depends on 25.1b. Under L30 10.6 builds after T4, after 10.5's probe.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: depends-on -> [[task-25.1b-hook-output-ladder]]

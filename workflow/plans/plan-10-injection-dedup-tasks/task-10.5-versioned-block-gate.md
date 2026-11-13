@@ -18,7 +18,9 @@ metadata:
 > is to run, with its bands written below before any probe. The id keeps its first name
 > (`versioned-block-gate`) because other docs address it; the block diff it first gated is closed
 > ([[#history]]).
-> Depends on: dd-10r's replay (done); 25.1's synthetic fixture memories for the probe.
+> Depends on: dd-10r's replay (done); 25.1's synthetic fixture memories for the probe; 25.1b
+> merged for Part 1b and for the probe's line (revision round 6, [[#rev-round-6]]). Under L30
+> the probe runs after T4, ahead of 10.6.
 
 rel: part-of -> [[plan-10-injection-dedup]]
 rel: derives-from -> [[measurement-injection-already-held-2026-11-13#design-replay]]
@@ -52,12 +54,49 @@ only) and the block diff (7/11, 10/16); the non-human gate failed in every arm (
 names-only (Q13). 10.2 R8 re-runs this replay with the rules imported from `src/` and must
 reproduce v2. {#part-1-result}
 
+## Part 1b: the replay re-derived on 25.1b's pack (v3) — to run {#part-1b}
+
+v1 and v2 scored names-only against 25.1 rev 7's pack, which renders whole bodies and drops the
+rest. 25.1b replaces that with a degrade ladder (full, excerpt, pointer, names line) and a spill
+page. It also owns the `still in play` line, whose members are held or over budget (L15, contra-b
+CB-1). The baseline that names-only is measured against has therefore changed, and so has 10.2
+R8's parity target. v3 re-derives both. {#part-1b-why}
+
+rel: depends-on -> [[task-25.1b-hook-output-ladder]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+1. **R1b The run.** It is v2's replay: the same windows, the same 1,472 prompt calls, the same 11
+   labelled and 16 R12 uses, and the same four held rules. The BASELINE changes: each call's
+   recall payload is rendered by 25.1b's `recall_pack.pack`, imported from `src/` after 25.1b
+   merges, on the call's retrieved rows. scan-prompt has no ladder under 25.1b, so v2's span
+   arithmetic stands for it, and only its line's bytes come from 25.1b's line renderer. Names-only is rendered TIER-PINNED, as 10.2 h9 defines it: every
+   non-held row keeps the tier the baseline gave it, and every held row's rendering is replaced by
+   its name on the line. The held rules and that substitution stay the replay's own (v2's code),
+   because 10.2 does not exist yet. That independence is what makes 10.2 R8 a parity check rather
+   than a tautology: at 10.2's GREEN the replay is re-run with `stm.held_items` and
+   `pack(held=…)` imported from `src/`, and both runs must agree. A retrieved row whose memory no
+   longer exists in the store copy is counted and left out of BOTH arms, and the count is
+   reported. {#r1b}
+2. **R2b The rule is unchanged.** v1/v2's pre-registered rule applies as written: every labelled
+   use stays visible and at most 1 R12 explicit use is lost. "Visible" means rendered at any
+   tier, or named on the line. An item only on the spill page is NOT visible. The run reports
+   block bytes against the v3 baseline, item-line bytes, labelled and R12 visible counts, and the
+   share of held members that fell past the names cap. {#r2b}
+3. **R3b The outcome.** If the rule holds, its figures are 10.2 R8's parity target and Part 1
+   reads PASSED (v3). If it fails, Part 1 reads FAILED (v3), 10.2 is not built, and the result goes
+   to the user with an id in `workflow/open-questions.md`. That is the existing precondition
+   gate ("10.2 starts only on 10.5's GO"), so no new rule is added. {#r3b}
+4. **R4b Order.** v3 runs in the measurement lane after 25.1b merges and before 10.2's RED. Its
+   result is appended to [[measurement-injection-already-held-2026-11-13]] as a dated `v3`
+   addendum, with counts only. {#r4b}
+
 ## Part 2: read-back probe — to run, bands written first {#part-2}
 
 1. **R1 The probe.** 50 scripted sessions (25 per payload: `prompt-recall`, `scan-prompt`) in a
    SCRATCH Claude Code project (never this repo's settings, 25.1 R0's rule), on 25.1's synthetic
    fixture memories and code. Each session: a prompt whose hook output carries item X in full;
-   1-7 filler prompts; then a prompt whose hook output names X only on `still in play: X`, and
+   1-7 filler prompts; then a prompt whose hook output names X only as a held member of 25.1b's
+   `still in play` line, rendered by 25.1b's line renderer exactly as 10.2 will print it, and
    whose question needs a fact that appears only in X's earlier full rendering. Scored by a script:
    correct when the answer carries that fact, or the agent fetches X (`rmx memory get` / `Read` /
    `rmx context`) and then carries it, without asking. Synthetic text only; transcripts stay
@@ -212,3 +251,12 @@ the "user decides" band. {#provisional-sensitivity}
 For comparison, the withdrawn per-item pointer (window N = 10) would have degraded about 68% of
 re-deliveries (gaps 1-10, [[plan-10-injection-dedup#context-2026-11-13]]) to a line that still
 names the item, against 38-40% omitted outright here at best.
+
+## Revision round 6 (2026-11-13, spec wave, spec-t3b) {#rev-round-6}
+
+Driven by G11 and L15 and L30 ([[plan-review-2026-11-13#lead]]), and by contra-b CB-1 ("R8 parity
+figures re-derived"). Part 1b (v3) re-runs the v2 replay on 25.1b's pack, with the same rule. Its
+figures become 10.2 R8's parity target, and a failure is the existing precondition gate. The probe
+prints X the way 10.2 will, as a held member of 25.1b's line. Under L30 the probe runs after T4.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]

@@ -17,13 +17,16 @@ metadata:
 > Status: Pending (drafted 2026-11-13; rev 3 the same day: no injection gate, Q10; ch-bsd spec
 > review next). The id keeps "gate" because other docs address it.
 > Depends on: [[task-25.1-recall-hook-byte-budget]] merged (curator status's budget and the hook
-> command table, R4); [[task-10.3-plan-10-injection-dedup]] (the `.emitted` directory and the
-> marker, for R4's change-only check).
+> command table, R4); [[task-25.1b-hook-output-ladder]] merged (R12's shared emitter, which every generated hook
+> command goes through, the new curator entry included; revision round 6, [[#rev-round-6]]);
+> [[task-10.3-plan-10-injection-dedup]] (the `.emitted` directory and the marker, for R4's
+> change-only check). Built after T4, after 10.6 and before 10.2 (L30).
 > Decisions: no separate gate, same dedupe as human prompts (Q10); curator silent (Q9); lead:
 > agent-message turns are not focus turns, an envelope origin field is read first (2026-11-13).
 
 rel: part-of -> [[plan-10-injection-dedup]]
 rel: depends-on -> [[task-25.1-recall-hook-byte-budget]]
+rel: depends-on -> [[task-25.1b-hook-output-ladder]]
 rel: derives-from -> [[measurement-injection-already-held-2026-11-13]]
 rel: derives-from -> [[measurement-injection-already-held-2026-11-13#gate-comparison]]
 rel: derives-from -> [[measurement-injection-already-held-2026-11-13#design-replay-v2]]
@@ -132,7 +135,8 @@ entries that are not tool results):
    depends on it. {#r3}
 4. **R4 Curator status (Q9; the 10.4b row).** The generator drops `rmx curator status` from
    `scan_cmd` and emits it as its OWN UserPromptSubmit entry, `rmx curator status --stdin-json`
-   (no `|| true`: its own entry cannot suppress the others). 25.1's `hook_budget.HOOK_COMMAND_CHANNELS`
+   (no `|| true`: its own entry cannot suppress the others). Like every generated hook command, it
+   goes through 25.1b R12's shared emitter and its 9,500 B clamp. 25.1's `hook_budget.HOOK_COMMAND_CHANNELS`
    changes to `scan_cmd` = `scan_prompt` and `curator_cmd` = `curator_status` (per-hook cap, R0
    outcome (A)); budgets unchanged. With `--stdin-json` it reads the envelope; on a non-human family
    it prints nothing and writes its `cli.log` row with `prompt_family` and `gated:
@@ -180,7 +184,8 @@ values are synthetic. {#acceptance-lead}
    a human prompt prints the queue within `budget("curator_status")`; a second human prompt with
    the same queue prints nothing and writes `gated: "skipped_unchanged"`; a changed queue prints
    again; after the generated PreCompact marker entry the same queue prints again; `rmx
-   install-hooks --check` is clean.
+   install-hooks --check` is clean. 25.1b's AC-16, which enumerates EVERY generated hook command,
+   is re-run and passes with the new curator entry among them.
 5. **AC-5 One predicate.** A structural test parses `src/refmatrix/`: the seven openings appear as
    string literals only in `terms.py`; `cli._is_ambient_prompt` does not exist; `stm.is_ambient_text`
    returns True for every AC-1 positive; scan-prompt and the recall verb call `ambient_family` only
@@ -191,7 +196,8 @@ values are synthetic. {#acceptance-lead}
    input hook (AC-3, AC-5); an injection branch on the family in scan-prompt (AC-2, AC-5); curator
    status left inside `scan_cmd` (AC-4); curator's skip not counted (AC-4); an unchanged queue
    printed twice (AC-4); the marker ignored by the change-only check (AC-4); `prompt_family`
-   missing from a row (AC-2).
+   missing from a row (AC-2); the curator entry generated outside 25.1b's shared emitter (AC-4,
+   through 25.1b AC-16).
 
 ## Files to modify {#files}
 
@@ -229,3 +235,12 @@ values are synthetic. {#acceptance-lead}
 - Implementation summary at `workflow/implementation_summaries/task-10.4-non-human-prompt-gate.md`.
 - R5's measurement file written (before at RED, after at deploy).
 - Committed on branch `task-10.4-non-human-prompt-gate`; merged `--no-ff` to `master`.
+
+## Revision round 6 (2026-11-13, spec wave, spec-t3b) {#rev-round-6}
+
+Driven by G11 and L15 and L30 ([[plan-review-2026-11-13#lead]]). 25.1b R12 clamps every generated
+hook command through one shared emitter, "any future one" included. R4's new curator entry is
+such a command, so 10.4 depends on 25.1b and AC-4 re-runs 25.1b's AC-16 enumeration. Under L30
+10.4 builds after T4, between 10.6 and 10.2.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]

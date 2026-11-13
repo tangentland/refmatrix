@@ -18,7 +18,10 @@ metadata:
 ([[measurement-injection-already-held-2026-11-13]]) found **48.0%** of delivered items already
 held by the session, almost all by re-delivery. A pre-registered replay of five designs chose
 names-only (Q13); non-human turns get the same dedupe, no separate gate (Q10). The specs go
-through a ch-bsd spec review before this plan moves to `approved`.
+through a ch-bsd spec review before this plan moves to `approved`. Revision round 6 (2026-11-13,
+spec wave, [[#rev-round-6]]) re-specs 10.2 against 25.1b, which owns the `still in play` line
+(L15). It also gates 10.6's composite part on Table A (L17), sets the build order (L30) and marks
+Q7 and Q11 superseded (L23).
 **Location:** `workflow/plans/plan-10-injection-dedup.md` — permanent home; stage is `metadata.status`.
 
 rel: depends-on -> [[constitution]]
@@ -37,6 +40,7 @@ rel: derives-from -> [[measurement-injection-already-held-2026-11-13#design-repl
 rel: derives-from -> [[measurement-injection-already-held-2026-11-13#design-replay-v2]]
 rel: related-to -> [[task-19.6-phased-context-and-topic-cache#split-plan-10]]
 rel: depends-on -> [[task-25.1-recall-hook-byte-budget]]
+rel: depends-on -> [[task-25.1b-hook-output-ladder]]
 rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 rel: related-to -> [[task-21.5-tool-used-signal]]
 rel: related-to -> [[exploration-handhold-outcome-experiment]]
@@ -71,15 +75,21 @@ at every compaction marker, and counts every name; nothing is removed by rule.
 On every prompt, human or not ([[task-10.2-plan-10-injection-dedup]]):
 
 ```
-# rmx recall · prompt_recall · 9 hits · budget 4000 B
-still in play: feedback_push_from_dev_not_deploy, project_0820_release_fleet_hooks (+0)
-- <the non-held hits, in their original rank order, as 25.1 renders them>
+<25.1b's header>
+<25.1b's `still in play` line: the held members (this plan) and the over-budget members (25.1b)>
+<the non-held hits, at the tier the full run gives them, in rank order, as 25.1b renders them>
 ```
+
+The line, its format, its cap of 15, its overflow and its spill page belong to 25.1b (L15,
+contra-b CB-1). Plan-10 adds only the held members. {#names-only-owner}
+
+rel: depends-on -> [[task-25.1b-hook-output-ladder]]
 
 - **Held** = delivered FULL on `scan_prompt`, `prompt_recall` or `session_start` on an EARLIER
   prompt of the session, after the last compaction marker (cross-block).
-- Held items are taken out of the payload and named on ONE line (cap 15, then `(+N)`); non-held
-  items render in full in their original order; nothing new is pulled in.
+- Held items are taken out of the payload and named on ONE line, 25.1b's. Non-held items keep
+  the tier and rendering the `full` run gives them, in their original order (tier-pinned,
+  10.2 h9 and h13). Nothing new is pulled in, and freed bytes are not re-spent.
 - The names line is visible but never makes an item held; compaction is the only reset.
 - State: one small file per writing channel under `stm/<session>.emitted/`, beside 10.3's marker.
   21.1's events measure it; they are not its state.
@@ -116,8 +126,11 @@ curator status on them (Q9), and labels every hook row with the prompt family
 
 ### Measured after ship {#ab}
 
-A per-session live A/B, `dedupe` vs `full`, drawn from one arm table shared with the handhold
-outcome experiment ([[task-10.2-plan-10-injection-dedup#r7]]). A later arm, 4+3b (baseline-delivered
+A per-session live A/B, `dedupe` vs `full`, NESTED in the handhold outcome experiment as a
+declared factor: arm A splits into `A+dedupe` / `A+full` (L20). 10.2 is built before the
+experiment starts, and the experiment's ≥ 14-day run IS this A/B
+([[task-10.2-plan-10-injection-dedup#r7]]). Its "used" outcome counts only R12 explicit uses plus
+`cited_in_answer` (L27). A later arm, 4+3b (baseline-delivered
 non-held first, then new candidates, then held into leftover budget, the rest named), is recorded
 for a future A/B and not built (Q13).
 
@@ -141,7 +154,9 @@ but never dedupes; PreCompact and explicit pulls neither.
 
 ### Q5: Before build {#q5}
 **Status:** OPEN (not a user question): 10.5's 50-probe read-back test, bands written first
-([[task-10.5-versioned-block-gate#part-2]]).
+([[task-10.5-versioned-block-gate#part-2]]); 10.5's v3 replay on 25.1b's pack
+([[task-10.5-versioned-block-gate#part-1b]]); 10.6 R0's Table A on the composite
+([[task-10.6-injection-presentation#r0]]).
 
 ## Decisions Log {#decisions-log}
 
@@ -153,8 +168,8 @@ but never dedupes; PreCompact and explicit pulls neither.
 | Q1' | Already-held share (against the session) | **48.0%** held, ≥ 30% band → reopen | 2026-11-13 |
 | D1 | Repeat rendering | ~~one-line pointer, never suppress~~ — superseded (Q7, then Q13) | 2026-11-13 |
 | R2' | Degrade-only | reopened (open-questions `#pre-ledger`); names-only removes held items from the payload but always names them | 2026-11-13 |
-| Q7 | Dedupe mechanism | context diff over pointer; tried as 19.6 R5/R6, provisionally NO-GO | 2026-11-13 |
-| Q11 | Design for the two payloads | 4+3; 19.6's block diff not used for them; its NO-GO stands | 2026-11-13 |
+| Q7 | Dedupe mechanism | ~~context diff over pointer; tried as 19.6 R5/R6, provisionally NO-GO~~ — **superseded** by Q11, then Q13 (names-only) and Q10 (L23) | 2026-11-13 |
+| Q11 | Design for the two payloads | ~~4+3~~ — **superseded** by Q13 (names-only) after the replay rejected 4+3, and by Q10 for non-human turns (L23). Still standing from Q11: 19.6's block diff is not used for these payloads, and its NO-GO stands | 2026-11-13 |
 | Q12 | How to choose | replay-score the designs first (dd-10r, pre-registered) | 2026-11-13 |
 | Q13 | Design after the replay | names-only now; 4+3b a later A/B arm | 2026-11-13 |
 | D2 | Non-human prompts | direction: less injection on non-human turns — refined by Q10 | 2026-11-13 |
@@ -167,29 +182,41 @@ but never dedupes; PreCompact and explicit pulls neither.
 | P1 | Presentation (user-agreed rules) | kind label on every item, kind-labelled headers, rank order kept; the composite uses 19.6 R5's `unchanged` line (whole-block versioning fits it; Table A failed only for the per-prompt lists) — task 10.6 | 2026-11-13 |
 | P2 | Curator status (user-agreed rule) | prints only when its content changed since its last print in the session (10.4 R4) | 2026-11-13 |
 | W1 | With/without (user asked) | offline: the gate failed (Q10); live: 10.2's `dedupe` vs `full` A/B, nested with the handhold experiment | 2026-11-13 |
+| L15 | The `still in play` line (plan review, lead) | 25.1b owns it; its members are held (10.2) or over budget (25.1b); 10.2 re-specced against it, R8 parity re-derived (10.5 v3) | 2026-11-13 |
+| L17 | 10.6's composite (plan review, lead; contra-b CB-7) | Table A runs on the composite before 10.6 R3, under 19.6's confirmed bands (10.6 R0) | 2026-11-13 |
+| L23 | Spec review and merge (plan review, lead) | plan-10 rev 5 gets its ch-bsd spec review, then the revival branch merges to master before any 10.x builds; Q7 and Q11 marked superseded | 2026-11-13 |
+| L27 | The A/B's outcome (plan review, lead) | only R12 explicit uses + `cited_in_answer`, never 21.5's unbuilt legs | 2026-11-13 |
+| L30 | Build order (plan review, lead) | only 10.3 builds early; 10.5 probe → 10.6 → 10.4 → 10.2 after T4, ahead of the experiment | 2026-11-13 |
 
 ## Task Breakdown {#task-breakdown}
 
 | Task ID | Title | Depends On |
 |---------|-------|------------|
 | 10.1 | **Measure the overlap** — consecutive-call replay (complete; history) | plan 9 |
-| 10.4 | **Non-human predicate** — focus graph, family label on hook rows | 25.1 merged |
+| 10.4 | **Non-human predicate** — focus graph, family label on hook rows | 25.1 merged; 25.1b merged (its curator entry goes through R12's shared emitter) |
 | 10.4b | **Curator status**: silent on non-human turns (Q9), change-only on human ones; its own hook entry; in [[task-10.4-non-human-prompt-gate#r4]] | 10.4; 10.3 |
 | 10.3 | **Compaction marker** — 19.6 R8a's writer; the only reset of the held set | `master` |
-| 10.5 | **Precondition** — the design replay (PASSED, v1/v2) and a 50-probe read-back test (to run) | dd-10r's replay (done) |
-| 10.6 | **Injection presentation** — kind labels on every item, kind-labelled headers, rank order kept; the STM composite sends `rev N unchanged` | 25.1 merged; 10.3 |
-| 10.2 | **Names-only dedupe** + the live A/B | 25.1 merged; 10.3; 10.4; 10.6; 10.5 GO |
+| 10.5 | **Precondition** — the design replay (PASSED, v1/v2; v3 on 25.1b's pack to run) and a 50-probe read-back test (to run) | dd-10r's replay (done); 25.1b merged (v3, the probe's line) |
+| 10.6 | **Injection presentation** — kind labels on every item at every 25.1b tier, kind-labelled headers, rank order kept; the STM composite sends `rev N unchanged` only if R0's Table A says GO | 25.1 merged; 25.1b merged; 10.3 |
+| 10.2 | **Names-only dedupe** (held members on 25.1b's line, tier-pinned) + the live A/B nested in the handhold experiment | 25.1b merged; 10.3; 10.4; 10.6; 10.5 GO (v3 and the probe) |
 
-**Order:** 10.3 and 10.5's probe can start now; 25.1 → 10.6 → 10.4 (+10.4b) → 10.2. 10.6 lands
-before 10.2 so the names line is labelled from its first commit. {#order}
+**Order (L30, plan-review queue items 4 and 6):** only 10.3 builds early. It follows the revival
+branch's merge (L23) in item 4, ahead of 25.1b and 25.3, which read its marker. Everything else
+moves after T4 (item 6): 10.5's probe (and v3 in the measurement lane once 25.1b has merged) →
+10.6 (after its R0 Table A) → 10.4 (+10.4b; install window) → 10.2. 10.2 lands before the
+handhold experiment starts, because the experiment nests 10.2's A/B (L20). 10.6 lands before 10.2
+so held members are labelled from 10.2's first commit. {#order}
+
+rel: derives-from -> [[plan-review-2026-11-13#queue]]
 
 ## Execution contract {#execution}
 
 TDD per [[tdd-governance]]. Plan-specific gates:
 
 - **10.1 is pre-registered and closed.** Its negative result is history.
-- **No build before the precondition.** 10.2 starts only on 10.5's GO; 10.5's probe bands are
-  committed before any probe result.
+- **No build before the precondition.** 10.2 starts only on 10.5's GO: v3 PASSED and the probe
+  GO. 10.5's probe bands are committed before any probe result, and 10.6 R0's bands before its
+  result.
 - **Nothing removed without a trace.** A held item is always named or counted (`(+N)`); the names
   line is reserved in the budget; a missing or unreadable state file means everything renders
   full; an unreadable marker means nothing is held.
@@ -216,3 +243,22 @@ rel: derives-from -> [[agent-brief-arch-10r]]
 | no non-human gate; the predicate's three uses | [[#non-human]] |
 | live A/B `dedupe` vs `full`; 4+3b a later arm | [[#ab]] |
 | 10.5 = replay (passed) + read-back probe | [[#task-breakdown]] |
+
+## Revision round 6 (2026-11-13, spec wave, spec-t3b) {#rev-round-6}
+
+This round is driven by [[plan-review-2026-11-13#spec-gaps]] G11 and by the lead rows L15, L17,
+L23, L27 and L30 ([[plan-review-2026-11-13#lead]]). It folds contra-b CB-1, CB-6 (10.3's side)
+and CB-7. The plan stays `drafting` until its ch-bsd spec review.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[agent-brief-spec-wave]]
+
+| change | driver | anchor |
+|---|---|---|
+| 25.1b owns the `still in play` line; 10.2 supplies held members only, tier-pinned on 25.1b's ladder; R8 parity re-derived by 10.5 v3 | L15, CB-1 | [[#names-only-owner]], [[task-10.2-plan-10-injection-dedup#rev-round-6]] |
+| 10.6 R0: Table A on the composite before R3, under 19.6's confirmed bands; the exploration's `#vi-evidence` revised | L17, CB-7 | [[task-10.6-injection-presentation#r0]], [[exploration-session-phased-context#vi-evidence-2026-11-13]] |
+| A/B nested in the handhold experiment; the outcome is R12 explicit + `cited_in_answer` only | L20, L27 | [[#ab]], [[task-10.2-plan-10-injection-dedup#r7]] |
+| Only 10.3 builds early; the rest follow T4 | L30 | [[#order]] |
+| Q7 and Q11 marked superseded by Q13 / Q10 | L23 | [[#decisions-log]] |
+| 10.3's reader list includes 25.1b R14 and 25.3 R7 (helix reset, L16) | L16, CB-6 | [[task-10.3-plan-10-injection-dedup#r2]] |
+| 10.4's curator entry goes through 25.1b R12's shared emitter | L15 | [[task-10.4-non-human-prompt-gate#rev-round-6]] |
