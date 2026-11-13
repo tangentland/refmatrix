@@ -4007,14 +4007,19 @@ def _op_prestage_hashes(d: Daemon, args: dict) -> dict:
     targets = [Path(p).resolve() for p in (args.get("targets") or [])]
     # Prestage walks the SAME set the bridge ingests, or it stamps hashes on
     # files the bridge then skips (task 26.1 AC-2, plan-26 r2 m1).
+    # What the doc walk's ignore rules excluded is RETURNED, not printed to
+    # this daemon's stderr log (bug-216 R6b, 2026-11-13): `ignored` /
+    # `ignored_paths`, the shape of `_skip_fields`.
     skipped: list = []
+    ignored: list = []
     files = collect_gmd_files(targets, as_memory=bool(args.get("as_memory")),
-                              skipped=skipped)
+                              skipped=skipped, ignored=ignored)
     partition = args.get("partition") or d._st()._partition_name
     with d._store_lock, d._st().with_partition(partition):
         report = prestage_hashes(d._st(), files)
     d._request_snapshot()
-    return {**report, "walk_skipped": _skip_fields(skipped)}
+    return {**report, "walk_skipped": _skip_fields(skipped),
+            "ignored": len(ignored), "ignored_paths": [str(p) for p in ignored]}
 
 
 def _op_sync_since(d: Daemon, args: dict) -> dict:

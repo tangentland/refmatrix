@@ -266,13 +266,19 @@ def ignore_reason(p: Path, root: Path | None = None, *,
       4. the built-in include of GMD `CLAUDE.md` / `.claude/PROJECT_PROFILE.md`
          at the project root -- included;
       5. the built-in hidden-directory rule -- ignored.
-    `root` None (no project to read a spec from) applies 1 and 5 only. The
-    segment rules (1, 5) read the ABSOLUTE path's parts, as they always have
-    -- or, with `base`, only the parts BELOW `base`: `ingest-gmd <dir>` takes
-    the directory it was handed as given and applies them beneath it. Without
-    that, `rmx session ingest` (cards under `<project>/.refmatrix/sessions/`)
-    indexed nothing once its walk went through this predicate."""
+    `root` None (no project to read a spec from) applies 1 and 5 only, to the
+    ABSOLUTE path's parts. Otherwise the segment rules (1, 5) read only the
+    parts BELOW `base`, which defaults to `root` (bug-216 #r2-base, spec-t56,
+    2026-11-13): on absolute parts a project at `<x>/.hidden/proj` or
+    `<x>/build/proj` (R12 put `build` / `dist` / `__pycache__` in the list)
+    synced nothing through the watcher, sync or `ingest_path`; a `build/` dir
+    INSIDE the project is still ignored. `ingest-gmd <dir>` passes the target
+    as `base` -- the directory it was handed is taken as given, which is why
+    `rmx session ingest` (cards under `<project>/.refmatrix/sessions/`) still
+    indexes its cards."""
     parts = p.parts
+    if base is None:
+        base = root
     if base is not None:
         try:
             parts = p.relative_to(base).parts
