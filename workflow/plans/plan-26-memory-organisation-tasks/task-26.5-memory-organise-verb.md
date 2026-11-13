@@ -240,6 +240,8 @@ verb-parity test covers both. No file is ever moved by hand, here or in plan-27.
       single-use guard exemption;
     - `_op_ingest_gmd_start` ignores parent/exempt keys;
     - `call` raises `ReplyTimeout` after the send (rev 10, w1, w2, w4).
+  - Modify `src/refmatrix/watch.py` (rev 14, M1, L66): `run_watcher`'s flush opens and drains
+    its own invocation on every flush. `Debouncer._safe_fire` re-raises `NoInvocationError`.
   - Modify `src/refmatrix/ingest.py`: `_ingest_path_inner` needs no dispatch code, because
     `ingest_gmd_paths` queues (rev 10). Its `ingest_gmd_paths` fallback (`ingest.py:1356-1368`
     at `4b4b96e`) skips memdir files through `memdir_of` and counts and names its own per-file
@@ -651,9 +653,16 @@ m3, m6 and m7. {#bug220-why}
       The drain prints the R-220d counts on stderr, and on `rerouted_failed` /
       `rerouted_unconfirmed` makes the exit non-zero unless the command is already exiting
       non-zero. In-process routes are covered by construction: `_sync_in_process` (all three
-      branches), the standalone `rmx watch` flush, `rmx ingest`, `tldr-warm` / `graphify-warm`
-      (`cli._ingest`) and `rmx ingest-gmd`. The standalone `rmx watch` loop may never exit, so,
-      like the daemon watcher, it also opens and drains an invocation for each flush iteration.
+      branches), `rmx ingest`, `tldr-warm` / `graphify-warm` (`cli._ingest`) and
+      `rmx ingest-gmd`.
+    - **The standalone `rmx watch` flush is its own boundary (rev 14, M1, L66).** Its flush runs on
+      the Debouncer thread (`watch.py:155-158`), not in the click context's thread, so the root
+      invocation never reaches it. `run_watcher`'s flush callback opens and drains its own
+      `memory_reroute.invocation()` UNCONDITIONALLY on every flush, like the daemon watcher.
+      `Debouncer._safe_fire` (`watch.py:127-131`) catches and prints sync errors today. It now
+      RE-RAISES `NoInvocationError`: a missing boundary is a code defect, and it fails loudly
+      instead of turning into a printed line and a loop that keeps running. Every other sync
+      error keeps today's handling.
     - **Never two Stores open at once on one root (x4; rev 12 y3, L63).** That is the
       invariant, the bug-105 class. A Store the invocation opens (`_store()` / `_store_rw()`) is
       registered on the click context object.
@@ -925,12 +934,25 @@ m3, m6 and m7. {#bug220-why}
   - (s) Nested invocations (rev 12, y5, L63). An inner `invocation()` inside an outer one, each
     with its own rerouted group: the inner drain dispatches only the inner group, at the inner
     exit, and the outer drain dispatches only the outer group. Each group is dispatched once.
-  - (t) No implicit invocation in test plumbing (rev 13, z1, L64). The test imports every
-    `conftest.py` under `tests/` and `eval/`, collects their fixtures, and fails if any autouse
-    fixture, or any fixture at all, enters `memory_reroute.invocation()`. It checks both by AST
-    scan for the call and by running each autouse fixture and asserting no invocation is open
-    afterwards. Must-fail proof: a planted conftest with an autouse fixture that opens one makes
-    the test fail ([[feedback_clean_corpus_hides_a_dead_gate]]).
+  - (t) No implicit invocation in test plumbing (rev 13 z1, L64; rev 14 M2, L66). It has two
+    parts:
+    - **The check:** a test with no fixture parameters asserts `memory_reroute.current() is None`
+      in its body. Every autouse fixture in the suite's `conftest.py` files applies to it, so a
+      fixture that opens an invocation, generator fixtures included (`with invocation(): yield`),
+      is open while the body runs, and the assertion fails.
+    - **Must-fail proof:** a `pytester` case plants a `conftest.py` with an autouse generator
+      fixture that does `with memory_reroute.invocation(): yield`, runs the same fixture-less
+      test, and asserts it FAILS ([[feedback_clean_corpus_hides_a_dead_gate]]).
+
+    The rev-13 AST leg and its "afterwards" check are dropped. The "afterwards" check could not
+    fail on a generator fixture.
+  - (u) The standalone `rmx watch` flush (rev 14, M1, L66). `run_watcher` is driven with a
+    `stop_event` over an (i)-shaped fixture, and a file in the memdir is touched:
+    - the flush on the Debouncer thread reroutes it, and its own drain dispatches once (audit
+      hook);
+    - a planted flush callback that walks with no invocation makes `_safe_fire` re-raise
+      `NoInvocationError`, which the test sees through a `threading.excepthook` capture. It is
+      never only printed.
   - (l) Prestage (n4): `rmx ingest-gmd --prestage <root>` over a root holding the (a) memdir
     reports `rerouted: 3` with the names on its result and its CLI line, dispatches nothing, and
     stages no `kind=doc` row for them.
@@ -978,7 +1000,12 @@ m3, m6 and m7. {#bug220-why}
     - checking the invocation only when there are groups kills (r)'s first leg; the fallback
       swallowing `NoInvocationError` kills (r)'s second (rev 12, y4);
     - joining an inner invocation to the outer one kills (s) (rev 12, y5);
-    - an autouse conftest fixture that opens an invocation kills (t) (rev 13, z1);
+    - an autouse conftest generator fixture that opens an invocation kills (t)'s fixture-less
+      check, and the `pytester` case proves it (rev 13 z1; rev 14 M2);
+    - dropping the per-flush invocation in `run_watcher` kills (u)'s first leg (the flush
+      raises) (rev 14, M1);
+    - `_safe_fire` swallowing `NoInvocationError` as it does other sync errors kills (u)'s second
+      leg (rev 14, M1);
     - dropping the drain result from `_handle`'s error reply kills (q)'s synchronous daemon leg
       (rev 13, z3);
     - mapping Y's fixture to A kills (p)'s "dispatched once" assertion, because X's active job
@@ -1092,7 +1119,7 @@ This table is not a dispatcher list. Every route below is covered by the queue a
 | daemon | `ingest_gmd` | `_run_ingest_gmd_body` | the pool-submitted `run` wrap's `finally` |
 | daemon | `ingest_gmd_start` | `_run_ingest_gmd_body` on `bg_pool` | the runner's `finally`, through the same wrap `_run_detached_job` uses |
 | CLI in-process | `_sync_in_process`: the `sync_since`, `flush_queue` and `sync_files` branches (`cli.py:8763-8808`) | `_sync_paths` | root `ctx.call_on_close` |
-| CLI in-process | standalone `rmx watch` (`watch.run_watcher` → `sync_files`) | `_sync_paths` | root `ctx.call_on_close`, plus each flush iteration if the watch loop is long-lived (it opens its own invocation per flush) |
+| CLI in-process | standalone `rmx watch` (`watch.run_watcher` → `sync_files`, on the Debouncer thread) | `_sync_paths` | each flush's own invocation, opened unconditionally in `run_watcher`'s flush (rev 14) |
 | CLI in-process | `rmx ingest`, `tldr-warm`, `graphify-warm` (shared `cli._ingest`, `cli.py:510-525`) | `ingest_path` | root `ctx.call_on_close` |
 | CLI in-process | `rmx ingest-gmd` (no daemon) | `_ingest_gmd_in_process` | root `ctx.call_on_close` |
 
@@ -1162,3 +1189,17 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 | z1 (every-call `NoInvocationError` with no migration rule) | Keep the every-call check. One explicit `with memory_reroute.invocation():` per direct call site, and never an autouse/conftest fixture. Every affected file (at bug-216 head `b556bf3`, re-grepped at RED) is listed as "wrap only, no assertion change"; eval harnesses wrap at their entry. AC-220 (f) reworded; new (t) guards against implicit invocations, with a must-fail fixture | [[#r-220c]], [[#files]], [[#ac-220]] |
 | z2 ((p)'s Y same-store group is refused while X's job runs) | Y's fixture maps to store B | [[#ac-220]] |
 | z3 (no carrier for the drain result on an error reply) | The `run` wrap attaches the result to the raised exception; `_handle`'s `except` (`daemon.py:3394-3395`) copies it into the `{"ok": False}` reply as `reroute`; (q) asserts it | [[#ac-220]] |
+
+## Revision round 14 (2026-11-14): bsd-spec-t2 r8, lead ruling L66 {#rev-round-14}
+
+Answers [[bsd-spec-t2-r8-e3cd4c7]] (MEH-only, 0B/0S/2M; Z1-Z3 closed; the approval bar is met)
+under the lead's ruling [[plan-review-2026-11-13#lead]] L66. By that ruling there is no further
+ch-bsd round: the lead sets `approved` on this fold. Status is unchanged here (`pending`).
+
+rel: derives-from -> [[bsd-spec-t2-r8-e3cd4c7]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | change (L66) | anchor |
+|---|---|---|
+| M1 (the `rmx watch` flush runs on the Debouncer thread; `_safe_fire` swallows errors) | `run_watcher`'s flush opens and drains an invocation unconditionally on every flush. "If long-lived" and the root-drain claim are dropped from the routes table. `_safe_fire` re-raises `NoInvocationError`. AC-220 (u) with two mutations; `watch.py` in Files | [[#r-220c]], [[#reroute-routes]], [[#ac-220]], [[#files]] |
+| M2 ((t)'s "afterwards" check cannot fail on a generator fixture) | (t) is a fixture-less test asserting `memory_reroute.current() is None` (autouse fixtures apply to it), plus a `pytester` must-fail case with a planted `with invocation(): yield` autouse fixture. The AST leg is dropped | [[#ac-220]] |
