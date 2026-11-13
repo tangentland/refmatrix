@@ -69,3 +69,19 @@ branch `task-plan10-revival`, symlink `.venv-eval` to the dev one (never stage i
 pathspec. GMD lint 0 errors on every file touched (`python3 tools/gmd/lint.py <path>`). Never
 search from `/`. Text report: shas, the decisions you made "as the user would" with reasons, open
 questions for the user.
+
+## Amendments after dispatch (2026-11-13) {#amendments}
+
+1. Q7: the dedupe is NOT a per-item pointer — first re-planned onto 19.6 R5/R6 (rev 2 `308edc8`,
+   provisional NO-GO `1e4c6bb`).
+2. Suppression reopened (degrade-only no longer non-negotiable); user words paraphrased tersely, cited
+   by Q-id (Q1).
+3. Q9 = curator status silent on non-human turns (10.4b); lead decisions: agent-message turns are not
+   focus turns; an envelope origin field is read before the prefix.
+4. 10.4 gets a with/without comparison (offline: dd-10r; live A/B nested with the handhold
+   experiment). Rev 3 `ff8ca4d`: policy table, A/B, curator entry.
+5. Q11 = 4+3, Q12 = replay first; four held-modelling rules accepted.
+6. FINAL: Q13 = names-only (design 3) now, 4+3b a future A/B arm; Q10 = no separate non-human gate,
+   same dedupe; 10.5 = the replay (passed) + the 50-probe read-back still to run.
+7. Add 10.6 injection presentation (kind labels, generic headers replaced, STM composite via 19.6
+   R5 `unchanged`); 10.4b curator prints only on change.
