@@ -23,6 +23,9 @@ s-1. A vanished cwd is still a raw traceback once `REFMATRIX_ROOT` is set -- the
 m-1. The cwd-less telemetry row is a deliverable with no test (mutations A and B survived).
 m-2. The daemon-down + launchd-installed branch of `rmx sync --since` catches only
     `RuntimeError`; `GitRefError`'s base class was unpinned (mutation D survived).
+a2 (lead decision, 2026-11-13). The socket half of that gate cannot tell a live daemon from a
+    socket file a crashed daemon left; the CLI then syncs in-process into the tracked catalog.
+    So an in-process sync whose target catalog git tracks refuses, loudly, catalog untouched.
 m-3. A ROOT commit (no parent) makes post-commit run `rmx sync --since HEAD~1`, which git
     rejects: a loud "failure" that indexes nothing. It should diff against the empty tree.
 
@@ -35,9 +38,11 @@ True; nothing is loaded into launchd.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -538,3 +543,155 @@ def test_sync_since_a_bad_ref_on_a_supervised_store_with_the_daemon_down_is_a_cl
         _assert_clean_since_error(r, ref, says, "daemon-down+launchd")
     finally:
         plist.unlink()
+
+
+# =============================================================================================
+# a2 (lead decision 2026-11-13): an in-process sync never writes a git-TRACKED catalog
+# =============================================================================================
+#
+# The hook gate's socket half (`[ -S "$ROOT/.refmatrix/rmxd.sock" ]`) cannot tell a live daemon
+# from a socket file a crashed daemon left behind. With no listener the CLI falls to an
+# in-process sync and writes the tracked catalog -- b-1 again, behind the new gate. So the CLI
+# itself refuses: an in-process `rmx sync` (plain and `--since`) whose target catalog git
+# tracks fails with ONE `Error:` line naming the tracked file and the remedy (untrack it, or
+# start the daemon), exit non-zero, catalog bytes unchanged.
+
+
+def _catalog_digests(store: Path) -> dict[str, str]:
+    return {n: hashlib.sha256((store / n).read_bytes()).hexdigest()
+            for n in WRITER_CATALOG_FILES if (store / n).exists()}
+
+
+def _target_catalog(layout: str) -> str:
+    """The file an in-process write lands in: the `active` slot, else the legacy file (the
+    files HEAD wrote in the b-1 runs: catalog.A.duckdb / catalog.duckdb)."""
+    return "catalog.A.duckdb" if layout == "slots" else "catalog.duckdb"
+
+
+def _refusal_lines(stderr: str, target: str) -> list[str]:
+    """`Error:` lines that name the tracked target file AND both remedies."""
+    out = []
+    for ln in stderr.splitlines():
+        if not ln.startswith("Error:"):
+            continue
+        low = ln.lower()
+        if target in ln and ("untrack" in low or "rm --cached" in low) and "daemon" in low:
+            out.append(ln)
+    return out
+
+
+def _stale_socket(path: Path) -> None:
+    """A unix socket FILE with no listener: bound, then closed without unlinking -- what a
+    daemon killed with SIGKILL leaves."""
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.bind(str(path))
+    finally:
+        s.close()
+    assert path.is_socket(), f"fixture: {path} is not a socket file"
+
+
+@pytest.mark.timeout(300)
+@pytest.mark.parametrize("mode", ["files", "since"])
+def test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog(tracked_repo, mode):
+    """a2: `rmx sync --files <f>` and `rmx sync --since HEAD~1`, no daemon, cwd = the main
+    checkout (no `REFMATRIX_ROOT`, as a hook runs it): one loud refusal, non-zero exit, the
+    tracked catalog untouched."""
+    repo, layout = tracked_repo
+    assert not dm.ping(repo.store), "fixture: a daemon answers"
+    path = repo.proj / "main_new.py"
+    path.write_text("def main_new():\n    return 3\n", encoding="utf-8")
+    _quiet(repo.proj, repo, "add", "main_new.py")
+    _quiet(repo.proj, repo, "commit", "-q", "-m", "a commit to sync")
+    before = _catalog_digests(repo.store)
+    argv = (["sync", "--files", str(path)] if mode == "files"
+            else ["sync", "--since", "HEAD~1"])
+    r = subprocess.run([sys.executable, str(_entry(repo.base)), *argv], cwd=str(repo.proj),
+                       env=_base_env(), capture_output=True, text=True, timeout=240)
+    text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    after = _catalog_digests(repo.store)
+    changed = sorted(n for n in before if after.get(n) != before[n])
+    assert TRACEBACK not in r.stderr, f"[{layout}] `rmx {' '.join(argv)}` crashed\n{text}"
+    assert not changed, (f"[{layout}] in-process `rmx {' '.join(argv)}` wrote the git-tracked "
+                         f"catalog {changed} (exit {r.returncode})\n{text}")
+    assert r.returncode != 0, \
+        f"[{layout}] `rmx {' '.join(argv)}` on a tracked catalog exited 0\n{text}"
+    target = _target_catalog(layout)
+    assert len(_refusal_lines(r.stderr, target)) == 1, \
+        f"[{layout}] no single `Error:` line naming the tracked {target} and the remedy " \
+        f"(untrack it, or start the daemon)\n{text}"
+    assert _status_refmatrix_catalogs(repo.proj) == "", \
+        f"[{layout}] git sees the tracked catalog modified:\n{_status_refmatrix_catalogs(repo.proj)}"
+
+
+def _status_refmatrix_catalogs(co: Path) -> str:
+    r = subprocess.run(["git", "-C", str(co), "status", "--porcelain", "--",
+                        *[f".refmatrix/{n}" for n in WRITER_CATALOG_FILES]],
+                       env=_base_env(), capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, f"git status: {r.stdout}{r.stderr}"
+    return r.stdout
+
+
+@pytest.mark.timeout(300)
+def test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly(tracked_repo):
+    """a2 through the GENERATED post-commit: the main checkout tracks its catalog and holds a
+    socket file with no listener (a crashed daemon's leftover), so a socket-presence gate
+    passes. The tracked catalog must be left byte-identical; if the hook ran `rmx`, the
+    refusal must be loud on the committing terminal (its `Error:` line naming the tracked file
+    and the remedy, then the hook's `rmx sync FAILED` line). The git op itself still exits 0."""
+    repo, layout = tracked_repo
+    sock = repo.store / dm.SOCKET_NAME
+    _stale_socket(sock)
+    assert not dm.ping(repo.store), "fixture: something answers on the stale socket"
+    assert _status_refmatrix_catalogs(repo.proj) == "", "fixture: the catalog is already dirty"
+    before = _catalog_digests(repo.store)
+    (repo.proj / "main_new.py").write_text("def main_new():\n    return 3\n", encoding="utf-8")
+    _quiet(repo.proj, repo, "add", "main_new.py")
+    r = _hooked(repo.proj, repo, "commit", "-q", "-m", "commit beside a stale socket")
+    text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}\nrmx calls: {_calls(repo)}"
+    assert r.returncode == 0, f"the git op itself failed\n{text}"
+    assert "hooks/post-commit" in _hooks_ran(repo), "fixture: git never ran post-commit"
+    after = _catalog_digests(repo.store)
+    changed = sorted(n for n in before if after.get(n) != before[n])
+    assert TRACEBACK not in r.stderr, f"[{layout}] post-commit crashed\n{text}"
+    assert not changed, (f"[{layout}] post-commit beside a stale socket wrote the git-tracked "
+                         f"catalog {changed}\ngit status:\n"
+                         f"{_status_refmatrix_catalogs(repo.proj)}\n{text}")
+    if _calls(repo):
+        target = _target_catalog(layout)
+        assert len(_refusal_lines(r.stderr, target)) == 1 and FAILED_LINE in r.stderr, \
+            f"[{layout}] post-commit ran rmx beside a stale socket and the refusal was not " \
+            f"loud (one `Error:` naming {target} + the remedy, then `{FAILED_LINE}`)\n{text}"
+
+
+@pytest.mark.timeout(300)
+def test_an_in_process_sync_of_a_store_outside_any_git_repo_still_writes():
+    """GUARD (passes at HEAD) against an over-broad a2 fix: a store that is not inside any git
+    repository (`git ls-files` fails there) is not "tracked" -- the in-process sync indexes."""
+    base = Path(tempfile.mkdtemp(prefix="b212n-", dir="/tmp")).resolve()
+    try:
+        proj = base / "proj"
+        root = proj / ".refmatrix"
+        s = Store(root)
+        s.init()
+        s.close()
+        probe = subprocess.run(["git", "-C", str(proj), "rev-parse", "--git-dir"],
+                               env=_base_env(), capture_output=True, text=True)
+        assert probe.returncode != 0, f"fixture: {proj} is inside a git repo: {probe.stdout}"
+        f = proj / "loose.py"
+        f.write_text("def loose():\n    return 5\n", encoding="utf-8")
+        r = subprocess.run([sys.executable, str(_entry(base)), "sync", "--files", str(f)],
+                           cwd=str(proj), env=_base_env(), capture_output=True, text=True,
+                           timeout=240)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0 and TRACEBACK not in r.stderr, \
+            f"in-process `rmx sync --files` on a store outside git failed\n{text}"
+        st = Store(root)
+        try:
+            n = st._connect().execute("SELECT count(*) FROM entities WHERE path = ?",
+                                      (str(f),)).fetchone()[0]
+        finally:
+            st.close()
+        assert int(n) > 0, f"the sync did not index {f.name}\n{text}"
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
