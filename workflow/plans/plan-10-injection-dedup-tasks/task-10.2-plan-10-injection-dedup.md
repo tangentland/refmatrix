@@ -113,7 +113,10 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
 2. **R2 The writers.** After printing, the hook `scan-prompt`, `memory recall --stdin-json` and
    `memory recall --session-start` each record the items they rendered at tiers 1-3, each with its
    tier per h15, in their own file (`stm.record_full(root, session, channel, items, *,
-   prompt_sha)`, temp-file + replace). Names-line items are never recorded (h4). {#r2}
+   prompt_sha)`, temp-file + replace). Names-line items are never recorded (h4). On recall and
+   `session_start`, the tier comes from `Packed`'s per-row rendered tier
+   ([[task-25.1b-hook-output-ladder-and-spill#r13]]), and `covers` compares against `Packed`'s
+   full-run tier. Telemetry is never read (h7). {#r2}
 3. **R3 Recall (on 25.1b's pack, tier-pinned).** `recall_pack.pack(..., held: "Collection |
    None" = None)` follows h13. The pack runs 25.1b's ladder over every row exactly as it does with
    `held=None`. Each row for which `held.covers(item_key, full_run_tier)` is true (h15) then
