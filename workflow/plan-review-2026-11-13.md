@@ -280,10 +280,9 @@ selector (L33); 25.5 R4 re-measure (L42). {#queue-body}
 
 ## User decisions, 2026-11-13 {#decisions}
 
-The user: "q1-a, q2-ship it, q-3-7 your recommendations". D-Q2 to D-Q7 are final; D-Q1 is ASSUMED
-until Q8 is answered. They supersede the proposal text above wherever it differs. {#decisions-quote}
+The user: "q1-a, q2-ship it, q-3-7 your recommendations". D-Q1 to D-Q7 are final (D-Q1 confirmed by Q8 = a). They supersede the proposal text above wherever it differs. {#decisions-quote}
 
-- **D-Q1 (X2) — ASSUMED until Q8 is answered (bsd-pop-r2 N0):** memories go INTO the graph, correctly classified (bug-220 route-not-refuse).
+- **D-Q1 (X2) — CONFIRMED by Q8 = a (user, 2026-11-13):** `workflow/` OUT at ingest (removed via plan-22's audited path after 22.6 R3); save-states and digests IN the store, excluded from co-mention by a derive-time filter. Earlier text, kept as history: memories go INTO the graph, correctly classified (bug-220 route-not-refuse).
   Save-states and `workflow/` stay OUT of the concept graph fleet-wide. The lead's reading, stated
   to the user: OUT means excluded from co-mention / concept-weight derivation, the pollution
   `feedback_operational_content_not_in_graph` names. It does not mean excluded from ingest:
@@ -345,7 +344,7 @@ L-row first; **new** = no spec yet; **review** = written but not through ch-bsd.
 | G19 | 3 | 26.8, 26.9, plan-27 | rev | 26.8: ADR-0005 Appendix A marker condition (L11), forget step for the user at AC-8 (L12), counts re-read; plan-27: survey refresh + Q3 re-host (L13) |
 | G20 | 9 | bug-218 | **new** | task spec (reinforcement reads edges reversed; currently "suspected") |
 | G21 | 9 | bug-219 count half + plan-22 | rev | bug-219 = bug-216 R8 (no new spec); 22.1a widened to a dead entity side (L6); plan-22 body status (CD-9); 22.4 deferral rows (L22) |
-| G22 | 9 | D-Q1 co-mention exclusion | held | waits on Q8 (ingest exclusion vs co-mention exclusion); then spec; live purge after 22.2 via plan-22's path |
+| G22 | 9 | D-Q1 (Q8 = a) | **new** | spec: `workflow/` excluded at ingest fleet-wide (ignore spec), existing entities removed through plan-22's audited path after 22.6 R3 (user-gated live purge); save-states + digests excluded from co-mention / concept-weight derivation by a derive-time filter; docs→workflow `rel:` edges counted and reported; memory amending `feedback_operational_content_not_in_graph` |
 | G23 | 10 | 16.1-16.5, 16.4 | rev | 16.1 vs bug-216 (L5); plan-16 body status (CD-9) |
 | G24 | 10 | 25.4/25.5 | close | 25.4/25.5 close as superseded by 16.5 (L42); premise note (L24) in the closing line; plan-25's task table, fixed list and `#approval-order` amended by name; cliquedb told on the bus (bug-167 closed by 16.5) when 16.5 ships |
 | G25 | 8, 11 | 23.4, 17.2, 17.4, plan-18 | rev | plan-17/18 body status lines (Cc-9); 18.2/18.3 PROVISIONAL marks cleared against the CONFIRMED rows |
