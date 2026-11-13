@@ -49,7 +49,7 @@ session-start` (matcher `startup|resume|clear|compact`, `hooks.py:255-258`, 21.1
 | f2 | The marker lives in 19.6's "last-emitted state": `stm/<session>.emitted/marker.json` (`{schema: 1, ts, source, writer}`), beside 10.2's per-block state files in the same directory | 19.6 R8a says the marker is written into the last-emitted state; one directory per session, one writer per file, atomic replace, no read-modify-write between the concurrent hooks |
 | f3 | The writer is the STM focus hook, not 25.1 R11's `recall-state` entry | `recall-state` is a reader (the handoff); the focus hook already parses the SessionStart envelope's `source` and owns STM session state |
 | f4 | `resume` and `startup` write no marker | `startup` starts a new session (no state); `resume` reloads the transcript, so what was emitted is in the window again |
-| f5 | A failed marker write exits non-zero with ONE `Error:` line on stderr; the readers treat an UNREADABLE marker file as "marker now" (keyframe) | a missed reset is the unsafe direction, so a read failure resets; a write failure is loud (the user's 2026-11-10 rule: errors that stop an operation fail loudly on the console) |
+| f5 | A failed marker write exits non-zero with ONE `Error:` line on stderr; the readers treat an UNREADABLE marker file as "marker now" (keyframe) | a missed reset is the unsafe direction, so a read failure resets; a write failure is loud (loud-failure rule, 2026-11-10) |
 
 ## Requirements {#requirements}
 

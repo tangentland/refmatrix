@@ -61,6 +61,7 @@ Per (session, block id), for `prompt-recall` and `scan-prompt` only:
 |---|---|---|
 | d1 | **NEEDS THE USER.** Judge the per-prompt blocks on Table B directly; record Table A, do not let it close them. {#d1} | Table A measures whole-block identity; a per-prompt block changes every prompt by construction (computed 2026-11-13: `prompt-recall` 0.00% / 3.32%, `scan-prompt` 0.00% / 0.00%, [[plan-10-injection-dedup#context-table-a]]); its < 3% band would close both ids ("NO-GO for that block id, closed") before Table B, which measures what an add-only delta saves, is consulted. Changing which table governs a block id is a band change and needs a decision-log row (19.6 R0). If the user declines, plan-10's dedupe ends here and 10.2 is not built |
 | d2 | K stays 8 | user-confirmed for R6 (d9v); the reopened suppression's "k" IS K here: an item is omitted at most `K − 1` consecutive revs; units with ≥ 6 earlier deliveries (1,461 + 555 = 2,016, 27% of re-delivered units) are the chronic repeaters a keyframe re-shows once per 8 revs. A different K needs its own row |
+| d4 | **NEEDS THE USER (after [[#provisional]]).** Under the confirmed bands the per-prompt blocks are NO-GO. Options: (a) accept NO-GO: plan-10 ships 10.4 (and 10.3 for 19.6), no per-prompt dedupe; (b) change three confirmed rules for these two ids only — Table B governs instead of Table A, the half-block rule is waived for add-only deltas, and Table B is judged on aggregate omitted bytes, not the median — then run R2-R4 formally (projected ~16-21% of item bytes, `x = 3` of 13 in the "user decides" band); (c) another design for these blocks (the withdrawn pointer, or a delta plus a names-only "in play" line), which Q7 steered away from {#d4} | the data does not support the context diff on per-prompt blocks as 19.6 pre-registered it; every route forward changes a user-confirmed rule or a user decision. Recommendation: (a) now — 10.4 removes injection on about half of all hook prompts with no new state; re-run this gate on human prompts only after 10.4's R5 (the measurement's human-only held share is 32.5%, against 48.0% overall), and choose (b) or (c) then if the saving still matters |
 | d3 | The labelled-use check uses the existing lbl-215 pilot labels (13 used pairs) for a provisional verdict and is re-run final at ≥ 40 used pairs | n = 13 cannot separate 10% from 25% (the measurement's Wilson interval for 6 / 13 is 23-71%); a provisional verdict lets 10.2's RED start, the final one gates the deploy |
 
 ## Requirements {#requirements}
@@ -103,6 +104,53 @@ Per (session, block id), for `prompt-recall` and `scan-prompt` only:
    RED and GREEN; final is required before deploy). Table B NO-GO or R4 OFF → the floor (R4).
    Written to `workflow/measurements/versioned-block-gate-2026-11.md` (GMD), counts only, with the
    commit of this spec named as the pre-registration. {#r5}
+
+## Provisional run, 2026-11-13 (after the pre-registration commit `308edc8`) {#provisional}
+
+Read-only replay of [[#state]] over `dd-10r`'s delivered units (the 2026-11-13 windows: refmatrix
+2026-10-20..11-13, cliquedb 2026-11-04..11-11), compaction boundaries from the sessions' own
+transcripts (every session had one). Counts only; item span bytes (bodies and headers excluded;
+`body_bytes` is null on every event); non-human prompts are still revs here (10.4 not built). Not
+the formal R1-R3 run (one window per store, no read-back probe). Script: the session scratchpad
+`arch10r/replay.py`. {#provisional-scope}
+
+| | refmatrix | cliquedb |
+|---|---|---|
+| revs (both blocks) | 684 | 703 |
+| keyframes by the half-block rule | 607 (89%) | 606 (86%) |
+| delta / unchanged revs | 39 / 15 | 52 / 29 |
+| **Table B median delta / full** | **1.000** (p25 0.901) | **1.000** (p25 0.863) |
+| items omitted (bytes) | 2.8% (2.5%) | 5.7% (5.4%) |
+| re-delivered items omitted | 266 of 4,170 (6.4%) | 347 of 3,193 (10.9%) |
+| cross-block-only re-deliveries | 24 | 14 |
+
+**R4, provisional (n = 13 used pairs, all matched): `x = 0`** → band "ON (provisional)".
+{#provisional-result}
+
+**Verdict under the pre-registered bands: NO-GO for both block ids.** Table A < 3% (0.00-3.32%)
+closes them unless [[#d1]] says otherwise, and even then Table B's median is 1.000 (> 50% →
+"NO-GO: keyframes only"). The mechanism: a per-prompt block's items are mostly new each prompt,
+so the half-block rule fires on ~87% of revs, every such keyframe resets the state to one prompt's
+items, and the add-only state never accumulates. {#provisional-verdict}
+
+**Sensitivity, NOT pre-registered** (each row changes a user-confirmed d9v rule, so none is a
+verdict):
+
+| variant | median delta / full | items omitted (bytes) | re-deliveries omitted | R4 `x` of 13 |
+|---|---|---|---|---|
+| K = 8, half-block rule waived for add-only blocks | 0.930 / 0.861 | 16.7% (15.9%) / 21.0% (20.9%) | 38.4% / 40.2% | 3 (2 scan, 1 recall) |
+| K = 4, half-block rule waived | 1.000 / 1.000 | 9.7% / 12.6% | 22.4% / 24.2% | 1 |
+
+The half-block rule exists because a large PATCH is harder to apply than a keyframe; an add-only
+delta is a subset of the keyframe's own lines, so for these blocks the rule costs bytes and resets
+the state without a readability gain. Waiving it is the only variant that saves a fifth of the
+bytes, and even then Table B's MEDIAN stays above 50% (most prompts are mostly new; the saving is
+concentrated in a minority of revs), so Table B as written still says NO-GO; and `x = 3` sits in
+the "user decides" band. {#provisional-sensitivity}
+
+For comparison, the withdrawn per-item pointer (window N = 10) would have degraded about 68% of
+re-deliveries (gaps 1-10, [[plan-10-injection-dedup#context-2026-11-13]]) to a line that still
+names the item, against 38-40% omitted outright here at best.
 
 ## Acceptance criteria {#acceptance}
 

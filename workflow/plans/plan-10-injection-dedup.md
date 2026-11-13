@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: plan-10-injection-dedup
-title: "Per-prompt injections are sent as 19.6's versioned blocks (keyframe + add-only delta), so items the session already holds are not re-sent; non-human prompts get no per-prompt injection"
+title: "Per-prompt dedupe through 19.6's versioned blocks (keyframe + add-only delta), gated by 10.5 (provisionally NO-GO); non-human prompts get no per-prompt injection"
 tags: [plan, scan-prompt, memory-recall, context, versioned-injection, hooks, injection, dedupe]
 metadata:
   node_type: plan
@@ -109,6 +109,14 @@ before Table B is consulted. 10.5 ([[task-10.5-versioned-block-gate]]) therefore
 decision to judge per-prompt blocks on Table B directly, then runs Table B (delta size and
 read-back correctness) and a pre-registered labelled-use check, and only its GO starts 10.2.
 
+**Provisional result (2026-11-13, after the pre-registration commit):** NO-GO under the confirmed
+bands. Table B's median delta / full is 1.000 on both stores: the half-block rule fires on ~87% of
+revs and resets the add-only state each time, so only 6.4% / 10.9% of re-deliveries would be
+omitted. Waiving the half-block rule (not pre-registered) omits 38-40% of re-deliveries and ~16-21%
+of item bytes, but the median still exceeds 50% and 3 of 13 labelled used items would have been
+omitted ([[task-10.5-versioned-block-gate#provisional]]). The way forward is the user's
+([[task-10.5-versioned-block-gate#d4]]). {#gate-provisional}
+
 ### Non-human prompts get no per-prompt injection {#non-human}
 
 User decision (arch-10r brief, 2026-11-13; unchanged by Q7): scan-prompt and the per-prompt
@@ -139,7 +147,9 @@ prompt_recall 57.6% / 77.3%. `session-start` stays fixed (prompt-less, as 19.6 R
 **Status:** RESOLVED 2026-11-13 by a read-only census ([[task-10.4-non-human-prompt-gate#census]]).
 
 ### Q5: Does Table A's NO-GO close the per-prompt blocks? {#q5}
-**Status:** OPEN — needs the user ([[task-10.5-versioned-block-gate#d1]]).
+**Status:** OPEN — needs the user ([[task-10.5-versioned-block-gate#d1]], and after the provisional
+run [[task-10.5-versioned-block-gate#d4]]: accept NO-GO, change three confirmed rules for these two
+ids, or another design).
 
 ## Decisions Log {#decisions-log}
 
@@ -168,8 +178,9 @@ prompt_recall 57.6% / 77.3%. `session-start` stays fixed (prompt-less, as 19.6 R
 | 10.3 | **Compaction marker** — 19.6 R8a's writer (PreCompact + SessionStart `compact\|clear`) into the last-emitted state | none beyond master; before 10.2 |
 | 10.2 | **Versioned per-prompt blocks** — 19.6 R5 / R6 on 25.1's pack and scan-prompt; live before / after | 25.1 merged; 10.3; 10.4; 10.5 GO |
 
-**Order:** 10.5 can run now (it reads existing logs, plus one probe); 10.3 can be built now;
-25.1 → 25.2 → 10.4 → 10.2. 10.4 lands before 10.2 so that non-human prompts never become revs
+**Order:** 25.1 → 25.2 → 10.4 proceeds regardless. 10.5's provisional run says NO-GO, so 10.2
+waits on the user's d4; 10.3 is useful to 19.6 either way and can be built now. Recommended: ship
+10.4, then re-run 10.5 on human prompts only before deciding d4. 10.4 lands before 10.2 so that non-human prompts never become revs
 (a gated prompt emits nothing), and 10.2's keyframe cadence counts human prompts from its first
 commit. {#order}
 
