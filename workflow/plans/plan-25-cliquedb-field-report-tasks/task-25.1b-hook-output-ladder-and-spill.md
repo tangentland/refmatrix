@@ -91,7 +91,7 @@ to the verb as `timeout`, whose busy message reads "recall not confirmed within 
 |---|---|---|
 | k1 | Own task id, own branch `task-25.1b-hook-output-ladder-and-spill`, cut from `master` after 25.1 and 10.3 merge | D-Q2; L15 (`depends-on 10.3`); L30 (only 10.3 builds early) |
 | k2 | **This task owns the ONE names line**, labelled `still in play`. It is ONE line: the 25.1 `+N more` trailer is folded into it, and it ends with the spill page's fetch command. One cap of 15 names is shared across both member kinds, the bytes are reserved before the fit, and `(+N)` overflow goes to the spill page. Members are of two kinds: OVER-BUDGET (this task: items the ladder put at tier 4) and HELD (10.2, later). The ONE renderer (`recall_pack`, the only place the literals `still in play` and `·held` appear in `src/`) takes both kinds; the held kind is empty until 10.2 builds. Members are in ONE rank order across both kinds. **A held member prints as `<name>·held`** (10.2 h16); the suffix's bytes count inside the line's reservation; an over-budget member is unmarked. 10.2 only supplies the held flag, through `pack(held=…)` ([[#k3]]). 10.6 labels each member later, where it stands (no regrouping, 10.6 p2). **Position:** the line is LAST in the payload, after every hook line and every body or excerpt, and it ends with the spill page's fetch command (the user-agreed presentation rule: most important first, [[feedback_injection_presentation_rules]]). scan-prompt's held line (10.2 R4) sits last in scan's payload by the same rule. 10.2 is re-specced against this task, not the other way round. {#k2} | L15; contra-b CB-1; both 25.1 rev 8 R13 and 10.2 h10 state the cap of 15; L52 and L54 (B1, S2) adopt 10.2 h16's marker |
-| k3 | **One pack call, one order, TIER-PINNED:** (1) the ladder runs over ALL retrieved rows in rank order, the `full` run ([[#r13]]); (2) held rows (10.2; the empty set until 10.2 builds) leave the tier the full run gave them and become HELD members of the names line, which degrades them to the names tier by dedupe; (3) non-held rows keep their full-run tier, and the bytes held rows free are never re-spent on promoting other rows; (4) the bodies of every row below tier 1, held rows included, and the names-cap overflow are written to the spill page ([[#r14]]); (5) the clamp runs on the whole command's stdout ([[#r12]]). The payload is never larger than the full run's. `recall_pack.pack(..., held: "Collection | None" = None)` performs steps 1-4; `held=None` is the empty set, and 10.2 supplies the held keys. {#k3} | CB-1 ("the order … is stated explicitly"); 10.2 h9 / the user's Q13 (freed bytes are not re-spent: the replay lost a use exactly by re-spending); agreed with spec-t3b 2026-11-13 |
+| k3 | **One pack call, one order, TIER-PINNED:** (1) the ladder runs over ALL retrieved rows in rank order, the `full` run ([[#r13]]); (2) a row whose key `held.covers(key, full_run_tier)` answers True (10.2's rule; nothing until 10.2 builds) leaves the tier the full run gave it and becomes a HELD member of the names line, which degrades it to the names tier by dedupe; a row `covers` answers False for keeps its tier; (3) non-held rows keep their full-run tier, and the bytes held rows free are never re-spent on promoting other rows; (4) the bodies of every row below tier 1, held rows included, and the names-cap overflow are written to the spill page ([[#r14]]); (5) the clamp runs on the whole command's stdout ([[#r12]]). The payload is never larger than the full run's. **This task is the ONE owner of `pack(held=…)`** (the lead's r2 ruling, 2026-11-13; bsd-spec-t3ab r2 S1). `held` is a protocol, not a key collection: `recall_pack.Held` (a `typing.Protocol`) with `covers(key, full_run_tier) -> bool`. `recall_pack.pack(..., held: "Held | None" = None)` performs steps 1-4 in ONE call, because each row's full-run tier is known only inside `pack`; `held=None` covers nothing. 10.2 supplies the implementation (its `HeldSet`, with h15's tier-aware rule) and never re-implements the removal. {#k3} | CB-1 ("the order … is stated explicitly"); 10.2 h9 / the user's Q13 (freed bytes are not re-spent: the replay lost a use exactly by re-spending); agreed with spec-t3b 2026-11-13 |
 | k4 | **Kind labels are not built here.** Each tier is rendered by its own function in `recall_pack`. 10.6 later decorates every tier's line with `telemetry.kind_label` (10.6 p1), and every tier carries a label from then on. Revision 8's "Kind labels (10.6) apply at every tier" is restated this way, so this task has no edge to 10.6. {#k4} | L15 (CB-5 restatement); bsd-pop-r1 S5 |
 | k5 | **`form` on delivered events:** `full` (tier 1), `excerpt` (tier 2), `pointer` (tier 3), `names` (a names-line member). It joins `telemetry.RECALL_EVENT_FIELDS_V1` as a nullable field, and `v` stays 1. 10.2 R6 planned the same field; it now exists from this task, and 10.2 adds one value, `held`, for a held member on the line (10.2 R6). {#k5} | CB-2 ("Excerpt counts as a form in the delivered event") |
 | k6 | Spill pages live under `stm/<session>.emitted/spill/`, one file per hook call, written only by that call {#k6} | L16's home rule for per-session emitted state; 10.2 h6 / 19.6 split: one writer per file |
@@ -177,8 +177,8 @@ review's citations stay valid). R0 is this task's own measurement step (L44 name
     - tier 1: the item's 25.1 hook line + its full body (25.1 R3's whole body);
     - tier 2: the item's 25.1 hook line + an excerpt, the item's first lines (its `lead` text), at
       most 3 lines and 300 B, ending on a whole line;
-    - tier 3: the item's 25.1 hook line alone, which carries its pointer: the name and the
-      scope-correct fetch address of 25.1 R6, the trailing `(rmx memory get <name>[ --scope
+    - tier 3: hook line (which carries its `(rmx memory get …)` fetch pointer). That pointer is
+      the scope-correct fetch address of 25.1 R6, the trailing `(rmx memory get <name>[ --scope
       global])` of `recall_pack.hook_line`;
     - tier 4: the name as a member of the single names line ([[#k2]]).
 
@@ -297,6 +297,18 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
   (e.g. `focus summarize --promote`) prints directly, bypassing the emitter (FAIL: its command
   exceeds 9,500 B and the structural check fires); two writers of one command given shares that sum
   over 9,500 B; a cut with no `capped` row. {#ac-26}
+- **AC-27 Spill ids and retention ([[#k10]]).** On a sandbox `stm/`, through the recall verb's
+  spill writer:
+  - session S holds 55 pages; one more spill write leaves exactly the newest 50 plus the new page's
+    effect (the newest 50 overall), and the call's row carries `spill_pruned` with the count;
+  - another session's `spill/` whose newest page is 8 days old is removed, and one whose newest
+    page is 6 days old is kept, both counted;
+  - a token issued for a page that a later prune removed gives one `Error:` line and never
+    resolves to a page written after the prune; `<seq>` values are strictly increasing across the
+    prune.
+
+  Mutations: a prune that keeps a 51st page; a token resolving to a page written after a prune
+  (`<seq>` reused); a prune not counted on the row; the other-session sweep at 6 days. {#ac-27}
 - **AC-17 (R13).** 40 retrieved items at 20 KB total, with 25.1-shaped hook lines of 250-370 B, at
   a 9,000 B budget. Every item is visible: at tiers 1-3 (its hook line printed, carrying its curated
   hook), as a names-line member, or, past the cap of 15, counted in `(+N)` and on the spill page.
@@ -341,7 +353,8 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
   row cites R0's table and sits on the T4 backlog line. Mutations: a skipped leg written as 0
   (AC-21 a); the `legs_ms` GREEN committed before its RED (AC-21 b, commit order); (if built) a leg
   bound read from outside `hook_budget`; a bound not equal to s × p90 (AC-21 b checks the recorded
-  values against the constant). {#ac-21}
+  values against the constant); R15 built on < 100 runs (a leg-bound commit present while the
+  recorded scan-prompt count is < 100: AC-21 b fails). {#ac-21}
 - **AC-22 (R16).** `scope=both` under a hook deadline, with the project leg's rerank made to use the
   whole budget. The stand-in for the slow rerank is a test double registered in
   `workflow/test_mock_registry.md`, because the reranker is internal. The global leg still answers
@@ -359,23 +372,29 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
   `recall_pack.pack` on the AC-17 fixture:
   - with `held` empty: every row's rendered tier equals its full-run tier, and every `(+N)` row
     reports `overflow`;
-  - with `held` = {a tier-1 row r, a tier-3 row q}: r and q render as `r·held` and `q·held` on the
-    names line, in one rank order with the over-budget members, which are unmarked; r's and q's
-    rendered tier is `names` and their full-run tiers are unchanged; every other row keeps its
-    full-run tier (tier-pinned, [[#k3]]); the payload is ≤ the full run's and ≤ budget; the names
-    line is the last line.
+  - with a test `Held` (a small concrete class in the test file, implementing the protocol, not a
+    stand-in for `src/` code) whose `covers` is True at every tier for a tier-1 row r and a tier-3
+    row q: r and q render as `r·held` and `q·held` on the names line, in one rank order with the
+    over-budget members, which are unmarked; r's and q's rendered tier is `names` and their
+    full-run tiers are unchanged; every other row keeps its full-run tier (tier-pinned, [[#k3]]);
+    the payload is ≤ the full run's and ≤ budget; the names line is the last line;
+  - **`covers` false at the full-run tier:** a `Held` that knows row p but answers `covers(p,
+    tier)` True only for `pointer` or poorer, with p's full-run tier `full`. p keeps tier 1 (hook
+    line + body, no `·held`), and its rendered tier equals its full-run tier.
 
   Mutations: marker missing on a held member; marker on an over-budget member; the marker's bytes
   left out of the line's reservation (the payload exceeds the budget on a fixture sized to the
   byte); the rendered tier reported as the full-run tier; a non-held row promoted into freed
-  bytes; the names line placed above the hits. {#ac-25}
+  bytes; the names line placed above the hits; membership used instead of `covers` (a row moves
+  to the line whenever `held` knows its key, whatever its full-run tier: p goes to the line and
+  the last leg FAILS). {#ac-25}
 
 ## Files {#files}
 
 | file | change |
 |---|---|
 | `src/refmatrix/hook_budget.py` | `HOOK_HARD_CAP_BYTES`, the shared emitter, `GLOBAL_LEG_RESERVE_S`, `LEG_WALL_S` (only if R15 is built) |
-| `src/refmatrix/recall_pack.py` | the ladder (one render function per tier), `pack(held=…)` with tier-pinned removal, the names line (the only home of `still in play` and `·held`), `Packed` gains per-row full-run and rendered tier and `form` |
+| `src/refmatrix/recall_pack.py` | the ladder (one render function per tier), the `Held` protocol (`covers(key, full_run_tier) -> bool`) and `pack(held=…)` with tier-pinned removal (the ONE owner; 10.2 passes its `HeldSet`), the names line (the only home of `still in play` and `·held`), `Packed` gains per-row full-run and rendered tier and `form` |
 | `src/refmatrix/stm.py` | spill page write, read and prune ([[#k10]]) under 10.3's `.emitted` directory helper; reads `stm.last_marker` |
 | `src/refmatrix/hooks.py` | `HOOK_COMMAND_CHANNELS` shares for every generated command with rmx stdout (via `hook_budget`) |
 | `src/refmatrix/cli.py` (the nine writer functions, [[#r12]]) | `_echo_pack`, `recall_state`, `scan_prompt_cmd`, `curator_status`, `focus_context`, `focus_hook` (session-start), `focus summarize`, `ingest-gmd --as-memory --detach`, `save_state` write through `hook_budget.emit` |
@@ -384,7 +403,7 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
 | `src/refmatrix/scan.py` | per-leg timing; leg bounds (only if R15 is built) |
 | `src/refmatrix/telemetry.py` | `form`, `capped`, `dropped_bytes`, `legs_ms`, `global_omitted`; `rmx telemetry --context` prints clamp firings |
 | `.claude/settings.json`, `.claude/rmx-hooks.json` | regenerated from Python in the task's clone, never by `rmx install-hooks` against a live store |
-| `tests/test_task25_1b_ladder_spill.py` (new) | AC-16..AC-26 |
+| `tests/test_task25_1b_ladder_spill.py` (new) | AC-16..AC-27 |
 | `tests/test_verb_parity.py` | the `page` twin |
 | `workflow/measurements/task-25.1b-scan-prompt-legs.md` (new) | R0's table and the L44 decision row |
 | `workflow/test_mock_registry.md` | AC-22's rerank double |
@@ -415,7 +434,7 @@ ruling is folded into the requirement it names. {#open-decisions-lead}
 |---|---|---|---|
 | O1 | The fetch command's spelling: rev 8's `rmx recall --page` named the graph hybrid retrieval, not memory recall | `rmx memory recall --page <token>`, verb `memory_recall(page=…)` | [[#r14]], AC-18 |
 | O2 | Page addressing: the agent's Bash call has no session id, and the newest-ring fallback is bug-100's defect | token `<session[:8]>-<seq>`, resolved by prefix under `stm/`; an ambiguous prefix gives one `Error:` line | [[#r14]], AC-18 |
-| O3 | Where R0's ≥ 100 runs come from | `legs_ms` is the branch's first commit, deployed ahead by fast-forward as a lead deploy step (not user-gated; no hook regeneration); live runs collected while R12-R14 build; R15 decided before GREEN closes | [[#r0]], AC-21 |
+| O3 | Where R0's ≥ 100 runs come from | `legs_ms` lands as the branch's first TWO commits (its AC-21 a RED, then GREEN), reviewed by a ch-bsd lite round, then deployed ahead by fast-forward as a lead deploy step (not user-gated; no hook regeneration); live runs collected while R12-R14 build; R15 decided at the window's end, before GREEN closes; < 100 runs → R15 not built (L54 S3) | [[#r0]], AC-21 |
 | O4 | 19.5's #w1c-rider sat in frozen 19.5, so plan-2 could not close | R0 records the rerank leg's outcome and closes it here, as the third plan-2 rider | [[#r0]], [[#k9]], AC-21 |
 | L58-a | Spill retention values ([[#k10]]) | newest 50 pages per session; another session's `spill/` directory is dropped once its newest page is older than 7 days | [[#k10]] |
 | L58-b | R0's run set ([[#r0]]) | the ≥ 100 runs are pooled over every store the early deploy reaches, and each store is reported apart | [[#r0]], AC-21 |
@@ -459,3 +478,17 @@ rel: implements -> [[plan-review-2026-11-13#lead]]
 | lead input (green-251c on `hooks.render_managed` at `23caf45`): no single emit point | R12 names all eight stdout writer entries, nine functions (four entries capped, four uncapped), the share rule and the out-of-scope list; AC-26 with a bypass mutation | [[#r12]], AC-26 |
 | M5 spill retention and `<seq>` | `<seq>` = write ms base 36, exclusive create; prune at marker, beyond the newest 50, and other sessions' dirs older than 7 days (values decided by the lead, L58) | [[#k10]] |
 | `form` value `held` (M2's 25.1b half) | `#k5` names it | [[#k5]] |
+
+## Revision round 2 (2026-11-13, ch-bsd joint spec review r2; the lead's ruling) {#rev-round-2}
+
+Folds the r2 report (DIRTY 0B/2S/8M; every r1 B/S closed) for this file. {#rev-round-2-lead}
+
+rel: implements -> [[plan-review-2026-11-13#lead]]
+
+| finding | change | anchor |
+|---|---|---|
+| S1 two specs built `pack(held=…)` with incompatible types | this task is the ONE owner; `held` is the `Held` protocol with `covers(key, full_run_tier) -> bool`; one pack call; AC-25 gains a "`covers` false" leg and the mutation "membership used instead of `covers`" | [[#k3]], [[#files]], AC-25 |
+| m1 retention labelled PROVISIONAL; untested | the labels already read DECIDED (L58) since `72d578e`; AC-27 tests `#k10` with four mutations | [[#k10]], [[#r0]], AC-27 |
+| m2 O3 row stale | refreshed: two commits, the ch-bsd lite round, the < 100 fallback | [[#open-decisions]] |
+| m3 tier-3 wording | "hook line (which carries its `(rmx memory get …)` fetch pointer)", the exact text 10.2 and 10.6 match | [[#r13]] |
+| m7 AC-21's fallback had no mutation | "R15 built on < 100 runs" | AC-21 |
