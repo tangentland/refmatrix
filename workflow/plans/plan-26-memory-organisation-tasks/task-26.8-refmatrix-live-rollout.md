@@ -7,20 +7,26 @@ metadata:
   node_type: task
   status: pending
   plan: plan-26-memory-organisation
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 26.8: refmatrix live rollout {#root}
 
 > Plan: [[plan-26-memory-organisation]]
 > Status: Pending
-> Depends on: 26.0-26.7 merged to `master` and released. 26.9 is NOT a dependency.
+> Depends on: 26.0-26.7 merged to `master` and released, including 26.6's R3 residual
+> ([[task-26.6-compile-subject-hygiene#r3-residual]]; 26.6 is `completed` only then). 26.9 is NOT
+> a dependency. Rev 6 (2026-11-13): AC-8 takes ADR-0005's amended Appendix A and A.2, and the
+> expected counts are re-read at run time ([[#rev-round-6]]).
 
 rel: part-of -> [[plan-26-memory-organisation]]
 rel: reinforces -> [[feedback_deploy_tree_is_the_runtime]]
 rel: reinforces -> [[feedback_restart_daemon_after_promote]]
 rel: reinforces -> [[feedback_verify_memory_by_recall_not_get]]
 rel: reinforces -> [[feedback_measure_the_outcome_not_the_wall]]
+rel: depends-on -> [[refmatrix/adr-0005-memory-dir-layout#appendix-memory-rules]]
+rel: depends-on -> [[refmatrix/adr-0005-memory-dir-layout#appendix-forget-step]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
 ## Requirements {#requirements}
 
@@ -133,7 +139,18 @@ first.
    - Hand-written prose is carried.
 8. **AC-8: MEMORY-RULES (plan Q8, recorded: the user authorises it here).**
    - Show the user the ADR-0005 appendix paragraph, and apply it to `~/.claude/MEMORY-RULES.md`
-     with their authorisation.
+     with their authorisation. **Rev 6 (L11):** the paragraph is the amended
+     [[refmatrix/adr-0005-memory-dir-layout#appendix-memory-rules]] text, which carries the marker
+     condition (organised dir: type folder; flat dir: top level). The applied section must
+     byte-equal the ADR's fenced block. Diff it and record the diff in the implementation
+     summary. If the user changes the text at this step, the change is written back into the ADR in
+     this task's commit, so the two never diverge.
+   - **Rev 6 (L12): forget-flow step 5.** In the same window, show the user
+     [[refmatrix/adr-0005-memory-dir-layout#appendix-forget-step]] (`rmx memory forget <id>` after
+     the file is deleted). Before showing it, re-check at the deployed sha that the bridge still
+     never forgets a deleted file, and record the evidence. Apply it to `MEMORY-RULES.md#forget`
+     only if the user accepts it. Record the user's answer, verbatim, in the implementation
+     summary, whether it is accept, change or decline.
    - **Why it matters.** Until the paragraph lands, every agent writes new memories at the memdir
      TOP level. Each one keeps `organise --check` non-zero. If an agent re-creates a top-level
      file whose id already lives in a type folder, that also trips 26.2's duplicate-id refusal:
@@ -211,3 +228,53 @@ rel: derives-from -> [[bsd-plan26-27-spec-review-r5-3ded49e]]
 | s1 (19 legacy rows go dead-path on apply, uncounted) | `moved_legacy` = 19, exact, in the preview and the apply bridge; `--check` includes it; 3 legacy rows read by name; merge/forget out of scope | AC-2, AC-3, AC-5 |
 | m2 (spot-check option (b) fails in viascope by design) | Byte-identity scoped to flat dirs; viascope's expected diff stated (entries added, prose dropped on both sides) | AC-0 |
 | m3 (`stale_before` compared with the whole `refresh_pending`) | Compared with AC-0's first two terms | AC-2 |
+
+## Revision round 6 (2026-11-13): plan-review folds {#rev-round-6}
+
+Answers [[plan-review-2026-11-13#lead]] L11 and L12, and spec gap G19's "counts re-read"
+([[plan-review-2026-11-13#spec-gaps]]). Evidence: `workflow/review-output/pop-2026-11-13/contra-a.md`
+Ca-4, Ca-9 and its clean-areas note on stale counts. Status is unchanged (`pending`).
+
+rel: derives-from -> [[plan-review-2026-11-13#spec-gaps]]
+
+| row | change | anchor |
+|---|---|---|
+| L11 / Ca-4 (Appendix A was unconditional; `/save-state` gates on the marker) | AC-8 applies the amended, marker-conditioned text; byte-equality with the ADR is checked | AC-8 |
+| L12 / Ca-9 (forget flow ends at deleting the file) | Step 5 is put to the user in the AC-8 window; it is applied only on acceptance | AC-8 |
+| G19 (counts) | The expected counts are re-read at run time; see [[#counts-reread]] | AC-2, AC-3, AC-4 |
+| L1 | Header: 26.6's R3 residual is part of "26.0-26.7 merged" | header |
+| Q8 open (brief rule) | Lines named | [[#q8-b]] |
+
+### Expected counts, re-read (2026-11-13) {#counts-reread}
+
+AC-3's figures (40 save-states; 250 typed as 68/170/12) and AC-2's `moved` are the 2026-11-09
+survey. On 2026-11-13 a read-only count of the live refmatrix memdir gave:
+- 306 top-level files: 44 save-states and 262 typed (72 `feedback`, 175 `project`, 15
+  `reference`);
+- `impressions/` holds 80;
+- `~/.claude` still tracks 2 refmatrix files (`MEMORY.md`, `project_csn_production_harness.md`).
+  It now carries 231 unstaged deletions, 93 of them under the gone `-enduris-cliquedb` dir.
+
+The dir keeps growing until 26.8 runs, so the rule replaces the numbers:
+- **AC-3.** Before the preview, re-survey the dir read-only and record the counts in
+  `workflow/review-output/26.8-organise-preview.log`. The preview must equal that survey
+  exactly, per folder. The 2026-11-09 and 2026-11-13 numbers are history, not expectations.
+- **AC-2.** `moved` = the preview's move count, exact (the rule is unchanged).
+  - `forced` = 0 while every save-state moves.
+  - `moved_legacy`: 19 is the 2026-11-09 probe. AC-0 re-probes it on a read-snapshot copy. The
+    preview must equal the re-probe, exact.
+  - A re-probe other than 19 is logged as a bug row with its reason, and reported, before AC-4.
+- **AC-4.** The "never `commit -a`" reason is the current dirt count (231 unstaged deletions
+  today), re-read at the step.
+- **AC-6.** The 20 pre-0.34 subject rows are re-listed at the step (`rmx memory list --type
+  subject`) before the stale assertion.
+
+### Lines that change under Q8 b {#q8-b}
+
+Q8 is open ([[open-questions]]). This spec holds under Q8 a or c. Under Q8 b (save-states kept
+out at ingest), these lines change:
+- AC-0's `refresh_pending` terms and AC-2's `stale_before` / `moved` / `forced` rows lose their
+  save-state share;
+- the save-state half of `moved` becomes a file-only move;
+- AC-5's first two bullets keep `rmx recall-state` and drop the `rmx memory recall` of a moved
+  save-state. The moved-feedback recall stays.

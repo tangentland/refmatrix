@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   plan: plan-27-memory-fleet-rollout
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 27.1: fleet inventory {#root}
@@ -17,11 +17,31 @@ metadata:
 > Depends on: plan-26 deployed
 
 rel: part-of -> [[plan-27-memory-fleet-rollout]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
 ## Requirements {#requirements}
 
 This task is read-only. Output: `workflow/plans/plan-27-memory-fleet-rollout-tasks/inventory.md`
 (GMD, lint-clean).
+
+0. **AC-0: refresh plan-27's `#survey` and `#facts` first (rev 6, L13).** {#ac-0}
+   - Before AC-1, re-measure every [[plan-27-memory-fleet-rollout#survey]] column read-only:
+     memories, top-level, save-states, store and daemon, and the SessionStart bridge.
+   - Rewrite the table in the plan with a dated note, and mark each changed cell. Rewrite
+     [[plan-27-memory-fleet-rollout#facts-hooks-0820]] from the measurement.
+   - **The hook column is measured two ways:**
+     - read each repo's `.claude/settings*.json` for the SessionStart `ingest-gmd --as-memory`
+       command;
+     - find fleet repos by the installed hook marker (the `refmatrix: refresh` line in
+       `<repo>/.git/hooks/post-commit`), over `~/github`, `~/claude_tools` and `~/enduris`,
+       skipping `_frameworks_and_libraries` and never searching from `/`. `rmx hub status`
+       alone is not enough ([[project_fleet_hooks_found_by_marker_not_hub]]).
+   - A repo found by its marker that is missing from `#survey` gets a row.
+   - Known on 2026-11-13: viascope's, cliquedb's and cliquet's settings carry the bridge. bdep/thiquet
+     and atlftpd were missed by the 0.82.0 re-install.
+   - Every command and its output goes to `workflow/review-output/27.1-survey-refresh.log`.
+   - Read-only, like the rest of this task: no hook is regenerated here
+     ([[plan-27-memory-fleet-rollout#q3-rehost]]).
 
 1. **AC-1: one row per `~/.claude/projects/*/memory`, empty dirs included.** Each row gives:
    - the resolved path, and whether it is a symlink;
@@ -93,6 +113,7 @@ This task is read-only. Output: `workflow/plans/plan-27-memory-fleet-rollout-tas
 
 - Create `workflow/plans/plan-27-memory-fleet-rollout-tasks/inventory.md`.
 - Create `workflow/review-output/27.1-*.log`.
+- Modify `workflow/plans/plan-27-memory-fleet-rollout.md` `#survey` and `#facts` (AC-0, rev 6).
 
 ## Test Strategy {#test-strategy}
 
@@ -140,3 +161,13 @@ rel: derives-from -> [[bsd-plan26-27-spec-review-r5-3ded49e]]
 |---|---|---|
 | s1 (legacy rows uncounted in every pre-alias store) | `moved_legacy` and the legacy-duplicate count recorded per store; later applies must match | AC-6 |
 | m6 (Q6 answer not carried; "latent wipe") | ble-sniffer-mqtt row names `~/github/atollogy/bdep/ble_sniffer_mqtt`, `no store`; the notice says prose loss | AC-4, AC-6 |
+
+## Revision round 6 (2026-11-13) {#rev-round-6}
+
+Answers [[plan-review-2026-11-13#lead]] L13 (`workflow/review-output/pop-2026-11-13/contra-a.md`
+Ca-8; spec gap G19). Status is unchanged (`pending`).
+
+| finding | change | anchor |
+|---|---|---|
+| L13 / Ca-8 (the survey's hook column is stale after the 0.82.0 re-install; fleet found by hub, not by marker) | AC-0 refreshes `#survey` and `#facts` before AC-1, and finds repos by their hook marker | [[#ac-0]] |
+| Q8 open (brief rule) | Under Q8 b, AC-1's mis-typed save-state count and AC-6's `refresh_pending` lose their store side; the file counts stay | [[plan-27-memory-fleet-rollout#q8-b]] |

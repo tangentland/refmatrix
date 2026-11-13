@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   plan: plan-26-memory-organisation
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 26.9: impression patterns {#root}
@@ -18,6 +18,8 @@ metadata:
 > - [[task-26.6-compile-subject-hygiene]]: scope-aware compile R-A, the `memory_compile` verb, and the `stale` mark.
 > - [[task-26.1-layout-module-and-index-walk]]: `impressions/` is a type folder.
 > - Live AC-5 runs after 26.8. AC-5 does NOT gate plan-26's close (ch-bsd r1 #m9).
+> - Runs in parallel with [[plan-27-memory-fleet-rollout]] after 26.8; neither waits on the other
+>   ([[#rev-round-4]], L10).
 
 rel: part-of -> [[plan-26-memory-organisation]]
 rel: depends-on -> [[task-26.6-compile-subject-hygiene]]
@@ -230,3 +232,22 @@ Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
 | finding | change | anchor |
 |---|---|---|
 | m9 (no multi-candidate rule) | Earliest matching report; candidates listed by the checker; the sighting count uses that assignment | R3 |
+
+## Revision round 4 (2026-11-13): L10 {#rev-round-4}
+
+Answers [[plan-review-2026-11-13#lead]] L10 (`workflow/review-output/pop-2026-11-13/contra-a.md`
+Ca-7; spec gap G19). The draft queue had put 26.9 ahead of plan-27, but this task never gated
+plan-27. So 26.9 runs in parallel with plan-27 after 26.8. They share no `src/` file: this task
+adds `bsd_fold.py` and nothing to `verbs.py` beyond 26.6's `scope`, and 27.0 modifies
+`memory_organise.py`, `verbs.py` and `cli.py`. Their live steps touch different memdirs:
+refmatrix's `impressions/` here, and the other projects' dirs there. Status is unchanged
+(`pending`).
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| row | change | anchor |
+|---|---|---|
+| L10 / Ca-7 | Header: ∥ plan-27 after 26.8 | header |
+| G19 (counts re-read) | The `#why-state` figures are as of `2f4a1df`. Re-read 2026-11-13: `IMPRESSIONS.md` 307 lines / 56 KB, and `memory/impressions/` holds 80. AC-3's cap is pre-measured on a ledger copy at run time, as R3 already requires, so no AC value changes | [[#why-state]] |
+| L45 (user gates) | Unchanged: the user approves each pattern doc (R2), and AC-5 is live | [[#ac-5]] |
+| Q8 open (brief rule) | No line here changes under Q8 b: impressions are memories, not save-states | none |

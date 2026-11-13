@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   plan: plan-27-memory-fleet-rollout
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 27.5: cliquedb, staged {#root}
@@ -64,3 +64,13 @@ Answers [[bsd-plan26-27-spec-review-r1-96feccd]].
 |---|---|---|
 | S8 (an idle timer is not a session boundary) | Explicit acknowledgement plus a process check only | AC-2 |
 | B2, B4 | `--store-from-memdir`; prose carried | AC-2 |
+
+## Lines that change under plan-review Q8 b (2026-11-13) {#q8-b}
+
+Q8 is open ([[open-questions]]). This spec holds under Q8 a or c. Under Q8 b (save-states kept
+out at ingest), AC-3's `rmx memory recall` of `savestate_7c4e19d2a8f3` cannot pass, and with it
+goes its point that "the type rewrite reached the store". It is replaced by `rmx recall-state`
+alone, plus a check that the file's `metadata.type` was rewritten. AC-1's 4 type rewrites (file
+edits) stay.
+
+rel: derives-from -> [[plan-27-memory-fleet-rollout#q8-b]]

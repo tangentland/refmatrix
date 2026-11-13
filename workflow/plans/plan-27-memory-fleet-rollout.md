@@ -7,7 +7,7 @@ metadata:
   node_type: plan
   status: approved
   created: 2026-11-08
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Plan 27: memory fleet rollout {#root}
@@ -18,6 +18,8 @@ metadata:
 the r6-lite confirm closed r5 s1, m2 and m6 (MEH-only). Execution waits on plan-26 deployed.
 **Location:** `workflow/plans/plan-27-memory-fleet-rollout.md`
 **Depends on:** [[plan-26-memory-organisation]] merged, released AND deployed (26.8 green).
+26.9 is NOT a dependency: plan-27 runs in parallel with it after 26.8
+([[plan-26-memory-organisation#overlap-26-9-plan-27]], L10). Revised 2026-11-13 ([[#rev-round-6]]).
 Plan 27 changes no behaviour of its own, apart from the merge mode in task 27.0. It applies the
 deployed `rmx memory organise` verb dir by dir.
 
@@ -27,6 +29,8 @@ rel: implements -> [[tdd-governance]]
 rel: reinforces -> [[feedback_verify_memory_by_recall_not_get]]
 rel: reinforces -> [[feedback_launchd_install_force_leaves_it_unloaded]]
 rel: reinforces -> [[feedback_store_calls_via_daemon]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[plan-review-2026-11-13#d-q5]]
 rel: specifies -> [[task-27.0-organise-merge-from]]
 rel: specifies -> [[task-27.1-fleet-inventory]]
 rel: specifies -> [[task-27.2a-index-prose-to-memories]]
@@ -39,6 +43,11 @@ rel: specifies -> [[task-27.6-per-store-compile-and-landing]]
 ## Context {#context}
 
 ### Survey, 2026-11-08 (coordinator plus architect, corrected) {#survey}
+
+**Refresh at 27.1's start (2026-11-13, L13).** This table is the 2026-11-08 survey. Its bridge
+column has been stale since the 0.82.0 fleet hook re-install. [[task-27.1-fleet-inventory#ac-0]]
+re-measures every column read-only and rewrites the table, with a dated note and each changed
+cell marked, before any other 27.x step reads it. {#survey-refresh}
 
 Columns: memories, top-level, save-states, store and daemon, bridge hook. The store column says
 which `.refmatrix/` the project's `default_memory_dir(repo)` slug maps from. The bridge column
@@ -67,6 +76,12 @@ Empty dirs (`-viascope-src-viascope`, `-viascope2-docs`) need nothing beyond bei
   `ingest-gmd --as-memory --detach '<memdir>'` hook (`hooks.py:289-306`). cliquedb and viascope
   have neither the hook nor (in viascope's case) any save-state. viascope's 146 memories may
   never have been bridged in full. 27.1 measures this.
+  - **Stale since 0.82.0 (2026-11-13, L13; `contra-a.md` Ca-8).** The 2026-11-10 re-install put
+    the SessionStart bridge into viascope's, cliquedb's and cliquet's `.claude/settings.json` (one
+    `ingest-gmd` line each, read 2026-11-13). The re-install was driven from `rmx hub status`, so it
+    missed `bdep/thiquet` and `bdep/atlftpd`, which still run the pre-26.2 silent bodies
+    ([[project_fleet_hooks_found_by_marker_not_hub]]). 27.1 AC-0 rewrites this bullet from its
+    own measurement. {#facts-hooks-0820}
 - **Future save-states land in `savestates/` automatically everywhere.** Every project runs the
   one deployed `~/bin/rmx`. A project with no rmx hooks only gets save-states from
   `rmx save-state` (deployed code) or from an agent writing a file by hand. The hand-written case
@@ -132,8 +147,9 @@ Round 1 added these rules (see [[#rev-round-1]]):
 - No deletion of any memory dir, checkout or store directory. Retirement means backup plus a
   tombstone README plus unsupervising, and the user decides on deletion.
 - No hook regeneration in other repos. 27.6 REPORTS drift (`rmx install-hooks --check` per
-  project). Regenerating is the user's call, and plan-24's mod replaces the shell hooks anyway
-  (Q3). **Exception, user decision 2026-11-10:** the 0.82.0 deploy re-installs hooks in all 8
+  project). Regenerating is the user's call (Q3). **Amended 2026-11-13 (L13, D-Q5):** plan-24's D1
+  is superseded, so its mod no longer hosts the regeneration. 27.6's drift report feeds the next
+  marker-found `install-hooks` window instead ([[#q3-rehost]]). **Exception, user decision 2026-11-10:** the 0.82.0 deploy re-installs hooks in all 8
   fleet projects (`rmx install-hooks --apply --force`, each project's `.claude/settings*.json` and
   `.git/hooks` backed up first, the Claude block diffed, every `.git/hooks` file read back) so the
   26.2 loud-failure hook bodies reach the fleet ([[bsd-task-26.2-r2-remedy-9204814#s2-2]]).
@@ -189,6 +205,13 @@ Round 1 added these rules (see [[#rev-round-1]]):
   Save-state's own bridge covers the migration. Each `rmx install-hooks` in a foreign repo is a
   backup-and-diff operation ([[feedback_install_hooks_no_claude_reaps]]) that should not ride a
   memory rollout.
+  **Re-hosted 2026-11-13 (L13; D-Q5 supersedes plan-24's D1, so "leave them to plan-24's mod" no
+  longer has a host).** Plan-27 still only REPORTS hook drift (27.6 AC-3). The regeneration rides
+  the marker-found `install-hooks` window: fleet repos are found by the installed hook marker,
+  not by `rmx hub status`, and each is re-installed with `--force` behind a backup, then
+  byte-compared. That window is the one queue item 1 opens for 0.83.0, and later ones are batched
+  where install windows fall together. Each window is user-gated. A repo that 27.6 reports as
+  drifted goes into the next window's list. Plan-27 runs no `install-hooks` itself. {#q3-rehost}
 - **Q4: should the home dir (`-Users-tholley`) be bridged into the GLOBAL store's memory
   partition?** DECIDED (r4): organise its files, and do NOT change what it bridges into until 27.1
   shows which partition it lands in today. The global store is the hub's.
@@ -199,6 +222,31 @@ Round 1 added these rules (see [[#rev-round-1]]):
   **ANSWERED (user, 2026-11-09):** the repo is `~/github/atollogy/bdep/ble_sniffer_mqtt`
   (origin `bitbucket.org:at0l/ble_sniffer_mqtt`; the memory-dir slug turns `_` into `-`). It has
   no `.refmatrix/` store, so it stays organised file-only (`no store`), now with the checkout named.
+
+## User gates, collected from the task specs (2026-11-13) {#user-gates}
+
+The goal stops at every user step a spec names ([[plan-review-2026-11-13#goal-horizon]], L45):
+
+| task | the goal stops for |
+|---|---|
+| 27.0, 27.2, 27.2a, 27.4 | the user's commit of staged moves in a tracked repo (viascope's repo, `~/.claude`); the verb exits 3 |
+| 27.2a | the user's review and approval of the converted prose set, before anything leaves viascope's `MEMORY.md` (AC-3) |
+| 27.2 | reading the Q1 overlap diff before apply; the viascope2 archive go (AC-8; delete or move needs a further go) |
+| 27.3 | the explicit acknowledgement before the bdep/thiquet backup (S7) |
+| 27.4 | a failed check or an index refusal, which stops the sequence for a user decision (AC-1, AC-5, AC-6 B4); a dir whose project has a live session waits for its acknowledgement (AC-6 S8) |
+| 27.5 | cliquedb's session acknowledgement on `proj:cliquedb:*`, or the user's confirmation that no session is live |
+| 27.6 | none beyond the report; any hook regeneration waits for a user-gated install window ([[#q3-rehost]]) |
+
+## Lines that change under plan-review Q8 b (2026-11-13) {#q8-b}
+
+Q8 is open ([[open-questions]]). This plan holds under Q8 a or c. Under Q8 b (save-states kept
+out at ingest), these lines change:
+- the recall of a migrated save-state in [[task-27.5-cliquedb-at-session-boundary]] AC-3 (the
+  `savestate_7c4e19d2a8f3` phrase) is replaced by `rmx recall-state`;
+- 27.1's mis-typed save-state counts, and the per-store `refresh_pending` / `moved` terms, lose
+  their store side.
+
+The file moves, `savestates/` and `rmx recall-state` are unchanged.
 
 ## Revision round 1 (2026-11-09) {#rev-round-1}
 
@@ -281,3 +329,18 @@ rel: derives-from -> [[bsd-plan26-27-spec-confirm-r6-lite-d396317]]
   wording needed no change.
 - Every task in [[#tasks]] (27.0, 27.1, 27.2a, 27.2-27.6) has its spec under
   `workflow/plans/plan-27-memory-fleet-rollout-tasks/`.
+
+## Revision round 6 (2026-11-13): plan-review folds {#rev-round-6}
+
+Answers [[plan-review-2026-11-13#lead]] L10, L13 and L45, and user decision D-Q5
+([[plan-review-2026-11-13#d-q5]]); spec gap G19. Evidence: `workflow/review-output/pop-2026-11-13/contra-a.md`
+Ca-7 and Ca-8. Status is unchanged (`approved`). The revised task specs go through the lead's
+ch-bsd round.
+
+| row | change | anchor |
+|---|---|---|
+| L13 / Ca-8 (the survey's hook column is stale after 0.82.0) | 27.1 AC-0 refreshes `#survey` and `#facts` first; the stale facts bullet is marked | [[#survey-refresh]], [[#facts-hooks-0820]], [[task-27.1-fleet-inventory#ac-0]] |
+| L13 + D-Q5 (Q3 rested on plan-24's mod) | Q3 re-hosted on the marker-found `install-hooks` window plus 27.6's report; the non-goal is amended | [[#q3-rehost]], [[#non-goals]], [[task-27.6-per-store-compile-and-landing#rev-round-4]] |
+| L10 / Ca-7 | 26.9 is not a dependency; the two run in parallel after 26.8 | header |
+| L45 | User gates collected | [[#user-gates]] |
+| Q8 open (brief rule) | Lines named | [[#q8-b]] |

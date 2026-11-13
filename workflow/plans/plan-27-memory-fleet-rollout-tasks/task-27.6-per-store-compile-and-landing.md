@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   plan: plan-27-memory-fleet-rollout
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 27.6: per-store compile, index and landing {#root}
@@ -46,7 +46,10 @@ rel: depends-on -> [[task-26.7-memory-index-by-subject]]
      `savestates/` in the first and the top level in the second.
    - Does a SessionStart bridge hook exist?
    - `rmx install-hooks --check` drift.
-   - Recommended action, per plan Q3: report only; regeneration rides plan-24.
+   - Recommended action, per plan Q3 as re-hosted on 2026-11-13
+     ([[plan-27-memory-fleet-rollout#q3-rehost]]): report only. Each drifted repo is listed as
+     input to the next marker-found `install-hooks` window, which is user-gated. Plan-24 no
+     longer hosts the regeneration (D-Q5).
 4. **AC-4: close-out.** Bring `workflow/plan-of-plans.md`'s plan-27 row up to date (by the plan
    owner), bring `handoff.md` up to date, and get `@ch-bsd` over the range to CLEAN.
 
@@ -83,3 +86,14 @@ Answers [[bsd-plan26-27-spec-review-r3-696c3cb]].
 | finding | change | anchor |
 |---|---|---|
 | m1 (the landing table attributed `savestates/` to the binary, not the marker) | `organised` column; dry-run in one organised and one un-organised project | AC-3 |
+
+## Revision round 4 (2026-11-13) {#rev-round-4}
+
+Answers [[plan-review-2026-11-13#lead]] L13 and [[plan-review-2026-11-13#d-q5]]. Status is
+unchanged (`pending`).
+
+rel: derives-from -> [[plan-review-2026-11-13#d-q5]]
+
+| finding | change | anchor |
+|---|---|---|
+| L13 + D-Q5 (Q3's "rides plan-24" has no host once plan-24 D1 is superseded) | AC-3's recommended action points at the marker-found `install-hooks` window | AC-3 |

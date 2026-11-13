@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   plan: plan-26-memory-organisation
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 26.5: the organise verb {#root}
@@ -16,13 +16,18 @@ metadata:
 > Status: Pending
 > Depends on: [[task-26.1-layout-module-and-index-walk]], [[task-26.2-bridge-move-safety]],
 > [[task-26.3-savestate-subfolder]], [[task-26.4-savestate-mtype-normalisation]]. Rebase on task
-> 3.7's verb changes ([[plan-26-memory-organisation#overlap-37]]).
+> 3.7's verb changes ([[plan-26-memory-organisation#overlap-37]]). Since rev 6 (2026-11-13):
+> [[task-bug216-rule-docs-in-graph]] merged (bug-220's reroute sits on its walker,
+> [[#bug220-route]]); bug-208 is fixed inside this task before the marker writer
+> ([[#pre-bug208]]).
 
 rel: part-of -> [[plan-26-memory-organisation]]
 rel: reinforces -> [[feedback_dry_run_match_real_cost]]
 rel: reinforces -> [[feedback_verify_memory_by_recall_not_get]]
 rel: reinforces -> [[feedback_store_calls_via_daemon]]
 rel: depends-on -> [[task-26.2-bridge-move-safety]]
+rel: depends-on -> [[task-bug216-rule-docs-in-graph]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
 ## Requirements {#requirements}
 
@@ -200,6 +205,17 @@ verb-parity test covers both. No file is ever moved by hand, here or in plan-27.
 - Regenerate the generated CLI-tree doc, if there is one
   ([[feedback_family_list_misses_generated_checks]]).
 - Create `tests/test_memory_organise.py`.
+- Rev 6 (2026-11-13):
+  - Modify `src/refmatrix/handoff.py` (`compose_save_state`, ~:428-483): bug-208's atomic write,
+    its error text and the `created:` source ([[#pre-bug208]]). Extend
+    `tests/test_savestate_subfolder.py`; register the part-way-failure monkeypatch in
+    `workflow/test_mock_registry.md`.
+  - Modify `src/refmatrix/memory_layout.py`: `memdir_of(path)`, the one memdir resolver shared by
+    R-264a and bug-220 ([[#bug220-route]]).
+  - Modify `src/refmatrix/ingest_gmd.py` (`collect_gmd_files`, `ingest_gmd_paths`) and `cli.py`
+    (`ingest-gmd` output): the reroute and its count. Create
+    `tests/test_ingest_gmd_memdir_route.py`.
+  - Create `workflow/review-output/26.5-bug202-existence.log` ([[#bug202-restore]]).
 
 ## Test Strategy {#test-strategy}
 
@@ -346,3 +362,191 @@ rel: derives-from -> [[bsd-task-26.4-r1-savestate-mtype-1caf3df]]
   the rewrite between backup and bridge. (e) 26.4's s-1 pins ride here: symlink refusal, a bare file
   with no frontmatter (error entry, never a silent skip), a file with no type line (insert happens,
   `error` stays None only when it did). {#ac-264}
+
+## Revision round 6 (2026-11-13): plan-review folds {#rev-round-6}
+
+Answers [[plan-review-2026-11-13#lead]] rows L9 and L37, spec gaps G4 and G15
+([[plan-review-2026-11-13#spec-gaps]]). Evidence: `workflow/review-output/pop-2026-11-13/contra-a.md`
+Ca-5 and Ca-6, [[bsd-pop-r1-c56782f#m4]], and the bug-202, bug-208 and bug-220 rows of
+`workflow/bug_registry.md`. Status is unchanged (`pending`); the lead sets `approved` after a clean
+ch-bsd round.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[plan-review-2026-11-13#spec-gaps]]
+rel: derives-from -> [[bsd-pop-r1-c56782f]]
+
+| row | change | anchor |
+|---|---|---|
+| L9 / Ca-5 (bug-208 has no AC anywhere) | bug-208 is a precondition inside this task, with its own requirements and AC, recorded GREEN before AC-4's marker write | [[#pre-bug208]] |
+| L9 / Ca-6, bsd-pop-r1 M4 (bug-202's restore points at files nobody found) | Existence check first. If found: restore with an anchor-set check. If not: bug-202's restore note closes with the reason | [[#bug202-restore]] |
+| L37 / X1 (bug-220, doc walk mints `kind=doc` memories) | Classification by location, route never refuse, one resolver shared with R-264a; own requirement and AC | [[#bug220-route]] |
+| Q8 open (brief rule) | Lines that change under Q8 b named | [[#q8-b]] |
+
+## Precondition: bug-208, the atomic save-state write (2026-11-13) {#pre-bug208}
+
+rel: derives-from -> [[bsd-task-26.3-r2-remedy-39bfc4a]]
+
+bug-208 ([[bsd-task-26.3-r2-remedy-39bfc4a#s-1]]): `handoff.compose_save_state` writes
+`savestates/<id>.md` with `Path.write_text` (`handoff.py:471` at `1cf3b9f`), which truncates
+first. A write that fails part-way (ENOSPC, EIO) leaves a truncated folder copy with a fresh
+mtime. The walk ranks that copy newest and skips the intact top-level copy that the error message
+says was kept. The row's status reads "fix before 26.5 ships the marker writer": no live dir
+takes the `savestates/` branch until this task's `--apply` writes `.memory-layout`. So AC-208 is
+RED and GREEN before AC-4's marker write is recorded GREEN, and the commit order shows it.
+{#pre-bug208-why}
+
+- **R-208a (s-1) atomic write.** The save-state is written to a dot-named temp file in
+  `target.parent` and `os.replace`d onto `target`, keeping the file mode
+  (impression `imp-atomic-write-changes-mode`). It reuses the existing atomic-write shape
+  (`memory_index._atomic_write_text`, bug-199) by calling one shared helper, never a second copy
+  ([[feedback_converge_repeated_shapes]]). A leftover temp file is skipped and named by the walk,
+  as today. {#r-208a}
+- **R-208b (m-2) the error tells the truth.** When the legacy top-level file was moved into
+  `savestates/` before the write failed, the error says so (the legacy file was moved to
+  `savestates/<id>.md` with its content intact). The CLI prints it, and the MCP verb raises it as a
+  `VerbError`. {#r-208b}
+- **R-208c (m-1) `created:` from the kept copy.** In a flat dir that holds `savestates/`, the
+  writer takes `created:` from the copy the walk keeps: the `savestate_pair` lookup is no longer
+  guarded by the marker (`handoff.py:432`). {#r-208c}
+- **R-208d (m-3) killing tests** for the three remedy behaviours that are unpinned at HEAD. Each
+  message branch of the newer-copy removal gets its own test. The `SaveStateWriteError` →
+  `VerbError` conversion is tested through the MCP verb, not only through the CLI. The
+  `remove_failed` catch is tested with the unlink made to fail. {#r-208d}
+- **AC-208.** Each part starts RED at HEAD, in task 23.0's sandbox: {#ac-208}
+  - (a) **Part-way failure.** A write that raises after some bytes are written (the monkeypatch
+    is registered in the mock registry):
+    - fresh-top pair: `rmx recall-state` returns the kept top-level copy byte-identical, and no
+      truncated `savestates/<id>.md` exists;
+    - fresh-folder pair: the folder copy is byte-identical to its pre-save bytes.
+  - (b) The error after a moved-legacy failure names the move (R-208b), on the CLI and on the MCP
+    verb.
+  - (c) A flat fresh-folder pair: the next save's `created:` equals the kept copy's (R-208c).
+  - (d) The three R-208d tests.
+  - Mutations, each killed:
+    - an in-place `write_text` kills (a);
+    - dropping the move clause kills (b);
+    - restoring the `if organised` guard kills (c);
+    - letting the raw `OSError` through kills (d)'s MCP leg.
+- Rows R-208b and R-208c are MEH findings that the bug-208 row names in its symptom but not in its
+  fix column. They ride here because they touch the same function. The lead may strike them (see
+  the spec-wave report).
+
+## bug-202's two anchor sets: check existence first (2026-11-13) {#bug202-restore}
+
+The bug-202 row says two memories lost ALL their anchors: `guardrail-coordinator-lane-dispatch`
+and `guardrail-two-writers-one-logical-db`. It says restoring them "needs a forced re-bridge
+(26.5 AC-5's force input)". AC-5's force input covers save-states only (Ca-6).
+[[bsd-pop-r1-c56782f#m4]] found no file with either id under `~/.claude/projects`,
+`~/claude_tools` or `~/github`. The rows themselves still exist in refmatrix's store: on
+2026-11-13, `rmx context guardrail-coordinator-lane-dispatch` returned its body. {#bug202-why}
+
+- **R-202a: existence check, read-only, run first.** At the start of this task, for each id: {#r-202a}
+  - read the row through refmatrix's daemon (`rmx memory get <id>`) and record its
+    `metadata.source_path`;
+  - test that path as written and as resolved;
+  - if it is absent, run a scoped search for a GMD file whose frontmatter `id` equals the id. The
+    search covers `~/.claude/projects/*/memory` and the repo roots in
+    [[plan-27-memory-fleet-rollout#survey]], skips `_frameworks_and_libraries`, and never starts
+    from `/` ([[feedback_never_search_from_root]]).
+
+  Every command and result goes to `workflow/review-output/26.5-bug202-existence.log`.
+- **R-202b: found → restore with a check.** The file is re-bridged past the content-hash gate
+  into the store that holds the row. It uses the same force input as AC-5's save-state re-bridge,
+  aimed at that one file (the per-file CLI shape is open item T2-O2 in the spec-wave report).
+  - The check is read through the daemon: the memory's `x#…` anchor concepts equal the file's
+    `{#anchor}` set, by name and by count. Before the restore the set is empty, which is the RED.
+  - This is a live write. It runs with the deployed `rmx` after this task is released, and it is
+    announced to the user first. {#r-202b}
+- **R-202c: not found → no restore.** The bug-202 row's restore note is closed with the reason:
+  the files are gone (see the R-202a log); the rows keep their bodies; and the anchors cannot be
+  rebuilt from a file that does not exist. The rows are not forgotten
+  ([[feedback_decay_never_loses_knowledge]]). {#r-202c}
+- **AC-202.** {#ac-202}
+  - The log exists. For each id it names the `source_path`, the existence result and the branch
+    taken.
+  - For R-202b, the anchor-set check passes.
+  - For R-202c, the bug-202 row's note carries the reason and the log path.
+
+## bug-220: a memory file is classified by where it lives (2026-11-13) {#bug220-route}
+
+rel: depends-on -> [[task-bug216-rule-docs-in-graph#r2]]
+
+bug-220: a doc walk lands every memory file as `kind=doc` in the project partition. The doc walk
+can be `rmx ingest-gmd <memdir>` without `--as-memory`, or any walk whose root covers a memory
+dir. The result is a second node per memory, of the wrong kind, invisible to recall's kind
+filter, with its `rel:` edges bound to the twin. The user (2026-11-13): "we should have a way to
+bridge memories into the graph as they are sometimes relevant". So the fix routes the file and
+never refuses it ([[plan-review-2026-11-13#x1]]). L37 folds it here because this task owns the
+memdir resolver (R-264a) and the marker reader. {#bug220-why}
+
+- **R-220a: one memdir resolver.** `memory_layout.memdir_of(path) -> Path | None` returns: {#r-220a}
+  - the nearest ancestor that holds a `.memory-layout` marker, read through `is_organised` (so a
+    malformed marker is still a hard error, ADR-0005 `#marker-encoding`);
+  - else the `~/.claude/projects/<slug>/memory` shape, tested on the unresolved path;
+  - else `None`.
+
+  R-264a's resolver IS this function plus its loud refusal on `None`. There is no second copy.
+- **R-220b: classification follows location.** In `collect_gmd_files` / `ingest_gmd_paths` with
+  `as_memory=False`, every file whose `memdir_of` is not `None` is taken out of the doc set and
+  ingested through the memory path of the same call. That means: {#r-220b}
+  - `kind=memory`, in the memory partition;
+  - 26.4's save-state rule, evaluated against that memdir;
+  - `iter_memory_files`' exclusions (dot-dirs, dotfiles, `MEMORY.md`, `README.md`).
+
+  No caller flag can mint a `kind=doc` row for such a file. The memory path already purges a prior
+  `kind=doc` row at the same path (`ingest_gmd.py:1376`). That purge runs on a rerouted file, so a
+  twin left by an earlier doc walk is removed the next time the file is walked.
+- **R-220c: counted and named.** The call's result carries `rerouted_to_memory: N` and lists the
+  files (the first 20, plus the count). The CLI prints it. A daemon walk records the count on its
+  op record. Nothing is silent ([[CLAUDE#no-silent-failures]]). {#r-220c}
+- **R-220d: after bug-216's prune, never before.** The reroute runs AFTER `should_ignore`
+  ([[task-bug216-rule-docs-in-graph#r2]]). A path the doc walk prunes, such as a dot-dir, is never
+  reached and so is never rerouted. bug-216's X1 pins stay green: {#r-220d}
+  - no entity under a dot-dir on a doc route;
+  - `.claude/PROJECT_PROFILE.md` lands once, as `kind=doc`;
+  - a memdir under `.claude` still lands as `kind=memory` through the bridge.
+- **R-220e: the store.** Rerouted files land in the store the call writes, exactly as
+  `--as-memory` does in the same call today. A memdir that resolves to ANOTHER store
+  (ADR-0005 `#store-resolution`) is open item T2-O1 in the spec-wave report. Until the lead rules,
+  the spec text holds to the same-call store, and the result names any rerouted file whose memdir
+  resolves elsewhere. {#r-220e}
+- **Every dir.** The reroute writes no file, so it is not marker-gated. ADR-0005 `#marker` lists it
+  among the behaviours that reach every dir (amended 2026-11-13). {#r-220-every-dir}
+- **AC-220.** Each case starts RED at HEAD, in task 23.0's sandbox, with the real CLI, re-read
+  against bug-216's merged walker before RED: {#ac-220}
+  - (a) `rmx ingest-gmd <memdir>` without `--as-memory`, over a fixture memdir under
+    `HOME/.claude/projects/<slug>/memory`. The fixture holds 2 feedback memories, 1 save-state,
+    `MEMORY.md` and a dot-dir file. Expected:
+    - 0 `kind=doc` rows with a path under the memdir;
+    - 3 `kind=memory` rows, the save-state stored as `session/recall-state`;
+    - `rerouted_to_memory: 3` printed, with the names;
+    - no row for the dot-dir file or for `MEMORY.md`.
+  - (b) The same on a FILE target and on a SUBDIR target (`feedback/`): the same classification.
+    These share R-264a's fixtures.
+  - (c) A marker-on dir outside the projects shape (a throwaway dir with a valid
+    `.memory-layout`): rerouted by the marker branch.
+  - (d) A doc walk over a root that holds `docs/x.md` and a memdir: `docs/x.md` stays `kind=doc`,
+    and only the memdir's files reroute.
+  - (e) A store that holds a `kind=doc` twin from a HEAD-built doc walk: after the next walk there
+    are 0 twins and one `kind=memory` row per file.
+  - (f) bug-216's X1 pins re-run green.
+  - Mutations, each killed:
+    - dropping the reroute kills (a);
+    - rerouting before `should_ignore` kills (f) (an entity appears under a dot-dir);
+    - a second resolver copy for R-264a that ignores the marker kills (c) and AC-264 (a);
+    - dropping the printed count kills (a)'s count assertion.
+
+## Lines that change under Q8 b (2026-11-13) {#q8-b}
+
+Q8 is open ([[open-questions]]). This spec holds under Q8 a or c, where save-states stay bridged
+as `session/recall-state` rows. Under Q8 b (save-states and digests kept out at ingest), these
+lines change:
+
+- AC-5's one-time forced re-bridge of save-states, and its `forced` stat, are no longer a
+  re-ingest. What replaces them (removing the existing save-state rows) belongs to the held G22
+  spec, and any live purge goes through plan-22's audited path (D-Q1).
+- R-264b's sticky-row repair has no save-state rows left to repair.
+- AC-6's first bullet (`rmx memory recall` returns a moved save-state) is replaced by
+  `rmx recall-state` alone.
+- R-220b: a rerouted save-state is skipped and counted, not ingested.
+- AC-2's file-side save-state type rewrites (26.4 AC-3) do NOT change: they are file edits.
