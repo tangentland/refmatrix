@@ -73,6 +73,28 @@ labelled and 6 R12 uses. Chosen: names-only (Q13), applied to non-human turns to
 | h13 | Order of operations on the recall channel: (1) retrieval, the four-source merge and the exclusions, unchanged; (2) 25.1b's ladder over EVERY row, with the line reserved; (3) each held row leaves its tier and becomes a HELD member of 25.1b's `still in play` line; (4) the line renders its held and over-budget members as 25.1b defines; (5) 25.1b R12's clamp, the safety net. A held row whose `full`-run tier was already the line keeps its place and is marked held | contra-b CB-1 asks for the order of held removal and the ladder to be stated; the order follows from h9, and steps 2 and 3 cannot swap without re-spending |
 | h14 | The live A/B's outcome counts only R12 explicit uses plus `cited_in_answer`, never 21.5's unbuilt legs | L27, L18's rule: 21.5's matcher measures proximity, not use (R12 pilot: 7% CAUSED) and is frozen until the experiment reports (D-Q3, D-Q4) |
 
+## Open for the lead: which ladder tier makes an item held {#open-held-tier}
+
+h1 says an item is HELD when it was "delivered FULL". Under 25.1 rev 7 there were only two forms,
+the item's own line (hook line, sometimes with a body) and the names line. "FULL" therefore meant
+"its own line", and v1/v2 scored that. 25.1b's ladder has four forms: body, excerpt, pointer and
+line member. No D-Q or L-row says which of them sets "held". The choice changes what tier pinning
+replaces, and it changes v3. This revision does not pick one. R2's `record_full` and h1 read
+"rendered at any tier above the line" until the lead settles it. {#open-held-tier-lead}
+
+- **(a) Recommended: tier-aware.** `record_full` stores the tier each item was rendered at. An
+  item is held for a call when its stored tier is the same as, or richer than, the tier the
+  `full` run gives it now. A body held covers a body, an excerpt or a pointer. A pointer held does
+  not cover a body, so the agent never loses content it was never shown. AC-2 gains a leg for
+  this.
+- **(b) Any rendering above the line sets held.** This is v2's literal reading. It is simpler, but
+  an item shown only as a pointer at prompt 2 would be reduced to a name at prompt 5 even when
+  prompt 5 would have shown its body.
+- **(c) Only a body (tier 1) sets held.** Safe, but on `prompt_recall` at 4,000 B the pack is
+  mostly pointers (25.1 d3), so recall would almost never dedupe.
+
+rel: depends-on -> [[task-25.1b-hook-output-ladder]]
+
 ## Requirements {#requirements}
 
 1. **R1 The held set.** `stm.held_items(root, session, *, prompt_sha, t0) -> HeldSet` reads
