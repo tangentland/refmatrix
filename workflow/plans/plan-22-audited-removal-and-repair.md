@@ -123,6 +123,7 @@ for the user's explicit removal commands:
 | `purge_path` on a deleted or ignored file (sync; `vacuum` step 2) | derived cleanup WITH a manifest; learned rows go to it | 22.6 R3 |
 | sync's GMD legacy purge on a `.md` edit (and the non-GMD purge-before-re-add, the same act) | a BUG (bug-107), fixed to keep learned rows; 16.6's verifier judges them | 22.6 R4 |
 | `vacuum`'s orphan-evidence delete | derived cleanup with a manifest AND a `facts.log` event | 22.6 R5 |
+| `vacuum`'s stale-evidence delete (both ends live, edge gone; learned-grep rows excluded; round 17) | derived cleanup with a manifest AND `evidence_remove` events | 22.6 R10 |
 | `unprotect` | not removal; its `protect` event carries `source` | 22.6 R6 |
 | `fold_concept_dups` (`rmx memory dedup`, MCP `rmx_memory` `dedup`) | a merge; plan-22 entry point owned with merge writes by the helix plan | 22.4 R5 (handed over, d9j) |
 | `merge_partition` | a merge; plan-22 entry point owned by the helix plan; dropped fragment bits go to the bug-105 hotfix's manifest (d9ac) | 22.4 R5; 22.6 R7 |
@@ -331,6 +332,7 @@ APPROVED; the task-level changes are 22.1a round 9 and 22.4's deferral note. `sr
 |---|---|
 | CD-9 (body "Drafting" vs frontmatter `approved`, POP "APPROVED d9cm") | [[#root]] status line |
 | L6 / CD-6 (bug-219's delete half is census input; widen 22.1a to a dead entity side) | [[task-22.1a-provenance-free-classes#rev-round-9]]: the widening is the audit's (`orphan-evidence`, report only), because 22.6 R5 already removes that side; [[#scope]] dangling bullet; [[#tasks]] 22.1a row |
+| lead rulings 2026-11-13 (L6 read as report-only, confirmed; the stale-evidence remover is option (a)) | [[task-22.6-removal-entry-points#r10]] (`vacuum` step 3b), [[#scope]] table row; 22.1a [[task-22.1a-provenance-free-classes#r1-stale-evidence]] |
 | L22 (22.4 and the two merge entry points become deferral rows under T6: "no host plan; plan-20 drafting", d9j) | [[deferral_registry#registry]] three rows; [[#tasks]] 22.4 row; [[task-22.4-merge-writes#rev-2026-11-13]] |
 | L2 (plan-22 after 16.6's Wave-1 slice and 17.1, the order of record) | no change: [[#dependencies]] already says so; the 2026-11-13 queue (item 9) now matches it |
 

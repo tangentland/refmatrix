@@ -45,14 +45,17 @@ user's pattern, to keep 16.5 R3's floor for BRE metas (L32), so R4's GO branch i
 translator is built. bug-174 closes when 16.5 lands, as a 16.5 R8 row (`fixed by task-16.5
 R1-R3`). {#closed-body}
 
-**The R4 re-measure (L42).** L42 keeps R4's re-measure (M ≥ 30 or 2026-12-31) in the backlog as
-the trigger that would reopen the path-less question as a user decision. As written, its data are
-the `bre_meta_literal: true` `query.log` rows that only R4's NO-GO branch writes, and that branch
-is not built; after 16.5 a path-less BRE call goes to the floor and writes no such row. The
-trigger therefore needs a re-hosted data source before it can fire; this is reported to the lead
-as an open item, not decided here. The nearest existing measure is 16.4's report of the share of
-taught concepts with a BRE meta, beside `forgone_index_share` ([[task-16.5-explicit-grep-hands-off#r3]],
-last paragraph). {#closed-remeasure}
+**The R4 re-measure (L42), re-hosted on 16.4 (lead ruling, 2026-11-13).** L42 keeps R4's
+re-measure as the trigger that would reopen the path-less question as a user decision. As written,
+its data were the `bre_meta_literal: true` `query.log` rows that only R4's NO-GO branch writes,
+and that branch is not built; after 16.5 a path-less BRE call goes to the floor and writes no such
+row. The trigger now lives in task 16.4's report: [[task-16.4-measurement#r4-reopen]] fires once,
+on the first run with N ≥ 30 taught concepts carrying a BRE meta or the first run on or after
+2026-12-31, whichever comes first, and the question goes to the user with the measured
+`bre_concept_share`. The `plan-of-plans` queue line that pointed at R4 is the lead's to repoint.
+{#closed-remeasure}
+
+rel: related-to -> [[task-16.4-measurement#r4-reopen]]
 
 **Premise correction (L24, CD-8).** This spec's urgency rested on "`rmx grep` … which agents and
 the PreToolUse rewrite reach directly". Since 2026-10-15 that is false: `~/.refmatrix/learn.off`

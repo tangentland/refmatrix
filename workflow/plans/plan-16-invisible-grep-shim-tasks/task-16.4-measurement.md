@@ -8,7 +8,7 @@ metadata:
   status: pending
   created: 2026-10-06
   revised: 2026-10-14
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Task 16.4: measurement {#root}
@@ -19,7 +19,8 @@ metadata:
 > scored on complete outputs only, with a forward-collected oracle.
 > **Wave:** 2, after 16.2 ships ([[plan-16-invisible-grep-shim#waves]]); its acceptance window
 > opens only after 16.2 and 16.3 deploy together AND the user runs `rmx learn on --global` (R0,
-> d9bj; revision round 8, [[#rev-round-8]]).
+> d9bj; revision round 8, [[#rev-round-8]]). Revision round 9 (2026-11-13) hosts the bug-174
+> reopen check re-homed from task 25.5 R4 ([[#rev-round-9]]).
 > Depends on: [[task-16.1-argv-faithful-learner]], [[task-16.2-invisible-shim]]. Tests run in
 > plan-23 task 23.0's sandbox.
 
@@ -32,6 +33,22 @@ rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
 rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
 rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision round 9 (2026-11-13) {#rev-round-9}
+
+Lead ruling of 2026-11-13 on the spec wave's open item 4: task 25.5 is closed as superseded by
+16.5 (D-Q7, L32, L42), and its R4 re-measure, which L42 keeps as the trigger that would reopen the
+path-less translate-vs-floor question, had no data source left (its `bre_meta_literal` rows were
+written only by 25.5's unbuilt NO-GO branch). It is re-hosted here on `bre_concept_share`, with
+25.5 R4's rule: N ≥ 30 or 2026-12-31, whichever comes first.
+
+| finding / decision | answered in |
+|---|---|
+| the 25.5 R4 reopen trigger re-hosted (option a) | [[#r4]] `bre_concept_n` row and [[#r4-reopen]]; AC-9 + mutations; [[task-25.5-substring-bre-metas#closed-remeasure]] |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: related-to -> [[task-25.5-substring-bre-metas#closed-remeasure]]
+rel: related-to -> [[task-16.5-explicit-grep-hands-off#r3]]
 
 ## Revision round 8 (2026-10-15) {#rev-round-8}
 
@@ -215,7 +232,7 @@ throwaway store with no hub registration. {#r2}
 - O2 (Grep-tool `content` mode) uses the same rules. Historical O2 is empty, so 16.3 is measured by
   its own AC-1 until forward O2 accrues.
 
-**R4. Pre-registered metrics,** written in the harness docstring before the first run:
+**R4. Pre-registered metrics,** written in the harness docstring before the first run: {#r4}
 
 | metric | definition | gate |
 |---|---|---|
@@ -228,11 +245,22 @@ throwaway store with no hub registration. {#r2}
 | unobserved_share | `unobserved` segments / (all grep segments − `unattributable`) (forward oracle); an upper bound (learn-off confound, R1) | reported; the cost of d-3 |
 | attribution buckets | counts of `attributed`, `ambiguous`, `unattributable`, `throttled-explained`, `unobserved`, and route-2 records | reported |
 | bre_concept_share | taught `query/*` concepts whose pattern carries a BRE meta / all taught concepts (16.5 R3: `rmx grep` never reads them) | reported |
+| bre_concept_n | the numerator of `bre_concept_share` (round 9) | reported; drives [[#r4-reopen]] |
 | forgone_index_share | path-less invocations the pre-16.2 rich path answered from the index, replayed in arm A's worktree in rich mode on a snapshot store that has NOT seen arm B's teaching / all | reported; the cost of d-1 |
 | timeouts | learner `outcome=timeout` / observed | reported; 16.1 R1b claims it is near 0 |
 | shim_overhead | 16.2 AC-9 | as 16.2 |
 
 If B misses an evaluated gate, the plan is re-decided. Thresholds are not edited after a run.
+
+**The bug-174 reopen check (round 9; re-homed from 25.5 R4).** {#r4-reopen} The first harness run
+with `bre_concept_n ≥ 30`, or the first run whose run date is on or after 2026-12-31, whichever
+comes first, prints in its dated row `bug-174 reopen check: bre_concept_share <x> (n=<N>, trigger
+<n|date>)`. The run date is a harness input (`--as-of`, default today), so the date half is
+testable. The check fires once: the report records that it fired, and later runs print only the
+metric. The question it opens (translate BRE on the path-less index leg, or keep 16.5 R3's floor)
+goes to the user with that number as a Q-id; it is not decided by a band here (L32: a reopen is a
+user question). If no run exists by 2026-12-31 (the window opens only after the flip, [[#r0]]),
+the date half fires on the first run after it.
 
 **Closure rule (#s-r3-9).** plan-16 cannot move to `completed` while `n_complete < 30`. If 14 days
 after the flip (R0) the forward oracle still has `n_complete < 30`, the harness's dated row says
@@ -298,13 +326,20 @@ This deferral is anchored to that date and to this task. It is not open-ended.
    with the marker removed and `--window-start` given, the same run prints `enabled=True
    rule=default` and evaluates the gates. A run with no `--window-start` is labelled `no-window`.
    Mutation "score regardless of the switch" FAILS it (the marker run reports a verdict).
+9. **The reopen check fires on its rule (round 9; [[#r4-reopen]]).** On a fixture store with 100
+   taught `query/*` concepts: with 30 carrying a BRE meta and `--as-of 2026-12-01`, the row prints
+   the check line with `trigger n`; with 29 and `--as-of 2026-12-30`, no line; with 29 and
+   `--as-of 2026-12-31`, the line with `trigger date`; a second run after a firing run prints no
+   line. Mutations, each FAILS it: "N counts every taught concept" (the 29-of-100 run at
+   2026-12-30 fires); "the date half is ignored" (the 2026-12-31 run is silent); "fire on every
+   qualifying run" (the second run prints the line).
 
 ## Files to modify {#files-to-modify}
 
 | File | Change |
 |------|--------|
 | `eval/production/grep_observed_learning.py` (new) | extraction, completeness, forward join, routes, two arms (worktree), metrics, `--since` |
-| `tests/test_grep_observed_learning.py` (new) | AC-3, 4, 5, 7 |
+| `tests/test_grep_observed_learning.py` (new) | AC-3, 4, 5, 7, 9 |
 | `docs/measurements/grep-observed-learning.md` (new), `docs/INDEX.md` | report + index row |
 
 ## Test strategy {#test-strategy}

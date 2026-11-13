@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-14
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Task 22.6: removal entry points and the bug-107 paths {#root}
@@ -17,8 +17,9 @@ metadata:
 > round 6, 2026-10-15, [[#rev-round-6]], round 7, 2026-10-15, [[#rev-round-7]], round 8,
 > 2026-10-15, [[#rev-round-8]], round 9, 2026-10-15, [[#rev-round-9]], round 10,
 > 2026-10-15, [[#rev-round-10]], round 11, 2026-10-15, [[#rev-round-11]], round 12,
-> 2026-10-15, [[#rev-round-12]], round 13, 2026-10-15, [[#rev-round-13]], and round 14,
-> 2026-10-15, [[#rev-round-14]])
+> 2026-10-15, [[#rev-round-12]], round 13, 2026-10-15, [[#rev-round-13]], round 14,
+> 2026-10-15, [[#rev-round-14]], and round 17, 2026-11-13: R10, the stale-evidence cleanup,
+> [[#rev-round-17]])
 > Wave: 1, after 22.2 (it needs the engine, the intent-record form and restore); parallel to
 > 22.5. R4 (the sync edit fix) needs only 16.6's Wave-1 slice and may land first.
 > Depends on: 22.2 (engine, primitives, R4 intent-record form, `removal_restore`), 22.1a
@@ -490,6 +491,29 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
    before its own purges ([[task-22.2-repair-then-remove#r2]]); for the purges of paths outside
    the engine, (b) is drained by the `dangling-evidence` class
    ([[task-22.1a-provenance-free-classes#r1-dangling]]), never silently.
+10. **R10 Stale evidence: derived cleanup with a manifest (round 17; lead ruling 2026-11-13 on
+    bug-219).** {#r10} A STALE evidence row is a `linkage_evidence` row whose entity and concept
+    are both alive under `LinkLiveness` ([[task-22.1a-provenance-free-classes#r1-dangling]]) and
+    which has no `entity_links` row with the same `(entity_id, linkage_id, concept_id)`: the edge
+    it annotated is gone, both ends remain (22.1a counts them,
+    [[task-22.1a-provenance-free-classes#r1-stale-evidence]]). It is derived cleanup under
+    [[refmatrix/adr-0004-unified-location-space-index#a14-removal-scope]]: an ingest evidence
+    row is re-derived by re-ingesting its file, so removing one whose edge is gone loses nothing.
+    - **Learned-grep rows are excluded.** A row whose `detail` starts `learned from grep` is
+      knowledge under plan-22 (its classes and 16.6's verifier judge it): R10 never selects it,
+      and counts it `stale_evidence_kept_learned`.
+    - **Where it runs:** `vacuum` step 3b, after R5's step 3, in the same `d._store_lock` hold.
+      Step 3 owns every row with a dead entity; step 3b selects only rows with both ends live,
+      so no row has two removers.
+    - **Manifest first:** R2's cleanup-manifest form, written streaming, of every selected row
+      (identity `(entity_id, linkage, concept_id, file, line, detail)`, both ends by name and
+      kind, weight), then the delete; a manifest write failure aborts step 3b before any row
+      changes (R8).
+    - **Replayable:** each deleted row logs 22.2 R3's `evidence_remove` row op by name, through
+      `edge_records.row_event` with `c_kind` (d9bl: one format, one resolver; no new op), so a
+      rebuild from `facts.log` does not resurrect it.
+    - **Counted and printed** by `vacuum`: `stale_evidence_dropped` split by `detail` prefix
+      (`rel:`, other), and `stale_evidence_kept_learned`.
 
 ## Acceptance criteria {#acceptance}
 
@@ -765,6 +789,18 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
    d9cg, which requires that event and makes it count-neutral by absorption). The compaction
    case of this fixture is 22.2 AC-4e's concept-end variant.
 
+10. **Stale evidence (R10; round 17).** {#ac-10} A sandbox store holds four `linkage_evidence`
+    rows: (a) a `rel:` row whose ends are live and whose `entity_links` row was unlinked; (b) a
+    `learned from grep` row in the same state; (c) a `rel:` row with its edge present; (d) a row
+    whose entity is dead (R5's). After `vacuum`: (a) is in step 3b's manifest and gone, with one
+    `evidence_remove` event; (b) remains, counted `stale_evidence_kept_learned: 1`; (c) is
+    untouched; (d) is in step 3's manifest only, never step 3b's. A rebuild from a copy's
+    `facts.log` holds (b) and (c) and neither (a) nor (d). Mutations, each FAILS it: "drop the
+    learned exclusion" ((b) removed); "skip the `evidence_remove` event" (the rebuild resurrects
+    (a)); "select rows whose edge is present" ((c) removed); "select rows with a dead end" ((d)
+    in both manifests); "write the manifest after the delete" (the manifest-failure injection
+    leaves (a) deleted).
+
 ## Test strategy {#test-strategy}
 
 All tests run inside task 23.0's sandbox (d1a/d1b): redirected `$HOME`/global root/registry/
@@ -790,6 +826,8 @@ mutation is pre-registered and must turn its test RED.
 | `src/refmatrix/cli.py` (also) | `sync --invalidate` as a re-ingest (R4); `memory forget` without the `_store()` fallback (R1) |
 | `src/refmatrix/store.py` (also) | `entities.protect_source` column + `protect_source` keyword on the protect writers; `dump_catalog_to_log` emits `source` (R6); `purge_legacy_relpath_doc` (R4) |
 | `tests/test_removal_entry_points.py` (new) | AC-1..AC-9, AC-6b (base, swapped, today's-shape and partition variants), AC-6c (and its kind variant), AC-6d (fold == rebuild over 22.2 AC-3, AC-3d/3f, AC-7 and AC-6b's logs), AC-6d also over AC-6e's logs, AC-6e (base, variants 1, 2 and 3, compacted variant), AC-6f (the AST check of the one predicate and of `restated_copy`), AC-9b, AC-9c, and 22.2 AC-4e (purge, compact, restore, rebuild; built on `untrack`, so it lands here; d9cg) |
+| `src/refmatrix/store.py` (also, round 17) | `vacuum` step 3b (R10): streaming manifest of stale non-learned evidence rows, delete, `evidence_remove` per row through `edge_records.row_event`, the two counters |
+| `tests/test_removal_entry_points.py` (also, round 17) | AC-10 |
 | `tests/test_learned_evidence.py` (16.6's) | 16.6 AC-11's test is REWRITTEN by this task (r4 m-5): from R3/R5 on, `purge_path` of a missing file and `vacuum` move the sidecar row into a manifest (AC-4, AC-6) instead of leaving it; AC-11 keeps only its `orphaned_provenance` count for paths this task does not route |
 
 ## Revision round 3 (2026-10-14) {#rev-round-3}
@@ -985,6 +1023,20 @@ unchanged. No requirement of this task changes: the rule is 22.2's restore.
 
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 rel: depends-on -> [[task-22.2-repair-then-remove#r4-relink]]
+
+## Revision round 17 (2026-11-13) {#rev-round-17}
+
+Lead ruling of 2026-11-13 on the spec wave's open item 3 (bug-219's stale evidence rows: both
+ends live, the edge gone; [[plan-review-2026-11-13#lead]] L6): option (a), a 22.6-style
+derived-cleanup entry with a manifest, the `detail` split excluding learned-grep rows. Code
+claims re-read at `1cf3b9f`. `src/` unchanged.
+
+| finding / decision | answered in |
+|---|---|
+| stale-evidence remover (no class or task owned it; 22.1a round 9 counted it) | [[#r10]]; [[#ac-10]]; [[#files-to-modify]] two rows; [[task-22.1a-provenance-free-classes#rev-round-9]] last row now names this |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: related-to -> [[task-22.1a-provenance-free-classes#r1-stale-evidence]]
 
 ## Revision round 16 (2026-10-15) {#rev-round-16}
 

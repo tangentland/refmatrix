@@ -1,8 +1,8 @@
 ---
 gmd: "0.1"
 id: task-bug218-reinforcement-edge-direction
-title: "Task bug-218: one storage orientation for reinforces / contradicts edges — R0 confirms or refutes the reversed read, then both writers and the reader agree"
-tags: [task, bug-218, reinforcement, linkages, direction, memory, t6]
+title: "Task bug-218: one storage orientation for reinforces / contradicts edges — R0 confirms or refutes the reversed read, then both writers and the reader agree (with bug-223)"
+tags: [task, bug-218, bug-223, reinforcement, linkages, direction, memory, t6]
 metadata:
   node_type: task
   status: drafting
@@ -12,9 +12,8 @@ metadata:
 
 # Task bug-218: reinforcement reads its edges in one orientation {#root}
 
-> Status: Drafting (2026-11-13, spec wave G20). Not approvable until open decision [[#o-1]] is
-> taken; every requirement below is written so that it holds for either option except the lines
-> marked "per O-1".
+> Status: Drafting (2026-11-13, spec wave G20; revision 1 the same day folds the lead's rulings:
+> O-1 = A, O-2 = (a), bug-223 hosted as [[#r7]]; [[#rev-1]]).
 > Track: T6 (graph integrity), queue item 9, first ([[plan-review-2026-11-13#queue]]; L8 puts
 > bug-218 on T6).
 > Depends on: bug-216 merged and live. Its R6 changes which entity a bare `rel:` target binds
@@ -64,9 +63,10 @@ the two direction-sensitive graph readers of the same rows: `pagerank.py` (which
 `contradicts` connectivity) and `brief.contradicted` (which de-duplicates pairs, so it does not
 depend on orientation). {#why-exposure}
 
-## Open decision O-1: the canonical orientation {#o-1}
+## Decision O-1: the canonical orientation (lead, 2026-11-13: A) {#o-1}
 
-No D-Q or L-row settles which orientation wins. Options, recommendation first:
+**Decided: A.** The GMD orientation is canonical; `memory_link` changes; the reader swaps its
+joins. The options as they were put, for the record:
 
 1. **(A, recommended) The GMD orientation is canonical** (`concept_id` = source, `entity_id` =
    target, as for every `rel:` verb). `memory_link` (CLI local path and daemon op) changes to
@@ -81,7 +81,7 @@ No D-Q or L-row settles which orientation wins. Options, recommendation first:
 3. **(C) The reader infers the source by kind** (the `kind='memory'` side is the source).
    Rejected: a memory reinforcing another memory, the common GMD case, has no answer.
 
-Under B, [[#r2]] and [[#r4]] change as noted in each; everything else stands. {#o-1-impact}
+B and C are not built. {#o-1-impact}
 
 ## Requirements {#requirements}
 
@@ -105,28 +105,34 @@ Under B, [[#r2]] and [[#r4]] change as noted in each; everything else stands. {#
      rows whose source (per its writer's orientation) is not `kind='memory'` ([[#r3]]'s drop).
      Results go to `workflow/measurements/bug218-direction-census-<date>.md`, counts only, one
      row per store, with the copy's timestamp. {#r0b}
-2. **R1 One orientation, both writers (per O-1).** The GMD ingester and `memory_link` (the CLI's
-   local path and `_op_memory_link`, which the MCP `rmx_memory` `link` action reaches) store "m
-   reinforces / contradicts c" as the SAME `entity_links` row. The orientation is written once, as
-   a named constant or docstring in `reinforcement.py` that both the writer change and the reader
+2. **R1 One orientation, both writers (O-1 = A).** "m reinforces / contradicts c" is stored as
+   `concept_id = m` (the source), `entity_id = c` (the target), the orientation the GMD ingester
+   writes for every `rel:` verb. `memory_link` changes to it: the CLI's local path and
+   `_op_memory_link` (which the MCP `rmx_memory` `link` action reaches) call
+   `link(linkage, m_id, cid, weight=…)`. The ingester is unchanged. The orientation is written
+   once, as a docstring paragraph in `reinforcement.py` that the writer change and the reader
    cite. {#r1}
-3. **R2 The reader reads that orientation (per O-1).** `reinforcement_scores(store, ids)` returns
-   the signal of each TARGET id: the sum over its incoming `reinforces` / `contradicts` rows,
-   decayed on the SOURCE entity's `entities.created_at`, clamped to ±cap.
+3. **R2 The reader reads that orientation.** `reinforcement_scores(store, ids)` returns the
+   signal of each TARGET id: the sum over its `reinforces` / `contradicts` rows with
+   `el.entity_id IN (<ids>)`, decayed on the SOURCE's `entities.created_at` (the
+   `el.concept_id` side, joined `e.id = el.concept_id`), clamped to ±cap.
    `reinforcement_components(store, id)` lists the SOURCE entities (id, name, kind, age, decay,
-   contribution). Under A this swaps both SQL joins; under B the SQL is unchanged and the change
-   is in the ingester. {#r2}
+   contribution). Both SQL joins swap. {#r2}
 4. **R3 Only memories reinforce.** A row contributes only when its source is `kind='memory'`,
    which is the module docstring's definition ("Memories accumulate confidence on a concept") and
    the bug row's proposed fix. A doc that cites a memory with `rel: reinforces` (task specs do)
    contributes nothing and is counted by R0b, so the drop is measured, not silent. {#r3}
-5. **R4 Existing rows in the non-canonical orientation.** If R0b finds any (under A: the
-   `memory_link`-written rows; under B: every GMD-written row of the two verbs), they are
-   re-oriented by a one-shot, dry-run-by-default repair that prints each row by name, writes a
-   manifest before any change, logs `unlink` + `link` events through `edge_records.edge_fields`
-   so a rebuild reproduces the result, and is applied by the lead, announced first, with a backup
-   (CLAUDE.md `#permissions`). The route is open decision [[#o-2]]. Under A with R0b at 0
-   re-orientable rows on every store, R4 builds nothing and says so in the summary. {#r4}
+5. **R4 Existing `memory_link`-written rows are re-oriented (O-2 = (a)).** If R0b finds any,
+   one committed command in the bug-195 shape ([[task-bug195-cut-hook-repair#r1]]), dry-run by
+   default, `--apply` to write: it prints each non-canonical row by name, writes a manifest of
+   every row it will change BEFORE any change, and per row logs an `unlink` of the old
+   orientation and a `link` of the new one through `edge_records.edge_fields`, so a rebuild from
+   `facts.log` reproduces the result. A re-orientation removes no knowledge (the same statement
+   is written back), so it is not plan-22's knowledge removal
+   ([[refmatrix/adr-0004-unified-location-space-index#a14-removal-scope]]). **USER-GATED live
+   step:** each live store's `--apply` is announced first, with a backup of its catalog slot and
+   `facts.log`, and runs only on the user's go. With R0b at 0 rows on every store, R4 builds
+   nothing and the summary says so. {#r4}
 6. **R5 Fixtures and benches seed through the writers.** `tests/test_reinforcement.py`, both
    `eval/reinforcement_*bench.py` scripts and the new tests create reinforcement edges only
    through the production writers (the `memory_link` op's store-level body or a GMD ingest),
@@ -135,6 +141,19 @@ Under B, [[#r2]] and [[#r4]] change as noted in each; everything else stands. {#
 7. **R6 Stated where a reader looks.** The `reinforcement.py` module docstring and `rmx memory
    link --help` state the stored orientation; the bug-218 row's "only writer" premise is corrected
    when the row is updated. {#r6}
+8. **R7 The `RMX_BOOST_REINFORCE` read fails loudly (bug-223).** In `Store.content_rank`, the
+   block that reads `reinforcement_scores` for the term boost is wrapped in `except Exception:
+   pass` (`store.py:5624-5625` at `1cf3b9f`): with the boost switched on, any failure of the read
+   this task rewrites drops the boost silently and the caller sees an unboosted ranking as if it
+   were boosted. The `except … pass` is removed; a failure propagates, re-raised with context
+   (`RMX_BOOST_REINFORCE: reinforcement signal read failed: <error>`). Raising, not
+   count-and-continue, because the boost is an opt-in tuning channel: a run that silently ran
+   without it reports a tuning result that never applied it, and with the variable unset the
+   block never runs, so nothing else can reach the raise. The three sibling silent guards in the
+   same method (the term-boost loop's two `except Exception: continue` and `_document_priors`'
+   `except Exception: pass`, `store.py:5631-5658`) are read in the same pass and listed in the
+   summary, each as "stated reason" or "silent failure"; a silent one is logged as its own bug
+   row, not fixed here. {#r7}
 
 ## Acceptance criteria {#acceptance}
 
@@ -143,9 +162,9 @@ Under B, [[#r2]] and [[#r4]] change as noted in each; everything else stands. {#
    at HEAD, see R0a's refute branch. {#ac-1}
 2. **AC-2 (R1) Writer parity.** For the same m and c, the GMD ingest, the `memory_link` daemon
    op, and the CLI's local `memory_link` path each produce exactly one `entity_links` row, and the
-   three rows have equal `(entity_id, concept_id)`. Mutations, each FAILS it: revert the
+   three rows have `concept_id = m` and `entity_id = c`. Mutations, each FAILS it: revert the
    `memory_link` op's orientation; revert the CLI local path's orientation (the daemon-down
-   route); under B, drop the ingester's two-verb case. {#ac-2}
+   route). {#ac-2}
 3. **AC-3 (R2) Signal and decay.** c is created now; m (created 30 days ago) reinforces c with
    weight 1.0; m2 (created now) contradicts c with weight 0.4; halflife 30 days, cap 5. `reinforcement_scores`
    gives c = 0.5 − 0.4 = 0.1 (±1e-6) and m = m2 = 0.0. Mutations, each FAILS it: key the signal
@@ -174,10 +193,17 @@ Under B, [[#r2]] and [[#r4]] change as noted in each; everything else stands. {#
    `facts.log` of a copy reproduces the applied rows. On the live stores, the post-apply R0b
    census reads 0 non-canonical rows. Mutation: apply without the `unlink` event: the rebuild
    holds both orientations and FAILS. {#ac-9}
+10. **AC-10 (R7, bug-223) The boost read fails loudly.** In the sandbox, with
+    `RMX_BOOST_REINFORCE=1` and `refmatrix.reinforcement.reinforcement_scores` replaced by a
+    stub that raises (a dependency of the method under test, not the method; the stub is
+    registered in `workflow/test_mock_registry.md`), a `content_rank` call raises an error whose text starts
+    `RMX_BOOST_REINFORCE: reinforcement signal read failed`. With the variable unset, the same
+    store's call returns normally (the block never runs). Mutation: restore `except Exception:
+    pass`: FAILS (the call returns a ranking). {#ac-10}
 
-## Open decision O-2: the route for R4's repair {#o-2}
+## Decision O-2: the route for R4's repair (lead, 2026-11-13: a) {#o-2}
 
-Only needed if R0b finds rows to re-orient. Options, recommendation first:
+**Decided: (a)**, a USER-GATED live step ([[#r4]]). The options as they were put:
 
 1. **(a, recommended) A one-shot repair in the bug-195 shape** ([[task-bug195-cut-hook-repair#r1]]:
    one committed command, dry-run default, `--apply`), with the manifest and events of R4. A
@@ -192,28 +218,36 @@ Under Q8 b (save-states and `workflow/` excluded at ingest), the GMD rows whose 
 `workflow/` doc disappear on re-ingest. R3 already gives them no weight, so no requirement changes;
 R0b's counts would differ.
 
+## Revision 1 (2026-11-13, lead rulings) {#rev-1}
+
+| ruling | answered in |
+|---|---|
+| O-1 = A (GMD orientation canonical; `memory_link` changes; the reader swaps its joins) | [[#o-1]], [[#r1]], [[#r2]], [[#files]] (`ingest_gmd.py` unchanged) |
+| O-2 = (a) (one-shot bug-195-shape repair, manifest, `unlink` + `link` events, dry-run default), a USER-GATED live step | [[#o-2]], [[#r4]], [[#ac-9]] |
+| bug-223 (the `except Exception: pass` around the `RMX_BOOST_REINFORCE` read) is owned here | [[#r7]], [[#ac-10]], [[#files]]; removed from [[#out-of-scope]] |
+
 ## Out of scope {#out-of-scope}
 
 - Turning the channel on (`RMX_REINFORCE_ALPHA`, `RMX_BOOST_REINFORCE`): a ranking change, gated
   by ADR-0004's per-type evaluation, not by this fix.
-- The `except Exception: pass` around the `RMX_BOOST_REINFORCE` read in `Store.content_rank`
-  (`store.py:5626`): a silent failure on a ranking path, reported to the lead for its own bug row.
 - bug-219 (stale evidence rows): plan-22's census, [[task-22.1a-provenance-free-classes#rev-round-9]].
 
 ## Files {#files}
 
 | file | change |
 |---|---|
-| `src/refmatrix/reinforcement.py` | R1 orientation stated once; R2 reader joins (under A); R3 kind filter; docstring (R6) |
-| `src/refmatrix/cli.py` (`memory_link`, `--help`) | R1 under A (local path orientation); R6 help text |
-| `src/refmatrix/daemon.py` (`_op_memory_link`) | R1 under A |
-| `src/refmatrix/ingest_gmd.py` | R1 under B only |
-| `tests/test_bug218_reinforcement_direction.py` (new) | AC-1..AC-6, AC-9 sandbox half |
+| `src/refmatrix/reinforcement.py` | R1 orientation stated once; R2 reader joins swapped; R3 kind filter; docstring (R6) |
+| `src/refmatrix/cli.py` (`memory_link`, `--help`) | R1 (local path writes `link(linkage, m_id, cid)`); R6 help text |
+| `src/refmatrix/daemon.py` (`_op_memory_link`) | R1 |
+| `src/refmatrix/store.py` (`content_rank`) | R7 (bug-223): the swallow removed, re-raise with context |
+| the R4 repair command (one module entry, bug-195 shape) | R4, only if R0b finds rows |
+| `tests/test_bug218_reinforcement_direction.py` (new) | AC-1..AC-6, AC-9 sandbox half, AC-10 |
 | `tests/test_reinforcement.py` | fixtures seed through the writers (R5) |
+| `workflow/test_mock_registry.md` | AC-10's raising `reinforcement_scores` stub |
 | `eval/reinforcement_bench.py`, `eval/reinforcement_csn_bench.py` | seed through the writers (R5); AC-7 runs |
 | `scripts/census_on_copy.py` (16.6's) or a scratch census script | R0b (read-only, copies only) |
 | `workflow/measurements/bug218-direction-census-<date>.md` (new) | AC-8 |
-| `workflow/bug_registry.md` | bug-218 row: premise corrected (two writers), status, fix sha |
+| `workflow/bug_registry.md` | bug-218 row: premise corrected (two writers), status, fix sha; bug-223 row: fix sha; any sibling silent guard R7 finds, as its own row |
 
 ## Definition of done {#done}
 

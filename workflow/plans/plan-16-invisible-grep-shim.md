@@ -286,6 +286,7 @@ writer's, not this round's. `src/` unchanged. Later rows win.
 | CD-9 (body "Drafting" / "Awaiting r6" / "Next gate r6" vs frontmatter and POP `approved`, d9ck) | [[#root]] status line; the "Awaiting" sentence and [[#decisions]]'s "Next gate" line marked superseded |
 | L5 / CD-5 (bug-216 wins over 16.1: `corpus.is_relevant` delegates to `should_ignore`; the prune keeps `!path` re-includes) | [[task-16.1-argv-faithful-learner#rev-round-6]]; [[task-16.3-grep-tool-hook-and-docs#rev-round-11]] (AC-2b); [[task-16.5-explicit-grep-hands-off#rev-round-7]] (the floor, AC-5h); plan edge `depends-on` bug-216 |
 | D-Q7 / L32 / L42 / CD-1 (16.5 wins on the named-path and stdin legs; BRE metas floor on the path-less leg; 25.4/25.5 close as superseded; bug-167/174 close when 16.5 lands) | [[task-16.5-explicit-grep-hands-off#r8]] rows, AC-5i, `supersedes` edges; [[#out-of-scope]] note |
+| lead ruling 2026-11-13 (25.5 R4's reopen trigger re-hosted on 16.4's `bre_concept_share`, N ≥ 30 or 2026-12-31) | [[task-16.4-measurement#rev-round-9]] |
 | L24 / CD-8 (25.4/25.5's premise that every agent grep reaches `rmx grep`) | the closing lines of 25.4/25.5; this plan's [[#today-learn-off]] already states it. The `PROJECT_PROFILE.md` corpus line is outside this plan's files |
 | L2 (only 16.1 → 16.2 ∥ 16.3 → 16.5 → 16.4 stay in T5; the 16.6 Wave-1 slice moves into T4, after 23.4, ahead of 17.1) | no change to [[#waves]]: wave 1 already holds the 16.6 slice ahead of plan-22, and wave 2's chain is T5's queue item 10, after bug-216 (queue item 1) |
 

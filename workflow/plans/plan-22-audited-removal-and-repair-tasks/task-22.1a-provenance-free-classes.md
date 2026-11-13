@@ -195,8 +195,10 @@ rel: depends-on -> [[task-bug216-rule-docs-in-graph#r8]]
      - **`stale-evidence` count (round 9; a COUNT, not a class).** A `linkage_evidence` row whose
        entity and concept are both alive but which has no `entity_links` row with the same
        `(entity_id, linkage_id, concept_id)`. The census prints the count, split by `detail`
-       prefix (`rel:`, `learned from grep`, other); no class selects these rows and nothing
-       removes them in this plan (owner open, [[#rev-round-9]]). {#r1-stale-evidence}
+       prefix (`rel:`, `learned from grep`, other); no class here selects these rows. The
+       non-learned ones are removed as derived cleanup by `vacuum` step 3b
+       ([[task-22.6-removal-entry-points#r10]], lead ruling 2026-11-13); the learned-grep ones are
+       knowledge and stay with plan-22's classes. {#r1-stale-evidence}
      - **One shared predicate (r6 m-3; r7 m-2).** `store.link_liveness(con) -> LinkLiveness` loads,
        from any DuckDB connection (the writer's, a read snapshot's, a census copy's), the ONLY
        liveness and naming data either caller reads:
@@ -735,5 +737,6 @@ at `1cf3b9f`. Later rows win over round 8.
 | L6 widening, read against this spec | CD-6 read only plan-22 `#scope`; this spec already gave an evidence row with a dead ENTITY to `vacuum` step 3 under [[task-22.6-removal-entry-points#r5]] (derived cleanup, ADR-0004 `#a14-removal-scope`). Widening the REMOVAL to that side would give one row two removers. The widening is therefore the AUDIT's: [[#r1-orphan-evidence]] reports and counts the dead-entity side (`report_only`), and its remover stays the vacuum. Put to the lead as an open item in the spec wave report |
 | L6 "census input" | [[#r1-stale-evidence]] (the live-ends, no-edge rows bug-219 counts in its 25,760 and no class owned), AC-8a rows and mutations, AC-8b census lines, [[#ac-8d]] reconciles bug-219's three numbers on a post-bug-216 copy |
 | bug-219's direction words | [[#r1-orphan-evidence]]: for a `rel:` row the evidence entity is the TARGET and the concept the SOURCE (`ingest_gmd.py:1769`, `Store.add_evidence(linkage, concept_id, entity_id)`), so "missing target" = dead entity side |
-| owner of `stale-evidence` | open: no class and no task removes a live-ends evidence row whose edge is gone. Listed in the spec wave report with options; this round only counts it |
+| owner of `stale-evidence` | lead ruling 2026-11-13 (option a): [[task-22.6-removal-entry-points#r10]] removes the non-learned rows as derived cleanup (`vacuum` step 3b, manifest first, `evidence_remove` events); learned-grep rows are excluded. This task only counts them |
+| L6 reading (the widening is report-only) | confirmed by the lead, 2026-11-13: `vacuum` step 3 / 22.6 R5 stay the remover of `orphan-evidence` |
 
