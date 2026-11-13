@@ -240,7 +240,14 @@ def _store_rw() -> Store:
     With the daemon up, opening the active slot r/w from another process
     will fail (DuckDB exclusive lock). This is the DAEMON-DOWN writer path;
     when the daemon is up, `_store(write=True)` returns a `_DaemonWriter`
-    that routes mutations through RPC instead."""
+    that routes mutations through RPC instead.
+
+    Before the catalog opens it refuses a store whose writer catalog git
+    tracks (bug-212 r2, lead decision 2026-11-13). This is the ONE in-process
+    write control point -- `rmx sync`, `rmx ingest`, `rmx memory add`, the
+    memory bridge and every other daemon-down writer reach it -- so the check
+    lives here, not per command. `Store(...)` above it only resolves paths;
+    nothing has touched the catalog when the refusal raises."""
     s = Store(_root(), partition=_resolve_partition())
     slot_path = _active_slot_path()
     if slot_path is not None:
@@ -249,6 +256,7 @@ def _store_rw() -> Store:
         raise click.ClickException(
             f"no refmatrix at {s.root}. Run `rmx init` first or set REFMATRIX_ROOT."
         )
+    _refuse_in_process_write_to_tracked_catalog(s.root, s.db_path)
     # Register a flush-and-close on normal interpreter exit. CLI commands
     # mutate the in-memory fragment cache and rely on close() to persist;
     # without this, every command would lose its writes.
@@ -8792,12 +8800,10 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
             # in-process synchronous flush — at least the work gets done.
             pass
 
-    # With no daemon answering, `_store()` below opens the catalog in THIS process. Never a
-    # catalog git tracks (bug-212 r1, lead decision a2, 2026-11-13) -- checked before it opens.
-    # (`-i` reaches here with a daemon up too; `_store()` then routes every write through it.)
-    from refmatrix import daemon as daemon_mod
-    if not daemon_mod.ping(_root()):
-        _refuse_in_process_write_to_tracked_catalog(_root())
+    # With no daemon answering, `_store()` below opens the catalog in THIS process through
+    # `_store_rw()`, which refuses a catalog git tracks before it opens (bug-212 r1/r2, lead
+    # decisions a2 and 2026-11-13). `-i` reaches here with a daemon up too; `_store()` then
+    # routes every write through it and nothing opens in-process.
     s = _store()
     proot = (project_root or _cwd()).resolve()
 
@@ -8820,37 +8826,36 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
         raise click.ClickException(str(exc)) from exc
 
 
-def _refuse_in_process_write_to_tracked_catalog(root: Path) -> None:
+def _refuse_in_process_write_to_tracked_catalog(root: Path, target: Path) -> None:
     """One clean `Error:` line (exit 1), BEFORE the catalog opens, when git tracks a writer
-    catalog of the store this process is about to write in-process.
+    catalog of the store `root` this process is about to write in-process; `target` is the
+    file the write would land in (`_store_rw()`'s resolved `db_path`), named in the line.
 
     Why (bug-212 r1, ch-bsd b-1 + lead decision a2, 2026-11-13): cliquet, atldb and
     prep_prolific commit their catalog files. The generated hooks' gate now lets a tracked
     catalog through only beside a daemon socket -- but a socket file a crashed daemon left
-    passes too, nothing answers it, and `rmx sync` fell to this in-process route and wrote the
+    passes too, nothing answers it, and `rmx sync` fell to the in-process route and wrote the
     committed binary (` M .refmatrix/catalog.A.duckdb`), the b-1 incident behind the new gate.
-    The refusal names the file the write would land in, every tracked catalog, and both
-    remedies. A store outside any git repo, or whose catalog git ignores, is not refused
+    r1 put the check in `rmx sync` alone; `rmx ingest`, `rmx memory add` and the memory bridge
+    still wrote a tracked catalog. r2 (lead decision 2026-11-13) calls it from `_store_rw()`
+    only -- the one in-process write control point -- so it is worded for any write, not a
+    sync. A store outside any git repo, or whose catalog git ignores, is not refused
     (`store.git_tracked_catalogs`). A `git ls-files` that fails is refused too: unknown is
     treated as tracked."""
+    remedy = "start the daemon (rmx daemon start) so the write goes through it"
     try:
         tracked = _store_mod.git_tracked_catalogs(root)
     except _store_mod.TrackedCatalogCheckError as exc:
         raise click.ClickException(
-            f"refusing an in-process sync: {exc}; untrack the catalog (git rm --cached) if git "
-            f"tracks it, or start the daemon (rmx daemon start) so the sync goes through it"
-        ) from exc
+            f"refusing an in-process write to {target}: {exc}; untrack the catalog "
+            f"(git rm --cached) if git tracks it, or {remedy}") from exc
     if not tracked:
         return
-    target = _active_slot_path()
-    if target is None:
-        legacy = [root / n for n in ("catalog.duckdb", "catalog.db") if (root / n).exists()]
-        target = legacy[0] if legacy else root / tracked[0]
     raise click.ClickException(
-        f"refusing an in-process sync into {target}: git tracks this store's catalog "
+        f"refusing an in-process write to {target}: git tracks this store's catalog "
         f"({', '.join(tracked)}), and the write would modify a committed file. Untrack it "
         f"(git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or "
-        f"start the daemon (rmx daemon start) so the sync goes through it")
+        f"{remedy}")
 
 
 def _sync_in_process(s, proot: Path, *, files, since, flush_queue, invalidate,
