@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-14
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Task 19.0: STM cluster hygiene {#root}
@@ -944,3 +944,11 @@ rel: depends-on -> [[task-25.3-stm-ref-admission-and-helix-repeat]]
 | scope | R0, R1's rebuild remainder (re-extraction from `detail` through `stm.command_refs(…, root=None)`, per [[#rev-plan25]]), R2-R7 |
 | bugs | bug-100 (R5), bug-103 (R2) and bug-104 (R1, with 25.3) are owned here and ride queue item 4. They leave the backlog, and their registry fix columns point here (the registry is the lead's) |
 | plan-24 D1 | not affected: D1 never named 19.0 |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Task 19.1: pack recall under the budget {#root}
@@ -317,3 +317,11 @@ rel: related-to -> [[task-25.1b-hook-output-ladder-and-spill]]
 |---|---|
 | #w1c-s2, #w1c-m4 (plan-2 r9 #s-2 / #m-4) | hosted by [[task-25.1b-hook-output-ladder-and-spill]] R16 / R17, with their ACs carried (AC-22, AC-23). Plan-2 closes when they land there (D-Q6) |
 | this task | fully realized: R1-R8 by 25.1 ([[#rev-plan25]]), the riders by 25.1b. Not built on its own; its header's Wave 1 slot and C11 window are history |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

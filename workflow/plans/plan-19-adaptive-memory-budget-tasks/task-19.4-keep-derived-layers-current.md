@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Task 19.4: keep the derived memory layers current {#root}
@@ -293,3 +293,11 @@ rel: related-to -> [[task-26.6-compile-subject-hygiene]]
 | R2-R7, ACs 1, 3, 4, 4b, 5-8 (the recall leg of AC-4 excepted) | [[task-26.6-compile-subject-hygiene]] (`#plan-19-delta`) | merged `8a867bc`; R3 (compile regenerates the index) is 26.6's open residual, after 26.7 (queue item 3, L1) |
 | AC-4, recall leg | 25.1 AC-6 | ships in 0.83.0 |
 | R1's tick registration and AC-2 | task 17.2, which hosts 26.6's tick registration (L28) | queue item 8 |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

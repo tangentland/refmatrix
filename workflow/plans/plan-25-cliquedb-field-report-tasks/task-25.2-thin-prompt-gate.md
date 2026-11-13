@@ -8,7 +8,7 @@ metadata:
   status: pending
   plan: plan-25-cliquedb-field-report
   created: 2026-11-08
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Task 25.2: ack-only prompt gate {#root}
@@ -299,3 +299,11 @@ rel: implements -> [[plan-review-2026-11-13#lead]]
 |---|---|---|
 | S10 R0's re-run after a build was undecided | resolved by order: G32 runs before this task's build, and R0 runs on the confirmed labels; the re-run sentence is gone | [[#r0]], [[#root]] |
 | M4 R0 had no AC; AC-7b named no mutation | AC-0 (the file, a script that imports nothing from `refmatrix`, commit order) with two mutations; AC-7b adds a row-by-row check over AC-3's table and a mutation | AC-0, AC-7b |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

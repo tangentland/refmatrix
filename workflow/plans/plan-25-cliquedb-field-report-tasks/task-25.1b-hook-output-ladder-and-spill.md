@@ -5,17 +5,18 @@ title: "Task 25.1b: every generated hook command's stdout stays under 9,500 B th
 tags: [task, plan-25, hooks, budget, pack, ladder, spill, scan-prompt, bug-182, bug-164, plan-2-riders]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   plan: plan-25-cliquedb-field-report
   created: 2026-11-13
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Task 25.1b: hook output ladder, spill page and hard cap {#root}
 
 > Plan: [[plan-25-cliquedb-field-report]]
-> Status: Drafting (2026-11-13, spec wave G12; ch-bsd spec review next; NOT approved). Its five
-> open decisions were ruled by the lead on 2026-11-13 ([[#open-decisions]]).
+> Status: Approved 2026-11-14 ([[#approval-2026-11-14]]): drafted 2026-11-13 (spec wave G12),
+> through four ch-bsd rounds to CLEAN. Its five open decisions were ruled by the lead on
+> 2026-11-13 ([[#open-decisions]]).
 > Bugs: the hard-limit half of bug-164's report (the user, Q14); bug-182 (R0 + R15, under L44's
 > band); plan-2's three riders: r9 #s-2 / #m-4 (R16, R17) and r5's scan-prompt rerank rate
 > (19.5 `#w1c-rider`, closed by R0).
@@ -520,3 +521,11 @@ rel: implements -> [[plan-review-2026-11-13#lead]]
 | r3 m3 AC-25's test `Held` unregistered | registered via the Files row, with its graduation | [[#files]], AC-25 |
 | S3 (r2, on `b032f24`) the out-of-scope list called silent commands `/dev/null` | silent by code: `focus hook` `tool` / `tool-pre` / `input` / `say` and 10.3's `compact-marker` (AC-26 asserts empty stdout, with a mutation); `/dev/null` kept only for `sync --flush-queue` and the primer | [[#r12]], AC-26 |
 | S4 (r2, on `b032f24`) curator status runs in two commands | SessionStart's `startup|resume` command named; curator status uses its fixed 500 B share everywhere, with no new argv; AC-26 covers both commands, with a mutation | [[#r12]], AC-26 |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` set to `approved` (was `drafting`); this task may now be built in its queue slot |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

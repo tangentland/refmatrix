@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-14
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Task 19.6: phased context, topic cache and versioned injection {#root}
@@ -855,3 +855,11 @@ rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r12-34f72b3]]
 | finding | answered at |
 |---|---|
 | r12 #m12-3 (the cap's no-candidate rule had no leg: a mutant evicting outside the candidate set, or dropping the over-cap count, survived) | AC-7i2 over-cap leg (66 records, the 58 outside the 8 newest all `expanded` → 66 kept, `topic-cache-evicted` = 0, `topic-cache-over-cap=2`, `topic_hubs` unchanged); mutation (round 12, #m12-3) |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

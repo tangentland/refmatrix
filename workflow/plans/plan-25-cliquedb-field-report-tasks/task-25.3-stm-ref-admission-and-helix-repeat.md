@@ -8,7 +8,7 @@ metadata:
   status: pending
   plan: plan-25-cliquedb-field-report
   created: 2026-11-08
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Task 25.3: STM ref admission and the helix repeat {#root}
@@ -373,3 +373,11 @@ Not adopted: contra-b CB-6's "better still" (a suppressed helix note moves to pl
 No L-row decides it, and nothing here builds it.
 
 **Q8 note:** nothing here changes under Q8 a, b or c. Helix reads ring touches, not save-states.
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

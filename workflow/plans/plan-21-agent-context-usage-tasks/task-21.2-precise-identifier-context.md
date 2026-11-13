@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Task 21.2: precise identifier answers {#root}
@@ -173,3 +173,11 @@ rel: related-to -> [[task-bug216-rule-docs-in-graph]]
 
 **Q8 note:** holds under Q8 a, b and c. The frozen set and its gold live in `src/` and `tests/`,
 never in `workflow/`.
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

@@ -7,7 +7,7 @@ metadata:
   node_type: plan
   status: approved
   created: 2026-10-07
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Plan 19: adaptive memory under the context budgets {#root}
@@ -533,3 +533,11 @@ supersedes that hold: 19.5 R1 was built on hooks as 25.1 R0, and what 19.6 still
 by D-Q3, not by D1. {#d9bi-narrowed-body}
 
 **Q8 note:** nothing in this section changes under Q8 a, b or c.
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | the plan stays `approved` |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

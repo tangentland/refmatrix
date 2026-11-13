@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Task 19.5: measure delivery, not production {#root}
@@ -214,3 +214,11 @@ rel: derives-from -> [[bsd-pop-r2-d99f41c#n1]]
 | R1 | built as 25.1 R0 ([[#rev-plan25]]), on hooks. Plan-24 D1's hold on it is superseded (D-Q5) |
 | R2-R4 | FROZEN with 19.2 (L26): they depend on 19.1-19.3 (header) and R4's baseline serves only frozen 19.6 work |
 | folded rider #w1c-rider (plan-2 r5: rerank never ran on scan-prompt at 5 s) | re-hosted by the lead (2026-11-13, 25.1b O4) in [[task-25.1b-hook-output-ladder-and-spill#r0]], which records the rerank leg's outcome and reports the rate. It is plan-2's third rider and closes there, not here |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

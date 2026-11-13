@@ -7,7 +7,7 @@ metadata:
   node_type: plan
   status: approved
   created: 2026-11-08
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Plan 25: cliquedb field report (bug-164..167) {#root}
@@ -268,7 +268,7 @@ Read from the plan-26 task specs' file lists on 2026-11-08 (drafts; re-read at 2
 | task | bug | what | RED on |
 |---|---|---|---|
 | [[task-25.1-recall-hook-byte-budget]] (rev 7; ships in 0.83.0) | bug-164, bug-181 | probe the cap (three outcomes); per-prompt rows through the verb; pack recall pointers-first after the merge; byte-cap scan-prompt; every UserPromptSubmit producer in one event budget; an MCP `project=` that resolves nothing raises `VerbUnknownProjectError` on every tool (R10, folded r5) | the generated per-prompt argv emits > 10,000 B on the fixture store |
-| [[task-25.1b-hook-output-ladder-and-spill]] (added 2026-11-13; drafting) | bug-182; plan-2 r9 #s-2 / #m-4 | 25.1's revision 8 split out (D-Q2): one 9,500 B emitter on every hook command as a counted safety net; a degrade ladder and a per-session spill page; the one `still in play` names line (L15); R0 per-leg scan-prompt timing and, in L44's band, R15 leg bounds; the global leg's reserved share and the two-number degrade line | a producer forced to 20 KB prints > 9,500 B through its generated command |
+| [[task-25.1b-hook-output-ladder-and-spill]] (added 2026-11-13; approved 2026-11-14, [[#approval-2026-11-14]]) | bug-182; plan-2 r9 #s-2 / #m-4 | 25.1's revision 8 split out (D-Q2): one 9,500 B emitter on every hook command as a counted safety net; a degrade ladder and a per-session spill page; the one `still in play` names line (L15); R0 per-leg scan-prompt timing and, in L44's band, R15 leg bounds; the global leg's reserved share and the two-number degrade line | a producer forced to 20 KB prints > 9,500 B through its generated command |
 | [[task-25.2-thin-prompt-gate]] (built only if L34's replay passes) | bug-165 | one ack-only gate: a prompt made only of stopwords / ack words / list markers → scan-prompt and the prompt recall inject nothing; a single content word passes | the generated scan-prompt + recall argvs on "yes next" emit > 0 B of content hits |
 | [[task-25.3-stm-ref-admission-and-helix-repeat]] | bug-166 (both halves) | one ref-admission predicate at both extraction sites and the rebuild; helix says a line once per session, never annotates a hub neighbour, and logs every suppression | a replayed `focus hook` envelope stores `s.repla`; a second identical prompt re-emits the helix line |
 | [[task-25.4-grep-bre-translation]] (**closed 2026-11-13: superseded by 16.5, L42**) | bug-167 | any backslash-escaped BRE translated once for every grep leg; anything not provably the same language (compile failure, stacked quantifier, locale-inexact class, ANY pattern under a non-UTF-8 locale) to the real grep; differential tests against BSD and GNU grep in two locales | `rmx grep -n 'B0\|group_key' file` exits 2 |
@@ -472,3 +472,11 @@ rel: implements -> [[plan-review-2026-11-13#lead]]
 | r2 m6 the 16.4 anchor exists only on spec-wave-t56 | the link is doc-level, with the section named in a code span | [[#rev-round-6]] |
 | M9 bug-182's split case had no status | under O5's split, R15 fixes the controllable share and bug-182 stays open on the T4 backlog for the wait share | [[#acceptance-amended]] |
 | B1, S1-S5, M3-M5 (25.1b), S10 and M4 (25.2) | folded in each task | [[task-25.1b-hook-output-ladder-and-spill#rev-round-1]], [[task-25.2-thin-prompt-gate#rev-round-5]] |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | the plan stays `approved` |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]
