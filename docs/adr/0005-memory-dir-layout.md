@@ -236,7 +236,8 @@ viascope2 and cliquet while `_ss_update_index` kept appending.
 - **The save-state mtype correction in the store** ([[#authority]]). It writes no file.
 - **Classification by location (amended 2026-11-13, bug-220, [[#amendments]]).** A GMD file
   inside a memory dir is ingested as `kind=memory` by ANY walk that reaches it, never as a
-  `kind=doc` twin. A memory dir here is the nearest ancestor with a marker, or the
+  `kind=doc` twin, into the store its memdir resolves to ([[#store-resolution]]; a memdir with no
+  resolvable store is file-only, counted and named). A memory dir here is the nearest ancestor with a marker, or the
   `~/.claude/projects/<slug>/memory` shape ([[task-26.5-memory-organise-verb#bug220-route]]).
   The reroute writes no file, and it runs after the ignore predicate, so a pruned dot-dir is never
   reached.

@@ -213,8 +213,11 @@ verb-parity test covers both. No file is ever moved by hand, here or in plan-27.
   - Modify `src/refmatrix/memory_layout.py`: `memdir_of(path)`, the one memdir resolver shared by
     R-264a and bug-220 ([[#bug220-route]]).
   - Modify `src/refmatrix/ingest_gmd.py` (`collect_gmd_files`, `ingest_gmd_paths`) and `cli.py`
-    (`ingest-gmd` output): the reroute and its count. Create
+    (`ingest-gmd` output): the reroute, routed to the memdir's own store through
+    `_sync_memory_dir(memdir, root=)`, and its counts. Create
     `tests/test_ingest_gmd_memdir_route.py`.
+  - Only if R-202a finds bug-202's files: `--force-rebridge <id>` in `memory_organise.py` and the
+    `memory organise` command ([[#r-202b]]).
   - Create `workflow/review-output/26.5-bug202-existence.log` ([[#bug202-restore]]).
 
 ## Test Strategy {#test-strategy}
@@ -428,8 +431,8 @@ RED and GREEN before AC-4's marker write is recorded GREEN, and the commit order
     - restoring the `if organised` guard kills (c);
     - letting the raw `OSError` through kills (d)'s MCP leg.
 - Rows R-208b and R-208c are MEH findings that the bug-208 row names in its symptom but not in its
-  fix column. They ride here because they touch the same function. The lead may strike them (see
-  the spec-wave report).
+  fix column. They ride here because they touch the same function (kept by lead ruling
+  2026-11-13, T2-O3; [[#lead-rulings-2026-11-13]]).
 
 ## bug-202's two anchor sets: check existence first (2026-11-13) {#bug202-restore}
 
@@ -451,8 +454,12 @@ and `guardrail-two-writers-one-logical-db`. It says restoring them "needs a forc
 
   Every command and result goes to `workflow/review-output/26.5-bug202-existence.log`.
 - **R-202b: found → restore with a check.** The file is re-bridged past the content-hash gate
-  into the store that holds the row. It uses the same force input as AC-5's save-state re-bridge,
-  aimed at that one file (the per-file CLI shape is open item T2-O2 in the spec-wave report).
+  into the store that holds the row, with `rmx memory organise <memdir> --apply --force-rebridge
+  <id>` (lead ruling T2-O2). `--force-rebridge <id>` (repeatable) extends AC-5's force input: the
+  named ids bypass the content-hash gate on that apply, alongside the save-states AC-5 already
+  forces, and each forced id is counted under `forced` and named. An id that matches no file in the
+  memdir exits non-zero naming it, before the backup. The flag is built only if R-202a finds the
+  files; if R-202c applies, it is not built.
   - The check is read through the daemon: the memory's `x#…` anchor concepts equal the file's
     `{#anchor}` set, by name and by count. Before the restore the set is empty, which is the RED.
   - This is a live write. It runs with the deployed `rmx` after this task is released, and it is
@@ -505,11 +512,22 @@ memdir resolver (R-264a) and the marker reader. {#bug220-why}
   - no entity under a dot-dir on a doc route;
   - `.claude/PROJECT_PROFILE.md` lands once, as `kind=doc`;
   - a memdir under `.claude` still lands as `kind=memory` through the bridge.
-- **R-220e: the store.** Rerouted files land in the store the call writes, exactly as
-  `--as-memory` does in the same call today. A memdir that resolves to ANOTHER store
-  (ADR-0005 `#store-resolution`) is open item T2-O1 in the spec-wave report. Until the lead rules,
-  the spec text holds to the same-call store, and the result names any rerouted file whose memdir
-  resolves elsewhere. {#r-220e}
+- **R-220e: the store is the memdir's own (lead ruling T2-O1).** Rerouted files land in the store
+  their memdir resolves to (ADR-0005 `#store-resolution`), never in the caller's store because it
+  is the caller's: {#r-220e}
+  - the store comes from AC-1's resolver on the memdir `memdir_of` returned, and the files go
+    through `_sync_memory_dir(memdir, root=<resolved>)`, the AC-1 bridge parameter: one bridge
+    per memdir reached, not one per file (the bridge is hash-gated);
+  - when the resolved store IS the store the walk is writing (an in-daemon walk of its own
+    memdir), the files go through the in-process memory path of the same call, so a daemon never
+    calls itself under its own lock;
+  - a memdir with no resolvable store (a well-formed slug matching no root, or a marker dir
+    outside the `~/.claude/projects/<slug>/memory` shape) is file-only, as ADR-0005 says: its files
+    are taken out of the doc set, ingested nowhere, and counted and named as
+    `rerouted_no_store` with the fix text. The walk continues; nothing is refused;
+  - the calling store's own `kind=doc` row at a rerouted path (a twin from an earlier doc walk)
+    is purged by the calling store with the existing purge (`ingest_gmd.py:1376`), wherever the
+    memory lands.
 - **Every dir.** The reroute writes no file, so it is not marker-gated. ADR-0005 `#marker` lists it
   among the behaviours that reach every dir (amended 2026-11-13). {#r-220-every-dir}
 - **AC-220.** Each case starts RED at HEAD, in task 23.0's sandbox, with the real CLI, re-read
@@ -524,17 +542,24 @@ memdir resolver (R-264a) and the marker reader. {#bug220-why}
   - (b) The same on a FILE target and on a SUBDIR target (`feedback/`): the same classification.
     These share R-264a's fixtures.
   - (c) A marker-on dir outside the projects shape (a throwaway dir with a valid
-    `.memory-layout`): rerouted by the marker branch.
+    `.memory-layout`): recognised by the marker branch, so no `kind=doc` row is minted; no store
+    resolves, so its files are counted and named under `rerouted_no_store` and no row lands
+    anywhere (R-220e).
   - (d) A doc walk over a root that holds `docs/x.md` and a memdir: `docs/x.md` stays `kind=doc`,
     and only the memdir's files reroute.
   - (e) A store that holds a `kind=doc` twin from a HEAD-built doc walk: after the next walk there
     are 0 twins and one `kind=memory` row per file.
   - (f) bug-216's X1 pins re-run green.
+  - (g) Cross-store (T2-O1): `rmx ingest-gmd <B's memdir>` run from root A, with no
+    `--as-memory`: the memories land in B's store as `kind=memory`, and A holds no row for them
+    (no `kind=doc` twin, no memory row). Mirrors AC-1 (a).
   - Mutations, each killed:
     - dropping the reroute kills (a);
     - rerouting before `should_ignore` kills (f) (an entity appears under a dot-dir);
     - a second resolver copy for R-264a that ignores the marker kills (c) and AC-264 (a);
-    - dropping the printed count kills (a)'s count assertion.
+    - dropping the printed count kills (a)'s count assertion;
+    - landing rerouted files in the calling store kills (g);
+    - ingesting a no-store memdir's files into the calling store kills (c).
 
 ## Lines that change under Q8 b (2026-11-13) {#q8-b}
 
@@ -550,3 +575,16 @@ lines change:
   `rmx recall-state` alone.
 - R-220b: a rerouted save-state is skipped and counted, not ingested.
 - AC-2's file-side save-state type rewrites (26.4 AC-3) do NOT change: they are file edits.
+
+## Lead rulings (2026-11-13) {#lead-rulings-2026-11-13}
+
+The spec-wave report's open items, ruled by the lead on the user's pattern (correct first, reuse
+existing infrastructure, route never refuse). Folded above; no hold remains.
+
+| item | ruling | anchor |
+|---|---|---|
+| T2-O1 (bug-220's store when the memdir resolves elsewhere) | (b): the memdir's own store, through `_sync_memory_dir(memdir, root=)`; AC-220 (g) | [[#r-220e]], [[#ac-220]] |
+| T2-O2 (per-file force input for bug-202) | (a): `organise --apply --force-rebridge <id>`, extending AC-5's force input; built only if R-202a finds the files | [[#r-202b]] |
+| T2-O3 (bug-208 m-1/m-2 scope) | Keep R-208b and R-208c | [[#pre-bug208]] |
+| T2-O4 ("same marker gate") | The reroute is ungated and reuses the marker reader inside `memdir_of`; the ADR-0005 amendment stands | [[#r-220a]], [[#r-220-every-dir]] |
+| T2-O5 (forget step 5 vs the decay rule) | Unchanged: the user decides at 26.8 AC-8; ADR-0005 A.2 states the tension | [[task-26.8-refmatrix-live-rollout#requirements]] |
