@@ -7,14 +7,14 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-10-14
+  updated: 2026-11-13
 ---
 
 # Task 21.2: precise identifier answers {#root}
 
 > Plan: [plan-21-agent-context-usage](../plan-21-agent-context-usage.md)
 > Status: Pending (revision after the 2026-10-14 decision log)
-> Wave: 3
+> Wave: 3 (history; 2026-11-13: queue item 6, pull side, ahead of 21.4, [[#rev-2026-11-13]])
 > Depends on: 21.1 (the `internal` source and the rows that measure the change), 23.0 (sandbox)
 
 rel: part-of -> [[plan-21-agent-context-usage]]
@@ -144,3 +144,25 @@ frozen; the lines below are at HEAD `b1c4324`, for reference.
 | d4f (harnesses set `internal`) | R7; AC-7 |
 | #t4-fixes "frozen replay names", "tested by defined or dropped" | [[#frozen-set]]; R3 |
 | MEH m-1..m-7 | none touch 21.2 (m-1, m-2, m-4 → 21.1; m-3, m-5, m-6 → 21.3; m-7 → plan `#decisions`) |
+
+## Revision (2026-11-13, the plan review: D-Q3, D-Q5; re-read against bug-216's resolver) {#rev-2026-11-13}
+
+No requirement or AC changes here. This records the order, the end of plan-24's hold, and the
+re-read the plan review asked for (G28). {#rev-2026-11-13-lead}
+
+rel: implements -> [[plan-review-2026-11-13#d-q3]]
+rel: implements -> [[plan-review-2026-11-13#d-q5]]
+rel: related-to -> [[task-bug216-rule-docs-in-graph]]
+
+| item | record |
+|---|---|
+| D-Q5 | plan-24 D1 had listed 21.2-21.4 as hook-shaped work that "retargets to the mod … not built". D-Q5 supersedes D1: this task builds now on the CLI, MCP and daemon (`--brief`, MCP `brief`, `_op_context`), with no mod dependency |
+| D-Q3 | pull-side work proceeds; only 21.3 (the push nudge) is frozen. Queue item 6: 21.2 → 21.4 |
+| bug-216 R6 (bare doc ids bind the doc first) | touches GMD `rel:` / wikilink targets only. The frozen set is 9 code symbols, whose DEFINED BY rows come from `defines` edges, so the gold is unaffected |
+| bug-216 R9 (`denotes` is transparent) | read at its GREEN `37d99a0` (branch `task-bug216-rule-docs-in-graph`, unmerged): `build_context` chains the rows of the path-less concepts that denote a `doc` or `memory` anchor. Code anchors are not touched, so AC-2, AC-3 and AC-5 are unaffected |
+| `LINKAGE_LABELS` | bug-216 adds no entry (read at `37d99a0`; the transparent hop reads concept rows under their existing labels), so R3's per-label tests are unchanged |
+| R2 (one entity per group) on doc / memory anchors | after bug-216, an entity can be reached twice on a doc or memory anchor: once from the doc's rows and once from a denoting concept's rows. R2 as written dedupes it, but AC-4 runs over the 9 code names only, so no AC exercises that path. Whether to add one is an open item for the lead (spec-wave report) |
+| baseline | AC-1's baseline runs on a catalog copy taken after bug-216 is live (queue item 1), so the record is post-bug-216 |
+
+**Q8 note:** holds under Q8 a, b and c. The frozen set and its gold live in `src/` and `tests/`,
+never in `workflow/`.

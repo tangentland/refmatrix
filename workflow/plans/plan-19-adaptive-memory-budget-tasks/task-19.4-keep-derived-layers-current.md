@@ -7,13 +7,14 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 19.4: keep the derived memory layers current {#root}
 
 > Plan: [plan-19-adaptive-memory-budget](../plan-19-adaptive-memory-budget.md)
-> Status: Pending (revision after the 2026-10-14 decision log)
+> Status: Pending (revision after the 2026-10-14 decision log). **2026-11-13: built by 26.6, 25.1
+> and 17.2** ([[#rev-2026-11-13]]); not built here.
 > Depends on: 19.3; plan-17 task 17.2 (the nightly tick and its step registry; no fallback, plan
 > review C6); 23.0 (sandbox).
 
@@ -279,3 +280,16 @@ rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
 | AC-4, recall leg (a `stale` subject is absent from `rmx memory recall`, with and without `--include-subjects`) | [[task-25.1-recall-hook-byte-budget#acceptance]] AC-6 (and its AC-14 mutation "stale subject visible in recall") | moved from plan-26 r2; 25.1 asserts it on the per-prompt argv, the SessionStart argv and the verb |
 | AC-4, the other legs (row kept, `protected`, absent from `MEMORY.md`, `memory get` returns it); R5's stale mark itself | not realized by plan-25 | the stale mark is written by plan-26's 26.6; recording 19.4's realized-by-26.6 status is left to plan-19's owner when 26.6 lands |
 
+## Revision (2026-11-13, the plan review: L14, L28) {#rev-2026-11-13}
+
+Record only. It closes the row [[#rev-plan25]] left "to plan-19's owner when 26.6 lands".
+{#rev-2026-11-13-lead}
+
+rel: implements -> [[plan-review-2026-11-13#lead]]
+rel: related-to -> [[task-26.6-compile-subject-hygiene]]
+
+| 19.4 item | realized by | state |
+|---|---|---|
+| R2-R7, ACs 1, 3, 4, 4b, 5-8 (the recall leg of AC-4 excepted) | [[task-26.6-compile-subject-hygiene]] (`#plan-19-delta`) | merged `8a867bc`; R3 (compile regenerates the index) is 26.6's open residual, after 26.7 (queue item 3, L1) |
+| AC-4, recall leg | 25.1 AC-6 | ships in 0.83.0 |
+| R1's tick registration and AC-2 | task 17.2, which hosts 26.6's tick registration (L28) | queue item 8 |

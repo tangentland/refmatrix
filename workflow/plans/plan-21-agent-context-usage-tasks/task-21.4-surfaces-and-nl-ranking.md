@@ -7,14 +7,14 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-10-14
+  updated: 2026-11-13
 ---
 
 # Task 21.4: NL ranking, then the surfaces {#root}
 
 > Plan: [plan-21-agent-context-usage](../plan-21-agent-context-usage.md)
 > Status: Pending (revision after the 2026-10-14 decision log)
-> Wave: 3
+> Wave: 3 (history; 2026-11-13: queue item 6, after 21.2, [[#rev-2026-11-13]])
 > Depends on: 21.1 (the `internal` source, the shared pytest-temp predicate the draw filters
 > with), 21.2, 23.0 (sandbox). The docs change LAST, so they never promise what the tool cannot do.
 
@@ -180,3 +180,44 @@ Answers [[bsd-plan19-21-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]
 | d9h (question set from this project's `query.log` only) | R1 source |
 | re-review #b-2 / d9g (legacy rows, fixture rows) as they reach the draw | R1 source (`row_provenance` classes) |
 | re-review #m-4 (question text kept) | R1 "question-text exception" |
+
+## Revision (2026-11-13, the plan review: D-Q3, D-Q5; re-read against bug-216's resolver) {#rev-2026-11-13}
+
+No requirement or AC changes here, except the Q8 constraint on the doc stratum's gold, which the
+spec wave's rule requires ([[#q8]]). Three open items go to the lead (listed at the end).
+{#rev-2026-11-13-lead}
+
+rel: implements -> [[plan-review-2026-11-13#d-q3]]
+rel: implements -> [[plan-review-2026-11-13#d-q5]]
+rel: related-to -> [[task-bug216-rule-docs-in-graph]]
+
+| item | record |
+|---|---|
+| D-Q5 | plan-24 D1's hold on 21.2-21.4 is superseded. This task builds now on the current surfaces: the CLI, the MCP tool description, the PRIMER generator, `_install_briefing`. The MCP description stays a surface until plan-24's re-plan after the charter decision |
+| D-Q3 | pull-side work proceeds. Queue item 6, after 21.2 |
+| doc stratum gold (`doc-id#anchor`) under bug-216 R6 | anchored targets keep concept-first, so the gold's meaning is unchanged |
+| ranking under bug-216 R9 | `denotes` is a zero-cost hop in `build_context`'s degree walk, and PageRank folds a concept's typed in-edges onto its `denotes` target, so doc ranks move when bug-216 goes live. R2's table and every R3 candidate run on ONE catalog copy taken after bug-216's live re-derive (queue item 1, user-gated, with R10's pending refs resolved). Otherwise bug-216's movement would be scored as a 21.4 win or loss |
+| bug-216 R11 (CLAUDE.md and `.claude/PROJECT_PROFILE.md` ingested when they carry GMD frontmatter) | CLAUDE.md is one of R4's five surfaces and is now also a ranked doc, so R4's rule sentence enters the corpus. No conflict. AC-4 still reads the committed file |
+
+**Open for the lead** (not decided here):
+- **O-a:** R1's drafting agent may not read "the ranking code" (`context.py`, `reranker.py`, the
+  rerank ops in `daemon.py`). bug-216 R9 makes the `denotes` walk and the PageRank fold part of
+  ranking. Recommendation: add the code that implements them (the typed-edge expansion and the
+  PageRank edge set bug-216 names) to the forbidden list, by d4c's own rule.
+- **O-b:** C9 makes this set THE ranking-eval harness. L29's per-type evaluation of bug-216's
+  PageRank fold (plan review G30, another spec) runs in the measurement lane "after bug-216 is
+  live", which is before this harness exists (item 6). Recommendation: G30 scores with its own
+  pre-registered per-type bands and records that C9's harness did not exist yet; this harness
+  re-scores the fold once frozen.
+- **O-c:** R4's regenerated `.refmatrix/CLAUDE.md` ships in a C11 `install-hooks` window. Its
+  batch partner 21.3 is frozen, and the plan review's G31 lists no window for 21.4.
+  Recommendation: name it in G31, riding whichever user-gated window falls first after R4 lands
+  (10.4's in item 6, else 16.3's in item 10).
+
+## Q8 {#q8}
+
+The spec wave's rule: specs hold under Q8 a or c. Under Q8 a, `workflow/` leaves the store at
+ingest, so a doc-stratum gold section under `workflow/` would become unreachable mid-measurement.
+R1's doc stratum therefore draws gold only from GMD docs OUTSIDE `workflow/`. If the user answers
+Q8 = c, the restriction may be lifted at the set's approval (R1's approval step). Under Q8 b the
+same holds as under a. {#q8-b}

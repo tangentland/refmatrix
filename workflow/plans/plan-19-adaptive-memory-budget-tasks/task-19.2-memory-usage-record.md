@@ -13,7 +13,8 @@ metadata:
 # Task 19.2: memory usage, counted exactly, decayed safely {#root}
 
 > Plan: [plan-19-adaptive-memory-budget](../plan-19-adaptive-memory-budget.md)
-> Status: Pending (revision after the 2026-10-14 decision log)
+> Status: Pending (revision after the 2026-10-14 decision log). **FROZEN 2026-11-13 until the
+> handhold outcome experiment reports** (the user's D-Q3, [[#rev-2026-11-13]]).
 > Depends on: 19.1 (the pack renderer whose byte spans 21.1's single emission site turns into
 > `delivered` events, 19.1 R8); 23.0 (sandbox); 23.1 (`bind(partition_name)`, the
 > non-consuming `tail(log, offset)` reader, the tick registry, the drain offset committed in the
@@ -463,3 +464,13 @@ rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r10-f6400aa]]
 | finding | answered at |
 |---|---|
 | r10 #m10-5 ("a finalize hold, if the fold takes one" left AC-12 conditional on the implementation) | AC-12: decided, no finalize hold; the offset commit rides the last batch's hold (the same-transaction rule already in the fold's requirements), so `holds == 2` is the total; a separate offset hold gives 3 and fails |
+
+## Revision (2026-11-13, the plan review: D-Q3) {#rev-2026-11-13}
+
+Record only. The user froze this task until the handhold outcome experiment reports (D-Q3). It
+depends on 19.1, whose R8 spans now come from 25.1. When it thaws, the spec is re-read against
+25.1's emitter and 25.1b's `form` field before RED. Frozen with it: 19.5 R2-R4 (L26), and the
+real score source of 19.3 as built by 26.7 (virtual scores until this task lands).
+{#rev-2026-11-13-body}
+
+rel: implements -> [[plan-review-2026-11-13#d-q3]]

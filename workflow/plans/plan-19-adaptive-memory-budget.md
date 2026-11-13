@@ -13,10 +13,13 @@ metadata:
 # Plan 19: adaptive memory under the context budgets {#root}
 
 **Date:** 2026-10-07; revised 2026-10-14 after the Wave 0 decision log.
-**Status:** Drafting. Task specs 19.0–19.6 are revised after
-[[plan-review-2026-10-14]]; a spec re-review is next.
+**Status:** Approved (frontmatter `status: approved`; until 2026-11-13 this line still said
+"Drafting", a body-status drift the plan review's L25 sweep did not list). Task specs 19.0–19.6
+were revised after [[plan-review-2026-10-14]]. **2026-11-13:** most of this plan is now built by
+other tasks or frozen; what remains, and who builds what, is in [[#rev-2026-11-13]].
 **Helix substrate (d9bi, the user 2026-10-15: "I want the context adaptive/variable stm
-handling in-place so we can build helix on top of that substrate").** Plan 19 LEADS Wave 1 after
+handling in-place so we can build helix on top of that substrate"; narrowed, not reversed, by the
+user's D-Q3 on 2026-11-13, [[#rev-2026-11-13]]).** Plan 19 LEADS Wave 1 after
 23.0 (19.0 and 21.1 → 19.1 → 19.2 ahead of plans 16/17/22), and 19.6 is pulled from Wave 3 to
 directly after its own dependencies. The helix plan (a Wave 4 draft, not yet a file) consumes
 four interfaces this plan fixes, so every spec choice below is made with them in view:
@@ -165,6 +168,10 @@ fit is reachable by a printed command that, when run, returns it; decay only dem
 
 Task specs: `workflow/plans/plan-19-adaptive-memory-budget-tasks/`.
 
+**2026-11-13:** the waves above are history. Which row is built by another task, which is frozen,
+and which is queued is in [[#rev-2026-11-13]]; the queue of record is
+[[plan-review-2026-11-13#queue]].
+
 ## Dependencies {#dependencies}
 
 From [[plan-review-2026-10-14#t8-wave1]]: Wave 1 is 23.0 ∥ 23.4 → 23.2 → 23.1 (+ tick registry)
@@ -172,7 +179,7 @@ From [[plan-review-2026-10-14#t8-wave1]]: Wave 1 is 23.0 ∥ 23.4 → 23.2 → 2
 
 | task | depends on |
 |---|---|
-| 19.0 | 23.0; bug-109 MERGED to `master` (d9s; its pointer and `verbs.resolve_session_source` are existing code R5 extends). Shares the resolver's deltas and `stm.pre_prompt_state` with 21.1 (specified in 21.1 R9); whichever merges first builds them |
+| 19.0 | 23.0; bug-109 MERGED to `master` (d9s; its pointer and `verbs.resolve_session_source` are existing code R5 extends). Shares the resolver's deltas and `stm.pre_prompt_state` with 21.1 (specified in 21.1 R9); whichever merges first builds them. **2026-11-13 (L41):** its remainder (R0, R1's rebuild remainder, R2-R7) follows 25.3's STM half, which builds R1 |
 | 19.1 | 23.0; 19.5 R1; 21.1 (R11's single emission site and R10's span fields must be merged FIRST: 19.1's pack returns spans to it; round-3 #m-1; [[plan-review-2026-10-14#t10-waves]] orders 21.1 → 19.1 since `734dc5f`, and both task specs carry the edge); scheduled after 23.1; deploys in the C11 hook window |
 | 19.2 | 19.1; 23.0; 23.1 (`bind(partition_name)`, `tail(log, offset)`, tick registry, offset in transaction); 23.2 (recorder); 21.1 (schema) |
 | 19.3 | 19.2; 23.0 (static catalog copy; no 19.4, no 22.2) |
@@ -464,3 +471,62 @@ rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r11-954f601]]
 | r11 #m11-4 (`cluster_cid` serialization; 19.4 build row) | [[task-19.6-phased-context-and-topic-cache#rev-round-11]]; [[task-19.4-keep-derived-layers-current#rev-round-11]]; header interface 2 |
 | r11 #m11-5 (AC-6f vacuous without a load proof) | [[task-19.0-stm-cluster-hygiene#rev-round-11]] |
 | r11 #m11-6 (text residue) | [[task-19.6-phased-context-and-topic-cache#rev-round-11]]; [[task-21.1-context-usage-telemetry#rev-round-11]] |
+
+## Revision (2026-11-13, the plan review: L14, L18, L26, L41, D-Q3, D-Q5, D-Q6) {#rev-2026-11-13}
+
+[[plan-review-2026-11-13]] (contra-b CB-10, bsd-pop-r1 M3) found that four in-flight tasks build
+plan-19 pieces and that this plan recorded none of it. A second implementer could have built 19.1
+again. This section is the record. Each task file carries its own short record. Task 19.6's file is
+NOT edited in this round, because plan-10's revival branch edits it and merges first (19.6
+`#split-plan-10`); its rows are recorded here only. {#rev-2026-11-13-lead}
+
+rel: implements -> [[plan-review-2026-11-13#lead]]
+rel: implements -> [[plan-review-2026-11-13#d-q3]]
+rel: implements -> [[plan-review-2026-11-13#d-q5]]
+rel: implements -> [[plan-review-2026-11-13#d-q6]]
+rel: derives-from -> [[bsd-pop-r1-c56782f#m3]]
+rel: derives-from -> [[bsd-pop-r3-b19f583#r6]]
+rel: derives-from -> [[bsd-pop-r3-b19f583#r7]]
+rel: derives-from -> [[bsd-pop-r4-d1614a8#x2]]
+
+### Realized by other tasks (L14) {#realized-by}
+
+| plan-19 item | realized by | state, 2026-11-13 |
+|---|---|---|
+| 19.1 R1-R8 and its ACs / mutations | [[task-25.1-recall-hook-byte-budget]] | revision 7 GREEN on its branch; ships in 0.83.0 (D-Q2) |
+| 19.1 folded riders #w1c-s2, #w1c-m4 (plan-2 r9) | [[task-25.1b-hook-output-ladder-and-spill]] R16, R17 | drafting (D-Q6) |
+| 19.5 R1 (the delivery-cap probe) | 25.1 R0 | done (`workflow/measurements/hook-output-cap-probe.md`, on the 25.1 branch) |
+| 19.4 AC-4, recall leg | 25.1 AC-6 | with 25.1 |
+| 19.0 R1 (`stm.command_refs`, the code-noise set, the prose path, the render-time filter) | [[task-25.3-stm-ref-admission-and-helix-repeat]] R1-R5 | queued (item 4); the STM half always builds (L43) |
+| 19.3 | [[task-26.7-memory-index-by-subject]] | queued (item 3). Scores are 19.3 R7's virtual scores until 19.2 lands, so the real score source stays open while 19.2 is frozen |
+| 19.4, the rest | [[task-26.6-compile-subject-hygiene]] | merged (`8a867bc`); its R3 residual is open. 19.4 R1's tick registration and AC-2 are hosted by 17.2 (L28) |
+| 19.6 R8a (the compaction-marker writer) | [[task-10.3-plan-10-injection-dedup]] | queued (item 4); writes on `compact` and `clear` too |
+| 19.6 R5 for the composite (`rev N unchanged`) | [[task-10.6-injection-presentation]] | queued (item 6), after Table A runs on the composite (L17) |
+| 19.6 R5 / R6 for `prompt-recall`, `scan-prompt` | nobody | not used for those payloads (the user's Q11; plan-10 builds names-only dedupe instead) |
+
+### What remains in plan-19, and its state {#remaining}
+
+| item | state | source |
+|---|---|---|
+| 19.0 R0, R1's rebuild remainder (re-extraction from `detail` with `command_refs(…, root=None)`), R2-R7 | queued in item 4, after 25.3's STM half only (not after the helix half). bugs 100 (R5), 103 (R2) and 104 (R1) ride it and leave the backlog | L41; bsd-pop-r3 R6, R7; bsd-pop-r4 X2 |
+| 19.1 | nothing left to build; do not build it | L14; D-Q6 |
+| 19.2 | FROZEN until the handhold experiment reports | D-Q3 |
+| 19.5 R2-R4, and its folded rider #w1c-rider (plan-2 r5: scan-prompt rerank rate) | FROZEN: they need 19.1-19.3 and serve only frozen 19.6 work. The rider's home is an open question in 25.1b (O4) | L26 |
+| 19.6 phasing, topic cache, and Table C | FROZEN until the handhold experiment reports. When it thaws, Table C counts only R12 explicit uses plus `cited_in_answer` until 21.5's matcher is revised | D-Q3; L18 |
+| 19.6 Table A on the composite | runs before 10.6 R3 (offline) | L17 |
+
+### d9bi narrowed (D-Q3) and plan-24 D1 superseded (D-Q5) {#d9bi-narrowed}
+
+Plan 19 no longer leads Wave 1. Of the four helix interfaces in the header:
+- (1) the pre-prompt snapshot (19.0 R7, 21.1 R9) proceeds with 19.0's remainder;
+- (2) the topic cache (19.6) is frozen;
+- (3) 21.1's versioned-injection fields are filled for the composite by 10.6, and stay null on the
+  per-prompt payloads;
+- (4) the usage record (19.2) is frozen.
+
+The header's rule stands: a change to any of the four after it merges needs a decision-log row
+that names helix. Plan-24's D1 had held 19.5 R1 and 19.6's injection design for the mod. D-Q5
+supersedes that hold: 19.5 R1 was built on hooks as 25.1 R0, and what 19.6 still holds is frozen
+by D-Q3, not by D1. {#d9bi-narrowed-body}
+
+**Q8 note:** nothing in this section changes under Q8 a, b or c.
