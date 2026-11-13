@@ -5,16 +5,16 @@ title: "Task 28.3: the ONE outcome scorer and reading module for the handhold ex
 tags: [task, plan-28, experiment, scorer, transcripts, labels, blinding, telemetry, readings]
 metadata:
   node_type: task
-  status: drafting
+  status: pending
   plan: plan-28-handhold-outcome-experiment
   created: 2026-11-13
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Task 28.3: the outcome scorer {#root}
 
 > Plan: [[plan-28-handhold-outcome-experiment]]
-> Status: Drafting (spec wave 2026-11-13, G17; r1 fold of `bsd-spec-t3c`, [[#rev-r1]]).
+> Status: Pending: approved to build (2026-11-14, [[#approval]]; spec wave 2026-11-13, G17; r1 fold of `bsd-spec-t3c`, [[#rev-r1]]).
 > Depends on: [[task-28.1-session-arms-and-push-switch]] (the `session_arm` fields it splits by);
 > 21.1's events (R12's explicit `used` evidences); 10.4's `prompt_family`.
 > Builds `eval/production/handhold/`. It reads local transcripts (from the archive) and telemetry
@@ -263,3 +263,10 @@ by the real hooks in 23.0's sandbox. Every AC names its mutation. {#acceptance-l
 |---|---|---|
 | r2-s3 `src/` told to import from `eval/` | `attribute_explicit_use` lives in `score.py` until 21.5 phase B MOVES it into `refmatrix/telemetry.py`; `score.py` then imports it; AC-9 holds one definition across `eval/` and `src/`, plus no `src` → `eval` import | [[#r7]], [[#ac-9]] |
 | r2-m5 "better on any" over three uncorrected CIs | Holm across outcomes (2)-(4), pre-registered; AC-8 adds a set where only the Holm step yields `shrink` | [[#r9]], [[#ac-8]] |
+
+## Approval (2026-11-14) {#approval}
+
+rel: derives-from -> [[bsd-spec-t3c-r3-c5d1b79]]
+rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
+
+**Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. This task is `pending`, which means approved to build in plan-28's order. {#approval-row}

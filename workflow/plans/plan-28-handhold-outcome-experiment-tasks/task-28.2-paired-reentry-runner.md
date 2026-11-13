@@ -5,16 +5,16 @@ title: "Task 28.2: the paired re-entry runner: real handoffs resumed by fresh ag
 tags: [task, plan-28, experiment, paired, clones, littlebig, handoff, hooks]
 metadata:
   node_type: task
-  status: drafting
+  status: pending
   plan: plan-28-handhold-outcome-experiment
   created: 2026-11-13
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Task 28.2: the paired re-entry runner {#root}
 
 > Plan: [[plan-28-handhold-outcome-experiment]]
-> Status: Drafting (spec wave 2026-11-13, G17; r1 fold of `bsd-spec-t3c`, [[#rev-r1]]).
+> Status: Pending: approved to build (2026-11-14, [[#approval]]; spec wave 2026-11-13, G17; r1 fold of `bsd-spec-t3c`, [[#rev-r1]]).
 > Depends on: [[task-28.1-session-arms-and-push-switch]] (the paired override and the as-of
 > filter).
 > Builds `eval/production/handhold/`. R0 is a probe whose answers can change R2's mechanics. If an
@@ -111,9 +111,15 @@ hazards shape it:
      R4's filter applies to the global store and to every pull path, in C too.
    - **Cell (r1 #s2).** For `A+dedupe` and `B` the runner exports `RMX_HANDHOLD_CELL` and
      `RMX_HANDHOLD_RUN`. `C` gets the generated bare profile from R0 (c), plus
-     `RMX_HANDHOLD_RUN` and `RMX_HANDHOLD_AS_OF`. No period record is used. The runner reads the
-     run's SessionStart row and aborts the run unless it shows the cell set (C: no rmx hook row
-     at all).
+     `RMX_HANDHOLD_RUN` and `RMX_HANDHOLD_AS_OF`. No period record is used.
+   - **Validated before launch, checked after (r3 m1).** Before it launches `claude`, the
+     runner parses the exact env it will export with 28.1's `arms.parse_paired` (the same
+     parser `paired_override` uses). On any parse failure it refuses to start the run (exit 1,
+     the reason on stderr) and creates no clone. After launch it reads the run's SessionStart
+     row and aborts unless the row shows the cell set (C: no rmx hook row at all). At the end,
+     any `arm_error` anywhere in the run's telemetry, on the SessionStart row or any pull row,
+     marks the run `arm_error`: it is aborted if still running, excluded from every reading,
+     and counted per cell.
    - **Trigger.** For `new-session`, a fresh process gets the resume prompt. For `clear`, a
      fresh process gets ONE fixed warm-up prompt (template frozen by 28.4), then `/clear`, then
      the resume prompt.
@@ -186,6 +192,15 @@ R0's probe and AC-6 use the real `claude`. Every AC names its mutation. {#accept
 8. **AC-8 Leak control.** A synthetic transcript with one Read of a file under the source repo
    marks the run `leak_suspect`, and it is excluded and counted. A Read inside the clone does
    not. **Mutation:** the scan limited to Bash calls; the Read leak passes unflagged. {#ac-8}
+9. **AC-9 Validation before launch, exclusion after (r3 m1).**
+   - A run whose env would carry an unparseable `RMX_HANDHOLD_AS_OF`, or `RMX_HANDHOLD_RUN=r-0001`,
+     is refused before any clone or process starts: exit 1, with the reason on stderr.
+   - A stubbed C run whose pull rows carry `arm_error` is excluded and counted
+     `arm_error=1` under C.
+   - A clean run is kept.
+
+   **Mutation:** the runner ignores `arm_error` on pull rows, so the C run is kept and AC-9
+   fails. {#ac-9}
 
 ## Files {#files}
 
@@ -193,21 +208,21 @@ R0's probe and AC-6 use the real `claude`. Every AC names its mutation. {#accept
 |---|---|
 | `eval/production/handhold/paired_runner.py` (new) | R1's task draw, R2's run (clone cut, snapshot, env, trigger, archive, teardown), R3's order, R4's refusals |
 | `eval/production/handhold/bare_profile.py` (new) | arm C's generated clone settings (R0 (c)'s mechanism) |
-| `tests/test_task28_2_paired_runner.py` (new) | AC-1 to AC-5, AC-7, AC-8 |
+| `tests/test_task28_2_paired_runner.py` (new) | AC-1 to AC-5, AC-7 to AC-9 |
 | `tests/fixtures/handhold/fake_claude` (new, test-only) | the stub executable; registered in `workflow/test_mock_registry.md` |
 | `workflow/measurements/handhold-paired-probe-<date>.md` (new, GMD) | R0's answers (a)-(h), counts only |
 | `/Volumes/littlebig/refmatrix-measurement-archive/plan-28/paired/` (LOCAL, `0700`, never committed; creation announced to the user) | R2's archive |
 
 ## Test strategy {#test-strategy}
 
-- RED first on AC-1 to AC-5, AC-7 and AC-8 (no runner exists). AC-6 is a real run, recorded.
+- RED first on AC-1 to AC-5 and AC-7 to AC-9 (no runner exists). AC-6 is a real run, recorded.
 - The only mock is the external `claude` binary, and only in the stubbed ACs. The store, the
   ingest, the daemon, git and the hooks generator are real.
 - Output is captured to `workflow/review-output/pytest-task28-2.log`.
 
 ## Definition of done {#done}
 
-- R0 recorded (a)-(h); AC-1 to AC-5, AC-7 and AC-8 RED then GREEN; AC-6's six runs recorded with
+- R0 recorded (a)-(h); AC-1 to AC-5 and AC-7 to AC-9 RED then GREEN; AC-6's six runs recorded with
   clean teardowns.
 - Implementation summary at `workflow/implementation_summaries/task-28.2-paired-reentry-runner.md`.
 - Committed on branch `task-28.2-paired-reentry-runner`, merged `--no-ff` to `master`.
@@ -227,3 +242,16 @@ R0's probe and AC-6 use the real `claude`. Every AC names its mutation. {#accept
 |---|---|---|
 | r2-s1 the as-of filter is never probed on the global leg | R0 (a) probes it end to end against the real daemon and global store, in an A cell and under C's env | [[#r0]] |
 | r2-s2 the run-id format is unnamed | `r-` plus six zero-padded digits, used by the clone path, the env and the archive | [[#r2]] |
+
+## Revision r3 (2026-11-14, `bsd-spec-t3c` r3 MEH-only; lead rulings) {#rev-r3}
+
+| finding | disposition | where |
+|---|---|---|
+| r3 m1 a bad `AS_OF` with a valid cell runs on; C's `arm_error` sits only on pull rows | the runner parses its env with `arms.parse_paired` before launch and refuses on failure; any `arm_error` in the run's telemetry excludes the run, counted per cell; AC-9 | [[#r2]], [[#ac-9]] |
+
+## Approval (2026-11-14) {#approval}
+
+rel: derives-from -> [[bsd-spec-t3c-r3-c5d1b79]]
+rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
+
+**Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. This task is `pending`, which means approved to build in plan-28's order. {#approval-row}

@@ -5,16 +5,16 @@ title: "Task 28.4: calibrate the paired leg, settle every P-item, and freeze the
 tags: [task, plan-28, experiment, preregistration, calibration, bands]
 metadata:
   node_type: task
-  status: drafting
+  status: pending
   plan: plan-28-handhold-outcome-experiment
   created: 2026-11-13
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Task 28.4: the pre-registration freeze {#root}
 
 > Plan: [[plan-28-handhold-outcome-experiment]]
-> Status: Drafting (spec wave 2026-11-13, G17).
+> Status: Pending: approved to build (2026-11-14, [[#approval]]; spec wave 2026-11-13, G17).
 > Depends on: 28.1, 28.2 (R0 and AC-6) and 28.3 merged; bug-216 live; 21.5 phase M reported
 > ([[task-21.5-tool-used-signal#done-m]]); the m1 r2-lite confirm (G32) CLEAN or MEH-only
 > (L36).
@@ -144,3 +144,10 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
 |---|---|---|
 | r2-m3 | the record's own commits are exempt from the pause ban | [[#r2]] |
 | r2-m5 | the push reading's Holm correction is frozen here | [[#r2]] |
+
+## Approval (2026-11-14) {#approval}
+
+rel: derives-from -> [[bsd-spec-t3c-r3-c5d1b79]]
+rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
+
+**Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. This task is `pending`, which means approved to build in plan-28's order. {#approval-row}

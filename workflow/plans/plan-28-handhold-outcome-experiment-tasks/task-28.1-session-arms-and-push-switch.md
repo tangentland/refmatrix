@@ -5,16 +5,16 @@ title: "Task 28.1: the plan-28 period record, the paired-run fields on 10.2's se
 tags: [task, plan-28, experiment, arms, scan-prompt, memory-recall, hooks, telemetry]
 metadata:
   node_type: task
-  status: drafting
+  status: pending
   plan: plan-28-handhold-outcome-experiment
   created: 2026-11-13
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Task 28.1: session arms and the push-off switch {#root}
 
 > Plan: [[plan-28-handhold-outcome-experiment]]
-> Status: Drafting (spec wave 2026-11-13, G17; r1 fold of `bsd-spec-t3c`, [[#rev-r1]]).
+> Status: Pending: approved to build (2026-11-14, [[#approval]]; spec wave 2026-11-13, G17; r1 fold of `bsd-spec-t3c`, [[#rev-r1]]).
 > Depends on: [[task-10.2-plan-10-injection-dedup]] merged. Its R7 CREATES `arms.py`: the full
 > cell table (`A+dedupe`, `A+full`, `B`, `C` at weight 0), the store-scoped `arms.draw`, the
 > SessionStart `session_arm` row, and the `dedupe` / `full` branch that the A cells use. The
@@ -112,6 +112,11 @@ This task also settles three things the r1 review found:
      `^[a-z0-9-]{8,64}$`, or an unparseable time each give `arm_error` and one stderr line. A
      bad cell or run falls back to `A+dedupe`, and a bad as-of turns the filter on at the
      earliest representable time, which admits nothing, so the error can never leak a row.
+   - **One parser (r3 m1).** The parsing is ONE pure function,
+     `arms.parse_paired(env: Mapping[str, str]) -> PairedRun`, which raises `PairedRunError`
+     on any invalid value. `paired_override()` calls it on `os.environ` and turns the error into
+     the `arm_error` fallback above. 28.2's runner calls it on the env it is about to export,
+     before launch.
 
    28.2's runner reads the SessionStart row and aborts any run whose row does not show the cell
    it set, or (for C) shows any rmx hook row.
@@ -121,6 +126,16 @@ This task also settles three things the r1 review found:
      every verb call that returns memory rows: `memory recall` (hook and interactive, CLI and
      MCP), `memory get`, recall-state's memory reads, `context` (its attached memories) and
      `scan-prompt`.
+   - **`as_of` is injected, never model-visible (r3 m2).** It rides each verb's `**internal`
+     kwargs, as `trace`, `embedder_policy` and 10.2's `dedupe` do. It is not in any verb's
+     `defaults`, so the generated MCP schema has no `as_of` property and the CLI has no
+     `--as-of` option.
+     - The adapters set it from `paired_override()` alone. A model-supplied `as_of` in MCP
+       arguments, or any caller-supplied `as_of` that disagrees with the env, is dropped. The
+       env value always wins, and with no env value no `as_of` is passed.
+     - `tests/test_verb_parity.py` records `as_of` as an injected internal parameter, with the
+       reason "measurement-only, injected from `paired_override`, never model-visible; deleted
+       with `arms.py`".
    - **The store side honours it.** The daemon op and the hub's global read accept `as_of` in
      their op arguments and apply ONE admit function, `arms.as_of_admit(meta, as_of) -> bool`,
      where rows leave the store, in both scopes. Neither ever reads an environment variable.
@@ -242,6 +257,18 @@ the mutation that must fail it (r1 #m3). {#acceptance-lead}
    block is byte-identical before and after. The switch lives inside the commands, and the env
    names are never interpolated into a hook line. **Mutation:** an env name interpolated into
    the generated UserPromptSubmit command; the byte comparison fails. {#ac-9}
+10. **AC-10 `as_of` is not model-visible (r3 m2).**
+    - The generated MCP schema of every verb has no `as_of` property, and the CLI has no
+      `--as-of` option. The parity test's injected-parameter record names `as_of` with its
+      reason.
+    - Under an env `RMX_HANDHOLD_AS_OF` = T, an MCP `rmx_memory_recall` call whose arguments
+      include `as_of` = a time later than T still excludes a row written between T and that
+      later time.
+    - With no env, an MCP call carrying `as_of` returns that row, because the model's value is
+      dropped.
+
+    **Mutations:** `as_of` added to a verb's `defaults`, exposing it in the schema; the adapter
+    preferring a caller's `as_of` over the env. Either fails AC-10. {#ac-10}
 
 ## Files {#files}
 
@@ -253,7 +280,8 @@ the mutation that must fail it (r1 #m3). {#acceptance-lead}
 | the project daemon's memory op and the hub's global read (sites named before GREEN, R4) | the store side: accept `as_of` as an op argument and apply `as_of_admit`; return `as_of_excluded`; never read env |
 | `src/refmatrix/telemetry.py` | `session_arm`, `suppressed`, `arm_error`, `as_of_excluded` row fields; the per-cell split |
 | `workflow/deferral_registry.md` | 10.2's `arms.py` row widened (R7) |
-| `tests/test_task28_1_session_arms.py` (new) | AC-1 to AC-9 |
+| `tests/test_task28_1_session_arms.py` (new) | AC-1 to AC-10 |
+| `tests/test_verb_parity.py` | `as_of` recorded as an injected internal parameter, with its reason (R4) |
 
 ## Test strategy {#test-strategy}
 
@@ -288,3 +316,17 @@ the mutation that must fail it (r1 #m3). {#acceptance-lead}
 |---|---|---|
 | r2-s1 the as-of env never reaches the hub or the clone daemon; C's partial env is undefined | the client reads the env and passes `as_of` as an explicit verb/op argument; the daemon op and the hub's global read honour the argument and never read env; `RUN` + `AS_OF` without `CELL` (arm C) keeps the filter on; AC-7 has a leg under C's exact env against a global store started before the env, with the mutation "store reads env instead of the argument" | a7, [[#r3]], [[#r4]], [[#ac-7]], [[#files]] |
 | r2-s2 AC-6's run id fails R3's own regex | AC-6 uses `r-000001`; a second leg asserts that the 6-character `r-0001` falls back with `arm_error`; the length-bound mutation | [[#ac-6]] |
+
+## Revision r3 (2026-11-14, `bsd-spec-t3c` r3 confirm-lite MEH-only 0B/0S/2M; lead rulings) {#rev-r3}
+
+| finding | disposition | where |
+|---|---|---|
+| r3 m1 a bad `AS_OF` with a valid cell runs on with zero memories | ONE parser, `arms.parse_paired`, used by `paired_override` and by 28.2's runner before launch | [[#r3]] |
+| r3 m2 `as_of` as a verb parameter would be model-visible | it rides `**internal`, injected by the adapters from `paired_override`; not in the MCP schema or the CLI; the env always wins; the parity test records it with a reason; AC-10 | [[#r4]], [[#ac-10]], [[#files]] |
+
+## Approval (2026-11-14) {#approval}
+
+rel: derives-from -> [[bsd-spec-t3c-r3-c5d1b79]]
+rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
+
+**Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. This task is `pending`, which means approved to build in plan-28's order. {#approval-row}

@@ -5,17 +5,18 @@ title: "Plan 28: the handhold outcome experiment: do refmatrix's handholds cut t
 tags: [plan, experiment, charter, recall, scan-prompt, telemetry, handhold, plan-21, plan-10]
 metadata:
   node_type: plan
-  status: drafting
+  status: approved
   created: 2026-11-13
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Plan 28: the handhold outcome experiment {#root}
 
 **Date:** 2026-11-13
-**Status:** Drafting (spec wave 2026-11-13, G17). Written from
-[[exploration-handhold-outcome-experiment]] and the plan review's decisions. Not approved: the
-lead sets `approved` after a clean ch-bsd round (the d9co route, [[plan-review-2026-11-13#goal-horizon]]).
+**Status:** Approved (2026-11-14, [[#approval]]); spec wave G17. Its tasks are `pending`, which means approved to build. **The START (28.5) remains user-gated.** Written from
+[[exploration-handhold-outcome-experiment]] and the plan review's decisions. The lead set
+`approved` on the d9co route after a clean (MEH-only) ch-bsd round
+([[plan-review-2026-11-13#goal-horizon]]).
 **Location:** `workflow/plans/plan-28-handhold-outcome-experiment.md`; tasks in
 `workflow/plans/plan-28-handhold-outcome-experiment-tasks/`.
 **Queue:** item 7 of [[plan-review-2026-11-13#queue]]. The m1 confirm (L36) and 21.5 phase M come
@@ -331,3 +332,10 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 | r2-s3 | `attribute_explicit_use` moves into `src/` in 21.5 phase B | [[task-28.3-outcome-scorer#rev-r2]] |
 | r2-m3 | the record's own start, pause and end commits are exempt from the pause ban | [[#ordering]] |
 | r2-m5 | the push reading is Holm-adjusted across (2)-(4) | [[#bands]], [[task-28.3-outcome-scorer#r9]] |
+
+## Approval (2026-11-14) {#approval}
+
+rel: derives-from -> [[bsd-spec-t3c-r3-c5d1b79]]
+rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
+
+**Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. Plan-28 is `approved`, and tasks 28.1-28.5 are `pending`: approved to build in queue order. The experiment's START stays user-gated (L45, 28.5 R1), and so do the other user steps the tasks name. {#approval-row}

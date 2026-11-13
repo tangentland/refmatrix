@@ -5,16 +5,16 @@ title: "Task 28.5: the user-gated run: start the period on the user's go, run bo
 tags: [task, plan-28, experiment, run, report, charter, user-gated]
 metadata:
   node_type: task
-  status: drafting
+  status: pending
   plan: plan-28-handhold-outcome-experiment
   created: 2026-11-13
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Task 28.5: run and report {#root}
 
 > Plan: [[plan-28-handhold-outcome-experiment]]
-> Status: Drafting (spec wave 2026-11-13, G17).
+> Status: Pending: approved to build (2026-11-14, [[#approval]]; spec wave 2026-11-13, G17).
 > Depends on: [[task-28.4-preregistration-freeze]] frozen and reviewed. **User-gated:** the
 > start (L45). **Goal stop:** the charter decision (G18).
 
@@ -131,3 +131,10 @@ decision (G18), not a goal step. {#why-body}
 | finding | disposition | where |
 |---|---|---|
 | r2-m3 | the record's own start, pause and end commits are exempt from the pause ban | [[#r3]] |
+
+## Approval (2026-11-14) {#approval}
+
+rel: derives-from -> [[bsd-spec-t3c-r3-c5d1b79]]
+rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
+
+**Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. This task is `pending`, which means approved to build in plan-28's order. Its user steps stay user-gated: the go, every pause, and the end. {#approval-row}

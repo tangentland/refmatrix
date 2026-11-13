@@ -5,14 +5,14 @@ title: "Task bug-216b: the per-type evaluation of bug-216's `denotes` relation a
 tags: [task, bug-216, denotes, pagerank, ranking, measurement, adr-0004]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   created: 2026-11-13
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Task bug-216b: evaluate the `denotes` fold per type {#root}
 
-> Status: Drafting (spec wave 2026-11-13, G30). A measurement-lane task (plan-review L29).
+> Status: Approved (2026-11-14, [[#approval]]; spec wave 2026-11-13, G30). A measurement-lane task (plan-review L29).
 > Depends on: [[task-bug216-rule-docs-in-graph]] merged and deployed; its derive, run on the live
 > refmatrix store through the production verb `rmx derive denotes` (the verb
 > `rmx_derive_denotes`, bug-216 R14, over the daemon op `denotes_link`); and its live recount
@@ -222,3 +222,10 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 |---|---|---|
 | r2-m2 M2 waits on a gate that is read after this task runs | M2 bands on R12 explicit uses only; `cited_in_answer` is report-only | [[#r3]] |
 | r2-m4 the ADR-0004 line says "the architect" | it says "spec-t3c (spec wave G30)" | [[refmatrix/adr-0004-unified-location-space-index#d-2026-11-13-denotes]] |
+
+## Approval (2026-11-14) {#approval}
+
+rel: derives-from -> [[bsd-spec-t3c-r3-c5d1b79]]
+rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
+
+**Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. It runs in the measurement lane once bug-216 is live, as its Depends-on line states. {#approval-row}

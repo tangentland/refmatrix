@@ -5,17 +5,17 @@ title: "Task 21.5: a tool-level `used` signal: derived at report time by joining
 tags: [task, plan-21, telemetry, recall-events, used, stm, agent-usage]
 metadata:
   node_type: task
-  status: pending
+  status: approved
   plan: plan-21-agent-context-usage
   created: 2026-11-11
-  updated: 2026-11-13
+  updated: 2026-11-14
   revision: 4
 ---
 
 # Task 21.5: a tool-level `used` signal {#root}
 
 > Plan: [[plan-21-agent-context-usage]]
-> Status: Pending. Rev 2 (2026-11-11) answered ch-bsd spec review r1 (DIRTY 18) and its addendum
+> Status: **Approved, rev 4 (2026-11-14, [[#approval]]): phase M is approved to build; phase B stays FROZEN until the charter decision** ([[#decision-no-build]]). History: Pending. Rev 2 (2026-11-11) answered ch-bsd spec review r1 (DIRTY 18) and its addendum
 > against 24.6 r5 ([[#rev-2]]). Rev 3 (2026-11-13) answers spec review r2 (DIRTY 14, NO-GO on
 > b-1: the Bash leg re-opened the clone leg D12 rules out) and re-runs [[#why-data]] under the
 > fix ([[#rev-3]]). Rev 3.1 (the same day) folds in the user's OD-4 and OD-5 decisions (OD-5: a
@@ -1774,3 +1774,10 @@ The user is told and may overturn any of them, which would be a dated revision b
 |---|---|---|
 | r2-s3 phase B told to import from `eval/` | phase B MOVES `attribute_explicit_use` into `telemetry.py`; the scorer imports it from there | [[#r6]] |
 | r2-m1 the frame starts at a date, not an instant | it starts at the pilot clone's latest possible instant, the pilot measurement's commit `6725801` (2026-11-13T11:35:59-08:00), or an earlier recorded clone time; `n_main < 50` flagged as likely | [[#r14-window]] |
+
+## Approval (2026-11-14) {#approval}
+
+rel: derives-from -> [[bsd-spec-t3c-r3-c5d1b79]]
+rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
+
+**Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. **Scope of the approval:** phase M (R14, the re-measure) is approved to build in queue item 7, after the m1 confirm (G32). **Phase B (R1-R13, every AC) stays FROZEN** until plan-28 reports and the user takes the charter decision (D-Q4, D-Q3, [[#decision-no-build]]). Approval does not unfreeze it. {#approval-row}
