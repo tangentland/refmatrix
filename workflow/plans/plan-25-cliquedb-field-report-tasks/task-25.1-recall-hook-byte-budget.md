@@ -735,3 +735,29 @@ add it" to this task. SessionStart fires with source `compact` after compaction 
 | R11: a SessionStart `compact|clear` entry runs `rmx recall-state --max-bytes N` as its own command, fitted to `hook_budget.budget("recall_state")` | [[#r11]] |
 | AC-15: the generated entry, the fitted output, the no-daemon and failure paths, verb parity; mutations | [[#ac-15]] |
 | R0's measured cap (`d748196`, outcome (A), 10,000 UTF-16 units per hook) sets N ≤ 9,000 B | [[#r0]] |
+
+## Revision round 7 (2026-11-13, lead decisions on the GREEN's open items) {#rev-round-7}
+
+`green-251b` committed the GREEN (`16ace00`, `#green` in `273050b`) with six non-AC-5 failures for
+the lead to judge and seven flags. The user's standing direction (2026-11-13: "the other next steps
+can proceed") covers these; each is decided as the user would, with the reason. Measurements are in
+the implementation summary's `#lead-judge-table`.
+
+| item | decision | owner |
+|---|---|---|
+| J1 `test_ac9_pack_trailer_quotes_a_multiline_query` | TEST fixture: 19.1 R3(d) prints a trailer only when a hit is not named; the fixture must carry more rows than fit (≥ 20 rows at 2,000 B). Spec unchanged | test engineer |
+| J2 `test_ac4f_…_including_a_doc` | FIXTURE artefact: AC-4 (f) is parity (CLI and verb name the same hits) plus reachability of the `kind=doc` leg (`kinds=[doc]` returns docs); it does not require a doc in the top 8 of a mixed recall. The test asserts those two, not a rank | test engineer |
+| J3/J4 `test_ac6_include_subjects_…` (argv and verb) | **PRODUCT fix:** a subject row is a label, which a cross-encoder cannot score against a prompt (rerank put the 4 live subjects at ranks 32-35 of 36; with `rerank=False`, ranks 1-4). With `include_subjects`, subject rows are EXEMPT from cross-encoder rerank and keep their pre-rerank rank; non-subject rows rerank as today; a stale subject stays hidden. {#j3-subjects-exempt} | implementer (tests already RED) |
+| J5 `test_ac9_session_start_carries_bodies_after_all_hook_lines` | SPEC tension resolved: R3's "every hook line before any body" with R7's SessionStart `--k 30` leaves ~3 KB for bodies at 9,000 B (30 lines = 5,961 B), so no project body (2.0-8.7 KB) fits. **R7 amended: SessionStart `--k 12`** (as per-prompt); the `+N more` trailer still points at the rest. PreCompact stays 30 (R0 may drop it). {#j5-session-start-k} | implementer (generator) + test engineer (AC-13 argv expectation) |
+| J6 `test_ac10_delivered_events_slice_the_payload_by_bytes` | TEST detector: a body is identified by its span offsets, not by a `BODYMARK` string (global bodies carry none). Spec unchanged | test engineer |
+| F1 `#r10-bus` (`rmx_bus_pub` `about` field) | tests first (RED), then build — in this task | test engineer → implementer |
+| F2 R11 last bullet (recall-state counted as producer `recall_state` in `rmx telemetry --context`) | tests first, then build — in this task | test engineer → implementer |
+| F3 AC-4 (i) has no test | write it: no `modelsrv` child and no `sentence_transformers` import when the daemon RPC leg serves | test engineer |
+| F4 two AC-14 mutations undecidable | add a SessionStart payload with a non-zero trailer (a trimmed hit) so "delivered event for a trimmed hit" and "global hit's event in the project file" can be killed | test engineer |
+| F5 hooks-by-id-only mutation survives | accepted as an equivalent (lead a4, `load_hooks` aliases path keys to ids) | — |
+| F6 `recall leg: …` printed on every recall under a `warning:` prefix | the line stays in the verb's `warnings` (R5); the CLI prints leg-served lines only with `--verbose`, never under `warning:` on a normal run; real warnings unchanged. {#f6-leg-line} | test engineer (RED) → implementer |
+| F7 routing-file mock row not graduated | graduate it per `#mocks-registry` | test engineer |
+| 27 contract-change failures (`#green-triage-table`) | update each test to the contract its spec line now states (replica leg in `recall.py`, `--pack` text not JSON, empty stdout on skip, 500 B curator cap, leg-named warnings); no `src/` change | test engineer |
+
+rel: amends -> [[task-25.1-recall-hook-byte-budget#r7]]
+rel: amends -> [[task-25.1-recall-hook-byte-budget#r2]]
