@@ -79,8 +79,8 @@ rel: depends-on -> [[task-19.6-phased-context-and-topic-cache#ranges-a]]
      and hashes only, [[feedback_no_raw_prompts_in_public_repo]]).
 1. **R1 Item labels, at every tier (L15).** Every tier of 25.1b's ladder carries the label. Per
    25.1b's tier shapes (bsd-spec-t3ab S1, lead ruling), tiers 1-3 all keep 25.1's hook line:
-   tier 1 = hook line + full body, tier 2 = hook line + excerpt, tier 3 = the item's 25.1 hook
-   line alone, which carries its `(rmx memory get …)` fetch pointer (25.1b R13's wording).
+   tier 1 = hook line + full body, tier 2 = hook line + excerpt, tier 3 = hook line (which carries its `(rmx memory get …)` fetch pointer)
+   (25.1b R13's string, verbatim).
    The label therefore sits on that hook line at every tier from 1 to 3, and on each member of
    the `still in play` line (tier 4), held or over budget. Every member is labelled where it stands, and rank order is kept (p2: no
    regrouping by label). 25.1b's tier renderers call `telemetry.kind_label`
@@ -165,11 +165,12 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 
 **bsd-spec-t3ab r1 folded (2026-11-13, lead ruling S1).** R1 labels the hook line that tiers 1-3
-all keep (tier 1 = hook line + body, 2 = hook line + excerpt, 3 = the hook line alone, which
-carries its fetch pointer), and each tier-4 line member. {#rev-round-6-bsd}
+all keep (tier 1 = hook line + body, 2 = hook line + excerpt, 3 = hook line (which carries its `(rmx memory get …)` fetch pointer)), and each tier-4 line member. {#rev-round-6-bsd}
 
 rel: derives-from -> [[bsd-spec-t3ab-ff1d453-369e0b5]]
 
 **bsd-spec-t3ab r2 m3 folded (2026-11-13).** Tier 3 uses 25.1b R13's wording: "the item's 25.1
 hook line alone, which carries its `(rmx memory get …)` fetch pointer". It is one line, not two.
 {#rev-round-6-bsd-r2}
+
+**bsd-spec-t3ab r3 m1 folded (2026-11-13).** Tier 3 is 25.1b R13's string, copied verbatim: "hook line (which carries its `(rmx memory get …)` fetch pointer)". {#rev-round-6-bsd-r3}
