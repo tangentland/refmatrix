@@ -2,7 +2,7 @@
 gmd: "0.1"
 id: task-bug185-bulk-gmd-ingest
 title: "Task bug-185: ingest_gmd_paths writes nodes, anchor concepts, mention links and rel edges in bulk; a GMD re-ingest's hold stops growing with its anchor count"
-tags: [task, bug-185, bug-186, gmd, ingest-gmd, writer-lock, performance, facts-log, replay, bug-093, bug-177, bug-178, bug-216]
+tags: [task, bug-185, bug-186, bug-221, gmd, ingest-gmd, writer-lock, performance, facts-log, replay, bug-093, bug-177, bug-178, bug-216]
 metadata:
   node_type: task
   status: approved
@@ -21,9 +21,15 @@ metadata:
 > L3, L4, L31). R2 resolves with bug-216 R6's precedence. The "minted earlier" rule never beats a
 > same-named doc or memory. bug-216's pending-ref (R10) and `denotes` (R7) writes join the bulk
 > writes ([[#r8]]), and a fourth entry point, `gmd_finish`, carries them. AC-2's golden is recorded
-> on the post-bug-216 tree. The gate is narrowed. **Two open items block RED:**
-> [[#open-replay-216]] and [[#open-finish-stop]]. The lead settles them; this revision picks
-> neither.
+> on the post-bug-216 tree. The gate is narrowed. Lead inputs folded the same day
+> ([[#rev-round-2-lead]]):
+> - the replay-fidelity gap is resolved by bug-216 R13 ([[#open-replay-216]]), and this
+>   task's bulk writes emit R13's events;
+> - bug-221 is fixed here: a re-ingest replaces the doc's own `rel:` edges ([[#r10]]);
+> - the cost of the per-file evidence clear is measured and bounded here ([[#r9]]).
+>
+> **One open item blocks RED:** [[#open-finish-stop]]. The lead settles it; this revision does
+> not pick an option.
 > Depends on (narrowed by L4, round 2; the old text was "plan-26 merged"):
 > - bug-178 merged to `master` ([[task-bug178-bulk-write-helper]]: `backend.bulk_write`, and
 >   `bulk_upsert_entity` lifted onto it). SATISFIED: `76ec748`.
@@ -35,7 +41,8 @@ metadata:
 > - **bug-216 merged to `master`** ([[task-bug216-rule-docs-in-graph]]; L3). R2 and [[#r8]] are
 >   written against its resolver and its pending-ref / `denotes` writes. AC-2's golden is
 >   recorded on a `master` that contains them.
-> Also fixes: bug-186 (facts.log replay drops link weights), [[#r6]].
+> Also fixes: bug-186 (facts.log replay drops link weights), [[#r6]]; bug-221 (a changed `rel:`
+> line leaves its old typed edge with no evidence after a re-ingest), [[#r10]] (round 2).
 > Blocks: [[task-23.3-sync-between-file-yield#ac-4b]] (needs this task's bulk path and its
 > per-document entry points, [[#r7]], to go GREEN).
 
@@ -50,6 +57,7 @@ rel: related-to -> [[task-23.3-sync-between-file-yield#r1]]
 rel: reinforces -> [[feedback_converge_repeated_shapes]]
 rel: related-to -> [[feedback_go_no_go_ranges_not_predrop]]
 rel: implements -> [[bug_registry]] {bug: "bug-186"}
+rel: implements -> [[bug_registry]] {bug: "bug-221"}
 
 ## Why {#why}
 
@@ -120,8 +128,11 @@ document, and its per-document hold has the same cause: 29 s for one session car
    resolver is [[task-bug216-rule-docs-in-graph#r6]], not the concept-first order this spec
    pinned in round 1. For each document, in this order:
    0. **The document's previous `rel:` evidence and pending rows are cleared** (bug-216 R10,
-      unchanged): `clear_rel_evidence(path)` and `clear_pending_refs_for_file(path)` run before
-      step 1. Each is one count and at most one delete per document, so the cost is constant.
+      logged by its R13): `clear_rel_evidence(path)` and `clear_pending_refs_for_file(path)`
+      run before step 1. Round 2 changes two things. The evidence clear also returns the
+      `(verb, source, target)` keys of the rows it removed: these are the edges the OLD text
+      stated, which [[#r10]] needs. Its statement shape and its cost bound are [[#r9]]. Both
+      clears are constant per document, and each logs its R13 event.
    1. **Unconditional concepts** (unchanged): `cids = _bulk_add_concepts(store, concept_specs)`.
       It runs BEFORE any target is resolved, as at HEAD, because 2 `rel:` targets and 7 refs in
       the real corpus resolve only through the document's own unconditional concepts (e.g.
@@ -192,13 +203,13 @@ document, and its per-document hold has the same cause: 29 s for one session car
      least one `link` event naming it, and every entity event precedes any link event that names
      that entity;
    - (c) **replay fidelity**: rebuilding a fresh store from the NEW code's facts.log reproduces
-     the NEW code's own catalog dump (minus the excluded columns). **Round 2: this cannot hold
-     as written on the post-bug-216 tree, and the cause is not this task.** bug-216's
-     `clear_rel_evidence` deletes evidence rows and logs no event, and its `pending_refs` table
-     has no event at all. So a job-path v1 → v2 re-ingest leaves one evidence row per `rel:`
-     line in the catalog and two in a replay, and every replay loses the pending rows. How (c)
-     treats both is [[#open-replay-216]], settled by the lead before RED. This spec does not
-     weaken (c) to fit.
+     the NEW code's own catalog dump (minus the excluded columns), `pending_refs` included.
+     **Round 2:** this holds on the post-bug-216 tree because bug-216 R13 logs its per-file
+     `rel:`-evidence clear and its pending-ref add / delete / per-file-clear writes as facts.log
+     events, and both replay paths apply them
+     ([[task-bug216-rule-docs-in-graph]] R13, `#r13` on its branch until it merges; [[#open-replay-216]]). This task's batched forms
+     of those writes emit the SAME events ([[#r8]] (e)). [[#r10]]'s unlinks are ordinary
+     `unlink` events. The v1 → v2 fixture is where (c) is proven ([[#ac-11]]).
 
    facts.log is NOT a multiset match with HEAD's, by construction: per-row `link()` logs every
    call, `bulk_link` logs only newly set bits (plus, after [[#r6]], weight updates), and
@@ -285,7 +296,68 @@ document, and its per-document hold has the same cause: 29 s for one session car
    - (d) Chunked reads (`link_denotes`' 450-name chunks, R4's `RMX_GMD_BULK_CHUNK`) count as
      batched. Their statements grow with names divided by the chunk size, not with rows.
      AC-3's fixtures stay inside one chunk.
+   - (e) **R13's events, from the batched writes (round 2, lead decision).** Every batched
+     write above logs exactly the events bug-216 R13 defines for its per-row form, with the
+     same fields, by names, partition-qualified, in walk order, through one batched
+     `_names_of` + `_log_events` per write:
+     - the per-file `rel:`-evidence clear: one event per file;
+     - one pending-add event per row inserted (none for a duplicate the dedupe drops);
+     - one pending-delete event per row resolved or dropped;
+     - the per-file pending clear: one event per file.
+
+     The R13 event set stays the one bug-216 defines. This task adds no event op of its own
+     ([[#r10]]'s unlink uses the existing `unlink` op).
    {#r8}
+9. **R9 The per-file evidence clear is one statement pair with a measured bound (round 2;
+   bug-216 GREEN flag 7, lead input).** `Store.clear_rel_evidence(file)` scans
+   `linkage_evidence` by `file`, and no index covers `file` (`idx_evidence_entity`,
+   `idx_evidence_lookup` only, in both DDLs). It runs once per re-processed GMD document,
+   inside that document's hold, so its cost grows with the whole store's evidence table.
+   - **Shape.** Per document, ONE read of the rows to remove (`linkage_id`, `concept_id`,
+     `entity_id`, for [[#r10]] and the R13 event) and ONE delete on the same predicate. It may
+     be one `DELETE … RETURNING` where both backends support it. Bug-216's count-then-delete,
+     which is two scans plus the delete, is replaced. Constant per document, as R1 requires.
+   - **Measured, with a pre-registered band** ([[#ac-4]]). On AC-4's clone, each run records
+     the clear's wall time for the pinned file and the clone's `linkage_evidence` row count:
+     - median clear ≤ 50 ms: no schema change; the figures are recorded;
+     - median clear > 50 ms: this task adds `CREATE INDEX IF NOT EXISTS idx_evidence_file ON
+       linkage_evidence(file)` to BOTH DDLs (`store.py` for SQLite, `duckdb_catalog.py` for
+       DuckDB), re-runs AC-4, and the clear's median must then be ≤ 50 ms. The one-time build
+       on the clone is timed and recorded, because an existing catalog builds the index at its
+       next `init()` under the writer. The release notes announce that build. The index is an
+       ART index on DuckDB, like the two `linkage_evidence` indexes that already exist; that
+       shape is not new to the live catalog.
+     - The bar is not lowered if the index misses it. That case STOPs and is reported
+       ([[feedback_go_no_go_ranges_not_predrop]]).
+   {#r9}
+10. **R10 A re-ingest replaces the doc's own `rel:` edges (bug-221; round 2, lead input).** At
+    post-bug-216 HEAD, a re-ingest adds the current `rel:` edges and clears the file's `rel:`
+    evidence, but never unlinks an edge the new text no longer states. A changed verb or
+    target therefore leaves the old typed edge in `entity_links` with no evidence. The R8
+    recount (evidence-joined) never sees it, and replay reproduces it, so replay fidelity
+    hides it.
+    - **Which edges are the doc's own.** These are the `(verb, source, target)` keys of the
+      `rel:` evidence rows the R9 clear removes for this file: the doc's direct lines, its
+      root-mirror rows, and the rows its pending refs resolved earlier. They are keyed by
+      evidence, never by "every edge whose source is one of this doc's nodes". A `rel:` verb
+      can also be a hierarchy or extraction linkage (`part-of`), and those edges are not this
+      text's.
+    - **Replace.** After the document's step 5 (its current rel edges and evidence written),
+      every old key that the new text does not state is unlinked, UNLESS a `linkage_evidence`
+      row still supports it after the document's writes (another file or another producer
+      states the same edge). The unlink is ONE batched write per document,
+      `Store.bulk_unlink(items)`. It mirrors `bulk_link`: the bitmap fragments are updated
+      in-process, there is one relational delete, and one `unlink` event is logged per bit
+      actually cleared through one `_names_of`, as `unlink()` logs. Nothing is unlinked for a
+      document whose clear removed no rows.
+    - **Both contexts.** On the sync path `purge_path` has already removed the doc's node
+      entities and their links, so the replace finds nothing to do and is a no-op there. On the
+      job path (no purge) it is what removes the stale edge.
+    - **Out of scope:** stale edges already in live stores from earlier re-ingests. Each one
+      has no evidence row, so no key names it. Their census and repair belong with plan-22's
+      dangling classes, next to bug-219's census input (plan review L6). This task stops new
+      ones.
+    {#r10}
 
 ## How it composes with 26.2's one-transaction legacy-row refresh {#compose-26-2}
 
@@ -445,6 +517,9 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
        ([[feedback_go_no_go_ranges_not_predrop]]).
    - The implementation summary records the 5+5 runs, both medians, the ratio and a per-call
      profile of one new run.
+   - **Round 2 ([[#r9]]):** each new run also records the evidence clear's wall time and the
+     clone's `linkage_evidence` row count. R9's 50 ms band decides the index, and the index
+     build time is recorded if the index is added.
    {#ac-4}
 5. **AC-5 (SQLite and the existing GMD tests).** The AC-1/AC-2 fixtures ingest on the SQLite
    backend, and these existing tests stay green: `test_ingest_gmd_root_rel_mirror.py`,
@@ -503,6 +578,53 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
       `pending_dropped`, and does not link it.
 
     Mutation: dedupe keeping the last row FAILS on `detail`. {#ac-10}
+11. **AC-11 (bug-221 + replay fidelity on v1 → v2; RED at post-bug-216 HEAD; round 2).**
+    The fixture mirrors red-216's `tests/test_bug216_replay_fidelity.py` (bug-216 AC-14, read
+    on its branch at `f79dab1`):
+    - doc `a` v1 has `rel: derives-from -> [[b-doc]]` (existing) and
+      `rel: depends-on -> [[c-doc]]` (missing);
+    - v2 changes the first line's verb to `related-to`, moves the second line, and adds
+      `rel: amends -> [[d-doc]]` (missing);
+    - and, in this task, a third v2 change: a `{#root}` line's TARGET changes, which exercises
+      the root mirror.
+
+    Throwaway store, `RMX_LOG=1`, direct context (`ingest_gmd_paths` alone, no purge):
+    - **After v2, the catalog holds no `derives-from` edge `a → b-doc`** and no edge to the
+      old root target. Every `rel:` edge whose source is a node of `a` has at least one
+      evidence row. At HEAD this FAILS: the old edges survive with no evidence (bug-221).
+    - **A still-supported edge survives.** Another `rel:` line cannot state an edge from
+      `a`'s nodes, so the case comes from another producer. v1 also carries
+      `rel: depends-on -> [[b-doc]]` on node `cite`. Before v2, the fixture writes one more
+      evidence row for that key (`depends-on`, `a#cite`, `b-doc`) under a non-`rel:` detail,
+      through `Store.add_evidence`, the real API every producer uses. v2 drops the line, and
+      the edge stays because that evidence row still supports it.
+    - **Replay fidelity.** A FRESH catalog rebuilt from a byte copy of the log through
+      `rebuild_index_from_log` holds the same `linkage_evidence`, `pending_refs` and `rel:`
+      `entity_links` rows as the source (by names, as a multiset), [[#r3]] (c). Then `c-doc`
+      is ingested, the pending ref binds, and the catalog and the replay agree again.
+    - **The sync context** runs the same v1 → v2 through `_sync_paths`. The replace is a no-op
+      there (purge first), and the result equals the direct context's rel edges and evidence.
+    - **Mutations, each FAILS:**
+      - drop [[#r10]]'s unlink (the old edge survives);
+      - unlink by "source is a node of `a`" instead of by evidence key (a `part-of` hierarchy
+        edge from `a`'s node is removed);
+      - skip the "still supported" check (the duplicate-line edge goes);
+      - `bulk_unlink` without its `unlink` events (replay holds the old edge).
+
+    The per-event replay leg (`apply_log_delta(0)` / `_apply_event_body`) is a separate test
+    function, `test_ac11_per_event_replay`. It is kept out of the main test, as AC-8's is, so
+    16.6 R1f deletes it with the path ([[task-16.6-learned-row-validation#rev-round-15]]).
+    {#ac-11}
+12. **AC-12 (R8 (e) events and R9's shape; round 2).**
+    - For one re-ingest, the facts.log events of the batched path equal, as a multiset of op
+      plus names, those of the per-row R13 path that bug-216 merged. This is checked on the
+      AC-11 fixture, with the batched path against a recorded golden of R13's events at
+      post-bug-216 HEAD.
+    - A spy on the DuckDB wrapper's `execute` sees R9's clear as ≤ 2 statements per document
+      against `linkage_evidence`, and none of them is a `count(*)`.
+    - Mutations, each FAILS: `bulk_add_pending_refs` logs no pending-add events; the clear
+      goes back to count-then-delete.
+    {#ac-12}
 
 ## Merge order {#merge-order}
 
@@ -530,11 +652,16 @@ rel: depends-on -> [[plan-review-2026-11-13#queue]]
   - the `rebuild_index_from_log` fold's `None`-weight rule (R6 (b));
   - `stamp_derive`'s `con.commit()` → `_maybe_commit(con)`;
   - (round 2) `bulk_add_pending_refs` and a batched pending-row delete (R8 (a), (b));
-    `link_denotes`' per-pair `link()` loop → one `bulk_link` (R8 (c)).
+    `link_denotes`' per-pair `link()` loop → one `bulk_link` (R8 (c)); the batched writes'
+    R13 events (R8 (e)); `clear_rel_evidence` as one read + one delete that returns the removed
+    keys (R9); `bulk_unlink` (R10).
+- `src/refmatrix/store.py` (`CATALOG_DDL`) and `src/refmatrix/duckdb_catalog.py`:
+  `idx_evidence_file`, ONLY if R9's band calls for it.
   - (`add_memory`'s switch is 26.2 n1's, already merged per the dependency.)
-- New `tests/test_bug185_bulk_gmd_ingest.py` and `tests/test_bug186_replay_link_weight.py`,
+- New `tests/test_bug185_bulk_gmd_ingest.py`, `tests/test_bug186_replay_link_weight.py` and
+  (round 2) `tests/test_bug221_rel_replace.py` (AC-11, AC-12),
   plus `tests/fixtures/bug185_*` (generated fixtures and the HEAD golden).
-- `workflow/bug_registry.md` (the bug-185 and bug-186 rows), and the implementation summary
+- `workflow/bug_registry.md` (the bug-185, bug-186 and bug-221 rows), and the implementation summary
   `workflow/implementation_summaries/bug-185-bulk-gmd-ingest.md`, which records AC-4's table
   and the RED sha. {#files-list}
 
@@ -626,14 +753,25 @@ rel: amends -> [[#rev-round-1]]
 | L31 / N17: 23.3 consumes R7's entry points | [[#r7]] (`gmd_finish`, the fourth entry point), [[#ac-9]]; [[task-23.3-sync-between-file-yield#rev-round-8]] | bug-216's tail runs once per batch after pass 2. If no entry point held it, 23.3's per-step wrapping would either drop it or run it unbounded |
 | L31 / N7: 16.6 deletes `_apply_event_body`, which AC-8 replays | [[#ac-8]] (the per-event half isolated in one named test function); [[task-16.6-learned-row-validation#rev-round-15]] | this task lands first (queue item 5, before item 8). 16.6's AC-12 scan would fail on a surviving caller, so the caller is made deletable as one unit |
 
-### Open item: replay fidelity after bug-216 {#open-replay-216}
+### Resolved: replay fidelity after bug-216 (bug-216 R13) {#open-replay-216}
 
-[[#r3]] (c) cannot hold on the job-path v1 → v2 fixture once bug-216 is merged, for a cause
-outside this task ([[#rev-round-2-facts]]):
-- bug-216 deletes `rel:` evidence unlogged and re-appends it logged;
-- its `pending_refs` rows have no event.
+**Resolved by the lead, 2026-11-13: bug-216 gains R13 before it merges**
+([[task-bug216-rule-docs-in-graph]] R13 and AC-14, anchors `#r13` / `#ac-14` on its branch, RED at `f79dab1`; the wikilink is doc-level until that branch merges). The per-file evidence clear
+and every pending-ref write become facts.log events that both replay paths apply. "Pending refs
+outside replay" was rejected: it would be a silent knowledge loss on rebuild. So [[#r3]] (c)
+holds on the post-bug-216 tree. This task's batched writes emit the same events ([[#r8]] (e)),
+and [[#ac-11]] proves (c) on the v1 → v2 fixture. The problem and the options as first written
+are kept below as history. The recommended option 1 was adopted, except for its
+"outside replay" half. {#open-replay-216-resolved}
 
-This is not a bug-185 choice, so this revision picks nothing. The options:
+rel: depends-on -> [[task-bug216-rule-docs-in-graph]] {req: "R13"}
+
+[[#r3]] (c) could not hold on the job-path v1 → v2 fixture once bug-216 was merged, for a
+cause outside this task ([[#rev-round-2-facts]]):
+- bug-216 deleted `rel:` evidence unlogged and re-appended it logged;
+- its `pending_refs` rows had no event.
+
+The options as first written:
 1. **(recommended) bug-216 logs what it writes before it merges.** `clear_rel_evidence` writes
    one event per file (or per row), and the rebuild applies it in timestamp order. That is the
    shape 16.6's row pass and plan-22's `evidence_remove` already plan
@@ -665,3 +803,21 @@ options:
    replays a marker it finds. Cost: a new table and a recovery path.
 3. Accept and report it: the gap is counted, and the documented recovery is the derive op plus
    the next batch that names the target. Cost: a silent-until-counted loss on a memory path.
+
+### Lead inputs folded the same day {#rev-round-2-lead}
+
+Three team-lead messages, 2026-11-13, after the first round-2 draft (`f9c2fa7`):
+
+rel: implements -> [[bug_registry]] {bug: "bug-221"}
+
+| input | answered at | rationale |
+|---|---|---|
+| replay fidelity decided: bug-216 R13 logs the evidence clear and every pending-ref write; pending refs are NOT outside replay | [[#open-replay-216]] (resolved), [[#r3]] (c), [[#r8]] (e), [[#ac-11]], [[#ac-12]] | a batched write that skipped R13's events would reopen the gap R13 closes, on the path this task makes hot |
+| bug-216 GREEN flag 7: `clear_rel_evidence` scans `linkage_evidence` by `file` with no index, once per re-processed doc | [[#r9]], [[#ac-4]], [[#ac-12]], [[#files-list]] | the scan grows with the store, not the document, so it is a per-hold cost this task owns. A pre-registered band decides between index and no index; the count-then-delete double scan goes either way |
+| bug-221 (owner: this revision): a changed `rel:` line leaves its old edge with no evidence | [[#r10]], [[#ac-11]], [[#files-list]] | replace semantics keyed by the evidence the clear removes, so hierarchy and extraction edges sharing a verb are never touched. Logged as `unlink` events, so replay reproduces the removal. Existing stale edges are a plan-22 census item, not repaired here |
+
+The per-event replay path these inputs mention (`apply_log_delta` / `_apply_event_body`) is
+retired by d9bu and deleted by 16.6 R1f. This task's per-event legs are each one named test
+function ([[#ac-8]], [[#ac-11]]), so that deletion removes them as a unit
+([[task-16.6-learned-row-validation#rev-round-15]]).
+

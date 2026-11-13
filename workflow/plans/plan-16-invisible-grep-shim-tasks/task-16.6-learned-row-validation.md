@@ -17,7 +17,8 @@ metadata:
 > Status: Pending (**revision round 15, 2026-11-13**: freshness against bug-185 R6's merged
 > replay fold and AC-8 (plan review L31, L2; bsd-pop-r2 N7): the rebuild's `link_state` fold
 > keeps bug-185's `None`-weight rule through this slice's row-pass rewrite; R1f's deletion list
-> gains bug-185's per-event replay test; one open item inherited from bug-185; see
+> gains bug-185's per-event replay tests and bug-216 R13's per-event branches and legs; R13's
+> events join the row pass; see
 > [[#rev-round-15]]. Earlier: amendment d9cl, 2026-10-15: AC-9d check 6, the single `log=False` caller,
 > [[#rev-amend-d9cl]]; revision round 14, 2026-10-15, d9ch (b): the dump's dead-end sidecar skip
 > stated, [[#rev-round-14]]; revision round 11, 2026-10-15, answering the r11 diff check
@@ -102,11 +103,25 @@ rel: depends-on -> [[task-bug185-bulk-gmd-ingest#r6]]
 - **bug-185 R6 (a) adds no new event op.** `bulk_link(update_weight=True)` logs ordinary `link`
   events with a weight for already-set bits. `FOLD_OPS` (17.4) and this slice's `ROW_OPS` are
   unchanged by it.
-- **Inherited open item.** bug-185's [[task-bug185-bulk-gmd-ingest#open-replay-216]] asks
-  whether bug-216's unlogged `rel:` evidence delete gets a logged event. If the lead picks its
-  option 1, that event is a row-level op, applied in THIS slice's timestamp-ordered row pass
-  (and named in 17.4's `FOLD_OPS`), with plan-22's `evidence_remove` as its closest shape. This
-  revision does not add it: the choice is open, and the op is not this slice's to invent.
+- **bug-216 R13 (lead decision, 2026-11-13; it replaces the open item this round first
+  inherited from bug-185).** [[task-bug216-rule-docs-in-graph]] R13 (`#r13` on its branch until it merges) logs bug-216's per-file
+  `rel:`-evidence clear and its pending-ref add / delete / per-file-clear writes as facts.log
+  events, and bug-185 R8 (e) emits the same events from its batched writes
+  ([[task-bug185-bulk-gmd-ingest#open-replay-216]]). For this slice that means:
+  - **Row pass.** R13's events are row-level ops. In this slice's ONE timestamp-ordered row
+    pass ([[#r1d]]) they are applied with the `evidence` appends, built by `row_event` where
+    they are edge-shaped, and named in 17.4's `FOLD_OPS` with their fold rule. AC-9c's
+    ordering case gains an evidence-clear event between two appends, and the AC-9d AST checks
+    iterate them. bug-216's AC-14 rebuild legs must stay green through the rewrite.
+  - **R1f deletes R13's per-event half too.** R13 states "both replay paths", so bug-216 adds
+    branches to `_apply_event_body`. d9bu retired that path, and d9bu dropped every spec clause
+    that extends it. R1f deletes those branches with the path. In bug-216's
+    `tests/test_bug216_replay_fidelity.py` it drops the `"delta"` value of the three
+    `parametrize("how", ["rebuild", "delta"])` tests. It also deletes bug-185's
+    `test_ac11_per_event_replay` ([[task-bug185-bulk-gmd-ingest#ac-11]]). AC-12's scan then
+    holds.
+  - **bug-185 R10's (bug-221) unlinks are `unlink` events.** That op is already in the link
+    pass, so neither `ROW_OPS` nor `FOLD_OPS` changes for it.
 
 ## Amendment (d9cl) {#rev-amend-d9cl}
 
@@ -1173,6 +1188,8 @@ The audit/prune/repair acceptance moved to plan-22. {#acceptance-moved}
 | `tests/test_learned_verify.py` (new) | AC-3, AC-3b, AC-3c |
 | `tests/test_bug117_rebuild_non_concept.py` | DELETE `test_the_incremental_replay_resolves_non_concept_rows` ([[#r1f]], d9bu); the rebuild tests stay unchanged |
 | `tests/test_bug186_replay_link_weight.py` (bug-185's) | DELETE `test_ac8_per_event_replay_keeps_weight` ([[#r1f]], round 15); its `rebuild_index_from_log` tests stay unchanged and green |
+| `tests/test_bug221_rel_replace.py` (bug-185's) | DELETE `test_ac11_per_event_replay` ([[#r1f]], round 15) |
+| `tests/test_bug216_replay_fidelity.py` (bug-216's) | drop the `"delta"` parametrize value of its three AC-14 tests ([[#r1f]], round 15); the `"rebuild"` legs stay green |
 | `tests/test_memory_content_log.py` | module docstring names `rebuild_index_from_log` only ([[#r1f]]) |
 | `tests/test_incremental_replay_retired.py` (new) | AC-12: the text scan (`src/refmatrix/`, `scripts/`, `eval/`) + AST scan (`tests/`, names, attributes and string constants) and its two-mode fixture-tree self-check (r10 m-3) |
 | `scripts/factslog-restore.py` (plan-17 task 17.4's) | `learned_provenance`, `learned_provenance_move` added to `FOLD_OPS`, each with its stated fold rule (r10 s-3): COUNT-NEUTRAL, named in `FOLD_OPS` as ignored for the `entities` / `links` / `evidence` counts, because both touch only the `learned_evidence` sidecar, which 17.4's count check does not compare; 22.6 AC-6d runs the fold-equals-rebuild check over logs holding them. In the same commit as the replay branch: 17.4's AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s op set, and an op missing from it fails restore verification loudly (`unknown event op`) ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r9-2) |
