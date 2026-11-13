@@ -768,3 +768,26 @@ Whether SessionStart should prefer PROJECT bodies is an orientation question for
 outcome experiment and 19.6, not 25.1 scope. a-f1, a-f2 (producer count shape), a-f3 (AC-4 (i) a
 guard), a-f4, a-f6 (`--verbose`), a-j3, a-j4 (subject index = its `rerank=False` index): accepted
 as written. {#rev-round-7-followup}
+
+## Revision round 8 (2026-11-13, user: a hard limit on hook output) {#rev-round-8}
+
+User: hard limit of 9.5k on outputs. Every generated hook command's stdout is clamped by ONE shared
+emitter at `hook_budget.HOOK_HARD_CAP_BYTES = 9_500` (UTF-8 bytes; a UTF-8 byte count is never
+below the UTF-16 unit count Claude Code measures against its 10,000 cap, so bytes are the safe
+unit). The cap is absolute and applies to every hook command the generator emits — SessionStart,
+UserPromptSubmit (scan + curator), PreCompact, Stop, the recall-state entry and any future one —
+on top of, never instead of, the per-channel budgets (which already sum to ≤ 9,000 per command).
+{#r12-hard-cap}
+
+13. **R12 Hard output cap.** The clamp cuts at whole-block boundaries (never mid-line), appends one
+    line `+N more (output capped at 9,500 B): <fetch cmd>`, still never exceeds 9,500 B including
+    that line, records `capped: true` and the dropped byte count in the call's telemetry row, and
+    exits 0. A hook command whose producers already fit is byte-identical before and after. No
+    environment variable or flag raises it. {#r12}
+
+- **AC-16 (R12).** A test enumerates EVERY hook command the generator emits and, with each producer
+  forced to emit 20 KB, asserts stdout ≤ 9,500 B, ends on a whole line, carries the `+N more` line
+  and a `capped` telemetry row; a fitting command is unchanged byte-for-byte. Mutations: clamp
+  mid-line; the cap read from an env var; one hook command bypassing the shared emitter. {#ac-16}
+
+Sequenced after the rev-7 GREEN (`green-251c`): RED then GREEN as its own round.
