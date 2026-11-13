@@ -385,3 +385,136 @@ them prints a traceback, and stdout is 0 B. {#green-a12-result}
 - **F9. 26.4 overlap.** No 26.4 code is here. AC-5 turns green only after the bridge types
   `savestate_*` as `session/recall-state`.
 {#green-flags-list}
+
+## RED rev 7 (red-251b, 2026-11-13) {#red-rev7}
+
+rel: implements -> [[task-25.1-recall-hook-byte-budget#rev-round-7]]
+rel: amends -> [[#red]]
+rel: depends-on -> [[agent-brief-red-251b]]
+
+`red-251b` applied the rev-7 decisions on the test side at `d68b71c` (GREEN `16ace00`). Tests
+only: no `src/` change. Commit `1f9459a` holds the tests, the mock-registry update and the run
+logs; this section and the mutation logs are the following docs commit. {#red-rev7-lead}
+
+### Runs {#red-rev7-runs}
+
+| run (at `d68b71c` src) | result | log |
+|---|---|---|
+| baseline: the two RED files before any edit | 7 failed, 119 passed (the GREEN's AC-5 + six) | `workflow/review-output/plan25/25.1-redb-baseline.log` |
+| the 11 contract-updated files | 176 passed | `workflow/review-output/plan25/25.1-redb-contract1.log` |
+| measurement probe (fixture; a scratch test, not committed) | 1 passed; the numbers quoted below | `workflow/review-output/plan25/25.1-redb-probe.log` |
+| graduated routing file (F7) | 8 passed | `workflow/review-output/plan25/25.1-redb-routing.log` |
+| every touched file (13) | **10 failed, 300 passed**: AC-5 + the new REDs, nothing else | `workflow/review-output/plan25/25.1-redb-touched-head.log` |
+| mutations (8) | 8 killed | `workflow/review-output/plan25/mutations/25.1-redb-mut-*.log` |
+
+{#red-rev7-runs-table}
+
+### Change map {#red-rev7-map}
+
+| rev-7 row | change (test side) | at HEAD |
+|---|---|---|
+| contract ×27 | `test_bigop_nonblocking` ×2, `test_plan2_remedy_r6` ×2, `test_plan2_remedy_r7` ×2, `test_rerank_cost_budget` ×2, `test_rerank_warning_routes` ×1: the replica leg is `recall.replica_memory_recall(root, partition=…)`; the store seam moved from `cli._reader_store` / `_resolve_partition` to `search.cached_replica`, and the leg embeds the query before its lock (a dim-4 stand-in). The rerank-budget, capped-pool, cause-naming and kill-switch assertions are unchanged | pass |
+| contract | `test_rerank_warning_routes::test_cli_recall_daemon_branch_prints_the_warnings`: the verb dials (`verbs._call`), partition pinned; still asserts the daemon's warning reaches stderr, plus exit 0 and exactly one `memory_recall` | pass |
+| contract | `test_plan2_remedy_r7::test_json_recall_with_no_hits_prints_an_empty_list`: the canned leg is `recall.replica_memory_recall` serving zero hits | pass |
+| contract | `test_plan3_remedy::test_verb_dense_rows_carry_the_annotation`: `warnings == [the daemon-leg line]` (no degrade warning; the leg named, R5) | pass |
+| contract ×11 | `test_task21_1_used_events` ×9, `test_task21_1_emitters` ×2: the generated hook prints `--pack`; named hits are read by ONE parser, `tests/task21_1_support.pack_rows` (scope from the fetch pointer); `task25_1_support.HOOK_LINE` aliases it | pass |
+| contract ×3 | `test_task21_1_recall_skip`: a degraded `--pack` hook prints nothing (d8): `stdout == ""` (stricter than `[]`) | pass |
+| contract ×2 | `test_task3_7_remedy_r1` / `_r2_meh`: the curator line is capped at 500 B; `+N more` with N ≥ 5 and shown + N = 15; the spool keeps what was not shown; the r2 control adds `--max-bytes 100000` so "everything shown" is reachable | pass |
+| J1 | trailer test: 20 unit rows (measured at GREEN: 14 named, 6 trimmed) | pass |
+| J2 | AC-4 (f): CLI `--json`, table and verb name the same hits for `-K memory,doc` AND `-K doc`; `-K doc` returns only `kind=doc` rows (the fixture's `quasar_design_*.md`). No rank claim | pass |
+| J3/J4 | AC-6 argv + verb: still "live subjects named, stale never"; added: the opt-in's non-subject rows are a prefix of the default (reranked) run's; verb only: a pre-check that the rerank reorders the fixture (`rerank=False` differs), and each subject keeps its `rerank=False` index | RED (below) |
+| J5 | AC-13 expects SessionStart `--k 12`; AC-9 counts named + trailer = 12 | RED (below) |
+| J5 / J6 | AC-9 counts bodies as `## <name>` blocks after the hook lines, any scope (`Pack.body_blocks`), not `BODYMARK` | see [[#red-rev7-ambiguities]] a-j5 |
+| J6 | AC-10: a body is identified by its span (`body_offset_bytes` / `body_bytes`): the slice sits right after `## <name>\n`, ends at a block boundary, names its row (a global body equals the global row's content), ≥ 3 `—` before it; null fields require no `## <name>` block | pass |
+| F4 | new `test_ac10_trimmed_hits_get_no_delivered_event_and_global_hits_stay_global`: the SessionStart argv plus `--k 12 --max-bytes 2000` (measured: 9 of 12 named, `+3 more`, four global hits named, 1,875 B) | pass (guard) |
+| F3 | new `test_ac4i_daemon_up_hub_down_daemon_serves_and_nothing_spawns`: CLI `--json` and MCP run in a child under an audit hook; no `embed_worker` spawn, no `sentence_transformers` / `torch` import; MCP `warnings` name the daemon leg | pass (guard, as the spec says) |
+| F6 | new `test_f6_recall_leg_line_only_under_verbose_never_a_warning` | RED (below) |
+| F2 | new `test_ac15g_recall_state_is_counted_as_producer_recall_state` | RED (below) |
+| F1 | four new `test_r10_bus_pub_*` tests over a real bus (`_MiniHub` from `test_verbs_migrated`) | 3 RED, 1 guard (below) |
+| F7 | `tests/test_mcp_memory_recall_routing.py`: the fake `daemon.call` and the `discover_roots` / `store_name` stubs are gone. Two real daemon-served stores (legacy `memory-<p>` and post-merge), embedded by the real model; dense-not-lexical proven by behaviour (a query that is a substring of no memory returns rows); the three `_resolve_root` tests use a real registry under a tmp `RMX_HOME`. Registry row marked GRADUATED, graduation-log entry added; the rows naming `cli._replica_memory_recall` / `cli._reader_store` now name the moved seams; a row added for `test_rerank_warning_routes` (its patches were unregistered) | pass |
+
+{#red-rev7-map-table}
+
+### The RED list for the implementer {#red-rev7-red-list}
+
+E lines from `25.1-redb-touched-head.log` (src = `d68b71c`):
+
+| test (`tests/test_task25_1_recall_budget.py`) | rev-7 row | E line at HEAD |
+|---|---|---|
+| `test_ac6_include_subjects_brings_live_subjects_back_never_the_stale_one` | J3 (#j3-subjects-exempt) | `AssertionError: ['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', …]`: no live subject named |
+| `test_ac6_verb_hides_subjects_and_the_stale_one_even_with_the_opt_in` | J4 | `AssertionError: ['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', …]`: no live subject |
+| `test_ac9_session_start_carries_bodies_after_all_hook_lines` | J5 | `AssertionError: (30, 0)` / `assert (30 + 0) == 12` |
+| `test_ac13_generator_emits_pack_raised_k_and_no_variable` | J5 | `('SessionStart', 'rmx memory recall --session-start --k 30 --scope both --pack --timeout 10')` |
+| `test_f6_recall_leg_line_only_under_verbose_never_a_warning` | F6 (#f6-leg-line) | `F6: a normal interactive recall printed the leg line: "# rmx: warning: recall leg: daemon RPC (the daemon's embedder and rerank default)\n"` |
+| `test_ac15g_recall_state_is_counted_as_producer_recall_state` | F2 (R11) | `F2: no producer view in telemetry --context: ['by_command', 'counted', 'hook_budget', 'total_bytes', 'total_tokens_est', 'uncounted']` |
+| `test_r10_bus_pub_about_tags_the_message_and_is_never_a_lookup` | F1 (#r10-bus) | `Failed: #r10-bus: verbs.bus_pub has no `about` parameter (… unexpected keyword argument 'about')` |
+| `test_r10_bus_pub_project_is_the_transport_target_only` | F1 | `("#r10-bus: the transport target leaked into the message's project tag", {… 'from': 'bravo' …})` / `assert 'bravo' is None` |
+| `test_r10_bus_pub_cli_about_option` | F1 | `Error: No such option: --about` (exit 2) |
+| `test_ac5_mistyped_savestate_not_named_on_the_packed_argv` | a5 (waits on 26.4) | `assert 'savestate_fx01' not in ['savestate_fx01', 'fx_dup_x', …]` |
+
+Guards that pass at HEAD: `test_r10_bus_pub_proj_channel_still_tags_its_project` (F1), the
+unknown-`project` leg of `test_r10_bus_pub_project_is_the_transport_target_only` (R10, built),
+F3 and F4. For the GREEN: SessionStart `--k 12` changes the generated config, so
+`.claude/settings.json` / `.claude/rmx-hooks.json` and the README hooks table must be
+regenerated (`test_repo_hooks_in_sync`, `test_docs_generated`); the bus verb's `about` needs its
+CLI twin for verb parity. {#red-rev7-red-list-notes}
+
+### Mutations on the new guards {#red-rev7-mutations}
+
+Tests committed first (`1f9459a`); one mutation at a time by a scratch applier; each restored by
+`git checkout -- <file>` in its own command; `__pycache__` cleared before each; every fix line
+grepped back after the batch; `src/` clean at the end.
+
+| mutation | guard | result (E line) |
+|---|---|---|
+| m1 `shared_embedder` tried before the daemon (`_dense_legs` step 1 takes the caller's policy) | F3 AC-4 (i) | KILLED: `the caller spawned a model worker: [[…/python, '-m', 'refmatrix.embed_worker', '--role', 'embed']]` |
+| m2 a `delivered` event for every trimmed hit (`_echo_pack` delivers all rows) | F4 | KILLED by F4 only: `delivered events != named hits (a trimmed hit must have none)`; AC-10's default payload trims nothing and passes, which is why F4 exists |
+| m3 a global hit's `delivered` event in the project file (`emit_recall_events`) | F4 + AC-10 | KILLED by both: `([], ['fx_dup_x', 'gx_mem_9', 'gx_mem_8', 'gx_mem_7'])` |
+| m4 "subjects exempt" done by turning the rerank off under `include_subjects` | J3/J4 | KILLED by both: the subjects come back, then `J3: the opt-in changed the order of the non-subject rows` / `J4: non-subject rows not reranked as without the opt-in` |
+| m5 the `proj:X:` channel default dropped | F1 guard | KILLED: `assert (None == 'X')` |
+| m6 body offset never recorded (`body_offset_bytes = None`) | J6 AC-10 | KILLED: `assert 126 is None` (body_bytes without an offset) |
+| m6b body offset and size both null | J6 AC-10 | KILLED: `AC-10: fx_dup_x has a body block in the payload but null body fields` |
+| m7 the verb binds the project partition, not `memory_partition` | F7 routing | KILLED: `dense recall on the legacy memory partition returned nothing` and the recent leg `set() == {…}` |
+
+{#red-rev7-mutations-table}
+
+### Ambiguities and findings {#red-rev7-ambiguities}
+
+- **a-j5 AC-9 at `--k 12` carries only GLOBAL bodies.** Measured on the fixture (SessionStart argv
+  with `--k 12` appended, `25.1-redb-probe.log`): 12 named, 8,710 B, 6 bodies, all global
+  (`fx_dup_x`, `gx_mem_9` … `gx_mem_5`), 0 project bodies. The pack takes bodies greedily in rank
+  order; the newest project memories are the largest (≥ 4.9 KB), and the 1.2 KB global bodies
+  fill the room first. The RED's `BODYMARK` counter therefore stays at 0 after k = 12, contrary to
+  the lead's "it should pass once k = 12 lands". AC-9 says "≥ 2 bodied hits", and J6 rules that a
+  body is not identified by `BODYMARK`, so AC-9 now counts `## <name>` blocks of any scope. At HEAD
+  it already sees 3 global bodies; it is RED on the k count only. If the lead wants PROJECT bodies
+  on SessionStart, that needs a separate decision (body order, or fixture sizes). {#a-j5}
+- **a-f2 the shape of "counted as producer `recall_state`".** The spec names the producer, not a
+  shape. The hook run is already in `by_command` as `recall-state` (n 1, 4,946 B at HEAD). The test
+  pins `by_producer.recall_state = {n, total_bytes, max_bytes, budget}`, keyed by
+  `CHANNEL_BUDGET_BYTES` names, counting only `source == "hook"` cli.log rows, and the text form
+  naming `recall_state`. The lead may narrow or widen this. {#a-f2}
+- **a-f3 AC-4 (i) is a guard, not RED.** The brief lists F3 among the new REDs; the spec says "Not
+  RED at HEAD … a guard, killed by the mutation". It passes at HEAD and m1 kills it. The spawn is
+  observed by an audit hook (`subprocess.Popen` argv), not inferred from a 5 s overrun (red-251
+  a7). The child sets `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES`, as the re-exec'd `rmx` has it,
+  so `cli_entry`'s macOS re-exec does not escape the hook. {#a-f3}
+- **a-f6 the flag.** The test uses `memory recall --verbose` (the spec's word); no `-v` is asserted.
+  The per-prompt hook argv must print no leg line. `--verbose` must not change the rows. {#a-f6}
+- **a-j3 the argv-level rerank guard is weaker than the verb's.** The argv compares only PROJECT
+  non-subject hits (global rows are merged by score); under m4 only 2 such rows remained beside
+  the subjects and the globals. The verb test, with its pre-check and the subject-rank check, is
+  the main guard. {#a-j3}
+- **a-j4 "keep their pre-rerank rank"** is pinned as: each subject's index in the opt-in result
+  equals its index in the `include_subjects=True, rerank=False` result (ranks 0-3 on the
+  fixture). If the implementer places subjects another way, the lead should confirm this
+  reading. {#a-j4}
+- **a-f1 a known `project=` on `rmx_bus_pub`.** The test asserts the row's `from` is the named
+  store and its `project` tag is None on a `global:` channel (the transport target never becomes
+  the tag); the verb has `about` and no own `project` parameter. {#a-f1}
+- **a-f4 F4's payload carries no body** (2,000 B fits only hook lines). Body spans stay AC-10's
+  default-payload job. {#a-f4}
+- **a-ac5** unchanged: still RED until 26.4 merges. At HEAD the SessionStart pack also names
+  `savestate_fx01` first. {#a-ac5}
+
+{#red-rev7-ambiguities-list}

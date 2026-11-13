@@ -1,0 +1,22 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_r10_bus_pub_proj_channel_still_tags_its_project _____________
+
+bus = {'alpha': PosixPath('/private/tmp/rmx-fjssa057/r10-auh9jfu5/alpha/.refmatrix'), 'base': PosixPath('/private/tmp/rmx-fj...-fjssa057/r10-auh9jfu5/bravo/.refmatrix'), 'home': PosixPath('/private/tmp/rmx-fjssa057/r10-auh9jfu5/home/.refmatrix')}
+
+    def test_r10_bus_pub_proj_channel_still_tags_its_project(bus):
+        """#r10-bus: a `proj:X:t` channel with neither `about` nor `project` still tags `X` (the
+        default moves to `about`; a GUARD, true at HEAD)."""
+        from refmatrix import verbs
+        alpha = bus["alpha"]
+        verbs.bus_pub(alpha, "proj:X:t5", "b")
+        row = _last_on(alpha, "proj:X:t5")
+>       assert row["project"] == "X" and row["from"] == "alpha", row
+E       AssertionError: {'body': 'b', 'channel': 'proj:X:t5', 'from': 'alpha', 'id': 'f325ee1370e9', ...}
+E       assert (None == 'X')
+
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1746: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_r10_bus_pub_proj_channel_still_tags_its_project
+1 failed in 0.34s

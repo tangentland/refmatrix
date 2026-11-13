@@ -1,0 +1,61 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________ test_ac10_delivered_events_slice_the_payload_by_bytes _____________
+
+fx = <tests.task25_1_support.Fixture object at 0x11280eba0>
+
+    def test_ac10_delivered_events_slice_the_payload_by_bytes(fx):
+        """AC-10 (R9): on the SessionStart argv, one `delivered` event per NAMED hit, one query_id
+        with the `retrieved` events; each span slices exactly its hook line / body out of the
+        payload BYTES; unbodied hits carry null body fields; a global hit's event is in the tmp
+        global root's file with scope=global. The fixed 7-of-12/3-bodied shape of 19.1 AC-6 is not
+        forced here (R0 sets the budget the shape depends on)."""
+        r, p, new_p, new_g = _ss_events(fx)
+>       deliv = _assert_delivered_spans(r.stdout, p, new_p + new_g)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_task25_1_recall_budget.py:1331: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = b'# rmx recall \xc2\xb7 session_start \xc2\xb7 30 hits \xc2\xb7 budget 9000 B\n- savestate_fx01 \xe2\x80\x94 Save-stat...0\x94 \xe2\x86\x92 \xe2\x80\x94 \xe2\x86\x92\nglobal detail line \xe2\x80\x94 \xe2\x86\x92 \xe2\x80\x94 \xe2\x86\x92\n'
+p = <tests.task25_1_support.Pack object at 0x11280fcb0>
+evs = [{'arm': 'fixed', 'block_id': 'session-start', 'block_sha': 'f45d4d9ef85ff35a63e5e941f238169da3f39fe700d519ac016cadcc8...start', 'block_sha': 'f45d4d9ef85ff35a63e5e941f238169da3f39fe700d519ac016cadcc8a4c7ca3', 'body_bytes': None, ...}, ...]
+
+    def _assert_delivered_spans(raw: bytes, p: "s.Pack", evs: list) -> list:
+        """AC-10 / R9 over one payload: one `delivered` event per NAMED hit and none for any other
+        (a trimmed hit has none), one query_id with the `retrieved` events, each hook-line span
+        slicing exactly its line (newline included) out of the payload BYTES.
+    
+        A body is identified by its SPAN (rev 7 J6, 2026-11-13), never by a marker string: global
+        bodies carry no `BODYMARK`, and the RED detector read a real global body as "no body". An
+        event with body offsets must slice exactly the text the pack printed under `## <name>`
+        (a whole block: it ends at the next block, the trailer, or the end), naming its row, with
+        ≥ 3 `—` in front of it (the AC-10 character-vs-byte pre-check); an event without them must
+        have no `## <name>` block in the payload. Returns the delivered events."""
+        qids = {e.get("query_id") for e in evs}
+        assert len(qids) == 1 and None not in qids, qids
+        deliv = [e for e in evs if e.get("stage") == "delivered"]
+        assert sorted(e["name"] for e in deliv) == sorted(p.named), (
+            "AC-10: delivered events != named hits (a trimmed hit must have none)",
+            sorted(e["name"] for e in deliv), sorted(p.named))
+        retrieved = {e["name"] for e in evs if e.get("stage") == "retrieved"}
+        assert set(p.named) <= retrieved, set(p.named) - retrieved
+        last_hook_end = max(raw.index((m.group(0) + "\n").encode("utf-8")) + len(
+            (m.group(0) + "\n").encode("utf-8")) for m in p.hook_lines)
+        bodied = 0
+        for e in deliv:
+            line = raw[e["offset_bytes"]:e["offset_bytes"] + e["bytes"]]
+            assert line == (p.hook_line_of(e["name"]) + "\n").encode("utf-8"), (e["name"], line)
+            head = f"## {e['name']}\n".encode("utf-8")
+            if e.get("body_offset_bytes") is None:
+>               assert e.get("body_bytes") is None, e
+E               AssertionError: {'arm': 'fixed', 'block_id': 'session-start', 'block_sha': 'f45d4d9ef85ff35a63e5e941f238169da3f39fe700d519ac016cadcc8a4c7ca3', 'body_bytes': 126, ...}
+E               assert 126 is None
+E                +  where 126 = <built-in method get of dict object at 0x11749f200>('body_bytes')
+E                +    where <built-in method get of dict object at 0x11749f200> = {'arm': 'fixed', 'block_id': 'session-start', 'block_sha': 'f45d4d9ef85ff35a63e5e941f238169da3f39fe700d519ac016cadcc8a4c7ca3', 'body_bytes': 126, ...}.get
+
+tests/test_task25_1_recall_budget.py:1290: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac10_delivered_events_slice_the_payload_by_bytes
+1 failed in 14.88s
