@@ -32,13 +32,13 @@ Next id: **Q14**.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
-| Q10 | 2026-11-13 | Non-human turns. The design replay shows the full gate loses 10 R12 uses (fails the band again); applying the dedupe on those turns keeps every use. | (a) no separate gate: non-human turns get the same dedupe as human prompts (10.4 keeps the focus-graph change and curator silence, Q9); (b) full injection on non-human turns; (c) gate anyway (fails the band) | open |
-| Q13 | 2026-11-13 | The replay rejects 4+3 (Q11): it hides 1 of 11 labelled uses (new candidates took a used item's budget) and saves ~2% of bytes for ~2 new items/call. Names-only (design 3) is the pre-registered winner: ~53% fewer payload bytes, 0 uses lost. A post-hoc 4+3b passes. | (a) design 3 now; 4+3b later as a live A/B arm if refill is wanted; (b) design 3 only; (c) 4+3b (post hoc) | open |
 
 ### Answered {#answered}
 
 | id | asked | question | answer | acted |
 |---|---|---|---|---|
+| Q13 | 2026-11-13 | Dedupe design after the replay rejected 4+3 | a: names-only (design 3) now; 4+3b later as a live A/B arm | `arch-10r` re-specs 10.2 as names-only; 4+3b recorded as a future A/B arm |
+| Q10 | 2026-11-13 | Non-human turns | a: no separate gate — same dedupe as human prompts | 10.4 keeps the focus-graph change and curator silence (Q9); its injection gate is dropped |
 | Q11 | 2026-11-13 | plan-10 dedupe design for the per-prompt payloads (seven options) | 4+3: rank new items first, collapse held ones into one 'still in play' names line | `arch-10r` re-specs 10.2 on it after the replay; 19.6 block diff not used for these payloads |
 | Q12 | 2026-11-13 | How to choose among the Q11 designs? | a: replay-score 1 / 3 / 4+3 / 5 first | `dd-10r` replay, pre-registered; also scores Q10's non-human policies (none / 4+3 / full) |
 | Q9 | 2026-11-13 | `rmx curator status` silent on non-human turns too? | a: yes, follow-on to 10.4 | sent to `arch-10r`: a 10.4 follow-on plumbs the envelope into `curator status` |
