@@ -505,3 +505,10 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 | L31 / bsd-pop-r2 N17 (23.3 vs the revised bug-185) | [[#merge-order]] item 6; [[task-23.3-sync-between-file-yield#rev-round-8]] |
 | L21 / Cc-6 (23.4 had no slot; plan-17 waits on its verdict) | [[#merge-order]] item 7 |
 
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t4 r3 MEH-only (0B/0S/4M) and r4-lite MEH-only (0B/0S/1M, the lead's bug-216 order edge), L62 | `workflow/bullshit/2026-11-14-0045-spec-t4-r3-e591c60.md`, `workflow/bullshit/2026-11-14-0055-spec-t4-r4-lite-ff44120.md` (over `spec-wave-t4` up to `ff44120`; `6a87bfb` finishes M2 wording only) | `metadata.status` stays `in-progress`; the revised records above are approved |
+
+rel: derives-from -> [[bsd-spec-t4-r4-lite-ff44120]]

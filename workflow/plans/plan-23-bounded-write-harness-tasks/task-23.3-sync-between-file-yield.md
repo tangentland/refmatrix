@@ -508,3 +508,10 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 | S1 (the stamp-before-tail mutation could not fail inside one step) | [[#ac-4b]] (replaced by the split-step mutation); bug-185 AC-13 tests the order with no transaction open |
 | M2 (the 450-name bound counted anchors only) | [[#ac-4b]] (distinct-name count pinned and asserted) |
 
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t4 r3 MEH-only (0B/0S/4M) and r4-lite MEH-only (0B/0S/1M, the lead's bug-216 order edge), L62 | `workflow/bullshit/2026-11-14-0045-spec-t4-r3-e591c60.md`, `workflow/bullshit/2026-11-14-0055-spec-t4-r4-lite-ff44120.md` (over `spec-wave-t4` up to `ff44120`; `6a87bfb` finishes M2 wording only) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t4-r4-lite-ff44120]]

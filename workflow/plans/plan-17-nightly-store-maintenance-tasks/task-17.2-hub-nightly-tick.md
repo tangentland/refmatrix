@@ -382,3 +382,10 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 | L28: 26.6 left 19.4 R1's tick half and AC-2 "pending 17.2" with no host spec | [[#r9-compile-step]], [[#ac-15]], [[#files-to-modify]] | without a host the scheduled compile is never registered and 19.4 R1 stays half-built; 17.2 owns the registry, so it registers the step |
 | R2's `runs.jsonl` obligation is unmet by the merged op | [[#r9-compile-step]] (the append added here) | the arm gate (R7) reads only `runs.jsonl`; without the line the step could never be armed |
 
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t4 r3 MEH-only (0B/0S/4M) and r4-lite MEH-only (0B/0S/1M, the lead's bug-216 order edge), L62 | `workflow/bullshit/2026-11-14-0045-spec-t4-r3-e591c60.md`, `workflow/bullshit/2026-11-14-0055-spec-t4-r4-lite-ff44120.md` (over `spec-wave-t4` up to `ff44120`; `6a87bfb` finishes M2 wording only) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t4-r4-lite-ff44120]]

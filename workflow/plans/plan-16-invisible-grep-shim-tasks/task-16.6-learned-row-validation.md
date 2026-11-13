@@ -1261,3 +1261,11 @@ repair them if possible") made re-pointing the DEFAULT and moved it, with the wh
 The read-time marks (d-b) are writes on a READ path, so they never take `_store_lock` inline. They
 go through plan-23's queue and its bounded drain (the 0.72.3 lesson in
 `project_grep_learn_wall_and_queue`). {#d-b-write-path}
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t4 r3 MEH-only (0B/0S/4M) and r4-lite MEH-only (0B/0S/1M, the lead's bug-216 order edge), L62 | `workflow/bullshit/2026-11-14-0045-spec-t4-r3-e591c60.md`, `workflow/bullshit/2026-11-14-0055-spec-t4-r4-lite-ff44120.md` (over `spec-wave-t4` up to `ff44120`; `6a87bfb` finishes M2 wording only) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t4-r4-lite-ff44120]]

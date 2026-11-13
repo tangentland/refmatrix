@@ -307,3 +307,11 @@ rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 | 18.3 "PROVISIONAL" | [[#tasks]] 18.3 row | CONFIRMED (d9bf, d9bp) |
 | d9bf/d9bp, d9bg/d9bq, d9br "(PROVISIONAL)" | [[#rev-18-1-verdict]] table | "PROVISIONAL at the time; CONFIRMED, plan-18 r4" |
 | 18.2 / 18.3 headers | [[task-18.2-catalog-maintain-step#rev-round-5]], [[task-18.3-offline-reclaim#rev-round-6]] | same |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t4 r3 MEH-only (0B/0S/4M) and r4-lite MEH-only (0B/0S/1M, the lead's bug-216 order edge), L62 | `workflow/bullshit/2026-11-14-0045-spec-t4-r3-e591c60.md`, `workflow/bullshit/2026-11-14-0055-spec-t4-r4-lite-ff44120.md` (over `spec-wave-t4` up to `ff44120`; `6a87bfb` finishes M2 wording only) | `metadata.status` stays `approved` |
+
+rel: derives-from -> [[bsd-spec-t4-r4-lite-ff44120]]

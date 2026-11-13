@@ -483,3 +483,11 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 | L28 (26.6's 19.4 R1 tick and its AC-2 hosted by 17.2) | [[#tasks]] 17.2 row; [[task-17.2-hub-nightly-tick#r9-compile-step]] |
 | L21 / Cc-6 (23.4 before 17.1) | [[#dependencies]] |
 | L45 (user gates taken from the spec) | [[#dependencies]] (17.3's three gates) |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t4 r3 MEH-only (0B/0S/4M) and r4-lite MEH-only (0B/0S/1M, the lead's bug-216 order edge), L62 | `workflow/bullshit/2026-11-14-0045-spec-t4-r3-e591c60.md`, `workflow/bullshit/2026-11-14-0055-spec-t4-r4-lite-ff44120.md` (over `spec-wave-t4` up to `ff44120`; `6a87bfb` finishes M2 wording only) | `metadata.status` stays `approved` |
+
+rel: derives-from -> [[bsd-spec-t4-r4-lite-ff44120]]

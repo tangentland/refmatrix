@@ -279,3 +279,10 @@ plan-26 is none: its R3 proxy is built on bug-178's `bulk_write`, and 26.1 + 26.
 
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t4 r3 MEH-only (0B/0S/4M) and r4-lite MEH-only (0B/0S/1M, the lead's bug-216 order edge), L62 | `workflow/bullshit/2026-11-14-0045-spec-t4-r3-e591c60.md`, `workflow/bullshit/2026-11-14-0055-spec-t4-r4-lite-ff44120.md` (over `spec-wave-t4` up to `ff44120`; `6a87bfb` finishes M2 wording only) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t4-r4-lite-ff44120]]
