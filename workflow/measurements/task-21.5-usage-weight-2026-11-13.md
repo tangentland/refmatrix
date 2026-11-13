@@ -85,3 +85,20 @@ term overlap, so the score is not reinforced by its own matches.
 First-lag coverage per term on main-loop no-prompt activity (not phase 1's head variant); R12
 mapping misses 78 of 103 refmatrix events (first query_id only); AUC on 62 / 8 held-out used units;
 no labelled NEW credits.
+
+## Addendum: placebo comparison {#addendum-placebo}
+
+Held-out split; each unit scored against its real activity and against activity from a random
+prompt of another session (same prompt-term exclusion), per arm; difference-in-differences as a
+ratio; AUC of real-scored used units against the same units placebo-scored.
+
+| corpus | weight | delivered real/placebo | control real/placebo | DiD ratio | AUC real vs placebo |
+|---|---|---|---|---|---|
+| refmatrix (62 used) | idf and every pre-registered λ | 1.31 | 1.30 | 1.00-1.01 | 0.570-0.569 |
+| refmatrix | post-hoc λ 1 / 2 | | | 1.01 | 0.561 / 0.553 |
+| refmatrix | reinforcement form | | | 1.00 | 0.570 |
+| cliquedb (8 used) | every weight | 1.00 | 0.96 | 1.04 | 0.844 |
+
+s_t separates delivered units from neither the control (stratified O/E identical to idf) nor the
+placebo (DiD 1.00, as idf); larger post-hoc λ makes used-vs-placebo separation slightly worse. The
+verdict stands. {#addendum-placebo-reading}
