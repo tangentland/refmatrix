@@ -107,10 +107,11 @@ B and C are not built. {#o-1-impact}
      the GMD statement scores on c at HEAD, the bug is REFUTED: the test is kept as a guard, the
      row is closed `not a bug` with the run log, and R1-R5 are not built. The RED run is logged
      ([[feedback_red_test_must_fail_at_head]]). {#r0a}
-   - **R0b Census, read-only.** On copies of each store's `catalog.read.duckdb` (the ONE census
-     procedure, [[task-16.6-learned-row-validation#r7]]: copy into a short `/tmp` dir,
-     `duckdb.connect(read_only=True)`, no `Store()`, no daemon, no socket), count `reinforces` and
-     `contradicts` rows in `entity_links` by writer class:
+   - **R0b Census, read-only.** On copies of each store's `catalog.read.duckdb` AND its
+     `facts.log` (the ONE census procedure, [[task-16.6-learned-row-validation#r7]]: copy into a
+     short `/tmp` dir, `duckdb.connect(read_only=True)`, the log read as a file; no `Store()`, no
+     daemon, no socket; r2 M5), count `reinforces` and `contradicts` rows in `entity_links` by
+     writer class:
      - **GMD direct**: a `linkage_evidence` row at the same `(entity_id, linkage_id, concept_id)`
        whose `detail` starts `rel:` and does not end `(root-mirror)`;
      - **GMD root-mirror**: the same with `(root-mirror)`; and its twin, the direct row from
@@ -133,8 +134,11 @@ B and C are not built. {#o-1-impact}
    orientation the GMD ingester writes for every `rel:` verb. The ingester is unchanged.
    - **One body (M1).** `Store.memory_link(src, linkage, concept, weight=None) -> dict` is the ONE
      store-level body. It resolves the memory, `add_concept(concept)` as today, writes
-     `link(linkage, m_id, cid, weight=weight)` and the evidence row below, and returns
-     `{src_id, concept_id}`. The CLI's local path and `_op_memory_link` (which the MCP
+     `link(linkage, m_id, cid, weight=weight)` and the evidence row below, calls bug-216's
+     ingest-time `denotes` helper for the concept's name (`Store.link_denotes(names=[concept])`
+     on the bug-216 branch, the call GMD ingest makes "on ingest of X"; idempotent), and returns
+     `{src_id, concept_id}`. A hand link made AFTER its same-named doc or memory exists therefore
+     gets its `denotes` at once, not at the next re-ingest or derive (r2 S2). The CLI's local path and `_op_memory_link` (which the MCP
      `rmx_memory` `link` action reaches) both call it, and neither keeps a body of its own.
      Fixtures and benches call it too ([[#r5]]).
    - **An evidence row tags the writer (S3).** It writes `add_evidence(linkage, m_id, cid,
@@ -163,7 +167,9 @@ B and C are not built. {#o-1-impact}
      every GMD row on a doc or memory target would be unreachable. One function,
      `reinforcement.resolve_targets(store, name_or_ids) -> set[int]`, gives the target set:
      - for a NAME (`rmx memory score <name>`, CLI local path and `_op_memory_score`): a bare name
-       resolves doc, memory, then concept (the concept only when no doc or memory has the name);
+       resolves doc, memory, then concept (the concept only when no doc or memory has the name;
+       the concept leg is today's `resolve_concept_ids(name, strict=False)`, so canonical
+       variants still match: `FooBar` finds `foo_bar`, r2 M4);
        an anchored `x#a` resolves the concept; and to that entity it adds every concept that
        `denotes` it ([[task-bug216-rule-docs-in-graph#r7-denotes]]; stored like `rel:`, concept
        side = the concept, entity side = the doc or memory), which is where a same-named
@@ -192,12 +198,20 @@ B and C are not built. {#o-1-impact}
      existing command, `rmx repair-index --reinforce-orientation [--apply]`, which calls the op
      through the store's own daemon and refuses when no daemon answers; it never opens `Store()`
      ([[feedback_store_calls_via_daemon]]). Each store is repaired through its own daemon.
+   - **Flag matrix (r2 M6).** `--reinforce-orientation` is exclusive with `--entities` and
+     `--fragments` (usage error, exit 2). With it, a dry run is the default and `--apply` writes.
+     `--dry-run` with `--reinforce-orientation` is accepted only alone (a no-op restatement of
+     the default), and `--dry-run --apply` is a usage error. `--apply` without
+     `--reinforce-orientation` is a usage error. The other modes keep their behaviour.
    - **Candidates.** A `reinforces` / `contradicts` row in the pre-R1 shape (entity side
      `kind='memory'`, concept side `kind='concept'`) with no `rel:` or `memory link:` evidence row
      at its key AND no `rel:` `evidence` append for its key in `facts.log` (a GMD row whose
      evidence was lost has the same end kinds when its source is an `x#root` concept and its target
      a memory). A row that matches the shape but has such an append is listed as `ambiguous`,
-     never re-oriented.
+     never re-oriented. **Cross-check (r2 M5):** a concept side whose name contains `#` (a GMD
+     node, never an `add_concept` name) is reported beside the verdict. A candidate with `#` in
+     its concept name is listed as `ambiguous` too, so a GMD row whose append is missing (logging
+     off, a compacted log) is never re-oriented. The hint never promotes a row to a candidate.
    - **Backup, a prior step.** Before any write, an `--apply` run materializes a fresh read
      snapshot (`d._snapshot_catalog(force=True)`), copies it and `facts.log` into
      `<store>/backups/bug218-reorient-<stamp>/`, prints both paths, and writes nothing if either
@@ -259,16 +273,20 @@ B and C are not built. {#o-1-impact}
 4. **AC-4 (R2) Components name the sources.** `rmx memory score c --explain` (and the daemon op's
    `components`) lists m and m2, ordered by |contribution|, and never c. Mutation: select the
    target's name for the component row: FAILS. {#ac-4}
-4b. **AC-4b (R2b) Doc and memory targets reach the readers.** A memory m4 (canonical file, created
-   now) has a root-level `rel: reinforces -> [[m5]]`, where m5 is a memory (bug-216 R6 binds the
-   memory); `memory_link` writes `m6 reinforces m5`, which targets the concept `m5`; bug-216's
-   derive links concept `m5` `denotes` memory m5. `rmx memory score m5` (CLI local and the
-   daemon op) reads 2.0 and `--explain` lists m4 and m6. With `RMX_BOOST_REINFORCE=1`, a query
+4b. **AC-4b (R2b) Doc and memory targets reach the readers.** Memory m5 is ingested FIRST. Then a
+   memory m4 (canonical file, created now) is ingested with a root-level
+   `rel: reinforces -> [[m5]]` (bug-216 R6 binds the memory m5), and `Store.memory_link` writes
+   `m6 reinforces m5` (m6 created now), which targets the concept `m5`; no derive is run, so the
+   concept's `denotes` to memory m5 comes from `memory_link` itself ([[#r1]]). `rmx memory score
+   m5` (CLI local and the daemon op) reads 2.0 and `--explain` lists m4 and m6. **Variant
+   spelling (r2 M4):** a concept `foo_bar` reinforced by m7 through `memory_link`, with no doc or
+   memory named `foo_bar`: `rmx memory score FooBar` reads 1.0. With `RMX_BOOST_REINFORCE=1`, a query
    whose term is `m5` boosts the postings of concept `m5` by the signal of {concept `m5`, memory
    m5}. Mutations, each FAILS it: "resolve with `resolve_concept_ids` only" (score reads 1.0, m4
-   missing); "skip `denotes`" (the boost sees 1.0, from the concept's own row only); "a second
-   resolver in `cli.py`" (a check asserts both score paths and the boost call
-   `reinforcement.resolve_targets`). {#ac-4b}
+   missing); "skip `denotes`" (the boost sees 1.0, from the concept's own row only);
+   "`memory_link` maintains no `denotes`" (score reads 1.0, m6 missing); "an exact-name concept
+   lookup" (`FooBar` reads 0.0); "a second resolver in `cli.py`" (a check asserts both score
+   paths and the boost call `reinforcement.resolve_targets`). {#ac-4b}
 5. **AC-5 (R3) Memory-only.** A doc d created now (`# Title {#root}`, a root-level
    `rel: reinforces -> [[c]]`) beside AC-3's rows leaves c at 0.1. Mutation: drop the kind filter:
    FAILS (c reads 2.1: the `d#root` concept row and the `d` doc mirror row both count). {#ac-5}
@@ -297,7 +315,10 @@ B and C are not built. {#o-1-impact}
    daemon stopped, the CLI refuses and writes nothing. Mutations, each FAILS it: apply without the
    `unlink` event (the rebuild holds both orientations); re-orient the ambiguous row; apply when
    the backup copy fails (the injection must leave the catalog unchanged). On the live stores,
-   the post-apply R0b census reads 0 candidates. {#ac-9}
+   the post-apply R0b census reads 0 candidates. **Flags (r2 M6):** `--reinforce-orientation
+   --fragments`, `--reinforce-orientation --dry-run --apply` and `--fragments --apply` each exit 2
+   with a usage error and change nothing. Mutation: let `--apply` combine with `--fragments`:
+   FAILS. {#ac-9}
 10. **AC-10 (R7, bug-223) The boost read fails loudly.** In the sandbox, with
     `RMX_BOOST_REINFORCE=1` and `refmatrix.reinforcement.reinforcement_scores` replaced by a
     stub that raises (a dependency of the method under test, not the method; the stub is
@@ -358,6 +379,19 @@ the lead's rulings of the same day.
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
 rel: related-to -> [[project_fleet_hooks_found_by_marker_not_hub]]
 
+## Revision 3 (2026-11-13, ch-bsd r2 + lead rulings) {#rev-3}
+
+| finding / ruling | answered in |
+|---|---|
+| r2 S2 (a hand link made after its target exists got no `denotes`) | [[#r1]] `Store.memory_link` calls bug-216's ingest-time `denotes` helper; [[#ac-4b]] ingests m5 first, no derive step, m6 created now; mutation "`memory_link` maintains no `denotes`" |
+| r2 M3 (AC-11 relies on bug-185 R10 keeping its evidence-support clause) | noted; the lead pins it on the writer side (spec-t4: R10 keeps the clause with its own AC) |
+| r2 M4 (canonical-variant match on the concept leg) | [[#r2b]] `resolve_concept_ids(name, strict=False)`; AC-4b variant row + mutation |
+| r2 M5 (R4's ambiguous count needs `facts.log`) | [[#r0b]] copies `facts.log`; [[#r4]] the `#`-in-name hint as a cross-check only, demoting to `ambiguous`, never promoting |
+| r2 M6 (the flag matrix) | [[#r4]] flag matrix; [[#ac-9]] flag rows + mutation |
+| lead: bug-185 AC-15's fixture | [[#files]] row; [[#done]] |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
 ## Out of scope {#out-of-scope}
 
 - Turning the channel on (`RMX_REINFORCE_ALPHA`, `RMX_BOOST_REINFORCE`): a ranking change, gated
@@ -378,11 +412,14 @@ rel: related-to -> [[project_fleet_hooks_found_by_marker_not_hub]]
 | `eval/reinforcement_bench.py`, `eval/reinforcement_csn_bench.py` | seed through the writers (R5); AC-7 runs |
 | `scripts/census_on_copy.py` (16.6's) or a scratch census script | R0b (read-only, copies only) |
 | `workflow/measurements/bug218-direction-census-<date>.md` (new) | AC-8 |
+| `tests/` (bug-185's AC-15 test, spec-wave-t4 at `4133f35`) | bug-185 merges first and writes a `memory_link`-shaped edge through `Store.link` + `Store.add_evidence`; this task switches that fixture to the real `Store.memory_link` ([[#r1]]) and re-runs bug-185 AC-15 |
 | `workflow/bug_registry.md` | bug-218 row: premise corrected (two writers), status, fix sha; bug-223 row: fix sha; any sibling silent guard R7 finds, as its own row |
 
 ## Definition of done {#done}
 
 - RED run (AC-1) and GREEN run recorded under `workflow/review-output/`, mutation check noted.
 - Implementation summary at `workflow/implementation_summaries/task-bug218-reinforcement-edge-direction.md`.
+- bug-185's AC-15 fixture uses `Store.memory_link`, and bug-185 AC-15 re-run green after the
+  switch (log cited).
 - Committed on branch `task-bug218-reinforcement-edge-direction`; merged `--no-ff` to `master`;
   the bug-218 row updated with the sha.
