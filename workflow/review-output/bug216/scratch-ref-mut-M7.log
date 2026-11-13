@@ -1,0 +1,114 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/f0521bff-0006-479a-9e0f-6df02d50937e/scratchpad/ref216/src/refmatrix as checked-hash (bug-037)
+.............................................FFF...FF                    [100%]
+=================================== FAILURES ===================================
+_______________ test_ac4_fails_naming_the_file_and_the_spec_rule _______________
+
+roots = [PosixPath('/private/tmp/b216pqsrzu30t')]
+
+    def test_ac4_fails_naming_the_file_and_the_spec_rule(roots):
+        """A GMD doc in the lint scope that a spec pattern excludes: non-zero, and the line naming
+        the file names the pattern that excluded it. The non-GMD file the same pattern excludes is
+        NOT a finding (only GMD docs carry anchors other docs cite)."""
+        root = _root()
+        roots.append(root)
+        _small_repo(root)
+        _spec(root, ["*-private.md", "!.claude/PROJECT_PROFILE.md"])
+        code, out = _run(root)
+>       assert code != 0, f"the gate passed a lint-scope GMD doc the ingest excludes:\n{out}"
+E       AssertionError: the gate passed a lint-scope GMD doc the ingest excludes:
+E         gmd parity: 0 divergent doc(s), 0 parse failure(s)
+E         
+E       assert 0 != 0
+
+tests/test_bug216_scope_parity.py:117: AssertionError
+______________ test_ac4_fails_on_the_hidden_dir_rule_and_names_it ______________
+
+roots = [PosixPath('/private/tmp/b216p9r7aoqlf')]
+
+    def test_ac4_fails_on_the_hidden_dir_rule_and_names_it(roots):
+        """No spec line touches the profile; the built-in hidden-dir rule alone excludes it (spec
+        #why-hidden). The finding must say so — the rule is not in any file the user can grep."""
+        root = _root()
+        roots.append(root)
+        _small_repo(root)
+        _spec(root, ["!docs/notes-private.md"])
+        code, out = _run(root)
+>       assert code != 0, out
+E       AssertionError: gmd parity: 0 divergent doc(s), 0 parse failure(s)
+E         
+E       assert 0 != 0
+
+tests/test_bug216_scope_parity.py:131: AssertionError
+___________________ test_ac4_fails_on_this_repos_head_config ___________________
+
+roots = [PosixPath('/private/tmp/b216p6qzmi165')]
+
+    def test_ac4_fails_on_this_repos_head_config(roots):
+        """The live store's ignore file as of 2026-11-13 (before R4): `.claude` and `CLAUDE.md`.
+        Both rule docs are in the lint scope, both are excluded — exactly bug-216."""
+        root = _root()
+        roots.append(root)
+        _small_repo(root)
+        (root / "docs" / "notes-private.md").unlink()
+        _spec(root, HEAD_CONFIG)
+        code, out = _run(root)
+>       assert code != 0, out
+E       AssertionError: gmd parity: 0 divergent doc(s), 0 parse failure(s)
+E         
+E       assert 0 != 0
+
+tests/test_bug216_scope_parity.py:144: AssertionError
+________________ test_ac4_this_repo_fails_with_its_head_config _________________
+
+roots = [PosixPath('/private/tmp/b216r9qjq23os')]
+
+    def test_ac4_this_repo_fails_with_its_head_config(roots):
+        """The must-fail twin of the test above, on the real corpus."""
+        root = _root("b216r")
+        roots.append(root)
+        _mirror_this_repo(root)
+        _spec(root, HEAD_CONFIG)
+        code, out = _run(root)
+>       assert code != 0, out[-4000:]
+E       AssertionError: gmd parity: 0 divergent doc(s), 0 parse failure(s)
+E         
+E       assert 0 != 0
+
+tests/test_bug216_scope_parity.py:228: AssertionError
+________________ test_ac4_lint_gmd_sh_fails_on_the_excluded_doc ________________
+
+roots = [PosixPath('/private/tmp/b216p5miyg61b')]
+
+    def test_ac4_lint_gmd_sh_fails_on_the_excluded_doc(roots):
+        """The scope check runs where the anchor check runs: `scripts/lint-gmd.sh` exits non-zero
+        on the must-fail fixture although lint itself is clean."""
+        root = _root()
+        roots.append(root)
+        _small_repo(root)
+        _spec(root, ["*-private.md", "!.claude/PROJECT_PROFILE.md"])
+        prefix = Path(sys.prefix)
+        assert (prefix / "bin" / "python").exists(), f"no venv python under {prefix}"
+        (root / ".venv-eval").symlink_to(prefix)
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        lint_alone = subprocess.run([sys.executable, str(root / "tools/gmd/lint.py"), *SCOPE],
+                                    capture_output=True, text=True, cwd=root, env=env)
+        assert lint_alone.returncode == 0, f"precondition: lint passes alone\n{lint_alone.stdout}"
+        p = subprocess.run(["bash", str(root / "scripts" / "lint-gmd.sh")], capture_output=True,
+                           text=True, cwd=root, env=env, timeout=600)
+        out = p.stdout + p.stderr
+>       assert p.returncode != 0, out
+E       AssertionError: gmd parity: 0 divergent doc(s), 0 parse failure(s)
+E         
+E         gmd lint: 7 files, 6 GMD docs, 0 errors, 0 warnings [phase 2 cross-doc]
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['bash', '/private/tmp/b216p5miyg61b/scripts/lint-gmd.sh'], returncode=0, stdout='gmd parity: 0 ...nt doc(s), 0 parse failure(s)\n', stderr='\ngmd lint: 7 files, 6 GMD docs, 0 errors, 0 warnings [phase 2 cross-doc]\n').returncode
+
+tests/test_bug216_scope_parity.py:253: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_scope_parity.py::test_ac4_fails_naming_the_file_and_the_spec_rule
+FAILED tests/test_bug216_scope_parity.py::test_ac4_fails_on_the_hidden_dir_rule_and_names_it
+FAILED tests/test_bug216_scope_parity.py::test_ac4_fails_on_this_repos_head_config
+FAILED tests/test_bug216_scope_parity.py::test_ac4_this_repo_fails_with_its_head_config
+FAILED tests/test_bug216_scope_parity.py::test_ac4_lint_gmd_sh_fails_on_the_excluded_doc
+5 failed, 48 passed in 13.44s

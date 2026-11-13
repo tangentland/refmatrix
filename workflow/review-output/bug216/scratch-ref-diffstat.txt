@@ -1,0 +1,8 @@
+ scripts/check-gmd-parity.py  | 14 +++++++-
+ scripts/check-rel-landing.py | 48 ++++++++++++++++++++++++++
+ src/refmatrix/cli.py         |  2 +-
+ src/refmatrix/daemon.py      |  8 ++---
+ src/refmatrix/ingest.py      | 80 +++++++++++++++++++++++++++++++++++---------
+ src/refmatrix/ingest_gmd.py  |  6 +++-
+ src/refmatrix/watch.py       | 24 ++-----------
+ 7 files changed, 138 insertions(+), 44 deletions(-)

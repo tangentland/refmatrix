@@ -1,0 +1,22 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/f0521bff-0006-479a-9e0f-6df02d50937e/scratchpad/ref216/src/refmatrix as checked-hash (bug-037)
+......F..............................................                    [100%]
+=================================== FAILURES ===================================
+________________ test_reinclude_is_anchored_to_the_project_root ________________
+
+root = PosixPath('/private/tmp/b216i_obhjn5z')
+
+    def test_reinclude_is_anchored_to_the_project_root(root):
+        """R1: `!path` is anchored. `!CLAUDE.md` re-includes the ROOT CLAUDE.md, not a nested one a
+        bare `CLAUDE.md` pattern still excludes."""
+        _spec(root, "CLAUDE.md", "!CLAUDE.md")
+        top = _touch(root, "CLAUDE.md")
+        nested = _touch(root, "pkg/CLAUDE.md")
+        assert should_ignore(top, root) is False
+>       assert should_ignore(nested, root) is True
+E       AssertionError: assert False is True
+E        +  where False = should_ignore(PosixPath('/private/tmp/b216i_obhjn5z/pkg/CLAUDE.md'), PosixPath('/private/tmp/b216i_obhjn5z'))
+
+tests/test_bug216_ignore_reinclude.py:168: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_ignore_reinclude.py::test_reinclude_is_anchored_to_the_project_root
+1 failed, 52 passed in 13.97s

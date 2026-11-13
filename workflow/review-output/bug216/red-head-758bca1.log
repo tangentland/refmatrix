@@ -1,0 +1,1071 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /Volumes/littlebig/refmatrix-bug216
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collecting ... collected 58 items
+
+tests/test_bug216_ignore_reinclude.py::test_ac1_profile_reincluded_under_an_ignored_claude_dir FAILED [  1%]
+tests/test_bug216_ignore_reinclude.py::test_ac1_claude_md_removed_from_the_spec_is_not_ignored PASSED [  3%]
+tests/test_bug216_ignore_reinclude.py::test_reinclude_never_beats_ingest_ignore_dirs PASSED [  5%]
+tests/test_bug216_ignore_reinclude.py::test_a_reinclude_naming_a_directory_is_reported_once_and_reincludes_nothing FAILED [  6%]
+tests/test_bug216_ignore_reinclude.py::test_reinclude_beats_the_hidden_dir_rule_with_no_spec_line FAILED [  8%]
+tests/test_bug216_ignore_reinclude.py::test_reinclude_beats_every_spec_pattern_shape_wherever_it_appears FAILED [ 10%]
+tests/test_bug216_ignore_reinclude.py::test_reinclude_is_anchored_to_the_project_root FAILED [ 12%]
+tests/test_bug216_ignore_reinclude.py::test_reinclude_accepts_a_glob FAILED [ 13%]
+tests/test_bug216_ignore_reinclude.py::test_without_a_root_only_the_builtin_rules_apply PASSED [ 15%]
+tests/test_bug216_ignore_reinclude.py::test_r2_only_ingest_reads_the_ignore_spec FAILED [ 17%]
+tests/test_bug216_ignore_reinclude.py::test_r2_only_ingest_uses_the_builtin_segment_rule PASSED [ 18%]
+tests/test_bug216_ignore_reinclude.py::test_r2_each_walker_goes_through_should_ignore[ingest.py:_ingest_tree] PASSED [ 20%]
+tests/test_bug216_ignore_reinclude.py::test_r2_each_walker_goes_through_should_ignore[sync.py:_sync_one] PASSED [ 22%]
+tests/test_bug216_ignore_reinclude.py::test_r2_each_walker_goes_through_should_ignore[watch.py:is_relevant] FAILED [ 24%]
+tests/test_bug216_ignore_reinclude.py::test_r2_each_walker_goes_through_should_ignore[ingest_gmd.py:collect_gmd_files] FAILED [ 25%]
+tests/test_bug216_ignore_reinclude.py::test_r2_the_daemon_watcher_filters_against_its_owning_root FAILED [ 27%]
+tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_claude_node_and_its_edge[sync] PASSED [ 29%]
+tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_claude_node_and_its_edge[watcher] PASSED [ 31%]
+tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_claude_node_and_its_edge[op-ingest-gmd] FAILED [ 32%]
+tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_claude_node_and_its_edge[cli-ingest-gmd] FAILED [ 34%]
+tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[sync] FAILED [ 36%]
+tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[watcher] FAILED [ 37%]
+tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[op-ingest-gmd] FAILED [ 39%]
+tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[cli-ingest-gmd] FAILED [ 41%]
+tests/test_bug216_rule_docs_e2e.py::test_ac2_old_config_has_no_rule_doc_nodes[sync] PASSED [ 43%]
+tests/test_bug216_rule_docs_e2e.py::test_ac2_old_config_has_no_rule_doc_nodes[watcher] PASSED [ 44%]
+tests/test_bug216_rule_docs_e2e.py::test_ac2_old_config_has_no_rule_doc_nodes[op-ingest-gmd] FAILED [ 46%]
+tests/test_bug216_rule_docs_e2e.py::test_ac2_old_config_has_no_rule_doc_nodes[cli-ingest-gmd] FAILED [ 48%]
+tests/test_bug216_rule_docs_e2e.py::test_ac2_old_config_counts_both_lines_unresolved[op-ingest-gmd] FAILED [ 50%]
+tests/test_bug216_rule_docs_e2e.py::test_ac2_old_config_counts_both_lines_unresolved[cli-ingest-gmd] FAILED [ 51%]
+tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_new_config[sync] FAILED [ 53%]
+tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_new_config[watcher] FAILED [ 55%]
+tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_new_config[op-ingest-gmd] FAILED [ 56%]
+tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_new_config[cli-ingest-gmd] FAILED [ 58%]
+tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_new_config[ingest-path] FAILED [ 60%]
+tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_old_config[sync] PASSED [ 62%]
+tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_old_config[watcher] PASSED [ 63%]
+tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_old_config[op-ingest-gmd] FAILED [ 65%]
+tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_old_config[cli-ingest-gmd] FAILED [ 67%]
+tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_old_config[ingest-path] PASSED [ 68%]
+tests/test_bug216_rule_docs_e2e.py::test_r2_watch_is_relevant_agrees_with_should_ignore FAILED [ 70%]
+tests/test_bug216_rule_docs_e2e.py::test_ac3_a_path_that_becomes_reincluded_is_picked_up_by_the_next_sync FAILED [ 72%]
+tests/test_bug216_rule_docs_e2e.py::test_ac3_a_path_that_becomes_ignored_is_purged_by_the_next_sync FAILED [ 74%]
+tests/test_bug216_rule_docs_e2e.py::test_ac3_purge_of_a_path_that_becomes_ignored_is_unchanged_for_a_plain_path PASSED [ 75%]
+tests/test_bug216_rule_docs_e2e.py::test_the_memory_walk_is_not_put_through_should_ignore PASSED [ 77%]
+tests/test_bug216_scope_parity.py::test_ac4_fails_naming_the_file_and_the_spec_rule FAILED [ 79%]
+tests/test_bug216_scope_parity.py::test_ac4_fails_on_the_hidden_dir_rule_and_names_it FAILED [ 81%]
+tests/test_bug216_scope_parity.py::test_ac4_fails_on_this_repos_head_config FAILED [ 82%]
+tests/test_bug216_scope_parity.py::test_ac4_exits_zero_when_reincluded PASSED [ 84%]
+tests/test_bug216_scope_parity.py::test_ac4_the_memory_dir_is_out_of_the_scope_check PASSED [ 86%]
+tests/test_bug216_scope_parity.py::test_ac4_this_repo_passes_with_r4_config PASSED [ 87%]
+tests/test_bug216_scope_parity.py::test_ac4_this_repo_fails_with_its_head_config FAILED [ 89%]
+tests/test_bug216_scope_parity.py::test_ac4_lint_gmd_sh_fails_on_the_excluded_doc FAILED [ 91%]
+tests/test_bug216_rel_landing.py::test_ac5_script_exists FAILED          [ 93%]
+tests/test_bug216_rel_landing.py::test_ac5_recount_reproduces_the_hand_computed_categories FAILED [ 94%]
+tests/test_bug216_rel_landing.py::test_ac5_is_read_only_on_the_catalog FAILED [ 96%]
+tests/test_bug216_rel_landing.py::test_ac5_prints_counts_and_paths_only FAILED [ 98%]
+tests/test_bug216_rel_landing.py::test_ac5_is_not_a_gate FAILED          [100%]
+
+=================================== FAILURES ===================================
+___________ test_ac1_profile_reincluded_under_an_ignored_claude_dir ____________
+
+root = PosixPath('/private/tmp/b216i7i30aybc')
+
+    def test_ac1_profile_reincluded_under_an_ignored_claude_dir(root):
+        """`.claude` in the spec + `!.claude/PROJECT_PROFILE.md`: the profile is NOT ignored and
+        `.claude/agents/x.md` IS. The override has to beat BOTH the spec's `.claude` line and the
+        built-in hidden-dir rule (spec #why-hidden)."""
+        _spec(root, ".claude", "!.claude/PROJECT_PROFILE.md")
+        prof = _touch(root, ".claude/PROJECT_PROFILE.md")
+        agent = _touch(root, ".claude/agents/x.md")
+>       assert should_ignore(prof, root) is False, "re-included profile is still ignored"
+E       AssertionError: re-included profile is still ignored
+E       assert True is False
+E        +  where True = should_ignore(PosixPath('/private/tmp/b216i7i30aybc/.claude/PROJECT_PROFILE.md'), PosixPath('/private/tmp/b216i7i30aybc'))
+
+tests/test_bug216_ignore_reinclude.py:78: AssertionError
+_ test_a_reinclude_naming_a_directory_is_reported_once_and_reincludes_nothing __
+
+root = PosixPath('/private/tmp/b216ik57cxu_s')
+capfd = <_pytest.capture.CaptureFixture object at 0x10f5cd940>
+
+    def test_a_reinclude_naming_a_directory_is_reported_once_and_reincludes_nothing(root, capfd):
+        """R1: a re-include applies to files only; a `!dir` line re-includes nothing and is reported
+        ONCE, loudly (stderr), when the spec loads — not once per walked file."""
+        (root / ".claude" / "agents").mkdir(parents=True)
+        inside = _touch(root, ".claude/agents/a.md")
+        _spec(root, ".claude", "!.claude/agents")
+        capfd.readouterr()
+        load_ignore_spec(root)
+        load_ignore_spec(root)          # cached: same (path, mtime)
+        for _ in range(3):
+            should_ignore(inside, root)
+        err = capfd.readouterr().err
+>       assert err.count("!.claude/agents") == 1, (
+            f"a `!dir` line must be reported exactly once on stderr; got:\n{err!r}")
+E       AssertionError: a `!dir` line must be reported exactly once on stderr; got:
+E         ''
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x105a936f0>('!.claude/agents')
+E        +    where <built-in method count of str object at 0x105a936f0> = ''.count
+
+tests/test_bug216_ignore_reinclude.py:117: AssertionError
+__________ test_reinclude_beats_the_hidden_dir_rule_with_no_spec_line __________
+
+root = PosixPath('/private/tmp/b216igaf_rmqv')
+
+    def test_reinclude_beats_the_hidden_dir_rule_with_no_spec_line(root):
+        """Mutation M1 in isolation: no ignore pattern at all, only the re-include. The ONLY rule
+        that excludes the profile is the built-in hidden-dir rule, so only the hidden-dir override
+        can make this pass. (Also pins that a spec holding nothing but re-includes is not dropped as
+        empty — `load_ignore_spec` returns None for a spec it judges empty.)"""
+        _spec(root, "# rule docs", "!.claude/PROJECT_PROFILE.md")
+        prof = _touch(root, ".claude/PROJECT_PROFILE.md")
+        other = _touch(root, ".claude/settings.md")
+>       assert should_ignore(prof, root) is False
+E       AssertionError: assert True is False
+E        +  where True = should_ignore(PosixPath('/private/tmp/b216igaf_rmqv/.claude/PROJECT_PROFILE.md'), PosixPath('/private/tmp/b216igaf_rmqv'))
+
+tests/test_bug216_ignore_reinclude.py:133: AssertionError
+______ test_reinclude_beats_every_spec_pattern_shape_wherever_it_appears _______
+
+root = PosixPath('/private/tmp/b216irctrdx9k')
+
+    def test_reinclude_beats_every_spec_pattern_shape_wherever_it_appears(root):
+        """R1 (a): bare name, basename glob and anchored path are all overridden, and the re-include
+        line may come BEFORE the pattern it overrides."""
+        _spec(root,
+              "!docs/keep.md",             # before the line it overrides
+              "docs",                      # bare name -> segment anywhere
+              "*.draft.md",                # basename glob
+              "notes/private",             # anchored
+              "!notes/private/ok.md",
+              "!a.draft.md")
+        keep = _touch(root, "docs/keep.md")
+        drop = _touch(root, "docs/drop.md")
+        ok = _touch(root, "notes/private/ok.md")
+        secret = _touch(root, "notes/private/secret.md")
+        draft_root = _touch(root, "a.draft.md")
+        draft_other = _touch(root, "b.draft.md")
+>       assert should_ignore(keep, root) is False
+E       AssertionError: assert True is False
+E        +  where True = should_ignore(PosixPath('/private/tmp/b216irctrdx9k/docs/keep.md'), PosixPath('/private/tmp/b216irctrdx9k'))
+
+tests/test_bug216_ignore_reinclude.py:153: AssertionError
+________________ test_reinclude_is_anchored_to_the_project_root ________________
+
+root = PosixPath('/private/tmp/b216i6fu2h621')
+
+    def test_reinclude_is_anchored_to_the_project_root(root):
+        """R1: `!path` is anchored. `!CLAUDE.md` re-includes the ROOT CLAUDE.md, not a nested one a
+        bare `CLAUDE.md` pattern still excludes."""
+        _spec(root, "CLAUDE.md", "!CLAUDE.md")
+        top = _touch(root, "CLAUDE.md")
+        nested = _touch(root, "pkg/CLAUDE.md")
+>       assert should_ignore(top, root) is False
+E       AssertionError: assert True is False
+E        +  where True = should_ignore(PosixPath('/private/tmp/b216i6fu2h621/CLAUDE.md'), PosixPath('/private/tmp/b216i6fu2h621'))
+
+tests/test_bug216_ignore_reinclude.py:167: AssertionError
+________________________ test_reinclude_accepts_a_glob _________________________
+
+root = PosixPath('/private/tmp/b216izqyj3jaz')
+
+    def test_reinclude_accepts_a_glob(root):
+        """R1: 'a glob is allowed'."""
+        _spec(root, ".claude", "!.claude/*PROFILE*.md")
+        prof = _touch(root, ".claude/PROJECT_PROFILE.md")
+        other = _touch(root, ".claude/settings.md")
+>       assert should_ignore(prof, root) is False
+E       AssertionError: assert True is False
+E        +  where True = should_ignore(PosixPath('/private/tmp/b216izqyj3jaz/.claude/PROJECT_PROFILE.md'), PosixPath('/private/tmp/b216izqyj3jaz'))
+
+tests/test_bug216_ignore_reinclude.py:176: AssertionError
+__________________ test_r2_only_ingest_reads_the_ignore_spec ___________________
+
+    def test_r2_only_ingest_reads_the_ignore_spec():
+        """`load_ignore_spec` is read by `should_ignore` and nothing else. At HEAD `watch.py` calls
+        it and re-implements the match (`is_relevant`)."""
+        users = [p.relative_to(SRC).as_posix() for p in _src_files()
+                 if p.name != "ingest.py" and "load_ignore_spec" in _names_used(p)]
+>       assert users == [], f"walks reading the ignore spec themselves: {users}"
+E       AssertionError: walks reading the ignore spec themselves: ['watch.py']
+E       assert ['watch.py'] == []
+E         
+E         Left contains one more item: 'watch.py'
+E         
+E         Full diff:
+E         - []
+E         + [
+E         +     'watch.py',
+E         + ]
+
+tests/test_bug216_ignore_reinclude.py:216: AssertionError
+_____ test_r2_each_walker_goes_through_should_ignore[watch.py:is_relevant] _____
+
+module = 'watch.py', func = 'is_relevant'
+
+    @pytest.mark.parametrize("module,func", WALKERS, ids=[f"{m}:{f}" for m, f in WALKERS])
+    def test_r2_each_walker_goes_through_should_ignore(module, func):
+        node = _func_src(SRC / module, func)
+        names = {_call_name(c) for c in _calls(node)}
+>       assert "should_ignore" in names, f"{module}:{func} does not call should_ignore"
+E       AssertionError: watch.py:is_relevant does not call should_ignore
+E       assert 'should_ignore' in {'Path', 'any', 'load_ignore_spec', 'lower', 'match', 'relative_to', ...}
+
+tests/test_bug216_ignore_reinclude.py:278: AssertionError
+_ test_r2_each_walker_goes_through_should_ignore[ingest_gmd.py:collect_gmd_files] _
+
+module = 'ingest_gmd.py', func = 'collect_gmd_files'
+
+    @pytest.mark.parametrize("module,func", WALKERS, ids=[f"{m}:{f}" for m, f in WALKERS])
+    def test_r2_each_walker_goes_through_should_ignore(module, func):
+        node = _func_src(SRC / module, func)
+        names = {_call_name(c) for c in _calls(node)}
+>       assert "should_ignore" in names, f"{module}:{func} does not call should_ignore"
+E       AssertionError: ingest_gmd.py:collect_gmd_files does not call should_ignore
+E       assert 'should_ignore' in {'add', 'append', 'extend', 'is_dir', 'is_file', 'iter_memory_files', ...}
+
+tests/test_bug216_ignore_reinclude.py:278: AssertionError
+__________ test_r2_the_daemon_watcher_filters_against_its_owning_root __________
+
+    def test_r2_the_daemon_watcher_filters_against_its_owning_root():
+        """The daemon's watcher handler (`_start_watcher` -> `_Handler._maybe`) called
+        `is_relevant(p)` with NO root, so the spec — and with it any re-include — never reached
+        the watcher's first filter. Whatever it calls (`is_relevant` or `should_ignore`), it must
+        pass a root."""
+        maybe = _func_src(SRC / "daemon.py", "_start_watcher._maybe")
+        filt = [c for c in _calls(maybe) if _call_name(c) in ("is_relevant", "should_ignore")]
+        assert filt, "the daemon watcher handler no longer filters at all"
+        for c in filt:
+            n = len(c.args) + len([k for k in c.keywords if k.arg == "root"])
+>           assert n >= 2, f"daemon watcher filter called without a root: {ast.unparse(c)}"
+E           AssertionError: daemon watcher filter called without a root: is_relevant(p)
+E           assert 1 >= 2
+
+tests/test_bug216_ignore_reinclude.py:293: AssertionError
+_ test_ac2_reinclude_config_lands_the_claude_node_and_its_edge[op-ingest-gmd] __
+
+route = 'op-ingest-gmd'
+proj_new = (PosixPath('/private/tmp/b216x2s8j5ol/proj'), PosixPath('/private/tmp/b216x2s8j5ol/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e659a30>
+
+    @pytest.mark.parametrize("route", AC2_ROUTES)
+    def test_ac2_reinclude_config_lands_the_claude_node_and_its_edge(route, proj_new, monkeypatch):
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            _assert_edge_landed(s, proj, "claude#no-silent-failures", "finding#swallow", CLAUDE_LINE)
+>           _assert_rest_of_dot_claude_stays_out(s, proj)
+
+tests/test_bug216_rule_docs_e2e.py:412: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <refmatrix.store.Store object at 0x1294c7e00>
+proj = PosixPath('/private/tmp/b216x2s8j5ol/proj')
+
+    def _assert_rest_of_dot_claude_stays_out(s: Store, proj: Path) -> None:
+        """The re-include lets ONE file in; the rest of `.claude/` (agent templates) stays out
+        (spec #why-consistent). At HEAD ingest-gmd's walk takes it, as it takes every `*.md`."""
+>       assert _eid(s, "concept", "agent-x#duty") is None, "the agent template reached the store"
+E       AssertionError: the agent template reached the store
+E       assert 6 is None
+E        +  where 6 = _eid(<refmatrix.store.Store object at 0x1294c7e00>, 'concept', 'agent-x#duty')
+
+tests/test_bug216_rule_docs_e2e.py:283: AssertionError
+_ test_ac2_reinclude_config_lands_the_claude_node_and_its_edge[cli-ingest-gmd] _
+
+route = 'cli-ingest-gmd'
+proj_new = (PosixPath('/private/tmp/b216v6k40cz5/proj'), PosixPath('/private/tmp/b216v6k40cz5/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f7e1e50>
+
+    @pytest.mark.parametrize("route", AC2_ROUTES)
+    def test_ac2_reinclude_config_lands_the_claude_node_and_its_edge(route, proj_new, monkeypatch):
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            _assert_edge_landed(s, proj, "claude#no-silent-failures", "finding#swallow", CLAUDE_LINE)
+>           _assert_rest_of_dot_claude_stays_out(s, proj)
+
+tests/test_bug216_rule_docs_e2e.py:412: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <refmatrix.store.Store object at 0x12925e7b0>
+proj = PosixPath('/private/tmp/b216v6k40cz5/proj')
+
+    def _assert_rest_of_dot_claude_stays_out(s: Store, proj: Path) -> None:
+        """The re-include lets ONE file in; the rest of `.claude/` (agent templates) stays out
+        (spec #why-consistent). At HEAD ingest-gmd's walk takes it, as it takes every `*.md`."""
+>       assert _eid(s, "concept", "agent-x#duty") is None, "the agent template reached the store"
+E       AssertionError: the agent template reached the store
+E       assert 6 is None
+E        +  where 6 = _eid(<refmatrix.store.Store object at 0x12925e7b0>, 'concept', 'agent-x#duty')
+
+tests/test_bug216_rule_docs_e2e.py:283: AssertionError
+_____ test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[sync] ______
+
+route = 'sync'
+proj_new = (PosixPath('/private/tmp/b216yqbz6w4a/proj'), PosixPath('/private/tmp/b216yqbz6w4a/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x129257f50>
+
+    @pytest.mark.parametrize("route", AC2_ROUTES)
+    def test_ac2_reinclude_config_lands_the_profile_node_and_its_edge(route, proj_new, monkeypatch):
+        """The profile sits under a hidden dir: only the re-include's hidden-dir override lets it
+        in, on every route (R1 + R2)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+>           _assert_edge_landed(s, proj, "project-profile#constraints", "finding#profile-cite",
+                                PROFILE_LINE)
+
+tests/test_bug216_rule_docs_e2e.py:425: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <refmatrix.store.Store object at 0x12925e510>
+proj = PosixPath('/private/tmp/b216yqbz6w4a/proj')
+target = 'project-profile#constraints', src = 'finding#profile-cite', line = 22
+
+    def _assert_edge_landed(s: Store, proj: Path, target: str, src: str, line: int) -> None:
+        """The node exists, ONE `contradicts` edge lands on it in the store's direction, and its
+        evidence row names the citing file and line."""
+        tgt = _eid(s, "concept", target)
+>       assert tgt is not None, f"no `{target}` node in the store"
+E       AssertionError: no `project-profile#constraints` node in the store
+E       assert None is not None
+
+tests/test_bug216_rule_docs_e2e.py:247: AssertionError
+____ test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[watcher] ____
+
+route = 'watcher'
+proj_new = (PosixPath('/private/tmp/b2160jn2848w/proj'), PosixPath('/private/tmp/b2160jn2848w/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ee1ae40>
+
+    @pytest.mark.parametrize("route", AC2_ROUTES)
+    def test_ac2_reinclude_config_lands_the_profile_node_and_its_edge(route, proj_new, monkeypatch):
+        """The profile sits under a hidden dir: only the re-include's hidden-dir override lets it
+        in, on every route (R1 + R2)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+>           _assert_edge_landed(s, proj, "project-profile#constraints", "finding#profile-cite",
+                                PROFILE_LINE)
+
+tests/test_bug216_rule_docs_e2e.py:425: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <refmatrix.store.Store object at 0x12925c1a0>
+proj = PosixPath('/private/tmp/b2160jn2848w/proj')
+target = 'project-profile#constraints', src = 'finding#profile-cite', line = 22
+
+    def _assert_edge_landed(s: Store, proj: Path, target: str, src: str, line: int) -> None:
+        """The node exists, ONE `contradicts` edge lands on it in the store's direction, and its
+        evidence row names the citing file and line."""
+        tgt = _eid(s, "concept", target)
+>       assert tgt is not None, f"no `{target}` node in the store"
+E       AssertionError: no `project-profile#constraints` node in the store
+E       assert None is not None
+
+tests/test_bug216_rule_docs_e2e.py:247: AssertionError
+_ test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[op-ingest-gmd] _
+
+route = 'op-ingest-gmd'
+proj_new = (PosixPath('/private/tmp/b2166trr8cix/proj'), PosixPath('/private/tmp/b2166trr8cix/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ee1ba80>
+
+    @pytest.mark.parametrize("route", AC2_ROUTES)
+    def test_ac2_reinclude_config_lands_the_profile_node_and_its_edge(route, proj_new, monkeypatch):
+        """The profile sits under a hidden dir: only the re-include's hidden-dir override lets it
+        in, on every route (R1 + R2)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            _assert_edge_landed(s, proj, "project-profile#constraints", "finding#profile-cite",
+                                PROFILE_LINE)
+>           _assert_rest_of_dot_claude_stays_out(s, proj)
+
+tests/test_bug216_rule_docs_e2e.py:427: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <refmatrix.store.Store object at 0x12925c590>
+proj = PosixPath('/private/tmp/b2166trr8cix/proj')
+
+    def _assert_rest_of_dot_claude_stays_out(s: Store, proj: Path) -> None:
+        """The re-include lets ONE file in; the rest of `.claude/` (agent templates) stays out
+        (spec #why-consistent). At HEAD ingest-gmd's walk takes it, as it takes every `*.md`."""
+>       assert _eid(s, "concept", "agent-x#duty") is None, "the agent template reached the store"
+E       AssertionError: the agent template reached the store
+E       assert 6 is None
+E        +  where 6 = _eid(<refmatrix.store.Store object at 0x12925c590>, 'concept', 'agent-x#duty')
+
+tests/test_bug216_rule_docs_e2e.py:283: AssertionError
+_ test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[cli-ingest-gmd] _
+
+route = 'cli-ingest-gmd'
+proj_new = (PosixPath('/private/tmp/b216_npqqhi6/proj'), PosixPath('/private/tmp/b216_npqqhi6/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ee1a5f0>
+
+    @pytest.mark.parametrize("route", AC2_ROUTES)
+    def test_ac2_reinclude_config_lands_the_profile_node_and_its_edge(route, proj_new, monkeypatch):
+        """The profile sits under a hidden dir: only the re-include's hidden-dir override lets it
+        in, on every route (R1 + R2)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            _assert_edge_landed(s, proj, "project-profile#constraints", "finding#profile-cite",
+                                PROFILE_LINE)
+>           _assert_rest_of_dot_claude_stays_out(s, proj)
+
+tests/test_bug216_rule_docs_e2e.py:427: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <refmatrix.store.Store object at 0x12925ea50>
+proj = PosixPath('/private/tmp/b216_npqqhi6/proj')
+
+    def _assert_rest_of_dot_claude_stays_out(s: Store, proj: Path) -> None:
+        """The re-include lets ONE file in; the rest of `.claude/` (agent templates) stays out
+        (spec #why-consistent). At HEAD ingest-gmd's walk takes it, as it takes every `*.md`."""
+>       assert _eid(s, "concept", "agent-x#duty") is None, "the agent template reached the store"
+E       AssertionError: the agent template reached the store
+E       assert 6 is None
+E        +  where 6 = _eid(<refmatrix.store.Store object at 0x12925ea50>, 'concept', 'agent-x#duty')
+
+tests/test_bug216_rule_docs_e2e.py:283: AssertionError
+___________ test_ac2_old_config_has_no_rule_doc_nodes[op-ingest-gmd] ___________
+
+route = 'op-ingest-gmd'
+proj_old = (PosixPath('/private/tmp/b216pbu1e2rz/proj'), PosixPath('/private/tmp/b216pbu1e2rz/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f6b7460>
+
+    @pytest.mark.parametrize("route", AC2_ROUTES)
+    def test_ac2_old_config_has_no_rule_doc_nodes(route, proj_old, monkeypatch):
+        """With the 2026-09-04 config neither rule doc reaches the store on ANY route, and the
+        citing lines land nothing. (At HEAD ingest-gmd's walk honours no ignore spec at all.)"""
+        proj, root = proj_old
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+>           _assert_no_node(s, "claude#no-silent-failures", "finding#swallow")
+
+tests/test_bug216_rule_docs_e2e.py:440: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <refmatrix.store.Store object at 0x12925ecf0>
+target = 'claude#no-silent-failures', src = 'finding#swallow'
+
+    def _assert_no_node(s: Store, target: str, src: str) -> None:
+>       assert _eid(s, "concept", target) is None, f"`{target}` node exists under the old config"
+E       AssertionError: `claude#no-silent-failures` node exists under the old config
+E       assert 9 is None
+E        +  where 9 = _eid(<refmatrix.store.Store object at 0x12925ecf0>, 'concept', 'claude#no-silent-failures')
+
+tests/test_bug216_rule_docs_e2e.py:266: AssertionError
+__________ test_ac2_old_config_has_no_rule_doc_nodes[cli-ingest-gmd] ___________
+
+route = 'cli-ingest-gmd'
+proj_old = (PosixPath('/private/tmp/b216gotvykx7/proj'), PosixPath('/private/tmp/b216gotvykx7/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f6b70e0>
+
+    @pytest.mark.parametrize("route", AC2_ROUTES)
+    def test_ac2_old_config_has_no_rule_doc_nodes(route, proj_old, monkeypatch):
+        """With the 2026-09-04 config neither rule doc reaches the store on ANY route, and the
+        citing lines land nothing. (At HEAD ingest-gmd's walk honours no ignore spec at all.)"""
+        proj, root = proj_old
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+>           _assert_no_node(s, "claude#no-silent-failures", "finding#swallow")
+
+tests/test_bug216_rule_docs_e2e.py:440: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <refmatrix.store.Store object at 0x12925f0e0>
+target = 'claude#no-silent-failures', src = 'finding#swallow'
+
+    def _assert_no_node(s: Store, target: str, src: str) -> None:
+>       assert _eid(s, "concept", target) is None, f"`{target}` node exists under the old config"
+E       AssertionError: `claude#no-silent-failures` node exists under the old config
+E       assert 9 is None
+E        +  where 9 = _eid(<refmatrix.store.Store object at 0x12925f0e0>, 'concept', 'claude#no-silent-failures')
+
+tests/test_bug216_rule_docs_e2e.py:266: AssertionError
+_______ test_ac2_old_config_counts_both_lines_unresolved[op-ingest-gmd] ________
+
+route = 'op-ingest-gmd'
+proj_old = (PosixPath('/private/tmp/b216nucwcq7d/proj'), PosixPath('/private/tmp/b216nucwcq7d/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f6b5390>
+
+    @pytest.mark.parametrize("route", ["op-ingest-gmd", "cli-ingest-gmd"])
+    def test_ac2_old_config_counts_both_lines_unresolved(route, proj_old, monkeypatch):
+        """ingest-gmd's report names unresolved refs (`IngestStats.report`), so the AC's 'the line
+        counted unresolved' is observable there. (The sync route discards the GMD stats; see the
+        RED summary.)"""
+        proj, root = proj_old
+        res = _run(route, proj, root, monkeypatch)
+        rep = str(res.get("report"))
+>       assert "claude#no-silent-failures" in rep, rep
+E       AssertionError: ingested 7 doc(s), 12 node(s), 2 rel: edge(s), 62 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         new linkage types: lead, part-of
+E       assert 'claude#no-silent-failures' in 'ingested 7 doc(s), 12 node(s), 2 rel: edge(s), 62 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage types: lead, part-of'
+
+tests/test_bug216_rule_docs_e2e.py:454: AssertionError
+_______ test_ac2_old_config_counts_both_lines_unresolved[cli-ingest-gmd] _______
+
+route = 'cli-ingest-gmd'
+proj_old = (PosixPath('/private/tmp/b2161utg65kh/proj'), PosixPath('/private/tmp/b2161utg65kh/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f6b6580>
+
+    @pytest.mark.parametrize("route", ["op-ingest-gmd", "cli-ingest-gmd"])
+    def test_ac2_old_config_counts_both_lines_unresolved(route, proj_old, monkeypatch):
+        """ingest-gmd's report names unresolved refs (`IngestStats.report`), so the AC's 'the line
+        counted unresolved' is observable there. (The sync route discards the GMD stats; see the
+        RED summary.)"""
+        proj, root = proj_old
+        res = _run(route, proj, root, monkeypatch)
+        rep = str(res.get("report"))
+>       assert "claude#no-silent-failures" in rep, rep
+E       AssertionError: ingested 7 doc(s), 12 node(s), 2 rel: edge(s), 62 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         new linkage types: lead, part-of
+E         
+E       assert 'claude#no-silent-failures' in 'ingested 7 doc(s), 12 node(s), 2 rel: edge(s), 62 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage types: lead, part-of\n'
+
+tests/test_bug216_rule_docs_e2e.py:454: AssertionError
+____ test_r2_every_walker_ingests_the_same_files_under_the_new_config[sync] ____
+
+route = 'sync'
+proj_new = (PosixPath('/private/tmp/b216tvul50d7/proj'), PosixPath('/private/tmp/b216tvul50d7/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f6b6190>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_r2_every_walker_ingests_the_same_files_under_the_new_config(route, proj_new,
+                                                                         monkeypatch):
+        """One fixture tree, one spec, the SAME included set on every walk. The tree has a spec
+        re-include under a hidden dir (the profile), a hidden-dir file the spec also ignores (the
+        agent template), an anchored spec exclusion (templates) and a re-include that must lose to
+        INGEST_IGNORE_DIRS (`!node_modules/n.md`)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert got == EXPECTED_NEW, (
+            f"{route}: missing {sorted(EXPECTED_NEW - got)}, extra {sorted(got - EXPECTED_NEW)}")
+E       AssertionError: sync: missing ['.claude/PROJECT_PROFILE.md'], extra []
+E       assert {'CLAUDE.md',...ocs/other.md'} == {'.claude/PRO...ocs/other.md'}
+E         
+E         Extra items in the right set:
+E         '.claude/PROJECT_PROFILE.md'
+E         
+E         Full diff:
+E           {
+E         -     '.claude/PROJECT_PROFILE.md',...
+E         
+E         ...Full output truncated (4 lines hidden), use '-vv' to show
+
+tests/test_bug216_rule_docs_e2e.py:477: AssertionError
+__ test_r2_every_walker_ingests_the_same_files_under_the_new_config[watcher] ___
+
+route = 'watcher'
+proj_new = (PosixPath('/private/tmp/b216eh_el3b0/proj'), PosixPath('/private/tmp/b216eh_el3b0/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ee1a350>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_r2_every_walker_ingests_the_same_files_under_the_new_config(route, proj_new,
+                                                                         monkeypatch):
+        """One fixture tree, one spec, the SAME included set on every walk. The tree has a spec
+        re-include under a hidden dir (the profile), a hidden-dir file the spec also ignores (the
+        agent template), an anchored spec exclusion (templates) and a re-include that must lose to
+        INGEST_IGNORE_DIRS (`!node_modules/n.md`)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert got == EXPECTED_NEW, (
+            f"{route}: missing {sorted(EXPECTED_NEW - got)}, extra {sorted(got - EXPECTED_NEW)}")
+E       AssertionError: watcher: missing ['.claude/PROJECT_PROFILE.md'], extra []
+E       assert {'CLAUDE.md',...ocs/other.md'} == {'.claude/PRO...ocs/other.md'}
+E         
+E         Extra items in the right set:
+E         '.claude/PROJECT_PROFILE.md'
+E         
+E         Full diff:
+E           {
+E         -     '.claude/PROJECT_PROFILE.md',...
+E         
+E         ...Full output truncated (4 lines hidden), use '-vv' to show
+
+tests/test_bug216_rule_docs_e2e.py:477: AssertionError
+_ test_r2_every_walker_ingests_the_same_files_under_the_new_config[op-ingest-gmd] _
+
+route = 'op-ingest-gmd'
+proj_new = (PosixPath('/private/tmp/b2167rqthile/proj'), PosixPath('/private/tmp/b2167rqthile/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ee18210>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_r2_every_walker_ingests_the_same_files_under_the_new_config(route, proj_new,
+                                                                         monkeypatch):
+        """One fixture tree, one spec, the SAME included set on every walk. The tree has a spec
+        re-include under a hidden dir (the profile), a hidden-dir file the spec also ignores (the
+        agent template), an anchored spec exclusion (templates) and a re-include that must lose to
+        INGEST_IGNORE_DIRS (`!node_modules/n.md`)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert got == EXPECTED_NEW, (
+            f"{route}: missing {sorted(EXPECTED_NEW - got)}, extra {sorted(got - EXPECTED_NEW)}")
+E       AssertionError: op-ingest-gmd: missing [], extra ['.claude/agents/x.md', 'node_modules/n.md', 'src/refmatrix/templates/t.md']
+E       assert {'.claude/PRO...es/n.md', ...} == {'.claude/PRO...ocs/other.md'}
+E         
+E         Extra items in the left set:
+E         'node_modules/n.md'
+E         'src/refmatrix/templates/t.md'
+E         '.claude/agents/x.md'
+E         
+E         Full diff:...
+E         
+E         ...Full output truncated (9 lines hidden), use '-vv' to show
+
+tests/test_bug216_rule_docs_e2e.py:477: AssertionError
+_ test_r2_every_walker_ingests_the_same_files_under_the_new_config[cli-ingest-gmd] _
+
+route = 'cli-ingest-gmd'
+proj_new = (PosixPath('/private/tmp/b216s8od1fpi/proj'), PosixPath('/private/tmp/b216s8od1fpi/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f6dc8a0>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_r2_every_walker_ingests_the_same_files_under_the_new_config(route, proj_new,
+                                                                         monkeypatch):
+        """One fixture tree, one spec, the SAME included set on every walk. The tree has a spec
+        re-include under a hidden dir (the profile), a hidden-dir file the spec also ignores (the
+        agent template), an anchored spec exclusion (templates) and a re-include that must lose to
+        INGEST_IGNORE_DIRS (`!node_modules/n.md`)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert got == EXPECTED_NEW, (
+            f"{route}: missing {sorted(EXPECTED_NEW - got)}, extra {sorted(got - EXPECTED_NEW)}")
+E       AssertionError: cli-ingest-gmd: missing [], extra ['.claude/agents/x.md', 'node_modules/n.md', 'src/refmatrix/templates/t.md']
+E       assert {'.claude/PRO...es/n.md', ...} == {'.claude/PRO...ocs/other.md'}
+E         
+E         Extra items in the left set:
+E         'node_modules/n.md'
+E         'src/refmatrix/templates/t.md'
+E         '.claude/agents/x.md'
+E         
+E         Full diff:...
+E         
+E         ...Full output truncated (9 lines hidden), use '-vv' to show
+
+tests/test_bug216_rule_docs_e2e.py:477: AssertionError
+_ test_r2_every_walker_ingests_the_same_files_under_the_new_config[ingest-path] _
+
+route = 'ingest-path'
+proj_new = (PosixPath('/private/tmp/b216g5a3wjby/proj'), PosixPath('/private/tmp/b216g5a3wjby/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f6de200>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_r2_every_walker_ingests_the_same_files_under_the_new_config(route, proj_new,
+                                                                         monkeypatch):
+        """One fixture tree, one spec, the SAME included set on every walk. The tree has a spec
+        re-include under a hidden dir (the profile), a hidden-dir file the spec also ignores (the
+        agent template), an anchored spec exclusion (templates) and a re-include that must lose to
+        INGEST_IGNORE_DIRS (`!node_modules/n.md`)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert got == EXPECTED_NEW, (
+            f"{route}: missing {sorted(EXPECTED_NEW - got)}, extra {sorted(got - EXPECTED_NEW)}")
+E       AssertionError: ingest-path: missing ['.claude/PROJECT_PROFILE.md'], extra []
+E       assert {'CLAUDE.md',...ocs/other.md'} == {'.claude/PRO...ocs/other.md'}
+E         
+E         Extra items in the right set:
+E         '.claude/PROJECT_PROFILE.md'
+E         
+E         Full diff:
+E           {
+E         -     '.claude/PROJECT_PROFILE.md',...
+E         
+E         ...Full output truncated (4 lines hidden), use '-vv' to show
+
+tests/test_bug216_rule_docs_e2e.py:477: AssertionError
+_ test_r2_every_walker_ingests_the_same_files_under_the_old_config[op-ingest-gmd] _
+
+route = 'op-ingest-gmd'
+proj_old = (PosixPath('/private/tmp/b216rro2m39z/proj'), PosixPath('/private/tmp/b216rro2m39z/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10edb1ef0>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_r2_every_walker_ingests_the_same_files_under_the_old_config(route, proj_old,
+                                                                         monkeypatch):
+        proj, root = proj_old
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert got == EXPECTED_OLD, (
+            f"{route}: missing {sorted(EXPECTED_OLD - got)}, extra {sorted(got - EXPECTED_OLD)}")
+E       AssertionError: op-ingest-gmd: missing [], extra ['.claude/PROJECT_PROFILE.md', '.claude/agents/x.md', 'CLAUDE.md', 'node_modules/n.md', 'src/refmatrix/templates/t.md']
+E       assert {'.claude/PRO...es/n.md', ...} == {'docs/findin...ocs/other.md'}
+E         
+E         Extra items in the left set:
+E         'node_modules/n.md'
+E         '.claude/PROJECT_PROFILE.md'
+E         'CLAUDE.md'
+E         'src/refmatrix/templates/t.md'
+E         '.claude/agents/x.md'...
+E         
+E         ...Full output truncated (11 lines hidden), use '-vv' to show
+
+tests/test_bug216_rule_docs_e2e.py:491: AssertionError
+_ test_r2_every_walker_ingests_the_same_files_under_the_old_config[cli-ingest-gmd] _
+
+route = 'cli-ingest-gmd'
+proj_old = (PosixPath('/private/tmp/b21640tvmdis/proj'), PosixPath('/private/tmp/b21640tvmdis/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f631a20>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_r2_every_walker_ingests_the_same_files_under_the_old_config(route, proj_old,
+                                                                         monkeypatch):
+        proj, root = proj_old
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert got == EXPECTED_OLD, (
+            f"{route}: missing {sorted(EXPECTED_OLD - got)}, extra {sorted(got - EXPECTED_OLD)}")
+E       AssertionError: cli-ingest-gmd: missing [], extra ['.claude/PROJECT_PROFILE.md', '.claude/agents/x.md', 'CLAUDE.md', 'node_modules/n.md', 'src/refmatrix/templates/t.md']
+E       assert {'.claude/PRO...es/n.md', ...} == {'docs/findin...ocs/other.md'}
+E         
+E         Extra items in the left set:
+E         'node_modules/n.md'
+E         '.claude/PROJECT_PROFILE.md'
+E         'CLAUDE.md'
+E         'src/refmatrix/templates/t.md'
+E         '.claude/agents/x.md'...
+E         
+E         ...Full output truncated (11 lines hidden), use '-vv' to show
+
+tests/test_bug216_rule_docs_e2e.py:491: AssertionError
+_____________ test_r2_watch_is_relevant_agrees_with_should_ignore ______________
+
+proj_new = (PosixPath('/private/tmp/b216nhhdmf5_/proj'), PosixPath('/private/tmp/b216nhhdmf5_/proj/.refmatrix'))
+
+    def test_r2_watch_is_relevant_agrees_with_should_ignore(proj_new):
+        """The `rmx watch` (watch.py) handler's filter, file by file, against the one predicate."""
+        from refmatrix.ingest import should_ignore
+        from refmatrix.watch import is_relevant
+        proj, _root = proj_new
+        diff = [p.relative_to(proj).as_posix() for p in _all_files(proj)
+                if is_relevant(p, proj) == should_ignore(p, proj)]
+        assert diff == [], f"is_relevant disagrees with should_ignore on {diff}"
+>       assert is_relevant(proj / ".claude" / "PROJECT_PROFILE.md", proj) is True
+E       AssertionError: assert False is True
+E        +  where False = <function is_relevant at 0x1292581a0>(((PosixPath('/private/tmp/b216nhhdmf5_/proj') / '.claude') / 'PROJECT_PROFILE.md'), PosixPath('/private/tmp/b216nhhdmf5_/proj'))
+
+tests/test_bug216_rule_docs_e2e.py:503: AssertionError
+____ test_ac3_a_path_that_becomes_reincluded_is_picked_up_by_the_next_sync _____
+
+    def test_ac3_a_path_that_becomes_reincluded_is_picked_up_by_the_next_sync():
+        """Ingest with the profile excluded, then add `!.claude/PROJECT_PROFILE.md`: the next sync
+        that names the profile ingests it. Its citing doc re-syncs (touched) and the edge lands."""
+        base, proj, root = _make_proj()
+        try:
+            _write_spec(proj, [".claude"])
+            _sync(proj, root, [p.relative_to(proj).as_posix() for p in _all_files(proj)])
+            s = _open(root)
+            try:
+                assert _eid(s, "concept", "project-profile#constraints") is None, "precondition"
+            finally:
+                s.close()
+            _write_spec(proj, [".claude", "!.claude/PROJECT_PROFILE.md"])
+            rep = _sync(proj, root, [".claude/PROJECT_PROFILE.md"])
+            s = _open(root)
+            try:
+>               assert _eid(s, "concept", "project-profile#constraints") is not None, (
+                    f"re-included profile not picked up by the next sync: {rep}")
+E                   AssertionError: re-included profile not picked up by the next sync: {'added': 0, 'updated': 0, 'purged': 0, 'touched': 0, 'cancelled': False, 'vector_delete_failed': 0, 'memory_anchors_kept': 0, 'memory_ownership_errors': []}
+E                   assert None is not None
+E                    +  where None = _eid(<refmatrix.store.Store object at 0x12a1f0050>, 'concept', 'project-profile#constraints')
+
+tests/test_bug216_rule_docs_e2e.py:539: AssertionError
+_______ test_ac3_a_path_that_becomes_ignored_is_purged_by_the_next_sync ________
+
+    def test_ac3_a_path_that_becomes_ignored_is_purged_by_the_next_sync():
+        """Existing behaviour, re-asserted over a re-included file: drop the re-include and the next
+        sync naming the profile purges its doc and nodes, and the edge into it goes with them."""
+        base, proj, root = _make_proj()
+        try:
+            _write_spec(proj, NEW_SPEC)
+            _sync(proj, root, [p.relative_to(proj).as_posix() for p in _all_files(proj)])
+            s = _open(root)
+            try:
+>               _assert_edge_landed(s, proj, "project-profile#constraints", "finding#profile-cite",
+                                    PROFILE_LINE)
+
+tests/test_bug216_rule_docs_e2e.py:565: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <refmatrix.store.Store object at 0x12925fa10>
+proj = PosixPath('/private/tmp/b216jrqgr28t/proj')
+target = 'project-profile#constraints', src = 'finding#profile-cite', line = 22
+
+    def _assert_edge_landed(s: Store, proj: Path, target: str, src: str, line: int) -> None:
+        """The node exists, ONE `contradicts` edge lands on it in the store's direction, and its
+        evidence row names the citing file and line."""
+        tgt = _eid(s, "concept", target)
+>       assert tgt is not None, f"no `{target}` node in the store"
+E       AssertionError: no `project-profile#constraints` node in the store
+E       assert None is not None
+
+tests/test_bug216_rule_docs_e2e.py:247: AssertionError
+_______________ test_ac4_fails_naming_the_file_and_the_spec_rule _______________
+
+roots = [PosixPath('/private/tmp/b216pv7_4xgfo')]
+
+    def test_ac4_fails_naming_the_file_and_the_spec_rule(roots):
+        """A GMD doc in the lint scope that a spec pattern excludes: non-zero, and the line naming
+        the file names the pattern that excluded it. The non-GMD file the same pattern excludes is
+        NOT a finding (only GMD docs carry anchors other docs cite)."""
+        root = _root()
+        roots.append(root)
+        _small_repo(root)
+        _spec(root, ["*-private.md", "!.claude/PROJECT_PROFILE.md"])
+        code, out = _run(root)
+>       assert code != 0, f"the gate passed a lint-scope GMD doc the ingest excludes:\n{out}"
+E       AssertionError: the gate passed a lint-scope GMD doc the ingest excludes:
+E         gmd parity: 0 divergent doc(s), 0 parse failure(s)
+E         
+E       assert 0 != 0
+
+tests/test_bug216_scope_parity.py:117: AssertionError
+______________ test_ac4_fails_on_the_hidden_dir_rule_and_names_it ______________
+
+roots = [PosixPath('/private/tmp/b216pm2disd48')]
+
+    def test_ac4_fails_on_the_hidden_dir_rule_and_names_it(roots):
+        """No spec line touches the profile; the built-in hidden-dir rule alone excludes it (spec
+        #why-hidden). The finding must say so — the rule is not in any file the user can grep."""
+        root = _root()
+        roots.append(root)
+        _small_repo(root)
+        _spec(root, ["!docs/notes-private.md"])
+        code, out = _run(root)
+>       assert code != 0, out
+E       AssertionError: gmd parity: 0 divergent doc(s), 0 parse failure(s)
+E         
+E       assert 0 != 0
+
+tests/test_bug216_scope_parity.py:131: AssertionError
+___________________ test_ac4_fails_on_this_repos_head_config ___________________
+
+roots = [PosixPath('/private/tmp/b216pe1uqm29z')]
+
+    def test_ac4_fails_on_this_repos_head_config(roots):
+        """The live store's ignore file as of 2026-11-13 (before R4): `.claude` and `CLAUDE.md`.
+        Both rule docs are in the lint scope, both are excluded — exactly bug-216."""
+        root = _root()
+        roots.append(root)
+        _small_repo(root)
+        (root / "docs" / "notes-private.md").unlink()
+        _spec(root, HEAD_CONFIG)
+        code, out = _run(root)
+>       assert code != 0, out
+E       AssertionError: gmd parity: 0 divergent doc(s), 0 parse failure(s)
+E         
+E       assert 0 != 0
+
+tests/test_bug216_scope_parity.py:144: AssertionError
+________________ test_ac4_this_repo_fails_with_its_head_config _________________
+
+roots = [PosixPath('/private/tmp/b216rpe506xvt')]
+
+    def test_ac4_this_repo_fails_with_its_head_config(roots):
+        """The must-fail twin of the test above, on the real corpus."""
+        root = _root("b216r")
+        roots.append(root)
+        _mirror_this_repo(root)
+        _spec(root, HEAD_CONFIG)
+        code, out = _run(root)
+>       assert code != 0, out[-4000:]
+E       AssertionError: gmd parity: 0 divergent doc(s), 0 parse failure(s)
+E         
+E       assert 0 != 0
+
+tests/test_bug216_scope_parity.py:228: AssertionError
+________________ test_ac4_lint_gmd_sh_fails_on_the_excluded_doc ________________
+
+roots = [PosixPath('/private/tmp/b216psjbirxdq')]
+
+    def test_ac4_lint_gmd_sh_fails_on_the_excluded_doc(roots):
+        """The scope check runs where the anchor check runs: `scripts/lint-gmd.sh` exits non-zero
+        on the must-fail fixture although lint itself is clean."""
+        root = _root()
+        roots.append(root)
+        _small_repo(root)
+        _spec(root, ["*-private.md", "!.claude/PROJECT_PROFILE.md"])
+        prefix = Path(sys.prefix)
+        assert (prefix / "bin" / "python").exists(), f"no venv python under {prefix}"
+        (root / ".venv-eval").symlink_to(prefix)
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        lint_alone = subprocess.run([sys.executable, str(root / "tools/gmd/lint.py"), *SCOPE],
+                                    capture_output=True, text=True, cwd=root, env=env)
+        assert lint_alone.returncode == 0, f"precondition: lint passes alone\n{lint_alone.stdout}"
+        p = subprocess.run(["bash", str(root / "scripts" / "lint-gmd.sh")], capture_output=True,
+                           text=True, cwd=root, env=env, timeout=600)
+        out = p.stdout + p.stderr
+>       assert p.returncode != 0, out
+E       AssertionError: gmd parity: 0 divergent doc(s), 0 parse failure(s)
+E         
+E         gmd lint: 7 files, 6 GMD docs, 0 errors, 0 warnings [phase 2 cross-doc]
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['bash', '/private/tmp/b216psjbirxdq/scripts/lint-gmd.sh'], returncode=0, stdout='gmd parity: 0 divergent doc(s), 0 parse failure(s)\n', stderr='\ngmd lint: 7 files, 6 GMD docs, 0 errors, 0 warnings [phase 2 cross-doc]\n').returncode
+
+tests/test_bug216_scope_parity.py:253: AssertionError
+____________________________ test_ac5_script_exists ____________________________
+
+    def test_ac5_script_exists():
+>       assert SCRIPT.is_file(), f"{SCRIPT.relative_to(REPO)} does not exist (spec #r5)"
+E       AssertionError: scripts/check-rel-landing.py does not exist (spec #r5)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-bug216/scripts/check-rel-landing.py').is_file
+
+tests/test_bug216_rel_landing.py:158: AssertionError
+___________ test_ac5_recount_reproduces_the_hand_computed_categories ___________
+
+catalog = (PosixPath('/private/tmp/b216l2qgufnbx/proj/.refmatrix/catalog.duckdb'), PosixPath('/private/tmp/b216l2qgufnbx/proj'))
+
+    def test_ac5_recount_reproduces_the_hand_computed_categories(catalog):
+        db, proj = catalog
+        p = _run(str(db), str(proj), "--json")
+>       assert p.returncode == 0, p.stdout + p.stderr
+E       AssertionError: /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python: can't open file '/Volumes/littlebig/refmatrix-bug216/scripts/check-rel-landing.py': [Errno 2] No such file or directory
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/Volumes/littlebig/refmatrix-bug216/scripts/check-rel-landing.py', '/private/tmp/b216l2qgufnbx/proj/.refmatrix/catalog.duckdb', '/private/tmp/b216l2qgufnbx/proj', '--json'], returncode=2, stdout='', stderr="/opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python: can't open file '/Volumes/littlebig/refmatrix-bug216/scripts/check-rel-landing.py': [Errno 2] No such file or directory\n").returncode
+
+tests/test_bug216_rel_landing.py:164: AssertionError
+_____________________ test_ac5_is_read_only_on_the_catalog _____________________
+
+catalog = (PosixPath('/private/tmp/b216lnse5js_7/proj/.refmatrix/catalog.duckdb'), PosixPath('/private/tmp/b216lnse5js_7/proj'))
+
+    def test_ac5_is_read_only_on_the_catalog(catalog):
+        """R5: read-only on the catalog path it is given — no byte of any file in the store dir
+        changes and no file (WAL, lock) appears."""
+        db, proj = catalog
+        before = _digest(db.parent)
+        for args in ((str(db), str(proj), "--json"), (str(db), str(proj))):
+            p = _run(*args)
+>           assert p.returncode == 0, p.stdout + p.stderr
+E           AssertionError: /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python: can't open file '/Volumes/littlebig/refmatrix-bug216/scripts/check-rel-landing.py': [Errno 2] No such file or directory
+E             
+E           assert 2 == 0
+E            +  where 2 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/Volumes/littlebig/refmatrix-bug216/scripts/check-rel-landing.py', '/private/tmp/b216lnse5js_7/proj/.refmatrix/catalog.duckdb', '/private/tmp/b216lnse5js_7/proj', '--json'], returncode=2, stdout='', stderr="/opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python: can't open file '/Volumes/littlebig/refmatrix-bug216/scripts/check-rel-landing.py': [Errno 2] No such file or directory\n").returncode
+
+tests/test_bug216_rel_landing.py:178: AssertionError
+____________________ test_ac5_prints_counts_and_paths_only _____________________
+
+catalog = (PosixPath('/private/tmp/b216lx1t7pa36/proj/.refmatrix/catalog.duckdb'), PosixPath('/private/tmp/b216lx1t7pa36/proj'))
+
+    def test_ac5_prints_counts_and_paths_only(catalog):
+        """R5: counts and paths only — never a doc's prose."""
+        db, proj = catalog
+        for args in ((str(db), str(proj), "--json"), (str(db), str(proj))):
+            p = _run(*args)
+>           assert p.returncode == 0, p.stdout + p.stderr
+E           AssertionError: /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python: can't open file '/Volumes/littlebig/refmatrix-bug216/scripts/check-rel-landing.py': [Errno 2] No such file or directory
+E             
+E           assert 2 == 0
+E            +  where 2 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/Volumes/littlebig/refmatrix-bug216/scripts/check-rel-landing.py', '/private/tmp/b216lx1t7pa36/proj/.refmatrix/catalog.duckdb', '/private/tmp/b216lx1t7pa36/proj', '--json'], returncode=2, stdout='', stderr="/opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python: can't open file '/Volumes/littlebig/refmatrix-bug216/scripts/check-rel-landing.py': [Errno 2] No such file or directory\n").returncode
+
+tests/test_bug216_rel_landing.py:187: AssertionError
+____________________________ test_ac5_is_not_a_gate ____________________________
+
+catalog = (PosixPath('/private/tmp/b216lobdbvwlr/proj/.refmatrix/catalog.duckdb'), PosixPath('/private/tmp/b216lobdbvwlr/proj'))
+
+    def test_ac5_is_not_a_gate(catalog):
+        """R5: 'Not a gate (line drift is benign)' — unresolved and drifted lines still exit 0."""
+        db, proj = catalog
+        p = _run(str(db), str(proj))
+>       assert p.returncode == 0, p.stdout + p.stderr
+E       AssertionError: /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python: can't open file '/Volumes/littlebig/refmatrix-bug216/scripts/check-rel-landing.py': [Errno 2] No such file or directory
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/Volumes/littlebig/refmatrix-bug216/scripts/check-rel-landing.py', '/private/tmp/b216lobdbvwlr/proj/.refmatrix/catalog.duckdb', '/private/tmp/b216lobdbvwlr/proj'], returncode=2, stdout='', stderr="/opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python: can't open file '/Volumes/littlebig/refmatrix-bug216/scripts/check-rel-landing.py': [Errno 2] No such file or directory\n").returncode
+
+tests/test_bug216_rel_landing.py:195: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_ignore_reinclude.py::test_ac1_profile_reincluded_under_an_ignored_claude_dir
+FAILED tests/test_bug216_ignore_reinclude.py::test_a_reinclude_naming_a_directory_is_reported_once_and_reincludes_nothing
+FAILED tests/test_bug216_ignore_reinclude.py::test_reinclude_beats_the_hidden_dir_rule_with_no_spec_line
+FAILED tests/test_bug216_ignore_reinclude.py::test_reinclude_beats_every_spec_pattern_shape_wherever_it_appears
+FAILED tests/test_bug216_ignore_reinclude.py::test_reinclude_is_anchored_to_the_project_root
+FAILED tests/test_bug216_ignore_reinclude.py::test_reinclude_accepts_a_glob
+FAILED tests/test_bug216_ignore_reinclude.py::test_r2_only_ingest_reads_the_ignore_spec
+FAILED tests/test_bug216_ignore_reinclude.py::test_r2_each_walker_goes_through_should_ignore[watch.py:is_relevant]
+FAILED tests/test_bug216_ignore_reinclude.py::test_r2_each_walker_goes_through_should_ignore[ingest_gmd.py:collect_gmd_files]
+FAILED tests/test_bug216_ignore_reinclude.py::test_r2_the_daemon_watcher_filters_against_its_owning_root
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_claude_node_and_its_edge[op-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_claude_node_and_its_edge[cli-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[sync]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[watcher]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[op-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[cli-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_old_config_has_no_rule_doc_nodes[op-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_old_config_has_no_rule_doc_nodes[cli-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_old_config_counts_both_lines_unresolved[op-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_old_config_counts_both_lines_unresolved[cli-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_new_config[sync]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_new_config[watcher]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_new_config[op-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_new_config[cli-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_new_config[ingest-path]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_old_config[op-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_old_config[cli-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_watch_is_relevant_agrees_with_should_ignore
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac3_a_path_that_becomes_reincluded_is_picked_up_by_the_next_sync
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac3_a_path_that_becomes_ignored_is_purged_by_the_next_sync
+FAILED tests/test_bug216_scope_parity.py::test_ac4_fails_naming_the_file_and_the_spec_rule
+FAILED tests/test_bug216_scope_parity.py::test_ac4_fails_on_the_hidden_dir_rule_and_names_it
+FAILED tests/test_bug216_scope_parity.py::test_ac4_fails_on_this_repos_head_config
+FAILED tests/test_bug216_scope_parity.py::test_ac4_this_repo_fails_with_its_head_config
+FAILED tests/test_bug216_scope_parity.py::test_ac4_lint_gmd_sh_fails_on_the_excluded_doc
+FAILED tests/test_bug216_rel_landing.py::test_ac5_script_exists - AssertionEr...
+FAILED tests/test_bug216_rel_landing.py::test_ac5_recount_reproduces_the_hand_computed_categories
+FAILED tests/test_bug216_rel_landing.py::test_ac5_is_read_only_on_the_catalog
+FAILED tests/test_bug216_rel_landing.py::test_ac5_prints_counts_and_paths_only
+FAILED tests/test_bug216_rel_landing.py::test_ac5_is_not_a_gate - AssertionEr...
+======================== 40 failed, 18 passed in 16.25s ========================
