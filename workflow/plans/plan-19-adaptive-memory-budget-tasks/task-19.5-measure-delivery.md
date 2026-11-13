@@ -14,8 +14,8 @@ metadata:
 
 > Plan: [plan-19-adaptive-memory-budget](../plan-19-adaptive-memory-budget.md)
 > Status: Pending (revision after the 2026-10-14 decision log). **2026-11-13:** R1 is built (25.1
-> R0); R2-R4 and the folded rider are FROZEN until the handhold outcome experiment reports
-> ([[#rev-2026-11-13]]).
+> R0); R2-R4 are FROZEN until the handhold outcome experiment reports; the folded rider moves to
+> 25.1b R0 ([[#rev-2026-11-13]]).
 > Depends on: R1 (the probe) depends on nothing and runs FIRST: it sets 19.1's default and decides
 > PreCompact (d5d). R2/R3 run after 19.1–19.3 and 21.1 (the recall-event schema), in 23.0's
 > sandbox.
@@ -213,4 +213,4 @@ rel: derives-from -> [[bsd-pop-r2-d99f41c#n1]]
 |---|---|
 | R1 | built as 25.1 R0 ([[#rev-plan25]]), on hooks. Plan-24 D1's hold on it is superseded (D-Q5) |
 | R2-R4 | FROZEN with 19.2 (L26): they depend on 19.1-19.3 (header) and R4's baseline serves only frozen 19.6 work |
-| folded rider #w1c-rider (plan-2 r5: rerank never ran on scan-prompt at 5 s) | frozen with R2-R4 unless the lead re-hosts it in 25.1b R0, which records the rerank leg's outcome anyway (25.1b open decision O4). Plan-2 cannot close on D-Q6's two riders while this one is frozen |
+| folded rider #w1c-rider (plan-2 r5: rerank never ran on scan-prompt at 5 s) | re-hosted by the lead (2026-11-13, 25.1b O4) in [[task-25.1b-hook-output-ladder-and-spill#r0]], which records the rerank leg's outcome and reports the rate. It is plan-2's third rider and closes there, not here |

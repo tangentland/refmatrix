@@ -14,10 +14,11 @@ metadata:
 # Task 25.1b: hook output ladder, spill page and hard cap {#root}
 
 > Plan: [[plan-25-cliquedb-field-report]]
-> Status: Drafting (2026-11-13, spec wave G12; ch-bsd spec review next; NOT approved). The
-> open decisions in [[#open-decisions]] need the lead before approval.
+> Status: Drafting (2026-11-13, spec wave G12; ch-bsd spec review next; NOT approved). Its five
+> open decisions were ruled by the lead on 2026-11-13 ([[#open-decisions]]).
 > Bugs: the hard-limit half of bug-164's report (the user, Q14); bug-182 (R0 + R15, under L44's
-> band); plan-2 r9 #s-2 / #m-4 (R16, R17).
+> band); plan-2's three riders: r9 #s-2 / #m-4 (R16, R17) and r5's scan-prompt rerank rate
+> (19.5 `#w1c-rider`, closed by R0).
 > Depends on: [[task-25.1-recall-hook-byte-budget]] MERGED (revision 7, released in 0.83.0: the
 > one budget module `hook_budget`, `fit_blocks`, the verb-side `recall_pack.pack`, R11's
 > recall-state entry); [[task-10.3-plan-10-injection-dedup]] MERGED (the compaction marker
@@ -25,7 +26,8 @@ metadata:
 > depend on [[task-10.6-injection-presentation]]: 10.6 adds kind labels to every tier later
 > ([[#k4]]).
 > Builds: 25.1's revision 8 (R12-R14, AC-16-AC-18), moved here by the user's D-Q2; the 19.1 folded
-> riders #w1c-s2 / #w1c-m4 (D-Q6); bug-182's measurement and its conditional fix (L39, L44).
+> riders #w1c-s2 / #w1c-m4 (D-Q6) and 19.5's folded rider #w1c-rider (lead, O4); bug-182's
+> measurement and its conditional fix (L39, L44).
 > Install: regenerates every hook command, so it ships in a user-gated `install-hooks` window
 > (plan review G31).
 
@@ -41,6 +43,7 @@ rel: amends -> [[task-25.1-recall-hook-byte-budget#r8]]
 rel: amends -> [[task-25.1-recall-hook-byte-budget#r9]]
 rel: amends -> [[task-25.1-recall-hook-byte-budget#acceptance]]
 rel: realizes -> [[task-19.1-pack-recall-under-budget#w1c-riders]]
+rel: realizes -> [[task-19.5-measure-delivery#w1c-rider]]
 rel: implements -> [[plan-review-2026-11-13#d-q2]]
 rel: implements -> [[plan-review-2026-11-13#d-q6]]
 rel: implements -> [[plan-review-2026-11-13#lead]]
@@ -93,7 +96,7 @@ to the verb as `timeout`, whose busy message reads "recall not confirmed within 
 | k6 | Spill pages live under `stm/<session>.emitted/spill/`, one file per hook call, written only by that call {#k6} | L16's home rule for per-session emitted state; 10.2 h6 / 19.6 split: one writer per file |
 | k7 | "Removed at compaction" means a page written before `stm.last_marker(root, session).ts` is gone. The fetch reports it in one `Error:` line, and the next spill write deletes those pages (the spill writer is the only deleter). The marker writer moves nothing else (10.3 R3 stays true). An unreadable marker counts as "marker now", so every older page is gone (10.3 f5, the safe direction) {#k7} | 25.1 rev 8 R14; L15 (the marker is 10.3's) |
 | k8 | R15 is built only in the band L44 pre-registered; R0's table and the decision row are written before any R15 code | L44; [[feedback_go_no_go_ranges_not_predrop]] |
-| k9 | The two plan-2 riders are carried with their own ACs and re-read against 25.1's code, not re-derived | D-Q6; [[task-19.1-pack-recall-under-budget#w1c-riders]] |
+| k9 | The three plan-2 riders are carried with their own ACs and re-read against 25.1's code, not re-derived: #s-2 (R16), #m-4 (R17), and 19.5's #w1c-rider (the scan-prompt rerank rate, R0) {#k9} | D-Q6; [[task-19.1-pack-recall-under-budget#w1c-riders]]; lead O4 |
 
 ## Requirements {#requirements}
 
@@ -107,10 +110,19 @@ review's citations stay valid). R0 is this task's own measurement step (L44 name
    composite, helix, grep floor, fit/render, telemetry write, and, as separate legs, any wait for a
    lock or the daemon (`lock_wait`, `daemon_wait`). Each leg also records `ran` / `skipped_budget`
    / `not_attempted`. A leg not run is absent, never 0. The sum of `legs_ms` and the row's total
-   wall are both recorded. Then, on ≥ 100 production hook runs (venue: [[#open-decisions]] O3),
-   commit `workflow/measurements/task-25.1b-scan-prompt-legs.md`: per leg p50 / p95 / max, and for
-   every run over 5 s its DOMINANT leg (the leg with the largest wall). Counts only, no prompt text.
-   {#r0}
+   wall are both recorded.
+   - **Venue (lead, O3):** `legs_ms` lands as this branch's FIRST commit. It is merged to `master`
+     and deployed ahead by fast-forward + `rmx daemon restart --relaunch`, a lead deploy step and
+     not user-gated: it is a `query.log` field, not an argv change, so no hook is regenerated.
+     ≥ 100 live production hook runs are collected while R12-R14 are built, and R15 is decided
+     before this task's GREEN closes.
+   - **Report:** commit `workflow/measurements/task-25.1b-scan-prompt-legs.md` with per-leg p50 /
+     p95 / max, and for every run over 5 s its DOMINANT leg (the leg with the largest wall). Counts
+     only, no prompt text.
+   - **The third plan-2 rider (lead, O4):** the report also gives the rerank leg's ran /
+     skipped_budget / not_attempted rate over the same runs, beside plan-2 r5's 28/28 skipped. That
+     closes 19.5's `#w1c-rider` ([[task-19.5-measure-delivery#w1c-rider]]). As the rider says, no fix
+     is assumed: the number decides whether a follow-up task is opened. {#r0}
 12. **R12 Hard output cap** (25.1 rev 8, restated as the safety net). Every hook command the
     generator emits passes its stdout through ONE shared emitter at `hook_budget.HOOK_HARD_CAP_BYTES
     = 9_500` (UTF-8 bytes; a UTF-8 byte count is never below the UTF-16 unit count Claude Code
@@ -140,9 +152,17 @@ review's citations stay valid). R0 is this task's own measurement step (L44 name
     are written to the call's spill page (`stm/<session>.emitted/spill/`, [[#k6]]; no page when
     nothing was degraded). The names line ends with the fetch command for that page. The fetch
     returns exactly the spilled items with their bodies, in rank order, through the recall verb's
-    `page` parameter (CLI and MCP, verb parity). The command's spelling and the page token are
-    [[#open-decisions]] O1 and O2. A missing, compacted ([[#k7]]) or unreadable page gives one
-    clean `Error:` line, exits non-zero and prints no traceback. With no session (no envelope
+    `page` parameter (CLI and MCP, verb parity).
+    - **The command (lead, O1):** `rmx memory recall --page <token>`, over verb
+      `memory_recall(page=…)`, the verb that made the pack. Not `rmx recall`, which is the graph
+      hybrid retrieval.
+    - **The token (lead, O2):** `<session[:8]>-<seq>`, printed on the names line and resolved by
+      prefix under `stm/` to `stm/<session>.emitted/spill/<seq>`. An ambiguous prefix gives one
+      `Error:` line naming the candidates' count. The fetch never falls back to the newest session
+      (bug-100).
+
+    A missing, compacted ([[#k7]]) or unreadable page gives one clean `Error:` line, exits non-zero
+    and prints no traceback. With no session (no envelope
     session), no page is written, and the names line says `(+N not paged: no session)`. {#r14}
 15. **R15 scan-prompt wall bound per leg (bug-182), built only in L44's band.** After R0, the lead
     writes the decision row against L44 before any R15 code:
@@ -154,7 +174,12 @@ review's citations stay valid). R0 is this task's own measurement step (L44 name
     - **not built:** if the overrun sits in `lock_wait` or `daemon_wait`, R15 is dropped, and
       bug-182 moves to the T4 backlog with R0's table cited in its row.
 
-    How "sits in" is decided is [[#open-decisions]] O5. {#r15}
+    **How "sits in" is decided (lead, O5):** classify each run over 5 s by its dominant leg.
+    - If ≥ 50% of them are dominated by controllable legs, R15 bounds every controllable leg that
+      dominates ≥ 10% of them.
+    - If ≥ 50% are dominated by `lock_wait` / `daemon_wait`, R15 is not built.
+    - A split result builds the bounds for the controllable share and also lists bug-182's wait
+      share on the T4 backlog. {#r15}
 16. **R16 The global leg keeps its share** (plan-2 r9 #s-2, [[task-19.1-pack-recall-under-budget#w1c-s2]]).
     In `verbs.memory_recall` on `scope=both` under a deadline, the global leg gets a reserved share
     of the call's time budget, `hook_budget.GLOBAL_LEG_RESERVE_S`, that the project leg's rerank
@@ -215,8 +240,11 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
   PreCompact entry run first), the same fetch gives one `Error:` line naming compaction, exits
   non-zero, and the next spill write leaves no page older than the marker. A corrupt page gives one
   `Error:` line and no `Traceback`. With no envelope session, no page is written and the names line
-  says so. Mutations: page kept after the marker; a traceback on a bad page; the newest-ring
-  session used when the envelope has none (bug-100's shape). {#ac-18}
+  says so. The token resolves by prefix: with two sessions whose ids share the first 8
+  characters, the fetch gives one `Error:` line and no page. `rmx memory recall --page` and
+  `memory_recall(page=…)` return the same items. Mutations: page kept after the marker; a
+  traceback on a bad page; the newest-ring session used when the envelope has none (bug-100's
+  shape); an ambiguous prefix resolved to the first match. {#ac-18}
 - **AC-19 (amended R8, AC-9).** On every AC-17 payload: items at tiers 1-3 + names members + `(+N)`
   = retrieved. Tier-1 bodies are whole. Every excerpt is ≤ 300 B and ≤ 3 lines and ends on a whole
   line. Mutations: a body counted as a second named hit; a spilled item counted twice. {#ac-19}
@@ -228,8 +256,10 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
   with the new ones. Mutation: a `delivered` event for a `(+N)` item. {#ac-20}
 - **AC-21 (R0, R15).** (a) The generated scan-prompt command writes `legs_ms` with every leg it ran
   and the ran / skipped / not-attempted outcome. A leg that did not run is absent, not 0. (b) R0's
-  measurement file exists with ≥ 100 runs and the dominant-leg table, and the decision row against
-  L44 precedes the first commit that touches a leg bound (commit order checked). (c) If built: on a
+  measurement file exists with ≥ 100 live runs, the dominant-leg table, O5's classification, and
+  the rerank leg's ran / skipped / not-attempted rate (19.5's rider). The decision row against L44
+  precedes the first commit that touches a leg bound (commit order checked), and the `legs_ms`
+  commit is the branch's first commit. (c) If built: on a
   fixture where one bounded leg is slow on real data (e.g. the grep floor over a large generated
   tree under the sandbox root, not a patched function), the generated command exits 0 within 5 s,
   `legs_ms` marks that leg `capped`, and the other legs' output is kept. If not built: bug-182's
@@ -257,7 +287,7 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
 | `src/refmatrix/stm.py` | spill page write, read and prune under 10.3's `.emitted` directory helper; reads `stm.last_marker` |
 | `src/refmatrix/hooks.py` | every generated command passes through the shared emitter |
 | `src/refmatrix/verbs.py` (`memory_recall`) | the `page` parameter; the global leg's reserve and `global_omitted`; the degrade wording (R17) |
-| `src/refmatrix/cli.py` | the fetch command (O1); scan-prompt's `legs_ms`; the R17 wording around `RECALL_DAEMON_SLICE_S` |
+| `src/refmatrix/cli.py` | `rmx memory recall --page <token>`; scan-prompt's `legs_ms`; the R17 wording around `RECALL_DAEMON_SLICE_S` |
 | `src/refmatrix/scan.py` | per-leg timing; leg bounds (only if R15 is built) |
 | `src/refmatrix/telemetry.py` | `form`, `capped`, `dropped_bytes`, `legs_ms`, `global_omitted`; `rmx telemetry --context` prints clamp firings |
 | `.claude/settings.json`, `.claude/rmx-hooks.json` | regenerated from Python in the task's clone, never by `rmx install-hooks` against a live store |
@@ -281,18 +311,18 @@ rel: depends-on -> [[feedback_red_test_must_fail_at_head]]
 rel: depends-on -> [[feedback_commit_before_mutation_revert]]
 rel: depends-on -> [[feedback_clear_pycache_after_mutation]]
 
-## Open decisions (for the lead, before approval) {#open-decisions}
+## Decisions taken by the lead (2026-11-13) {#open-decisions}
 
-None of these is settled by a D-Q or an L-row. Each has a recommendation, and the spec text above
-does not pick one. {#open-decisions-lead}
+The five open decisions of the first draft were ruled by the lead on 2026-11-13, each on the
+recommended option. Each ruling is folded into the requirement it names. {#open-decisions-lead}
 
-| # | decision | options (recommendation first) |
-|---|---|---|
-| O1 | The fetch command's spelling. Revision 8 wrote `rmx recall --page <n>`, but `rmx recall` is the graph hybrid retrieval (`cli.recall_cmd`), not memory recall, and the spilled items are `memory_recall`'s | **a:** `rmx memory recall --page <token>` over verb `memory_recall(page=…)`, the verb that made the pack · b: a new `rmx recall-page` command and verb |
-| O2 | Page addressing. The agent's Bash call carries no session id (`HOOK_ENV` exports none), and the newest-ring fallback is bug-100's defect | **a:** the token printed on the names line encodes the session: `<session[:8]>-<seq>`, resolved by prefix under `stm/`; an ambiguous prefix gives `Error:` · b: the full session id in the token (about 30 B more on every paged payload) |
-| O3 | Where R0's ≥ 100 runs come from | **a:** R0's `legs_ms` lands as this branch's first commit and is merged and deployed ahead by a fast-forward deploy. No hook regeneration is needed, because it is a `query.log` field and not an argv change. ≥ 100 live hook runs are collected while R12-R14 are built, and R15 is decided before this task's GREEN closes · b: replay on a catalog copy in the dev tree. There is no live contention there, so L44's lock/daemon branch cannot show and the result is biased toward "build" · c: decide R15 after the whole task deploys. R15 changes no argv, so L39's single hook window still holds, but bug-182 stays open longer |
-| O4 | 19.5's folded rider #w1c-rider (plan-2 r5: rerank never ran on scan-prompt at 5 s, 28/28 skipped) sits in 19.5's frozen remainder (L26), so plan-2 cannot close on D-Q6's two riders alone | **a:** R0 records the rerank leg's ran / skipped / not-attempted outcome anyway, so its report states the rate and closes the rider here · b: leave it frozen in 19.5; plan-2 stays open until the handhold experiment reports |
-| O5 | How R0's table decides "sits in" for L44 | **a:** classify each > 5 s run by its dominant leg. If ≥ 50% of them are dominated by controllable legs, R15 bounds every controllable leg that dominates ≥ 10% of them. If ≥ 50% are dominated by `lock_wait` / `daemon_wait`, R15 is not built. A split result builds the bounds for the controllable share and also lists bug-182's wait share on the T4 backlog · b: total wall share per class over the > 5 s runs, at the same 50% line |
+| # | decision | ruling | folded into |
+|---|---|---|---|
+| O1 | The fetch command's spelling: rev 8's `rmx recall --page` named the graph hybrid retrieval, not memory recall | `rmx memory recall --page <token>`, verb `memory_recall(page=…)` | [[#r14]], AC-18 |
+| O2 | Page addressing: the agent's Bash call has no session id, and the newest-ring fallback is bug-100's defect | token `<session[:8]>-<seq>`, resolved by prefix under `stm/`; an ambiguous prefix gives one `Error:` line | [[#r14]], AC-18 |
+| O3 | Where R0's ≥ 100 runs come from | `legs_ms` is the branch's first commit, deployed ahead by fast-forward as a lead deploy step (not user-gated; no hook regeneration); live runs collected while R12-R14 build; R15 decided before GREEN closes | [[#r0]], AC-21 |
+| O4 | 19.5's #w1c-rider sat in frozen 19.5, so plan-2 could not close | R0 records the rerank leg's outcome and closes it here, as the third plan-2 rider | [[#r0]], [[#k9]], AC-21 |
+| O5 | How "sits in" is decided for L44 | dominant leg per > 5 s run; ≥ 50% controllable → bound every controllable leg dominating ≥ 10%; ≥ 50% waits → not built; split → both | [[#r15]] |
 
 ## Q8 {#q8}
 
@@ -307,5 +337,5 @@ line. {#q8-body}
 - Implementation summary at `workflow/implementation_summaries/task-25.1b-hook-output-ladder-and-spill.md`.
 - Committed on branch `task-25.1b-hook-output-ladder-and-spill` and merged `--no-ff` to `master`.
   The `install-hooks` window is the user's (G31), batched with any window that falls together (C11).
-- With this task merged, plan-2's riders #s-2 / #m-4 are landed (D-Q6), and so is #w1c-rider if O4
-  = a.
+- With this task merged, plan-2's three riders are landed: #s-2 and #m-4 (D-Q6) and 19.5's
+  #w1c-rider (lead, O4).

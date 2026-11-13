@@ -98,6 +98,10 @@ frozen; the lines below are at HEAD `b1c4324`, for reference.
 3. **`--brief`** output is ≤ 200 tokens (the project's token counter) on all 9, and each contains
    the gold `path:line`.
 4. **No duplicates:** no entity appears twice in any group, across the 9.
+4b. **No duplicates through `denotes`** (lead, 2026-11-13, after bug-216 R9). A fixture: doc B
+    (GMD id `b-doc`), a path-less concept `b-doc` that `denotes` B, and an entity X linked from
+    BOTH B and the concept under the same linkage. `rmx context b-doc` (the doc anchor) lists X
+    exactly once in that group.
 5. **Labels and TESTED BY:** on a fixture tree with a known call graph (`a` calls `b`;
    `tests/test_b.py::test_b` calls `b`; `c` calls `a`), `rmx context b` lists `a` under CALLED BY
    only, `test_b` under TESTED BY only, and `rmx context a` lists `b` under CALLS and `c` under
@@ -109,7 +113,9 @@ frozen; the lines below are at HEAD `b1c4324`, for reference.
    and writes only `invocation=internal` rows to the copy.
 8. **Mutations that must FAIL a test** (pre-registered):
    - DEFINED BY without the line (AC-2, AC-5);
-   - dedupe disabled (AC-4);
+   - dedupe disabled (AC-4, AC-4b);
+   - dedupe keyed per source row instead of per entity, so the `denotes` hop's copy survives
+     (AC-4b);
    - CALLS / CALLED BY label swap (AC-5);
    - `is_test_entity` replaced by "every caller" (AC-5: `a` appears under TESTED BY);
    - helix on code anchors re-enabled (a renderer test on a code anchor);
@@ -147,8 +153,9 @@ frozen; the lines below are at HEAD `b1c4324`, for reference.
 
 ## Revision (2026-11-13, the plan review: D-Q3, D-Q5; re-read against bug-216's resolver) {#rev-2026-11-13}
 
-No requirement or AC changes here. This records the order, the end of plan-24's hold, and the
-re-read the plan review asked for (G28). {#rev-2026-11-13-lead}
+No requirement changes here; one AC is added (AC-4b, on the lead's ruling). This records the
+order, the end of plan-24's hold, and the re-read the plan review asked for (G28).
+{#rev-2026-11-13-lead}
 
 rel: implements -> [[plan-review-2026-11-13#d-q3]]
 rel: implements -> [[plan-review-2026-11-13#d-q5]]
@@ -161,7 +168,7 @@ rel: related-to -> [[task-bug216-rule-docs-in-graph]]
 | bug-216 R6 (bare doc ids bind the doc first) | touches GMD `rel:` / wikilink targets only. The frozen set is 9 code symbols, whose DEFINED BY rows come from `defines` edges, so the gold is unaffected |
 | bug-216 R9 (`denotes` is transparent) | read at its GREEN `37d99a0` (branch `task-bug216-rule-docs-in-graph`, unmerged): `build_context` chains the rows of the path-less concepts that denote a `doc` or `memory` anchor. Code anchors are not touched, so AC-2, AC-3 and AC-5 are unaffected |
 | `LINKAGE_LABELS` | bug-216 adds no entry (read at `37d99a0`; the transparent hop reads concept rows under their existing labels), so R3's per-label tests are unchanged |
-| R2 (one entity per group) on doc / memory anchors | after bug-216, an entity can be reached twice on a doc or memory anchor: once from the doc's rows and once from a denoting concept's rows. R2 as written dedupes it, but AC-4 runs over the 9 code names only, so no AC exercises that path. Whether to add one is an open item for the lead (spec-wave report) |
+| R2 (one entity per group) on doc / memory anchors | after bug-216, an entity can be reached twice on a doc or memory anchor: once from the doc's rows and once from a denoting concept's rows. R2 as written dedupes it, but AC-4 runs over the 9 code names only. The lead ruled (2026-11-13) to add a fixture row: AC-4b, with a mutation in AC-8 |
 | baseline | AC-1's baseline runs on a catalog copy taken after bug-216 is live (queue item 1), so the record is post-bug-216 |
 
 **Q8 note:** holds under Q8 a, b and c. The frozen set and its gold live in `src/` and `tests/`,

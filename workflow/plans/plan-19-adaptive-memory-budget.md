@@ -511,7 +511,8 @@ rel: derives-from -> [[bsd-pop-r4-d1614a8#x2]]
 | 19.0 R0, R1's rebuild remainder (re-extraction from `detail` with `command_refs(…, root=None)`), R2-R7 | queued in item 4, after 25.3's STM half only (not after the helix half). bugs 100 (R5), 103 (R2) and 104 (R1) ride it and leave the backlog | L41; bsd-pop-r3 R6, R7; bsd-pop-r4 X2 |
 | 19.1 | nothing left to build; do not build it | L14; D-Q6 |
 | 19.2 | FROZEN until the handhold experiment reports | D-Q3 |
-| 19.5 R2-R4, and its folded rider #w1c-rider (plan-2 r5: scan-prompt rerank rate) | FROZEN: they need 19.1-19.3 and serve only frozen 19.6 work. The rider's home is an open question in 25.1b (O4) | L26 |
+| 19.5 R2-R4 | FROZEN: they need 19.1-19.3 and serve only frozen 19.6 work | L26 |
+| 19.5's folded rider #w1c-rider (plan-2 r5: scan-prompt rerank rate) | re-hosted in 25.1b R0, plan-2's third rider | lead, 2026-11-13 (25.1b O4) |
 | 19.6 phasing, topic cache, and Table C | FROZEN until the handhold experiment reports. When it thaws, Table C counts only R12 explicit uses plus `cited_in_answer` until 21.5's matcher is revised | D-Q3; L18 |
 | 19.6 Table A on the composite | runs before 10.6 R3 (offline) | L17 |
 

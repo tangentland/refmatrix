@@ -67,7 +67,9 @@ ranks`) so those callers reuse it rather than building their own.
      `invocation=internal` rows and the 2026-10-07T11:06:35-11:07:13 replay window excluded. The
      global `~/.refmatrix/query.log` is never read (it holds other trees' queries).
    - **Who drafts:** a dedicated agent whose brief forbids reading the ranking code
-     (`src/refmatrix/context.py`, `src/refmatrix/reranker.py`, and the rerank ops in `daemon.py`);
+     (`src/refmatrix/context.py`, `src/refmatrix/reranker.py`, the rerank ops in `daemon.py`, and,
+     since bug-216 R9 made them part of ranking (lead, 2026-11-13), the typed-edge candidate
+     expansion and the PageRank edge-set code that bug-216 changed: the `denotes` walk and fold);
      its tool-call list is kept with the set's provenance, and a check fails the set if any Read of
      those paths appears. A question whose gold lies in those files is excluded. The tuner (the
      agent or session doing R3) never edits the set.
@@ -101,7 +103,9 @@ ranks`) so those callers reuse it rather than building their own.
      `hooks.py:1017`), the MCP tool description, plan-16 R3 / task 16.3.
    - The PRIMER keeps "plain english" only if R2/R3 support it.
    - Plan-16's `rmx_search` mention is corrected.
-   - The regenerated `.refmatrix/CLAUDE.md` ships in the C11 install-hooks window (bsd #m-5).
+   - The regenerated `.refmatrix/CLAUDE.md` ships in the C11 install-hooks window (bsd #m-5): the
+     first user-gated window after R4 lands, 10.4's (queue item 6), else 16.3's (item 10). The
+     lead lists it in the plan review's G31 (lead, 2026-11-13).
 
 ## The frozen hash {#frozen-hash}
 
@@ -183,8 +187,9 @@ Answers [[bsd-plan19-21-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]
 
 ## Revision (2026-11-13, the plan review: D-Q3, D-Q5; re-read against bug-216's resolver) {#rev-2026-11-13}
 
-No requirement or AC changes here, except the Q8 constraint on the doc stratum's gold, which the
-spec wave's rule requires ([[#q8]]). Three open items go to the lead (listed at the end).
+Three requirement changes, no AC change: the Q8 constraint on the doc stratum's gold, which the
+spec wave's rule requires ([[#q8]]), and the lead's 2026-11-13 rulings on R1's forbidden list and
+R4's install window. A third ruling adds a note on the fold re-score (all listed at the end).
 {#rev-2026-11-13-lead}
 
 rel: implements -> [[plan-review-2026-11-13#d-q3]]
@@ -199,20 +204,17 @@ rel: related-to -> [[task-bug216-rule-docs-in-graph]]
 | ranking under bug-216 R9 | `denotes` is a zero-cost hop in `build_context`'s degree walk, and PageRank folds a concept's typed in-edges onto its `denotes` target, so doc ranks move when bug-216 goes live. R2's table and every R3 candidate run on ONE catalog copy taken after bug-216's live re-derive (queue item 1, user-gated, with R10's pending refs resolved). Otherwise bug-216's movement would be scored as a 21.4 win or loss |
 | bug-216 R11 (CLAUDE.md and `.claude/PROJECT_PROFILE.md` ingested when they carry GMD frontmatter) | CLAUDE.md is one of R4's five surfaces and is now also a ranked doc, so R4's rule sentence enters the corpus. No conflict. AC-4 still reads the committed file |
 
-**Open for the lead** (not decided here):
-- **O-a:** R1's drafting agent may not read "the ranking code" (`context.py`, `reranker.py`, the
-  rerank ops in `daemon.py`). bug-216 R9 makes the `denotes` walk and the PageRank fold part of
-  ranking. Recommendation: add the code that implements them (the typed-edge expansion and the
-  PageRank edge set bug-216 names) to the forbidden list, by d4c's own rule.
-- **O-b:** C9 makes this set THE ranking-eval harness. L29's per-type evaluation of bug-216's
-  PageRank fold (plan review G30, another spec) runs in the measurement lane "after bug-216 is
-  live", which is before this harness exists (item 6). Recommendation: G30 scores with its own
-  pre-registered per-type bands and records that C9's harness did not exist yet; this harness
-  re-scores the fold once frozen.
-- **O-c:** R4's regenerated `.refmatrix/CLAUDE.md` ships in a C11 `install-hooks` window. Its
-  batch partner 21.3 is frozen, and the plan review's G31 lists no window for 21.4.
-  Recommendation: name it in G31, riding whichever user-gated window falls first after R4 lands
-  (10.4's in item 6, else 16.3's in item 10).
+**Ruled by the lead, 2026-11-13** (each on the recommended option):
+- **O-a (folded into R1):** the drafting agent's forbidden list adds bug-216's typed-edge
+  candidate expansion and PageRank edge-set code (the `denotes` walk and fold), by d4c's own rule.
+- **O-b (a note, no requirement change):** C9 makes this set THE ranking-eval harness, but L29's
+  per-type evaluation of bug-216's PageRank fold (plan review G30) runs in the measurement lane
+  before this harness exists (item 6). G30 therefore scores with its own pre-registered per-type
+  bands. Once this set is frozen ([[#frozen-hash]]), this harness RE-SCORES the fold on both
+  routes and records the result in `REPORT.md` beside G30's numbers. The re-score is a
+  measurement and gates nothing in 21.4.
+- **O-c (folded into R4's last bullet):** the regenerated `.refmatrix/CLAUDE.md` rides the first
+  user-gated install window after R4 lands (10.4's, else 16.3's). The lead adds it to G31.
 
 ## Q8 {#q8}
 
