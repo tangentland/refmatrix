@@ -185,6 +185,7 @@ it gets used. Three more are fallout from shipping plan-26 to the fleet. {#detou
 | L48 | spec-t0 open items O1..O5 (`a3b1979`) | O1 bug-196 joins T0 as T0.8, because W1-e's clean-suite gate cannot pass while it sits in the backlog; O2 `brief.parse_gmd` is deleted (no production caller, plan-6 Q1 rule); O3 plan-8 deferral rows 43/44 move to T3, held with the frozen 19.2, and T0.6 re-takes the symbolic rows on the same build; O4 master's repo-scope GMD gate, red on the lead's own artifacts, is fixed at `35e1e0d`; O5 a failure no T0 row owns stops T0's closure and goes to the lead. bug-215 = the SkipGate UNPINNED row (one item). bug-222 (`rmx grep -- '-x'`) is logged and owned by 16.5 R2 |
 | L49 | spec-t56 open items (`17ed5d7`, `17eaa7a`, `9e5c4b9`) | bug-218 has TWO writers in opposite orientations (`rmx memory link` vs the GMD ingester), so its row's "swap the reader's join" fix was wrong. O-1: the GMD orientation is canonical, `memory_link` changes and the reader follows. O-2: existing rows are re-oriented by a bug-195-shape repair (manifest, logged unlink+link), a USER-GATED live step. O-3: `stale-evidence` rows are removed by a 22.6-style derived cleanup with a manifest, with learned-grep rows excluded. O-4: the 25.5 R4 re-measure trigger moves to 16.4's report. O-5: L6's widening is report-only (vacuum step 3 / 22.6 R5 stay the remover). bug-223 (silent except in the reinforcement boost) is owned by bug-218. bug-216's watcher `base=` defect (a project under a dot-dir or `build/` ancestor syncs nothing) goes to bug-216's next RED |
 | L50 | spec-t4 (`913d386`) contradiction | **amends L46.** L46 said bug-216 R13's events apply on "both replay paths", but d9bu (CONFIRMED under d9ck) RETIRED the incremental path (`apply_log_delta` / `_apply_event_body`, no caller in `src/`, deletion owned by 16.6). R13 applies in `rebuild_index_from_log` only; red-216 amends the spec and tests, green-216 adds no `_apply_event_body` branches, and bug-185 / 16.6 drop their per-event legs. The lead's earlier instruction was the error. bug-185 also folds bug-221 (R10: replace semantics for the doc's own `rel:` edges, removing only those that lose all evidence) and flag 7 (R9: one read + one delete per doc; an index only if the clear's median exceeds 50 ms, pre-registered) |
+| L51 | spec-t3a open items (`89bddda`, `de74c97`, `841ca70`; report `workflow/review-output/pop-2026-11-13/spec-t3a.md`) | all 10 recommendations adopted. 25.1b: `rmx memory recall --page <token>`; tokens of the form `<session[:8]>-<seq>`; `legs_ms` lands first and deploys ahead (a query.log field, no hook change); R0 closes 19.5's rerank rider (a third plan-2 rider); L44's "sits in" means each run's dominant leg. 21.4: bug-216's ranking code is forbidden to its drafter; G30 uses its own bands; R4 rides the first user-gated install window after it lands. 21.2: dedupe fixture for a doc reached via a denoting concept. Consequence stated: 26.7's 19.3 value fold stays virtual for the whole goal (19.2 is frozen). D-Q6 corrected: plan-2 has THREE riders (#s-2, #m-4, 19.5's rerank rider) |
 
 ## Revised proposal {#proposal}
 
@@ -271,7 +272,7 @@ by a user decision carries its id, and a line placed by an L-row carries that ro
 L17's Table A; L34's 25.2 scoring; L29's `denotes` fold evaluation (after bug-216 is live).
 **Install windows** are batched where they fall together (C11).
 
-**Backlog (outside the goal; it ends listing them):** T2 206, 210; T3 165 only if L43 fires (196 moved to T0, L48); T4 097,
+**Backlog (outside the goal; it ends listing them):** T2 206, 210; T3 165 + 166's helix half only if L43 fires (196 moved to T0, L48); T4 097,
 207; T5 180; T6 119, 121, 124; plan-7 W4-a deferrals with the plan-20 evals; G11 `--like`
 selector (L33); 25.5 R4 re-measure (L42). {#queue-body}
 
@@ -351,7 +352,7 @@ L-row first; **new** = no spec yet; **review** = written but not through ch-bsd.
 | G28 | 4, 6 | 19.0 R0/R2-R7, 21.2, 21.4 | rev | approved plans; each spec records what 25.1/25.3/26.6/26.7 already realize (L14) and drops plan-24 D1's hold (D-Q5); 21.2/21.4 re-read against bug-216's resolver; 19.5 rest frozen (L26) |
 | G29 | 8 | 17.3 fleet rollout; 26.6's 19.4 R1 tick via 17.2 | rev | 17.3 approved; order 17.4 → 17.3 (L40), user-gated; 26.6 AC-2's tick registration named in 17.2 (L28) |
 | G30 | lane | `denotes` fold per-type evaluation | **new** | measurement task with pre-registered bands (L29) |
-| G31 | 1, 4, 6, 10 | install windows (0.83.0, 25.1b, 10.4, 16.3) | — | user-gated; batched where they fall together (C11) |
+| G31 | 1, 4, 6, 10 | install windows (0.83.0, 25.1b, 10.4 + 21.4 R4's briefing, 16.3) | — | user-gated; batched where they fall together (C11) |
 | G32 | lane, before 7 | m1 r2-lite confirm over `4b57796..` the four measurement files' current head (incl. `36f0251`, `8db3497`, `3ddba55`) | **new** | ch-bsd confirm of the folded 21.5 measurement corrections before G17 draws bands (L36) |
 
 **Proposed goal horizon:** queue items 1-11 plus the T0 sweep, in `#queue` order, with the

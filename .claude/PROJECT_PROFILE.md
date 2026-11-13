@@ -76,7 +76,10 @@ Mirrored into `.claude/hooks/hooks.env` (`CORPUS_PATHS`, `SRC_DIR`, `ADR_DIR`).
 - **Corpus roots:** `src docs workflow tests eval`
 - **Source extensions:** `.py .md .sh .json .yaml .yml .toml .txt .html .css .js .pseudo`
 - **Lookup ladder:** `rmx context <symbol>` → `rmx grep` → `tldr` → raw grep (the global
-  `grep-rewrite-guard` hook rewrites bare grep to `rmx grep`; there is no escape — a grep reading a pipe is a filter and stays byte-exact).
+  `grep-rewrite-guard` hook rewrites bare grep to `rmx grep` only while grep learning is on; it
+  exits early while `~/.refmatrix/learn.off` exists, which it has since 2026-10-15, so today only an
+  explicit `rmx grep` reaches it. Plan-16 replaces the rewrite with a passive shim. A grep reading a
+  pipe is a filter and stays byte-exact).
 
 ## Architectural primitives {#primitives}
 
