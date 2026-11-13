@@ -59,7 +59,8 @@ first.
        pre-deploy binary's output on a second copy. **Scope (r5 m2):** byte-identity holds only
        for FLAT dirs (memories top-level or in `impressions/`, 26.1 AC-9). In a nested
        un-organised dir, 26.1 AC-3's ungated `collect` legitimately widens the index. viascope's
-       expected diff is stated, not waived: HEAD renders 3 entries (1 line / 119 chars); the
+       expected diff is stated, not waived (its figures are the 2026-11-09 r5 probe; the rule is
+       what binds, and the figures are re-measured on the copy at run time): HEAD renders 3 entries (1 line / 119 chars); the
        deployed binary renders 145 (65 feedback, 68 project, 9 reference, 3 impressions) as
        139 lines / 23,857 chars, under the 24,000 budget, with 5 project entries folded behind
        "nothing was deleted". The ONLY permitted diff is those added entry/fold lines; the
@@ -81,13 +82,13 @@ first.
      | term | expected | tolerance |
      |---|---|---|
      | `stale_before` | AC-0's first two terms only: missing + symlink-form `source_path` (r5 m3) | ±5 |
-     | `moved` | the AC-3 preview's move count (40 save-states + 250 typed) | exact |
-     | `forced` | save-states forced by 26.5 AC-5 that were NOT moved; 0 here, because all 40 move | exact |
-     | `moved_legacy` (r5 s1) | **19**: the legacy `memory_sync_disk` rows that share a moved file's `source_path` (r5 probe of a read-snapshot copy: 376 rows / 357 files), and the AC-3 preview's projected count | exact |
+     | `moved` | the AC-3 preview's move count, as recorded at run time ([[#counts-reread]]) | exact |
+     | `forced` | save-states forced by 26.5 AC-5 that were NOT moved; 0 when every save-state moves | exact |
+     | `moved_legacy` (r5 s1) | the legacy `memory_sync_disk` rows that share a moved file's `source_path`: AC-0's re-probe on a read-snapshot copy, which must equal the AC-3 preview's projected count ([[#counts-reread]]; 19 on 2026-11-09) | exact |
 
      The moved save-states are counted once, under `moved`. A row falls in one term only, by
-     its stored path's shape (26.2 `#impl-notes-r5`). If `moved_legacy` is not 19, or differs
-     from the preview's projection, log a bug row and report before AC-5. The 19 legacy
+     its stored path's shape (26.2 `#impl-notes-r5`). If `moved_legacy` differs from AC-0's
+     re-probe or from the preview's projection, log a bug row and report before AC-5. The legacy
      duplicates are NOT merged or forgotten here (26.2 AC-1b, out of scope;
      [[feedback_decay_never_loses_knowledge]]); the implementation summary lists them by name.
    - Then run ONE `rmx memory sync-disk` and record two things from the bridge report: the number
@@ -98,11 +99,12 @@ first.
    - Run `rmx memory organise <live memdir>` with the default `--store-from-memdir` (26.5 AC-1).
      The resolved store must be refmatrix's.
    - Save the plan to `workflow/review-output/26.8-organise-preview.log`.
-   - The counts must match a fresh survey of the dir. Expected: 40 save-states to `savestates/`,
-     and the 250 typed files to `feedback/`, `project/` and `reference/` (68, 170 and 12) per
-     plan Q1. `unplaceable` must be 0, or every unplaceable file is named.
+   - The counts must match a fresh read-only survey of the dir, taken just before the preview
+     and recorded in the log: every save-state to `savestates/`, and every typed file to
+     `feedback/`, `project/` and `reference/`, per plan Q1, exact per folder ([[#counts-reread]]).
+     `unplaceable` must be 0, or every unplaceable file is named.
    - The preview must report `index: ok` (26.5 AC-2, r2 s5).
-   - The preview must report `moved_legacy: 19` (26.5 AC-2; r5 s1).
+   - The preview's `moved_legacy` must equal AC-0's re-probe (26.5 AC-2; r5 s1).
    - The preview must report `git_tracked: ~/.claude` for the two tracked files: `MEMORY.md` and
      `project_csn_production_harness.md`. It must also report the carried prose line count.
 4. **AC-4: back up, then apply.**
@@ -110,7 +112,8 @@ first.
    - The tarball must exist, and its member count must equal the full walk.
    - The two `~/.claude`-tracked moves must appear as staged `git mv`s.
    - The verb exits 3 with the exact `git -C ~/.claude commit -m '…' -- <paths>` command. Never
-     `commit -a`: `~/.claude` carries 93 unrelated unstaged deletions. The user commits.
+     `commit -a`: `~/.claude` carries unrelated unstaged deletions, counted at this step and
+     named in the summary. The user commits.
    - The bridge report must show zero `duplicate_ids` and zero errors.
 5. **AC-5: prove it.** Capture each check to a log.
    - `rmx recall-state` shows the newest save-state by `updated`, read from `savestates/`. The
@@ -119,13 +122,14 @@ first.
    - The same recall check passes for one moved feedback memory.
    - `rmx context <a moved memory's anchor>` shows a `path` under the new folder (26.2).
    - `rmx memory organise --check` is clean, including `moved_legacy: 0` (26.5 AC-8; r5 s1).
-   - For 3 of the 19 legacy rows, a daemon read by name (`rmx memory get <name>`, e.g.
+   - For 3 of the legacy rows AC-0 counted, a daemon read by name (`rmx memory get <name>`, e.g.
      `refmatrix-daemon-architecture`) shows `source_path` under the new folder, and its content
      is unchanged from before the apply (r5 s1).
 6. **AC-6: re-compile (26.6 builds 19.4).**
    - Run `memory_compile --apply` (scope `memory`) through the daemon.
-   - The 20 pre-0.34 rows (15 `unlabeled_N`; `from`, `existing`, `feedback`, `fixes`, `memory`)
-     must read `stale = true` with a `stale_since`. They must still be present, be returned by
+   - The pre-0.34 subject rows (re-listed at this step with `rmx memory list --type subject`;
+     20 on 2026-11-09: 15 `unlabeled_N`, plus `from`, `existing`, `feedback`, `fixes` and
+     `memory`) must read `stale = true` with a `stale_since`. They must still be present, be returned by
      `rmx memory get`, show their mark in `rmx memory list --type subject`, and be absent from
      `MEMORY.md`. Recall absence is NOT asserted here: it lands with 25.1 AC-6 (r2 s1).
    - The run summary must report `stale_new`.
@@ -148,7 +152,9 @@ first.
    - **Rev 6 (L12): forget-flow step 5.** In the same window, show the user
      [[refmatrix/adr-0005-memory-dir-layout#appendix-forget-step]] (`rmx memory forget <id>` after
      the file is deleted). Before showing it, re-check at the deployed sha that the bridge still
-     never forgets a deleted file, and record the evidence. Apply it to `MEMORY-RULES.md#forget`
+     never forgets a deleted file, and record the evidence. If the re-check finds that the bridge
+     DOES forget a deleted file by then, A.2 is withdrawn: it is not shown as a proposal, and the
+     user is told why, with the evidence (rev 7, bsd-spec-t2 m5). Apply it to `MEMORY-RULES.md#forget`
      only if the user accepts it. Record the user's answer, verbatim, in the implementation
      summary, whether it is accept, change or decline.
    - **Why it matters.** Until the paragraph lands, every agent writes new memories at the memdir
@@ -278,3 +284,14 @@ out at ingest), these lines change:
 - the save-state half of `moved` becomes a file-only move;
 - AC-5's first two bullets keep `rmx recall-state` and drop the `rmx memory recall` of a moved
   save-state. The moved-feedback recall stays.
+
+## Revision round 7 (2026-11-13): bsd-spec-t2 {#rev-round-7}
+
+Answers [[bsd-spec-t2-b5fe2d3]] m4 and m5. Status is unchanged (`pending`).
+
+rel: derives-from -> [[bsd-spec-t2-b5fe2d3]]
+
+| finding | change | anchor |
+|---|---|---|
+| m4 (AC bodies still asserted the 2026-11-09 numbers) | AC-2's table, AC-3, AC-4, AC-5 and AC-6 state rules that are re-read at run time; the old figures remain only as dated history | AC-2-AC-6, [[#counts-reread]] |
+| m5 (no branch for a false premise in the forget-step re-check) | If the bridge forgets deleted files by then, A.2 is withdrawn and the user is told why | AC-8 |

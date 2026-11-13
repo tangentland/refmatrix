@@ -157,9 +157,17 @@ the caller's cwd (plan-26 B2; [[task-26.5-memory-organise-verb]] AC-1).
 - The path is never `.resolve()`d: a symlinked memdir (viascope's) resolves outside `projects/`
   and the lookup would fail.
 - A path that is not under `~/.claude/projects/<slug>/` is a hard error that names the fix. It
-  never silently becomes "no store".
+  never silently becomes "no store". This governs every explicit memdir argument: the organise
+  verb's (26.5 AC-1) and R-264a's file/subdir resolution for `ingest-gmd --as-memory`. An explicit
+  `--as-memory` call keeps its own store behaviour and refusals.
 - A well-formed slug that matches no store root is **file-only**: files are organised, the
   bridge is not run, and the output says so.
+- **The flagless-walk carve-out (amended 2026-11-13, bug-220, [[#amendments]]).** A walk WITHOUT
+  `--as-memory` that reaches a memory dir never hard-errors on it. It resolves the store from the
+  memdir's unresolved form with a non-raising variant of the same resolver. A slug that matches no
+  root, or a marker dir with no slug form, is file-only there: counted and named, the walk
+  continues. The home memdir (the hub's global store) is held, counted and named, until plan-27
+  Q4 is answered ([[task-26.5-memory-organise-verb#r-220c]]). {#store-resolution-walk}
 - The resolved store's memory lands in that store's own default (ACTIVE) partition, which is
   where ADR-0003 already puts memory ([[refmatrix/adr-0003-canonical-partition-layout#co-reside]]).
   This ADR does not touch the partition layout.
@@ -234,13 +242,16 @@ viascope2 and cliquet while `_ss_update_index` kept appending.
   removes dot-path and `README.md` files (0 found fleet-wide) and only ADDS nested entries. It is
   deliberately ungated: gating `collect` would keep viascope's index wipe.
 - **The save-state mtype correction in the store** ([[#authority]]). It writes no file.
-- **Classification by location (amended 2026-11-13, bug-220, [[#amendments]]).** A GMD file
-  inside a memory dir is ingested as `kind=memory` by ANY walk that reaches it, never as a
-  `kind=doc` twin, into the store its memdir resolves to ([[#store-resolution]]; a memdir with no
-  resolvable store is file-only, counted and named). A memory dir here is the nearest ancestor with a marker, or the
-  `~/.claude/projects/<slug>/memory` shape ([[task-26.5-memory-organise-verb#bug220-route]]).
-  The reroute writes no file, and it runs after the ignore predicate, so a pruned dot-dir is never
-  reached.
+- **Classification by location, on walks without `--as-memory` (amended 2026-11-13, bug-220,
+  [[#amendments]]).** A GMD file inside a memory dir that such a walk reaches is never ingested as
+  a `kind=doc` twin. It is collected and bridged as `kind=memory`, after the walk's own ingest
+  returns and outside its writer lock, into the store its memdir resolves to, per
+  [[#store-resolution-walk]]. A memory dir here is the `~/.claude/projects/<slug>/memory` shape,
+  or the nearest ancestor with a marker, matched on both the as-given and the resolved path
+  ([[task-26.5-memory-organise-verb#bug220-route]]). It runs after the ignore predicate, so a
+  pruned dot-dir is never reached. It is ungated because it is store-side. The only file write it
+  can cause is the memory path's `MEMORY.md` regeneration in an organised dir, which is already
+  marker-gated. An explicit `--as-memory` call is unchanged.
 
 **The trade, stated.** An un-organised dir keeps the old prose-dropping compaction until it is
 organised behind its own backup (plan-27). In viascope that means prose loss on a save-state,
@@ -375,20 +386,32 @@ linted exactly like a top-level one. `MEMORY.md` stays excluded.
 ## Amendments {#amendments}
 
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[bsd-spec-t2-b5fe2d3]]
 
 - **2026-11-13 (plan-review L11, L12, L37; spec gaps G4 and G19).** The status stays Proposed. {#amend-2026-11-13}
   - Appendix A's MEMORY-RULES text carries the marker condition (L11; `contra-a.md` Ca-4).
   - Appendix A.2 proposes forget-flow step 5 for the user's decision at 26.8 AC-8 (L12; Ca-9).
-  - [[#marker]]'s every-dir list gains classification by location (bug-220, L37).
+  - [[#marker]]'s every-dir list gains classification by location (bug-220, L37), scoped to
+    walks without `--as-memory`.
+  - [[#store-resolution]] gains [[#store-resolution-walk]]. A walk without `--as-memory` that
+    reaches a memdir with no resolvable store treats it as file-only and never hard-errors; the
+    home memdir is held per plan-27 Q4. This IS a resolution-rule change, for that walk only. The
+    hard error still governs every explicit memdir argument. (Corrected in rev 7, answering
+    [[bsd-spec-t2-b5fe2d3#s2]]; the first wording of this entry said no resolution rule
+    changed.)
   - The marker-encoding open question is marked closed.
-  - No folder, identity, resolution or gating rule changes.
+  - No folder, identity or gating rule changes. The reroute is ungated because it is store-side,
+    and its only possible file write is already marker-gated.
 
 ## Lines that change under plan-review Q8 b {#q8-b}
 
 Q8 is open ([[open-questions]]). This ADR holds under Q8 a or c. Under Q8 b (save-states kept
-out at ingest), two things change:
+out at ingest), three things change:
 - [[#authority]]'s "the bridge stores that mtype and counts each override";
 - [[#marker]]'s every-dir "save-state mtype correction in the store".
 
-Both lose their store side, because no save-state row is written. The file-side rewrite by
-`organise --apply` stays.
+- [[#marker]]'s classification-by-location bullet: a rerouted save-state is skipped and counted,
+  not bridged (rev 7, bsd-spec-t2 m1).
+
+The first two lose their store side, because no save-state row is written. The file-side rewrite
+by `organise --apply` stays.

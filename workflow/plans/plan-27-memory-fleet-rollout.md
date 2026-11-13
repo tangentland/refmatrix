@@ -214,7 +214,10 @@ Round 1 added these rules (see [[#rev-round-1]]):
   drifted goes into the next window's list. Plan-27 runs no `install-hooks` itself. {#q3-rehost}
 - **Q4: should the home dir (`-Users-tholley`) be bridged into the GLOBAL store's memory
   partition?** DECIDED (r4): organise its files, and do NOT change what it bridges into until 27.1
-  shows which partition it lands in today. The global store is the hub's.
+  shows which partition it lands in today. The global store is the hub's. **Also holds 26.5's
+  bug-220 reroute for the home memdir (2026-11-13, rev 7):** a flagless walk that reaches it
+  reports `rerouted_held` and dispatches nothing until 27.1's answer lifts the hold
+  ([[task-26.5-memory-organise-verb#r-220c]]).
 - **Q5: what happens to the empty `~/enduris/thiquet` store and its `.obsidian/` and
   `CLAUDE.md`?** DECIDED (r4): unsupervise it, back up `.refmatrix/`, leave a tombstone README, and
   leave the directory in place for the user to decide.
@@ -234,7 +237,7 @@ The goal stops at every user step a spec names ([[plan-review-2026-11-13#goal-ho
 | 27.2 | reading the Q1 overlap diff before apply; the viascope2 archive go (AC-8; delete or move needs a further go) |
 | 27.3 | the explicit acknowledgement before the bdep/thiquet backup (S7) |
 | 27.4 | a failed check or an index refusal, which stops the sequence for a user decision (AC-1, AC-5, AC-6 B4); a dir whose project has a live session waits for its acknowledgement (AC-6 S8) |
-| 27.5 | cliquedb's session acknowledgement on `proj:cliquedb:*`, or the user's confirmation that no session is live |
+| 27.5 | cliquedb's session acknowledgement on `proj:cliquedb:*`, or the user's confirmation that no session is live; bug-202's restore (AC-5) rides that same window, and a cross-store row stops it for a report |
 | 27.6 | none beyond the report; any hook regeneration waits for a user-gated install window ([[#q3-rehost]]) |
 
 ## Lines that change under plan-review Q8 b (2026-11-13) {#q8-b}
@@ -344,3 +347,14 @@ ch-bsd round.
 | L10 / Ca-7 | 26.9 is not a dependency; the two run in parallel after 26.8 | header |
 | L45 | User gates collected | [[#user-gates]] |
 | Q8 open (brief rule) | Lines named | [[#q8-b]] |
+
+## Revision round 7 (2026-11-13): bsd-spec-t2 {#rev-round-7}
+
+Answers [[bsd-spec-t2-b5fe2d3]] s4 and m7. Status is unchanged.
+
+rel: derives-from -> [[bsd-spec-t2-b5fe2d3]]
+
+| finding | change | anchor |
+|---|---|---|
+| s4 | 27.5 AC-5 hosts bug-202's live restore: only the two named files, single-file bridge, the same session window, a cross-store row stops it | [[task-27.5-cliquedb-at-session-boundary#r-202b-live]], [[#user-gates]] |
+| m7 | Q4 also holds 26.5's home-memdir reroute until 27.1 reports | [[#open-questions]] |

@@ -18,6 +18,7 @@ metadata:
 
 rel: part-of -> [[plan-27-memory-fleet-rollout]]
 rel: related-to -> [[task-26.4-savestate-mtype-normalisation]]
+rel: depends-on -> [[task-26.5-memory-organise-verb#r-202b]]
 
 ## Requirements {#requirements}
 
@@ -47,6 +48,24 @@ itself.
    - `rmx recall-state` resumes.
 4. **AC-4: report back on the bus** with the counts and the tarball path.
 
+5. **AC-5: bug-202's two anchor sets, live (rev 7, 2026-11-13).** Only if
+   [[task-26.5-memory-organise-verb#r-202a]] found the files. If 26.5 took R-202c (not found),
+   this AC records "not applicable" with the 26.5 log path, and nothing runs. {#r-202b-live}
+   - **Why here.** The only `guardrail-*` memory files on disk are in cliquedb's memdir
+     ([[task-26.5-memory-organise-verb#bug202-why]]). The restore therefore runs inside this
+     task's session-boundary window, after AC-2's acknowledgement, never as a separate apply.
+   - **Only the two named files.** For each found file, run the single-file bridge that 26.5
+     built: `rmx ingest-gmd --as-memory --force-rebridge <file>`. Never a full organise, and no
+     other file.
+   - **Same store, or stop.** The restore must write the store that holds the row (R-202a
+     recorded it; it was refmatrix's on 2026-11-13). If the file's memdir resolves to a different
+     store from the row's, the restore does not run. Instead, log a bug row (a cross-store memory
+     row) and report it to the user.
+   - **Check, by name and count.** Read through the row's store's daemon: the memory's `x#…`
+     anchor concepts equal the file's `{#anchor}` set, by name and count. Before the restore the
+     set is empty. Record both reads.
+   - The bug-202 row's restore note is closed with the result and the log path.
+
 ## Files to Create / Modify {#files}
 
 - Modify the live dir through the verb only.
@@ -74,3 +93,12 @@ alone, plus a check that the file's `metadata.type` was rewritten. AC-1's 4 type
 edits) stay.
 
 rel: derives-from -> [[plan-27-memory-fleet-rollout#q8-b]]
+
+## Revision round 7 (2026-11-13) {#rev-round-7}
+
+Answers [[bsd-spec-t2-b5fe2d3#s4]] with the lead's ruling. 26.5's restore was a full organise
+apply that could run out of order, or in another project's dir. It moves here, to AC-5: only the
+two named files, through the single-file bridge, at this task's session boundary, checked by name
+and count. Status is unchanged (`pending`).
+
+rel: derives-from -> [[bsd-spec-t2-b5fe2d3]]

@@ -444,7 +444,7 @@ The consolidated plan runs as a goal that stops at every user step a spec names
 
 | task | the goal stops for | spec |
 |---|---|---|
-| 26.5 | announcing bug-202's restore re-bridge, only if R-202a finds the files (a live write) | [[task-26.5-memory-organise-verb#r-202b]] |
+| 26.5 | none live. bug-202's restore, if R-202a finds the files, runs in 27.5 AC-5 (rev 7) | [[task-26.5-memory-organise-verb#r-202b]] |
 | 26.8 | the stop and report if AC-0's `refresh_pending` is over 50 | [[task-26.8-refmatrix-live-rollout#requirements]] AC-2 |
 | 26.8 | the go-ahead for `organise --apply` on the live refmatrix dir | AC-4 |
 | 26.8 | the user's commit of the staged `git mv`s in `~/.claude` (the verb exits 3) | AC-4 |
@@ -570,3 +570,15 @@ rel: derives-from -> [[plan-review-2026-11-13#d-q2]]
 | L10 / Ca-7 | 26.9 ∥ plan-27 after 26.8 | [[#overlap-26-9-plan-27]], [[task-26.9-impression-patterns#rev-round-4]] |
 | L11, L12 / Ca-4, Ca-9 | Appendix A carries the marker condition; forget step 5 is put to the user at 26.8 AC-8; 26.8 counts re-read | [[task-26.8-refmatrix-live-rollout#rev-round-6]] |
 | L45 | User gates collected | [[#user-gates]] |
+
+## Revision round 7 (2026-11-13): bsd-spec-t2 {#rev-round-7}
+
+Answers [[bsd-spec-t2-b5fe2d3]] (DIRTY 0B/4S/7M) with the lead's rulings. Status is unchanged.
+
+rel: derives-from -> [[bsd-spec-t2-b5fe2d3]]
+
+| finding | change | anchor |
+|---|---|---|
+| s1, s2, s3, m1, m2, m3, m6, m7 | 26.5's bug-220 reroute is rewritten: both path forms; collected, then dispatched outside the writer lock; full `--as-memory` path; loud failure branch; home memdir held per plan-27 Q4. ADR-0005 is made self-consistent | [[task-26.5-memory-organise-verb#rev-round-7]], [[refmatrix/adr-0005-memory-dir-layout#amendments]] |
+| s4 | bug-202's live restore moves to 27.5 AC-5; 26.5 keeps the existence check | [[task-26.5-memory-organise-verb#r-202b]], [[#user-gates]] |
+| m4, m5 | 26.8 AC bodies state rules; the forget-step false-premise branch | [[task-26.8-refmatrix-live-rollout#rev-round-7]] |
