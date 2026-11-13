@@ -91,7 +91,7 @@ to the verb as `timeout`, whose busy message reads "recall not confirmed within 
 |---|---|---|
 | k1 | Own task id, own branch `task-25.1b-hook-output-ladder-and-spill`, cut from `master` after 25.1 and 10.3 merge | D-Q2; L15 (`depends-on 10.3`); L30 (only 10.3 builds early) |
 | k2 | **This task owns the ONE names line**, labelled `still in play`. It is ONE line: the 25.1 `+N more` trailer is folded into it, and it ends with the spill page's fetch command. One cap of 15 names is shared across both member kinds, the bytes are reserved before the fit, and `(+N)` overflow goes to the spill page. Members are of two kinds: OVER-BUDGET (this task: items the ladder put at tier 4) and HELD (10.2, later). The ONE renderer (`recall_pack`, the only place the literals `still in play` and `·held` appear in `src/`) takes both kinds; the held kind is empty until 10.2 builds. Members are in ONE rank order across both kinds. **A held member prints as `<name>·held`** (10.2 h16); the suffix's bytes count inside the line's reservation; an over-budget member is unmarked. 10.2 only supplies the held flag, through `pack(held=…)` ([[#k3]]). 10.6 labels each member later, where it stands (no regrouping, 10.6 p2). **Position:** the line is LAST in the payload, after every hook line and every body or excerpt, and it ends with the spill page's fetch command (the user-agreed presentation rule: most important first, [[feedback_injection_presentation_rules]]). scan-prompt's held line (10.2 R4) sits last in scan's payload by the same rule. 10.2 is re-specced against this task, not the other way round. {#k2} | L15; contra-b CB-1; both 25.1 rev 8 R13 and 10.2 h10 state the cap of 15; L52 and L54 (B1, S2) adopt 10.2 h16's marker |
-| k3 | **One pack call, one order, TIER-PINNED:** (1) the ladder runs over ALL retrieved rows in rank order, the `full` run ([[#r13]]); (2) a row whose key `held.covers(key, full_run_tier)` answers True (10.2's rule; nothing until 10.2 builds) leaves the tier the full run gave it and becomes a HELD member of the names line, which degrades it to the names tier by dedupe; a row `covers` answers False for keeps its tier; (3) non-held rows keep their full-run tier, and the bytes held rows free are never re-spent on promoting other rows; (4) the bodies of every row below tier 1, held rows included, and the names-cap overflow are written to the spill page ([[#r14]]); (5) the clamp runs on the whole command's stdout ([[#r12]]). The payload is never larger than the full run's. **This task is the ONE owner of `pack(held=…)`** (the lead's r2 ruling, 2026-11-13; bsd-spec-t3ab r2 S1). `held` is a protocol, not a key collection: `recall_pack.Held` (a `typing.Protocol`) with `covers(key, full_run_tier) -> bool`. `recall_pack.pack(..., held: "Held | None" = None)` performs steps 1-4 in ONE call, because each row's full-run tier is known only inside `pack`; `held=None` covers nothing. 10.2 supplies the implementation (its `HeldSet`, with h15's tier-aware rule) and never re-implements the removal. {#k3} | CB-1 ("the order … is stated explicitly"); 10.2 h9 / the user's Q13 (freed bytes are not re-spent: the replay lost a use exactly by re-spending); agreed with spec-t3b 2026-11-13 |
+| k3 | **One pack call, one order, TIER-PINNED:** (1) the ladder runs over ALL retrieved rows in rank order, the `full` run ([[#r13]]); (2) a row whose key `held.covers(key, full_run_tier)` answers True (10.2's rule; nothing until 10.2 builds) leaves the tier the full run gave it and becomes a HELD member of the names line, which degrades it to the names tier by dedupe; a row `covers` answers False for keeps its tier; (3) non-held rows keep their full-run tier, and the bytes held rows free are never re-spent on promoting other rows; (4) the bodies of every row below tier 1, held rows included, and the names-cap overflow are written to the spill page ([[#r14]]); (5) the clamp runs on the whole command's stdout ([[#r12]]). The payload is never larger than the full run's. **This task is the ONE owner of `pack(held=…)`** (L59; bsd-spec-t3ab r2 S1). `held` is a protocol, not a key collection: `recall_pack.Held` (a `typing.Protocol`) with `covers(key, full_run_tier) -> bool`. `recall_pack.pack(..., held: "Held | None" = None)` performs steps 1-4 in ONE call, because each row's full-run tier is known only inside `pack`; `held=None` covers nothing. 10.2 supplies the implementation (its `HeldSet`, with h15's tier-aware rule) and never re-implements the removal. {#k3} | CB-1 ("the order … is stated explicitly"); 10.2 h9 / the user's Q13 (freed bytes are not re-spent: the replay lost a use exactly by re-spending); agreed with spec-t3b 2026-11-13 |
 | k4 | **Kind labels are not built here.** Each tier is rendered by its own function in `recall_pack`. 10.6 later decorates every tier's line with `telemetry.kind_label` (10.6 p1), and every tier carries a label from then on. Revision 8's "Kind labels (10.6) apply at every tier" is restated this way, so this task has no edge to 10.6. {#k4} | L15 (CB-5 restatement); bsd-pop-r1 S5 |
 | k5 | **`form` on delivered events:** `full` (tier 1), `excerpt` (tier 2), `pointer` (tier 3), `names` (a names-line member). It joins `telemetry.RECALL_EVENT_FIELDS_V1` as a nullable field, and `v` stays 1. 10.2 R6 planned the same field; it now exists from this task, and 10.2 adds one value, `held`, for a held member on the line (10.2 R6). {#k5} | CB-2 ("Excerpt counts as a form in the delivered event") |
 | k6 | Spill pages live under `stm/<session>.emitted/spill/`, one file per hook call, written only by that call {#k6} | L16's home rule for per-session emitted state; 10.2 h6 / 19.6 split: one writer per file |
@@ -152,12 +152,14 @@ review's citations stay valid). R0 is this task's own measurement step (L44 name
     - **There is no single emit point today** (green-251c, reading `hooks.render_managed` at the 25.1
       branch's `23caf45`). So the shared emitter is ONE function, `hook_budget.emit(text, *,
       command, channel)`, and every rmx stdout writer that a generated hook command runs calls it.
-      These are the eight writer entries, which are nine functions (scan-prompt and curator status
-      are one command with two writers):
+      These are nine writer entries, which are nine functions; `cli.curator_status` runs in two
+      commands, and scan-prompt and curator status share one command:
       - capped today, each by its own writer: `cli._echo_pack` (the three `memory recall --pack`
         hooks); `cli.recall_state` (`recall-state --max-bytes 9000`); `cli.scan_prompt_cmd` and
-        `cli.curator_status` (one command, two writers, 4,500 B / 500 B shares);
-        `cli.focus_context` (1,500 B);
+        `cli.curator_status` in UserPromptSubmit's `scan_cmd` (one command, two writers, 4,500 B /
+        500 B shares); `cli.curator_status` in SessionStart's `startup|resume` command (`sess_cmd`,
+        `hooks.py:208-215` on the 25.1 branch: the backgrounded primer `; rmx curator status`),
+        where it is that command's only stdout writer; `cli.focus_context` (1,500 B);
       - UNCAPPED today, and reaching the agent: `cli.focus_hook` on `--event session-start` (all
         four SessionStart matchers); `rmx focus summarize --promote` (PreCompact `--timeout 30`,
         Stop `--timeout 5`; it prints the full STM digest); `rmx ingest-gmd --as-memory --detach`
@@ -167,10 +169,17 @@ review's citations stay valid). R0 is this task's own measurement step (L44 name
       several writers, their shares are listed in `HOOK_COMMAND_CHANNELS` and sum to ≤ 9,500 B, so
       the command's stdout is ≤ 9,500 B with no cross-process coordination. Each `emit` call that
       cuts writes its `capped` row, with the command id and the dropped bytes.
-    - **Out of scope** (stdout to `/dev/null`, or not rmx): `sync --flush-queue`, the backgrounded
-      primer, `focus hook` on `tool` / `say` / `input`, the PostToolUse inline python, the grep
-      scripts. A later hook command whose rmx stdout reaches the agent joins the list through the
-      same function. {#r12}
+    - **curator status uses its FIXED `curator_status` share (500 B) in every command** (the lead,
+      on bsd-spec-t3ab r2 S4). No argv identifies the command, and none is added. In SessionStart's
+      `startup|resume` command, the rest of that command's 9,500 B is unused headroom.
+    - **Silent by code** (they write stdout only on `session-start`, so they print nothing; their
+      generated commands redirect only stderr): `focus hook` on `--event tool`, `tool-pre`, `input`
+      and `say`, and 10.3's `focus hook --event compact-marker` entry. AC-26 runs each one and
+      asserts empty stdout.
+    - **Redirected to `/dev/null`:** `sync --flush-queue` and the backgrounded primer.
+    - **Not rmx:** the PostToolUse inline python and the grep scripts.
+    - A later hook command whose rmx stdout reaches the agent joins the writer list through the same
+      function. {#r12}
 13. **R13 Degrade ladder inside the pack.** When a payload does not fit its channel budget, items
     are degraded in rank order instead of dropped. The tier shapes (L54 S1) keep 25.1 R3 / J5's
     "every hook line before any body":
@@ -292,11 +301,17 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
   -c`. For every command: stdout ≤ 9,500 B; a `capped` row carries that command's id; each writer's
   output is within its `HOOK_COMMAND_CHANNELS` share. A structural check parses `src/refmatrix/` and
   fails if any of the nine writer functions named in R12 writes to stdout other than through
-  `hook_budget.emit`. The out-of-scope commands are asserted to send rmx stdout to `/dev/null`.
-  The four writers uncapped today are RED at HEAD. Mutations: one of the four uncapped writers
-  (e.g. `focus summarize --promote`) prints directly, bypassing the emitter (FAIL: its command
-  exceeds 9,500 B and the structural check fires); two writers of one command given shares that sum
-  over 9,500 B; a cut with no `capped` row. {#ac-26}
+  `hook_budget.emit`. Both curator-status commands are covered: UserPromptSubmit's `scan_cmd`, and
+  SessionStart's `startup|resume` command, where curator status alone is ≤ 500 B (its fixed share)
+  and the command's stdout is ≤ 9,500 B. The five silent-by-code commands (`focus hook` on
+  `tool`, `tool-pre`, `input`, `say`, `compact-marker`) are each run with an envelope and print
+  empty stdout. `sync --flush-queue` and the backgrounded primer are asserted to redirect stdout to
+  `/dev/null`. The four writers uncapped today are RED at HEAD. Mutations: one of the four
+  uncapped writers (e.g. `focus summarize --promote`) prints directly, bypassing the emitter
+  (FAIL: its command exceeds 9,500 B and the structural check fires); two writers of one command
+  given shares that sum over 9,500 B; a cut with no `capped` row; a silent-by-code command that
+  prints (e.g. `--event input` echoing its envelope; FAIL: non-empty stdout); curator status
+  emitting the whole command budget in SessionStart (FAIL: > 500 B). {#ac-26}
 - **AC-27 Spill ids and retention ([[#k10]]).** On a sandbox `stm/`, through the recall verb's
   spill writer:
   - session S holds 55 pages; one more spill write leaves exactly the newest 50 plus the new page's
@@ -479,7 +494,7 @@ rel: implements -> [[plan-review-2026-11-13#lead]]
 | M5 spill retention and `<seq>` | `<seq>` = write ms base 36, exclusive create; prune at marker, beyond the newest 50, and other sessions' dirs older than 7 days (values decided by the lead, L58) | [[#k10]] |
 | `form` value `held` (M2's 25.1b half) | `#k5` names it | [[#k5]] |
 
-## Revision round 2 (2026-11-13, ch-bsd joint spec review r2; the lead's ruling) {#rev-round-2}
+## Revision round 2 (2026-11-13, ch-bsd joint spec review r2; lead ruling L59) {#rev-round-2}
 
 Folds the r2 report (DIRTY 0B/2S/8M; every r1 B/S closed) for this file. {#rev-round-2-lead}
 
@@ -492,3 +507,5 @@ rel: implements -> [[plan-review-2026-11-13#lead]]
 | m2 O3 row stale | refreshed: two commits, the ch-bsd lite round, the < 100 fallback | [[#open-decisions]] |
 | m3 tier-3 wording | "hook line (which carries its `(rmx memory get …)` fetch pointer)", the exact text 10.2 and 10.6 match | [[#r13]] |
 | m7 AC-21's fallback had no mutation | "R15 built on < 100 runs" | AC-21 |
+| S3 (r2, on `b032f24`) the out-of-scope list called silent commands `/dev/null` | silent by code: `focus hook` `tool` / `tool-pre` / `input` / `say` and 10.3's `compact-marker` (AC-26 asserts empty stdout, with a mutation); `/dev/null` kept only for `sync --flush-queue` and the primer | [[#r12]], AC-26 |
+| S4 (r2, on `b032f24`) curator status runs in two commands | SessionStart's `startup|resume` command named; curator status uses its fixed 500 B share everywhere, with no new argv; AC-26 covers both commands, with a mutation | [[#r12]], AC-26 |
