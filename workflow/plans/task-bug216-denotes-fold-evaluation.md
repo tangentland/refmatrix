@@ -27,6 +27,7 @@ rel: implements -> [[refmatrix/adr-0004-unified-location-space-index#gate-depth]
 rel: derives-from -> [[refmatrix/adr-0004-unified-location-space-index#d-2026-11-13-denotes]]
 rel: related-to -> [[measurement-task-21.5-relation-gaps-2026-11-13#gmd-gap-correction]]
 rel: related-to -> [[measurement-injection-already-held-2026-11-13#design-replay-v2]]
+rel: related-to -> [[task-21.4-surfaces-and-nl-ranking]]
 rel: reinforces -> [[feedback_go_no_go_ranges_not_predrop]]
 rel: reinforces -> [[feedback_measure_the_path_users_run]]
 
@@ -119,6 +120,11 @@ agent actually made visible, and does what it moves rank better or worse than wh
    | M1: `use_lost_on ≥ 1`, OR M2 (when not `underpowered`): the ON-only use rate is below the OFF-only use rate with the CI excluding 0 | `denotes` harms ranking | **If FOLD-OFF ran and reproduces the harm:** a new task spec disables the PageRank fold (R9's fold sentence), while R7's link and R6's binding stay (L7: the fold, not the link), and the user is told before the change. **If FOLD-OFF ran and does not reproduce it**, the walker transparency is the cause, and the user decides. **If FOLD-OFF could not run**, the harm is not attributed: the reading goes to the user, and nothing is disabled automatically (e4; r1 #m6) |
    | M1: `use_lost_on = 0`, AND M2: `underpowered`, or the ON-only use rate is at least the OFF-only rate, or the CI includes 0 | `denotes` holds | nothing changes. ADR-0004's decision log records the result, and the `denotes` per-type prior stays flat (1.0) |
 
+   **These bands are this task's own (L51; t3a's 21.4 O-b, adopted).** C9's ranking harness
+   (21.4) did not exist yet when they were written, and the measurement file records that.
+   Once 21.4's harness is frozen, it RE-SCORES the `denotes` fold as a note that gates nothing:
+   no reading here changes because of it.
+
    M3 and M4 are reported and carry no band: M3 is the repair working as designed, and M4
    is the size of the change. A `use_gained_on` count is reported beside `use_lost_on` and never
    offsets it, the same shape as L34's "drops 0 CAUSED/INFORMED and 0 explicit uses".
@@ -209,4 +215,5 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 | finding | disposition | where |
 |---|---|---|
 | s6 M2 bands on next-touch proximity, the refuted method | M2 counts R12 explicit uses plus gated `cited_in_answer` on memory items (L18); proximity is dropped; M2 has an `underpowered` floor | [[#r3]], [[#r4]] |
+| m6 an edge to 21.4's re-score (L51; t3a's 21.4 O-b) | `rel: related-to` to 21.4; this task's own bands stand, and 21.4's frozen harness re-scores the fold later as a note that gates nothing | header edges, [[#r4]] |
 | m6 the derive verb; how OFF removes `denotes`; the rerank limit; harm disabling the fold when FOLD-OFF could not run | names `rmx derive denotes` / `rmx_derive_denotes`; e1 removal on the throwaway copy, with e1b (no watcher, no sync) and R0's count; `RMX_RERANK=0` stated as a limit; an unattributed harm goes to the user, and nothing is disabled automatically | header, e1, e1b, e3, [[#r0]], [[#r4]], [[#ac-1]] |
