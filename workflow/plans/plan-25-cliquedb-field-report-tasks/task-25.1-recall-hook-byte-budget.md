@@ -739,7 +739,7 @@ add it" to this task. SessionStart fires with source `compact` after compaction 
 ## Revision round 7 (2026-11-13, lead decisions on the GREEN's open items) {#rev-round-7}
 
 `green-251b` committed the GREEN (`16ace00`, `#green` in `273050b`) with six non-AC-5 failures for
-the lead to judge and seven flags. The user's standing direction (2026-11-13: the user let the other held steps proceed) covers these; each is decided as the user would, with the reason. Measurements are in
+the lead to judge and seven flags. The user's standing direction (2026-11-13: the user other steps proceed) covers these; each is decided as the user would, with the reason. Measurements are in
 the implementation summary's `#lead-judge-table`.
 
 | item | decision | owner |
