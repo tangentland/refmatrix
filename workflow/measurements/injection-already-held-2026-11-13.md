@@ -82,3 +82,27 @@ topic count equals the logged value for 90.6% / 94.4% of prompt units. Held is n
 compaction variant is the partial correction); a subagent's `rmx context` counts as held by the
 session. Name matching and the human / non-human split are heuristic. Scripts stay in the session
 scratchpad (`dd/`).
+
+## Addendum: with / without the non-human gate (plan-10 task 10.4) {#gate-comparison}
+
+User asked for a with/without comparison of the non-human gate. Pre-registered at 13:01 (rule: SAFE
+if labelled + R12 explicit uses lose at most 1 use with no human-prompt delivery of the same key
+before it). Classifier: exact prefix of the delivering query.log row (`<agent-message`,
+`<cross-session-message`, `<task-notification`, `<channel`, `[SYSTEM NOTIFICATION`); ring
+cross-check agrees 607/608 and 572/579. Distinct delivering prompts: refmatrix plain 350,
+agent-message 257, task-notification 77; cliquedb 274 / 286 / 143. {#gate-setup}
+
+| | with gate removes | units | bytes |
+|---|---|---|---|
+| refmatrix | 62.0% | 9,663 → 3,676 | 538,964 → 206,881 |
+| cliquedb | 62.8% | 6,148 → 2,286 | 377,986 → 140,419 |
+| pooled | 62.3% | 15,811 → 5,962 | 916,950 → 347,300 |
+
+- **Labelled uses:** of 13 CAUSED+INFORMED pairs, 11 on prompt channels: 10 human, 1 non-human, and
+  that item had already been delivered on a human prompt — 0 labelled uses lost.
+- **R12 explicit uses:** 16 on prompt channels; 10 rode non-human prompts (9 agent-message, 1
+  task-notification; all scan_prompt concept items), and NONE had any earlier delivery of the same
+  key — 10 lost. Only 2 were used within ~4 minutes; 8 came 1.7-107 h later (weak attribution); 9
+  of 10 are lead sessions, where agent-message turns are teammate reports read by the main loop.
+- **Removed deliveries:** 57.5% were already held; 42.5% (242,668 B) were not.
+- **Verdict:** 10 lost > 1 → the user decides (Q10). Near-term only: 2 lost, still > 1. {#gate-verdict}

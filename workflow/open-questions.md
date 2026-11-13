@@ -26,12 +26,13 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session f0521bff (2026-11-13) {#session-f0521bff}
 
-Next id: **Q10**.
+Next id: **Q11**.
 
 ### Open {#open}
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q10 | 2026-11-13 | Non-human gate (10.4): with the gate, 62% of prompt-channel injections disappear, 0 labelled uses lost, but 10 explicit R12 uses (2 within minutes, 8 hours later) rode agent-message turns with no other delivery — the pre-registered rule says you decide. In lead sessions, agent reports ARE read by the main loop. | (a) delta-only on non-human turns: send only items not already held (keeps all 10, cuts the 57.5% already-held share), live A/B against the full gate; (b) full gate as specced; (c) gate task-notifications only, keep agent-message | open |
 | Q9 | 2026-11-13 | plan-10 task 10.4 silences scan-prompt and the per-prompt recall on non-human turns (agent messages, task notifications, bus). Should `rmx curator status` — the second command in the per-prompt hook, up to 500 B every prompt — also go silent on them? It needs the hook envelope plumbed into that command, so it would be a small follow-on to 10.4. | (a) yes, follow-on to 10.4; (b) no, keep it on every prompt | open |
 
 ### Answered {#answered}
