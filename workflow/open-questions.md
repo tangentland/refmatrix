@@ -32,14 +32,14 @@ Next id: **Q13**.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
-| Q10 | 2026-11-13 | Non-human gate (10.4): with the gate 62% of prompt-channel injections go, 0 labelled uses lost, 10 explicit R12 uses (2 near-term) rode agent-message turns with no other delivery — rule trips. Now a single policy table in 10.4 (none / delta / full per family and surface); a live A/B (arms nested in the handhold experiment, ≥14 days, ≥40 sessions/arm/store, bands pre-written) follows ship. | (b) full gate (none for every family), shipped inside the live A/B; (c) none for task-notifications only, full for agent messages; (a) delta on non-human turns — needs 10.2's block state even if Q11 says no 10.2, and that state holds little, so it cuts far less than 57.5% | on hold — user: wait for Q11 |
-| Q11 | 2026-11-13 | plan-10 dedupe of the per-prompt payloads. 19.6's block diff fails there (lists change every turn). User asked for design options; seven laid out (pointer, suppress+refresh, names-only line, rank-by-novelty, item diff+keyframe, session-aware retrieval, pull-only). | lead recommends 4+3: rank new items first, collapse held ones into one 'still in play' line — pending Q12 | open (options given) |
-| Q12 | 2026-11-13 | How to choose among the Q11 designs? | (a) replay-score 1 / 3 / 4+3 / 5 on the same sessions (bytes saved, new items gained, labelled + explicit uses kept visible), then decide; (b) go straight to 4+3; (c) pick another | open |
+| Q10 | 2026-11-13 | Non-human gate (10.4): with the gate 62% of prompt-channel injections go, 0 labelled uses lost, 10 explicit R12 uses (2 near-term) rode agent-message turns with no other delivery — rule trips. Now a single policy table in 10.4 (none / delta / full per family and surface); a live A/B (arms nested in the handhold experiment, ≥14 days, ≥40 sessions/arm/store, bands pre-written) follows ship. | (b) full gate (none for every family), shipped inside the live A/B; (c) none for task-notifications only, full for agent messages; (a) delta on non-human turns — needs 10.2's block state even if Q11 says no 10.2, and that state holds little, so it cuts far less than 57.5% | on hold until dd-10r's replay scores the non-human policies |
 
 ### Answered {#answered}
 
 | id | asked | question | answer | acted |
 |---|---|---|---|---|
+| Q11 | 2026-11-13 | plan-10 dedupe design for the per-prompt payloads (seven options) | 4+3: rank new items first, collapse held ones into one 'still in play' names line | `arch-10r` re-specs 10.2 on it after the replay; 19.6 block diff not used for these payloads |
+| Q12 | 2026-11-13 | How to choose among the Q11 designs? | a: replay-score 1 / 3 / 4+3 / 5 first | `dd-10r` replay, pre-registered; also scores Q10's non-human policies (none / 4+3 / full) |
 | Q9 | 2026-11-13 | `rmx curator status` silent on non-human turns too? | a: yes, follow-on to 10.4 | sent to `arch-10r`: a 10.4 follow-on plumbs the envelope into `curator status` |
 | Q1 | 2026-11-13 | Verbatim user prompts in today's docs, before the push to the public repo | a: paraphrase before the push | today's docs paraphrased (see the commit) |
 | Q2 | 2026-11-13 | Remove the `CLAUDE.md` ignore line fleet-wide after bug-216 deploys? | a: fleet-wide after deploy | recorded in task-bug216 `#fleet`; done at deploy, announced |
