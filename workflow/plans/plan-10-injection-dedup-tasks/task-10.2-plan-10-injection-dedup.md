@@ -196,9 +196,11 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
      deployed code to every store: a store-blind draw would randomise the whole fleet (lead
      ruling, 2026-11-13, on spec-t3c's request). **The cell is fixed for the session at SessionStart** (bsd-spec-t3c r1 m2, at spec-t3c's
      request; accepted by the lead as L59). The SessionStart focus hook calls `arms.draw` ONCE, with `now` = the hook's time,
-     and ONLY when `stm/<session>.arm.json` does not exist. It writes that file (`{cell, period,
-     t}`, temp-file + replace, one writer) and records the arm once (`session_arm` on a `cli.log`
-     row). **SessionStart on `compact`, `resume` or `clear` never redraws and never overwrites
+     and ONLY when `stm/<session>.arm.json` does not exist AND this store's slug is in the
+     `scope` of SOME period record, active or future (bsd-spec-t3c r2 m6, lead ruling). Otherwise
+     it writes nothing (no file, no `session_arm` row), and `session_cell`'s missing-file default
+     `A+dedupe` applies. When it does write, the file is `{cell, period, t}` (temp-file +
+     replace, one writer), and the arm is recorded once (`session_arm` on a `cli.log` row). **SessionStart on `compact`, `resume` or `clear` never redraws and never overwrites
      the file** (lead ruling, 2026-11-13, r3). An existing file, readable or not, is left as it
      is.
      `arms.session_cell(session_id, *, root) -> str` reads that file. It returns `A+dedupe` when
@@ -327,7 +329,9 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
     A session whose SessionStart falls inside `[start, end)` keeps its drawn cell on every later
     prompt, including prompts after `end`. A `resume` (and a `compact` or `clear`) SessionStart
     after `end` keeps the original cell: the file is unchanged byte-for-byte, and no second
-    `session_arm` row is written. A session that started before `start` stays
+    `session_arm` row is written. A session in a store whose slug is in no period record's
+    `scope` (as shipped: every store, since no record exists) leaves no arm file and no
+    `session_arm` row, and reads `A+dedupe`. A session that started before `start` stays
     `A+dedupe` throughout. A missing arm file reads `A+dedupe`. An unreadable one reads
     `A+dedupe` with one stderr line. Both the verb and scan-prompt call `arms.session_cell`.
     `workflow/deferral_registry.md` holds the `arms.py` row (owner plan-28, deletion 28.5 R8),
@@ -344,7 +348,8 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
     `arms.draw` using a random source (AC-11); the per-prompt read calling `arms.draw` with the wall
     clock instead of `arms.session_cell` (AC-11: the straddling session flips at `end`); a redraw
     on `resume` (or an overwrite of an existing arm file) (AC-11: the resume-after-`end` leg reads
-    `A+dedupe` instead of the original cell); `draw` ignoring `scope` (AC-11: the out-of-scope
+    `A+dedupe` instead of the original cell); the arm file written for every store regardless of
+    scope (AC-11: the out-of-scope store leaves a file); `draw` ignoring `scope` (AC-11: the out-of-scope
     root is randomised); `end` treated as inclusive (AC-11); a non-held row promoted into freed bytes (AC-2,
     tier pinning); held removal applied BEFORE the ladder (AC-2: the 40-row fixture shows a
     promotion); held members printed on a second, 10.2-owned line (AC-14); a held member recorded
@@ -410,6 +415,7 @@ rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 | Every held row's body goes to 25.1b's spill page (k3 step 4); held overflow is counted `(+N)` | L15 | R3, AC-6 |
 | One rank order across both member kinds (10.6 p2); held members marked `·held` | 25.1b k2; lead ruling on [[#open-held-mark]] (a) | h16, R3, R4, AC-1, AC-14 |
 | `arms.draw(session_id, *, root, now=None)` store-scoped: period records carry `scope`; ships with no active period; out of scope or out of period → `A+dedupe` | spec-t3c, plan-28 handshake (`5ac42e5`): arms.py ships to every store | R7, AC-11 |
+| Arm file and `session_arm` row written only when the store's slug is in some period record's `scope` | bsd-spec-t3c r2 m6, lead ruling | R7, AC-11, AC-13 |
 | bsd-spec-t3ab r3 folded, lead rulings: S5 (`telemetry.item_key` built by 25.1b, h8 cites it, removed from Files); m1 (tier-3 string verbatim from 25.1b); m2 (`covers(key, full_run_tier)`); arm file never redrawn or overwritten on compact/resume/clear | bsd-spec-t3ab-r3 | h8, h15, R1, R7, AC-11, AC-13, Files |
 | Cell fixed at SessionStart: one `draw`, `stm/<session>.arm.json`, `arms.session_cell` read per prompt; 28.1 extends it | bsd-spec-t3c r1 m2 (spec-t3c's request; L59) | R7, AC-11, AC-13, Files |
 | bsd-spec-t3ab r2 (DIRTY 0B/2S/8M) folded, lead rulings: S1 (10.2 builds no `pack`; it supplies `HeldSet` for 25.1b's `Held` protocol); S2 (period end and minimums deferred to 28.4; the n-floor row deleted); m3 (tier-3 wording = 25.1b's); m5 (the post-G22 parity re-run) | bsd-spec-t3ab-r2 | R3, R7, R8, h15, Files |
