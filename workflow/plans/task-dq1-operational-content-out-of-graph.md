@@ -8,13 +8,14 @@ metadata:
   status: drafting
   created: 2026-11-13
   updated: 2026-11-14
-  revision: 6
+  revision: 7
 ---
 
 # Task D-Q1: operational content stays in the partition, out of the skew {#root}
 
-> Status: Drafting. Revision 6 (2026-11-14) answers ch-bsd `bsd-spec-t56-r4` under the lead's
-> L67 ruling, which amends L61 S3 ([[#rev-6]]); revision 5 answered r3 under L61 ([[#rev-5]]);
+> Status: Drafting. Revision 7 (2026-11-14) answers ch-bsd `bsd-spec-t56-r5` ([[#rev-7]]).
+> Revision 6 answered `bsd-spec-t56-r4` under the lead's L67 ruling, which amends L61 S3
+> ([[#rev-6]]); revision 5 answered r3 under L61 ([[#rev-5]]);
 > earlier revisions are in [[#history]].
 > Track: T6. Queue slot after bug-216; the lead places it in the POP rewrite (L61 M6).
 > Depends on: bug-216 merged and live (a bare doc id binds the doc, so a `workflow/` doc and its
@@ -117,8 +118,12 @@ skew whats returned". So:
      the partition id. `Store._invalidate_content_rank_caches` drops it with `_conceptdf_cache`
      (its attribute tuple gains the name), and a reader `Store` opened on a swapped snapshot starts
      with no cache, so a newly ingested `workflow/` doc is a member at the next read (r3 M4).
-   - **`OPERATIONAL_RULES_VERSION`**: a constant in `memory_layout` that changes whenever
-     `is_operational`'s rules change (r4 M1). The adjacency caches key on it ([[#r2]]).
+   - **The adjacency caches key on code, not on a hand-bumped constant (r4 M1, r5 M2).** Both
+     tiers of `pagerank.cached_adjacency` add the module function
+     `refmatrix.store.derive_code_hash("pagerank")` (`store.py:822`) to their key.
+     That is the content hash of the `pagerank` pass's modules, which include `memory_layout.py`
+     ([[#r2]] staleness row; AC-4). Any edit to `is_operational`'s rules therefore changes the key
+     with no version to remember. Revision 6's `OPERATIONAL_RULES_VERSION` constant is dropped.
    - **Convergence.** `pagerank._OPERATIONAL_RE`, `consolidate._OPERATIONAL_RE`,
      `brief.OPERATIONAL_RE`, `scan._is_operational_anchor` and `context._is_session_card` are
      removed; the sites in [[#r2]] call `memory_layout`. The compile's `subject` exclusion and
@@ -140,7 +145,7 @@ skew whats returned". So:
    | `consolidate`'s compile input (`:130`), the stamped `memory-compile` and `memory-compile:pattern` passes | derivation | `is_operational(name=, mtype=)` per memory row | excluded from clustering (as today for session/digest mtypes) |
    | `Store.concept_df` | derivation | `operational_ids(store)` | not counted in any concept's df |
    | `QueryEngine.co_occurrence` | derivation | `operational_ids(store)` | not counted as a co-mention |
-   | `pagerank.cached_adjacency` (in-process and on-disk tiers, `pagerank.py:172-215`) | derivation cache | its key gains `memory_layout.OPERATIONAL_RULES_VERSION` | an adjacency built under older rules is never served: the on-disk file is rebuilt (r4 M1) |
+   | `pagerank.cached_adjacency` (in-process and on-disk tiers, `pagerank.py:172-215`) | derivation cache | its key gains `derive_code_hash("pagerank")` | an adjacency built under older rules is never served: the on-disk file is rebuilt (r4 M1, r5 M2) |
    | `ppr.py:229`, `:301` (walker) | unreachable | none; the site's own check is deleted | excluded by the adjacency |
    | `net.py:195` (walker) | unreachable | none; the site's own check is deleted | excluded by the adjacency |
    | `enrich.py:163` (walker) | unreachable | none; the site's own check is deleted | excluded by the adjacency |
@@ -175,9 +180,13 @@ skew whats returned". So:
        resolves a memdir's store from its project slug, so a copy that keeps this project's slug
        would resolve to the LIVE project store. W's copy lives at
        `$SANDBOX_HOME/.claude/projects/<slug of W's unpacked root>/memory`, and N's at the same
-       path under N's root's slug. `eval/dq1/build.py` prints the resolved store root of every
-       bridge run, and asserts that it is W's or N's throwaway `.refmatrix/`. On a mis-slugged
-       copy it exits non-zero BEFORE any write.
+       path under N's root's slug.
+     - **The order inside `eval/dq1/build.py` (r5 S1).** Before each bridge run, it resolves the
+       copy's store with the bridge's own resolver, `cli._root_from_projects_slug(<copy path>)`
+       (the ADR-0005 slug match against discovered roots). It prints the result and asserts that
+       it equals that build's throwaway `.refmatrix/`. ONLY THEN does it run the bridge. On a
+       mismatch, or when nothing resolves, it exits non-zero with no write to any store
+       (AC-13).
      - **W and N are both FRESH builds of one commit's tree** (`git archive <sha>` unpacked into
        the sandbox; no worktree, and never a copy of the live store). Each gets its own throwaway
        store and daemon, and both run the same steps: `rmx ingest`, the bridge over that build's
@@ -194,10 +203,12 @@ skew whats returned". So:
        `src/`, 20 GMD doc ids under `docs/`, and 20 three-word phrases (the rarest three body terms
        of 20 sampled `docs/` sections);
      - WORKFLOW set: 20 doc ids (plans, task specs, ch-bsd reports), 20 `<id>#<anchor>` refs, 10
-       `rel:` edges from a non-`workflow/` doc into a `workflow/` doc (each recorded with its
-       source node `S`, parsed from the citing GMD file), and 10 three-word
+       `rel:` edges from a non-`workflow/` doc into a `workflow/` doc, and 10 three-word
        rarest-term phrases from sampled `workflow/` sections. It is read from W's `workflow/`
-       paths, the only place they exist.
+       paths, the only place they exist. Each `rel:` edge is recorded as `(S, verb, target)`,
+       where `S` is the source node parsed from the citing GMD file. Only edges whose `S` is an
+       ANCHORED concept (`<doc>#<anchor>`, including `#root`) are eligible, never the synthetic
+       root (r5 M1).
 
      Both sets and the script are committed in the RED commit before any `src/` change, and that
      sha is cited in the summary.
@@ -214,9 +225,11 @@ skew whats returned". So:
    - **USEFUL.** On W, AFTER, measured the same way BEFORE:
      - name: `rmx context <id>` resolves to the doc, for 20/20;
      - anchor: `rmx context <id>#<anchor>` resolves to the anchor, for 20/20;
-     - `rel:`: for each sampled edge, `rmx neighbors <S>` lists the `workflow/` doc, for 10/10.
-       `S` is the node that carries the citing `rel:` line (the enclosing `{#…}` block of the
-       line, as the draw script records it from the GMD source). `rmx neighbors` reads LINKS, not
+     - `rel:`: for each sampled edge, `rmx neighbors <S> --linkage <verb> --limit <L>` lists the
+       `workflow/` doc, for 10/10. `L` is at least the walk's cardinality: the harness reads it
+       from a first call's `cardinality` and re-asks with that limit, because the default
+       `--limit 50` lists in id order and could cut the target (r5 M1). `S` is the anchored node
+       that carries the citing `rel:` line. `rmx neighbors` reads LINKS, not
        the adjacency: `graphread.neighbors_payload` (`graphread.py:42-52`) calls
        `QueryEngine.neighbors` (`query.py:273-302`), which walks `Store.load_bitmap(linkage,
        concept_id)` from the resolved concept. That is the stored direction of a `rel:` edge
@@ -360,11 +373,12 @@ sandbox.
 6. **AC-6 (R1) The cache follows the data** (`test_ac6_cache_invalidation`). With the daemon's
    `Store` holding a computed `operational_ids`, an in-process ingest of a new `workflow/plans/q.md`
    makes `q.md` a member at the next read. Mutation: leave `_operational_ids_cache` out of
-   `_invalidate_content_rank_caches`: FAILS (r3 M4). **On-disk adjacency (r4 M1):** an
-   `adjacency.cache.npz` / `.json` pair written under an older `OPERATIONAL_RULES_VERSION` (the
-   test writes it with the old value in the key) is not served: `cached_adjacency` rebuilds and
-   rewrites it, and the rebuilt adjacency excludes a name the new rules added. Mutation: leave the
-   version out of the disk key (the stale file is served and the new member is a node): FAILS.
+   `_invalidate_content_rank_caches`: FAILS (r3 M4). **On-disk adjacency (r4 M1, r5 M2):** on a
+   copy of the module tree (`_DERIVE_SRC_DIR`, as AC-4), an `adjacency.cache.npz` / `.json` pair
+   is written. Then `is_operational`'s prefix list gains a name, with no other change. The next
+   `cached_adjacency` call does not serve the old pair: it rebuilds and rewrites it, and the
+   rebuilt adjacency excludes the new name. Mutation: leave the code hash out of the disk key (the
+   stale file is served, and the new member is a node): FAILS.
    {#ac-6}
 7. **AC-7 (R4) The measuring code can fail** (`tests/test_dq1_measure.py`, against
    `eval/dq1/measure.py`). These are fixture list pairs; no store is involved:
@@ -408,6 +422,12 @@ sandbox.
 12. **AC-12 (R6) The rollout record.** `workflow/measurements/dq1-rollout-<date>.md` lists the
     marker search's output and, per project store, the derive stamps and the user's go (date) or
     `held`. The global store's deferral row exists. {#ac-12}
+13. **AC-13 (R4) The mis-slug guard runs before any write** (`tests/test_dq1_measure.py`, r5 S1).
+    In the sandbox, a second throwaway store `Z` exists (discovered). A memdir copy is placed under
+    the slug of Z's project root, and `build.py` is asked to bridge it for W. `build.py` exits
+    non-zero and names both roots, and Z's catalog files and `facts.log` are byte-identical
+    afterwards (W's too). A copy under W's own slug resolves to W, and the bridge runs. Mutation:
+    assert AFTER the bridge runs: FAILS (Z's `facts.log` changes). {#ac-13}
 
 ## Open items {#open-items}
 
@@ -420,15 +440,15 @@ R5's commit.
 
 | file | change |
 |---|---|
-| `src/refmatrix/memory_layout.py` | R1 `is_operational`, `is_session_card`, `operational_ids`, `OPERATIONAL_RULES_VERSION` |
-| `src/refmatrix/pagerank.py`, `ppr.py`, `enrich.py`, `net.py`, `consolidate.py`, `brief.py`, `scan.py`, `context.py` | R2 the table's call forms; the private gates removed; walker checks deleted; name-matched legs rank last; `cached_adjacency`'s keys gain `OPERATIONAL_RULES_VERSION` |
+| `src/refmatrix/memory_layout.py` | R1 `is_operational`, `is_session_card`, `operational_ids` |
+| `src/refmatrix/pagerank.py`, `ppr.py`, `enrich.py`, `net.py`, `consolidate.py`, `brief.py`, `scan.py`, `context.py` | R2 the table's call forms; the private gates removed; walker checks deleted; name-matched legs rank last; `cached_adjacency`'s keys gain `derive_code_hash("pagerank")` |
 | `src/refmatrix/store.py` | R2 `concept_df`; `_invalidate_content_rank_caches` drops `_operational_ids_cache`; `_DERIVE_PASS_MODULES` (`pagerank`, both compile passes) gain `memory_layout.py` |
 | `src/refmatrix/query.py` | R2 `co_occurrence` |
 | `src/refmatrix/cli.py` / `verbs.py` (the recall pack's ordering) | R2, R3 |
 | `eval/dq1/draw_queries.py`, `eval/dq1/queries-*.txt` (new) | R4 frozen sets (RED commit) |
 | `eval/dq1/build.py` (new) | R4 the sandbox recipe for W and N; per-build slugged memdir copies; prints and asserts each bridge run's resolved store root |
 | `eval/dq1/measure.py` (new) | R4 the formula and the bands |
-| `tests/test_dq1_operational_weights.py`, `tests/test_dq1_measure.py` (new) | AC-1..AC-8 |
+| `tests/test_dq1_operational_weights.py`, `tests/test_dq1_measure.py` (new) | AC-1..AC-8, AC-13 |
 | `tests/test_scan_prompt_dedup.py`, `tests/test_brief_detectors.py`, `tests/test_plan7_10_remedy_r4.py` | AC-10 ported |
 | `docs/adr/0003-canonical-partition-layout.md` | the decision-log line (in this revision); the `depends-on` repoint with R5 |
 | `workflow/measurements/dq1-skew-useful-<date>.md`, `workflow/measurements/dq1-rollout-<date>.md` (new) | AC-9, AC-12 |
@@ -443,6 +463,16 @@ R5's commit.
 - Committed on branch `task-dq1-operational-content-out-of-graph` and merged `--no-ff` to
   `master`; every project store's rollout row is recorded (done or `held`).
 
+## Revision 7 (2026-11-14, ch-bsd r5) {#rev-7}
+
+| finding | answered in |
+|---|---|
+| S1 (the mis-slug guard has no AC; its order is unpinned) | [[#r4]] the order inside `build.py` (resolve with `cli._root_from_projects_slug`, assert, then bridge); [[#ac-13]] + mutation |
+| M1 (the `rel:` channel could report false defects) | [[#r4]] only anchored-`S` edges are drawn; `rmx neighbors <S> --linkage <verb> --limit <cardinality>` |
+| M2 (`OPERATIONAL_RULES_VERSION` was bumped by hand, unchecked) | [[#r1]] both cache tiers key on `derive_code_hash("pagerank")`, which covers `memory_layout.py`; the constant is dropped; AC-6 edits the rules and sees a rebuild |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
 ## Revision 6 (2026-11-14, ch-bsd r4 + L67) {#rev-6}
 
 L67 (lead, dev master `a3a459b`) amends L61 S3: its "rank last at the walkers" contradicted the
@@ -453,7 +483,7 @@ derivation exclusion the walkers read.
 | B1 (walker rows unreachable; AC-5 walker assertions could not hold; operational seeds dropped) | [[#r2]]: walker rows "unreachable: excluded by the adjacency; the site's own check is deleted"; rank-last for the name-matched legs only; [[#r3]] scoped to those legs; AC-5 walk-output assertion, mutation `build_adjacency(exclude_operational=False)`, the match-leg injection of `p`; the ADR-0003 line and the memory text match |
 | L67's code check of USEFUL's `rel:` channel | it reads links, not the adjacency (`graphread.py:42-52` → `query.py:273-302`, `load_bitmap`). The check found the channel's query backwards; [[#r4]] now asks `rmx neighbors <S>` from the source node |
 | S1 (a memdir copy keeps the live slug) | [[#r4]] per-build slugged copies; `build.py` prints and asserts the resolved root, exiting before any write |
-| M1 (disk adjacency cache key) | [[#r1]] `OPERATIONAL_RULES_VERSION`; [[#r2]] `cached_adjacency` row; AC-6 on-disk leg |
+| M1 (disk adjacency cache key) | [[#r2]] `cached_adjacency` row; AC-6 on-disk leg (the key itself is revision 7's code hash) |
 | M3 (AC-7's BEFORE mutation had no fixture) | AC-7 BEFORE-divergent / AFTER-identical query, the printed verdict |
 | M4 (brief open item) | [[#open-items]] closed by L65 |
 
@@ -492,6 +522,9 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 - **Revision 6** answers r4 under L67: walkers inherit the exclusion, rank-last is scoped to the
   name-matched legs, per-build slugged memdir copies, the rules version keys the adjacency caches,
   and the `rel:` channel is queried from its source node.
+- **Revision 7** answers r5: `build.py`'s guard resolves and asserts before bridging (AC-13),
+  the `rel:` channel draws only anchored sources with an explicit linkage and limit, and the
+  adjacency caches key on the `pagerank` pass's code hash.
 {#history-revs}
 
 ## Appendix: the superseding memory's text {#appendix-memory}
