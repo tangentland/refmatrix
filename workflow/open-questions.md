@@ -26,12 +26,13 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session f0521bff (2026-11-13) {#session-f0521bff}
 
-Next id: **Q9**.
+Next id: **Q10**.
 
 ### Open {#open}
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q9 | 2026-11-13 | plan-10 task 10.4 silences scan-prompt and the per-prompt recall on non-human turns (agent messages, task notifications, bus). Should `rmx curator status` — the second command in the per-prompt hook, up to 500 B every prompt — also go silent on them? It needs the hook envelope plumbed into that command, so it would be a small follow-on to 10.4. | (a) yes, follow-on to 10.4; (b) no, keep it on every prompt | open |
 
 ### Answered {#answered}
 
