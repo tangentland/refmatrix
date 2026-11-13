@@ -26,12 +26,13 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session f0521bff (2026-11-13) {#session-f0521bff}
 
-Next id: **Q14**.
+Next id: **Q15**.
 
 ### Open {#open}
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q14 | 2026-11-13 | How should hook output live within the 9.5k hard limit (25.1 rev 8)? Options: clamp; rank-and-pack (today); degrade ladder (full → lead excerpt → pointer → names line); one budget across producers; spill to a pull page; defer; shrink at source. | (a) degrade ladder + spill-to-pull, clamp as a counted safety net; (b) clamp only (rev 8 as written); (c) another combination | open |
 
 ### Answered {#answered}
 
