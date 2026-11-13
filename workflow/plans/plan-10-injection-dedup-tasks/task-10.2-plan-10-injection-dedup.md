@@ -209,6 +209,9 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
         result is reported as INCONCLUSIVE, with no default change.
      2. **Bytes.** If `dedupe` cuts bytes per human prompt by less than 30%, there is no default
         change: the run does not confirm `A+dedupe` as the default, and the result is reported.
+        Dedupe stays ON. It ships on by default (`A+dedupe` outside any period) because the user
+        chose names-only dedupe "now" in Q13, and this row never flips it to `A+full` (lead
+        ruling, 2026-11-13).
      3. **Used rate (only when bytes cut ≥ 30%):**
         - within −5% of `full` (or above) → keep;
         - 5-15% below → the user decides;
