@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-20
-  updated: 2026-11-11
+  updated: 2026-11-13
 ---
 
 # Task 24.6: context and observation move in {#root}
@@ -18,7 +18,7 @@ metadata:
 > loudness and the subagent / `-p` probes added per ch-bsd s5; `refmatrix.injected` /
 > `refmatrix.delivered` per the user's question of 2026-10-20 on `$.state`; revised for ch-bsd r2,
 > [[#rev-r2]]; r5 and r6 (2026-11-11) align the tool observation with task 21.5, [[#rev-r5]],
-> [[#rev-r6]]).
+> [[#rev-r6]]; r7 (2026-11-13) follows 21.5 rev 3, [[#rev-r7]]).
 > Depends on: [[task-24.2a-hook-verbs-explicit-session]] (every verb this task calls),
 > [[task-24.5-mod-core]] (handshake, routing, state contract, outbox, timers),
 > [[task-24.0-hook-cost-baseline]] (its before window closed before this deploys; its row schema).
@@ -133,7 +133,13 @@ never fired (unprobed). {#event-map-lead}
    mod's events carry exactly the shell hook's fields: `t`, `t_start` (from the awaited
    `tool-pre`'s park), `tool`, `cwd`, `tool_use_id`, `origin` (`agent:<agentId>` when
    `agent_id` is given, else `parent`: the mod knows its loop, 21.5 D13, 19.0 R2's field), and
-   the capped `input_path` / `pattern` / `command` / `prompt` with `input_truncated`. It adds
+   the capped `input_path` / `pattern` / `command` / `prompt` / `args` (an `mcp__*` tool's
+   string arguments, 21.5 D17) with `input_truncated`. **Every tool-call line takes them (r7):**
+   `tool-pre`'s park stores the builder's fields, so a call the next turn sweeps as `abandoned`
+   keeps its `origin`, `tool` and `tool_use_id` (21.5 D14); and a Bash git milestone's `git`
+   line, which 24.2a R3's shared observe writes with its own `terse` and diffstat `refs`, takes
+   every other field from the builder, so 21.5 matches it on `command`, never on the diffstat
+   (21.5 R1, R3). It adds
    `result_mentions` = the `mentions` as received, RAW: no `delivered_in_session` call and no
    other read of the event files (d6). It emits NO `used` event and adds no evidence kind: 21.1
    R12's "no `used` from a hook" holds for the mod as well, and tool use of a delivered item is
@@ -213,6 +219,15 @@ never fired (unprobed). {#event-map-lead}
      Agent `name` leg for a delivered memory named in that prompt.
    - **MCP.** An `mcp__refmatrix__rmx_context` call reaches the ring as ONE event with that
      `tool`; 21.5's report counts it under `skipped_explicit_tool_calls` and credits nothing.
+     An `mcp__refmatrix__rmx_grep` call whose pattern names a delivered item reaches the ring
+     with `args`, and 21.5's report credits it under `mcp_name` (r7; 21.5 D17).
+   - **Git (r7).** A main-loop Bash `git commit` reaches the ring as ONE `git` line carrying
+     `t_start`, `tool: "Bash"`, `cwd`, `command`, `tool_use_id` and `origin: "parent"` beside
+     its diffstat `refs`.
+   - **Swept (r7).** A subagent's `tool-pre` (event with `agentId: "a1"`) whose post-observe
+     never arrives is swept at the next `prompt.submit` as ONE `abandoned` line carrying
+     `origin: "agent:a1"`, `tool` and `tool_use_id`, and 21.5's report counts it under
+     `subagent_tool_events`.
    - **Subagent.** A subagent's tool call (event with `agentId: "a1"`) is observed with
      `origin: "agent:a1"`, and 21.5's report counts it under `subagent_tool_events`.
    - The tool's result reaches the model unchanged in every case.
@@ -360,3 +375,24 @@ Cost of observing every tool: one more `tool-pre` / `tool` observe pair per Agen
 each an append through the daemon; the tool's result is unchanged and a failed observe is an
 outbox entry, never a failed call (R3).
 {#rev-r6-cost}
+
+## Revision r7 (2026-11-13, 21.5 spec rev 3) {#rev-r7}
+
+rel: derives-from -> [[bsd-task-21.5-spec-r2-540ab50]]
+rel: depends-on -> [[task-21.5-tool-used-signal#r1]]
+rel: related-to -> [[task-19.0-stm-cluster-hygiene#requirements]]
+
+ch-bsd's r2 review of 21.5 rev 2 found two gaps in the ring fields this task's observe writes
+through 21.5's ONE builder, and one in the MCP leg. 21.5 rev 3 closes them on its side
+([[task-21.5-tool-used-signal#rev-3]]); r7 makes the mod's path match. The decisions were made
+by the lead as the user would.
+
+| item | change | anchor |
+|---|---|---|
+| 21.5 r2 s-1: `git` lines carry no builder fields and match on a diffstat | the git-milestone line takes the builder's fields (its own `terse` and diffstat `refs` kept); 21.5 matches it on `command` only | [[#r4]], [[#ac-3]] |
+| 21.5 r2 m-3: a swept call loses its fields | `tool-pre`'s park stores the builder's fields; the swept `abandoned` line carries them, `origin` included | [[#r4]], [[#ac-3]] |
+| 21.5 r2 m-5: every `mcp__refmatrix__` tool skipped | the builder records an `mcp__*` tool's string arguments as `args`; 21.5 skips only R12's three and matches the others under `mcp_name` | [[#r4]], [[#ac-3]] |
+
+No change to the event map, the decisions table, or what the mod emits: still no `used`, no
+delivered-set read at observe time (d6).
+{#rev-r7-note}

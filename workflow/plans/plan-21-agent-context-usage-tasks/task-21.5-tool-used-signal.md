@@ -8,21 +8,23 @@ metadata:
   status: pending
   plan: plan-21-agent-context-usage
   created: 2026-11-11
-  updated: 2026-11-11
-  revision: 2
+  updated: 2026-11-13
+  revision: 3
 ---
 
 # Task 21.5: a tool-level `used` signal {#root}
 
 > Plan: [[plan-21-agent-context-usage]]
-> Status: Pending. Rev 2 (2026-11-11) answers ch-bsd spec review r1 (DIRTY 18) and its addendum
-> against 24.6 r5 ([[#rev-2]]). It needs a spec re-review before it can be approved.
+> Status: Pending. Rev 2 (2026-11-11) answered ch-bsd spec review r1 (DIRTY 18) and its addendum
+> against 24.6 r5 ([[#rev-2]]). Rev 3 (2026-11-13) answers spec review r2 (DIRTY 14, NO-GO on
+> b-1: the Bash leg re-opened the clone leg D12 rules out) and re-runs [[#why-data]] under the
+> fix ([[#rev-3]]). It needs a spec re-review, and the user's OD-4 / OD-5, before approval.
 > Wave: now. The user prioritised it on 2026-11-11, after reading `rmx telemetry --agent-usage`.
 > Depends on: 21.1 (completed: the ONE recall-event schema, `emit_recall_events`,
 > `delivered_in_session`, R12's three explicit evidences, the `--agent-usage` report), and 23.0
 > (completed: the shared test sandbox).
 > Touches the interfaces of 19.0 R2 and 19.2 (pending), 19.6 (pending), 24.6 (pending; amended
-> to r6 in the same change as this revision) and 25.1 (pending). [[#open-for-user]] lists what
+> to r6 with rev 2 and to r7 with rev 3) and 25.1 (pending). [[#open-for-user]] lists what
 > still needs the user.
 
 rel: part-of -> [[plan-21-agent-context-usage]]
@@ -37,6 +39,7 @@ rel: related-to -> [[task-25.1-recall-hook-byte-budget]]
 rel: related-to -> [[task-24.0-hook-cost-baseline]]
 rel: derives-from -> [[bsd-plan19-21-spec-rereview-32dde06]]
 rel: derives-from -> [[bsd-task-21.5-spec-r1-15e8f64]]
+rel: derives-from -> [[bsd-task-21.5-spec-r2-540ab50]]
 rel: reinforces -> [[feedback_no_silent_failures]]
 rel: reinforces -> [[feedback_go_no_go_ranges_not_predrop]]
 
@@ -59,38 +62,68 @@ needs, records the item's file on each event, and joins the two at report time. 
 event, and it does not reopen R12's hook rule.
 {#why-body}
 
-### What the data says (rev 2 prototype) {#why-data}
+### What the data says (rev 3 re-run) {#why-data}
 
 r1's review found three legs dead on contact with a 40-line join over scratch copies
-([[bsd-task-21.5-spec-r1-15e8f64#imp-prototype-the-join]]). Rev 2's join was re-run the same way
-before this text was written: APFS clones of this project's `recall-events.jsonl`, `query.log`,
-`stm/*.jsonl` and `catalog.read.duckdb`, plus the global events file, under a `mkdtemp()` root,
-deleted afterwards. Window 2026-11-10T00:00Z to the copy (2026-11-11 ~13:30 local). Only counts are
-recorded; no prompt, command or body was printed. The prototype is rough (no `t_start`, legacy
-ordering only), so these numbers show direction, not the shipped result.
+([[bsd-task-21.5-spec-r1-15e8f64#imp-prototype-the-join]]); r2's found that rev 2's Bash leg
+credited clone work through its `cwd` fallback ([[bsd-task-21.5-spec-r2-540ab50#b-1]]). So rev 3's
+join was re-run, before this text was written, over fresh read-only APFS clones (`cp -c`, then
+`chmod a-w`) of this project's `recall-events.jsonl`, `query.log`, `stm/*.jsonl` and
+`catalog.read.duckdb`, plus the global events file and the GLOBAL `catalog.read.duckdb` ([[#r10]]),
+under a `mkdtemp()` root, deleted afterwards. Window 2026-11-10T00:00Z to 2026-11-11 ~13:30 local
+(rev 2's window). Only counts were printed; no prompt, command or body. Each row gives rev 2's
+rules on the same clones (which reproduce r2's re-derivation exactly) and rev 3's rules: the Bash
+base directory ([[#d15]]), git lines matched on their command only ([[#r3]]; r2 s-1), legacy Bash
+paths from `detail` as well as the capped `refs` (r2 m-4), and global events resolved against the
+global snapshot (r2 s-2). The prototype is still legacy-ordered (no `t_start`, no `origin` on any
+line), so the numbers show direction, not the shipped result.
 {#why-data-method}
 
-| measure | count |
-|---|---|
-| prompts on the prompt clock ([[#r4]]) / ring `input` lines | 95 / 82 |
-| prompts the clock holds with a prompt-recall row but no scan row | 4 |
-| delivered events (project file + 6 from the global file for this root) / `precompact` gated | 2,440 / 20 |
-| delivered units ([[#d7]]) over the remaining 2,420 events | 2,144 |
-| prompt-time deliveries anchored to their own prompt by `query_id` | 2,366 of 2,366 (no anchor race) |
-| delivered items whose path came from `Entity.path` / a memory's `source_path` / a grep-floor name | 1,582 / 396 / 45 |
-| delivered items with no path: entity has none / memory has no `source_path` | 293 / 104 |
-| credited units: scan_prompt / prompt_recall / recall (agent) | 57 / 1 / 4 |
-| of those, `prior_touch` (the file was touched before the delivery) | 44 |
-| credited units with no prior touch (the headline numerator, [[#d8]]) | 18 |
-| `lag_turns` of the first match: 0 / 1 / 2 / `>W` | 40 / 11 / 11 / 63 |
-| credited strata: Bash `bash_path` / Bash `bash_name` / Read, Edit, Write `path` | 35 / 27 / 0 |
-| Read / Edit / Write ring events: under this project / under `/Volumes/littlebig/` / elsewhere | 14 / 269 / 65 |
-| ring tool events: Bash / Read / Write / Edit / Grep, Glob, Agent, `mcp__*` | 3,475 / 134 / 109 / 105 / 0 |
-| control units ([[#r7]]) / touched | 722 / 6 |
+| measure | rev 2 rules | rev 3 rules |
+|---|---|---|
+| prompts on the prompt clock ([[#r4]]) / ring `input` lines | 95 / 82 | same |
+| prompts the clock holds with a prompt-recall row but no scan row | 4 | same |
+| delivered events (project file + 6 from the global file for this root) / `precompact` gated | 2,440 / 20 | same |
+| delivered units ([[#d7]]) over the remaining 2,420 events | 2,144 | same |
+| prompt-time deliveries anchored to their own prompt by `query_id` | 2,366 of 2,366 | same |
+| eligible events with a path from `Entity.path` / a memory's `source_path` / a grep-floor name | 1,581 / 396 / 45 | 1,581 / 401 / 45 |
+| eligible events with no path: term concept / memory without `source_path` / id not in its snapshot (`path_unresolved`) | 158 / 98 / 142 | 158 / 99 / 136 |
+| the 6 global-scope deliveries (5 ids): ids found in the project snapshot / in the global snapshot | 0 / not read | 0 / 5 |
+| Bash + git ring events (3,451 Bash, 474 git) | 3,925 | same |
+| of those: with a simple command based outside the project / on an unknown base / wholly inside | not computed | 2,897 / 146 / 901 |
+| Bash refs counted `refs_outside_project` / `bash_base_unknown` / git diffstat refs no longer matched / Bash lines at the 8-ref cap | 0 / 0 / 0 / not counted | 8,022 / 329 / 876 / 458 |
+| credited units: scan_prompt / prompt_recall / recall (agent) | 59 / 1 / 4 (64) | 30 / 1 / 4 (35) |
+| of those, `prior_touch` (the file was touched before the delivery) | 46 | 17 |
+| credited units with no prior touch (the headline numerator, [[#d8]]) | 18 | 18 |
+| credited strata: Bash `bash_path` / Bash `bash_name` / Read, Edit, Write `path` | 35 / 29 / 0 | 13 / 22 / 0 |
+| headline strata: `bash_path` / `bash_name` | 11 / 7 | 10 / 8 |
+| credits whose command names a `/Volumes/littlebig/` path | 38 | 6 |
+| units with a later matching call: its first match at lag 0 / 1 / 2 / `>W` | 46 / 9 / 9 / 34 (98) | 27 / 3 / 5 / 21 (56) |
+| Read / Edit / Write refs: under this project / under `/Volumes/littlebig/` / elsewhere | 14 / 269 / 65 | same |
+| ring tool events: Bash / Read / Write / Edit / Grep, Glob, Agent, `mcp__*` | 3,451 (+474 git) / 134 / 109 / 105 / 0 | same |
+| control units ([[#r7]]), keys and files never delivered in the session / touched | 723 / 6 | 723 / 4 |
+| control units under R7's per-call rule (never delivered before `T`) / touched | not computed | 1,308 / 4 |
 
-Three facts follow. The Bash legs are the whole signal at present. Most Read/Edit/Write calls in
-this project's sessions touch paths under `/Volumes/littlebig/`, not this tree, so they cannot
-match (counted, [[#d12]]). And most credits are prior-touch, which is why the headline excludes them.
+**b-1 alone.** With only the base-directory rule applied (git refs still matched, no `detail`
+paths, global events against the project snapshot): 37 credited, 20 prior-touch, 17 headline.
+s-1 alone on top of it removes 4 credits (33 / 17 / 16); the `detail` paths add 2 (39 / 20 / 19).
+{#why-data-b1-alone}
+
+**Why the headline did not move.** 8 of rev 2's 18 headline units are gone: 7 were clone
+commands (5 `bash_path`, 2 `bash_name`) and 1 a git diffstat. 8 others joined: 7 had been
+`prior_touch` only because a clone command touched the same relative path before the delivery,
+and 1 is a `detail` path past the 8-ref cap. 10 of the 18 are the same units. So the rate is
+unchanged by coincidence, and its composition is not.
+{#why-data-headline}
+
+Four facts follow. Only the Bash legs produce at present, and nearly three quarters of the
+ring's Bash calls (2,897 of 3,925) run at least one simple command outside this tree, so the
+base-directory rule ([[#d15]]) is what makes the Bash legs mean "this project". Most
+Read/Edit/Write calls in this project's sessions touch paths under `/Volumes/littlebig/`, not
+this tree, and cannot match (counted, [[#d12]]). About half the credits are still prior-touch, which is why the headline excludes them.
+And the headline rate is small: 18 of 2,144 units (0.8%) against a control of 4 of 723 (0.6%), so
+on this window the lift is within noise and [[#r12]]'s labelled sample, not this table, decides
+whether the signal is worth counting.
 {#why-data-reading}
 
 ## Decisions this task carries {#decisions}
@@ -194,11 +227,11 @@ match (counted, [[#d12]]). And most credits are prior-touch, which is why the he
      from the most recent delivering prompt at or before `T`'s prompt. A Bash touching two
      delivered files credits two units.
    - The report prints `units` and `anchors_in_units` beside each other, so the collapse is
-     visible. The prototype gives 2,420 eligible events in 2,144 units.
+     visible. The re-run gives 2,420 eligible events in 2,144 units ([[#why-data]]).
 8. **D8: the headline excludes prior-touch; both numbers are printed (m-7).** {#d8}
    - A file the agent touched before the delivery and touches again after it is weak evidence
-     that the delivery caused the second touch. In the prototype, 44 of 62 credited units are
-     prior-touch.
+     that the delivery caused the second touch. In rev 3's re-run, 17 of 35 credited units are
+     prior-touch (46 of 64 under rev 2's rules, most of them made prior by clone commands).
    - **Lead decision.** `rate_headline = used_headline / eligible_units`, where `used_headline`
      counts units used explicitly (R12) or credited by a tool call with `prior_touch = no`.
      `rate_incl_prior` (prior-touch credits included) is printed on the same line. Neither is
@@ -231,7 +264,9 @@ match (counted, [[#d12]]). And most credits are prior-touch, which is why the he
     - This task's report counts ring events that carry the field (`result_mentions_present`)
       and does not match on it. A `match_on: tool_result` leg that checks those names against
       the delivered events at report time joins [[#r3]] only after it is measured against
-      [[#r12]]'s bands, in its own task.
+      [[#r12]]'s bands. That leg is task 21.6, filed with acceptance criteria as a plan-21 task
+      row and a deferral-registry row ([[plan-21-agent-context-usage#tasks]],
+      [[deferral_registry#registry]]); its trigger is 24.6 R4 shipping the field (r2 s-5).
 11. **D11: the report resolves paths against a logical root (s-4).** {#d11}
     - The ring stores no `root`; pre-task Bash lines store no `cwd`; and R8's global-file filter
       compares each event's recorded `root` with the reader's. Run against a clone (AC-15), the
@@ -239,18 +274,22 @@ match (counted, [[#d12]]). And most credits are prior-touch, which is why the he
       touches in r1's prototype were Bash) and the global filter returns nothing.
     - **Decision.** `agent_usage_report(root, *, logical_root=None, ...)`: `logical_root` defaults
       to `root`. It is the root the logs were WRITTEN for. The global filter compares
-      `norm_path(event.root)` with `norm_path(logical_root)`; a relative Bash ref with no `cwd`
-      resolves against `logical_root`'s parent (the project dir), counted `cwd_fallback`. The
+      `norm_path(event.root)` with `norm_path(logical_root)`. A Bash line with no `cwd` STARTS
+      at `logical_root`'s parent (the project dir), counted `cwd_fallback`; that is only the
+      start: a `cd`, `pushd` or `git -C` in the command moves the base ([[#d15]], r2 b-1). The
       files are read from `root`. Production never passes it; AC-15 passes the live root's path
       as a string and opens nothing under it.
 12. **D12: paths outside the project are counted, not matched.** {#d12}
-    - In the prototype, of 348 Read/Edit/Write events, 14 touched this project, 269 a path under
-      `/Volumes/littlebig/` (where this project's isolated write work runs, in
+    - In the re-run ([[#why-data]]), of 348 Read/Edit/Write refs, 14 touch this project, 269 a
+      path under `/Volumes/littlebig/` (where this project's isolated write work runs, in
       `<project>-<worker>` clones) and 65 somewhere else. A clone's copy of a file is a different
       path from the delivered item's. Which loop issued those calls was not measured (no ring
       line carries `origin` yet).
-    - **Decision.** No clone or repo-relative leg. Tool-event refs outside `logical_root`'s
-      project dir are counted per tool (`refs_outside_project`), so the gap is visible. A
+    - **Decision.** No clone or repo-relative leg, on ANY leg that resolves a path (r2 b-1: the
+      rule was first written for Read and came back through Bash's relative refs). Tool-event
+      refs outside `logical_root`'s project dir are counted per tool (`refs_outside_project`),
+      so the gap is visible. A Bash simple command, or a Grep / Glob call, whose base directory
+      is outside the project matches nothing, by path or by name ([[#d15]]). A
       repo-relative leg would need a "same repository" test and its own precision measurement.
       When `origin` exists ([[#d13]]), the report splits `refs_outside_project` by origin, which
       says whether a clone leg would mostly credit subagents (false by construction) before
@@ -280,6 +319,74 @@ match (counted, [[#d12]]). And most credits are prior-touch, which is why the he
     - **Decision.** The sweep passes the parked record's `t` as `t_start`. An abandoned call
       (hung, denied, killed) still credits: the agent acted on the file, whether or not the
       tool succeeded. Such credits are counted `credited_abandoned`.
+    - **The parked call keeps its fields (r2 m-3).** Rev 2's park record held only `terse`,
+      `refs` and a `detail` cut at 600 (`stm.py:1260`), so a swept call had no `tool`, `origin`,
+      `command` or `tool_use_id`, and an abandoned subagent call was credited as
+      `origin_unknown`. `Stm.inflight_begin` now stores the builder's `ToolEventFields` ([[#r1]])
+      in the park record, and the sweep writes them on the `abandoned` event, `origin` included
+      when the park knew it (envelope `agent_id`, or the mod's `origin_known`). These are a
+      superset of the park fields 19.0 R2 adds (`tool_use_id`, `tool_name` as `tool`); 19.0 adds
+      `transcript_path` and its input digest, and runs its ladder on a swept call whose park has
+      no `origin` ([[task-19.0-stm-cluster-hygiene#requirements]]). A park record written before
+      this task has none of the fields; its swept event is read as a legacy line ([[#r10]]).
+15. **D15: a Bash call's base directory comes from its command, not only the envelope (r2 b-1).**
+    {#d15}
+    - **The defect.** Rev 2 resolved a relative Bash ref against the envelope `cwd`, else
+      `logical_root`'s parent. The envelope `cwd` is the session's working directory, not the
+      directory a compound `cd X && …` runs in, and a subagent's cwd resets on every call. So
+      `cd /Volumes/littlebig/<clone> && sed -n 1,40p src/refmatrix/telemetry.py` credited the
+      PROJECT's `telemetry.py`: the clone leg [[#d12]] rules out, re-opened. Under rev 2's rules
+      38 of 64 credits came from commands naming a clone path, 32 of them a `cd` into one.
+    - **Decision (the fix r2 prescribes).** `telemetry.bash_segments(command, start) ->
+      list[BashSegment]` is the ONE parser. It splits the command into simple commands at
+      `&&`, `||`, `;`, `|`, newlines and parentheses (quoted text is not split). The start base
+      is the envelope `cwd` (a legacy line: `logical_root`'s parent, counted `cwd_fallback`). A
+      simple command `cd D` or `pushd D` sets the base for itself and every later simple
+      command (a relative `D` resolves against the current base; a bare `cd` is `$HOME`).
+      `git -C D …` sets the base for its own simple command only. A `D` that cannot be resolved
+      statically (`$VAR`, a backtick or `$(…)`, `cd -`) and `popd` make the base unknown.
+    - **What matches.** A relative ref resolves against its simple command's base; an absolute
+      ref is taken as is. A ref that lands inside the project matches under `bash_path`,
+      whatever the base (an absolute project path names a project file). A relative ref on a
+      base outside the project counts `refs_outside_project`; one on an unknown base counts
+      `bash_base_unknown`; neither matches. A name token matches under `bash_name` only in a
+      simple command whose base is inside the project. A Bash call with any simple command
+      whose base is outside the project or unknown is counted once in
+      `bash_names_outside_project` (its tokens there were not matched).
+    - **Why the name leg too (lead).** A name in a command run inside a clone is the same act
+      as a path there: the clone's copy of the symbol, run mostly by a worker that never saw the
+      delivery ([[#d13]]). Matching it would re-open the clone leg by name.
+    - **Grep and Glob (lead).** Their `path` input is their base (absent: `cwd`). Outside the
+      project they match nothing, counted `refs_outside_project`; the Grep `name` and Glob legs
+      apply only inside it.
+    - **Not a shell interpreter.** It does not expand variables, aliases or functions, follow
+      `source`, or undo a subshell's `cd` at `)`. What it cannot resolve it counts and does not
+      match, so its errors can only lower the rate, never credit a clone.
+    - **Measured** ([[#why-data]]): 2,897 of 3,925 Bash + git events run a simple command outside
+      the project, 146 on an unknown base. Credits fall from 64 to 35; credits from commands that
+      name a clone path fall from 38 to 6, each matching in a simple command based in the
+      project; the headline stays 18 with 8 units exchanged ([[#why-data-headline]]).
+16. **D16: R12's precision is measured on the population a consumer would count (r2 s-3).**
+    {#d16}
+    - Rev 2 drew "credited (U, T) pairs", so prior-touch credits (17 of 35 in rev 3's re-run, 46
+      of 64 under rev 2's rules) would make up much of a sample whose band gates a 19.2 column,
+      while [[#d8]]'s headline excludes them.
+    - **Decision (lead).** A consumer counts headline credits only: 19.2's `used_tool` column
+      ([[#d4]]) and [[#od-3]]'s drain write and count credits with `prior_touch = no`. So
+      [[#r12]]'s banded sample is drawn from headline credits. Prior-touch credits get their own
+      labelled stratum of up to 20 pairs, reported with its precision and never banded or
+      weighted, so the report still says what `rate_incl_prior` is made of.
+17. **D17: only R12's three explicit MCP tools are skipped; other `mcp__refmatrix__` tools match
+    by name (r2 m-5).** {#d17}
+    - Rev 2 skipped every `mcp__refmatrix__*` tool while a Bash `rmx grep` matched as Bash: two
+      policies for one act.
+    - **Decision (lead).** `mcp__refmatrix__rmx_context`, `mcp__refmatrix__rmx_memory_get` and
+      `mcp__refmatrix__rmx_focus_note` are R12's explicit evidences: skipped and counted
+      (`skipped_explicit_tool_calls`), as their Bash forms are. Every other
+      `mcp__refmatrix__*` tool matches under `mcp_name`: a whole token of its string arguments
+      equals the item's `name`, by the `bash_name` tokeniser and gate. R1 records those
+      arguments as `args`. Live from 24.6 R4 ([[#d6]]). Tools of other MCP servers stay
+      unmatched, counted per tool.
 
 ## Requirements {#requirements}
 
@@ -292,7 +399,18 @@ match (counted, [[#d12]]). And most credits are prior-touch, which is why the he
      hook and 24.2a's `rmx_focus_observe` (called by 24.6's mod) call the same code. It returns
      `terse`, `refs` and `detail` exactly as `_tool_event_fields` does today, plus the fields
      below. `cli.focus_hook` calls it; `cli._tool_event_fields` is removed, not kept as a shim.
-   - **A `tool` event gains:**
+   - **Every tool-call line goes through it (r2 s-1, m-3).** Three writers record a tool call,
+     and each takes the builder's fields: the `tool` line; the `git` line of the git-milestone
+     branch (`cli.py:2161-2180`), which keeps its own `terse` (subcommand + first output line)
+     and its diffstat `refs`, and takes every other field from the builder, so it carries
+     `t_start`, `tool: "Bash"`, `cwd`, `command`, `tool_use_id` and `origin`; and the sweep's
+     `abandoned` line, from the park record ([[#d14]]). The `reason` lines the git branch also
+     writes are not tool calls and take no fields.
+   - **The park record holds them.** `Stm.inflight_begin` stores the builder's
+     `ToolEventFields` (all but `t_start`) beside `t`, `terse`, `refs` and `detail`;
+     `inflight_end` returns them and `inflight_sweep` writes them on the `abandoned` event with
+     `t_start` = the parked `t` ([[#d14]]).
+   - **A tool-call line gains:**
      - `tool`: the envelope's `tool_name`;
      - `cwd`: the envelope's `cwd`;
      - `t_start`: the parked PreToolUse record's `t`, from `inflight_end`'s return value; null
@@ -303,8 +421,9 @@ match (counted, [[#d12]]). And most credits are prior-touch, which is why the he
        else `parent` when `origin_known` (the mod knows its loop); else no key;
      - the matcher's inputs, from `tool_input`: `input_path` (`file_path`, or Grep's `path`, or
        NotebookEdit's `notebook_path`), `pattern` (Grep / Glob), `command` (Bash), `prompt`
-       (Agent / Task). Each is capped at `stm.INPUT_FIELD_MAX = 2000` characters; a capped field
-       is named in `input_truncated` (a list) and counted by the report. Edit / Write bodies are
+       (Agent / Task), and `args` for an `mcp__*` tool (its string arguments as a JSON object,
+       [[#d17]]). Each is capped at `stm.INPUT_FIELD_MAX = 2000` characters; a capped field is
+       named in `input_truncated` (a list) and counted by the report. Edit / Write bodies are
        still dropped;
      - `result_mentions`: written only by 24.6's observe ([[#d10]]); reserved here.
    - **No extra file is opened and no extra read is made.** The fields ride the existing append.
@@ -321,11 +440,18 @@ match (counted, [[#d12]]). And most credits are prior-touch, which is why the he
        (the project dir the floor searched) joined with the name, when the name contains `/`
        (45 of 45 such names in the window resolve there); legacy events take `logical_root`'s
        parent at report time, counted `path_from_name`;
-     - every other item: the entity's `Entity.path`, or null (a term concept).
+     - every other item: the entity's `Entity.path`, or null (a term concept). A relative
+       `Entity.path` (94 entities on the snapshot) is joined to the store root's parent, the
+       tree it was indexed from, never resolved against the emitter's cwd (r2 m-6).
    - **The emitters already hold the item.** `context._item` / `bundle_items` (anchor, attached
      memory, group entries); `scan.py` through the context bundle; `telemetry.recall_item`
      (recall hits, through `Store.item_meta`, which gains `e.path` and the memory's
      `metadata->>'source_path'` by a left join, both in `context.ITEM_META_FIELDS`).
+   - **The plumbing that filters item keys carries it (r2 m-6).** `context.annotate_items`
+     fills `path` and `source_path` alongside `partition` and `mtype` in its ONE catalog query
+     (its `fields` tuple, `context.py:1781`), and `telemetry._item_fields`
+     (`telemetry.py:1386`) passes `path`, so no emitter drops it on the way to
+     `emit_recall_events`.
    - R5's `malformed` rule, `_EVENT_REQUIRED` and `row_provenance` do not change.
 3. **R3: ONE matcher, `telemetry.tool_touches(tool_name, tool_input, cwd) -> ToolTouches`, plus
    a ring adapter (m-8, OD-4).** {#r3}
@@ -342,18 +468,33 @@ match (counted, [[#d12]]). And most credits are prior-touch, which is why the he
    |---|---|---|
    | Read, Edit, Write, MultiEdit, NotebookEdit | `path` | `norm_path` of `input_path` (or any `refs` entry on legacy lines) equals the item's `path` |
    | Grep | `path` | its `input_path` equals the item's `path` |
-   | Grep | `name` | a whole token of `pattern` equals the item's `name`; tokenised by 21.1 R12's `_NOTE_TOKEN_RE` and gated by `_matchable`, the focus-note matcher, not a new one |
-   | Glob | `glob` | the item's `path` basename appears literally in the pattern's last component, AND `fnmatch(path, pattern)` (`**/*.py` alone matches nothing) |
-   | Bash | `bash_path` | a `refs` path, resolved against `cwd` (else `logical_root`'s parent, counted `cwd_fallback`), equals the item's `path` |
-   | Bash | `bash_name` | a whole token of `command` (legacy: `detail`) equals the item's `name` (same tokeniser and gate) |
+   | Grep | `name` | its base ([[#d15]]: `input_path`, else `cwd`) is inside the project, and a whole token of `pattern` equals the item's `name`; tokenised by 21.1 R12's `_NOTE_TOKEN_RE` and gated by `_matchable`, the focus-note matcher, not a new one |
+   | Glob | `glob` | its base is inside the project, the item's `path` basename appears literally in the pattern's last component, AND `fnmatch(path, pattern)` (`**/*.py` alone matches nothing) |
+   | Bash (and `kind = git` lines) | `bash_path` | a path in `command` (legacy: `detail`, plus the `refs` of a `tool` line), resolved against its simple command's base ([[#d15]]), lands inside the project and equals the item's `path` |
+   | Bash (and `kind = git` lines) | `bash_name` | in a simple command whose base is inside the project, a whole token equals the item's `name` (same tokeniser and gate) |
    | Agent, Task | `name` | a whole token of `prompt` equals the item's `name`. Live from 24.6 R4 ([[#d6]]) |
+   | `mcp__refmatrix__*` except R12's three | `mcp_name` | a whole token of `args` equals the item's `name` (same tokeniser and gate). Live from 24.6 R4 ([[#d17]]) |
    | any other tool | none | not matched; counted per tool name in `tool_events_unmatched_by_tool` |
 
-   - **Explicit calls are skipped.** Any tool whose name starts with `mcp__refmatrix__` (live
-     from 24.6 R4), and a Bash command whose first `rmx` invocation is `context`, `memory get`
-     or `focus note`. Those are R12's explicit evidences; matching them here would count one act
-     twice. They are counted (`skipped_explicit_tool_calls`) and never matched.
-   - **Other `rmx` commands match as Bash**, including `rmx grep`, the shim's target.
+   - **Where the Bash paths come from (r2 m-4).** `tool_touches` extracts paths from the whole
+     `command` it is given with `stm._PATH_RE`, with no count cap (the ring's `command` is
+     capped at 2,000 characters, named in `input_truncated`). It never reads `refs`: the shell
+     hook's `refs` are capped at 8 (`cli.py:2027`; 458 of 3,451 live Bash lines sit at the cap).
+     A legacy `tool` line has no `command`: `ring_tool_call` gives `detail` as the command
+     (paths with their positions, so each finds its simple command) plus every `refs` entry not
+     found in `detail`, resolved against the base at the end of `detail`; a line whose `refs`
+     are at the cap is counted `refs_capped`.
+   - **Git lines match on their command only (r2 s-1).** A `kind = git` line's `refs` are a
+     diffstat of `cwd` (else the project), not the paths the command names: a commit made in a
+     clone records the project repo's diffstat. So a git line matches on `command` (legacy:
+     `detail`, which the git branch fills with the verbatim invocation) and never on `refs`.
+   - **Explicit calls are skipped.** `mcp__refmatrix__rmx_context`,
+     `mcp__refmatrix__rmx_memory_get` and `mcp__refmatrix__rmx_focus_note` (live from 24.6 R4),
+     and a Bash command whose first `rmx` invocation is `context`, `memory get` or `focus note`.
+     Those are R12's explicit evidences; matching them here would count one act twice. They are
+     counted (`skipped_explicit_tool_calls`) and never matched.
+   - **Other `rmx` commands match as Bash**, including `rmx grep`, the shim's target; other
+     `mcp__refmatrix__` tools match under `mcp_name`, so one act has one policy ([[#d17]]).
    - **Memory items.** A memory's `path` is its `metadata.source_path` ([[#r2]]), so a Read of
      `memory/feedback_x.md` is a `path` match. Its `name` matches under the name rules.
    - **`result_mentions` is ignored** ([[#d10]]).
@@ -375,7 +516,11 @@ match (counted, [[#d12]]). And most credits are prior-touch, which is why the he
      A tool event takes `idx(T.t_start)` (or `T.t`, counted `order_from_end`).
    - **Credit conditions.** `T` can credit a unit `U` only when all of these hold:
      - same session (the ring union below);
-     - `T.t_start` is strictly after the unit's first delivery `ts` (UTC, R10);
+     - `T.t_start` is strictly after the unit's first delivery `ts` (UTC, R10), decided by ONE
+       pure function, `telemetry.tool_after_delivery(t_start, d_ts, *, t_start_exact,
+       d_ts_exact) -> bool | None`: `True` when strictly after, `False` when at or before,
+       `None` (counted `order_ambiguous`) for the legacy tie below. Every ordering in this
+       task calls it (r2 m-1: equality is only testable through the function);
      - `0 ≤ lag_turns = idx(T) − idx(U) ≤ W`, with `W = telemetry.TOOL_USED_WINDOW_TURNS = 2`;
      - `T`'s `origin` is `parent` or absent ([[#d13]]).
    - **Reads before delivery never count.** A match whose `T` precedes the unit sets
@@ -422,7 +567,11 @@ match (counted, [[#d12]]). And most credits are prior-touch, which is why the he
    - per-distinct-file: `distinct_used / distinct_eligible`;
    - the control and the lift ([[#r7]]);
    - the prompt clock line: prompts, prompt-clock rows by kind, prompts without a scan row,
-     ring `input` lines, `prompt_unanchored`, `prompt_rows_legacy`.
+     ring `input` lines, `prompt_unanchored`, `prompt_rows_legacy`;
+   - an **`any channel` row** (r2 m-8): credited units collapsed across channels to
+     `(session, prompt, file or key)`, over eligible units collapsed the same way, so a file
+     that scan_prompt and prompt_recall both delivered for one prompt and one Read used counts
+     once there and once under each channel.
 
    Deliveries come from the store's own file AND the global file. A global event is read when
    `norm_path(event.root) == norm_path(logical_root)` (m-5; through `row_provenance` first, so
@@ -435,14 +584,19 @@ match (counted, [[#d12]]). And most credits are prior-touch, which is why the he
      session has no ring file under this root, for example after `rmx focus clear`) or
      `precompact_gated` (d5d), at the branch where it is admitted or turned away. `eligible` is a
      counter at the admission point, never `delivered` minus the others. The report asserts
-     `delivered = eligible + no_session + no_ring + precompact_gated`; a mismatch prints
-     `identity-broken` and the report exits 1.
+     `delivered = eligible + no_session + no_ring + precompact_gated`. A mismatch is loud (r2
+     m-7): `agent_usage_report` raises `telemetry.UsageIdentityBroken`, which carries the
+     report's lines and an `identity-broken delivered=<n> eligible=<n> …` line; `cli.telemetry`
+     (`cli.py:7795`, which today only echoes the returned lines) catches it, echoes the lines,
+     writes the `identity-broken` line to stderr and exits 1. The return type stays
+     `list[str]`, so 21.1's callers and tests are unchanged.
    - **Every other count, printed even when 0**, on one `used-by-channel exclusions` line:
      `no_path`, `memory_no_source_path`, `path_from_catalog`, `path_unresolved`,
      `path_from_name`; `prompt_unanchored`, `prompt_rows_legacy`, `order_ambiguous`,
      `order_from_end`, `cwd_fallback`; `ring_unparseable`, `tool_from_terse`,
-     `input_truncated`, `detail_truncated`; `skipped_explicit_tool_calls`,
-     `tool_events_unmatched_by_tool`, `refs_outside_project`; `origin_unknown`,
+     `input_truncated`, `detail_truncated`, `refs_capped`; `skipped_explicit_tool_calls`,
+     `tool_events_unmatched_by_tool`, `refs_outside_project`, `bash_base_unknown`,
+     `bash_names_outside_project` ([[#d15]]); `origin_unknown`,
      `subagent_tool_events`, `origin_unattributed`; `credited_abandoned`;
      `result_mentions_present`; `explicit_ref_unresolved`.
 10. **R10: legacy data (the window the user already asked about).** {#r10}
@@ -451,11 +605,21 @@ match (counted, [[#d12]]). And most credits are prior-touch, which is why the he
       `memory_content.metadata.source_path`), using the normal CLI read path, never a `Store()`
       open on the active slot. Counted `path_from_catalog`; an id not found is counted
       `path_unresolved` and falls back to the name rules.
+    - **A legacy event resolves against the store that minted its id (r2 s-2).** A
+      `scope = global` event's `entity_id` belongs to the GLOBAL catalog, so it is resolved
+      against the global store's read snapshot (`derive_tool_used`'s `global_root`, default
+      `telemetry._global_root_default()`), through the same read path pointed at that root;
+      never against the project snapshot, where an id collision would give a confident wrong
+      path. A global id not found there is `path_unresolved`. On the re-run the 5 ids of the 6
+      global deliveries are all in the global snapshot and none in the project's
+      ([[#why-data]]).
     - **Ring lines without `t`** are ordered by their local `ts`, converted with `time.mktime`
       (ties per [[#r4]]).
     - **Ring lines without `tool`** take the tool from `terse`'s first token, counted
       `tool_from_terse` (m-3). `kind = git` lines are Bash calls (the git-milestone branch of
-      the tool hook) and are read as `tool = Bash`.
+      the tool hook) and are read as `tool = Bash`, with `detail` as the command and their
+      diffstat `refs` ignored ([[#r3]]). Post-task git lines carry `tool` and `command` from the
+      builder ([[#r1]]).
     - **Query.log rows without `t`** start at `ts − latency_ms` ([[#r4]]).
     - **What this gives.** A number for 2026-11-10 onward on the day it ships, marked
       `legacy-ordered=<n>`, so it is not read as exact.
@@ -464,12 +628,17 @@ match (counted, [[#d12]]). And most credits are prior-touch, which is why the he
     and makes no `delivered_in_session` call. R12's sentence "a `hook` call never emits `used`"
     stays true without an exception clause. {#r11}
 12. **R12: pre-registered precision bands (s-6), before any consumer counts it.** {#r12}
-    - **The source window.** Credited `(U, T)` pairs from the 21 days after the deploy sha
-      recorded in the implementation summary. Under 50 pairs at day 21: the window extends to
-      day 42. Still under 50: the result is **report-only** (the default; no band is read) and
+    - **The population (r2 s-3, [[#d16]]).** The banded sample is drawn from headline credits
+      (`prior_touch = no`), the credits a consumer would count. Every count below (the 50, the
+      80, the strata) is of headline pairs. Prior-touch credits are a separate, report-only
+      stratum: up to 20 pairs drawn uniformly, labelled the same way, their precision printed,
+      never banded, dropped or weighted.
+    - **The source window.** Credited headline `(U, T)` pairs from the 21 days after the deploy
+      sha recorded in the implementation summary. Under 50 pairs at day 21: the window extends
+      to day 42. Still under 50: the result is **report-only** (the default; no band is read) and
       R12 re-runs on the next 21-day window.
-    - **The draw.** All pairs when there are at most 80; otherwise uniform within strata
-      (`tool` × `match_on`), each stratum taking `min(available, max(10, its proportional
+    - **The draw.** All headline pairs when there are at most 80; otherwise uniform within
+      strata (`tool` × `match_on`), each stratum taking `min(available, max(10, its proportional
       share))`, at least 50 in total. The pair list's sha256 is committed and frozen.
     - **The labels.** Per pair, from the local transcript (d8f: raw text stays local; labels,
       the hash and the counts are committed): "the delivery plausibly caused the tool call"
@@ -516,7 +685,14 @@ with `mark_token`, so 23.0's end-of-run growth check attributes any leak to the 
 The ring and the events are produced by the REAL commands: `rmx focus hook --event
 tool-pre|tool|input` fed real-shaped envelopes on stdin, and `rmx scan-prompt` /
 `rmx memory recall --stdin-json` against a tmp store. No ring, event or query.log line is
-hand-written, except in AC-9 and AC-2b, which are about legacy lines. {#ac-producers}
+hand-written, except these, each because its producer is pre-task or not built by this task
+(r2 m-8): AC-2b's pre-task event and AC-9's hand-written rows (legacy shapes copied from a
+HEAD-era emitter's and hook's field sets, and edge rows no real producer writes on demand, each
+marked in AC-9's table); AC-7's legacy parity lines
+(pre-task); AC-14's `origin: "unattributed"` line (19.0 R2's value); AC-16's Agent line, AC-17
+(d)'s `prompt_id` rows and AC-18's `result_mentions` line (24.6's producers). Every
+hand-written line copies its producer's field set as that producer's spec states it.
+{#ac-producers}
 
 1. **AC-1 (R1): ring fields, one builder.** A `tool-pre` then `tool` envelope pair for a Read of
    `F` (with `cwd` and `tool_use_id` set) writes one ring `tool` line carrying `t`, `t_start`
@@ -524,17 +700,31 @@ hand-written, except in AC-9 and AC-2b, which are about legacy lines. {#ac-produ
    key. The same pair with `agent_id: "a1"` in the envelope writes `origin: "agent:a1"`. A Bash
    whose command is 2,500 characters writes `command` of 2,000 and `input_truncated:
    ["command"]`. A `tool` envelope with no prior `tool-pre` writes `t_start: null`. A call
-   parked and then swept writes `abandoned: true` with `t_start` = the parked `t`.
-   `cli._tool_event_fields` no longer exists, and `stm.tool_event_fields` is the only builder
-   (an import check). **RED at HEAD:** the line has none of the new fields; the builder is in
-   `cli`. {#ac-1}
+   parked and then swept writes `abandoned: true` with `t_start` = the parked `t`; the same
+   with `agent_id: "a1"` on the `tool-pre` envelope writes the swept line with `origin:
+   "agent:a1"`, `tool`, `tool_use_id` and `input_path` (r2 m-3). A Bash `git commit` pair, run
+   in a tmp repo, writes a `git` line carrying `t_start`, `tool: "Bash"`, `cwd`, `command` and
+   `tool_use_id` beside its diffstat `refs` (r2 s-1).
+   **One builder, not one import (r2 m-8).** (a) For each of the three tool-call writers (the
+   `tool` line, the `git` line, the swept line), the ring line's builder fields equal
+   `stm.tool_event_fields(...)` called on the same envelope, field by field. (b) A pass-through
+   spy on `stm.tool_event_fields` (it calls the real function and counts) sees exactly one
+   call per `tool-pre` and one per `tool` envelope. (c) An AST scan of `src/refmatrix/` finds
+   exactly one function that stores a value under the key `"input_truncated"` (a dict-literal
+   key or a subscript store), `stm.tool_event_fields`; an inline copy under another name fails
+   it. `cli._tool_event_fields` no longer exists.
+   **RED at HEAD:** the line has none of the new fields; the builder is in `cli`; the git line
+   has no `tool`. {#ac-1}
 2. **AC-2 (R2, D3): `path`, and `v` stays 1.** A real scan-prompt over a tmp store holding code
    file `F` writes delivered events for `F`'s symbols with `v == 1` and `path ==
    norm_path(F)`. A real `memory recall --stdin-json` over a tmp memory dir writes a
    `kind=memory` delivered event whose `path` is the memory file's `source_path`. A memory row
    with no `source_path` and a term concept each write the key with `path: null`. A grep-floor
-   item `src/x.py` writes the store root's parent joined with it.
-   `"path" in RECALL_EVENT_FIELDS_V1`. **RED at HEAD:** no `path` key; memories have no
+   item `src/x.py` writes the store root's parent joined with it. A code entity whose
+   `Entity.path` is relative writes the store root's parent joined with it, with the test's
+   cwd set elsewhere (r2 m-6). The scan-prompt case runs twice, once on a store root spelled
+   `/tmp/…` for a dir under `/private/tmp/…`: both write the same `path` (r2 m-8, the
+   `norm_path` mutation). `"path" in RECALL_EVENT_FIELDS_V1`. **RED at HEAD:** no `path` key; memories have no
    `Entity.path`. {#ac-2}
 3. **AC-2b (D3): the classifier and the existing funnel are untouched.** One events file holds a
    hand-written pre-task event (no `path` key, copied from a HEAD-era emitter's field set) and a
@@ -553,7 +743,10 @@ hand-written, except in AC-9 and AC-2b, which are about legacy lines. {#ac-produ
    delivery of `S` in prompt 2, and no later Read: `used_tool=0`. (b) As (a), plus a Read of
    `F` in prompt 2: `used_incl_prior=1`, `prior_touch=yes`, `used_headline=0`. (c) A Read of
    `F` whose `t_start` precedes the delivery's `ts` but whose PostToolUse lands after it: not
-   credited. **RED at HEAD:** no block; with an ordering mutation, (c) is credited. {#ac-4}
+   credited. (d) Through the pure function (r2 m-1): `tool_after_delivery(x, x, exact, exact)`
+   is `False`, `tool_after_delivery(x + 0.001, x, …)` is `True`, and a second-resolution pair in
+   the same second is `None`. **RED at HEAD:** no block, no function; with an ordering
+   mutation, (c) is credited. {#ac-4}
 6. **AC-5 (R4, D9): the window counts every prompt.** (a) A Read of `F` in the third prompt after
    the delivery credits nothing and lands in `lag >2`; in the second prompt after, it is
    credited. (b) An AMBIENT prompt (a real `focus hook --event input` and scan-prompt hook run
@@ -568,7 +761,7 @@ hand-written, except in AC-9 and AC-2b, which are about legacy lines. {#ac-produ
    credited, and the `any channel` row counts the file once. (d) Two Reads after one delivery:
    credited once. (e) One Bash touching delivered `F` and `G`: two units credited. **RED at
    HEAD:** no block. {#ac-6}
-8. **AC-7 (R3): each matcher leg, positive and negative.** {#ac-7}
+8. **AC-7 (R3, D15): each matcher leg, positive and negative.** {#ac-7}
    - Through the real hook: a Grep with `path=F` is credited; a Grep whose pattern is
      `used_events|other` is credited for the delivered name `used_events`; a Grep for `run`
      against a delivered name `run` is NOT credited (`_matchable`); Glob `**/telemetry.py` is
@@ -576,12 +769,36 @@ hand-written, except in AC-9 and AC-2b, which are about legacy lines. {#ac-produ
      src/x.py` with `cwd` = the project dir is credited `bash_path`; Bash `rmx context S` is
      counted in `skipped_explicit_tool_calls` and credits nothing; a Read of a memory's source
      file is credited for that memory.
+   - **The base directory (r2 b-1), each with `cwd` = the project dir, `src/x.py` delivered:**
+     - `cd <other-dir> && sed -n 1,40p src/x.py` is NOT credited and counts
+       `refs_outside_project=1` (the negative case r2 prescribes; `<other-dir>` is a tmp dir
+       holding its own `src/x.py`);
+     - `pushd <other-dir> && cat src/x.py` and `git -C <other-dir> diff src/x.py`: not
+       credited, each counted;
+     - `cd <other-dir> && grep -n x_symbol *.py` for a delivered name `x_symbol`: NOT credited
+       (`bash_names_outside_project=1`);
+     - `cd <other-dir> && cat <project>/src/x.py` (absolute project path): credited
+       `bash_path`;
+     - `cd <other-dir> && cd <project> && cat src/x.py`: credited (the later `cd` wins);
+     - `cd "$D" && cat src/x.py`: not credited, `bash_base_unknown=1`;
+     - a Grep with `path=<other-dir>` and pattern `x_symbol`: not credited, counted.
+   - **Git lines (r2 s-1).** A `git commit -m "touch x_symbol"` run in a tmp repo OUTSIDE the
+     project, whose diffstat names `src/x.py`, credits nothing by path (the diffstat is never
+     matched); the same commit run in the project credits `x_symbol` by `bash_name`.
+   - **Uncapped paths (r2 m-4).** A Bash command naming ten paths, the delivered one tenth,
+     is credited `bash_path` (the shell `refs` would have kept only eight).
    - Unit legs, labelled as such, because their producer is 24.6 R4 ([[#d6]]):
      `tool_touches("Agent", {"prompt": …}, cwd)` matches a delivered memory's name;
-     `tool_touches("mcp__refmatrix__rmx_context", …)` is `explicit`. The end-to-end test of
-     both is 24.6 r6 AC-3.
-   - `ring_tool_call` on a legacy line (no `tool`, `detail` only) gives the same matches as on
-     an R1 line for the same call.
+     `tool_touches("mcp__refmatrix__rmx_context", …)` is `explicit`;
+     `tool_touches("mcp__refmatrix__rmx_grep", {"pattern": "x_symbol"}, cwd)` matches under
+     `mcp_name` and is not `explicit` (r2 m-5). The end-to-end test of these is 24.6 r7 AC-3.
+   - **Legacy parity (r2 m-8).** `ring_tool_call` on a legacy line (no `tool`, `detail` only)
+     gives the same `ToolTouches.match` result as on an R1 line for the same call, for three
+     calls: a positive pair (a delivered path and name, both matched), a zero-match pair (no
+     delivered path or name), and a command over 600 characters whose delivered path sits past
+     character 600 and is its ninth path (so neither the cut `detail` nor the 8 `refs` hold it:
+     the legacy line misses it, counted `detail_truncated=1` and `refs_capped=1`; the R1 line
+     matches it). Parity is asserted where it holds, and the gap is counted where it does not.
 
    **RED at HEAD:** no matcher.
 9. **AC-8 (R6): explicit uses go to the delivering channel.** scan-prompt delivers `S`, then
@@ -589,21 +806,50 @@ hand-written, except in AC-9 and AC-2b, which are about legacy lines. {#ac-produ
    `scan_prompt used_explicit context_by_name=1`, not under `context`. A `used` event whose
    `ref_query_id` matches no delivered event in the window is counted `explicit_ref_unresolved`.
    **RED at HEAD:** the report lists it as `events context used: 1`. {#ac-8}
-10. **AC-9 (R9, R10): every exclusion is counted, and the identity is not tautological (s-7).**
-    {#ac-9}
-    - One fixture holds: a delivered event with `session: null`; one whose session has no ring;
-      a `precompact` delivery; a term concept with `path: null`; a pre-task event (no `path`
-      key) whose `entity_id` is in the tmp catalog (`path_from_catalog`) and one whose id is not
-      (`path_unresolved`); a legacy ring line without `t` tying `D.ts` to the second
-      (`order_ambiguous`); a legacy line with no `tool`; a Bash without `cwd`
-      (`cwd_fallback`); a non-JSON ring line; a `detail` of exactly `DETAIL_MAX`; a Read of a
-      path outside the project.
-    - Each count is printed with its exact value, and the identity holds.
-    - **Mutations, each must print `identity-broken` and exit 1:** `no_ring` dropped from the
-      identity; and, separately, the `no_session` branch made to `continue` without counting.
-      The second proves `eligible` is counted at admission, not computed by subtraction.
-    - The pre-task and legacy lines here are hand-written; they copy the field sets a HEAD-era
-      emitter and hook wrote.
+10. **AC-9 (R9, R10): every count has an exact value, and the identity is not tautological (s-7;
+    r2 s-2, s-4).** {#ac-9}
+    - **One fixture, every count.** The fixture is built from the elements below, real
+      producers unless marked (hw = hand-written). Every R9 count is printed and asserted at the
+      exact value in the last column, so a count hard-wired to 0, or fed by the wrong element,
+      fails. Counts not listed here are asserted 0 in this fixture and are given non-zero exact
+      values by the AC named.
+
+    | count | fixture element | value |
+    |---|---|---|
+    | `no_session` | a delivered event with `session: null` (hw) | 1 |
+    | `no_ring` | a delivered event whose session has no ring file (hw) | 1 |
+    | `precompact_gated` | a `precompact` delivery (hw) | 1 |
+    | `eligible` | every other delivered event of the fixture | their number, counted at admission |
+    | `path_from_catalog` | a pre-task event (no `path` key, hw) whose `entity_id` is in the tmp project catalog; and a pre-task `scope = global` event (hw) whose `entity_id` names a memory in the tmp GLOBAL catalog and ALSO a different entity in the tmp project catalog (ids are per store, so the two stores' early ids collide): its path is the global memory's `source_path`, never the project entity's (r2 s-2) | 2 |
+    | `path_unresolved` | a pre-task event (hw) whose id is in neither catalog | 1 |
+    | `memory_no_source_path` | a real recall delivering a memory row with no `source_path` | 1 |
+    | `no_path` | a term concept (`path: null`), the memory above, the unresolved id | 3 |
+    | `path_from_name` | a pre-task grep-floor event (hw: no `entity_id`, `name` `src/x.py`, no `path` key) | 1 |
+    | `prompt_unanchored` | a `scan_prompt` delivery (hw) whose `query_id` has no query.log row | 1 |
+    | `prompt_rows_legacy` | one query.log prompt row without `t` (hw) | 1 |
+    | `order_ambiguous` | a legacy Read line without `t` (hw) in the same second as a delivery of its file | 1 |
+    | `order_from_end` | a real `tool` envelope with no `tool-pre` before it | 1 |
+    | `cwd_fallback`, `refs_capped`, `detail_truncated` | ONE legacy Bash line (hw): no `cwd`, 8 `refs`, `detail` of exactly `DETAIL_MAX` | 1, 1, 1 |
+    | `tool_from_terse` | the two legacy lines above (the Read and the Bash) | 2 |
+    | `ring_unparseable` | a non-JSON ring line (hw) | 1 |
+    | `input_truncated` | a real Bash envelope whose command is 2,500 characters | 1 |
+    | `skipped_explicit_tool_calls` | a real Bash `rmx context S` | 1 |
+    | `tool_events_unmatched_by_tool` | a real `rmx focus hook --event tool` envelope for `WebFetch` (the hook records what it is fed; the matcher lives in settings) | `WebFetch=1` |
+    | `refs_outside_project` | a real Read of a path outside the project | 1 |
+    | `bash_base_unknown` | a real Bash `cd "$D" && cat src/x.py` | 1 |
+    | `bash_names_outside_project` | a real Bash `cd <other-dir> && echo x_symbol`, `x_symbol` delivered, and the `cd "$D"` call above | 2 |
+    | `credited_abandoned` | a real `tool-pre` for a Read of delivered `F`, swept by the next real `input` hook | 1 |
+    | `origin_unknown` | the credits of this fixture whose tool line has no `origin` (all of them; the swept Read is one) | the number of credits, asserted equal to `used_tool` |
+    | `subagent_tool_events`, `origin_unattributed` | none here | 0 here; exact values in [[#ac-14]] |
+    | `result_mentions_present` | none here | 0 here; exact value in [[#ac-18]] |
+    | `explicit_ref_unresolved` | none here | 0 here; exact value in [[#ac-8]] |
+
+    - The identity holds. **Mutations, each must make `rmx telemetry --agent-usage` (run through
+      the real CLI entry) exit 1 with `identity-broken` on stderr (r2 m-7):** `no_ring` dropped
+      from the identity; and, separately, the `no_session` branch made to `continue` without
+      counting. The second proves `eligible` is counted at admission, not computed by
+      subtraction. A third mutation resolves global legacy events against the project
+      snapshot: the collision event's path becomes the project entity's and this AC fails.
 
     **RED at HEAD:** none of the counts exist.
 11. **AC-10 (R7): the control.** A `retrieved`-only item (trimmed by the payload cap) whose file
@@ -621,10 +867,13 @@ hand-written, except in AC-9 and AC-2b, which are about legacy lines. {#ac-produ
     at `lag 0`. **RED at HEAD:** no block. With a mutation that reads only the bare-session
     ring, it is not credited. {#ac-12}
 14. **AC-13 (R11): no hook emits (a guard, proven by mutation).** After AC-3's flow, no
-    `recall-events.jsonl` contains a `used` event outside R12's three evidences. Across the
-    `rmx focus hook` calls, the event files' size and mtime are unchanged. A mutation that
-    emits from `focus_hook` fails this AC. This passes at HEAD by construction; its RED is the
-    mutation. {#ac-13}
+    `recall-events.jsonl` contains a `used` event outside R12's three evidences. The flow's
+    `rmx focus hook` calls run in-process (click's runner) under a recording audit hook, as
+    24.6 AC-3 does with 23.0's: no `open` event names a `recall-events.jsonl`, project or
+    global, during any of them (r2 m-2: size and mtime alone miss a READ). Two mutations fail
+    this AC: `focus_hook` calls `emit_recall_events`, and `focus_hook` calls
+    `delivered_in_session` (the read [[#d1]] and [[#r11]] rule out). This passes at HEAD by
+    construction; its RED is the mutations. {#ac-13}
 15. **AC-14 (R4, D13): origin.** Through the real hook: a tool event with `origin:
     "agent:a1"` (envelope `agent_id`) credits nothing and is counted `subagent_tool_events`; a
     tool event with no `origin` is credited and counted `origin_unknown`, and the footer says
@@ -664,7 +913,8 @@ hand-written, except in AC-9 and AC-2b, which are about legacy lines. {#ac-produ
 ## Mutations {#mutations}
 
 Each mutation must make at least one AC FAIL, not hang. Each restore runs as its own command.
-- `>` to `>=` in R4's ordering: AC-4 (c) credits.
+- `>` to `>=` in `tool_after_delivery`: AC-4 (d) (`(x, x)` returns `True`). AC-4 (c) cannot
+  kill it: its `t_start` is strictly before the delivery (r2 m-1).
 - `t_start` replaced by `t`: AC-4 (c) credits.
 - The window `W` raised to 3: AC-5 (a) credits the third-prompt Read.
 - The clock built from ring `input` lines: AC-5 (b).
@@ -674,7 +924,22 @@ Each mutation must make at least one AC FAIL, not hang. Each restore runs as its
 - The explicit skip removed: AC-7 credits `rmx context S`, and AC-8's `used_headline`
   double-counts.
 - Explicit uses attributed by their own `channel`: AC-8.
-- `no_ring` dropped from the identity, and the uncounted `no_session` branch: AC-9.
+- `no_ring` dropped from the identity, and the uncounted `no_session` branch: AC-9 (exit 1,
+  stderr).
+- Any one AC-9 count hard-wired to 0: AC-9's table (r2 s-4).
+- Global legacy events resolved against the project snapshot: AC-9's collision row (r2 s-2).
+- The Bash base taken from `cwd` only (rev 2's rule): AC-7's `cd <other-dir>`, `pushd` and
+  `git -C` cases credit (r2 b-1).
+- Name tokens matched in every simple command: AC-7's `cd <other-dir> && grep -n x_symbol`
+  case credits.
+- A git line matched on its diffstat `refs`: AC-7's out-of-project commit credits (r2 s-1).
+- Bash paths read from the 8 `refs`: AC-7's ten-path case misses (r2 m-4).
+- Every `mcp__refmatrix__` tool skipped: AC-7's `rmx_grep` unit leg returns `explicit` (r2
+  m-5).
+- The park record without the builder's fields: AC-1's swept `agent:a1` line has no `origin`
+  (r2 m-3).
+- An inline copy of the builder in `cli.focus_hook`: AC-1 (a)-(c) (r2 m-8).
+- `focus_hook` calls `delivered_in_session`: AC-13's audit hook (r2 m-2).
 - The control admits units whose file was delivered: AC-10.
 - The global filter without `norm_path`: AC-11.
 - The bare ring only: AC-12.
@@ -690,12 +955,12 @@ Each mutation must make at least one AC FAIL, not hang. Each restore runs as its
 
 | file | change |
 |---|---|
-| `src/refmatrix/stm.py` | `Stm.record` stamps `t` on every event; `tool_event_fields` (moved from `cli`) with `tool`, `cwd`, `t_start`, `tool_use_id`, `origin`, `input_path` / `pattern` / `command` / `prompt`, `INPUT_FIELD_MAX`, `input_truncated`; `inflight_sweep` passes the parked `t` as `t_start` (R1, D13, D14) |
-| `src/refmatrix/cli.py` | `focus_hook`'s tool branches call `stm.tool_event_fields` with the envelope's `cwd`, `tool_use_id`, `agent_id`; `_tool_event_fields` removed (R1) |
-| `src/refmatrix/context.py` | `_item` / `bundle_items` carry `item_path`; `ITEM_META_FIELDS` gains `path` and `source_path` (R2) |
+| `src/refmatrix/stm.py` | `Stm.record` stamps `t` on every event; `tool_event_fields` (moved from `cli`) with `tool`, `cwd`, `t_start`, `tool_use_id`, `origin`, `input_path` / `pattern` / `command` / `prompt` / `args`, `INPUT_FIELD_MAX`, `input_truncated`; `inflight_begin` stores the builder's fields in the park record and `inflight_sweep` writes them, with the parked `t` as `t_start` (R1, D13, D14) |
+| `src/refmatrix/cli.py` | `focus_hook`'s `tool-pre`, `tool` AND git-milestone branches call `stm.tool_event_fields` with the envelope's `cwd`, `tool_use_id`, `agent_id` (the git line keeps its own `terse` and diffstat `refs`); `_tool_event_fields` removed (R1; r2 s-1). `telemetry` (`cli.py:7795`) catches `telemetry.UsageIdentityBroken`, echoes the lines, writes the `identity-broken` line to stderr and exits 1 (R9; r2 m-7) |
+| `src/refmatrix/context.py` | `_item` / `bundle_items` carry `item_path`; `ITEM_META_FIELDS` gains `path` and `source_path`; `annotate_items` fills `path` and `source_path` in its one catalog query (`context.py:1781`) (R2; r2 m-6) |
 | `src/refmatrix/store.py` | `Store.item_meta` selects `e.path` and the memory's `metadata->>'source_path'` (R2) |
 | `src/refmatrix/hooks.py` | `FOCUS_TOOL_MATCHER` constant, used by the generator; generated output byte-identical (D6) |
-| `src/refmatrix/telemetry.py` | `path` appended to `RECALL_EVENT_FIELDS_V1`; `item_path` (R2); `log_query` writes `t` (R13); `is_prompt_row`, `prompt_clock`, `PROMPT_PAIR_S`, `TOOL_USED_WINDOW_TURNS` (R4); `tool_touches`, `ToolTouches`, `ring_tool_call` (R3); `derive_tool_used(root, *, logical_root, global_root, since, until) -> ToolUsed` returning per-unit credit records (`unit`, `tool`, `match_on`, `ref_query_id`, `lag_turns`, `lag_s`, `prior_touch`, `origin`) plus the R9 counts, never written to any file (R4-R7, R9, R10); the `used by channel` block, the leg table, the reconciling line and the identity check in `agent_usage_report(..., logical_root=None)` (R8, R9, D11) |
+| `src/refmatrix/telemetry.py` | `path` appended to `RECALL_EVENT_FIELDS_V1`; `item_path`, with relative `Entity.path` joined to the store root's parent, and `_item_fields` passing `path` (`telemetry.py:1386`) (R2; r2 m-6); `bash_segments` / `BashSegment` (D15); `tool_after_delivery` (R4; r2 m-1); `UsageIdentityBroken` (R9); `log_query` writes `t` (R13); `is_prompt_row`, `prompt_clock`, `PROMPT_PAIR_S`, `TOOL_USED_WINDOW_TURNS` (R4); `tool_touches`, `ToolTouches`, `ring_tool_call` (R3); `derive_tool_used(root, *, logical_root, global_root, since, until) -> ToolUsed` returning per-unit credit records (`unit`, `tool`, `match_on`, `ref_query_id`, `lag_turns`, `lag_s`, `prior_touch`, `origin`) plus the R9 counts, never written to any file; global legacy events resolved against `global_root`'s snapshot (R4-R7, R9, R10; r2 s-2); the `used by channel` block, the leg table, the reconciling line and the identity check in `agent_usage_report(..., logical_root=None)` (R8, R9, D11) |
 | `workflow/plans/plan-21-agent-context-usage-tasks/task-21.1-context-usage-telemetry.md` | R10's field table gains a `path` row (null allowed; absent before 21.5); a revision row naming this task (D3) |
 | `tests/test_task21_5_tool_used.py` | AC-1 to AC-18 except AC-15 |
 | `workflow/implementation_summaries/task-21.5-tool-used-signal.md` | AC-15's run; the deploy sha that opens R12's window |
@@ -755,8 +1020,10 @@ when it is built; this task does not build it.
 **Spec-settled here (lead decisions, made as the user would), not needing the user:** keeping
 `v: 1` ([[#d3]]); the Agent / mcp legs ([[#d6]]); the credit unit ([[#d7]]); the headline
 ([[#d8]]); the prompt definition ([[#d9]]); `result_mentions` ([[#d10]]); the logical root
-([[#d11]]); paths outside the project ([[#d12]]); `origin` ([[#d13]]); abandoned calls
-([[#d14]]); the control ([[#r7]]); the explicit-call skip ([[#r3]]); attribution by
+([[#d11]]); paths outside the project ([[#d12]]); `origin` ([[#d13]]); abandoned calls and
+their park fields ([[#d14]]); the Bash base directory and the name leg under it ([[#d15]]);
+the precision population ([[#d16]]); the MCP legs ([[#d17]]); the `tool_result` leg's task
+row ([[#d10]]); the control ([[#r7]]); the explicit-call skip ([[#r3]]); attribution by
 `ref_query_id` ([[#r6]]); no new verb ([[#d5]]). {#spec-settled}
 
 ## Open for the user {#open-for-user}
@@ -771,8 +1038,8 @@ when it is built; this task does not build it.
    pairs, the Wilson bounds, the 20-pair stratum minimum, and the 10% subagent ceiling.
    **Recommendation: confirm before AC-15's output is read.** Changing `W` is a one-constant
    change that rewrites no data (D1), and the lag histogram shows what any other `W` would
-   give; in the prototype, of 125 first matches after a delivery, 40 / 11 / 11 sit at lag
-   0 / 1 / 2 and 63 beyond `W`.
+   give; in rev 3's re-run ([[#why-data]]), of 56 units with a later matching call, the first
+   match sits at lag 0 / 1 / 2 for 27 / 3 / 5 and beyond `W` for 21.
    {#ofu-od5}
 
 ## Non-goals {#non-goals}
@@ -829,3 +1096,37 @@ Also from the prototype (not an r1 finding): 269 of 348 Read/Edit/Write calls to
 `/Volumes/littlebig/` and cannot match; counted `refs_outside_project`, no leg ([[#d12]]). The 21.5 row in
 [[plan-21-agent-context-usage]] is updated to match (no `v: 2`; units; headline).
 {#rev-2-note}
+
+## Revision 3 (2026-11-13, ch-bsd spec r2) {#rev-3}
+
+rel: derives-from -> [[bsd-task-21.5-spec-r2-540ab50]]
+rel: amends -> [[task-24.6-context-and-observation#rev-r7]]
+
+Every r2 finding, with where it is closed. Lead decisions, made as the user would, are marked
+(lead). OD-4 and OD-5 stay the user's ([[#open-for-user]]); rev 3 changed only OD-5's lag
+numbers, from the re-run.
+
+| finding | disposition | where |
+|---|---|---|
+| b-1 the Bash `cwd` fallback re-opens the clone leg | the base directory comes from the command: `cd` / `pushd` carry forward, `git -C` per simple command, unresolvable bases unknown; a relative ref on a base outside the project counts `refs_outside_project` and never matches; name tokens match only in simple commands based in the project (lead: the name leg too, and Grep / Glob by their `path`); AC-7's negative cases, including r2's `cd <other-dir> && sed -n 1,40p src/x.py`; `#why-data` re-run under the fix: credits 64 → 35, prior-touch 46 → 17, headline 18 → 18 with 8 units exchanged | [[#d15]], [[#d11]], [[#d12]], [[#r3]], [[#ac-7]], [[#why-data]] |
+| s-1 git lines get no R1 fields and match on a diffstat | the git branch calls the builder (keeps its `terse` and diffstat `refs`); git lines match on `command` only, never `refs`; legacy git lines on `detail`; AC-1 git case, AC-7 out-of-project commit; 24.6 r7 R4 | [[#r1]], [[#r3]], [[#r10]], [[#ac-1]], [[#ac-7]] |
+| s-2 global legacy events resolved against the project snapshot | resolved against the global store's snapshot (`global_root`); re-run: 5 of 5 ids found there, 0 in the project's; AC-9 collision row and mutation | [[#r10]], [[#ac-9]] |
+| s-3 prior-touch credits in the precision sample | the banded sample is drawn from headline credits, the population a consumer counts; prior-touch is a report-only stratum of up to 20 pairs (lead) | [[#d16]], [[#r12]] |
+| s-4 8 of 23 R9 counts have no fixture | AC-9 is a table: every R9 count with its fixture element and exact value, the rest asserted 0 and valued by the AC named; a hard-wired-0 mutation | [[#ac-9]], [[#mutations]] |
+| s-5 the `tool_result` leg defers to a task that does not exist | task 21.6 filed with acceptance criteria as a plan-21 task row and a deferral-registry row (`inert-sentinel`, trigger 24.6 R4) | [[#d10]]; [[plan-21-agent-context-usage#tasks]]; [[deferral_registry#registry]] |
+| m-1 AC-4 (c) cannot kill `>` → `>=` | ONE ordering function `tool_after_delivery`; AC-4 (d) tests equality through it; the mutation line now names AC-4 (d) | [[#r4]], [[#ac-4]], [[#mutations]] |
+| m-2 AC-13 misses a read in `focus_hook` | recording audit hook over the in-process hook calls: no open of any `recall-events.jsonl`; a `delivered_in_session` mutation | [[#ac-13]] |
+| m-3 swept events lack the builder's fields | the park record stores the builder's fields; the sweep writes them, `origin` included; aligned with 19.0 R2's park fields; 24.6 r7 R4 | [[#d14]], [[#r1]], [[#ac-1]] |
+| m-4 Bash leg reads `refs`, capped at 8 uncounted | `tool_touches` extracts paths from the whole `command`, no count cap; legacy lines use `detail` plus the `refs`, a capped line counted `refs_capped`; AC-7 ten-path case | [[#r3]], [[#r9]], [[#ac-7]] |
+| m-5 every `mcp__refmatrix__*` tool skipped | only R12's three are explicit; the others match under `mcp_name` on `args` (lead); unit leg in AC-7; 24.6 r7 AC-3 | [[#d17]], [[#r1]], [[#r3]], [[#ac-7]] |
+| m-6 R2 plumbing unlisted; relative `Entity.path` | `annotate_items` and `_item_fields` named and listed; relative paths joined to the store root's parent; AC-2 case | [[#r2]], [[#ac-2]], [[#files-to-modify]] |
+| m-7 "exits 1" has no exit path | `UsageIdentityBroken` raised by the report, caught by `cli.telemetry`, stderr + exit 1; `cli.py` row; AC-9 runs the mutations through the CLI | [[#r9]], [[#files-to-modify]], [[#ac-9]] |
+| m-8 AC text gaps | hand-written lines enumerated per AC with the reason; `any channel` row defined in R8; AC-2 `/tmp`-spelled root; AC-7 parity with positive, zero-match and >600-character cases; AC-1 one-builder test by field equality, a pass-through spy and an AST scan | [[#ac-producers]], [[#r8]], [[#ac-2]], [[#ac-7]], [[#ac-1]] |
+| imp-ruled-out-leg-returns-via-fallback | D12's exclusion now stated for every leg that resolves a path (Read, Bash, Grep, Glob) | [[#d12]], [[#d15]] |
+| imp-printed-count-needs-a-fixture | as s-4 | [[#ac-9]] |
+
+**Re-run.** `#why-data` was re-run on fresh read-only APFS clones, counts only; rev 2's rules on
+the same clones reproduce r2's re-derivation exactly (64 / 46 / 18), so every before → after in
+the table is a rule change, not a data change. The 21.6 rows were filed in the same change
+as this revision.
+{#rev-3-note}
