@@ -91,7 +91,10 @@ to the verb as `timeout`, whose busy message reads "recall not confirmed within 
 |---|---|---|
 | k1 | Own task id, own branch `task-25.1b-hook-output-ladder-and-spill`, cut from `master` after 25.1 and 10.3 merge | D-Q2; L15 (`depends-on 10.3`); L30 (only 10.3 builds early) |
 | k2 | **This task owns the ONE names line**, labelled `still in play`. It is ONE line: the 25.1 `+N more` trailer is folded into it, and it ends with the spill page's fetch command. One cap of 15 names is shared across both member kinds, the bytes are reserved before the fit, and `(+N)` overflow goes to the spill page. Members are of two kinds: OVER-BUDGET (this task: items the ladder put at tier 4) and HELD (10.2, later). The ONE renderer (`recall_pack`, the only place the literals `still in play` and `·held` appear in `src/`) takes both kinds; the held kind is empty until 10.2 builds. Members are in ONE rank order across both kinds. **A held member prints as `<name>·held`** (10.2 h16); the suffix's bytes count inside the line's reservation; an over-budget member is unmarked. 10.2 only supplies the held flag, through `pack(held=…)` ([[#k3]]). 10.6 labels each member later, where it stands (no regrouping, 10.6 p2). **Position:** the line is LAST in the payload, after every hook line and every body or excerpt, and it ends with the spill page's fetch command (the user-agreed presentation rule: most important first, [[feedback_injection_presentation_rules]]). scan-prompt's held line (10.2 R4) sits last in scan's payload by the same rule. 10.2 is re-specced against this task, not the other way round. {#k2} | L15; contra-b CB-1; both 25.1 rev 8 R13 and 10.2 h10 state the cap of 15; L52 and L54 (B1, S2) adopt 10.2 h16's marker |
-| k3 | **One pack call, one order, TIER-PINNED:** (1) the ladder runs over ALL retrieved rows in rank order, the `full` run ([[#r13]]); (2) a row whose key `held.covers(key, full_run_tier)` answers True (10.2's rule; nothing until 10.2 builds) leaves the tier the full run gave it and becomes a HELD member of the names line, which degrades it to the names tier by dedupe; a row `covers` answers False for keeps its tier; (3) non-held rows keep their full-run tier, and the bytes held rows free are never re-spent on promoting other rows; (4) the bodies of every row below tier 1, held rows included, and the names-cap overflow are written to the spill page ([[#r14]]); (5) the clamp runs on the whole command's stdout ([[#r12]]). The payload is never larger than the full run's. **This task is the ONE owner of `pack(held=…)`** (L59; bsd-spec-t3ab r2 S1). `held` is a protocol, not a key collection: `recall_pack.Held` (a `typing.Protocol`) with `covers(key, full_run_tier) -> bool`. `recall_pack.pack(..., held: "Held | None" = None)` performs steps 1-4 in ONE call, because each row's full-run tier is known only inside `pack`; `held=None` covers nothing. 10.2 supplies the implementation (its `HeldSet`, with h15's tier-aware rule) and never re-implements the removal. {#k3} | CB-1 ("the order … is stated explicitly"); 10.2 h9 / the user's Q13 (freed bytes are not re-spent: the replay lost a use exactly by re-spending); agreed with spec-t3b 2026-11-13 |
+| k3 | **One pack call, one order, TIER-PINNED:** (1) the ladder runs over ALL retrieved rows in rank order, the `full` run ([[#r13]]); (2) `pack` computes `telemetry.item_key(row)` for EVERY row, and a row for which `held.covers(item_key(row), full_run_tier)` answers True (10.2's rule; nothing until 10.2 builds) leaves the tier the full run gave it and becomes a HELD member of the names line, which degrades it to the names tier by dedupe; a row `covers` answers False for keeps its tier; (3) non-held rows keep their full-run tier, and the bytes held rows free are never re-spent on promoting other rows; (4) the bodies of every row below tier 1, held rows included, and the names-cap overflow are written to the spill page ([[#r14]]); (5) the clamp runs on the whole command's stdout ([[#r12]]). The payload is never larger than the full run's. **This task is the ONE owner of `pack(held=…)`** (L59; bsd-spec-t3ab r2 S1). `held` is a protocol, not a key collection: `recall_pack.Held` (a `typing.Protocol`) with `covers(key, full_run_tier) -> bool`. `recall_pack.pack(..., held: "Held | None" = None)` performs steps 1-4 in ONE call, because each row's full-run tier is known only inside `pack`; `held=None` covers nothing. 10.2 supplies the implementation (its `HeldSet`, with h15's tier-aware rule) and never re-implements the removal. **The key is ONE function this task builds:**
+`telemetry.item_key(row)` = `(scope, entity_id)`, else `(scope, kind, name)` (10.2 h8, moved here
+from 10.2's Files; bsd-spec-t3ab r3 S5). Two code symbols with one name in two files are two
+keys. 10.2's state, both renderers and 10.5's replay call the same function. {#k3} | CB-1 ("the order … is stated explicitly"); 10.2 h9 / the user's Q13 (freed bytes are not re-spent: the replay lost a use exactly by re-spending); agreed with spec-t3b 2026-11-13 |
 | k4 | **Kind labels are not built here.** Each tier is rendered by its own function in `recall_pack`. 10.6 later decorates every tier's line with `telemetry.kind_label` (10.6 p1), and every tier carries a label from then on. Revision 8's "Kind labels (10.6) apply at every tier" is restated this way, so this task has no edge to 10.6. {#k4} | L15 (CB-5 restatement); bsd-pop-r1 S5 |
 | k5 | **`form` on delivered events:** `full` (tier 1), `excerpt` (tier 2), `pointer` (tier 3), `names` (a names-line member). It joins `telemetry.RECALL_EVENT_FIELDS_V1` as a nullable field, and `v` stays 1. 10.2 R6 planned the same field; it now exists from this task, and 10.2 adds one value, `held`, for a held member on the line (10.2 R6). {#k5} | CB-2 ("Excerpt counts as a form in the delivered event") |
 | k6 | Spill pages live under `stm/<session>.emitted/spill/`, one file per hook call, written only by that call {#k6} | L16's home rule for per-session emitted state; 10.2 h6 / 19.6 split: one writer per file |
@@ -387,22 +390,27 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
   `recall_pack.pack` on the AC-17 fixture:
   - with `held` empty: every row's rendered tier equals its full-run tier, and every `(+N)` row
     reports `overflow`;
-  - with a test `Held` (a small concrete class in the test file, implementing the protocol, not a
-    stand-in for `src/` code) whose `covers` is True at every tier for a tier-1 row r and a tier-3
+  - with a test `Held` (a small concrete class in the test file implementing the protocol; it
+    stands in for 10.2's `HeldSet` and is registered in `workflow/test_mock_registry.md`, see
+    [[#files]]) whose `covers` is True at every tier for a tier-1 row r and a tier-3
     row q: r and q render as `r·held` and `q·held` on the names line, in one rank order with the
     over-budget members, which are unmarked; r's and q's rendered tier is `names` and their
     full-run tiers are unchanged; every other row keeps its full-run tier (tier-pinned, [[#k3]]);
     the payload is ≤ the full run's and ≤ budget; the names line is the last line;
   - **`covers` false at the full-run tier:** a `Held` that knows row p but answers `covers(p,
     tier)` True only for `pointer` or poorer, with p's full-run tier `full`. p keeps tier 1 (hook
-    line + body, no `·held`), and its rendered tier equals its full-run tier.
+    line + body, no `·held`), and its rendered tier equals its full-run tier;
+  - **same name, two files:** two rows named `x` from `src/a.py` and `src/b.py` (distinct
+    `entity_id`s, so distinct `telemetry.item_key`s), and a `Held` whose `covers` is True only for
+    the `src/a.py` key. Only that row moves to the names line; the `src/b.py` row keeps its tier.
 
   Mutations: marker missing on a held member; marker on an over-budget member; the marker's bytes
   left out of the line's reservation (the payload exceeds the budget on a fixture sized to the
   byte); the rendered tier reported as the full-run tier; a non-held row promoted into freed
   bytes; the names line placed above the hits; membership used instead of `covers` (a row moves
   to the line whenever `held` knows its key, whatever its full-run tier: p goes to the line and
-  the last leg FAILS). {#ac-25}
+  the covers-false leg FAILS); `pack` keys rows by name instead of `telemetry.item_key` (both `x`
+  rows move: the same-name leg FAILS). {#ac-25}
 
 ## Files {#files}
 
@@ -416,12 +424,12 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
 | `src/refmatrix/verbs.py` (`memory_recall`) | the `page` parameter; the global leg's reserve and `global_omitted`; the degrade wording (R17) |
 | `src/refmatrix/cli.py` | `rmx memory recall --page <token>`; `legs_ms` on scan-prompt's and the per-prompt recall's rows; the R17 wording around `RECALL_DAEMON_SLICE_S` |
 | `src/refmatrix/scan.py` | per-leg timing; leg bounds (only if R15 is built) |
-| `src/refmatrix/telemetry.py` | `form`, `capped`, `dropped_bytes`, `legs_ms`, `global_omitted`; `rmx telemetry --context` prints clamp firings |
+| `src/refmatrix/telemetry.py` | `item_key` (the ONE item key, 10.2 h8; built here, [[#k3]]); `form`, `capped`, `dropped_bytes`, `legs_ms`, `global_omitted`; `rmx telemetry --context` prints clamp firings |
 | `.claude/settings.json`, `.claude/rmx-hooks.json` | regenerated from Python in the task's clone, never by `rmx install-hooks` against a live store |
 | `tests/test_task25_1b_ladder_spill.py` (new) | AC-16..AC-27 |
 | `tests/test_verb_parity.py` | the `page` twin |
 | `workflow/measurements/task-25.1b-scan-prompt-legs.md` (new) | R0's table and the L44 decision row |
-| `workflow/test_mock_registry.md` | AC-22's rerank double |
+| `workflow/test_mock_registry.md` | AC-22's rerank double; AC-25's test `Held` class, standing in for 10.2's `HeldSet` (`internal-pending` at this task's build, because `HeldSet` is not built yet; it becomes `internal-active` when 10.2 lands; graduation: replaced by `stm.HeldSet` in 10.2's AC-2) |
 | `workflow/bug_registry.md` | bug-182 (fixed by R15, or moved to the T4 backlog with R0's numbers); bug-164's row names this task for the hard cap |
 
 ## Test strategy {#test-strategy}
@@ -507,5 +515,8 @@ rel: implements -> [[plan-review-2026-11-13#lead]]
 | m2 O3 row stale | refreshed: two commits, the ch-bsd lite round, the < 100 fallback | [[#open-decisions]] |
 | m3 tier-3 wording | "hook line (which carries its `(rmx memory get …)` fetch pointer)", the exact text 10.2 and 10.6 match | [[#r13]] |
 | m7 AC-21's fallback had no mutation | "R15 built on < 100 runs" | AC-21 |
+| r3 S5 nobody owned the key `pack` passes to `covers` | this task builds `telemetry.item_key` (10.2 h8, moved from 10.2's Files); `pack` calls it for every row; AC-25 same-name leg and the mutation "pack keys by name" | [[#k3]], [[#files]], AC-25 |
+| r3 m1 tier-3 wording | this task's string is canonical (lead); 10.2 and 10.6 copy it verbatim | [[#r13]] |
+| r3 m3 AC-25's test `Held` unregistered | registered via the Files row, with its graduation | [[#files]], AC-25 |
 | S3 (r2, on `b032f24`) the out-of-scope list called silent commands `/dev/null` | silent by code: `focus hook` `tool` / `tool-pre` / `input` / `say` and 10.3's `compact-marker` (AC-26 asserts empty stdout, with a mutation); `/dev/null` kept only for `sync --flush-queue` and the primer | [[#r12]], AC-26 |
 | S4 (r2, on `b032f24`) curator status runs in two commands | SessionStart's `startup|resume` command named; curator status uses its fixed 500 B share everywhere, with no new argv; AC-26 covers both commands, with a mutation | [[#r12]], AC-26 |
