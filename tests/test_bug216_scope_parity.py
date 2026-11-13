@@ -121,15 +121,19 @@ def test_ac4_fails_naming_the_file_and_the_spec_rule(roots):
 
 
 def test_ac4_fails_on_the_hidden_dir_rule_and_names_it(roots):
-    """No spec line touches the profile; the built-in hidden-dir rule alone excludes it (spec
-    #why-hidden). The finding must say so — the rule is not in any file the user can grep."""
+    """A scanned GMD doc that only the built-in hidden-dir rule excludes. The finding must say so
+    — the rule is not in any file the user can grep. (Rev 4 R11: the PROFILE is now a built-in
+    include, so the hidden-dir case is another `.claude/` doc passed to the script.)"""
     root = _root()
     roots.append(root)
     _small_repo(root)
+    (root / ".claude" / "NOTES.md").write_text(_gmd("claude-notes"))
     _spec(root, ["!docs/notes-private.md"])
-    code, out = _run(root)
+    code, out = _run(root, str(root / ".claude" / "NOTES.md"))
     assert code != 0, out
-    assert "hidden" in _line_naming(out, ".claude/PROJECT_PROFILE.md").lower(), out
+    assert "hidden" in _line_naming(out, ".claude/NOTES.md").lower(), out
+    assert ".claude/PROJECT_PROFILE.md" not in out, (
+        f"R11: the GMD profile is a built-in include, never a finding:\n{out}")
 
 
 def test_ac4_fails_on_this_repos_head_config(roots):
