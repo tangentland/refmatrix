@@ -189,7 +189,7 @@ Answers [[bsd-plan19-21-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]
 ## Revision (2026-11-13, the plan review: D-Q3, D-Q5; re-read against bug-216's resolver) {#rev-2026-11-13}
 
 Three requirement changes, no AC change: the Q8 constraint on the doc stratum's gold, which the
-spec wave's rule requires ([[#q8]]), and the lead's 2026-11-13 rulings on R1's forbidden list and
+spec wave's rule required and Q9 / L60 keeps ([[#q8]]), and the lead's 2026-11-13 rulings on R1's forbidden list and
 R4's install window. A third ruling adds a note on the fold re-score (all listed at the end).
 {#rev-2026-11-13-lead}
 
@@ -202,7 +202,7 @@ rel: related-to -> [[task-bug216-rule-docs-in-graph]]
 | D-Q5 | plan-24 D1's hold on 21.2-21.4 is superseded. This task builds now on the current surfaces: the CLI, the MCP tool description, the PRIMER generator, `_install_briefing`. The MCP description stays a surface until plan-24's re-plan after the charter decision |
 | D-Q3 | pull-side work proceeds. Queue item 6, after 21.2 |
 | doc stratum gold (`doc-id#anchor`) under bug-216 R6 | anchored targets keep concept-first, so the gold's meaning is unchanged |
-| ranking under bug-216 R9 | `denotes` is a zero-cost hop in `build_context`'s degree walk, and PageRank folds a concept's typed in-edges onto its `denotes` target, so doc ranks move when bug-216 goes live. R2's table and every R3 candidate run on ONE catalog copy taken after bug-216's live re-derive (queue item 1, user-gated, with R10's pending refs resolved). Otherwise bug-216's movement would be scored as a 21.4 win or loss |
+| ranking under bug-216 R9 | `denotes` is a zero-cost hop in `build_context`'s degree walk, and PageRank folds a concept's typed in-edges onto its `denotes` target, so doc ranks move when bug-216 goes live. R2's table and every R3 candidate run on ONE catalog copy taken after bug-216's live re-derive (queue item 1, user-gated, with R10's pending refs resolved). Otherwise bug-216's movement would be scored as a 21.4 win or loss. The copy is also taken BEFORE G22 rev 2's gate deploys ([[#q8-copy-order]]) |
 | bug-216 R11 (CLAUDE.md and `.claude/PROJECT_PROFILE.md` ingested when they carry GMD frontmatter) | CLAUDE.md is one of R4's five surfaces and is now also a ranked doc, so R4's rule sentence enters the corpus. No conflict. AC-4 still reads the committed file |
 
 **Ruled by the lead, 2026-11-13** (each on the recommended option):
@@ -217,10 +217,22 @@ rel: related-to -> [[task-bug216-rule-docs-in-graph]]
 - **O-c (folded into R4's last bullet):** the regenerated `.refmatrix/CLAUDE.md` rides the first
   user-gated install window after R4 lands (10.4's, else 16.3's). The lead adds it to G31.
 
-## Q8 {#q8}
+## Q8 / Q9: `workflow/` in the store {#q8}
 
-The spec wave's rule: specs hold under Q8 a or c. Under Q8 a, `workflow/` leaves the store at
-ingest, so a doc-stratum gold section under `workflow/` would become unreachable mid-measurement.
-R1's doc stratum therefore draws gold only from GMD docs OUTSIDE `workflow/`. If the user answers
-Q8 = c, the restriction may be lifted at the set's approval (R1's approval step). Under Q8 b the
-same holds as under a. {#q8-b}
+Q8 is answered (a), and Q9 refined it for `workflow/` (L60, G22 rev 2). `workflow/` stays ingested
+in the project partition and is DEMOTED by design: one gate in `pagerank.py` drops operational ids
+(`workflow/`-path docs, their anchors and the concepts that `denote` them) from PageRank adjacency,
+`concept_df`, the mentions BM25 statistics and co-occurrence. Context and scan then rank those hits
+last unless the query names that doc or anchor. So R1's doc stratum still draws gold only from GMD
+docs OUTSIDE `workflow/`. A gold section under `workflow/` would measure G22's demotion, not 21.4's
+ranking. The restriction is not lifted. Save-states are never gold (R1: memories and sessions are
+out). {#q8-b}
+
+**The catalog copy's order** (bsd-spec-t3ab r3 m4). 21.4's ONE catalog copy, which R2's table and
+every R3 candidate use, is taken after bug-216's live re-derive (queue item 1) and BEFORE G22 rev
+2's gate deploys (item 6 precedes item 9). `REPORT.md` records the deployed sha the copy was taken
+at. If G22 has landed by the time the copy is taken, the run records that, and the measurement
+re-scores on a pre-G22 copy (built from the last pre-G22 deployed sha in a throwaway store),
+rather than attributing G22's rank shift to a 21.4 candidate. {#q8-copy-order}
+
+rel: depends-on -> [[plan-review-2026-11-13#lead]]
