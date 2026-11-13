@@ -159,7 +159,7 @@ review's citations stay valid). R0 is this task's own measurement step (L44 name
     - **There is no single emit point today** (green-251c, reading `hooks.render_managed` at the 25.1
       branch's `23caf45`). So the shared emitter is ONE function, `hook_budget.emit(text, *,
       command, channel)`, and every rmx stdout writer that a generated hook command runs calls it.
-      These are nine writer entries, which are nine functions; `cli.curator_status` runs in two
+      These are ten writer entries, which are ten functions; `cli.curator_status` runs in two
       commands, and scan-prompt and curator status share one command:
       - capped today, each by its own writer: `cli._echo_pack` (the three `memory recall --pack`
         hooks); `cli.recall_state` (`recall-state --max-bytes 9000`); `cli.scan_prompt_cmd` and
@@ -170,7 +170,9 @@ review's citations stay valid). R0 is this task's own measurement step (L44 name
       - UNCAPPED today, and reaching the agent: `cli.focus_hook` on `--event session-start` (all
         four SessionStart matchers); `rmx focus summarize --promote` (PreCompact `--timeout 30`,
         Stop `--timeout 5`; it prints the full STM digest); `rmx ingest-gmd --as-memory --detach`
-        (SessionStart); `cli.save_state` (PreCompact).
+        (SessionStart); `cli.save_state` (PreCompact);
+      - added by R18 (L70 m1): the nested `cli._memory_recall_impl._degrade_or_raise`, whose
+        hook-mode skip line ([[#r18]]) goes through `emit` on the recall command's channel.
     - **Shares.** A writer's share is its `hook_budget.HOOK_COMMAND_CHANNELS` share. A writer that
       is its command's only stdout writer gets the command's whole 9,500 B. Where one command holds
       several writers, their shares are listed in `HOOK_COMMAND_CHANNELS` and sum to ≤ 9,500 B, so
@@ -260,24 +262,42 @@ review's citations stay valid). R0 is this task's own measurement step (L44 name
     separately, each labelled. For example: `recall not confirmed within the 1.5 s daemon slice (hook
     budget 5 s) — daemon busy; the hook skipped this turn`. {#r17}
 18. **R18 A hook-mode skip says so in the payload** (bug-224; L68, added 2026-11-14,
-    [[#rev-round-3]]). Today, when a `--pack` hook-mode recall degrades,
-    `cli._memory_recall_impl._degrade_or_raise` records the outcome, prints the cause on stderr
-    only, and returns before printing anything (25.1 d8: "nothing on stdout"). bsd-251 reproduced
-    the result at the 25.1 branch's `f656f78`: exit 0, 0 B on stdout, which the agent reads as
-    "nothing relevant". With this task, every hook-mode skip on the pack path emits ONE skip line
-    in the payload through `hook_budget.emit`, inside the channel's budget:
+    [[#rev-round-3]]; amended by L70, [[#rev-round-4]]). Today, when a `--pack` hook-mode recall
+    degrades, `cli._memory_recall_impl._degrade_or_raise` records the outcome, prints the cause on
+    stderr only, and returns before printing anything (25.1 d8: "nothing on stdout"). bsd-251
+    reproduced the result at the 25.1 branch's `f656f78`: exit 0, 0 B on stdout, which the agent
+    reads as "nothing relevant". With this task, every hook-mode skip on the pack path emits ONE
+    skip line in the payload through `hook_budget.emit`, inside the channel's budget:
     `rmx recall skipped: <cause> — <the classifier's words>`.
-    - `<cause>` is one of `daemon busy`, `budget spent`, `worker timeout`, `daemon absent` or
-      `transport error`. ONE function maps the exception type to it, the same exception that
-      `rec.degraded` records, so the line and the telemetry row never disagree.
-    - The line is at most 300 B. Where it would exceed that, the classifier's words are cut at a
-      whole word, and the line never exceeds the channel's budget.
+    - **A line wherever a skip already happens; never a new skip** (L70 B1). Where each mode
+      skips today:
+      - the per-prompt dense path skips with no daemon (d8, `VerbAbsentError`), with a busy
+        daemon, and on the deadline;
+      - `--session-start` and `--recent` / PreCompact skip ONLY on a busy daemon with no reader
+        store. With no daemon they fall through to the replica or `_read_store` and print a real
+        pack (25.1's daemonless read), and that stays so.
+    - **`<cause>` comes from the exception TYPE** (L70 S1). ONE function maps the exception that
+      `rec.degraded` records (`_raw_transport_cause(e)`) to a cause, checking subclasses before
+      their parents, so the line and the telemetry row never disagree:
+
+      | exception type | cause |
+      |---|---|
+      | `verbs.VerbDeadlineError` (new, a subclass of `VerbBusyError`), raised by `_left`'s deadline (`cli.py:12622-12628` on the 25.1 branch) and by `recall.replica_memory_recall`'s deadline (`recall.py:1094-1095`) | `budget spent` |
+      | plain `VerbBusyError` (for example `require_daemon`'s busy ping) | `daemon busy` |
+      | a daemon op `TimeoutError` / `socket.timeout` | `daemon timeout` |
+      | `VerbAbsentError`; `ConnectionRefusedError` | `daemon absent` |
+      | `ConnectionResetError`, other `OSError`, `JSONDecodeError` | `transport error` |
+
+      `VerbDeadlineError` is still classified `skipped_budget`, because
+      `telemetry._budget_exception_types` matches subclasses. "worker timeout" is not a cause: a
+      worker-probe timeout is caught inside the probe and never reaches the degrade path.
+    - The line is at most 300 B. ONE line builder cuts the classifier's words at a whole word when
+      the line would exceed that, and the line never exceeds the channel's budget.
     - The exit stays 0, the stderr line stays, and the degrade row is unchanged except that its
       `payload_bytes` counts the skip line. The skip line is not an item: it emits no `delivered`
       event.
     - Interactive and MCP callers are unchanged: they still raise, per 25.1 R5.
-    - The hook modes covered are `--stdin-json`, `--session-start` and `--recent` / PreCompact,
-      with `--pack`. {#r18}
+    - Modes covered: `--stdin-json`, `--session-start` and `--recent` / PreCompact, with `--pack`. {#r18}
 
 ### Amendments to 25.1, by name {#amends}
 
@@ -330,7 +350,8 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
   producer in it, forces the producer to emit 20 KB on a fixture and runs the command with `bash
   -c`. For every command: stdout ≤ 9,500 B; a `capped` row carries that command's id; each writer's
   output is within its `HOOK_COMMAND_CHANNELS` share. A structural check parses `src/refmatrix/` and
-  fails if any of the nine writer functions named in R12 writes to stdout other than through
+  fails if any of the ten writer functions named in R12 (the nested `_degrade_or_raise`
+  included; the check walks nested `def`s) writes to stdout other than through
   `hook_budget.emit`. Both curator-status commands are covered: UserPromptSubmit's `scan_cmd`, and
   SessionStart's `startup|resume` command, where curator status alone is ≤ 500 B (its fixed share)
   and the command's stdout is ≤ 9,500 B. The five silent-by-code commands (`focus hook` on
@@ -354,27 +375,44 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
 
   Mutations: a prune that keeps a 51st page; a token resolving to a page written after a prune
   (`<seq>` reused); a prune not counted on the row; the other-session sweep at 6 days. {#ac-27}
-- **AC-28 A skip is visible in the payload (R18, bug-224).**
-  - **No daemon, no hub worker:** the GENERATED per-prompt recall command, run unchanged in the
-    sandbox (25.1 AC-4 (c)'s setup), exits 0. Its stdout is exactly one line,
-    `rmx recall skipped: daemon absent — …`, of ≤ 300 B and within `budget("prompt_recall")`.
-    The degrade row's `payload_bytes` equals that line's bytes, and no `delivered` event is
-    written. RED at HEAD: 0 B on stdout.
-  - **Budget spent:** the same command's argv, with only `--timeout` lowered to 0.01 s (a recorded
-    deviation from the generated argv: there is no other way to spend the budget without a mock),
-    prints one `rmx recall skipped: budget spent — …` line.
-  - **Generated SessionStart and PreCompact recall commands:** both print one skip line in the
-    no-daemon setup.
-  - **The cause map:** a unit table over the one cause function covers all five causes, from
-    real exception types (`VerbBusyError`, `VerbAbsentError`, a worker-probe timeout,
-    `ConnectionRefusedError`, `JSONDecodeError`).
-  - **Interactive is unchanged:** an interactive call in the no-daemon setup raises as before.
+- **AC-28 A skip is visible in the payload (R18, bug-224; legs per L70).** Each leg names its
+  setup, and asserts its cause on the recorded exception TYPE, never on timing.
+  - **(a) Per-prompt, no daemon and no hub worker** (25.1 AC-4 (c)'s setup; the GENERATED
+    command, run unchanged): exit 0, and stdout is exactly one line,
+    `rmx recall skipped: daemon absent — …`, of ≤ 300 B and within `budget("prompt_recall")`. The
+    recorded type is `VerbAbsentError`. The degrade row's `payload_bytes` equals that line's bytes,
+    and no `delivered` event is written. RED at HEAD: 0 B on stdout.
+  - **(b) Per-prompt, daemon busy:** a sandbox daemon held with `SIGSTOP` (it accepts the connect
+    in the kernel backlog and never answers); the generated command, unchanged. The leg first
+    asserts that `require_daemon`'s ping timeout is below the hook's budget, which removes the race
+    with the deadline. One line, `daemon busy`; the recorded type is plain `VerbBusyError`.
+  - **(c) Per-prompt, budget spent:** the generated argv with only `--timeout 0` (a recorded
+    deviation). `_left` raises at its first call, so the recorded type is `VerbDeadlineError`
+    deterministically. One line, `budget spent`; the row's outcome is `skipped_budget`.
+  - **(d) SessionStart and PreCompact, busy daemon AND no reader store** (the `SIGSTOP` daemon of
+    (b), with the sandbox store's replica / reader file absent): each generated command prints one
+    `daemon busy` skip line.
+  - **(e) Guard: SessionStart and PreCompact with NO daemon** (a reader store present, as 25.1
+    leaves it): each generated command prints its pack and NO skip line.
+  - **(f) The cause map:** a unit table over the one cause function, from real exception
+    instances: `VerbDeadlineError` → `budget spent`; `VerbBusyError` → `daemon busy`;
+    `TimeoutError` → `daemon timeout`; `VerbAbsentError` and `ConnectionRefusedError` →
+    `daemon absent`; `ConnectionResetError` and `JSONDecodeError` → `transport error`.
+  - **(g) The line builder:** a unit leg feeds the builder classifier words over 400 B. The line is
+    ≤ 300 B, ends on a whole word, and keeps the cause.
+  - **(h) Interactive is unchanged:** an interactive call in the no-daemon setup raises as before.
 
-  Mutations: the degrade returns before `emit` (FAIL: 0 B on stdout); the skip line printed with
-  `click.echo` instead of `hook_budget.emit` (FAIL: AC-26's structural check, and no command id on
-  the row); the cause taken from the message text instead of the exception type (FAIL: the
-  unit table's refused-connection row reads `daemon busy`); a skip line over 300 B (FAIL: the
-  length check). {#ac-28}
+  Mutations:
+  - the degrade returns before `emit` (FAIL: 0 B on stdout in (a));
+  - the skip line printed with `click.echo` instead of `hook_budget.emit` (FAIL: (a)'s
+    `payload_bytes` check, because `rec.payload` is left unset, and AC-26's structural check, which
+    now covers `_degrade_or_raise`);
+  - the cause taken from the message text instead of the exception type (FAIL: (c), because
+    `_left`'s message says "daemon busy");
+  - `VerbBusyError` matched before `VerbDeadlineError` (FAIL: (c) and (f));
+  - absent treated as a skip on the session-start path (FAIL: (e) prints a skip line and no
+    pack);
+  - the 300 B cut removed (FAIL: (g)). {#ac-28}
 - **AC-17 (R13).** 40 retrieved items at 20 KB total, with 25.1-shaped hook lines of 250-370 B, at
   a 9,000 B budget. Every item is visible: at tiers 1-3 (its hook line printed, carrying its curated
   hook), as a names-line member, or, past the cap of 15, counted in `(+N)` and on the spill page.
@@ -468,8 +506,10 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
 | `src/refmatrix/recall_pack.py` | the ladder (one render function per tier), the `Held` protocol (`covers(key, full_run_tier) -> bool`) and `pack(held=…)` with tier-pinned removal (the ONE owner; 10.2 passes its `HeldSet`), the names line (the only home of `still in play` and `·held`), `Packed` gains per-row full-run and rendered tier and `form` |
 | `src/refmatrix/stm.py` | spill page write, read and prune ([[#k10]]) under 10.3's `.emitted` directory helper; reads `stm.last_marker` |
 | `src/refmatrix/hooks.py` | `HOOK_COMMAND_CHANNELS` shares for every generated command with rmx stdout (via `hook_budget`) |
-| `src/refmatrix/cli.py` (`_memory_recall_impl._degrade_or_raise`) | R18: the skip line through `hook_budget.emit` on the pack path; the one exception-to-cause function (beside `_raw_transport_cause`) |
-| `src/refmatrix/cli.py` (the nine writer functions, [[#r12]]) | `_echo_pack`, `recall_state`, `scan_prompt_cmd`, `curator_status`, `focus_context`, `focus_hook` (session-start), `focus summarize`, `ingest-gmd --as-memory --detach`, `save_state` write through `hook_budget.emit` |
+| `src/refmatrix/cli.py` (`_memory_recall_impl._degrade_or_raise`, `_left`) | R18: the skip line through `hook_budget.emit` on the pack path; the one exception-to-cause function and the one line builder (beside `_raw_transport_cause`); `_left` raises `VerbDeadlineError` |
+| `src/refmatrix/verbs.py` (error classes) | `VerbDeadlineError(VerbBusyError)` (R18) |
+| `src/refmatrix/recall.py` (`replica_memory_recall`) | its deadline raises `VerbDeadlineError` (R18) |
+| `src/refmatrix/cli.py` (the ten writer functions, [[#r12]]) | `_echo_pack`, `recall_state`, `scan_prompt_cmd`, `curator_status`, `focus_context`, `focus_hook` (session-start), `focus summarize`, `ingest-gmd --as-memory --detach`, `save_state` write through `hook_budget.emit` |
 | `src/refmatrix/verbs.py` (`memory_recall`) | the `page` parameter; the global leg's reserve and `global_omitted`; the degrade wording (R17) |
 | `src/refmatrix/cli.py` | `rmx memory recall --page <token>`; `legs_ms` on scan-prompt's and the per-prompt recall's rows; the R17 wording around `RECALL_DAEMON_SLICE_S` |
 | `src/refmatrix/scan.py` | per-leg timing; leg bounds (only if R15 is built) |
@@ -596,3 +636,19 @@ rel: derives-from -> [[bug_registry#registry]]
 | AC | AC-28: no daemon (the generated command unchanged), budget spent (`--timeout` lowered, recorded), SessionStart and PreCompact, the cause table, interactive unchanged; four mutations, including "the degrade returns before emit" | AC-28 |
 | files and RED | `_degrade_or_raise` and the cause function; AC-28 RED at HEAD (0 B) | [[#files]], [[#test-strategy]] |
 | bug-224's row | the lead points it here; T0.3 keeps only the load reproduction (L68) | — |
+
+## Revision round 4 (2026-11-14, confirm-lite on R18; lead ruling L70) {#rev-round-4}
+
+Folds `workflow/bullshit/2026-11-14-0125-spec-t3a-25.1b-r18-8337acb.md` (DIRTY 1B/1S/2M) on the
+lead's ruling L70. `metadata.status` stays `approved` pending a confirm-lite r2.
+{#rev-round-4-lead}
+
+rel: derives-from -> [[bsd-spec-251b-r18-8337acb]]
+rel: implements -> [[plan-review-2026-11-13#lead]]
+
+| finding | change | anchor |
+|---|---|---|
+| B1 AC-28 asked SessionStart / PreCompact to skip on a missing daemon, which they never do | R18 adds a line only where a skip already happens; AC-28 (d) uses a busy daemon AND no reader store; guard leg (e) with the mutation "absent treated as skip" | [[#r18]], AC-28 |
+| S1 the cause map could not be built from the type | new `VerbDeadlineError(VerbBusyError)` from `_left` and the replica deadline → `budget spent`; plain `VerbBusyError` → `daemon busy`; daemon op `TimeoutError` → `daemon timeout`; `VerbAbsentError` / refused → `daemon absent`; reset / other → `transport error`; "worker timeout" dropped; every leg names its setup and asserts on type (a `SIGSTOP` sandbox daemon for busy, `--timeout 0` for the deadline) | [[#r18]], AC-28, [[#files]] |
+| m1 the skip writer was outside R12's list | `_degrade_or_raise` joins R12 (ten writers) and AC-26's structural check (nested `def`s walked); the mutation's FAIL reason corrected | [[#r12]], AC-26, AC-28 |
+| m2 the over-300 B mutation had no fixture | unit leg (g) on the line builder with > 400 B of words | AC-28 |
