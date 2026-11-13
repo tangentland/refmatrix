@@ -7,13 +7,15 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-14
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Task 22.1a: the provenance-free audit classes {#root}
 
 > Plan: [plan-22-audited-removal-and-repair](../plan-22-audited-removal-and-repair.md)
-> Status: Pending (revision round 8, 2026-10-15; [[#rev-round-8]]; round 7 in [[#rev-round-7]]; round 6 in
+> Status: Pending (revision round 9, 2026-11-13: the report-only `orphan-evidence` class, the
+> `stale-evidence` count and bug-219's reconciliation, L6, [[#rev-round-9]]; revision round 8,
+> 2026-10-15; [[#rev-round-8]]; round 7 in [[#rev-round-7]]; round 6 in
 > [[#rev-round-6]], round 5
 > in [[#rev-round-5]], round 3 in [[#rev-round-3]])
 > Wave: 1, after 23.1 and 16.6's Wave-1 slice (d6d; #t8-amendments; #t8-wave1).
@@ -35,6 +37,8 @@ rel: depends-on -> [[task-16.6-learned-row-validation]]
 rel: depends-on -> [[plan-23-bounded-write-harness]]
 rel: depends-on -> [[feedback_decay_never_loses_knowledge]]
 rel: related-to -> [[project_global_relative_rows_repair]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: depends-on -> [[task-bug216-rule-docs-in-graph#r8]]
 
 ## Requirements {#requirements}
 
@@ -171,7 +175,28 @@ rel: related-to -> [[project_global_relative_rows_repair]]
      - **`dangling-evidence` (d9ar)** is a `linkage_evidence` row whose entity is ALIVE and whose
        concept is dead under the same predicate (any `detail`: a `rel:` edge's ingest evidence is
        the common case). A row whose ENTITY is dead is not a member: it is `vacuum` step 3's, made
-       auditable by [[task-22.6-removal-entry-points#r5]].
+       auditable by [[task-22.6-removal-entry-points#r5]], and since round 9 it is REPORTED here
+       as `orphan-evidence` (next bullet), never removed here.
+     - **`orphan-evidence` (unit: EVIDENCE ROW; round 9, L6; REPORT ONLY).** {#r1-orphan-evidence}
+       A `linkage_evidence` row whose ENTITY is dead under the same predicate, whatever its
+       concept side (a both-dead row is a member, labelled `both-dead`). Its remover is unchanged:
+       `vacuum` step 3, manifest-backed and logged by [[task-22.6-removal-entry-points#r5]]
+       (ADR-0004 classifies it as derived cleanup,
+       [[refmatrix/adr-0004-unified-location-space-index#a14-removal-scope]]). The audit lists and
+       counts it so bug-219's census has one reader for every evidence row with a dead end; 22.2
+       R9 does not select it, and no `removal_apply` manifest may carry it. It is not named from
+       `facts.log` (the vacuum keys a drop on the orphan's own appends,
+       [[task-22.6-removal-entry-points#r5-own-appends]]),
+       so the member records `(entity_id, linkage, concept_id, file, line, detail)`, which side
+       is dead, and the live concept's partition or `none`. For a `rel:` row the evidence entity
+       is the edge's TARGET and the concept its SOURCE (`ingest_gmd.py:1769`), so bug-219's
+       "missing target" rows are this class and its "missing source" rows are
+       `dangling-evidence` or `orphan-evidence:both-dead`.
+     - **`stale-evidence` count (round 9; a COUNT, not a class).** A `linkage_evidence` row whose
+       entity and concept are both alive but which has no `entity_links` row with the same
+       `(entity_id, linkage_id, concept_id)`. The census prints the count, split by `detail`
+       prefix (`rel:`, `learned from grep`, other); no class selects these rows and nothing
+       removes them in this plan (owner open, [[#rev-round-9]]). {#r1-stale-evidence}
      - **One shared predicate (r6 m-3; r7 m-2).** `store.link_liveness(con) -> LinkLiveness` loads,
        from any DuckDB connection (the writer's, a read snapshot's, a census copy's), the ONLY
        liveness and naming data either caller reads:
@@ -284,7 +309,9 @@ rel: related-to -> [[project_global_relative_rows_repair]]
    entity that is also ingested is reported `shared` and never becomes `missing-file` or
    `orphan-root:unresolved` as a whole; only its learned rows are classified. The two dangling
    sub-classes are the stated exception ([[#r1-dangling]]): they select a row by its DEAD side,
-   ingest-derived or not, and never touch the live end's other rows. {#r2}
+   ingest-derived or not, and never touch the live end's other rows. The report-only
+   `orphan-evidence` class (round 9, [[#r1-orphan-evidence]]) and the `stale-evidence` count read
+   ingest-derived rows the same way and select nothing for removal. {#r2}
 3. **R3 Read-only, defined (22 #m-2).** The audit is a daemon READ op over the lock-free read
    snapshot. It writes no catalog row, no Lance version, no queue entry and no `facts.log` event.
    It enqueues NO `stale_seen` marks (those belong to 16.6's grep read path). Its only output is the
@@ -308,7 +335,9 @@ rel: related-to -> [[project_global_relative_rows_repair]]
    walk's `candidate_trees`, `walk_prunes` and `home_base`, every member with its class, its
    recorded resolution, its readable-today attribute and (for `orphan-root:unverifiable`) its
    `Unverifiable` reasons. A dangling member carries its own `partition` (live end, or `none`) and
-   its `names_from_log`; the manifest's one `partition` field does not scope them (r6 s-2).
+   its `names_from_log`; the manifest's one `partition` field does not scope them (r6 s-2). An
+   `orphan-evidence` member is written with `report_only: true` (round 9); 22.2 R9 selects only
+   `dangling-link` and `dangling-evidence` members, so no apply reaches it.
    Exit 0 when the scan completes; any unreadable input is counted and printed, never skipped
    silently. {#r4}
 
@@ -409,7 +438,13 @@ rel: related-to -> [[project_global_relative_rows_repair]]
      `dangling-link:concept` (`p2`), not a member, `dangling-link:entity` (`none`), not a member
      (`dead-linkage=1`), `dangling-link:entity` (the planted id: the entity side ignores
      `concepts`), `dangling-link:entity` ×2 for `E2` (`unnamed:none`: no one name covers both
-     rows), `dangling-evidence` (its entity's partition), and not a member (vacuum's).
+     rows), `dangling-evidence` (its entity's partition), and `orphan-evidence` (report only:
+     vacuum's; round 9). Mutations (round 9), each FAILS it: "`orphan-evidence` rows are
+     omitted" (the class count is 0, the recount 2); "`orphan-evidence` enters the apply plan"
+     (the plan manifest carries a row 22.2 R9 may select). Two more `linkage_evidence` rows: one
+     whose entity AND concept are dead (`orphan-evidence`, `both-dead`, partition `none`), and
+     one whose ends are both alive with no `entity_links` row (in no class; `stale-evidence`
+     count 1). Mutation "count a stale row as `dangling-evidence`": FAILS.
      **Reborn and per-partition naming (r7 m-1, m-3).** Two more rows: a row of a dead id `R0`
      whose logged name `R` has an `entity` event and a covering `link` event AND a live catalog
      row (re-created) → `dangling-link:entity`, `unnamed:reborn`; a row of a dead id `P0` whose
@@ -441,7 +476,8 @@ rel: related-to -> [[project_global_relative_rows_repair]]
    - **8b, operator census (not a suite test; as 5b).** `--census dangling-link`
      ([[task-16.6-learned-row-validation#r7]]) on copies of cliquedb's and this repo's
      `catalog.read.duckdb` and `facts.log` prints, per store: the class counts (`:entity`,
-     both-dead, `:concept`, `dead-linkage`, `dangling-evidence`); the naming counts, link side
+     both-dead, `:concept`, `dead-linkage`, `dangling-evidence`, `orphan-evidence` with its
+     `both-dead` part, and the `stale-evidence` count, round 9); the naming counts, link side
      and evidence side apart (dead ids, `named`, `unnamed:reborn`, `unnamed:none`,
      `unnamed:ambiguous`); `would_resurrect` (keys with an untombstoned
      `entity` event and no catalog row) and how many of them a dead id claims
@@ -475,6 +511,18 @@ rel: related-to -> [[project_global_relative_rows_repair]]
      helper `_live_ids(conn)` in `removal_audit` that builds the id set and is called from
      `_classify_dangling`" (the per-function check of round 6 passed it); "the repair keeps its
      own `concept_ids` set for the bit loop" (the bit half, `store.py:4433` at `77ac38f`).
+   - **8d, bug-219 reconciled (operator census, round 9, L6; as 8b).** {#ac-8d} On a copy of this
+     repo's `catalog.read.duckdb` taken AFTER bug-216's live re-ingest (its R4), the census also
+     prints bug-219's three numbers re-measured on the same copy, for `rel:` evidence rows only
+     (`detail` starting `rel:`): rows whose SOURCE (the concept side) is dead, rows whose TARGET
+     (the entity side) is dead, and rows with no `entity_links` row. Beside them it prints, from
+     the classifier, `dangling-evidence` + `orphan-evidence:both-dead` restricted to `rel:` rows,
+     `orphan-evidence` restricted to `rel:` rows, and the sum of those dead-end rows and the
+     `rel:` `stale-evidence` count. Each pair is labelled `equal` or `differs by N`; a difference
+     is explained in the summary before 22.2 is built. The 2026-11-13 reading (36,121 rows;
+     24,698 / 7,752 / 25,760; `bsd-215m1` `#s6`, `workflow/bullshit/2026-11-13-1230-215-measurements-4b57796.md`)
+     is the pre-bug-216 reference, cited, not asserted. Mutation: count `orphan-evidence` on the
+     concept side: the target pair reads `differs`.
 
 ## Files to modify {#files-to-modify}
 
@@ -674,3 +722,18 @@ Code claims re-read at `77ac38f`. Later rows win over round 6.
 | r7 b-1 / d9av, s-1, s-2, s-3 | not this task's: [[task-22.2-repair-then-remove#rev-round-7]], [[task-22.3-bug-086-global-repair#rev-round-7]] |
 
 rel: amends -> [[bsd-plan16-22-spec-rereview-r7-331b414]]
+
+## Revision round 9 (2026-11-13) {#rev-round-9}
+
+Applies L6 of [[plan-review-2026-11-13#lead]] (from contra-d CD-6) for the spec wave's G21
+([[plan-review-2026-11-13#spec-gaps]]). L6: bug-219's delete half becomes census input for
+plan-22's dangling classes, and 22.1a widens to a dead entity side (7,752 rows). Code claims re-read
+at `1cf3b9f`. Later rows win over round 8.
+
+| finding / decision | answered in |
+|---|---|
+| L6 widening, read against this spec | CD-6 read only plan-22 `#scope`; this spec already gave an evidence row with a dead ENTITY to `vacuum` step 3 under [[task-22.6-removal-entry-points#r5]] (derived cleanup, ADR-0004 `#a14-removal-scope`). Widening the REMOVAL to that side would give one row two removers. The widening is therefore the AUDIT's: [[#r1-orphan-evidence]] reports and counts the dead-entity side (`report_only`), and its remover stays the vacuum. Put to the lead as an open item in the spec wave report |
+| L6 "census input" | [[#r1-stale-evidence]] (the live-ends, no-edge rows bug-219 counts in its 25,760 and no class owned), AC-8a rows and mutations, AC-8b census lines, [[#ac-8d]] reconciles bug-219's three numbers on a post-bug-216 copy |
+| bug-219's direction words | [[#r1-orphan-evidence]]: for a `rel:` row the evidence entity is the TARGET and the concept the SOURCE (`ingest_gmd.py:1769`, `Store.add_evidence(linkage, concept_id, entity_id)`), so "missing target" = dead entity side |
+| owner of `stale-evidence` | open: no class and no task removes a live-ends evidence row whose edge is gone. Listed in the spec wave report with options; this round only counts it |
+

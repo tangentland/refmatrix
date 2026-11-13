@@ -8,6 +8,7 @@ metadata:
   status: blocked
   created: 2026-10-07
   revised: 2026-10-14
+  updated: 2026-11-13
 ---
 
 # Task 22.4: merge writes (blocked) {#root}
@@ -19,6 +20,9 @@ metadata:
 > **Hand-over (d9j, user 2026-10-14):** plan-22 may close with this task handed to the future
 > ADR-0004 helix implementation plan; when that plan is written it takes this spec as its merge
 > task, and plan-22's engine (22.2) is its only removal/repair path.
+> **Deferral (2026-11-13, L22):** no host plan exists and plan-20 is `drafting` (waiting on the
+> user's 20.1 labels), not dormant. This task and its two merge entry points are tracked as
+> deferral rows ([[#rev-2026-11-13]]), outside the 2026-11-13 goal.
 
 rel: part-of -> [[plan-22-audited-removal-and-repair]]
 rel: depends-on -> [[plan-20-concept-similarity-eval]]
@@ -83,3 +87,11 @@ Owner of ADR-0004 `#rule-no-delete`'s "merge" path. {#owner}
 
 rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
 rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
+
+## Revision (2026-11-13 plan review) {#rev-2026-11-13}
+
+| finding / decision | answered in |
+|---|---|
+| L22 / Cc-8 / CD-9 (22.4 and the two merge entry points as deferral rows under T6; plan-20 is drafting, not dormant; d9j) | [[#root]] deferral note; three rows in [[deferral_registry#registry]]: this task, `fold_concept_dups` and `merge_partition`, each naming its graduation trigger (the helix plan written and taking this spec, after plan-20's rule) |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]

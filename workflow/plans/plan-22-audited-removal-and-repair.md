@@ -8,13 +8,17 @@ metadata:
   status: approved
   created: 2026-10-07
   revised: 2026-10-14
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Plan 22: audited removal and repair {#root}
 
 **Date:** 2026-10-07 (revised 2026-10-14 after the Wave 0 decision log)
-**Status:** Drafting — revision round 16 (2026-10-15) for ch-bsd r13 s-1, s-2 and d9cj (the
+**Status:** APPROVED 2026-10-15 for implementation (d9cm; ch-bsd r15 CLEAN `8fbfb0c`,
+[[plan-review-2026-10-14#t12-approvals]]); revision round 17 (2026-11-13) is the 2026-11-13 plan
+review's: 22.1a reports the dead-entity evidence side, 22.4 and the two merge entry points are
+deferral rows, and this line replaces the body's stale "Drafting" (CD-9; [[#rev-round-17]]).
+Earlier rounds: revision round 16 (2026-10-15) for ch-bsd r13 s-1, s-2 and d9cj (the
 absorb mark keyed per manifest; the vacuum scan judges the absorbing copy; a dangling
 re-insert's sidecar rows are catalog-only through `add_learned_provenance(rows, log=False)`;
 [[#rev-round-16]]); revision round 15 (2026-10-15) for d9ci (a restore re-logs every
@@ -104,7 +108,10 @@ for the user's explicit removal commands:
   owners of bug-111's deferral and of what every purge leaves behind; audited store-wide by
   22.1a ([[task-22.1a-provenance-free-classes#r1-dangling]]) and removed replay-safely by 22.2
   (tombstone and `unlink` by NAME, never an id-keyed event; d9aq;
-  [[task-22.2-repair-then-remove#r9-dangling]]);
+  [[task-22.2-repair-then-remove#r9-dangling]]); an evidence row whose ENTITY is dead
+  (`orphan-evidence`) is REPORTED by 22.1a since round 17 and removed only by `vacuum` step 3
+  (22.6 R5, table below), so bug-219's stale rows have one census and one remover per row
+  ([[task-22.1a-provenance-free-classes#r1-orphan-evidence]]);
 - **the selector entry points (d9k): `rmx forget`, `rmx memory forget`, `rmx memory bulk-forget`**
   build a plan manifest and need `--confirm <hash>`; restorable (task 22.6 R1).
 
@@ -184,12 +191,12 @@ concept classes do not live under `rmx learn` (#m-6).
 
 | task | wave | what | acceptance (summary) |
 |---|---|---|---|
-| 22.1a | 1 | provenance-free classes: `orphan-root` (incl. root-`ambiguous`, `home-readable`, `unverifiable`), `missing-file`, `duplicate`, `orphan-alias`, `stale-subject`, `dangling-link` and `dangling-evidence` (store scope, dead end named from `facts.log`); the `removal_audit` verb | fixture row per class; the recovered probe re-run on a global copy with a churn-bounded `reproduced`/`drift` verdict beside the applied split; independent recount equals audit count; one liveness predicate shared with `repair_fragments` (AST check); audit writes nothing |
+| 22.1a | 1 | provenance-free classes: `orphan-root` (incl. root-`ambiguous`, `home-readable`, `unverifiable`), `missing-file`, `duplicate`, `orphan-alias`, `stale-subject`, `dangling-link` and `dangling-evidence` (store scope, dead end named from `facts.log`); `orphan-evidence` REPORT ONLY and the `stale-evidence` count (round 17, L6); the `removal_audit` verb | fixture row per class; the recovered probe re-run on a global copy with a churn-bounded `reproduced`/`drift` verdict beside the applied split; independent recount equals audit count; one liveness predicate shared with `repair_fragments` (AST check); audit writes nothing |
 | 22.2 | 1 | the engine: repair/move/remove primitives, row-level `facts.log` events in both replay paths, manifest + intent log + restore, `bind` + recorder, ablation gate on a copy of THIS store, `removal_apply`/`removal_restore`; dangling-row removal; with 22.6 R6 in its slice | rebuild reproduces post-apply; a rebuild after a dangling removal resurrects no dead endpoint; restore equal by name incl. evidence, protection, vectors, dangling rows; two-partition AC; gate refuses on a masked delta and on a store lacking the candidates |
 | 22.5 | 1 | cross-store move: copy → verify → forget across two daemons, manifest-backed, idempotent, sidecar rows travelling with their evidence; the no-owner buckets reported and held until the user rules (d9b) | crash at each step leaves no loss and no duplicate; collision merges; only named store roots; nothing applied to a `pending` no-owner bucket |
 | 22.3 | 1 | first apply, live global store: `orphan-root:unresolved` removed (`orphan-root:unverifiable` kept) (measured; 563 was the probe's no-verifying-file count, which included rows still readable today), 48 kept ambiguous, the 1,655 pytest-tmp entities' learned rows removed (the entities kept as user-asserted under d9ab; removing them is the user's selector step); learned-only members that a `cli.log` grep record attributes to the learner purged whole (≤ 90; the count printed and shown to the user before the apply, d9aw); resolved and `home-readable` entities handed to 22.5 (the no-owner ones held for the user's ruling, d9b) | total global `unreadable` over a pre-registered pattern set drops to the residual explained by class; memory count unchanged |
 | 22.1 | 2 | flag-sensitive classes: `ok`, `moved` (per `(concept, file)` set), `grown`/`shrunk`, `stale-line`, `out-of-range`, `unverifiable`, `empty-learned`; every row decided by 16.6's `learned_verify` (no matcher here); 16.6's read-time marks read for ordering and reporting | two-hit shift ends re-pointed with 0 `ambiguous`; BRE, POSIX-class and `\<…\>` rows `ok`; exit 2 `unverifiable`; pre-provenance `-i` row stays `ok`; marked rows listed; `empty-learned` recount exact |
-| 22.4 | blocked; handed over on close (d9j) | merge writes into the alias map; `fold_concept_dups` as a merge entry point (d9o) | blocked until ADR-0004's helix plan defines the alias map and plan-20 supplies the rule; that plan takes it over |
+| 22.4 | blocked; handed over on close (d9j); a deferral row since round 17 (L22) | merge writes into the alias map; `fold_concept_dups` as a merge entry point (d9o) | blocked until ADR-0004's helix plan defines the alias map and plan-20 (`drafting`, waiting on the user's 20.1 labels) supplies the rule; that plan takes it over. No host plan exists: tracked in [[deferral_registry#registry]] with `fold_concept_dups` and `merge_partition` |
 | 22.6 | 1 (after 22.2; parallel to 22.5) | entry points (`forget`, `memory forget`, `memory bulk-forget` with `--confirm`; `untrack`, `prune-noise --drop` manifest first) and the bug-107 paths (deleted/ignored-file purge with manifest; sync edits keep learned rows; `vacuum` orphan drop with manifest + event; `unprotect` source) | `forget` without `--confirm` writes nothing; bulk-forget restores bodies; edit keeps learned rows and a rebuild agrees; vacuum drops are logged and replayable |
 
 Task specs: `workflow/plans/plan-22-audited-removal-and-repair-tasks/`.
@@ -313,6 +320,22 @@ earlier links still resolve.
    source, which attributes 217 of this repo's and 90 of the global store's learned-only
    protections to the learner; those are purgeable whole when they are class members, and 22.3
    prints its count before the live apply ([[task-22.3-bug-086-global-repair#r3]]).
+
+## Revision round 17 (2026-11-13) {#rev-round-17}
+
+Applies the 2026-11-13 plan review's rows for plan-22 ([[plan-review-2026-11-13#lead]] L2, L6,
+L22; contra-d CD-6, CD-9; spec-wave G21, [[plan-review-2026-11-13#spec-gaps]]). The plan stays
+APPROVED; the task-level changes are 22.1a round 9 and 22.4's deferral note. `src/` unchanged.
+
+| finding / decision | answered in |
+|---|---|
+| CD-9 (body "Drafting" vs frontmatter `approved`, POP "APPROVED d9cm") | [[#root]] status line |
+| L6 / CD-6 (bug-219's delete half is census input; widen 22.1a to a dead entity side) | [[task-22.1a-provenance-free-classes#rev-round-9]]: the widening is the audit's (`orphan-evidence`, report only), because 22.6 R5 already removes that side; [[#scope]] dangling bullet; [[#tasks]] 22.1a row |
+| L22 (22.4 and the two merge entry points become deferral rows under T6: "no host plan; plan-20 drafting", d9j) | [[deferral_registry#registry]] three rows; [[#tasks]] 22.4 row; [[task-22.4-merge-writes#rev-2026-11-13]] |
+| L2 (plan-22 after 16.6's Wave-1 slice and 17.1, the order of record) | no change: [[#dependencies]] already says so; the 2026-11-13 queue (item 9) now matches it |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[plan-review-2026-11-13#spec-gaps]]
 
 ## Revision round 16 (2026-10-15) {#rev-round-16}
 
