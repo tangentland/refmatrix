@@ -1,0 +1,38 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+___________ test_ac13_generator_emits_pack_raised_k_and_no_variable ____________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-918/test_ac13_generator_emits_pack0')
+
+    def test_ac13_generator_emits_pack_raised_k_and_no_variable(tmp_path):
+        """AC-13 / R7: the three recall commands carry `--pack`, no `--json`, no `$` after HOOK_ENV
+        (no interpolated budget variable), and `--k` SessionStart 30, per-prompt 12, PreCompact 30
+        (PreCompact absent only if R0 dropped it); then `rmx install-hooks --apply` → `--check` is
+        clean in the sandbox."""
+        root = tmp_path / "proj" / ".refmatrix"
+        root.mkdir(parents=True)
+        (root.parent / ".git").mkdir()
+        want = {"UserPromptSubmit": ("memory recall --stdin-json", 12),
+                "SessionStart": ("memory recall --session-start", 30),
+                "PreCompact": ("memory recall --recent", 30)}
+        for ev, (needle, k) in want.items():
+            hits = [c for e, _m, c in h.hook_entries(root, ev) if needle in c]
+            if ev == "PreCompact" and not hits:
+                continue
+            assert len(hits) == 1, (ev, hits)
+            tail = s.after_env(hits[0])
+            assert "--pack" in tail and "--json" not in tail, (ev, tail)
+>           assert "$" not in tail, (ev, tail)
+E           AssertionError: ('UserPromptSubmit', 'rmx memory recall --stdin-json --k 12 --scope both --pack --max-bytes ${RMX_HOOK_BUDGET_BYTES:-4000} --timeout 5')
+E           assert '$' not in 'rmx memory ... --timeout 5'
+E             
+E             '$' is contained here:
+E               max-bytes ${RMX_HOOK_BUDGET_BYTES:-4000} --timeout 5
+E             ?           +
+
+tests/test_task25_1_recall_budget.py:1204: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac13_generator_emits_pack_raised_k_and_no_variable
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.18s

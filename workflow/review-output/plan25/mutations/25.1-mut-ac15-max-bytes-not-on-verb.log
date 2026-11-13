@@ -1,0 +1,19 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+____________ test_ac15f_max_bytes_is_a_recall_state_verb_parameter _____________
+
+    def test_ac15f_max_bytes_is_a_recall_state_verb_parameter():
+        """AC-15 (f): `max_bytes` is a parameter of the recall_state VERB (MCP schema) and the CLI
+        flag `--max-bytes` (verb parity)."""
+        from refmatrix import cli, mcp
+        props = mcp.TOOLS["rmx_recall_state"]["schema"]["properties"]
+>       assert "max_bytes" in props, sorted(props)
+E       AssertionError: ['memory_dir', 'project', 'root', 'session']
+E       assert 'max_bytes' in {'memory_dir': {'type': 'string'}, 'project': {'description': "Target another project by the NAME of a registered refm...path to a project or its .refmatrix); default: the server's project", 'type': 'string'}, 'session': {'type': 'string'}}
+
+tests/test_task25_1_recall_budget.py:1335: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac15f_max_bytes_is_a_recall_state_verb_parameter
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.17s

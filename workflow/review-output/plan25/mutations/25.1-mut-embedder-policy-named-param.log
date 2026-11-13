@@ -1,0 +1,19 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+__________ test_ac7_schema_has_pack_params_and_never_embedder_policy ___________
+
+    def test_ac7_schema_has_pack_params_and_never_embedder_policy():
+        """AC-7 / r4 #n2: `pack`, `max_bytes`, `include_subjects` are verb params (MCP schema) and
+        CLI options; `embedder_policy` rides `**internal` and is absent from the schema."""
+        from refmatrix import cli, mcp
+        props = mcp.TOOLS["rmx_memory_recall"]["schema"]["properties"]
+        assert {"pack", "max_bytes", "include_subjects"} <= set(props), sorted(props)
+>       assert "embedder_policy" not in props
+E       AssertionError: assert 'embedder_policy' not in {'degree': {'description': '>0 attaches a context bundle (body + one-hop neighbours) per row', 'type': 'integer'}, 'em...ray'}, 'fuse': {'description': 'RRF-fuse dense ANN with symbolic content_rank (BM25); opt-in', 'type': 'boolean'}, ...}
+
+tests/test_task25_1_recall_budget.py:984: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac7_schema_has_pack_params_and_never_embedder_policy
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.17s

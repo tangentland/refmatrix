@@ -1,16 +1,16 @@
 ---
 gmd: "0.1"
 id: task-25.1-recall-hook-byte-budget-summary
-title: "Task 25.1 implementation summary (stub): RED tests for the recall hook byte budget (bug-164) and the MCP unknown-project error (bug-181)"
-tags: [implementation-summary, plan-25, task-25.1, bug-164, bug-181, red, tests]
+title: "Task 25.1 implementation summary: RED tests and GREEN code for the recall hook byte budget (bug-164) and the MCP unknown-project error (bug-181)"
+tags: [implementation-summary, plan-25, task-25.1, bug-164, bug-181, red, green, tests]
 metadata:
   node_type: implementation-summary
-  status: red
+  status: green
   created: 2026-11-11
-  updated: 2026-11-11
+  updated: 2026-11-13
 ---
 
-# Task 25.1 implementation summary (stub, RED only) {#root}
+# Task 25.1 implementation summary {#root}
 
 rel: implements -> [[task-25.1-recall-hook-byte-budget]]
 rel: part-of -> [[plan-25-cliquedb-field-report]]
@@ -164,3 +164,224 @@ positive control. The routing file's PRE-EXISTING stubs (`daemon.call` / `daemon
 (`workflow/test_mock_registry.md`, last row), classified internal-active, graduating onto the
 25.1 stores at GREEN. The registry's recent rows, including this one, sit below its
 `#graduation-log` header: pre-existing layout drift, not fixed here. {#mocks-registry}
+
+## GREEN {#green}
+
+rel: evidence-for -> [[task-25.1-recall-hook-byte-budget#acceptance]]
+rel: depends-on -> [[plan-25-hook-bytes]]
+
+`green-251` (2026-11-11) wrote the GREEN and left it uncommitted. `green-251b` resumed it on
+2026-11-13, triaged it, fixed it, and committed it as `16ace00` on
+`task-25.1-recall-hook-byte-budget`. That commit touches `src/refmatrix/` (two new modules and
+seven changed ones), `.claude/settings.json` and `README.md`. No test was edited. {#green-lead}
+
+### Signatures {#green-signatures}
+
+- `hook_budget`: `CHANNEL_BUDGET_BYTES` has eight channels (`recall_state` included).
+  `HOOK_COMMAND_CHANNELS`, `EVENT_SPLIT` and `NON_RMX_RESERVE_BYTES` are keyed per event
+  (`UserPromptSubmit` 512, `SessionStart` 3,584). Also `MIN_USEFUL_RECALL_BYTES` and the functions
+  `budget(channel) -> int`, `resolve(channel, max_bytes) -> int`, `env_override() -> int | None`,
+  `nbytes(text) -> int`, `clip_utf8(text, max_bytes) -> str` and
+  `fit_blocks(blocks, max_bytes, *, trailer) -> Fitted(text, kept, dropped, payload_bytes)`.
+- `recall_pack.pack(rows, *, hooks, max_bytes, channel, query, mode, k_more, since=None,
+  subject=None, global_hooks=None) -> Packed(text, spans, named, more, payload_bytes)`. Also
+  `hook_for`, `hook_line`, `fetch_of`, `more_command`, `header_line` and `first_sentence`.
+- `recall.replica_memory_recall(root, *, partition, query, k, kinds, fuse, rerank, left=None,
+  warnings=None, embedder_policy="hub_only") -> {"hits", "fetch", "embedder"} | None`, plus
+  `recall.replica_first_enabled()` and `recall.entity_row(s, eid, kinds)`.
+- `verbs.memory_recall(..., include_subjects=False, ..., pack=False, max_bytes=None, timeout=30.0,
+  **internal)`. `embedder_policy` and `channel` ride `**internal`.
+- `verbs.recall_state(root, *, session=None, memory_dir=None, max_bytes=None)`.
+- New in `verbs`: `VerbUnknownProjectError(VerbArgsError)`, `recall_patterns`,
+  `is_stale_subject`, `recall_rows_filter`, `pack_recall`, `_dense_legs` and
+  `_memory_get_global`.
+- New in `handoff`: `recall_state_blocks(rep) -> list[str]` and
+  `fit_recall_state(rep, max_bytes) -> (text, dropped)`.
+- `mcp._resolve_root(args)` raises `VerbUnknownProjectError` when it is given a `project` it
+  cannot resolve.
+- New CLI flags: `memory recall --pack --max-bytes --include-subjects`,
+  `memory get --scope {project,global}`, `scan-prompt --max-bytes`, `curator status --max-bytes`,
+  `focus context --max-bytes` and `recall-state --max-bytes`.
+
+### What green-251b changed in the uncommitted GREEN {#green-resume}
+
+1. **A spent budget no longer throws away the project rows (a regression).** When the deadline
+   is gone before the global leg runs on `scope=both`, the verb now keeps the project rows and
+   adds "global rows omitted: …". On `scope=global` it still raises busy. Before this change the
+   interactive and hook CLI, now routed through the verb, exited 1. The rule is the 2026-09-15
+   live incident that `test_plan2_remedy_r6.py::test_budget_spent_before_the_global_leg_keeps_the_project_rows`
+   pins.
+2. **Output could run one byte over N (a regression).** `click.echo` adds a newline that the
+   budget never counted. The pack's trailer now carries and counts its own newline, and the CLI
+   writes the verb's text byte for byte (`nl=False`). scan-prompt, curator status and focus
+   context now fit their output to `cap - 1`, which leaves room for the newline they print.
+3. **The hook's degrade row is typed by the raw transport cause again (21.1 R4).**
+   `_degrade_or_raise` now records the first non-verb exception in the cause chain, through
+   `cli._raw_transport_cause`. The no-daemon refusal keeps that chain (`from e`). Without this,
+   moving the dial into the verb turned a refused connect into
+   `VerbAbsentError: memory recall needs …` and a mid-answer close into `skipped_budget`. Both
+   are 21.1 `error`s. The d8 no-daemon case has no transport cause and is still recorded as
+   `VerbAbsentError: memory recall needs the daemon up …` (AC-4 (c)).
+4. **`RMX_RECALL_REPLICA_FIRST=0` now applies inside `recall.replica_memory_recall`.** R5 says
+   the switch moves with the leg. Setting it turns off every replica step, including the
+   no-daemon step, as it did at HEAD.
+5. **The curator's kept-file notice now names the byte cap as a reason**, beside `--limit`.
+   The `README.md` hooks table was regenerated with `scripts/gen-cli-tree.py`, running under the
+   clone's `PYTHONPATH`.
+{#green-resume-list}
+
+### Runs {#green-runs}
+
+| run | result | log |
+|---|---|---|
+| uncommitted GREEN, full suite (green-251, 2026-11-11) | 41 failed, 4360 passed, 1 skipped | `workflow/review-output/plan25/25.1-green-full-wip.log` |
+| RED files plus the touched failing files, after fixes 1-2 | 11 failed, 161 passed | `workflow/review-output/plan25/25.1-green-b-red1.log` |
+| family (75 files: hooks, recall, verbs, MCP, scan, focus, handoff, save-state, budget, rerank, curator, 21.1, plan-2/3 remedies), after fixes 1-5 | 34 failed, 1251 passed, 1 skipped | `workflow/review-output/plan25/25.1-green-b-family.log` |
+| measurement probe (fixture, 3 runs, plus the a12 probe) | 2 passed | `workflow/review-output/plan25/25.1-green-b-probe.log` |
+| mutations (38) | 37 killed, 1 survived (equivalent, a4) | `workflow/review-output/plan25/mutations/` |
+| full suite at `16ace00` | **38 failed, 4363 passed, 1 skipped** (46 min). The 38 are AC-5, the 6 in [[#lead-judge]], 4 pre-existing and 27 contract changes ([[#green-triage-table]]). No regression is left | `workflow/review-output/plan25/25.1-green-full.log` |
+
+{#green-runs-table}
+
+### The RED files after GREEN {#green-red-files}
+
+Over `tests/test_task25_1_recall_budget.py` and `tests/test_mcp_memory_recall_routing.py`,
+7 tests still fail:
+
+- **AC-5, as expected.** `test_ac5_mistyped_savestate_not_named_on_the_packed_argv` fails with
+  `assert 'savestate_fx01' not in ['savestate_fx01', 'fx_dup_x', …]`. It waits on task 26.4
+  (lead decision a5). No 26.4 code was written.
+- **Six for the lead to judge (Amendment 2).** Each one is measured below
+  ([[#lead-judge]]).
+
+### The six non-AC-5 failures, for the lead to judge {#lead-judge}
+
+All of these numbers come from the fixture probe at `16ace00`
+([[plan-25-hook-bytes#session-start]]). None of the sandbox daemons set `RMX_RERANK`, so every
+leg ran with the daemon's default rerank (on), served by the daemon RPC leg (the verb's
+`warnings` say "recall leg: daemon RPC (the daemon's embedder and rerank default)"). Any
+exception is said in its row.
+
+| # | test | measured | reading |
+|---|---|---|---|
+| 1 | `test_ac9_pack_trailer_quotes_a_multiline_query` | 12 unit rows give 12 hook lines in 1,502 of 2,000 B. Nothing is dropped, so there is no trailer. With 20 rows: 14 named, and the trailer reads `+6 more: rmx memory recall 'line one of the question line two; rm -rf $HOME \`x\` pad …' --k 24`, collapsed to one line, at most 120 chars, and `shlex`-quoted | TEST fixture: 19.1 R3(d) prints a trailer only "when any retrieved hit was not named". 12 rows fit in 2,000 B, so the `more > 0` precondition never holds |
+| 2 | `test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc` | verb, `kinds=[memory, doc]`, k=40: the first doc is at rank **33** with the daemon's default rerank and rank **32** with `rerank=False`. Doc distances are 0.52-0.57 against 0.29-0.35 for memories (green-251's probe). With `kinds=[doc]` alone the verb returns the 10 docs | FIXTURE (or PRODUCT): the `kind=doc` leg works, but no fixture doc can reach the top 8 under either rerank setting. The CLI and the verb name the same 8 hits, and that is the AC-4 (f) parity |
+| 3 | `test_ac6_include_subjects_brings_live_subjects_back_never_the_stale_one` (argv) | the per-prompt argv with `--include-subjects` names 12 hits and none of them is a subject. The verb with k=40 and the daemon's default rerank puts the live subjects at ranks **32-35 of 36** | **PRODUCT finding:** the cross-encoder rerank, which is the production default, buries all 4 live subjects. `--include-subjects` then never shows a subject in a k=12 recall on this fixture |
+| 4 | `test_ac6_verb_hides_subjects_and_the_stale_one_even_with_the_opt_in` (verb) | with `rerank=False` the same call puts the subjects at ranks **1-4**. The stale subject is never returned under either setting | as #3. The exclusion works, but the opt-in loses to the rerank |
+| 5 | `test_ac9_session_start_carries_bodies_after_all_hook_lines` | 30 named hits, 0 trailer, 8,609 of 9,000 B. The hook lines take 5,961 B and leave 2,981 B. Three bodies fit, all GLOBAL rows: `fx_dup_x` at 126 B, and `gx_mem_9` and `gx_mem_8` at 1,214 B each. The smallest project body among the 30 is `fx_mem_12` at 4,934 B | SPEC tension: R3 puts every hook line before any body, and R7 sets SessionStart to `--k 30`. The 9,000 B budget then leaves no room for a fixture project body (2.0-8.7 KB). The test counts only `BODYMARK` bodies, and only project rows carry that marker, so it sees 0 |
+| 6 | `test_ac10_delivered_events_slice_the_payload_by_bytes` | the event that fails is `fx_dup_x`, the GLOBAL duplicate. Its 126 B body was appended at byte 6,031, and its `body_offset_bytes` / `body_bytes` slice that body exactly | TEST detector: the test calls a hit "bodied" only when its body contains `BODYMARK`, so a real global body is treated as having no body. Its later global-file checks are never reached |
+
+{#lead-judge-table}
+
+### Triage of the non-25.1 failures, by E line {#green-triage}
+
+The baseline is `release-0.82.0-full.log` in the dev repo (bug-127/168, bug-168 ×9, bug-170,
+bug-196 ×2). The list is final: it is the full-suite run at `16ace00` ([[#green-runs]]). That
+run had 31 non-25.1 failures: 4 pre-existing and 27 contract changes. The 3 regressions
+listed as FIXED failed only in the uncommitted run. The bug-168 rewriter ×9 failures from
+0.82.0 do not occur in this clone.
+
+| test | E line at GREEN | class |
+|---|---|---|
+| `test_brief_real_daemon::test_an_unknown_class_fails_loudly_through_the_daemon` | `_duckdb.IOException: … Could not set lock on file …catalog.A.duckdb` | pre-existing; same E line as 0.82.0 |
+| `test_task21_1_agent_usage_report::test_ac6_frozen_fixture_prints_the_exact_counts`, `::test_ac6_cli_log_recalls_are_split_per_channel` | `agent usage · window 2026-09-23 .. ` (counts) | pre-existing (bug-196 ×2); same E line |
+| `test_gmd_lint_requires_version::test_the_repo_scope_is_clean_under_the_stricter_gate` | `docs/INDEX.md:31: error: [dangling-doc] [[adr-0000-adr-overview]] …` | pre-existing at this branch's base: GREEN edits no file under `docs/`. Its E line differs from 0.82.0's, whose errors were in a `workflow/bullshit` report |
+| `test_docs_generated::test_hooks_table_section_equals_its_render`, `::test_check_mode_reports_drift_and_apply_fixes_it` | (README hooks table drift) | regression, FIXED: table regenerated |
+| `test_plan2_remedy_r6::test_budget_spent_before_the_global_leg_keeps_the_project_rows` | `Error: recall not confirmed within 0.999603s …`, exit 1 | regression, FIXED ([[#green-resume-list]] item 1) |
+| `test_bigop_nonblocking::test_replica_recall_env_kill_switch`, `::test_replica_recall_none_without_shared_workers`; `test_plan2_remedy_r6::test_rerank_is_skipped_and_said_when_the_budget_is_short`, `::test_rerank_timeout_is_said_not_swallowed`; `test_plan2_remedy_r7::test_json_recall_with_no_hits_prints_an_empty_list`, `::test_replica_recall_leg_sends_a_capped_pool_to_the_reranker`; `test_rerank_cost_budget::test_the_replica_recall_leg_skips_and_says_the_numbers`, `::test_the_replica_recall_leg_reranks_when_the_budget_covers_it`; `test_rerank_warning_routes::test_replica_recall_names_the_cause` | `ImportError` / `AttributeError: module 'refmatrix.cli' has no attribute '_replica_memory_recall'` | CONTRACT CHANGE, spec `#r5` (lines 209-214): "`_replica_memory_recall` moves to `recall.replica_memory_recall(root, *, partition, …)` … reads NO CLI global". The tests should target the moved leg with an explicit `root` / `partition` over `search.cached_replica` instead of `cli._reader_store` / `cli._resolve_partition`. The moved code keeps `RERANK_MIN_S`, `RERANK_PROBE_S`, `RERANK_DOC_CHARS` (re-exported from `cli`), the cause in `rr_why`, the A/B switch and the None returns |
+| `test_rerank_warning_routes::test_cli_recall_daemon_branch_prints_the_warnings` | exit 1: `memory-partition probe failed (cannot dial the daemon … socket path is too long …)` | CONTRACT CHANGE, `#r5` (lines 296-297): the CLI "computes no rows of its own". The test patches `cli._memory_daemon_call`, which is no longer the recall transport; the verb dials through `verbs._call`. The behaviour it checks (daemon `warnings` reach stderr) is kept: `_dense_legs` extends `warnings` from the RPC and the CLI prints every warning |
+| `test_plan3_remedy::test_verb_dense_rows_carry_the_annotation` | `['recall leg: daemon RPC (the daemon's embedder and rerank default)'] == []` | CONTRACT CHANGE, `#r5` (lines 250-251, 278; AC-4 (g)/(i)): "the verb's `warnings` name which leg and which embedder served" |
+| `test_task21_1_used_events` (9: `test_ac11a` ×2, `test_ac11b` ×2, `test_ac11c`, `test_ac11d`, `test_ac11e`, `test_ac11f`, `test_r12`) and `test_task21_1_emitters::test_ac8_prompt_recall_retrieves_10_delivers_3_in_intuition`, `::test_ac10_global_hit_goes_to_the_global_file_project_hit_to_the_project_file` | `json.decoder.JSONDecodeError: Expecting value` on `'# rmx recall · prompt_recall · …'` | CONTRACT CHANGE, `#r7` (line 302): "the generator emits `--pack` in place of `--json` on the three recall commands". Their helpers `json.loads` the generated hook's stdout |
+| `test_task21_1_recall_skip::test_ac2b_busy_daemon_skip_writes_one_skipped_budget_recall_row`, `::test_ac2b_non_budget_refused_connect_is_error`, `::test_ac2b_mid_answer_close_is_error_not_traceback` | `assert _stdout_is_empty_json('')` (the row's outcome and error assertions now pass) | CONTRACT CHANGE, `#r5` d8 (line 281: "prints NOTHING to stdout") and `#r7`. A `--pack` hook that degrades prints nothing, never `[]` |
+| `test_task3_7_remedy_r1::test_cli_drain_that_printed_more_leaves_the_rest_in_the_spool`, `test_task3_7_remedy_r2_meh::test_drain_behind_an_oversized_head_file_reports_what_it_kept_on_stderr` | `'+5 more' in …`, but the line reads `+8 more path(s) not shown within 500 B` | CONTRACT CHANGE, `#r0b` (lines 152-155): "`rmx curator status` … fits its lines through `fit_blocks` to `budget("curator_status")`" (500 B). Drain safety holds: only the paths shown are drained, and the kept-file notice is still on stderr |
+
+{#green-triage-table}
+
+### Mutations {#green-mutations}
+
+The method follows `#mutations-method`. The GREEN was committed first. Each mutation had a
+single edit and its own log. The touched files were restored by `git checkout --` in a separate
+subprocess, which also verified `git diff --quiet`, and `__pycache__` was cleared after every
+mutation. The stated fix lines were grepped after the batch. The runner is a scratch script,
+not committed. The logs are in `workflow/review-output/plan25/mutations/25.1-mut-<id>.log`.
+
+| mutation (AC) | status | killed by (E line) |
+|---|---|---|
+| budget applied before the merge: the pack is given the project rows only (AC-4 a) | KILLED | `test_ac1_ac4a_per_prompt_argv…`: exit 1, because `_echo_pack` refuses spans for rows the payload does not carry |
+| chars instead of bytes (AC-2) | KILLED | `test_ac9_fit_blocks…[2000]`: `3532 <= 2000` |
+| bodies before hook lines (AC-9) | KILLED | `body of u_mem_00 precedes a hook line` |
+| a cut body (AC-9) | KILLED | `body of u_mem_02 is cut` |
+| missing trailer count (AC-9) | KILLED | `(15 + 0) == 20` |
+| spans in characters (AC-10) | KILLED | `test_ac10_pack_spans_are_utf8_byte_ranges`: the hook-line slice is wrong |
+| generator keeps `--json` (AC-13) | KILLED | `test_ac13`: `… --json --timeout 5` |
+| `${RMX_HOOK_BUDGET_BYTES}` interpolated into the argv (AC-8, AC-13) | KILLED | `test_ac13`: the `$` is in the tail |
+| `subject` exclusion dropped (AC-6) | KILLED | `AC-6 (replica leg): subjects named: ['subject_quasar_ledger_0', …]` |
+| stale subject visible (AC-6) | KILLED | `test_ac6_session_start…`: `--include-subjects` names `subject_quasar_ledger_4` |
+| a body counted as a second named hit (AC-9) | KILLED | `pk.named == list(p.named)` fails |
+| `memory get --scope global` falls back to the project row (AC-11) | KILLED | `fx_dup_x id=205 mtype=project` |
+| a `delivered` event for a trimmed hit (AC-10) | KILLED, but **not decidable** | same E line as GREEN (`body_offset_bytes` 6,031 on `fx_dup_x`). The fixture's SessionStart names 30 of 30, so no hit is trimmed |
+| the packer calls a telemetry writer (AC-10), v1 | ineffective | the span records carry no `partition`, so `emit_recall_events` dropped them and the E line is unchanged |
+| the packer calls a telemetry writer (AC-10), v2 (emits `recall_item` rows) | KILLED | `len({query_id, 'packer'}) == 1` fails: 2 query_ids |
+| the CLI renders its own text, not the verb's (AC-7) | KILLED | `test_ac7` byte-for-byte |
+| the verb skips the replica leg (AC-4 b) | KILLED | `VerbAbsentError: daemon not running for …/fxb/.refmatrix` |
+| scan-prompt not fitted (AC-12) | KILLED | `printed 6660 B > budget('scan_prompt') = 4500 B` |
+| curator status not fitted (AC-12) | KILLED | `printed 1885 B > … = 500 B` |
+| the moved replica leg reads the CWD store (AC-4 e) | KILLED | `test_ac4e_mcp_cross_project…`: `set()` |
+| the interactive path computes its own rows: the CLI passes `rerank=False` (AC-4 f) | KILLED | first assertion: CLI `[…, fx_mem_06, fx_mem_01, …]` != verb `[…, fx_mem_00, fx_mem_10, …]`. This E line differs from GREEN's doc-leg failure |
+| the no-daemon hook exits 1 (AC-4 c) | KILLED | `AC-4 (c): exit 1` |
+| a global hit's `delivered` event in the project file (AC-10) | KILLED, but **not decidable** | same E line as GREEN. AC-10 fails on `fx_dup_x`'s body before it reaches its scope check |
+| hook mode embeds through `shared_embedder` (AC-4 c) | KILLED | `stdout not empty: b'# rmx recall · prompt_recall · 8 hits …'` |
+| interactive / MCP kept hub-only (AC-4 g) | KILLED | `AC-4 (g): exit 1: … needs the daemon up …` |
+| `shared_embedder` tried before the daemon RPC (AC-4 i) | KILLED, **indirectly** | there is no AC-4 (i) test (red-251 a13). Over both RED files, two tests fail that pass at GREEN: `test_ac4d_rows_parity…[no-worker]` and `test_ac7_cli_prints_the_verbs_text…`. Those parity tests see the in-process verb answer from a private-worker replica while the argv answers from the daemon |
+| `embedder_policy` made a named verb parameter (AC-7) | KILLED | `'embedder_policy' not in {…schema…}` |
+| the replica leg binds the project partition (AC-4 h) | KILLED | `replica leg [] != rpc leg ['fx_mem_26', …]` |
+| the pack looks hooks up by id only (AC-9, r3 #m2) | **SURVIVED** | equivalent through `load_hooks`, which aliases path keys to ids (lead a4). A spec finding |
+| focus context not fitted (AC-12b) | KILLED | `printed 3297 B > … = 1500 B` |
+| one `NON_RMX_RESERVE_BYTES` for both events (AC-12b) | KILLED | `{'SessionStart': 512, 'UserPromptSubmit': 512}` |
+| HEAD's silent `project` fallback restored (R10) | KILLED | `R10: project='charlie' names no store, yet _resolve_root returned …/alpha/.refmatrix` |
+| AC-15: entry chained into another command (a) | KILLED | `test_ac15a` |
+| AC-15: matcher drops `compact` (a) | KILLED | `test_ac15a` |
+| AC-15: output not fitted (b, c) | KILLED | `test_ac15c`: 4,507 B > 700 (b passes: the full report fits 9,000) |
+| AC-15: no `--max-bytes` in the generated argv (a, b, c) | KILLED | `test_ac15a` |
+| AC-15: a traceback instead of one `Error:` line (e) | KILLED | `test_ac15e`: `Traceback` in stderr |
+| AC-15: `max_bytes` not on the verb (f) | KILLED | `['memory_dir', 'project', 'root', 'session']` |
+
+{#green-mutations-table}
+
+### a12: a bare `rmx recall-state` on an unreadable memdir {#green-a12}
+
+This was measured on a throwaway sandbox store, with no daemon and the memdir at mode 0.
+`rmx recall-state`, `rmx recall-state --json` and `rmx recall-state --max-bytes 9000` each exit 1
+with exactly ONE line on stderr: `Error: recall-state: the memory dir … is not readable`. None of
+them prints a traceback, and stdout is 0 B. {#green-a12-result}
+
+### Flags for the lead and the test engineer {#green-flags}
+
+- **F1. `#r10-bus` is neither built nor tested.** It is the user's 2026-11-10 decision to split
+  `rmx_bus_pub`'s `project` field into `about`. No RED test covers it, so it needs tests first.
+  The R10 sweep already refuses an unknown `project=` on `rmx_bus_pub`.
+- **F2. R11's last bullet is neither built nor tested.** It asks for recall-state to be counted
+  as producer `recall_state` in `rmx telemetry --context`. R11 (d)'s "counted" is met as "said"
+  (red-251 a12): the daemon block reads `daemon not running`.
+- **F3. AC-4 (i) has no test.** Its mutation is killed only through AC-4 (d) and AC-7 parity.
+  The "no `modelsrv` child, no `sentence_transformers`" assertions that the spec names are
+  unwritten.
+- **F4. Two AC-14 mutations are undecidable while AC-10 is RED** ([[#lead-judge-table]] #6):
+  "a delivered event for a trimmed hit" and "a global hit's delivered event in the project
+  file". The fixture's SessionStart pack also trims no hit, so the trimmed-hit leg needs a
+  payload with a non-zero trailer.
+- **F5. The hooks-by-id-only mutation survives** as an equivalent (lead a4: spec finding).
+- **F6. The `recall leg: …` line is printed on every recall.** The spec wants it in the
+  `warnings`. The CLI prints every warning to stderr as `# rmx: warning: …`, so every recall,
+  hook included, now prints one informational line under a "warning" prefix. Hook stderr on
+  exit 0 is not injected. The lead should decide whether the CLI should print it without the
+  prefix.
+- **F7. The mock-registry row for the routing file is not graduated.** `#mocks-registry` said
+  that row (the `daemon.call` / `discover_roots` stubs) would graduate at GREEN. Graduating it
+  means editing tests, which is test-engineer work, so it was not done here.
+- **F8. Registry.** bug-164 and bug-181 close at merge (spec `#files-to-modify`), so the lead
+  writes those rows. Fixes 1-3 in [[#green-resume-list]] were regressions inside the uncommitted
+  GREEN and never reached `master`.
+- **F9. 26.4 overlap.** No 26.4 code is here. AC-5 turns green only after the bridge types
+  `savestate_*` as `session/recall-state`.
+{#green-flags-list}

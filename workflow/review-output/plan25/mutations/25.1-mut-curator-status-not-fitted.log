@@ -1,0 +1,34 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+_______________ test_ac12_curator_status_alone_within_its_budget _______________
+
+fx = <tests.task25_1_support.Fixture object at 0x10803aa50>
+
+    def test_ac12_curator_status_alone_within_its_budget(fx):
+        """AC-12: `rmx curator status` with 30 queued paths > 120 chars ≤ budget("curator_status").
+        HEAD: 1,885 B."""
+        r = s.run_cmd(fx, s.HOOK_ENV + "rmx curator status")
+        _ok(r, "curator status")
+        assert r.stdout, "fixture: the curator queue printed nothing"
+>       s.assert_within(len(r.stdout), "curator_status", "AC-12 curator status")
+
+tests/test_task25_1_recall_budget.py:1131: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+n = 1885, channel = 'curator_status', what = 'AC-12 curator status'
+
+    def assert_within(n: int, channel: str, what: str) -> int:
+        """`n` bytes ≤ `hook_budget.budget(channel)`; RED names the measured bytes."""
+        b = budget_or_none(channel)
+        assert b is not None, (f"{what}: printed {n} B; R1 `refmatrix.hook_budget` is not built, "
+                               f"so budget({channel!r}) does not exist")
+>       assert n <= b, f"{what}: printed {n} B > budget({channel!r}) = {b} B"
+               ^^^^^^
+E       AssertionError: AC-12 curator status: printed 1885 B > budget('curator_status') = 500 B
+
+tests/task25_1_support.py:90: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac12_curator_status_alone_within_its_budget
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 14.56s

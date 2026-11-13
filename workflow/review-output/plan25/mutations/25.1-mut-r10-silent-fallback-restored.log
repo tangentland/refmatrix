@@ -1,0 +1,25 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+______________ test_ac4e_r10_resolve_root_unknown_project_raises _______________
+
+r10 = {'alpha': PosixPath('/private/tmp/rmx-khfzs8tt/r10-adn8lcze/alpha/.refmatrix'), 'base': PosixPath('/private/tmp/rmx-kh...-khfzs8tt/r10-adn8lcze/bravo/.refmatrix'), 'home': PosixPath('/private/tmp/rmx-khfzs8tt/r10-adn8lcze/home/.refmatrix')}
+
+    def test_ac4e_r10_resolve_root_unknown_project_raises(r10):
+        """R10 leg (1): `_resolve_root({"project": "charlie"})` raises VerbUnknownProjectError
+        (a VerbArgsError) with R10's words. HEAD: returns alpha's root (bug-181)."""
+        from refmatrix import mcp, verbs
+        try:
+            got = mcp._resolve_root({"project": "charlie"})
+        except Exception as e:  # noqa: BLE001 -- the type is the assertion
+            err = e
+        else:
+>           pytest.fail(f"R10: project='charlie' names no store, yet _resolve_root returned {got} "
+                        f"(bug-181 silent fallback)")
+E           Failed: R10: project='charlie' names no store, yet _resolve_root returned /private/tmp/rmx-khfzs8tt/r10-adn8lcze/alpha/.refmatrix (bug-181 silent fallback)
+
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:637: Failed
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_resolve_root_unknown_project_raises
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.33s
