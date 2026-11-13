@@ -2466,10 +2466,13 @@ def refine_reject(cand_ids):
               help="Message type. announce/decision feed the refinement queue.")
 @click.option("--from", "sender", default=None, help="Agent id (default: $RMX_AGENT or host).")
 @click.option("--reply-to", default=None, help="Message id this replies to.")
-def bus_pub(channel, message, mtype, sender, reply_to):
+@click.option("--about", default=None,
+              help="Tag the message with the project it concerns (default: the <name> of a "
+                   "proj:<name>: channel). A tag, never a store lookup.")
+def bus_pub(channel, message, mtype, sender, reply_to, about):
     """Publish a message to a channel."""
     r = _bus_verb("bus_pub", channel, message, type=mtype, sender=sender,
-                  reply_to=reply_to)
+                  reply_to=reply_to, about=about)
     console.print(f"[green]published[/] {r['message']['id']} → {channel}")
 
 
@@ -7830,7 +7833,10 @@ def telemetry(since, top_queried, zero_results, as_context, window, agent_usage,
 
     if as_context:
         # cli.log lives on the root, not in the catalog — no replica read.
-        data = summarize_context(_root(), since=since, window_s=window)
+        try:
+            data = summarize_context(_root(), since=since, window_s=window)
+        except ValueError as e:      # a non-integer RMX_HOOK_BUDGET_BYTES, named
+            raise click.ClickException(str(e)) from e
         if fmt == "json":
             click.echo(json.dumps(data, indent=2))
             return
@@ -7852,6 +7858,12 @@ def telemetry(since, top_queried, zero_results, as_context, window, agent_usage,
                       f"{m['mean_bytes']:,}", f"{m['p50_bytes']:,}",
                       f"{m['p95_bytes']:,}", f"{m['max_bytes']:,}")
         console.print(t)
+        # Task 25.1 R11 / rev 7 F2: each HOOK producer's bytes against its hook_budget entry.
+        pt = Table("producer (hook runs)", "n", "total", "max", "budget", "over")
+        for name, m in data["by_producer"].items():
+            pt.add_row(name, str(m["n"]), f"{m['total_bytes']:,}", f"{m['max_bytes']:,}",
+                       f"{m['budget']:,}", str(m["over_budget"]))
+        console.print(pt)
         console.print(
             f"\n[bold]per-prompt hook budget[/] over {hb['windows']:,} window(s): "
             f"p50 {hb['p50_bytes']:,} B (~{hb['p50_tokens_est']:,} tok), "
@@ -12446,6 +12458,9 @@ def _parse_duration(text: str) -> float:
                    "the `part-of` index for this subject (id, `subject_<slug>` "
                    "name, or bare label), newest first. Composes with "
                    "--exclude-mtype / -k. The cross-session 'everything on X'.")
+@click.option("--verbose", "verbose", is_flag=True, default=False,
+              help="Also say on stderr which leg served the recall (replica snapshot or "
+                   "daemon RPC, and which embedder). Never changes the rows.")
 @click.option("--timeout", "timeout", type=float, default=30.0, show_default=True,
               help="Budget in seconds for the WHOLE recall (partition probe, "
                    "recall, per-hit fetch, global store, rerank, context) — the "
@@ -12457,7 +12472,7 @@ def _parse_duration(text: str) -> float:
 def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                   session_start, as_json, as_gmd, kinds, exclude_mtype,
                   include_subjects, pack, max_bytes,
-                  include_session, degree, fuse, scope, subject, rerank, timeout):
+                  include_session, degree, fuse, scope, subject, rerank, verbose, timeout):
     """Memory retrieval. Three modes:
 
     Dense (default): pure dense ANN (cosine over bge-small vectors) on the
@@ -12490,7 +12505,7 @@ def memory_recall(query, prompt_query, text, stdin_json, k, recent, since,
                                 session_start, as_json, as_gmd, kinds, exclude_mtype,
                                 include_session, degree, fuse, scope, subject, rerank,
                                 timeout, rec=rec, include_subjects=include_subjects,
-                                pack=pack, max_bytes=max_bytes)
+                                pack=pack, max_bytes=max_bytes, verbose=verbose)
         finally:
             rec.close_row()
     rec.emit()
@@ -12500,7 +12515,8 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
                         session_start, as_json, as_gmd, kinds, exclude_mtype,
                         include_session, degree, fuse, scope, subject, rerank, timeout,
                         *, rec: "_RecallCall", include_subjects: bool = False,
-                        pack: bool = False, max_bytes: "int | None" = None):
+                        pack: bool = False, max_bytes: "int | None" = None,
+                        verbose: bool = False):
     """The body of `rmx memory recall`; `rec` records the query, the payload, the retrieved
     and delivered items and a degrade for the wrapper's row and events."""
     # The budget clock starts HERE, before the partition probe: the probe
@@ -12641,6 +12657,18 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
     def _warn(msg: str) -> None:
         click.echo(f"# rmx: warning: {msg}", err=True)
 
+    def _say_verb_warnings(res: dict) -> None:
+        """The verb's `warnings`, said on stderr. A `recall leg: …` line names the leg that
+        SERVED; it is not a warning (task 25.1 rev 7 F6, 2026-11-13: every recall, the
+        per-prompt hook included, printed it under `warning:`). It stays in the verb's
+        `warnings` (R5: MCP callers read it there) and is printed only under `--verbose`."""
+        for w in res.get("warnings") or []:
+            if _verbs.is_recall_leg_line(w):
+                if verbose:
+                    click.echo(f"# rmx: {w}", err=True)
+            else:
+                _warn(w)
+
     def _global_rows(qq, *, recent_flag, since):
         """Global-store rows for the --scope both/global merge, with the SAME
         exclusion applied as the project side (2026-07-09: without it global
@@ -12726,8 +12754,7 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
             packed = res if pack else None
             rec.retrieved = list(_recall_trace) or list(rows)
             widened = bool(res.get("widened"))
-            for w in res.get("warnings") or []:
-                _warn(w)
+            _say_verb_warnings(res)
         except (_verbs.VerbBusyError, _verbs.VerbAbsentError) as e:
             rs = _replica if _replica is not None else (
                 _reader_store() if isinstance(e, _verbs.VerbBusyError) else None)
@@ -12838,8 +12865,7 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
     except _verbs.VerbError as e:
         raise click.ClickException(str(e))
     rec.retrieved = list(_trace)
-    for w in res.get("warnings") or []:
-        _warn(w)
+    _say_verb_warnings(res)
     rows = res["memories"]
     if pack:
         _echo_pack(rec, res)

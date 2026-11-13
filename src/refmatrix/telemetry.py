@@ -1011,6 +1011,42 @@ def _command_groups() -> "frozenset[str]":
         return frozenset({"memory", "daemon", "hub", "focus", "bus", "session",
                           "task", "queue", "subject", "flag"})
 
+def _flag_value(argv: "list", flag: str) -> "str | None":
+    """`--flag V` or `--flag=V` in an argv, else None."""
+    for i, a in enumerate(argv):
+        a = str(a)
+        if a == flag and i + 1 < len(argv):
+            return str(argv[i + 1])
+        if a.startswith(flag + "="):
+            return a[len(flag) + 1:]
+    return None
+
+
+def hook_producer(command: str, argv: "list") -> "str | None":
+    """The `hook_budget.CHANNEL_BUDGET_BYTES` producer a HOOK-invoked cli.log row is, from its
+    subcommand path and flags, or None when the command writes no budgeted hook output.
+
+    Why (task 25.1 R11's last bullet, rev 7 F2, 2026-11-13): the compact|clear `rmx
+    recall-state` hook landed in `by_command` beside every interactive run of the same
+    command, so nothing read the HOOK's bytes against its budget. The memory-recall producers
+    follow `recall_channel`'s first-match order (`--session-start`, `--stdin-json`, then
+    `--recent`, which only PreCompact's hook runs)."""
+    flags = {str(a) for a in argv}
+    if command == "memory recall":
+        if "--session-start" in flags:
+            return "session_start"
+        if "--stdin-json" in flags:
+            return "prompt_recall"
+        if "--recent" in flags:
+            return "precompact"
+        return None
+    if command == "focus hook":
+        return "focus_input" if _flag_value(argv, "--event") == "input" else None
+    return {"recall-state": "recall_state", "scan-prompt": "scan_prompt",
+            "curator status": "curator_status",
+            "focus context": "focus_context"}.get(command)
+
+
 def summarize_context(root: Path, *, since: "str | None" = None,
                       window_s: int = 5) -> dict:
     """What rmx charged the model's context window, from `cli.log`.
@@ -1090,6 +1126,31 @@ def summarize_context(root: Path, *, since: "str | None" = None,
             "max_bytes": max(vals),
         }
 
+    # ---- each hook producer against its budget (task 25.1 R11, rev 7 F2) ----
+    # Only `source == "hook"` rows: an interactive `rmx recall-state` is the same command but
+    # no hook's output. Every channel of the budget table is listed, a silent one with n 0,
+    # so a producer that never ran is visible as such. `budget()` honours
+    # RMX_HOOK_BUDGET_BYTES, as the producers themselves do; a non-integer value raises
+    # ValueError naming the variable (never a silent fallback to the table).
+    from refmatrix import hook_budget
+    produced: "dict[str, list[int]]" = {c: [] for c in hook_budget.CHANNEL_BUDGET_BYTES}
+    for r in counted:
+        if r.get("source") != "hook":
+            continue
+        prod = hook_producer(_cmd(r), list(r.get("argv") or []))
+        if prod is not None:
+            produced[prod].append(int(r["out_bytes"]))
+    producers = {}
+    for chan, vals in produced.items():
+        cap = hook_budget.budget(chan)
+        producers[chan] = {
+            "n": len(vals),
+            "total_bytes": sum(vals),
+            "max_bytes": max(vals) if vals else 0,
+            "budget": cap,
+            "over_budget": sum(1 for v in vals if v > cap),
+        }
+
     # ---- the per-prompt hook budget ------------------------------------
     # ANCHORED ON AN ACTUAL PROMPT. `source == "hook"` is exported by EVERY
     # rmx hook template — PostToolUse, PreToolUse, Stop, SubagentStop,
@@ -1135,6 +1196,7 @@ def summarize_context(root: Path, *, since: "str | None" = None,
         "total_bytes": total_bytes,
         "total_tokens_est": total_bytes // 4,
         "by_command": commands,
+        "by_producer": producers,
         "hook_budget": {
             "windows": len(windows),
             "window_s": window_s,

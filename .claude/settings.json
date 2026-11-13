@@ -95,7 +95,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx memory recall --session-start --k 30 --scope both --pack --timeout 10"
+            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx memory recall --session-start --k 12 --scope both --pack --timeout 10"
           },
           {
             "type": "command",

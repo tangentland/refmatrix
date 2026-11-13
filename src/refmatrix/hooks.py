@@ -324,10 +324,13 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                     # pointer per hit under hook_budget's session_start bytes (R0: Claude
                     # Code previews any one hook over 10,000 UTF-16 units). No budget
                     # variable in the argv: the CLI resolves its own default.
+                    # `--k 12`, not 30 (task 25.1 rev 7 J5, 2026-11-13, R7 amended): R3 puts
+                    # every hook line before any body, and 30 lines took 5,961 of the 9,000 B,
+                    # so no body could follow them; the `+N more` trailer points at the rest.
                     "command": (
                         HOOK_ENV
                         + "rmx memory recall --session-start "
-                        "--k 30 --scope both --pack --timeout 10"
+                        "--k 12 --scope both --pack --timeout 10"
                     ),
                 },
                 {

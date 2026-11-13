@@ -1060,6 +1060,16 @@ _RECALL_DESCRIPTIONS = {
 RECALL_ABSENT_MSG = ("memory recall needs the daemon up (dense embedder lives there) "
                      "or a replica + shared model workers")
 
+# The line `_dense_legs` adds to `warnings` naming the HEALTHY leg that served (R5: the hub
+# worker's replica, or the daemon RPC). It rides the warnings list so an MCP caller sees it, but
+# it reports, it does not warn: the CLI prints it only under `memory recall --verbose` (task
+# 25.1 rev 7 F6, 2026-11-13). The no-daemon leg is a degrade and stays a real warning.
+RECALL_LEG_PREFIX = "recall leg: "
+
+
+def is_recall_leg_line(w: str) -> bool:
+    return str(w).startswith(RECALL_LEG_PREFIX)
+
 
 def recall_patterns(exclude_mtype: "list[str] | None", *, include_session: bool,
                     include_subjects: bool) -> "list[str]":
@@ -1233,7 +1243,7 @@ def _dense_legs(root: Path, *, query: str, k: int, kinds: "list[str] | None", fu
             root, partition=partition, query=query, k=k, kinds=kinds, fuse=fuse,
             rerank=rerank, left=left, warnings=warnings, embedder_policy="hub_only")
         if r is not None:
-            warnings.append(f"recall leg: replica snapshot (embedder: {r['embedder']}; "
+            warnings.append(f"{RECALL_LEG_PREFIX}replica snapshot (embedder: {r['embedder']}; "
                             f"rerank default resolved in this process)")
             return r["hits"], r["fetch"]
     try:
@@ -1252,11 +1262,15 @@ def _dense_legs(root: Path, *, query: str, k: int, kinds: "list[str] | None", fu
             rerank=rerank, left=left, warnings=warnings, embedder_policy="shared")
         if r is None:
             raise VerbAbsentError(RECALL_ABSENT_MSG) from e
-        warnings.append(f"recall leg: replica snapshot, no daemon (embedder: {r['embedder']})")
+        # A DEGRADED leg, so a real warning, not a `recall leg:` report (rev 7 F6, 2026-11-13):
+        # no daemon answered and this process embedded the query itself (a private worker or
+        # an in-process model, 6-33 s) -- the CLI says it on every run, as AC-4 (g) requires.
+        warnings.append(f"no daemon: recall served from the replica snapshot "
+                        f"(embedder: {r['embedder']})")
         return r["hits"], r["fetch"]
     # An unreranked answer says so (ch-bsd r7 #s-1).
     warnings.extend(res.get("warnings") or [])
-    warnings.append("recall leg: daemon RPC (the daemon's embedder and rerank default)")
+    warnings.append(f"{RECALL_LEG_PREFIX}daemon RPC (the daemon's embedder and rerank default)")
 
     def fetch(eid: int) -> "dict | None":
         # Typed and one attempt under the deadline (bsd-plan3-r4 #s-3).
@@ -1269,6 +1283,69 @@ def _dense_legs(root: Path, *, query: str, k: int, kinds: "list[str] | None", fu
                               partition=partition)["row"]
         return m
     return list(res.get("hits", [])), fetch
+
+
+def _hit_id(h: dict) -> "int | None":
+    eid = h.get("id") or h.get("entity_id")
+    return None if eid is None else int(eid)
+
+
+def _rank_order(hits: "list[dict]") -> "list[dict]":
+    """Best first: an L2 `distance` ascending, else a `score` (RRF or cross-encoder logit)
+    descending -- the order every dense leg's hits are read in."""
+    return sorted(hits, key=lambda h: (
+        h["distance"] if h.get("distance") is not None else -(h.get("score") or 0.0)))
+
+
+def _dense_rows(hits: "list[dict]", fetch: Callable[[int], "dict | None"], patterns,
+                k: int, fetched: "dict[int, dict | None]") -> "list[dict]":
+    """The first `k` hits, in order, whose rows pass the recall exclusion, each annotated with
+    its hit's ranking fields. `fetched` caches rows by id across calls, so the rerank-exempt
+    pass (two orders over one pool) does not fetch a row twice."""
+    rows: list[dict] = []
+    for h in hits:
+        if len(rows) >= k:
+            break
+        eid = _hit_id(h)
+        if eid is None:
+            continue
+        if eid not in fetched:
+            fetched[eid] = fetch(eid)
+        m = fetched[eid]
+        if m and recall_rows_filter([m], patterns):
+            rows.append(annotate_hit(dict(m), h))
+    return rows
+
+
+# Rows a cross-encoder must not reorder (task 25.1 rev 7 J3): a subject is a compile label whose
+# members are the hits; scored against a prompt it sinks to the bottom of every rerank.
+RERANK_EXEMPT_MTYPES = frozenset({"subject"})
+
+
+def place_rerank_exempt(pre: "list[dict]", ranked: "list[dict]", k: int) -> "list[dict]":
+    """Merge two orders of ONE recall (task 25.1 rev 7 J3/J4, 2026-11-13): `pre` is the
+    unreranked answer with the exempt rows in it, `ranked` the reranked answer without them.
+    Each exempt row of `pre` keeps its index; every other slot takes the next `ranked` row, so
+    the non-exempt rows read exactly as the reranked answer does. An exempt row is marked
+    `rerank_exempt` (its `score` is the unreranked one, not a cross-encoder logit). When
+    `ranked` runs out before `pre` does, the remaining exempt rows follow in `pre` order."""
+    out: list[dict] = []
+    rest = iter(ranked)
+    for row in pre:
+        if len(out) >= k:
+            break
+        if row.get("mtype") in RERANK_EXEMPT_MTYPES:
+            row["rerank_exempt"] = True
+            out.append(row)
+            continue
+        nxt = next(rest, None)
+        if nxt is not None:
+            out.append(nxt)
+    for row in rest:
+        if len(out) >= k:
+            break
+        out.append(row)
+    return out
 
 
 def _memory_recall_rows(root: Path, *, query: str | None = None, k: int = 10,
@@ -1368,25 +1445,41 @@ def _memory_recall_rows(root: Path, *, query: str | None = None, k: int = 10,
                 since_seconds = None
       else:
         if want_project:
-            ann_k = k * 3 if patterns else k
-            hits, fetch = _dense_legs(root, query=query, k=ann_k, kinds=kinds, fuse=fuse,
-                                      rerank=rerank, partition=partition, left=_left,
-                                      retries=_retries, warnings=warnings,
-                                      embedder_policy=embedder_policy)
-            hits = sorted(hits, key=lambda h: (
-                h["distance"] if h.get("distance") is not None
-                else -(h.get("score") or 0.0)))
+            # Over-fetch when rows will be filtered out. Under `include_subjects` the reranked
+            # pass below filters the subjects out, and it must fetch the pool the call without
+            # the opt-in fetches, or its rows would not be that call's (rev 7 J3).
+            ann_k = k * 3 if (patterns or include_subjects) else k
+
+            def _dense(rr: "bool | None", ws: "list[str]"):
+                hs, fe = _dense_legs(root, query=query, k=ann_k, kinds=kinds, fuse=fuse,
+                                     rerank=rr, partition=partition, left=_left,
+                                     retries=_retries, warnings=ws,
+                                     embedder_policy=embedder_policy)
+                return _rank_order(hs), fe
+
+            hits, fetch = _dense(rerank, warnings)
             if trace is not None:
                 trace.extend(hits)       # every hit is retrieved, filtered or not (R11)
-            for h in hits:
-                if len(project_rows) >= k:
-                    break
-                eid = h.get("id") or h.get("entity_id")
-                if eid is None:
-                    continue
-                m = fetch(int(eid))
-                if m and recall_rows_filter([m], patterns):
-                    project_rows.append(annotate_hit(m, h))
+            fetched: "dict[int, dict | None]" = {}
+            if include_subjects and any(h.get("reranked") for h in hits):
+                # Rev 7 J3 (2026-11-13, spec #j3-subjects-exempt): a subject row is a LABEL a
+                # cross-encoder cannot score against a prompt -- the daemon's default rerank
+                # put the 4 live subjects of the fixture at ranks 32-35 of 36, so the opt-in
+                # never showed one. Subjects are exempt: the non-subject rows are the reranked
+                # answer's (exactly what the call without the opt-in returns), and each subject
+                # keeps the index it has in the unreranked answer. Only when a rerank ran.
+                pre_ws: list[str] = []
+                pre_hits, pre_fetch = _dense(False, pre_ws)
+                warnings.extend(w for w in pre_ws if w not in warnings)
+                if trace is not None:
+                    seen = {_hit_id(h) for h in hits}
+                    trace.extend(h for h in pre_hits if _hit_id(h) not in seen)
+                ranked = _dense_rows(hits, fetch, [*patterns, *sorted(RERANK_EXEMPT_MTYPES)],
+                                     k, fetched)
+                pre = _dense_rows(pre_hits, pre_fetch, patterns, k, fetched)
+                project_rows = place_rerank_exempt(pre, ranked, k)
+            else:
+                project_rows = _dense_rows(hits, fetch, patterns, k, fetched)
       for r in project_rows:
         r["scope"] = "project"
 
@@ -2281,15 +2374,23 @@ def _hub_rpc(op: str, args: "dict | None" = None) -> dict:
     return resp.get("result", {})
 
 
-@verb("rmx_bus_pub", "Publish a message to the agent bus (proj:<name>:<topic> or global:<topic>). `from` defaults to this server's project; pass `reply_to` (a prior message id) to thread a reply.", aliases={"from": "sender"})
+@verb("rmx_bus_pub", "Publish a message to the agent bus (proj:<name>:<topic> or global:<topic>). `from` defaults to this server's project; pass `reply_to` (a prior message id) to thread a reply. `about` tags the message with the project it concerns (default: the <name> of a proj:<name>: channel); it is a tag, never a store lookup. `project` is the transport target like on every tool: publish FROM that registered store.", aliases={"from": "sender"},
+      descriptions={"about": "The project this message is about: a free tag stored on the "
+                             "message (the hub row's `project`), never resolved to a store. "
+                             "Default: the <name> of a proj:<name>:<topic> channel."})
 def bus_pub(root: Path, channel: str, body: str, *, type: str = "announce",
-            sender: str | None = None, project: str | None = None,
+            sender: str | None = None, about: str | None = None,
             reply_to: str | None = None) -> dict:
-    if project is None and channel.startswith("proj:"):
+    """Why `about` (task 25.1 #r10-bus, user decision 2026-11-10, built rev 7 F1 2026-11-13):
+    `project` was both the MCP transport target and this verb's message tag, and the transport
+    reads the key first -- so tagging a message about a project with no store raised under
+    R10, and a known name both moved the sender AND tagged the row. The tag is `about`;
+    `project` is only the transport's (`mcp._resolve_root`)."""
+    if about is None and channel.startswith("proj:"):
         parts = channel.split(":")
-        project = parts[1] if len(parts) > 1 else None
+        about = parts[1] if len(parts) > 1 else None
     return _hub_rpc("bus_pub", {"channel": channel, "body": body, "type": type,
-                                "from": _bus_sender(root, sender), "project": project,
+                                "from": _bus_sender(root, sender), "project": about,
                                 "reply_to": reply_to})
 
 
