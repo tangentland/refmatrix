@@ -150,6 +150,12 @@ _EMPTY_VIEW = _NeighborView(_np.empty(0, dtype=_np.int64),
                             _np.empty(0, dtype=_np.float64))
 
 
+# The adjacency's SHAPE version, part of both cache keys: a cache file built
+# before `build_adjacency` folded `denotes` (bug-216 R9, 2026-11-13) has the
+# same facts.log size key as a fresh one and would be served as current.
+_ADJ_SHAPE = "denotes-fold-1"
+
+
 def _adj_disk_paths(store: "Store"):
     root = Path(store.root)
     return root / "adjacency.cache.npz", root / "adjacency.cache.json"
@@ -185,7 +191,7 @@ def cached_adjacency(store: "Store", *, link_weight: float = 2.0,
     back to a fresh build. Best-effort throughout."""
     import json as _json
     key = (store._partition_id, link_weight, exclude_operational,
-           _adj_mentions_mode())
+           _adj_mentions_mode(), _ADJ_SHAPE)
     cached = getattr(store, "_adjacency_cache", None)
     if cached is not None and cached[0] == key:
         return cached[1]
@@ -320,7 +326,7 @@ def build_adjacency(
     try:
         if skip_lid is not None:
             rows = con.execute(
-                "SELECT el.concept_id, el.entity_id, el.weight "
+                "SELECT el.concept_id, el.entity_id, el.weight, el.linkage_id "
                 "FROM entity_links el "
                 "JOIN entities ce ON ce.id = el.concept_id AND ce.partition_id = ? "
                 "JOIN entities ee ON ee.id = el.entity_id  AND ee.partition_id = ? "
@@ -329,7 +335,7 @@ def build_adjacency(
             ).fetchall()
         else:
             rows = con.execute(
-                "SELECT el.concept_id, el.entity_id, el.weight "
+                "SELECT el.concept_id, el.entity_id, el.weight, el.linkage_id "
                 "FROM entity_links el "
                 "JOIN entities ce ON ce.id = el.concept_id AND ce.partition_id = ? "
                 "JOIN entities ee ON ee.id = el.entity_id  AND ee.partition_id = ? ",
@@ -337,12 +343,40 @@ def build_adjacency(
             ).fetchall()
     except Exception:
         rows = []
+    # `denotes` folds (bug-216 R9, 2026-11-13): a path-less concept that
+    # denotes a doc/memory is that node, so a TYPED edge INTO the concept (a
+    # misbound `rel: X verb -> [[doc-id]]`, stored entity_id = concept) is
+    # credited to the denoted target instead, split evenly when the concept
+    # denotes several. The `denotes` edge itself carries no centrality.
+    # `mentions` rows are never folded: the concept is their term side.
+    from refmatrix.store import DENOTES
+    try:
+        den_lid = store.get_linkage_id(DENOTES)
+    except Exception:
+        den_lid = None
+    try:
+        men_lid = store.get_linkage_id("mentions")
+    except Exception:
+        men_lid = None
+    fold: dict[int, list[int]] = {}
+    if den_lid is not None:
+        for r in rows:
+            if r[3] == den_lid:
+                fold.setdefault(int(r[0]), []).append(int(r[1]))
     for r in rows:
+        if den_lid is not None and r[3] == den_lid:
+            continue
         cid, eid = int(r[0]), int(r[1])
         w = r[2] if r[2] is not None else 1.0
         # Negative weights (contradicts) still contribute connectivity; use
         # magnitude for the undirected centrality graph.
-        add(cid, eid, link_weight * abs(float(w)))
+        wt = link_weight * abs(float(w))
+        tgts = fold.get(eid) if r[3] != men_lid else None
+        if tgts:
+            for t in tgts:
+                add(cid, t, wt / len(tgts))
+        else:
+            add(cid, eid, wt)
 
     return adj
 

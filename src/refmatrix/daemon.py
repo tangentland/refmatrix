@@ -3227,8 +3227,14 @@ class Daemon:
 
         class _Handler(FileSystemEventHandler):
             def _maybe(self_inner, raw_path: str) -> None:
+                # Filtered against the watch root that OWNS the path (bug-216
+                # R2, 2026-11-13): `is_relevant(p)` with no root never read
+                # the spec, so its `!path` re-includes and the built-in
+                # include of the rule docs could not reach this first filter
+                # -- the hidden-dir rule dropped `.claude/PROJECT_PROFILE.md`
+                # before `sync_files` ever saw it.
                 p = Path(raw_path)
-                if is_relevant(p):
+                if is_relevant(p, _owning_root(p.resolve())):
                     debouncer.add(str(p))
 
             def on_created(self_inner, event) -> None:
@@ -3688,7 +3694,8 @@ def _register_ingest_job(d: Daemon, *, files_total: int, args: dict) -> str:
 
 
 def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict, *,
-                         skipped: "list | None" = None) -> dict:
+                         skipped: "list | None" = None,
+                         ignored: "list | None" = None) -> dict:
     """Execute one ingest against the daemon's Store. Mutates the job
     record in `d._ingest_jobs` as it goes — `files_done`, `current_file`,
     and an `events` deque every status query can stream from.
@@ -3804,8 +3811,15 @@ def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict, *,
         if line:
             d._log(f"ingest-gmd job={job_id} {line}")
             report = f"{report}\n{line}"
+    # What the doc walk excluded by the ignore rules (bug-216 R2), counted and
+    # named for the caller -- the daemon's stderr log reaches no one.
+    from refmatrix.ingest_gmd import render_ignored_line
+    ign_line = render_ignored_line(ignored or [])
+    if ign_line:
+        report = f"{report}\n{ign_line}"
     result = {
         "files": len(files), "report": report,
+        "ignored": len(ignored or []),
         "docs": stats.docs, "nodes": stats.nodes,
         "rels": stats.rels, "mentions": stats.mentions,
         "unresolved": len(stats.unresolved),
@@ -3847,12 +3861,21 @@ def _op_ingest_gmd(d: Daemon, args: dict) -> dict:
     targets = [Path(p).resolve() for p in (args.get("targets") or [])]
     # The memory path walks a memdir with THE memory walk (task 26.1 AC-2).
     skipped: list = []
+    ignored: list = []
     files = collect_gmd_files(targets, as_memory=bool(args.get("as_memory")),
-                              skipped=skipped)
+                              skipped=skipped, ignored=ignored)
     if not files:
-        return {"files": 0, "report": "no candidate files found", **_skip_fields(skipped)}
+        return _no_candidates(skipped, ignored)
     job_id = _register_ingest_job(d, files_total=len(files), args=args)
-    return _run_ingest_gmd_body(d, job_id, files, args, skipped=skipped)
+    return _run_ingest_gmd_body(d, job_id, files, args, skipped=skipped, ignored=ignored)
+
+
+def _no_candidates(skipped: list, ignored: list) -> dict:
+    """The empty-walk reply, still naming what the walk excluded (bug-216 R2)."""
+    from refmatrix.ingest_gmd import render_ignored_line
+    line = render_ignored_line(ignored)
+    return {"files": 0, "report": "no candidate files found" + (f"\n{line}" if line else ""),
+            "ignored": len(ignored), **_skip_fields(skipped)}
 
 
 def _op_ingest_gmd_start(d: Daemon, args: dict) -> dict:
@@ -3867,15 +3890,16 @@ def _op_ingest_gmd_start(d: Daemon, args: dict) -> dict:
     targets = [Path(p).resolve() for p in (args.get("targets") or [])]
     # The memory path walks a memdir with THE memory walk (task 26.1 AC-2).
     skipped: list = []
+    ignored: list = []
     files = collect_gmd_files(targets, as_memory=bool(args.get("as_memory")),
-                              skipped=skipped)
+                              skipped=skipped, ignored=ignored)
     if not files:
-        return {"files": 0, "report": "no candidate files found", **_skip_fields(skipped)}
+        return _no_candidates(skipped, ignored)
     job_id = _register_ingest_job(d, files_total=len(files), args=args)
 
     def _runner() -> None:
         try:
-            _run_ingest_gmd_body(d, job_id, files, args, skipped=skipped)
+            _run_ingest_gmd_body(d, job_id, files, args, skipped=skipped, ignored=ignored)
         except Exception as exc:
             d._log(f"detached ingest job {job_id} failed: {exc!r}")
 
@@ -3887,6 +3911,7 @@ def _op_ingest_gmd_start(d: Daemon, args: dict) -> dict:
         "job_id": job_id,
         "files_total": len(files),
         "status": "running",
+        "ignored": len(ignored),
         # the start reply carries the skips too, so `--detach` prints them
         # before it returns (ch-bsd 26.1 #s-3)
         **_skip_fields(skipped),
@@ -4769,6 +4794,31 @@ def _op_coref_link(d: Daemon, args: dict) -> dict:
             min_shared=int(args.get("min_shared", 2)))
     d._request_snapshot()
     return result
+
+
+def _op_denotes_link(d: Daemon, args: dict) -> dict:
+    """The one-time `denotes` derive (bug-216 R7(a), 2026-11-13): link every
+    PATH-LESS concept named after an ingested doc or memory id -- and its
+    spelling variants -- to that doc/memory, in the caller's partition
+    (`args['partition']`, default the daemon's). Idempotent: a second run
+    adds nothing. Returns `{added, concepts, targets, multi_target}` and logs
+    the same counts. GMD ingest maintains the links from then on; this op
+    repairs what was written before it (1,909+ misbound live rows), without
+    rewriting a single existing edge. Run through the daemon, announced and
+    backed up first:
+
+        daemon.call(root, "denotes_link", {}, timeout=600)
+    """
+    part = args.get("partition") or d._st()._partition_name
+    with d._store_lock, d._st().with_partition(part):
+        result = d._st().link_denotes(None)
+        if result["added"]:
+            d._st().flush_fragments()
+    d._log(f"denotes_link partition={part} added={result['added']} "
+           f"concepts={result['concepts']} targets={result['targets']} "
+           f"multi_target={result['multi_target']}")
+    d._request_snapshot()
+    return {**result, "partition": part}
 
 
 def _op_merge_verb_aliases(d: Daemon, args: dict) -> dict:
@@ -6657,6 +6707,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "derive_unstamp": _op_derive_unstamp,
     "compile_pairs": _op_compile_pairs,
     "coref_link": _op_coref_link,
+    "denotes_link": _op_denotes_link,
     "merge_verb_aliases": _op_merge_verb_aliases,
     "vacuum": _op_vacuum,
     "stats": _op_stats,

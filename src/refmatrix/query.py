@@ -276,12 +276,30 @@ class QueryEngine:
         depth: int = 1,
         linkages: list[str] | None = None,
     ) -> BitMap:
+        """The depth-N linkage closure of `concept_name`, seeds excluded.
+
+        `denotes` is transparent (bug-216 R9, 2026-11-13): a path-less concept
+        and the doc/memory it denotes are ONE node, so every member of a
+        frontier brings its `denotes` equivalents into the same frontier at
+        zero cost and the edge itself is never a counted hop. A seed's own
+        equivalents are the seed, not neighbours."""
+        from refmatrix.store import DENOTES
         cids = self.s.resolve_concept_ids(concept_name, strict=self.strict)
         if not cids:
             return BitMap()
-        link_names = linkages or [lk["name"] for lk in self.s.list_linkages()]
+        link_names = [ln for ln in (linkages or [lk["name"] for lk in self.s.list_linkages()])
+                      if ln != DENOTES]
         noise = self._noise_ids()
+        noise_bm = BitMap(noise) if noise else BitMap()
+
+        def _equivalents(bm: BitMap) -> BitMap:
+            out = BitMap()
+            for vs in self.s.denotes_equivalents(list(bm)).values():
+                out |= BitMap(vs)
+            return out
+
         seed_ids = BitMap(cids)
+        seed_ids |= _equivalents(seed_ids) - noise_bm
         frontier = BitMap(seed_ids)
         seen = BitMap(seed_ids)
         for _ in range(depth):
@@ -290,8 +308,8 @@ class QueryEngine:
                 for ln in link_names:
                     next_frontier |= self.s.load_bitmap(ln, cid)
             next_frontier -= seen
-            if noise:
-                next_frontier -= BitMap(noise)
+            next_frontier -= noise_bm
+            next_frontier |= _equivalents(next_frontier) - seen - noise_bm
             if len(next_frontier) == 0:
                 break
             seen |= next_frontier

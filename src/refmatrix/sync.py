@@ -24,12 +24,10 @@ from refmatrix.ingest import (
     _ingest_pseudo_semantics,
     _ingest_tldr,
     _is_adr_file,
+    is_gmd_file,
     should_ignore,
 )
 from refmatrix.store import MemoryOwnershipError, Store
-
-
-_GMD_SNIFF_BYTES = 512
 
 
 def _gmd_route_pending(s, path: Path, ext: str) -> bool:
@@ -65,16 +63,9 @@ def _gmd_route_pending(s, path: Path, ext: str) -> bool:
         return False
 
 
-def _is_gmd_file(path: Path) -> bool:
-    """Cheap sniff: file opens with `---` and has `gmd:` in first ~512 bytes."""
-    try:
-        with path.open("rb") as f:
-            head = f.read(_GMD_SNIFF_BYTES)
-    except OSError:
-        return False
-    if not head.startswith(b"---"):
-        return False
-    return b"\ngmd:" in head or b"\ngmd :" in head
+# One sniff for "carries GMD frontmatter" (bug-216 R11 shares it with the
+# built-in include in `ingest.ignore_reason`).
+_is_gmd_file = is_gmd_file
 
 
 QUEUE_FILE = "dirty.queue"

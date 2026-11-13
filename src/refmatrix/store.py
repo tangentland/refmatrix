@@ -525,7 +525,36 @@ CREATE TABLE IF NOT EXISTS pair_index (
 );
 CREATE INDEX IF NOT EXISTS idx_pair_index_df
     ON pair_index(partition_id, df);
+
+-- `rel:` lines whose target did not resolve when their doc was ingested
+-- (bug-216 R10, 2026-11-13). GMD ingest skips unchanged files, so a target
+-- that appears LATER (a rule doc un-ignored, a doc written after its citer)
+-- left the citing line dangling until someone edited the citer: 247 lines
+-- cite the two rule docs alone. Ingesting a doc / memory / anchor whose name
+-- equals `target_name` resolves the row (edge + evidence) and deletes it; a
+-- purge of `source_id` deletes it; re-ingesting the citing file replaces its
+-- rows. Not replayed from facts.log: the rows are re-derived by re-ingesting
+-- the citing file (`rmx ingest-gmd`), never by a log rebuild. No PK or index:
+-- the table holds the unresolved residue (hundreds of rows), and the
+-- writer keeps it duplicate-free (`Store.add_pending_ref`).
+CREATE TABLE IF NOT EXISTS pending_refs (
+    partition_id INTEGER NOT NULL DEFAULT 1,
+    source_id    INTEGER NOT NULL,
+    linkage      TEXT NOT NULL,
+    target_name  TEXT NOT NULL,
+    ref          TEXT NOT NULL,
+    file         TEXT NOT NULL,
+    line         INTEGER NOT NULL,
+    weight       REAL,
+    detail       TEXT,
+    created_at   REAL NOT NULL
+);
 """
+
+# A path-less concept -> the doc/memory whose GMD id is the concept's name
+# (bug-216 R7, 2026-11-13). Registered on first use (`Store.link_denotes`), so a
+# store that never had a misbound concept never carries the type.
+DENOTES = "denotes"
 
 DEFAULT_LINKAGES = [
     ("mentions",     1, None, "entity mentions concept"),
@@ -5670,18 +5699,48 @@ class Store:
                     _sa = self.get_linkage_id("same_as")
                 except Exception:
                     pass
+                # `denotes` is NOT a hop (bug-216 R9, 2026-11-13): a path-less
+                # concept and the doc it denotes are one node to the walk, so
+                # the edge is crossed at zero cost by `_close` below -- never
+                # counted against RMX_EXPAND_HOPS, never decayed. As a counted
+                # hop, a doc whose only in-edge is a misbound `[[doc-id]]`
+                # (bsd-215m1: 1,909+ live rows) sat one hop further than its
+                # citer meant, and fell out of every hops=1 walk.
+                _den = self._denotes_lid()
                 _lex_order = [e for e, _ in sorted(
                     scores.items(), key=lambda kv: (-kv[1], kv[0]))]
                 _frontier = _lex_order[:_nseed]
                 _seen = set(scores)
                 _walk_order: list[int] = []
+                # zero-cost member -> the walked id it stands in for
+                _origin: dict[int, int] = {}
+
+                def _close(ids: list[int]) -> list[int]:
+                    if _den is None or not ids:
+                        return []
+                    eq = self.denotes_equivalents(ids)
+                    added: list[int] = []
+                    for x in ids:
+                        for q in sorted(eq.get(x, ())):
+                            if q in _seen:
+                                continue
+                            _seen.add(q)
+                            added.append(q)
+                            _walk_order.append(q)
+                            _origin[q] = _origin.get(x, x)
+                            if _mode == "decay":
+                                scores[q] = scores.get(_origin[q], 0.0)
+                    return added
+
+                _frontier = _frontier + _close(_frontier)
                 _w = 1.0
                 for _ in range(_hops):
                     _w *= 0.3
                     if not _frontier:
                         break
                     _fp = ",".join("?" * len(_frontier))
-                    _skip = [mlid] + ([_sa] if _sa is not None else [])
+                    _skip = [mlid] + ([_sa] if _sa is not None else []) \
+                        + ([_den] if _den is not None else [])
                     _sp = ",".join("?" * len(_skip))
                     # Bidirectional: a typed edge is stored (target, source),
                     # so a document is reachable from either slot.
@@ -5694,6 +5753,7 @@ class Store:
                     _next = []
                     for _a, _b in _rows:
                         for _cand, _src in ((int(_a), int(_b)), (int(_b), int(_a))):
+                            _src = _origin.get(_src, _src)
                             if _cand in _seen or _src not in scores:
                                 continue
                             _seen.add(_cand)
@@ -5701,7 +5761,7 @@ class Store:
                             _walk_order.append(_cand)
                             if _mode == "decay":
                                 scores[_cand] = scores.get(_src, 0.0) * _w
-                    _frontier = _next
+                    _frontier = _next + _close(_next)
                 if _mode != "decay" and _walk_order:
                     # Scale-free: fuse the lexical ranking with the walk order
                     # as two RANKED LISTS. No constant has to claim what a hop
@@ -5775,6 +5835,257 @@ class Store:
                     **edge_fields(linkage, cn[0], cn[1], en[0], en[1],
                                   file=file, line=line, span_end=span_end, detail=detail),
                 )
+
+    def clear_rel_evidence(self, file: str) -> int:
+        """Delete the GMD `rel:` evidence rows (`detail` = `rel: <verb> -> ...`)
+        recorded for `file`, active partition's entities only, and return how
+        many went. The GMD ingest calls it before it re-derives a changed doc's
+        `rel:` lines (bug-216 R10, 2026-11-13): `add_evidence` appends, so a
+        re-ingest -- or a pending line resolved earlier and then re-resolved by
+        the edit -- wrote a second row for the same line, and every count over
+        evidence (the R5/R8 recount) double-counted it."""
+        con = self._connect()
+        n = con.execute(
+            "SELECT count(*) FROM linkage_evidence le JOIN entities e "
+            "ON e.id = le.concept_id WHERE le.file = ? AND le.detail LIKE 'rel: %' "
+            "AND e.partition_id = ?", (file, self._partition_id)).fetchone()[0]
+        if n:
+            con.execute(
+                "DELETE FROM linkage_evidence WHERE file = ? AND detail LIKE 'rel: %' "
+                "AND concept_id IN (SELECT id FROM entities WHERE partition_id = ?)",
+                (file, self._partition_id))
+            self._maybe_commit(con)
+        return int(n)
+
+    # ---- pending `rel:` references (bug-216 R10) ----------------------------
+
+    def add_pending_ref(self, source_id: int, linkage: str, target_name: str, *,
+                        ref: str, file: str, line: int, weight: "float | None" = None,
+                        detail: "str | None" = None) -> bool:
+        """Record one unresolved `rel:` line of `source_id` (active partition).
+        Returns False when the same (source, verb, target, file, line) row is
+        already recorded -- the table stays duplicate-free without a key."""
+        linkage = _canonical_verb(linkage)
+        con = self._connect()
+        if con.execute(
+                "SELECT 1 FROM pending_refs WHERE partition_id=? AND source_id=? "
+                "AND linkage=? AND target_name=? AND file=? AND line=?",
+                (self._partition_id, source_id, linkage, target_name, file, line),
+        ).fetchone() is not None:
+            return False
+        con.execute(
+            "INSERT INTO pending_refs(partition_id, source_id, linkage, target_name, ref, "
+            "file, line, weight, detail, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (self._partition_id, source_id, linkage, target_name, ref, file, line,
+             weight, detail, time.time()))
+        self._maybe_commit(con)
+        return True
+
+    def clear_pending_refs_for_file(self, file: str) -> int:
+        """Drop the active partition's pending rows recorded from `file`: the
+        GMD ingest is about to re-derive that file's `rel:` lines, so its old
+        rows describe a version of the file that is gone."""
+        con = self._connect()
+        n = con.execute("SELECT count(*) FROM pending_refs WHERE partition_id=? AND file=?",
+                        (self._partition_id, file)).fetchone()[0]
+        if n:
+            con.execute("DELETE FROM pending_refs WHERE partition_id=? AND file=?",
+                        (self._partition_id, file))
+            self._maybe_commit(con)
+        return int(n)
+
+    def pending_refs_for(self, names: "Iterable[str]") -> "list[dict]":
+        """The active partition's pending rows whose `target_name` is in
+        `names`. The table is the unresolved residue, so it is read whole and
+        filtered here rather than with an N-way IN list."""
+        want = set(names)
+        if not want:
+            return []
+        rows = self._connect().execute(
+            "SELECT source_id, linkage, target_name, ref, file, line, weight, detail "
+            "FROM pending_refs WHERE partition_id=?", (self._partition_id,)).fetchall()
+        return [{"source_id": int(r[0]), "linkage": r[1], "target_name": r[2],
+                 "ref": r[3], "file": r[4], "line": int(r[5]), "weight": r[6],
+                 "detail": r[7]} for r in rows if r[2] in want]
+
+    def delete_pending_ref(self, row: dict) -> None:
+        """Delete one pending row (as returned by `pending_refs_for`)."""
+        con = self._connect()
+        con.execute(
+            "DELETE FROM pending_refs WHERE partition_id=? AND source_id=? AND linkage=? "
+            "AND target_name=? AND file=? AND line=?",
+            (self._partition_id, row["source_id"], row["linkage"], row["target_name"],
+             row["file"], row["line"]))
+        self._maybe_commit(con)
+
+    def entity_exists(self, entity_id: int) -> bool:
+        return self._connect().execute(
+            "SELECT 1 FROM entities WHERE id=?", (entity_id,)).fetchone() is not None
+
+    # ---- `denotes`: path-less concept -> the doc / memory it names (bug-216 R7) --
+
+    def _denotes_lid(self) -> "int | None":
+        try:
+            return self.get_linkage_id(DENOTES)
+        except KeyError:
+            return None
+
+    def denotes_equivalents(self, ids: "Iterable[int]") -> "dict[int, set[int]]":
+        """For each id in `ids`, the ids one `denotes` edge away in EITHER
+        direction (a concept -> the docs/memories it denotes; a doc/memory ->
+        the concepts denoting it). The walkers treat these as the same node
+        (bug-216 R9): a zero-cost hop, never counted, never decayed. Empty when
+        the store has no `denotes` linkage yet."""
+        ids = [int(i) for i in ids]
+        lid = self._denotes_lid() if ids else None
+        out: dict[int, set[int]] = {}
+        if lid is None:
+            return out
+        con = self._connect()
+        want = set(ids)
+        CHUNK = 450
+        if len(ids) > CHUNK:
+            # A wide frontier (a depth-2 `neighbors` walk off a hub): the
+            # `denotes` set is small -- one row per misbound concept -- so one
+            # read of it beats hundreds of IN-list queries.
+            pairs = con.execute(
+                "SELECT concept_id, entity_id FROM entity_links WHERE linkage_id=?",
+                (lid,)).fetchall()
+        else:
+            ph = ",".join("?" * len(ids))
+            pairs = con.execute(
+                f"SELECT concept_id, entity_id FROM entity_links WHERE linkage_id=? "
+                f"AND (concept_id IN ({ph}) OR entity_id IN ({ph}))",
+                (lid, *ids, *ids)).fetchall()
+        for c, e in pairs:
+            c, e = int(c), int(e)
+            if c in want:
+                out.setdefault(c, set()).add(e)
+            if e in want:
+                out.setdefault(e, set()).add(c)
+        return out
+
+    def link_denotes(self, names: "Iterable[str] | None" = None) -> dict:
+        """Link every PATH-LESS concept named after an ingested doc or memory id
+        (and the concept's spelling variants) to that doc/memory with a
+        `denotes` edge, active partition. `names` None = every doc/memory id in
+        the partition (the one-time derive op, `OPS["denotes_link"]`); else only
+        those ids (GMD ingest, for the ids it just wrote or the concepts it just
+        minted). Idempotent. Returns `{added, concepts, targets, multi_target}`
+        -- `multi_target` counts concepts that name BOTH a doc and a memory
+        (each is linked to both; spec #r7-denotes (c)).
+
+        WHY (bug-216 rev 3, 2026-11-13). A bare `[[doc-id]]` used to bind a
+        same-named path-less concept (minted by a plain wikilink mention, by
+        title terms, by extraction), so 1,909+ live `rel:` rows reach only
+        other citers of that concept, never the doc. R6 stops new ones; this
+        edge repairs the existing ones and covers every producer that will
+        ever mint such a concept, without rewriting any edge. NOT `same_as`:
+        the typed-edge walk excludes `same_as` by design (variant aliasing, not
+        a relation), and the walkers must cross this hop.
+
+        Variants: the concept's `same_as` group AND the names `_concept_variants`
+        spells (`b-doc` / `b_doc` / `b doc`). The names are read too because a
+        sync batch buffers its `same_as` links until it commits, so a concept
+        minted in the same batch has no visible group yet."""
+        con = self._connect()
+        pid = self._partition_id
+        if names is None:
+            trows = con.execute(
+                "SELECT id, name FROM entities WHERE partition_id=? AND kind IN ('doc','memory')",
+                (pid,)).fetchall()
+        else:
+            nl = sorted({str(n) for n in names if n})
+            trows = []
+            CH = 450
+            for i in range(0, len(nl), CH):
+                part = nl[i:i + CH]
+                trows += con.execute(
+                    f"SELECT id, name FROM entities WHERE partition_id=? "
+                    f"AND kind IN ('doc','memory') AND name IN ({','.join('?' * len(part))})",
+                    (pid, *part)).fetchall()
+        targets: dict[str, set[int]] = {}
+        for tid, tname in trows:
+            targets.setdefault(str(tname), set()).add(int(tid))
+        if not targets:
+            return {"added": 0, "concepts": 0, "targets": 0, "multi_target": 0}
+        # spelling -> the target names it stands for
+        spell: dict[str, set[str]] = {}
+        for tname in targets:
+            canonical, variants = _concept_variants(tname)
+            for v in {tname, canonical, *variants}:
+                spell.setdefault(v, set()).add(tname)
+        concept_for: dict[int, set[str]] = {}
+        sl = sorted(spell)
+        CH = 450
+        for i in range(0, len(sl), CH):
+            part = sl[i:i + CH]
+            for cid, cname in con.execute(
+                    f"SELECT id, name FROM entities WHERE partition_id=? AND kind='concept' "
+                    f"AND path IS NULL AND name IN ({','.join('?' * len(part))})",
+                    (pid, *part)).fetchall():
+                concept_for.setdefault(int(cid), set()).update(spell[str(cname)])
+        # the concepts' same_as groups (two hops: variant -> canonical -> variants)
+        try:
+            sa = self.get_linkage_id("same_as")
+        except KeyError:
+            sa = None
+        frontier = list(concept_for)
+        for _hop in range(2):
+            if sa is None or not frontier:
+                break
+            nxt: list[int] = []
+            for i in range(0, len(frontier), CH):
+                part = frontier[i:i + CH]
+                ph = ",".join("?" * len(part))
+                for c, e in con.execute(
+                        f"SELECT el.concept_id, el.entity_id FROM entity_links el "
+                        f"JOIN entities x ON x.id = el.concept_id "
+                        f"JOIN entities y ON y.id = el.entity_id "
+                        f"WHERE el.linkage_id=? AND (el.concept_id IN ({ph}) "
+                        f"OR el.entity_id IN ({ph})) "
+                        f"AND x.kind='concept' AND x.path IS NULL AND x.partition_id=? "
+                        f"AND y.kind='concept' AND y.path IS NULL AND y.partition_id=?",
+                        (sa, *part, *part, pid, pid)).fetchall():
+                    c, e = int(c), int(e)
+                    for a, b in ((c, e), (e, c)):
+                        if a in concept_for and b not in concept_for:
+                            concept_for[b] = set(concept_for[a])
+                            nxt.append(b)
+                        elif a in concept_for:
+                            concept_for[b] |= concept_for[a]
+            frontier = nxt
+        want: set[tuple[int, int]] = set()
+        multi = 0
+        for cid, tnames in concept_for.items():
+            tids = {t for n in tnames for t in targets.get(n, ())}
+            if len(tids) > 1:
+                multi += 1
+            for t in tids:
+                if t != cid:
+                    want.add((cid, t))
+        if not want:
+            return {"added": 0, "concepts": 0, "targets": len(targets), "multi_target": 0}
+        lid = self._denotes_lid()
+        have: set[tuple[int, int]] = set()
+        if lid is None:
+            self.add_linkage_type(
+                DENOTES, directed=True,
+                description="path-less concept denotes the doc/memory its name is the id of "
+                            "(bug-216 R7)")
+        else:
+            cl = sorted({c for c, _t in want})
+            for i in range(0, len(cl), CH):
+                part = cl[i:i + CH]
+                have |= {(int(c), int(e)) for c, e in con.execute(
+                    f"SELECT concept_id, entity_id FROM entity_links WHERE linkage_id=? "
+                    f"AND concept_id IN ({','.join('?' * len(part))})",
+                    (lid, *part)).fetchall()}
+        add = sorted(want - have)
+        for cid, tid in add:
+            self.link(DENOTES, cid, tid)
+        return {"added": len(add), "concepts": len({c for c, _t in want}),
+                "targets": len(targets), "multi_target": multi}
 
     def get_evidence(
         self, entity_id: int, linkage: str | None = None, concept_id: int | None = None
@@ -6245,6 +6556,9 @@ class Store:
         con.execute("DELETE FROM entity_links WHERE concept_id=?", (entity_id,))
         con.execute("DELETE FROM entities WHERE id=?", (entity_id,))
         con.execute("DELETE FROM concepts WHERE id=?", (entity_id,))
+        # A purged citer's unresolved `rel:` lines go with it (bug-216 R10): a
+        # later ingest of their target must not write an edge from a dead id.
+        con.execute("DELETE FROM pending_refs WHERE source_id=?", (entity_id,))
         # Memory sidecar (no-op for non-memory rows; sqlite has FK CASCADE
         # set but the daemon does not turn PRAGMA foreign_keys on, and
         # DuckDB's memory_content has no FK clause at all — so the explicit

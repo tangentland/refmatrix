@@ -46,27 +46,58 @@ DOC_EXTS = {".md", ".markdown", ".rst", ".txt", ".adoc"}
 # stay on the plain path -- the GMD parser reads markdown headings.
 GMD_EXTS = {".md", ".markdown", ".gmd"}
 
-# Non-dot directory segments excluded from rglob walks. Dotfile dirs
-# (anything starting with `.`) are excluded via _is_ignored() below —
-# enumerating them was unsustainable and missed tooling dirs like
-# .wolf / .claude / .cursor / .idea that get appended to repos all the
-# time. Kept separate from watch.IGNORE_DIRS (broader, includes caches)
-# to avoid a circular import: watch.py imports from this module.
+# Non-dot directory segments excluded from every walk, ALWAYS: no `!path`
+# re-include line and no built-in include beats them (bug-216 R1). Dotfile dirs
+# (anything starting with `.`) are excluded by the built-in hidden-directory
+# rule in `ignore_reason` -- enumerating them was unsustainable and missed
+# tooling dirs like .wolf / .claude / .cursor / .idea that get appended to repos
+# all the time.
+#
+# ONE list (bug-216 R12, 2026-11-13): `watch.py` kept a private `IGNORE_DIRS`
+# that added `__pycache__`, `dist` and `build`, so the watcher and the ingest
+# walks disagreed on those dirs. They live here now and every walker reads them
+# through `should_ignore`.
 #
 # Per-repo extras live in `<project>/.refmatrix/.refmatrix_ignore`
-# (gitignore-ish, loaded by load_ignore_spec) — e.g. a `workflow/` dir of
+# (gitignore-ish, loaded by load_ignore_spec) -- e.g. a `workflow/` dir of
 # Claude operational content that should stay out of the concept graph but
 # remain reachable via `rmx session`/`rmx memory` recall.
-INGEST_IGNORE_DIRS = ("node_modules", "venv")
+INGEST_IGNORE_DIRS = ("node_modules", "venv", "__pycache__", "dist", "build")
 
 # Name of the per-repo ignore file, read from the project-local .refmatrix dir.
 IGNORE_FILE = ".refmatrix_ignore"
 _IGNORE_CACHE: dict[str, tuple[float, "IgnoreSpec | None"]] = {}
 
+# The project's two GMD rule docs (bug-216 R11, 2026-11-13). The cat-herder
+# bootstrap made `CLAUDE.md` (`id: claude`) and `.claude/PROJECT_PROFILE.md`
+# (`id: project-profile`) GMD docs that 247 authored `rel:` lines cite; the
+# hidden-directory rule kept the profile out of every store, and a fresh clone
+# or CI checkout has no ignore file to re-include it. A file at one of these
+# root-relative paths that carries GMD frontmatter is INCLUDED by default. An
+# explicit ignore line still beats it (the fleet's ignore files list both until
+# the user removes the lines), and a `!path` line beats that.
+BUILTIN_INCLUDES = ("CLAUDE.md", ".claude/PROJECT_PROFILE.md")
+
+_GMD_SNIFF_BYTES = 512
+
+
+def is_gmd_file(path: Path) -> bool:
+    """Cheap sniff: the file opens with `---` and has `gmd:` in its first ~512
+    bytes. One copy for the sync GMD dispatch (`sync._is_gmd_file`) and the
+    built-in include above, so "carries GMD frontmatter" means one thing."""
+    try:
+        with path.open("rb") as f:
+            head = f.read(_GMD_SNIFF_BYTES)
+    except OSError:
+        return False
+    if not head.startswith(b"---"):
+        return False
+    return b"\ngmd:" in head or b"\ngmd :" in head
+
 
 class IgnoreSpec:
     """A tiny gitignore-ish matcher for `.refmatrix_ignore`. Supports three
-    pattern shapes, one per line (blank lines and `#` comments skipped):
+    ignore pattern shapes, one per line (blank lines and `#` comments skipped):
 
     - bare name  (`workflow`, `node_modules`) -> matches that path SEGMENT
       anywhere in the tree (a trailing `/` is allowed and stripped).
@@ -74,16 +105,43 @@ class IgnoreSpec:
     - path with `/`  (`docs/bullshit`, `a/b`) -> anchored to the repo root:
       matches that relative path or anything beneath it (and fnmatch).
 
-    Not full gitignore (no negation / `**`), but covers the dir- and
-    glob-exclusion cases refmatrix needs."""
+    and one re-include shape (bug-216 R1, 2026-11-13):
 
-    def __init__(self, lines: list[str]):
+    - `!path` (`!.claude/PROJECT_PROFILE.md`, `!.claude/*PROFILE*.md`) ->
+      ANCHORED to the project root (never a basename match), a glob allowed.
+      A file it matches is not ignored, whatever ignore line matches it and
+      wherever that line sits, and despite the built-in hidden-directory
+      rule. It never beats `INGEST_IGNORE_DIRS`. It applies to FILES only: a
+      `!dir` line (a trailing `/`, or a path that is a directory under the
+      root when the spec loads) re-includes nothing and is reported once by
+      `load_ignore_spec`.
+
+    Not full gitignore (no `**`), but covers the dir- and glob-exclusion cases
+    refmatrix needs."""
+
+    def __init__(self, lines: list[str], root: "Path | None" = None):
         self.names: list[str] = []
         self.globs: list[str] = []
         self.anchored: list[str] = []
+        self.reincludes: list[str] = []
+        # `!dir` lines, dropped from `reincludes`; `load_ignore_spec` reports them.
+        self.dir_reincludes: list[str] = []
         for raw in lines:
             line = raw.strip()
             if not line or line.startswith("#"):
+                continue
+            if line.startswith("!"):
+                pat = line[1:].strip().lstrip("/")
+                if not pat:
+                    continue
+                is_dir = pat.endswith("/")
+                pat = pat.rstrip("/")
+                if not pat:
+                    continue
+                if not is_dir and root is not None and not any(
+                        ch in pat for ch in "*?["):
+                    is_dir = (root / pat).is_dir()
+                (self.dir_reincludes if is_dir else self.reincludes).append(pat)
                 continue
             line = line.rstrip("/")
             if not line:
@@ -96,26 +154,48 @@ class IgnoreSpec:
                 self.names.append(line)
 
     def __bool__(self) -> bool:
-        return bool(self.names or self.globs or self.anchored)
+        # A spec holding nothing but re-includes is NOT empty: it overrides the
+        # built-in hidden-directory rule on its own.
+        return bool(self.names or self.globs or self.anchored or self.reincludes)
 
-    def match(self, rel: Path) -> bool:
+    def matching_pattern(self, rel: Path) -> "str | None":
+        """The first ignore line that matches `rel` (as written in the file),
+        or None. Re-includes are not consulted here."""
         from fnmatch import fnmatch
         segs = rel.parts
-        if any(n in segs for n in self.names):
-            return True
+        for n in self.names:
+            if n in segs:
+                return n
         name = rel.name
-        if any(fnmatch(name, g) for g in self.globs):
-            return True
+        for g in self.globs:
+            if fnmatch(name, g):
+                return g
         posix = rel.as_posix()
         for pat in self.anchored:
             if posix == pat or posix.startswith(pat + "/") or fnmatch(posix, pat):
-                return True
-        return False
+                return pat
+        return None
+
+    def match(self, rel: Path) -> bool:
+        """True when an ignore line matches `rel`. Re-includes are NOT applied:
+        the one predicate that applies them is `should_ignore`."""
+        return self.matching_pattern(rel) is not None
+
+    def reincluded(self, rel: Path) -> bool:
+        """True when a `!path` line matches `rel` -- a path relative to the
+        project root, compared whole (anchored), fnmatch allowed."""
+        from fnmatch import fnmatch
+        posix = rel.as_posix()
+        return any(posix == pat or fnmatch(posix, pat) for pat in self.reincludes)
 
 
 def load_ignore_spec(project_root: Path) -> "IgnoreSpec | None":
     """Load `<project_root>/.refmatrix/.refmatrix_ignore` if present, cached by
-    (path, mtime) so a walk reads it once. Returns None when absent/empty."""
+    (path, mtime) so a walk reads it once. Returns None when absent/empty.
+
+    A `!dir` line is reported on stderr once per load (bug-216 R1): it would
+    otherwise re-include nothing in silence, and the author would believe the
+    files under it were back in the graph."""
     f = project_root / ".refmatrix" / IGNORE_FILE
     try:
         mtime = f.stat().st_mtime
@@ -125,38 +205,109 @@ def load_ignore_spec(project_root: Path) -> "IgnoreSpec | None":
     cached = _IGNORE_CACHE.get(str(f))
     if cached is not None and cached[0] == mtime:
         return cached[1]
-    spec = IgnoreSpec(f.read_text().splitlines())
+    spec = IgnoreSpec(f.read_text().splitlines(), root=project_root)
+    if spec.dir_reincludes:
+        import sys as _sys
+        for pat in spec.dir_reincludes:
+            print(f"refmatrix: {f}: `!{pat}` names a directory; a re-include applies to "
+                  f"files only, so this line re-includes nothing (list each file)",
+                  file=_sys.stderr)
     spec = spec if spec else None
     _IGNORE_CACHE[str(f)] = (mtime, spec)
     return spec
 
 
-def _is_ignored(parts: set[str]) -> bool:
-    """True if any path segment is a non-dot ignore-listed dir
-    (node_modules, venv) or a hidden directory (starts with `.`).
-    The `seg != "."` guard keeps a leading `.` in relative paths
-    (Path(".").parts == ('.',)) from excluding the cwd itself."""
-    if any(seg in parts for seg in INGEST_IGNORE_DIRS):
-        return True
-    return any(seg.startswith(".") and seg != "." for seg in parts)
+def _ignored_dir_segment(parts: "tuple[str, ...] | set[str]") -> "str | None":
+    return next((seg for seg in INGEST_IGNORE_DIRS if seg in parts), None)
 
 
-def should_ignore(p: Path, root: Path | None = None) -> bool:
-    """Walk-filter predicate: the built-in `_is_ignored` segment rules PLUS the
-    per-repo `.refmatrix_ignore` spec (matched against the path relative to
-    `root`). `root` None falls back to the built-in rules only."""
-    if _is_ignored(set(p.parts)):
-        return True
+def _hidden_segment(parts: "tuple[str, ...]") -> "str | None":
+    """The first hidden-directory segment (starts with `.`). The `seg != "."`
+    guard keeps a leading `.` in relative paths (Path(".").parts == ('.',))
+    from excluding the cwd itself."""
+    return next((seg for seg in parts if seg.startswith(".") and seg != "."), None)
+
+
+def _rel_to_root(p: Path, root: Path) -> "Path | None":
+    """`p` relative to `root`, trying the resolved forms when the literal ones
+    disagree (`/tmp` -> `/private/tmp` on macOS); None when `p` is outside."""
+    try:
+        return p.relative_to(root)
+    except ValueError:
+        pass
+    try:
+        return p.resolve().relative_to(root.resolve())
+    except (ValueError, OSError):
+        return None
+
+
+def find_project_root(start: Path) -> "Path | None":
+    """The nearest directory at or above `start` that holds a `.refmatrix/`
+    dir -- where that project's ignore spec lives. `rmx ingest-gmd docs/`
+    anchors the spec here, not at `docs/` (bug-216 #rev-4-accepted): taking the
+    target as the root re-anchored `docs/private` to `docs/docs/private`."""
+    cur = start if start.is_dir() else start.parent
+    for d in (cur, *cur.parents):
+        if (d / ".refmatrix").is_dir():
+            return d
+    return None
+
+
+def ignore_reason(p: Path, root: Path | None = None, *,
+                  base: Path | None = None) -> "str | None":
+    """Why `p` is excluded from ingest, or None when it is included. The ONE
+    implementation of the rule (bug-216 R2): `should_ignore` is this, and the
+    scope-parity gate (`scripts/check-gmd-parity.py`, R3) prints it.
+
+    Precedence (bug-216 R1 + R11, 2026-11-13):
+      1. an `INGEST_IGNORE_DIRS` segment -- ALWAYS ignored;
+      2. a `!path` re-include in the spec -- included;
+      3. an explicit ignore line in the spec -- ignored;
+      4. the built-in include of GMD `CLAUDE.md` / `.claude/PROJECT_PROFILE.md`
+         at the project root -- included;
+      5. the built-in hidden-directory rule -- ignored.
+    `root` None (no project to read a spec from) applies 1 and 5 only. The
+    segment rules (1, 5) read the ABSOLUTE path's parts, as they always have
+    -- or, with `base`, only the parts BELOW `base`: `ingest-gmd <dir>` takes
+    the directory it was handed as given and applies them beneath it. Without
+    that, `rmx session ingest` (cards under `<project>/.refmatrix/sessions/`)
+    indexed nothing once its walk went through this predicate."""
+    parts = p.parts
+    if base is not None:
+        try:
+            parts = p.relative_to(base).parts
+        except ValueError:
+            pass
+    seg = _ignored_dir_segment(parts)
+    if seg is not None:
+        return f"built-in ignore dir `{seg}` (INGEST_IGNORE_DIRS; never re-included)"
+    rel: "Path | None" = None
+    spec: "IgnoreSpec | None" = None
     if root is not None:
+        rel = _rel_to_root(p, root)
         spec = load_ignore_spec(root)
-        if spec is not None:
-            try:
-                rel = p.relative_to(root)
-            except ValueError:
-                rel = Path(p.name)
-            if spec.match(rel):
-                return True
-    return False
+    if spec is not None:
+        if rel is not None and spec.reincluded(rel):
+            return None
+        pat = spec.matching_pattern(rel if rel is not None else Path(p.name))
+        if pat is not None:
+            return f"pattern `{pat}` in {root / '.refmatrix' / IGNORE_FILE}"
+    if rel is not None and rel.as_posix() in BUILTIN_INCLUDES and is_gmd_file(p):
+        return None
+    hidden = _hidden_segment(parts)
+    if hidden is not None:
+        return f"built-in hidden-directory rule (segment `{hidden}`)"
+    return None
+
+
+def should_ignore(p: Path, root: Path | None = None, *,
+                  base: Path | None = None) -> bool:
+    """Walk-filter predicate -- the ONE every walker calls (bug-216 R2: the
+    `ingest_path` tree walk, both watchers through `watch.is_relevant`,
+    `sync._sync_one` including its purge of a path that became ignored, and
+    `ingest-gmd`'s doc walk). See `ignore_reason` for the precedence and
+    `base`."""
+    return ignore_reason(p, root, base=base) is not None
 
 
 def ingest_path(

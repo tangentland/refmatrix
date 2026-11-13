@@ -10734,12 +10734,18 @@ def _ingest_gmd_in_process(s: Store, root: Path, resolved: list[Path], *, as_mem
                            with_stats: bool):
     """The daemon-down body of `_ingest_gmd_sync` (the caller owns and closes `s`)."""
     from refmatrix.ingest_gmd import (collect_gmd_files, ingest_gmd_paths,
-                                      render_memory_skip_line)
+                                      render_ignored_line, render_memory_skip_line)
     # THE memory walk on the memory path (task 26.1 AC-2, ADR-0005 #one-walk);
-    # every skip is counted and named in the report (ch-bsd 26.1 #s-3)
+    # every skip is counted and named in the report (ch-bsd 26.1 #s-3), and so
+    # is every path the doc walk's ignore rules excluded (bug-216 R2)
     skipped_paths: list = []
-    files = collect_gmd_files(resolved, as_memory=as_memory, skipped=skipped_paths)
+    ignored_paths: list = []
+    files = collect_gmd_files(resolved, as_memory=as_memory, skipped=skipped_paths,
+                              ignored=ignored_paths)
     skip_line = render_memory_skip_line(skipped_paths)
+    ign_line = render_ignored_line(ignored_paths)
+    if ign_line:
+        skip_line = f"{skip_line}\n{ign_line}" if skip_line else ign_line
     if not files:
         rep = "no candidate files found" + (f"\n{skip_line}" if skip_line else "")
         return (rep, {"skipped": len(skipped_paths),

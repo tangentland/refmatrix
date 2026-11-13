@@ -493,21 +493,88 @@ def _resolve_target_eid(
     persistent store. The batch-only dict misses any target that was
     ingested in a prior call — per-file watcher ingests and partial-tree
     invocations would silently drop every cross-file rel: edge without
-    this DB fallback."""
+    this DB fallback.
+
+    Resolution order (bug-216 R6, 2026-11-13):
+    - an ANCHORED target (`doc#id`) is a node: `concept`, then `doc`, `memory`;
+    - a BARE target (`doc-id`) is the doc: `doc`, then `memory` (a doc id
+      ingested with --as-memory is a `kind=memory` entity), then `concept`
+      -- a concept only when no doc or memory of that name exists.
+    The bare order was concept-first, so a same-named PATH-LESS concept
+    (minted by a plain `[[doc-id]]` mention, by title terms, by extraction)
+    won over the doc even when it was created after it: bsd-215m1 measured
+    3,662 of 5,431 live `rel:` evidence rows landing path-less, 1,909+ of
+    them on a doc that IS ingested. A concept hit for a bare name is never
+    cached in `eid_by_name`, so the batch dict holds only docs/memories (and
+    pass 1's own registrations) under a bare id."""
     eid = eid_by_name.get(target_name)
     if eid is not None:
         return eid
-    # Try concept (node anchors `doc#id`) then doc, then memory (a bare doc-id
-    # ingested with --as-memory is a `kind=memory` entity, NOT a doc/concept).
-    # `memory` MUST be in this list: once the duplicate `__root__` concept is no
-    # longer minted, a cross-doc `[[slug]]` target only exists as the memory,
-    # and omitting it here would drop every memory->memory rel: edge.
-    for kind in ("concept", "doc", "memory"):
+    bare = "#" not in target_name
+    kinds = ("doc", "memory", "concept") if bare else ("concept", "doc", "memory")
+    for kind in kinds:
         e = store.get_entity(kind, target_name)
         if e is not None:
-            eid_by_name[target_name] = e.id  # cache for the rest of this batch
+            if not (bare and kind == "concept"):
+                eid_by_name[target_name] = e.id  # cache for the rest of this batch
             return e.id
     return None
+
+
+def _target_name(doc_id: str, ref: str) -> "tuple[str | None, str]":
+    """(`target_doc`, entity name) for one wikilink ref as written in `doc_id`."""
+    target_doc, anchor = _split_ref(ref)
+    if target_doc is None:
+        return None, _entity_name(doc_id, anchor)
+    return target_doc, (_entity_name(target_doc, anchor) if anchor else target_doc)
+
+
+def _resolve_ref(store, eid_by_name: dict, target_doc: "str | None",
+                 target_name: str) -> "int | None":
+    """`_resolve_target_eid` plus the ADR slug/slash bridge: a wikilink like
+    [[adr-0078-json-schema-as-type-authority]] also resolves against the
+    non-GMD ADR ingester's `adr/0078` entity."""
+    eid = _resolve_target_eid(store, eid_by_name, target_name)
+    if eid is None and target_doc:
+        slash = _adr_slash_alias(target_doc)
+        if slash:
+            eid = _resolve_target_eid(store, eid_by_name, slash)
+    return eid
+
+
+def resolve_pending_refs(store: Store, names: "set[str]", eid_by_name: dict,
+                         stats: "IngestStats") -> None:
+    """Resolve the pending `rel:` rows whose target is one of `names` -- the
+    docs / memories / anchors this ingest just registered (bug-216 R10,
+    2026-11-13). Each resolved row becomes its edge plus its evidence row and
+    is deleted; a row whose SOURCE no longer exists is deleted and counted as
+    dropped (the purge removes them too -- this is the second safeguard, for
+    a source removed by a path that does not run `purge_entity`). A row whose
+    target still does not resolve stays pending.
+
+    WHY: GMD ingest skips unchanged files and nothing retried a dangling
+    target when it appeared, so un-ignoring the rule docs (R4) alone would
+    have left all 247 lines citing them dangling until each citer was edited."""
+    rows = store.pending_refs_for(names)
+    for row in rows:
+        src = row["source_id"]
+        if not store.entity_exists(src):
+            store.delete_pending_ref(row)
+            stats.pending_dropped += 1
+            continue
+        target_doc, _anchor = _split_ref(row["ref"])
+        tgt = _resolve_ref(store, eid_by_name, target_doc, row["target_name"])
+        if tgt is None:
+            continue
+        store.delete_pending_ref(row)
+        if tgt == src:
+            # a root-mirror row whose target turned out to be the doc itself
+            continue
+        store.link(row["linkage"], src, tgt, weight=row["weight"])
+        store.add_evidence(row["linkage"], src, tgt, file=row["file"], line=row["line"],
+                           detail=row["detail"])
+        stats.pending_resolved += 1
+        stats.rels += 1
 
 
 # ---- ingest ---------------------------------------------------------------
@@ -550,6 +617,13 @@ class IngestStats:
     # An unreadable `.memory-layout` met by the gate (the path-aware rule was
     # applied there; `_OrganisedDirs`), named in the report.
     marker_errors: list[str] = field(default_factory=list)
+    # bug-216 R10: unresolved `rel:` lines recorded as pending; pending lines
+    # this ingest resolved (their target arrived); pending rows dropped
+    # because their source entity is gone. bug-216 R7: `denotes` links added.
+    pending_recorded: int = 0
+    pending_resolved: int = 0
+    pending_dropped: int = 0
+    denotes_added: int = 0
 
     @property
     def refresh_pending(self) -> int:
@@ -571,7 +645,11 @@ class IngestStats:
                 "skipped_unchanged": self.skipped_unchanged,
                 "duplicate_ids": [[i, [str(p) for p in ps]]
                                   for i, ps in self.duplicate_ids],
-                "marker_errors": list(self.marker_errors)}
+                "marker_errors": list(self.marker_errors),
+                "pending_recorded": self.pending_recorded,
+                "pending_resolved": self.pending_resolved,
+                "pending_dropped": self.pending_dropped,
+                "denotes_added": self.denotes_added}
 
     def refresh_lines(self, *, always: bool = False) -> list[str]:
         """`<term>: N` for the four refresh terms (AC-3). The bridge report
@@ -624,8 +702,19 @@ class IngestStats:
                 "new linkage types: "
                 + ", ".join(sorted(self.linkage_types_added))
             )
+        if self.pending_resolved:
+            lines.append(f"pending refs resolved: {self.pending_resolved} "
+                         f"(their target was ingested)")
+        if self.pending_dropped:
+            lines.append(f"pending refs dropped: {self.pending_dropped} "
+                         f"(their source entity is gone)")
+        if self.denotes_added:
+            lines.append(f"denotes links added: {self.denotes_added}")
         if self.unresolved:
-            lines.append(f"unresolved refs: {len(self.unresolved)}")
+            lines.append(f"unresolved refs: {len(self.unresolved)}"
+                         + (f" ({self.pending_recorded} rel: line(s) recorded as pending: "
+                            f"they resolve when their target is ingested)"
+                            if self.pending_recorded else ""))
             for p, ln, r in self.unresolved[:10]:
                 lines.append(f"  {p}:{ln}: [[{r}]]")
             if len(self.unresolved) > 10:
@@ -1501,6 +1590,22 @@ def ingest_gmd_paths(
 
     stats.marker_errors.extend(organised.errors)
 
+    # Every name this batch registers -- doc ids, anchor nodes, ADR slash
+    # aliases, skipped (unchanged) docs included: a pending `rel:` line whose
+    # target is one of them resolves after pass 2 (bug-216 R10). And the names
+    # whose same-named path-less concepts get a `denotes` link to the doc /
+    # memory (bug-216 R7(b)); pass 2 adds the concept names it mints.
+    batch_names: set[str] = set()
+    denotes_names: set[str] = set()
+    for doc in docs:
+        batch_names.add(doc.doc_id)
+        denotes_names.add(doc.doc_id)
+        for node in doc.nodes:
+            batch_names.add(_entity_name(doc.doc_id, node.id))
+        _slash = _adr_slash_alias(doc.doc_id)
+        if _slash:
+            batch_names.add(_slash)
+
     # ---- pass 2: hierarchy + rel: + mentions ----------------------------
     _ensure_linkage(store, "part-of", stats)
     _ensure_linkage(store, "mentions", stats)
@@ -1536,6 +1641,13 @@ def ingest_gmd_paths(
                 yield_lock()
             continue
 
+        # This doc's `rel:` lines are re-derived below, so the evidence rows and
+        # pending rows its previous version recorded go first (bug-216 R10):
+        # `add_evidence` appends, and a line resolved earlier (directly or as a
+        # pending row) would otherwise carry two evidence rows after an edit.
+        store.clear_rel_evidence(str(doc.path))
+        store.clear_pending_refs_for_file(str(doc.path))
+
         # Pre-collect this doc's UNCONDITIONAL concepts (tags + per-node title
         # tokens / aliases / body terms) in add_concept order, then bulk-create
         # them so the link pass below is a map lookup, not ~1 upsert per term
@@ -1545,6 +1657,7 @@ def ingest_gmd_paths(
         concept_specs: list[tuple[str, str]] = []
         for tag in doc.tags:
             concept_specs.append((tag, f"tag '{tag}'"))
+            denotes_names.add(tag)
         for node in doc.nodes:
             _seen_tok: set[str] = set()
             for tok in _title_concept_tokens(node.title):
@@ -1552,6 +1665,9 @@ def ingest_gmd_paths(
                     continue
                 _seen_tok.add(tok)
                 concept_specs.append((tok, f"title token '{tok}'"))
+                # a title that spells a doc id mints that id's concept
+                # (bug-216 #rev-3-contracts finding: the second producer)
+                denotes_names.add(tok)
             for alias in node.aliases:
                 concept_specs.append((alias, f"alias '{alias}'"))
             if _tphrases:
@@ -1683,34 +1799,27 @@ def ingest_gmd_paths(
             for line_no, verb, target in node.rels:
                 _ensure_linkage(store, verb, stats)
                 resolved = False
+                _weight = _authority if _authority != 1.0 else None
                 for wm in _WIKILINK_RE.finditer(target):
                     ref = wm.group(1).strip()
-                    target_doc, anchor = _split_ref(ref)
-                    if target_doc is None:
-                        # local ref; resolves within same doc
-                        target_name = _entity_name(doc.doc_id, anchor)
-                    else:
-                        target_name = (
-                            _entity_name(target_doc, anchor) if anchor
-                            else target_doc
-                        )
-                    target_eid = _resolve_target_eid(store, eid_by_name, target_name)
-                    if target_eid is None and target_doc:
-                        # ADR slug/slash bridge: a wikilink like
-                        # [[adr-0078-json-schema-as-type-authority]] also
-                        # resolves against the non-GMD ADR ingester's
-                        # `adr/0078` entity.
-                        slash = _adr_slash_alias(target_doc)
-                        if slash:
-                            target_eid = _resolve_target_eid(
-                                store, eid_by_name, slash
-                            )
+                    target_doc, target_name = _target_name(doc.doc_id, ref)
+                    target_eid = _resolve_ref(store, eid_by_name, target_doc, target_name)
                     if target_eid is None:
                         stats.unresolved.append((doc.path, line_no, ref))
+                        # Pending, not dropped (bug-216 R10): the edge lands
+                        # when the target is ingested, with no edit to this doc.
+                        _detail = f"rel: {verb} -> {ref}"
+                        if store.add_pending_ref(src_eid, verb, target_name, ref=ref,
+                                                 file=str(doc.path), line=line_no,
+                                                 weight=_weight, detail=_detail):
+                            stats.pending_recorded += 1
+                        if node.id == "root" and doc_eid != src_eid:
+                            store.add_pending_ref(doc_eid, verb, target_name, ref=ref,
+                                                  file=str(doc.path), line=line_no,
+                                                  weight=_weight,
+                                                  detail=f"{_detail} (root-mirror)")
                         continue
-                    store.link(verb, src_eid, target_eid,
-                               weight=(_authority if _authority != 1.0
-                                       else None))
+                    store.link(verb, src_eid, target_eid, weight=_weight)
                     store.add_evidence(
                         verb, src_eid, target_eid,
                         file=str(doc.path), line=line_no,
@@ -1731,9 +1840,7 @@ def ingest_gmd_paths(
                         and doc_eid != src_eid
                         and doc_eid != target_eid
                     ):
-                        store.link(verb, doc_eid, target_eid,
-                                   weight=(_authority if _authority != 1.0
-                                           else None))
+                        store.link(verb, doc_eid, target_eid, weight=_weight)
                         store.add_evidence(
                             verb, doc_eid, target_eid,
                             file=str(doc.path), line=line_no,
@@ -1744,21 +1851,9 @@ def ingest_gmd_paths(
 
             # plain wikilinks → mentions linkage on resolved targets
             for line_no, ref in node.refs:
-                target_doc, anchor = _split_ref(ref)
-                if target_doc is None:
-                    target_name = _entity_name(doc.doc_id, anchor)
-                else:
-                    target_name = (
-                        _entity_name(target_doc, anchor) if anchor
-                        else target_doc
-                    )
-                target_eid = _resolve_target_eid(store, eid_by_name, target_name)
-                if target_eid is None and target_doc:
-                    slash = _adr_slash_alias(target_doc)
-                    if slash:
-                        target_eid = _resolve_target_eid(
-                            store, eid_by_name, slash
-                        )
+                target_doc, target_name = _target_name(doc.doc_id, ref)
+                anchor = _split_ref(ref)[1]
+                target_eid = _resolve_ref(store, eid_by_name, target_doc, target_name)
                 if target_eid is None:
                     stats.unresolved.append((doc.path, line_no, ref))
                     continue
@@ -1772,6 +1867,9 @@ def ingest_gmd_paths(
                     )
                     store.link("mentions", cid, src_eid)
                     stats.mentions += 1
+                    # the production producer of a same-named path-less
+                    # concept: it denotes the doc it names (bug-216 R7(b))
+                    denotes_names.add(concept_name)
 
             _node_tick()
 
@@ -1808,6 +1906,13 @@ def ingest_gmd_paths(
             progress_cb("pass2", pass2_processed, len(docs), doc.path)
         if yield_lock and pass2_processed % yield_every == 0:
             yield_lock()
+
+    # Pending `rel:` lines whose target this batch registered (bug-216 R10),
+    # then the `denotes` links for the ids it wrote and the concepts it minted
+    # (bug-216 R7(b)). Both counted in the report; an error here fails the
+    # ingest loudly -- these are the graph's edges, not a best-effort extra.
+    resolve_pending_refs(store, batch_names, eid_by_name, stats)
+    stats.denotes_added += store.link_denotes(denotes_names)["added"]
 
     # Which code derived this partition's GMD graph (bug-039). The GMD passes
     # changed under a store that kept reading green — the body-anchor fix
@@ -1849,7 +1954,8 @@ def render_memory_skip_line(skipped) -> str:
 
 
 def collect_gmd_files(targets: list[Path], *, as_memory: bool = False,
-                      skipped: "list | None" = None) -> list[Path]:
+                      skipped: "list | None" = None,
+                      ignored: "list | None" = None) -> list[Path]:
     """Expand a list of files or directories to candidate GMD paths.
 
     `as_memory=True` (task 26.1 AC-2, ADR-0005 #one-walk, 2026-11-09): a
@@ -1872,6 +1978,20 @@ def collect_gmd_files(targets: list[Path], *, as_memory: bool = False,
       prints it); without it, the line goes to stderr here. At HEAD the daemon
       ops printed it to the daemon's own stderr log, which no caller reads
       (ch-bsd 26.1 #s-3, 2026-11-09).
+
+    The DOC walk of a directory goes through `ingest.should_ignore` (bug-216
+    R2, 2026-11-13): it honoured no ignore spec at all, so `rmx ingest-gmd .`
+    took `.claude/agents/*`, `node_modules/` and every spec-excluded path while
+    the sync and the watcher took the rule docs' re-includes -- four walkers,
+    four answers. The spec is read from the PROJECT root, found by walking up
+    from the target to the `.refmatrix/` dir (a target with none above it is
+    its own root), so `ingest-gmd docs/` anchors `docs/private` where the
+    author wrote it. The built-in segment rules apply BELOW the target only
+    (`base=t`): a directory handed in explicitly -- `.refmatrix/sessions/` by
+    `rmx session ingest` -- is taken as given, as a file target is. Every excluded path is counted and named: into `ignored`
+    when the caller passes it (`render_ignored_line`), else on stderr here.
+    Explicit file targets are taken as given; the memory walk is never put
+    through the doc rule (the memdir lives under `~/.claude/`).
     """
     import sys as _sys
     out: list[Path] = []
@@ -1900,12 +2020,36 @@ def collect_gmd_files(targets: list[Path], *, as_memory: bool = False,
             elif other:
                 print(render_memory_skip_line(other), file=_sys.stderr)
         elif t.is_dir():
+            from refmatrix.ingest import find_project_root, should_ignore
+            proj = find_project_root(t) or t
+            excluded: list[Path] = []
             for ext in ("*.gmd", "*.md"):
                 for p in sorted(t.rglob(ext)):
-                    if p not in seen:
-                        out.append(p)
-                        seen.add(p)
+                    if p in seen:
+                        continue
+                    if should_ignore(p, proj, base=t):
+                        excluded.append(p)
+                        continue
+                    out.append(p)
+                    seen.add(p)
+            if ignored is not None:
+                ignored.extend(excluded)
+            elif excluded:
+                print(render_ignored_line(excluded), file=_sys.stderr)
     return out
+
+
+def render_ignored_line(ignored) -> str:
+    """THE line naming what the doc walk excluded by the ignore rules (bug-216
+    R2): the count and the first names. Empty when nothing was excluded."""
+    names = [str(p) for p in ignored]
+    if not names:
+        return ""
+    shown = names[:MEMORY_SKIP_NAMES_SHOWN]
+    more = len(names) - len(shown)
+    return (f"ingest-gmd: ignored {len(names)} path(s) excluded by the ignore rules "
+            f"(INGEST_IGNORE_DIRS, .refmatrix_ignore, hidden directories): "
+            f"{', '.join(shown)}{f' … and {more} more' if more else ''}")
 
 
 # ---- memory rows need VECTORS, or recall cannot see them (bug-065) --------

@@ -19,41 +19,27 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from refmatrix.ingest import CODE_EXTS, DOC_EXTS, load_ignore_spec
+from refmatrix.ingest import CODE_EXTS, DOC_EXTS, should_ignore
 from refmatrix.store import Store
 from refmatrix.sync import sync_files
 
-IGNORE_DIRS = {
-    "venv", "node_modules",
-    "__pycache__", "dist", "build",
-}
 SUPPORTED_EXTS = CODE_EXTS | DOC_EXTS
 
 
 def is_relevant(p: Path, root: Path | None = None) -> bool:
-    """True if a path is worth syncing. Excludes hidden directories
-    (any segment starting with `.` — covers .git, .venv, .tldr,
-    .refmatrix, .wolf, .claude, .cursor, .idea, .mypy_cache, .pytest_cache,
-    .ruff_cache, .tox, .nox, ...), the non-dot tooling dirs in IGNORE_DIRS,
-    and — when `root` is given — anything matched by that repo's
-    .refmatrix_ignore (e.g. a workflow/ dir of operational content)."""
+    """True if a path is worth syncing: a supported extension that the ONE
+    ingest predicate, `ingest.should_ignore`, does not exclude -- hidden
+    directories, `INGEST_IGNORE_DIRS` (node_modules, venv, __pycache__, dist,
+    build) and, when `root` is given, that repo's `.refmatrix_ignore` with its
+    `!path` re-includes and the built-in include of the GMD rule docs.
+
+    bug-216 R2/R12 (2026-11-13): this used to be a private copy of the rule
+    with its own `IGNORE_DIRS` list and no re-include, so the watcher dropped
+    `.claude/PROJECT_PROFILE.md` while the spec re-included it, and kept
+    `dist/` / `build/` files the ingest walk skipped."""
     if p.suffix.lower() not in SUPPORTED_EXTS:
         return False
-    parts = p.parts
-    if any(part in IGNORE_DIRS for part in parts):
-        return False
-    if any(part.startswith(".") and part != "." for part in parts):
-        return False
-    if root is not None:
-        spec = load_ignore_spec(root)
-        if spec is not None:
-            try:
-                rel = p.relative_to(root)
-            except ValueError:
-                rel = Path(p.name)
-            if spec.match(rel):
-                return False
-    return True
+    return not should_ignore(p, root)
 
 
 # Filename + path-segment patterns that signal "this change is curator-

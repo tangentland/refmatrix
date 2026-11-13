@@ -16,6 +16,16 @@ skipped, as lint skips it. Memory dirs are parsed the way the bridge parses them
 excluded from the comparison: `__root__` (the ingester's synthetic doc node) and the ingester's
 auto `_hN` / `_hN_M` heading ids, which lint never registers by design.
 
+SCOPE PARITY (bug-216 R3, 2026-11-13). The same "two parsers, never compared" shape, between
+SCOPES: the gate linted CLAUDE.md and `.claude/PROJECT_PROFILE.md` and resolved 247 `rel:` lines
+citing them, while the store's ingest excluded both (`.refmatrix_ignore` listed `CLAUDE.md` and
+`.claude`; the hidden-dir rule dropped the profile), so every one of those edges dangled in the
+graph with the gate green. Every GMD doc in the lint scope outside the memory dirs (which reach
+the store through the bridge, not the ignore-spec walk) must be INCLUDED by
+`refmatrix.ingest.ignore_reason` -- the predicate every ingest walker uses -- with the spec read
+from the doc's project root (the nearest `.refmatrix/` above it, else the nearest `.git`, else
+this script's checkout). A doc it excludes is an error naming the file and the rule.
+
 This script is refmatrix-specific (it imports `refmatrix`), so it lives in `scripts/`, not in the
 vendored `tools/gmd/` mirror (spec #d6), and runs under `.venv-eval/bin/python`.
 """
@@ -32,12 +42,26 @@ ROOT = Path(__file__).resolve().parents[1]
 # of a different tree).
 sys.path.insert(0, str(ROOT / "src"))
 
+from refmatrix.ingest import find_project_root, ignore_reason  # noqa: E402
 from refmatrix.ingest_gmd import parse_gmd  # noqa: E402
 
 LINT_PATH = ROOT / "tools" / "gmd" / "lint.py"
 _AUTO_ID = re.compile(r"^_h\d+(?:_\d+)?$")
 
 Divergence = tuple[Path, set, set]  # (path, lint-only ids, ingester-only ids)
+Exclusion = tuple[Path, str]         # (path, the ingest rule that excludes it)
+
+
+def _project_root(f: Path) -> Path:
+    """Where `f`'s ignore spec lives: the nearest `.refmatrix/` above it (what the ingest
+    walkers use), else the nearest `.git` (a clone or CI checkout has no store), else ROOT."""
+    found = find_project_root(f.resolve())
+    if found is not None:
+        return found
+    for d in f.resolve().parents:
+        if (d / ".git").exists():
+            return d
+    return ROOT
 
 
 def _load_lint():
@@ -73,9 +97,11 @@ def _ingest_ids(path: Path, *, memory: bool) -> set[str] | None:
     return {n.id for n in doc.nodes if n.id != "__root__" and not _AUTO_ID.match(n.id)}
 
 
-def scan(paths, memory_dirs=()) -> tuple[list[Divergence], list[tuple[Path, str]]]:
+def scan(paths, memory_dirs=(), exclusions: "list[Exclusion] | None" = None
+         ) -> tuple[list[Divergence], list[tuple[Path, str]]]:
     """Return (divergences, failures). A failure is a file either parser raised on: it is
-    reported, never skipped."""
+    reported, never skipped. With `exclusions`, every GMD doc of `paths` (never of
+    `memory_dirs`) that the ingest excludes is appended to it as (path, rule) -- bug-216 R3."""
     lint = _load_lint()
     divergences: list[Divergence] = []
     failures: list[tuple[Path, str]] = []
@@ -96,6 +122,10 @@ def scan(paths, memory_dirs=()) -> tuple[list[Divergence], list[tuple[Path, str]
                 continue
             if ldoc.gmd_version is None:
                 continue  # not GMD to lint (and lint says so itself, as an error or opt-out)
+            if exclusions is not None and not memory:
+                why = ignore_reason(key, _project_root(f))
+                if why is not None:
+                    exclusions.append((f, why))
             lint_ids = set(ldoc.node_ids)
             try:
                 ing = _ingest_ids(f, memory=memory)
@@ -142,14 +172,20 @@ def main(argv: list[str]) -> int:
     if not paths and not mem:
         print("usage: check-gmd-parity.py <path>... [--memory-dir <dir>]...", file=sys.stderr)
         return 2
-    divergences, failures = scan(paths, mem)
+    exclusions: list[Exclusion] = []
+    divergences, failures = scan(paths, mem, exclusions)
     for p, lint_only, ing_only in divergences:
         print(f"{p}: error: [anchor-parity] lint and the store ingester disagree — "
               f"lint-only: {sorted(lint_only) or '-'}; ingester-only: {sorted(ing_only) or '-'}")
     for p, msg in failures:
         print(f"{p}: error: [parity-parse-fail] {msg}")
-    n = len(divergences) + len(failures)
-    print(f"gmd parity: {len(divergences)} divergent doc(s), {len(failures)} parse failure(s)",
+    for p, why in exclusions:
+        print(f"{p}: error: [ingest-scope] a linted GMD doc the store ingest excludes, by "
+              f"{why} — its anchors resolve for lint and dangle in the graph; re-include it "
+              f"(`!<path>` in .refmatrix/.refmatrix_ignore) or take it out of the lint scope")
+    n = len(divergences) + len(failures) + len(exclusions)
+    print(f"gmd parity: {len(divergences)} divergent doc(s), {len(failures)} parse failure(s), "
+          f"{len(exclusions)} doc(s) outside the ingest scope",
           file=sys.stderr if n else sys.stdout)
     return 1 if n else 0
 
