@@ -313,6 +313,72 @@ def test_ac9_pack_loud_overflow_never_empty_never_over():
     assert list(p.named) == []
 
 
+def _unreadable_index_memdir(tag: str) -> "tuple[Path, Path]":
+    """A project whose sandbox memdir holds a MEMORY.md this process cannot read (mode 000): a
+    REAL `load_hooks` failure (`PermissionError` from `_index_hook_records`), nothing patched.
+    Returns (root, MEMORY.md); the caller restores the mode."""
+    base = s.short_base(tag)
+    proj = base / "fxh"
+    md = s.copy_memdir(proj, include={f"fx_mem_{i:02d}" for i in range(3)})
+    idx = md / "MEMORY.md"
+    os.chmod(idx, 0)
+    return proj / ".refmatrix", idx
+
+
+def test_s2_pack_recall_never_drops_a_curated_hooks_failure():
+    """bsd-251 s-2 / L68 (2026-11-14): `verbs.pack_recall` with NO warnings list and a
+    `load_hooks` that fails must surface the failure -- it raises, or the result carries a
+    warning naming it. CLAUDE.md #no-silent-failures: every hook line silently fell back to
+    its first sentence. HEAD: the `except` appends only `if warnings is not None`, so nothing
+    reaches the caller. A caller that passes a list keeps getting the warning (a guard)."""
+    from refmatrix import verbs
+    root, idx = _unreadable_index_memdir("p25h")
+    rows = [_urow(i) for i in range(3)]
+    try:
+        try:
+            res = verbs.pack_recall(root, rows, mode="dense", query=QUESTION, k=12,
+                                    max_bytes=4000, channel="prompt_recall")
+        except Exception as e:  # noqa: BLE001 -- raising is one of the two allowed outcomes
+            assert "PermissionError" in f"{type(e).__name__}: {e}" or "hook" in str(e).lower(), (
+                f"s-2: raised, but not about the curated hooks: {type(e).__name__}: {e}")
+        else:
+            said = [w for w in res.get("warnings") or [] if "curated hooks unreadable" in w]
+            assert said, (f"s-2: pack_recall swallowed a load_hooks failure (no warnings list "
+                          f"passed, no raise, result keys {sorted(res)})")
+        ws: list[str] = []
+        verbs.pack_recall(root, rows, mode="dense", query=QUESTION, k=12, max_bytes=4000,
+                          channel="prompt_recall", warnings=ws)
+        assert any("curated hooks unreadable" in w and "PermissionError" in w for w in ws), ws
+    finally:
+        os.chmod(idx, 0o644)
+
+
+def test_s2_busy_fall_through_says_a_curated_hooks_failure(offline):
+    """bsd-251 s-2 / L68: the SessionStart argv's busy/absent fall-through (`cli.py`, the
+    lock-free replica serves `--session-start` and packs through `verbs.pack_recall`) SAYS a
+    `load_hooks` failure on stderr. Store B of `offline` (replica on disk, no daemon), its
+    MEMORY.md made unreadable. HEAD: the fall-through passes no warnings list, the pack falls
+    back to first sentences, and nothing names why."""
+    b = offline["b"]
+    idx = b.memdir / "MEMORY.md"
+    mode = idx.stat().st_mode
+    os.chmod(idx, 0)
+    try:
+        r = s.run_cmd(b, s.recall_cmd(b.root, "SessionStart"),
+                      env_in=s.envelope("", event="SessionStart", source="resume"),
+                      RMX_HOME=str(offline["home"]),
+                      RMX_MODEL_SOCK=str(offline["base"] / "none.sock"))
+    finally:
+        os.chmod(idx, mode)
+    err = r.stderr.decode("utf-8", "replace")
+    _ok(r, "SessionStart argv (fall-through)")
+    assert "reading the replica" in err, f"fixture: the fall-through did not serve: {err[-600:]}"
+    p = _pack(r, "SessionStart argv (fall-through)")
+    assert p.named, "fixture: the fall-through named no hit"
+    assert "curated hooks unreadable" in err, (
+        f"s-2: the fall-through dropped a load_hooks failure silently: {err[-800:]!r}")
+
+
 def test_ac10_pack_spans_are_utf8_byte_ranges():
     """R9: per named hit, `offset_bytes`/`bytes` slice its hook line (newline included) and
     `body_offset_bytes`/`body_bytes` its body, in BYTES; ≥ 3 `—` precede the last hook line
@@ -449,6 +515,38 @@ def test_ac2_max_bytes_bounds_every_channel(fx, channel, n):
     _ok(r, f"{channel} --max-bytes {n}")
     assert r.stdout, f"{channel} --max-bytes {n}: empty payload (R8: never empty)"
     assert len(r.stdout) <= n, f"{channel}: {len(r.stdout)} B > --max-bytes {n}"
+
+
+# bsd-251 s-1 (2026-11-14): N small enough that each producer's fitted text is CLIPPED to its
+# cap (`fit_blocks`' trailer-alone branch; the pack's loud-overflow branch), so its payload lands
+# EXACTLY on the edge. Measured before writing (2026-11-14): at 20 and 30 B every producer lands
+# on N; at 60 B scan-prompt's whole trailer (`# [+14 block(s) omitted …]`, 43 B) fits, so it does
+# not.
+_EDGE_N = (20, 30)
+
+
+@pytest.mark.parametrize("n", _EDGE_N)
+@pytest.mark.parametrize("producer", ["prompt_recall", "scan_prompt", "curator_status"])
+def test_s1_max_bytes_is_n_bytes_on_the_wire_newline_counted(fx, producer, n):
+    """R8 "never over N" on what the agent RECEIVES, at the one place it can fail: a payload of
+    exactly N bytes. Three writers hold back the newline they print -- `_echo_pack`'s
+    `nl=False`, and `cap - 1` handed to `fit_blocks` by `curator status` and `scan-prompt` --
+    and a fixture that never lands on N cannot see any of them go (bsd-251 m2/m3/m4 survived
+    AC-2, AC-7 and AC-12). Each producer runs as the GENERATED hook argv, `--max-bytes N`
+    appended; stdout is taken whole (no rstrip). The second assertion is the fixture's: the
+    payload IS N bytes, so the first one tests the edge and not the interior."""
+    if producer == "prompt_recall":
+        r = _q(fx, append=f" --max-bytes {n}")
+    elif producer == "scan_prompt":
+        cmd = s.scan_prompt_part(fx.root).replace(" 2>/dev/null || true", "")
+        r = s.run_cmd(fx, cmd + f" --max-bytes {n}", env_in=s.envelope(QUESTION))
+    else:
+        r = s.run_cmd(fx, s.HOOK_ENV + f"rmx curator status --max-bytes {n}")
+    _ok(r, f"{producer} --max-bytes {n}")
+    assert len(r.stdout) <= n, (f"s-1: {producer} put {len(r.stdout)} B on the wire > "
+                                f"--max-bytes {n}: {r.stdout!r}")
+    assert len(r.stdout) == n, (f"s-1 fixture: {producer} at --max-bytes {n} printed "
+                                f"{len(r.stdout)} B, not the edge: {r.stdout!r}")
 
 
 def test_ac2_fixture_density_precheck():
@@ -1117,20 +1215,78 @@ def test_ac6_verb_hides_subjects_and_the_stale_one_even_with_the_opt_in(fx, monk
             "J4: a subject did not keep its pre-rerank rank", subj, inc, pre)
 
 
+@pytest.fixture(scope="module")
+def few():
+    """A daemon-served store SMALLER than the rerank pool: 3 memories and 1 live subject. The
+    reranked answer (`ranked`) then reaches past every texted row to the subject itself, which
+    the 30-memory fixture never shows (its rerank buries all 5 subjects below k)."""
+    from refmatrix import daemon as dm
+    base = s.short_base("p25f")
+    home = base / "g" / ".refmatrix"
+    s.build_global(home)
+    proj = base / "fxfew"
+    fx = s.Fixture(base, proj, home)
+    s._init_store(fx.root)
+    s.copy_memdir(proj, include={f"fx_mem_{i:02d}" for i in range(3)})
+    r = s.rmx(fx, "ingest-gmd", "--as-memory", str(fx.memdir), timeout=600)
+    assert r.returncode == 0, r.stderr[-1500:]
+    d = h.SandboxDaemon(fx.root, RMX_HOME=str(home))
+    try:
+        d.wait_models_warm()
+        part = s._verbs_partition(fx)
+        res = dm.call(fx.root, "memory_add", {
+            "name": "subject_few_0", "mtype": "subject", "metadata": {"subject": True},
+            "partition": part, "content": f"{QUESTION} — subject group → members"},
+            timeout=120)
+        assert res.get("ok"), res
+        assert dm.call(fx.root, "embed", {"kinds": ["memory"], "partition": part},
+                       timeout=900).get("ok")
+        assert dm.call(fx.root, "snapshot", {"force": True}, timeout=300).get("ok")
+        yield fx
+    finally:
+        d.stop()
+        import rmx_sandbox
+        rmx_sandbox.remove_tree(base)
+
+
+def test_m1_include_subjects_never_names_a_subject_twice(few, monkeypatch):
+    """bsd-251 m-1 / green flag g7-2 (2026-11-14): under `include_subjects` the exempt pass
+    places each subject at its unreranked index and fills the other slots from the reranked
+    answer WITHOUT subjects. Drop that filter (bsd-251 m8) and a subject the reranked answer
+    also reaches is named twice (`place_rerank_exempt([s1, a, b], [s1, b, a], 3)` →
+    `[s1, s1, b]`). Preconditions: the rerank ran and the exempt pass placed the subject
+    (`rerank_exempt` on its row)."""
+    from refmatrix import verbs
+    monkeypatch.setenv("RMX_HOME", str(few.home))
+    monkeypatch.setenv("RMX_MODEL_SOCK", str(few.base / "none.sock"))
+    res = verbs.memory_recall(few.root, query=QUESTION, k=12, include_subjects=True)
+    names = [m["name"] for m in res["memories"]]
+    subj = [m for m in res["memories"] if m["name"] == "subject_few_0"]
+    assert subj and subj[0].get("rerank_exempt") is True, (
+        "fixture: the exempt pass did not place the subject (no rerank ran?)", names,
+        res.get("warnings"))
+    assert len(names) == len(set(names)), f"m-1: a row is named twice: {names}"
+    assert len(names) == 4, names                    # 3 memories + 1 subject, each once
+
+
 # ---- AC-7: the CLI prints the verb ----------------------------------------------------------------------
 
 
 def test_ac7_cli_prints_the_verbs_text_byte_for_byte(fx, monkeypatch):
     """AC-7: the verb's `text` (query, k=12, scope=both, pack=True) equals the per-prompt argv's
-    stdout byte for byte (one trailing newline from click.echo tolerated). Replica leg OFF (no
-    worker); the ON leg is AC-4 (d)'s parity."""
+    stdout byte for byte. Replica leg OFF (no worker); the ON leg is AC-4 (d)'s parity.
+
+    bsd-251 s-1 (2026-11-14): no newline is tolerated any more. The pack carries and counts its
+    own final newline and the CLI writes the text `nl=False`; the RED's `rstrip(b"\n")` on both
+    sides was exactly the byte a regressed `nl=True` brings back (bsd-251 mutation m2 survived
+    it)."""
     from refmatrix import verbs
     r = _q(fx)
     _ok(r, "per-prompt argv")
     monkeypatch.setenv("RMX_HOME", str(fx.home))
     res = verbs.memory_recall(fx.root, query=QUESTION, k=12, scope="both", pack=True)
     assert "text" in res, f"AC-7: pack=True returned no `text`: keys {sorted(res)}"
-    assert r.stdout.rstrip(b"\n") == res["text"].encode("utf-8").rstrip(b"\n")
+    assert r.stdout == res["text"].encode("utf-8"), (len(r.stdout), res["payload_bytes"])
 
 
 def test_ac7_schema_has_pack_params_and_never_embedder_policy():
@@ -1660,6 +1816,100 @@ def test_ac15g_recall_state_is_counted_as_producer_recall_state(rs):
     assert got["budget"] == s.budget_or_none("recall_state"), got
     txt = s.rmx(rs, "telemetry", "--context", COLUMNS="200")
     assert txt.returncode == 0 and "recall_state" in txt.stdout, txt.stdout[-1200:]
+
+
+def test_ac15h_any_failure_is_one_error_line_never_a_traceback():
+    """bsd-251 m-5 / L68 (2026-11-14): R11 -- "a real failure exits non-zero with ONE clean
+    `Error:` line and no traceback" -- for ANY exception, not only the `VerbError`s the verb
+    converts (an unreadable memdir, an `OSError` from `compose_recall_state`). The forced
+    failure is real and not an OSError: the newest save-state holds bytes that are not UTF-8,
+    so reading it raises `UnicodeDecodeError` (a ValueError). Run through the GENERATED
+    compact|clear entry. HEAD: a traceback, `UnicodeDecodeError` uncaught. The `Error:` line
+    names the exception type, so the cause is said."""
+    base = s.short_base("p25e")
+    home = base / "g" / ".refmatrix"
+    s._init_store(home, partition="global")
+    proj = base / "fxe"
+    fx = s.Fixture(base, proj, home)
+    s._init_store(fx.root)
+    md = fx.memdir
+    md.mkdir(parents=True, exist_ok=True)
+    (md / "savestate_bad01.md").write_bytes(
+        b"---\ngmd: \"0.1\"\nid: savestate_bad01\ntitle: \"bad bytes\"\nmetadata:\n"
+        b"  type: session/recall-state\n  updated: 2026-11-14\n---\n\n# bad {#root}\n\n"
+        b"resume \xff\xfe\xfd here\n")
+    try:
+        _m, cmd = _rs_entry(fx.root)
+        r = s.run_cmd(fx, cmd, env_in=s.envelope("", event="SessionStart", source="compact"))
+        err = r.stderr.decode("utf-8", "replace")
+        assert r.returncode != 0, f"m-5: exit 0 on an unreadable save-state: {r.stdout[:300]!r}"
+        assert "Traceback" not in err, f"m-5: a traceback, not one Error: line: {err[-1500:]}"
+        errs = [ln for ln in err.splitlines() if ln.startswith("Error:")]
+        assert len(errs) == 1, err[-800:]
+        assert "UnicodeDecodeError" in errs[0], errs[0]
+    finally:
+        import rmx_sandbox
+        rmx_sandbox.remove_tree(base)
+
+
+# Every budgeted hook producer, found in the GENERATED config by the command it runs, and the
+# `hook_budget.CHANNEL_BUDGET_BYTES` producer its HOOK run must count as (spec R1/R11).
+_PRODUCER_OF = (
+    ("UserPromptSubmit", "rmx scan-prompt", "scan_prompt"),
+    ("UserPromptSubmit", "rmx curator status", "curator_status"),
+    ("UserPromptSubmit", "rmx focus hook --event input", "focus_input"),
+    ("UserPromptSubmit", "rmx memory recall --stdin-json", "prompt_recall"),
+    ("SessionStart", "rmx memory recall --session-start", "session_start"),
+    ("SessionStart", "rmx focus context", "focus_context"),
+    ("PreCompact", "rmx memory recall --recent", "precompact"),
+    ("SessionStart", "rmx recall-state", "recall_state"),
+)
+
+
+def _generated_argv(root: Path, event: str, needle: str) -> list[str]:
+    """The cli.log `argv` (after `rmx`) of the generated hook segment that runs `needle`: the
+    command split on `;` / `&&` / `||`, the segment shlex-split, redirections dropped."""
+    for _e, _m, cmd in h.hook_entries(root, event):
+        for seg in re.split(r"\s*(?:;|&&|\|\|)\s*", s.after_env(cmd)):
+            if needle in seg:
+                toks = shlex.split(seg)
+                toks = toks[toks.index("rmx") + 1:]
+                return [x for x in toks if not re.match(r"^\d?>|^&$|^<", x)]
+    raise AssertionError(f"no generated {event} segment runs {needle!r}")
+
+
+def test_m2_by_producer_counts_every_hook_producer(tmp_path):
+    """bsd-251 m-2 / L68 (2026-11-14): `by_producer` is pinned for all 8 channels, not only
+    `recall_state`. A cli.log is written whose rows carry the argv of each GENERATED hook
+    producer (source "hook", a distinct size each, two for `prompt_recall`), plus rows that
+    must count nowhere: the same commands run interactively, a hook `focus hook --event tool`,
+    and a hook `memory recall` with none of the three channel flags. Kills bsd-251 m5
+    (`--stdin-json` → None) and any other mis-mapped channel."""
+    from refmatrix import hook_budget, telemetry
+    root = tmp_path / "proj" / ".refmatrix"
+    root.mkdir(parents=True)
+    rows, want = [], {}
+    for i, (ev, needle, prod) in enumerate(_PRODUCER_OF):
+        argv = _generated_argv(root, ev, needle)
+        sizes = [100 + i] + ([300 + i] if prod == "prompt_recall" else [])
+        for sz in sizes:
+            rows.append({"ts": f"2026-11-14T01:00:{i:02d}", "argv": argv, "source": "hook",
+                         "exit_code": 0, "outcome": "ok", "out_bytes": sz})
+        rows.append({"ts": f"2026-11-14T02:00:{i:02d}", "argv": argv, "source": "unknown",
+                     "exit_code": 0, "outcome": "ok", "out_bytes": 9999})
+        want[prod] = sizes
+    for argv in (["focus", "hook", "--event", "tool"], ["memory", "recall", "q", "--pack"]):
+        rows.append({"ts": "2026-11-14T03:00:00", "argv": argv, "source": "hook",
+                     "exit_code": 0, "outcome": "ok", "out_bytes": 7777})
+    (root / telemetry.CLI_LOG_NAME).write_text("".join(json.dumps(x) + "\n" for x in rows))
+    bp = telemetry.summarize_context(root)["by_producer"]
+    assert set(bp) == set(hook_budget.CHANNEL_BUDGET_BYTES) == set(want), (sorted(bp),
+                                                                           sorted(want))
+    for prod, sizes in want.items():
+        got = bp[prod]
+        assert (got["n"], got["total_bytes"], got["max_bytes"]) == (
+            len(sizes), sum(sizes), max(sizes)), (prod, got, sizes)
+        assert got["budget"] == hook_budget.budget(prod) and got["over_budget"] == 0, got
 
 
 # ---- F1 (rev 7): #r10-bus -- `rmx_bus_pub`'s `about` field, `project` is transport only ----------
