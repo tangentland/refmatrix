@@ -60,6 +60,8 @@ Window: the newest run bullets. Older bullets are folded VERBATIM, anchor ids un
 - 2026-11-11 (bug-212 r1) — A RE-INSTALL WITH NO VERIFIER HAS ALREADY MISSED REPOS. 0.82.0's fleet hook re-install skipped the two hooked repos outside the hub registry; they still run silent pre-26.2 bodies. Find fleet repos by the installed marker, not the registry, and byte-compare after install. {#imp-reinstall-needs-a-verifier}
 - 2026-11-13 (task 21.5 spec r2, 540ab50) — A DECISION THAT RULES A LEG OUT MUST BE CHECKED AGAINST EVERY LEG THAT RESOLVES PATHS. The clone leg ruled out for Read came back through Bash's relative-ref fallback; 79% of this project's Bash commands name a /Volumes/littlebig path. {#imp-ruled-out-leg-returns-via-fallback}
 - 2026-11-13 (task 21.5 spec r2) — A COUNT THAT IS PRINTED IS NOT A COUNT THAT IS TESTED. 8 of 23 exclusion counts had no fixture; each needs an exact value in a fixture, or it can be hard-wired to 0. {#imp-printed-count-needs-a-fixture}
+- 2026-11-13 (21.5 measurements m1, 4b57796) — A CORRECTION NEEDS THE SAME PROOF AS THE CLAIM IT CORRECTS. The lead "corrected" a 67% gap to a probe-direction artefact after tracing three edges, without checking that the probe already walked both directions; the original number was right and its meaning was a resolver binding the wrong node. Before withdrawing a measured number, re-run the measuring code's own logic, not a plausible story. {#imp-correction-needs-proof}
+- 2026-11-13 (21.5 measurements m1) — A PLACEBO MUST GET THE SAME PREPROCESSING AS THE REAL ARM. Building the prior-context filter from the real session and applying it to the placebo session's activity made the placebo look as good as the real work. {#imp-placebo-symmetric}
 
 ## Former anchors, restored {#former-anchors}
 

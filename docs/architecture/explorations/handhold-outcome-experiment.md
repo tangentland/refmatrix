@@ -48,12 +48,15 @@ not the claim; it is one weak proxy for it. {#question-note}
 - **Pulled and boundary handholds look better, on tiny samples:** prompt_recall 2/4, context 1/3,
   session_start 1/1 CAUSED+INFORMED ([[measurement-task-21.5-r12-pilot-2026-11-13#breakdowns]]).
 - **Topical overlap is not use.** Term and clique overlap (three clique sources) add nothing over
-  the control after stratification, and a placebo from an unrelated session scores as high
-  ([[measurement-task-21.5-term-clique-2026-11-13#not-signal]]).
-- **Typed structure predicts relevance; vocabulary does not.** Code-structure 2-hop paths and
-  GMD-provenance combos beat chance 2-5×; co-mention reach sits at chance
-  ([[measurement-task-21.5-relation-gaps-2026-11-13#shortlist]]). Most authored GMD `rel:` edges
-  never reach the graph (bug-216).
+  the control after stratification ([[measurement-task-21.5-term-clique-2026-11-13#not-signal]]).
+  (The first placebo design was biased toward the placebo; corrected by ch-bsd, real work scores
+  above the placebo, so the placebo is no longer cited as evidence.)
+- **Typed structure predicts relevance; vocabulary does not.** Code-structure 2-hop paths beat
+  chance 2-3×; co-mention reach sits at chance
+  ([[measurement-task-21.5-relation-gaps-2026-11-13#shortlist]]). About two thirds of GMD `rel:`
+  edges bind a same-named path-less concept instead of the doc they cite (bug-216), so the
+  GMD-provenance combos measured co-citation and are re-measured after that fix
+  ([[measurement-task-21.5-relation-gaps-2026-11-13#gmd-gap-correction]]).
 - **Not measured at all:** cross-session continuity (save-state / recall-state / focus), behaviour
   a feedback memory changes without being named, and any outcome (time, tokens, re-derivation,
   repeated mistakes).
