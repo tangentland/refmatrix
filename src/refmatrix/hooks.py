@@ -27,7 +27,11 @@ to treat as work are not: a checkout with no store of its own (a worktree or a
 clone of a fleet repo that tracks `.refmatrix/CLAUDE.md`) has nothing to sync,
 and an initial checkout (`git clone`, `git worktree add`: post-checkout's `$1`
 is the null sha) is not a branch switch. Both exit 0 silently; see
-`_store_gate` and the post-checkout body.
+`_store_gate` and the post-checkout body. Nor is a checkout whose catalog git
+TRACKS and no daemon serves (bug-212 r1, 2026-11-11): a sync there would write
+the committed binary, so the gate passes only a daemon socket or an untracked
+catalog. And a root commit has no `HEAD~1`; post-commit diffs it against the
+empty tree instead of reporting git's refusal as a failed sync.
 """
 from __future__ import annotations
 
@@ -59,22 +63,47 @@ HOOK_ENV = ('export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:
             "export TOKENIZERS_PARALLELISM=false; ")
 
 def _store_gate() -> str:
-    """The shell line every generated git hook gates on: exit 0 unless THIS checkout holds a
-    store of its own -- one of `store.WRITER_CATALOG_FILES` under `$ROOT/.refmatrix/`.
+    """The shell lines every generated git hook gates on: exit 0 unless THIS checkout holds a
+    store of its own that a sync may write -- a live daemon's socket, or a writer catalog git
+    does NOT track.
 
-    Why (bug-212, 2026-11-11): the gate was `[ -d "$ROOT/.refmatrix" ] || exit 0`. Fleet repos
-    (cliquet, atldb, viascope) TRACK `.refmatrix/CLAUDE.md`, so every worktree and clone of
-    them has the dir and no store; the hook ran `rmx sync` there, which created a store in the
-    non-store dir, and in a removed worktree crashed on the vanished cwd. No store, no sync:
-    the hook exits 0 and prints nothing. The file list is rendered from the ONE definition in
-    `store.py`, never retyped here, so the shell and Python cannot disagree on what a store
-    is."""
-    tests = " || ".join(f'[ -e "$ROOT/.refmatrix/{name}" ]' for name in WRITER_CATALOG_FILES)
-    return f"{tests} || exit 0"
+    Rendered from the ONE definition of each fact, never retyped: the catalog names from
+    `store.WRITER_CATALOG_FILES`, the socket name from `daemon.SOCKET_NAME`, so the shell and
+    Python cannot disagree on what a store is.
+
+    Why, round 1 (bug-212, 2026-11-11): the gate was `[ -d "$ROOT/.refmatrix" ] || exit 0`.
+    Fleet repos TRACK `.refmatrix/CLAUDE.md`, so every worktree and clone of them has the dir
+    and no store; the hook ran `rmx sync` there, which created a store in the non-store dir,
+    and in a removed worktree crashed on the vanished cwd.
+
+    Why, round 2 (bug-212 r1, ch-bsd b-1, 2026-11-11): round 1 gated on catalog PRESENCE, and
+    cliquet, atldb and prep_prolific commit their catalog files -- so every worktree and clone
+    of them passed, the hook's in-process `rmx sync` wrote the tracked binary
+    (` M .refmatrix/catalog.duckdb`), and `git worktree remove` refused. A checked-out file is
+    not proof of a store: git can put it there. So:
+
+    - a socket (`-S`) passes: git cannot track a socket, and with a daemon listening the sync
+      goes through it (no in-process write). A STALE socket a crashed daemon left also passes;
+      the CLI itself then refuses the in-process write to a tracked catalog (lead decision a2,
+      2026-11-13), loudly, so this gate need not tell live from stale.
+    - else a writer catalog must be present AND untracked (`git ls-files` prints nothing for
+      those names). A tracked catalog with no socket gets no sync at all (lead decision a1:
+      fail closed); its repo untracks it (bug-214) to be kept fresh without a daemon.
+    - `git ls-files` itself failing is not "untracked": the hook says so on stderr and does
+      not sync (fail closed, never silent)."""
+    from refmatrix.daemon import SOCKET_NAME
+    present = " || ".join(f'[ -e "$ROOT/.refmatrix/{name}" ]' for name in WRITER_CATALOG_FILES)
+    names = " ".join(f'".refmatrix/{name}"' for name in WRITER_CATALOG_FILES)
+    return (f'if [ ! -S "$ROOT/.refmatrix/{SOCKET_NAME}" ]; then\n'
+            f"  {present} || exit 0\n"
+            f'  TRACKED="$(git -C "$ROOT" ls-files -- {names})" || '
+            '{ echo "refmatrix: ${0##*/}: git ls-files failed; not syncing" >&2; exit 0; }\n'
+            '  [ -z "$TRACKED" ] || exit 0\n'
+            "fi")
 
 
-_NO_STORE_COMMENT = ("# no store of its own (a worktree or clone with only the tracked "
-                     ".refmatrix/CLAUDE.md): nothing to sync")
+_NO_STORE_COMMENT = ("# no store of its own to write (no daemon socket, and no catalog -- or "
+                     "only one git tracks): nothing to sync")
 
 GIT_HOOK_SCRIPTS: dict[str, str] = {
     name: body.replace("@STORE_GATE@", f"{_NO_STORE_COMMENT}\n{_store_gate()}")
@@ -84,7 +113,10 @@ GIT_HOOK_SCRIPTS: dict[str, str] = {
 set -e
 ROOT="$(git rev-parse --show-toplevel)"
 @STORE_GATE@
-( cd "$ROOT" && rmx sync --since HEAD~1 >/dev/null || echo "refmatrix: post-commit rmx sync FAILED (exit $?); its error is above" >&2 ) &
+# a root commit has no HEAD~1: diff against the empty tree, so its files are synced
+SINCE=HEAD~1
+git rev-parse -q --verify HEAD~1 >/dev/null || SINCE="$(git hash-object -t tree /dev/null)"
+( cd "$ROOT" && rmx sync --since "$SINCE" >/dev/null || echo "refmatrix: post-commit rmx sync FAILED (exit $?); its error is above" >&2 ) &
 disown
 """,
         "post-merge": r"""#!/usr/bin/env bash

@@ -52,6 +52,60 @@ WRITER_CATALOG_FILES: tuple[str, ...] = (
     "catalog.A.duckdb", "catalog.B.duckdb", "catalog.duckdb", "catalog.db")
 
 
+# The repository-local variables `git rev-parse --local-env-vars` lists (git 2.x). A process a
+# git hook started inherits the HOOK's repository through them (`GIT_DIR`, `GIT_INDEX_FILE`,
+# ...); `git_tracked_catalogs` asks about the repository that CONTAINS the store, so it drops
+# them and lets git discover that repository from the store's own path.
+_GIT_LOCAL_ENV_VARS: tuple[str, ...] = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT", "GIT_OBJECT_DIRECTORY", "GIT_DIR", "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE", "GIT_GRAFT_FILE", "GIT_INDEX_FILE", "GIT_NO_REPLACE_OBJECTS",
+    "GIT_REPLACE_REF_BASE", "GIT_PREFIX", "GIT_INTERNAL_SUPER_PREFIX", "GIT_SHALLOW_FILE",
+    "GIT_COMMON_DIR")
+
+
+class TrackedCatalogCheckError(RuntimeError):
+    """`git ls-files` failed inside the repository that contains a store, so whether its
+    catalog is committed is UNKNOWN. Callers treat unknown as tracked (fail closed)."""
+
+
+def git_tracked_catalogs(root: Path) -> list[str]:
+    """The `WRITER_CATALOG_FILES` names under the store dir `root` that git TRACKS, in that
+    tuple's order; `[]` when none is, when `root` is in no git work tree, or when git is not
+    installed.
+
+    Why (bug-212 r1, lead decision a2, 2026-11-13): fleet repos (cliquet, atldb,
+    prep_prolific) commit their catalog files. The generated git hooks' gate lets a stale
+    daemon socket through (it cannot tell live from stale), and the CLI then fell to an
+    in-process sync that wrote the committed binary -- the b-1 incident behind the new gate.
+    So the in-process writer asks git first and refuses a tracked catalog.
+
+    "Not in a repository" and "git not installed" answer `[]`: nothing commits the file then,
+    and a store outside any repo must keep syncing in-process. A FAILED `ls-files` inside a
+    repository answers nothing it can trust and raises `TrackedCatalogCheckError` (fail
+    closed, never read as "untracked")."""
+    import shutil
+    import subprocess
+
+    root = Path(root)
+    if shutil.which("git") is None or not root.is_dir():
+        return []
+    env = {k: v for k, v in os.environ.items() if k not in _GIT_LOCAL_ENV_VARS}
+    inside = subprocess.run(["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"],
+                            env=env, capture_output=True, text=True)
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        return []
+    ls = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--", *WRITER_CATALOG_FILES],
+                        env=env, capture_output=True, text=True)
+    if ls.returncode != 0:
+        said = " ".join(ln.strip() for ln in ls.stderr.splitlines() if ln.strip())
+        raise TrackedCatalogCheckError(
+            f"cannot tell whether git tracks the catalog under {root}: git ls-files exited "
+            f"{ls.returncode}: {said or '(git printed nothing)'}")
+    listed = {Path(p).name for p in ls.stdout.split("\0") if p}
+    return [name for name in WRITER_CATALOG_FILES if name in listed]
+
+
 def _canonical_for_kind(kind: str, name: str) -> str | None:
     """Compute the canonical_name column value for an entities row.
 

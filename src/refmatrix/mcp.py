@@ -18,6 +18,8 @@ import sys
 import threading
 from pathlib import Path
 
+from refmatrix.workdir import current_dir
+
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_INFO = {"name": "refmatrix", "version": "1"}
 
@@ -60,7 +62,12 @@ def _resolve_root(args: dict) -> Path:
     env = os.environ.get("REFMATRIX_ROOT")
     if env:
         return Path(env)
-    cur = Path.cwd()
+    # The shared cwd reader (bug-212 r1, ch-bsd s-1, 2026-11-11): a vanished cwd was
+    # `FileNotFoundError: [Errno 2] No such file or directory`, naming nothing; the
+    # dispatcher now replies `isError` with `WorkingDirectoryGone: the working directory
+    # no longer exists (...)`, and the server keeps serving.
+    cur = current_dir(remedy="name `root` or `project` in the call, set REFMATRIX_ROOT, or "
+                            "start `rmx mcp` from an existing project directory")
     for d in (cur, *cur.parents):
         if (d / ".refmatrix").is_dir():
             return d / ".refmatrix"

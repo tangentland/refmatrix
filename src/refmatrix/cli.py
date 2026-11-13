@@ -83,34 +83,41 @@ from refmatrix import store as _store_mod
 from refmatrix.store import Store, default_partition_name
 from refmatrix.telemetry import log_query
 from refmatrix import graphread as _graphread
+from refmatrix import workdir as _workdir
 
 console = Console()
 
 
-def _cwd_gone_message() -> str:
-    """The one wording of "this process's working directory no longer exists". `$PWD` is
-    the shell's record of the dir it `cd`ed into -- the kernel cannot name a deleted cwd --
-    so it is quoted as the shell's claim, or said to be unknown."""
-    where = os.environ.get("PWD") or "(unknown: $PWD is unset)"
-    return (f"the working directory no longer exists ({where}); "
-            f"cd to a project, or set REFMATRIX_ROOT")
-
-
 def _cwd() -> Path:
-    """`Path.cwd()`, or a clean `Error:` (exit 1) when the working directory was deleted.
+    """`workdir.current_dir()`: the cwd, or `WorkingDirectoryGone` when it was deleted.
 
     Why (bug-212, 2026-11-11): the backgrounded post-commit `rmx sync` outlived
     `git worktree remove`, and `Path.cwd()` raised a raw `FileNotFoundError` traceback on the
-    committing terminal. Only `os.getcwd()`'s own failure is translated -- ENOENT with no
-    filename -- so a missing FILE elsewhere is never reported as a missing cwd. Every cwd read
-    in this module goes through here, so a command that needs a project fails on the first
-    one, before it can resolve the wrong store."""
-    try:
-        return Path.cwd()
-    except FileNotFoundError as exc:
-        if exc.filename is not None:
-            raise
-        raise click.ClickException(_cwd_gone_message()) from exc
+    committing terminal. Every cwd read in this module goes through here, and every cwd read
+    in the modules it calls (discovery, sync, mcp, cctree) goes through the same
+    `workdir.current_dir()` (bug-212 r1, ch-bsd s-1: the first fix guarded cli.py only, and
+    `REFMATRIX_ROOT` -- the remedy its own message gave -- led to a raw traceback in
+    `discovery.partition_marker`). `_RmxGroup` turns the error into one `Error:` line, exit 1,
+    wherever in a command it is raised, so a command that needs a project fails on its first
+    cwd read, before it can resolve the wrong store."""
+    return _workdir.current_dir()
+
+
+class _RmxGroup(click.Group):
+    """The `rmx` group: a vanished working directory is a clean `Error:` line (exit 1) from
+    ANY command, whichever module read the cwd (bug-212 r1, ch-bsd s-1, 2026-11-11).
+
+    `workdir.WorkingDirectoryGone` is deliberately not a `click.ClickException`: `discovery`,
+    `sync` and `cctree` raise it and must not depend on click. Click's standalone `main()`
+    prints only ClickExceptions cleanly, so the conversion lives here, at the one place every
+    subcommand's invocation passes through -- not in each command, where a missed one would be
+    a traceback again (the pattern the audit named: loudness is a census of entry points)."""
+
+    def invoke(self, ctx: click.Context):
+        try:
+            return super().invoke(ctx)
+        except _workdir.WorkingDirectoryGone as exc:
+            raise click.ClickException(str(exc)) from exc
 
 
 def _root() -> Path:
@@ -888,7 +895,7 @@ def _replica_read(fn):
     ) from last
 
 
-@click.group(context_settings={"help_option_names": ["-h", "--help"]})
+@click.group(cls=_RmxGroup, context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(__version__, "-V", "--version", prog_name="refmatrix")
 @click.option(
     "--partition", "-p", default=None,
@@ -7105,9 +7112,11 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
     # cwd the tool ran in. `normpath`, not `resolve` — the spelling is the
     # identity, and a symlink is not its target. The DISPLAY keeps grep's
     # spelling; only what the graph stores changes.
+    # The cwd through the shared reader (bug-212 r1 a6, 2026-11-13): census item -- unreachable
+    # from the CLI in a vanished cwd (`_root()` reads it first), but no cwd read stays raw.
     import os as _os
-    _cwd = _os.getcwd()
-    fb_hits = [{"file": _os.path.normpath(_os.path.join(_cwd, f)), "line": n}
+    _here = str(_cwd())
+    fb_hits = [{"file": _os.path.normpath(_os.path.join(_here, f)), "line": n}
                for f, n, _ in triples]
 
     def _shaped(f: str, n: int, text: str) -> str:
@@ -8783,6 +8792,12 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
             # in-process synchronous flush — at least the work gets done.
             pass
 
+    # With no daemon answering, `_store()` below opens the catalog in THIS process. Never a
+    # catalog git tracks (bug-212 r1, lead decision a2, 2026-11-13) -- checked before it opens.
+    # (`-i` reaches here with a daemon up too; `_store()` then routes every write through it.)
+    from refmatrix import daemon as daemon_mod
+    if not daemon_mod.ping(_root()):
+        _refuse_in_process_write_to_tracked_catalog(_root())
     s = _store()
     proot = (project_root or _cwd()).resolve()
 
@@ -8803,6 +8818,39 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
         # failed: git diff exited N: <git's stderr>`, exit 1 -- the line the daemon
         # route and the daemon-down enqueue branch print for the same failure.
         raise click.ClickException(str(exc)) from exc
+
+
+def _refuse_in_process_write_to_tracked_catalog(root: Path) -> None:
+    """One clean `Error:` line (exit 1), BEFORE the catalog opens, when git tracks a writer
+    catalog of the store this process is about to write in-process.
+
+    Why (bug-212 r1, ch-bsd b-1 + lead decision a2, 2026-11-13): cliquet, atldb and
+    prep_prolific commit their catalog files. The generated hooks' gate now lets a tracked
+    catalog through only beside a daemon socket -- but a socket file a crashed daemon left
+    passes too, nothing answers it, and `rmx sync` fell to this in-process route and wrote the
+    committed binary (` M .refmatrix/catalog.A.duckdb`), the b-1 incident behind the new gate.
+    The refusal names the file the write would land in, every tracked catalog, and both
+    remedies. A store outside any git repo, or whose catalog git ignores, is not refused
+    (`store.git_tracked_catalogs`). A `git ls-files` that fails is refused too: unknown is
+    treated as tracked."""
+    try:
+        tracked = _store_mod.git_tracked_catalogs(root)
+    except _store_mod.TrackedCatalogCheckError as exc:
+        raise click.ClickException(
+            f"refusing an in-process sync: {exc}; untrack the catalog (git rm --cached) if git "
+            f"tracks it, or start the daemon (rmx daemon start) so the sync goes through it"
+        ) from exc
+    if not tracked:
+        return
+    target = _active_slot_path()
+    if target is None:
+        legacy = [root / n for n in ("catalog.duckdb", "catalog.db") if (root / n).exists()]
+        target = legacy[0] if legacy else root / tracked[0]
+    raise click.ClickException(
+        f"refusing an in-process sync into {target}: git tracks this store's catalog "
+        f"({', '.join(tracked)}), and the write would modify a committed file. Untrack it "
+        f"(git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or "
+        f"start the daemon (rmx daemon start) so the sync goes through it")
 
 
 def _sync_in_process(s, proot: Path, *, files, since, flush_queue, invalidate,
@@ -15027,8 +15075,8 @@ def cli_entry() -> None:
     cwd_error: "str | None" = None
     try:
         cwd = str(_cwd())
-    except click.ClickException as exc:
-        cwd, cwd_error = None, exc.message
+    except _workdir.WorkingDirectoryGone as exc:
+        cwd, cwd_error = None, str(exc)
     pid = os.getpid()
     exit_code = 0
     error: str | None = None

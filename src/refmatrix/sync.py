@@ -27,6 +27,7 @@ from refmatrix.ingest import (
     should_ignore,
 )
 from refmatrix.store import MemoryOwnershipError, Store
+from refmatrix.workdir import current_dir
 
 
 _GMD_SNIFF_BYTES = 512
@@ -157,10 +158,18 @@ def changed_since(project_root: Path, git_ref: str) -> list[Path]:
     return [project_root / f for f in out.stdout.splitlines() if f.strip()]
 
 
+# The remedy a vanished cwd names in this module: the library reads the cwd only when its
+# caller passed no `project_root` (the CLI and the daemon ops always pass one).
+_NO_PROJECT_ROOT = "pass project_root, or run from an existing project directory"
+
+
 def sync_since(s: Store, git_ref: str, project_root: Path | None = None,
                semantic: bool = False,
                cancel_check: Callable[[], bool] | None = None) -> dict:
-    project_root = (project_root or Path.cwd()).resolve()
+    """Sync every path `git diff --name-only <git_ref>` names. With no `project_root` the
+    cwd is the project; a vanished cwd raises `workdir.WorkingDirectoryGone`, not a bare
+    `FileNotFoundError` naming nothing (bug-212 r1, ch-bsd s-1, 2026-11-11)."""
+    project_root = (project_root or current_dir(remedy=_NO_PROJECT_ROOT)).resolve()
     files = changed_since(project_root, git_ref)
     return _sync_paths(s, files, project_root, semantic,
                        cancel_check=cancel_check)
@@ -280,7 +289,9 @@ def _sync_paths(
                 "and does not track filesystem paths. Sync from a project "
                 "store instead."
             )
-    project_root = (project_root or Path.cwd()).resolve()
+    # The cwd through the shared reader (bug-212 r1, ch-bsd s-1): `sync_files` and
+    # `flush_queue` with no `project_root` reach here.
+    project_root = (project_root or current_dir(remedy=_NO_PROJECT_ROOT)).resolve()
     added = updated = purged = skipped_unchanged = 0
     failed0 = getattr(s, "vector_delete_failures", 0)
     # Memory-bridge anchors a purge below DECLINED (task 26.2 r1 #b-1,
