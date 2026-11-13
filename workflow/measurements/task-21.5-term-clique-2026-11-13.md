@@ -119,3 +119,46 @@ One labelling pass, no second rater; refmatrix topics stratum n = 4; the cliqued
 from 3 sessions; the PageRank salience floor not reproduced; D15 not applied to transcript tokens;
 one Jaccard threshold. Working files (scripts, label TSVs, local transcript excerpts) stay in the
 session scratchpad and are not committed.
+
+## Addendum: main-loop and prompt-term splits {#addendum-main-loop}
+
+Re-run on fresh read-only clones (11:52; refmatrix grew to 8,457 delivered / 3,456 alive
+control; cliquedb unchanged) with lbl-215's two confounds controlled: main-loop activity from the
+main transcript only (tool inputs, reply text, and a `path_main` source from Read/Edit/Write/
+MultiEdit/NotebookEdit, Grep/Glob paths and D15-based Bash paths; `bash_name` dropped); ring paths
+(which may include subagent calls) reported apart.
+
+**File/name, main loop vs ring (headline):**
+
+| | credits D/C | kernel D | kernel C | lift (pt) |
+|---|---|---|---|---|
+| refmatrix, ring (all origins) | 132/24 | 57.6 (0.68%) | 6.1 (0.18%) | +0.50 |
+| refmatrix, main loop only | 99/5 | 20.1 (0.24%) | 2.0 (0.06%) | +0.18 |
+| cliquedb, ring | 72/32 | 26.6 (0.45%) | 7.1 (0.16%) | +0.30 |
+| cliquedb, main loop only | 6/1 | 3.9 (0.07%) | 0.0 | +0.07 |
+
+Only 36 of 132 (refmatrix) and 1 of 72 (cliquedb) ring headline credits are also credited from
+main-loop touches; the rest are subagent or unattributed. Refmatrix main-loop credits by lag band
+0 / 1-3 / 4-6 / 7+ = 10 / 6 / 7 / 76. The stratified main-loop control expects 0, so O/E is
+undefined (observed 19 and 3). {#addendum-file-name}
+
+**Term score on main-loop activity:**
+
+| variant | refmatrix D vs C | strat O/E | placebo DiD | cliquedb D vs C | strat O/E | placebo DiD |
+|---|---|---|---|---|---|---|
+| incl (prompt terms kept) | 33.80% vs 13.63% | 1.15 | +4.42 | 19.55% vs 8.36% | 1.03 | +0.77 |
+| noprompt | 31.92% vs 13.15% | 1.12 | +3.72 | 18.40% vs 7.34% | 1.03 | +0.58 |
+| head (no prompt, no earlier session work) | 2.53% vs 1.92% | 0.82 | −0.15 | 0.54% vs 0.46% | 0.63 | −0.00 |
+
+The excess left after removing prompt terms vanishes once terms already in the session's earlier
+work are removed: it is continuation of work under way (CONSISTENT), not use. {#addendum-terms}
+
+**Cliques on main-loop activity**, headline O/E refmatrix / cliquedb: subjects 0.56 / n/a; STM
+topics 0.60 / 0.32; store communities 0.93 / 0.98. Labels on main-loop pairs: CAUSED 0 in both;
+cliquedb 4 INFORMED.
+
+**Net:** no term or clique source adds signal on main-loop activity once prompt terms are
+excluded; the file/name signal is mostly non-main-loop. Recommendation addendum (provisional): the
+21.5 headline is the main-loop file leg only, subagent and unattributed credits reported beside
+it and never counted — which needs `origin` on ring lines (D13) or a transcript-side join.
+{#addendum-net}
