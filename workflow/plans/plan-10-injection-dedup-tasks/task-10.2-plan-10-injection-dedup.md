@@ -125,15 +125,22 @@ labelled and 6 R12 uses. Chosen: names-only (Q13), applied to non-human turns to
    held rows would have rendered as at their `full`-run tiers, minus their bytes on the line.
    `rmx telemetry --context` shows the held share and the bytes saved per channel. {#r6}
 7. **R7 Live A/B, per session (moved from 10.4 R7, h11).** {#r7}
-   - **Arms:** `dedupe` vs `full` (`held` is the empty set), equal weights, a fixed period written
-     before the run (≥ 14 days and ≥ 40 sessions per arm per store, whichever is later), refmatrix
-     and cliquedb.
-   - **One arm table, nested with the handhold experiment:** `arms.SESSION_ARMS` (new, tiny, pure)
-     and `arms.draw(session_id) -> str`, a pure function of `sha256(session_id + period salt)`, no
-     state file; the SessionStart focus hook records the arm once (`session_arm` on a `cli.log`
-     row); the verb and scan-prompt ask `arms.draw`. If the handhold experiment runs in the same
-     period, its arm A (push on) splits into `A+dedupe` / `A+full`, its B (no push) has no dedupe
-     factor, its C (bare, opt-in) is never drawn. `session_arm` is not 21.1's per-prompt `arm`.
+   - **Arms:** `dedupe` vs `full` (`held` is the empty set), at equal weights, in refmatrix and
+     cliquedb.
+   - **The run is the handhold experiment's run (L20).** The A/B is not a serial step and has no
+     period of its own. It is a declared factor of the experiment: arm A (push on) splits into
+     `A+dedupe` / `A+full`, arm B (no push) has no dedupe factor, and arm C (bare, opt-in) is never
+     drawn. The experiment's spec owns the period (≥ 14 days, and ≥ 40 sessions per cell per
+     store, whichever is later, written before the start), its salt and its user-gated start.
+     That spec is [[plan-28-handhold-outcome-experiment]], from
+     [[exploration-handhold-outcome-experiment#assignment]].
+   - **One arm table, built here:** 10.2 is built before the experiment starts, so it creates
+     `arms.SESSION_ARMS` (new, tiny, pure) holding the experiment's full cell table (`A+dedupe`,
+     `A+full`, `B`, and `C` at weight 0), plus `arms.draw(session_id) -> str`, a pure function of
+     `sha256(session_id + period salt)` with no state file. The SessionStart focus hook records
+     the arm once (`session_arm` on a `cli.log` row). The verb and scan-prompt ask `arms.draw` for
+     the dedupe factor. The experiment wires arm B's push-off to the same draw.
+     `session_arm` is not 21.1's per-prompt `arm`.
    - **Outcomes, counts only (L27, h14):** injected bytes per human prompt (all per-prompt
      bytes of the session, non-human turns included, divided by its human prompts); used items per
      100 human prompts, where "used" is ONLY a 21.1 R12 explicit `used` event or a
@@ -146,9 +153,10 @@ labelled and 6 R12 uses. Chosen: names-only (Q13), applied to non-human turns to
    - **Bands, written here before the run:** `dedupe` cuts bytes per human prompt ≥ 30% and its
      used rate is within −5% of `full` (or above) → keep; used rate 5-15% below → the user decides;
      more than 15% below → the user decides whether the names line needs more than names.
-   - **The switch is for measurement only:** `arms.py` and its branch are deleted after the
-     period (a row in `workflow/deferral_registry.md` with the end date); outside the period `draw`
-     returns `dedupe`. Correctness never depends on it.
+   - **The switch is for measurement only:** `arms.py` and its branches are deleted after the
+     experiment's period, by the experiment's close-out (a row in `workflow/deferral_registry.md`
+     with the end date). Outside the period `draw` returns `A+dedupe` (push on, dedupe on).
+     Correctness never depends on it.
    - **Future arm (Q13), not built:** `4+3b` — baseline-delivered non-held rows first, then new
      candidates, then held rows into leftover budget, the rest on the names line. A later A/B adds
      it as a third cell under its own spec.
@@ -204,9 +212,9 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
 10. **AC-10 State failures.** An unreadable channel file → everything full, one stderr line,
     `held_error` on the row, exit 0; an unreadable marker → full (10.3's reset).
 11. **AC-11 The arm draw.** `arms.draw` is deterministic per session id and salt; 400 synthetic
-    ids split 200 ± 30; a `full` session's payloads equal the no-dedupe render; the SessionStart
-    entry records one `session_arm` row; outside the period every session is `dedupe`; with the
-    handhold rows present the nested cells are drawn and C never is.
+    ids split between `A+dedupe` and `A+full` within ± 30 of their table share; a `full` session's payloads equal the no-dedupe render; the SessionStart
+    entry records one `session_arm` row; outside the period every session is `A+dedupe`; inside
+    it the four cells are drawn at their table weights and C never is.
 12. **AC-12 Offline parity** (R8): the replay with `src/` imports reproduces 10.5's v3 figures on
     the same clones.
 13. **AC-13 Mutations that must FAIL a test:** a held item dropped without a name (AC-2); a

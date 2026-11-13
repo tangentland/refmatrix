@@ -217,8 +217,8 @@ TDD per [[tdd-governance]]. Plan-specific gates:
 - **No build before the precondition.** 10.2 starts only on 10.5's GO: v3 PASSED and the probe
   GO. 10.5's probe bands are committed before any probe result, and 10.6 R0's bands before its
   result.
-- **Nothing removed without a trace.** A held item is always named or counted (`(+N)`); the names
-  line is reserved in the budget; a missing or unreadable state file means everything renders
+- **Nothing removed without a trace.** A held item is always named on 25.1b's line, or put on
+  25.1b's spill page and counted. The line is reserved in the budget; a missing or unreadable state file means everything renders
   full; an unreadable marker means nothing is held.
 - **The saving is re-measured live** after the fleet has been busy
   ([[impression_bsd_cost_measured_idle]]), plus an offline parity run of the replay through the
