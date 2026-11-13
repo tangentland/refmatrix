@@ -343,6 +343,16 @@ without a write per event. {#amend-helix-body}
   relation taxonomy mapped onto L0–L3; proximity tiers as a tier family; directory/extension facets;
   Aster's decaying approximate counters and per-key eager/lazy merge; and the gates prior
   measurements impose. The ADR stays Proposed. {#d-2026-10-07-amend}
+- **2026-11-13 (lead, on the user's pattern; plan review 2026-11-13 L49, spec wave t56): two
+  derived paths join [[#a14-removal-scope]]'s derived-cleanup list.** (1) `vacuum` step 3b
+  ([[task-22.6-removal-entry-points#r10]]) deletes a `linkage_evidence` row whose two ends are
+  live and whose edge is gone, excluding learned-grep rows (knowledge, plan-22's): an ingest
+  evidence row is re-derived by re-ingesting its file. Manifest first, an `evidence_stale_drop`
+  event per dropped copy. (2) bug-218 R4's re-orientation of pre-fix `memory link` rows
+  ([[task-bug218-reinforcement-edge-direction#r4]]) is a repair, not a removal: the same
+  statement is written back in the canonical orientation, behind a backup and a manifest, as a
+  user-gated daemon op. Neither is a knowledge removal, so neither routes through plan-22's
+  confirm. {#d-2026-11-13-t56}
 
 ## Amendment 2026-10-14 (APPROVED by the user, 2026-10-14) {#amend-2026-10-14}
 

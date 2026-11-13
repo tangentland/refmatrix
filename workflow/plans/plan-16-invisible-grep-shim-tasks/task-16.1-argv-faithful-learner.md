@@ -14,8 +14,8 @@ metadata:
 # Task 16.1: the argv-faithful learner {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision round 6, 2026-11-13: R1b and R3 over bug-216's one predicate, L5,
-> [[#rev-round-6]]; revision round 5, 2026-10-14, answering the r4 re-review
+> Status: Pending (revision round 7, 2026-11-13: M4, [[#rev-round-7]]; revision round 6,
+> 2026-11-13: R1b and R3 over bug-216's one predicate, L5, [[#rev-round-6]]; revision round 5, 2026-10-14, answering the r4 re-review
 > `bsd-plan16-22-spec-rereview-r4-878647c`, [[#rev-round-5]]; revision round 3, answering the r3 re-review
 > `bsd-plan16-22-spec-rereview-r3-6091648`, [[#rev-round-3]]; revision 6 answered spec review r5
 > `bsd-plan16-spec-review-r5-cd7c923`)
@@ -41,6 +41,17 @@ rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
 rel: related-to -> [[task-16.5-explicit-grep-hands-off#r0]]
 rel: depends-on -> [[task-bug216-rule-docs-in-graph#r2]]
 rel: depends-on -> [[task-bug216-rule-docs-in-graph#r12]]
+
+## Revision round 7 (2026-11-13) {#rev-round-7}
+
+Answers `bsd-spec-t56-r1-fecda59` M4 (lead ruling: point the `base=` note at bug-216 AC-17, rev 6
+`4b4b96e`; `SUPPORTED_EXTS` lives in `watch.py`).
+
+| finding | answered in |
+|---|---|
+| M4 (the watcher's missing `base=` is now bug-216's AC-17; `SUPPORTED_EXTS` is not in `ingest.py`) | [[#r3-predicate]] `base` bullet and `SUPPORTED_EXTS` bullet; AC-5d; [[#files-to-modify]] |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
 ## Revision round 6 (2026-11-13) {#rev-round-6}
 
@@ -327,15 +338,21 @@ and no narrower. {#why-lead}
   `not ingest.should_ignore(p, root, base=base)`, nothing else
   ([[task-bug216-rule-docs-in-graph#r2]]: `should_ignore` is THE predicate; R12: one list).
   - `corpus.py` keeps no ignore list, no glob and no hidden-directory test of its own. It
-    re-exports `SUPPORTED_EXTS`, `CODE_EXTS`, `DOC_EXTS`, `INGEST_IGNORE_DIRS`,
-    `BUILTIN_INCLUDES`, `load_ignore_spec`, `IgnoreSpec` and `IGNORE_FILE` from `ingest.py`, so
-    R1b's flags and `REINC` read the same names.
-  - `watch.is_relevant` is a re-export of `corpus.is_relevant` (bug-216's branch already made it
-    a delegate), so the watcher, ingest and the learner call one function.
-  - The one difference is `base`: the watcher calls it on absolute paths with no `base`, so in a
-    project below a hidden or `INGEST_IGNORE_DIRS`-named ancestor it syncs nothing while this
-    learner teaches (AC-5's third bullet). That difference predates round 6 and is named in the
-    summary.
+    DEFINES `SUPPORTED_EXTS = CODE_EXTS | DOC_EXTS` (moved from `watch.py:26`, where bug-216's
+    branch keeps it; `ingest.py` has no such name) and re-exports `CODE_EXTS`, `DOC_EXTS`,
+    `INGEST_IGNORE_DIRS`, `BUILTIN_INCLUDES`, `load_ignore_spec`, `IgnoreSpec` and `IGNORE_FILE`
+    from `ingest.py`, so R1b's flags and `REINC` read the same names. `corpus` imports only
+    `ingest`; `watch` imports `corpus` (never the reverse, `watch` imports `Store`).
+  - `watch.is_relevant` and `watch.SUPPORTED_EXTS` are re-exports of `corpus`'s (bug-216's branch
+    already made `is_relevant` a delegate), so the watcher, ingest and the learner call one
+    function.
+  - **`base` is the same for every caller (round 7, M4).** bug-216 rev 6 (`4b4b96e`, its
+    AC-17 and `#r2-base`, on the `task-bug216-rule-docs-in-graph` branch; cited as text until that
+    spec revision merges, bug-217's lesson) makes the watcher and sync pass
+    `base=` too, so the segment rules apply only below the project root on every route, and a
+    project below a hidden or `build/` ancestor syncs, ingests and teaches alike (AC-5's third
+    bullet). Round 6's "the one difference is `base`" is withdrawn; this task depends on that
+    AC.
 - Drops are counted as `out_of_corpus`.
 
 **R4. Bounded on every leg, the store included (#b-5, #s-n7, #s-n8).**
@@ -491,7 +508,8 @@ for a case-sensitive `rmx grep`.
      though the re-run found it).
    - **5d (round 6) One predicate, mechanical.** A check asserts `corpus.is_relevant` calls
      `ingest.should_ignore`, `corpus.py` holds no `startswith(".")` test, no set or tuple literal
-     of directory names and no `fnmatch`, and `watch.is_relevant is corpus.is_relevant`.
+     of directory names and no `fnmatch`, `watch.is_relevant is corpus.is_relevant`, and
+     `watch.SUPPORTED_EXTS is corpus.SUPPORTED_EXTS` (round 7).
      Mutation: re-implement the hidden-dir rule in `corpus.py`: FAILS.
 6. **Pruned re-run (#s-n1).** A 20,000-file out-of-corpus tree placed ahead of `src/` gives a
    path-less `grep -rn PAT` that teaches `src/` hits within the timeout. Without R1b the same
@@ -547,8 +565,8 @@ for a case-sensitive `rmx grep`.
 | File | Change |
 |------|--------|
 | `src/refmatrix/grep_learn.py` (new) | detach, slot dirs, tables, classify, pruning flags, re-run, stream-parse, corpus filter, enqueue, log, stamp pruning |
-| `src/refmatrix/corpus.py` (new) | round 6: `is_relevant(p, root=None, *, base=None)` = suffix gate + `ingest.should_ignore`; re-exports `SUPPORTED_EXTS`, `CODE_EXTS`, `DOC_EXTS`, `INGEST_IGNORE_DIRS`, `BUILTIN_INCLUDES`, `load_ignore_spec`, `IgnoreSpec`, `IGNORE_FILE` from `ingest.py`; no list or rule of its own |
-| `src/refmatrix/watch.py` | round 6: `is_relevant` re-exported from `corpus` (bug-216 already delegates) |
+| `src/refmatrix/corpus.py` (new) | round 6: `is_relevant(p, root=None, *, base=None)` = suffix gate + `ingest.should_ignore`; round 7: defines `SUPPORTED_EXTS`; re-exports `CODE_EXTS`, `DOC_EXTS`, `INGEST_IGNORE_DIRS`, `BUILTIN_INCLUDES`, `load_ignore_spec`, `IgnoreSpec`, `IGNORE_FILE` from `ingest.py`; no list or rule of its own |
+| `src/refmatrix/watch.py` | round 6: `is_relevant` re-exported from `corpus` (bug-216 already delegates); round 7: `SUPPORTED_EXTS` re-exported from `corpus` |
 | `src/refmatrix/daemon.py` | `_learn_grep_hits`: all-present short-circuit (evidence + sidecar) before any write; missing-only evidence; `kind` from `CODE_EXTS`; R10 sidecar write replacing 16.6 R1b's legacy call; the context backstop's provenance |
 | `src/refmatrix/cli.py` | hidden `grep-learn`; `learn status` counts |
 | `workflow/bug_registry.md` | `cli.log` has no rotation (R9). bug-102 is closed by 16.5 R8 when 16.5 R4 deletes `_GREP_VALUE_FLAGS`; this table is its fix |

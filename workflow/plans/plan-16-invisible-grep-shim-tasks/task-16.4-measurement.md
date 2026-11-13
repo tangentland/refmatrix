@@ -34,6 +34,16 @@ rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
 rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
 
+## Revision round 10 (2026-11-13) {#rev-round-10}
+
+Answers `bsd-spec-t56-r1-fecda59` M6: the reopen check's fired state is a named file.
+
+| finding | answered in |
+|---|---|
+| M6 ("fires once" with no persisted state) | [[#r4-reopen]] `bug174-reopen.json`; AC-9 seeded-file run + mutation |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
 ## Revision round 9 (2026-11-13) {#rev-round-9}
 
 Lead ruling of 2026-11-13 on the spec wave's open item 4: task 25.5 is closed as superseded by
@@ -256,8 +266,11 @@ If B misses an evaluated gate, the plan is re-decided. Thresholds are not edited
 with `bre_concept_n ≥ 30`, or the first run whose run date is on or after 2026-12-31, whichever
 comes first, prints in its dated row `bug-174 reopen check: bre_concept_share <x> (n=<N>, trigger
 <n|date>)`. The run date is a harness input (`--as-of`, default today), so the date half is
-testable. The check fires once: the report records that it fired, and later runs print only the
-metric. The question it opens (translate BRE on the path-less index leg, or keep 16.5 R3's floor)
+testable. The check fires once. **Fired state (round 10, M6):** the firing run writes
+`<store_root>/bug174-reopen.json` (`{fired_at, as_of, trigger, share, n, harness_sha}`), where
+`<store_root>` is the `.refmatrix/` of the project the harness measures; every run reads it first,
+and when it exists prints only the metric. A test points `store_root` at its sandbox project's
+`.refmatrix/`, never a live one. The question it opens (translate BRE on the path-less index leg, or keep 16.5 R3's floor)
 goes to the user with that number as a Q-id; it is not decided by a band here (L32: a reopen is a
 user question). If no run exists by 2026-12-31 (the window opens only after the flip, [[#r0]]),
 the date half fires on the first run after it.
@@ -328,11 +341,13 @@ This deferral is anchored to that date and to this task. It is not open-ended.
    Mutation "score regardless of the switch" FAILS it (the marker run reports a verdict).
 9. **The reopen check fires on its rule (round 9; [[#r4-reopen]]).** On a fixture store with 100
    taught `query/*` concepts: with 30 carrying a BRE meta and `--as-of 2026-12-01`, the row prints
-   the check line with `trigger n`; with 29 and `--as-of 2026-12-30`, no line; with 29 and
-   `--as-of 2026-12-31`, the line with `trigger date`; a second run after a firing run prints no
-   line. Mutations, each FAILS it: "N counts every taught concept" (the 29-of-100 run at
-   2026-12-30 fires); "the date half is ignored" (the 2026-12-31 run is silent); "fire on every
-   qualifying run" (the second run prints the line).
+   the check line with `trigger n` and writes `bug174-reopen.json`; with 29 and `--as-of
+   2026-12-30`, no line and no file; with 29 and `--as-of 2026-12-31`, the line with `trigger
+   date`; a run in a FRESH process, with a seeded `bug174-reopen.json` in the sandbox project's
+   `.refmatrix/` and 30 BRE concepts, prints no line. Mutations, each FAILS it: "N counts every
+   taught concept" (the 29-of-100 run at 2026-12-30 fires); "the date half is ignored" (the
+   2026-12-31 run is silent); "keep the fired state in memory only" (the seeded-file run prints
+   the line).
 
 ## Files to modify {#files-to-modify}
 

@@ -92,6 +92,6 @@ rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
 
 | finding / decision | answered in |
 |---|---|
-| L22 / Cc-8 / CD-9 (22.4 and the two merge entry points as deferral rows under T6; plan-20 is drafting, not dormant; d9j) | [[#root]] deferral note; three rows in [[deferral_registry#registry]]: this task, `fold_concept_dups` and `merge_partition`, each naming its graduation trigger (the helix plan written and taking this spec, after plan-20's rule) |
+| L22 / Cc-8 / CD-9 (22.4 and the two merge entry points as deferral rows under T6; plan-20 is drafting, not dormant; d9j) | [[#root]] deferral note; three rows in [[deferral_registry#registry]]: this task, `fold_concept_dups` and `merge_partition`, each naming its graduation trigger (the helix plan written and taking this spec, after plan-20's rule) and THIS task as owner (ch-bsd `bsd-spec-t56-r1-fecda59` S5: the helix plan does not exist, so it cannot own a row); `fold_concept_dups` is classified `live-unrouted`, not `scaffold-no-caller` |
 
 rel: derives-from -> [[plan-review-2026-11-13#lead]]

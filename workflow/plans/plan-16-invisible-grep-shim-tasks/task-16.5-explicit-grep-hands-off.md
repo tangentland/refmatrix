@@ -16,7 +16,8 @@ metadata:
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
 > Status: Pending (revision after the 2026-10-14 decision log; revision 6, answering spec review
 > r5 `bsd-plan16-spec-review-r5-cd7c923`; revision round 7, 2026-11-13: supersedes 25.4/25.5 and
-> closes bug-167/bug-174, the floor keeps bug-216's re-includes, [[#rev-round-7]])
+> closes bug-167/bug-174, the floor keeps bug-216's re-includes, [[#rev-round-7]]; revision round
+> 8: bug-222, [[#rev-round-8]])
 > **Wave:** 2, last of plan-16's chain ([[plan-16-invisible-grep-shim#waves]]).
 > Depends on: [[task-16.1-argv-faithful-learner]], [[task-16.2-invisible-shim]] (16.2 provides its
 > differential fixture and its spawn rules). Tests run in plan-23 task 23.0's sandbox.
@@ -30,6 +31,17 @@ rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
 rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
 rel: implements -> [[plan-review-2026-10-14#t7-fixes]]
+
+## Revision round 8 (2026-11-13) {#rev-round-8}
+
+Answers `bsd-spec-t56-r1-fecda59` M5: bug-222 (logged after this branch's base; plan-review L48
+gives it to 16.5 R2) is folded.
+
+| finding | answered in |
+|---|---|
+| M5 bug-222 (`rmx grep -c -F -- '---'` on a pipe: "no PATTERN given") | [[#r5]] bug-222 rows; [[#r8]] `fixed by task-16.5 R2` row |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
 ## Revision round 7 (2026-11-13) {#rev-round-7}
 
@@ -286,6 +298,9 @@ concepts with a BRE meta beside `forgone_index_share`.
   `--file=pats.txt f.txt` (named), `-f pats.txt f.txt`, `-f pats.txt -f pats2.txt f.txt`,
   `-e a -e b f.txt`, `-d skip alpha f.txt sub`, `--binary-files text alpha f.txt`,
   `--label L -H alpha` over a pipe, `-i foo -- --limit 3` (`--limit` and `3` are operands).
+- **bug-222 rows (round 8):** over a pipe of `a\n---\n`, `-c -F -- '---'` (count 1, exit 0) and
+  `-c -- '--x'` (count 0, exit 1); both byte-equal to `/usr/bin/grep` with the exit code. At HEAD
+  the first prints `Error: grep: no PATTERN given`, exit 2, so the row has power.
 - **s-r5-1 and bug-102 rows:** `-e --help f.txt` (grep searches for `--help`), `-ekey f.txt`,
   `-fkeys.txt f.txt`, `-fkcode f.txt` (grep's `-f kcode`, never rmx's `-k code`), and
   `--context alpha f.txt` (`--context` takes no space value: `alpha` is the pattern).
@@ -332,6 +347,8 @@ on any it finds.
   the `\|` refusal is deleted) and bug-174 (an unescaped `. * [ ] ^ $` is grep's own on the
   named-path and pipe legs, and condition 1 floors it on the path-less leg). Their planned fixes,
   tasks 25.4 and 25.5, are superseded ([[#rev-round-7]]).
+- `fixed by task-16.5 R2` (round 8): bug-222 (a piped `rmx grep` execs the real grep on
+  `grep_argv`, so a pattern starting with `-` after `--` is grep's; `_grep_stdin` is deleted).
 - `fixed by task-16.5 R4` (with 16.1 R1's `value` column as the one table): bug-102, the
   `--context` space-value entry in `_GREP_VALUE_FLAGS` (`cli.py:5540`).
 - bug-076, 077, 078, 083 and 084 stay as they are, because their code is kept.
