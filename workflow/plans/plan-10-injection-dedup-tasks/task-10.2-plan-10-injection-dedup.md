@@ -259,8 +259,8 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
    tier-pinned names-only on 25.1b's pack, with the held rules and the substitution written
    independently in the replay. At GREEN, the same replay re-run with `stm.held_items` (the
    `HeldSet`), `telemetry.item_key` and 25.1b's `pack(held=…)` imported from `src/` reproduces
-   v3's figures on the same clones. After G22's ingest exclusion deploys, 10.5 R4b re-runs this
-   parity check against the re-run target (r2 m5). A difference is a defect in one of the two and is resolved before merge. If v3
+   v3's figures on the same clones. After G22 rev 2's operational gate deploys (L60), 10.5 R4b
+   re-runs this parity check against the re-run target (r2 m5; r3 S3). A difference is a defect in one of the two and is resolved before merge. If v3
    FAILED, 10.2 is not built (10.5 R3b). {#r8}
 
 ## Acceptance criteria {#acceptance}
@@ -415,6 +415,7 @@ rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 | Every held row's body goes to 25.1b's spill page (k3 step 4); held overflow is counted `(+N)` | L15 | R3, AC-6 |
 | One rank order across both member kinds (10.6 p2); held members marked `·held` | 25.1b k2; lead ruling on [[#open-held-mark]] (a) | h16, R3, R4, AC-1, AC-14 |
 | `arms.draw(session_id, *, root, now=None)` store-scoped: period records carry `scope`; ships with no active period; out of scope or out of period → `A+dedupe` | spec-t3c, plan-28 handshake (`5ac42e5`): arms.py ships to every store | R7, AC-11 |
+| v3 re-run trigger re-keyed to G22 rev 2's operational gate (Q9 / L60 supersede the ingest exclusion) | bsd-spec-t3ab r3 S3, lead ruling | R8 |
 | Arm file and `session_arm` row written only when the store's slug is in some period record's `scope` | bsd-spec-t3c r2 m6, lead ruling | R7, AC-11, AC-13 |
 | bsd-spec-t3ab r3 folded, lead rulings: S5 (`telemetry.item_key` built by 25.1b, h8 cites it, removed from Files); m1 (tier-3 string verbatim from 25.1b); m2 (`covers(key, full_run_tier)`); arm file never redrawn or overwritten on compact/resume/clear | bsd-spec-t3ab-r3 | h8, h15, R1, R7, AC-11, AC-13, Files |
 | Cell fixed at SessionStart: one `draw`, `stm/<session>.arm.json`, `arms.session_cell` read per prompt; 28.1 extends it | bsd-spec-t3c r1 m2 (spec-t3c's request; L59) | R7, AC-11, AC-13, Files |

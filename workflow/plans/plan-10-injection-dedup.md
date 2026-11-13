@@ -255,22 +255,27 @@ rel: derives-from -> [[agent-brief-arch-10r]]
 
 ## Q8 {#q8}
 
-**Q8 is decided: a (user, 2026-11-13).** `workflow/` leaves the store at INGEST, which is G22's
-work. No plan-10 rule changes. Per-prompt recall already excludes `session/*` in hook modes (25.1
+**Q8 is decided: a, as amended by Q9 (user, 2026-11-13; L60).** `workflow/` STAYS ingested.
+G22 rev 2 adds ONE operational gate: `workflow/` docs, save-states and digests are dropped from
+pagerank, concept weights and co-occurrence, and ranked LAST in default `rmx context` and the push
+hooks unless the query names them. No plan-10 rule changes. Per-prompt recall already excludes `session/*` in hook modes (25.1
 R2/R2b), so no save-state is ever held, named or spilled, and `session_start` records only what it
 rendered. {#q8-body}
 
 **The figures move, the rules do not.** {#q8-b}
 
-- Once G22's ingest exclusion deploys, scan-prompt stops surfacing `workflow/` docs.
-- The 2026-11-13 held share (48.0%), the v1/v2 replay and 10.5's v3 were all computed on stores
-  that still ingest `workflow/`.
-- **The re-run trigger:** v3 is re-run after G22's ingest exclusion deploys
+- Once G22 rev 2's operational gate deploys, scan-prompt and recall rank `workflow/` hits last.
+  So what the push hooks deliver, and in what order, changes.
+- The 2026-11-13 held share (48.0%), the v1/v2 replay and 10.5's v3 were all computed under the
+  old ranking.
+- **The re-run trigger:** v3 is re-run after G22 rev 2's operational gate deploys (L60)
   ([[task-10.5-versioned-block-gate#r4b]]).
 - R7's live run measures whatever store state exists while it runs.
 
-The anchor keeps its name because earlier commits cite it. The earlier text keyed this to Q8 b,
-but option a removes `workflow/` at ingest too (bsd-spec-t3ab S6).
+The anchor keeps its name because earlier commits cite it. The trigger was keyed first to Q8 b,
+then to "G22's ingest exclusion" (bsd-spec-t3ab S6). Q9 / L60 superseded the exclusion
+(bsd-spec-t3ab r3 S3, lead ruling): `workflow/` stays, and the re-run is still needed because
+ranking changes.
 
 rel: depends-on -> [[plan-review-2026-11-13#d-q1]]
 

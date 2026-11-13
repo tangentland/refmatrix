@@ -96,13 +96,16 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
    10.2's RED. Its result is appended to [[measurement-injection-already-held-2026-11-13]] as a
    dated `v3` addendum, with counts only.
 
-   Q8 is decided as a: `workflow/` leaves at ingest (G22). v3 is therefore RE-RUN, on the same
-   code and windows re-read from the post-exclusion store, after G22's ingest exclusion deploys
-   ([[plan-10-injection-dedup#q8-b]]). The re-run's figures replace v3's as 10.2 R8's parity
+   Q8 is decided as a, amended by Q9 (L60). `workflow/` stays ingested, and G22 rev 2 adds one
+   operational gate that ranks `workflow/` docs, save-states and digests LAST and drops them from
+   pagerank, concept weights and co-occurrence. Ranking changes, so v3 is RE-RUN after G22 rev 2's
+   operational gate deploys (L60): same code, with windows re-read from the store as ranked under
+   the gate ([[plan-10-injection-dedup#q8-b]]). The re-run's figures replace v3's as 10.2 R8's parity
    target. **10.5 also re-runs 10.2 R8's parity check against that new target** (r2 m5): the
    same replay in parity mode, with `stm.held_items` and 25.1b's `pack(held=…)` imported from
    the deployed `master`. It runs in the measurement lane, in the same session as the re-run,
-   right after G22's ingest exclusion deploys, and both results go in the same dated addendum.
+   right after G22 rev 2's operational gate deploys, and both results go in the same dated
+   addendum.
    If the re-run fails R2b's rule, Part 1 reads FAILED (v3, re-run): 10.2 is not built, or if it
    has already merged, the result goes to the user with an id, which is R3b's path. A parity
    mismatch is a defect: it is logged in `workflow/bug_registry.md` and fixed in 10.2's code or
@@ -306,3 +309,7 @@ rel: derives-from -> [[bsd-spec-t3ab-ff1d453-369e0b5]]
 **bsd-spec-t3ab r2 m5 folded (2026-11-13).** R4b's post-G22 re-run also re-runs 10.2 R8's parity
 check against the new target. 10.5 runs it, in the measurement lane, right after G22 deploys.
 {#rev-round-6-bsd-r2}
+
+**bsd-spec-t3ab r3 S3 folded (2026-11-13, lead ruling).** The re-run trigger is re-keyed to "G22
+rev 2's operational gate deploying (L60)". Q9 keeps `workflow/` ingested, and the r1 S6 wording
+("ingest exclusion") is superseded. The re-run stays because ranking changes. {#rev-round-6-bsd-r3}
