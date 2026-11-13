@@ -243,8 +243,8 @@ disown
 
 ## RED r1 (remedy for ch-bsd r1, DIRTY 8) {#red-r1}
 
-Test commit `277ce60` on top of `7537965` (tests + mock registry only; no `src/`). File
-`tests/test_bug212_r1_remedy.py`. At HEAD: **31 failed, 4 passed** in 32 s
+Test commits `277ce60` and `b0a0604` (a2) on top of `7537965` (tests + mock registry only; no
+`src/`). File `tests/test_bug212_r1_remedy.py`. At `7537965`: **31 failed, 4 passed** in 32 s
 (`workflow/review-output/bug212/red-r1-head.log`). The 4 passes are guards, each proven by a
 mutation below. Real git and the GENERATED hook bodies (`hooks._install_git_hooks`) in tmp repos
 under a short `/tmp` mkdtemp root; the bug-212 recording `rmx` shim; `GIT_TRACE` proves each
@@ -348,28 +348,51 @@ audit's prescribed gate, `[ -S "$ROOT/.refmatrix/rmxd.sock" ] || { <presence> &&
 tests pass. The 11 that still fail are s-1 and m-3, which no gate can fix
 (`red-r1-probe-full-gate.log`). The b-1 contract can be met with a shell gate alone.
 
-### Ambiguities for the lead {#red-r1-ambiguities}
+### a2: an in-process sync never writes a git-tracked catalog {#red-r1-a2}
 
-- **a1.** The main checkout with a tracked catalog and no daemon is pinned to "no sync". This
-  follows from the stated gate (a live socket OR an untracked catalog). The consequence: a fleet
-  trunk that still tracks its catalog does not index on commit while its daemon is down.
-- **a2.** A stale socket is not tested. `[ -S ]` passes on a socket a crashed daemon left behind.
-  The CLI then falls to an in-process sync and writes a tracked catalog. A shell cannot cheaply
-  test liveness. Should `rmx sync` itself refuse an in-process write to a git-tracked catalog?
-- **a3.** The optional linked-worktree check (`git-dir != git-common-dir`) is not pinned either
-  way. A worktree that ran its own `rmx init` (untracked store) syncs under the prescribed gate.
-- **a4.** The s-1 tests with `REFMATRIX_ROOT` require FAILURE, not success. The partition comes
-  from the cwd's `.refmatrix/partition` marker, and falling back to the store's name would
-  silently pick a partition of a shared store. If the lead prefers "succeed on the default
-  partition", the five cases need relaxing.
-- **a5.** cctree and hub-pause assert only non-zero plus an `Error:` line, not that the line
-  names the cwd. `hub pause <name>` needs no cwd in principle. If `discover_roots` drops a vanished
-  cwd instead of raising, it must say so: no-silent-failures applies.
-- **a6.** `cli.py:7109` (`_grep_rg_fallback`'s `os.getcwd()`) has no RED. It is unreachable from
-  the CLI in a vanished cwd: `rmx grep` with `REFMATRIX_ROOT`, `RMX_PARTITION` and an absolute
-  path already fails cleanly at `cli._cwd()` (probe 2026-11-13). The implementer should still
-  route it through the shared helper, as a census item.
-- **a7.** The `Path.cwd()` defaults inside daemon ops (`daemon.py` 3475/3496/3582/4002/4563) read
-  the DAEMON's cwd. The audit does not list them, and they are not tested.
-- **a8.** The library-level tests pin behaviour (a non-OSError naming the working directory), not
-  a class. `CwdGone(RuntimeError)` is the audit's suggestion, not a contract.
+This was added on the lead's decision a2 (2026-11-13). Test commit `b0a0604`. At `52e6b72` it adds
+**6 RED and 1 guard**. Both bug-212 files together give **37 failed, 24 passed**
+(`red-r1-a2-head.log`; after the mutation restore, `red-r1-a2-post-restore.log` gives the same
+counts).
+
+- `test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[<layout>-files|since]` -- 4
+  cases. `rmx sync --files <f>` and `rmx sync --since HEAD~1` run in the main checkout of
+  `tracked_repo`, with cwd resolution, no `REFMATRIX_ROOT`, and no daemon. Required: no traceback;
+  the sha256 of every catalog file is unchanged; exit non-zero; exactly ONE `Error:` line that
+  names the target file (`catalog.A.duckdb` for slots, `catalog.duckdb` for legacy) and contains
+  both remedies (`untrack` or `rm --cached`, and `daemon`); `git status` shows no catalog file
+  modified. RED line: `[<layout>] in-process `rmx sync ...` wrote the git-tracked catalog
+  ['<target>'] (exit 0)`.
+- `test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[<layout>]` -- 2
+  cases. A unix socket file with no listener sits at `.refmatrix/rmxd.sock` (bound, then closed
+  without unlinking), so the socket half of the gate passes. The GENERATED post-commit then runs.
+  Required: the git op exits 0; no traceback; the tracked catalog is byte-identical. If the hook
+  ran `rmx`, stderr must also carry the one refusal `Error:` line and the hook's `rmx sync FAILED`
+  line. RED line: `[<layout>] post-commit beside a stale socket wrote the git-tracked catalog
+  ['<target>']`.
+- GUARD `test_an_in_process_sync_of_a_store_outside_any_git_repo_still_writes` -- a store that is
+  not inside any git repo, where `git rev-parse` fails. `rmx sync --files` in-process must exit 0
+  and index the file. Passes at HEAD. Mutation R, every in-process `rmx sync` raising before
+  `_store()`, kills it (`red-r1-mut-R-refuse-all.log`). The a2 REDs stay red under R because they
+  require the message to name the file and the remedy. The ignored-store case, where a git repo
+  does not track the catalog, is already guarded:
+  `test_bug212_hooks_in_worktrees.py::test_the_main_checkout_with_a_store_still_syncs` syncs
+  in-process with `.refmatrix/*` ignored.
+
+### Lead decisions on a1-a8 (2026-11-13) {#red-r1-decisions}
+
+- **a1 accepted.** A tracked catalog with no daemon gets no sync; the gate fails closed. The trunks
+  lose their tracked catalogs when they merge bug-214's untrack commits.
+- **a2 → RED added** in [[#red-r1-a2]]. The CLI refuses an in-process write to a tracked catalog,
+  and the stale-socket path is covered through the generated post-commit.
+- **a3 accepted.** A worktree whose own store is untracked (it ran `rmx init` itself) syncs. Not
+  pinned.
+- **a4 accepted.** With `REFMATRIX_ROOT` set and the cwd gone, the command fails. It never picks
+  a partition silently.
+- **a5 accepted.** cctree and hub-pause: non-zero exit plus an `Error:` line is enough.
+- **a6 accepted.** `cli.py:7109` (`_grep_rg_fallback`'s `os.getcwd()`) is a census item for the
+  implementer. It is unreachable from the CLI in a vanished cwd, so it has no RED.
+- **a7 accepted, out of scope.** The `Path.cwd()` defaults inside daemon ops (`daemon.py`
+  3475/3496/3582/4002/4563) read the DAEMON's cwd. They are not part of this remedy.
+- **a8 accepted.** The library-level s-1 tests pin a behaviour (a non-OSError naming the working
+  directory), not a class.
