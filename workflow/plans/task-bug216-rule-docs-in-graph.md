@@ -265,3 +265,33 @@ unresolved_by_target_doc`, plus R8's binding classes); "counted unresolved" is o
   is ingested like any root `.md` (no new exclusion — lead, 2026-11-13); an explicit `CLAUDE.md` ignore line excludes it; `!` beats an
   explicit ignore. R3's gate exits 0 on a fixture with no ignore file. {#ac-12}
 - **AC-13 (R12).** A `dist/x.md` is ignored by every walker; `watch.py` defines no ignore list. {#ac-13}
+
+## Revision 5 (2026-11-13, spec-t4 finding; lead decision: replay fidelity) {#rev-5}
+
+The GREEN (`2fc5554`) added GMD-path writes that facts.log never records: `clear_rel_evidence`
+deletes `rel:` evidence with no event, and `pending_refs` rows are never logged. Both replay paths
+append every `evidence` event, so after a changed doc is re-ingested the catalog holds one evidence
+row per `rel:` line and a replay holds the old ones too; and a replay loses every pending row.
+Declaring pending refs "outside replay" was rejected: a rebuild would silently lose dangling refs
+that should bind later (no silent loss on memory paths; decay never loses knowledge). {#rev-5-why}
+
+rel: reinforces -> [[feedback_decay_never_loses_knowledge]]
+
+13. **R13 Replay fidelity for bug-216's writes.** Every GMD-path write bug-216 adds is a facts.log
+    event that BOTH replay paths apply — `rebuild_index_from_log` and the incremental
+    `apply_log_delta` / `_apply_event_body`: a per-file `rel:`-evidence-clear event, and
+    pending-ref add / delete / per-file clear events, named by entity kind and name (never ids),
+    partition-qualified, applied in log order relative to `evidence` events. Old logs without
+    these events still replay as before. The `pending_refs` schema comment ("not replayed from
+    facts.log") is corrected with it. {#r13}
+
+- **AC-14 (R13).** Throwaway store, facts.log on: ingest v1 of a doc with two `rel:` lines (one to
+  an existing target, one to a missing target), then v2 with changed `rel:` lines (a verb change,
+  a moved line, a second missing target). A FRESH catalog rebuilt from a copy of the log — through
+  `rebuild_index_from_log` and through `apply_log_delta(0)` — holds the same `linkage_evidence`
+  rows (by names, as a multiset: no duplicates) and the same `pending_refs` rows as the source
+  catalog. Then the missing target is ingested: the pending ref binds (edge + evidence, row gone)
+  identically in the catalog and both replays. Guard: a log holding only the pre-R13 ops still
+  replays one evidence row per `evidence` event. Mutations, each failing: drop the clear event;
+  drop the pending events; either replay path ignores them.
+  Test: `tests/test_bug216_replay_fidelity.py`. {#ac-14}

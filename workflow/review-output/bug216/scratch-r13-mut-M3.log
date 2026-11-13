@@ -1,0 +1,62 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/r13/src/refmatrix as checked-hash (bug-037)
+F.F...                                                                   [100%]
+=================================== FAILURES ===================================
+_____ test_ac14_a_replay_after_a_changed_doc_matches_the_catalog[rebuild] ______
+
+env = {'base': PosixPath('/private/tmp/b216llugz6y35'), 'n': [1], 'proj': PosixPath('/private/tmp/b216llugz6y35/proj'), 'root': PosixPath('/private/tmp/b216llugz6y35/proj/.refmatrix')}
+how = 'rebuild'
+
+    @pytest.mark.parametrize("how", ["rebuild", "delta"])
+    def test_ac14_a_replay_after_a_changed_doc_matches_the_catalog(env, how):
+        """v1 then v2 of a doc with an existing and a missing `rel:` target: the replay holds the
+        catalog's evidence rows (no v1 leftovers, no duplicates) and its pending rows."""
+        want = _v1_then_v2(env)
+        got = _replay(env, how)
+>       assert got == want, f"{how} replay differs from the catalog:\n{_diff(want, got)}"
+E       AssertionError: rebuild replay differs from the catalog:
+E         evidence: replay has extra {('proj', 'derives-from', 'concept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216llugz6y35/proj/docs/a.md', 16, 'rel: derives-from -> b-doc'): 1}; replay is missing {}
+E         pending: replay has extra {}; replay is missing {('proj', 'concept', 'a#cite', 'amends', 'd-doc', 'd-doc', '/private/tmp/b216llugz6y35/proj/docs/a.md', 20, None, 'rel: amends -> d-doc'): 1, ('proj', 'concept', 'a#cite', 'depends-on', 'c-doc', 'c-doc', '/private/tmp/b216llugz6y35/proj/docs/a.md', 19, None, 'rel: depends-on -> c-doc'): 1}
+E       assert {'evidence': ...'b-doc'): 1})} == {'evidence': ...'b-doc'): 1})}
+E         
+E         Omitting 2 identical items, use -vv to show
+E         Differing items:
+E         {'pending': Counter()} != {'pending': Counter({('proj', 'concept', 'a#cite', 'amends', 'd-doc', 'd-doc', '/private/tmp/b216llugz6y35/proj/docs/a...depends-on', 'c-doc', 'c-doc', '/private/tmp/b216llugz6y35/proj/docs/a.md', 19, None, 'rel: depends-on -> c-doc'): 1})}
+E         {'evidence': Counter({('proj', 'related-to', 'concept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216llugz6y35/proj/doc...oncept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216llugz6y35/proj/docs/a.md', 16, 'rel: derives-from -> b-doc'): 1})} != {'evide...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show
+
+tests/test_bug216_replay_fidelity.py:188: AssertionError
+_______ test_ac14_a_pending_ref_binds_identically_after_replay[rebuild] ________
+
+env = {'base': PosixPath('/private/tmp/b216llxp9jdn6'), 'n': [1], 'proj': PosixPath('/private/tmp/b216llxp9jdn6/proj'), 'root': PosixPath('/private/tmp/b216llxp9jdn6/proj/.refmatrix')}
+how = 'rebuild'
+
+    @pytest.mark.parametrize("how", ["rebuild", "delta"])
+    def test_ac14_a_pending_ref_binds_identically_after_replay(env, how):
+        """Then the missing target is ingested: the pending ref binds (edge + evidence, row gone) in
+        the catalog, and the replay holds exactly the same."""
+        _v1_then_v2(env)
+        _ingest(env, [_write(env, "docs/c.md", C_MD)])
+        want = _snapshot(env["root"])
+        assert [k[4] for k in want["pending"]] == ["d-doc"], dict(want["pending"])
+        assert any(k[0] == "depends-on" and k[3] == "doc" and k[4] == "c-doc"
+                   for k in want["rel_links"]), dict(want["rel_links"])
+        got = _replay(env, how)
+>       assert got == want, f"{how} replay differs from the catalog:\n{_diff(want, got)}"
+E       AssertionError: rebuild replay differs from the catalog:
+E         evidence: replay has extra {('proj', 'derives-from', 'concept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216llxp9jdn6/proj/docs/a.md', 16, 'rel: derives-from -> b-doc'): 1}; replay is missing {}
+E         pending: replay has extra {}; replay is missing {('proj', 'concept', 'a#cite', 'amends', 'd-doc', 'd-doc', '/private/tmp/b216llxp9jdn6/proj/docs/a.md', 20, None, 'rel: amends -> d-doc'): 1}
+E       assert {'evidence': ...'b-doc'): 1})} == {'evidence': ...'b-doc'): 1})}
+E         
+E         Omitting 2 identical items, use -vv to show
+E         Differing items:
+E         {'pending': Counter()} != {'pending': Counter({('proj', 'concept', 'a#cite', 'amends', 'd-doc', 'd-doc', '/private/tmp/b216llxp9jdn6/proj/docs/a.md', 20, None, 'rel: amends -> d-doc'): 1})}
+E         {'evidence': Counter({('proj', 'related-to', 'concept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216llxp9jdn6/proj/doc...oncept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216llxp9jdn6/proj/docs/a.md', 16, 'rel: derives-from -> b-doc'): 1})} != {'evidence': Counter({('proj', 'related-to', 'concept', 'a#cite', 'doc', 'b-doc', '/...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show
+
+tests/test_bug216_replay_fidelity.py:202: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_replay_fidelity.py::test_ac14_a_replay_after_a_changed_doc_matches_the_catalog[rebuild]
+FAILED tests/test_bug216_replay_fidelity.py::test_ac14_a_pending_ref_binds_identically_after_replay[rebuild]
+2 failed, 4 passed in 4.62s

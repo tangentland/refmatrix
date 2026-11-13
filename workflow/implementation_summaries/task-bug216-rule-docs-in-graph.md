@@ -248,6 +248,22 @@ only through R11. {#red-ac12-updates}
 `test_ingest_gmd_on_a_subdir_reads_the_spec_from_the_project_root[op / cli]`: HEAD ingests
 `docs/private/p.md` (`{'docs/finding.md', 'docs/other.md', 'docs/private/p.md'}`). {#red-subdir-line}
 
+### AC-14 (R13 replay fidelity, rev 5) — tests/test_bug216_replay_fidelity.py {#red-ac14}
+
+RED at `4cacc5c` (`red-r13-4cacc5c.log`): 4 failed, 2 passed (the two guards).
+
+| test | line at `4cacc5c` |
+|---|---|
+| `test_ac14_a_replay_after_a_changed_doc_matches_the_catalog[rebuild / delta]` | replay has an extra v1 `rel: derives-from -> b-doc` evidence row (line 16), and is missing both pending rows (`c-doc`, `d-doc`) |
+| `test_ac14_a_pending_ref_binds_identically_after_replay[rebuild / delta]` | the same extra v1 evidence row; missing the `d-doc` pending row |
+| `test_ac14_guard_a_log_without_the_new_events_replays_as_before[rebuild / delta]` | guard |
+
+A scratch R13 reference (logged clear / pending events; `_apply_event_body` applies them; the
+rebuild applies them in log order with `evidence`) passes the file plus test_bug117 / test_log /
+test_factslog_compaction (29), and every bug-216 file + bridge-move + log tests (185). Mutations,
+each failing: drop the clear event (4), drop the pending events (4), the rebuild ignores them (2),
+the delta path ignores them (2) (`scratch-r13-*.log`). {#red-ac14-proof}
+
 ### Satisfiability and mutations {#red-mutations}
 
 A scratch reference implementation (never committed; diffstat in
