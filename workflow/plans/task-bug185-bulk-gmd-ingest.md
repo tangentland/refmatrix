@@ -485,8 +485,8 @@ document, and its per-document hold has the same cause: 29 s for one session car
           `1cf3b9f`; `:5483-5484` on bug-216 at `4b4b96e`). The CLI local path in `cli.py`'s
           `memory_link` does the same `s.add_concept(concept)` + `s.link(linkage, cid,
           m["id"], …)`, and `Store` has no `memory_link` method. `add_concept` writes
-          `kind="concept"`. So the concept side is a concept, the entity side is the memory,
-          and the linkage is the caller's. The entry describes today's shape, not bug-218's
+          `kind="concept"`. So in stored sides (r3 M2, L62) the CONCEPT side is a concept, the
+          ENTITY side is the memory, and the linkage is the caller's. The entry describes today's shape, not bug-218's
           future orientation. **bug-218 removes it when it re-orients `memory_link`**; that is
           on bug-218's DoD, forwarded to spec-t56 by the lead.
         - **What this costs (stated; accepted by the lead as a decision row):** until bug-218
@@ -875,7 +875,7 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
       run, through the test-side fixture, not a production default. It writes an edge
       matching that signature, with a key that doc `a`'s v1 `rel:` line states and v2 drops.
       After v2 the edge is still linked and `rel_unlink_skipped_unowned == 1`. **A second edge
-      (r2 M7)** has the same linkage but a different target KIND, so its signature is not
+      (r2 M7)** has the same linkage but a different ENTITY-SIDE kind, so its signature is not
       listed. It sits on its own `rel:` line, which v2 also drops, and it is unlinked.
       Mutations, each FAILS: the signature check removed (the first edge is unlinked); the
       counter not incremented (the count is 0); the signature matched on linkage alone (the
@@ -890,12 +890,12 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
     bsd-spec-t56 r2 M3, lead).**
     - **Fixture.** A memory `m` is ingested `--as-memory`. Its v1 carries `{#root}`
       `rel: reinforces -> [[c]]`, and **`c` is a CONCEPT, not a memory** (r2 S3 (c)). So the root
-      mirror writes the key `(reinforces, m, c)` with signature `(reinforces, memory,
-      concept)`. The run uses the SHIPPED `UNOWNED_REL_PRODUCERS`, and the test first asserts
+      mirror writes the key `(reinforces, m, c)`: concept side `m` (memory), entity side `c`
+      (concept). In stored sides (r3 M2, L62) its signature is `(reinforces, memory, concept)`. The run uses the SHIPPED `UNOWNED_REL_PRODUCERS`, and the test first asserts
       it equals `[("*", "concept", "memory", "bug-218")]` ([[#r10]]). Leg 1's target `c` is a
       concept, so none of leg 1's keys has a memory on its entity side, and none can match the
       entry. The test also asserts this directly: no leg-1 key's
-      `(linkage, concept kind, entity kind)` matches a listed signature.
+      `(linkage, concept-side kind, entity-side kind)` matches a listed signature.
     - The same key is then written the way bug-218 S3 specifies for `memory_link`: GMD
       orientation, plus its own `linkage_evidence` row with `memory_link`'s detail. bug-218
       merges after this task (`#queue` item 9 vs 5), so the fixture writes it through
@@ -905,11 +905,13 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
     - **Expected:** the edge `(reinforces, m, c)` is still linked; its `memory_link` evidence
       row is untouched (R9's clear removes only `rel: `-detail rows);
       `rel_unlink_skipped_unowned == 0`. The survival is the evidence clause's doing, not the
-      unowned skip's: `(reinforces, memory, concept)` does not match the shipped entry.
+      unowned skip's: `(reinforces, memory, concept)` (concept-side memory, entity-side
+      concept) does not match the shipped entry `("*", "concept", "memory")`.
     - **Second leg (lead ruling, adjusted to the entry's shape).** `m`'s v1 also carries, on a
       NON-root node `{#sec}`, `rel: reinforces -> [[m2]]`, where `m2` is a memory. That gives
-      the key `(reinforces, m#sec, m2)`, a concept-kind node → memory, which is
-      `memory_link`'s shape. The edge has no evidence row besides its own `rel:` row, which R9
+      the key `(reinforces, m#sec, m2)`: concept side the node `m#sec` (`kind="concept"`),
+      entity side the memory `m2`. That is the signature `(reinforces, concept, memory)`,
+      `memory_link`'s stored shape. The edge has no evidence row besides its own `rel:` row, which R9
       clears. v2 drops the line. The edge survives through the shipped wildcard entry:
       `rel_unlink_skipped_unowned == 1`. This is the stated partial-bug-221 cost, observed.
     - **Mutations, each FAILS:** drop R10's evidence check (leg 1's edge is unlinked); ship
@@ -1218,7 +1220,7 @@ rel: implements -> [[bug_registry]] {bug: "bug-221"}
 | r2 S3: census = OTHER producers of an edge whose concept side is a GMD entity, the document's own write set excluded; `*` linkage allowed; shipped list = `("*", "concept", "memory", "bug-218")` (see the next row); AC-15 pins `c` a concept, plus a memory-target leg | [[#r10]], [[#ac-14]], [[#ac-15]] | bounds the lead's c8deca7 rule (its wording was too wide); AC-2's golden is untouched |
 | r2 M4: pending resolution by `DELETE … RETURNING`, linking only the returned rows | [[#r8]] (b), [[#ac-10]] | the per-batch cache can be stale across a released lock |
 | UNOWNED entry pinned to the shape `memory_link` writes at the merge base, `("*", "concept", "memory", "bug-218")`, verified at `1cf3b9f` and `4b4b96e`; bug-218 removes it when it re-orients; the partial-bug-221 cost (a stale node → memory `rel:` key with no other evidence is skipped and counted until then) is accepted | [[#r10]], [[#ac-15]] (second leg on a node → memory key) | the skip list must describe what the unowned producer actually writes, or it either misses that producer's edges or skips edges no producer wrote |
-| bsd-spec-t4 r3 (MEH-only, 4M): M1 AC-10's other writer uses `Store.delete_pending_ref` + `link` + `add_evidence`; M2 the signature is `(linkage, concept-side kind, entity-side kind)`; M3 the census keeps the `rel:`-verb (or `"*"`) condition and excludes the document's whole write set, pass 1's `same_as` ADR alias included. M4 is the lead's | [[#r10]], [[#ac-10]] | the per-row resolver does not survive GREEN; `memory_link`'s source is on the entity side; without the verb condition the census catches pass 1's alias and breaks AC-2's golden |
+| bsd-spec-t4 r3 (MEH-only, 4M), ruled by the lead as L62 (dev master `8bf3660`, [[plan-review-2026-11-13#lead]]: "T4 meets the approval bar"; `approved` is set on this fold, with no further ch-bsd round): M1 AC-10's other writer uses `Store.delete_pending_ref` + `link` + `add_evidence`; M2 the signature is `(linkage, concept-side kind, entity-side kind)`; M3 the census keeps the `rel:`-verb (or `"*"`) condition and excludes the document's whole write set, pass 1's `same_as` ADR alias included. M4 is the lead's | [[#r10]], [[#ac-10]] | the per-row resolver does not survive GREEN; `memory_link`'s source is on the entity side; without the verb condition the census catches pass 1's alias and breaks AC-2's golden |
 | r1 S2 census: no user stop. Every producer of a `rel:`-verb edge writes an evidence row; an in-reach producer is fixed here; an unowned one gets a bug row and is skipped by signature, counted `rel_unlink_skipped_unowned` | [[#r10]], [[#ac-14]], [[#r3]] (a), [[#files-list]] | evidence is the only provenance R10 can read. Making it universal removes the ambiguity, matches bug-218 S3's `memory_link` fix, and the counted skip keeps an unowned edge from being unlinked silently before its owner lands |
 
 **Two further lead rulings, 2026-11-13** (the decision table above records them):
