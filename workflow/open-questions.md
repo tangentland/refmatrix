@@ -26,13 +26,14 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session f0521bff (2026-11-13) {#session-f0521bff}
 
-Next id: **Q11**.
+Next id: **Q12**.
 
 ### Open {#open}
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
-| Q10 | 2026-11-13 | Non-human gate (10.4): with the gate, 62% of prompt-channel injections disappear, 0 labelled uses lost, but 10 explicit R12 uses (2 within minutes, 8 hours later) rode agent-message turns with no other delivery — the pre-registered rule says you decide. In lead sessions, agent reports ARE read by the main loop. | (a) delta-only on non-human turns: send only items not already held (keeps all 10, cuts the 57.5% already-held share), live A/B against the full gate; (b) full gate as specced; (c) gate task-notifications only, keep agent-message | open |
+| Q10 | 2026-11-13 | Non-human gate (10.4): with the gate 62% of prompt-channel injections go, 0 labelled uses lost, 10 explicit R12 uses (2 near-term) rode agent-message turns with no other delivery — rule trips. DEPENDS ON Q11: option (a) needs the dedupe machinery Q11(a) defers. | if Q11=a: (b) full gate shipped inside the live A/B (half of sessions keep injection; the A/B can turn it off); (a) only new items on non-human turns (needs Q11=b); (c) gate task-notifications only | open |
+| Q11 | 2026-11-13 | plan-10 dedupe of the per-prompt payloads. 19.6's context diff as confirmed does almost nothing there (whole blocks never repeat; the half-block rule fires on ~88% of revs; 6-11% of re-deliveries omitted). Waiving three 19.6 rules for these two blocks omits 38-40% of re-deliveries (16-21% of item bytes) at a labelled cost of 3 of 13. | (a) ship 10.4 first, re-measure on human prompts only, then choose; (b) relax the three 19.6 rules for these two blocks and run 10.5; (c) another design (pointer, or delta + names-only line) | open |
 
 ### Answered {#answered}
 
