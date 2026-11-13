@@ -8,7 +8,7 @@ metadata:
   status: approved
   created: 2026-11-13
   updated: 2026-11-13
-  revision: 3
+  revision: 4
 ---
 
 # Task bug-216: the rule docs reach the graph {#root}
@@ -208,3 +208,40 @@ mints a same-named concept. {#rev-3-decision}
 - **AC-6 (live) amended again:** after deploy, run the derive op (announced, backed up); the recount
   (R8) reports misbound rows that now reach a doc via `denotes` as BOUND-VIA-DENOTES, and rows
   reaching nothing fall to the unresolved residue; the rule-doc groups fall to 0 after R4. {#ac-6-rev3}
+
+## Revision 4 (2026-11-13, lead decisions on red-216's RED ambiguities) {#rev-4}
+
+`red-216` committed RED for AC-1..AC-5 (`a08d80b`, `05628d2`; 40 failed, 18 guards pass; a scratch
+reference implementation satisfies all 58). Its ambiguities, decided as the user would:
+
+10. **R10 Pending references re-resolve on ingest.** GMD ingest skips unchanged files (content hash;
+    sync on mtime) and nothing retries a dangling `rel:` target when it later appears, so R4 alone
+    leaves the 247 rule-doc lines unresolved. Every unresolved `rel:` target is recorded as pending
+    (source entity, verb, target ref, file, line); ingesting a doc, memory or anchor whose name
+    matches a pending target resolves those edges (with evidence) and clears them. Same hook point
+    as R7's `denotes` maintenance ("on ingest of X"). Counted and printed; a pending row whose
+    source is purged is removed with it. No forced re-ingest. {#r10}
+11. **R11 Built-in include for the rule docs.** Precedence: an explicit `!path` line, then an
+    explicit ignore pattern, then a BUILT-IN include of `CLAUDE.md` at the root and
+    `.claude/PROJECT_PROFILE.md` when either carries GMD frontmatter, then the built-in
+    hidden-directory and `INGEST_IGNORE_DIRS` rules. Fresh clones and CI therefore pass R3's gate
+    with no ignore file; a store whose ignore file lists `CLAUDE.md` (the fleet today) keeps
+    excluding it until that line is removed (the user's fleet decision). {#r11}
+12. **R12 One ignore list.** `watch.py`'s private `IGNORE_DIRS` additions (`__pycache__`, `dist`,
+    `build`) move into `INGEST_IGNORE_DIRS`; `watch.py` keeps no list of its own (R2). {#r12}
+
+Accepted as RED wrote them: `!dir` is reported on stderr once per spec load; the hidden-dir
+exclusion message names "hidden" and a spec exclusion quotes its pattern; the parity script reads
+the spec from the scanned files' project root; `check-rel-landing.py --json` keys
+(`authored, landed, landed_other_line, file_not_ingested, target_unresolved,
+unresolved_by_target_doc`, plus R8's binding classes); "counted unresolved" is observed through
+`ingest-gmd`'s report. `ingest-gmd <subdir>` finds the project root by walking up to `.refmatrix/`
+(tested). {#rev-4-accepted}
+
+- **AC-11 (R10).** Ingest a doc citing `[[b-doc]]` before b-doc exists → the line is pending;
+  ingest b-doc → the edge exists with evidence and the pending row is gone; purge the citer → its
+  pending rows go. Mutation: never clear pending rows. {#ac-11}
+- **AC-12 (R11).** No ignore file: CLAUDE.md and the profile (with GMD frontmatter) are ingested;
+  without frontmatter they are not; an explicit `CLAUDE.md` ignore line excludes it; `!` beats an
+  explicit ignore. R3's gate exits 0 on a fixture with no ignore file. {#ac-12}
+- **AC-13 (R12).** A `dist/x.md` is ignored by every walker; `watch.py` defines no ignore list. {#ac-13}
