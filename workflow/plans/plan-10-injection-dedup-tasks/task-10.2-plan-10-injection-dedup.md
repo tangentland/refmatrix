@@ -20,7 +20,8 @@ metadata:
 > Depends on: [[task-25.1-recall-hook-byte-budget]] MERGED (GREEN on branch
 > `task-25.1-recall-hook-byte-budget`, clone `/Volumes/littlebig/refmatrix-plan25-1`, spec rev 7,
 > merges after 26.4); [[task-10.3-plan-10-injection-dedup]] (the compaction marker);
-> [[task-10.4-non-human-prompt-gate]] (the family field the A/B splits by); 21.1's events.
+> [[task-10.4-non-human-prompt-gate]] (the family field the A/B splits by);
+> [[task-10.6-injection-presentation]] (kind labels, for the names line); 21.1's events.
 
 rel: part-of -> [[plan-10-injection-dedup]]
 rel: depends-on -> [[task-10.5-versioned-block-gate]]
@@ -28,6 +29,7 @@ rel: depends-on -> [[task-25.1-recall-hook-byte-budget]]
 rel: amends -> [[task-25.1-recall-hook-byte-budget#r4]]
 rel: depends-on -> [[task-10.3-plan-10-injection-dedup]]
 rel: depends-on -> [[task-10.4-non-human-prompt-gate]]
+rel: depends-on -> [[task-10.6-injection-presentation]]
 rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 rel: derives-from -> [[measurement-injection-already-held-2026-11-13#design-replay]]
 rel: derives-from -> [[measurement-injection-already-held-2026-11-13#design-replay-v2]]
@@ -78,7 +80,9 @@ labelled and 6 R12 uses. Chosen: names-only (Q13), applied to non-human turns to
 3. **R3 Recall (25.1 surfaces, exactly).** `recall_pack.pack(..., held: "Collection | None" =
    None)`: rows whose `item_key` is held are taken out of the rows the hook lines are fitted from;
    the remaining rows keep their rank order and 25.1's rules (hook lines, bodies, trailer); one
-   line `still in play: a, b, c (+N)` (h10) follows the header, its bytes reserved before the fit;
+   line `still in play: a, b, c (+N)` (h10) follows the header, its bytes reserved before the fit,
+   its names grouped by 10.6's `telemetry.kind_label` (`still in play: rule a, b · doc c (+N)`), rank
+   order kept within each group;
    `Packed` gains `held_named`, `held_overflow` and `names_span`. The verb (25.1 R5) reads
    `internal.get("dedupe")` (CLI `--stdin-json` only, the way `embedder_policy` rides `**internal`),
    calls `stm.held_items` once and passes `held`. `hook_budget`, `fit_blocks`, the budgets, the

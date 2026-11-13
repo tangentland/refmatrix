@@ -17,7 +17,8 @@ metadata:
 > Status: Pending (drafted 2026-11-13; rev 3 the same day: no injection gate, Q10; ch-bsd spec
 > review next). The id keeps "gate" because other docs address it.
 > Depends on: [[task-25.1-recall-hook-byte-budget]] merged (curator status's budget and the hook
-> command table, R4).
+> command table, R4); [[task-10.3-plan-10-injection-dedup]] (the `.emitted` directory and the
+> marker, for R4's change-only check).
 > Decisions: no separate gate, same dedupe as human prompts (Q10); curator silent (Q9); lead:
 > agent-message turns are not focus turns, an envelope origin field is read first (2026-11-13).
 
@@ -135,7 +136,12 @@ entries that are not tool results):
    changes to `scan_cmd` = `scan_prompt` and `curator_cmd` = `curator_status` (per-hook cap, R0
    outcome (A)); budgets unchanged. With `--stdin-json` it reads the envelope; on a non-human family
    it prints nothing and writes its `cli.log` row with `prompt_family` and `gated:
-   "skipped_non_human"`. Without `--stdin-json` (interactive) nothing is gated. {#r4}
+   "skipped_non_human"`. Without `--stdin-json` (interactive) nothing is gated.
+   **Change-only (agreed rule, 2026-11-13):** on a human prompt it prints only when its content
+   differs from its last print in the session: the sha of its rendered text is kept in
+   `stm/<session>.emitted/curator_status.json` (one writer: this entry, written after the print;
+   10.3's directory); same sha and no compaction marker since → nothing printed, the row carries
+   `gated: "skipped_unchanged"`; a missing or unreadable file or marker → it prints. {#r4}
 5. **R5 Before / after.** {#r5}
    - **Before (at RED):** [[#census-querylog]]'s table recomputed by the GREEN `ambient_family`
      over the same `query.log` clones; the numbers must equal the census (a difference is resolved
@@ -171,8 +177,10 @@ values are synthetic. {#acceptance-lead}
 4. **AC-4 Curator status.** The generated config has `rmx curator status --stdin-json` as its own
    UserPromptSubmit entry and `scan_cmd` no longer contains it; with a 30-path curator queue, an
    `<agent-message` envelope prints nothing and writes one row with `gated: "skipped_non_human"`;
-   a human prompt prints the queue within `budget("curator_status")`; `rmx install-hooks --check` is
-   clean.
+   a human prompt prints the queue within `budget("curator_status")`; a second human prompt with
+   the same queue prints nothing and writes `gated: "skipped_unchanged"`; a changed queue prints
+   again; after the generated PreCompact marker entry the same queue prints again; `rmx
+   install-hooks --check` is clean.
 5. **AC-5 One predicate.** A structural test parses `src/refmatrix/`: the seven openings appear as
    string literals only in `terms.py`; `cli._is_ambient_prompt` does not exist; `stm.is_ambient_text`
    returns True for every AC-1 positive; scan-prompt and the recall verb call `ambient_family` only
@@ -181,8 +189,9 @@ values are synthetic. {#acceptance-lead}
    AC-3); tag-boundary check dropped (AC-1); matching anywhere in the text (AC-1); origin ignored
    (AC-1); `cli._is_ambient_prompt` kept with the old three-prefix tuple and still called by the
    input hook (AC-3, AC-5); an injection branch on the family in scan-prompt (AC-2, AC-5); curator
-   status left inside `scan_cmd` (AC-4); curator's skip not counted (AC-4); `prompt_family` missing
-   from a row (AC-2).
+   status left inside `scan_cmd` (AC-4); curator's skip not counted (AC-4); an unchanged queue
+   printed twice (AC-4); the marker ignored by the change-only check (AC-4); `prompt_family`
+   missing from a row (AC-2).
 
 ## Files to modify {#files}
 

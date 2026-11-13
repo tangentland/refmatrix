@@ -31,6 +31,7 @@ rel: specifies -> [[task-10.2-plan-10-injection-dedup]]
 rel: specifies -> [[task-10.3-plan-10-injection-dedup]]
 rel: specifies -> [[task-10.4-non-human-prompt-gate]]
 rel: specifies -> [[task-10.5-versioned-block-gate]]
+rel: specifies -> [[task-10.6-injection-presentation]]
 rel: derives-from -> [[measurement-injection-already-held-2026-11-13]]
 rel: derives-from -> [[measurement-injection-already-held-2026-11-13#design-replay]]
 rel: derives-from -> [[measurement-injection-already-held-2026-11-13#design-replay-v2]]
@@ -163,6 +164,8 @@ but never dedupes; PreCompact and explicit pulls neither.
 | L2 | Envelope origin field (lead) | read before the prefix table when present | 2026-11-13 |
 | L3 | Held rules (lead) | cross-block from earlier prompts; compaction the only reset; names line never refreshes held; scan in item units | 2026-11-13 |
 | L4 | "Earlier prompt" (architect) | by `prompt_sha` and `PRE_PROMPT_SKEW_S`, not the STM turn (agent-message turns get payloads but are not STM turns) | 2026-11-13 |
+| P1 | Presentation (user-agreed rules) | kind label on every item, kind-labelled headers, rank order kept; the composite uses 19.6 R5's `unchanged` line (whole-block versioning fits it; Table A failed only for the per-prompt lists) — task 10.6 | 2026-11-13 |
+| P2 | Curator status (user-agreed rule) | prints only when its content changed since its last print in the session (10.4 R4) | 2026-11-13 |
 | W1 | With/without (user asked) | offline: the gate failed (Q10); live: 10.2's `dedupe` vs `full` A/B, nested with the handhold experiment | 2026-11-13 |
 
 ## Task Breakdown {#task-breakdown}
@@ -171,12 +174,14 @@ but never dedupes; PreCompact and explicit pulls neither.
 |---------|-------|------------|
 | 10.1 | **Measure the overlap** — consecutive-call replay (complete; history) | plan 9 |
 | 10.4 | **Non-human predicate** — focus graph, family label on hook rows | 25.1 merged |
-| 10.4b | **Curator status silent on non-human turns** (Q9), its own hook entry; in [[task-10.4-non-human-prompt-gate#r4]] | 10.4 |
+| 10.4b | **Curator status**: silent on non-human turns (Q9), change-only on human ones; its own hook entry; in [[task-10.4-non-human-prompt-gate#r4]] | 10.4; 10.3 |
 | 10.3 | **Compaction marker** — 19.6 R8a's writer; the only reset of the held set | `master` |
 | 10.5 | **Precondition** — the design replay (PASSED, v1/v2) and a 50-probe read-back test (to run) | dd-10r's replay (done) |
-| 10.2 | **Names-only dedupe** + the live A/B | 25.1 merged; 10.3; 10.4; 10.5 GO |
+| 10.6 | **Injection presentation** — kind labels on every item, kind-labelled headers, rank order kept; the STM composite sends `rev N unchanged` | 25.1 merged; 10.3 |
+| 10.2 | **Names-only dedupe** + the live A/B | 25.1 merged; 10.3; 10.4; 10.6; 10.5 GO |
 
-**Order:** 10.3 and 10.5's probe can start now; 25.1 → 10.4 (+10.4b) → 10.2. {#order}
+**Order:** 10.3 and 10.5's probe can start now; 25.1 → 10.6 → 10.4 (+10.4b) → 10.2. 10.6 lands
+before 10.2 so the names line is labelled from its first commit. {#order}
 
 ## Execution contract {#execution}
 
