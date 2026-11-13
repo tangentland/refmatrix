@@ -139,6 +139,21 @@ session history. Once transcripts are archived or removed, un-ingested sessions 
 `rmx session ingest`, which reads `*.jsonl` only. That makes ingest time-sensitive in a way nothing
 currently says. {#amend-sessions-durability}
 
+## Decision log {#decision-log}
+
+- **2026-11-14 (lead, L61, on the user's Q9 of 2026-11-13):** the four name gates that
+  [[#not-exclusion]] lists are replaced by one module, `memory_layout`. It has two facets:
+  `is_operational` (by mtype, name prefix and path) and `is_session_card`, which keeps
+  `context`'s `--include-sessions` filter. `workflow/` stays in the project partition, as the user
+  put it: "as long as it is useful and doesn't skew whats returned". Derivations exclude
+  operational content from their inputs, and output lists rank it last. Its statistical effect is
+  measured by the DOESN'T SKEW gate of [[task-dq1-operational-content-out-of-graph#r4]], not
+  assumed away by a partition. [[#isolate]]'s rule still governs session cards. This ADR's
+  `depends-on` moves to the superseding memory when that memory is written (the task's R5).
+  {#d-2026-11-14-dq1}
+
+rel: derives-from -> [[task-dq1-operational-content-out-of-graph]]
+
 ## What this ADR deliberately does NOT decide {#deferred}
 
 **Whether session partitions are embedded.** viascope's session vectors cost 233MB and nobody has

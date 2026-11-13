@@ -7,31 +7,30 @@ metadata:
   node_type: task
   status: drafting
   created: 2026-11-13
-  updated: 2026-11-13
-  revision: 4
-  updated_by: "rev 4 reconciled with L60 (dev master 1356a06)"
+  updated: 2026-11-14
+  revision: 5
 ---
 
 # Task D-Q1: operational content stays in the partition, out of the skew {#root}
 
-> Status: Drafting (2026-11-13, spec wave G22). Revision 4: revision 3's Q9 direction with the
-> lead's rulings on revision 2's open items ([[#rulings]]); revisions 1 (`f19a28b`, ingest
-> exclusion) and 2 (`d9296bd`) are superseded ([[#history]]).
-> Track: T6 ([[plan-review-2026-11-13#queue]]). [[#r1]]-[[#r3]] have no dependency on plan-22; the
-> lead places them in the queue.
+> Status: Drafting. Revision 5 (2026-11-14) answers ch-bsd `bsd-spec-t56-r3` under the lead's
+> L61 rulings ([[#rev-5]]); earlier revisions are in [[#history]].
+> Track: T6. Queue slot after bug-216; the lead places it in the POP rewrite (L61 M6).
 > Depends on: bug-216 merged and live (a bare doc id binds the doc, so a `workflow/` doc and its
-> anchors are found by name; `denotes` ties a same-named concept to it).
+> anchors are found by name). Nothing here depends on plan-22.
 > Nothing is excluded at ingest and nothing is deleted.
 
 rel: implements -> [[plan-review-2026-11-13#d-q1]]
-rel: derives-from -> [[plan-review-2026-11-13#spec-gaps]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
 rel: derives-from -> [[open-questions]]
 rel: depends-on -> [[task-bug216-rule-docs-in-graph#r6]]
-rel: depends-on -> [[task-bug216-rule-docs-in-graph#r7-denotes]]
 rel: supersedes -> [[feedback_operational_content_not_in_graph]]
+rel: amends -> [[refmatrix/adr-0003-canonical-partition-layout#not-exclusion]]
+rel: depends-on -> [[task-23.0-test-sandbox]]
 rel: depends-on -> [[feedback_converge_repeated_shapes]]
 rel: depends-on -> [[feedback_measure_the_path_users_run]]
 rel: depends-on -> [[feedback_go_no_go_ranges_not_predrop]]
+rel: depends-on -> [[feedback_clean_corpus_hides_a_dead_gate]]
 rel: depends-on -> [[project_fleet_hooks_found_by_marker_not_hub]]
 
 ## The decision {#decision}
@@ -52,276 +51,394 @@ skew whats returned". So:
 - **Partitions.** This store has `refmatrix` (code, docs, memory and `workflow/`) and
   `sessions-refmatrix` (session cards, ADR-0003 `#isolate`). `workflow/` is not ignored here.
   {#facts-partitions}
-- **Four operational gates exist, none sees `workflow/`, and they disagree:** {#facts-gates}
-  - `pagerank._OPERATIONAL_RE = ^(session|digest)[-_]`, used by `build_adjacency(
-    exclude_operational=True)` (the `pagerank` derive pass) and imported by `ppr.py`, `enrich.py`
-    and `net.py`. It misses save-states (`savestate_*`, mtype `session/recall-state`) and STM
-    digests (`focus_summary_*`, mtype `session/digest`), so the `pagerank` pass keeps both.
-  - `consolidate._OPERATIONAL_RE` is a copy (`brief.py` re-exports it), beside
-    `DEFAULT_EXCLUDE_MTYPES = ("session", "session/*", "digest", "digest/*", "subject")` for the
-    memory compile.
-  - `scan._is_operational_anchor`: `savestate_`, `session-`, `focus_summary_` and their
-    `#anchor` sections, kept out of scan-prompt's PPR expansion unless they are seeds.
-  - `context._is_session_card` (`session-` only) sorts session cards after docs in
-    `_rank_entries`.
+- **Four operational gates exist, they disagree, and none sees `workflow/`.** Each plays one of two
+  roles: excluding an entity from a derivation's inputs, or filtering an output list. {#facts-gates}
+  - `pagerank._OPERATIONAL_RE = (?i)^(session|digest)[-_]`. `build_adjacency(
+    exclude_operational=True)` (the `pagerank` derive pass) excludes matching entities from its
+    inputs. `ppr.py` (`:229`, `:301`), `net.py:195` and `enrich.py:163` import it and DROP
+    matching entities from their output lists. It misses save-states (`savestate_*`, mtype
+    `session/recall-state`) and STM digests (`focus_summary_*`, mtype `session/digest`), so the
+    `pagerank` pass keeps both.
+  - `consolidate._OPERATIONAL_RE` is a copy. It filters the compile's input rows (`:130`, beside
+    `DEFAULT_EXCLUDE_MTYPES`) and its label candidates (`:210`). `brief.py` re-exports it as
+    `OPERATIONAL_RE` and skips findings with it (`:323`, `:406`).
+  - `scan._is_operational_anchor` (`savestate_`, `session-`, `focus_summary_`, case-sensitive)
+    drops non-seed members from scan-prompt's PPR expansion (`scan.py:825`).
+  - `context._is_session_card` (`session-`) is a FILTER at `context.py:360`, `:671` and `:834`
+    (session cards are hidden unless `--include-sessions`) and a sort key at `:1265` for the
+    cards that were opted back in.
+- **An anchor node carries its doc's path.** `ingest_gmd.py:1539-1542` upserts every
+  `<doc>#<anchor>` concept with the doc's `path`. A path rule therefore covers a doc's anchors.
+  {#facts-anchor-path}
+- **The read-side caches** (`concept_df` and the BM25 statistics) are dropped together by
+  `Store._invalidate_content_rank_caches` (`store.py:5292-5301`) at write boundaries. They are
+  keyed on the partition id only. {#facts-caches}
 - **Memory recall reads `mentions`.** `recall.hybrid_memory_recall` fuses dense ANN with
-  `content_rank` (BM25 over `mentions`). That is how a save-state is recalled and how a
-  `workflow/` doc is found by a phrase, so `mentions`, BM25 and embeddings stay untouched.
+  `content_rank` (BM25 over `mentions`), so `mentions`, BM25 scoring and embeddings stay
+  untouched. That is how save-states are recalled and how `workflow/` docs are found by phrase.
   {#facts-recall}
+- **Existing tests pin the gates:** `tests/test_scan_prompt_dedup.py:20,70-75` (imports
+  `_is_operational_anchor`; four members, and the non-members `project_scan_prompt_junk_gate#root`
+  and `scan-prompt`), `tests/test_brief_detectors.py:228` (`brief.OPERATIONAL_RE is
+  consolidate._OPERATIONAL_RE`), and `tests/test_plan7_10_remedy_r4.py:267` (uses
+  `brief.OPERATIONAL_RE`). {#facts-tests}
 
 ## Requirements {#requirements}
 
 1. **R0 Inventory, before the build.** {#r0} Every reader that aggregates `mentions` or typed
-   edges into a CONCEPT weight is listed in the summary as "filtered by R1" or "not a concept
-   weight, unchanged" (with the reason; BM25 and embeddings are in the second group by decision).
-   The list closes only when an `rmx grep` for the four gates' names and the callers of
-   `build_adjacency`, `concept_df` and `co_occurrence` finds no unlisted site.
-2. **R1 One predicate, `memory_layout.is_operational`.** {#r1}
-   - `memory_layout.is_operational(*, name, mtype=None, path=None, project_root=None,
-     workflow_docs=frozenset()) -> bool` is True when:
+   edges into a CONCEPT weight, and every site that filters or orders an output list by an
+   operational test, is listed in the summary against [[#r2]]'s table, with the reason for each
+   placement. BM25 scoring and embeddings are "unchanged by decision". The list closes only when an
+   `rmx grep` for the four gates' names, for `OPERATIONAL_RE`, and for the callers of
+   `build_adjacency`, `concept_df` and `co_occurrence` finds no site outside the table.
+2. **R1 One predicate module, two facets: `memory_layout`.** {#r1}
+   - **`is_operational(*, name, kind=None, mtype=None, path=None, project_root=None) -> bool`** is
+     True when:
      - `mtype` is `session`, `session/*`, `digest` or `digest/*`; or
      - the name's base (before `#`) starts with `session-`, `session_`, `digest-`, `digest_`,
-       `savestate_` or `focus_summary_` (the union of today's name gates; a curated memory whose
-       name merely contains "session", such as `project_session_0328`, stays out); or
-     - `path`, relative to `project_root`, starts with `workflow/` (path-based, never a segment
-       match, so `src/pkg/workflow/x.py` stays out); or
-     - the name's base is in `workflow_docs` (the `#anchor` concepts of a `workflow/` doc), or the
-       entity is a concept that `denotes` one (bug-216 R7).
-   - `memory_layout.operational_ids(con, *, project_root) -> frozenset[int]` loads the
-     `workflow_docs` names once and applies the predicate to a partition, for SQL-side callers.
-     It is cached per (partition, snapshot) like `concept_df`.
+       `savestate_` or `focus_summary_`, matched CASE-INSENSITIVELY as the old `(?i)` regex did
+       (`Session-x` and `DIGEST_x` match). A curated memory whose name merely contains "session",
+       such as `project_session_0328`, stays out; or
+     - `path`, relative to `project_root`, starts with `workflow/` (a prefix of the relative path,
+       never a segment match, so `src/pkg/workflow/x.py` stays out). Because an anchor node
+       carries its doc's path ([[#facts-anchor-path]]), a `workflow/` doc's anchors are covered by
+       this rule; no name-set rule is needed.
+
+     Operational status comes from mtype, name prefix and path only. A concept that `denotes` a
+     `workflow/` doc is NOT operational: a term concept such as `exploration` (the id of
+     `workflow/templates/exploration.md`) is also what `docs/` and `src/` mention (r3 S2).
+   - **`is_session_card(name) -> bool`**, the separate session-card facet (r3 S1): the name's base
+     starts with `session-`, case-insensitively. It drives ONLY `context`'s `include_sessions`
+     filter, which stays exactly what it is today.
+   - **`operational_ids(store) -> frozenset[int]`**: the ids of the bound partition's entities
+     for which `is_operational` holds (name, kind, mtype and path read in one query; project root
+     from the store). It is cached on the `Store` instance under `_operational_ids_cache`, keyed by
+     the partition id. `Store._invalidate_content_rank_caches` drops it with `_conceptdf_cache`
+     (its attribute tuple gains the name), and a reader `Store` opened on a swapped snapshot starts
+     with no cache, so a newly ingested `workflow/` doc is a member at the next read (r3 M4).
    - **Convergence.** `pagerank._OPERATIONAL_RE`, `consolidate._OPERATIONAL_RE`,
-     `scan._is_operational_anchor` and `context._is_session_card` are removed. `pagerank`, `ppr`,
-     `enrich`, `net`, `consolidate`, `brief`, `scan` and `context` call the predicate. The
-     compile's `subject` exclusion stays local (it is compile-specific). No regex, prefix list or
-     path test for operational content remains outside `memory_layout.py`.
-3. **R2 The derivations it applies to, named.** {#r2}
-   - **`pagerank` pass** (stamped): `build_adjacency(exclude_operational=True)` drops every
-     `operational_ids` member, its nodes and its edges. This is where the `savestate_` /
-     `focus_summary_` miss ([[#facts-gates]]) is fixed.
-   - **`memory-compile` and `memory-compile:pattern`** (stamped): their operational test is the
-     predicate. Save-states and digests were already excluded by mtype; a `workflow/` doc is not a
-     memory row.
-   - **`Store.concept_df`** (the co-mention base rate `assoc.py` reads): counts only
-     non-operational entities.
-   - **`QueryEngine.co_occurrence`** (the co-mention counts `graphread` serves): skips
-     operational entities.
+     `brief.OPERATIONAL_RE`, `scan._is_operational_anchor` and `context._is_session_card` are
+     removed; the sites in [[#r2]] call `memory_layout`. The compile's `subject` exclusion and
+     brief's own process-node gates (`_WORKFLOW_NODE_RE`, `_MEMORY_ID_RE`, name rules about
+     authored nodes, not operational content) stay where they are.
+3. **R2 Every site, its role, its call form.** {#r2} Derivation sites EXCLUDE operational ids from
+   their inputs. Output sites never remove an entry; they rank operational entries LAST (a stable
+   partition: each part keeps its order). The one exception is `context`'s session-card filter,
+   which is today's behaviour, unchanged (r3 S1, S3).
+
+   | site | role | call form | what a member gets |
+   |---|---|---|---|
+   | `pagerank.build_adjacency(exclude_operational=True)`, the stamped `pagerank` pass | derivation | `operational_ids(store)` | excluded from the adjacency (nodes and edges) |
+   | `consolidate`'s compile input (`:130`), the stamped `memory-compile` and `memory-compile:pattern` passes | derivation | `is_operational(name=, mtype=)` per memory row | excluded from clustering (as today for session/digest mtypes) |
+   | `Store.concept_df` | derivation | `operational_ids(store)` | not counted in any concept's df |
+   | `QueryEngine.co_occurrence` | derivation | `operational_ids(store)` | not counted as a co-mention |
+   | `ppr.py:229`, `:301` | output | `operational_ids(store)` membership | ranked last (today: dropped) |
+   | `net.py:195` | output | `operational_ids(store)` membership | ranked last (today: dropped) |
+   | `enrich.py:163` | output | `operational_ids(store)` membership | ranked last (today: dropped) |
+   | `scan.py:825`, scan-prompt's PPR expansion | output | `operational_ids(store)` membership; seeds exempt | ranked last within the expansion before `max_concepts` cuts it (today: dropped) |
+   | `brief.py:323` (contradicted), `:406` (orphan concept) | output | `is_operational(name=)` (endpoints are names; a `workflow/` endpoint is caught by `_WORKFLOW_NODE_RE`, unchanged) | findings with an operational endpoint are listed after the others and counted `operational` (today: skipped); see [[#open-items]] |
+   | `consolidate.py:210`, compile label candidates | output | `is_operational(name=)` | a candidate only when no other candidate exists |
+   | `context.py:360`, `:671`, `:834` | output, FILTER | `is_session_card(name)` | session cards hidden unless `--include-sessions` (unchanged) |
+   | `context._rank_entries` (`:1265`), the ref-level hit lists (`context.py:778/792`) and the grep floor's hits | output | `operational_ids(store)` membership | ranked last; the named entity is exempt ([[#r3]]) |
+   | the recall pack (`rmx memory recall --stdin-json … --scope both`) | output | `is_operational(name=, mtype=)` per memory | ranked last among the memories; the named one is exempt |
+
    - **Staleness:** `_DERIVE_PASS_MODULES` gains `memory_layout.py` for `pagerank` and both
-     compile passes, so a change to the predicate marks them behind code.
+     compile passes, so a predicate change marks them behind code.
    - **Untouched:** the `ingest` and `gmd` passes (entities, anchors, `rel:` edges, `mentions`),
-     BM25 (`content_rank`, `_mentions_bm25_stats`) and embeddings, so `workflow/` docs,
-     save-states and digests stay findable by name, anchor, `rel:`, phrase and recall.
-4. **R3 Ranking: operational hits below code/docs unless the query names them.** {#r3}
-   - **Default `rmx context`.** In `context._rank_entries` the "docs first" key becomes
-     "non-operational first": in each co-mention linkage an operational entry sorts after every
-     other (hits before non-hits stays the first key). The ref-level hit lists (`content_rank`,
-     `context.py:778/792`, and the grep floor's hits) are stably partitioned the same way: each
-     part keeps its order, operational hits come last, and a token budget cuts them first.
-     Nothing is removed.
-   - **scan-prompt** (UserPromptSubmit push hook): its injected entries are partitioned the same
-     way. Its PPR expansion keeps dropping operational members unless they are seeds.
-   - **The recall pack** (`rmx memory recall --stdin-json … --scope both`, the push hook):
-     operational memories (save-states, digests) are partitioned after the other memories.
-     `rmx recall-state` and the SessionStart save-state leg, which ask for save-states by design,
-     are unchanged.
-   - **The exemption.** A query names an operational entity when a ref, seed or query term is an
-     exact match for its name, its `<doc>#<anchor>` name, or its path under `workflow/` (resolved
-     by bug-216 R6's rules). Only the named entity and, for a doc, its anchors are ranked like
-     non-operational hits. Every other operational hit stays last.
-5. **R4 Pre-registered acceptance, frozen in this spec before any build.** {#r4} Once this spec is
-   approved, the sets' rules, the bands and the actions do not change after a run
-   ([[feedback_go_no_go_ranges_not_predrop]]).
-   - **Stores.** Throwaway only, under a short `mkdtemp()` root, built from one repo commit plus the
-     memory bridge:
-     - `W` keeps `workflow/` (a copy of this store);
-     - `N`, the reference, is the same build with `workflow/*` in the throwaway's ignore spec.
-     Each is measured on the pre-change code (BEFORE) and on the post-change code (AFTER),
-     through the production entry points (`rmx context`, `rmx scan-prompt`, the recall hook's
-     `rmx memory recall --stdin-json`, `rmx neighbors`) against the throwaway's own daemon
-     ([[feedback_measure_the_path_users_run]]).
+     BM25 scoring and its statistics (only the SKEW re-tune touches the statistics, [[#r4]]), and
+     embeddings.
+4. **R3 The exemption: an exact name or anchor names it.** {#r3} A query names an operational
+   entity when a ref, seed or query term is an exact (case-folded) match for its name, its
+   `<doc>#<anchor>` name, or its path under `workflow/`, resolved by bug-216 R6's rules. Only that
+   entity, plus a named doc's anchors, ranks like a non-operational entry; every other operational
+   entry stays last. `rmx recall-state` and the SessionStart save-state leg ask for save-states by
+   design and are unchanged.
+5. **R4 Pre-registered acceptance, frozen in this spec before any build (L60, L61).** {#r4} Once this
+   spec is approved, the recipe, the sets' rules, the formula, the bands and the actions do not
+   change after a run ([[feedback_go_no_go_ranges_not_predrop]]).
+   - **The recipe (r3 S4).** Everything runs inside task 23.0's sandbox
+     ([[task-23.0-test-sandbox]]): redirected `$HOME` and `RMX_HOME`, the local model cache only
+     (`HF_HUB_OFFLINE`), the sandbox guard on.
+     - **The memory dir is a COPY** of this project's memdir under the sandbox. The bridge is
+       pointed at the copy, never at `~/.claude/projects/…/memory`, so it can only resolve to the
+       sandbox store.
+     - **W and N are both FRESH builds of one commit's tree** (`git archive <sha>` unpacked into
+       the sandbox; no worktree, and never a copy of the live store). Each gets its own throwaway
+       store and daemon, and both run the same steps: `rmx ingest`, the bridge over the memdir
+       copy, `rmx pagerank`, and `rmx memory compile --apply` for both scopes. They differ ONLY in
+       N's `.refmatrix/.refmatrix_ignore` line `workflow/*`.
+     - **BEFORE** builds W and N from the RED commit (pre-change code). **AFTER** builds them from
+       the GREEN head. The query sets are the same for both.
+     - Measurement goes through the production entry points (`rmx context`, `rmx scan-prompt`,
+       `rmx neighbors`) against each throwaway daemon ([[feedback_measure_the_path_users_run]]).
    - **The sets, drawn without looking at results.** A committed script,
-     `eval/dq1/draw_queries.py`, draws with seed `20261113` and reads entity names, paths and
-     headings only, never a ranking:
-     - CODE/DOC set, drawn from `N` only: 40 `kind=code` symbol names of at least 4 characters
-       from `src/`, 20 GMD doc ids under `docs/`, and 20 three-word phrases (the rarest three body
-       terms of 20 sampled `docs/` sections).
+     `eval/dq1/draw_queries.py`, draws with seed `20261113` and reads names, paths, headings and
+     corpus term frequencies only, never a ranking:
+     - CODE/DOC set, drawn from N only: 40 `kind=code` symbol names of at least 4 characters from
+       `src/`, 20 GMD doc ids under `docs/`, and 20 three-word phrases (the rarest three body terms
+       of 20 sampled `docs/` sections);
      - WORKFLOW set: 20 doc ids (plans, task specs, ch-bsd reports), 20 `<id>#<anchor>` refs, 10
        `rel:` edges from a non-`workflow/` doc into a `workflow/` doc, and 10 three-word
-       rarest-term phrases from sampled `workflow/` sections. This set is read from `W`'s
-       `workflow/` paths, the only place they exist, by the same seeded script, which still never
-       reads a ranking.
+       rarest-term phrases from sampled `workflow/` sections. It is read from W's `workflow/`
+       paths, the only place they exist.
+
      Both sets and the script are committed in the RED commit before any `src/` change, and that
      sha is cited in the summary.
-   - **DOESN'T SKEW.** For each CODE/DOC query, compute the Jaccard of the top-10 entity names of
-     `W` (AFTER) and `N` (AFTER) on `rmx context`'s ref-level hit list and on scan-prompt's
-     injected entity set. When `N` returns fewer than 10, use `k = len(N's list)`. A `workflow/`
-     or other operational entity in `W`'s top-k counts as a mismatch. Each surface reports its
-     MEAN and its MINIMUM, with every per-query value. BEFORE is recorded beside it.
-   - **USEFUL.** On `W` (AFTER), measured the same way BEFORE:
-     - by name: `rmx context <id>` resolves to the doc, for 20/20;
-     - by anchor: `rmx context <id>#<anchor>` resolves to the anchor, for 20/20;
-     - by `rel:`: `rmx neighbors <workflow-id>` lists the citing doc, for 10/10;
-     - by BM25: the target doc is in the default `rmx context "<phrase>"` output for at least
-       8/10;
-     - no count is lower AFTER than BEFORE.
-   - **Bands and actions (lead ruling, 2026-11-13):**
+   - **DOESN'T SKEW (r3 S5).** For each CODE/DOC query and surface (`rmx context`'s ref-level hit
+     list, and scan-prompt's injected entity set):
+     - `k = min(10, len(N's list))`;
+     - `TW` and `TN` are the top-k entries of W's and N's lists, compared by entity identity
+       `(kind, name, path relative to the project root)`, since ids differ between builds;
+     - `OP` is every entry of `TW ∪ TN` that is operational under [[#r1]].
+
+     The score is **`J = |(TW ∩ TN) − OP| / |TW ∪ TN|`**: an operational entry counts in the union
+     and never in the intersection. Each surface reports its MEAN, its MINIMUM and every per-query
+     value. BEFORE is recorded beside AFTER.
+   - **USEFUL.** On W, AFTER, measured the same way BEFORE:
+     - name: `rmx context <id>` resolves to the doc, for 20/20;
+     - anchor: `rmx context <id>#<anchor>` resolves to the anchor, for 20/20;
+     - `rel:`: `rmx neighbors <workflow-id>` lists the citing doc, for 10/10;
+     - BM25: the target doc is in the default `rmx context "<phrase>"` output, for at least 8/10;
+     - no count may be lower AFTER than BEFORE.
+   - **Bands and actions (L60; L61 S6):**
 
      | gate | result | action |
      |---|---|---|
      | DOESN'T SKEW | mean ≥ 0.90 AND no query < 0.60, on each surface | pass |
-     | DOESN'T SKEW | otherwise, with every mean ≥ 0.80 and every query ≥ 0.45 (a mean in 0.80-0.90 or a query in 0.45-0.60) | re-tune ONCE: extend R1's filter to BM25's corpus statistics (`_mentions_bm25_stats` N and avgdl, and the per-term df `content_rank` reads), the only change that touches skew outside R2/R3; re-measure on the same sets; the pass row decides, otherwise report |
+     | DOESN'T SKEW | otherwise, with every mean ≥ 0.80 and every query ≥ 0.45 | re-tune ONCE: extend [[#r1]]'s exclusion to BM25's corpus statistics (`_mentions_bm25_stats` N and avgdl, and the per-term df `content_rank` reads), then re-measure on the same sets; the pass row decides, otherwise report |
      | DOESN'T SKEW | a mean < 0.80 or a query < 0.45, or still failing after the re-tune | report to the user with every per-query value |
-     | USEFUL | name 20/20, anchor 20/20, `rel:` 10/10, BM25 phrase ≥ 8/10, and no count lower than BEFORE | pass |
-     | USEFUL | any bar missed | re-tune ONCE: the exemption also matches a query equal to a workflow doc's exact title; re-measure on the same sets; the pass row decides |
-     | USEFUL | still failing after the re-tune | report to the user with every miss |
+     | USEFUL | every bar met, no drop from BEFORE | pass |
+     | USEFUL | only the BM25 bar missed | re-tune ONCE, BM25 channel only: [[#r3]]'s exemption also covers a query whose terms ALL appear in one `workflow/` doc's title or in one of its section headings (that doc only), then re-measure; the pass row decides, otherwise report |
+     | USEFUL | a name, anchor or `rel:` miss, or any drop from BEFORE | report to the user straight away: a resolution miss is a defect, not a band (rev 3's rule, restored) |
 
      A re-tune is one pre-registered change, measured once; the sets never change.
-   - **Report.** `workflow/measurements/dq1-skew-useful-<date>.md` (GMD): the sets' sizes and
-     sha, every per-query value for both surfaces and both builds, the USEFUL hits and misses,
-     each band reached, any re-tune and its result, and the commit and store build of each run.
+   - **Report.** `workflow/measurements/dq1-skew-useful-<date>.md` (GMD): the recipe's commit shas,
+     the sets' sizes and sha, every per-query `J` for both surfaces and both builds, the USEFUL
+     hits and misses, each band reached, and any re-tune with its result.
 6. **R5 The superseding memory.** {#r5} `feedback_operational_content_same_partition_not_skewing`,
-   GMD per MEMORY-RULES (type `feedback`, fresh id, `created` frozen), with `rel: supersedes ->
-   [[feedback_operational_content_not_in_graph]]` (lead ruling: the old memory's "exclude at
-   INGEST" is reversed for `workflow/`, and MEMORY-RULES' tree makes a reversed rule a supersede;
-   the old file stays as history, and its `MEMORY.md` line is replaced by the new one). It is written at approval, not before, then
-   linted, indexed in `MEMORY.md`, and verified by a `rmx memory recall` for a phrase unique to
-   it. Text: [[#appendix-memory]].
-7. **R6 Rollout: the derive re-runs.** {#r6}
-   - **Stores:** this repo's store; every fleet repo found by the installed hook marker
+   GMD per MEMORY-RULES (type `feedback`, fresh id, `created` frozen), with
+   `rel: supersedes -> [[feedback_operational_content_not_in_graph]]`. The old memory's "exclude at
+   INGEST" is reversed for `workflow/`, and MEMORY-RULES' tree treats a reversed rule as a
+   supersede. Steps, at approval and not before:
+   - the old file stays as history, and its `MEMORY.md` line is replaced by the new one;
+   - the new file is linted and verified by a `rmx memory recall` for a phrase unique to it;
+   - in the same commit, ADR-0003's `rel: depends-on -> [[feedback_operational_content_not_in_graph]]`
+     is repointed to the new memory. It cannot be repointed earlier, because a link to a memory
+     that does not exist yet fails the repo gate (r3 M5).
+
+   Text: [[#appendix-memory]].
+7. **R6 Rollout: derive re-runs on project stores.** {#r6}
+   - **Stores:** this repo's store, and every fleet repo found by the installed hook marker
      (`grep -l "refmatrix: refresh" <repo>/.git/hooks/post-commit` over `~/github`,
      `~/claude_tools` and `~/enduris`, skipping `_frameworks_and_libraries`;
-     [[project_fleet_hooks_found_by_marker_not_hub]], the bug-209 rule) that holds a
-     `.refmatrix/` catalog; and the global store `~/.refmatrix/`. The list is printed first.
-   - **Per store, after the deploy:** re-run the `pagerank` pass and both compile passes through
-     the store's daemon (the compile with its own `--apply` rules; 26.6), and record the stamps
-     in `workflow/measurements/dq1-rollout-<date>.md`. The cached aggregates (`concept_df`,
-     `operational_ids`) refresh on their own.
-   - **Gates:** this repo's store re-derives with the deploy (announced). Each OTHER fleet store's
-     live re-derive is user-gated and recorded as done (with the date of the user's go) or `held`.
-     No ignore file changes, and no row is deleted.
+     [[project_fleet_hooks_found_by_marker_not_hub]], the bug-209 rule) that holds a project
+     `.refmatrix/` catalog. The list is printed first.
+   - **Per store, after the deploy:** `rmx pagerank` and both compile passes run through the
+     store's daemon, and the stamps go in `workflow/measurements/dq1-rollout-<date>.md`. The caches
+     refresh on their own.
+   - **Gates:** this repo's store re-derives with the deploy (announced). Each other fleet store's
+     live re-derive is user-gated, and is recorded with the date of the user's go or as `held`.
+   - **The global store `~/.refmatrix/` is out of this rollout (r3 M6).** It is a deferral row in
+     [[deferral_registry#registry]]: its `pagerank` stamp reads `behind_code` until it is
+     re-derived, so the gap stays visible.
+   - No ignore file changes and no row is deleted.
 8. **R7 The profile is unchanged.** {#r7} `.claude/PROJECT_PROFILE.md` `#corpus` keeps `workflow` as
    a corpus root: it is still ingested.
 
 ## Acceptance criteria {#acceptance}
 
-1. **AC-1 (R1) Membership.** A sandbox store holds:
-   - `workflow/plans/p.md` (GMD, id `p`, anchor `#a`, and a same-named concept `p` that
-     `denotes` it);
+Every AC below is in `tests/test_dq1_operational_weights.py` unless it says otherwise, in task 23.0's
+sandbox.
+
+1. **AC-1 (R1) Membership** (`test_ac1_membership`). A sandbox store holds:
+   - `workflow/plans/p.md` (GMD, id `p`) with an anchor `#a`;
+   - `workflow/templates/exploration.md` (id `exploration`) and a concept `exploration`, mentioned
+     by `docs/d.md` and `denotes`-linked to that doc;
    - `src/pkg/workflow/x.py`;
    - a save-state `savestate_s1` (mtype `session/recall-state`, with `savestate_s1#root`);
-   - a digest `focus_summary_s1` (mtype `session/digest`);
-   - `docs/d.md`;
-   - a curated memory `project_session_0328`.
+   - a digest `focus_summary_s1` (mtype `session/digest`) and a digest `notes_s2` (mtype
+     `session/digest`);
+   - entities named `Session-x` and `DIGEST_y`;
+   - `docs/d.md`, and a curated memory `project_session_0328`.
 
-   `operational_ids` holds `p`, `p#a`, the concept `p`, `savestate_s1`, `savestate_s1#root` and
-   `focus_summary_s1`, and not `x.py`, `d.md` or `project_session_0328`. Mutations, each FAILS it:
-   match `workflow` as any path segment (`x.py` joins); `"session" in name`
-   (`project_session_0328` joins); drop the anchor rule (`p#a` missing); drop the mtype rule
-   (a digest renamed `notes_s2` with mtype `session/digest` is missed). {#ac-1}
-2. **AC-2 (R2) Out of the derivations, still findable.** On AC-1's store, every entity mentions
-   concept `alpha`:
-   - `build_adjacency` has no `operational_ids` node;
+   `operational_ids` holds `p.md`, `p#a`, `exploration.md`, `savestate_s1`, `savestate_s1#root`,
+   `focus_summary_s1`, `notes_s2`, `Session-x` and `DIGEST_y`. It does NOT hold the concept
+   `exploration`, `x.py`, `d.md` or `project_session_0328`.
+
+   Mutations, each FAILS it:
+   - match `workflow` as any path segment (`x.py` joins);
+   - `"session" in name` (`project_session_0328` joins);
+   - the path rule tests `kind='doc'` only (`p#a`, a concept carrying the doc's path, is missed;
+     r3 M1);
+   - every `denotes` concept joins (`exploration` joins);
+   - drop the mtype rule (`notes_s2` is missed);
+   - case-sensitive prefixes (`Session-x` and `DIGEST_y` are missed).
+   {#ac-1}
+2. **AC-2 (R2) Derivation sites exclude; recall and phrase still find**
+   (`test_ac2_derivations`). On AC-1's store, every entity mentions concept `alpha`:
+   - `build_adjacency` has no `operational_ids` node, and keeps `exploration` with `d.md`'s edge;
    - `concept_df[alpha]` counts `d.md`, `x.py` and `project_session_0328` only;
    - `co_occurrence("alpha")` lists no operational entity;
-   - the compile's input excludes the save-state and the digest;
+   - the compile's input excludes the save-state and both digests;
    - `content_rank(["alpha"])` still scores `p.md`;
    - `rmx memory recall` for a phrase unique to `savestate_s1` returns it;
    - `rmx context "<a phrase from p.md's title>"` lists `p.md`.
 
-   Mutations, each FAILS it: keep the old regex in `build_adjacency` (`savestate_s1` and
-   `focus_summary_s1` are nodes); drop operational `mentions` at ingest instead (the recall and
-   the phrase miss). {#ac-2}
-3. **AC-3 (R1) One predicate, mechanical.** An AST check over `src/refmatrix/` finds no
-   `_OPERATIONAL_RE`, no `_is_operational_anchor` or `_is_session_card` body, and no string literal
-   `savestate_`, `focus_summary_`, `^(session|digest)` or `workflow/` used as an operational test
-   outside `memory_layout.py`. The eight modules call `memory_layout.is_operational` or
-   `operational_ids`. Mutation: leave `ppr._is_operational` as a regex: FAILS. {#ac-3}
-4. **AC-4 (R2) Passes know their module.** `derive_pass_modules` for `pagerank` and both compile
-   passes includes `memory_layout.py`. On a copy of the module tree (`_DERIVE_SRC_DIR`), editing
-   the predicate flips all three to `behind_code`. Mutation: omit it from `pagerank`: FAILS. {#ac-4}
-5. **AC-5 (R3) Below unless named.** On AC-1's store:
-   - `rmx context alpha`'s hit list and co-mention lists place `p.md`, `savestate_s1` and
-     `focus_summary_s1` after `d.md` and `x.py`; at a budget that fits two entries, no
-     operational entry is printed;
-   - `rmx context p` ranks `p.md` and `p#a` first, while `savestate_s1` stays last;
-   - `rmx scan-prompt` on a prompt naming `alpha` injects `d.md` before `p.md`, and on a prompt
-     naming `p` injects `p.md`;
-   - the recall pack for a query matching `savestate_s1` and `project_session_0328` lists the
-     curated memory first, unless the query names `savestate_s1`.
+   Mutations, each FAILS it:
+   - keep the old regex in `build_adjacency` (`savestate_s1` and `focus_summary_s1` become nodes);
+   - drop operational `mentions` at ingest instead (the recall and the phrase both miss).
+   {#ac-2}
+3. **AC-3 (R1, R2) One module, mechanical** (`test_ac3_one_predicate`). An AST check over
+   `src/refmatrix/`:
+   - finds no `_OPERATIONAL_RE` and no `OPERATIONAL_RE`;
+   - finds no `_is_operational_anchor`, `_is_session_card` or `_is_operational` body;
+   - finds no string literal `savestate_`, `focus_summary_`, `^(session|digest)` or `workflow/`
+     used as an operational test outside `memory_layout.py`;
+   - finds each site in [[#r2]]'s table calling the form its row names.
 
-   Mutations, each FAILS it: no partition (`p.md` ties by score); exempt every operational hit
-   when one is named (`savestate_s1` rises on `rmx context p`); exempt on a substring match
-   (`rmx context pl` lifts `p.md`). {#ac-5}
-6. **AC-6 (R4) The frozen gates.**
+   Mutation: leave `ppr._is_operational` as a regex: FAILS. {#ac-3}
+4. **AC-4 (R2) Passes know their module** (`test_ac4_pass_modules`).
+   `derive_pass_modules` for `pagerank` and both compile passes includes `memory_layout.py`. On a
+   copy of the module tree (`_DERIVE_SRC_DIR`), editing the predicate flips all three to
+   `behind_code`. Mutation: omit `memory_layout.py` from `pagerank`'s modules: FAILS. {#ac-4}
+5. **AC-5 (R2, R3) Each behaviour class** (`test_ac5_ranking`). On AC-1's store plus a session card
+   `session-abc`:
+   - **output sites rank last, never remove.** `rmx context alpha` lists `p.md`, `savestate_s1`
+     and `focus_summary_s1` after `d.md` and `x.py`. At a budget that fits two entries, neither
+     operational entry is printed. `ppr` / `net` / `enrich` results for `alpha` contain `p.md`,
+     ranked after every non-operational entry. scan-prompt's PPR expansion keeps a non-seed
+     `p#a` after every non-operational candidate;
+   - **the session-card filter is unchanged.** `session-abc` is absent from `rmx context alpha` and
+     present with `--include-sessions`, while `p.md` is present in both, ranked last (r3 S1);
+   - **the exemption.** `rmx context p` ranks `p.md` and `p#a` first, with `savestate_s1` still
+     last. scan-prompt on a prompt naming `p` injects `p.md`. The recall pack lists
+     `project_session_0328` before `savestate_s1` unless the query names `savestate_s1`;
+   - **brief and labels.** A contradicted pair with an operational endpoint is listed after the
+     others and counted `operational`. A compile label is an operational name only when no other
+     candidate exists.
+
+   Mutations, each FAILS it:
+   - no partition (`p.md` ties by score);
+   - the session filter uses full `is_operational` (`p.md` disappears from default context);
+   - the output sites keep dropping (`p.md` is absent from `ppr`);
+   - scan's PPR filter is called by name only (`p#a` is missed and ranked by score);
+   - exempt every operational entry when one is named (`savestate_s1` rises on `rmx context p`);
+   - exempt on a substring match (`rmx context pl` lifts `p.md`).
+   {#ac-5}
+6. **AC-6 (R1) The cache follows the data** (`test_ac6_cache_invalidation`). With the daemon's
+   `Store` holding a computed `operational_ids`, an in-process ingest of a new `workflow/plans/q.md`
+   makes `q.md` a member at the next read. Mutation: leave `_operational_ids_cache` out of
+   `_invalidate_content_rank_caches`: FAILS (r3 M4). {#ac-6}
+7. **AC-7 (R4) The measuring code can fail** (`tests/test_dq1_measure.py`, against
+   `eval/dq1/measure.py`). These are fixture list pairs; no store is involved:
+   - an identical non-operational pair scores 1.0;
+   - a planted divergence (W `[op, a..e, x, y, z, w]` vs N `[a..j]`) scores 1/3, below 0.60, and
+     `measure.py` reports that query below the floor;
+   - a pair where both lists carry the same operational `op` (`[op, a..i]` both sides) scores 0.9;
+   - with N `[a..e]` and W `[a..e, f..j]`, `k = 5` and the score is 1.0;
+   - the gate reads AFTER, not BEFORE.
+
+   Mutations, each FAILS it:
+   - turn the mismatch rule off (the shared-`op` pair reads 1.0);
+   - take `k` from W's list (the short-N pair reads 0.5);
+   - score against BEFORE (the AFTER-only fixture changes verdict).
+   {#ac-7}
+8. **AC-8 (R4) The re-tune can change an outcome** (`tests/test_dq1_measure.py`). On a sandbox
+   store where a `workflow/` doc's title holds every term of a fixture phrase, and a token budget
+   cuts that doc from `rmx context "<phrase>"` without the re-tune, the re-tune puts it in the
+   output. A phrase whose terms do not all appear in one title or heading is unchanged. Mutation:
+   the re-tune requires the query to EQUAL the title (the fixture outcome no longer changes; r3 S6).
+   {#ac-8}
+9. **AC-9 (R4) The frozen gates.**
    - The R4 sets and script are committed before the first `src/` change (their sha precedes the
      GREEN commits).
-   - The report exists, with each gate's band and the action taken.
-   - A pass requires the pass band, reached directly or after the one pre-registered re-tune.
+   - The report exists with the recipe's shas, each gate's band and the action taken.
+   - A pass is a pass band, reached directly or after the one pre-registered re-tune.
    - A report-band result goes to the user with its numbers, and the bands are not edited.
-   {#ac-6}
-7. **AC-7 (R5) The memory exists and is found.** It lints with 0 errors, carries `rel: supersedes ->
-   [[feedback_operational_content_not_in_graph]]`, replaces the old memory's `MEMORY.md` line, and
-   `rmx memory recall` for a phrase unique to it returns it. {#ac-7}
-8. **AC-8 (R6) The rollout record.** `workflow/measurements/dq1-rollout-<date>.md` lists the marker
-   search's output and, per store, the three derive stamps and the user's go (date) or `held`.
-   {#ac-8}
+   {#ac-9}
+10. **AC-10 (R1) The ported tests** (r3 M2). The assertions of `tests/test_scan_prompt_dedup.py`,
+    `tests/test_brief_detectors.py` and `tests/test_plan7_10_remedy_r4.py` that pin the removed
+    gates are ported to `memory_layout.is_operational`. Their non-member rows
+    (`project_scan_prompt_junk_gate#root`, `scan-prompt`) stay, as regression guards, and the
+    identity assertion becomes "`brief` imports the predicate from `memory_layout`". None of these
+    tests is deleted. {#ac-10}
+11. **AC-11 (R5) The memory and the ADR repoint.** The memory lints with 0 errors, carries
+    `rel: supersedes -> [[feedback_operational_content_not_in_graph]]`, replaces the old memory's
+    `MEMORY.md` line, and a `rmx memory recall` for a phrase unique to it returns it. In the same
+    commit, ADR-0003's `depends-on` names it, and `./scripts/lint-gmd.sh` exits 0. {#ac-11}
+12. **AC-12 (R6) The rollout record.** `workflow/measurements/dq1-rollout-<date>.md` lists the
+    marker search's output and, per project store, the derive stamps and the user's go (date) or
+    `held`. The global store's deferral row exists. {#ac-12}
 
-## Rulings folded (lead, 2026-11-13; plan-review L60 on dev master `1356a06`) {#rulings}
+## Open items {#open-items}
 
-- L60 accepted revision 2's direction. Revision 4 keeps revision 3's additions:
-  - the predicate's location (`memory_layout.is_operational` and `operational_ids`, accepted over
-    `pagerank.py`);
-  - R2/R3's coverage;
-  - AC-3, AC-4 and AC-5;
-  - the re-tune-ONCE action bands.
-- It restores L60's stricter gates and set sizes: DOESN'T SKEW is a mean ≥ 0.90 AND no query below
-  0.60 per surface, and USEFUL is judged channel by channel.
-- The exemption covers the named entity only (accepted).
-- The memory SUPERSEDES `feedback_operational_content_not_in_graph` (a reversed mechanism, per
-  MEMORY-RULES), not amends.
-- Every band freezes at approval.
+- **brief's findings under "rank last".** L61 lists `brief` among the output sites. Its two sites
+  are detectors, not rankings: a `contradicted` or `orphan-concept` finding with an operational
+  endpoint was skipped and counted. Under L61 such findings are listed after the others, so the
+  brief output grows by them. The `workflow/` nodes that made 45 of the first 47 contradicted pairs
+  noise (ch-bsd r2 #b-2-r2, `brief.py:71-78`) are still skipped by `_WORKFLOW_NODE_RE`, which this
+  task does not touch. Recommendation: as written (L61). If the lead prefers brief's counted skip,
+  that is a one-row change to [[#r2]]'s table.
 
 ## Files {#files}
 
 | file | change |
 |---|---|
-| `src/refmatrix/memory_layout.py` | R1 `is_operational`, `operational_ids` |
-| `src/refmatrix/pagerank.py`, `ppr.py`, `enrich.py`, `net.py`, `consolidate.py`, `brief.py`, `scan.py`, `context.py` | R1 call the predicate (private gates removed); R2 `build_adjacency`; R3 the partitions in `context._rank_entries`, the hit lists and scan-prompt |
-| `src/refmatrix/store.py` | R2 `concept_df`; `_DERIVE_PASS_MODULES` (`pagerank`, both compile passes) gain `memory_layout.py` |
+| `src/refmatrix/memory_layout.py` | R1 `is_operational`, `is_session_card`, `operational_ids` |
+| `src/refmatrix/pagerank.py`, `ppr.py`, `enrich.py`, `net.py`, `consolidate.py`, `brief.py`, `scan.py`, `context.py` | R2 the table's call forms; the private gates removed; output sites rank last |
+| `src/refmatrix/store.py` | R2 `concept_df`; `_invalidate_content_rank_caches` drops `_operational_ids_cache`; `_DERIVE_PASS_MODULES` (`pagerank`, both compile passes) gain `memory_layout.py` |
 | `src/refmatrix/query.py` | R2 `co_occurrence` |
-| `src/refmatrix/cli.py` / `verbs.py` (the recall pack's ordering) | R3 |
+| `src/refmatrix/cli.py` / `verbs.py` (the recall pack's ordering) | R2, R3 |
 | `eval/dq1/draw_queries.py`, `eval/dq1/queries-*.txt` (new) | R4 frozen sets (RED commit) |
-| `eval/dq1/measure.py` (new) | R4 runs through the production entry points |
-| `tests/test_dq1_operational_weights.py` (new) | AC-1..AC-5 |
-| `workflow/measurements/dq1-skew-useful-<date>.md`, `workflow/measurements/dq1-rollout-<date>.md` (new) | AC-6, AC-8 |
-| the memory dir: the R5 file and its `MEMORY.md` line | R5, AC-7 |
+| `eval/dq1/build.py` (new) | R4 the sandbox recipe for W and N |
+| `eval/dq1/measure.py` (new) | R4 the formula and the bands |
+| `tests/test_dq1_operational_weights.py`, `tests/test_dq1_measure.py` (new) | AC-1..AC-8 |
+| `tests/test_scan_prompt_dedup.py`, `tests/test_brief_detectors.py`, `tests/test_plan7_10_remedy_r4.py` | AC-10 ported |
+| `docs/adr/0003-canonical-partition-layout.md` | the decision-log line (in this revision); the `depends-on` repoint with R5 |
+| `workflow/measurements/dq1-skew-useful-<date>.md`, `workflow/measurements/dq1-rollout-<date>.md` (new) | AC-9, AC-12 |
+| the memory dir: the R5 file and its `MEMORY.md` line | R5, AC-11 |
 
 ## Definition of done {#done}
 
-- RED and GREEN runs recorded under `workflow/review-output/`, the mutation check noted, and the
-  R4 sets committed before the first `src/` change.
-- The implementation summary at
+- RED and GREEN runs recorded under `workflow/review-output/`, with the mutation check noted. The R4
+  sets are committed before the first `src/` change.
+- Implementation summary at
   `workflow/implementation_summaries/task-dq1-operational-content-out-of-graph.md`.
 - Committed on branch `task-dq1-operational-content-out-of-graph` and merged `--no-ff` to
-  `master`, with every store's rollout row recorded (done or `held`).
+  `master`; every project store's rollout row is recorded (done or `held`).
+
+## Revision 5 (2026-11-14, ch-bsd r3 + L61) {#rev-5}
+
+| finding | answered in |
+|---|---|
+| S1 (`_is_session_card` is a filter) | [[#facts-gates]]; [[#r1]] `is_session_card` facet; [[#r2]] context rows; AC-5 session rows + mutation |
+| S2 (`denotes` made term concepts operational) | [[#r1]]: mtype, name prefix and path only; AC-1 `exploration` row + mutation |
+| S3 (call form and role per site) | [[#r2]] table; AC-3 checks the forms; AC-5 one row per behaviour class + the "scan by name only" mutation |
+| S4 (the W/N recipe; the bridge can reach live) | [[#r4]] recipe: 23.0 sandbox, memdir copy, fresh builds of one commit, the same named passes, differing only in N's ignore line |
+| S5 (Jaccard undefined; measuring code unproven) | [[#r4]] formula; AC-7 with three mutations |
+| S6 (the re-tune could not change any outcome) | [[#r4]] BM25-only re-tune (all of a query's terms in one title or heading); name/anchor/`rel:` misses go straight to report; AC-8 |
+| M1 (an unfailable mutation) | AC-1 "path rule tests `kind='doc'` only", named test `test_ac1_membership` |
+| M2 (tests pinning the gates) | [[#facts-tests]]; AC-10 ports them |
+| M3 (case) | [[#r1]] case-insensitive prefixes; AC-1 row + mutation |
+| M4 (cache key) | [[#r1]] `_operational_ids_cache` dropped by `_invalidate_content_rank_caches`; AC-6 |
+| M5 (ADR-0003) | the ADR-0003 decision-log line [[refmatrix/adr-0003-canonical-partition-layout#d-2026-11-14-dq1]]; the `depends-on` repoint with R5 |
+| M6 (the global store; queue slot) | [[#r6]] global store as a deferral row; the header's queue line |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
 ## History {#history}
 
-- **Revision 1** (`f19a28b`) followed Q8 = a literally: a `workflow/*` ignore line, a purge
-  through 22.6 R3, a backup gate, and a lint-parity carve-out.
-- **Revision 2** (`d9296bd`) followed Q9 but homed the gate in `pagerank.py` and also filtered the
-  BM25 statistics.
-- **Revision 3** (`2032cf4`) follows the lead's Q9 direction: the predicate is
-  `memory_layout.is_operational`, BM25 is untouched (filtering its statistics is now only the
-  DOESN'T-SKEW re-tune), the recall pack is ranked, the gates have pre-registered actions, and
-  there is no ignore line, purge or 22.6 dependency.
-- **Revision 4** reconciles revision 3, which crossed the lead's L60 acceptance of revision 2
-  ([[#rulings]]). It keeps revision 3's predicate location, coverage, AC-3/4/5 and re-tune-once
-  bands, and restores L60's stricter gates (Jaccard floor 0.60, re-tune band 0.80-0.90 or
-  0.45-0.60; USEFUL by channel), revision 2's set sizes, and `supersedes` for the memory.
+- **Revision 1** (`f19a28b`) followed Q8 = a literally: a `workflow/*` ignore line, a purge through
+  22.6 R3, a backup gate, and a lint-parity carve-out.
+- **Revision 2** (`d9296bd`) followed Q9; L60 accepted its direction.
+- **Revision 3** (`2032cf4`) moved the predicate to `memory_layout` and pre-registered the action
+  bands.
+- **Revision 4** (`95720fe`, `e4dc31b`) reconciled revision 3 with L60.
+- **Revision 5** answers r3 under L61: two facets, no `denotes` clause, a per-site table, a pinned
+  recipe, a defined and proven Jaccard, a BM25-only re-tune, and project stores only.
 {#history-revs}
 
-## Appendix: the amendment memory's text {#appendix-memory}
+## Appendix: the superseding memory's text {#appendix-memory}
 
 Frontmatter: `id: feedback_operational_content_same_partition_not_skewing`, `title: "Operational
 content stays in the same partition, useful and not skewing what is returned"`, `tags: [feedback,
@@ -331,19 +448,21 @@ derive, ranking, operational-content]`, `type: feedback`. Body:
 >
 > `workflow/` (plans, task specs, ch-bsd reports, summaries) stays ingested in the project
 > partition, findable by name, anchor, `rel:` and phrase. Save-states and STM digests stay in the
-> store and in memory recall. One predicate, `memory_layout.is_operational`, keeps all three out of
-> co-mention and concept-weight derivation (pagerank, the memory compile, `concept_df`,
-> co-occurrence). Default `rmx context`, scan-prompt and the recall pack rank them below code and
-> docs unless the query names that doc or anchor.
+> store and in memory recall. One module, `memory_layout`, decides what is operational (by mtype,
+> name prefix and path). Derivations (pagerank, the memory compile, `concept_df`, co-occurrence)
+> exclude it from their inputs. Output lists (`rmx context`, scan-prompt, the recall pack, ppr,
+> net, enrich) rank it last and never remove it, unless the query names that doc or anchor. Session
+> cards keep their own filter (`--include-sessions`).
 >
 > `**Why:**` the user, Q9, 2026-11-13: "I'm okay with it being in the same partition as long as
-> it is useful and doesn't skew whats returned". This supersedes the parent rule, whose mechanism
-> (exclude at ingest) is reversed for `workflow/`. Its reasons stand (operational text co-mentions everything and goes
-> stale), and they are met by the weights and the ranking, not by removal. Two frozen query sets
-> pin the conditions: DOESN'T SKEW (code/doc top-10 Jaccard against a store without `workflow/`)
-> and USEFUL (workflow docs found by name, anchor, `rel:` and phrase).
+> it is useful and doesn't skew whats returned". This reverses the old rule's mechanism (exclude at
+> ingest), so it supersedes it. The old rule's reasons stand: operational text co-mentions
+> everything and goes stale. They are met by the weights and the ranking, not by removal. Two
+> frozen query sets pin the conditions: DOESN'T SKEW (code/doc top-10 Jaccard against a store
+> without `workflow/`) and USEFUL (workflow docs found by name, anchor, `rel:` and phrase).
 >
-> `**How to apply:**` a new kind of operational content joins the one predicate, never a private
-> regex or an ingest exclusion. Check any ranking change against the frozen sets.
+> `**How to apply:**` a new kind of operational content joins `memory_layout.is_operational`,
+> never a private regex and never an ingest exclusion. Check any ranking change against the frozen
+> sets.
 >
 > `rel: supersedes -> [[feedback_operational_content_not_in_graph]]`
