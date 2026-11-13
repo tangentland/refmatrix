@@ -533,10 +533,12 @@ CREATE INDEX IF NOT EXISTS idx_pair_index_df
 -- cite the two rule docs alone. Ingesting a doc / memory / anchor whose name
 -- equals `target_name` resolves the row (edge + evidence) and deletes it; a
 -- purge of `source_id` deletes it; re-ingesting the citing file replaces its
--- rows. Not replayed from facts.log: the rows are re-derived by re-ingesting
--- the citing file (`rmx ingest-gmd`), never by a log rebuild. No PK or index:
--- the table holds the unresolved residue (hundreds of rows), and the
--- writer keeps it duplicate-free (`Store.add_pending_ref`).
+-- rows. Replayed from facts.log (bug-216 R13): `pending_ref` /
+-- `pending_ref_delete` / `pending_refs_clear` events, source named by kind and
+-- name, partition-qualified; a source's `tombstone` drops its rows; the
+-- compaction dump re-emits the live rows. No PK or index: the table holds the
+-- unresolved residue (hundreds of rows), and the writer keeps it duplicate-free
+-- (`Store.add_pending_ref`).
 CREATE TABLE IF NOT EXISTS pending_refs (
     partition_id INTEGER NOT NULL DEFAULT 1,
     source_id    INTEGER NOT NULL,
@@ -5855,6 +5857,10 @@ class Store:
                 "AND concept_id IN (SELECT id FROM entities WHERE partition_id = ?)",
                 (file, self._partition_id))
             self._maybe_commit(con)
+        # Logged whether or not rows went (bug-216 R13): a replay applies it in
+        # log order against the `evidence` events, so a log that carries more
+        # than this catalog did still converges on one row per `rel:` line.
+        self._log_event("rel_evidence_clear", partition=self._partition_name, file=file)
         return int(n)
 
     # ---- pending `rel:` references (bug-216 R10) ----------------------------
@@ -5879,7 +5885,24 @@ class Store:
             (self._partition_id, source_id, linkage, target_name, ref, file, line,
              weight, detail, time.time()))
         self._maybe_commit(con)
+        self._log_pending("pending_ref", source_id, linkage, target_name, file, line,
+                          ref=ref, weight=weight, detail=detail)
         return True
+
+    def _log_pending(self, op: str, source_id: int, linkage: str, target_name: str,
+                     file: str, line: int, **extra) -> None:
+        """One pending-ref facts.log event (bug-216 R13), its source named by
+        (kind, name) -- never by id -- and partition-qualified, like every
+        replayable event. A source with no name (already gone) logs nothing:
+        replay could not place the row either."""
+        if self._replay_mode or not _log_enabled():
+            return
+        sn = self._name_of(source_id)
+        if not sn:
+            return
+        self._log_event(op, partition=self._partition_name, s_kind=sn[0], s=sn[1],
+                        linkage=linkage, target_name=target_name, file=file, line=line,
+                        **extra)
 
     def clear_pending_refs_for_file(self, file: str) -> int:
         """Drop the active partition's pending rows recorded from `file`: the
@@ -5892,6 +5915,8 @@ class Store:
             con.execute("DELETE FROM pending_refs WHERE partition_id=? AND file=?",
                         (self._partition_id, file))
             self._maybe_commit(con)
+        # Logged whether or not rows went, as `rel_evidence_clear` is (R13).
+        self._log_event("pending_refs_clear", partition=self._partition_name, file=file)
         return int(n)
 
     def pending_refs_for(self, names: "Iterable[str]") -> "list[dict]":
@@ -5910,6 +5935,11 @@ class Store:
 
     def delete_pending_ref(self, row: dict) -> None:
         """Delete one pending row (as returned by `pending_refs_for`)."""
+        # Named BEFORE the delete: a row dropped because its source is gone
+        # logs nothing (`_log_pending`), and replay drops it with the source's
+        # tombstone instead.
+        self._log_pending("pending_ref_delete", row["source_id"], row["linkage"],
+                          row["target_name"], row["file"], row["line"])
         con = self._connect()
         con.execute(
             "DELETE FROM pending_refs WHERE partition_id=? AND source_id=? AND linkage=? "
@@ -8225,6 +8255,7 @@ class Store:
         counts = {
             "entity": 0, "protect": 0, "noise": 0, "memory_content": 0,
             "link": 0, "evidence": 0, "track": 0, "linkage_type": 0,
+            "pending_ref": 0,
         }
         default_linkages = {row[0] for row in DEFAULT_LINKAGES}
         # Stream into a temp file then atomic-rename so a crash mid-dump
@@ -8361,6 +8392,26 @@ class Store:
                                      span_end=row["span_end"], detail=row["detail"]),
                     })
                     counts["evidence"] += 1
+
+                # Pending `rel:` refs (bug-216 R13): a compaction must not drop
+                # the dangling refs that bind when their target is ingested.
+                for row in con.execute(
+                    "SELECT s.kind AS s_kind, s.name AS s_name, pr.linkage, "
+                    "       pr.target_name, pr.ref, pr.file, pr.line, pr.weight, "
+                    "       pr.detail, pr.created_at AS ts "
+                    "FROM pending_refs pr JOIN entities s ON s.id = pr.source_id "
+                    "WHERE pr.partition_id=? "
+                    "ORDER BY pr.created_at, s.name, pr.file, pr.line",
+                    (pid,),
+                ):
+                    emit({
+                        "ts": row["ts"], "op": "pending_ref", "partition": pname,
+                        "s_kind": row["s_kind"], "s": row["s_name"],
+                        "linkage": row["linkage"], "target_name": row["target_name"],
+                        "ref": row["ref"], "file": row["file"], "line": row["line"],
+                        "weight": row["weight"], "detail": row["detail"],
+                    })
+                    counts["pending_ref"] += 1
 
                 for row in con.execute(
                     "SELECT path, mtime, last_synced FROM tracked_files "
@@ -8547,6 +8598,28 @@ class Store:
                     span_end=ev.get("span_end"), detail=ev.get("detail"),
                 )
                 return True
+            # bug-216 R13: the GMD path's evidence clear and pending refs.
+            if op == "rel_evidence_clear":
+                self.clear_rel_evidence(ev["file"])
+                return True
+            if op == "pending_refs_clear":
+                self.clear_pending_refs_for_file(ev["file"])
+                return True
+            if op in ("pending_ref", "pending_ref_delete"):
+                src = self.get_entity(ev["s_kind"], ev["s"])
+                if src is None:
+                    return False
+                if op == "pending_ref":
+                    self.add_pending_ref(
+                        src.id, ev["linkage"], ev["target_name"], ref=ev["ref"],
+                        file=ev["file"], line=int(ev["line"]), weight=ev.get("weight"),
+                        detail=ev.get("detail"))
+                else:
+                    self.delete_pending_ref({
+                        "source_id": src.id, "linkage": ev["linkage"],
+                        "target_name": ev["target_name"], "file": ev["file"],
+                        "line": int(ev["line"])})
+                return True
             if op == "memory_content":
                 # add_memory upserts the entity (idempotent — the prior
                 # `entity` event already created it) and (re)writes the body.
@@ -8591,8 +8664,12 @@ class Store:
         - LINK/UNLINK: OR-Set with tombstones — for each
           (linkage, c, e_kind, e), keep the event with the largest ts
         - TRACK/UNTRACK: LWW per-path
-        - EVIDENCE: replayed unconditionally (idempotent in practice — the
-          source-side ingester writes the same evidence each scan)
+        - EVIDENCE: replayed in log order, together with `rel_evidence_clear`
+          (bug-216 R13): a clear drops the `rel:` evidence its partition holds
+          for that file so far, exactly as `Store.clear_rel_evidence` did
+        - PENDING REFS (bug-216 R13): `pending_ref` / `pending_ref_delete` /
+          `pending_refs_clear` and the `tombstone` of a source applied in log
+          order; the surviving rows whose source survives are written
         """
         if not self.log_path.exists():
             raise FileNotFoundError(self.log_path)
@@ -8638,6 +8715,8 @@ class Store:
         link_state: dict[tuple, tuple[float, str, float | None]] = {}
         track_state: dict[tuple[str, str], tuple[float, str, float | None]] = {}
         evidence_events: list[dict] = []
+        # bug-216 R13: pending rows by identity, folded in log order.
+        pending_state: dict[tuple, dict] = {}
         # Memory bodies, LWW by (partition, entity name).
         memory_content_lww: dict[tuple[str, str], tuple[float, dict]] = {}
         # Linkage types referenced anywhere in the log (partition-independent).
@@ -8678,6 +8757,28 @@ class Store:
                 key = (part, ev["kind"], ev["name"])
                 if ts > tombstone_ts.get(key, -1):
                     tombstone_ts[key] = ts
+                # `purge_entity` deletes the purged source's pending rows.
+                for pk in [k for k in pending_state if k[:3] == key]:
+                    del pending_state[pk]
+            elif op in ("pending_ref", "pending_ref_delete"):
+                pk = (part, ev["s_kind"], ev["s"], ev["linkage"], ev["target_name"],
+                      ev["file"], int(ev["line"]))
+                if op == "pending_ref":
+                    pending_state[pk] = ev
+                else:
+                    pending_state.pop(pk, None)
+            elif op == "pending_refs_clear":
+                for pk in [k for k in pending_state
+                           if k[0] == part and k[5] == ev["file"]]:
+                    del pending_state[pk]
+            elif op == "rel_evidence_clear":
+                # Same predicate as `clear_rel_evidence`: this partition's
+                # `rel:` evidence for the file, as of this point in the log.
+                f_ = ev["file"]
+                evidence_events = [
+                    x for x in evidence_events
+                    if not ((x.get("partition") or dpart) == part and x.get("file") == f_
+                            and str(x.get("detail") or "").startswith("rel: "))]
             elif op == "protect":
                 key = (part, ev["kind"], ev["name"])
                 prev = protect_lww.get(key)
@@ -8762,6 +8863,7 @@ class Store:
             "links_unresolved": links_unresolved,
             "evidence_unresolved": evidence_unresolved,
             "links_skipped_dead": 0, "evidence_skipped_dead": 0,
+            "pending_refs": 0, "pending_refs_skipped_dead": 0,
         }
         self._replay_mode = True
         try:
@@ -8843,6 +8945,19 @@ class Store:
                         )
                         counts["evidence"] += 1
 
+                    for pk, pev in pending_state.items():
+                        if pk[0] != pname:
+                            continue
+                        sid = name_to_id.get((pk[1], pk[2]))
+                        if sid is None:
+                            counts["pending_refs_skipped_dead"] += 1
+                            continue
+                        self.add_pending_ref(
+                            sid, pev["linkage"], pev["target_name"], ref=pev["ref"],
+                            file=pev["file"], line=int(pev["line"]),
+                            weight=pev.get("weight"), detail=pev.get("detail"))
+                        counts["pending_refs"] += 1
+
                     for key, (_, op, mtime) in track_state.items():
                         if key[0] != pname:
                             continue
@@ -8879,4 +8994,6 @@ class Store:
             "evidence_unresolved": counts["evidence_unresolved"],
             "links_skipped_dead": counts["links_skipped_dead"],
             "evidence_skipped_dead": counts["evidence_skipped_dead"],
+            "pending_refs": counts["pending_refs"],
+            "pending_refs_skipped_dead": counts["pending_refs_skipped_dead"],
         }

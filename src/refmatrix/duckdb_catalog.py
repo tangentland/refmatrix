@@ -238,12 +238,12 @@ CREATE INDEX IF NOT EXISTS idx_pair_index_df
 -- cite the two rule docs alone. Ingesting a doc / memory / anchor whose name
 -- equals `target_name` resolves the row (edge + evidence) and deletes it; a
 -- purge of `source_id` deletes it; re-ingesting the citing file replaces its
--- rows. Same shape as the SQLite CATALOG_DDL in store.py; this file is the one
--- the DuckDB backend applies, on EVERY writer open (`init_catalog`), so an
--- existing store gains the table the first time a daemon opens it. Not replayed from facts.log: the rows are re-derived by re-ingesting
--- the citing file (`rmx ingest-gmd`), never by a log rebuild. No PK or index:
--- the table holds the unresolved residue (hundreds of rows), and the
--- writer keeps it duplicate-free (`Store.add_pending_ref`).
+-- rows. Replayed from facts.log (bug-216 R13): `pending_ref` /
+-- `pending_ref_delete` / `pending_refs_clear` events, source named by kind and
+-- name, partition-qualified; a source's `tombstone` drops its rows; the
+-- compaction dump re-emits the live rows. No PK or index: the table holds the
+-- unresolved residue (hundreds of rows), and the writer keeps it duplicate-free
+-- (`Store.add_pending_ref`).
 CREATE TABLE IF NOT EXISTS pending_refs (
     partition_id INTEGER NOT NULL DEFAULT 1,
     source_id    INTEGER NOT NULL,
