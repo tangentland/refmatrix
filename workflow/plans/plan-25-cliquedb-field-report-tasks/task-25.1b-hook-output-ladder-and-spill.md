@@ -147,7 +147,10 @@ review's citations stay valid). R0 is this task's own measurement step (L44 name
     remaining item at a lower tier; then tier 2, and so on. Every retrieved item stays visible at
     some tier unless the names cap is reached; past the cap, items are counted `(+N)` and spilled
     ([[#r14]]). Tiers are monotone in rank: an item never sits at a higher tier than an item ranked
-    above it. Kind labels: [[#k4]]. {#r13}
+    above it. Kind labels: [[#k4]]. `Packed` reports, for every retrieved row, its full-run tier
+    (`full` / `excerpt` / `pointer` / `names`, the [[#k5]] values, or `overflow` for `(+N)`) and
+    its rendered tier after held removal. The caller (10.2's `stm.record_full`) records state from
+    these, never from telemetry events (10.2 h7). {#r13}
 14. **R14 Spill to pull.** The bodies of degraded items (tiers 2-4) and the items past the names cap
     are written to the call's spill page (`stm/<session>.emitted/spill/`, [[#k6]]; no page when
     nothing was degraded). The names line ends with the fetch command for that page. The fetch
