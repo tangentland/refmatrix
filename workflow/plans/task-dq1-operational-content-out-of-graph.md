@@ -13,7 +13,7 @@ metadata:
 
 # Task D-Q1: operational content stays in the partition, out of the skew {#root}
 
-> Status: Drafting. Revision 8 (2026-11-14) answers ch-bsd `bsd-spec-t56-r6` ([[#rev-8]]);
+> Status: Drafting. Revision 8 (2026-11-14) answers ch-bsd `bsd-spec-t56-r6` under L71 ([[#rev-8]]);
 > revision 7 answered `bsd-spec-t56-r5` under L69 ([[#rev-7]]).
 > Revision 6 answered `bsd-spec-t56-r4` under the lead's L67 ruling, which amends L61 S3
 > ([[#rev-6]]); revision 5 answered r3 under L61 ([[#rev-5]]);
@@ -189,8 +189,9 @@ skew whats returned". So:
        slug of the CWD (not of a memdir argument), then the cwd walk. Task 23.0's autouse
        fixture sets `REFMATRIX_ROOT`, which would otherwise decide the store on its own. So each
        bridge run is a subprocess whose cwd is that build's memdir copy and whose environment has
-       `REFMATRIX_ROOT` UNSET. The slug of the copy then decides the store, as it does for a real
-       session. If ADR-0005's resolution from the memdir argument has shipped (task 26.5), the
+       `REFMATRIX_ROOT` UNSET. `cli._root()` then resolves through the same
+       `_root_from_projects_slug` that the guard asserts, which is the production SessionStart
+       path. If ADR-0005's resolution from the memdir argument has shipped (task 26.5), the
        bridge may be called with the copy as its argument instead; the guard below uses the same
        resolution the bridge will use.
      - **The order inside `eval/dq1/build.py` (r5 S1).** Before each bridge run, it resolves the
@@ -392,9 +393,9 @@ sandbox.
    `derive_code_hash("pagerank")`. The next `cached_adjacency` call (in a fresh process, so no
    instance cache) does not serve the old pair: it rebuilds and rewrites it under a new key that
    carries the new hash. The test asserts the key change and the rewrite only. It does not assert
-   the new rule's effect, because the running code still imports the unedited predicate. Mutation:
-   leave the code hash out of the disk key (the old pair is served, its key unchanged, the file not
-   rewritten): FAILS.
+   the new rule's effect, because the running code still imports the unedited predicate, and no new
+   mock is added (L71). Mutation: leave the code hash out of the disk key: FAILS, because the old
+   file's mtime and contents are unchanged.
    {#ac-6}
 7. **AC-7 (R4) The measuring code can fail** (`tests/test_dq1_measure.py`, against
    `eval/dq1/measure.py`). These are fixture list pairs; no store is involved:
@@ -440,7 +441,9 @@ sandbox.
     `held`. The global store's deferral row exists. {#ac-12}
 13. **AC-13 (R4) The mis-slug guard runs before any write** (`tests/test_dq1_measure.py`, r5 S1,
     r6 S1). In the sandbox, W and a second throwaway store `Z` are both registered. The bridge
-    subprocesses run with `REFMATRIX_ROOT` UNSET and cwd at the copy, as [[#r4]] invokes them.
+    subprocesses run with `REFMATRIX_ROOT` UNSET and cwd at the copy, as [[#r4]] invokes them. This
+    is a stated override of task 23.0's autouse `REFMATRIX_ROOT` value, scoped to the bridge
+    subprocess's environment only; the sandbox's `$HOME` and guard stay in force.
     - **Negative leg.** A memdir copy is placed under the slug of Z's project root, and `build.py`
       is asked to bridge it for W. `build.py` exits non-zero and names both roots, and Z's and W's
       catalog files and `facts.log` are byte-identical afterwards.
@@ -484,7 +487,10 @@ R5's commit.
 - Committed on branch `task-dq1-operational-content-out-of-graph` and merged `--no-ff` to
   `master`; every project store's rollout row is recorded (done or `held`).
 
-## Revision 8 (2026-11-14, ch-bsd r6) {#rev-8}
+## Revision 8 (2026-11-14, ch-bsd r6 + L71) {#rev-8}
+
+The lead's ruling L71 (dev master `43ddd38`) adopts both fixes; for M1 it picks the
+rebuild-only assertion, with no new mock.
 
 | finding | answered in |
 |---|---|
