@@ -99,9 +99,14 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
    Q8 is decided as a: `workflow/` leaves at ingest (G22). v3 is therefore RE-RUN, on the same
    code and windows re-read from the post-exclusion store, after G22's ingest exclusion deploys
    ([[plan-10-injection-dedup#q8-b]]). The re-run's figures replace v3's as 10.2 R8's parity
-   target. If the re-run fails R2b's rule, Part 1 reads FAILED (v3, re-run): 10.2 is not built,
-   or if it has already merged, the result goes to the user with an id, which is R3b's path.
-   {#r4b}
+   target. **10.5 also re-runs 10.2 R8's parity check against that new target** (r2 m5): the
+   same replay in parity mode, with `stm.held_items` and 25.1b's `pack(held=…)` imported from
+   the deployed `master`. It runs in the measurement lane, in the same session as the re-run,
+   right after G22's ingest exclusion deploys, and both results go in the same dated addendum.
+   If the re-run fails R2b's rule, Part 1 reads FAILED (v3, re-run): 10.2 is not built, or if it
+   has already merged, the result goes to the user with an id, which is R3b's path. A parity
+   mismatch is a defect: it is logged in `workflow/bug_registry.md` and fixed in 10.2's code or
+   the replay before the addendum closes. {#r4b}
 
 ## Part 2: read-back probe — to run, bands written first {#part-2}
 
@@ -297,3 +302,7 @@ line is last. S6: Q8 = a, so v3 is re-run after G22's ingest exclusion deploys (
 AC-3 gain mutations, and AC-4/AC-5 cover Part 1b. {#rev-round-6-bsd}
 
 rel: derives-from -> [[bsd-spec-t3ab-ff1d453-369e0b5]]
+
+**bsd-spec-t3ab r2 m5 folded (2026-11-13).** R4b's post-G22 re-run also re-runs 10.2 R8's parity
+check against the new target. 10.5 runs it, in the measurement lane, right after G22 deploys.
+{#rev-round-6-bsd-r2}

@@ -19,11 +19,16 @@ metadata:
 > Depends on: nothing beyond `master`. It is the ONLY plan-10 task that builds early (L30). It
 > follows the revival merge in queue item 4 and lands before 25.1b and 25.3, which read its
 > marker. The rest of plan-10 builds after T4.
-> **Install: user-gated.** R1's new PreCompact entry regenerates the hook config, so it reaches
-> live stores only through an `install-hooks` window. It rides 25.1b's user-gated window in queue
-> item 4, batched per C11 (bsd-spec-t3ab S7, lead ruling; the lead adds it to G31). Until that
-> window runs, no live marker is written, so the readers see "no marker". That is safe: 10.2 is
-> not built yet, and 25.1b ships in the same window.
+> **Install: user-gated, for the PreCompact entry only.** R1's NEW PreCompact entry
+> (`--event compact-marker`) regenerates the hook config, so it reaches live stores only through
+> an `install-hooks` window. It rides 25.1b's user-gated window in queue item 4, batched per C11
+> (bsd-spec-t3ab S7; in G31). The `session-start` dispatch on `compact` / `clear` needs no window:
+> it rides TODAY's installed SessionStart focus entry, whose matcher already covers both. So once
+> 10.3 deploys, markers are written live on SessionStart `compact` / `clear`, and only the
+> PreCompact-side marker waits for the window (r2 m4). Every reader handles that safely:
+> - 10.2 is not built yet;
+> - 25.1b ships in the same window;
+> - 25.3 R7's helix reset only sees its reset happen sooner, which is the safe direction.
 > Builds: [[task-19.6-phased-context-and-topic-cache]] R8a's writer, as 19.6 names it. Its readers
 > are listed in R2.
 
@@ -148,3 +153,7 @@ rel: motivates -> [[task-25.3-stm-ref-admission-and-helix-repeat#r7]]
 25.1b's window in queue item 4, recorded in the header and the DoD. {#rev-round-6-bsd}
 
 rel: derives-from -> [[bsd-spec-t3ab-ff1d453-369e0b5]]
+
+**bsd-spec-t3ab r2 m4 folded (2026-11-13).** The install note is corrected: SessionStart
+`compact` / `clear` markers are written live after deploy through today's entry, and only the new
+PreCompact entry waits for the window. 25.3 R7 is named among the readers. {#rev-round-6-bsd-r2}
