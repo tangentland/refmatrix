@@ -19,7 +19,8 @@ metadata:
 > 2026-11-13 ([[#open-decisions]]).
 > Bugs: the hard-limit half of bug-164's report (the user, Q14); bug-182 (R0 + R15, under L44's
 > band); plan-2's three riders: r9 #s-2 / #m-4 (R16, R17) and r5's scan-prompt rerank rate
-> (19.5 `#w1c-rider`, closed by R0).
+> (19.5 `#w1c-rider`, closed by R0); bug-224, the silent empty payload on a hook-mode skip (R18,
+> added 2026-11-14 by L68).
 > Depends on: [[task-25.1-recall-hook-byte-budget]] MERGED (revision 7, released in 0.83.0: the
 > one budget module `hook_budget`, `fit_blocks`, the verb-side `recall_pack.pack`, R11's
 > recall-state entry); [[task-10.3-plan-10-injection-dedup]] MERGED (the compaction marker
@@ -43,6 +44,8 @@ rel: amends -> [[task-25.1-recall-hook-byte-budget#r3]]
 rel: amends -> [[task-25.1-recall-hook-byte-budget#r8]]
 rel: amends -> [[task-25.1-recall-hook-byte-budget#r9]]
 rel: amends -> [[task-25.1-recall-hook-byte-budget#acceptance]]
+rel: amends -> [[task-25.1-recall-hook-byte-budget#r5]]
+rel: amends -> [[task-25.1-recall-hook-byte-budget#open-decisions]]
 rel: realizes -> [[task-19.1-pack-recall-under-budget#w1c-riders]]
 rel: realizes -> [[task-19.5-measure-delivery#w1c-rider]]
 rel: implements -> [[plan-review-2026-11-13#d-q2]]
@@ -256,6 +259,25 @@ review's citations stay valid). R0 is this task's own measurement step (L44 name
     The busy / degrade line a hook-mode recall prints names the daemon slice and the total budget
     separately, each labelled. For example: `recall not confirmed within the 1.5 s daemon slice (hook
     budget 5 s) — daemon busy; the hook skipped this turn`. {#r17}
+18. **R18 A hook-mode skip says so in the payload** (bug-224; L68, added 2026-11-14,
+    [[#rev-round-3]]). Today, when a `--pack` hook-mode recall degrades,
+    `cli._memory_recall_impl._degrade_or_raise` records the outcome, prints the cause on stderr
+    only, and returns before printing anything (25.1 d8: "nothing on stdout"). bsd-251 reproduced
+    the result at the 25.1 branch's `f656f78`: exit 0, 0 B on stdout, which the agent reads as
+    "nothing relevant". With this task, every hook-mode skip on the pack path emits ONE skip line
+    in the payload through `hook_budget.emit`, inside the channel's budget:
+    `rmx recall skipped: <cause> — <the classifier's words>`.
+    - `<cause>` is one of `daemon busy`, `budget spent`, `worker timeout`, `daemon absent` or
+      `transport error`. ONE function maps the exception type to it, the same exception that
+      `rec.degraded` records, so the line and the telemetry row never disagree.
+    - The line is at most 300 B. Where it would exceed that, the classifier's words are cut at a
+      whole word, and the line never exceeds the channel's budget.
+    - The exit stays 0, the stderr line stays, and the degrade row is unchanged except that its
+      `payload_bytes` counts the skip line. The skip line is not an item: it emits no `delivered`
+      event.
+    - Interactive and MCP callers are unchanged: they still raise, per 25.1 R5.
+    - The hook modes covered are `--stdin-json`, `--session-start` and `--recent` / PreCompact,
+      with `--pack`. {#r18}
 
 ### Amendments to 25.1, by name {#amends}
 
@@ -282,6 +304,10 @@ The ladder changes four rules 25.1 states. Each is amended here, and nothing els
   tier-1 body cut, or an excerpt cut mid-line or over 300 B / 3 lines". A tier-2 excerpt is the
   intended rendering, not a cut body. AC-9's "whole bodies" assertion becomes "tier-1 bodies whole;
   tier-2 excerpts within their cap and ending on a whole line". {#amend-ac9-ac14}
+- **25.1 d8 and R5's hook-mode no-daemon bullet, with AC-4 (c)** ("prints NOTHING to stdout,
+  exits 0"): from this task on, a hook-mode skip prints ONE skip line ([[#r18]]) and still exits
+  0, and AC-4 (c)'s "nothing on stdout" becomes "exactly the skip line on stdout". 25.1 ships in
+  0.83.0 under d8 unchanged (L68). {#amend-d8}
 
 ## Acceptance criteria {#acceptance}
 
@@ -328,6 +354,27 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
 
   Mutations: a prune that keeps a 51st page; a token resolving to a page written after a prune
   (`<seq>` reused); a prune not counted on the row; the other-session sweep at 6 days. {#ac-27}
+- **AC-28 A skip is visible in the payload (R18, bug-224).**
+  - **No daemon, no hub worker:** the GENERATED per-prompt recall command, run unchanged in the
+    sandbox (25.1 AC-4 (c)'s setup), exits 0. Its stdout is exactly one line,
+    `rmx recall skipped: daemon absent — …`, of ≤ 300 B and within `budget("prompt_recall")`.
+    The degrade row's `payload_bytes` equals that line's bytes, and no `delivered` event is
+    written. RED at HEAD: 0 B on stdout.
+  - **Budget spent:** the same command's argv, with only `--timeout` lowered to 0.01 s (a recorded
+    deviation from the generated argv: there is no other way to spend the budget without a mock),
+    prints one `rmx recall skipped: budget spent — …` line.
+  - **Generated SessionStart and PreCompact recall commands:** both print one skip line in the
+    no-daemon setup.
+  - **The cause map:** a unit table over the one cause function covers all five causes, from
+    real exception types (`VerbBusyError`, `VerbAbsentError`, a worker-probe timeout,
+    `ConnectionRefusedError`, `JSONDecodeError`).
+  - **Interactive is unchanged:** an interactive call in the no-daemon setup raises as before.
+
+  Mutations: the degrade returns before `emit` (FAIL: 0 B on stdout); the skip line printed with
+  `click.echo` instead of `hook_budget.emit` (FAIL: AC-26's structural check, and no command id on
+  the row); the cause taken from the message text instead of the exception type (FAIL: the
+  unit table's refused-connection row reads `daemon busy`); a skip line over 300 B (FAIL: the
+  length check). {#ac-28}
 - **AC-17 (R13).** 40 retrieved items at 20 KB total, with 25.1-shaped hook lines of 250-370 B, at
   a 9,000 B budget. Every item is visible: at tiers 1-3 (its hook line printed, carrying its curated
   hook), as a names-line member, or, past the cap of 15, counted in `(+N)` and on the spill page.
@@ -421,13 +468,14 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
 | `src/refmatrix/recall_pack.py` | the ladder (one render function per tier), the `Held` protocol (`covers(key, full_run_tier) -> bool`) and `pack(held=…)` with tier-pinned removal (the ONE owner; 10.2 passes its `HeldSet`), the names line (the only home of `still in play` and `·held`), `Packed` gains per-row full-run and rendered tier and `form` |
 | `src/refmatrix/stm.py` | spill page write, read and prune ([[#k10]]) under 10.3's `.emitted` directory helper; reads `stm.last_marker` |
 | `src/refmatrix/hooks.py` | `HOOK_COMMAND_CHANNELS` shares for every generated command with rmx stdout (via `hook_budget`) |
+| `src/refmatrix/cli.py` (`_memory_recall_impl._degrade_or_raise`) | R18: the skip line through `hook_budget.emit` on the pack path; the one exception-to-cause function (beside `_raw_transport_cause`) |
 | `src/refmatrix/cli.py` (the nine writer functions, [[#r12]]) | `_echo_pack`, `recall_state`, `scan_prompt_cmd`, `curator_status`, `focus_context`, `focus_hook` (session-start), `focus summarize`, `ingest-gmd --as-memory --detach`, `save_state` write through `hook_budget.emit` |
 | `src/refmatrix/verbs.py` (`memory_recall`) | the `page` parameter; the global leg's reserve and `global_omitted`; the degrade wording (R17) |
 | `src/refmatrix/cli.py` | `rmx memory recall --page <token>`; `legs_ms` on scan-prompt's and the per-prompt recall's rows; the R17 wording around `RECALL_DAEMON_SLICE_S` |
 | `src/refmatrix/scan.py` | per-leg timing; leg bounds (only if R15 is built) |
 | `src/refmatrix/telemetry.py` | `item_key` (the ONE item key, 10.2 h8; built here, [[#k3]]); `form`, `capped`, `dropped_bytes`, `legs_ms`, `global_omitted`; `rmx telemetry --context` prints clamp firings |
 | `.claude/settings.json`, `.claude/rmx-hooks.json` | regenerated from Python in the task's clone, never by `rmx install-hooks` against a live store |
-| `tests/test_task25_1b_ladder_spill.py` (new) | AC-16..AC-27 |
+| `tests/test_task25_1b_ladder_spill.py` (new) | AC-16..AC-28 |
 | `tests/test_verb_parity.py` | the `page` twin |
 | `workflow/measurements/task-25.1b-scan-prompt-legs.md` (new) | R0's table and the L44 decision row |
 | `workflow/test_mock_registry.md` | AC-22's rerank double; AC-25's test `Held` class, standing in for 10.2's `HeldSet` (`internal-pending` at this task's build, because `HeldSet` is not built yet; it becomes `internal-active` when 10.2 lands; graduation: replaced by `stm.HeldSet` in 10.2's AC-2) |
@@ -438,7 +486,7 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
 - The branch opens with its own micro-cycle: AC-21 (a) RED (no `legs_ms`), then the `legs_ms`
   GREEN, then a ch-bsd lite round over the pair, then the lead's early merge and deploy ([[#r0]]).
 - Then RED, at `master` after 25.1, 10.3 and that pair: AC-16 (no shared emitter), AC-17 (25.1
-  drops instead of degrading), AC-18 (no page), AC-22, AC-23, AC-25. Each red run is recorded. A RED that passes at HEAD is not a RED ([[feedback_red_test_must_fail_at_head]]).
+  drops instead of degrading), AC-18 (no page), AC-22, AC-23, AC-25, AC-28 (0 B on a skip). Each red run is recorded. A RED that passes at HEAD is not a RED ([[feedback_red_test_must_fail_at_head]]).
 - No mock of the pack, the emitter, the generator, STM or telemetry. The one stand-in is AC-22's
   rerank double, which is registered.
 - Mutation run per [[feedback_commit_before_mutation_revert]] and
@@ -529,3 +577,22 @@ rel: implements -> [[plan-review-2026-11-13#lead]]
 | The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` set to `approved` (was `drafting`); this task may now be built in its queue slot |
 
 rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]
+
+## Revision round 3 (2026-11-14, bug-224 confirmed; lead ruling L68) {#rev-round-3}
+
+bsd-251 reviewed 25.1 at `f656f78` and confirmed bug-224's cause: the hook-mode degrade path on
+`--pack` returns before printing anything, so a skipped recall reaches the agent as an empty
+payload with exit 0. L68 keeps 25.1's d8 for the 0.83.0 release and moves the fix here, because
+this task owns the single emitter. `metadata.status` stays `approved` pending a confirm-lite ch-bsd
+round over this revision. {#rev-round-3-lead}
+
+rel: implements -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[bug_registry#registry]]
+
+| item | change | anchor |
+|---|---|---|
+| L68 (b-1): bug-224 | R18: one skip line in the payload through `hook_budget.emit`, inside the budget, naming the cause from ONE exception-to-cause map; exit 0 and the stderr line kept | [[#r18]] |
+| 25.1 d8 / R5 / AC-4 (c) | amended by name: a hook-mode skip prints exactly the skip line; 25.1 itself ships under d8 | [[#amend-d8]] |
+| AC | AC-28: no daemon (the generated command unchanged), budget spent (`--timeout` lowered, recorded), SessionStart and PreCompact, the cause table, interactive unchanged; four mutations, including "the degrade returns before emit" | AC-28 |
+| files and RED | `_degrade_or_raise` and the cause function; AC-28 RED at HEAD (0 B) | [[#files]], [[#test-strategy]] |
+| bug-224's row | the lead points it here; T0.3 keeps only the load reproduction (L68) | — |
