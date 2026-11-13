@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: task-28.1-session-arms-and-push-switch
-title: "Task 28.1: the plan-28 period record, a session cell fixed at SessionStart, the paired-run override (cell and as-of memory filter), and arm B's push-off switch: per-prompt scan-prompt and recall print nothing and retrieve nothing in cell B"
+title: "Task 28.1: the plan-28 period record, the paired-run fields on 10.2's session cell, the paired-run override (cell and as-of memory filter), and arm B's push-off switch: per-prompt scan-prompt and recall print nothing and retrieve nothing in cell B"
 tags: [task, plan-28, experiment, arms, scan-prompt, memory-recall, hooks, telemetry]
 metadata:
   node_type: task
@@ -169,7 +169,8 @@ the mutation that must fail it (r1 #m3). {#acceptance-lead}
    **Mutation:** the dedupe factor read from `draw` at the prompt's time rather than from
    `session_cell`, with the session straddling `end`; the `A+full` session dedupes after `end`.
    {#ac-4}
-5. **AC-5 The cell is fixed for the session (r1 #m2).**
+5. **AC-5 `push_on` follows the session cell (r1 #m2).** This AC guards this task's use of 10.2's
+   `session_cell`; 10.2's own AC-11 tests the cell itself.
    - A session that starts `B` one second before `end` gets empty per-prompt payloads at prompts
      after `end`.
    - A session that starts one second before `start` gets full payloads after `start`.
@@ -213,7 +214,7 @@ the mutation that must fail it (r1 #m3). {#acceptance-lead}
 | file | change |
 |---|---|
 | `src/refmatrix/arms.py` (created by 10.2, with `session_cell` and the arm file) | the arm file's `source` and `run` fields, `paired_override`, `as_of_admit`, `push_on`; the plan-28 record (inert until 28.5) |
-| `src/refmatrix/cli.py` (`scan-prompt`, `_memory_recall_impl` stdin-json path, `focus hook --event session-start`) | the arm file at SessionStart; `push_on` before retrieval; the suppressed row; the SessionStart row fields |
+| `src/refmatrix/cli.py` (`scan-prompt`, `_memory_recall_impl` stdin-json path, `focus hook --event session-start`) | the `source` and `run` fields on 10.2's arm file at SessionStart; `push_on` before retrieval; the suppressed row; the SessionStart row fields |
 | the one memory-row read site (named before GREEN, R4) | `as_of_admit` |
 | `src/refmatrix/telemetry.py` | `session_arm`, `suppressed`, `arm_error`, `as_of_excluded` row fields; the per-cell split |
 | `workflow/deferral_registry.md` | 10.2's `arms.py` row widened (R7) |
