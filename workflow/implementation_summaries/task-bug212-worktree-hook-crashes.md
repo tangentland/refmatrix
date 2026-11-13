@@ -240,3 +240,136 @@ disown
 - The pre-existing `except Exception: pass` around `log_cli_invocation` in `cli_entry` is
   unchanged (accounting never fails the command); the cwd-less case no longer reaches it.
 - The bug-212 registry row is still `open`; flipping it is for the commit that merges this.
+
+## RED r1 (remedy for ch-bsd r1, DIRTY 8) {#red-r1}
+
+Test commit `277ce60` on top of `7537965` (tests + mock registry only; no `src/`). File
+`tests/test_bug212_r1_remedy.py`. At HEAD: **31 failed, 4 passed** in 32 s
+(`workflow/review-output/bug212/red-r1-head.log`). The 4 passes are guards, each proven by a
+mutation below. Real git and the GENERATED hook bodies (`hooks._install_git_hooks`) in tmp repos
+under a short `/tmp` mkdtemp root; the bug-212 recording `rmx` shim; `GIT_TRACE` proves each
+hook fired. Scope per the brief: b-1, s-1, m-1, m-2, m-3 (s-2 = bug-209, s-3 docs and bug-215
+are out of scope).
+
+rel: derives-from -> [[bsd-bug212-r1-b024a95]]
+rel: depends-on -> [[agent-brief-red-212r1]]
+
+### b-1: a repo that tracks its catalog {#red-r1-b1}
+
+Fixture `tracked_repo`, two committed layouts from the 2026-11-11 fleet survey: `slots`
+(catalog.A/B.duckdb + `active` + catalog.duckdb, cliquet/atldb) and `legacy` (catalog.duckdb only,
+prep_prolific). Nothing under `.refmatrix/` is ignored; the fixture asserts the catalogs are
+tracked and the main checkout's `.refmatrix/` is clean before any hook runs.
+
+- `test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[<layout>-<hook>-<worktree|clone>]`
+  -- 16 cases: all four hooks, in a `git worktree add` and in a `git clone`. Asserts that no rmx
+  call is made, no traceback or FAILED line appears, `git status --porcelain --untracked-files=all
+  -- .refmatrix` is empty, and (worktree) a plain `git worktree remove` succeeds. RED line (each):
+  `[<layout>] <hook> in a <where> of a repo that TRACKS its catalog ran rmx: [('<co>', 'sync
+  --since ...')]`. The same message carries the status at HEAD: ` M .refmatrix/catalog.A.duckdb`
+  (slots) or ` M .refmatrix/catalog.duckdb` (legacy), plus `?? cli.log / sync.log / facts.log`.
+  That is the audit's tracked binary being written.
+- `test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[<layout>-post-commit|post-checkout]`
+  -- 4 cases: the main checkout, catalog tracked, no daemon. RED line: `[<layout>] <hook> in the
+  main checkout (catalog tracked, no daemon) ran rmx: [('<proj>', 'sync --since ...')]`. See
+  ambiguity a1.
+- GUARD `test_a_repo_that_tracks_its_catalog_still_syncs_through_a_live_daemon[<layout>]` -- 2
+  cases. A real daemon (`spawn_daemon_subprocess`) runs on the tracked store. post-commit must
+  sync in the main checkout, and the file must be in the store after the daemon stops. Passes at
+  HEAD. Killed by G1 (gate = `exit 0`) and by G2 (the gate reduced to "a catalog git does not
+  track", dropping the socket half): `ran no sync: []`, 2/2 each.
+- The existing guard `test_bug212_hooks_in_worktrees.py::test_the_main_checkout_with_a_store_still_syncs`
+  already covers "a primary checkout with an untracked store still syncs". It was not changed.
+
+### s-1: a vanished cwd at every cwd reader {#red-r1-s1}
+
+- `test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[sync-since|stats|grep|context|query]`
+  -- `REFMATRIX_ROOT` set to a throwaway store, cwd deleted before exec. Must exit non-zero with
+  no traceback and an `Error:` line that says the working directory is gone. RED line (each):
+  `` `rmx <argv>` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw traceback ``. The
+  frames are `discovery.resolve_partition:296` -> `discovery.partition_marker:269`.
+- `test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[cctree|hub-pause]` -- no
+  `REFMATRIX_ROOT`. Must exit non-zero with no traceback and an `Error:` line. RED lines: `rmx
+  cctree` crashed (`cctree.resolve_path:1297`); `rmx hub pause nosuch-bug212` crashed
+  (`discovery.discover_roots:121` -> `_cwd_root:100`).
+- `test_an_mcp_tool_call_in_a_vanished_cwd_names_the_working_directory` -- `rmx mcp` over stdio
+  with `rmx_query` and no root/project. Must return `isError` with text that says the working
+  directory is gone, and must still answer a ping after. RED line: `... failed without saying the
+  working directory is gone: 'FileNotFoundError: [Errno 2] No such file or directory'`
+  (`mcp._resolve_root:63`).
+- `test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_since|sync_files]`
+  -- `sync.sync_since` (sync.py:163) and `sync.sync_files` -> `_sync_paths` (sync.py:283), with no
+  `project_root`. Each must raise a non-OSError whose message says the working directory is gone.
+  The class name is the implementer's choice. RED line: `sync.<fn> in a vanished cwd raised
+  FileNotFoundError: '[Errno 2] No such file or directory' -- not the named cwd error`.
+
+### m-1, m-2, m-3 {#red-r1-m}
+
+- m-3, RED: `test_a_root_commit_is_synced_not_reported_as_a_failure`. A fresh repo with an
+  ignored store and the hooks installed. The first commit must print no FAILED or `Error:` line,
+  must run a sync, and must index the root commit's file. RED line: `post-commit on a root commit
+  (no HEAD~1) reported a failure`, with stderr `Error: sync --since HEAD~1 failed: git diff exited
+  128: fatal: ambiguous argument 'HEAD~1' ...` and `refmatrix: post-commit rmx sync FAILED (exit
+  1)`.
+- m-1, GUARD: `test_a_cwd_less_run_writes_one_telemetry_row_naming_the_lost_cwd`. `rmx version`
+  runs in a vanished cwd with no `REFMATRIX_ROOT`, a fresh `RMX_HOME`, and telemetry on. It must
+  write exactly one `cli.log` row with `argv ["version"]`, `cwd: null`, and a `cwd_error` naming
+  the directory. Mutation A (row filed through `_root()`) kills it: `expected exactly one cli.log
+  row in RMX_HOME, got []`. Mutation B (drop `record["cwd_error"]`) kills it: `the cwd-less row's
+  cwd_error does not name ...`.
+- m-2, GUARD: `test_sync_since_a_bad_ref_on_a_supervised_store_with_the_daemon_down_is_a_clean_error`.
+  A placeholder plist FILE sits at `launchctl.plist_path(root)` inside the sandbox; the test
+  refuses any path outside `RMX_SANDBOX_ROOT`. The real `is_installed` therefore answers True.
+  There is no daemon. A control call with `--since HEAD` must print `daemon down`, which proves the
+  branch is reachable. Then `--since no-such-ref-bug212` must be a clean `Error:` naming the ref
+  and git's message. Mutation D (`GitRefError(Exception)`) kills it: `[daemon-down+launchd] ...
+  failed as a raw traceback` (`refmatrix.sync.GitRefError: ...`).
+
+### Mutations and the satisfiability probe {#red-r1-mutations}
+
+Every mutation ran on `277ce60` against the whole new file. Each was restored in its own command
+with `git checkout -- <file>`, the fix was grepped back, and `git status --short src` was empty.
+`__pycache__` was cleared after the batch. After the restore, the new file plus the prior bug-212
+file give 31 failed, 23 passed (`red-r1-post-restore.log`): the same 31 REDs, 4 guards, and the
+19 prior tests.
+
+| id | mutation | killed | log |
+|----|----------|--------|-----|
+| G1 | `_store_gate` returns `exit 0` | live-daemon guard 2/2 | `red-r1-mut-G1-gate-exit0.log` |
+| G2 | gate = presence AND `git ls-files` empty (no socket half) | live-daemon guard 2/2; all 20 b-1 REDs pass under it | `red-r1-mut-G2-untracked-only.log` |
+| D | `class GitRefError(Exception)` | m-2 guard | `red-r1-mut-D-gitreferror-base.log` |
+| A | telemetry row filed via `_root()` | m-1 guard | `red-r1-mut-A-telemetry-via-root.log` |
+| B | `record["cwd_error"]` not written | m-1 guard | `red-r1-mut-B-no-cwd-error.log` |
+
+The satisfiability probe was not committed and was restored like a mutation. It applied the
+audit's prescribed gate, `[ -S "$ROOT/.refmatrix/rmxd.sock" ] || { <presence> && [ -z "$(git -C
+"$ROOT" ls-files -- <WRITER_CATALOG_FILES>)" ]; } || exit 0`, rendered from
+`WRITER_CATALOG_FILES`. Result: all 20 b-1 REDs, both live-daemon guards, and the 19 prior bug-212
+tests pass. The 11 that still fail are s-1 and m-3, which no gate can fix
+(`red-r1-probe-full-gate.log`). The b-1 contract can be met with a shell gate alone.
+
+### Ambiguities for the lead {#red-r1-ambiguities}
+
+- **a1.** The main checkout with a tracked catalog and no daemon is pinned to "no sync". This
+  follows from the stated gate (a live socket OR an untracked catalog). The consequence: a fleet
+  trunk that still tracks its catalog does not index on commit while its daemon is down.
+- **a2.** A stale socket is not tested. `[ -S ]` passes on a socket a crashed daemon left behind.
+  The CLI then falls to an in-process sync and writes a tracked catalog. A shell cannot cheaply
+  test liveness. Should `rmx sync` itself refuse an in-process write to a git-tracked catalog?
+- **a3.** The optional linked-worktree check (`git-dir != git-common-dir`) is not pinned either
+  way. A worktree that ran its own `rmx init` (untracked store) syncs under the prescribed gate.
+- **a4.** The s-1 tests with `REFMATRIX_ROOT` require FAILURE, not success. The partition comes
+  from the cwd's `.refmatrix/partition` marker, and falling back to the store's name would
+  silently pick a partition of a shared store. If the lead prefers "succeed on the default
+  partition", the five cases need relaxing.
+- **a5.** cctree and hub-pause assert only non-zero plus an `Error:` line, not that the line
+  names the cwd. `hub pause <name>` needs no cwd in principle. If `discover_roots` drops a vanished
+  cwd instead of raising, it must say so: no-silent-failures applies.
+- **a6.** `cli.py:7109` (`_grep_rg_fallback`'s `os.getcwd()`) has no RED. It is unreachable from
+  the CLI in a vanished cwd: `rmx grep` with `REFMATRIX_ROOT`, `RMX_PARTITION` and an absolute
+  path already fails cleanly at `cli._cwd()` (probe 2026-11-13). The implementer should still
+  route it through the shared helper, as a census item.
+- **a7.** The `Path.cwd()` defaults inside daemon ops (`daemon.py` 3475/3496/3582/4002/4563) read
+  the DAEMON's cwd. The audit does not list them, and they are not tested.
+- **a8.** The library-level tests pin behaviour (a non-OSError naming the working directory), not
+  a class. `CwdGone(RuntimeError)` is the audit's suggestion, not a contract.
