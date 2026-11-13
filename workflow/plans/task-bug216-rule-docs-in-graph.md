@@ -8,7 +8,7 @@ metadata:
   status: approved
   created: 2026-11-13
   updated: 2026-11-13
-  revision: 2
+  revision: 3
 ---
 
 # Task bug-216: the rule docs reach the graph {#root}
@@ -174,3 +174,37 @@ measured co-citation, not item → cited doc. {#rev-2-mechanism}
   one is listed with why), and the rule-doc groups fall from 209 / 38 to 0. {#ac-6-rev}
 
 Out of scope stays as written; the reinforcement direction is bug-218.
+
+## Revision 3 (2026-11-13, user decision: a `denotes` link replaces the forced re-ingest) {#rev-3}
+
+The user asked whether the path-less concept could simply be linked to its doc, then accepted the
+lead's recommendation: keep R6 (new edges bind the doc directly) AND add the link, which replaces
+R7's forced re-ingest as the repair for existing edges and as a safety net for every producer that
+mints a same-named concept. {#rev-3-decision}
+
+7. **R7 (replaced) `denotes` links.** A new linkage `denotes` (concept → the doc or memory entity
+   whose GMD id equals the concept's name, including the concept's `same_as` variants). (a) A
+   one-time derive op, run through the daemon (`_op_*`, announced, backed up), adds the link for
+   every existing path-less concept whose name is an ingested doc or memory id; idempotent;
+   counted and printed. (b) GMD ingest maintains it: ingesting a doc or memory with id X links
+   every concept named X (and its variants) to it; purging the doc removes the links. (c) A concept
+   name matching two targets (doc and memory) links both and is counted. `same_as` is NOT used:
+   the typed-edge walk excludes it by design (`store.py` `_expand_cfg` docstring: variant
+   aliasing, not a relation). {#r7-denotes}
+9. **R9 Walkers treat `denotes` as transparent.** The typed-edge candidate expansion
+   (`store.py` ~5660), `rmx neighbors`, `build_context`'s degree walk and PageRank's edge set
+   follow `denotes` as a zero-cost hop (no decay, not counted as a hop). PageRank folds a
+   concept's typed in-edges onto its `denotes` target. {#r9}
+
+**Acceptance (rev 3)** — AC-8 is replaced:
+
+- **AC-8 (R7, replaced).** A store built at HEAD with a misbound `derives-from` row to a path-less
+  concept: after the derive op, `denotes` links that concept to the doc; the original row is
+  untouched; a second run adds nothing. A doc ingested AFTER the concept exists gets the link at
+  ingest; purging the doc removes it. Mutations: link via `same_as`; skip the variants. {#ac-8-rev3}
+- **AC-10 (R9).** From doc A whose only edge to doc B is through a misbound concept, the expansion
+  walk with `RMX_EXPAND_HOPS=1` reaches B; `rmx neighbors A` lists B; PageRank gives B the in-edge.
+  Mutation: the walk treats `denotes` as a counted, decayed hop → B falls out at hops = 1. {#ac-10}
+- **AC-6 (live) amended again:** after deploy, run the derive op (announced, backed up); the recount
+  (R8) reports misbound rows that now reach a doc via `denotes` as BOUND-VIA-DENOTES, and rows
+  reaching nothing fall to the unresolved residue; the rule-doc groups fall to 0 after R4. {#ac-6-rev3}
