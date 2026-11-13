@@ -791,3 +791,32 @@ on top of, never instead of, the per-channel budgets (which already sum to ≤ 9
   mid-line; the cap read from an env var; one hook command bypassing the shared emitter. {#ac-16}
 
 Sequenced after the rev-7 GREEN (`green-251c`): RED then GREEN as its own round.
+
+**Rev 8 decided (user, Q14 = a): degrade ladder + spill to pull; the clamp is the counted safety
+net.** {#rev-round-8-q14}
+
+14. **R13 Degrade ladder inside the pack.** When a payload does not fit its channel budget, items
+    are degraded in rank order instead of dropped: tier 1 full body; tier 2 a short excerpt (the
+    item's first lines — the `lead` text, at most ~3 lines / 300 B); tier 3 a one-line pointer
+    (name, kind, scope-correct fetch command); tier 4 the single names line (`still in play` /
+    `+N more` names, cap 15). The pack fills top-down: as many tier-1 items as fit while leaving room
+    for every remaining item at a lower tier, then tier 2, and so on; every retrieved item stays
+    visible in some tier unless the names cap is reached. Kind labels (10.6) apply at every tier.
+    {#r13}
+15. **R14 Spill to pull.** Items that fall past the names cap, and the bodies of degraded items, are
+    written to a per-session spill page (one file per hook call under STM session state, one writer,
+    removed at compaction) and fetched with `rmx recall --page <n>` (verb parameter `page`, MCP and
+    CLI); the names line ends with that command. A missing or unreadable page is one clean `Error:`
+    line. {#r14}
+16. **R12 restated:** the 9,500 B clamp stays, but as a safety net: it fires only if the ladder
+    still overflows (a bug), and a firing is counted (`capped: true`, dropped bytes) and surfaced
+    on the console by `rmx telemetry --context`. {#r12-safety-net}
+
+- **AC-17 (R13).** With 40 retrieved items at 20 KB total and a 9,000 B budget: every item is visible
+  in some tier, tiers are monotone in rank, the payload is ≤ budget, and tier-1 count is maximal for
+  the room left. Mutations: drop instead of degrade; excerpt longer than its cap; tiers out of rank
+  order. {#ac-17}
+- **AC-18 (R14).** The names line's `rmx recall --page N` returns exactly the spilled items with
+  their bodies; the page is gone after a compaction marker; verb/CLI/MCP parity. {#ac-18}
+- **AC-16 amended:** with the ladder on, the clamp does not fire on the AC-17 fixture; with the ladder
+  disabled by mutation it fires and is counted. {#ac-16-amended}
