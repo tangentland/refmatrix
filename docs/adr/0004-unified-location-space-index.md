@@ -343,6 +343,21 @@ without a write per event. {#amend-helix-body}
   relation taxonomy mapped onto L0–L3; proximity tiers as a tier family; directory/extension facets;
   Aster's decaying approximate counters and per-key eager/lazy merge; and the gates prior
   measurements impose. The ADR stays Proposed. {#d-2026-10-07-amend}
+- **2026-11-13 (user, via bug-216 rev 3; recorded by the architect per plan-review L7 and L29):
+  `denotes` is a binding repair, not an alias merge.** bug-216 R7's `denotes` link joins a
+  path-less concept, minted by a bare doc-id `rel:` target or by a doc title that spells its id,
+  to the doc or memory whose GMD id it spells. It adds no term-space alias and no `same_as` row,
+  so the "merges target the alias map" rule of [[#d-2026-10-07]] is not engaged. The user
+  accepted rev 3 and confirmed rev 3-4 (the earlier 2026-11-13 Q8 row of the open-questions
+  ledger). R9's zero-cost walker hop and PageRank fold therefore ship as specced. The fold
+  changes a ranking input, so [[#gate-prior]] and [[#gate-depth]] apply to it: `denotes` is
+  evaluated per type after bug-216 is live, by [[task-bug216-denotes-fold-evaluation]], with
+  bands written there before the run. Its harm band disables the fold, never the link, and its
+  result is appended here. Until then the type's prior stays flat (1.0). {#d-2026-11-13-denotes}
+
+rel: related-to -> [[task-bug216-rule-docs-in-graph#r9]]
+rel: specified-by -> [[task-bug216-denotes-fold-evaluation]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
 ## Amendment 2026-10-14 (APPROVED by the user, 2026-10-14) {#amend-2026-10-14}
 
