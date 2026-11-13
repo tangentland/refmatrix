@@ -1,0 +1,591 @@
+......................................................FFFFFF........F... [ 81%]
+..FFFFFF........                                                         [100%]
+=================================== FAILURES ===================================
+_ test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-files] __
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x105dd2fd0>, 'slots')
+mode = 'files'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("mode", ["files", "since"])
+    def test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog(tracked_repo, mode):
+        """a2: `rmx sync --files <f>` and `rmx sync --since HEAD~1`, no daemon, cwd = the main
+        checkout (no `REFMATRIX_ROOT`, as a hook runs it): one loud refusal, non-zero exit, the
+        tracked catalog untouched."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        path = repo.proj / "main_new.py"
+        path.write_text("def main_new():\n    return 3\n", encoding="utf-8")
+        _quiet(repo.proj, repo, "add", "main_new.py")
+        _quiet(repo.proj, repo, "commit", "-q", "-m", "a commit to sync")
+        before = _catalog_digests(repo.store)
+        argv = (["sync", "--files", str(path)] if mode == "files"
+                else ["sync", "--since", "HEAD~1"])
+        r = subprocess.run([sys.executable, str(_entry(repo.base)), *argv], cwd=str(repo.proj),
+                           env=_base_env(), capture_output=True, text=True, timeout=240)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        after = _catalog_digests(repo.store)
+        changed = sorted(n for n in before if after.get(n) != before[n])
+        assert TRACEBACK not in r.stderr, f"[{layout}] `rmx {' '.join(argv)}` crashed\n{text}"
+        assert not changed, (f"[{layout}] in-process `rmx {' '.join(argv)}` wrote the git-tracked "
+                             f"catalog {changed} (exit {r.returncode})\n{text}")
+        assert r.returncode != 0, \
+            f"[{layout}] `rmx {' '.join(argv)}` on a tracked catalog exited 0\n{text}"
+        target = _target_catalog(layout)
+>       assert len(_refusal_lines(r.stderr, target)) == 1, \
+            f"[{layout}] no single `Error:` line naming the tracked {target} and the remedy " \
+            f"(untrack it, or start the daemon)\n{text}"
+E       AssertionError: [slots] no single `Error:` line naming the tracked catalog.A.duckdb and the remedy (untrack it, or start the daemon)
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process write to /private/tmp/b212t-jbch_bp1/proj/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it
+E         
+E       assert 0 == 1
+E        +  where 0 = len([])
+E        +    where [] = _refusal_lines('Error: refusing an in-process write to /private/tmp/b212t-jbch_bp1/proj/.refmatrix/catalog.A.duckdb: git tracks this ...ted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it\n', 'catalog.A.duckdb')
+E        +      where 'Error: refusing an in-process write to /private/tmp/b212t-jbch_bp1/proj/.refmatrix/catalog.A.duckdb: git tracks this ...ted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it\n' = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-jbch_bp1/rmx...ed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it\n").stderr
+
+tests/test_bug212_r1_remedy.py:620: AssertionError
+_ test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-since] __
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x105dd1dd0>, 'slots')
+mode = 'since'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("mode", ["files", "since"])
+    def test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog(tracked_repo, mode):
+        """a2: `rmx sync --files <f>` and `rmx sync --since HEAD~1`, no daemon, cwd = the main
+        checkout (no `REFMATRIX_ROOT`, as a hook runs it): one loud refusal, non-zero exit, the
+        tracked catalog untouched."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        path = repo.proj / "main_new.py"
+        path.write_text("def main_new():\n    return 3\n", encoding="utf-8")
+        _quiet(repo.proj, repo, "add", "main_new.py")
+        _quiet(repo.proj, repo, "commit", "-q", "-m", "a commit to sync")
+        before = _catalog_digests(repo.store)
+        argv = (["sync", "--files", str(path)] if mode == "files"
+                else ["sync", "--since", "HEAD~1"])
+        r = subprocess.run([sys.executable, str(_entry(repo.base)), *argv], cwd=str(repo.proj),
+                           env=_base_env(), capture_output=True, text=True, timeout=240)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        after = _catalog_digests(repo.store)
+        changed = sorted(n for n in before if after.get(n) != before[n])
+        assert TRACEBACK not in r.stderr, f"[{layout}] `rmx {' '.join(argv)}` crashed\n{text}"
+        assert not changed, (f"[{layout}] in-process `rmx {' '.join(argv)}` wrote the git-tracked "
+                             f"catalog {changed} (exit {r.returncode})\n{text}")
+        assert r.returncode != 0, \
+            f"[{layout}] `rmx {' '.join(argv)}` on a tracked catalog exited 0\n{text}"
+        target = _target_catalog(layout)
+>       assert len(_refusal_lines(r.stderr, target)) == 1, \
+            f"[{layout}] no single `Error:` line naming the tracked {target} and the remedy " \
+            f"(untrack it, or start the daemon)\n{text}"
+E       AssertionError: [slots] no single `Error:` line naming the tracked catalog.A.duckdb and the remedy (untrack it, or start the daemon)
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process write to /private/tmp/b212t-iccern62/proj/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it
+E         
+E       assert 0 == 1
+E        +  where 0 = len([])
+E        +    where [] = _refusal_lines('Error: refusing an in-process write to /private/tmp/b212t-iccern62/proj/.refmatrix/catalog.A.duckdb: git tracks this ...ted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it\n', 'catalog.A.duckdb')
+E        +      where 'Error: refusing an in-process write to /private/tmp/b212t-iccern62/proj/.refmatrix/catalog.A.duckdb: git tracks this ...ted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it\n' = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-iccern62/rmx...ed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it\n").stderr
+
+tests/test_bug212_r1_remedy.py:620: AssertionError
+_ test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-files] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x105dd3350>, 'legacy')
+mode = 'files'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("mode", ["files", "since"])
+    def test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog(tracked_repo, mode):
+        """a2: `rmx sync --files <f>` and `rmx sync --since HEAD~1`, no daemon, cwd = the main
+        checkout (no `REFMATRIX_ROOT`, as a hook runs it): one loud refusal, non-zero exit, the
+        tracked catalog untouched."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        path = repo.proj / "main_new.py"
+        path.write_text("def main_new():\n    return 3\n", encoding="utf-8")
+        _quiet(repo.proj, repo, "add", "main_new.py")
+        _quiet(repo.proj, repo, "commit", "-q", "-m", "a commit to sync")
+        before = _catalog_digests(repo.store)
+        argv = (["sync", "--files", str(path)] if mode == "files"
+                else ["sync", "--since", "HEAD~1"])
+        r = subprocess.run([sys.executable, str(_entry(repo.base)), *argv], cwd=str(repo.proj),
+                           env=_base_env(), capture_output=True, text=True, timeout=240)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        after = _catalog_digests(repo.store)
+        changed = sorted(n for n in before if after.get(n) != before[n])
+        assert TRACEBACK not in r.stderr, f"[{layout}] `rmx {' '.join(argv)}` crashed\n{text}"
+        assert not changed, (f"[{layout}] in-process `rmx {' '.join(argv)}` wrote the git-tracked "
+                             f"catalog {changed} (exit {r.returncode})\n{text}")
+        assert r.returncode != 0, \
+            f"[{layout}] `rmx {' '.join(argv)}` on a tracked catalog exited 0\n{text}"
+        target = _target_catalog(layout)
+>       assert len(_refusal_lines(r.stderr, target)) == 1, \
+            f"[{layout}] no single `Error:` line naming the tracked {target} and the remedy " \
+            f"(untrack it, or start the daemon)\n{text}"
+E       AssertionError: [legacy] no single `Error:` line naming the tracked catalog.duckdb and the remedy (untrack it, or start the daemon)
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process write to /private/tmp/b212t-969ycmqt/proj/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it
+E         
+E       assert 0 == 1
+E        +  where 0 = len([])
+E        +    where [] = _refusal_lines('Error: refusing an in-process write to /private/tmp/b212t-969ycmqt/proj/.refmatrix/catalog.duckdb: git tracks this st...ted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it\n', 'catalog.duckdb')
+E        +      where 'Error: refusing an in-process write to /private/tmp/b212t-969ycmqt/proj/.refmatrix/catalog.duckdb: git tracks this st...ted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it\n' = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-969ycmqt/rmx...ed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it\n").stderr
+
+tests/test_bug212_r1_remedy.py:620: AssertionError
+_ test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-since] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x105dd2b50>, 'legacy')
+mode = 'since'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("mode", ["files", "since"])
+    def test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog(tracked_repo, mode):
+        """a2: `rmx sync --files <f>` and `rmx sync --since HEAD~1`, no daemon, cwd = the main
+        checkout (no `REFMATRIX_ROOT`, as a hook runs it): one loud refusal, non-zero exit, the
+        tracked catalog untouched."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        path = repo.proj / "main_new.py"
+        path.write_text("def main_new():\n    return 3\n", encoding="utf-8")
+        _quiet(repo.proj, repo, "add", "main_new.py")
+        _quiet(repo.proj, repo, "commit", "-q", "-m", "a commit to sync")
+        before = _catalog_digests(repo.store)
+        argv = (["sync", "--files", str(path)] if mode == "files"
+                else ["sync", "--since", "HEAD~1"])
+        r = subprocess.run([sys.executable, str(_entry(repo.base)), *argv], cwd=str(repo.proj),
+                           env=_base_env(), capture_output=True, text=True, timeout=240)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        after = _catalog_digests(repo.store)
+        changed = sorted(n for n in before if after.get(n) != before[n])
+        assert TRACEBACK not in r.stderr, f"[{layout}] `rmx {' '.join(argv)}` crashed\n{text}"
+        assert not changed, (f"[{layout}] in-process `rmx {' '.join(argv)}` wrote the git-tracked "
+                             f"catalog {changed} (exit {r.returncode})\n{text}")
+        assert r.returncode != 0, \
+            f"[{layout}] `rmx {' '.join(argv)}` on a tracked catalog exited 0\n{text}"
+        target = _target_catalog(layout)
+>       assert len(_refusal_lines(r.stderr, target)) == 1, \
+            f"[{layout}] no single `Error:` line naming the tracked {target} and the remedy " \
+            f"(untrack it, or start the daemon)\n{text}"
+E       AssertionError: [legacy] no single `Error:` line naming the tracked catalog.duckdb and the remedy (untrack it, or start the daemon)
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process write to /private/tmp/b212t-e3koqz_s/proj/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it
+E         
+E       assert 0 == 1
+E        +  where 0 = len([])
+E        +    where [] = _refusal_lines('Error: refusing an in-process write to /private/tmp/b212t-e3koqz_s/proj/.refmatrix/catalog.duckdb: git tracks this st...ted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it\n', 'catalog.duckdb')
+E        +      where 'Error: refusing an in-process write to /private/tmp/b212t-e3koqz_s/proj/.refmatrix/catalog.duckdb: git tracks this st...ted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it\n' = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-e3koqz_s/rmx...ed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it\n").stderr
+
+tests/test_bug212_r1_remedy.py:620: AssertionError
+_ test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[slots] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10686c8d0>, 'slots')
+
+    @pytest.mark.timeout(300)
+    def test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly(tracked_repo):
+        """a2 through the GENERATED post-commit: the main checkout tracks its catalog and holds a
+        socket file with no listener (a crashed daemon's leftover), so a socket-presence gate
+        passes. The tracked catalog must be left byte-identical; if the hook ran `rmx`, the
+        refusal must be loud on the committing terminal (its `Error:` line naming the tracked file
+        and the remedy, then the hook's `rmx sync FAILED` line). The git op itself still exits 0."""
+        repo, layout = tracked_repo
+        sock = repo.store / dm.SOCKET_NAME
+        _stale_socket(sock)
+        assert not dm.ping(repo.store), "fixture: something answers on the stale socket"
+        assert _status_refmatrix_catalogs(repo.proj) == "", "fixture: the catalog is already dirty"
+        before = _catalog_digests(repo.store)
+        (repo.proj / "main_new.py").write_text("def main_new():\n    return 3\n", encoding="utf-8")
+        _quiet(repo.proj, repo, "add", "main_new.py")
+        r = _hooked(repo.proj, repo, "commit", "-q", "-m", "commit beside a stale socket")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}\nrmx calls: {_calls(repo)}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert "hooks/post-commit" in _hooks_ran(repo), "fixture: git never ran post-commit"
+        after = _catalog_digests(repo.store)
+        changed = sorted(n for n in before if after.get(n) != before[n])
+        assert TRACEBACK not in r.stderr, f"[{layout}] post-commit crashed\n{text}"
+        assert not changed, (f"[{layout}] post-commit beside a stale socket wrote the git-tracked "
+                             f"catalog {changed}\ngit status:\n"
+                             f"{_status_refmatrix_catalogs(repo.proj)}\n{text}")
+        if _calls(repo):
+            target = _target_catalog(layout)
+>           assert len(_refusal_lines(r.stderr, target)) == 1 and FAILED_LINE in r.stderr, \
+                f"[{layout}] post-commit ran rmx beside a stale socket and the refusal was not " \
+                f"loud (one `Error:` naming {target} + the remedy, then `{FAILED_LINE}`)\n{text}"
+E           AssertionError: [slots] post-commit ran rmx beside a stale socket and the refusal was not loud (one `Error:` naming catalog.A.duckdb + the remedy, then `rmx sync FAILED`)
+E             stdout:
+E             
+E             stderr:
+E             Error: refusing an in-process write to /private/tmp/b212t-dmiwqk_x/proj/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it
+E             refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E             
+E             rmx calls: [('/private/tmp/b212t-dmiwqk_x/proj', 'sync --since HEAD~1')]
+E           assert (0 == 1)
+E            +  where 0 = len([])
+E            +    where [] = _refusal_lines('Error: refusing an in-process write to /private/tmp/b212t-dmiwqk_x/proj/.refmatrix/catalog.A.duckdb: git tracks this ...(rmx daemon start) so the write goes through it\nrefmatrix: post-commit rmx sync FAILED (exit 1); its error is above\n', 'catalog.A.duckdb')
+E            +      where 'Error: refusing an in-process write to /private/tmp/b212t-dmiwqk_x/proj/.refmatrix/catalog.A.duckdb: git tracks this ...(rmx daemon start) so the write goes through it\nrefmatrix: post-commit rmx sync FAILED (exit 1); its error is above\n' = CompletedProcess(args=['git', '-C', '/private/tmp/b212t-dmiwqk_x/proj', 'commit', '-q', '-m', 'commit beside a stale s...rmx daemon start) so the write goes through it\nrefmatrix: post-commit rmx sync FAILED (exit 1); its error is above\n").stderr
+
+tests/test_bug212_r1_remedy.py:662: AssertionError
+_ test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[legacy] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1034c6950>, 'legacy')
+
+    @pytest.mark.timeout(300)
+    def test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly(tracked_repo):
+        """a2 through the GENERATED post-commit: the main checkout tracks its catalog and holds a
+        socket file with no listener (a crashed daemon's leftover), so a socket-presence gate
+        passes. The tracked catalog must be left byte-identical; if the hook ran `rmx`, the
+        refusal must be loud on the committing terminal (its `Error:` line naming the tracked file
+        and the remedy, then the hook's `rmx sync FAILED` line). The git op itself still exits 0."""
+        repo, layout = tracked_repo
+        sock = repo.store / dm.SOCKET_NAME
+        _stale_socket(sock)
+        assert not dm.ping(repo.store), "fixture: something answers on the stale socket"
+        assert _status_refmatrix_catalogs(repo.proj) == "", "fixture: the catalog is already dirty"
+        before = _catalog_digests(repo.store)
+        (repo.proj / "main_new.py").write_text("def main_new():\n    return 3\n", encoding="utf-8")
+        _quiet(repo.proj, repo, "add", "main_new.py")
+        r = _hooked(repo.proj, repo, "commit", "-q", "-m", "commit beside a stale socket")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}\nrmx calls: {_calls(repo)}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert "hooks/post-commit" in _hooks_ran(repo), "fixture: git never ran post-commit"
+        after = _catalog_digests(repo.store)
+        changed = sorted(n for n in before if after.get(n) != before[n])
+        assert TRACEBACK not in r.stderr, f"[{layout}] post-commit crashed\n{text}"
+        assert not changed, (f"[{layout}] post-commit beside a stale socket wrote the git-tracked "
+                             f"catalog {changed}\ngit status:\n"
+                             f"{_status_refmatrix_catalogs(repo.proj)}\n{text}")
+        if _calls(repo):
+            target = _target_catalog(layout)
+>           assert len(_refusal_lines(r.stderr, target)) == 1 and FAILED_LINE in r.stderr, \
+                f"[{layout}] post-commit ran rmx beside a stale socket and the refusal was not " \
+                f"loud (one `Error:` naming {target} + the remedy, then `{FAILED_LINE}`)\n{text}"
+E           AssertionError: [legacy] post-commit ran rmx beside a stale socket and the refusal was not loud (one `Error:` naming catalog.duckdb + the remedy, then `rmx sync FAILED`)
+E             stdout:
+E             
+E             stderr:
+E             Error: refusing an in-process write to /private/tmp/b212t-jy12npui/proj/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it
+E             refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E             
+E             rmx calls: [('/private/tmp/b212t-jy12npui/proj', 'sync --since HEAD~1')]
+E           assert (0 == 1)
+E            +  where 0 = len([])
+E            +    where [] = _refusal_lines('Error: refusing an in-process write to /private/tmp/b212t-jy12npui/proj/.refmatrix/catalog.duckdb: git tracks this st...(rmx daemon start) so the write goes through it\nrefmatrix: post-commit rmx sync FAILED (exit 1); its error is above\n', 'catalog.duckdb')
+E            +      where 'Error: refusing an in-process write to /private/tmp/b212t-jy12npui/proj/.refmatrix/catalog.duckdb: git tracks this st...(rmx daemon start) so the write goes through it\nrefmatrix: post-commit rmx sync FAILED (exit 1); its error is above\n' = CompletedProcess(args=['git', '-C', '/private/tmp/b212t-jy12npui/proj', 'commit', '-q', '-m', 'commit beside a stale s...rmx daemon start) so the write goes through it\nrefmatrix: post-commit rmx sync FAILED (exit 1); its error is above\n").stderr
+
+tests/test_bug212_r1_remedy.py:662: AssertionError
+_____ test_a_worktree_hook_of_one_repo_cannot_vouch_for_a_store_in_another _____
+
+two_repos = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10680b6d0>, PosixPath('/private/tmp/b212e-orask0x0/wt'), PosixPath('/private/tmp/b212e-orask0x0/b/.refmatrix'))
+
+    @pytest.mark.timeout(300)
+    def test_a_worktree_hook_of_one_repo_cannot_vouch_for_a_store_in_another(two_repos):
+        """E1, end to end: `REFMATRIX_ROOT` names B's store; a commit in A's worktree fires the
+        generated post-commit, which runs `rmx sync` with A's absolute `GIT_DIR` exported. B's
+        catalog is tracked, so the in-process sync into it is refused, loudly, bytes unchanged."""
+        repo, wt, b_store = two_repos
+        (wt / "w.py").write_text("def w():\n    return 3\n", encoding="utf-8")
+        _quiet(wt, repo, "add", "w.py")
+        before = _digests(b_store)
+        env = {**_hook_env(repo), "REFMATRIX_ROOT": str(b_store)}
+        r = subprocess.run(["git", "-C", str(wt), "commit", "-q", "-m", "commit in A's worktree"],
+                           env=env, capture_output=True, text=True, timeout=240)
+        calls = _git_dir_calls(repo)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}\nrmx calls: {calls}"
+        assert r.returncode == 0, f"the commit itself failed\n{text}"
+        syncs = [c for c in calls if c[2].startswith("sync")]
+        assert syncs, f"fixture: post-commit in A's worktree ran no `rmx sync`\n{text}"
+        git_dir = syncs[0][1]
+        assert git_dir.startswith("/") and "/worktrees/" in git_dir, \
+            f"fixture: the worktree hook did not export an absolute GIT_DIR (got {git_dir!r}); " \
+            f"this is not the E1 shape\n{text}"
+        changed = _changed(before, _digests(b_store))
+        assert TRACEBACK not in r.stderr, f"the hook's rmx crashed\n{text}"
+        assert not changed, (f"the in-process sync wrote B's git-tracked {changed}: the tracked-"
+                             f"catalog check read A's repository through the exported GIT_DIR\n{text}")
+>       assert len(_refusal_lines(r.stderr, "catalog.duckdb")) == 1 and FAILED_LINE in r.stderr, \
+            f"the refusal was not loud (one `Error:` naming catalog.duckdb + the remedy, then " \
+            f"`{FAILED_LINE}`)\n{text}"
+E       AssertionError: the refusal was not loud (one `Error:` naming catalog.duckdb + the remedy, then `rmx sync FAILED`)
+E         exit 0
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process write to /private/tmp/b212e-orask0x0/b/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         
+E         rmx calls: [('/private/tmp/b212e-orask0x0/wt', '/private/tmp/b212e-orask0x0/proj/.git/worktrees/wt', 'sync --since HEAD~1')]
+E       assert (0 == 1)
+E        +  where 0 = len([])
+E        +    where [] = _refusal_lines("Error: refusing an in-process write to /private/tmp/b212e-orask0x0/b/.refmatrix/catalog.duckdb: git tracks this store...(rmx daemon start) so the write goes through it\nrefmatrix: post-commit rmx sync FAILED (exit 1); its error is above\n", 'catalog.duckdb')
+E        +      where "Error: refusing an in-process write to /private/tmp/b212e-orask0x0/b/.refmatrix/catalog.duckdb: git tracks this store...(rmx daemon start) so the write goes through it\nrefmatrix: post-commit rmx sync FAILED (exit 1); its error is above\n" = CompletedProcess(args=['git', '-C', '/private/tmp/b212e-orask0x0/wt', 'commit', '-q', '-m', "commit in A's worktree"],...rmx daemon start) so the write goes through it\nrefmatrix: post-commit rmx sync FAILED (exit 1); its error is above\n").stderr
+
+tests/test_bug212_r2_red.py:293: AssertionError
+___ test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-ingest] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10686fd50>, 'slots')
+writer = 'ingest'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+        assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+        assert r.returncode != 0, f"[{layout}] `{writer}` on a tracked catalog exited 0\n{text}"
+        errs = _errors(r.stderr)
+        target = _target_catalog(layout)
+>       assert len(errs) == 1 and _refusal_lines(r.stderr, target) == errs, \
+            f"[{layout}] `{writer}`: expected ONE `Error:` line naming the tracked {target} and " \
+            f"the remedy (untrack it, or start the daemon); got {errs}\n{text}"
+E       AssertionError: [slots] `ingest`: expected ONE `Error:` line naming the tracked catalog.A.duckdb and the remedy (untrack it, or start the daemon); got ["Error: refusing an in-process write to /private/tmp/b212t-p9atxst_/proj/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it"]
+E         exit 1
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process write to /private/tmp/b212t-p9atxst_/proj/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it
+E         
+E       assert (1 == 1 and [] == ['Error: refu...s through it']
+E        +  where 1 = len(['Error: refusing an in-process write to /private/tmp/b212t-p9atxst_/proj/.refmatrix/catalog.A.duckdb: git tracks this...tted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it'])
+E         
+E         Right contains one more item: 'Error: refusing an in-process write to /private/tmp/b212t-p9atxst_/proj/.refmatrix/catalog.A.duckdb: git tracks this ...itted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it'
+E         Use -v to get more diff)
+
+tests/test_bug212_r2_red.py:452: AssertionError
+_ test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-memory-add] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10686c7d0>, 'slots')
+writer = 'memory-add'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+        assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+        assert r.returncode != 0, f"[{layout}] `{writer}` on a tracked catalog exited 0\n{text}"
+        errs = _errors(r.stderr)
+        target = _target_catalog(layout)
+>       assert len(errs) == 1 and _refusal_lines(r.stderr, target) == errs, \
+            f"[{layout}] `{writer}`: expected ONE `Error:` line naming the tracked {target} and " \
+            f"the remedy (untrack it, or start the daemon); got {errs}\n{text}"
+E       AssertionError: [slots] `memory-add`: expected ONE `Error:` line naming the tracked catalog.A.duckdb and the remedy (untrack it, or start the daemon); got ["Error: refusing an in-process write to /private/tmp/b212t-iso_tvyt/proj/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it"]
+E         exit 1
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process write to /private/tmp/b212t-iso_tvyt/proj/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it
+E         
+E       assert (1 == 1 and [] == ['Error: refu...s through it']
+E        +  where 1 = len(['Error: refusing an in-process write to /private/tmp/b212t-iso_tvyt/proj/.refmatrix/catalog.A.duckdb: git tracks this...tted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it'])
+E         
+E         Right contains one more item: 'Error: refusing an in-process write to /private/tmp/b212t-iso_tvyt/proj/.refmatrix/catalog.A.duckdb: git tracks this ...itted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it'
+E         Use -v to get more diff)
+
+tests/test_bug212_r2_red.py:452: AssertionError
+___ test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-bridge] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x106809050>, 'slots')
+writer = 'bridge'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+        assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+        assert r.returncode != 0, f"[{layout}] `{writer}` on a tracked catalog exited 0\n{text}"
+        errs = _errors(r.stderr)
+        target = _target_catalog(layout)
+>       assert len(errs) == 1 and _refusal_lines(r.stderr, target) == errs, \
+            f"[{layout}] `{writer}`: expected ONE `Error:` line naming the tracked {target} and " \
+            f"the remedy (untrack it, or start the daemon); got {errs}\n{text}"
+E       AssertionError: [slots] `bridge`: expected ONE `Error:` line naming the tracked catalog.A.duckdb and the remedy (untrack it, or start the daemon); got ["Error: refusing an in-process write to /private/tmp/b212t-gje6st38/proj/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it"]
+E         exit 1
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process write to /private/tmp/b212t-gje6st38/proj/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it
+E         
+E       assert (1 == 1 and [] == ['Error: refu...s through it']
+E        +  where 1 = len(['Error: refusing an in-process write to /private/tmp/b212t-gje6st38/proj/.refmatrix/catalog.A.duckdb: git tracks this...tted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it'])
+E         
+E         Right contains one more item: 'Error: refusing an in-process write to /private/tmp/b212t-gje6st38/proj/.refmatrix/catalog.A.duckdb: git tracks this ...itted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it'
+E         Use -v to get more diff)
+
+tests/test_bug212_r2_red.py:452: AssertionError
+__ test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-ingest] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1034c5cd0>, 'legacy')
+writer = 'ingest'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+        assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+        assert r.returncode != 0, f"[{layout}] `{writer}` on a tracked catalog exited 0\n{text}"
+        errs = _errors(r.stderr)
+        target = _target_catalog(layout)
+>       assert len(errs) == 1 and _refusal_lines(r.stderr, target) == errs, \
+            f"[{layout}] `{writer}`: expected ONE `Error:` line naming the tracked {target} and " \
+            f"the remedy (untrack it, or start the daemon); got {errs}\n{text}"
+E       AssertionError: [legacy] `ingest`: expected ONE `Error:` line naming the tracked catalog.duckdb and the remedy (untrack it, or start the daemon); got ["Error: refusing an in-process write to /private/tmp/b212t-t3emadvb/proj/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it"]
+E         exit 1
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process write to /private/tmp/b212t-t3emadvb/proj/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it
+E         
+E       assert (1 == 1 and [] == ['Error: refu...s through it']
+E        +  where 1 = len(['Error: refusing an in-process write to /private/tmp/b212t-t3emadvb/proj/.refmatrix/catalog.duckdb: git tracks this s...tted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it'])
+E         
+E         Right contains one more item: 'Error: refusing an in-process write to /private/tmp/b212t-t3emadvb/proj/.refmatrix/catalog.duckdb: git tracks this st...itted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it'
+E         Use -v to get more diff)
+
+tests/test_bug212_r2_red.py:452: AssertionError
+_ test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-memory-add] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x106809950>, 'legacy')
+writer = 'memory-add'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+        assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+        assert r.returncode != 0, f"[{layout}] `{writer}` on a tracked catalog exited 0\n{text}"
+        errs = _errors(r.stderr)
+        target = _target_catalog(layout)
+>       assert len(errs) == 1 and _refusal_lines(r.stderr, target) == errs, \
+            f"[{layout}] `{writer}`: expected ONE `Error:` line naming the tracked {target} and " \
+            f"the remedy (untrack it, or start the daemon); got {errs}\n{text}"
+E       AssertionError: [legacy] `memory-add`: expected ONE `Error:` line naming the tracked catalog.duckdb and the remedy (untrack it, or start the daemon); got ["Error: refusing an in-process write to /private/tmp/b212t-ro_b12z4/proj/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it"]
+E         exit 1
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process write to /private/tmp/b212t-ro_b12z4/proj/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it
+E         
+E       assert (1 == 1 and [] == ['Error: refu...s through it']
+E        +  where 1 = len(['Error: refusing an in-process write to /private/tmp/b212t-ro_b12z4/proj/.refmatrix/catalog.duckdb: git tracks this s...tted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it'])
+E         
+E         Right contains one more item: 'Error: refusing an in-process write to /private/tmp/b212t-ro_b12z4/proj/.refmatrix/catalog.duckdb: git tracks this st...itted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it'
+E         Use -v to get more diff)
+
+tests/test_bug212_r2_red.py:452: AssertionError
+__ test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-bridge] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10680a350>, 'legacy')
+writer = 'bridge'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+        assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+        assert r.returncode != 0, f"[{layout}] `{writer}` on a tracked catalog exited 0\n{text}"
+        errs = _errors(r.stderr)
+        target = _target_catalog(layout)
+>       assert len(errs) == 1 and _refusal_lines(r.stderr, target) == errs, \
+            f"[{layout}] `{writer}`: expected ONE `Error:` line naming the tracked {target} and " \
+            f"the remedy (untrack it, or start the daemon); got {errs}\n{text}"
+E       AssertionError: [legacy] `bridge`: expected ONE `Error:` line naming the tracked catalog.duckdb and the remedy (untrack it, or start the daemon); got ["Error: refusing an in-process write to /private/tmp/b212t-3tvmysuz/proj/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it"]
+E         exit 1
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process write to /private/tmp/b212t-3tvmysuz/proj/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it
+E         
+E       assert (1 == 1 and [] == ['Error: refu...s through it']
+E        +  where 1 = len(['Error: refusing an in-process write to /private/tmp/b212t-3tvmysuz/proj/.refmatrix/catalog.duckdb: git tracks this s...tted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it'])
+E         
+E         Right contains one more item: 'Error: refusing an in-process write to /private/tmp/b212t-3tvmysuz/proj/.refmatrix/catalog.duckdb: git tracks this st...itted file. Or (ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it'
+E         Use -v to get more diff)
+
+tests/test_bug212_r2_red.py:452: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-files]
+FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-since]
+FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-files]
+FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-since]
+FAILED tests/test_bug212_r1_remedy.py::test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[slots]
+FAILED tests/test_bug212_r1_remedy.py::test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[legacy]
+FAILED tests/test_bug212_r2_red.py::test_a_worktree_hook_of_one_repo_cannot_vouch_for_a_store_in_another
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-ingest]
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-memory-add]
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-bridge]
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-ingest]
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-memory-add]
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-bridge]
+13 failed, 75 passed in 68.57s (0:01:08)

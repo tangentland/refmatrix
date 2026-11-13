@@ -609,3 +609,120 @@ shows the 8 standing a2 REDs; nothing else failed.
   not a catalog and the tests do not count it.
 - Not covered: a corrupt index for the non-sync writers (same function after the move), and the
   daemon-route write to a tracked catalog (lead decision a1/a2: bug-214's untracking).
+
+## GREEN r2 (the refusal at the write control point; RED r2 green) {#green-r2}
+
+Fix commit `ed36b6a` (src only, `src/refmatrix/cli.py`, by pathspec). No test was edited. All
+three bug-212 files: **88 passed** (`bug212/green-r2.log`; at `deafd6d` they were 8 failed /
+80 passed, `bug212/red-r2-head-all3.log`).
+
+rel: implements -> [[#red-r2]]
+rel: amends -> [[#green-r1-changes]]
+rel: depends-on -> [[agent-brief-red-212r2]]
+
+### What changed {#green-r2-changes}
+
+- `cli._store_rw() -> Store` now ends its path resolution with
+  `_refuse_in_process_write_to_tracked_catalog(s.root, s.db_path)`. That happens after the
+  `no refmatrix at ...` check and before anything connects. `Store(...)` only resolves paths
+  (`select_backend` only tests whether files exist), so nothing has touched the catalog when
+  the refusal raises. `_store_rw()` is the one in-process write control point, so `rmx sync`,
+  `rmx ingest`, `rmx memory add`, `ingest-gmd --as-memory`, `tldr-warm`, the repair commands
+  and the `_read_store` fallback all reach it (see the flags).
+- `cli._refuse_in_process_write_to_tracked_catalog(root: Path, target: Path) -> None`. The new
+  `target` parameter is the caller's resolved `db_path`, the file the write would land in. It
+  replaces r1's re-derivation from `_active_slot_path()` and the legacy names. The wording is
+  now neutral, and each failure prints one `Error:` line:
+  - tracked: `refusing an in-process write to <target>: git tracks this store's catalog
+    (<names>), and the write would modify a committed file. Untrack it (git rm --cached
+    .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx
+    daemon start) so the write goes through it`;
+  - `ls-files` failed: `refusing an in-process write to <target>: cannot tell whether git
+    tracks the catalog under <root>: git ls-files exited N: <git's stderr>; untrack the
+    catalog (git rm --cached) if git tracks it, or start the daemon ...`.
+- `rmx sync` no longer calls the helper itself, and its `daemon_mod.ping` gate is gone (no
+  per-command copy). With a daemon up, `_store()` returns the `_DaemonWriter`, never reaches
+  `_store_rw()`, and so is not refused: the same split r1's ping gate made. A stale socket is
+  `VerbAbsentError` (`require_daemon`), so it reaches `_store_rw()` and is refused (r1
+  stale-socket tests green).
+- The survivors keep their r1 code, unchanged and now under test: G3 is the shell gate's
+  ls-files branch, E2 the `TrackedCatalogCheckError` raise, E1 the `_GIT_LOCAL_ENV_VARS` strip,
+  and W1/W2 the remedy text.
+
+### Runs {#green-r2-runs}
+
+- `bug212/green-r2.log`: the three bug-212 files at `ed36b6a`, **88 passed**.
+- `bug212/green-r2-family.log`: 88 files (r1's 52 plus every ingest/memory/cli/discovery/
+  cctree/mcp/telemetry/bridge/bug212 file; list in `green-r2-family.files`), **1 failed, 1249
+  passed, 1 skipped**. The skip is the SkipGate UNPINNED `test_installed_hooks_match_generated`
+  (m-4). The failure is `test_tldr_warm` (below).
+- `bug212/green-r2-wide.log`: the full suite at `ed36b6a`, **5 failed, 4366 passed, 1
+  skipped**, 46m42s. That is r1's 4340 passed plus the 27 r2 tests, minus the one new failure.
+  Compared by E line against `release-0.82.0-full.log` and `green-r1-wide.log`:
+  - `test_brief_real_daemon::test_an_unknown_class_fails_loudly_through_the_daemon`: same E
+    (`Could not set lock on file .../catalog.A.duckdb`).
+  - `test_task21_1_agent_usage_report` x2: same E lines.
+  - `test_gmd_lint_requires_version::test_the_repo_scope_is_clean_under_the_stricter_gate`:
+    the GMD error lines are identical to r1's wide run (clone scope, as r1 recorded).
+  - **NEW, caused by this change:**
+    `test_sync_and_extras::test_tldr_warm_invokes_binary_and_ingests`. E: `exit_code 1 ...
+    AttributeError("'R' object has no attribute 'stdout'")`. The test monkeypatches the
+    GLOBAL `subprocess.run` with a fake whose result has only `returncode`. `tldr-warm` then
+    ingests through `_store(write=True)` -> `_store_rw()`, whose tracked-catalog check runs
+    `git rev-parse` through that fake. Probe `bug212/green-r2-tldr-warm-probe.log` records the
+    fake's calls: `[<tldr bin> warm ...], ['git', '-C', <store>, 'rev-parse',
+    '--is-inside-work-tree']`. The defect is the over-broad mock, not the product: the store
+    is in no repo, and the real git answers `[]`. Not edited (no test edits); see the flags.
+  - No suite fixture that `git add -A`s a store was refused. `test_bridge_move_safety_r1`'s
+    `gitproj` ignores `.refmatrix/`. `test_verbs_migrated` runs `add -A` before it creates the
+    store, and `test_upgrade` / `test_stm_rationale_capture` have no store in the repo.
+
+### Mutations {#green-r2-mutations}
+
+Against `ed36b6a`, each run over all three bug-212 files. Driver
+`scratchpad/mut212g2.py` (not committed): every replace is an exact single occurrence; the
+driver ran pytest to `bug212/green-r2-mut-<id>.log`, then `git checkout -- src/refmatrix/cli.py`
+as its own subprocess, then checked `git status --short src` empty and the control-point call
+back. Batch log `bug212/green-r2-mutations.log`. `__pycache__` cleared after the batch, src ==
+HEAD.
+
+| id | mutation | result |
+|----|----------|--------|
+| K1 | the `_store_rw()` call removed (no check anywhere) | killed: 16 (r1 sync x4, stale socket x2, E2 sync, E1, a2 writers x6, control point x2) |
+| K2 | r1 shape: check removed from `_store_rw()`, ping-gated copy back in `sync` only | killed: 8 (a2 writers x6, control point x2) |
+| K3 | `if not tracked: return` -> `if True: return` | killed: 15 |
+| K4 | `TrackedCatalogCheckError` swallowed (`return`) | killed: 1 (`test_an_in_process_sync_refuses_when_git_ls_files_fails`) |
+| K5 | `s._connect()` before the refusal (the catalog opens first) | killed: 14 (catalog bytes change). The direct control-point test alone does not see it |
+| K6 | tracked line drops `to {target}` | **survived** 88/88 |
+| K7 | tracked line drops the untrack remedy | killed: 13 |
+| K8 | ls-files-failure line drops `to {target}` | **survived** 88/88 |
+| K9 | check asks `Path.cwd()`, not the store root | killed: 15 |
+
+### For the lead, the test engineer and the reviewers {#green-r2-flags}
+
+- **K6 survives (test engineer).** `_refusal_lines` requires the target's BASENAME in the line,
+  but the tracked list `(catalog.A.duckdb, ...)` contains that basename too. So a line that
+  drops the write target still passes. A predicate on the target's full path (or `to <path>:`)
+  would kill it.
+- **K8 survives (test engineer).** No test requires the target on the `ls-files`-failure line,
+  though the lead's wording decision asks for it there too (the E2 sync test checks
+  `ls-files` + remedies only).
+- **K5 is killed only end to end.** The direct `_store_rw()` test cannot tell "refused before
+  open" from "refused after open", because a bare connect does not change the bytes. The
+  subprocess writers catch it.
+- **`test_tldr_warm_invokes_binary_and_ingests` now fails (test engineer, mock registry).** The
+  global `subprocess.run` fake also answers the store's git probe. The fix belongs in the test:
+  scope the fake to the tldr binary and delegate other argv to the real `subprocess.run`, and
+  filter `invoked`. Do not reshape src around the mock.
+- **Reads can be refused now (lead decision needed?).** `_read_store()` falls to `_store()` ->
+  `_store_rw()` when there is no `catalog.read.duckdb` and no daemon. On a tracked store that
+  read now gets the write refusal, which is worded as a write. That path opens the writer slot
+  read-write (and `close()` flushes), so refusing it is fail-closed. A fleet store normally has
+  a replica once its daemon has run. No test covers it.
+- **Cost:** every in-process write now runs `git rev-parse` + `git ls-files` (two subprocesses)
+  before it opens the catalog. Daemon-routed writes pay nothing.
+- **Docs (ch-doc-writer):** `docs/INTEGRATION.md#sync-tracked-catalog` still describes the
+  refusal as sync-only and quotes `refusing an in-process sync into <file>`. It needs the
+  writer-wide scope and the new wording. Not edited here.
+- Unchanged from r1: the daemon route still writes a tracked catalog (a1/a2, bug-214), the
+  daemon-op cwd defaults (a7), and the SkipGate UNPINNED skip (m-4).
