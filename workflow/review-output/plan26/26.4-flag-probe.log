@@ -1,0 +1,117 @@
+pyc-guard: recompiled 24 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-4/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /Volumes/littlebig/refmatrix-plan26-4
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collecting ... collected 3 items
+
+tests/test_zz_probe_264_flag.py::test_probe[file] FAILED                 [ 33%]
+tests/test_zz_probe_264_flag.py::test_probe[subdir] FAILED               [ 66%]
+tests/test_zz_probe_264_flag.py::test_probe[memdir] PASSED               [100%]
+
+=================================== FAILURES ===================================
+_______________________________ test_probe[file] _______________________________
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-v1_8bsi9'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-v1_8bsi9/proj/.refmatrix'))
+target = 'file'
+
+    @pytest.mark.parametrize("target", ["file", "subdir", "memdir"])
+    def test_probe(inproc, target):
+        base, root = inproc
+        memdir = base / "memory"
+        memdir.mkdir()
+        organise(memdir)
+        p = savestate(memdir, "feedback/savestate_misfiled.md", mtype="project",
+                      created="2026-07-07", updated="2026-07-08", mtime=at(2026, 7, 8))
+        t = {"file": p, "subdir": p.parent, "memdir": memdir}[target]
+        out = _invoke(["ingest-gmd", "--as-memory", str(t)]).output
+        print(out)
+>       assert _mtypes(root)["savestate_misfiled"] == "project", out
+E       AssertionError: ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 11 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         mtype_normalised: 1 (save-state stored as session/recall-state; its file says otherwise)
+E           savestate_misfiled: project -> session/recall-state
+E         new linkage types: lead, part-of
+E         memory embed: 1 row(s) now reachable by recall in proj
+E         
+E       assert 'session/recall-state' == 'project'
+E         
+E         - project
+E         + session/recall-state
+
+tests/test_zz_probe_264_flag.py:18: AssertionError
+----------------------------- Captured stdout call -----------------------------
+ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 11 mention(s)
+skipped_non_gmd: 0
+skipped_unparseable: 0
+mtype_normalised: 1 (save-state stored as session/recall-state; its file says otherwise)
+  savestate_misfiled: project -> session/recall-state
+new linkage types: lead, part-of
+memory embed: 1 row(s) now reachable by recall in proj
+
+______________________________ test_probe[subdir] ______________________________
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-ymwt3hrn'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-ymwt3hrn/proj/.refmatrix'))
+target = 'subdir'
+
+    @pytest.mark.parametrize("target", ["file", "subdir", "memdir"])
+    def test_probe(inproc, target):
+        base, root = inproc
+        memdir = base / "memory"
+        memdir.mkdir()
+        organise(memdir)
+        p = savestate(memdir, "feedback/savestate_misfiled.md", mtype="project",
+                      created="2026-07-07", updated="2026-07-08", mtime=at(2026, 7, 8))
+        t = {"file": p, "subdir": p.parent, "memdir": memdir}[target]
+        out = _invoke(["ingest-gmd", "--as-memory", str(t)]).output
+        print(out)
+>       assert _mtypes(root)["savestate_misfiled"] == "project", out
+E       AssertionError: ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 11 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         mtype_normalised: 1 (save-state stored as session/recall-state; its file says otherwise)
+E           savestate_misfiled: project -> session/recall-state
+E         new linkage types: lead, part-of
+E         memory embed: 1 row(s) now reachable by recall in proj
+E         
+E       assert 'session/recall-state' == 'project'
+E         
+E         - project
+E         + session/recall-state
+
+tests/test_zz_probe_264_flag.py:18: AssertionError
+----------------------------- Captured stdout call -----------------------------
+ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 11 mention(s)
+skipped_non_gmd: 0
+skipped_unparseable: 0
+mtype_normalised: 1 (save-state stored as session/recall-state; its file says otherwise)
+  savestate_misfiled: project -> session/recall-state
+new linkage types: lead, part-of
+memory embed: 1 row(s) now reachable by recall in proj
+
+=========================== short test summary info ============================
+FAILED tests/test_zz_probe_264_flag.py::test_probe[file] - AssertionError: in...
+FAILED tests/test_zz_probe_264_flag.py::test_probe[subdir] - AssertionError: ...
+========================= 2 failed, 1 passed in 8.20s ==========================
+
+==== probe source (tests/test_zz_probe_264_flag.py, throwaway, not committed; run at 3831499) ====
+"""THROWAWAY probe (not committed): does a file / subdir target re-type a misfiled save-state?"""
+import pytest
+from tests.test_savestate_mtype import (inproc, organise, savestate, at, _mtypes, _invoke,  # noqa: F401
+                                        RS)
+
+
+@pytest.mark.parametrize("target", ["file", "subdir", "memdir"])
+def test_probe(inproc, target):
+    base, root = inproc
+    memdir = base / "memory"
+    memdir.mkdir()
+    organise(memdir)
+    p = savestate(memdir, "feedback/savestate_misfiled.md", mtype="project",
+                  created="2026-07-07", updated="2026-07-08", mtime=at(2026, 7, 8))
+    t = {"file": p, "subdir": p.parent, "memdir": memdir}[target]
+    out = _invoke(["ingest-gmd", "--as-memory", str(t)]).output
+    print(out)
+    assert _mtypes(root)["savestate_misfiled"] == "project", out
