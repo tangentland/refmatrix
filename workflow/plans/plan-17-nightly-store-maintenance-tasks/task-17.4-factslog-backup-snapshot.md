@@ -228,8 +228,8 @@ once-a-day COPY under `backups/` is what Time Machine backs up. {#why-body}
              explicitly ignored for them: `entity`, `tombstone`,
              `protect`, `noise`, `link`, `unlink`, `evidence`, `track`, `untrack`,
              `memory_content`, `linkage_type` at HEAD, `store.py:7969-8027`). **Round 15:**
-             `FOLD_OPS` = those HEAD ops ∪ the keys of `edge_records.FOLD_RULES`, IMPORTED, never
-             restated ([[task-16.6-learned-row-validation#rev-round-15]]). The fold applies each
+             `FOLD_OPS` = `edge_records.BASE_FOLD_OPS` (those 11 ops) ∪ the keys of
+             `edge_records.FOLD_RULES`. Both are IMPORTED, never restated (bsd-spec-t4 r2 M5) ([[task-16.6-learned-row-validation#rev-round-15]]). The fold applies each
              imported rule:
              - `"ignored"`: `learned_provenance`, `learned_provenance_move`;
              - `"evidence_clear_by_file"` (`rel_evidence_clear`): drop from the folded

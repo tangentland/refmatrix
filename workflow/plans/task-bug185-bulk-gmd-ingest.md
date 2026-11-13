@@ -286,7 +286,13 @@ document, and its per-document hold has the same cause: 29 s for one session car
    - `gmd_prepare(paths, …) -> GmdBatch`: parse, hash, and the name table (`eid_by_name`,
      `doc_level_eid`, `file_hashes`, `stats`). It does no store I/O, so it runs OFF the lock
      (r1 S4). The resume gate's stored-hash read stays in `gmd_pass1_document`, where HEAD's
-     pass 1 does it, so it reads the writer's state;
+     pass 1 does it, so it reads the writer's state. **26.2's walk-wide `--as-memory` gate
+     inputs (r2 S1, lead ruling)** are HEAD's pre-loop reads: `mem_rows` (one `_memory_row`
+     per document), `walk_eids` and `_SourcePathIndex(store, None)`. They are read ONCE per
+     batch, in the FIRST `gmd_pass1_document` call, under its hold, as a constant number of
+     statements, and kept in `GmdBatch` for every later `_memory_gate(…, walk_eids=…)` call.
+     With `as_memory=False` (23.3's sync path) there are no such reads. `gmd_prepare` stays
+     free of store I/O in both cases ([[#ac-9]]);
    - `gmd_pass1_document(store, batch, doc)`: the resume gate (a document whose stored hash
      matches is counted `skipped_unchanged` and writes nothing), then the doc-level row(s) and
      R1's bulk node rows;
@@ -344,8 +350,14 @@ document, and its per-document hold has the same cause: 29 s for one session car
        existence read below;
      - ONE batched existence read of their sources;
      - their targets through R2 step 2's batched read, in the same precedence;
-     - ONE `bulk_link(update_weight=True)` for the resolved edges, then ONE `bulk_add_evidence`;
-     - ONE batched delete of the resolved rows and of the rows whose source is gone.
+     - **ONE `DELETE … RETURNING`** (r2 M4; R9's pattern) of the rows about to be resolved and
+       of the rows whose source is gone. Where a backend lacks `RETURNING`, a read and a
+       delete on the same predicate under the same hold are used instead;
+     - ONE `bulk_link(update_weight=True)`, then ONE `bulk_add_evidence`, for the RETURNED
+       resolved rows only. A cached row that another writer already resolved and deleted
+       between steps is not returned, so it is neither linked nor given a second evidence row
+       (the double count bug-216 R10 removes). `pending_ref_delete` events are logged for the
+       returned resolved rows only ([[#r8]] (e)).
 
      bug-216's rules stay: a resolved target equal to its source is deleted and not linked, and
      a row whose target still misses stays pending. `pending_resolved`, `pending_dropped` and
@@ -426,19 +438,27 @@ document, and its per-document hold has the same cause: 29 s for one session car
       in-process, there is one relational delete, and one `unlink` event is logged per bit
       actually cleared through one `_names_of`, as `unlink()` logs. Nothing is unlinked for a
       document whose clear removed no rows.
-    - **Both contexts.** On the sync path `purge_path` has already removed the doc's node
-      entities and their links, so the replace finds nothing to do and is a no-op there. On the
-      job path (no purge) it is what removes the stale edge.
+    - **Both contexts (corrected, r2 S2).** `_sync_one` purges a GMD path only when a `doc` row
+      named by its RELPATH exists (`sync.py:216-218` at `1cf3b9f`), and a GMD document's `doc`
+      is named by its GMD id. So on the sync path the purge fires only for a document that
+      carries a legacy relpath `doc` row. Otherwise sync goes through the same pass-2 steps as
+      the job path, R10 does the same real work there, and its unlinks are the same
+      ([[#ac-11]]'s sync leg). The round-2 text ("on the sync path `purge_path` has already
+      removed … a no-op there") was false.
     - **Every producer of a `rel:`-verb edge writes evidence (lead decision, 2026-11-13;
       [[#rev-round-2-lead]]).** An edge with the same key that another producer wrote WITHOUT
       an evidence row cannot be told apart from a stale `rel:` edge. So the rule is that no
       such producer exists, the same fix bug-218 S3 applies to `memory_link`. There is no
       user stop:
-      - **Census, at RED.** The implementer walks every `link` / `bulk_link` / `link_batch`
-        caller in `src/` whose linkage can equal a GMD `rel:` verb, literal or computed. Each
-        call site is classified as writes-evidence / no-evidence-in-reach /
-        no-evidence-unowned and listed in the implementation summary with its path, symbol
-        and sha.
+      - **Census, at RED, bounded (r2 S3 (a), lead ruling).** The implementer walks the
+        `link` / `bulk_link` / `link_batch` callers in `src/` that are OTHER producers, able to
+        write an edge whose CONCEPT side is a GMD entity: a doc, a memory, or a node (`doc#id`)
+        entity. Excluded: this document's own pass-2 write set (steps 5-7: `rel:` edges, the
+        `part-of` hierarchy, `imports`, mentions), which "stated" already protects. They get
+        no new evidence, so [[#ac-2]]'s golden is untouched. The census covers callers on the
+        sync path and the job path alike. Each call site is classified as writes-evidence /
+        no-evidence-in-reach / no-evidence-unowned and listed in the implementation summary
+        with its path, symbol and sha.
       - **In reach: fixed here.** A no-evidence producer is in reach when its code has no
         other open owning plan or task. Each one gains an evidence write as part of this task
         ([[#ac-14]] (a): a test per producer, plus a mutation).
@@ -446,7 +466,18 @@ document, and its per-document hold has the same cause: 29 s for one session car
         owns (for example `memory_link`, owned by bug-218) gets its own bug row in
         `workflow/bug_registry.md`. It is also entered in
         `ingest_gmd.UNOWNED_REL_PRODUCERS`, a list of signatures:
-        `(linkage, source kind, target kind)` plus the owning bug id. Until that bug is fixed,
+        `(linkage, source kind, target kind)` plus the owning bug id. `linkage` may be `"*"`
+        (r2 S3 (b)) for a producer whose linkage comes from its caller.
+        - **The shipped list, pinned (lead ruling):** exactly one entry,
+          `("*", "memory", "memory", "bug-218")`, for `memory_link` until bug-218 lands. Its
+          linkage is caller-supplied (`daemon.py` `_op_memory_link`). At `1cf3b9f` it writes
+          concept `c` → memory `m`, and bug-218 re-orients it to memory → target.
+        - **What this costs (stated):** until bug-218's row is removed, a stale memory → memory
+          `rel:` key (a memory's root-mirror line to another memory) with no other evidence is
+          SKIPPED and counted, not unlinked. bug-221 is then fixed for that class when the
+          entry comes off.
+
+        Until that bug is fixed,
         R10 does not unlink an otherwise-stale key whose edge matches a listed signature. It
         counts it in a new `IngestStats.rel_unlink_skipped_unowned`, printed in the report
         whenever it is nonzero ([[#ac-14]] (b)). When the owning fix lands, its row is removed
@@ -544,13 +575,18 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
        `#rev-3-contracts`);
      - **(r1 B1)** an `--as-memory` batch `[m_one, citer]` where `citer`'s BODY says `m_one`
        (a body term, not a title) and no concept `m_one` exists beforehand, run in both
-       orders, `[m_one, citer]` and `[citer, m_one]`; plus a variant case, a body term
-       `d1 id` against a batch doc `d1-id`. In every case the `denotes` links equal the
-       golden, which is HEAD's single batch-end call.
+       orders, `[m_one, citer]` and `[citer, m_one]`. `m_one`'s title is pinned to a phrase
+       that does not spell `m_one` (r2 M1: the root title defaults to the doc id, whose title
+       token would mint `m_one` at `m_one`'s own step and hide the intersection). Plus a
+       variant case: a document whose TAG is `d1 id`, against a batch doc `d1-id`, in the order
+       `[d1-id, tagger]`. A body term cannot carry a space (`_BODY_TOKEN_RE`), which is why
+       the variant uses a tag. In every case the `denotes` links equal the golden, which is
+       HEAD's single batch-end call.
    - **v1 → v2 fixture:** a document ingested at v1, then re-ingested at v2 with one anchor and
-     one wikilink removed, through BOTH paths: sync (`purge_path` first: the old node rows and
-     their links are gone) and the job path (`ingest_gmd_paths` alone: the stale node rows
-     persist at HEAD and must persist after).
+     one wikilink removed, through BOTH paths: sync and the job path (`ingest_gmd_paths`
+     alone). The expectation on each path is HEAD's golden, with no prose claim. r2 S2: sync
+     purges only a document with a relpath-named `doc` row, so for this id-named fixture
+     both paths keep the stale node rows at HEAD, and must keep them after.
    - **Dump rules (fixed here, not delegated):** rows are keyed by `(kind, name)`; every id
      column is mapped to its entity's `(kind, name)` or linkage name and raw ids are never
      compared (HEAD's repeated `add_concept` consumes sequence values the bulk call does not);
@@ -680,6 +716,10 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
    - building `eid_by_name` per document instead of once in `gmd_prepare` (the forward link
      goes unresolved);
    - dropping the per-document tail (the pending row stays and no `denotes` link is written);
+   - (r2 S1) the `--as-memory` gate inputs read per `gmd_pass1_document` call instead of once.
+     An `--as-memory` three-document batch must execute exactly one `mem_rows` /
+     `walk_eids` / `_SourcePathIndex` read set, counted by a pass-through spy, and the
+     mutation makes it three;
    - dropping `gmd_finish` (the unchanged document's pending row stays);
    - the tail's pending read without the in-batch-file exclusion (`pending_resolved` exceeds
      the single call's on a fixture whose citer is re-processed later in the same batch).
@@ -694,8 +734,16 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
       row (r1 S3), and a rebuild from the log holds no pending row for it, because the
       source's `tombstone` drops it.
 
+    - **Concurrent resolver (r2 M4).** The batch caches its pending rows. Before a document's
+      tail, the test resolves and deletes one cached row through bug-216's per-row
+      `resolve_pending_refs` on the same store, between two `gmd_pass2_document` calls (AC-9's
+      step shape, no transaction spanning them). That is the window another writer has when
+      the lock is released between steps. The tail then writes no edge or evidence for that row: one
+      evidence row in total, and no `pending_ref_delete` event from this batch for it.
+
     Mutations, each FAILS: dedupe keeping the last row (on `detail`); a `pending_ref_delete`
-    logged for the dropped row (the event check). {#ac-10}
+    logged for the dropped row (the event check); linking every cached row instead of the
+    `RETURNING` set (two evidence rows). {#ac-10}
 11. **AC-11 (bug-221 + replay fidelity on v1 → v2; RED at post-bug-216 HEAD; round 2).**
     The fixture mirrors red-216's `tests/test_bug216_replay_fidelity.py` (bug-216 AC-14, read
     on its branch at `f79dab1`):
@@ -727,15 +775,20 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
       `rebuild_index_from_log` holds the same `linkage_evidence`, `pending_refs` and `rel:`
       `entity_links` rows as the source (by names, as a multiset), [[#r3]] (c). Then `c-doc`
       is ingested, the pending ref binds, and the catalog and the replay agree again.
-    - **The sync context** runs the same v1 → v2 through `_sync_paths`. The replace is a no-op
-      there (purge first), and the result equals the direct context's rel edges and evidence.
+    - **The sync leg (r2 S2).** The same v1 → v2 runs through the watcher/sync route
+      (`_sync_paths` over the changed file, no relpath-named `doc` row). It asserts the SAME
+      unlinks as the job path: the same `unlink` events by names, and the same final `rel:`
+      edges and evidence. Mutation: R10 skipped when called from `_sync_paths` → FAILS (the
+      old `derives-from` edge survives on sync).
     - **Mutations, each FAILS:**
       - drop [[#r10]]'s unlink (the old edge survives);
       - unlink by "source is a node of `a`" instead of by evidence key (the `a#cite → ext`
         edge, which no step re-writes, is removed);
-      - "stated" narrowed to the `rel:` lines (step 5) only, or the unlink moved before step 6
-        (the hierarchy collision's edge is removed, or is re-written only after the catalog
-        and the replay diverge);
+      - "stated" narrowed to the `rel:` lines (step 5) only (the hierarchy collision's edge is
+        removed);
+      - the unlink moved before step 6 (r2 M2). Step 6 re-writes the bit, so the catalog and
+        the replay end equal. The test therefore asserts that facts.log holds NO `unlink`
+        event naming the collision key, and this mutation fails on that assertion;
       - skip the "still supported" check (the evidence-backed `a#cite → b-doc` edge goes);
       - `bulk_unlink` without its `unlink` events (replay holds the old edge).
 
@@ -752,8 +805,9 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
       R13 logs no per-row delete for a dropped row, and neither does this path.
     - A spy on the DuckDB wrapper's `execute` sees R9's clear as ≤ 2 statements per document
       against `linkage_evidence`, and none of them is a `count(*)`.
-    - Mutations, each FAILS: `bulk_add_pending_refs` logs no `pending_ref` events; a
-      `pending_ref_delete` logged for a dropped row; the clear goes back to count-then-delete.
+    - Mutations, each FAILS: `bulk_add_pending_refs` logs no `pending_ref` events; the clear
+      goes back to count-then-delete. The dropped-row mutation lives in [[#ac-10]] only, whose
+      fixture has a purged source (r2 M3).
     {#ac-12}
 13. **AC-13 (a stop leaves processed documents complete and stamped, the rest unstamped;
     round 2, lead ruling on [[#open-finish-stop]], option 1).**
@@ -798,10 +852,12 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
     - (b) **Unowned skip.** The test adds a signature to `UNOWNED_REL_PRODUCERS` for its own
       run, through the test-side fixture, not a production default. It writes an edge
       matching that signature, with a key that doc `a`'s v1 `rel:` line states and v2 drops.
-      After v2 the edge is still linked and `rel_unlink_skipped_unowned == 1`. An edge with the
-      same key but a signature not in the list is unlinked. Mutations, each FAILS: the
-      signature check removed (the edge is unlinked); the counter not incremented (the count
-      is 0); the signature matched on linkage alone (the non-listed edge is kept).
+      After v2 the edge is still linked and `rel_unlink_skipped_unowned == 1`. **A second edge
+      (r2 M7)** has the same linkage but a different target KIND, so its signature is not
+      listed. It sits on its own `rel:` line, which v2 also drops, and it is unlinked.
+      Mutations, each FAILS: the signature check removed (the first edge is unlinked); the
+      counter not incremented (the count is 0); the signature matched on linkage alone (the
+      second edge is kept).
     - (c) **The census is recorded.** The implementation summary's census table lists every
       call site with its class. Each `no-evidence-unowned` site has a bug-row id that exists
       in `workflow/bug_registry.md` and an entry in `UNOWNED_REL_PRODUCERS`. A unit test
@@ -811,7 +867,10 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
 15. **AC-15 (a `memory_link` edge with its own evidence survives a dropped `rel:` line;
     bsd-spec-t56 r2 M3, lead).**
     - **Fixture.** A memory `m` is ingested `--as-memory`. Its v1 carries `{#root}`
-      `rel: reinforces -> [[c]]`, so the root mirror writes the key `(reinforces, m, c)`.
+      `rel: reinforces -> [[c]]`, and **`c` is a CONCEPT, not a memory** (r2 S3 (c)). So the root
+      mirror writes the key `(reinforces, m, c)` with signature `(reinforces, memory,
+      concept)`. The run uses the SHIPPED `UNOWNED_REL_PRODUCERS`, and the test first asserts
+      it equals `[("*", "memory", "memory", "bug-218")]` ([[#r10]]).
     - The same key is then written the way bug-218 S3 specifies for `memory_link`: GMD
       orientation, plus its own `linkage_evidence` row with `memory_link`'s detail. bug-218
       merges after this task (`#queue` item 9 vs 5), so the fixture writes it through
@@ -821,8 +880,12 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
     - **Expected:** the edge `(reinforces, m, c)` is still linked; its `memory_link` evidence
       row is untouched (R9's clear removes only `rel: `-detail rows);
       `rel_unlink_skipped_unowned == 0`. The survival is the evidence clause's doing, not the
-      unowned skip's: the fixture's signature is not in `UNOWNED_REL_PRODUCERS`.
-    - **Mutation:** drop R10's evidence check → FAILS (the edge is unlinked).
+      unowned skip's: `(reinforces, memory, concept)` does not match the shipped entry.
+    - **Second leg (lead ruling).** The same shape, but the target is a memory `m2` and the
+      edge has NO evidence row of its own. v2 drops the line. The edge survives through the
+      shipped wildcard entry: `rel_unlink_skipped_unowned == 1`.
+    - **Mutations, each FAILS:** drop R10's evidence check (leg 1's edge is unlinked); ship
+      the list empty (leg 2's edge is unlinked, count 0).
     {#ac-15}
 
 ## Merge order {#merge-order}
@@ -1122,6 +1185,10 @@ rel: implements -> [[bug_registry]] {bug: "bug-221"}
 | `#open-finish-stop` = option 1 (the first ruling, option 2, withdrawn) | [[#open-finish-stop]], [[#r2]] steps 8-9, [[#r7]], [[#ac-13]] | a stamped document is always complete; per-document progress survives every stop; option 2 livelocks under 23.3's `budget_s` |
 | r1 S4 wording: `stamp_derive("gmd")` is the LAST WRITE of `gmd_finish`, not a step of its own | [[#r7]]; [[task-23.3-sync-between-file-yield#r1]] (`N + A + 1`) | the ruling text "its own step inside gmd_finish" was contradictory; the writer's reading stands |
 | bsd-spec-t56 r2 M3: R10's "UNLESS a `linkage_evidence` row still supports it" clause is kept explicitly under the write-set rule, with its own AC | [[#r10]], [[#ac-15]] | bug-218's `memory_link` edges survive R10 only through that clause; without an AC of its own, a later simplification to "stated = write set" alone would pass every other test |
+| r2 S1: 26.2's `--as-memory` gate reads happen once, in the first `gmd_pass1_document`, cached in `GmdBatch`; `gmd_prepare` stays free of store I/O | [[#r7]], [[#ac-9]] | HEAD reads them before its pass-1 loop. Per-document reads would change 26.2's gate, and reads in `gmd_prepare` would break the off-lock contract |
+| r2 S2: sync purges only a relpath-named `doc`, so R10 works on sync too | [[#r10]], [[#ac-2]], [[#ac-11]] (sync leg) | the round-2 premise was false; a "no-op" assertion would fail against correct code |
+| r2 S3: census = OTHER producers of an edge whose concept side is a GMD entity, the document's own write set excluded; `*` linkage allowed; shipped list = `("*", "memory", "memory", "bug-218")`; AC-15 pins `c` a concept, plus a memory-target leg | [[#r10]], [[#ac-14]], [[#ac-15]] | bounds the lead's c8deca7 rule (its wording was too wide); AC-2's golden is untouched |
+| r2 M4: pending resolution by `DELETE … RETURNING`, linking only the returned rows | [[#r8]] (b), [[#ac-10]] | the per-batch cache can be stale across a released lock |
 | r1 S2 census: no user stop. Every producer of a `rel:`-verb edge writes an evidence row; an in-reach producer is fixed here; an unowned one gets a bug row and is skipped by signature, counted `rel_unlink_skipped_unowned` | [[#r10]], [[#ac-14]], [[#r3]] (a), [[#files-list]] | evidence is the only provenance R10 can read. Making it universal removes the ambiguity, matches bug-218 S3's `memory_link` fix, and the counted skip keeps an unowned edge from being unlinked silently before its owner lands |
 
 **Two further lead rulings, 2026-11-13** (the decision table above records them):

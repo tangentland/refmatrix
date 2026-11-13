@@ -115,18 +115,24 @@ rel: depends-on -> [[task-bug185-bulk-gmd-ingest#r6]]
     "EVIDENCE: replayed in log order, together with `rel_evidence_clear`"). This slice keeps
     those rules through its row-pass rewrite:
     - **`rel_evidence_clear` is NOT count-neutral.** In the ONE row pass ([[#r1d]]) it acts at
-      its timestamp position. It removes the evidence copies of its partition and `file`
-      whose `detail` starts with `rel: ` and that were appended at or before it. That is the
+      its position. It removes the evidence copies of its partition and `file` whose `detail`
+      starts with `rel: ` and that come BEFORE it in `(ts, log position)` order (bsd-spec-t4 r2
+      M5: the rebuild's stable sort on `ts`, so ties fall in log order; 17.4's fold uses the
+      same rule). That is the
       predicate of `Store.clear_rel_evidence`. It names a file, not an edge, so it is applied
       by `_row_pass_events`' order but stays outside `ROW_OPS` and `row_event` (d9bl's builder
       is for edge-keyed row ops). AC-9c's ordering case gains a `rel_evidence_clear` at `ts 2`
       between a `rel:` append at `ts 1` (removed) and one at `ts 3` (kept). Mutation: the
-      clear applied after all appends FAILS (the `ts 3` copy is removed).
+      clear applied after all appends FAILS (the `ts 3` copy is removed). A tie case: an
+      append and a clear, both at `ts 2`, with the append EARLIER in the log, so the clear
+      removes it; then the same pair with the clear earlier, so the append stays. Mutation:
+      ties broken against log order FAILS.
     - **`pending_ref`, `pending_ref_delete`, `pending_refs_clear`** fold to the `pending_refs`
       table in timestamp order, with a source's `tombstone` dropping its rows, exactly as
       bug-216's rebuild does. They touch no evidence, link or entity row.
   - **One fold table, which 17.4 imports (r1 S5).** This slice adds
-    `edge_records.FOLD_RULES: dict[str, str]`, the one statement of each non-HEAD replay op's
+    `edge_records.BASE_FOLD_OPS` (below) and `edge_records.FOLD_RULES: dict[str, str]`, the
+    one statement of each non-HEAD replay op's
     rule for an independent count fold:
     - `learned_provenance` and `learned_provenance_move`: `"ignored"` (sidecar only; r10 s-3's
       rule, moved here from the old `factslog-restore.py` row);
@@ -137,9 +143,12 @@ rel: depends-on -> [[task-bug185-bulk-gmd-ingest#r6]]
     **This slice does NOT edit `scripts/factslog-restore.py`.** That file does not exist until
     17.4, which `#queue` item 8 builds after this slice. 17.4 imports `FOLD_RULES`
     ([[task-17.4-factslog-backup-snapshot#rev-round-15]]). A unit test asserts that
-    `FOLD_RULES`' keys are a subset of `rebuild_index_from_log`'s AST-read dispatch set, and
-    that every non-HEAD op in that set is a key. 22.2 and 22.6 add their ops' rules to it when
-    they add the ops. Mutation: drop `rel_evidence_clear` from `FOLD_RULES` FAILS. bug-216's AC-14 rebuild legs must stay green through the rewrite.
+    `rebuild_index_from_log`'s AST-read dispatch set EQUALS `edge_records.BASE_FOLD_OPS`
+    ∪ `FOLD_RULES`' keys (r2 M5). `BASE_FOLD_OPS` is the frozenset of the 11 ops at HEAD before
+    bug-216: `entity`, `tombstone`, `protect`, `noise`, `link`, `unlink`, `evidence`, `track`,
+    `untrack`, `memory_content`, `linkage_type`. This slice defines it in `edge_records`, and
+    17.4 imports both. 22.2 and 22.6 add their ops' rules to `FOLD_RULES` when they add the
+    ops; plan-22's `FOLD_OPS` file rows are its owner's to repoint (the lead is told). Mutation: drop `rel_evidence_clear` from `FOLD_RULES` FAILS. bug-216's AC-14 rebuild legs must stay green through the rewrite.
   - **R13 applies in `rebuild_index_from_log` only** (lead ruling, 2026-11-13: d9bu wins over
     R13's first "both replay paths" text). bug-216 adds no `_apply_event_body` branch and no
     per-event test leg, so R1f gains nothing from R13.
@@ -1196,7 +1205,7 @@ The audit/prune/repair acceptance moved to plan-22. {#acceptance-moved}
 |------|--------|
 | `src/refmatrix/duckdb_catalog.py` | `learned_evidence` DDL + primary key |
 | `src/refmatrix/store.py` | `dump_catalog_to_log` emits one `learned_provenance` event per sidecar row of a dumped evidence row after each partition's `evidence` events, with its evidence row's `ts`, and counts the dead-end rows it skips `provenance_not_dumped` (R1d, r4 b-2, d9av; round 14); `add_learned_provenance` (+ `learned_provenance` events); `move_learned_provenance` (+ `learned_provenance_move` event); DELETE `apply_log_delta`, `_apply_one_event`, `_apply_event_body`, `_replay_concept` and rewrite the `add_memory` comment that names them ([[#r1f]], d9bu); both ops in `rebuild_index_from_log`'s ONE timestamp-ordered row pass, which replaces pass 3's separate `evidence_events` loop and keeps Pass 2b (`_row_pass_events`, R1d, d9av; r8 m-1); Pass 2b calling `edge_records.resolve_c_kind`; `_row_skip` / `row_skips` ([[#r1d-one-format]], d9bl); `verify_evidence_rows` stats split (`missing_file`, `out_of_range`, `reader_rule`); `grep_evidence` enqueues R4 candidates for learned rows |
-| `src/refmatrix/edge_records.py` | `ROW_OPS` (this slice's two ops), `row_event`, `row_key`, `resolve_c_kind` (Pass 2b's rule, extracted) ([[#r1d-one-format]], d9bl); 22.2 and 22.6 add their ops to `ROW_OPS`; (round 15) `FOLD_RULES` ([[#rev-round-15]]) |
+| `src/refmatrix/edge_records.py` | `ROW_OPS` (this slice's two ops), `row_event`, `row_key`, `resolve_c_kind` (Pass 2b's rule, extracted) ([[#r1d-one-format]], d9bl); 22.2 and 22.6 add their ops to `ROW_OPS`; (round 15) `BASE_FOLD_OPS` and `FOLD_RULES` ([[#rev-round-15]]) |
 | `src/refmatrix/learned_verify.py` (new) | R2: `Rules`, `Unverifiable`, `UNVERIFIABLE_REASONS`, `verify_argv`, `matching_lines`, `permissive_matching_lines`, `hash_line`, `verify` |
 | `src/refmatrix/replica_merge.py` | none: R1c is RETIRED (d9ay) |
 | `src/refmatrix/daemon.py` | DELETE `REPLICA_REBUILD_DELTA_BYTES` and its comment ([[#r1f]], d9bu); R4 drain consumer (pre-step + batch apply) on plan-23's drain; R5 backfill op; R1b call in `_learn_grep_hits` |
