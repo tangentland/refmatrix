@@ -148,7 +148,29 @@ review's citations stay valid). R0 is this task's own measurement step (L44 name
     exceeds 9,500 B. It records `capped: true` and the dropped byte count in the call's telemetry
     row and exits 0. `rmx telemetry --context` prints every firing on the console. A command whose
     producers already fit is byte-identical before and after. No environment variable or flag
-    raises the cap. With the ladder working it fires only on a defect. {#r12}
+    raises the cap. With the ladder working it fires only on a defect.
+    - **There is no single emit point today** (green-251c, reading `hooks.render_managed` at the 25.1
+      branch's `23caf45`). So the shared emitter is ONE function, `hook_budget.emit(text, *,
+      command, channel)`, and every rmx stdout writer that a generated hook command runs calls it.
+      These are the eight writer entries, which are nine functions (scan-prompt and curator status
+      are one command with two writers):
+      - capped today, each by its own writer: `cli._echo_pack` (the three `memory recall --pack`
+        hooks); `cli.recall_state` (`recall-state --max-bytes 9000`); `cli.scan_prompt_cmd` and
+        `cli.curator_status` (one command, two writers, 4,500 B / 500 B shares);
+        `cli.focus_context` (1,500 B);
+      - UNCAPPED today, and reaching the agent: `cli.focus_hook` on `--event session-start` (all
+        four SessionStart matchers); `rmx focus summarize --promote` (PreCompact `--timeout 30`,
+        Stop `--timeout 5`; it prints the full STM digest); `rmx ingest-gmd --as-memory --detach`
+        (SessionStart); `cli.save_state` (PreCompact).
+    - **Shares.** A writer's share is its `hook_budget.HOOK_COMMAND_CHANNELS` share. A writer that
+      is its command's only stdout writer gets the command's whole 9,500 B. Where one command holds
+      several writers, their shares are listed in `HOOK_COMMAND_CHANNELS` and sum to ≤ 9,500 B, so
+      the command's stdout is ≤ 9,500 B with no cross-process coordination. Each `emit` call that
+      cuts writes its `capped` row, with the command id and the dropped bytes.
+    - **Out of scope** (stdout to `/dev/null`, or not rmx): `sync --flush-queue`, the backgrounded
+      primer, `focus hook` on `tool` / `say` / `input`, the PostToolUse inline python, the grep
+      scripts. A later hook command whose rmx stdout reaches the agent joins the list through the
+      same function. {#r12}
 13. **R13 Degrade ladder inside the pack.** When a payload does not fit its channel budget, items
     are degraded in rank order instead of dropped. The tier shapes (L54 S1) keep 25.1 R3 / J5's
     "every hook line before any body":
@@ -264,6 +286,17 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
   mutation it fires, is counted, and `rmx telemetry --context` prints it. Mutations: clamp
   mid-line; the cap read from an env var; one hook command bypassing the shared emitter; a firing
   not counted. {#ac-16}
+- **AC-26 Every writer goes through the one emitter** (R12's writer list). The test renders every
+  generated hook command (`hooks.render_managed` / `hooks._claude_hook_block`) and, for each rmx
+  producer in it, forces the producer to emit 20 KB on a fixture and runs the command with `bash
+  -c`. For every command: stdout ≤ 9,500 B; a `capped` row carries that command's id; each writer's
+  output is within its `HOOK_COMMAND_CHANNELS` share. A structural check parses `src/refmatrix/` and
+  fails if any of the nine writer functions named in R12 writes to stdout other than through
+  `hook_budget.emit`. The out-of-scope commands are asserted to send rmx stdout to `/dev/null`.
+  The four writers uncapped today are RED at HEAD. Mutations: one of the four uncapped writers
+  (e.g. `focus summarize --promote`) prints directly, bypassing the emitter (FAIL: its command
+  exceeds 9,500 B and the structural check fires); two writers of one command given shares that sum
+  over 9,500 B; a cut with no `capped` row. {#ac-26}
 - **AC-17 (R13).** 40 retrieved items at 20 KB total, with 25.1-shaped hook lines of 250-370 B, at
   a 9,000 B budget. Every item is visible: at tiers 1-3 (its hook line printed, carrying its curated
   hook), as a names-line member, or, past the cap of 15, counted in `(+N)` and on the spill page.
@@ -344,13 +377,14 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
 | `src/refmatrix/hook_budget.py` | `HOOK_HARD_CAP_BYTES`, the shared emitter, `GLOBAL_LEG_RESERVE_S`, `LEG_WALL_S` (only if R15 is built) |
 | `src/refmatrix/recall_pack.py` | the ladder (one render function per tier), `pack(held=…)` with tier-pinned removal, the names line (the only home of `still in play` and `·held`), `Packed` gains per-row full-run and rendered tier and `form` |
 | `src/refmatrix/stm.py` | spill page write, read and prune ([[#k10]]) under 10.3's `.emitted` directory helper; reads `stm.last_marker` |
-| `src/refmatrix/hooks.py` | every generated command passes through the shared emitter |
+| `src/refmatrix/hooks.py` | `HOOK_COMMAND_CHANNELS` shares for every generated command with rmx stdout (via `hook_budget`) |
+| `src/refmatrix/cli.py` (the nine writer functions, [[#r12]]) | `_echo_pack`, `recall_state`, `scan_prompt_cmd`, `curator_status`, `focus_context`, `focus_hook` (session-start), `focus summarize`, `ingest-gmd --as-memory --detach`, `save_state` write through `hook_budget.emit` |
 | `src/refmatrix/verbs.py` (`memory_recall`) | the `page` parameter; the global leg's reserve and `global_omitted`; the degrade wording (R17) |
 | `src/refmatrix/cli.py` | `rmx memory recall --page <token>`; `legs_ms` on scan-prompt's and the per-prompt recall's rows; the R17 wording around `RECALL_DAEMON_SLICE_S` |
 | `src/refmatrix/scan.py` | per-leg timing; leg bounds (only if R15 is built) |
 | `src/refmatrix/telemetry.py` | `form`, `capped`, `dropped_bytes`, `legs_ms`, `global_omitted`; `rmx telemetry --context` prints clamp firings |
 | `.claude/settings.json`, `.claude/rmx-hooks.json` | regenerated from Python in the task's clone, never by `rmx install-hooks` against a live store |
-| `tests/test_task25_1b_ladder_spill.py` (new) | AC-16..AC-25 |
+| `tests/test_task25_1b_ladder_spill.py` (new) | AC-16..AC-26 |
 | `tests/test_verb_parity.py` | the `page` twin |
 | `workflow/measurements/task-25.1b-scan-prompt-legs.md` (new) | R0's table and the L44 decision row |
 | `workflow/test_mock_registry.md` | AC-22's rerank double |
@@ -422,5 +456,6 @@ rel: implements -> [[plan-review-2026-11-13#lead]]
 | S5 R15's bounds had no rule | s = min(1, (T − 0.5 s) / Σ p90ᵢ); bound = s × p90ᵢ | [[#r15]], AC-21 |
 | M3 title said two riders | three | title |
 | M4 ACs without mutations; `Packed` tiers unpinned | AC-21, AC-24 mutations; AC-25 pins full-run / rendered tiers and `overflow` | AC-21, AC-24, AC-25 |
+| lead input (green-251c on `hooks.render_managed` at `23caf45`): no single emit point | R12 names all eight stdout writer entries, nine functions (four entries capped, four uncapped), the share rule and the out-of-scope list; AC-26 with a bypass mutation | [[#r12]], AC-26 |
 | M5 spill retention and `<seq>` | `<seq>` = write ms base 36, exclusive create; prune at marker, beyond the newest 50, and other sessions' dirs older than 7 days (values decided by the lead, L58) | [[#k10]] |
 | `form` value `held` (M2's 25.1b half) | `#k5` names it | [[#k5]] |
