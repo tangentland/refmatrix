@@ -42,3 +42,4 @@
 2026-11-11T13:42:31-0800 commit=b024a95 verdict=DIRTY findings=8 (1B/3S/4M) report=2026-11-11-1342-bug212-r1-b024a95.md
 2026-11-13T10:53:24-0800 commit=540ab50 verdict=DIRTY findings=14 (1B/5S/8M) report=2026-11-13-1053-task-21.5-spec-r2-540ab50.md
 2026-11-13T12:30:44-0800 commit=4b57796 verdict=DIRTY findings=13 (2B/6S/5M) report=2026-11-13-1230-215-measurements-4b57796.md
+2026-11-13T13:36:11-0800 commit=1caf3df verdict=DIRTY findings=6 (1B/2S/3M) report=2026-11-13-1336-task-26.4-r1-savestate-mtype-1caf3df.md

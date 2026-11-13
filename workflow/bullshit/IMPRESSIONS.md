@@ -62,6 +62,8 @@ Window: the newest run bullets. Older bullets are folded VERBATIM, anchor ids un
 - 2026-11-13 (task 21.5 spec r2) — A COUNT THAT IS PRINTED IS NOT A COUNT THAT IS TESTED. 8 of 23 exclusion counts had no fixture; each needs an exact value in a fixture, or it can be hard-wired to 0. {#imp-printed-count-needs-a-fixture}
 - 2026-11-13 (21.5 measurements m1, 4b57796) — A CORRECTION NEEDS THE SAME PROOF AS THE CLAIM IT CORRECTS. The lead "corrected" a 67% gap to a probe-direction artefact after tracing three edges, without checking that the probe already walked both directions; the original number was right and its meaning was a resolver binding the wrong node. Before withdrawing a measured number, re-run the measuring code's own logic, not a plausible story. {#imp-correction-needs-proof}
 - 2026-11-13 (21.5 measurements m1) — A PLACEBO MUST GET THE SAME PREPROCESSING AS THE REAL ARM. Building the prior-context filter from the real session and applying it to the placebo session's activity made the placebo look as good as the real work. {#imp-placebo-symmetric}
+- 2026-11-13 (task 26.4 r1, 1caf3df) — A STORE OVERRIDE BEHIND A CONTENT-HASH GATE IS STICKY. A file-target ingest wrote the wrong mtype and every later correct bridge skipped the unchanged file, so the wrong row outlives the fix and the forced re-bridge. When a rule changes what a row says, ask what re-ingests the rows it already got wrong. {#imp-override-behind-hash-gate-is-sticky}
+- 2026-11-13 (task 26.4 r1) — THE FOURTH HAND-OFF TO A SIBLING WITH NO AC IN THE SIBLING; filed as [[bsd-pattern-handoff-without-sibling-ac]]. Grep the receiving spec before accepting any deferral. {#imp-handoff-without-sibling-ac-4th}
 
 ## Former anchors, restored {#former-anchors}
 
