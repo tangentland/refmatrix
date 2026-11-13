@@ -85,8 +85,11 @@ contra-b CB-1). Plan-10 adds only the held members. {#names-only-owner}
 
 rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 
-- **Held** = delivered FULL on `scan_prompt`, `prompt_recall` or `session_start` on an EARLIER
-  prompt of the session, after the last compaction marker (cross-block).
+- **Held** = rendered on its own (above the line) on `scan_prompt`, `prompt_recall` or
+  `session_start` on an EARLIER prompt of the session, after the last compaction marker
+  (cross-block). It is held only at the tier it was shown and poorer ones (10.2 h15, lead ruling):
+  an item seen as a pointer still gets its body when the `full` run would give one. Held names are
+  marked `·held` on the line (h16).
 - Held items are taken out of the payload and named on ONE line, 25.1b's. Non-held items keep
   the tier and rendering the `full` run gives them, in their original order (tier-pinned,
   10.2 h9 and h13). Nothing new is pulled in, and freed bytes are not re-spent.
@@ -186,6 +189,8 @@ but never dedupes; PreCompact and explicit pulls neither.
 | L17 | 10.6's composite (plan review, lead; contra-b CB-7) | Table A runs on the composite before 10.6 R3, under 19.6's confirmed bands (10.6 R0) | 2026-11-13 |
 | L23 | Spec review and merge (plan review, lead) | plan-10 rev 5 gets its ch-bsd spec review, then the revival branch merges to master before any 10.x builds; Q7 and Q11 marked superseded | 2026-11-13 |
 | L27 | The A/B's outcome (plan review, lead) | only R12 explicit uses + `cited_in_answer`, never 21.5's unbuilt legs | 2026-11-13 |
+| h15 | Which 25.1b tier makes an item held (lead ruling on 10.2 `#open-held-tier`) | (a) tier-aware: held only at the tier shown and poorer ones; the richest tier since the marker counts | 2026-11-13 |
+| h16 | Held names on the line (lead ruling on 10.2 `#open-held-mark`) | (a) marked `·held`, inside the line's bytes; one rank order with over-budget members | 2026-11-13 |
 | L30 | Build order (plan review, lead) | only 10.3 builds early; 10.5 probe → 10.6 → 10.4 → 10.2 after T4, ahead of the experiment | 2026-11-13 |
 
 ## Task Breakdown {#task-breakdown}
@@ -271,6 +276,7 @@ rel: derives-from -> [[agent-brief-spec-wave]]
 | 10.6 R0: Table A on the composite before R3, under 19.6's confirmed bands; the exploration's `#vi-evidence` revised | L17, CB-7 | [[task-10.6-injection-presentation#r0]], [[exploration-session-phased-context#vi-evidence-2026-11-13]] |
 | A/B nested in the handhold experiment; the outcome is R12 explicit + `cited_in_answer` only | L20, L27 | [[#ab]], [[task-10.2-plan-10-injection-dedup#r7]] |
 | Only 10.3 builds early; the rest follow T4 | L30 | [[#order]] |
+| Tier-aware held (h15); held names marked `·held` (h16) | lead rulings, 2026-11-13 | [[task-10.2-plan-10-injection-dedup#open-held-tier]], [[task-10.2-plan-10-injection-dedup#open-held-mark]] |
 | Q7 and Q11 marked superseded by Q13 / Q10 | L23 | [[#decisions-log]] |
 | 10.3's reader list includes 25.1b R14 and 25.3 R7 (helix reset, L16) | L16, CB-6 | [[task-10.3-plan-10-injection-dedup#r2]] |
 | 10.4's curator entry goes through 25.1b R12's shared emitter | L15 | [[task-10.4-non-human-prompt-gate#rev-round-6]] |

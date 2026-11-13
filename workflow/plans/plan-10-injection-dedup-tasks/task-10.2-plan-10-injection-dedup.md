@@ -58,10 +58,10 @@ labelled and 6 R12 uses. Chosen: names-only (Q13), applied to non-human turns to
 
 | # | decision | reason |
 |---|---|---|
-| h1 | HELD = delivered FULL on `scan_prompt`, `prompt_recall` or `session_start` on an EARLIER prompt of the session, after the last compaction marker (cross-block) | the four held rules (lead, 2026-11-13); the definition the replay scored (v2) |
+| h1 | HELD = rendered on its own (any tier above the line) on `scan_prompt`, `prompt_recall` or `session_start` on an EARLIER prompt of the session, after the last compaction marker (cross-block). It is held only at that tier and poorer ones (h15). Rev 5 said "delivered FULL"; under 25.1b's tiers that is made precise by h15 | the four held rules (lead, 2026-11-13); the definition the replay scored (v2) |
 | h2 | "Earlier prompt" is decided by prompt identity, not by the STM turn: an entry is earlier when its `prompt_sha` differs from this call's, or when it is older than `stm.PRE_PROMPT_SKEW_S` (10 s) before this call's process start; a `session_start` entry is always earlier | scan-prompt and the recall run concurrently on one prompt and must not hold each other's same-prompt items; the STM turn cannot serve, because 10.4 stops counting agent-message turns while those turns still get payloads (Q10); `PRE_PROMPT_SKEW_S` is the skew 21.1 R9 already uses to tell this prompt from another |
 | h3 | Compaction is the only reset (no TTL, no window, no keyframe) | lead rule 2; nothing is removed outright, so a stale "held" only moves an item to the names line, where it is still named |
-| h4 | The names line is visible but never sets "held"; only a full rendering does | lead rule 3; an item seen only by name keeps its original full delivery as the reason it is held |
+| h4 | The names line is visible but never sets "held"; only a rendering at tier 1-3 does, and it records its tier (h15) | lead rule 3; an item seen only by name keeps its original full delivery as the reason it is held |
 | h5 | scan-prompt dedupes in ITEM units (anchors and group entries), with its own render and its own `fit_blocks` call; the recall dedupes rows inside 25.1's pack | lead rule 4; scan is not a row list |
 | h6 | State: one file per WRITING channel, `stm/<session>.emitted/<channel>.json` (`scan_prompt`, `prompt_recall`, `session_start`), each written only by its own hook after its payload is printed; every reader reads all three plus 10.3's `marker.json` | one writer per file, no read-modify-write between concurrent hooks; written after the print so a hook that dies first leaves the old state (the next prompt renders in full; an item is never named that the model did not get) |
 | h7 | 21.1's `delivered` events are the MEASUREMENT, not the state | telemetry has a kill switch (`telemetry._disabled()`) and skips a failed append by design, so behaviour would silently depend on telemetry config; reading state back from a 32 MB log costs a backwards scan per prompt |
@@ -72,26 +72,16 @@ labelled and 6 R12 uses. Chosen: names-only (Q13), applied to non-human turns to
 | h12 | `session_start`, `precompact` and explicit pulls (`rmx context`, interactive and MCP recall) never dedupe; `session_start` RECORDS its full deliveries (h1); `precompact` and explicit pulls record nothing | a boundary payload is what the window starts from; an explicit pull is the agent asking for the body, often because it lost it |
 | h13 | Order of operations on the recall channel (the same order as 25.1b [[task-25.1b-hook-output-ladder-and-spill#k3]], converged with spec-t3a; [[#open-held-order]]): (1) retrieval, the four-source merge and the exclusions, unchanged; (2) 25.1b's ladder over EVERY row, with the line reserved; (3) each held row leaves its tier and becomes a HELD member of 25.1b's `still in play` line; (4) the line renders its held and over-budget members as 25.1b defines; (5) 25.1b R12's clamp, the safety net. A held row whose `full`-run tier was already the line keeps its place and is marked held | contra-b CB-1 asks for the order of held removal and the ladder to be stated; the order follows from h9, and steps 2 and 3 cannot swap without re-spending |
 | h14 | The live A/B's outcome counts only R12 explicit uses plus `cited_in_answer`, never 21.5's unbuilt legs | L27, L18's rule: 21.5's matcher measures proximity, not use (R12 pilot: 7% CAUSED) and is frozen until the experiment reports (D-Q3, D-Q4) |
+| h15 | **Tier-aware held (lead ruling, 2026-11-13, on [[#open-held-tier]] (a)).** An item is held for a call only when the tier it was shown at is the same as, or richer than, the tier the `full` run gives it now. Full shown → held at every tier. Excerpt shown → held at excerpt, pointer and names, not at full. Pointer shown → held at pointer and names. A held state with several deliveries keeps the RICHEST tier shown since the marker. Cross-block tiers: a recall or `session_start` row records its 25.1b tier (`full` / `excerpt` / `pointer`). A scan-prompt anchor block (anchor line, tldr, body) records `full`, and a scan group entry (one line) records `pointer` | the agent never loses content it was never shown; (b) would name an item whose body it never saw, and (c) would almost never dedupe `prompt_recall`, which is mostly pointers at 4,000 B (25.1 d3). The scan mapping is the nearest 25.1b tier by content, derived to apply the ruling across blocks, and is called out for review |
+| h16 | **Held names are marked (lead ruling, 2026-11-13, on [[#open-held-mark]] (a)).** Each held member on the line carries the suffix `·held`, rendered by 25.1b's one line renderer and counted inside the line's bytes. Over-budget members carry no marker. Members keep one rank order across both kinds (10.6 p2). On scan-prompt every member is held and marked | a held member's content is already in the window, while an over-budget member's is only on the spill page; the marker tells the agent which names to fetch |
 
-## Open for the lead: which ladder tier makes an item held {#open-held-tier}
+## Which ladder tier makes an item held (resolved: h15) {#open-held-tier}
 
-h1 says an item is HELD when it was "delivered FULL". Under 25.1 rev 7 there were only two forms,
-the item's own line (hook line, sometimes with a body) and the names line. "FULL" therefore meant
-"its own line", and v1/v2 scored that. 25.1b's ladder has four forms: body, excerpt, pointer and
-line member. No D-Q or L-row says which of them sets "held". The choice changes what tier pinning
-replaces, and it changes v3. This revision does not pick one. R2's `record_full` and h1 read
-"rendered at any tier above the line" until the lead settles it. {#open-held-tier-lead}
-
-- **(a) Recommended: tier-aware.** `record_full` stores the tier each item was rendered at. An
-  item is held for a call when its stored tier is the same as, or richer than, the tier the
-  `full` run gives it now. A body held covers a body, an excerpt or a pointer. A pointer held does
-  not cover a body, so the agent never loses content it was never shown. AC-2 gains a leg for
-  this.
-- **(b) Any rendering above the line sets held.** This is v2's literal reading. It is simpler, but
-  an item shown only as a pointer at prompt 2 would be reduced to a name at prompt 5 even when
-  prompt 5 would have shown its body.
-- **(c) Only a body (tier 1) sets held.** Safe, but on `prompt_recall` at 4,000 B the pack is
-  mostly pointers (25.1 d3), so recall would almost never dedupe.
+Rev 5's h1 said "delivered FULL". Under 25.1 rev 7 that meant "its own line, not the names line".
+25.1b's ladder has four forms, and no D-Q or L-row said which of them sets "held". Three options
+were put to the lead: (a) tier-aware, (b) any rendering above the line, (c) only a full body. The
+lead ruled (a) on 2026-11-13. It is decision h15, and AC-2 tests it. The anchor stays because
+`1d7807d` and 10.5 cite it. {#open-held-tier-lead}
 
 rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 
@@ -105,45 +95,37 @@ because commit `537c7e2` cites it. {#open-held-order-lead}
 
 rel: related-to -> [[task-25.1b-hook-output-ladder-and-spill#k3]]
 
-## Open for the lead: where held members sit on the line, and how they are marked {#open-held-mark}
+## Where held members sit on the line, and how they are marked (resolved: h16) {#open-held-mark}
 
-25.1b k2 leaves this to 10.2. 10.6 p2 (the user-agreed rule that labels never reorder and rank
-order is kept) settles the ORDER: one rank order across held and over-budget members, under the
-one cap of 15. It does not settle whether the agent can tell the two kinds apart on the line. The
-difference matters: a held member's content is already in the window, while an over-budget
-member's content is only on the spill page. {#open-held-mark-lead}
-
-- **(a) Recommended: mark held members.** Each held member carries one short marker in the line
-  (for example a trailing `·held`), and the marker's bytes count inside the line's reservation.
-  The agent then knows which names to fetch.
-- **(b) No marker.** The line stays as rev 5 drew it. The agent fetches from the page when it
-  cannot find a name in its window.
-
-This spec writes order = rank order. The marker waits on this item. {#open-held-mark-order}
+25.1b k2 leaves this to 10.2. Order: one rank order across held and over-budget members (10.6
+p2). Marker: the lead ruled (a) on 2026-11-13, so held members carry `·held` inside the line's
+bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
 
 ## Requirements {#requirements}
 
 1. **R1 The held set.** `stm.held_items(root, session, *, prompt_sha, t0) -> HeldSet` reads
    `stm/<session>.emitted/{scan_prompt,prompt_recall,session_start}.json` and 10.3's
    `stm.last_marker` once per call and returns the keys held under h1-h2. An entry is `{key, name,
-   kind, scope, prompt_sha, ts}`. A missing file contributes nothing; an unreadable one contributes
+   kind, scope, tier, prompt_sha, ts}`. `HeldSet.covers(key, tier)` answers h15: the richest tier
+   recorded for that key since the marker is the same as, or richer than, `tier`. A missing file contributes nothing; an unreadable one contributes
    nothing plus one `rmx: held state: …` stderr line and `held_error` on the call's row (the safe
    direction: everything renders full); an unreadable marker resets (10.3). {#r1}
 2. **R2 The writers.** After printing, the hook `scan-prompt`, `memory recall --stdin-json` and
-   `memory recall --session-start` each record their FULL-rendered items in their own file
-   (`stm.record_full(root, session, channel, items, *, prompt_sha)`, temp-file + replace).
-   Names-line items are never recorded (h4). {#r2}
+   `memory recall --session-start` each record the items they rendered at tiers 1-3, each with its
+   tier per h15, in their own file (`stm.record_full(root, session, channel, items, *,
+   prompt_sha)`, temp-file + replace). Names-line items are never recorded (h4). {#r2}
 3. **R3 Recall (on 25.1b's pack, tier-pinned).** `recall_pack.pack(..., held: "Collection |
    None" = None)` follows h13. The pack runs 25.1b's ladder over every row exactly as it does with
-   `held=None`. Each row whose `telemetry.item_key` is held then leaves its tier and becomes a
-   HELD member of 25.1b's `still in play` line. Non-held rows keep their tiers, rank order and
+   `held=None`. Each row for which `held.covers(item_key, full_run_tier)` is true (h15) then
+   leaves its tier and becomes a HELD member of 25.1b's `still in play` line, marked `·held`
+   (h16). A row whose held tier is poorer than its full-run tier is not held for this call: it
+   renders as the `full` run renders it, and that richer rendering is recorded (R2). Non-held rows keep their tiers, rank order and
    renderings byte-for-byte (h9). The line's format, its one cap of 15 in rank order across both
    member kinds ([[task-25.1b-hook-output-ladder-and-spill#k2]]), 10.6's per-member labels (no
    regrouping, 10.6 p2), its overflow and its spill page are 25.1b's. A held member past the cap
    is counted `(+N)`. Every held row's body is written to the spill page, inside the cap or past
    it, because 25.1b k3 step 4 spills the body of every row below tier 1, held rows included.
-   Line members, held and over budget alike, sit in one rank order (10.6 p2;
-   [[#open-held-mark]]).
+   Line members, held and over budget alike, sit in one rank order (10.6 p2; h16).
    `Packed` gains `held_named` and `held_overflow`. Held members carry the line span 25.1b defines
    for line members. The verb (25.1 R5) reads
    `internal.get("dedupe")` (CLI `--stdin-json` only, the way `embedder_policy` rides
@@ -156,8 +138,9 @@ This spec writes order = rank order. The marker waits on this item. {#open-held-
    filter (`shown`) is now keyed by `telemetry.item_key` instead of the entity name. A held ANCHOR
    renders no anchor block (`context.render_text_spans(b, omit_anchor=True)`: no anchor line,
    tldr or body), and its non-held entries render under the bundle header as today. A bundle left
-   with nothing is not rendered. Every held item becomes a held member of ONE line, rendered by
-   25.1b's line renderer. scan-prompt has no ladder (25.1 R0b), so that line holds held members
+   with nothing is not rendered. A held item here is one whose `held.covers` is true at its scan
+   tier (an anchor block is `full`, a group entry `pointer`, h15). Every held item becomes a held
+   member of ONE line, marked `·held` (h16), rendered by 25.1b's line renderer. scan-prompt has no ladder (25.1 R0b), so that line holds held members
    only. It is appended as its own block and reserved in scan's `fit_blocks` call so it is never
    cut. 25.1b's spill page belongs to the pack, and scan-prompt writes none. Past the cap, scan's
    held items are counted `(+N)` with `retrieved` events only, which is rev 5's rule kept. The
@@ -230,7 +213,8 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
 {#acceptance-lead}
 
 1. **AC-1 Held is named, not rendered.** Prompt 1 renders X (both payloads). Prompt 2 retrieves X
-   and Y: it renders Y as the `full` run would, and X only as a held member of 25.1b's line.
+   and Y: it renders Y as the `full` run would, and X only as a held member of 25.1b's line,
+   printed `X·held`; an over-budget member on the same line carries no marker.
    Prompt 3 behaves the same. RED at the 25.1b + 10.3 + 10.4 + 10.6 base.
 2. **AC-2 Nothing vanishes; tier-pinned.** A property test runs over the fixture with 200 random
    held subsets (plus the empty and the full one) on both payloads. Every item the `full` run
@@ -239,7 +223,13 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
    appears. On recall, every non-held row's rendering is byte-identical to its rendering in the
    `full` run (h9). The `dedupe` payload is never more bytes than the `full` payload. On 25.1b
    AC-17's fixture (40 rows, 20 KB) at 4,000 B with 10 held rows, no non-held row moves to a
-   higher tier.
+   higher tier. Tier-aware legs (h15):
+   - X shown as a pointer at prompt 1 and given a body by the `full` run at prompt 2 renders its
+     body at prompt 2 (not held), and that is recorded.
+   - X shown as a body at prompt 1 is held at prompt 2 whether the `full` run gives it a body, an
+     excerpt or a pointer.
+   - X shown as an excerpt is held at excerpt and pointer, not at full.
+   - On scan-prompt, an item seen only as a group entry is not held for an anchor block.
 3. **AC-3 Earlier prompts only.** scan-prompt and recall run concurrently on one prompt: neither
    names the other's same-prompt items; a `session_start` delivery is held on the first prompt; an
    identical prompt text re-sent later than `PRE_PROMPT_SKEW_S` does hold; an agent-message turn
@@ -283,10 +273,13 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
     `arms.draw` using a random source (AC-11); a non-held row promoted into freed bytes (AC-2,
     tier pinning); held removal applied BEFORE the ladder (AC-2: the 40-row fixture shows a
     promotion); held members printed on a second, 10.2-owned line (AC-14); a held member recorded
-    with 25.1b's over-budget `form` (AC-7).
+    with 25.1b's over-budget `form` (AC-7); the tier ignored in `HeldSet.covers` (AC-2, the
+    pointer-then-body leg); the poorest tier kept instead of the richest (AC-2, the body-then-pointer
+    leg); the `·held` marker missing, or put on an over-budget member (AC-1).
 14. **AC-14 One line.** A structural test parses `src/refmatrix/`. The literal `still in play`
     appears only in 25.1b's line renderer. The pack and scan-prompt both call that renderer, and
-    neither builds a line of its own.
+    neither builds a line of its own. The marker literal `·held` likewise appears only in that
+    renderer.
 
 ## Files to modify {#files}
 
@@ -335,7 +328,8 @@ rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 | The line is 25.1b's; 10.2 adds held members and owns no line | L15, CB-1 | h10, R3, R4, AC-14 |
 | Tier-pinned: the ladder runs over every row first; held rows then leave their tiers; non-held rows never take freed bytes | h9 applied to the ladder (CB-1 asks for the order) | h9, h13, R3, AC-2 |
 | Every held row's body goes to 25.1b's spill page (k3 step 4); held overflow is counted `(+N)` | L15 | R3, AC-6 |
-| One rank order across both member kinds (10.6 p2); the held marker is open | 25.1b k2 | R3, [[#open-held-mark]] |
+| One rank order across both member kinds (10.6 p2); held members marked `·held` | 25.1b k2; lead ruling on [[#open-held-mark]] (a) | h16, R3, R4, AC-1, AC-14 |
+| Tier-aware held: held only at the tier shown and poorer ones | lead ruling on [[#open-held-tier]] (a) | h1, h4, h15, R1, R2, R3, R4, AC-2 |
 | `form: "held"` is distinct from 25.1b's over-budget form | CB-2's resolution in 25.1b | R6, AC-7 |
 | R8 parity target = 10.5 v3 (tier-pinned on 25.1b's pack), not v2 | L15 | R8, AC-12 |
 | The A/B is the handhold experiment's run (arm A × {dedupe, full}); the outcome is R12 explicit + `cited_in_answer` only | L20, L27 | R7, h14 |

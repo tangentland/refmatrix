@@ -76,9 +76,10 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
    than a tautology: at 10.2's GREEN the replay is re-run with `stm.held_items` and
    `pack(held=…)` imported from `src/`, and both runs must agree. A retrieved row whose memory no
    longer exists in the store copy is counted and left out of BOTH arms, and the count is
-   reported. Which ladder tier sets "held" is open
-   ([[task-10.2-plan-10-injection-dedup#open-held-tier]]). v3 runs only after the lead settles it,
-   and it uses that rule. {#r1b}
+   reported. "Held" is tier-aware (lead ruling 2026-11-13, 10.2 h15,
+   [[task-10.2-plan-10-injection-dedup#open-held-tier]]): an item is held only at the tier it was
+   shown and poorer ones. The replay applies that rule in its own code, and the line's bytes
+   include h16's `·held` marker. {#r1b}
 2. **R2b The rule is unchanged.** v1/v2's pre-registered rule applies as written: every labelled
    use stays visible and at most 1 R12 explicit use is lost. "Visible" means rendered at any
    tier, or named on the line. An item only on the spill page is NOT visible. The run reports
