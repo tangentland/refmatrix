@@ -193,3 +193,139 @@ def test_ac5_is_not_a_gate(catalog):
     db, proj = catalog
     p = _run(str(db), str(proj))
     assert p.returncode == 0, p.stdout + p.stderr
+
+
+# ---------------------------------------------------------------- AC-9 (R8): binding classes
+#
+# Spec #r8 (rev 2, amended a306e71): a line is LANDED only when its evidence row joins a LIVE
+# `entity_links` row whose two entities both still exist; an evidence row without one is STALE
+# (bug-219). Every landed row is then classed by its target. Rev 3 (#ac-6-rev3) adds
+# BOUND-VIA-DENOTES: a path-less concept sharing an ingested doc's name that reaches the doc by a
+# `denotes` link. MISBOUND = the same concept with no such link.
+#
+# Assumed `--json` keys (on top of AC-5's): `stale` (int) and `binding`, a dict with
+# `doc_or_memory`, `anchor_node`, `misbound`, `bound_via_denotes`, `other_concept`.
+#
+# The ingester writes rows 1-2 (the same at HEAD and after R6: one fresh batch). Rows 3-6 are the
+# states HEAD left in live stores, written with the store API after the ingest and cited by rel:
+# lines appended to a.md (appending shifts no earlier line):
+#   L1 [[b-doc]]      -> B's doc                                  doc_or_memory
+#   L2 [[b-doc#sec]]  -> B's sec node (path)                      anchor_node
+#   L3 [[c-doc]]      -> path-less `c-doc`; c.md ingested as c-doc, no denotes   misbound
+#   L4 [[d-concept]]  -> path-less `d-concept`; no doc of that id  other_concept
+#   L5 [[e-doc]]      -> path-less `e-doc` -denotes-> e.md's doc  bound_via_denotes
+#   L6 [[f-doc]]      -> evidence row only, no entity_links row     stale
+#   authored 6 = landed 5 + stale 1
+
+A9_HEAD = """---
+gmd: "0.1"
+id: a9
+title: "A9"
+tags: [t]
+---
+
+# A9 {#root}
+
+## Cite {#cite}
+
+Text.
+
+rel: derives-from -> [[b-doc]]
+rel: depends-on -> [[b-doc#sec]]
+"""
+A9_TAIL = ["rel: derives-from -> [[c-doc]]", "rel: derives-from -> [[d-concept]]",
+           "rel: derives-from -> [[e-doc]]", "rel: related-to -> [[f-doc]]"]
+
+EXPECTED_AC9 = {
+    "authored": 6, "landed": 5, "landed_other_line": 0, "stale": 1,
+    "file_not_ingested": 0, "target_unresolved": 0,
+    "binding": {"doc_or_memory": 1, "anchor_node": 1, "misbound": 1,
+                "bound_via_denotes": 1, "other_concept": 1},
+}
+
+
+def _gmd9(doc_id: str, extra: str = "") -> str:
+    # title != id: a hyphenated title mints its own same-named concept (title terms)
+    return (f'---\ngmd: "0.1"\nid: {doc_id}\ntitle: "Fixture document"\ntags: [t]\n---\n\n'
+            f"# Fixture document {{#root}}\n\nBody.\n{extra}")
+
+
+def _link9(s: Store, verb: str, c: int, e: int) -> None:
+    try:
+        s.get_linkage_id(verb)
+    except KeyError:
+        s.add_linkage_type(verb, directed=True, description=f"bug-216 fixture '{verb}'")
+    s.link(verb, c, e)
+
+
+@pytest.fixture
+def catalog9():
+    base = Path(tempfile.mkdtemp(prefix="b216n", dir="/tmp")).resolve()
+    proj = base / "proj"
+    d = proj / "docs"
+    d.mkdir(parents=True)
+    a = d / "a9.md"
+    a.write_text(A9_HEAD)
+    files = {"b": _gmd9("b-doc", "\n## Sec {#sec}\n\nS.\n"), "c": _gmd9("c-doc"),
+             "e": _gmd9("e-doc"), "f": _gmd9("f-doc")}
+    paths = [a]
+    for k, body in files.items():
+        p = d / f"{k}.md"
+        p.write_text(body)
+        paths.append(p)
+    root = proj / ".refmatrix"
+    root.mkdir()
+    s = Store(root)
+    s.init()
+    try:
+        stats = ingest_gmd_paths(s, paths)
+        assert stats.rels == 2, stats.report()
+        lines = A9_HEAD.splitlines() + [""] + A9_TAIL
+        a.write_text("\n".join(lines) + "\n")
+        src = s.get_entity("concept", "a9#cite").id
+        doc = {n: s.get_entity("doc", n).id for n in ("c-doc", "e-doc", "f-doc")}
+        for n in ("c-doc", "d-concept", "e-doc"):
+            assert s.get_entity("concept", n) is None, f"precondition: no `{n}` concept yet"
+        cc = s.upsert_entity(kind="concept", name="c-doc")
+        dc = s.upsert_entity(kind="concept", name="d-concept")
+        ec = s.upsert_entity(kind="concept", name="e-doc")
+        _link9(s, "denotes", ec, doc["e-doc"])
+        for tail_line, verb, tgt, ref in (
+                (A9_TAIL[0], "derives-from", cc, "c-doc"),
+                (A9_TAIL[1], "derives-from", dc, "d-concept"),
+                (A9_TAIL[2], "derives-from", ec, "e-doc"),
+                (A9_TAIL[3], "related-to", doc["f-doc"], "f-doc")):
+            line = lines.index(tail_line) + 1
+            if ref != "f-doc":                       # L6: evidence with NO live edge
+                _link9(s, verb, src, tgt)
+            else:
+                try:
+                    s.get_linkage_id(verb)
+                except KeyError:
+                    s.add_linkage_type(verb, directed=True)
+            s.add_evidence(verb, src, tgt, file=str(a), line=line,
+                           detail=f"rel: {verb} -> {ref}")
+        db = Path(s.db_path)
+    finally:
+        s.close()
+    yield db, proj
+    shutil.rmtree(base)
+
+
+def test_ac9_recount_classifies_binding_and_stale_rows(catalog9):
+    db, proj = catalog9
+    p = _run(str(db), str(proj), "--json")
+    assert p.returncode == 0, p.stdout + p.stderr
+    got = json.loads(p.stdout)
+    assert {k: got.get(k) for k in EXPECTED_AC9} == EXPECTED_AC9, json.dumps(got, indent=1)
+    assert sum(got["binding"].values()) == got["landed"], got
+    assert got["authored"] == sum(got[k] for k in (
+        "landed", "landed_other_line", "stale", "file_not_ingested", "target_unresolved"))
+
+
+def test_ac9_the_ac5_fixture_has_no_stale_rows(catalog):
+    """Every AC-5 row is live: R8's stricter `landed` must not move AC-5's numbers."""
+    db, proj = catalog
+    p = _run(str(db), str(proj), "--json")
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert json.loads(p.stdout).get("stale") == 0, p.stdout

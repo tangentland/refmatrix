@@ -240,11 +240,21 @@ def _evidence(s: Store, verb: str, entity_id: int, concept_id: int) -> list[tupl
         "AND concept_id=?", (lid, entity_id, concept_id)).fetchall()
 
 
+TARGET_FILE = {"claude": "CLAUDE.md", "project-profile": ".claude/PROJECT_PROFILE.md"}
+
+
 def _assert_edge_landed(s: Store, proj: Path, target: str, src: str, line: int) -> None:
     """The node exists, ONE `contradicts` edge lands on it in the store's direction, and its
     evidence row names the citing file and line."""
     tgt = _eid(s, "concept", target)
     assert tgt is not None, f"no `{target}` node in the store"
+    # The NODE ENTITY of the rule doc, not merely some row with that name (lead, 2026-11-13:
+    # bsd-215m1 found ~38% of resolved rel: lines landing on a path-less same-named concept).
+    ent = s.get_entity_by_id(tgt)
+    want = TARGET_FILE[target.split("#")[0]]
+    assert ent.kind == "concept" and ent.path and \
+        Path(ent.path).resolve() == (proj / want).resolve(), (
+            f"`{target}` is not {want}'s node entity: kind={ent.kind} path={ent.path}")
     src_id = _eid(s, "concept", src)
     assert src_id is not None, f"no `{src}` node (the citing section) in the store"
     lid = _lid(s, "contradicts")
