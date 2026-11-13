@@ -424,7 +424,13 @@ def test_ac2_doc_ingest_keeps_its_own_walk(capfd):
     What 26.1 AC-2 actually protected ("Doc ingest keeps its own walk") still holds and is pinned
     by the discriminating case below: files the MEMORY walk drops for memory-specific reasons
     (`README.md`, a nested `MEMORY.md`, a `.gmd` file -- none a dot-dir or an ignore-spec match)
-    are kept by the doc walk. The memory rule does not leak into doc ingest."""
+    are kept by the doc walk. The memory rule does not leak into doc ingest.
+
+    The expected `{keep_top, keep_nested}` is what the doc WALK returns, not an endorsement of
+    ingesting a memdir as docs: that lands its memory files as kind=doc rows, a pre-existing
+    defect logged as bug-220. The store-level conditions — hidden-dir files never reach the
+    store by any route, the re-included profile lands once as a doc, the bridge still lands
+    memories under a `.claude` path — are pinned in tests/test_bug216_hidden_no_pollution.py."""
     from refmatrix.ingest_gmd import collect_gmd_files
     base = Path(tempfile.mkdtemp(prefix="rmx261-", dir="/tmp")).resolve()
     try:
