@@ -132,3 +132,13 @@ higher-ranked candidates that were retrieved but never delivered at baseline.
 **Non-human turns** (847 calls; human calls under 4+3): `none` (the gate) loses the same 10 R12
 uses (fails); `4+3` keeps 1/1 labelled and 10/10 R12 at 0.982 bytes; `full` keeps all. Applying
 the dedupe there keeps every use; the gate does not. {#design-verdict}
+
+**v2 (2026-11-13, the four held rules as a dated pre-registration addendum, run after v1 was
+reported):** held = full delivery on scan_prompt / prompt_recall / session_start from an EARLIER
+prompt (prompt clock: 1,472 / 1,472 anchored); compaction the only reset; names and pointer lines
+visible but never setting held; scan in item units, recall in bytes. Line arm: 4+3 11/11 labelled,
+16/16 R12 — ACCEPTABLE by one item (ratio 1.345, 1.76 new/call); block arm: 4+3 10/11 — not
+acceptable. 4+3b (post hoc) 11/11 and 16/16 in both arms (block 0.978, 1.76 new/call). Names-only
+0.872 line / 0.470 block, 11/11, 16/16; pointer 1.011 / 0.478, acceptable; design 5 fails (7/11,
+10/16). The non-human gate fails in every arm (R12 6/16 overall). 4+3's verdict flips on one
+prompt_recall item with the byte model; 4+3b does not. {#design-replay-v2}
