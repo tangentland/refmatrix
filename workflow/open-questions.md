@@ -26,12 +26,13 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session 37b7498f (2026-11-13) {#session-37b7498f}
 
-Next id: **Q9**.
+Next id: **Q10**.
 
 ### Open {#open-37b7498f}
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q9 | 2026-11-13 | The user: "on the workflow folder front, I thought we ingested into a different partition". Fact: this store has 2 partitions, `refmatrix` (code + docs + memory + `workflow/`) and `sessions-refmatrix` (session cards only, per ADR-0003 `#isolate`); `workflow/` is NOT ignored here (viascope's ignore does list it). Should `workflow/` move to its own partition instead of Q8 a's ingest exclusion? | a: own `ops-<project>` partition (reuses the sessions mechanism; isolates statistics + co-mention; default context and push hooks read only the active partition, so stale plans stay out; reachable via `rmx -p ops-<project>`; cost: cross-partition `rel:` links do not resolve, so plan→ADR/code links drop out of the graph, as ADR-0003 `#co-reside` notes) · b: keep Q8 = a (excluded at ingest; files + grep only) | open |
 
 ### Answered {#answered-37b7498f}
 
