@@ -401,9 +401,15 @@ def test_ac2_hook_mode_recall_hides_the_hand_typed_savestate_and_include_session
                            "session_id": "sess-264", "hook_event_name": "UserPromptSubmit"})
 
     def names(extra):
+        # Task 25.1 R7 (2026-11-13 contract update, red-251b g7-8): the generated per-prompt
+        # hook prints `--pack` text, not a `--json` list, so the hits it carries are the ones
+        # its hook lines NAME (the one parser, `task21_1_support.pack_rows`). A degraded hook
+        # prints nothing, which the control-note assertion below still catches.
+        from tests import task21_1_support as h
         r = _invoke(argv + extra, input=envelope, env=env)
         assert "recall skipped" not in (r.stderr or ""), r.stderr
-        return [row.get("name") for row in json.loads(r.stdout)]
+        assert r.stdout.startswith("# rmx recall · "), r.stdout[:200]      # a --pack payload
+        return [row["name"] for row in h.pack_rows(r.stdout)]
 
     hooked = names([])
     assert "feedback_control" in hooked, f"control note missing: the recall did not run {hooked}"

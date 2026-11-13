@@ -473,8 +473,11 @@ def test_ac3_reach_at_least_8_distinct_memories(fx):
     r = _q(fx)
     _ok(r, "per-prompt argv")
     got = s.distinct_memories_received(r.stdout)
+    # The hook's stderr rides the message: an empty payload with exit 0 is a degraded skip
+    # (d8), and its cause is said there, never guessed (one 0 B failure at load ~30, 2026-11-13).
     assert len(got) >= 8, (f"AC-3: the model receives {len(got)} distinct memories "
-                           f"({sorted(got)}) from a {len(r.stdout)} B payload")
+                           f"({sorted(got)}) from a {len(r.stdout)} B payload; stderr: "
+                           f"{r.stderr.decode('utf-8', 'replace')[-600:]!r}")
 
 
 # ---- AC-4 (b)(c)(e)(g): the verb serves every caller --------------------------------------------
@@ -814,7 +817,12 @@ def test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc(fx, monkey
         r = s.rmx(fx, "memory", "recall", QUESTION, "--json", "-K", kinds, "--k", "8")
         assert r.returncode == 0, (kinds, r.stderr[-800:])
         cli_names = [m["name"] for m in json.loads(r.stdout)]
-        vres = verbs.memory_recall(fx.root, query=QUESTION, k=8, kinds=kinds.split(","))
+        # The interactive CLI shows session/* rows (`include_session=True`, an operator
+        # affordance pinned by test_plan3_remedy and test_verb_parity); the verb's default
+        # hides them. Parity is like for like (g7-7, 2026-11-13: after 26.4 types
+        # savestate_fx01 session/recall-state, only the CLI side named it).
+        vres = verbs.memory_recall(fx.root, query=QUESTION, k=8, kinds=kinds.split(","),
+                                   include_session=True)
         vnames = [m["name"] for m in vres["memories"]]
         assert vnames, f"AC-4 (f): the verb returned nothing for -K {kinds}"
         assert cli_names == vnames, (kinds, cli_names, vnames)
