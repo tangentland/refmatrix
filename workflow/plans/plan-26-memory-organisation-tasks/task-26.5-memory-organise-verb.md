@@ -213,19 +213,24 @@ verb-parity test covers both. No file is ever moved by hand, here or in plan-27.
   - Modify `src/refmatrix/memory_layout.py`: `memdir_of(path)`, the one memdir resolver shared by
     R-264a and bug-220 ([[#bug220-route]]).
   - Modify `src/refmatrix/ingest_gmd.py` (`collect_gmd_files`, `ingest_gmd_paths`: collect the
-    `rerouted` groups) and `cli.py` (`ingest-gmd`: keep each target's as-given form; print the
-    five counts (R-220d) and any dispatched `job_id`s from the op result; dispatch only on the
-    no-daemon routes of `ingest-gmd` and `rmx ingest`; prestage's `rerouted` line). Create `src/refmatrix/memory_reroute.py` (the dispatcher,
-    R-220c) and `tests/test_ingest_gmd_memdir_route.py`.
-  - Modify `src/refmatrix/daemon.py`: every dispatcher named in [[#r-220c]] (`_op_ingest_gmd`,
-    the `ingest_gmd_start` runner, `_op_ingest_path`, the `ingest_path_start` runner,
-    `_op_sync_files`, `_op_sync_since`, the watcher flush) calls `memory_reroute.dispatch` once,
-    after `d._store_lock` is released. The dispatch result is written onto the job record before
-    the record flips to `done`. The same-store group goes through a detached `ingest_gmd_start` on
-    itself (the full `as_memory` body, vector drain and index regen) (rev 7 s3; rev 8 t1; rev 9
-    u2, v1).
-  - Modify `src/refmatrix/ingest.py`: `_ingest_path_inner` returns the `rerouted` groups with its
-    count (it returns an `int` at HEAD). Its `ingest_gmd_paths` fallback (`ingest.py:1356-1368`
+    `rerouted` groups) and `cli.py`:
+    - `ingest-gmd` keeps each target's as-given form;
+    - the top-level wrapper (`cli_entry` / the click result callback) drains `memory_reroute` on
+      exit, prints the five R-220d counts and sets the exit code;
+    - a daemon route prints the counts and `job_id`s from the op result;
+    - prestage gets its `rerouted` line.
+
+    Create `src/refmatrix/memory_reroute.py` (queue and drain, R-220c) and
+    `tests/test_ingest_gmd_memdir_route.py` (rev 10).
+  - Modify `src/refmatrix/daemon.py`:
+    - the `d._store_lock` context drains `memory_reroute` at its outermost exit, and job runners
+      flip to `done` after it;
+    - the internal same-store memory-job start that takes the parent job object, with its
+      single-use guard exemption;
+    - `_op_ingest_gmd_start` ignores parent/exempt keys;
+    - `call` raises `ReplyTimeout` after the send (rev 10, w1, w2, w4).
+  - Modify `src/refmatrix/ingest.py`: `_ingest_path_inner` needs no dispatch code, because
+    `ingest_gmd_paths` queues (rev 10). Its `ingest_gmd_paths` fallback (`ingest.py:1356-1368`
     at `4b4b96e`) skips memdir files through `memdir_of` and counts and names its own per-file
     failures, with no bare `except: pass` (rev 9, u2). Modify `src/refmatrix/sync.py` only to pass
     the `rerouted` result up.
@@ -536,29 +541,40 @@ m3, m6 and m7. {#bug220-why}
   `ingest-gmd --prestage` (without `--as-memory`) uses the same walk. Its result and its CLI line
   carry a `rerouted` count with the names, in the same shape as bug-216 R6b's `ignored` /
   `ignored_paths`. Prestage dispatches nothing (rev 8, n4). {#r-220b}
-- **R-220c: dispatch after the doc ingest returns, outside the writer lock, never waiting on
-  another store (rev 7 s3; rev 8 t1, lead rulings).** The `rerouted` groups are dispatched only
-  AFTER the walking store's ingest has returned and its writer lock (`d._store_lock`) is released.
-  Each dispatch is a separate op, never nested under a held lock (the bug-085 class), and no
-  dispatch waits for another store's ingest. {#r-220c}
-  - **The job reads `done` only after the dispatch (rev 9, v1).** The dispatch result (the R-220d
-    counts and the dispatched `job_id`s) is written onto the walk's job
-    record BEFORE that record flips to `done`. So a `--detach` / `--progress` client, or
-    `ingest-status`, that sees `done` also sees the reroute result. The same-store start issued by
-    that job's own dispatch is exempt from A's single-active-ingest guard for that one start; it
-    names the parent job, and the guard holds for every other caller.
-  - **One dispatcher per route (rev 9, u2 names them all).** Every route that runs a doc walk
-    through `ingest_gmd_paths` has exactly one dispatcher:
-    - `ingest-gmd`: the `_op_ingest_gmd` body and the detached `ingest_gmd_start` runner;
-    - `ingest_path` (`rmx ingest`): `_op_ingest_path` (`daemon.py:3605`) and the
-      `ingest_path_start` runner. `_ingest_path_inner` returns the `rerouted` groups to them;
-    - the sync ops: `_op_sync_files`, `_op_sync_since` and the watcher flush.
-
-    On a daemon route the daemon body dispatches. A CLI that sent the walk to A's daemon only
-    prints the counts from the op result, and never dispatches again. The CLI dispatches only on
-    its own no-daemon routes (`rmx ingest-gmd` and `rmx ingest` run in-process). A route that
-    collects `rerouted` and does not dispatch it is a defect, and AC-220 (i)'s `ingest_path` leg
-    pins it.
+- **R-220c: queue during the walk, drain at one place per context, outside the writer lock,
+  never waiting on another store (rev 7 s3; rev 8 t1; rev 10 w1, lead rulings).** The `rerouted`
+  groups are dispatched only AFTER the walking store's ingest has returned and its writer lock
+  (`d._store_lock`) is released. Each dispatch is a separate op, never nested under a held lock
+  (the bug-085 class), and no dispatch waits for another store's ingest. {#r-220c}
+  - **One queue, one drain per context (rev 10, w1; replaces rev 9's per-route dispatcher
+    list).** No route dispatches by itself, so a route list can never go stale:
+    - **Queue.** `ingest_gmd_paths` (with `as_memory=False`) puts its `rerouted` groups on ONE
+      per-process pending-dispatch queue, `memory_reroute.enqueue(groups, *, walking_root)`. It
+      enqueues them as soon as they are collected, before the doc ingest, so a later raise
+      cannot lose them. It never dispatches. Every caller of `ingest_gmd_paths` is covered by that one line: `sync.py`,
+      `ingest.py` (`_ingest_path_inner`), the `ingest-gmd` bodies, and any later caller.
+    - **Daemon drain.** The OUTERMOST exit of the `d._store_lock` context drains the queue and
+      dispatches it. In the daemon every `ingest_gmd_paths` call runs under that lock, so at
+      release the queue holds only that holder's groups. The drain result is attached to the
+      releasing op's reply, to its job record when it has one, and to the daemon log.
+    - **CLI drain.** The top-level command wrapper (`cli_entry` / the click result callback)
+      drains on exit, prints the R-220d counts, and sets the non-zero exit for
+      `rerouted_failed` / `rerouted_unconfirmed`. In-process routes are covered by construction:
+      `_sync_in_process` (all three branches), the standalone `rmx watch` flush, `rmx ingest`, and
+      `tldr-warm` / `graphify-warm` (`cli._ingest`). A CLI that sent the walk to A's daemon has an
+      empty queue: it prints the counts from the op result and dispatches nothing.
+    - **The job reads `done` only after its drain (rev 9, v1).** A job's runner flips its record
+      to `done` only after the drain at its lock exit has written its result onto the record. The
+      drain is synchronous and never waits on another store, so this stays bounded. So a
+      `--detach` / `--progress` client, or `ingest-status`, that sees `done` also sees the
+      reroute result.
+    - **Informative only.** The routes that reach `ingest_gmd_paths` at `4b4b96e` are tabled in
+      [[#reroute-routes]]. The table is not a dispatcher list. AC-220 (n) runs every row.
+  - **The library module.** `src/refmatrix/memory_reroute.py` holds `enqueue`, `drain(*,
+    walking_root, same_store) -> counts`, the store resolution (below), the held/no-store
+    branches and the cross-store leg. The drain context supplies the same-store leg
+    (`same_store`): the daemon passes its internal memory-job start (below), and the CLI passes
+    `_ingest_gmd_in_process(…, as_memory=True)`. The library never imports `cli.py`.
   - **The `ingest_path` fallback (rev 9, u2).** When `ingest_gmd_paths` raises inside
     `_ingest_path_inner`, the existing fallback (`ingest.py:1356-1368` at `4b4b96e`) upserts every
     GMD path as `kind=doc`. It now skips every file for which `memdir_of` is not `None` (no twin is
@@ -580,24 +596,39 @@ m3, m6 and m7. {#bug220-why}
     v3: without it the rows land in B's bound code partition). It uses `daemon.call(…,
     retries=0)` with a short timeout (a named constant, at most 2 s). B's `job_id` goes on A's
     result and op record.
+    - **The mechanism (rev 10, w4).** `daemon.call` raises a typed `ReplyTimeout` when the request
+      was SENT and the reply did not arrive in time. Connect and send failures keep their existing
+      exceptions. `ReplyTimeout` subclasses the exception `daemon.call` raises for a timeout
+      today, so every existing `except` clause behaves as before. The helper maps `ReplyTimeout`
+      to `rerouted_unconfirmed` and everything else to `rerouted_failed`.
     - A failure BEFORE the request is sent (no socket, refused, connect timeout) is
       `rerouted_failed`.
     - A timeout AFTER the request is sent, waiting for the start reply, is `rerouted_unconfirmed`:
       B may have registered the job (rev 9, v2). It is named with the memdir, B's root and B's
       `job_id` when the reply carried one, plus the text "job may be running on B; check
-      `rmx ingest-status` in B's root". The helper tells the two apart by where the call failed,
-      never by guessing. Nothing waits for B's job: there is no
+      `rmx ingest-status` in B's root". The helper tells the two apart by the exception type
+      (`ReplyTimeout`), never by guessing. Nothing waits for B's job: there is no
     synchronous `ingest_gmd` call, no `ingest_gmd_status` polling and no
     `_bridge_wait_for_active_job`. The same rule holds on every route, CLI included. B's own job
     runs the full `--as-memory` body: drain, index regeneration, marker-gated writes. This
     replaces rev 6's `_sync_memory_dir(memdir, root=B)` route, which waited on B
     (bsd-spec-t2-r2 t1); the T2-O1 ruling (B is the memdir's own store) stands.
   - **Same store (memdir → A).** The group goes through A's FULL `--as-memory` path as its own
-    job, after the doc op's job has closed. That includes the memory-vector drain and the index
-    regeneration, which `daemon.py:3790`/`:3805` gate on `args.get("as_memory")` (bug-065:
-    without the drain, rows are durable but invisible to recall). In the daemon it is a detached
-    `ingest_gmd_start` on A, called in-process. On the CLI's no-daemon route it is
+    job: after the doc ingest has returned and released the lock, and before the parent job flips
+    to `done` (rev 10, w3). That includes the memory-vector drain and the index regeneration,
+    which `daemon.py:3790`/`:3805` gate on `args.get("as_memory")` (bug-065: without the drain,
+    rows are durable but invisible to recall). On the CLI's no-daemon route it is
     `_ingest_gmd_in_process(…, as_memory=True)`, the CLI's own store, as today.
+  - **The daemon's same-store start is internal (rev 10, w2; lead ruling).** In the daemon, the
+    drain starts the memory job by an in-process FUNCTION CALL into the job runner (the same body
+    `_op_ingest_gmd_start` registers), passing the parent job OBJECT. It is never an OPS socket
+    op, and never an `args` key.
+    - The parent job object carries a single-use exemption from A's single-active-ingest guard.
+      The call consumes it, and a second use is refused.
+    - Nothing a socket client sends can reach the exemption: `_op_ingest_gmd_start` ignores any
+      parent or exempt key and applies the guard as today.
+    - A drain with no parent job (an op that runs no job) has no exemption. If another job is
+      active, the group is `rerouted_failed` with the reason.
   - **B absent, busy or refusing.** This is never a silent drop ([[CLAUDE#no-silent-failures]]):
     - A's ingest still completes and its result stands;
     - each such memdir is counted under `rerouted_failed` and named with B's root and the reason:
@@ -648,7 +679,10 @@ m3, m6 and m7. {#bug220-why}
     - every gate auto-releases at its own deadline (at most 20 s) and in `finally`;
     - teardown stops each daemon with a timeout, and kills one that does not stop within it;
     - a mutation that makes A wait on B must FAIL by A's call timing out within 10 s, never by
-      deadlock.
+      deadlock;
+    - before any bounded call, the fixture pre-warms the embedding model, or uses the sandbox's
+      cached model worker, so the bounds measure the dispatch and not a cold model load (rev 10,
+      w5).
   - (a) `rmx ingest-gmd <memdir>` without `--as-memory`, over a fixture memdir under
     `HOME/.claude/projects/<slug>/memory`. The fixture holds 2 feedback memories, 1 save-state,
     `MEMORY.md` and a dot-dir file. Expected:
@@ -719,6 +753,27 @@ m3, m6 and m7. {#bug220-why}
       op returns without waiting.
   - (j) The home memdir (m7): a walk that reaches `HOME/.claude/projects/-<home-slug>/memory`
     dispatches nothing and reports `rerouted_held` with the plan-27 Q4 reason.
+  - (m) The exemption is internal and single-use (rev 10, w2). While a job is active on A:
+    - a socket `ingest_gmd_start` carrying that job's id under any parent or exempt key
+      (`parent_job`, `exempt`, `parent`) is refused with `ingest already active`;
+    - in-process, a second exempt start from the same parent job object is refused.
+  - (n) Every route drains exactly once (rev 10, w1). The test is parametrized over every OPS name
+    and every CLI in-process entry point that reaches `ingest_gmd_paths`:
+    - OPS: `sync_files`, `sync_since`, `flush_queue`, `flush_queue_async`, `ingest_path`,
+      `ingest_path_start`, `ingest_gmd`, `ingest_gmd_start`;
+    - CLI in-process: `rmx sync` (the `sync_since`, `flush_queue` and `sync_files` branches of
+      `_sync_in_process`), the standalone `rmx watch` flush, `rmx ingest`, `tldr-warm`,
+      `graphify-warm` and `rmx ingest-gmd`.
+
+    Each runs on a fixture with one rerouted file and asserts exactly one dispatch, observed
+    through the drain's audit hook. A second check asserts the list is complete: it scans
+    `daemon.OPS` and the CLI command tree for handlers whose call graph reaches `ingest_gmd_paths`
+    (an AST/`tldr` call-graph walk, as bug-216 R2 enumerates its walkers) and fails on any name
+    missing from the parametrization.
+  - (o) `ReplyTimeout` (rev 10, w4), against a test socket server:
+    - one that accepts, reads the request and never replies raises `ReplyTimeout`;
+    - a refused connection does not;
+    - a connect that times out does not.
   - (l) Prestage (n4): `rmx ingest-gmd --prestage <root>` over a root holding the (a) memdir
     reports `rerouted: 3` with the names on its result and its CLI line, dispatches nothing, and
     stages no `kind=doc` row for them.
@@ -749,7 +804,15 @@ m3, m6 and m7. {#bug220-why}
     - opening B's store in-process when B has no daemon kills (k)'s and (g2)'s B-absent legs (the
       mtimes change) (rev 8, t1, n5);
     - the CLI dispatching again on A's daemon-up route kills (g)'s one-job assertion (rev 8, t1);
-    - dropping prestage's `rerouted` count kills (l) (rev 8, n4).
+    - dropping prestage's `rerouted` count kills (l) (rev 8, n4);
+    - skipping the drain on lock release kills (n)'s OPS rows and (i) (rev 10, w1);
+    - skipping the drain on CLI exit kills (n)'s CLI rows and the no-daemon runs of (a) and (g)
+      (rev 10, w1);
+    - dropping dispatch from `_op_flush_queue_async`, for example by releasing its lock through a
+      path that skips the drain, kills (n)'s `flush_queue_async` row (rev 10, w1);
+    - reading the exemption from `args` kills (m)'s socket leg (rev 10, w2);
+    - not consuming the exemption kills (m)'s second-start leg (rev 10, w2);
+    - raising `ReplyTimeout` on a connect timeout kills (o) (rev 10, w4).
     - skipping the twin purge on the cross-store or no-store branch kills (g) and (c);
     - dropping the twin purge entirely kills (e);
     - dispatching the home memdir kills (j).
@@ -835,3 +898,39 @@ rel: derives-from -> [[bsd-spec-t2-r3-abbe45f]]
 | v1 (`done` before the dispatch result) | The dispatch result is written before the job flips to `done`. The job's own same-store start is exempt from the single-active guard | [[#r-220c]], [[#ac-220]] |
 | v2 (a slow reply read as a failure) | A post-send timeout is `rerouted_unconfirmed` (named, with the job id when known, exit non-zero); a pre-send failure stays `rerouted_failed`. (k) slow-reply leg | [[#r-220c]], [[#ac-220]] |
 | v3 (B's memory partition not passed) | The cross-store start passes B's memory partition; (g) asserts the rows land there | [[#r-220c]], [[#ac-220]] |
+
+## Routes that reach `ingest_gmd_paths` (informative, at `4b4b96e`) {#reroute-routes}
+
+This table is not a dispatcher list. Every route below is covered by the queue and its drain
+([[#r-220c]]), and AC-220 (n) runs each one. Source: [[bsd-spec-t2-r4-15b2f25#w1]].
+
+| context | route | reaches `ingest_gmd_paths` via | drained at |
+|---|---|---|---|
+| daemon | `sync_files`, `sync_since`, the watcher flush | `sync._sync_paths` (`sync.py:308`) | lock exit |
+| daemon | `flush_queue`, `flush_queue_async` (the Stop/SubagentStop hook route) | `syncmod.flush_queue` → `_sync_paths` | lock exit |
+| daemon | `ingest_path`, `ingest_path_start` (its runner IS `_op_ingest_path`, `daemon.py:3950`) | `_ingest_path_inner` (`ingest.py:1354`) | lock exit |
+| daemon | `ingest_gmd`, `ingest_gmd_start` | `_run_ingest_gmd_body` | lock exit |
+| CLI in-process | `_sync_in_process`: the `sync_since`, `flush_queue` and `sync_files` branches (`cli.py:8763-8808`) | `_sync_paths` | wrapper exit |
+| CLI in-process | standalone `rmx watch` (`watch.run_watcher` → `sync_files`) | `_sync_paths` | wrapper exit |
+| CLI in-process | `rmx ingest`, `tldr-warm`, `graphify-warm` (shared `cli._ingest`, `cli.py:510-525`) | `ingest_path` | wrapper exit |
+| CLI in-process | `rmx ingest-gmd` (no daemon) | `_ingest_gmd_in_process` | wrapper exit |
+
+## Revision round 10 (2026-11-13): bsd-spec-t2 r4 {#rev-round-10}
+
+Answers [[bsd-spec-t2-r4-15b2f25]] (DIRTY 0B/2S/3M; U1, V2 and V3 closed) with the lead's
+rulings. Status is unchanged (`pending`).
+
+rel: derives-from -> [[bsd-spec-t2-r4-15b2f25]]
+
+| finding | change | anchor |
+|---|---|---|
+| w1 (the dispatcher list missed `flush_queue`, `flush_queue_async` and the CLI in-process sync/watch/warm routes) | Design change: `ingest_gmd_paths` queues on one per-process queue. It is drained at the outermost `d._store_lock` exit (daemon) and at the top-level command wrapper's exit (CLI). The per-route list becomes an informative table. AC-220 (n) runs every route and checks the list is complete; three mutations | [[#r-220c]], [[#reroute-routes]], [[#ac-220]] |
+| w2 (the V1 exemption was untested and socket-reachable) | The same-store start is an in-process function call with the parent job object, carrying a single-use exemption; socket keys are ignored. AC-220 (m); mutations "read from args" and "not consumed" | [[#r-220c]], [[#ac-220]] |
+| w3 (stale "after the doc op's job has closed") | Now "after the lock is released, before the parent flips to `done`" | [[#r-220c]] |
+| w4 (failed vs unconfirmed needed an unnamed `daemon.call` change) | `daemon.call` raises a typed `ReplyTimeout` after the send, subclassing today's timeout; listed in Files; AC-220 (o) | [[#r-220c]], [[#files]], [[#ac-220]] |
+| w5 (cold model load inside the bounds) | The fixture pre-warms the model, or uses the sandbox's cached worker, before any bounded call | [[#ac-220]] |
+
+The lead's ruling says the daemon drain runs "after the job record closes". Read literally, that
+contradicts V1 (`done` only after the dispatch result). This text keeps V1: the drain runs at
+the lock exit, and the runner flips the job to `done` after the drain has written its result.
+That is flagged to the lead.
