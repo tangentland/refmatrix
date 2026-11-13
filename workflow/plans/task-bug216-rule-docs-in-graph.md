@@ -62,6 +62,11 @@ stays out. {#why-consistent}
    watcher, `_sync_paths` (including its purge of a path that became ignored), and `ingest-gmd`'s
    walk — goes through `should_ignore(p, root)`; no walk keeps a private copy of `_is_ignored`. A
    test enumerates the walkers. {#r2}
+
+   R2 supersedes task 26.1 AC-2's assertion that the doc walk reads dot-dirs
+   (`tests/test_memory_bridge.py::test_ac2_doc_ingest_keeps_its_own_walk`, lead ruling
+   2026-11-13): that test now expects the `should_ignore` set with the exclusions counted and
+   named, and keeps 26.1's intent — the memory rule never leaks into doc ingest. {#r2-supersedes-261}
 3. **R3 Scope parity in the gate.** `scripts/check-gmd-parity.py` (run by `lint-gmd.sh`) fails,
    naming each file and the rule that excluded it, when a GMD doc in the lint scope (outside the
    memory dir, which reaches the store through the bridge) is excluded by `should_ignore` for this
