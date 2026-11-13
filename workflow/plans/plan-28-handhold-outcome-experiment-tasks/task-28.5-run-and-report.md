@@ -50,8 +50,19 @@ decision (G18), not a goal step. {#why-body}
 4. **R4 End.** At the end rule, a commit sets `end` (if it was not already set) and deploys.
    After that, `arms.draw` returns the default for every session (checked on a new session in
    each store). {#r4}
-5. **R5 Score and read.** 28.3's scorer runs over local copies (stores read-only, transcripts in
-   place). Every outcome is computed, every band is read as frozen, and every deviation from the
+5. **R5 Archive, then score and read.** At the period's end, before any scoring, every
+   session-leg transcript of the period is copied into a LOCAL archive. That covers both
+   stores, the parent file and every subagent file, plus the read-only copies of the stores'
+   telemetry. The archive is at
+   `/Volumes/littlebig/refmatrix-measurement-archive/plan-28/session/`:
+   - it is outside the repo and outside every watched tree;
+   - it is mode `0700`, and nothing in it is ever committed; only a sha256 manifest is
+     committed;
+   - its creation is announced to the user before the first copy (lead ruling 2026-11-13, on
+     the report's contradiction 7).
+
+   Claude Code prunes old transcripts, so without the archive a re-score could not be
+   reproduced. 28.3's scorer then runs over the archive. Every outcome is computed, every band is read as frozen, and every deviation from the
    pre-registration is listed. 10.2 R7's nested bands are read and handed to 10.2's
    implementation summary. {#r5}
 6. **R6 Report.** `workflow/measurements/handhold-experiment-<date>.md` (GMD) holds the counts,

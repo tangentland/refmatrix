@@ -209,7 +209,8 @@ rel: related-to -> [[task-19.6-phased-context-and-topic-cache#ranges]]
 
 ## Under Q8 b {#q8-b}
 
-This plan holds under Q8 a or c, where save-states stay bridged as `session/recall-state` rows. Under
+"Q8" here is the save-state question of the open-questions ledger, session 37b7498f. It is not
+the bug-216 confirm of session f0521bff. This plan holds under Q8 a or c, where save-states stay bridged as `session/recall-state` rows. Under
 Q8 b (save-states and digests out at ingest), these lines change, and nothing else does:
 - [[task-28.2-paired-reentry-runner#r2]]'s memory snapshot: save-states before the start are
   still copied into the clone's memory dir, but the bridge no longer ingests them, so in arms A
@@ -220,32 +221,51 @@ Q8 b (save-states and digests out at ingest), these lines change, and nothing el
   but the boundary cells deliver less than under a or c. The frozen pre-registration
   (28.4) records which Q8 answer was live at the start.
 
-## Open for the lead (P-items, frozen by 28.4) {#open}
+## Lead rulings on the P-items (2026-11-13; frozen by 28.4) {#open}
 
-Choices no D-Q or L-row settles. The tasks are written to option (a), the recommendation, so
-they are buildable; 28.4 freezes the final value.
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
-1. **P-1 cell weights (session leg).** (a) equal thirds `A+dedupe` / `A+full` / `B`; (b) `B` one
+**Decision rows.** No D-Q or L-row settled these choices. The lead ruled on the user's pattern
+and chose option (a) on all ten. The user is told and may overturn any of them, which would be
+a dated revision before 28.4 freezes the pre-registration. 28.4 copies each value into the
+frozen file, with this section cited. The options are kept below as the record. {#p-rulings}
+
+| item | ruling |
+|---|---|
+| P-1 | equal thirds `A+dedupe` / `A+full` / `B` (`C` at 0) |
+| P-2 | the primary comparison is `B` vs `C` |
+| P-3 | the banded scalar for orientation cost is tool calls; tokens and wall time are printed |
+| P-4 | W = 3 prompts |
+| P-5 | 50 blind `cited_in_answer` labels first; if the Wilson upper bound is below 0.50, outcome 6 counts R12 explicit uses only |
+| P-6 | the paired leg's A cell is `A+dedupe` only |
+| P-7 | the curator status line stays on in `B` |
+| P-8 | "holds" and "holds weakly" need the effect's 95% CI to exclude 0 |
+| P-9 | Cohen's κ < 0.6 makes that outcome report-only |
+| P-10 | `C` runs only in the paired leg |
+| contradiction 7 | every transcript the experiment uses is archived locally, outside the repo and every watched tree, never committed; the archive's creation is announced to the user ([[task-28.2-paired-reentry-runner#r2]], [[task-28.5-run-and-report#r5]]) |
+{#p-rulings-table}
+
+1. **P-1 cell weights (session leg). RULED (a).** (a) equal thirds `A+dedupe` / `A+full` / `B`; (b) `B` one
    half and each A cell one quarter, which gives A vs B more power and 10.2 less. {#p-1}
-2. **P-2 the primary comparison.** (a) `B` vs `C`, the charter's named handholds with no
+2. **P-2 the primary comparison. RULED (a).** (a) `B` vs `C`, the charter's named handholds with no
    multiple-comparison inflation; (b) the better of `A+dedupe` and `B` against `C`. {#p-2}
-3. **P-3 orientation cost's banded scalar.** (a) tool calls (tokens include injected bytes,
+3. **P-3 orientation cost's banded scalar. RULED (a).** (a) tool calls (tokens include injected bytes,
    which bias against A); (b) tokens; (c) wall time. {#p-3}
-4. **P-4 churn window W.** (a) 3 prompts (21.5's plateau `k`); (b) 2. {#p-4}
-5. **P-5 `cited_in_answer` precision.** (a) 50 cited pairs labelled with R12's rubric before its
+4. **P-4 churn window W. RULED (a).** (a) 3 prompts (21.5's plateau `k`); (b) 2. {#p-4}
+5. **P-5 `cited_in_answer` precision. RULED (a).** (a) 50 cited pairs labelled with R12's rubric before its
    counts enter outcome 6; if the Wilson upper bound is below 0.50, outcome 6 is R12 explicit only
    and `cited_in_answer` is reported apart. It is whole-token matching in agent text, the same
    mechanism and prompt-echo confound that sank `bash_name`. (b) count it unchecked, as L18/L27
    say. {#p-5}
-6. **P-6 the paired leg's A cell.** (a) `A+dedupe` only, the shipped default after 10.2; (b) both
+6. **P-6 the paired leg's A cell. RULED (a).** (a) `A+dedupe` only, the shipped default after 10.2; (b) both
    A cells, at 1.5× the runs. {#p-6}
-7. **P-7 the curator status line in `B`.** (a) it stays on: it reports state and retrieves
+7. **P-7 the curator status line in `B`. RULED (a).** (a) it stays on: it reports state and retrieves
    nothing; (b) off with the rest of the per-prompt output. {#p-7}
-8. **P-8 the CI rule for a band.** (a) "holds" and "holds weakly" need the effect's 95% CI to
+8. **P-8 the CI rule for a band. RULED (a).** (a) "holds" and "holds weakly" need the effect's 95% CI to
    exclude 0, otherwise the reading is the third row; (b) the point estimate alone. {#p-8}
-9. **P-9 label agreement.** (a) Cohen's κ < 0.6 on the 20% second-rater set makes that outcome
+9. **P-9 label agreement. RULED (a).** (a) Cohen's κ < 0.6 on the 20% second-rater set makes that outcome
    report-only; (b) no threshold. {#p-9}
-10. **P-10 arm C in the session leg.** The exploration says "arm C is opt-in per session". (a)
+10. **P-10 arm C in the session leg. RULED (a).** The exploration says "arm C is opt-in per session". (a)
     Not built: an opt-in session is not randomised and could not be compared, and 10.2 R7 already
     says C is never drawn; (b) build an opt-in switch whose sessions are reported descriptively
     only. {#p-10}

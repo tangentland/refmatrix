@@ -92,10 +92,17 @@ hazards shape it:
      the resume prompt.
    - **Stop.** At the endpoint 28.3 detects, or at a cap of tool calls and wall time frozen by
      28.4. A run stopped at the cap is `censored`.
-   - **Archive.** The transcript (the parent and every subagent file) and the clone store's
-     telemetry are copied to a LOCAL archive outside the repo
-     (`~/.refmatrix/measurements/plan-28/paired/<run-id>/`). Only the run id, the cell, the
-     trigger, the task id and hashes are committed.
+   - **Archive (lead ruling 2026-11-13, on the report's contradiction 7).** The transcript (the
+     parent file and every subagent file) and the clone store's telemetry are copied to a LOCAL
+     archive at `/Volumes/littlebig/refmatrix-measurement-archive/plan-28/paired/<run-id>/`:
+     - it is outside the repo and outside every watched tree;
+     - it is mode `0700`, and nothing in it is ever committed;
+     - only the run id, the cell, the trigger, the task id and a sha256 manifest are committed.
+
+     **The archive's creation is announced to the user before the first run.** The lead makes
+     the announcement, and its date is recorded in the implementation summary. If the volume
+     is not mounted, the runner refuses (R4). The archive is deleted only on the user's word,
+     after 28.5's report.
    - **Teardown.** Daemon stopped, clone and clone memory dir removed, hub, launchd and
      registry state verified unchanged against the pre-run reading. A teardown mismatch stops
      the series loudly.
@@ -143,6 +150,7 @@ R0's probe and AC-6 use the real `claude`. {#acceptance-lead}
 | `tests/test_task28_2_paired_runner.py` (new) | AC-1 to AC-5 |
 | `tests/fixtures/handhold/fake_claude` (new, test-only) | the stub executable; registered in `workflow/test_mock_registry.md` |
 | `workflow/measurements/handhold-paired-probe-<date>.md` (new, GMD) | R0's answers (a)-(f), counts only |
+| `/Volumes/littlebig/refmatrix-measurement-archive/plan-28/paired/` (LOCAL, `0700`, never committed; creation announced to the user) | R2's archive |
 
 ## Test strategy {#test-strategy}
 

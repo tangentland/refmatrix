@@ -348,8 +348,8 @@ without a write per event. {#amend-helix-body}
   path-less concept, minted by a bare doc-id `rel:` target or by a doc title that spells its id,
   to the doc or memory whose GMD id it spells. It adds no term-space alias and no `same_as` row,
   so the "merges target the alias map" rule of [[#d-2026-10-07]] is not engaged. The user
-  accepted rev 3 and confirmed rev 3-4 (the earlier 2026-11-13 Q8 row of the open-questions
-  ledger). R9's zero-cost walker hop and PageRank fold therefore ship as specced. The fold
+  accepted rev 3 and confirmed rev 3-4 (the Q8 row of session f0521bff in the open-questions
+  ledger, not the save-state Q8 of session 37b7498f). R9's zero-cost walker hop and PageRank fold therefore ship as specced. The fold
   changes a ranking input, so [[#gate-prior]] and [[#gate-depth]] apply to it: `denotes` is
   evaluated per type after bug-216 is live, by [[task-bug216-denotes-fold-evaluation]], with
   bands written there before the run. Its harm band disables the fold, never the link, and its

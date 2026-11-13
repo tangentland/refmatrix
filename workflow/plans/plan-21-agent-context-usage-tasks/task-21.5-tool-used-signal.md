@@ -943,21 +943,35 @@ rel: derives-from -> [[plan-review-2026-11-13#d-q3]]
       Deliveries, the prompt clock and the control come from the store's own logs, as in R4-R7
       (clones of `recall-events.jsonl`, `query.log`, the global events file and the read
       snapshots). A session with deliveries and no transcript is counted `no_transcript` and
-      forms no unit. Claude Code prunes old transcripts, so the per-call matcher inputs
-      (`tool_name`, `tool_input`, `cwd`, call hash) are archived LOCALLY, outside the repo
-      (`~/.refmatrix/measurements/task-21.5-r12-remeasure/calls.jsonl`), for [[#ac-20]]. Only
-      the call-hash list is committed. {#r14-source}
+      forms no unit. {#r14-source}
+    - **The transcript archive (lead ruling 2026-11-13, on the report's contradiction 7).**
+      Claude Code prunes old transcripts, so AC-20 would have nothing to replay. Phase M
+      therefore copies every transcript file it reads (the parent file and every subagent file)
+      and the per-call matcher inputs (`calls.jsonl`: `tool_name`, `tool_input`, `cwd`, call
+      hash) into a LOCAL archive at
+      `/Volumes/littlebig/refmatrix-measurement-archive/task-21.5-r12-remeasure/`:
+      - it is outside the repo and outside every watched tree, since no store's watch root
+        covers it;
+      - it is mode `0700`, and nothing in it is ever committed;
+      - only a manifest (one sha256 per archived file) and the call-hash list are committed.
+
+      **The archive's creation is announced to the user before the first copy.** The lead makes
+      the announcement, and its date is recorded in the measurement file. If the volume is not
+      mounted, phase M refuses to run; there is no fallback path. The archive is deleted only
+      on the user's word, after phase B's AC-20 has run. {#r14-archive}
     - **Corpora and window.** R14 runs on refmatrix and cliquedb, the pilot's two corpora,
       each from its events file's first line to the clone time. cliquedb is a fleet repo: its
-      store is copied read-only under the terms of AC-15's allowance ([[#ofu-cliquedb]]; whether
-      that allowance covers phase M is open item O-4, [[#rev-4-open]]). {#r14-window}
+      store is copied read-only under the terms of AC-15's allowance ([[#ofu-cliquedb]]). The
+      lead ruled that those terms cover phase M ([[#o-4]]), and the lead tells the user.
+      {#r14-window}
     - **Pre-registration.** `PREREG.md` is committed, and its sha recorded, BEFORE any pair is
       drawn. It holds:
       - the seed and the sort key;
       - R12's draw: lag bands 0 / 1-3 / 4-6 / 7+, each band `min(available, max(20, share))`;
       - the minimums: at least 50 headline main-loop pairs pooled over the two corpora, plus up
         to 20 prior-touch and 20 control pairs per corpus as report-only strata;
-      - the rubric, the banded label (O-2) and the band table below.
+      - the rubric, the banded label (CAUSED+INFORMED, with CAUSED printed beside it; [[#o-2]])
+        and the band table below.
 
       The pair list's sha256 is committed and frozen before labelling. Overlap with the pilot's
       pairs is allowed and reported. {#r14-prereg}
@@ -968,7 +982,8 @@ rel: derives-from -> [[plan-review-2026-11-13#d-q3]]
       agreement on CAUSED+INFORMED vs not is reported. The user spot-checks 10 pairs
       ([[#od-2]]). {#r14-labels}
     - **Bands: R12's own (L35).** The bands are read on the pooled kernel-weighted `p_w` over
-      main-loop pairs (Kish `n_eff`), on the label that `PREREG.md` names:
+      main-loop pairs (Kish `n_eff`), on CAUSED+INFORMED ([[#o-2]]), with the CAUSED-only `p_w`
+      printed beside it:
 
       | condition | reading | what phase B builds once unfrozen (never before the charter decision) |
       |---|---|---|
@@ -1392,7 +1407,8 @@ Each mutation must make at least one AC FAIL, not hang. Each restore runs as its
 | `eval/spikes/task-21.5-r12-remeasure/PREREG.md` (new, GMD) | seed, sort key, draw, rubric, banded label, band table; committed and its sha recorded before the draw |
 | `eval/spikes/task-21.5-r12-remeasure/pairs.sha256`, `calls.sha256`, `labels.csv` (new) | the frozen pair-list hash, the call-hash list for AC-20, labels by pair id (no text) |
 | `workflow/measurements/task-21.5-r12-remeasure-<date>.md` (new, GMD) | the counts, the band reading and the comparison with the pilot ([[#r14-output]]) |
-| `~/.refmatrix/measurements/task-21.5-r12-remeasure/calls.jsonl` (LOCAL, never committed) | the per-call matcher inputs that AC-20 replays |
+| `/Volumes/littlebig/refmatrix-measurement-archive/task-21.5-r12-remeasure/` (LOCAL, `0700`, never committed; creation announced to the user) | the archived transcripts and `calls.jsonl` that AC-20 replays ([[#r14-archive]]) |
+| `eval/spikes/task-21.5-r12-remeasure/archive-manifest.sha256` (new) | one sha256 per archived file |
 
 `verbs.py` does not change (D5). `rmx install-hooks --check` stays clean because the generated
 hook commands are byte-identical (AC-16). 24.2a's `rmx_focus_observe` calls `stm.tool_event_fields`
@@ -1671,31 +1687,43 @@ did not fire. {#rev-4-lead}
 
 ### Under Q8 b {#q8-b}
 
-No requirement changes under Q8 b. A save-state that is no longer bridged is no longer a
+"Q8" here is the save-state question of the open-questions ledger, session 37b7498f. It is not
+the bug-216 confirm of session f0521bff. No requirement changes under Q8 b. A save-state that is no longer bridged is no longer a
 `kind=memory` delivery, so it simply stops forming units. [[#r2]]'s memory path rule and
 [[#r14]]'s method are unchanged.
 
-### Open for the lead (rev 4) {#rev-4-open}
+### Lead rulings on the rev-4 open items (2026-11-13) {#rev-4-open}
 
-These choices are not settled by a D-Q or L-row. The text above is written to the
-recommendation (option a) so that phase M is runnable. A ch-bsd round or the lead may flip any of
-them before phase M's `PREREG.md` is frozen.
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
-1. **O-1, the unit after change 7a.** (a, recommended) A unit is the first delivery per segment,
+**Decision rows.** The lead ruled on the user's pattern and chose option (a) on all four items.
+The user is told and may overturn any of them, which would be a dated revision before phase M's
+`PREREG.md` is frozen. The options are kept below as the record. {#rev-4-rulings}
+
+| item | ruling | effect in this spec |
+|---|---|---|
+| O-1 | (a) a unit is the first delivery per segment; re-deliveries form no unit | [[#d7]], [[#r5]], [[#ac-6]] as written |
+| O-2 | (a) the bands read CAUSED+INFORMED, with CAUSED printed beside it | [[#r14-prereg]], [[#r14-bands]]; R12's post-deploy reading uses the same label |
+| O-3 | (a) Grep `name`, Agent / Task `name` and `mcp_name` stay as strata, `underpowered` with no consumer weight until each has 20 labelled main-loop pairs | [[#r3]], [[#r12]] (stratum rule) |
+| O-4 | (a) phase M's cliquedb copy is covered by AC-15's allowance terms; the lead tells the user | [[#r14-window]] |
+| contradiction 7 (lead) | transcripts used by phase M are archived locally, outside the repo and every watched tree, never committed; the archive's creation is announced to the user | [[#r14-archive]] |
+{#rev-4-rulings-table}
+
+1. **O-1, the unit after change 7a. RULED (a).** (a, recommended) A unit is the first delivery per segment,
    and re-deliveries form no unit. This matches 10.2's h1 and leaves re-deliveries out of the
    denominator. (b) Keep per-prompt units, but credit the EARLIEST uncredited one. That is
    closer to rev 3, but re-deliveries stay in the denominator and keep lowering the rate.
    {#o-1}
-2. **O-2, the label the bands read.** (a, recommended) CAUSED+INFORMED, with CAUSED printed
+2. **O-2, the label the bands read. RULED (a).** (a, recommended) CAUSED+INFORMED, with CAUSED printed
    beside it. R12's yes/no label ("plausibly caused") was operationalised by the pilot's rubric
    as two labels, and the pilot reported both. (b) CAUSED only, which is stricter: a consumer
    weight then rests on cause alone. {#o-2}
-3. **O-3, the other name legs** (Grep `name`, Agent / Task `name`, `mcp_name`). The pilot sampled
+3. **O-3, the other name legs. RULED (a).** (Grep `name`, Agent / Task `name`, `mcp_name`). The pilot sampled
    none of them, but they share `bash_name`'s tokeniser and its prompt-echo confound. (a,
    recommended) Keep them as strata, which are `underpowered` until each has 20 labelled
    main-loop pairs and carry no consumer weight until then. (b) Drop them with `bash_name` on
    the same mechanism. {#o-3}
-4. **O-4, cliquedb in phase M.** The user's allowance ([[#ofu-cliquedb]]) names AC-15. The pilot
+4. **O-4, cliquedb in phase M. RULED (a).** The user's allowance ([[#ofu-cliquedb]]) names AC-15. The pilot
    also copied cliquedb at the user's direction. (a, recommended) Treat phase M as covered by the
    same terms (read-only APFS clone, counts only, deleted after) and say so to the user when
    phase M starts. (b) Ask the user first. {#o-4}

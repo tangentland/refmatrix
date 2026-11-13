@@ -34,7 +34,8 @@ rel: reinforces -> [[feedback_measure_the_path_users_run]]
 bug-216 R7 adds a linkage `denotes`: a path-less concept minted by a bare doc-id `rel:` target
 links to the doc or memory whose GMD id it spells. R9 makes every walker treat it as a zero-cost
 hop and folds the concept's typed in-edges onto its target in PageRank. The user accepted rev 3
-and confirmed it ("rev 3-4 stand", the earlier 2026-11-13 Q8 row in [[open-questions]]). Contra-d
+and confirmed it ("rev 3-4 stand": the Q8 row of session f0521bff in [[open-questions]], not
+the save-state Q8 of session 37b7498f). Contra-d
 CD-7 found that R9 changes a ranking input that ADR-0004's gates reserve for measurement:
 "cumulative-weight ordering [is] opt-in per relation type, after measurement" and "the per-type
 prior … moves only on a per-type evaluation". L7 resolved it: R7 and R9 ship as specced, ADR-0004
@@ -54,7 +55,7 @@ agent actually made visible, and does what it moves rank better or worse than wh
 | e3 | Confounds held down as in `eval/production/scanprompt_graph_delta.py`: `RMX_RERANK=0`, composite intra-edges 0, one frozen prompt set, same order in both arms | the cross-encoder is nondeterministic under load; STM is session state a re-derive does not change |
 | e4 | The fold-isolated arm (**FOLD-OFF**: ON with its `pagerank` table and adjacency cache taken from OFF) runs only if R0 finds those two are the fold's only inputs. It is report-only | L29 names the fold; R9's walker transparency also reads `denotes`. If they cannot be separated by data, a harm reading is attributed by the user, not guessed |
 | e5 | Uses come from the labelled sets already on record: 10.5's design-replay sets (11 labelled CAUSED+INFORMED and 16 R12 explicit uses on prompt channels) plus 21.5 phase M's labelled CAUSED+INFORMED pairs when phase M has reported | a "use" must be an act the agent made, not a proximity count (L18's rule) |
-| e6 | Corpus: refmatrix. cliquedb only if its store has had the derive op AND the user allows the read-only copy (open item O-2) | bug-216's derive op runs on the refmatrix store first; a fleet store is the user's |
+| e6 | Corpus: refmatrix. cliquedb only if its store has had the derive op AND the user allows the read-only copy (ruled, [[#o-2]]) | bug-216's derive op runs on the refmatrix store first; a fleet store is the user's |
 
 ## Requirements {#requirements}
 
@@ -73,7 +74,11 @@ agent actually made visible, and does what it moves rank better or worse than wh
    ([[measurement-injection-already-held-2026-11-13#design-replay-v2]]): each call's prompt text is
    read from the local transcript and never committed (d8f). The call-id list's sha256 is
    committed before any arm runs. A call whose prompt cannot be re-read is counted
-   `prompt_missing` and dropped from both arms. {#r1}
+   `prompt_missing` and dropped from both arms. The transcripts read are archived exactly as
+   [[task-21.5-tool-used-signal#r14-archive]] archives phase M's, under
+   `/Volumes/littlebig/refmatrix-measurement-archive/bug216-denotes-eval/`, so a re-run can be
+   reproduced after Claude Code prunes them. The archive is mode `0700`, never committed (only
+   a sha256 manifest is), and its creation is announced to the user. {#r1}
 3. **R2 The harness.** `eval/production/denotes_fold_eval.py` runs the production `scan-prompt`
    and per-prompt recall for every call in R1 against each arm's store and records each call's
    delivered item keys (`telemetry.item_key`) in rank order. It writes only under its `mkdtemp()`
@@ -153,13 +158,25 @@ the real CLI. AC-5 is the run on real data. {#acceptance-lead}
   `ingest-gmd` and the real derive op.
 - Output is captured to `workflow/review-output/pytest-bug216-denotes-eval.log`.
 
-## Open for the lead {#open}
+## Lead rulings (2026-11-13) {#open}
 
-1. **O-1, isolating the fold.** (a, recommended) Band on ON vs OFF (the relation type as a
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+**Decision rows.** The lead ruled on the user's pattern and chose option (a) on both items. The
+user is told and may overturn either one, which would be a dated revision before AC-5 runs.
+The options are kept below as the record. {#open-rulings}
+
+| item | ruling | effect |
+|---|---|---|
+| O-1 | the band reads ON vs OFF, the `denotes` type as a whole; FOLD-OFF is report-only, run when R0 allows it | e1, e4, [[#r4]] as written; no measurement switch in `src/` |
+| O-2 | refmatrix only, until cliquedb's store has the derive op AND the user allows a read-only copy | e6 as written |
+{#open-rulings-table}
+
+1. **O-1, isolating the fold. RULED (a).** (a, recommended) Band on ON vs OFF (the relation type as a
    whole, ADR-0004's per-type unit), and run FOLD-OFF as report-only when R0 allows it. (b) Add a
    measurement-only parameter to `pagerank.build_adjacency` to switch the fold alone. This is
    more precise, but it puts a measurement switch into `src/`. {#o-1}
-2. **O-2, cliquedb.** (a, recommended) refmatrix only, until cliquedb's store has the derive op
+2. **O-2, cliquedb. RULED (a).** (a, recommended) refmatrix only, until cliquedb's store has the derive op
    and the user allows a read-only copy for this task. (b) Ask the user now, so both corpora run
    together. {#o-2}
 
