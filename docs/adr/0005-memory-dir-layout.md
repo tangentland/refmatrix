@@ -157,9 +157,10 @@ the caller's cwd (plan-26 B2; [[task-26.5-memory-organise-verb]] AC-1).
 - The path is never `.resolve()`d: a symlinked memdir (viascope's) resolves outside `projects/`
   and the lookup would fail.
 - A path that is not under `~/.claude/projects/<slug>/` is a hard error that names the fix. It
-  never silently becomes "no store". This governs every explicit memdir argument: the organise
-  verb's (26.5 AC-1) and R-264a's file/subdir resolution for `ingest-gmd --as-memory`. An explicit
-  `--as-memory` call keeps its own store behaviour and refusals.
+  never silently becomes "no store". This hard error is the organise verb's (26.5 AC-1). R-264a
+  (`ingest-gmd --as-memory` on a file or subdir) refuses only when no memdir is found, with its own
+  `Error:` line, and resolves no store. An explicit `--as-memory` call keeps its current store
+  behaviour (amended 2026-11-13, rev 8, bsd-spec-t2-r2 n3).
 - A well-formed slug that matches no store root is **file-only**: files are organised, the
   bridge is not run, and the output says so.
 - **The flagless-walk carve-out (amended 2026-11-13, bug-220, [[#amendments]]).** A walk WITHOUT
@@ -246,7 +247,8 @@ viascope2 and cliquet while `_ss_update_index` kept appending.
   [[#amendments]]).** A GMD file inside a memory dir that such a walk reaches is never ingested as
   a `kind=doc` twin. It is collected and bridged as `kind=memory`, after the walk's own ingest
   returns and outside its writer lock, into the store its memdir resolves to, per
-  [[#store-resolution-walk]]. A memory dir here is the `~/.claude/projects/<slug>/memory` shape,
+  [[#store-resolution-walk]]. Another store is reached by starting a detached job on its daemon,
+  never by waiting on it and never by opening it in-process. A memory dir here is the `~/.claude/projects/<slug>/memory` shape,
   or the nearest ancestor with a marker, matched on both the as-given and the resolved path
   ([[task-26.5-memory-organise-verb#bug220-route]]). It runs after the ignore predicate, so a
   pruned dot-dir is never reached. It is ungated because it is store-side. The only file write it
@@ -399,6 +401,9 @@ rel: derives-from -> [[bsd-spec-t2-b5fe2d3]]
     hard error still governs every explicit memdir argument. (Corrected in rev 7, answering
     [[bsd-spec-t2-b5fe2d3#s2]]; the first wording of this entry said no resolution rule
     changed.)
+  - Rev 8 (answering [[bsd-spec-t2-r2-091dec9]]): the hard error is named as the organise verb's
+    alone, and R-264a's refusal is "no memdir found" only (n3). The walk reaches another store
+    through a detached job, never by waiting on it or opening it (t1, n5).
   - The marker-encoding open question is marked closed.
   - No folder, identity or gating rule changes. The reroute is ungated because it is store-side,
     and its only possible file write is already marker-gated.

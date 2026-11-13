@@ -213,13 +213,15 @@ verb-parity test covers both. No file is ever moved by hand, here or in plan-27.
   - Modify `src/refmatrix/memory_layout.py`: `memdir_of(path)`, the one memdir resolver shared by
     R-264a and bug-220 ([[#bug220-route]]).
   - Modify `src/refmatrix/ingest_gmd.py` (`collect_gmd_files`, `ingest_gmd_paths`: collect the
-    `rerouted` groups) and `cli.py` (`ingest-gmd`: keep each target's as-given form, dispatch
-    after the doc ingest, print the four counts; `_sync_memory_dir(memdir, root=)` as a thin
-    caller of the library op-call helper). Create `tests/test_ingest_gmd_memdir_route.py`.
-  - Modify `src/refmatrix/daemon.py` (`_run_ingest_gmd_body` and the sync op): dispatch the
-    `rerouted` groups after `d._store_lock` is released, record the counts on the op record, and
-    send the same-store group through the full `as_memory` body (vector drain, index regen)
-    (rev 7, bsd-spec-t2 s3). Modify `src/refmatrix/sync.py` / `ingest.py` only to pass the
+    `rerouted` groups) and `cli.py` (`ingest-gmd`: keep each target's as-given form; print the
+    four counts and any dispatched `job_id`s from the op result; dispatch only on the no-daemon
+    route; prestage's `rerouted` line). Create `src/refmatrix/memory_reroute.py` (the dispatcher,
+    R-220c) and `tests/test_ingest_gmd_memdir_route.py`.
+  - Modify `src/refmatrix/daemon.py` (`_op_ingest_gmd`, `_op_ingest_gmd_start`'s runner and the
+    sync op): call `memory_reroute.dispatch` once, after `d._store_lock` is released and the job
+    record is closed. The same-store group goes through a detached `ingest_gmd_start` on itself
+    (the full `as_memory` body, vector drain and index regen). The counts and the dispatched
+    `job_id`s go on the op record (rev 7 s3; rev 8 t1). Modify `src/refmatrix/sync.py` / `ingest.py` only to pass the
     `rerouted` result up.
   - Only if R-202a finds bug-202's files: `ingest-gmd --as-memory --force-rebridge <file>` on the
     single-file bridge ([[#r-202b]]); the live restore is 27.5's.
@@ -512,43 +514,68 @@ m3, m6 and m7. {#bug220-why}
     finds viascope's symlinked memdir under its slug;
   - else `None`.
 
-  The CLI keeps each target's as-given form beside its resolved form and passes it in. The
+  Whichever branch matched, the marker branch included, the memdir's UNRESOLVED form comes from
+  the as-given path when there is one, else from the symlink map (rev 8, bsd-spec-t2-r2 n1). The
+  CLI keeps each target's as-given form beside its resolved form and passes it in. The
   unresolved form is the only one ever given to the store resolver (ADR-0005
-  `#store-resolution`: never `.resolve()`). R-264a's resolver IS this function plus its loud
+  `#store-resolution`: never `.resolve()`). A memdir with no unresolved form (no as-given
+  projects path, no symlink to it) has no slug, so it is no-store (R-220c). R-264a's resolver IS this function plus its loud
   refusal on `None`. There is no second copy.
 - **R-220b: classification follows location; collect, never ingest in place.** In
   `collect_gmd_files` / `ingest_gmd_paths` with `as_memory=False`, every file whose `memdir_of`
   is not `None` is taken out of the doc set and COLLECTED, grouped by memdir, into the call's
   `rerouted` result. It is never ingested inside the doc ingest. No caller flag can mint a
   `kind=doc` row for such a file. The memory-side exclusions apply when the group is bridged
-  (`iter_memory_files`: dot-dirs, dotfiles, `MEMORY.md`, `README.md`). {#r-220b}
-- **R-220c: dispatch after the doc ingest returns, outside the writer lock (rev 7, s3; lead ruling).**
-  The `rerouted` groups are dispatched only AFTER the walking store's ingest has returned and its
-  writer lock (`d._store_lock`) is released. Each dispatch is a separate op call, never nested
-  under a held lock (the bug-085 class). {#r-220c}
+  (`iter_memory_files`: dot-dirs, dotfiles, `MEMORY.md`, `README.md`).
+  `ingest-gmd --prestage` (without `--as-memory`) uses the same walk. Its result and its CLI line
+  carry a `rerouted` count with the names, in the same shape as bug-216 R6b's `ignored` /
+  `ignored_paths`. Prestage dispatches nothing (rev 8, n4). {#r-220b}
+- **R-220c: dispatch after the doc ingest returns, outside the writer lock, never waiting on
+  another store (rev 7 s3; rev 8 t1, lead rulings).** The `rerouted` groups are dispatched only
+  AFTER the walking store's ingest has returned, its writer lock (`d._store_lock`) is released and
+  its job record is closed. Each dispatch is a separate op, never nested under a held lock (the
+  bug-085 class), and no dispatch waits for another store's ingest. {#r-220c}
+  - **One dispatcher per route.** On every daemon route (the `ingest_gmd` op body, the detached
+    `ingest_gmd_start` job, and the sync/watcher op), the daemon body is the ONE dispatcher. A
+    CLI that sent the walk to A's daemon only prints the counts from the op result, and never
+    dispatches again. The CLI dispatches only on its own no-daemon route, where it ran the walk
+    in-process.
+  - **The library helper.** It is a new module, `src/refmatrix/memory_reroute.py`:
+    `dispatch(groups, *, walking_root, same_store) -> counts`. It holds the store resolution
+    (below), the held/no-store branches and the cross-store leg. The same-store leg is passed in
+    by the caller (`same_store`): the daemon passes its own detached-job start, and the CLI's
+    no-daemon route passes `_ingest_gmd_in_process(…, as_memory=True)`. The library never imports
+    `cli.py`.
   - **The store is the memdir's own** (lead ruling T2-O1). It is resolved from the memdir's
     unresolved form (R-220a) by a NON-raising variant of AC-1's resolver, which returns
     `store | no_store | held`. AC-1's raising resolver stays the organise verb's.
-  - **Cross-store (memdir → store B, the walk wrote A).** One `ingest_gmd` op with
-    `as_memory=True` for B per memdir, through the same path `_sync_memory_dir(memdir, root=B)`
-    takes today, including its existing no-daemon leg. The
-    library never calls into `cli.py`. The op-call helper lives in a library module, and
-    `cli._sync_memory_dir(memdir, root=)` becomes a thin caller of it, so there is one copy.
+  - **Cross-store (memdir → store B, the walk wrote A).** One detached job per memdir: the
+    `ingest_gmd_start` op on B's daemon (`daemon.py:3858`), with `as_memory=True`,
+    `daemon.call(…, retries=0)` and a short connect timeout (a named constant, at most 2 s). B's
+    `job_id` goes on A's result and op record. Nothing waits for B's job: there is no
+    synchronous `ingest_gmd` call, no `ingest_gmd_status` polling and no
+    `_bridge_wait_for_active_job`. The same rule holds on every route, CLI included. B's own job
+    runs the full `--as-memory` body: drain, index regeneration, marker-gated writes. This
+    replaces rev 6's `_sync_memory_dir(memdir, root=B)` route, which waited on B
+    (bsd-spec-t2-r2 t1); the T2-O1 ruling (B is the memdir's own store) stands.
   - **Same store (memdir → A).** The group goes through A's FULL `--as-memory` path as its own
-    op, after the doc op has released the lock. That includes the memory-vector drain and the
-    index regeneration, which `daemon.py:3790`/`:3805` gate on `args.get("as_memory")`
-    (bug-065: without the drain, rows are durable but invisible to recall). With no daemon, the
-    CLI runs `_ingest_gmd_in_process(…, as_memory=True)`, the same full path.
-  - **B busy or unreachable.** This is never a silent drop ([[CLAUDE#no-silent-failures]]):
+    job, after the doc op's job has closed. That includes the memory-vector drain and the index
+    regeneration, which `daemon.py:3790`/`:3805` gate on `args.get("as_memory")` (bug-065:
+    without the drain, rows are durable but invisible to recall). In the daemon it is a detached
+    `ingest_gmd_start` on A, called in-process. On the CLI's no-daemon route it is
+    `_ingest_gmd_in_process(…, as_memory=True)`, the CLI's own store, as today.
+  - **B absent, busy or refusing.** This is never a silent drop ([[CLAUDE#no-silent-failures]]):
     - A's ingest still completes and its result stands;
-    - each such memdir is counted under `rerouted_failed` and named with B's root and the
-      error, on stderr;
-    - the CLI exits non-zero after printing A's result;
-    - an in-daemon walk writes the count and names onto its op record and the daemon log, and
-      never waits on B (no `_bridge_wait_for_active_job` from inside A's op). It also never opens
-      B's store in-process: with no daemon for B, the memdir counts under `rerouted_failed`. The
-      memdir's own bridge (SessionStart, save-state) is its next route. The CLI may use the
-      existing wait and the existing no-daemon leg, because it holds no lock.
+    - each such memdir is counted under `rerouted_failed` and named with B's root and the reason:
+      `ingest already active` (busy), the refusal text, or "no daemon for <B root>: start B's
+      daemon (`rmx daemon start`)" (absent, rev 8, n5);
+    - on the CLI this goes to stderr and the exit is non-zero after A's result is printed;
+    - in the daemon it goes onto the op record and the daemon log.
+    - No route ever opens B's store in-process, CLI included (store access routes through
+      daemons, rev 8, n5). The CLI's OWN store keeps today's no-daemon behaviour. The memdir's own
+      bridge (SessionStart, save-state) is the next route for a failed group.
+    - A same-store job that cannot start because A already has an active ingest is counted the
+      same way, with the reason.
   - **No store.** A well-formed slug that matches no root, or a marker dir with no slug form, is
     file-only (ADR-0005 `#store-resolution`, amended 2026-11-13 for this walk only). Its files are
     taken out of the doc set, ingested nowhere, and counted and named as `rerouted_no_store` with
@@ -575,8 +602,10 @@ m3, m6 and m7. {#bug220-why}
   behaviours, scoped to walks without `--as-memory`. An explicit `--as-memory` call keeps its
   current store behaviour and its refusals (R-264a). {#r-220-every-dir}
 - **AC-220.** Each case starts RED at HEAD, in task 23.0's sandbox, with the real CLI, re-read
-  against bug-216's merged walker before RED. Cases (a), (g) and (h) each run twice: once with the
-  owning daemons up, and once with them down (in-process). {#ac-220}
+  against bug-216's merged walker before RED. Cases (a), (g) and (h) each run on two routes: A's
+  daemon up (the daemon body dispatches; the test waits for the dispatched job ids through
+  `ingest_gmd_status` before asserting), and A's daemon down (the CLI's no-daemon route
+  dispatches). B's state is per case. {#ac-220}
   - (a) `rmx ingest-gmd <memdir>` without `--as-memory`, over a fixture memdir under
     `HOME/.claude/projects/<slug>/memory`. The fixture holds 2 feedback memories, 1 save-state,
     `MEMORY.md` and a dot-dir file. Expected:
@@ -599,22 +628,47 @@ m3, m6 and m7. {#bug220-why}
     are 0 twins and one `kind=memory` row per file.
   - (f) bug-216's X1 pins re-run green.
   - (g) Cross-store (T2-O1): `rmx ingest-gmd <B's memdir>` run from root A, with no
-    `--as-memory`, and A seeded with a HEAD-built twin. The memories land in B as `kind=memory`,
-    recall in B returns one, A holds no row for them (the twin is purged), and the CLI's exit is 0.
-  - (g2) The same, with B's bridge failing: B's store root is made unwritable, so the bridge
-    returns its `error` on either leg (daemon or no-daemon, whichever `_sync_memory_dir`'s existing
-    path takes). A's doc ingest completes, `rerouted_failed: 1` names B's root and the error on
-    stderr, the exit is non-zero, and A still holds no twin.
+    `--as-memory`, A seeded with a HEAD-built twin, and B's daemon up. The result carries B's
+    `job_id`. After that job completes, the memories are in B as `kind=memory` and recall in B
+    returns one. A holds no row for them (the twin is purged), and the CLI's exit is 0. On A's
+    daemon-up route the CLI makes no dispatch call of its own: B's job registry shows exactly one
+    job.
+  - (g2) The same, with B faulted deterministically (rev 8, n2), on both of A's routes:
+    - B busy: B holds an active ingest job, so `ingest already active`;
+    - B absent: B has no daemon, so the reason carries the `rmx daemon start` remedy, and B's
+      catalog files are not opened (their mtimes are unchanged).
+
+    In both: A's doc ingest completes, `rerouted_failed: 1` names B's root and the reason, the
+    CLI exits non-zero with the reason on stderr, and A still holds no twin.
   - (h) A symlinked memdir (viascope's shape: `HOME/.claude/projects/<slug>/memory` → a target
     outside `projects/`), marker-off and marker-on, passed as the symlink path. The memories land
     in the slug's store. A sync walk that reaches the resolved target also finds the slug, through
     the symlink map.
-  - (i) The sync route (m6): `_sync_paths` over a project root that holds a marker memdir outside
-    any dot-dir (reachable through the walker). The files reroute as in (a), the counts land on the
-    op record, and the dispatch runs after the sync op releases its lock: an audit hook on the
-    lock asserts it is not held during the dispatch.
+  - (i) The sync route (m6; rev 8, t2). The fixture memdir is a plain dir inside A's project tree,
+    outside any dot-dir, so the walker reaches it. It is the TARGET of a
+    `HOME/.claude/projects/<slug>/memory` symlink, so the sync walk finds its slug through the
+    symlink map. It runs twice:
+    - slug → A (the same-store branch);
+    - slug → B (the cross-store branch, B up).
+
+    Each run of `_sync_paths` through A's daemon: the files reroute as in (a), and the counts land
+    on the op record. An audit hook on `d._store_lock` and on the dispatcher records each dispatch
+    and the lock state at that moment. It asserts at least one dispatch was observed per run and
+    that the lock was not held at any of them.
+  - (k) In-daemon cross-store (rev 8, t1). A sync-op walk in A reaches the (i) fixture mapped to
+    B:
+    - B up: B's job is held at its start by a test-only gate (registered in
+      `workflow/test_mock_registry.md`). A's op returns, with B's `job_id` on its record, while
+      B's job is still gated. Once the gate opens, the rows appear in B.
+    - B absent: `rerouted_failed` with the remedy on A's op record and daemon log, and B's catalog
+      files are not opened (their mtimes are unchanged).
+    - B busy (an active ingest job on B): `rerouted_failed` with `ingest already active`, and A's
+      op returns without waiting.
   - (j) The home memdir (m7): a walk that reaches `HOME/.claude/projects/-<home-slug>/memory`
     dispatches nothing and reports `rerouted_held` with the plan-27 Q4 reason.
+  - (l) Prestage (n4): `rmx ingest-gmd --prestage <root>` over a root holding the (a) memdir
+    reports `rerouted: 3` with the names on its result and its CLI line, dispatches nothing, and
+    stages no `kind=doc` row for them.
   - Mutations, each killed:
     - dropping the reroute kills (a);
     - rerouting before `should_ignore` kills (f) (an entity appears under a dot-dir);
@@ -622,11 +676,18 @@ m3, m6 and m7. {#bug220-why}
     - dropping the printed count kills (a)'s count assertion;
     - landing rerouted files in the calling store kills (g);
     - ingesting a no-store memdir's files into the calling store kills (c);
-    - resolving before `memdir_of` kills (h);
+    - passing the resolved form to the store resolver kills (h) (marker-on) and (i) (rev 8, n1);
+    - dropping the symlink map kills (h)'s sync leg and (i) (rev 8, n1);
     - skipping the memory-vector drain on the same-store branch kills (a)'s recall leg;
     - running the reroute only on the in-process path kills the daemon-up run of (a);
     - dispatching under the writer lock kills (i)'s audit assertion;
     - swallowing B's error kills (g2);
+    - waiting on B's ingest (a synchronous `ingest_gmd` call, status polling, or
+      `_bridge_wait_for_active_job`) kills (k)'s B-up leg (rev 8, t1);
+    - opening B's store in-process when B has no daemon kills (k)'s and (g2)'s B-absent legs (the
+      mtimes change) (rev 8, t1, n5);
+    - the CLI dispatching again on A's daemon-up route kills (g)'s one-job assertion (rev 8, t1);
+    - dropping prestage's `rerouted` count kills (l) (rev 8, n4).
     - skipping the twin purge on the cross-store or no-store branch kills (g) and (c);
     - dropping the twin purge entirely kills (e);
     - dispatching the home memdir kills (j).
@@ -657,7 +718,7 @@ existing infrastructure, route never refuse). Folded above; no hold remains.
 
 | item | ruling | anchor |
 |---|---|---|
-| T2-O1 (bug-220's store when the memdir resolves elsewhere) | (b): the memdir's own store, through `_sync_memory_dir(memdir, root=)`; AC-220 (g). Rev 7: dispatched after the lock is released | [[#r-220c]], [[#ac-220]] |
+| T2-O1 (bug-220's store when the memdir resolves elsewhere) | (b): the memdir's own store; AC-220 (g). Rev 7: dispatched after the lock is released. Rev 8: reached by a detached `ingest_gmd_start` on B, not `_sync_memory_dir`'s synchronous call | [[#r-220c]], [[#ac-220]] |
 | T2-O2 (per-file force input for bug-202) | (a): `--force-rebridge`, extending AC-5's force input; built only if R-202a finds the files. **Superseded in rev 7** (lead, bsd-spec-t2 s4): it rides the single-file bridge (`ingest-gmd --as-memory --force-rebridge <file>`), not an organise apply, and the live restore is 27.5's | [[#r-202b]] |
 | T2-O3 (bug-208 m-1/m-2 scope) | Keep R-208b and R-208c | [[#pre-bug208]] |
 | T2-O4 ("same marker gate") | The reroute is ungated and reuses the marker reader inside `memdir_of`; the ADR-0005 amendment stands | [[#r-220a]], [[#r-220-every-dir]] |
@@ -681,3 +742,19 @@ rel: derives-from -> [[bsd-spec-t2-b5fe2d3]]
 | m3 (mutation gaps) | AC-208 (d) gains two mutations; AC-220 (c)/(g) are seeded with a HEAD-built twin; twin-purge mutations named | [[#ac-208]], [[#ac-220]] |
 | m6 (no sync-route case) | AC-220 (i) through `_sync_paths` on a marker memdir | [[#ac-220]] |
 | m7 (the home memdir would reroute into the hub's global store) | Held per plan-27 Q4 (`rerouted_held`) until 27.1 reports; AC-220 (j) | [[#r-220c]], [[#ac-220]] |
+
+## Revision round 8 (2026-11-13): bsd-spec-t2 r2 {#rev-round-8}
+
+Answers [[bsd-spec-t2-r2-091dec9]] (DIRTY 0B/2S/6M; all r1 findings closed) with the lead's
+rulings. Status is unchanged (`pending`).
+
+rel: derives-from -> [[bsd-spec-t2-r2-091dec9]]
+
+| finding | change | anchor |
+|---|---|---|
+| t1 (in-daemon cross-store still waited on B; two dispatch owners; helper module unnamed; no in-daemon AC) | Cross-store starts a detached `ingest_gmd_start` on B with `retries=0` and a short connect timeout, and never waits. The daemon body is the one dispatcher on every daemon route, and the CLI dispatches only on its no-daemon route. New `memory_reroute.py`. AC-220 (k) covers B up/absent/busy; mutations "waits on B" and "opens B in-process" | [[#r-220c]], [[#ac-220]], [[#files]] |
+| t2 (case (i) was vacuous: a slugless marker dir is no-store) | (i)'s memdir is the target of a projects symlink; it runs same-store and cross-store; at least one dispatch observed; no dispatch under the lock | [[#ac-220]] |
+| n1 (the (h) mutation survived; the marker branch's unresolved form) | Every branch takes its unresolved form through the as-given path or the symlink map; mutations "resolved form to the store resolver" and "drop the map" | [[#r-220a]], [[#ac-220]] |
+| n2 (the chmod fault may not fault) | (g2) faults B by a held ingest job (busy) or no daemon (absent), on both of A's routes | [[#ac-220]] |
+| n4 (prestage dropped rerouted files uncounted) | Prestage carries `rerouted` with names (the bug-216 R6b shape); AC-220 (l) | [[#r-220b]], [[#ac-220]] |
+| n5 (the CLI's no-daemon leg opened B in-process) | No route opens B in-process. B absent is `rerouted_failed` with the `rmx daemon start` remedy. The CLI's own store keeps today's behaviour | [[#r-220c]] |

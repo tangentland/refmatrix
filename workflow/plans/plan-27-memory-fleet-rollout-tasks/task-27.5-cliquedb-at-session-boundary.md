@@ -54,9 +54,12 @@ itself.
    - **Why here.** The only `guardrail-*` memory files on disk are in cliquedb's memdir
      ([[task-26.5-memory-organise-verb#bug202-why]]). The restore therefore runs inside this
      task's session-boundary window, after AC-2's acknowledgement, never as a separate apply.
-   - **Only the two named files.** For each found file, run the single-file bridge that 26.5
-     built: `rmx ingest-gmd --as-memory --force-rebridge <file>`. Never a full organise, and no
-     other file.
+   - **Only the two named files, from the row's store root.** For each found file, run the
+     single-file bridge that 26.5 built, `rmx ingest-gmd --as-memory --force-rebridge <file>`,
+     with the cwd set to the root of the store R-202a recorded for the row (refmatrix's on
+     2026-11-13). The bridge writes the caller's store, so the cwd is the target. The log records
+     `rmx version -v` and the resolved store before the run. Never a full organise, and no other
+     file (rev 8, bsd-spec-t2-r2 n6).
    - **Same store, or stop.** The restore must write the store that holds the row (R-202a
      recorded it; it was refmatrix's on 2026-11-13). If the file's memdir resolves to a different
      store from the row's, the restore does not run. Instead, log a bug row (a cross-store memory
@@ -102,3 +105,11 @@ two named files, through the single-file bridge, at this task's session boundary
 and count. Status is unchanged (`pending`).
 
 rel: derives-from -> [[bsd-spec-t2-b5fe2d3]]
+
+## Revision round 8 (2026-11-13) {#rev-round-8}
+
+Answers [[bsd-spec-t2-r2-091dec9#n6]]. AC-5 pins the cwd: the root of the store holding the row,
+recorded with `rmx version -v` and the resolved store. A cross-store row still stops it. Status
+is unchanged (`pending`).
+
+rel: derives-from -> [[bsd-spec-t2-r2-091dec9]]
