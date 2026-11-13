@@ -7,7 +7,7 @@ metadata:
   node_type: plan
   status: approved
   created: 2026-10-07
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Plan 19: adaptive memory under the context budgets {#root}
@@ -210,6 +210,7 @@ Every test in every task runs in task 23.0's sandbox (d1a/d1b) and asserts 0 liv
 | d9ay | d9ao's retirement extends to 19.2 R6 / AC-10 (slot merge); [[#open-after-revision]] item 4 corrected | user, 2026-10-15 |
 | d9bi | plan 19 is the helix substrate: it leads Wave 1 after 23.0; 19.6 moves to directly after its dependencies; helix consumes 19.x's outputs (header) | user, 2026-10-15 |
 | d9bm | AMENDS d9ax: identity needs ≥ 2 shared members, ≥ 1 of them NOT a hub, AND J ≥ `j_return`; hub = member of ≥ ⌈8/2⌉ = 4 of the cache's 8 newest snapshots; the cache bound `N` = 8 (19.6 R3); `derive_snapshots` stays pure. PROVISIONAL until its ch-bsd loop is clean | orchestrator on the user's pattern, 2026-10-15, from ch-bsd r8 #ns-1 |
+| d21-5a | AMENDS d9v's read-back clause, source and owner only: the tool-input evidence is named `tool` (was `file_read`); it is computed by task 21.5's ONE matcher `telemetry.tool_touches(tool_name, tool_input, cwd)`, which 19.6's `score_readback.py` calls on each transcript tool call; a memory's path is its `memory_content.metadata.source_path`; 21.1 R12's reservation names `tool` (owned by 21.5) and `cited_in_answer` (19.6's); the clause's wording is otherwise unchanged, and 21.5's decay kernel does not apply to it ([[task-21.5-tool-used-signal#od-4]]) | user, 2026-11-13 (21.5 OD-4) |
 
 ## Out of scope {#out-of-scope}
 

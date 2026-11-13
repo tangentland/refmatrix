@@ -9,68 +9,59 @@ metadata:
 
 # Session Handoff for refmatrix {#root}
 
-Date: 2026-11-11 (session 7efc36ce, resumed from 7aea273d's 2026-11-10 handoff). Released and
-deployed 0.82.0. Prior handoff archived at
-`workflow/past_handoffs/018-wave0-plan24-specs-hypertree_2026-10-20.md`.
+Date: 2026-11-13 (session f0521bff, resumed from 7efc36ce's 2026-11-11 handoff). No release. Deployed
+is still **0.82.0**; every change this session is spec, measurement, registry or test/src in
+littlebig clones. Prior handoff archived at `workflow/past_handoffs/019-0830-pipeline-paused_2026-11-11.md`.
 
-rel: supersedes -> [[handoff-018-wave0-plan24-specs-hypertree]]
-rel: depends-on -> [[plan-of-plans#goal-2026-11-10-progress]]
+rel: supersedes -> [[handoff-019-0830-pipeline-paused]]
+rel: depends-on -> [[open-questions]]
 
-## State {#state}
+## Active goal {#active-goal}
 
-- **Deployed: 0.82.0** (release `9432b83`; hub + 8 daemons verified 0.82.0 from `~/refmatrix`,
-  no `[DEV TREE]`, hub under launchd; no `FatalException` since the restarts). Deploy tree at
-  `afda6ff` (src unchanged since the release). `origin/main` = `afda6ff` (pushed).
-- **Shipped in 0.82.0:** plan-26 26.2 (`05164ce`, ch-bsd r3 GO) + 26.3 (`fdc6359`, r2 GO) + AC-4c
-  (`078c951`); bug-199/200 (`6c2abb2`, `54e4f70`); user-level `/save-state` + `/recall-state`
-  (`3842f6d`); the loud-sync-failure requirement (user, 2026-11-10: "if the sync stops in an
-  error, it needs to fail loudly on the commandline or console, not just logs").
-- **Release suite** (`037d10c`): 4265 passed, 14 failed — 13 by E line = bug-127/168, bug-168 x9,
-  bug-170, bug-196 x2; 1 = the GMD lint gate, fixed as bug-211 (`577287d`).
-- **Fleet hooks re-installed** (user decision: full install in all 5 + refmatrix): refmatrix,
-  cliquedb, orderly, atldb, viascope, cliquet all `--check` in sync, 0 foreign hooks lost,
-  4/4 loud git hooks each. Backups: `~/.refmatrix/backups/hooks-0.82.0/`. cliquedb and viascope
-  now run the full rmx Claude hook layer for the first time.
-- **Live cut-hook repair re-run** (bug-199): 11 derived dropped, 9 curated restored from
-  `hooks29-draft.json`; after a write: 0 `…` values, 9/9 restores intact, "nothing to repair".
+No active goal (no `/goal` was set this session).
 
-rel: depends-on -> [[impl-task-user-level-state-commands#deploy-cleanup]]
+**Agents at the update (2026-11-13, after save-state)** — still running: `green-216`, `green-251c`, `green-212r2` (briefs in `workflow/agents/<name>.md`; re-dispatch from the brief if
+gone; their next artifact is a commit on the clone's branch, reports come back as text):
 
-## Open items {#open}
+| agent · type | clone (`/Volumes/littlebig/…`) · branch | base at dispatch | expected artifact | brief |
+|---|---|---|---|---|
+| `green-216` · ch-implementer | `refmatrix-bug216` · `task-bug216-rule-docs-in-graph` | `f1aa796` | src + docs + `#green`; R1-R12 GREEN | `green-216.md` |
+| `green-251c` · ch-implementer | `refmatrix-plan25-1` · `task-25.1-recall-hook-byte-budget` | spec `4f95c23` | rev-7 GREEN + regenerated hooks + `#green-rev7` | `green-251c.md` |
+| `green-212r2` · ch-implementer | `refmatrix-bug212` · `task-bug212-worktree-hook-crashes` | `deafd6d` | `_store_rw` refusal + survivors + `#green-r2` | `green-212r2.md` |
+| `arch-10r` · ch-architect | `refmatrix-plan10` · `task-plan10-revival` | rev 5 `c04c9b9` | DONE: plan-10 rev 4 (`a401924`) + rev 5 (10.6 kind labels, composite `rev N unchanged`, curator prints only on change; order 25.1 → 10.6 → 10.4 → 10.2); (names-only Q13, no gate Q10, 10.4b curator Q9, 10.5 replay passed + 50-probe read-back to run, 10.6 presentation); lead accepted its L4 (earlier prompt = prompt identity) | `arch-10r.md` (+ amendments) |
+| `bsd-264r1` · ch-bsd | `refmatrix-plan26-4` | `1caf3df` | DONE: r1 DIRTY 6, code sound; b-1 anchored in 26.5 (`b587f77`); **26.4 MERGED `0c74872`** | `bsd-264r1.md` |
+| `adj-215` · general-purpose | none | — | DONE: graph-neighbour leg does not separate from control → keep out of 21.5 (`workflow/measurements/task-21.5-adjacency-2026-11-13.md`) | `adj-215.md` |
 
-- **Release items closed (2026-11-11):** fleet command cleanup committed in the 7 tracking repos
-  (trunks: cat-herder `09a4997`, cliquedb `e946d0d`, cliquet `d5a4bc7`, prep_prolific `1d48803`,
-  thiquet `c74f571`; current branch: atldb `fc8ee67`, portal `4b104b1c`); hook-install files
-  committed by pathspec (cliquedb `b4a66e2`, atldb `83fcc1e`, viascope `5244c8720`, cliquet
-  `41aa6db`); `/mcp` reconnected here; bug-199 re-counted after a save-state (0 `…`, 9/9 held).
-- **Not pushed** in any fleet repo — the user pushes. cliquedb's `origin/main` still carries the
-  pair until `e946d0d` is pushed; the feature branches (gmd-conformance-sweep x3, nr-native-recast,
-  cliquedb's 10 agent worktrees) drop it when they merge their trunk.
-- **Left uncommitted on purpose:** orderly's hook files (the repo has no commits yet) and
-  viascope's `.claude/settings.local.json` (it carried someone else's uncommitted edits).
-- **Other open clients** still need `/mcp` reconnect for 0.82.0's MCP server.
-- **Store derive (done 2026-11-11):** no force reingest — only pagerank's code had moved
-  (ingest/semantic/embed are version-label drift; gmd re-derived at 0.82.0). `rmx pagerank`:
-  85,400 -> 101,784 scored nodes (graph grew 86.9k -> 112.4k entities since 0.77.1).
-  `rmx memory compile --apply`: 57 subjects (0 unlabeled, 262 of 278 memories), 30 July-era
-  subjects marked stale (15 `unlabeled-N` + junk labels; rows kept), declared subject untouched.
-  A few new labels are weak (`github-0e9e309f`, `github-bca1c694`, `allowed`, `cwd`, `store`) —
-  rename via `focus change-subject` if wanted.
-- **Open rows:** bug-201 (rich eats `[daemon]`), 203 (`sync -i` purges on the replica), 206
-  (in-place dropped heading's anchor lingers), 207 (in-process sync never closes its Store), 208
-  (non-atomic save-state write — before 26.5), 209 (`--check` blind to `.git/hooks`), 210 (26.2
-  r3 MEH follow-ups, m3-1 first), 177 (Stop promote timeout behind a long sync, seen 2);
-  pre-existing suite rows bug-127/168, 170, 190, 194, 196. 2 live memories lost all anchors
-  before 0.82.0 (bug-202 note) — restore needs 26.5's forced re-bridge.
-- **Plan-26 order:** 26.4 → 26.5 (rollback-moves-`savestates/`-back AC, `b5ed7b3`) → 26.7 →
-  26.6 R3 residual → 26.8; then bug-185 → 23.2 → 23.1 → 23.3 ∥ 23.5; plan-25 and plan-27
-  (now carries the fleet-hook exception, `9780579`) after their dependencies.
-- **littlebig:** the plan26-2, plan26-3 and bug199-200 clones are merged and can be retired at
-  the user's word; four October store-copy scratch dirs kept by the user's choice.
+## What this session did {#did}
+
+- **bug-214:** fleet store files untracked + ignored on the checked-out branches (cliquet `74bea2d`,
+  atldb `e9a3289`, prep_prolific `88c683e`); trunks still track until merged; not pushed.
+- **21.5:** spec revs 2→3.1 (decay kernel k = 3, h = 2; OD-4 approved) merged to master
+  (`0818327`, fixing bug-217's red lint gate). Four measurements + ch-bsd m1 review (DIRTY 13,
+  corrections folded): push injection mostly unused; terms/cliques/usage-weight add nothing.
+  21.5's approval is open — narrow build vs labelled sampling.
+- **bug-216** (GMD `rel:` bare-doc-id misbinding + rule docs not ingested): spec revs 1-4 + contracts;
+  RED done (71 fail / 28 guards); GREEN in flight. bug-218 (reinforcement reversed), bug-219 (stale
+  evidence) logged.
+- **plan-10 reopened:** already-held measurement (48.0%), gate with/without, design replay v1/v2 —
+  user chose names-only dedupe (Q13), no separate non-human gate (Q10), curator silent on
+  non-human (Q9).
+- **25.1:** GREEN `16ace00`; rev 7 (lead judgements) RED done, GREEN in flight; rev 8 (hard 9,500 B
+  cap + degrade ladder + spill page, Q14) specced, not started.
+- **bug-212:** r1 GREEN `faabdfe`; r2 RED done; r2 GREEN in flight.
+- **Exploration** `handhold-outcome-experiment` (does refmatrix cut the re-derivation tax): arms,
+  outcomes, bands; queued after 21.5's decision and bug-216.
+- **Question ledger** `workflow/open-questions.md`: Q1-Q14 this session, all answered.
+
+## Open {#open}
+
+- **Questions:** none open (next id Q15).
+- **PAUSED by the user (2026-11-13: update the handoff then pause).** No new agents. The three running implementers may finish; collect their reports, then stop.
+- **Next, in order, when resumed:** merge master (`0c74872`, 26.4) into the 25.1 branch so AC-5 can go green → collect `green-216`, `green-251c`, `green-212r2` → ch-bsd each (bug-216, 25.1 rev 7, bug-212 r2) → merge 25.1 → bug-212 → bug-216 → release 0.83.0 → fleet `install-hooks --apply --force` (find repos by hook marker; bug-209) → bug-216 live steps (`denotes_link` derive, recount AC-6, fleet CLAUDE.md un-ignore per Q2) → 25.1 rev 8 RED/GREEN (Q14 ladder + spill) → plan-10 rev 5 (`c04c9b9`) to ch-bsd (spec review) → 10.5 read-back probe → 26.5 (now carries bug-213, `#inherit-264-r1`) → 21.5 approval decision → handhold outcome experiment.
+- **Not pushed:** dev master is ~75 commits ahead of `origin/main`; fleet commits from bug-214 too.
 
 ## Resume {#resume}
 
-1. `/recall-state`; read this file and `workflow/plan-of-plans.md`.
-2. Confirm the user ran the fleet command cleanup; re-scan with the inventory in
-   [[impl-task-user-level-state-commands#deploy-cleanup]] step 1.
-3. Next work: bug-210 m3-1 (bound the whole-batch re-queue), then the plan-26 order above.
+1. `/recall-state`; read this file and `workflow/open-questions.md`.
+2. `ListAgents` — any agent above still addressable is live; otherwise inspect its clone
+   (`git -C <clone> log --oneline -3`, `git status`) and re-dispatch from its brief.

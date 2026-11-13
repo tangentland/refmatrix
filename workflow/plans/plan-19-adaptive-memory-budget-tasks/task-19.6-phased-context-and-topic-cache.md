@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-14
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Task 19.6: phased context, topic cache and versioned injection {#root}
@@ -366,9 +366,12 @@ session sets (d4d's quiet/loaded rule applied to session sets).
 item is READ BACK when, later in the same session, any of these points at it by `name` (or, for a
 file, its path or `doc-id#anchor`): a 21.1 R12 `used` event (`memory_get_by_name`,
 `context_by_name`, `focus_note`) whose `ref_query_id` is the delivering call; a later tool call
-whose input names it (`file_read`); or a later assistant message that contains it as a whole token
-(`cited_in_answer`). The last two come from the transcript scorer, which is this task's
-`eval/production/phased_context/score_readback.py`: it reads local transcripts (d8f), writes only
+whose input names it (`tool`; renamed from `file_read` by d21-5a, user 2026-11-13, [[plan-19-adaptive-memory-budget#decisions]]); or a later assistant message that contains it as a whole
+token (`cited_in_answer`). The last two come from the transcript scorer, which is this task's
+`eval/production/phased_context/score_readback.py`. For `tool` it calls 21.5's ONE matcher,
+`telemetry.tool_touches(tool_name, tool_input, cwd)`, on each transcript tool call, so the clause
+has one implementation; a memory's path is its `memory_content.metadata.source_path`
+([[task-21.5-tool-used-signal#od-4]]). The scorer reads local transcripts (d8f), writes only
 its report (hashes and counts committed), and NEVER appends to `recall-events.jsonl`, so no live
 counter depends on it. Metric: `readback_per_1k = read-back items / (delivered payload bytes /
 1000)`, per arm.

@@ -50,6 +50,10 @@ LAYOUT_VERSION = 1
 MARKER_NAME = ".memory-layout"
 SAVESTATE_FOLDER = "savestates"
 SAVESTATE_PREFIX = "savestate_"
+# The ONE type a save-state carries (ADR-0005 #authority, task 26.4): the
+# bridge stores it whatever the frontmatter says, and
+# `normalise_savestate_types` writes it into a file that says otherwise.
+SAVESTATE_MTYPE = FOLDERS[SAVESTATE_FOLDER]
 
 # Files inside a memory dir that are never memories, at any depth. `MEMORY.md`
 # is the flat index (not GMD, MEMORY-RULES #index); `README.md` is prose about
@@ -305,6 +309,138 @@ def iter_savestates(memdir) -> list:
     root = Path(memdir)
     return sort_savestates(p for p in iter_memory_files(root)
                            if is_savestate_path(root, p))
+
+
+# ---- save-state type correction (task 26.4 AC-3, ADR-0005 #authority) -----
+
+def _type_line(lines: list) -> "tuple[int | None, int | None, str | None, str | None]":
+    """`(type_idx, meta_idx, value, error)` of a memory file's `metadata.type`.
+
+    Read by the bridge's own rule (`ingest_gmd.ingest_gmd_paths`, as-memory
+    pass 1), so this function and the bridge cannot disagree on what a file's
+    type is: a `metadata:` line opens the block, an indented `key: value` line
+    inside it is a field (the LAST `type` wins), and a non-blank unindented line
+    closes it. `lines` keep their line endings. `error` names a file that has
+    no frontmatter or no `metadata:` block -- there is no line to correct."""
+    if not lines or lines[0].rstrip("\r\n") != "---":
+        return None, None, None, "no frontmatter (the file does not open with ---)"
+    end = next((i for i in range(1, len(lines)) if lines[i].rstrip("\r\n") == "---"), None)
+    if end is None:
+        return None, None, None, "unterminated frontmatter (no closing ---)"
+    type_idx = meta_idx = None
+    value = None
+    in_meta = False
+    for i in range(1, end):
+        line = lines[i].rstrip("\r\n")
+        if line.strip() == "metadata:":
+            in_meta = True
+            if meta_idx is None:
+                meta_idx = i
+            continue
+        if in_meta:
+            if line.startswith("  ") and ":" in line:
+                k, _, v = line.strip().partition(":")
+                if k.strip() == "type":
+                    type_idx, value = i, v.strip().strip("\"'")
+            elif line.strip() and not line.startswith("  "):
+                in_meta = False
+    if meta_idx is None:
+        return None, None, None, "no metadata: block to carry the type"
+    return type_idx, meta_idx, value, None
+
+
+def normalise_savestate_types(memdir, *, apply: bool) -> list:
+    """Correct every save-state FILE whose `metadata.type` is not
+    `session/recall-state` (task 26.4 AC-3, ADR-0005 #authority). Returns one
+    entry per mis-typed save-state, in walk order:
+    `{"id", "path", "from", "to", "error"}` -- `from` is the file's type (None
+    when it has none), `error` is None, or names why THAT file was not (or,
+    with `apply=False`, could not be) corrected. `apply=False` is the preview
+    list 26.5's `organise` prints and writes nothing.
+
+    WHY it is a metadata correction, not a content update (ch-bsd r1 #s2,
+    2026-11-09): ADR-0005 #newest orders save-states by `(updated date, mtime,
+    name)`. A rewrite that moved the mtime or stamped `updated:` would make a
+    June/July hand-typed save-state newer than the August one, and
+    `rmx recall-state` would resume from the wrong session. So only the `type:`
+    line changes (or, when the metadata block has none, one `type:` line is
+    added at the top of it); `updated`, `created`, `originSessionId` and the
+    body are byte-identical, and the prior atime/mtime are restored.
+
+    WHICH files: the save-states the one walk yields and the one predicate
+    accepts (`iter_memory_files` + `is_savestate_path`): `savestates/*.md` and
+    a legacy top-level `savestate_*.md`. A `savestate_*` stem in another folder
+    is misfiled, not re-typed (team-lead decision 2026-11-11); 26.5's
+    `organise --check` reports it. The losing copy of a top-level/`savestates/`
+    pair is not walked, so it is not corrected here either.
+
+    No silent failure on this memory path: an unreadable file, one with no
+    frontmatter or metadata block, a symlink (replacing it would turn the link
+    into a regular file), and a failed write each come back as an entry with
+    `error` set, and the caller (26.5's `organise --apply`) prints them. The
+    write is replace-first (`.<name>.normalise-tmp`, a dotfile the walk skips
+    and counts), so a crash leaves the old file whole, never half a file."""
+    import shutil
+
+    root = Path(memdir)
+    out: list = []
+    for p in iter_memory_files(root):
+        if not is_savestate_path(root, p):
+            continue
+        entry = {"id": p.stem, "path": str(p), "from": None, "to": SAVESTATE_MTYPE,
+                 "error": None}
+        try:
+            text = p.read_bytes().decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            entry["error"] = f"unreadable: {type(exc).__name__}: {exc}"
+            out.append(entry)
+            continue
+        from refmatrix.memory_index import _frontmatter
+        entry["id"] = _frontmatter(text).get("id") or p.stem
+        lines = text.splitlines(keepends=True)
+        type_idx, meta_idx, value, err = _type_line(lines)
+        if err is None and value == SAVESTATE_MTYPE:
+            continue                                   # already right: not listed
+        entry["from"] = value or None
+        if err is None and p.is_symlink():
+            err = "a symlink; correct the file it points to by hand"
+        if err is not None:
+            entry["error"] = err
+            out.append(entry)
+            continue
+        if apply:
+            if type_idx is not None:
+                old = lines[type_idx]
+                body = old.rstrip("\r\n")
+                indent = body[:len(body) - len(body.lstrip())]
+                lines[type_idx] = f"{indent}type: {SAVESTATE_MTYPE}{old[len(body):]}"
+            else:
+                meta = lines[meta_idx]
+                eol = meta[len(meta.rstrip("\r\n")):] or "\n"
+                lines.insert(meta_idx + 1, f"  type: {SAVESTATE_MTYPE}{eol}")
+            tmp = p.with_name(f".{p.name}.normalise-tmp")
+            try:
+                st = p.stat()
+                tmp.write_bytes("".join(lines).encode("utf-8"))
+                shutil.copymode(p, tmp)
+                os.replace(tmp, p)
+            except OSError as exc:
+                entry["error"] = f"not written: {type(exc).__name__}: {exc}"
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError as exc2:
+                    entry["error"] += f"; and {tmp} was left behind ({exc2})"
+                out.append(entry)
+                continue
+            try:
+                os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns))
+            except OSError as exc:
+                # The type IS corrected, but the mtime moved: named, because
+                # it can move "newest" (ADR-0005 #newest) -- never swallowed.
+                entry["error"] = (f"type corrected but mtime NOT restored "
+                                  f"({type(exc).__name__}: {exc}); it may now sort newest")
+        out.append(entry)
+    return out
 
 
 # ---- the marker (ADR-0005 #marker-encoding) -------------------------------

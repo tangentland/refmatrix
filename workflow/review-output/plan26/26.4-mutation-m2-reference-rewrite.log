@@ -1,0 +1,15 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-4/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /Volumes/littlebig/refmatrix-plan26-4
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collecting ... collected 18 items / 13 deselected / 5 selected
+
+tests/test_savestate_mtype.py::test_ac3_apply_rewrites_only_the_type_line_and_restores_mtime PASSED [ 20%]
+tests/test_savestate_mtype.py::test_ac3_preview_lists_the_corrections_and_writes_nothing PASSED [ 40%]
+tests/test_savestate_mtype.py::test_ac3_fixture_discriminates_both_mutations PASSED [ 60%]
+tests/test_savestate_mtype.py::test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[False] PASSED [ 80%]
+tests/test_savestate_mtype.py::test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[True] PASSED [100%]
+
+======================= 5 passed, 13 deselected in 0.81s =======================

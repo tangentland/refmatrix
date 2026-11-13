@@ -314,3 +314,35 @@ copy (26.3's walk rule), so `recall-state` would resume from the older copy. **A
 `memory organise --rollback`, no `savestates/` folder remains (its files are back at the top
 level, byte-identical), and a following save + `recall-state` reads the new save. Mutation:
 rollback leaves `savestates/` in place — killed. {#inherit-rollback-savestates}
+
+## Inherited from ch-bsd 26.4 r1 (2026-11-13) {#inherit-264-r1}
+
+[[bsd-task-26.4-r1-savestate-mtype-1caf3df#b-1]] found two 26.4 hand-offs to this task with no
+acceptance criterion here; they are anchored now (lead decision, as the user would: anchor the
+deferral rather than widen 26.4).
+
+rel: derives-from -> [[bsd-task-26.4-r1-savestate-mtype-1caf3df]]
+
+- **R-264a (bug-213, file/subdir targets).** `rmx ingest-gmd --as-memory <target>` where the target is
+  a FILE or a SUBDIR inside a memory dir resolves the memory dir first — the nearest ancestor with a
+  `.memory-layout` marker, else the `~/.claude/projects/<slug>/memory` shape, else ONE loud refusal
+  naming the target — and applies the save-state predicate relative to that memory dir, exactly as a
+  memdir bridge would. {#r-264a}
+- **R-264b (sticky rows).** Rows already mis-typed by a pre-fix file/subdir ingest are repaired:
+  `organise --apply` (and the forced re-bridge) re-evaluate the stored mtype of every memory row
+  whose file is a `savestate_*` stem OUTSIDE the top level and `savestates/`, bypassing the
+  content-hash gate for those rows only; repairs are counted and printed. {#r-264b}
+- **R-264c (misfiled stems).** `organise --check` names every `savestate_*` stem outside the top level
+  and `savestates/` as misfiled, whatever its type (`project/savestate_x.md` typed project included).
+  {#r-264c}
+- **R-264d (sequence).** In AC-4's apply sequence, 26.4's `normalise_savestate_types(apply=True)`
+  runs after the backup and before the forced re-bridge, and the backup covers the files it rewrites.
+  {#r-264d}
+- **AC-264.** (a) RED both directions: a file target and a subdir target holding a misfiled
+  `feedback/savestate_x.md` (typed project) store `project`; a real `savestates/` file via a subdir
+  target stores `session/recall-state`; an unresolvable target refuses in one `Error:` line. (b) A
+  store holding the sticky wrong row (built at 26.4's head) is repaired by `organise --apply`; a
+  second run repairs nothing. (c) `--check` lists `project/savestate_x.md`. (d) The apply log shows
+  the rewrite between backup and bridge. (e) 26.4's s-1 pins ride here: symlink refusal, a bare file
+  with no frontmatter (error entry, never a silent skip), a file with no type line (insert happens,
+  `error` stays None only when it did). {#ac-264}

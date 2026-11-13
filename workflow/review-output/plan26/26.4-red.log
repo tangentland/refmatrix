@@ -1,0 +1,495 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /Volumes/littlebig/refmatrix-plan26-4
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collecting ... collected 18 items
+
+tests/test_savestate_mtype.py::test_ac1_top_level_hand_typed_savestate_is_stored_as_recall_state FAILED [  5%]
+tests/test_savestate_mtype.py::test_ac1_savestates_folder_file_ignores_its_frontmatter_type[project] FAILED [ 11%]
+tests/test_savestate_mtype.py::test_ac1_savestates_folder_file_ignores_its_frontmatter_type[feedback] FAILED [ 16%]
+tests/test_savestate_mtype.py::test_ac1_savestates_folder_file_ignores_its_frontmatter_type[None] FAILED [ 22%]
+tests/test_savestate_mtype.py::test_ac1_ingest_stats_count_every_override_and_only_overrides FAILED [ 27%]
+tests/test_savestate_mtype.py::test_ac1_bridge_report_prints_the_count_and_names_each_id FAILED [ 33%]
+tests/test_savestate_mtype.py::test_ac1_in_process_bridge_result_carries_mtype_normalised FAILED [ 38%]
+tests/test_savestate_mtype.py::test_ac1_daemon_bridge_result_carries_mtype_normalised FAILED [ 44%]
+tests/test_savestate_mtype.py::test_ac1_waited_job_result_carries_mtype_normalised FAILED [ 50%]
+tests/test_savestate_mtype.py::test_ac2_hook_mode_recall_hides_the_hand_typed_savestate_and_include_session_keeps_it FAILED [ 55%]
+tests/test_savestate_mtype.py::test_ac3_apply_rewrites_only_the_type_line_and_restores_mtime FAILED [ 61%]
+tests/test_savestate_mtype.py::test_ac3_preview_lists_the_corrections_and_writes_nothing FAILED [ 66%]
+tests/test_savestate_mtype.py::test_ac3_fixture_discriminates_both_mutations PASSED [ 72%]
+tests/test_savestate_mtype.py::test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[False] FAILED [ 77%]
+tests/test_savestate_mtype.py::test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[True] FAILED [ 83%]
+tests/test_savestate_mtype.py::test_ac3_after_the_rewrite_disk_and_store_agree_and_the_next_bridge_counts_zero FAILED [ 88%]
+tests/test_savestate_mtype.py::test_ac3b_unorganised_unchanged_file_keeps_its_row_until_its_next_touch FAILED [ 94%]
+tests/test_savestate_mtype.py::test_ac4_a_project_file_in_feedback_is_not_retyped_by_bridge_or_correction FAILED [100%]
+
+=================================== FAILURES ===================================
+______ test_ac1_top_level_hand_typed_savestate_is_stored_as_recall_state _______
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-3876__iz'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-3876__iz/proj/.refmatrix'))
+
+    def test_ac1_top_level_hand_typed_savestate_is_stored_as_recall_state(inproc):
+        """Un-organised (flat) dir, cliquedb's shape: legacy top-level `savestate_*` typed `project`.
+        RED: `memory_content.mtype` reads `project` (the frontmatter copied verbatim)."""
+        base, root = inproc
+        memdir = base / "memory"
+        memdir.mkdir()
+        savestate(memdir, "savestate_cq_0603.md", mtype="project", created="2026-06-03",
+                  updated="2026-06-03", mtime=at(2026, 6, 3))
+        note(memdir, "project_plain.md", mtype="project")
+        _bridge_cli(memdir)
+        got = _mtypes(root)
+>       assert got.get("savestate_cq_0603") == RS, \
+            f"hand-typed top-level save-state stored as {got.get('savestate_cq_0603')!r}, not {RS!r}"
+E       AssertionError: hand-typed top-level save-state stored as 'project', not 'session/recall-state'
+E       assert 'project' == 'session/recall-state'
+E         
+E         - session/recall-state
+E         + project
+
+tests/test_savestate_mtype.py:236: AssertionError
+____ test_ac1_savestates_folder_file_ignores_its_frontmatter_type[project] _____
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-8ipl9bp3'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-8ipl9bp3/proj/.refmatrix'))
+ftype = 'project'
+
+    @pytest.mark.parametrize("ftype", ["project", "feedback", None])
+    def test_ac1_savestates_folder_file_ignores_its_frontmatter_type(inproc, ftype):
+        """Organised dir: ANY file under `savestates/` is a recall-state whatever its frontmatter
+        says, including no `type` at all (the bridge's `memory_mtype_default`, `curated`, is not a
+        save-state's type either). RED: the row reads `project` / `feedback` / `curated`."""
+        base, root = inproc
+        memdir = base / "memory"
+        memdir.mkdir()
+        organise(memdir)
+        savestate(memdir, "savestates/savestate_cq_0707.md", mtype=ftype, created="2026-07-07",
+                  updated="2026-07-08", mtime=at(2026, 7, 8))
+        _bridge_cli(memdir)
+        got = _mtypes(root).get("savestate_cq_0707")
+>       assert got == RS, f"savestates/ file typed {ftype!r} stored as {got!r}, not {RS!r}"
+E       AssertionError: savestates/ file typed 'project' stored as 'project', not 'session/recall-state'
+E       assert 'project' == 'session/recall-state'
+E         
+E         - session/recall-state
+E         + project
+
+tests/test_savestate_mtype.py:254: AssertionError
+____ test_ac1_savestates_folder_file_ignores_its_frontmatter_type[feedback] ____
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-b4ha8dzq'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-b4ha8dzq/proj/.refmatrix'))
+ftype = 'feedback'
+
+    @pytest.mark.parametrize("ftype", ["project", "feedback", None])
+    def test_ac1_savestates_folder_file_ignores_its_frontmatter_type(inproc, ftype):
+        """Organised dir: ANY file under `savestates/` is a recall-state whatever its frontmatter
+        says, including no `type` at all (the bridge's `memory_mtype_default`, `curated`, is not a
+        save-state's type either). RED: the row reads `project` / `feedback` / `curated`."""
+        base, root = inproc
+        memdir = base / "memory"
+        memdir.mkdir()
+        organise(memdir)
+        savestate(memdir, "savestates/savestate_cq_0707.md", mtype=ftype, created="2026-07-07",
+                  updated="2026-07-08", mtime=at(2026, 7, 8))
+        _bridge_cli(memdir)
+        got = _mtypes(root).get("savestate_cq_0707")
+>       assert got == RS, f"savestates/ file typed {ftype!r} stored as {got!r}, not {RS!r}"
+E       AssertionError: savestates/ file typed 'feedback' stored as 'feedback', not 'session/recall-state'
+E       assert 'feedback' == 'session/recall-state'
+E         
+E         - session/recall-state
+E         + feedback
+
+tests/test_savestate_mtype.py:254: AssertionError
+______ test_ac1_savestates_folder_file_ignores_its_frontmatter_type[None] ______
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-7a7cbzug'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-7a7cbzug/proj/.refmatrix'))
+ftype = None
+
+    @pytest.mark.parametrize("ftype", ["project", "feedback", None])
+    def test_ac1_savestates_folder_file_ignores_its_frontmatter_type(inproc, ftype):
+        """Organised dir: ANY file under `savestates/` is a recall-state whatever its frontmatter
+        says, including no `type` at all (the bridge's `memory_mtype_default`, `curated`, is not a
+        save-state's type either). RED: the row reads `project` / `feedback` / `curated`."""
+        base, root = inproc
+        memdir = base / "memory"
+        memdir.mkdir()
+        organise(memdir)
+        savestate(memdir, "savestates/savestate_cq_0707.md", mtype=ftype, created="2026-07-07",
+                  updated="2026-07-08", mtime=at(2026, 7, 8))
+        _bridge_cli(memdir)
+        got = _mtypes(root).get("savestate_cq_0707")
+>       assert got == RS, f"savestates/ file typed {ftype!r} stored as {got!r}, not {RS!r}"
+E       AssertionError: savestates/ file typed None stored as 'curated', not 'session/recall-state'
+E       assert 'curated' == 'session/recall-state'
+E         
+E         - session/recall-state
+E         + curated
+
+tests/test_savestate_mtype.py:254: AssertionError
+________ test_ac1_ingest_stats_count_every_override_and_only_overrides _________
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-_lb_etzl'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-_lb_etzl/proj/.refmatrix'))
+
+    def test_ac1_ingest_stats_count_every_override_and_only_overrides(inproc):
+        """`stats.mtype_normalised: [(id, from, to)]` names each override; a correctly typed
+        save-state and a `project` note outside the save-state shapes are not in it.
+        RED: `IngestStats` has no `mtype_normalised` (AttributeError)."""
+        from refmatrix.ingest_gmd import collect_gmd_files, ingest_gmd_paths
+        base, root = inproc
+        memdir = base / "memory"
+        memdir.mkdir()
+        cliquedb_four(memdir)
+        note(memdir, "project_plain.md", mtype="project")
+        note(memdir, "feedback/feedback_typed_project.md", mtype="project")
+        s = Store(root)
+        try:
+            st = ingest_gmd_paths(s, collect_gmd_files([memdir.resolve()], as_memory=True),
+                                  as_memory=True)
+        finally:
+            s.close()
+        want = sorted((i, "project", RS) for i in MISTYPED)
+>       assert _norm(st.mtype_normalised) == want, st.mtype_normalised
+                     ^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'IngestStats' object has no attribute 'mtype_normalised'
+
+tests/test_savestate_mtype.py:275: AttributeError
+__________ test_ac1_bridge_report_prints_the_count_and_names_each_id ___________
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-yvgelmk2'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-yvgelmk2/proj/.refmatrix'))
+
+    def test_ac1_bridge_report_prints_the_count_and_names_each_id(inproc):
+        """RED: the report has no `mtype_normalised:` line."""
+        base, root = inproc
+        memdir = base / "memory"
+        memdir.mkdir()
+        cliquedb_four(memdir)
+        out = _bridge_cli(memdir)
+        m = re.search(r"^\s*mtype_normalised: (\d+)\b", out, re.M)
+>       assert m and int(m.group(1)) == 4, f"no `mtype_normalised: 4` line in the report:\n{out}"
+E       AssertionError: no `mtype_normalised: 4` line in the report:
+E         ingested 5 doc(s), 5 node(s), 0 rel: edge(s), 55 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         new linkage types: lead, part-of
+E         memory embed: 5 row(s) now reachable by recall in proj
+E         
+E       assert (None)
+
+tests/test_savestate_mtype.py:290: AssertionError
+__________ test_ac1_in_process_bridge_result_carries_mtype_normalised __________
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-4k5ni4_4'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-4k5ni4_4/proj/.refmatrix'))
+
+    def test_ac1_in_process_bridge_result_carries_mtype_normalised(inproc):
+        """`cli._sync_memory_dir` (save-state's and SessionStart's bridge), daemon down: the result
+        carries the overrides through `_bridge_stats`. RED: KeyError `mtype_normalised`."""
+        base, root = inproc
+        memdir = base / "memory"
+        memdir.mkdir()
+        cliquedb_four(memdir)
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["error"] is None, out
+>       assert _norm(out["mtype_normalised"]) == sorted((i, "project", RS) for i in MISTYPED), out
+                     ^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'mtype_normalised'
+
+tests/test_savestate_mtype.py:304: KeyError
+____________ test_ac1_daemon_bridge_result_carries_mtype_normalised ____________
+
+daemon = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-5386ofkw'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-5386ofkw/proj/.refmatrix'))
+
+    def test_ac1_daemon_bridge_result_carries_mtype_normalised(daemon):
+        """The daemon leg: the count crosses the daemon result (`stats` = `as_dict()`) into
+        `_bridge_stats`, and the row the DAEMON wrote reads recall-state. RED: the result has no
+        `mtype_normalised` (None)."""
+        base, root = daemon
+        memdir = base / "memory"
+        memdir.mkdir()
+        cliquedb_four(memdir)
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["error"] is None and out["waited"] is False, out
+>       assert _norm(out.get("mtype_normalised")) == sorted((i, "project", RS) for i in MISTYPED), \
+            f"daemon-leg bridge result: mtype_normalised={out.get('mtype_normalised')!r}"
+E       AssertionError: daemon-leg bridge result: mtype_normalised=None
+E       assert [] == [('savestate_...ecall-state')]
+E         
+E         Right contains 4 more items, first extra item: ('savestate_cq_0603', 'project', 'session/recall-state')
+E         
+E         Full diff:
+E         + []
+E         - [
+E         -     (...
+E         
+E         ...Full output truncated (20 lines hidden), use '-vv' to show
+
+tests/test_savestate_mtype.py:317: AssertionError
+_____________ test_ac1_waited_job_result_carries_mtype_normalised ______________
+
+daemon = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-qqjk5rt5'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-qqjk5rt5/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10aa34c80>
+
+    @pytest.mark.timeout(900)
+    def test_ac1_waited_job_result_carries_mtype_normalised(daemon, monkeypatch):
+        """ch-bsd r1 #m5: the overlap path (`_bridge_wait_for_active_job`) takes the covering job's
+        result; it must carry the field too. RED: the result has no `mtype_normalised` (None)."""
+        base, root = daemon
+        memdir = base / "memory"
+        memdir.mkdir()
+        cliquedb_four(memdir)
+        for i in range(350):                      # long enough that the bridge meets it running
+            (memdir / f"doc{i:04d}.md").write_text(
+                PLAIN.format(id=f"w_doc{i:04d}", body="x " * 400), encoding="utf-8")
+        part = verbs.memory_partition(root)
+        resp = dm.call(root, "ingest_gmd_start", {"targets": [str(memdir.resolve())],
+                                                  "as_memory": True, "memory_mtype": "curated",
+                                                  "partition": part}, timeout=30)
+        assert resp.get("ok"), resp
+        monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "600")
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["waited"] is True and out["waited_job"] == resp["result"]["job_id"], out
+        assert out["error"] is None, out
+>       assert _norm(out.get("mtype_normalised")) == sorted((i, "project", RS) for i in MISTYPED), \
+            f"waited-job bridge result: mtype_normalised={out.get('mtype_normalised')!r}"
+E       AssertionError: waited-job bridge result: mtype_normalised=None
+E       assert [] == [('savestate_...ecall-state')]
+E         
+E         Right contains 4 more items, first extra item: ('savestate_cq_0603', 'project', 'session/recall-state')
+E         
+E         Full diff:
+E         + []
+E         - [
+E         -     (...
+E         
+E         ...Full output truncated (20 lines hidden), use '-vv' to show
+
+tests/test_savestate_mtype.py:348: AssertionError
+_ test_ac2_hook_mode_recall_hides_the_hand_typed_savestate_and_include_session_keeps_it _
+
+daemon = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-cxxsxz_w'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-cxxsxz_w/proj/.refmatrix'))
+
+    @pytest.mark.timeout(900)
+    def test_ac2_hook_mode_recall_hides_the_hand_typed_savestate_and_include_session_keeps_it(
+            daemon):
+        """After AC-1 the per-prompt hook's recall (`--stdin-json`, `RMX_INVOCATION_SOURCE=hook`)
+        no longer returns the hand-typed save-state; `--include-session` still does. A curated
+        note answering the same prompt is the control: the recall worked and was not a degraded
+        `[]`. RED: the save-state is in the hook-mode answer (its row reads `project`)."""
+        base, root = daemon
+        memdir = base / "memory"
+        memdir.mkdir()
+        phrase = "quillwort barometer tessellation"
+        savestate(memdir, "savestate_cq_0707.md", mtype="project", created="2026-07-07",
+                  updated="2026-07-08", mtime=at(2026, 7, 8),
+                  body=f"resume the {phrase} handoff")
+        note(memdir, "feedback_control.md", mtype="feedback", body=f"the {phrase} control note")
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["error"] is None, out
+        assert out["embed"] and out["embed"].get("error") is None, out["embed"]
+        # warm the models through the daemon's own recall op (the same one the CLI dials)
+        warm = dm.call(root, "memory_recall", {"query": phrase, "k": 5,
+                                               "partition": verbs.memory_partition(root)},
+                       timeout=300)
+        assert warm.get("ok"), warm
+        argv = _hook_recall_argv(root, "120")
+        env = {"RMX_INVOCATION_SOURCE": "hook"}
+        envelope = json.dumps({"prompt": f"where were we on the {phrase}?",
+                               "session_id": "sess-264", "hook_event_name": "UserPromptSubmit"})
+    
+        def names(extra):
+            r = _invoke(argv + extra, input=envelope, env=env)
+            assert "recall skipped" not in (r.stderr or ""), r.stderr
+            return [row.get("name") for row in json.loads(r.stdout)]
+    
+        hooked = names([])
+        assert "feedback_control" in hooked, f"control note missing: the recall did not run {hooked}"
+>       assert "savestate_cq_0707" not in hooked, \
+            f"hook-mode recall returned the hand-typed save-state: {hooked}"
+E       AssertionError: hook-mode recall returned the hand-typed save-state: ['savestate_cq_0707', 'feedback_control']
+E       assert 'savestate_cq_0707' not in ['savestate_cq_0707', 'feedback_control']
+
+tests/test_savestate_mtype.py:410: AssertionError
+________ test_ac3_apply_rewrites_only_the_type_line_and_restores_mtime _________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-823/test_ac3_apply_rewrites_only_t0')
+
+    def test_ac3_apply_rewrites_only_the_type_line_and_restores_mtime(tmp_path):
+        """The rewrite is a metadata correction, not a content update: exactly one line changes
+        (`type: project` -> `type: session/recall-state`); `updated`, `created`, `originSessionId`
+        and the body are byte-identical; mtime is its prior value. The correctly typed August file
+        is untouched. RED: `memory_layout.normalise_savestate_types` does not exist."""
+        memdir = tmp_path / "memory"
+        memdir.mkdir()
+        fx = cliquedb_four(memdir)
+        before = _snapshot(fx.values())
+>       res = memory_layout.normalise_savestate_types(memdir, apply=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'refmatrix.memory_layout' has no attribute 'normalise_savestate_types'
+
+tests/test_savestate_mtype.py:433: AttributeError
+__________ test_ac3_preview_lists_the_corrections_and_writes_nothing ___________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-823/test_ac3_preview_lists_the_cor0')
+
+    def test_ac3_preview_lists_the_corrections_and_writes_nothing(tmp_path):
+        """apply=False is the list 26.5's preview prints (spec: "the correction is listed in the
+        organise report"), and touches no byte and no mtime. RED: no such function."""
+        memdir = tmp_path / "memory"
+        memdir.mkdir()
+        fx = cliquedb_four(memdir)
+        before = _snapshot(fx.values())
+>       res = memory_layout.normalise_savestate_types(memdir, apply=False)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'refmatrix.memory_layout' has no attribute 'normalise_savestate_types'
+
+tests/test_savestate_mtype.py:458: AttributeError
+___ test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[False] ___
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-823/test_ac3_recall_state_still_re0')
+organised = False
+
+    @pytest.mark.parametrize("organised", [False, True])
+    def test_ac3_recall_state_still_resumes_from_august_after_the_rewrite(tmp_path, organised):
+        """`rmx recall-state` resumes from the August save-state before AND after the correction.
+        If the rewrite bumped mtime or `updated:` it would resume from July (the fixture-proof test
+        shows both). RED: no `normalise_savestate_types`."""
+        memdir = tmp_path / "memory"
+        memdir.mkdir()
+        if organised:
+            organise(memdir)
+        cliquedb_four(memdir, prefix="savestates/" if organised else "")
+    
+        def resumes() -> str:
+            r = _invoke(["recall-state", "--json", "-s", "sess-264", "--memory-dir", str(memdir)])
+            rep = json.loads(r.stdout)
+            return (rep.get("savestate") or {}).get("id")
+    
+        assert resumes() == "savestate_cq_0814", "fixture: recall-state did not resume from August"
+>       res = memory_layout.normalise_savestate_types(memdir, apply=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'refmatrix.memory_layout' has no attribute 'normalise_savestate_types'
+
+tests/test_savestate_mtype.py:503: AttributeError
+___ test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[True] ____
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-823/test_ac3_recall_state_still_re1')
+organised = True
+
+    @pytest.mark.parametrize("organised", [False, True])
+    def test_ac3_recall_state_still_resumes_from_august_after_the_rewrite(tmp_path, organised):
+        """`rmx recall-state` resumes from the August save-state before AND after the correction.
+        If the rewrite bumped mtime or `updated:` it would resume from July (the fixture-proof test
+        shows both). RED: no `normalise_savestate_types`."""
+        memdir = tmp_path / "memory"
+        memdir.mkdir()
+        if organised:
+            organise(memdir)
+        cliquedb_four(memdir, prefix="savestates/" if organised else "")
+    
+        def resumes() -> str:
+            r = _invoke(["recall-state", "--json", "-s", "sess-264", "--memory-dir", str(memdir)])
+            rep = json.loads(r.stdout)
+            return (rep.get("savestate") or {}).get("id")
+    
+        assert resumes() == "savestate_cq_0814", "fixture: recall-state did not resume from August"
+>       res = memory_layout.normalise_savestate_types(memdir, apply=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'refmatrix.memory_layout' has no attribute 'normalise_savestate_types'
+
+tests/test_savestate_mtype.py:503: AttributeError
+_ test_ac3_after_the_rewrite_disk_and_store_agree_and_the_next_bridge_counts_zero _
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-wr2kv9ex'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-wr2kv9ex/proj/.refmatrix'))
+
+    def test_ac3_after_the_rewrite_disk_and_store_agree_and_the_next_bridge_counts_zero(inproc):
+        """Bridge (four overrides) -> correct the files -> bridge again: the rewritten files are
+        re-ingested (their hash changed), every row reads recall-state, and nothing is overridden
+        because disk already says so. RED: no `mtype_normalised` in the bridge result."""
+        base, root = inproc
+        memdir = base / "memory"
+        memdir.mkdir()
+        cliquedb_four(memdir)
+        first = cli_mod._sync_memory_dir(memdir)
+        assert first["error"] is None, first
+>       assert len(first["mtype_normalised"]) == 4, first["mtype_normalised"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'mtype_normalised'
+
+tests/test_savestate_mtype.py:518: KeyError
+___ test_ac3b_unorganised_unchanged_file_keeps_its_row_until_its_next_touch ____
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-fkx8ill0'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-fkx8ill0/proj/.refmatrix'))
+
+    def test_ac3b_unorganised_unchanged_file_keeps_its_row_until_its_next_touch(inproc):
+        """Un-organised dir, a store already holding the pre-26.4 row (`project`): an UNCHANGED file
+        is skipped by the hash gate and keeps `project` (accepted and stated: cliquedb's four keep it
+        until 27.5); the file's next touch re-ingests it and the rule lands, counted. No file is
+        written by the bridge. RED: after the touch the row still reads `project`."""
+        base, root = inproc
+        memdir = base / "memory"
+        memdir.mkdir()
+        p = savestate(memdir, "savestate_cq_0707.md", mtype="project", created="2026-07-07",
+                      updated="2026-07-08", mtime=at(2026, 7, 8))
+        cli_mod._sync_memory_dir(memdir)
+        _set_mtype(root, "savestate_cq_0707", "project")         # the deployed stores' row today
+        text0 = p.read_text(encoding="utf-8")
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["error"] is None and out["skipped_unchanged"] == 1, out
+        assert _mtypes(root)["savestate_cq_0707"] == "project", \
+            "an unchanged file was re-typed: the gate did not skip it"
+        assert p.read_text(encoding="utf-8") == text0, "the bridge wrote the file"
+        p.write_text(text0.replace("made-up handoff", "made-up handoff, edited"), encoding="utf-8")
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["error"] is None, out
+>       assert _mtypes(root)["savestate_cq_0707"] == RS, \
+            "the next touch re-ingested the save-state and still stored the frontmatter type"
+E       AssertionError: the next touch re-ingested the save-state and still stored the frontmatter type
+E       assert 'project' == 'session/recall-state'
+E         
+E         - session/recall-state
+E         + project
+
+tests/test_savestate_mtype.py:554: AssertionError
+__ test_ac4_a_project_file_in_feedback_is_not_retyped_by_bridge_or_correction __
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-3ht786z2'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-3ht786z2/proj/.refmatrix'))
+
+    def test_ac4_a_project_file_in_feedback_is_not_retyped_by_bridge_or_correction(inproc):
+        """A `project`-typed file in `feedback/` keeps `project` in the store, is not counted, and
+        `normalise_savestate_types` neither lists nor rewrites it (its `folder/type mismatch` line is
+        26.5's `organise --check`). RED: no `mtype_normalised` / no `normalise_savestate_types`."""
+        base, root = inproc
+        memdir = base / "memory"
+        memdir.mkdir()
+        organise(memdir)
+        fb = note(memdir, "feedback/feedback_typed_project.md", mtype="project")
+        savestate(memdir, "savestates/savestate_cq_0707.md", mtype="project", created="2026-07-07",
+                  updated="2026-07-08", mtime=at(2026, 7, 8))
+        os.utime(fb, (at(2026, 9, 1), at(2026, 9, 1)))
+        fb0 = (fb.read_text(encoding="utf-8"), fb.stat().st_mtime_ns)
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["error"] is None, out
+>       assert _norm(out["mtype_normalised"]) == [("savestate_cq_0707", "project", RS)], out
+                     ^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'mtype_normalised'
+
+tests/test_savestate_mtype.py:579: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_savestate_mtype.py::test_ac1_top_level_hand_typed_savestate_is_stored_as_recall_state
+FAILED tests/test_savestate_mtype.py::test_ac1_savestates_folder_file_ignores_its_frontmatter_type[project]
+FAILED tests/test_savestate_mtype.py::test_ac1_savestates_folder_file_ignores_its_frontmatter_type[feedback]
+FAILED tests/test_savestate_mtype.py::test_ac1_savestates_folder_file_ignores_its_frontmatter_type[None]
+FAILED tests/test_savestate_mtype.py::test_ac1_ingest_stats_count_every_override_and_only_overrides
+FAILED tests/test_savestate_mtype.py::test_ac1_bridge_report_prints_the_count_and_names_each_id
+FAILED tests/test_savestate_mtype.py::test_ac1_in_process_bridge_result_carries_mtype_normalised
+FAILED tests/test_savestate_mtype.py::test_ac1_daemon_bridge_result_carries_mtype_normalised
+FAILED tests/test_savestate_mtype.py::test_ac1_waited_job_result_carries_mtype_normalised
+FAILED tests/test_savestate_mtype.py::test_ac2_hook_mode_recall_hides_the_hand_typed_savestate_and_include_session_keeps_it
+FAILED tests/test_savestate_mtype.py::test_ac3_apply_rewrites_only_the_type_line_and_restores_mtime
+FAILED tests/test_savestate_mtype.py::test_ac3_preview_lists_the_corrections_and_writes_nothing
+FAILED tests/test_savestate_mtype.py::test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[False]
+FAILED tests/test_savestate_mtype.py::test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[True]
+FAILED tests/test_savestate_mtype.py::test_ac3_after_the_rewrite_disk_and_store_agree_and_the_next_bridge_counts_zero
+FAILED tests/test_savestate_mtype.py::test_ac3b_unorganised_unchanged_file_keeps_its_row_until_its_next_touch
+FAILED tests/test_savestate_mtype.py::test_ac4_a_project_file_in_feedback_is_not_retyped_by_bridge_or_correction
+=================== 17 failed, 1 passed in 71.80s (0:01:11) ====================

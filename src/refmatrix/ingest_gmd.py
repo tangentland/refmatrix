@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
 
+from refmatrix.memory_layout import SAVESTATE_MTYPE
 from refmatrix.store import Store
 
 
@@ -550,6 +551,13 @@ class IngestStats:
     # An unreadable `.memory-layout` met by the gate (the path-aware rule was
     # applied there; `_OrganisedDirs`), named in the report.
     marker_errors: list[str] = field(default_factory=list)
+    # Task 26.4 AC-1 (ADR-0005 #authority, 2026-11-11): a save-state file
+    # (`memory_layout.is_savestate_path`) is stored as `session/recall-state`
+    # whatever its frontmatter says. Each override is `(id, from, to)`, where
+    # `from` is the type the row would have carried (the frontmatter's, or the
+    # bridge default when the file has none). Counted and named, never silent:
+    # the disagreement between disk and store is said until the file is fixed.
+    mtype_normalised: list[tuple[str, str, str]] = field(default_factory=list)
 
     @property
     def refresh_pending(self) -> int:
@@ -571,7 +579,8 @@ class IngestStats:
                 "skipped_unchanged": self.skipped_unchanged,
                 "duplicate_ids": [[i, [str(p) for p in ps]]
                                   for i, ps in self.duplicate_ids],
-                "marker_errors": list(self.marker_errors)}
+                "marker_errors": list(self.marker_errors),
+                "mtype_normalised": [[i, f, t] for i, f, t in self.mtype_normalised]}
 
     def refresh_lines(self, *, always: bool = False) -> list[str]:
         """`<term>: N` for the four refresh terms (AC-3). The bridge report
@@ -595,6 +604,18 @@ class IngestStats:
             lines.append(f"  {i}: " + ", ".join(str(p) for p in ps))
         return lines
 
+    def mtype_normalised_lines(self) -> list[str]:
+        """Task 26.4 AC-1: `mtype_normalised: N` and one line per overridden id
+        (never truncated -- each is a file whose type disagrees with its row
+        until `rmx memory organise --apply` corrects it, 26.5)."""
+        if not self.mtype_normalised:
+            return []
+        lines = [f"mtype_normalised: {len(self.mtype_normalised)} (save-state stored as "
+                 f"session/recall-state; its file says otherwise)"]
+        for i, frm, to in self.mtype_normalised:
+            lines.append(f"  {i}: {frm} -> {to}")
+        return lines
+
     def report(self) -> str:
         lines = [
             f"ingested {self.docs} doc(s), {self.nodes} node(s), "
@@ -606,6 +627,7 @@ class IngestStats:
             lines.append(f"skipped_unchanged: {self.skipped_unchanged}")
         lines.extend(self.refresh_lines())
         lines.extend(self.duplicate_lines())
+        lines.extend(self.mtype_normalised_lines())
         for err in self.marker_errors:
             lines.append(f"marker_error: {err}")
         if self.skipped_index:
@@ -940,6 +962,27 @@ class _OrganisedDirs:
             if rp.is_relative_to(r):
                 return r
         return rp.parent
+
+    def is_savestate(self, path: Path) -> bool:
+        """Task 26.4 AC-1: is this walked file a save-state of the memdir the
+        bridge was pointed at? The memdir is the same bound the marker lookup
+        uses (the deepest target dir holding the file, else the file's own
+        dir), and the answer is `memory_layout.is_savestate_path` -- THE one
+        predicate (ADR-0005 #authority; team-lead decision 2026-11-11: a
+        `savestate_*` file in any other folder is misfiled, 26.5 reports it,
+        and the bridge does not re-type it).
+
+        The walked path is judged first, unresolved, so a `.md` symlink inside
+        the memdir is judged by where it sits, not where it points; a path
+        that only matches a target once resolved (`/var` vs `/private/var`)
+        is judged resolved."""
+        from refmatrix.memory_layout import is_savestate_path
+        p = Path(path).absolute()
+        for cand in (p, p.resolve()):
+            for r in self._roots:
+                if cand.is_relative_to(r):
+                    return is_savestate_path(r, cand)
+        return is_savestate_path(p.parent, p)
 
     def __call__(self, path: Path) -> bool:
         from refmatrix.memory_layout import MARKER_NAME, MemoryLayoutError, is_organised
@@ -1383,6 +1426,18 @@ def ingest_gmd_paths(
                         in_meta_block = False
             if raw_meta.get("type"):
                 mtype = raw_meta["type"]
+            # Task 26.4 AC-1 (ADR-0005 #authority): a save-state's row type is
+            # `session/recall-state` wherever its frontmatter came from.
+            # cliquedb's four hand-written save-states said `project`, so
+            # hook-mode recall's `session/*` exclusion did not hide them and
+            # they rode every prompt's payload (bug-164's symptom). The file is
+            # NOT written here -- `memory_layout.normalise_savestate_types`
+            # corrects it under `organise --apply` (26.5); until then the
+            # override is counted and named. `raw_meta` (the metadata mirror)
+            # keeps the file's own value, so the row records the disagreement.
+            if organised.is_savestate(path) and mtype != SAVESTATE_MTYPE:
+                stats.mtype_normalised.append((doc.doc_id, mtype, SAVESTATE_MTYPE))
+                mtype = SAVESTATE_MTYPE
             mem_metadata = {
                 "source": "ingest_gmd_as_memory",
                 # In an organised dir the RESOLVED path is stored, since the

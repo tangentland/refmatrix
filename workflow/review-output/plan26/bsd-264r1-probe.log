@@ -1,0 +1,347 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /Volumes/littlebig/refmatrix-plan26-4
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collecting ... collected 12 items
+
+tests/test_zz_bsd264r1_probe.py::test_p1_mixed_memdir[sync-True-inproc] [inproc marker=True sync] mtype_normalised=[('handoff_unprefixed', 'feedback', 'session/recall-state'), ('savestate_in_folder', 'project', 'session/recall-state'), ('savestate_notype', 'curated', 'session/recall-state'), ('savestate_top', 'project', 'session/recall-state')]
+ingested 8 doc(s), 8 node(s), 0 rel: edge(s), 82 mention(s)
+skipped_non_gmd: 0
+skipped_unparseable: 0
+mtype_normalised: 4 (save-state stored as session/recall-state; its file says otherwise)
+  savestate_top: project -> session/recall-state
+  handoff_unprefixed: feedback -> session/recall-state
+  savestate_in_folder: project -> session/recall-state
+  savestate_notype: curated -> session/recall-state
+new linkage types: lead, part-of
+memory embed: 8 row(s) now reachable by recall in proj
+stored: {
+ "savestate_in_folder": "session/recall-state",
+ "handoff_unprefixed": "session/recall-state",
+ "savestate_notype": "session/recall-state",
+ "savestate_top": "session/recall-state",
+ "savestate_already": "session/recall-state",
+ "savestate_misfiled": "project",
+ "feedback_plain": "feedback",
+ "project_note": "project"
+}
+PASSED
+tests/test_zz_bsd264r1_probe.py::test_p1_mixed_memdir[sync-True-daemon] [daemon marker=True sync] mtype_normalised=[('handoff_unprefixed', 'feedback', 'session/recall-state'), ('savestate_in_folder', 'project', 'session/recall-state'), ('savestate_notype', 'curated', 'session/recall-state'), ('savestate_top', 'project', 'session/recall-state')]
+ingested 8 doc(s), 8 node(s), 0 rel: edge(s), 82 mention(s)
+skipped_non_gmd: 0
+skipped_unparseable: 0
+mtype_normalised: 4 (save-state stored as session/recall-state; its file says otherwise)
+  savestate_top: project -> session/recall-state
+  handoff_unprefixed: feedback -> session/recall-state
+  savestate_in_folder: project -> session/recall-state
+  savestate_notype: curated -> session/recall-state
+new linkage types: lead, part-of
+memory embed: 8 row(s) now reachable by recall in proj
+stored: {
+ "savestate_in_folder": "session/recall-state",
+ "handoff_unprefixed": "session/recall-state",
+ "savestate_notype": "session/recall-state",
+ "savestate_top": "session/recall-state",
+ "savestate_already": "session/recall-state",
+ "savestate_misfiled": "project",
+ "feedback_plain": "feedback",
+ "project_note": "project"
+}
+PASSED
+tests/test_zz_bsd264r1_probe.py::test_p1_mixed_memdir[sync-False-inproc] [inproc marker=False sync] mtype_normalised=[('handoff_unprefixed', 'feedback', 'session/recall-state'), ('savestate_in_folder', 'project', 'session/recall-state'), ('savestate_notype', 'curated', 'session/recall-state'), ('savestate_top', 'project', 'session/recall-state')]
+ingested 8 doc(s), 8 node(s), 0 rel: edge(s), 82 mention(s)
+skipped_non_gmd: 0
+skipped_unparseable: 0
+mtype_normalised: 4 (save-state stored as session/recall-state; its file says otherwise)
+  savestate_top: project -> session/recall-state
+  handoff_unprefixed: feedback -> session/recall-state
+  savestate_in_folder: project -> session/recall-state
+  savestate_notype: curated -> session/recall-state
+new linkage types: lead, part-of
+memory embed: 8 row(s) now reachable by recall in proj
+stored: {
+ "savestate_in_folder": "session/recall-state",
+ "handoff_unprefixed": "session/recall-state",
+ "savestate_notype": "session/recall-state",
+ "savestate_top": "session/recall-state",
+ "savestate_already": "session/recall-state",
+ "savestate_misfiled": "project",
+ "feedback_plain": "feedback",
+ "project_note": "project"
+}
+PASSED
+tests/test_zz_bsd264r1_probe.py::test_p1_mixed_memdir[sync-False-daemon] [daemon marker=False sync] mtype_normalised=[('handoff_unprefixed', 'feedback', 'session/recall-state'), ('savestate_in_folder', 'project', 'session/recall-state'), ('savestate_notype', 'curated', 'session/recall-state'), ('savestate_top', 'project', 'session/recall-state')]
+ingested 8 doc(s), 8 node(s), 0 rel: edge(s), 82 mention(s)
+skipped_non_gmd: 0
+skipped_unparseable: 0
+mtype_normalised: 4 (save-state stored as session/recall-state; its file says otherwise)
+  savestate_top: project -> session/recall-state
+  handoff_unprefixed: feedback -> session/recall-state
+  savestate_in_folder: project -> session/recall-state
+  savestate_notype: curated -> session/recall-state
+new linkage types: lead, part-of
+memory embed: 8 row(s) now reachable by recall in proj
+stored: {
+ "savestate_in_folder": "session/recall-state",
+ "handoff_unprefixed": "session/recall-state",
+ "savestate_notype": "session/recall-state",
+ "savestate_top": "session/recall-state",
+ "savestate_already": "session/recall-state",
+ "savestate_misfiled": "project",
+ "feedback_plain": "feedback",
+ "project_note": "project"
+}
+PASSED
+tests/test_zz_bsd264r1_probe.py::test_p1_mixed_memdir[cli-True-inproc] [inproc marker=True cli]
+ingested 8 doc(s), 8 node(s), 0 rel: edge(s), 82 mention(s)
+skipped_non_gmd: 0
+skipped_unparseable: 0
+mtype_normalised: 4 (save-state stored as session/recall-state; its file says otherwise)
+  savestate_top: project -> session/recall-state
+  handoff_unprefixed: feedback -> session/recall-state
+  savestate_in_folder: project -> session/recall-state
+  savestate_notype: curated -> session/recall-state
+new linkage types: lead, part-of
+memory embed: 8 row(s) now reachable by recall in proj
+
+stored: {
+ "savestate_in_folder": "session/recall-state",
+ "handoff_unprefixed": "session/recall-state",
+ "savestate_notype": "session/recall-state",
+ "savestate_top": "session/recall-state",
+ "savestate_already": "session/recall-state",
+ "savestate_misfiled": "project",
+ "feedback_plain": "feedback",
+ "project_note": "project"
+}
+PASSED
+tests/test_zz_bsd264r1_probe.py::test_p1_mixed_memdir[cli-True-daemon] [daemon marker=True cli]
+ingested 8 doc(s), 8 node(s), 0 rel: edge(s), 82 mention(s)
+skipped_non_gmd: 0
+skipped_unparseable: 0
+mtype_normalised: 4 (save-state stored as session/recall-state; its file says otherwise)
+  savestate_top: project -> session/recall-state
+  handoff_unprefixed: feedback -> session/recall-state
+  savestate_in_folder: project -> session/recall-state
+  savestate_notype: curated -> session/recall-state
+new linkage types: lead, part-of
+memory embed: 8 row(s) now reachable by recall in proj
+
+stored: {
+ "savestate_in_folder": "session/recall-state",
+ "handoff_unprefixed": "session/recall-state",
+ "savestate_notype": "session/recall-state",
+ "savestate_top": "session/recall-state",
+ "savestate_already": "session/recall-state",
+ "savestate_misfiled": "project",
+ "feedback_plain": "feedback",
+ "project_note": "project"
+}
+PASSED
+tests/test_zz_bsd264r1_probe.py::test_p1_mixed_memdir[cli-False-inproc] [inproc marker=False cli]
+ingested 8 doc(s), 8 node(s), 0 rel: edge(s), 82 mention(s)
+skipped_non_gmd: 0
+skipped_unparseable: 0
+mtype_normalised: 4 (save-state stored as session/recall-state; its file says otherwise)
+  savestate_top: project -> session/recall-state
+  handoff_unprefixed: feedback -> session/recall-state
+  savestate_in_folder: project -> session/recall-state
+  savestate_notype: curated -> session/recall-state
+new linkage types: lead, part-of
+memory embed: 8 row(s) now reachable by recall in proj
+
+stored: {
+ "savestate_in_folder": "session/recall-state",
+ "handoff_unprefixed": "session/recall-state",
+ "savestate_notype": "session/recall-state",
+ "savestate_top": "session/recall-state",
+ "savestate_already": "session/recall-state",
+ "savestate_misfiled": "project",
+ "feedback_plain": "feedback",
+ "project_note": "project"
+}
+PASSED
+tests/test_zz_bsd264r1_probe.py::test_p1_mixed_memdir[cli-False-daemon] [daemon marker=False cli]
+ingested 8 doc(s), 8 node(s), 0 rel: edge(s), 82 mention(s)
+skipped_non_gmd: 0
+skipped_unparseable: 0
+mtype_normalised: 4 (save-state stored as session/recall-state; its file says otherwise)
+  savestate_top: project -> session/recall-state
+  handoff_unprefixed: feedback -> session/recall-state
+  savestate_in_folder: project -> session/recall-state
+  savestate_notype: curated -> session/recall-state
+new linkage types: lead, part-of
+memory embed: 8 row(s) now reachable by recall in proj
+
+stored: {
+ "savestate_in_folder": "session/recall-state",
+ "handoff_unprefixed": "session/recall-state",
+ "savestate_notype": "session/recall-state",
+ "savestate_top": "session/recall-state",
+ "savestate_already": "session/recall-state",
+ "savestate_misfiled": "project",
+ "feedback_plain": "feedback",
+ "project_note": "project"
+}
+PASSED
+tests/test_zz_bsd264r1_probe.py::test_p1b_bug213_sticky_after_a_memdir_bridge[file] ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 11 mention(s)
+skipped_non_gmd: 0
+skipped_unparseable: 0
+mtype_normalised: 1 (save-state stored as session/recall-state; its file says otherwise)
+  savestate_misfiled: project -> session/recall-state
+new linkage types: lead, part-of
+memory embed: 1 row(s) now reachable by recall in proj
+
+after file session/recall-state
+memdir bridge: ingested 1 doc(s), 0 node(s), 0 rel: edge(s), 0 mention(s)
+skipped_non_gmd: 0
+skipped_unparseable: 0
+skipped_unchanged: 1 skipped_unchanged 1
+after memdir bridge: session/recall-state
+FAILED
+tests/test_zz_bsd264r1_probe.py::test_p1b_bug213_sticky_after_a_memdir_bridge[subdir] ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 11 mention(s)
+skipped_non_gmd: 0
+skipped_unparseable: 0
+mtype_normalised: 1 (save-state stored as session/recall-state; its file says otherwise)
+  savestate_misfiled: project -> session/recall-state
+new linkage types: lead, part-of
+memory embed: 1 row(s) now reachable by recall in proj
+
+after subdir session/recall-state
+memdir bridge: ingested 1 doc(s), 0 node(s), 0 rel: edge(s), 0 mention(s)
+skipped_non_gmd: 0
+skipped_unparseable: 0
+skipped_unchanged: 1 skipped_unchanged 1
+after memdir bridge: session/recall-state
+FAILED
+tests/test_zz_bsd264r1_probe.py::test_p2_recall_state_after_fix_insert_branch_and_crlf [
+ {
+  "id": "savestate_cq_0603",
+  "path": "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-882/test_p2_recall_state_after_fix0/memory/savestates/savestate_cq_0603.md",
+  "from": "project",
+  "to": "session/recall-state",
+  "error": null
+ },
+ {
+  "id": "savestate_cq_0619",
+  "path": "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-882/test_p2_recall_state_after_fix0/memory/savestates/savestate_cq_0619.md",
+  "from": "project",
+  "to": "session/recall-state",
+  "error": null
+ },
+ {
+  "id": "savestate_cq_0707",
+  "path": "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-882/test_p2_recall_state_after_fix0/memory/savestates/savestate_cq_0707.md",
+  "from": "project",
+  "to": "session/recall-state",
+  "error": null
+ },
+ {
+  "id": "savestate_cq_0722",
+  "path": "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-882/test_p2_recall_state_after_fix0/memory/savestates/savestate_cq_0722.md",
+  "from": "project",
+  "to": "session/recall-state",
+  "error": null
+ },
+ {
+  "id": "savestate_cq_0725",
+  "path": "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-882/test_p2_recall_state_after_fix0/memory/savestates/savestate_cq_0725.md",
+  "from": null,
+  "to": "session/recall-state",
+  "error": null
+ },
+ {
+  "id": "savestate_cq_0726",
+  "path": "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-882/test_p2_recall_state_after_fix0/memory/savestates/savestate_cq_0726.md",
+  "from": "project",
+  "to": "session/recall-state",
+  "error": null
+ }
+]
+PASSED
+tests/test_zz_bsd264r1_probe.py::test_p2b_symlink_and_no_frontmatter_are_named [
+ {
+  "id": "savestate_bare",
+  "path": "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-882/test_p2b_symlink_and_no_frontm0/memory/savestates/savestate_bare.md",
+  "from": null,
+  "to": "session/recall-state",
+  "error": "no frontmatter (the file does not open with ---)"
+ },
+ {
+  "id": "savestate_x",
+  "path": "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-882/test_p2b_symlink_and_no_frontm0/memory/savestates/savestate_x.md",
+  "from": "project",
+  "to": "session/recall-state",
+  "error": "a symlink; correct the file it points to by hand"
+ }
+]
+PASSED
+
+=================================== FAILURES ===================================
+______________ test_p1b_bug213_sticky_after_a_memdir_bridge[file] ______________
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-8g9j9bk9'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-8g9j9bk9/proj/.refmatrix'))
+target = 'file'
+
+    @pytest.mark.parametrize("target", ["file", "subdir"])
+    def test_p1b_bug213_sticky_after_a_memdir_bridge(inproc, target):
+        """A file/subdir ingest mis-types feedback/savestate_misfiled (bug-213). Does the next
+        correct memdir-level bridge repair the row, or does the hash gate keep it wrong?"""
+        base, root = inproc
+        memdir = base / "memory"
+        memdir.mkdir()
+        p = savestate(memdir, "feedback/savestate_misfiled.md", mtype="project",
+                      created="2026-07-06", updated="2026-07-06", mtime=at(2026, 7, 6))
+        t = {"file": p, "subdir": p.parent}[target]
+        print(_invoke(["ingest-gmd", "--as-memory", str(t)]).output)
+        print("after", target, _mtypes(root)["savestate_misfiled"])
+        out = cli_mod._sync_memory_dir(memdir)
+        print("memdir bridge:", out["report"], "skipped_unchanged", out["skipped_unchanged"])
+        got = _mtypes(root)["savestate_misfiled"]
+        print("after memdir bridge:", got)
+>       assert got == "project", f"bug-213 is sticky: a correct memdir bridge left {got!r}"
+E       AssertionError: bug-213 is sticky: a correct memdir bridge left 'session/recall-state'
+E       assert 'session/recall-state' == 'project'
+E         
+E         - project
+E         + session/recall-state
+
+tests/test_zz_bsd264r1_probe.py:89: AssertionError
+_____________ test_p1b_bug213_sticky_after_a_memdir_bridge[subdir] _____________
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-mc7687wt'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-mc7687wt/proj/.refmatrix'))
+target = 'subdir'
+
+    @pytest.mark.parametrize("target", ["file", "subdir"])
+    def test_p1b_bug213_sticky_after_a_memdir_bridge(inproc, target):
+        """A file/subdir ingest mis-types feedback/savestate_misfiled (bug-213). Does the next
+        correct memdir-level bridge repair the row, or does the hash gate keep it wrong?"""
+        base, root = inproc
+        memdir = base / "memory"
+        memdir.mkdir()
+        p = savestate(memdir, "feedback/savestate_misfiled.md", mtype="project",
+                      created="2026-07-06", updated="2026-07-06", mtime=at(2026, 7, 6))
+        t = {"file": p, "subdir": p.parent}[target]
+        print(_invoke(["ingest-gmd", "--as-memory", str(t)]).output)
+        print("after", target, _mtypes(root)["savestate_misfiled"])
+        out = cli_mod._sync_memory_dir(memdir)
+        print("memdir bridge:", out["report"], "skipped_unchanged", out["skipped_unchanged"])
+        got = _mtypes(root)["savestate_misfiled"]
+        print("after memdir bridge:", got)
+>       assert got == "project", f"bug-213 is sticky: a correct memdir bridge left {got!r}"
+E       AssertionError: bug-213 is sticky: a correct memdir bridge left 'session/recall-state'
+E       assert 'session/recall-state' == 'project'
+E         
+E         - project
+E         + session/recall-state
+
+tests/test_zz_bsd264r1_probe.py:89: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_zz_bsd264r1_probe.py::test_p1b_bug213_sticky_after_a_memdir_bridge[file]
+FAILED tests/test_zz_bsd264r1_probe.py::test_p1b_bug213_sticky_after_a_memdir_bridge[subdir]
+======================== 2 failed, 10 passed in 44.44s =========================
+pytest exit=1
+
+==== probe source: tests/test_zz_bsd264r1_probe.py (throwaway, deleted after the run; ch-bsd 26.4 r1, run at 1caf3df) ====
+P1 x8 (sync|cli x marker on/off x inproc|daemon) PASS; P1b file+subdir FAIL = bug-213 row survives a later memdir bridge (hash gate); P2 PASS (insert branch + CRLF, recall-state keeps August); P2b PASS (symlink + no-frontmatter named)

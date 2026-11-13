@@ -1,0 +1,58 @@
+applied M1 to /Volumes/littlebig/refmatrix-plan26-4/src/refmatrix/ingest_gmd.py
+tests/test_savestate_mtype.py:617: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_savestate_mtype.py::test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[True-inproc]
+FAILED tests/test_savestate_mtype.py::test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[True-daemon]
+FAILED tests/test_savestate_mtype.py::test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[False-inproc]
+FAILED tests/test_savestate_mtype.py::test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[False-daemon]
+4 failed, 19 passed in 92.94s (0:01:32)
+M1 pytest exit=1
+restored-M1
+applied M2 to /Volumes/littlebig/refmatrix-plan26-4/src/refmatrix/ingest_gmd.py
+.......................                                                  [100%]
+23 passed in 93.74s (0:01:33)
+M2 pytest exit=0
+restored-M2
+applied M3 to /Volumes/littlebig/refmatrix-plan26-4/src/refmatrix/ingest_gmd.py
+=========================== short test summary info ============================
+FAILED tests/test_savestate_mtype.py::test_ac1_bridge_report_prints_the_count_and_names_each_id
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 5 passed in 14.43s
+M3 pytest exit=1
+restored-M3
+applied M5 to /Volumes/littlebig/refmatrix-plan26-4/src/refmatrix/memory_layout.py
+............                                                             [100%]
+12 passed, 11 deselected in 34.34s
+M5 pytest exit=0
+restored-M5
+applied M6 to /Volumes/littlebig/refmatrix-plan26-4/src/refmatrix/memory_layout.py
+............                                                             [100%]
+12 passed, 11 deselected in 33.78s
+M6 pytest exit=0
+restored-M6
+applied M7 to /Volumes/littlebig/refmatrix-plan26-4/src/refmatrix/memory_layout.py
+............                                                             [100%]
+12 passed, 11 deselected in 33.26s
+M7 pytest exit=0
+restored-M7
+applied M10 to /Volumes/littlebig/refmatrix-plan26-4/src/refmatrix/memory_layout.py
+FAILED tests/test_savestate_mtype.py::test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[False-inproc]
+FAILED tests/test_savestate_mtype.py::test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[False-daemon]
+9 failed, 3 passed, 11 deselected in 33.67s
+M10 pytest exit=1
+restored-M10
+applied M9 to /Volumes/littlebig/refmatrix-plan26-4/src/refmatrix/ingest_gmd.py
+FAILED tests/test_savestate_mtype.py::test_ac1_ingest_stats_count_every_override_and_only_overrides
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 4 passed in 11.30s
+M9 pytest exit=1
+restored-M9
+==== mutation key (ch-bsd 26.4 r1; applier /private/tmp scratch mut264.py, string replace; each restored by git checkout in its own command; __pycache__ cleared after the batch; fix grep matched after restore) ====
+M1  _OrganisedDirs.is_savestate ignores roots (judge by p.parent)        KILLED (4, f1 guard)
+M2  is_savestate drops the p.resolve() candidate                       SURVIVED (unreachable: every production caller resolves targets)
+M3  mtype_normalised_lines drops the per-id lines                      KILLED (report test)
+M5  normalise_savestate_types: symlink guard removed                   SURVIVED (no test)
+M6  normalise_savestate_types: no-frontmatter/no-metadata entry dropped SURVIVED (no test; silent-skip branch)
+M7  normalise_savestate_types: insert-type branch does nothing         SURVIVED (no test; returns error=None for an unchanged file)
+M9  bridge override counts already-correct save-states                 KILLED (count test)
+M10 normalise skips any typed file                                     KILLED (9)

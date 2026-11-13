@@ -1,0 +1,50 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /Volumes/littlebig/refmatrix-plan26-4
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collecting ... collected 18 items / 12 deselected / 6 selected
+
+tests/test_savestate_mtype.py::test_ac1_top_level_hand_typed_savestate_is_stored_as_recall_state PASSED [ 16%]
+tests/test_savestate_mtype.py::test_ac1_savestates_folder_file_ignores_its_frontmatter_type[project] PASSED [ 33%]
+tests/test_savestate_mtype.py::test_ac1_savestates_folder_file_ignores_its_frontmatter_type[feedback] PASSED [ 50%]
+tests/test_savestate_mtype.py::test_ac1_savestates_folder_file_ignores_its_frontmatter_type[None] PASSED [ 66%]
+tests/test_savestate_mtype.py::test_ac2_hook_mode_recall_hides_the_hand_typed_savestate_and_include_session_keeps_it PASSED [ 83%]
+tests/test_savestate_mtype.py::test_ac3b_unorganised_unchanged_file_keeps_its_row_until_its_next_touch FAILED [100%]
+
+=================================== FAILURES ===================================
+___ test_ac3b_unorganised_unchanged_file_keeps_its_row_until_its_next_touch ____
+
+inproc = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-bea6cdw9'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-bea6cdw9/proj/.refmatrix'))
+
+    def test_ac3b_unorganised_unchanged_file_keeps_its_row_until_its_next_touch(inproc):
+        """Un-organised dir, a store already holding the pre-26.4 row (`project`): an UNCHANGED file
+        is skipped by the hash gate and keeps `project` (accepted and stated: cliquedb's four keep it
+        until 27.5); the file's next touch re-ingests it and the rule lands, counted. No file is
+        written by the bridge. RED: after the touch the row still reads `project`."""
+        base, root = inproc
+        memdir = base / "memory"
+        memdir.mkdir()
+        p = savestate(memdir, "savestate_cq_0707.md", mtype="project", created="2026-07-07",
+                      updated="2026-07-08", mtime=at(2026, 7, 8))
+        cli_mod._sync_memory_dir(memdir)
+        _set_mtype(root, "savestate_cq_0707", "project")         # the deployed stores' row today
+        text0 = p.read_text(encoding="utf-8")
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["error"] is None and out["skipped_unchanged"] == 1, out
+        assert _mtypes(root)["savestate_cq_0707"] == "project", \
+            "an unchanged file was re-typed: the gate did not skip it"
+        assert p.read_text(encoding="utf-8") == text0, "the bridge wrote the file"
+        p.write_text(text0.replace("made-up handoff", "made-up handoff, edited"), encoding="utf-8")
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["error"] is None, out
+        assert _mtypes(root)["savestate_cq_0707"] == RS, \
+            "the next touch re-ingested the save-state and still stored the frontmatter type"
+>       assert _norm(out["mtype_normalised"]) == [("savestate_cq_0707", "project", RS)], out
+                     ^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'mtype_normalised'
+
+tests/test_savestate_mtype.py:556: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_savestate_mtype.py::test_ac3b_unorganised_unchanged_file_keeps_its_row_until_its_next_touch
+================= 1 failed, 5 passed, 12 deselected in 26.30s ==================

@@ -1,0 +1,113 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-4/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /Volumes/littlebig/refmatrix-plan26-4
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collecting ... collected 18 items / 14 deselected / 4 selected
+
+tests/test_savestate_mtype.py::test_ac3_apply_rewrites_only_the_type_line_and_restores_mtime FAILED [ 25%]
+tests/test_savestate_mtype.py::test_ac3_preview_lists_the_corrections_and_writes_nothing PASSED [ 50%]
+tests/test_savestate_mtype.py::test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[False] FAILED [ 75%]
+tests/test_savestate_mtype.py::test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[True] FAILED [100%]
+
+=================================== FAILURES ===================================
+________ test_ac3_apply_rewrites_only_the_type_line_and_restores_mtime _________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-827/test_ac3_apply_rewrites_only_t0')
+
+    def test_ac3_apply_rewrites_only_the_type_line_and_restores_mtime(tmp_path):
+        """The rewrite is a metadata correction, not a content update: exactly one line changes
+        (`type: project` -> `type: session/recall-state`); `updated`, `created`, `originSessionId`
+        and the body are byte-identical; mtime is its prior value. The correctly typed August file
+        is untouched. RED: `memory_layout.normalise_savestate_types` does not exist."""
+        memdir = tmp_path / "memory"
+        memdir.mkdir()
+        fx = cliquedb_four(memdir)
+        before = _snapshot(fx.values())
+        res = memory_layout.normalise_savestate_types(memdir, apply=True)
+        assert sorted((e["id"], e["from"], e["to"]) for e in res) == \
+            sorted((i, "project", RS) for i in MISTYPED), res
+        assert sorted(Path(e["path"]).resolve() for e in res) == \
+            sorted(fx[k].resolve() for k in ("jun_a", "jun_b", "jul_a", "jul_b")), res
+        for k, p in fx.items():
+            text0, mt0 = before[p]
+            text1, mt1 = p.read_text(encoding="utf-8"), p.stat().st_mtime_ns
+>           assert mt1 == mt0, f"{p.name}: mtime {mt0} -> {mt1} (the rewrite must restore it)"
+E           AssertionError: savestate_cq_0603.md: mtime 1780513200000000000 -> 1794430718421248196 (the rewrite must restore it)
+E           assert 1794430718421248196 == 1780513200000000000
+
+tests/test_savestate_mtype.py:441: AssertionError
+___ test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[False] ___
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-827/test_ac3_recall_state_still_re0')
+organised = False
+
+    @pytest.mark.parametrize("organised", [False, True])
+    def test_ac3_recall_state_still_resumes_from_august_after_the_rewrite(tmp_path, organised):
+        """`rmx recall-state` resumes from the August save-state before AND after the correction.
+        If the rewrite bumped mtime or `updated:` it would resume from July (the fixture-proof test
+        shows both). RED: no `normalise_savestate_types`."""
+        memdir = tmp_path / "memory"
+        memdir.mkdir()
+        if organised:
+            organise(memdir)
+        cliquedb_four(memdir, prefix="savestates/" if organised else "")
+    
+        def resumes() -> str:
+            r = _invoke(["recall-state", "--json", "-s", "sess-264", "--memory-dir", str(memdir)])
+            rep = json.loads(r.stdout)
+            return (rep.get("savestate") or {}).get("id")
+    
+        assert resumes() == "savestate_cq_0814", "fixture: recall-state did not resume from August"
+        res = memory_layout.normalise_savestate_types(memdir, apply=True)
+        assert len(res) == 4, res
+>       assert resumes() == "savestate_cq_0814", "the type correction moved the resume point"
+E       AssertionError: the type correction moved the resume point
+E       assert 'savestate_cq_0722' == 'savestate_cq_0814'
+E         
+E         - savestate_cq_0814
+E         ?               ^^^
+E         + savestate_cq_0722
+E         ?               ^^^
+
+tests/test_savestate_mtype.py:505: AssertionError
+___ test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[True] ____
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-827/test_ac3_recall_state_still_re1')
+organised = True
+
+    @pytest.mark.parametrize("organised", [False, True])
+    def test_ac3_recall_state_still_resumes_from_august_after_the_rewrite(tmp_path, organised):
+        """`rmx recall-state` resumes from the August save-state before AND after the correction.
+        If the rewrite bumped mtime or `updated:` it would resume from July (the fixture-proof test
+        shows both). RED: no `normalise_savestate_types`."""
+        memdir = tmp_path / "memory"
+        memdir.mkdir()
+        if organised:
+            organise(memdir)
+        cliquedb_four(memdir, prefix="savestates/" if organised else "")
+    
+        def resumes() -> str:
+            r = _invoke(["recall-state", "--json", "-s", "sess-264", "--memory-dir", str(memdir)])
+            rep = json.loads(r.stdout)
+            return (rep.get("savestate") or {}).get("id")
+    
+        assert resumes() == "savestate_cq_0814", "fixture: recall-state did not resume from August"
+        res = memory_layout.normalise_savestate_types(memdir, apply=True)
+        assert len(res) == 4, res
+>       assert resumes() == "savestate_cq_0814", "the type correction moved the resume point"
+E       AssertionError: the type correction moved the resume point
+E       assert 'savestate_cq_0722' == 'savestate_cq_0814'
+E         
+E         - savestate_cq_0814
+E         ?               ^^^
+E         + savestate_cq_0722
+E         ?               ^^^
+
+tests/test_savestate_mtype.py:505: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_savestate_mtype.py::test_ac3_apply_rewrites_only_the_type_line_and_restores_mtime
+FAILED tests/test_savestate_mtype.py::test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[False]
+FAILED tests/test_savestate_mtype.py::test_ac3_recall_state_still_resumes_from_august_after_the_rewrite[True]
+================== 3 failed, 1 passed, 14 deselected in 0.74s ==================

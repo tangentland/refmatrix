@@ -65,6 +65,8 @@ plan's remaining work is scheduled in the folded wave list [[plan-review-2026-10
 
 **Queued re-measure (plan-25 r4, 2026-11-09):** bug-174 / task 25.5 R3 re-runs when `rmx telemetry --agent-usage` shows ≥ 30 `bre_meta_literal` grep rows (M ≥ 30) or on 2026-12-31, whichever comes first; the 25.5 R4 bands decide again, unchanged ([[plan-25-cliquedb-field-report#rev-round-4]]). {#queue-bug174-remeasure}
 
+**Queued exploration (user, 2026-11-13, session f0521bff): the handhold outcome experiment** ([[exploration-handhold-outcome-experiment]]) runs after the user's decision on task 21.5. The 21.5 measurements (R12 pilot, term/clique, relation gaps; all provisional, ch-bsd pending) showed ambient push injection is mostly unused and topical overlap is not use; the experiment tests the charter itself — push / boundary / pull arms against pre-registered orientation-cost, churn, re-derivation and repeated-mistake outcomes. bug-216 (GMD `rel:` edges missing from `entity_links`) lands before its arm-A baseline. {#queue-handhold-outcome-experiment}
+
 **Current order (2026-10-19, user-requested fold of plans 1-15): [[plan-review-2026-10-14#t11-folded-waves]], amending [[plan-review-2026-10-14#t10-waves]] for EVERY wave** (bug-105 hotfix first; Wave 1 starts with 23.0 ∥ 23.4). Superseded: (2026-10-07) [[plan-review-2026-10-07#order]]. The numbered rationale below is historical.
 
 

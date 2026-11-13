@@ -1,0 +1,148 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-4/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /Volumes/littlebig/refmatrix-plan26-4
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collecting ... collected 23 items / 22 deselected / 1 selected
+
+tests/test_savestate_mtype.py::test_every_production_memory_bridge_call_names_its_marker_roots FAILED [100%]
+
+=================================== FAILURES ===================================
+_______ test_every_production_memory_bridge_call_names_its_marker_roots ________
+
+    def test_every_production_memory_bridge_call_names_its_marker_roots():
+        """The predicate's memdir is the bridge's DIR target (`_OrganisedDirs.is_savestate`); a
+        direct `ingest_gmd_paths(..., as_memory=...)` caller that names no `marker_roots` bounds
+        each file by its own folder, so `feedback/savestate_x.md` would read as a top-level
+        save-state (green-264's flag). Pins that every such call in `src/` passes `marker_roots`
+        -- the three today: the in-process CLI leg, the daemon's ingest op, `sessions index`."""
+        import ast
+        src = Path(__file__).resolve().parent.parent / "src" / "refmatrix"
+        calls, bare = [], []
+        for f in sorted(src.rglob("*.py")):
+            for node in ast.walk(ast.parse(f.read_text(encoding="utf-8"))):
+                if not (isinstance(node, ast.Call) and getattr(node.func, "id", None)
+                        == "ingest_gmd_paths"):
+                    continue
+                kw = {k.arg for k in node.keywords}
+                if "as_memory" not in kw:
+                    continue                     # a doc ingest: no memory rows, no save-state rule
+                calls.append(f"{f.name}:{node.lineno}")
+                if "marker_roots" not in kw:
+                    bare.append(f"{f.name}:{node.lineno}")
+        assert len(calls) >= 3, f"expected the CLI, daemon and sessions callers, found {calls}"
+>       assert not bare, f"as-memory ingest_gmd_paths calls with no marker_roots: {bare}"
+E       AssertionError: as-memory ingest_gmd_paths calls with no marker_roots: ['daemon.py:3755']
+E       assert not ['daemon.py:3755']
+
+tests/test_savestate_mtype.py:652: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_savestate_mtype.py::test_every_production_memory_bridge_call_names_its_marker_roots
+======================= 1 failed, 22 deselected in 0.67s =======================
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-4/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /Volumes/littlebig/refmatrix-plan26-4
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collecting ... collected 23 items / 21 deselected / 2 selected
+
+tests/test_savestate_mtype.py::test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[True-daemon] FAILED [ 50%]
+tests/test_savestate_mtype.py::test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[False-daemon] FAILED [100%]
+
+=================================== FAILURES ===================================
+_ test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[True-daemon] _
+
+request = <FixtureRequest for <Function test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[True-daemon]>>
+leg = 'daemon', marker = True
+
+    @pytest.mark.parametrize("leg", ["inproc", "daemon"])
+    @pytest.mark.parametrize("marker", [True, False])
+    def test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten(
+            request, leg, marker):
+        """`feedback/savestate_misfiled.md` typed `project` stays `project` in the store, is not in
+        `mtype_normalised`, and `normalise_savestate_types` neither lists nor rewrites it (26.5's
+        `organise --check` reports it as misfiled). A real `savestates/` save-state in the same dir
+        is the positive control: the rule ran, on the right file only. Through the save-state /
+        SessionStart bridge (`cli._sync_memory_dir`), both legs, the memdir as its target.
+    
+        Kills ch-bsd 26.4 mutation f1 (the override widened to any `savestate_*` id): the misfiled
+        file is counted and stored as `session/recall-state`."""
+        base, root = request.getfixturevalue(leg)
+        memdir = base / "memory"
+        memdir.mkdir()
+        if marker:
+            organise(memdir)
+        mis = savestate(memdir, "feedback/savestate_misfiled.md", mtype="project",
+                        created="2026-07-07", updated="2026-07-08", mtime=at(2026, 7, 8))
+        real = "savestates/savestate_cq_0707.md" if marker else "savestate_cq_0707.md"
+        savestate(memdir, real, mtype="project", created="2026-07-07", updated="2026-07-08",
+                  mtime=at(2026, 7, 8))
+        mis0 = (mis.read_bytes(), mis.stat().st_mtime_ns)
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["error"] is None, out
+>       assert _norm(out["mtype_normalised"]) == [("savestate_cq_0707", "project", RS)], \
+            f"{leg} bridge counted a misfiled savestate_* stem: {out['mtype_normalised']}"
+E       AssertionError: daemon bridge counted a misfiled savestate_* stem: [['savestate_misfiled', 'project', 'session/recall-state'], ['savestate_cq_0707', 'project', 'session/recall-state']]
+E       assert [('savestate_...ecall-state')] == [('savestate_...ecall-state')]
+E         
+E         Left contains one more item: ('savestate_misfiled', 'project', 'session/recall-state')
+E         
+E         Full diff:
+E           [
+E               (
+E                   'savestate_cq_0707',...
+E         
+E         ...Full output truncated (9 lines hidden), use '-vv' to show
+
+tests/test_savestate_mtype.py:617: AssertionError
+_ test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[False-daemon] _
+
+request = <FixtureRequest for <Function test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[False-daemon]>>
+leg = 'daemon', marker = False
+
+    @pytest.mark.parametrize("leg", ["inproc", "daemon"])
+    @pytest.mark.parametrize("marker", [True, False])
+    def test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten(
+            request, leg, marker):
+        """`feedback/savestate_misfiled.md` typed `project` stays `project` in the store, is not in
+        `mtype_normalised`, and `normalise_savestate_types` neither lists nor rewrites it (26.5's
+        `organise --check` reports it as misfiled). A real `savestates/` save-state in the same dir
+        is the positive control: the rule ran, on the right file only. Through the save-state /
+        SessionStart bridge (`cli._sync_memory_dir`), both legs, the memdir as its target.
+    
+        Kills ch-bsd 26.4 mutation f1 (the override widened to any `savestate_*` id): the misfiled
+        file is counted and stored as `session/recall-state`."""
+        base, root = request.getfixturevalue(leg)
+        memdir = base / "memory"
+        memdir.mkdir()
+        if marker:
+            organise(memdir)
+        mis = savestate(memdir, "feedback/savestate_misfiled.md", mtype="project",
+                        created="2026-07-07", updated="2026-07-08", mtime=at(2026, 7, 8))
+        real = "savestates/savestate_cq_0707.md" if marker else "savestate_cq_0707.md"
+        savestate(memdir, real, mtype="project", created="2026-07-07", updated="2026-07-08",
+                  mtime=at(2026, 7, 8))
+        mis0 = (mis.read_bytes(), mis.stat().st_mtime_ns)
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["error"] is None, out
+>       assert _norm(out["mtype_normalised"]) == [("savestate_cq_0707", "project", RS)], \
+            f"{leg} bridge counted a misfiled savestate_* stem: {out['mtype_normalised']}"
+E       AssertionError: daemon bridge counted a misfiled savestate_* stem: [['savestate_cq_0707', 'project', 'session/recall-state'], ['savestate_misfiled', 'project', 'session/recall-state']]
+E       assert [('savestate_...ecall-state')] == [('savestate_...ecall-state')]
+E         
+E         Left contains one more item: ('savestate_misfiled', 'project', 'session/recall-state')
+E         
+E         Full diff:
+E           [
+E               (
+E                   'savestate_cq_0707',...
+E         
+E         ...Full output truncated (9 lines hidden), use '-vv' to show
+
+tests/test_savestate_mtype.py:617: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_savestate_mtype.py::test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[True-daemon]
+FAILED tests/test_savestate_mtype.py::test_ac1_a_savestate_stem_in_another_folder_is_not_retyped_counted_or_rewritten[False-daemon]
+====================== 2 failed, 21 deselected in 11.91s =======================
