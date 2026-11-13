@@ -516,6 +516,15 @@ def _gate_root(*, lint_src: str | None, doc: str, venv: bool = True) -> Path:
     (root / "CLAUDE.md").write_text(_mini("claude-md"))
     (root / ".claude").mkdir()
     (root / ".claude" / "PROJECT_PROFILE.md").write_text(_mini("project-profile"))
+    # bug-216 R3: the gate now also fails on a lint-scope GMD doc the ingest excludes, and the
+    # built-in hidden-dir rule excludes `.claude/PROJECT_PROFILE.md` unless it is re-included.
+    # This root mirrors this repo's R4 config so the bug-179 cases test only anchor parity.
+    # A `.git` marker, as every real checkout has: the scanned files' repo root is THIS root
+    # however the parity script derives it.
+    (root / ".git").mkdir()
+    (root / ".refmatrix").mkdir()
+    (root / ".refmatrix" / ".refmatrix_ignore").write_text(
+        ".claude\n!.claude/PROJECT_PROFILE.md\n")
     for d in ("docs", "workflow", "eval"):
         (root / d).mkdir()
         (root / d / f"{d}-index.md").write_text(_mini(f"{d}-index"))
