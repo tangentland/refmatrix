@@ -776,3 +776,58 @@ batch. Log: `bug212/red-r3-probe.log`.
 | W+K5 (`s._connect()` before the refusal) | 18 failed, incl. control point x2: `` `_store_rw()` connected to [...catalog.A.duckdb] BEFORE refusing `` |
 | W+K6 (tracked line drops the target) | 17 failed |
 | W+K8 (`ls-files` line drops the target) | 1 failed: the E2 sync test, `the refusal does not start ...` |
+
+## GREEN r3 (the open-wording contract; RED r3 green) {#green-r3}
+
+Fix commit `cd3abe8` (`src/refmatrix/cli.py` + `docs/INTEGRATION.md`, by pathspec). No test
+was edited. The 3 bug-212 files plus `tests/test_sync_and_extras.py`: **117 passed**
+(`bug212/green-r3.log`; at `ed36b6a` they were 18 failed / 99 passed, `bug212/red-r3-head.log`).
+
+rel: implements -> [[#red-r3]]
+rel: amends -> [[#green-r2-changes]]
+
+### What changed {#green-r3-changes}
+
+- `cli._refuse_in_process_write_to_tracked_catalog(root: Path, target: Path) -> None` (same
+  signature): only the two f-string heads changed. Both are now
+  `refusing to open {target} read-write in-process: ...`, where `target` is `_store_rw()`'s
+  resolved full `db_path`. The text after the colon is unchanged, and the `ls-files` variant
+  keeps `git ls-files exited N`. No other src changed.
+- `docs/INTEGRATION.md#sync-tracked-catalog` (anchor kept; heading "No command opens a tracked
+  catalog read-write in-process") now covers:
+  - every writer behind `_store_rw()`;
+  - the read fall-through (a reader file serves the read; only with none of
+    `catalog.read.duckdb` / `read_only.duckdb` / inactive slot / legacy `catalog.duckdb`, and
+    no daemon, does a read reach the refusal);
+  - the live-daemon case;
+  - the new wording of both lines.
+  GMD lint: 0 errors, 3 pre-existing single-file `dangling-doc` warnings.
+
+### Runs {#green-r3-runs}
+
+- `bug212/green-r3.log`: 117 passed. This includes the read-path RED
+  (`slot_only_tracked_repo`, `pairs show` / `memory get`) and the guard
+  `test_a_read_on_a_tracked_store_with_a_reader_file_is_served_not_refused`.
+- `bug212/green-r3-wide.log`: the full suite at `cd3abe8` (`__pycache__` cleared first),
+  **4 failed, 4371 passed, 1 skipped**, 46m35s. The skip is the SkipGate UNPINNED (m-4). By E
+  line against `green-r2-wide.log` (normalised for tmp dirs, pids, addresses;
+  `bug212/green-r3-wide-elines.txt`):
+  - gone: `test_sync_and_extras::test_tldr_warm_invokes_binary_and_ingests` (the fake is now
+    scoped to the tldr binary, `3f84c59`);
+  - new: none;
+  - SAME E lines: `test_brief_real_daemon::test_an_unknown_class_fails_loudly_through_the_daemon`,
+    `test_task21_1_agent_usage_report` x2, and
+    `test_gmd_lint_requires_version::test_the_repo_scope_is_clean_under_the_stricter_gate`.
+    These match 0.82.0 / r1 as recorded in `#green-r2-runs`.
+
+### For the lead and the reviewers {#green-r3-flags}
+
+- The function's docstring still says the refusal "is worded for any write, not a sync" (r2).
+  Under the r3 contract it is worded as an open. The brief said to change no other src, so it
+  was left. It is a one-sentence docstring fix for the next src touch.
+- The text after the colon still says "the write would modify a committed file" and "so the
+  write goes through it", even when the caller is a read that fell to `_store_rw()`. That is
+  per the brief (after the colon unchanged), and the RED r3 read test passes with it (it
+  forbids only "in-process write").
+- No mutation batch this round. The change is wording only, and RED r3's probe already ran W,
+  W+K5, W+K6 and W+K8 on this exact wording (`#red-r3-probe`).
