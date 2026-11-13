@@ -153,8 +153,9 @@ measured co-citation, not item → cited doc. {#rev-2-mechanism}
    doc and removes its rows to the path-less same-named concept (evidence rows too). After deploy
    the lead runs a forced GMD re-ingest of `docs/`, `workflow/` and the memory bridge (announced,
    backed up, through the daemon), then the recount. No direct DB surgery. {#r7}
-8. **R8 The recount classifies binding.** `check-rel-landing.py` (R5) also classifies every landed
-   row by its target: doc / memory with a path, anchor node with a path, path-less concept that
+8. **R8 The recount classifies binding.** `check-rel-landing.py` (R5) counts a line as landed only when
+   its `linkage_evidence` row joins a LIVE `entity_links` row whose two entities both still exist
+   (an evidence row without one is STALE, bug-219); it then classifies every landed row by its target: doc / memory with a path, anchor node with a path, path-less concept that
    shares its name with an ingested doc (MISBOUND), other path-less concept. {#r8}
 
 **Acceptance (rev 2):**
