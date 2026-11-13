@@ -568,14 +568,27 @@ def _target_catalog(layout: str) -> str:
     return "catalog.A.duckdb" if layout == "slots" else "catalog.duckdb"
 
 
-def _refusal_lines(stderr: str, target: str) -> list[str]:
-    """`Error:` lines that name the tracked target file AND both remedies."""
+def _refusal_head(target: Path) -> str:
+    """The lead's wording contract for the in-process refusal (bug-212 r2, 2026-11-13), the
+    tracked line and the `ls-files`-failure line alike: `refusing to open <target> read-write
+    in-process: ...`. `target` is the FULL path of the catalog the open would land on, not its
+    basename: the tracked-names list `(catalog.A.duckdb, ...)` already carries the basename, so
+    a line that dropped the target still matched the basename (GREEN r2 mutations K6/K8
+    survived). "open ... read-write", not "write": `_read_store()` with no replica and no
+    daemon reaches the same `_store_rw()` for a READ (GREEN r2 flag 5, lead ruling)."""
+    return f"refusing to open {target} read-write in-process:"
+
+
+def _refusal_lines(stderr: str, target: Path) -> list[str]:
+    """`Error:` lines carrying `_refusal_head(target)` -- the full target path -- AND both
+    remedies (untrack the catalog; start the daemon)."""
+    head = _refusal_head(target)
     out = []
     for ln in stderr.splitlines():
         if not ln.startswith("Error:"):
             continue
         low = ln.lower()
-        if target in ln and ("untrack" in low or "rm --cached" in low) and "daemon" in low:
+        if head in ln and ("untrack" in low or "rm --cached" in low) and "daemon" in low:
             out.append(ln)
     return out
 
@@ -616,9 +629,9 @@ def test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog(tracked_repo,
                          f"catalog {changed} (exit {r.returncode})\n{text}")
     assert r.returncode != 0, \
         f"[{layout}] `rmx {' '.join(argv)}` on a tracked catalog exited 0\n{text}"
-    target = _target_catalog(layout)
+    target = repo.store / _target_catalog(layout)
     assert len(_refusal_lines(r.stderr, target)) == 1, \
-        f"[{layout}] no single `Error:` line naming the tracked {target} and the remedy " \
+        f"[{layout}] no single `Error:` line `{_refusal_head(target)} ...` with the remedy " \
         f"(untrack it, or start the daemon)\n{text}"
     assert _status_refmatrix_catalogs(repo.proj) == "", \
         f"[{layout}] git sees the tracked catalog modified:\n{_status_refmatrix_catalogs(repo.proj)}"
@@ -658,10 +671,11 @@ def test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly(tra
                          f"catalog {changed}\ngit status:\n"
                          f"{_status_refmatrix_catalogs(repo.proj)}\n{text}")
     if _calls(repo):
-        target = _target_catalog(layout)
+        target = repo.store / _target_catalog(layout)
         assert len(_refusal_lines(r.stderr, target)) == 1 and FAILED_LINE in r.stderr, \
             f"[{layout}] post-commit ran rmx beside a stale socket and the refusal was not " \
-            f"loud (one `Error:` naming {target} + the remedy, then `{FAILED_LINE}`)\n{text}"
+            f"loud (one `Error:` `{_refusal_head(target)} ...` + the remedy, then " \
+            f"`{FAILED_LINE}`)\n{text}"
 
 
 @pytest.mark.timeout(300)

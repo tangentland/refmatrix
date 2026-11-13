@@ -50,7 +50,8 @@ from tests.test_bug212_hooks_in_worktrees import (
     _quiet, _write_shim,
 )
 from tests.test_bug212_r1_remedy import (  # noqa: F401 -- `tracked_repo` is used by name
-    _refusal_lines, _status_refmatrix_catalogs, _target_catalog, _vanished, tracked_repo,
+    _refusal_head, _refusal_lines, _status_refmatrix_catalogs, _target_catalog, _vanished,
+    tracked_repo,
 )
 
 
@@ -162,8 +163,11 @@ def test_git_tracked_catalogs_raises_when_ls_files_fails(corrupt_index_repo):
 @pytest.mark.timeout(300)
 def test_an_in_process_sync_refuses_when_git_ls_files_fails(corrupt_index_repo):
     """E2, end to end: `rmx sync --files <f>`, no daemon. Whether git tracks the catalog is
-    unknown, so the in-process write is refused: one `Error:` line naming the failing
-    `ls-files` and the remedies, exit non-zero, catalog bytes unchanged."""
+    unknown, so the in-process open is refused: ONE `Error:` line
+    `refusing to open <full catalog path> read-write in-process: ...` that names the failing
+    `ls-files` with its exit code and both remedies; exit non-zero, catalog bytes unchanged.
+    The full path is required because GREEN r2's mutation K8 (the target dropped from this
+    line) survived a basename check (r3 RED, lead 2026-11-13)."""
     repo = corrupt_index_repo
     f = repo.proj / "two.py"
     before = _digests(repo.store)
@@ -179,8 +183,12 @@ def test_an_in_process_sync_refuses_when_git_ls_files_fails(corrupt_index_repo):
     errs = _errors(r.stderr)
     assert len(errs) == 1, f"expected exactly one `Error:` line, got {errs}\n{text}"
     low = errs[0].lower()
-    assert "ls-files" in low and ("untrack" in low or "rm --cached" in low) and "daemon" in low, \
-        f"the refusal does not name the failing ls-files and both remedies: {errs[0]!r}"
+    head = _refusal_head(repo.store / "catalog.duckdb")
+    assert head in errs[0], f"the refusal does not start `{head}`: {errs[0]!r}"
+    assert "ls-files exited" in low and ("untrack" in low or "rm --cached" in low) \
+        and "daemon" in low, \
+        f"the refusal does not name the failing ls-files (with its exit code) and both " \
+        f"remedies: {errs[0]!r}"
 
 
 # =============================================================================================
@@ -290,9 +298,10 @@ def test_a_worktree_hook_of_one_repo_cannot_vouch_for_a_store_in_another(two_rep
     assert TRACEBACK not in r.stderr, f"the hook's rmx crashed\n{text}"
     assert not changed, (f"the in-process sync wrote B's git-tracked {changed}: the tracked-"
                          f"catalog check read A's repository through the exported GIT_DIR\n{text}")
-    assert len(_refusal_lines(r.stderr, "catalog.duckdb")) == 1 and FAILED_LINE in r.stderr, \
-        f"the refusal was not loud (one `Error:` naming catalog.duckdb + the remedy, then " \
-        f"`{FAILED_LINE}`)\n{text}"
+    target = b_store / "catalog.duckdb"
+    assert len(_refusal_lines(r.stderr, target)) == 1 and FAILED_LINE in r.stderr, \
+        f"the refusal was not loud (one `Error:` `{_refusal_head(target)} ...` + the remedy, " \
+        f"then `{FAILED_LINE}`)\n{text}"
     assert _status_refmatrix_catalogs(b_store.parent) == "", "git sees B's catalog modified"
 
 
@@ -448,10 +457,10 @@ def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, wri
                          f"{changed} (exit {r.returncode})\n{text}")
     assert r.returncode != 0, f"[{layout}] `{writer}` on a tracked catalog exited 0\n{text}"
     errs = _errors(r.stderr)
-    target = _target_catalog(layout)
+    target = repo.store / _target_catalog(layout)
     assert len(errs) == 1 and _refusal_lines(r.stderr, target) == errs, \
-        f"[{layout}] `{writer}`: expected ONE `Error:` line naming the tracked {target} and " \
-        f"the remedy (untrack it, or start the daemon); got {errs}\n{text}"
+        f"[{layout}] `{writer}`: expected ONE `Error:` line `{_refusal_head(target)} ...` " \
+        f"with the remedy (untrack it, or start the daemon); got {errs}\n{text}"
     assert _status_refmatrix_catalogs(repo.proj) == "", \
         f"[{layout}] git sees the tracked catalog modified after `{writer}`"
 
@@ -460,13 +469,28 @@ def test_the_write_control_point_itself_refuses_a_git_tracked_catalog(tracked_re
                                                                      monkeypatch):
     """a2: the refusal lives IN `cli._store_rw()` -- the one in-process writer every command
     reaches -- not per command. Called directly on a tracked store, it raises a
-    `ClickException` before the catalog opens; the bytes are unchanged."""
+    `ClickException` `refusing to open <full target path> read-write in-process: ...` BEFORE
+    the catalog opens; the bytes are unchanged.
+
+    "Before it opens" is observed, not inferred from the bytes (GREEN r2 mutation K5 -- a
+    `s._connect()` ahead of the refusal -- left the bytes unchanged and passed this test; only
+    the subprocess writers caught it): `Store._connect` is wrapped by a RECORDER that calls the
+    real method and notes the catalog it opened. A double of a collaborator, not of the SUT
+    (registered in workflow/test_mock_registry.md); no connect may name this store's catalog."""
     import click
 
     from refmatrix import cli
     repo, layout = tracked_repo
     monkeypatch.setenv("REFMATRIX_ROOT", str(repo.store))
     monkeypatch.chdir(repo.proj)
+    connects: list[str] = []
+    real_connect = Store._connect
+
+    def recording_connect(self, *a, **kw):
+        connects.append(str(getattr(self, "db_path", "?")))
+        return real_connect(self, *a, **kw)
+
+    monkeypatch.setattr(Store, "_connect", recording_connect)
     before = _digests(repo.store)
     opened = None
     try:
@@ -475,9 +499,106 @@ def test_the_write_control_point_itself_refuses_a_git_tracked_catalog(tracked_re
     finally:
         if opened is not None:
             opened.close()
-    assert _target_catalog(layout) in ei.value.message, \
-        f"[{layout}] the refusal does not name {_target_catalog(layout)}: {ei.value.message!r}"
+    target = repo.store / _target_catalog(layout)
+    assert _refusal_head(target) in ei.value.message, \
+        f"[{layout}] the refusal does not start `{_refusal_head(target)}`: {ei.value.message!r}"
+    opened_here = [c for c in connects if Path(c).parent == repo.store]
+    assert not opened_here, \
+        f"[{layout}] `_store_rw()` connected to {opened_here} BEFORE refusing: the refusal " \
+        f"must come before the catalog opens"
     assert _changed(before, _digests(repo.store)) == [], f"[{layout}] the catalog changed"
+
+
+# A READ with no replica file and no daemon reaches `_store_rw()` too: `_read_store()` ->
+# `_reader_store()` finds no replica -> `_store()` -> `_store_rw()`, which opens the WRITER
+# catalog read-write and flushes on close. Refusing that on a tracked catalog is correct
+# (fail-closed; lead ruling on GREEN r2 flag 5, 2026-11-13), but the line must not claim a
+# write -- hence "open ... read-write".
+#
+# Measured 2026-11-13 at ed36b6a: "no catalog.read.duckdb" alone does NOT reach that path.
+# `cli._replica_reader_path()` falls back to the INACTIVE slot (`active` marker) or to the
+# legacy `catalog.duckdb`, and opens it read-only -- so in `tracked_repo`'s two layouts a read
+# is served (`pairs show` exit 0, bytes unchanged). The fall-through needs every reader file
+# absent: `active` = A with only `catalog.A.duckdb` on disk (no B, no legacy file, no snapshot,
+# no `read_only.duckdb`). That is the RED fixture; the two common layouts are the GUARD.
+READ_ARGVS = [["pairs", "show", "foo_bar"], ["memory", "get", "bug212_r2_absent"]]
+
+
+@pytest.fixture
+def slot_only_tracked_repo():
+    """A repo whose committed store is ONE rotation slot: `active` = A, `catalog.A.duckdb`, and
+    no other catalog or reader file. No daemon. Short resolved `/tmp` root."""
+    base = Path(tempfile.mkdtemp(prefix="b212r-", dir="/tmp")).resolve()
+    r = Repo(base)
+    try:
+        r.proj.mkdir()
+        _quiet(r.proj, r, "init", "-q", "--template=", "-b", "main")
+        r.store.mkdir()
+        (r.store / "CLAUDE.md").write_text(CLAUDE_MD, encoding="utf-8")
+        s = Store(r.store)
+        s.init()
+        s.close()
+        legacy = r.store / "catalog.duckdb"
+        shutil.copyfile(legacy, r.store / "catalog.A.duckdb")
+        legacy.unlink()
+        (r.store / "active").write_text("A\n", encoding="utf-8")
+        for name in ("catalog.B.duckdb", "catalog.duckdb", "catalog.read.duckdb",
+                     "read_only.duckdb"):
+            assert not (r.store / name).exists(), f"fixture: {name} exists"
+        _quiet(r.proj, r, "add", "-A")
+        _quiet(r.proj, r, "commit", "-q", "-m", "c0 (one slot committed)")
+        assert store_mod.git_tracked_catalogs(r.store) == ["catalog.A.duckdb"], \
+            "fixture: catalog.A.duckdb is not tracked"
+        yield r
+    finally:
+        dm.stop_daemon(r.store)
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def _run_read(repo: Repo, argv: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, str(_entry(repo.base)), *argv], cwd=str(repo.proj),
+                          env=_base_env(), capture_output=True, text=True, timeout=240)
+
+
+@pytest.mark.timeout(300)
+@pytest.mark.parametrize("argv", READ_ARGVS, ids=["pairs-show", "memory-get"])
+def test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open(
+        slot_only_tracked_repo, argv):
+    """GREEN r2 flag 5, lead ruling: no reader file of any kind, no daemon, a tracked catalog.
+    The read falls to the writer catalog through `_store_rw()`; it is refused with ONE
+    `Error:` line `refusing to open <full target path> read-write in-process: ...` (both
+    remedies), exit non-zero, catalog bytes unchanged -- and the line does not say "write"."""
+    repo = slot_only_tracked_repo
+    assert not dm.ping(repo.store), "fixture: a daemon answers"
+    before = _digests(repo.store)
+    r = _run_read(repo, argv)
+    text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    changed = _changed(before, _digests(repo.store))
+    assert TRACEBACK not in r.stderr, f"`rmx {' '.join(argv)}` crashed\n{text}"
+    assert not changed, f"`rmx {' '.join(argv)}` (a read) changed the tracked catalog " \
+                        f"{changed}\n{text}"
+    assert r.returncode != 0, f"`rmx {' '.join(argv)}` exited 0\n{text}"
+    errs = _errors(r.stderr)
+    target = repo.store / "catalog.A.duckdb"
+    assert len(errs) == 1 and _refusal_lines(r.stderr, target) == errs, \
+        f"`rmx {' '.join(argv)}`: expected ONE `Error:` line `{_refusal_head(target)} ...` " \
+        f"with both remedies; got {errs}\n{text}"
+    assert "in-process write" not in errs[0], f"a READ's refusal claims a write: {errs[0]!r}"
+
+
+@pytest.mark.timeout(300)
+def test_a_read_on_a_tracked_store_with_a_reader_file_is_served_not_refused(tracked_repo):
+    """GUARD (passes at ed36b6a) against an over-broad fix: in `tracked_repo`'s layouts a
+    reader file exists (the inactive slot, or the legacy catalog), so `rmx pairs show` is served
+    read-only from it -- exit 0, no refusal line, catalog bytes unchanged."""
+    repo, layout = tracked_repo
+    assert not dm.ping(repo.store), "fixture: a daemon answers"
+    before = _digests(repo.store)
+    r = _run_read(repo, ["pairs", "show", "foo_bar"])
+    text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    assert r.returncode == 0 and TRACEBACK not in r.stderr and not _errors(r.stderr), \
+        f"[{layout}] a read with a reader file on disk failed\n{text}"
+    assert _changed(before, _digests(repo.store)) == [], f"[{layout}] the read changed the catalog"
 
 
 @pytest.fixture(params=["no-repo", "ignored"])

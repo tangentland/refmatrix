@@ -322,8 +322,15 @@ def test_tldr_warm_invokes_binary_and_ingests(tmp_path, monkeypatch):
     fake_bin.chmod(0o755)
 
     invoked: list[list[str]] = []
+    real_run = subprocess.run
 
     def fake_run(cmd, *args, **kwargs):
+        # Scoped to the tldr binary (bug-212 r2, 2026-11-13): `_store_rw()` now asks git
+        # whether the catalog is tracked (`store.git_tracked_catalogs`) before it opens, and a
+        # global fake answered that probe with an object lacking `stdout`. Every other argv
+        # runs for real, so the store's own git probe is not faked.
+        if not cmd or str(cmd[0]) != str(fake_bin):
+            return real_run(cmd, *args, **kwargs)
         invoked.append(cmd)
         # simulate tldr warm: drop a call_graph.json into the project
         cache = proj / ".tldr" / "cache"
@@ -346,7 +353,8 @@ def test_tldr_warm_invokes_binary_and_ingests(tmp_path, monkeypatch):
         ["tldr-warm", str(proj), "--tldr-bin", str(fake_bin), "--lang", "python"],
     )
     assert result.exit_code == 0, result.output
-    assert invoked, "subprocess.run was never called"
+    assert invoked, "the tldr binary was never invoked"
+    assert len(invoked) == 1, f"the tldr binary ran {len(invoked)} times: {invoked}"
     cmd = invoked[0]
     assert cmd[0] == str(fake_bin)
     assert cmd[1] == "warm"
