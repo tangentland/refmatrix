@@ -851,3 +851,25 @@ rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r12-34f72b3]]
 | finding | answered at |
 |---|---|
 | r12 #m12-3 (the cap's no-candidate rule had no leg: a mutant evicting outside the candidate set, or dropping the over-cap count, survived) | AC-7i2 over-cap leg (66 records, the 58 outside the 8 newest all `expanded` → 66 kept, `topic-cache-evicted` = 0, `topic-cache-over-cap=2`, `topic_hubs` unchanged); mutation (round 12, #m12-3) |
+
+## Split: R5 / R6 on the per-prompt blocks and R8a's writer move to plan-10 (2026-11-13) {#split-plan-10}
+
+Plan-10's dedupe IS this task's versioned injection (context diff over pointer, Q7), applied to
+the two per-prompt blocks ahead of the rest of 19.6. Ownership moves; no interface changes.
+
+rel: related-to -> [[plan-10-injection-dedup]]
+rel: related-to -> [[task-10.2-plan-10-injection-dedup]]
+rel: related-to -> [[task-10.3-plan-10-injection-dedup]]
+rel: related-to -> [[task-10.5-versioned-block-gate]]
+
+| part | built by | what 19.6 keeps |
+|---|---|---|
+| R8a's writer (`focus hook --event compact-marker`, the `session-start` dispatch) | [[task-10.3-plan-10-injection-dedup]], which also writes on `clear`; the marker is `stm/<session>.emitted/marker.json`, read by `stm.last_marker` | R8a's definition of "in the window"; 19.6 reads the marker through `stm.last_marker` |
+| R5 / R6 for block ids `prompt-recall`, `scan-prompt` | [[task-10.2-plan-10-injection-dedup]], gated by [[task-10.5-versioned-block-gate]] | R5 / R6 for the composite blocks (`stm-topic-expanded`, `stm-topic-collapsed`), the topic-cache `re-activate` line, R1-R4, R7, R9, R10, Tables C and D |
+| "last-emitted state" | `stm/<session>.emitted/<block_id>.json` (10.2 R2), one writer per file | 19.6's composite blocks add their own files there |
+| Table A for the per-prompt ids | computed 2026-11-13 at 0.00-3.32% (whole blocks never repeat); whether Table B governs these two ids instead is a user decision ([[task-10.5-versioned-block-gate#d1]]) | Tables A / B unchanged for every other block id |
+
+Unchanged: block ids, `rev`, `unchanged` (21.1's fields; plan-10 adds `rev_kind` and `held_rev`),
+the header and `supersedes` lines, the delta grammar, `K = 8`, keyframe after a marker, the
+half-block rule. The out-of-scope line about plan-10 (consecutive overlap 0.000) is history:
+plan-10 now measures the item-level held share (48.0%).

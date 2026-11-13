@@ -1,8 +1,8 @@
 ---
 gmd: "0.1"
 id: task-10.3-plan-10-injection-dedup
-title: "Task 10.3: a compaction marker (PreCompact and SessionStart compact|clear, 19.6 R8a's writer) resets the injection ledger, proven through the generated hooks, and the saving is re-measured live on the same corpus"
-tags: [task, plan-10, hooks, stm, compaction, telemetry, measurement]
+title: "Task 10.3: 19.6 R8a's compaction marker, built ahead of 19.6 — PreCompact and SessionStart compact|clear write it into the session's last-emitted state, proven through the generated hooks"
+tags: [task, plan-10, hooks, stm, compaction, versioned-injection]
 metadata:
   node_type: task
   status: pending
@@ -11,147 +11,111 @@ metadata:
   updated: 2026-11-13
 ---
 
-# Task 10.3: compaction marker and the live re-measure {#root}
+# Task 10.3: the compaction marker {#root}
 
 > Plan: [[plan-10-injection-dedup]]
-> Status: Pending (rewritten 2026-11-13 on the reopening; was cancelled 2026-09-15; ch-bsd spec
-> review next)
-> Depends on: [[task-10.2-plan-10-injection-dedup]] (the ledger and its `since_ts`).
-> Builds: the compaction-marker WRITER that [[task-19.6-phased-context-and-topic-cache]] R8a names
-> (`rmx focus hook --event compact-marker` + the `session-start` dispatch); 19.6 becomes a reader.
+> Status: Pending (rewritten twice 2026-11-13; the second time onto 19.6's versioned injection,
+> context diff over pointer, Q7; ch-bsd spec review next)
+> Depends on: nothing beyond `master`. Lands before [[task-10.2-plan-10-injection-dedup]].
+> Builds: [[task-19.6-phased-context-and-topic-cache]] R8a's writer, as 19.6 names it; 19.6 and
+> 10.2 are its readers.
 
 rel: part-of -> [[plan-10-injection-dedup]]
-rel: depends-on -> [[task-10.2-plan-10-injection-dedup]]
 rel: realizes -> [[task-19.6-phased-context-and-topic-cache]]
+rel: implements -> [[exploration-session-phased-context#vi-compaction]]
 rel: related-to -> [[task-25.1-recall-hook-byte-budget]]
-rel: derives-from -> [[measurement-injection-already-held-2026-11-13]]
 rel: depends-on -> [[impression_bsd_guard_cannot_fire]]
 rel: depends-on -> [[impression_bsd_tests_bypass_wiring]]
-rel: depends-on -> [[impression_bsd_cost_measured_idle]]
 
 ## Why {#why}
 
-The ledger records what was SENT, not what SURVIVES ([[plan-10-injection-dedup#hazard]]).
-Compaction is the moment the two diverge, so after it nothing may be held: the next delivery of
-every item renders full. 10.2's turn window bounds the damage of a missed signal to 10 turns; this
-task removes it for the signals Claude Code does send. {#why-lead}
+19.6 R5 / R6 omit only against a rev "known to be in the window", and R8a defines that as
+"emitted since the session's last compaction marker". 10.2 needs the marker before it can omit
+anything; 19.6 needs the same marker later. One writer, built once. {#why-lead}
 
-Two signals, because neither is trustworthy alone: **PreCompact** fires before every compaction
-(manual and auto), and **SessionStart** fires after it with `source: "compact"` (and `"clear"`
-after `/clear`). rmx already runs a command on each: on PreCompact `rmx focus summarize --promote`,
-the recall and the save-state checkpoint; on SessionStart `rmx focus hook --event session-start`
-(matcher `startup|resume|clear|compact`, `hooks.py:255-258`, 21.1 D4). 25.1 R11 adds `rmx
-recall-state --max-bytes N` on `compact|clear`.
+Two signals, because neither is trustworthy alone. 25.1's R0 probe (branch
+`task-25.1-recall-hook-byte-budget`, `workflow/measurements/hook-output-cap-probe.md`) observed
+`/compact` firing PreCompact (`trigger=manual`) and then SessionStart with `source=compact`, and
+found PreCompact output reaching the compaction summary: that answers 19.6 R8's first question for
+the manual path. rmx already runs a command on each event: PreCompact `rmx focus summarize
+--promote`, the recall and the save-state checkpoint; SessionStart `rmx focus hook --event
+session-start` (matcher `startup|resume|clear|compact`, `hooks.py:255-258`, 21.1 D4).
 
 ## Decisions {#decisions}
 
 | # | decision | reason |
 |---|---|---|
-| f1 | ONE marker for plan-10 and 19.6: this task builds 19.6 R8a's writer as 19.6 named it (`rmx focus hook --event compact-marker`, its own PreCompact entry, plus the `session-start` dispatch on `source` = `compact`) and adds `clear` | two windows over one context would be the four-call-sites shape again ([[feedback_converge_repeated_shapes]]); 19.6 is pending (Wave 3), this task lands first, so it owns the writer and 19.6 reads it |
-| f2 | The marker is written by the STM focus hook, not by 25.1 R11's `recall-state` entry | `recall-state` is a reader (the handoff); a read verb that also writes session state would hide a side effect in it; the focus hook already parses the SessionStart envelope's `source` and owns STM session state |
-| f3 | The marker lives in STM session state: a ring event `{"kind": "marker", "source": …}` (provenance; refs empty) and `last_marker: {ts, source, turn}` in the focus graph | the graph is already loaded once per prompt by `stm.pre_prompt_state` (10.2 R2 reads the turn there), so the marker read is free; the ring is the record the graph is rebuilt from, so `rebuild_focus` restores `last_marker` from it |
-| f4 | `resume` and `startup` write no marker | `startup` is a new session (an empty ledger by session id); `resume` reloads the transcript, so what was held is held again |
-| f5 | A failed marker write exits non-zero with ONE `Error:` line on stderr | an error that stops an operation fails loudly on the console (the user's 2026-11-10 rule); the cost of a missed marker is bounded by 10.2's window, so the hook does not need to block anything |
+| f1 | Build 19.6 R8a exactly as named: `rmx focus hook --event compact-marker` as its OWN PreCompact entry, and the dispatch inside `--event session-start` on `source=compact`; plus `source=clear` | one marker for plan-10 and 19.6; `/clear` empties the window as compaction does, so its next emission must be a keyframe too (a new session id after `/clear` gives that already; the marker makes it independent of that) |
+| f2 | The marker lives in 19.6's "last-emitted state": `stm/<session>.emitted/marker.json` (`{schema: 1, ts, source, writer}`), beside 10.2's per-block state files in the same directory | 19.6 R8a says the marker is written into the last-emitted state; one directory per session, one writer per file, atomic replace, no read-modify-write between the concurrent hooks |
+| f3 | The writer is the STM focus hook, not 25.1 R11's `recall-state` entry | `recall-state` is a reader (the handoff); the focus hook already parses the SessionStart envelope's `source` and owns STM session state |
+| f4 | `resume` and `startup` write no marker | `startup` starts a new session (no state); `resume` reloads the transcript, so what was emitted is in the window again |
+| f5 | A failed marker write exits non-zero with ONE `Error:` line on stderr; the readers treat an UNREADABLE marker file as "marker now" (keyframe) | a missed reset is the unsafe direction, so a read failure resets; a write failure is loud (the user's 2026-11-10 rule: errors that stop an operation fail loudly on the console) |
 
 ## Requirements {#requirements}
 
-1. **R1 The writer.** `stm.mark_compaction(root, session, *, source) -> dict` appends the ring
-   event and sets `last_marker` in the graph (one write path). It is called by: {#r1}
+1. **R1 The writer.** `stm.mark_compaction(root, session, *, source) -> dict` writes
+   `stm/<session>.emitted/marker.json` by temp-file + replace (one write path), creating the
+   directory. Called by: {#r1}
    - `rmx focus hook --event compact-marker` (a new `--event` choice), generated as its OWN
-     PreCompact entry, not chained into the summarize / recall / save-state commands, present
+     PreCompact entry, not chained into the summarize / recall / save-state commands, and present
      whether or not the PreCompact recall entry is generated (25.1 R7 may drop it);
    - `rmx focus hook --event session-start` when the envelope's `source` is `compact` or `clear`
      (today's entry; its matcher already covers both).
-2. **R2 Ring readers ignore the marker.** `_apply_turn` is never called with it as an input (no
-   turn increment, no refs); `helix.build_index`, `composite.build_topic_composite`, `focus show`
-   and `rebuild_focus`'s replay treat `kind == "marker"` as a no-op for the graph and restore
-   `last_marker` from the newest one. {#r2}
-3. **R3 The reader.** 10.2's `since_ts` becomes `max(session's first ring event ts,
-   last_marker.ts)`: after a marker nothing is held, and the backwards read stops there. 19.6 R8a's
-   "in the window" reads the same `last_marker` (its next revision cites this requirement). {#r3}
-4. **R4 Failure surface.** `mark_compaction` failing (ring or graph unwritable) → exit non-zero,
-   one `Error: compaction marker not written: …` line on stderr, no traceback; the session-start
-   entry's existing pointer write and surfacing still run first. {#r4}
-5. **R5 Live re-measure (the plan's execution contract).** {#r5}
-   - **Before:** [[measurement-injection-already-held-2026-11-13]] (held 48.0%; hook-channel (a)
-     43.2% / 51.9%; compaction-aware 42.1%), 10.4's after-numbers and 10.2's offline replay
-     ([[task-10.2-plan-10-injection-dedup#r10]]).
-   - **After:** deployed with 10.2, measured after the fleet has been busy for at least 5 working
-     days ([[impression_bsd_cost_measured_idle]]), over at least as many sessions per store as the
-     before window, read-only and counts only, with `rmx telemetry --context` and `dd-10r`'s
-     criteria (a) on hook channels: per channel, bytes per human prompt, the share of delivered
-     items rendered as pointers, `pointer_saved_bytes`, the held share of FULL deliveries (what
-     the window and the marker let through), and how many pointers fell after a marker (must be
-     0).
-   - **The floor check.** Over items rendered as pointers, the share later fetched or used (21.5
-     `used` events whose `ref_query_id` is a pointer delivery, plus a main-loop `Read` / `rmx memory
-     get` / `rmx context` of the item within 3 turns), against the same share for full deliveries.
-   - **The window check.** The gap distribution of re-deliveries in STM turns (human turns after
-     10.4), in the measurement's buckets.
-   - **Bands, written here before any number:**
-     - UserPromptSubmit bytes per human prompt (scan-prompt + recall) fall ≥ 20% → keep;
-       5-20% → keep and record; < 5% → the user decides whether the mechanism earns its place.
-     - Floor: with ≥ 30 pointer items eligible, a fetched-or-used share under half the full items'
-       share → the user decides (pointer content or N), nothing is changed silently.
-     - Window: fewer than 50% of re-deliveries at gaps 1-10 → N is revisited with the user.
-   - Written to `workflow/measurements/injection-degrade-2026-11.md` (the after section).
+2. **R2 The reader.** `stm.last_marker(root, session) -> Marker | None`: None when the file does
+   not exist; `Marker(ts=now, source="unreadable")` plus one stderr line when it exists but cannot
+   be read or parsed (f5). 10.2's keyframe rule and, later, 19.6's "in the window" call it; nothing
+   else reads the file. {#r2}
+3. **R3 Nothing else moves.** The marker is not a ring event and not a focus-graph field: the ring,
+   `focus.json`, the topic cache, `pre.json` and the STM turn are untouched by it (19.6 R3's "one
+   writer, one home" for the cache stays true). {#r3}
+4. **R4 Failure surface.** `mark_compaction` failing → exit non-zero, one `Error: compaction marker
+   not written: …` line on stderr, no traceback; in the session-start entry the existing pointer
+   write and surfacing run first and still print. {#r4}
 
 ## Acceptance criteria {#acceptance}
 
-Run in 23.0's sandbox on 10.2's fixture (store, ring, event history), through the GENERATED hook
-config: the test builds it with `hooks._claude_hook_block(...)`, takes the entry under test and
-runs it with `bash -c`, the envelope on stdin and the sandbox `HOME`. A test that calls
+Run in 23.0's sandbox through the GENERATED hook config (`hooks._claude_hook_block(...)`, the entry
+under test run with `bash -c`, the envelope on stdin, the sandbox `HOME`). A test that calls
 `mark_compaction` directly does not show the hook is wired ([[impression_bsd_tests_bypass_wiring]]);
-those exist only in addition. {#acceptance-lead}
+such tests exist only in addition. {#acceptance-lead}
 
 1. **AC-1 Generated config.** PreCompact holds exactly one entry whose command is `rmx focus hook
-   --event compact-marker`, in its own entry, with and without the PreCompact recall entry (both
-   generator settings); the SessionStart `startup|resume|clear|compact` focus entry is unchanged;
-   `rmx install-hooks --check` is clean after `--apply`.
-2. **AC-2 PreCompact resets.** X is held (pointer at turn t); the generated PreCompact marker entry
-   runs; the next per-prompt recall and scan-prompt render X in full. RED at the 10.2 base.
-3. **AC-3 SessionStart resets.** Same with the generated SessionStart focus entry and
-   `{"source": "compact"}`, and with `{"source": "clear"}`; with `{"source": "resume"}` and
-   `{"source": "startup"}` X stays a pointer (no marker written).
-4. **AC-4 The ring stays clean.** After a marker: the graph `turn` is unchanged; `helix.build_index`
-   and the topic composite produce byte-identical output with and without the marker event in the
-   ring; `rmx focus rebuild` restores `last_marker` from the ring.
-5. **AC-5 The read stops at the marker.** With a marker one minute old and a 32 MB event history,
-   `held_items`' `bytes_read` is below the bytes written since the marker plus one 64 KB block.
-6. **AC-6 Loud failure.** An unwritable ring: the generated marker entry exits non-zero with one
-   `Error:` line and no `Traceback`; the next prompt still renders (10.2's window still applies).
-7. **AC-7 Mutations that must FAIL a test:** the PreCompact marker ENTRY removed from the generator
+   --event compact-marker`, in its own entry, with and without the PreCompact recall entry; the
+   SessionStart focus entry is unchanged; `rmx install-hooks --check` is clean after `--apply`.
+2. **AC-2 PreCompact writes it.** After the generated PreCompact marker entry runs,
+   `stm.last_marker` returns `source="precompact"` with a ts inside the run.
+3. **AC-3 SessionStart writes it on compact and clear only.** The generated SessionStart focus
+   entry with `{"source": "compact"}` and with `{"source": "clear"}` writes the marker; with
+   `resume` and `startup` the file is unchanged (absent, or its old ts).
+4. **AC-4 Nothing else moves.** The ring, `focus.json` and the graph `turn` are byte-identical
+   before and after AC-2 and AC-3.
+5. **AC-5 Read failure resets, write failure is loud.** A marker file holding `{` → `last_marker`
+   returns `source="unreadable"` and a stderr line; an unwritable `.emitted` directory → the
+   generated entry exits non-zero with one `Error:` line and no `Traceback`.
+6. **AC-6 Mutations that must FAIL a test:** the PreCompact marker ENTRY removed from the generator
    (the call site, not the function: AC-1, AC-2); the marker chained into the summarize command
-   (AC-1); the `session-start` dispatch dropped (AC-3 compact); `clear` left out (AC-3 clear);
-   `resume` writing a marker (AC-3); the reader ignoring `last_marker` (AC-2); the marker recorded
-   as an `input` (AC-4: turn moves); `rebuild_focus` losing `last_marker` (AC-4); a traceback on
-   failure (AC-6).
+   (AC-1); the session-start dispatch dropped (AC-3 compact); `clear` left out (AC-3 clear);
+   `resume` writing a marker (AC-3); the marker written as a ring event (AC-4); an unreadable file
+   read as "no marker" (AC-5); a traceback on failure (AC-5).
 
 ## Files to modify {#files}
 
 | file | change |
 |---|---|
-| `src/refmatrix/stm.py` | `mark_compaction`; `last_marker` in the graph; `rebuild_focus` restores it; marker events skipped by the turn replay |
+| `src/refmatrix/stm.py` | `mark_compaction`, `last_marker`, `Marker`; the `.emitted` directory path helper (10.2 reuses it) |
 | `src/refmatrix/cli.py` (`focus hook`) | `--event compact-marker`; the `session-start` dispatch on `compact` / `clear`; R4's error line |
 | `src/refmatrix/hooks.py` | the PreCompact `compact-marker` entry, independent of the recall flag |
-| `src/refmatrix/telemetry.py` | `held_items`' `since_ts` from `last_marker` (through the caller); pointers-after-marker count in the report |
-| `src/refmatrix/helix.py`, `src/refmatrix/composite.py` | skip `kind == "marker"` events where they read the ring (if they do not already) |
 | `.claude/settings.json`, `.claude/rmx-hooks.json` | regenerated by calling the generator from Python in the task's clone (never `rmx install-hooks` against a live store) |
-| `tests/test_task10_3_compaction_marker.py` (new) | AC-1..AC-7 |
-| `workflow/measurements/injection-degrade-2026-11.md` | R5's after section |
+| `tests/test_task10_3_compaction_marker.py` (new) | AC-1..AC-6 |
 
 ## Test strategy {#test-strategy}
 
-- RED first on AC-1, AC-2, AC-3 at the 10.2 base, recorded.
-- No mock of the hook generator, the focus hook, STM or the ledger; the generated entries run as
-  bash commands, as Claude Code runs them.
-- Mutations per the plan's execution contract; the call-site mutation edits `hooks.py`, not
-  `stm.py`.
+- RED first on AC-1, AC-2, AC-3, AC-5 at `master`, recorded.
+- No mock of the generator, the focus hook or STM; the generated entries run as bash commands.
+- The call-site mutation edits `hooks.py`, not `stm.py`.
 
 ## Definition of done {#done}
 
 - RED run recorded, GREEN run recorded, mutation table in the implementation summary.
 - Implementation summary at `workflow/implementation_summaries/task-10.3-plan-10-injection-dedup.md`.
-- R5's live numbers written after deploy, with each band's verdict; any band that hands the decision
-  to the user is reported to the user before plan-10 moves to `completed`.
 - Committed on branch `task-10.3-plan-10-injection-dedup`; merged `--no-ff` to `master`.

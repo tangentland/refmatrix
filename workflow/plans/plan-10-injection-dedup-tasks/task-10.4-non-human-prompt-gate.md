@@ -102,8 +102,8 @@ entries that are not tool results):
 | n4 | The definition lives in `terms.py` (`ambient_family(text) -> str \| None`); `stm.is_ambient_text(text)` stays as the name its callers use and returns `ambient_family(text) is not None` | `terms.prompt_gate` (25.2) must call it, and `terms` cannot import `stm` (`stm` imports `scan`, which imports `terms`); one definition, three consumers |
 | n5 | 10.4 EXTENDS 25.2's gate rather than adding a second gate: `terms.prompt_gate` checks `ambient_family` FIRST, then 25.2's ack-only rule | two call sites (scan-prompt, recall) must ask ONE function; a second gate called beside the first is the shape this repo has seen skipped at one call site four times ([[feedback_converge_repeated_shapes]]); 25.2's AC-6 structural test already pins "one gate" |
 | n6 | 10.4 is its own task, after 25.2 merges; 25.2's spec is NOT re-opened | 25.2 has been through three ch-bsd rounds; this task's delta (a clause, a table, a gate kind, a telemetry value) is reviewable on its own |
-| n7 | A non-human prompt gets NOTHING from scan-prompt, the STM composite included | D2 says "inject nothing"; 25.2 g5 keeps the composite on an ACK because the session's topics are what a human "yes next" needs, which does not hold for a teammate's report |
-| n8 | The focus input hook follows the predicate: `<agent-message` and `<cross-session-message` turns are no longer recorded as STM `input` events (no turn increment); tool events after them still are | one predicate, one meaning ("not user intent", the existing docstring); the bus-message case (`<channel`) was decided the same way in 2026-07; the STM turn becomes a human-turn count, the unit 10.2's window counts in |
+| n7 | A non-human prompt gets NOTHING from scan-prompt, the STM composite included | D2 is no injection at all; 25.2 g5 keeps the composite on an ACK because the session's topics are what a human "yes next" needs, which does not hold for a teammate's report |
+| n8 | The focus input hook follows the predicate: `<agent-message` and `<cross-session-message` turns are no longer recorded as STM `input` events (no turn increment); tool events after them still are | one predicate, one meaning ("not user intent", the existing docstring); the bus-message case (`<channel`) was decided the same way in 2026-07; the STM turn becomes a human-turn count |
 | n9 | `rmx curator status` (the second producer in `scan_cmd`) is NOT gated here | outside D2's named surfaces, and it does not read the envelope (scan-prompt consumes stdin); open question to the user ([[#open-questions]]) |
 | n10 | Counted on the call's EXISTING row: `gated: "skipped_non_human"`, `gate_family: <family>`, `retrieved: 0` | 25.2 R4's field with a second value; the family label is a constant from the table, never prompt text |
 
@@ -124,8 +124,8 @@ entries that are not tool results):
    names a family, BEFORE the ack-only rule runs; otherwise 25.2's result with `kind` set. {#r2}
 3. **R3 Call sites** (25.2 R3's two, unchanged in number). {#r3}
    - `scan.scan_prompt`: on `kind == "non_human"` it returns the empty string: no
-     `match_concepts`, no content leg, no rerank, no helix, no composite (n7), and no ledger read
-     ([[task-10.2-plan-10-injection-dedup]]). On `ack_only` it keeps 25.2's behaviour.
+     `match_concepts`, no content leg, no rerank, no helix, no composite (n7), and no block rev
+     ([[task-10.2-plan-10-injection-dedup]]: the versioned block state is left untouched). On `ack_only` it keeps 25.2's behaviour.
    - Per-prompt recall: the verb's `gate_thin_prompt=True` path (25.2 R3, set by the CLI's
      `--stdin-json`) returns an empty payload with no retrieval and no embedding on `non_human`;
      exit 0. An explicit query (interactive, MCP) is never gated (25.2 R3 unchanged).
