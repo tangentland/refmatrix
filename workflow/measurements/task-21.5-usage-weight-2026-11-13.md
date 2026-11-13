@@ -89,16 +89,31 @@ no labelled NEW credits.
 ## Addendum: placebo comparison {#addendum-placebo}
 
 Held-out split; each unit scored against its real activity and against activity from a random
-prompt of another session (same prompt-term exclusion), per arm; difference-in-differences as a
+prompt of another session (prompt-term exclusion from the real prompt — a milder form of the term-clique placebo bias, mostly cancelled by the ratio of ratios), per arm; difference-in-differences as a
 ratio; AUC of real-scored used units against the same units placebo-scored.
 
 | corpus | weight | delivered real/placebo | control real/placebo | DiD ratio | AUC real vs placebo |
 |---|---|---|---|---|---|
-| refmatrix (62 used) | idf and every pre-registered λ | 1.31 | 1.30 | 1.00-1.01 | 0.570-0.569 |
-| refmatrix | post-hoc λ 1 / 2 | | | 1.01 | 0.561 / 0.553 |
+| refmatrix (62 used) | idf and every pre-registered λ | 1.31 | 1.30 | 1.00 | 0.570 |
+| refmatrix | post-hoc λ 1 / 2 / 4 | | | 1.01 | 0.569 / 0.561 / 0.553 |
 | refmatrix | reinforcement form | | | 1.00 | 0.570 |
 | cliquedb (8 used) | every weight | 1.00 | 0.96 | 1.04 | 0.844 |
 
 s_t separates delivered units from neither the control (stratified O/E identical to idf) nor the
 placebo (DiD 1.00, as idf); larger post-hoc λ makes used-vs-placebo separation slightly worse. The
 verdict stands. {#addendum-placebo-reading}
+
+## Review corrections (ch-bsd m1, 2026-11-13) {#review-m1}
+
+rel: amends -> [[bsd-215m1-measurements-r1]]
+
+- Placebo rows corrected in place ([[bsd-215m1-measurements-r1#m5]]); at the pre-registered λ a
+  DiD of 1.00 equals idf by construction (at most 3 of 115 terms change weight), so it is not
+  separate evidence. The reinforcement comparison and the placebo addendum were NOT
+  pre-registered.
+- The pre-registered primary hub slice, omitted above: refmatrix held-out 58.13% vs 27.16%, O/E
+  1.00 for every λ ([[bsd-215m1-measurements-r1#m2]]).
+- "Trustworthy" overstates the evidence: 68 of 93 refmatrix used units are main-loop path credits,
+  whose labelled precision is 0.35 [0.19, 0.54] ([[bsd-215m1-measurements-r1#s3]]). The binding
+  constraint is label validity as well as count; the "do not build" verdict is stronger, not weaker.
+- Pre-registration timing verified: PREREG 12:03:57, script 12:04:38, first outputs 12:04:44.

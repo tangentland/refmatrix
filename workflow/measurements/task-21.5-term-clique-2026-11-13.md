@@ -162,3 +162,25 @@ excluded; the file/name signal is mostly non-main-loop. Recommendation addendum 
 21.5 headline is the main-loop file leg only, subagent and unattributed credits reported beside
 it and never counted — which needs `origin` on ring lines (D13) or a transcript-side join.
 {#addendum-net}
+
+## Review corrections (ch-bsd m1, 2026-11-13) {#review-m1}
+
+rel: amends -> [[bsd-215m1-measurements-r1]]
+
+- **Placebo withdrawn as evidence** ([[bsd-215m1-measurements-r1#b2]]): the prior-context filter
+  was built from the real session and applied to the placebo session's activity. Symmetric, the
+  real session's later work carries the item's new terms ~4× more than another session's
+  (refmatrix 2.67% vs 0.62% main-loop new terms; cliquedb 0.54% vs 0.08%). Item 2 of
+  [[#not-signal]] and the placebo columns are void; the term and clique verdicts rest on the
+  stratified control comparison alone.
+- **File/name excess: direction, not size** ([[bsd-215m1-measurements-r1#s1]]): by credit count
+  refmatrix is 0.88 (76 vs 86.6 expected); the lag-weighted ratio is 3.20 / 1.53 / 1.37 / 1.22
+  under four stratifications (cliquedb 2.55 / 2.61 / 2.59 / 1.09); bootstrap 95% [1.4, 19.5] and
+  [1.22, 7.37].
+- **Strata limit** ([[bsd-215m1-measurements-r1#s2]]): the min-20-control rule drops the
+  delivered-only doc-anchor × scan_prompt strata (444 / 257 units), where the pilot found use.
+  Sensitivity: min 5 → main-loop new terms 0.72 / 0.62; no term-count bucket → cliquedb 1.39 / 1.58.
+- **"Continuation, not use"** ([[#addendum-terms]]) is weakened to "term overlap cannot
+  distinguish use".
+- **Inputs** ([[bsd-215m1-measurements-r1#m1]]): refmatrix inputs drifted between runs (8,144 vs
+  8,457 units on a fresh clone); signs hold.

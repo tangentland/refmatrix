@@ -134,7 +134,7 @@ entities of the same name — a `doc` with a path and a `concept` with none — 
 binds the concept. Anchored links (`[[doc#id]]`) bind correctly. The rule-doc exclusion (R1-R4) is a
 real but much smaller part. {#rev-2-finding}
 
-(Source: the ch-bsd report `bsd-215m1`, 2026-11-13; linked once persisted.)
+rel: derives-from -> [[bsd-215m1-measurements-r1#b1]]
 
 **Mechanism (code, `ingest_gmd._resolve_target_eid`):** after the batch dict, it tries
 `store.get_entity(kind, name)` for `("concept", "doc", "memory")` in that order. Concept-first is

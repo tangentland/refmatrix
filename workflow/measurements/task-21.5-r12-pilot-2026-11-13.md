@@ -63,7 +63,7 @@ R12 gates: n_main 49 pooled (< 50, report-only); subagent share 60% (ceiling 10%
 
 ## Breakdowns {#breakdowns}
 
-- **match_on:** `bash_name` 0 CAUSED of 46, C+I 1/46 = 0.02 [0.00, 0.11] (main loop 0/23 [0, 0.14] — meets R12's per-stratum drop rule); `bash_path` C 5/75, C+I 11/75 = 0.15 [0.08, 0.24], main loop C+I 9/26 = 0.35 [0.19, 0.54] — all of the signal; `path` / `name` / `mcp_name` produced no credits.
+- **match_on:** `bash_name` 0 CAUSED of 46, C+I 1/46 = 0.02 [0.00, 0.11] (main loop 0/23 [0, 0.14] — meets R12's per-stratum drop rule); `bash_path` C 5/75, C+I 11/75 = 0.15 [0.08, 0.24], main loop C+I 9/26 = 0.35 [0.19, 0.54] — all of the signal; `path` / `name` / `mcp_name` were absent from the sample (none of the 121 sampled headline pairs used them).
 - **item kind:** term concepts 0/40 C+I; grep-floor names 0/24; doc anchors C 3/43, C+I 8/43; code 1/7; memory C+I 3/5.
 - **channel:** scan_prompt C+I 8/113 = 0.07; prompt_recall 2/4; context 1/3; session_start 1/1.
 - **origin:** main loop C+I 9/49 = 0.18; subagent 3/72 = 0.04 (scan_prompt deliveries never reach a subagent). {#by-leg}
@@ -99,3 +99,14 @@ The rubric left one call open: a subagent opening a file for its own brief with 
 delivery was CONSISTENT in four chunks and UNRELATED in one. It moves only the
 CONSISTENT/UNRELATED split, never CAUSED or INFORMED. Working files (pair ids, labels, one-line
 paraphrases) stay in the session scratchpad and are not committed.
+
+## Review corrections (ch-bsd m1, 2026-11-13) {#review-m1}
+
+rel: amends -> [[bsd-215m1-measurements-r1]]
+
+Pilot counts and `p_w` reproduced exactly ([[bsd-215m1-measurements-r1#verdict-lines]]). "Measures
+proximity, not use" holds for "caused the touch"; it is weaker as a claim about usefulness, since
+the rubric cannot see a detour a delivery prevented. The CONSISTENT ↔ UNRELATED split is wider
+than [[#caveat]] says: 5 of 26 blind pairs (19%), all subagent touches; no CAUSED/INFORMED label
+is affected ([[bsd-215m1-measurements-r1#s5]]). Blind agreement on CAUSED+INFORMED vs not: 25/26,
+with no original positive in the blind set.

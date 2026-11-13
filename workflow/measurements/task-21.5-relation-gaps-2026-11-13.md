@@ -114,3 +114,15 @@ vs 2/20 (Fisher one-sided p 0.006); mentions>.lead< 4/5 vs 28/135 (p 0.010); men
 
 One hop-2 degree cap; ≤ 4,000 units per arm; outcome = main-loop transcript paths only; git log
 read-only; random baseline ignores file popularity; no placebo in this phase.
+
+## Review corrections (ch-bsd m1, 2026-11-13) {#review-m1}
+
+rel: amends -> [[bsd-215m1-measurements-r1]]
+
+[[#gmd-gap-correction]] carries the binding mechanism ([[bsd-215m1-measurements-r1#b1]]): of 3,594
+authored wikilink `rel:` lines, 29.2% reach a target with a path, 39.0% bind a path-less concept,
+19.0% have stale evidence and no live edge, 12.9% have no evidence. The GMD-provenance combos are
+largely co-citation; re-run after bug-216. The doc-id regex cut namespaced ids
+(`refmatrix/adr-…` → `refmatrix`), dropping them from the denominator
+([[bsd-215m1-measurements-r1#m4]]). The code-structure rows stand as counts; the random baseline
+ignores file popularity.
