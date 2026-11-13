@@ -1,8 +1,8 @@
 ---
 gmd: "0.1"
 id: plan-10-injection-dedup
-title: "Per-prompt dedupe through 19.6's versioned blocks (keyframe + add-only delta), gated by 10.5 (provisionally NO-GO); non-human prompts get no per-prompt injection"
-tags: [plan, scan-prompt, memory-recall, context, versioned-injection, hooks, injection, dedupe]
+title: "Names-only dedupe of the per-prompt payloads: an item the session already holds is named on one 'still in play' line instead of re-sent, on every prompt, human or not"
+tags: [plan, scan-prompt, memory-recall, context, hooks, injection, dedupe]
 metadata:
   node_type: plan
   status: drafting
@@ -10,17 +10,15 @@ metadata:
   updated: 2026-11-13
 ---
 
-# Proposed Plan: versioned per-prompt blocks, and no injection on non-human prompts {#root}
+# Proposed Plan: names-only dedupe of the per-prompt payloads {#root}
 
 **Date:** 2026-09-15; reopened 2026-11-13.
 **Status:** DRAFTING (reopened). 10.1 (2026-09-15) measured consecutive-call overlap at median
 **0.000** and stopped the plan; that result stands as history. The 2026-11-13 re-measurement
-([[measurement-injection-already-held-2026-11-13]], provisional until ch-bsd) found **48.0%** of
-delivered items already held by the session, almost all by re-delivery, and about half of all
-hook prompts non-human. The dedupe is 19.6's versioned injection (R5 / R6) applied to the two
-per-prompt blocks, pulled forward ahead of the rest of 19.6 (context diff over pointer, Q7); a
-pre-build gate (10.5) decides whether it is built. The specs go through a ch-bsd spec review
-before this plan moves to `approved`.
+([[measurement-injection-already-held-2026-11-13]]) found **48.0%** of delivered items already
+held by the session, almost all by re-delivery. A pre-registered replay of five designs chose
+names-only (Q13); non-human turns get the same dedupe, no separate gate (Q10). The specs go
+through a ch-bsd spec review before this plan moves to `approved`.
 **Location:** `workflow/plans/plan-10-injection-dedup.md` — permanent home; stage is `metadata.status`.
 
 rel: depends-on -> [[constitution]]
@@ -34,12 +32,13 @@ rel: specifies -> [[task-10.3-plan-10-injection-dedup]]
 rel: specifies -> [[task-10.4-non-human-prompt-gate]]
 rel: specifies -> [[task-10.5-versioned-block-gate]]
 rel: derives-from -> [[measurement-injection-already-held-2026-11-13]]
-rel: realizes -> [[task-19.6-phased-context-and-topic-cache]]
-rel: implements -> [[exploration-session-phased-context#versioned-injection]]
+rel: derives-from -> [[measurement-injection-already-held-2026-11-13#design-replay]]
+rel: derives-from -> [[measurement-injection-already-held-2026-11-13#design-replay-v2]]
+rel: related-to -> [[task-19.6-phased-context-and-topic-cache#split-plan-10]]
 rel: depends-on -> [[task-25.1-recall-hook-byte-budget]]
-rel: depends-on -> [[task-25.2-thin-prompt-gate]]
 rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 rel: related-to -> [[task-21.5-tool-used-signal]]
+rel: related-to -> [[exploration-handhold-outcome-experiment]]
 rel: depends-on -> [[open-questions]]
 
 ## Context {#context}
@@ -49,115 +48,99 @@ decline them. Over a long session the same items come back turn after turn.
 
 **2026-11-13 numbers** ([[measurement-injection-already-held-2026-11-13#result]]): 7,641 of
 15,934 delivered units (48.0%; 46.9% of item bytes) were already held when delivered; re-delivery
-alone 46.7%; hook channels only 43.2% / 51.9% (refmatrix / cliquedb); compaction-aware 42.1%.
-Repeats are spread across the session: re-delivery gaps 1 prompt 1,168; 2-3 1,811; 4-10 2,049;
-≥ 11 2,293; earlier deliveries per re-delivered unit 1 → 2,515; 2 → 1,221; 3-5 → 1,634; 6-20 →
-1,461; ≥ 21 → 555. Cost check: 6 of 13 labelled used items were re-deliveries. {#context-2026-11-13}
+alone 46.7%; hook channels only 43.2% / 51.9% (refmatrix / cliquedb). Repeats are spread across
+the session (re-delivery gaps 1 prompt 1,168; 2-3 1,811; 4-10 2,049; ≥ 11 2,293) and arrive on
+different words. Cost check: 6 of 13 labelled used items were re-deliveries, so nothing may be
+removed without a trace. {#context-2026-11-13}
 
-**Whole blocks never repeat.** 19.6's Table A statistic (the share of a block's emitted bytes
-byte-identical to its previous rev, from 21.1's `block_sha`), computed read-only on the same
-windows on 2026-11-13: `prompt-recall` 0.00% (refmatrix, 338 calls) and 3.32% (cliquedb, 332
-calls, 10 identical consecutive packs); `scan-prompt` 0.00% / 0.00% (362 / 369 calls). The
-repetition is at the ITEM level, inside blocks whose whole content changes every prompt.
-{#context-table-a}
+**Whole blocks never repeat.** 19.6's Table A statistic on the same windows: `prompt-recall`
+0.00% / 3.32%, `scan-prompt` 0.00% / 0.00%. The repetition is at the ITEM level, inside payloads
+whose whole content changes every prompt. {#context-table-a}
 
 ## The failure mode this plan is designed around {#hazard}
 
-A hook cannot see the context window. Whatever this plan omits because "the session already
-holds it" may have been compacted or edited away. The design answer is 19.6's
-([[exploration-session-phased-context#vi-delta]]): omit only against a rev KNOWN to be in the
-window (since the last compaction marker), re-send everything in a full KEYFRAME every `K = 8`
-revs and after any compaction, and count every omission. The labelled-use gate in 10.5 decides
-whether omission is safe enough to switch on at all.
+A hook cannot see the context window. Whatever this plan stops re-sending may have been compacted
+or edited away. The design keeps every held item NAMED (one `still in play` line), resets "held"
+at every compaction marker, and counts every name; nothing is removed by rule.
 
 ## Proposed Approach {#proposed-approach}
 
-### The dedupe is 19.6's versioned injection on the per-prompt blocks {#versioned}
+### Names-only dedupe {#names-only}
 
-The two per-prompt payloads are 21.1's block ids `prompt-recall` (25.1's pack) and `scan-prompt`.
-Each becomes a versioned block ([[task-10.2-plan-10-injection-dedup]]):
+On every prompt, human or not ([[task-10.2-plan-10-injection-dedup]]):
 
 ```
-keyframe:   # rmx recall · prompt_recall · 9 hits · budget 4000 B · prompt-recall rev 9 keyframe
-            supersedes earlier revs of prompt-recall
-            <25.1's pack, unchanged>
-delta:      # prompt-recall rev 10 = rev 9 + {add: 2}
-            <25.1's hook lines for the 2 items not already in the block since rev 9>
-unchanged:  prompt-recall rev 11 unchanged
+# rmx recall · prompt_recall · 9 hits · budget 4000 B
+still in play: feedback_push_from_dev_not_deploy, project_0820_release_fleet_hooks (+0)
+- <the non-held hits, in their original rank order, as 25.1 renders them>
 ```
 
-The block's STATE is every item it carried since its last keyframe (add-only). A delta carries
-only items not in that state; a keyframe re-renders the current prompt's whole pack and resets the
-state to it. That is Table B's "add-only deltas" band, and it is where the reopened suppression
-question lands: an item omitted from a delta is suppressed for at most `K − 1` revs and re-shown
-at the next keyframe or after any compaction ([[#decisions-log]] R2'). No per-item pointer and no
-separate ledger: the state is 19.6's "last-emitted state", one small file per session and block,
-written by the block's own hook.
+- **Held** = delivered FULL on `scan_prompt`, `prompt_recall` or `session_start` on an EARLIER
+  prompt of the session, after the last compaction marker (cross-block).
+- Held items are taken out of the payload and named on ONE line (cap 15, then `(+N)`); non-held
+  items render in full in their original order; nothing new is pulled in.
+- The names line is visible but never makes an item held; compaction is the only reset.
+- State: one small file per writing channel under `stm/<session>.emitted/`, beside 10.3's marker.
+  21.1's events measure it; they are not its state.
+
+**Why this design.** dd-10r's pre-registered replay (1,472 prompt calls; 11 labelled and 16 R12
+explicit uses) scored five designs ([[measurement-injection-already-held-2026-11-13#design-replay]],
+v2 [[measurement-injection-already-held-2026-11-13#design-replay-v2]]): names-only kept 11/11 and
+16/16 visible at 0.469-0.470 of baseline block bytes; the per-item pointer also passed (0.477);
+4+3 (novelty-first plus the names line) lost a labelled use under block bytes; 19.6's block diff
+lost 4 labelled and 6 R12 uses. {#why-names-only}
 
 ### Per-item pointer: withdrawn {#degrade}
 
-The first 2026-11-13 draft rendered a held item as a one-line pointer and never suppressed it.
-Withdrawn the same day: context diff over pointer (Q7); degrade-only reopened (open-questions
-`#pre-ledger`). Kept as an anchor for the briefs that cite it.
+The first 2026-11-13 draft rendered a held item as a one-line pointer. Withdrawn the same day
+(context diff over pointer, Q7; then names-only, Q13). Kept as an anchor for the briefs that cite
+it.
 
-### The gate comes first {#gate}
+### 19.6's block diff: not used for these payloads {#block-diff}
 
-19.6 builds R5 / R6 only in the bands of its pre-registered Tables A and B (user-confirmed, d9v).
-The 48.0% figure is an item-level held share; it is neither Table A's statistic nor Table B's,
-so it satisfies neither. As written, Table A sends both per-prompt blocks to NO-GO ([[#context-table-a]]),
-before Table B is consulted. 10.5 ([[task-10.5-versioned-block-gate]]) therefore needs a user
-decision to judge per-prompt blocks on Table B directly, then runs Table B (delta size and
-read-back correctness) and a pre-registered labelled-use check, and only its GO starts 10.2.
+Plan-10 then planned 19.6 R5 / R6 (keyframe + delta) on the two payloads; the provisional replay
+put it at NO-GO under 19.6's confirmed bands (Table B median delta / full 1.000;
+[[task-10.5-versioned-block-gate#history]]), and the user chose not to use it for these payloads
+(Q11). That NO-GO stands. 19.6 keeps R5 / R6 for its own blocks; plan-10 builds only R8a's marker
+writer for it ([[task-19.6-phased-context-and-topic-cache#split-plan-10]]).
 
-**Provisional result (2026-11-13, after the pre-registration commit):** NO-GO under the confirmed
-bands. Table B's median delta / full is 1.000 on both stores: the half-block rule fires on ~87% of
-revs and resets the add-only state each time, so only 6.4% / 10.9% of re-deliveries would be
-omitted. Waiving the half-block rule (not pre-registered) omits 38-40% of re-deliveries and ~16-21%
-of item bytes, but the median still exceeds 50% and 3 of 13 labelled used items would have been
-omitted ([[task-10.5-versioned-block-gate#provisional]]). The way forward is the user's
-([[task-10.5-versioned-block-gate#d4]]). {#gate-provisional}
+### Non-human turns {#non-human}
 
-### Non-human prompts get no per-prompt injection {#non-human}
+No separate gate (Q10): the full gate lost 10 R12 explicit uses in the with/without comparison
+([[measurement-injection-already-held-2026-11-13#gate-comparison]]) and failed in every replay arm,
+while names-only on those turns kept every use. What remains of 10.4 is a predicate
+(`terms.ambient_family`) that keeps those turns out of the focus graph (lead decision), silences
+curator status on them (Q9), and labels every hook row with the prompt family
+([[task-10.4-non-human-prompt-gate]]).
 
-Direction (D2, unchanged by Q7): no per-prompt injection on teammate, agent, cross-session, bus
-or task-notification turns. One predicate (`terms.ambient_family`, behind `stm.is_ambient_text`)
-through 25.2's one prompt gate, and ONE policy table that says what each surface emits per family
-([[task-10.4-non-human-prompt-gate#policy]]). The with/without comparison
-([[measurement-injection-already-held-2026-11-13#gate-comparison]]): the full gate removes 62.3% of
-prompt-channel units, loses 0 labelled uses and 10 R12 explicit uses, so its pre-registered rule
-tripped and the per-family values are the user's (Q10, open). Curator status goes silent too (Q9).
-After ship, a per-session live A/B sharing one arm table with the handhold experiment.
+### Measured after ship {#ab}
+
+A per-session live A/B, `dedupe` vs `full`, drawn from one arm table shared with the handhold
+outcome experiment ([[task-10.2-plan-10-injection-dedup#r7]]). A later arm, 4+3b (baseline-delivered
+non-held first, then new candidates, then held into leftover budget, the rest named), is recorded
+for a future A/B and not built (Q13).
 
 ## Open Questions {#open-questions}
 
 ### Q1: Does the repeat actually happen, and how much? {#q1}
-**Status:** RESOLVED twice; the second answer governs.
-
-- **2026-09-15 (10.1, history):** median consecutive-call overlap **0.000** against a
-  pre-registered 0.40; the plan stopped ([[injection-overlap]]).
-- **2026-11-13:** 48.0% held, band ≥ 30% → reopen
-  ([[measurement-injection-already-held-2026-11-13#result-band]]).
+**Status:** RESOLVED twice; the second answer governs. 2026-09-15 (10.1, history): consecutive
+overlap 0.000 ([[injection-overlap]]). 2026-11-13: 48.0% held, band ≥ 30% → reopen
+([[measurement-injection-already-held-2026-11-13#result-band]]).
 
 ### Q2: Where does the state live? {#q2}
-**Status:** RESOLVED 2026-11-13 — 19.6's last-emitted state, one file per (session, block) under
-`stm/<session>.emitted/`, plus the compaction marker in the same directory (19.6 R8a)
-([[task-10.2-plan-10-injection-dedup#r2]], [[task-10.3-plan-10-injection-dedup#r1]]).
+**Status:** RESOLVED — `stm/<session>.emitted/`: one held file per writing channel (10.2 h6) and
+10.3's marker.
 
-### Q3: Is scan-prompt even the right target? {#q3}
-**Status:** RESOLVED 2026-11-13 — both per-prompt blocks: scan_prompt held 42.2% / 45.6%,
-prompt_recall 57.6% / 77.3%. `session-start` stays fixed (prompt-less, as 19.6 R7).
+### Q3: Which payloads? {#q3}
+**Status:** RESOLVED — `scan-prompt` and the per-prompt recall dedupe; `session_start` records
+but never dedupes; PreCompact and explicit pulls neither.
 
-### Q4: What is a non-human prompt, exactly? {#q4}
-**Status:** RESOLVED 2026-11-13 by a read-only census ([[task-10.4-non-human-prompt-gate#census]]).
+### Q4: What is a non-human prompt? {#q4}
+**Status:** RESOLVED by a read-only census ([[task-10.4-non-human-prompt-gate#census]]).
 
-### Q6: What does a non-human turn get, per family? {#q6}
-**Status:** OPEN — Q10 with the user; 10.4's policy table takes the answer
-([[task-10.4-non-human-prompt-gate#policy]]).
-
-### Q5: Does Table A's NO-GO close the per-prompt blocks? {#q5}
-**Status:** OPEN — needs the user ([[task-10.5-versioned-block-gate#d1]], and after the provisional
-run [[task-10.5-versioned-block-gate#d4]]: accept NO-GO, change three confirmed rules for these two
-ids, or another design).
+### Q5: Before build {#q5}
+**Status:** OPEN (not a user question): 10.5's 50-probe read-back test, bands written first
+([[task-10.5-versioned-block-gate#part-2]]).
 
 ## Decisions Log {#decisions-log}
 
@@ -166,67 +149,65 @@ ids, or another design).
 | Q1 | Repeat rate (consecutive calls) | Pre-registered >= 0.40. **Measured 0.000.** Plan stopped at 10.1. | 2026-09-15 |
 | Q2 | Ledger location | Moot — not built. | 2026-09-15 |
 | Q3 | scan-prompt vs grep | Moot for dedup. Separate finding: 28% of scan-prompt calls return nothing. | 2026-09-15 |
-| Q1' | Already-held share (against the session) | **48.0%** held, ≥ 30% band → reopen; cost check tripped → the user decides | 2026-11-13 |
-| D1 | What a re-delivered item becomes | ~~one-line pointer, never suppress~~ — SUPERSEDED by R1', R2' | 2026-11-13 |
-| D2 | Non-human prompts | direction: **no per-prompt injection** on teammate / agent / cross-session / bus / task-notification turns; stands after Q7; per-family values → Q10 | 2026-11-13 |
-| Q9 | Curator status on non-human turns | silent too (Q9); its own hook entry reading the envelope (10.4 R8) | 2026-11-13 |
-| Q10 | Per-family behaviour on non-human turns | OPEN: delta-only / full gate / task-notifications only; 10.4's policy table takes the answer | — |
-| L1 | Focus graph and agent-message turns (lead) | not counted as STM input turns, same principle as `is_ambient_text` | 2026-11-13 |
-| L2 | Envelope origin field (lead) | read before the prefix table when present (10.4 R0) | 2026-11-13 |
-| W1 | With/without the gate (user asked for the comparison) | offline before ship (pre-registered rule tripped → Q10); live per-session A/B after ship, one arm table with the handhold experiment (10.4 R6, R7) | 2026-11-13 |
-| R2' | "Degrade, never suppress" | degrade-only reopened (open-questions `#pre-ledger`); folded into the delta model: omission from a delta, bounded by keyframe and compaction, gated by 10.5's pre-registered labelled-use check | 2026-11-13 |
-| R1' | The dedupe mechanism | context diff over pointer (Q7): 19.6 R5 / R6 on `prompt-recall` and `scan-prompt`, pulled forward; no per-item pointer, no separate ledger | 2026-11-13 |
-| Q2' | State location | 19.6's last-emitted state (per session, per block); marker in the same store | 2026-11-13 |
-| Q3' | Which blocks | `prompt-recall`, `scan-prompt`; `session-start`, `precompact`, explicit pulls stay full | 2026-11-13 |
-| Q4 | Non-human predicate | `terms.ambient_family`, seven harness openings, behind `stm.is_ambient_text`; called through 25.2's `terms.prompt_gate` | 2026-11-13 |
-| P1' | Task split | 10.4 gate; 10.5 pre-build measurement (Tables A/B on per-prompt blocks + labelled-use check); 10.3 the compaction marker (19.6 R8a's writer); 10.2 the versioned blocks, only on 10.5's GO | 2026-11-13 |
+| Q1' | Already-held share (against the session) | **48.0%** held, ≥ 30% band → reopen | 2026-11-13 |
+| D1 | Repeat rendering | ~~one-line pointer, never suppress~~ — superseded (Q7, then Q13) | 2026-11-13 |
+| R2' | Degrade-only | reopened (open-questions `#pre-ledger`); names-only removes held items from the payload but always names them | 2026-11-13 |
+| Q7 | Dedupe mechanism | context diff over pointer; tried as 19.6 R5/R6, provisionally NO-GO | 2026-11-13 |
+| Q11 | Design for the two payloads | 4+3; 19.6's block diff not used for them; its NO-GO stands | 2026-11-13 |
+| Q12 | How to choose | replay-score the designs first (dd-10r, pre-registered) | 2026-11-13 |
+| Q13 | Design after the replay | names-only now; 4+3b a later A/B arm | 2026-11-13 |
+| D2 | Non-human prompts | direction: less injection on non-human turns — refined by Q10 | 2026-11-13 |
+| Q10 | Non-human turns | no separate gate; same dedupe as human prompts | 2026-11-13 |
+| Q9 | Curator status on non-human turns | silent (10.4 R4, the 10.4b row) | 2026-11-13 |
+| L1 | Agent-message turns and the focus graph (lead) | not STM input turns, same principle as `is_ambient_text` | 2026-11-13 |
+| L2 | Envelope origin field (lead) | read before the prefix table when present | 2026-11-13 |
+| L3 | Held rules (lead) | cross-block from earlier prompts; compaction the only reset; names line never refreshes held; scan in item units | 2026-11-13 |
+| L4 | "Earlier prompt" (architect) | by `prompt_sha` and `PRE_PROMPT_SKEW_S`, not the STM turn (agent-message turns get payloads but are not STM turns) | 2026-11-13 |
+| W1 | With/without (user asked) | offline: the gate failed (Q10); live: 10.2's `dedupe` vs `full` A/B, nested with the handhold experiment | 2026-11-13 |
 
 ## Task Breakdown {#task-breakdown}
 
 | Task ID | Title | Depends On |
 |---------|-------|------------|
 | 10.1 | **Measure the overlap** — consecutive-call replay (complete; history) | plan 9 |
-| 10.4 | **Non-human prompt gate** — one predicate through 25.2's gate; the per-family policy table (Q10); offline comparison before ship, live A/B after | 25.1, 25.2 merged; Q10 answered before ship |
-| 10.4b | **Curator status silent on non-human turns** (Q9) — its own hook entry reading the envelope; specified in [[task-10.4-non-human-prompt-gate#r8]] | 10.4 |
-| 10.5 | **Gate for versioned per-prompt blocks** — Table A / B on `prompt-recall` and `scan-prompt`, read-back correctness probe, labelled-use check; GO / NO-GO for 10.2 | the user's Q5 answer; 21.1's events (exist) |
-| 10.3 | **Compaction marker** — 19.6 R8a's writer (PreCompact + SessionStart `compact\|clear`) into the last-emitted state | none beyond master; before 10.2 |
-| 10.2 | **Versioned per-prompt blocks** — 19.6 R5 / R6 on 25.1's pack and scan-prompt; live before / after | 25.1 merged; 10.3; 10.4; 10.5 GO |
+| 10.4 | **Non-human predicate** — focus graph, family label on hook rows | 25.1 merged |
+| 10.4b | **Curator status silent on non-human turns** (Q9), its own hook entry; in [[task-10.4-non-human-prompt-gate#r4]] | 10.4 |
+| 10.3 | **Compaction marker** — 19.6 R8a's writer; the only reset of the held set | `master` |
+| 10.5 | **Precondition** — the design replay (PASSED, v1/v2) and a 50-probe read-back test (to run) | dd-10r's replay (done) |
+| 10.2 | **Names-only dedupe** + the live A/B | 25.1 merged; 10.3; 10.4; 10.5 GO |
 
-**Order:** 25.1 → 25.2 → 10.4 proceeds regardless. 10.5's provisional run says NO-GO, so 10.2
-waits on the user's d4; 10.3 is useful to 19.6 either way and can be built now. Recommended: ship
-10.4, then re-run 10.5 on human prompts only before deciding d4. 10.4 lands before 10.2 so that non-human prompts never become revs
-(a gated prompt emits nothing), and 10.2's keyframe cadence counts human prompts from its first
-commit. {#order}
+**Order:** 10.3 and 10.5's probe can start now; 25.1 → 10.4 (+10.4b) → 10.2. {#order}
 
 ## Execution contract {#execution}
 
 TDD per [[tdd-governance]]. Plan-specific gates:
 
-- **10.1 is pre-registered and closed.** Its negative result is history; it is not re-scored.
-- **No build before the gate.** 10.2 starts only on 10.5's GO; 10.5's bands are committed before
-  any of its numbers are computed.
-- **Omission is bounded and counted.** An item is omitted only against a rev known to be in the
-  window (after the last marker, since the block's last keyframe); every omission is counted on the
-  call's row and as a `retrieved` event carrying the rev that holds it; a missing or unreadable
-  state file means a keyframe.
-- **The saving is re-measured live**, with `rmx telemetry --context` before and after, on the same
-  corpus, after the fleet has been busy ([[impression_bsd_cost_measured_idle]]), plus an offline
-  replay of the 2026-11-13 corpus through the GREEN functions.
+- **10.1 is pre-registered and closed.** Its negative result is history.
+- **No build before the precondition.** 10.2 starts only on 10.5's GO; 10.5's probe bands are
+  committed before any probe result.
+- **Nothing removed without a trace.** A held item is always named or counted (`(+N)`); the names
+  line is reserved in the budget; a missing or unreadable state file means everything renders
+  full; an unreadable marker means nothing is held.
+- **The saving is re-measured live** after the fleet has been busy
+  ([[impression_bsd_cost_measured_idle]]), plus an offline parity run of the replay through the
+  GREEN functions.
+- **Measurement switches are temporary.** The A/B's arm switch exists only for its period and is
+  then deleted; correctness never depends on it.
 - **Counts only.** Measurements read transcripts, rings and logs read-only and report counts,
-  bytes and harness prefixes, never prompt or message text; user decisions are cited by id
-  ([[open-questions]]), never quoted ([[feedback_no_raw_prompts_in_public_repo]]).
+  bytes and harness prefixes; user decisions are cited by id ([[open-questions]]), never quoted
+  ([[feedback_no_raw_prompts_in_public_repo]]).
 
 ## Revision 2026-11-13 (reopening) {#rev-2026-11-13}
 
-Reopened on the already-held measurement; specs by `arch-10r` (brief `workflow/agents/arch-10r.md`).
-First draft (`d9c62cf`) specified a per-item pointer and a delivery-log ledger; superseded the
-same day by Q7 (context diff over pointer) and the degrade-only reopening.
+Specs by `arch-10r` (brief `workflow/agents/arch-10r.md`), four designs in one day: per-item
+pointer (`d9c62cf`), 19.6 block diff (`308edc8`, provisional NO-GO `1e4c6bb`), a non-human policy
+table (`ff8ca4d`), names-only with no gate (this revision, Q13, Q10).
 
 rel: derives-from -> [[agent-brief-arch-10r]]
 
 | change | anchor |
 |---|---|
-| dedupe = 19.6 R5 / R6 on the per-prompt blocks; pointer and ledger withdrawn | [[#versioned]], [[#decisions-log]] R1' |
-| suppression folded into delta omission, gated by 10.5 | [[#decisions-log]] R2', [[#gate]] |
-| Table A computed on the corpus: 0.00-3.32%; Q5 opened | [[#context-table-a]], [[#q5]] |
-| 10.5 added; 10.3 writes the marker into the last-emitted state; order fixed | [[#task-breakdown]], [[#order]] |
+| names-only dedupe; pointer and block diff withdrawn | [[#names-only]], [[#degrade]], [[#block-diff]] |
+| no non-human gate; the predicate's three uses | [[#non-human]] |
+| live A/B `dedupe` vs `full`; 4+3b a later arm | [[#ab]] |
+| 10.5 = replay (passed) + read-back probe | [[#task-breakdown]] |

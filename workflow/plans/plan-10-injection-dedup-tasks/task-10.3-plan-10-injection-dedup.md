@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: task-10.3-plan-10-injection-dedup
-title: "Task 10.3: 19.6 R8a's compaction marker, built ahead of 19.6 — PreCompact and SessionStart compact|clear write it into the session's last-emitted state, proven through the generated hooks"
+title: "Task 10.3: the compaction marker (19.6 R8a's writer, built ahead of 19.6) — PreCompact and SessionStart compact|clear write it; it is the only reset of 10.2's held set"
 tags: [task, plan-10, hooks, stm, compaction, versioned-injection]
 metadata:
   node_type: task
@@ -14,8 +14,7 @@ metadata:
 # Task 10.3: the compaction marker {#root}
 
 > Plan: [[plan-10-injection-dedup]]
-> Status: Pending (rewritten twice 2026-11-13; the second time onto 19.6's versioned injection,
-> context diff over pointer, Q7; ch-bsd spec review next)
+> Status: Pending (rewritten 2026-11-13; unchanged in substance by Q13; ch-bsd spec review next)
 > Depends on: nothing beyond `master`. Lands before [[task-10.2-plan-10-injection-dedup]].
 > Builds: [[task-19.6-phased-context-and-topic-cache]] R8a's writer, as 19.6 names it; 19.6 and
 > 10.2 are its readers.
@@ -29,9 +28,9 @@ rel: depends-on -> [[impression_bsd_tests_bypass_wiring]]
 
 ## Why {#why}
 
-19.6 R5 / R6 omit only against a rev "known to be in the window", and R8a defines that as
-"emitted since the session's last compaction marker". 10.2 needs the marker before it can omit
-anything; 19.6 needs the same marker later. One writer, built once. {#why-lead}
+10.2's names-only dedupe treats an item as held only if it was delivered in full after the
+session's last compaction marker, and the marker is its ONLY reset (10.2 h3). 19.6 R8a defines
+"in the window" by the same marker for its own blocks later. One writer, built once. {#why-lead}
 
 Two signals, because neither is trustworthy alone. 25.1's R0 probe (branch
 `task-25.1-recall-hook-byte-budget`, `workflow/measurements/hook-output-cap-probe.md`) observed
@@ -45,11 +44,11 @@ session-start` (matcher `startup|resume|clear|compact`, `hooks.py:255-258`, 21.1
 
 | # | decision | reason |
 |---|---|---|
-| f1 | Build 19.6 R8a exactly as named: `rmx focus hook --event compact-marker` as its OWN PreCompact entry, and the dispatch inside `--event session-start` on `source=compact`; plus `source=clear` | one marker for plan-10 and 19.6; `/clear` empties the window as compaction does, so its next emission must be a keyframe too (a new session id after `/clear` gives that already; the marker makes it independent of that) |
-| f2 | The marker lives in 19.6's "last-emitted state": `stm/<session>.emitted/marker.json` (`{schema: 1, ts, source, writer}`), beside 10.2's per-block state files in the same directory | 19.6 R8a says the marker is written into the last-emitted state; one directory per session, one writer per file, atomic replace, no read-modify-write between the concurrent hooks |
+| f1 | Build 19.6 R8a exactly as named: `rmx focus hook --event compact-marker` as its OWN PreCompact entry, and the dispatch inside `--event session-start` on `source=compact`; plus `source=clear` | one marker for plan-10 and 19.6; `/clear` empties the window as compaction does, so nothing may count as held after it (a new session id after `/clear` gives that already; the marker makes it independent of that) |
+| f2 | The marker lives at `stm/<session>.emitted/marker.json` (`{schema: 1, ts, source, writer}`), beside 10.2's per-channel held files | 19.6 R8a says the marker is written into the session's last-emitted state; one directory per session, one writer per file, atomic replace, no read-modify-write between the concurrent hooks |
 | f3 | The writer is the STM focus hook, not 25.1 R11's `recall-state` entry | `recall-state` is a reader (the handoff); the focus hook already parses the SessionStart envelope's `source` and owns STM session state |
 | f4 | `resume` and `startup` write no marker | `startup` starts a new session (no state); `resume` reloads the transcript, so what was emitted is in the window again |
-| f5 | A failed marker write exits non-zero with ONE `Error:` line on stderr; the readers treat an UNREADABLE marker file as "marker now" (keyframe) | a missed reset is the unsafe direction, so a read failure resets; a write failure is loud (loud-failure rule, 2026-11-10) |
+| f5 | A failed marker write exits non-zero with ONE `Error:` line on stderr; the readers treat an UNREADABLE marker file as "marker now" (nothing held) | a missed reset is the unsafe direction, so a read failure resets; a write failure is loud (loud-failure rule, 2026-11-10) |
 
 ## Requirements {#requirements}
 
@@ -63,7 +62,7 @@ session-start` (matcher `startup|resume|clear|compact`, `hooks.py:255-258`, 21.1
      (today's entry; its matcher already covers both).
 2. **R2 The reader.** `stm.last_marker(root, session) -> Marker | None`: None when the file does
    not exist; `Marker(ts=now, source="unreadable")` plus one stderr line when it exists but cannot
-   be read or parsed (f5). 10.2's keyframe rule and, later, 19.6's "in the window" call it; nothing
+   be read or parsed (f5). 10.2's `held_items` and, later, 19.6's "in the window" call it; nothing
    else reads the file. {#r2}
 3. **R3 Nothing else moves.** The marker is not a ring event and not a focus-graph field: the ring,
    `focus.json`, the topic cache, `pre.json` and the STM turn are untouched by it (19.6 R3's "one
