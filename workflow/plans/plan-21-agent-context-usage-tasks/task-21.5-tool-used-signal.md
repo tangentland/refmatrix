@@ -9,7 +9,7 @@ metadata:
   plan: plan-21-agent-context-usage
   created: 2026-11-11
   updated: 2026-11-13
-  revision: 3
+  revision: 3.1
 ---
 
 # Task 21.5: a tool-level `used` signal {#root}
@@ -18,8 +18,9 @@ metadata:
 > Status: Pending. Rev 2 (2026-11-11) answered ch-bsd spec review r1 (DIRTY 18) and its addendum
 > against 24.6 r5 ([[#rev-2]]). Rev 3 (2026-11-13) answers spec review r2 (DIRTY 14, NO-GO on
 > b-1: the Bash leg re-opened the clone leg D12 rules out) and re-runs [[#why-data]] under the
-> fix ([[#rev-3]]). The user decided OD-4 and OD-5 on 2026-11-13 (OD-5: a decay kernel replaces
-> the hard window, [[#d18]]). It needs a spec re-review, and the user's answer on
+> fix ([[#rev-3]]). Rev 3.1 (the same day) folds in the user's OD-4 and OD-5 decisions (OD-5: a
+> decay kernel replaces the hard window, [[#d18]]) and re-runs the data under it on two corpora
+> ([[#rev-3-1]]). It needs a spec re-review, and the user's answer on
 > [[#ofu-cliquedb]], before approval.
 > Wave: now. The user prioritised it on 2026-11-11, after reading `rmx telemetry --agent-usage`.
 > Depends on: 21.1 (completed: the ONE recall-event schema, `emit_recall_events`,
@@ -125,57 +126,66 @@ Read/Edit/Write calls in this project's sessions touch paths under `/Volumes/lit
 this tree, and cannot match (counted, [[#d12]]). About half the credits are still prior-touch,
 which is why the headline excludes them. And the headline rate is small: under `W = 2`, 18 of
 2,144 units (0.8%) against a control of 4 of 723 (0.6%) (the kernel's numbers are in
-[[#why-data-kernel]]), so on this window the lift is within noise and [[#r12]]'s labelled sample, not this table, decides
-whether the signal is worth counting.
+[[#why-data-kernel]]), so on this window the lift is within noise and [[#r12]]'s labelled
+sample, not this table, decides whether the signal is worth counting.
 {#why-data-reading}
 
 #### The lag, uncapped, and the kernel (the user's OD-5 decision) {#why-data-kernel}
 
 The rows above apply rev 2's `W = 2`. After the user replaced it with a kernel ([[#d18]]), the
-join was re-run with no cutoff on the same clones, on the spec window and on the full delivery
-range (2026-10-20, the events file's first line, to the copy, 2026-11-13 ~11:00 local). Each
+join was re-run with no cutoff, under [[#d15]]'s rules, on three windows: this project's spec
+window; this project's full delivery range (2026-10-20, the events file's first line, to the
+copy, 2026-11-13 ~11:00 local); and a second corpus, cliquedb (2026-11-04 to 2026-11-11), run
+through `logical_root` = its own root, as AC-15 will. Each was over fresh read-only APFS clones
+(the cliquedb store's files and the global events file), deleted after; counts only. Each
 unit's lag is its first qualifying touch's ([[#r5]]); bins 0 / 1 / 2 / 3 / 4 / 5 / 6-10 / 11-20 /
 21-50 / 51+. Rev 2's "of 125 first matches ... 63 beyond `W`" counted matching EVENTS; per unit
 it was 34 of 98, and 21 of 56 under rev 3's rules.
 
-| measure (rev 3 rules unless stated) | 2026-11-10 window | 2026-10-20 to 2026-11-13 |
-|---|---|---|
-| eligible units | 2,144 | 8,303 |
-| credited units / prior-touch / headline | 56 / 23 / 33 | 258 / 133 / 125 |
-| first-match lag, all credits | 27/3/5/3/1/1/7/9/0/0 (56) | 78/28/15/10/10/7/42/39/23/6 (258) |
-| first-match lag, headline | 13/2/3/1/0/0/6/8/0/0 (33) | 26/8/2/5/6/3/21/27/22/5 (125) |
-| same, rev 2's rules (no base-directory fix) | 12/3/3/4/1/0/5/6/3/0 (37) | 26/15/4/9/7/3/17/25/23/6 (135) |
-| headline by lag band 0 / 1-3 / 4-6 / 7+ | 13 / 6 / 2 / 12 | 26 / 15 / 17 / 67 |
-| `score_headline`, `k = 3`, `h = 2` (share of units) | 20.7 (0.97%) | 52.5 (0.63%) |
-| its parts by band 0 / 1-3 / 4-6 / 7+ | 13.0 / 6.0 / 0.7 / 1.0 | 26.0 / 15.0 / 8.6 / 2.9 |
-| sensitivity `k = 4` / `k = 2` | 21.4 / 19.9 | 57.3 / 47.7 |
-| binary `used_le2` (rev 2's headline) / `used_lag0` / a step at `k = 3` | 18 / 13 / 19 | 36 / 26 / 41 |
-| control units (keys and files never delivered in the session) / touched | 723 / 8 | 2,611 / 28 |
-| control kernel score (share) | 6.3 (0.87%) | 10.6 (0.41%) |
-| control touched by band 0 / 1-3 / 4-6 / 7+ | 1 / 5 / 0 / 2 | 2 / 6 / 3 / 17 |
-| per 1,000 units, headline vs control: lag 0 / 1-3 / 4-6 / 7+ | 6.1 vs 1.4 / 2.8 vs 6.9 / 0.9 vs 0 / 5.6 vs 2.8 | 3.1 vs 0.8 / 1.8 vs 2.3 / 2.0 vs 1.1 / 8.1 vs 6.5 |
-| control under R7's per-call rule: units / touched / kernel score | 1,308 / 8 / 6.3 (0.48%) | 5,218 / 36 / 12.8 (0.25%) |
+| measure (rev 3 rules unless stated) | refmatrix, 2026-11-10 window | refmatrix, 2026-10-20 to 11-13 | cliquedb, 2026-11-04 to 11-11 |
+|---|---|---|---|
+| eligible units | 2,144 | 8,303 | 5,874 |
+| credited units / prior-touch / headline | 56 / 23 / 33 | 258 / 133 / 125 | 215 / 143 / 72 |
+| first-match lag, all credits | 27/3/5/3/1/1/7/9/0/0 | 78/28/15/10/10/7/42/39/23/6 | 38/35/10/10/8/10/18/30/33/23 |
+| first-match lag, headline | 13/2/3/1/0/0/6/8/0/0 | 26/8/2/5/6/3/21/27/22/5 | 11/6/3/3/0/1/11/9/15/13 |
+| same, rev 2's rules (no [[#d15]]) | 12/3/3/4/1/0/5/6/3/0 (37) | 26/15/4/9/7/3/17/25/23/6 (135) | 11/6/3/3/0/1/12/9/15/12 (72) |
+| headline by lag band 0 / 1-3 / 4-6 / 7+ | 13 / 6 / 2 / 12 | 26 / 15 / 17 / 67 | 11 / 12 / 6 / 43 |
+| **`score_headline`**, `k = 3`, `h = 2` (share of units) | **20.7 (0.97%)** | **52.5 (0.63%)** | **26.6 (0.45%)** |
+| its parts by band 0 / 1-3 / 4-6 / 7+ | 13.0 / 6.0 / 0.7 / 1.0 | 26.0 / 15.0 / 8.6 / 2.9 | 11.0 / 12.0 / 2.3 / 1.4 |
+| sensitivity `k = 4` / `k = 2` | 21.4 / 19.9 | 57.3 / 47.7 | 28.1 / 24.7 |
+| binary `used_le2` (rev 2's headline) / `used_lag0` / a step at `k = 3` | 18 / 13 / 19 | 36 / 26 / 41 | 20 / 11 / 23 |
+| control units (keys and files never delivered in the session) / touched | 723 / 8 | 2,611 / 28 | 3,733 / 84 |
+| **control kernel score** (share) | **6.3 (0.87%)** | **10.6 (0.41%)** | **35.4 (0.95%)** |
+| lift on kernel scores (points of share) | +0.10 | +0.22 | **−0.50** |
+| control touched by band 0 / 1-3 / 4-6 / 7+ | 1 / 5 / 0 / 2 | 2 / 6 / 3 / 17 | 7 / 23 / 7 / 47 |
+| per 1,000 units, headline vs control: lag 0 / 1-3 / 4-6 / 7+ | 6.1 vs 1.4 / 2.8 vs 6.9 / 0.9 vs 0 / 5.6 vs 2.8 | 3.1 vs 0.8 / 1.8 vs 2.3 / 2.0 vs 1.1 / 8.1 vs 6.5 | 1.9 vs 1.9 / 2.0 vs 6.2 / 1.0 vs 1.9 / 7.3 vs 12.6 |
+| control under R7's per-call rule: units / touched / kernel score | 1,308 / 8 / 6.3 (0.48%) | 5,218 / 36 / 12.8 (0.25%) | 7,176 / 99 / 45.7 (0.64%) |
 
-The "rev 2's rules" rows reproduce the lead's own uncapped counts on separate copies (spec window
-46/9/9/7/6/0/9/7/5/0 over all 98 credits; headline 37; long window 373 credits, headline 134
-against 135 here, the window's end differing by minutes). {#why-data-kernel-check}
+The "rev 2's rules" row reproduces the lead's own uncapped counts on separate copies exactly
+for the spec window and for cliquedb (and 135 against the lead's 134 headline credits on the
+long window, whose end differed by minutes); the numbers here, under [[#d15]], supersede the
+lead's proxy. In cliquedb, whose work does not run in clones, [[#d15]] moves almost nothing (72
+headline credits either way; 3 of 13,112 Bash lines name `/Volumes/littlebig`). In this project
+it moves the headline lags, not the count. {#why-data-kernel-check}
 
-**cliquedb, the second corpus (the lead's run, 2026-11-13; not re-run here).** 2026-11-04 to
-2026-11-11, 5,874 units: all first matches 39/34/11/9/9/10/20/30/32/21 (215); headline
-11/6/3/3/0/1/12/9/15/12 (72); headline without commands that leave the project (the lead's
-proxy for [[#d15]]: a `cd`, `pushd` or `git -C` to an absolute directory outside it, or a
-`/Volumes/littlebig` path) 11/6/3/3/0/1/11/9/14/10 (68). Kernel about 26 against 20 for `W = 2`;
-rate about 0.4%. The proxy removes 4 of 72 there, against 62 of 134 in this project, whose
-isolated work runs in clones. AC-15 re-runs cliquedb under the real rule.
-{#why-data-cliquedb}
+**The kernel-matched control is the test of the tail, and of the plateau.** A touch long after
+a delivery is as likely for a trimmed item the agent never saw as for a delivered one, unless
+the delivery caused it; so a lag band is evidence only where its per-unit rate is above the
+control's in the same band. On these counts, before any label is read:
 
-What this says, before any label is read. Lag 6+ is most of the headline credits on the long
-windows (75 of 125 here, 60%; 50-65% in the lead's runs), but the kernel gives the 7+ band
-little weight (2.9 of 52.5 here). Per unit, lag 0 is four times the
-control's rate; lags 1-3, inside the plateau, are not above it on either window here; 7+ is
-close to it. So the kernel-matched control does what the user's decision needs it to do: it
-shows the tail and the plateau are not yet distinguishable from coincidence. [[#r12]]'s lag
-bands, labelled, decide; these counts do not.
+- In this project, lag 0 is four times the control's rate on both windows. Lags 1-3, inside
+  the plateau, are below the control on both. Lag 7+ is near it on the long window (8.1 against
+  6.5 per 1,000).
+- In cliquedb, the control's rate equals or exceeds the headline's in EVERY band (lag 0: 1.9
+  against 1.9; 7+: 7.3 against 12.6), and its kernel score is twice the headline's. Whatever
+  the 72 headline credits are, on these counts they are not distinguishable from coincidence.
+- Lag 6+ is most of the headline credits on the long windows (75 of 125 here, 48 of 72 in
+  cliquedb), but the kernel gives the 7+ band little weight (2.9 of 52.5; 1.4 of 26.6).
+
+R7 states the control's bias (trimmed items rank lower, so the control should UNDER-estimate the
+base rate); cliquedb's control running above the headline is the opposite direction, so either
+the bias does not hold there or the cliquedb credits are mostly coincidence. [[#r12]]'s lag
+bands, labelled, decide; these counts do not. [[#kernel-for-user]] carries this to the user.
 {#why-data-kernel-reading}
 
 ## Decisions this task carries {#decisions}
@@ -474,7 +484,9 @@ bands, labelled, decide; these counts do not.
       when a band's credit rate is indistinguishable from the control's.
     - **Measured** ([[#why-data-kernel]]): on 2026-10-20 to 2026-11-13, 125 headline credits
       over 8,303 units score 52.5 under the kernel (0.63%) against 36 under `W = 2`; the
-      control scores 0.41%. Lag 0 is clearly above the control; lags 1-3 and 7+ are not.
+      control scores 0.41%. Lag 0 is clearly above the control; lags 1-3 and 7+ are not. In
+      cliquedb, 72 headline credits over 5,874 units score 26.6 (0.45%) and the control 0.95%:
+      no band is above the control there.
 
 ## Requirements {#requirements}
 
@@ -841,7 +853,8 @@ hand-written line copies its producer's field set as that producer's spec states
    `Entity.path` is relative writes the store root's parent joined with it, with the test's
    cwd set elsewhere (r2 m-6). The scan-prompt case runs twice, once on a store root spelled
    `/tmp/…` for a dir under `/private/tmp/…`: both write the same `path` (r2 m-8, the
-   `norm_path` mutation). `"path" in RECALL_EVENT_FIELDS_V1`. **RED at HEAD:** no `path` key; memories have no
+   `norm_path` mutation). `"path" in RECALL_EVENT_FIELDS_V1`. **RED at HEAD:** no `path` key;
+   memories have no
    `Entity.path`. {#ac-2}
 3. **AC-2b (D3): the classifier and the existing funnel are untouched.** One events file holds a
    hand-written pre-task event (no `path` key, copied from a HEAD-era emitter's field set) and a
@@ -862,8 +875,12 @@ hand-written line copies its producer's field set as that producer's spec states
    `F` whose `t_start` precedes the delivery's `ts` but whose PostToolUse lands after it: not
    credited. (d) Through the pure function (r2 m-1): `tool_after_delivery(x, x, exact, exact)`
    is `False`, `tool_after_delivery(x + 0.001, x, …)` is `True`, and a second-resolution pair in
-   the same second is `None`. **RED at HEAD:** no block, no function; with an ordering
-   mutation, (c) is credited. {#ac-4}
+   the same second is `None`. **Under the kernel (D18):** no weight is given before delivery
+   at any lag. (a) and (c) print `score_headline = 0.000` and no lag entry; (b) prints the
+   prompt-2 credit at lag 0, weight `1.000`, in `score_incl_prior` and `0.000` in
+   `score_headline`. A mutation that weighs a pre-delivery touch by `w(|lag|)` makes (a)
+   non-zero. **RED at HEAD:** no block, no function; with an ordering mutation, (c) is
+   credited. {#ac-4}
 6. **AC-5 (R4, D9, D18): every prompt counts, and the kernel weighs the lag.** {#ac-5}
    - **(a) The kernel, end to end.** Five delivered files, each Read once, at lag 0, 3, 4, 5
      and 9 (real prompts): every one is credited, with weights `1.000`, `1.000`, `0.707`,
@@ -890,8 +907,11 @@ hand-written line copies its producer's field set as that producer's spec states
    scan-prompt in prompts 1 and 2, one Read in prompt 2: per-unit `1/2`, distinct `1/1`. (c)
    `F` delivered in prompt 3 by both scan_prompt and prompt_recall, then a Read: both channels
    credited, and the `any channel` row counts the file once. (d) Two Reads after one delivery:
-   credited once. (e) One Bash touching delivered `F` and `G`: two units credited. **RED at
-   HEAD:** no block. {#ac-6}
+   credited once. (e) One Bash touching delivered `F` and `G`: two units credited. **Under the
+   kernel (D18):** (a) scores `1.000`, not `3.000` (one unit, one weight); (b) scores `1.000 /
+   2` per unit (the prompt-2 unit at lag 0; the prompt-1 unit is not credited, R5), not
+   `1.000 + 0.707`; (d) the two Reads at lag 0 and lag 5 weigh `1.000` (the maximum), not
+   `1.500` or `0.500`. **RED at HEAD:** no block. {#ac-6}
 8. **AC-7 (R3, D15): each matcher leg, positive and negative.** {#ac-7}
    - Through the real hook: a Grep with `path=F` is credited; a Grep whose pattern is
      `used_events|other` is credited for the delivered name `used_events`; a Grep for `run`
@@ -1084,6 +1104,9 @@ Each mutation must make at least one AC FAIL, not hang. Each restore runs as its
   (r2 m-3).
 - An inline copy of the builder in `cli.focus_hook`: AC-1 (a)-(c) (r2 m-8).
 - `focus_hook` calls `delivered_in_session`: AC-13's audit hook (r2 m-2).
+- A pre-delivery touch weighed by `w(|lag|)`: AC-4 (a) (D18).
+- A unit weighed per anchor, per older unit, or by summed / last touches: AC-6 (a), (b), (d)
+  (D18).
 - The control admits units whose file was delivered: AC-10.
 - The global filter without `norm_path`: AC-11.
 - The bare ring only: AC-12.
@@ -1195,8 +1218,9 @@ user should see before AC-15's output is read.
 3. **A second corpus reads a fleet repo's store (AC-15).** cliquedb's `.refmatrix/` files are
    copied read-only (APFS clones, deleted after) so the kernel's tail is checked on a store
    whose work does not run in clones. The project's rules say an agent never touches a fleet
-   repo; a read-only copy writes nothing there, and the lead already ran one, but the
-   implementer needs the user's yes, or AC-15 runs on this project alone.
+   repo; a read-only copy writes nothing there, and the lead and this revision each ran one at
+   the lead's direction, but the implementer needs the user's yes, or AC-15 runs on this
+   project alone.
    **Recommendation: allow it, read-only, counts only.** {#ofu-cliquedb}
 4. **What the user should see about the kernel (not blocking; lead-drawn from the user's
    words).** {#kernel-for-user}
@@ -1207,6 +1231,11 @@ user should see before AC-15's output is read.
      from the control there, R12's band rule revises `k`.
    - **The tail is most credits and little score.** Lag 6+ is 60% of headline credits; the
      kernel gives 7+ only 2.9 of 52.5. Its per-unit rate is close to the control's.
+   - **In cliquedb the control beats the headline in every band.** Kernel score 26.6 (0.45% of
+     5,874 units) against the control's 0.95%; lift −0.50 points. R7 expected the control to
+     UNDER-estimate the base rate, so either that bias fails in cliquedb or its credits are
+     mostly coincidence. Nothing is decided by it (R12's labels decide), but it is the first
+     corpus where the signal is not visible at all ([[#why-data-kernel-reading]]).
    - **`k = 3` was the lead's pick** within "3 or 4"; `k = 4` is printed beside it (57.3
      against 52.5 on the long window).
    - **R12's pooled precision is now kernel-weighted** (`p_w`, with a Kish effective sample
@@ -1278,8 +1307,8 @@ Also from the prototype (not an r1 finding): 269 of 348 Read/Edit/Write calls to
 rel: derives-from -> [[bsd-task-21.5-spec-r2-540ab50]]
 rel: amends -> [[task-24.6-context-and-observation#rev-r7]]
 
-Every r2 finding, with where it is closed, then the user's two decisions of 2026-11-13. Lead
-decisions, made as the user would, are marked (lead).
+Every r2 finding, with where it is closed, then the user's two decisions of 2026-11-13 (rev
+3.1, [[#rev-3-1]]). Lead decisions, made as the user would, are marked (lead).
 
 | finding | disposition | where |
 |---|---|---|
@@ -1300,10 +1329,21 @@ decisions, made as the user would, are marked (lead).
 | imp-ruled-out-leg-returns-via-fallback | D12's exclusion now stated for every leg that resolves a path (Read, Bash, Grep, Glob) | [[#d12]], [[#d15]] |
 | imp-printed-count-needs-a-fixture | as s-4 | [[#ac-9]] |
 | OD-4 (user, 2026-11-13: approved as recommended) | decision-log row d21-5a in plan-19's log; `file_read` renamed `tool` in 19.6's read-back paragraph, 21.1 R12's reservation and 19.2 R1; 19.6's scorer calls `tool_touches`; the kernel does not reach 19.6 | [[#od-4]]; [[plan-19-adaptive-memory-budget#decisions]] |
-| OD-5 (user, 2026-11-13: R12's numbers confirmed; `W = 2` replaced by a sliding, decaying score, decay starting at 3 or 4) | a USER decision with a LEAD-DRAWN shape: `w = 1` to `k = 3`, then `2^(-(lag−k)/h)`, `h = 2`, no cutoff, raw lag stored, unit weight = max over touches, explicit uses weigh 1, kernel-weighted headline with binary `used_lag0` / `used_le2`, the histogram and a `k = 4` sensitivity row beside it; control kernel-scored, lift on kernel scores; R12 drawn by lag band 0 / 1-3 / 4-6 / 7+ with Wilson per band and an `indistinguishable from control` line; pooled precision kernel-weighted. Consumers restated: 19.2's column counts `Σ w` at `w_tool = round(2 × p_w, 1)` (D4); 19.6 untouched (OD-4); AC-3, AC-5, AC-10 and the mutations (`k` 3 → 2 / 4, `h`, a step at `k`, the hard window). `#why-data-kernel` re-run uncapped on two windows; cliquedb from the lead's run | [[#d18]], [[#d4]], [[#d8]], [[#r4]], [[#r5]], [[#r7]], [[#r8]], [[#r12]], [[#ac-5]], [[#ac-10]], [[#ac-15]], [[#mutations]], [[#why-data-kernel]], [[#kernel-for-user]] |
+| OD-5 (user, 2026-11-13: R12's numbers confirmed; `W = 2` replaced by a sliding, decaying score, decay starting at 3 or 4) | a USER decision with a LEAD-DRAWN shape: `w = 1` to `k = 3`, then `2^(-(lag−k)/h)`, `h = 2`, no cutoff, raw lag stored, unit weight = max over touches, explicit uses weigh 1, kernel-weighted headline with binary `used_lag0` / `used_le2`, the histogram and a `k = 4` sensitivity row beside it; control kernel-scored, lift on kernel scores; R12 drawn by lag band 0 / 1-3 / 4-6 / 7+ with Wilson per band and an `indistinguishable from control` line; pooled precision kernel-weighted. Consumers restated: 19.2's column counts `Σ w` at `w_tool = round(2 × p_w, 1)` (D4); 19.6 untouched (OD-4); AC-3, AC-4, AC-5, AC-6, AC-10 and the mutations (`k` 3 → 2 / 4, `h`, a step at `k`, the hard window). `#why-data-kernel` re-run uncapped under D15 on this project's spec window and full delivery range and on cliquedb, superseding the lead's proxy numbers | [[#d18]], [[#d4]], [[#d8]], [[#r4]], [[#r5]], [[#r7]], [[#r8]], [[#r12]], [[#ac-5]], [[#ac-10]], [[#ac-15]], [[#mutations]], [[#why-data-kernel]], [[#kernel-for-user]] |
 
 **Re-run.** `#why-data` was re-run on fresh read-only APFS clones, counts only; rev 2's rules on
 the same clones reproduce r2's re-derivation exactly (64 / 46 / 18), so every before → after in
 the table is a rule change, not a data change. The 21.6 rows were filed in the same change
 as this revision. The kernel re-run used fresh read-only clones too, deleted after.
 {#rev-3-note}
+
+### Rev 3.1 (2026-11-13, the user's OD-4 / OD-5 decisions) {#rev-3-1}
+
+Rev 3 (`58b787d`) was committed before the user's decisions reached this revision. Rev 3.1
+folds them in: the OD-4 and OD-5 rows of the table above; [[#d18]], the kernel, a user decision
+whose exact shape (`k = 3`, `h = 2`, the bands, kernel-weighted `p_w`, explicit uses at weight
+1) was drawn by the lead from the user's words; the decision-log row d21-5a and the `tool`
+rename in 19.6, 21.1 and 19.2; the 21.5 and 21.6 rows of the plan and the deferral row without
+`W`; and [[#why-data-kernel]] on three windows, cliquedb included. What the user should still see
+is [[#kernel-for-user]]; what still needs the user is [[#ofu-cliquedb]].
+{#rev-3-1-note}
