@@ -110,8 +110,8 @@ Through the GENERATED UserPromptSubmit commands in 23.0's sandbox on 25.1's fixt
    them as not built, with R0's figure.
 1. **AC-1 Labels.** A fixture with one feedback, one guardrail, one decision memory, one ADR doc,
    one project memory, a doc and a code symbol: each line carries `rule`, `rule`, `decision`,
-   `decision`, `memory`, `doc`, `code`; the order equals the unlabelled run's. On 25.1b AC-17's fixture (40 rows,
-   20 KB) at 4,000 B, every tier present (full, excerpt, pointer, line member)
+   `decision`, `memory`, `doc`, `code`; the order equals the unlabelled run's. On 25.1b AC-17's
+   fixture (40 rows, 20 KB) at 4,000 B, every tier present (full, excerpt, pointer, line member)
    carries its label, and the line's members are grouped by label in rank order.
 2. **AC-2 Headers.** scan-prompt's output has no `refmatrix content matches for prompt` and no
    `=== context for`; `rmx context X` still prints `=== context for` and its row's `cardinality` is

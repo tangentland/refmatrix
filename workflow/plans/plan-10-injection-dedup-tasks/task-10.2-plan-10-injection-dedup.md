@@ -20,8 +20,8 @@ metadata:
 > 7's pack and must PASS again on 25.1b's (v3, [[task-10.5-versioned-block-gate#part-1b]]). The
 > 50-probe read-back test is still to run.
 > Depends on: [[task-25.1-recall-hook-byte-budget]] merged (rev 7, 0.83.0);
-> [[task-25.1b-hook-output-ladder]] MERGED (the ladder, the spill page and the `still in play` line that this task adds
-> held members to, L15); [[task-10.3-plan-10-injection-dedup]] (the compaction marker);
+> [[task-25.1b-hook-output-ladder]] MERGED (the ladder, the spill page and the `still in play`
+> line that this task adds held members to, L15); [[task-10.3-plan-10-injection-dedup]] (the compaction marker);
 > [[task-10.4-non-human-prompt-gate]] (the family field the A/B splits by);
 > [[task-10.6-injection-presentation]] (kind labels at every tier); 21.1's events.
 > Order (L30): last of plan-10, after T4 (10.5 probe → 10.6 → 10.4 → 10.2). It is built before
@@ -206,8 +206,9 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
    names is named in the `dedupe` run: rendered, on the line, or on the spill page and counted.
    Non-held items keep their relative order. No item outside the `full` run's retrieved set
    appears. On recall, every non-held row's rendering is byte-identical to its rendering in the
-   `full` run (h9). The `dedupe` payload is never more bytes than the `full` payload. 25.1b AC-17's fixture (40 rows,
-   20 KB) at 4,000 B, with 10 held rows, shows that no non-held row moves to a higher tier.
+   `full` run (h9). The `dedupe` payload is never more bytes than the `full` payload. On 25.1b
+   AC-17's fixture (40 rows, 20 KB) at 4,000 B with 10 held rows, no non-held row moves to a
+   higher tier.
 3. **AC-3 Earlier prompts only.** scan-prompt and recall run concurrently on one prompt: neither
    names the other's same-prompt items; a `session_start` delivery is held on the first prompt; an
    identical prompt text re-sent later than `PRE_PROMPT_SKEW_S` does hold; an agent-message turn
