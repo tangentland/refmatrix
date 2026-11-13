@@ -281,13 +281,18 @@ def test_ac9_pack_curated_hook_else_first_sentence_and_scope_correct_fetch():
 
 def test_ac9_pack_trailer_quotes_a_multiline_query():
     """R3(d): `+N more: rmx memory recall <q> --k M`, the query collapsed to one line, ≤ 120
-    chars, shlex-quoted (a shell metacharacter cannot escape the pointer)."""
+    chars, shlex-quoted (a shell metacharacter cannot escape the pointer).
+
+    Rev 7 J1 (2026-11-13): 19.1 R3(d) prints the trailer only when a retrieved hit is NOT
+    named, so the fixture carries more rows than fit -- 20 hook lines of ~125 B cannot fit
+    beside the header in 2,000 B (measured at GREEN: 14 named, 6 in the trailer). 12 rows
+    (the RED fixture) all fit, so the trailer's precondition never held."""
     q = "line one of the question\nline two; rm -rf $HOME `x` " + "pad " * 40
-    rows = [_urow(i, body=2000) for i in range(12)]
+    rows = [_urow(i, body=2000) for i in range(20)]
     p = _pack_unit(rows, max_bytes=2000, channel="prompt_recall", query=q, mode="dense",
                    k_more=24)
     pk = s.Pack(p.text.encode())
-    assert pk.trailer is not None and pk.more == 12 - len(pk.named) > 0
+    assert pk.trailer is not None and pk.more == 20 - len(pk.named) > 0, (pk.named, pk.more)
     toks = shlex.split(pk.trailer.group("cmd"))
     assert toks[:3] == ["rmx", "memory", "recall"]
     assert "\n" not in toks[3] and len(toks[3]) <= 120
@@ -796,22 +801,32 @@ def test_ac4d_rows_parity_replica_on_and_off(fx, monkeypatch, leg):
 
 def test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc(fx, monkeypatch):
     """AC-4 (f): `rmx memory recall "q"` (table) and `--json` name the same hits as the verb
-    for the same query, including a `kind=doc` row (the CLI-only doc leg moves into the verb)."""
+    for the same query, and the `kind=doc` leg (moved from the CLI into the verb) is reachable:
+    `-K doc` returns the fixture's docs from the verb AND from the CLI.
+
+    Rev 7 J2 (2026-11-13): AC-4 (f) is parity plus reachability of the doc leg; it does not
+    require a doc in the top 8 of a MIXED recall (measured at GREEN: the first doc ranks 32-33
+    of 40 under either rerank setting -- doc distances 0.52-0.57 against 0.29-0.35 for
+    memories). The rank assertion the RED wrote is gone; parity is asserted on BOTH kind sets."""
     from refmatrix import verbs
-    r = s.rmx(fx, "memory", "recall", QUESTION, "--json", "-K", "memory,doc", "--k", "8")
-    assert r.returncode == 0, r.stderr[-800:]
-    cli_rows = json.loads(r.stdout)
     monkeypatch.setenv("RMX_HOME", str(fx.home))
-    vres = verbs.memory_recall(fx.root, query=QUESTION, k=8, kinds=["memory", "doc"])
-    vnames = [m["name"] for m in vres["memories"]]
-    assert [m["name"] for m in cli_rows] == vnames, ([m["name"] for m in cli_rows], vnames)
-    assert any((m.get("kind") == "doc") for m in vres["memories"]), (
-        f"AC-4 (f): the verb returns no kind=doc row for -K memory,doc: {vnames}")
-    t = s.rmx(fx, "memory", "recall", QUESTION, "-K", "memory,doc", "--k", "8",
-              COLUMNS="400")
-    assert t.returncode == 0, t.stderr[-800:]
-    for n in vnames:
-        assert n in t.stdout, f"table misses {n}"
+    for kinds in ("memory,doc", "doc"):
+        r = s.rmx(fx, "memory", "recall", QUESTION, "--json", "-K", kinds, "--k", "8")
+        assert r.returncode == 0, (kinds, r.stderr[-800:])
+        cli_names = [m["name"] for m in json.loads(r.stdout)]
+        vres = verbs.memory_recall(fx.root, query=QUESTION, k=8, kinds=kinds.split(","))
+        vnames = [m["name"] for m in vres["memories"]]
+        assert vnames, f"AC-4 (f): the verb returned nothing for -K {kinds}"
+        assert cli_names == vnames, (kinds, cli_names, vnames)
+        t = s.rmx(fx, "memory", "recall", QUESTION, "-K", kinds, "--k", "8", COLUMNS="400")
+        assert t.returncode == 0, (kinds, t.stderr[-800:])
+        for n in vnames:
+            assert n in t.stdout, f"table (-K {kinds}) misses {n}"
+        if kinds == "doc":
+            # reachability: every row the doc leg returns is a fixture doc (kind=doc)
+            assert all(m.get("kind") == "doc" for m in vres["memories"]), [
+                (m["name"], m.get("kind")) for m in vres["memories"]]
+            assert all(m.get("kind") == "doc" for m in json.loads(r.stdout))
 
 
 def test_ac4g_interactive_no_daemon_no_hub_uses_shared_embedder(offline):
@@ -889,6 +904,97 @@ def test_ac4h_legacy_memory_partition_replica_and_rpc_agree(monkeypatch):
         rmx_sandbox.remove_tree(base)
 
 
+# ---- AC-4 (i): daemon up, hub down -- the daemon answers, nothing spawns -----------------------
+
+# Runs ONE caller in a child under an audit hook (CPython `sys.addaudithook`): every process the
+# child starts (`subprocess.Popen`, `os.posix_spawn`, `os.fork`, `os.exec`) and every import of
+# a model stack. A private embed worker is `python -m refmatrix.embed_worker` under
+# `subprocess.Popen` (`subproc.py`), so a spawn is SEEN, not inferred from a 5 s overrun (red-251
+# a7 could only infer it). The result goes to stderr on one `AUDIT ` line at exit, so the
+# caller's stdout stays byte-exact.
+_AUDIT_RUN = r"""
+import atexit, json, sys
+spawned, imported = [], []
+def _hook(ev, args):
+    if ev == "subprocess.Popen":
+        a = args[1]
+        spawned.append([str(x) for x in a] if isinstance(a, (list, tuple)) else [str(a)])
+    elif ev in ("os.posix_spawn", "os.fork", "os.exec", "os.spawn", "os.forkpty"):
+        spawned.append([ev] + [str(x) for x in (args[1] if len(args) > 1 and
+                                                 isinstance(args[1], (list, tuple)) else [])])
+    elif ev == "import" and str(args[0]).split(".")[0] in ("sentence_transformers", "torch",
+                                                          "transformers"):
+        imported.append(str(args[0]))
+sys.addaudithook(_hook)
+atexit.register(lambda: print("AUDIT " + json.dumps({"spawned": spawned,
+                                                      "imported": sorted(set(imported))}),
+                              file=sys.stderr, flush=True))
+mode, argv = sys.argv[1], sys.argv[2:]
+if mode == "cli":
+    from refmatrix.cli import cli_entry
+    sys.argv = ["rmx", *argv]
+    cli_entry()
+else:
+    from refmatrix import mcp
+    resp = mcp.handle_message({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                               "params": {"name": "rmx_memory_recall",
+                                          "arguments": json.loads(argv[0])}})
+    print(json.dumps(resp))
+"""
+
+
+def _audited(fx, mode: str, *args, **extra) -> "tuple[subprocess.CompletedProcess, dict]":
+    # The var `cli_entry` re-execs itself to set on macOS (`_reexec_for_fork_safety`): set
+    # here, as the re-exec'd `rmx` and a launchd plist have it, so the audited process is the
+    # one that serves the call (a re-exec would run `python rmx …` outside the hook).
+    env = h.rmx_env(fx.root, RMX_HOME=str(fx.home), OBJC_DISABLE_INITIALIZE_FORK_SAFETY="YES",
+                    **extra)
+    r = subprocess.run([sys.executable, "-c", _AUDIT_RUN, mode, *map(str, args)], env=env,
+                       cwd=str(fx.proj), capture_output=True, text=True, timeout=300)
+    line = next((ln for ln in r.stderr.splitlines() if ln.startswith("AUDIT ")), None)
+    assert line, f"the audited child wrote no AUDIT line (rc={r.returncode}): {r.stderr[-1500:]}"
+    return r, json.loads(line[6:])
+
+
+def _assert_nothing_spawned_or_loaded(audit: dict, what: str) -> None:
+    workers = [a for a in audit["spawned"]
+               if any("embed_worker" in x or "modelsrv" in x or "rerank" in x for x in a)
+               or a[:1] in (["os.fork"], ["os.forkpty"])]
+    assert not workers, f"AC-4 (i) {what}: the caller spawned a model worker: {workers}"
+    assert not audit["imported"], f"AC-4 (i) {what}: the caller imported {audit['imported']}"
+
+
+def test_ac4i_daemon_up_hub_down_daemon_serves_and_nothing_spawns(fx):
+    """AC-4 (i) (r4 #n1; F3, rev 7, 2026-11-13): a sandbox daemon is up, no `models.sock`
+    worker. `rmx memory recall "q" --json` and MCP `rmx_memory_recall` are served by the
+    daemon RPC (the verb's `warnings` name the daemon leg), and the calling process spawns no
+    model worker and imports no `sentence_transformers` (the same two facts as AC-4 (c), here
+    observed by an audit hook).
+
+    A GUARD, not RED at HEAD (the spec says so: HEAD's leg order already asks the daemon
+    first); killed by AC-14's mutation "`shared_embedder` tried before the daemon", which
+    spawns the private worker this test sees. Before this test that mutation was killed only
+    indirectly, through AC-4 (d)/AC-7 parity (green-251b F3)."""
+    none_sock = str(fx.base / "none.sock")
+    r, audit = _audited(fx, "cli", "memory", "recall", QUESTION, "--json", "--k", "6",
+                        RMX_MODEL_SOCK=none_sock)
+    assert r.returncode == 0, r.stderr[-1500:]
+    names = [m["name"] for m in json.loads(r.stdout)]
+    assert names, "AC-4 (i): the interactive recall returned no rows"
+    _assert_nothing_spawned_or_loaded(audit, "interactive CLI")
+    r, audit = _audited(fx, "mcp", json.dumps({"query": QUESTION, "k": 6}),
+                        RMX_MODEL_SOCK=none_sock)
+    assert r.returncode == 0, r.stderr[-1500:]
+    res = json.loads(r.stdout.strip().splitlines()[-1])["result"]
+    text = "".join(c.get("text", "") for c in res.get("content") or [])
+    assert not res.get("isError"), text[:600]
+    body = json.loads(text)
+    assert body["memories"], body
+    assert any(w.startswith("recall leg: daemon RPC") for w in body.get("warnings") or []), (
+        body.get("warnings"))
+    _assert_nothing_spawned_or_loaded(audit, "MCP")
+
+
 # ---- AC-5: the mis-typed save-state on the packed path ----------------------------------------------
 
 
@@ -929,11 +1035,32 @@ def test_ac6_no_subject_rows_on_the_per_prompt_argv(fx):
         _pack(r, f"per-prompt argv ({leg} leg)")
 
 
+def _project_non_subjects(p: "s.Pack") -> list[str]:
+    """The pack's PROJECT, non-subject hits in order (a global hit's pointer reads
+    `--scope global`, R6)."""
+    return [m.group("name") for m in p.hook_lines
+            if "--scope global" not in m.group("fetch") and m.group("name") not in s.SUBJECTS]
+
+
 def test_ac6_include_subjects_brings_live_subjects_back_never_the_stale_one(fx):
-    r = _q(fx, append=" --include-subjects")
-    p = _pack(r, "per-prompt argv --include-subjects")
+    """AC-6 on the per-prompt argv: with `--include-subjects`, live subjects are named and the
+    stale one never is.
+
+    Rev 7 J3 (2026-11-13, spec #j3-subjects-exempt, a PRODUCT fix): a subject row is a label a
+    cross-encoder cannot score against a prompt (the daemon's default rerank put the 4 live
+    subjects at ranks 32-35 of 36, so the opt-in never showed one). With `include_subjects`
+    subjects are EXEMPT from the rerank; non-subject rows rerank AS TODAY. So the fix cannot
+    be "turn the rerank off": the project non-subject hits of the opt-in run are a prefix of
+    the default run's (which excludes subjects and is reranked), the subjects only taking
+    slots. The rerank is per (query, doc) pair, so the order among non-subjects cannot depend
+    on whether subjects ride along."""
+    p = _pack(_q(fx, append=" --include-subjects"), "per-prompt argv --include-subjects")
     assert set(p.named) & set(s.LIVE_SUBJECTS), p.named
     assert s.STALE_SUBJECT not in p.named
+    base = _project_non_subjects(_pack(_q(fx), "per-prompt argv"))
+    inc = _project_non_subjects(p)
+    assert inc and inc == base[:len(inc)], (
+        "J3: the opt-in changed the order of the non-subject rows (rerank lost?)", inc, base)
 
 
 def test_ac6_session_start_argv_has_no_subject_and_no_stale_subject(fx):
@@ -949,14 +1076,37 @@ def test_ac6_session_start_argv_has_no_subject_and_no_stale_subject(fx):
 
 
 def test_ac6_verb_hides_subjects_and_the_stale_one_even_with_the_opt_in(fx, monkeypatch):
+    """AC-6 on the verb: no subject by default; with `include_subjects` the live subjects come
+    back and the stale one never does.
+
+    Rev 7 J4 (2026-11-13, spec #j3-subjects-exempt): subjects are EXEMPT from the cross-encoder
+    rerank and keep their PRE-rerank rank; non-subject rows rerank as today. Asserted three
+    ways, so neither "rerank off" nor "subjects appended at the end" passes:
+    - pre-check: on this fixture the rerank does reorder the non-subject rows (else the next
+      assertion could not tell a disabled rerank from a working one);
+    - the opt-in's non-subject rows are a prefix of the default (reranked) run's;
+    - each subject sits at the rank it has with `rerank=False` (its pre-rerank rank)."""
     from refmatrix import verbs
     monkeypatch.setenv("RMX_HOME", str(fx.home))
-    names = [m["name"] for m in verbs.memory_recall(fx.root, query=QUESTION, k=12)["memories"]]
-    assert not set(names) & set(s.SUBJECTS), names
-    names = [m["name"] for m in verbs.memory_recall(fx.root, query=QUESTION, k=12,
-                                                     include_subjects=True)["memories"]]
-    assert set(names) & set(s.LIVE_SUBJECTS), names
-    assert s.STALE_SUBJECT not in names
+
+    def names(**kw) -> list[str]:
+        return [m["name"] for m in verbs.memory_recall(fx.root, query=QUESTION, k=12,
+                                                       **kw)["memories"]]
+    base = names()
+    assert not set(base) & set(s.SUBJECTS), base
+    plain = [n for n in names(rerank=False) if n not in s.SUBJECTS]
+    assert plain != base, ("fixture pre-check: the rerank does not reorder the non-subject "
+                           "rows, so a disabled rerank would pass", base)
+    inc = names(include_subjects=True)
+    assert set(inc) & set(s.LIVE_SUBJECTS), inc
+    assert s.STALE_SUBJECT not in inc
+    non = [n for n in inc if n not in s.SUBJECTS]
+    assert non == base[:len(non)], ("J4: non-subject rows not reranked as without the opt-in",
+                                    non, base)
+    pre = names(include_subjects=True, rerank=False)
+    for subj in (n for n in inc if n in s.SUBJECTS):
+        assert subj in pre and inc.index(subj) == pre.index(subj), (
+            "J4: a subject did not keep its pre-rerank rank", subj, inc, pre)
 
 
 # ---- AC-7: the CLI prints the verb ----------------------------------------------------------------------
@@ -998,6 +1148,40 @@ def test_ac7_mcp_embedder_policy_argument_is_dropped(offline):
     assert res["json"]["memories"], res["json"]
 
 
+# ---- F6 (rev 7): the leg line is said under --verbose, never as a warning -----------------------
+
+
+def test_f6_recall_leg_line_only_under_verbose_never_a_warning(fx):
+    """Rev 7 F6 (2026-11-13, spec #f6-leg-line): the `recall leg: …` line stays in the verb's
+    `warnings` (R5; AC-4 (i) reads it there), but the CLI prints leg-served lines only with
+    `--verbose`, and never under the `warning:` prefix; real warnings are unchanged
+    (tests/test_rerank_warning_routes.py::test_cli_recall_daemon_branch_prints_the_warnings).
+
+    HEAD (measured 2026-11-13): every recall -- interactive and the per-prompt hook -- prints
+    `# rmx: warning: recall leg: daemon RPC (the daemon's embedder and rerank default)` on
+    stderr, and `memory recall` has no `--verbose`."""
+    none_sock = str(fx.base / "none.sock")
+    plain = s.rmx(fx, "memory", "recall", QUESTION, "--json", "--k", "4",
+                  RMX_MODEL_SOCK=none_sock)
+    assert plain.returncode == 0, plain.stderr[-800:]
+    assert "recall leg" not in plain.stderr, (
+        f"F6: a normal interactive recall printed the leg line: {plain.stderr[-600:]!r}")
+    hook = _q(fx, RMX_MODEL_SOCK=none_sock)
+    _ok(hook, "per-prompt argv")
+    assert b"recall leg" not in hook.stderr, (
+        f"F6: the per-prompt hook printed the leg line: {hook.stderr[-600:]!r}")
+    v = s.rmx(fx, "memory", "recall", QUESTION, "--json", "--k", "4", "--verbose",
+              RMX_MODEL_SOCK=none_sock)
+    assert v.returncode == 0, f"F6: --verbose exit {v.returncode}: {v.stderr[-600:]}"
+    legs = [ln for ln in v.stderr.splitlines() if "recall leg:" in ln]
+    assert any("daemon RPC" in ln for ln in legs), (
+        f"F6: --verbose did not say which leg served: {v.stderr[-600:]!r}")
+    assert not [ln for ln in legs if "warning" in ln.lower()], legs
+    # --verbose says more on stderr; it changes no row
+    assert [m["name"] for m in json.loads(v.stdout)] == [
+        m["name"] for m in json.loads(plain.stdout)]
+
+
 # ---- AC-8: environment -------------------------------------------------------------------------------
 
 
@@ -1037,52 +1221,139 @@ def test_ac9_prompt_recall_is_pointers_only_and_arithmetic_holds(fx):
 
 
 def test_ac9_session_start_carries_bodies_after_all_hook_lines(fx):
+    """AC-9 / d3: the SessionStart argv carries ≥ 2 bodied hits, every body after every hook
+    line and each a NAMED hit, and named + trailer N = the generated `--k`.
+
+    Rev 7 J5 (2026-11-13, R7 amended, spec #j5-session-start-k): SessionStart `--k 12`, not 30
+    (30 hook lines took 5,961 of the 9,000 B). The count the test checks against is 12.
+    Rev 7 J6's rule applies here too: a body is the `## <name>` block the pack printed after
+    its hook lines, any scope; the RED counted only `BODYMARK` (project) bodies. Measured on
+    the fixture before GREEN (`--k 12` appended, 2026-11-13): 12 named, 6 bodies, all GLOBAL
+    rows (`fx_dup_x`, `gx_mem_9` … `gx_mem_5`) -- no project body (4.9-8.7 KB) fits after
+    the globals in rank order (see the implementation summary's #red-rev7 a-j5)."""
     p = _pack(_ss(fx), "SessionStart argv")
-    assert len(p.bodied) >= 2, f"AC-9: {len(p.bodied)} bodied hits on session_start"
-    assert set(p.bodied) <= set(p.named)
+    assert len(p.body_blocks) >= 2, f"AC-9: {p.body_blocks} bodied hits on session_start"
+    assert set(p.body_blocks) <= set(p.named)
     last_hook = max(p.text.index(m.group(0)) for m in p.hook_lines)
-    first_body = min(p.text.index(f"BODYMARK {b}") for b in p.bodied)
+    first_body = min(p.text.index(f"## {b}\n") for b in p.body_blocks)
     assert first_body > last_hook
-    assert len(p.named) + p.more == 30, (len(p.named), p.more)
+    assert len(p.named) + p.more == 12, (len(p.named), p.more)
 
 
 # ---- AC-10: delivered events and spans -------------------------------------------------------------
 
 
-def test_ac10_delivered_events_slice_the_payload_by_bytes(fx):
-    """AC-10 (R9): on the SessionStart argv, one `delivered` event per NAMED hit (none for a
-    trimmed hit), one query_id with the `retrieved` events; each span slices exactly its hook
-    line / body out of the payload BYTES; unbodied hits carry null body fields; a global hit's
-    event is in the tmp global root's file with scope=global. The fixed 7-of-12/3-bodied shape
-    of 19.1 AC-6 is not forced here (R0 sets the budget the shape depends on)."""
+_GLOBAL_CONTENT = {r["name"]: r["content"] for r in s.GLOBAL_ROWS}
+
+
+def _ss_events(fx, append: str = ""):
+    """Run the SessionStart argv (plus `append`) and return (result, pack, project events,
+    global events) appended by THIS call on the `session_start` channel. This module runs one
+    hook at a time, so the lines appended since the counts were taken are this call's
+    (`--session-start` reads no envelope, so the event's session is not the test's to pick)."""
     pe, ge = fx.root / "recall-events.jsonl", fx.home / "recall-events.jsonl"
     n_p, n_g = len(h.jsonl(pe)), len(h.jsonl(ge))
-    r = _ss(fx)
-    p = _pack(r, "SessionStart argv")
-    # This module runs one hook at a time, so the lines appended since n_p/n_g are this call's
-    # (`--session-start` reads no envelope, so the event's session is not the test's to pick).
+    r = _ss(fx, append=append)
+    p = _pack(r, f"SessionStart argv{append}")
+    new_p = [e for e in h.jsonl(pe)[n_p:] if e.get("channel") == "session_start"]
     new_g = [e for e in h.jsonl(ge)[n_g:] if e.get("channel") == "session_start"]
-    evs = [e for e in h.jsonl(pe)[n_p:] if e.get("channel") == "session_start"] + new_g
+    return r, p, new_p, new_g
+
+
+def _assert_delivered_spans(raw: bytes, p: "s.Pack", evs: list) -> list:
+    """AC-10 / R9 over one payload: one `delivered` event per NAMED hit and none for any other
+    (a trimmed hit has none), one query_id with the `retrieved` events, each hook-line span
+    slicing exactly its line (newline included) out of the payload BYTES.
+
+    A body is identified by its SPAN (rev 7 J6, 2026-11-13), never by a marker string: global
+    bodies carry no `BODYMARK`, and the RED detector read a real global body as "no body". An
+    event with body offsets must slice exactly the text the pack printed under `## <name>`
+    (a whole block: it ends at the next block, the trailer, or the end), naming its row, with
+    ≥ 3 `—` in front of it (the AC-10 character-vs-byte pre-check); an event without them must
+    have no `## <name>` block in the payload. Returns the delivered events."""
     qids = {e.get("query_id") for e in evs}
     assert len(qids) == 1 and None not in qids, qids
     deliv = [e for e in evs if e.get("stage") == "delivered"]
     assert sorted(e["name"] for e in deliv) == sorted(p.named), (
-        [e["name"] for e in deliv], p.named)
-    raw = r.stdout
+        "AC-10: delivered events != named hits (a trimmed hit must have none)",
+        sorted(e["name"] for e in deliv), sorted(p.named))
+    retrieved = {e["name"] for e in evs if e.get("stage") == "retrieved"}
+    assert set(p.named) <= retrieved, set(p.named) - retrieved
+    last_hook_end = max(raw.index((m.group(0) + "\n").encode("utf-8")) + len(
+        (m.group(0) + "\n").encode("utf-8")) for m in p.hook_lines)
+    bodied = 0
     for e in deliv:
         line = raw[e["offset_bytes"]:e["offset_bytes"] + e["bytes"]]
         assert line == (p.hook_line_of(e["name"]) + "\n").encode("utf-8"), (e["name"], line)
-        if e["name"] in p.bodied:
-            body = raw[e["body_offset_bytes"]:e["body_offset_bytes"] + e["body_bytes"]]
-            assert f"BODYMARK {e['name']}".encode() in body
-            assert raw[:e["body_offset_bytes"]].decode().count("—") >= 3
+        head = f"## {e['name']}\n".encode("utf-8")
+        if e.get("body_offset_bytes") is None:
+            assert e.get("body_bytes") is None, e
+            assert head not in raw[last_hook_end:], (
+                f"AC-10: {e['name']} has a body block in the payload but null body fields")
+            continue
+        bodied += 1
+        off, n = e["body_offset_bytes"], e["body_bytes"]
+        assert off >= last_hook_end, (e["name"], off, last_hook_end)
+        assert raw[off - len(head):off] == head, (e["name"], raw[off - len(head):off])
+        rest = raw[off + n:]
+        assert rest in (b"", b"\n") or rest.lstrip(b"\n").startswith((b"## ", b"+")), (
+            e["name"], rest[:80])
+        body = raw[off:off + n].decode("utf-8")
+        if e.get("scope") == "global":
+            assert body == _GLOBAL_CONTENT[e["name"]], (e["name"], body[:120])
         else:
-            assert e.get("body_offset_bytes") is None and e.get("body_bytes") is None, e
-        if e["name"] in s.GLOBAL_NAMES:
-            assert e.get("scope") == "global"
+            assert e["name"] in body, (e["name"], body[:120])
+        assert raw[:off].decode("utf-8").count("—") >= 3
+    return deliv
+
+
+def _assert_global_events_in_the_global_file(p: "s.Pack", new_p: list, new_g: list) -> None:
+    """19.1 AC-6's global leg: a NAMED global hit's events are in the tmp global root's file with
+    scope=global; the project file carries no global-scope event."""
+    named_global = [m.group("name") for m in p.hook_lines
+                    if "--scope global" in m.group("fetch")]
     g_deliv = [e for e in new_g if e.get("stage") == "delivered"]
-    assert all(e.get("scope") == "global" for e in g_deliv)
-    assert {e["name"] for e in g_deliv} == {n for n in p.named if n in s.GLOBAL_NAMES}
+    assert all(e.get("scope") == "global" for e in new_g), new_g[:3]
+    assert sorted(e["name"] for e in g_deliv) == sorted(named_global), (
+        [e["name"] for e in g_deliv], named_global)
+    assert not [e for e in new_p if e.get("scope") == "global"], (
+        "AC-10: a global hit's event was written to the PROJECT file",
+        [e["name"] for e in new_p if e.get("scope") == "global"])
+
+
+def test_ac10_delivered_events_slice_the_payload_by_bytes(fx):
+    """AC-10 (R9): on the SessionStart argv, one `delivered` event per NAMED hit, one query_id
+    with the `retrieved` events; each span slices exactly its hook line / body out of the
+    payload BYTES; unbodied hits carry null body fields; a global hit's event is in the tmp
+    global root's file with scope=global. The fixed 7-of-12/3-bodied shape of 19.1 AC-6 is not
+    forced here (R0 sets the budget the shape depends on)."""
+    r, p, new_p, new_g = _ss_events(fx)
+    deliv = _assert_delivered_spans(r.stdout, p, new_p + new_g)
+    assert any(e.get("body_offset_bytes") is not None for e in deliv), (
+        "AC-10: the SessionStart payload carries no body; the body spans are untested")
+    _assert_global_events_in_the_global_file(p, new_p, new_g)
+
+
+# F4's shape, measured on the fixture before GREEN (2026-11-13, SessionStart argv with these
+# two flags appended): 9 of 12 named (`+3 more`), four of them GLOBAL (fx_dup_x, gx_mem_9,
+# gx_mem_8, gx_mem_7), 1,875 B.
+F4_K = 12
+F4_BYTES = 2000
+
+
+def test_ac10_trimmed_hits_get_no_delivered_event_and_global_hits_stay_global(fx):
+    """F4 (rev 7, 2026-11-13): a SessionStart payload with a NON-ZERO trailer, so two AC-14
+    mutations are decidable -- "a `delivered` event for a trimmed hit" (an extra delivered
+    event, or one per retrieved row) and "a global hit's `delivered` event in the project file".
+    The default SessionStart pack names every hit (trailer 0), so it could kill neither.
+    `--k F4_K --max-bytes F4_BYTES` are appended (click keeps the last), fixing the shape whatever
+    the generator's `--k`; preconditions: some hit trimmed, some GLOBAL hit named."""
+    r, p, new_p, new_g = _ss_events(fx, append=f" --k {F4_K} --max-bytes {F4_BYTES}")
+    assert p.more > 0, f"F4 fixture: nothing trimmed ({len(p.named)} named, trailer 0)"
+    assert any("--scope global" in m.group("fetch") for m in p.hook_lines), (
+        f"F4 fixture: no global hit named: {p.named}")
+    _assert_delivered_spans(r.stdout, p, new_p + new_g)
+    _assert_global_events_in_the_global_file(p, new_p, new_g)
 
 
 # ---- AC-11: the global pointer --------------------------------------------------------------------------
@@ -1185,14 +1456,18 @@ def test_ac12b_each_session_start_command_within_its_budget(fx):
 
 def test_ac13_generator_emits_pack_raised_k_and_no_variable(tmp_path):
     """AC-13 / R7: the three recall commands carry `--pack`, no `--json`, no `$` after HOOK_ENV
-    (no interpolated budget variable), and `--k` SessionStart 30, per-prompt 12, PreCompact 30
+    (no interpolated budget variable), and `--k` SessionStart 12, per-prompt 12, PreCompact 30
     (PreCompact absent only if R0 dropped it); then `rmx install-hooks --apply` → `--check` is
-    clean in the sandbox."""
+    clean in the sandbox.
+
+    Rev 7 J5 (2026-11-13, R7 amended, spec #j5-session-start-k): SessionStart `--k 12`, not 30.
+    R3 puts every hook line before any body; 30 lines took 5,961 of the 9,000 B, so no project
+    body (2.0-8.7 KB) could ever follow them."""
     root = tmp_path / "proj" / ".refmatrix"
     root.mkdir(parents=True)
     (root.parent / ".git").mkdir()
     want = {"UserPromptSubmit": ("memory recall --stdin-json", 12),
-            "SessionStart": ("memory recall --session-start", 30),
+            "SessionStart": ("memory recall --session-start", 12),
             "PreCompact": ("memory recall --recent", 30)}
     for ev, (needle, k) in want.items():
         hits = [c for e, _m, c in h.hook_entries(root, ev) if needle in c]
@@ -1335,3 +1610,149 @@ def test_ac15f_max_bytes_is_a_recall_state_verb_parameter():
     assert "max_bytes" in props, sorted(props)
     opts = {o for p_ in cli.recall_state.params for o in getattr(p_, "opts", [])}
     assert "--max-bytes" in opts, sorted(opts)
+
+
+def test_ac15g_recall_state_is_counted_as_producer_recall_state(rs):
+    """R11's last bullet (F2, rev 7, 2026-11-13): the compact|clear recall-state is "counted as
+    producer `recall_state` in `rmx telemetry --context`".
+
+    The contract this test pins (red-251b's reading; the spec names the producer, not the
+    shape -- see the summary's #red-rev7): `rmx telemetry --context --format json` carries
+    `by_producer`, keyed by `hook_budget.CHANNEL_BUDGET_BYTES` names, whose `recall_state`
+    entry counts the HOOK-invoked `rmx recall-state` runs in `cli.log` (`source == "hook"`,
+    `out_bytes` recorded) as `n`, `total_bytes`, `max_bytes`, with `budget` =
+    `budget("recall_state")` beside them; an interactive `rmx recall-state` is not a producer
+    run. The text form names `recall_state`.
+
+    HEAD (measured 2026-11-13): the run IS in `by_command` as `recall-state` (n 1, 4,946 B),
+    but nothing names the producer or reads it against its budget; there is no
+    `by_producer`."""
+    _m, cmd = _rs_entry(rs.root)
+    r = s.run_cmd(rs, cmd, env_in=s.envelope("", event="SessionStart", source="compact"))
+    _ok(r, "recall-state entry (compact)")
+    i = s.rmx(rs, "recall-state")                       # interactive: not a producer run
+    assert i.returncode == 0, i.stderr[-600:]
+    rows = [x for x in h.jsonl(rs.root / "cli.log")
+            if x.get("phase") != "start" and (x.get("argv") or [None])[0] == "recall-state"
+            and isinstance(x.get("out_bytes"), int)]
+    hook_rows = [x for x in rows if x.get("source") == "hook"]
+    assert hook_rows and len(hook_rows) < len(rows), (
+        "fixture: cli.log must hold hook AND interactive recall-state rows",
+        [(x.get("source"), x.get("out_bytes")) for x in rows])
+    assert len(r.stdout) in [x["out_bytes"] for x in hook_rows]
+    j = s.rmx(rs, "telemetry", "--context", "--format", "json")
+    assert j.returncode == 0, j.stderr[-600:]
+    data = json.loads(j.stdout)
+    assert "by_producer" in data, f"F2: no producer view in telemetry --context: {sorted(data)}"
+    got = data["by_producer"].get("recall_state")
+    assert got is not None, sorted(data["by_producer"])
+    assert got["n"] == len(hook_rows), (got, len(hook_rows))
+    assert got["total_bytes"] == sum(x["out_bytes"] for x in hook_rows), got
+    assert got["max_bytes"] == max(x["out_bytes"] for x in hook_rows), got
+    assert got["budget"] == s.budget_or_none("recall_state"), got
+    txt = s.rmx(rs, "telemetry", "--context", COLUMNS="200")
+    assert txt.returncode == 0 and "recall_state" in txt.stdout, txt.stdout[-1200:]
+
+
+# ---- F1 (rev 7): #r10-bus -- `rmx_bus_pub`'s `about` field, `project` is transport only ----------
+
+
+@pytest.fixture
+def bus(r10, monkeypatch):
+    """The R10 stores (cwd alpha, bravo registered, `charlie` unknown) plus a REAL bus: the
+    `_MiniHub` of tests/test_verbs_migrated.py binds `hub.hub_sock_path()` under the R10 home
+    and serves the real `Hub._op_bus_*` handlers over a real `Bus()`. Nothing in `src/` is
+    patched; RMX_AGENT is unset so the sender default (the store's name) is observable."""
+    from refmatrix import hub as hub_mod
+    from tests.test_verbs_migrated import _MiniHub
+    monkeypatch.delenv("RMX_AGENT", raising=False)
+    mh = _MiniHub()
+    assert hub_mod.is_running()
+    try:
+        yield r10
+    finally:
+        mh.close()
+        try:
+            hub_mod.hub_sock_path().unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _mcp_tool(name: str, arguments: dict) -> "tuple[bool, str]":
+    from refmatrix import mcp
+    resp = mcp.handle_message({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                               "params": {"name": name, "arguments": arguments}})
+    res = resp["result"]
+    return bool(res.get("isError")), "".join(c.get("text", "") for c in res.get("content") or [])
+
+
+def _last_on(root: Path, channel: str) -> dict:
+    from refmatrix import verbs
+    msgs = verbs.bus_history(root, channel)["messages"]
+    assert msgs, f"nothing was published on {channel}"
+    return msgs[-1]
+
+
+def test_r10_bus_pub_about_tags_the_message_and_is_never_a_lookup(bus):
+    """#r10-bus (user decision 2026-11-10; F1, rev 7): the message field is `about`. With no
+    store named Y, `about="Y"` publishes and the hub row's `project` is `Y` -- on the verb and
+    through MCP. Kills the spec's mutation "`about` ignored (row `project` empty)": MCP's
+    `Verb.call` drops an argument the verb does not name, which is HEAD's behaviour."""
+    from refmatrix import verbs
+    alpha = bus["alpha"]
+    try:
+        verbs.bus_pub(alpha, "global:t1", "b", about="Y")
+    except TypeError as e:
+        pytest.fail(f"#r10-bus: verbs.bus_pub has no `about` parameter ({e})")
+    assert _last_on(alpha, "global:t1")["project"] == "Y"
+    err, text = _mcp_tool("rmx_bus_pub", {"channel": "global:t2", "body": "b", "about": "Y"})
+    assert not err, text[:400]
+    assert _last_on(alpha, "global:t2")["project"] == "Y", (
+        "#r10-bus: MCP `about` did not reach the hub row (dropped as an unknown argument)")
+
+
+def test_r10_bus_pub_project_is_the_transport_target_only(bus):
+    """#r10-bus: `project` on `rmx_bus_pub` is the MCP TRANSPORT target, under R10 like every
+    tool: an unknown name raises `VerbUnknownProjectError` (a guard: R10 already holds at
+    HEAD); a KNOWN name publishes from that store -- its name is the default sender -- and is
+    never the message's `project` tag (HEAD: the same key filled both, so the row read
+    `project: bravo`). The verb has an `about` parameter and no `project` parameter of its
+    own (the schema's `project` is the transport property)."""
+    import inspect
+    from refmatrix import mcp, verbs
+    alpha = bus["alpha"]
+    err, text = _mcp_tool("rmx_bus_pub", {"channel": "global:t3", "body": "b", "project": "Y"})
+    assert err and text.startswith("VerbUnknownProjectError:"), text[:400]
+    err, text = _mcp_tool("rmx_bus_pub", {"channel": "global:t4", "body": "b",
+                                          "project": "bravo"})
+    assert not err, text[:400]
+    row = _last_on(alpha, "global:t4")
+    assert row["from"] == "bravo", row
+    assert row["project"] is None, (
+        "#r10-bus: the transport target leaked into the message's project tag", row)
+    params = inspect.signature(verbs.bus_pub).parameters
+    assert "about" in params and "project" not in params, list(params)
+    props = mcp.TOOLS["rmx_bus_pub"]["schema"]["properties"]
+    assert "about" in props and "project" in props, sorted(props)
+
+
+def test_r10_bus_pub_proj_channel_still_tags_its_project(bus):
+    """#r10-bus: a `proj:X:t` channel with neither `about` nor `project` still tags `X` (the
+    default moves to `about`; a GUARD, true at HEAD)."""
+    from refmatrix import verbs
+    alpha = bus["alpha"]
+    verbs.bus_pub(alpha, "proj:X:t5", "b")
+    row = _last_on(alpha, "proj:X:t5")
+    assert row["project"] == "X" and row["from"] == "alpha", row
+
+
+def test_r10_bus_pub_cli_about_option(bus):
+    """#r10-bus: `rmx bus pub` gains `--about` (verb parity: the verb's `about` has its CLI
+    twin). HEAD: no such option (exit 2)."""
+    from click.testing import CliRunner
+    from refmatrix import cli
+    alpha = bus["alpha"]
+    r = CliRunner().invoke(cli.main, ["bus", "pub", "global:t6", "hello", "--about", "Y"])
+    assert r.exit_code == 0, (r.exit_code, r.output)
+    assert _last_on(alpha, "global:t6")["project"] == "Y"
+

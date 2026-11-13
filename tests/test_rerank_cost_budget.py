@@ -333,6 +333,11 @@ def test_the_client_stamps_a_deadline_from_its_own_timeout(monkeypatch):
 # ---- the call sites ------------------------------------------------------
 
 class _FakeStore:
+    def item_meta(self, ids):
+        # The moved leg (task 25.1 R5) merges each hit's catalog meta (21.1 R10); a fake
+        # store has none to give, which `apply_item_meta` takes as "nothing to merge".
+        return {}
+
     def with_partition(self, name):
         from contextlib import contextmanager
 
@@ -345,7 +350,6 @@ class _FakeStore:
 def _wire_replica_leg(monkeypatch, *, cost, queue, scores=None):
     """Stand the replica recall leg up with everything below the rerank
     decision faked, so the test is about the DECISION."""
-    from refmatrix import cli as cli_mod
     from refmatrix import modelsrv, recall
     from refmatrix.embedder import RemoteEmbedder
 
@@ -356,8 +360,20 @@ def _wire_replica_leg(monkeypatch, *, cost, queue, scores=None):
                         lambda role, **kw: _StubClient({"cost_s_per_doc": cost,
                                                         "queue_depth": queue}))
     monkeypatch.setattr(RemoteEmbedder, "__init__", lambda self, c: None)
-    monkeypatch.setattr(cli_mod, "_reader_store", lambda: _FakeStore())
-    monkeypatch.setattr(cli_mod, "_resolve_partition", lambda: "p")
+    # Task 25.1 R5 (2026-11-13 contract update): the leg moved to
+    # `recall.replica_memory_recall(root, *, partition, ...)`, which reads its store through
+    # `search.cached_replica(root)` (was `cli._reader_store()` / `cli._resolve_partition()`)
+    # and embeds the query before the replica lock -- so the stand-in embedder yields a
+    # vector (`dense_recall` is canned below; the value is never read).
+    import threading
+    import numpy as np
+    from refmatrix import search
+    monkeypatch.setattr(RemoteEmbedder, "dim", 4)
+    monkeypatch.setattr(RemoteEmbedder, "model_name", "stub-embedder")
+    monkeypatch.setattr(RemoteEmbedder, "embed_texts",
+                        lambda self, texts: np.zeros((len(texts), 4), dtype="float32"))
+    monkeypatch.setattr(search, "cached_replica",
+                        lambda root: (_FakeStore(), threading.Lock()))
     hits = [(i, 0.5 - i / 100) for i in range(1, 11)]
     monkeypatch.setattr(recall, "dense_recall",
                         lambda *a, **kw: list(hits))
@@ -375,13 +391,16 @@ def _wire_replica_leg(monkeypatch, *, cost, queue, scores=None):
 
 
 def test_the_replica_recall_leg_skips_and_says_the_numbers(monkeypatch):
-    from refmatrix import cli as cli_mod
+    from pathlib import Path
+    from refmatrix import recall
 
     client = _wire_replica_leg(monkeypatch, cost=0.42, queue=2)
     ws: list[str] = []
-    rows = cli_mod._replica_memory_recall(
-        "why did the daemon restart", k=5, kinds=["memory"], fuse=False,
-        rerank=True, left=lambda default: 3.8, warnings=ws)
+    out = recall.replica_memory_recall(
+        Path("/nonexistent/.refmatrix"), partition="p", query="why did the daemon restart",
+        k=5, kinds=["memory"], fuse=False, rerank=True, left=lambda default: 3.8,
+        warnings=ws)
+    rows = (out or {}).get("hits")
 
     assert rows and not any(r.get("reranked") for r in rows)
     assert any("rerank skipped" in w and "10 docs" in w and "queued" in w
@@ -390,13 +409,16 @@ def test_the_replica_recall_leg_skips_and_says_the_numbers(monkeypatch):
 
 
 def test_the_replica_recall_leg_reranks_when_the_budget_covers_it(monkeypatch):
-    from refmatrix import cli as cli_mod
+    from pathlib import Path
+    from refmatrix import recall
 
     client = _wire_replica_leg(monkeypatch, cost=0.05, queue=0)
     ws: list[str] = []
-    rows = cli_mod._replica_memory_recall(
-        "why did the daemon restart", k=5, kinds=["memory"], fuse=False,
-        rerank=True, left=lambda default: 30.0, warnings=ws)
+    out = recall.replica_memory_recall(
+        Path("/nonexistent/.refmatrix"), partition="p", query="why did the daemon restart",
+        k=5, kinds=["memory"], fuse=False, rerank=True, left=lambda default: 30.0,
+        warnings=ws)
+    rows = (out or {}).get("hits")
 
     assert rows and all(r.get("reranked") for r in rows)
     assert [c["op"] for c in client.calls] == ["rerank"]

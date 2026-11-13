@@ -102,7 +102,7 @@ def command_budget(command: str) -> int | None:
 
 # ---- the --pack format (19.1 R3) ----------------------------------------------------------------
 
-HOOK_LINE = re.compile(r"^- (?P<name>[^\s]+) — (?P<rest>.*)\((?P<fetch>rmx memory get [^()]*)\)\s*$")
+HOOK_LINE = h.PACK_HOOK_LINE          # one parser of the hook line (tests/task21_1_support.py)
 TRAILER = re.compile(r"^\+(?P<n>\d+) more: (?P<cmd>.+)$")
 
 
@@ -121,6 +121,14 @@ class Pack:
         self.header = self.lines[0] if self.lines else ""
         self.is_pack = bool(self.lines) and not self.text.lstrip().startswith(("[", "{"))
         self.bodied = sorted({n for n in re.findall(r"BODYMARK (\S+)", self.text)})
+        # The NAMED hits whose body the pack printed, any scope (19.1 R3(c): a `## <name>`
+        # block after the last hook line). `bodied` above sees only PROJECT fixture bodies
+        # (their `BODYMARK`); a global body carries none (rev 7 J6, 2026-11-13).
+        tail = self.text
+        if self.hook_lines:
+            last = self.hook_lines[-1].group(0) + "\n"
+            tail = self.text[self.text.rindex(last) + len(last):]
+        self.body_blocks = [n for n in self.named if f"## {n}\n" in tail]
 
     def fetch_of(self, name: str) -> str | None:
         for m in self.hook_lines:

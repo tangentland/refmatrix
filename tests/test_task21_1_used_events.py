@@ -136,14 +136,16 @@ def _seed_global() -> Path:
 # ---- calls ----------------------------------------------------------------------------------
 
 def _prompt_recall(root: Path, session: str, prompt: str = RECALL_PROMPT, **extra) -> list:
-    """The GENERATED per-prompt recall hook (`prompt_recall` channel), S's envelope on stdin."""
+    """The GENERATED per-prompt recall hook (`prompt_recall` channel), S's envelope on stdin.
+    Returns the hits the payload NAMES. Task 25.1 R7 (2026-11-13 contract update): the hook
+    prints a `--pack` text payload, not a `--json` list, so the named hits are read from its
+    hook lines (`h.pack_rows`); an empty stdout (a degraded hook, d8) names none."""
     cmd = h.generated_cmd(root, "UserPromptSubmit", "memory recall --stdin-json")
     r = h.run_hook(cmd, root=root, timeout=300, envelope={
         "session_id": session, "prompt": prompt, "hook_event_name": "UserPromptSubmit",
         "cwd": str(root.parent)}, **extra)
     assert r.returncode == 0, f"fixture: recall hook failed: {r.stderr[-800:]}"
-    rows = json.loads(r.stdout or "[]")
-    return rows
+    return h.pack_rows(r.stdout)
 
 
 def _scan(root: Path, session: str, prompt: str) -> str:
