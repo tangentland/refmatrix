@@ -189,7 +189,7 @@ T2. {#queue-why}
 
 ## Questions {#questions}
 
-Recorded in [[open-questions]] with ids once this draft clears ch-bsd. {#questions-body}
+Recorded in [[open-questions]] under session 37b7498f (ids restart at Q1 per session) once this draft clears ch-bsd; Q1 (X2) is already asked. {#questions-body}
 
 - Adopt P1 (one queue, six tracks, POP rewritten)?
 - Adopt P2 (close plans 2, 3, 6, 7, 8, 9, 15; residuals to deferral rows)?

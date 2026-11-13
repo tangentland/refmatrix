@@ -24,6 +24,21 @@ rel: related-to -> [[plan-of-plans]]
 
 The session handoff (`handoff.md` `#open`) points here instead of keeping its own question list.
 
+## Session 37b7498f (2026-11-13) {#session-37b7498f}
+
+Next id: **Q2**.
+
+### Open {#open-37b7498f}
+
+| id | asked | question | options (lead's recommendation first) | status |
+|---|---|---|---|---|
+| Q1 | 2026-11-13 | Which content may enter a project's concept graph? (X2 in [[plan-review-2026-11-13#x2]]: memories-in vs `feedback_operational_content_not_in_graph`) | a: memories IN, correctly classified (bug-220 route-not-refuse); save-states and `workflow/` OUT (viascope's rule, fleet-wide) · b: memories and save-states IN, `workflow/` OUT · c: everything IN, as refmatrix's store has it today · d: per-project choice | open |
+
+### Answered {#answered-37b7498f}
+
+| id | asked | question | answer | acted |
+|---|---|---|---|---|
+
 ## Session f0521bff (2026-11-13) {#session-f0521bff}
 
 Next id: **Q15**.
