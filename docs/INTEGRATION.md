@@ -123,22 +123,88 @@ is injected as additional context for the model on that turn.
 
 ## Git integration {#git-integration}
 
-### Hooks installed (`hooks.py:23-59`) {#hooks-installed-hooks-py-23-59}
+### Hooks installed (`hooks.GIT_HOOK_SCRIPTS`) {#hooks-installed}
 
-| Hook              | Command                                            | Trigger                                    |
-|-------------------|----------------------------------------------------|--------------------------------------------|
-| `post-commit`     | `rmx sync --since HEAD~1`                          | Every commit                               |
-| `post-merge`      | `rmx sync --since ORIG_HEAD`                       | After merge                                |
-| `post-checkout`   | `rmx sync --since $1..$2` (only when `$3 == 1`)    | Branch switch (not file checkout)          |
-| `post-rewrite`    | `rmx sync --since <oldest pre-rewrite OID>`        | After rebase / amend                       |
+`rmx install-hooks --apply` writes these into `.git/hooks/` from `hooks.GIT_HOOK_SCRIPTS`
+(`--force` replaces an existing hook).
 
-All hooks run `rmx` in the background so they don't block the git operation.
+| Hook              | Command                                                         | Trigger                                 |
+|-------------------|-----------------------------------------------------------------|-----------------------------------------|
+| `post-commit`     | `rmx sync --since HEAD~1` (a root commit: the empty tree)       | Every commit                            |
+| `post-merge`      | `rmx sync --since ORIG_HEAD`                                    | After merge                             |
+| `post-checkout`   | `rmx sync --since $1..$2` (only when `$3 == 1`, `$1` not null)  | Branch switch (not file checkout)       |
+| `post-rewrite`    | `rmx sync --since <oldest pre-rewrite OID>`                     | After rebase / amend                    |
+
+### The store gate {#store-gate}
+
+Each hook syncs only in a checkout that has its own store that a sync may write. The gate is
+`hooks._store_gate`. It is built from `store.WRITER_CATALOG_FILES` and `daemon.SOCKET_NAME`,
+never retyped:
+
+- **A daemon socket** `.refmatrix/rmxd.sock` passes. Git cannot track a socket, and a live
+  daemon takes the write.
+- **Otherwise a writer catalog must be present and NOT tracked by git**:
+  `catalog.A.duckdb`, `catalog.B.duckdb`, `catalog.duckdb` or `catalog.db`, for which
+  `git ls-files` prints nothing.
+  - A checkout with no catalog exits 0 silently. That covers a worktree or clone that has only
+    a tracked `.refmatrix/CLAUDE.md`.
+  - A checkout whose catalog git tracks also exits 0 silently, whether it is the main
+    checkout, a worktree or a clone. It has no daemon, and a sync would write the committed
+    binary (bug-212 r1). To keep such a repo fresh, untrack the catalog
+    (`git rm --cached .refmatrix/catalog*` and ignore it) or run its daemon.
+  - If `git ls-files` itself fails, the hook prints
+    `refmatrix: <hook>: git ls-files failed; not syncing` and does not sync.
+
+`post-checkout` also exits 0 on an initial checkout (`git clone`, `git worktree add`). There
+the previous HEAD `$1` is the null sha, and the checkout is not a branch switch.
+
+### Failures are loud, and never fail git {#hook-failures}
+
+Every hook backgrounds and disowns `rmx sync`, so the git operation never waits on it and
+never fails because of it.
+
+- The sync's stdout is discarded. Its stderr stays on the terminal that ran git.
+- A non-zero exit adds `refmatrix: <hook> rmx sync FAILED (exit N); its error is above`.
+- Both lines can print after the shell prompt returns.
+
+### `rmx sync` never writes a tracked catalog in-process {#sync-tracked-catalog}
+
+When no daemon answers, `rmx sync` (`--files`, `--since`, `--flush-queue`, `-i`) writes the
+catalog itself. Before it opens the catalog it asks git (`store.git_tracked_catalogs`), and it
+refuses if a writer catalog is tracked:
+
+- one `Error: refusing an in-process sync into <file>: git tracks this store's catalog (...)`
+  line that names both remedies (untrack it with `git rm --cached`, or start the daemon);
+- exit 1, with the catalog bytes unchanged.
+
+A socket file that a crashed daemon left behind passes the hook gate, and this refusal is what
+then stops the write. A store outside any git repository, or one whose catalog git ignores,
+still syncs in-process. If `git ls-files` fails inside a repository, the sync is refused too:
+an unknown answer counts as tracked.
+
+### A vanished working directory {#vanished-cwd}
+
+A backgrounded hook can outlive `git worktree remove`. Every cwd read (`cli`, `discovery`,
+`sync`, `mcp`, `cctree`) goes through `workdir.current_dir()`. When the directory is gone it
+raises `workdir.WorkingDirectoryGone`, never a raw `FileNotFoundError`:
+
+- The CLI prints one `Error: the working directory no longer exists (<$PWD>); ...` line and
+  exits 1. The conversion happens in `cli._RmxGroup`, for every command.
+- The remedy in that line depends on context. With `REFMATRIX_ROOT` set, the command still
+  needed the cwd (for example to resolve the partition), so the line says to cd to an existing
+  directory.
+- `rmx mcp` answers the tool call with `isError` and the same text, and keeps serving.
+- `rmx version` still works, and its telemetry row carries `cwd: null` and `cwd_error`.
 
 ### `rmx sync --since <ref>` {#rmx-sync-since-ref}
 
-Calls `git diff --name-only <ref>` to get the changed-file list, then
-re-ingests just those paths. Incremental: files whose mtime equals
-`tracked_files.mtime` are skipped (`sync.py:129-140`).
+`rmx sync --since` calls `git diff --name-only <ref>` to get the list of changed files, then
+re-ingests only those paths. A file whose mtime equals `tracked_files.mtime` is skipped
+(`sync._sync_one`).
+
+If git rejects the ref, `sync.GitRefError` is raised and the CLI prints one line:
+`Error: sync --since <ref> failed: git diff exited N: <git's message>`. The daemon route and
+the daemon-down enqueue route print the same text.
 
 ## GMD (Graph Markdown) integration {#gmd-graph-markdown-integration}
 
