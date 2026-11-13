@@ -8,13 +8,14 @@ metadata:
   status: drafting
   created: 2026-11-13
   updated: 2026-11-13
-  revision: 3
+  revision: 4
 ---
 
 # Task D-Q1: operational content stays in the partition, out of the skew {#root}
 
-> Status: Drafting (2026-11-13, spec wave G22). Revision 3 is written to the lead's Q9 direction;
-> revisions 1 (`f19a28b`, ingest exclusion) and 2 (`d9296bd`) are superseded ([[#history]]).
+> Status: Drafting (2026-11-13, spec wave G22). Revision 4: revision 3's Q9 direction with the
+> lead's rulings on revision 2's open items ([[#rulings]]); revisions 1 (`f19a28b`, ingest
+> exclusion) and 2 (`d9296bd`) are superseded ([[#history]]).
 > Track: T6 ([[plan-review-2026-11-13#queue]]). [[#r1]]-[[#r3]] have no dependency on plan-22; the
 > lead places them in the queue.
 > Depends on: bug-216 merged and live (a bare doc id binds the doc, so a `workflow/` doc and its
@@ -26,7 +27,7 @@ rel: derives-from -> [[plan-review-2026-11-13#spec-gaps]]
 rel: derives-from -> [[open-questions]]
 rel: depends-on -> [[task-bug216-rule-docs-in-graph#r6]]
 rel: depends-on -> [[task-bug216-rule-docs-in-graph#r7-denotes]]
-rel: amends -> [[feedback_operational_content_not_in_graph]]
+rel: supersedes -> [[feedback_operational_content_not_in_graph]]
 rel: depends-on -> [[feedback_converge_repeated_shapes]]
 rel: depends-on -> [[feedback_measure_the_path_users_run]]
 rel: depends-on -> [[feedback_go_no_go_ranges_not_predrop]]
@@ -140,37 +141,47 @@ skew whats returned". So:
    - **The sets, drawn without looking at results.** A committed script,
      `eval/dq1/draw_queries.py`, draws with seed `20261113` and reads entity names, paths and
      headings only, never a ranking:
-     - CODE/DOC set: ≥ 30 queries (20 `kind=code` symbol names of ≥ 4 characters from `src/`, and
-       15 `docs/` headings), drawn from `N`;
-     - WORKFLOW set: ≥ 20 queries (6 plan ids, 6 `<id>#<anchor>` refs, 4 ch-bsd report ids, and 6
-       phrases taken from plan titles), drawn from `W`'s `workflow/` paths.
+     - CODE/DOC set, drawn from `N`: 80 queries. These are 40 `kind=code` symbol names of at
+       least 4 characters from `src/`, 20 GMD doc ids or headings under `docs/`, and 20
+       three-word phrases (the rarest three body terms of 20 sampled `docs/` sections).
+     - WORKFLOW set, drawn from `W`'s `workflow/` paths: 60 queries. These are 20 doc ids (plans,
+       task specs, and at least 4 ch-bsd report ids), 20 `<id>#<anchor>` refs, 10 `rel:` edges
+       from a non-`workflow/` doc into a `workflow/` doc, and 10 three-word phrases from plan
+       titles.
      Both sets and the script are committed in the RED commit before any `src/` change, and that
      sha is cited in the summary.
    - **DOESN'T SKEW.** For each CODE/DOC query, compute the Jaccard of the top-10 entity names of
      `W` (AFTER) and `N` (AFTER) on `rmx context`'s ref-level hit list and on scan-prompt's
      injected entity set. When `N` returns fewer than 10, use `k = len(N's list)`. A `workflow/`
-     or other operational entity in `W`'s top-k counts as a mismatch. The statistic is the MEAN
-     per surface; every per-query value is reported. BEFORE is recorded beside it.
-   - **USEFUL.** For each WORKFLOW query on `W` (AFTER), the target (the doc, anchor or report)
-     is in the top-5 of `rmx context <query>`. The statistic is the share of queries.
-   - **Bands and actions:**
+     or other operational entity in `W`'s top-k counts as a mismatch. Each surface reports its
+     MEAN and its MINIMUM, with every per-query value. BEFORE is recorded beside it.
+   - **USEFUL.** On `W` (AFTER), measured the same way BEFORE:
+     - by name: `rmx context <id>` resolves to the doc, for 20/20;
+     - by anchor: `rmx context <id>#<anchor>` resolves to the anchor, for 20/20;
+     - by `rel:`: `rmx neighbors <workflow-id>` lists the citing doc, for 10/10;
+     - by BM25: the target doc is in the default `rmx context "<phrase>"` output for at least
+       8/10;
+     - no count is lower AFTER than BEFORE.
+   - **Bands and actions (lead ruling, 2026-11-13):**
 
-     | gate | band | action |
+     | gate | result | action |
      |---|---|---|
-     | DOESN'T SKEW | mean ≥ 0.90 on both surfaces | pass |
-     | DOESN'T SKEW | 0.80 ≤ mean < 0.90 on a surface | re-tune ONCE: extend R1's filter to BM25's corpus statistics (`_mentions_bm25_stats` N and avgdl, and the per-term df `content_rank` reads), the only change that touches skew outside R2/R3; re-measure on the same sets; ≥ 0.90 passes, otherwise report |
+     | DOESN'T SKEW | mean ≥ 0.90 AND no query < 0.60, on both surfaces | pass |
+     | DOESN'T SKEW | fails, with mean ≥ 0.80 on every surface | re-tune ONCE: extend R1's filter to BM25's corpus statistics (`_mentions_bm25_stats` N and avgdl, and the per-term df `content_rank` reads), the only change that touches skew outside R2/R3; re-measure on the same sets; the pass row decides, otherwise report |
      | DOESN'T SKEW | mean < 0.80 on a surface | report to the user with every per-query value; no tuning |
-     | USEFUL | ≥ 95% in top-5 | pass |
-     | USEFUL | 85% ≤ share < 95% | re-tune ONCE: the exemption also matches a query equal (case-folded) to a workflow doc's title; re-measure; ≥ 95% passes, otherwise report |
-     | USEFUL | < 85% | report to the user with every miss; no tuning |
+     | USEFUL | every bar met and no drop from BEFORE | pass |
+     | USEFUL | only the BM25 bar missed, at 6/10 or 7/10 | re-tune ONCE: the exemption also matches a query equal (case-folded) to a workflow doc's title; re-measure; the pass row decides, otherwise report |
+     | USEFUL | a name, anchor or `rel:` miss, any drop from BEFORE, or BM25 below 6/10 | report to the user with every miss; no tuning (a name, anchor or `rel:` miss is a defect, not a band) |
 
      A re-tune is one pre-registered change, measured once; the sets never change.
    - **Report.** `workflow/measurements/dq1-skew-useful-<date>.md` (GMD): the sets' sizes and
      sha, every per-query value for both surfaces and both builds, the USEFUL hits and misses,
      each band reached, any re-tune and its result, and the commit and store build of each run.
-6. **R5 The amendment memory.** {#r5} `feedback_operational_content_same_partition_not_skewing`,
-   GMD per MEMORY-RULES (type `feedback`, fresh id, `created` frozen), with `rel: amends ->
-   [[feedback_operational_content_not_in_graph]]`. It is written at approval, not before, then
+6. **R5 The superseding memory.** {#r5} `feedback_operational_content_same_partition_not_skewing`,
+   GMD per MEMORY-RULES (type `feedback`, fresh id, `created` frozen), with `rel: supersedes ->
+   [[feedback_operational_content_not_in_graph]]` (lead ruling: the old memory's "exclude at
+   INGEST" is reversed for `workflow/`, and MEMORY-RULES' tree makes a reversed rule a supersede;
+   the old file stays as history, and its `MEMORY.md` line is replaced by the new one). It is written at approval, not before, then
    linted, indexed in `MEMORY.md`, and verified by a `rmx memory recall` for a phrase unique to
    it. Text: [[#appendix-memory]].
 7. **R6 Rollout: the derive re-runs.** {#r6}
@@ -246,20 +257,20 @@ skew whats returned". So:
    - A pass requires the pass band, reached directly or after the one pre-registered re-tune.
    - A report-band result goes to the user with its numbers, and the bands are not edited.
    {#ac-6}
-7. **AC-7 (R5) The memory exists and is found.** It lints with 0 errors, carries `rel: amends ->
-   [[feedback_operational_content_not_in_graph]]`, has a `MEMORY.md` line, and `rmx memory recall`
-   for a phrase unique to it returns it. {#ac-7}
+7. **AC-7 (R5) The memory exists and is found.** It lints with 0 errors, carries `rel: supersedes ->
+   [[feedback_operational_content_not_in_graph]]`, replaces the old memory's `MEMORY.md` line, and
+   `rmx memory recall` for a phrase unique to it returns it. {#ac-7}
 8. **AC-8 (R6) The rollout record.** `workflow/measurements/dq1-rollout-<date>.md` lists the marker
    search's output and, per store, the three derive stamps and the user's go (date) or `held`.
    {#ac-8}
 
-## Open items {#open-items}
+## Rulings folded (lead, 2026-11-13) {#rulings}
 
-- **The DOESN'T-SKEW statistic is the mean per surface.** The lead's "top-10 Jaccard ≥ 0.9" can
-  also be read per query. Recommendation: the mean, with every per-query value reported, because
-  one short or noisy query would otherwise fail the gate alone.
-- **The bands' lower edges and re-tunes** (0.80 / 85% / BM25 statistics / title match) are the
-  spec writer's proposal. They freeze at approval.
+- The exemption covers the named entity only: accepted.
+- The memory supersedes `feedback_operational_content_not_in_graph`, not amends.
+- Bands: mean Jaccard ≥ 0.90 with no query below 0.60; name 20/20, anchor 20/20, `rel:` 10/10,
+  BM25 ≥ 8/10, no drop from BEFORE. They freeze at approval.
+- The pass / re-tune-once / report actions follow the lead's Q9 direction.
 
 ## Files {#files}
 
@@ -291,10 +302,12 @@ skew whats returned". So:
   through 22.6 R3, a backup gate, and a lint-parity carve-out.
 - **Revision 2** (`d9296bd`) followed Q9 but homed the gate in `pagerank.py` and also filtered the
   BM25 statistics.
-- **Revision 3** follows the lead's Q9 direction: the predicate is `memory_layout.is_operational`,
-  BM25 is untouched (filtering its statistics is now only the DOESN'T-SKEW re-tune), the recall
-  pack is ranked, the gates have pre-registered actions, and there is no ignore line, purge or
-  22.6 dependency.
+- **Revision 3** (`2032cf4`) follows the lead's Q9 direction: the predicate is
+  `memory_layout.is_operational`, BM25 is untouched (filtering its statistics is now only the
+  DOESN'T-SKEW re-tune), the recall pack is ranked, the gates have pre-registered actions, and
+  there is no ignore line, purge or 22.6 dependency.
+- **Revision 4** folds the lead's rulings on revision 2's open items ([[#rulings]]): `supersedes`,
+  and revision 2's accepted bands and sets, mapped onto revision 3's action table.
 {#history-revs}
 
 ## Appendix: the amendment memory's text {#appendix-memory}
@@ -313,13 +326,13 @@ derive, ranking, operational-content]`, `type: feedback`. Body:
 > docs unless the query names that doc or anchor.
 >
 > `**Why:**` the user, Q9, 2026-11-13: "I'm okay with it being in the same partition as long as
-> it is useful and doesn't skew whats returned". This amends the parent rule's mechanism (exclude at
-> ingest) for `workflow/`. Its reasons stand (operational text co-mentions everything and goes
+> it is useful and doesn't skew whats returned". This supersedes the parent rule, whose mechanism
+> (exclude at ingest) is reversed for `workflow/`. Its reasons stand (operational text co-mentions everything and goes
 > stale), and they are met by the weights and the ranking, not by removal. Two frozen query sets
 > pin the conditions: DOESN'T SKEW (code/doc top-10 Jaccard against a store without `workflow/`)
-> and USEFUL (workflow targets in the top-5).
+> and USEFUL (workflow docs found by name, anchor, `rel:` and phrase).
 >
 > `**How to apply:**` a new kind of operational content joins the one predicate, never a private
 > regex or an ingest exclusion. Check any ranking change against the frozen sets.
 >
-> `rel: amends -> [[feedback_operational_content_not_in_graph]]`
+> `rel: supersedes -> [[feedback_operational_content_not_in_graph]]`
