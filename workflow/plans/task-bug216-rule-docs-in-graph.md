@@ -235,8 +235,8 @@ reference implementation satisfies all 58). Its ambiguities, decided as the user
     matches a pending target resolves those edges (with evidence) and clears them. Same hook point
     as R7's `denotes` maintenance ("on ingest of X"). Counted and printed; a pending row whose
     source is purged is removed with it. No forced re-ingest. {#r10}
-11. **R11 Built-in include for the rule docs.** Precedence: an explicit `!path` line, then an
-    explicit ignore pattern, then a BUILT-IN include of `CLAUDE.md` at the root and
+11. **R11 Built-in include for the rule docs.** Precedence (`INGEST_IGNORE_DIRS` always wins — R1): an explicit
+    `!path` line, then an explicit ignore pattern, then a BUILT-IN include of `CLAUDE.md` at the root and
     `.claude/PROJECT_PROFILE.md` when either carries GMD frontmatter, then the built-in
     hidden-directory and `INGEST_IGNORE_DIRS` rules. Fresh clones and CI therefore pass R3's gate
     with no ignore file; a store whose ignore file lists `CLAUDE.md` (the fleet today) keeps
@@ -256,6 +256,7 @@ unresolved_by_target_doc`, plus R8's binding classes); "counted unresolved" is o
   ingest b-doc → the edge exists with evidence and the pending row is gone; purge the citer → its
   pending rows go. Mutation: never clear pending rows. {#ac-11}
 - **AC-12 (R11).** No ignore file: CLAUDE.md and the profile (with GMD frontmatter) are ingested;
-  without frontmatter they are not; an explicit `CLAUDE.md` ignore line excludes it; `!` beats an
+  a profile without frontmatter stays out (hidden-dir rule); a root CLAUDE.md without frontmatter
+  is ingested like any root `.md` (no new exclusion — lead, 2026-11-13); an explicit `CLAUDE.md` ignore line excludes it; `!` beats an
   explicit ignore. R3's gate exits 0 on a fixture with no ignore file. {#ac-12}
 - **AC-13 (R12).** A `dist/x.md` is ignored by every walker; `watch.py` defines no ignore list. {#ac-13}
