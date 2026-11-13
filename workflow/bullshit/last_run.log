@@ -69,3 +69,5 @@
 2026-11-13T15:33:05-0800 commit=e05f3a1 verdict=DIRTY findings=4 (0B/2S/2M) report=2026-11-14-0030-spec-t2-r5-e05f3a1.md
 2026-11-13T15:33:34-0800 commit=c5d1b79 verdict=MEH-only findings=2 report=2026-11-14-0035-spec-t3c-r3-c5d1b79.md
 2026-11-13T15:37:56-0800 commit=e4dc31b verdict=DIRTY findings=13 (0B/6S/7M) report=2026-11-14-0040-spec-t56-r3-e4dc31b.md
+2026-11-13T15:39:15-0800 commit=e591c60 verdict=MEH-only findings=4 (0B/0S/4M) report=2026-11-14-0045-spec-t4-r3-e591c60.md
+2026-11-13T15:39:15-0800 commit=9589fa3 verdict=DIRTY findings=5 (0B/2S/3M) report=2026-11-14-0050-spec-t2-r6-9589fa3.md
