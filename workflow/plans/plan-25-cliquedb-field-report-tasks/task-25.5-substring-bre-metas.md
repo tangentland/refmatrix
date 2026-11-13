@@ -5,18 +5,19 @@ title: "Task 25.5: an unescaped BRE metacharacter (. * [ ^ $) is read the way gr
 tags: [task, plan-25, bug-174, grep, bre, drop-in, substring, measurement]
 metadata:
   node_type: task
-  status: pending
+  status: superseded
   plan: plan-25-cliquedb-field-report
   created: 2026-11-09
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 25.5: substring mode and unescaped BRE metas {#root}
 
 > Plan: [[plan-25-cliquedb-field-report]]
-> Status: Pending (spec drafted 2026-11-09 in revision round 2, [[#rev-round-2]]; first reviewed
-> in r3 and revised in [[#rev-round-3]]; r4-lite confirm folded in [[#rev-round-4]]; plan approval
-> pending the user's bug-181 decision)
+> Status: **SUPERSEDED 2026-11-13 by task 16.5; not built** ([[#closed]]). Former status: Pending
+> (spec drafted 2026-11-09 in revision round 2, [[#rev-round-2]]; first reviewed in r3 and revised
+> in [[#rev-round-3]]; r4-lite confirm folded in [[#rev-round-4]]; plan approval pending the
+> user's bug-181 decision). The text below is kept as history.
 > Bug: bug-174 (logged 2026-11-09 from [[bsd-plan25-spec-r1-2f4a1df#m8]])
 > Depends on: [[task-25.4-grep-bre-translation]] merged (it builds `grep_dialect.bre_to_py`,
 > `UntranslatableBRE`, the `grep_first` delegation and the grouped `-w` / `-x` this task reuses).
@@ -31,6 +32,35 @@ rel: amends -> [[task-25.4-grep-bre-translation#acceptance]]
 rel: depends-on -> [[project_grep_surface_defect_family]]
 rel: depends-on -> [[feedback_go_no_go_ranges_not_predrop]]
 rel: related-to -> [[plan-14-grep-learning-measurement]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[plan-review-2026-11-13#decisions]]
+rel: related-to -> [[task-16.5-explicit-grep-hands-off#rev-round-7]]
+
+## Closed: superseded by task 16.5 (2026-11-13) {#closed}
+
+The 2026-11-13 plan review closed this task (D-Q7, L32, L42; contra-d CD-1). On the drop-in legs
+(R2) task 16.5 execs the platform grep, whose BRE reads `. * [ ] ^ $` natively
+([[task-16.5-explicit-grep-hands-off#r3]]); on the path-less index leg the lead decided, on the
+user's pattern, to keep 16.5 R3's floor for BRE metas (L32), so R4's GO branch is not taken and no
+translator is built. bug-174 closes when 16.5 lands, as a 16.5 R8 row (`fixed by task-16.5
+R1-R3`). {#closed-body}
+
+**The R4 re-measure (L42).** L42 keeps R4's re-measure (M ≥ 30 or 2026-12-31) in the backlog as
+the trigger that would reopen the path-less question as a user decision. As written, its data are
+the `bre_meta_literal: true` `query.log` rows that only R4's NO-GO branch writes, and that branch
+is not built; after 16.5 a path-less BRE call goes to the floor and writes no such row. The
+trigger therefore needs a re-hosted data source before it can fire; this is reported to the lead
+as an open item, not decided here. The nearest existing measure is 16.4's report of the share of
+taught concepts with a BRE meta, beside `forgone_index_share` ([[task-16.5-explicit-grep-hands-off#r3]],
+last paragraph). {#closed-remeasure}
+
+**Premise correction (L24, CD-8).** This spec's urgency rested on "`rmx grep` … which agents and
+the PreToolUse rewrite reach directly". Since 2026-10-15 that is false: `~/.refmatrix/learn.off`
+exists, and with learning off the rewrite does not happen at all
+(`~/.claude/hooks/rmxgrep-rewrite.py`; [[plan-16-invisible-grep-shim#today-learn-off]]). Only
+explicit `rmx grep` calls reach it, and after plan-16 the rewrite feeds the passive shim, never
+`rmx grep` ([[plan-16-invisible-grep-shim#d-1]]). {#closed-premise}
+
 
 ## Why {#why}
 

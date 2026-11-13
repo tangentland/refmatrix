@@ -8,13 +8,18 @@ metadata:
   status: approved
   created: 2026-10-06
   revised: 2026-10-14
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Plan 16: the grep shim stops answering and only watches {#root}
 
 **Date:** 2026-10-06
-**Status:** Drafting (revision round 10, 2026-10-15: 16.6's AC-12 scan sees docstrings and
+**Status:** APPROVED 2026-10-15 for implementation (d9ck; ch-bsd r13 `be965bb`;
+[[plan-review-2026-10-14#t12-approvals]]); d9cl is an additive amendment. Revision round 11
+(2026-11-13) is the 2026-11-13 plan review's: 16.1 over bug-216's one ignore predicate, 16.5
+supersedes 25.4/25.5, and this line replaces the body's stale "Drafting" (CD-9; [[#rev-round-11]]).
+No `rmx learn on` in any scope before 16.3 deploys (d9bj). The history below is the drafting
+record. Earlier rounds: (revision round 10, 2026-10-15: 16.6's AC-12 scan sees docstrings and
 self-checks both modes, its `FOLD_OPS` rows state their fold rule, AC-9d check 2 names 22.6's
 vacuum scan as a `resolve_c_kind` caller (d9bz), and 16.3's merge-order clause carries the test
 half, for the r10 diff check `bsd-plan16-22-spec-diffcheck-r10-451b505`, [[#rev-round-10]];
@@ -40,8 +45,8 @@ BULLSHIT, 6 SKETCHY, 7 MEH, plus r4's partials) and every 2026-10-14 decision th
 (d6d, d7a, #t6-fixes, #t7-fixes, #t8-amendments; [[#revision-6]]). Both former decisions-needed are
 settled ([[#decisions-needed]]). 16.6 is split by dependency: its Wave-1 slice runs after plan-23's
 23.1; 16.1-16.5 are Wave 2 ([[#waves]]). The precision gate is KEPT by user decision, scored on
-complete outputs with a minimum n and a forward-collected oracle. Awaiting spec review r6 before
-`approved`. No plan-16 code yet, except the `-f/--flags` removal (`d559567`, d-4), which landed
+complete outputs with a minimum n and a forward-collected oracle. *(Superseded: spec review r6
+and the r7-r13 loop ran; approved by d9ck.)* No plan-16 code yet, except the `-f/--flags` removal (`d559567`, d-4), which landed
 ahead of 16.5. `bsd-r1-remedy` has merged to `master`.
 
 rel: depends-on -> [[plan-15-derive-impact-tracking]]
@@ -56,6 +61,7 @@ rel: derives-from -> [[plan-review-2026-10-14]]
 rel: depends-on -> [[plan-23-bounded-write-harness]]
 rel: depends-on -> [[task-23.0-test-sandbox]]
 rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
+rel: depends-on -> [[task-bug216-rule-docs-in-graph]]
 
 ## Why {#why}
 
@@ -245,7 +251,9 @@ Tasks 16.7–16.10 (the agent's `rmx context` usage) moved to [[plan-21-agent-co
 tty, so greps already run the real tool plus today's flag-stripped ping until 16.2 ships. The 63
 env-sensitive tests pass under it (`workflow/review-output/rmxgrep-mode-plain.log`). {#interim}
 
-Next gate: `@ch-bsd` spec review r6 of task specs 16.1–16.6 revision 6, then `approved`.
+*(Superseded 2026-10-15: plan-16 was approved by d9ck after rounds r6-r13.)* The next gate is
+the ch-bsd spec review of revision round 11 ([[#rev-round-11]]), then the lead re-confirms
+`approved`.
 
 ## Decisions needed (user) — both SETTLED 2026-10-14 {#decisions-needed}
 
@@ -265,6 +273,25 @@ Next gate: `@ch-bsd` spec review r6 of task specs 16.1–16.6 revision 6, then `
 
 rel: derives-from -> [[plan-review-2026-10-14#t6]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision round 11 (2026-11-13) {#rev-round-11}
+
+Applies the 2026-11-13 plan review's rows for plan-16 ([[plan-review-2026-11-13#lead]] L2, L5,
+L24, L32, L42; [[plan-review-2026-11-13#decisions]] D-Q7; contra-d CD-1, CD-5, CD-8, CD-9; spec-wave
+G23 and G24's task side, [[plan-review-2026-11-13#spec-gaps]]). The 16.6 rows are the T4 spec
+writer's, not this round's. `src/` unchanged. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| CD-9 (body "Drafting" / "Awaiting r6" / "Next gate r6" vs frontmatter and POP `approved`, d9ck) | [[#root]] status line; the "Awaiting" sentence and [[#decisions]]'s "Next gate" line marked superseded |
+| L5 / CD-5 (bug-216 wins over 16.1: `corpus.is_relevant` delegates to `should_ignore`; the prune keeps `!path` re-includes) | [[task-16.1-argv-faithful-learner#rev-round-6]]; [[task-16.3-grep-tool-hook-and-docs#rev-round-11]] (AC-2b); [[task-16.5-explicit-grep-hands-off#rev-round-7]] (the floor, AC-5h); plan edge `depends-on` bug-216 |
+| D-Q7 / L32 / L42 / CD-1 (16.5 wins on the named-path and stdin legs; BRE metas floor on the path-less leg; 25.4/25.5 close as superseded; bug-167/174 close when 16.5 lands) | [[task-16.5-explicit-grep-hands-off#r8]] rows, AC-5i, `supersedes` edges; [[#out-of-scope]] note |
+| L24 / CD-8 (25.4/25.5's premise that every agent grep reaches `rmx grep`) | the closing lines of 25.4/25.5; this plan's [[#today-learn-off]] already states it. The `PROJECT_PROFILE.md` corpus line is outside this plan's files |
+| L2 (only 16.1 → 16.2 ∥ 16.3 → 16.5 → 16.4 stay in T5; the 16.6 Wave-1 slice moves into T4, after 23.4, ahead of 17.1) | no change to [[#waves]]: wave 1 already holds the 16.6 slice ahead of plan-22, and wave 2's chain is T5's queue item 10, after bug-216 (queue item 1) |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[plan-review-2026-11-13#decisions]]
+rel: derives-from -> [[plan-review-2026-11-13#spec-gaps]]
 
 ## Revision round 10 (2026-10-15) {#rev-round-10}
 
@@ -478,7 +505,9 @@ rel: amends -> [[plan-review-2026-10-07#gaps]]
   explicit command's backlog". Task 16.5 now brings them IN scope: named-path and pipe calls exec
   the real grep, BRE patterns route to the grep floor, and 16.5 R8 marks bug-081 fixed and the
   named-path rows superseded. Nothing of the explicit command's drop-in surface remains out of
-  scope.
+  scope. **2026-11-13 (D-Q7, L42):** plan-25's tasks 25.4 and 25.5, which planned BRE translation
+  into the legs 16.5 deletes, are closed as superseded by 16.5; bug-167 and bug-174 are 16.5 R8
+  rows ([[#rev-round-11]]).
 - A PATH-level `grep` alias. CORRECTION (task 16.2): scripts the agent runs under bash DO reach the
   shim today, through the `grep()`/`rg()` functions that `BASH_ENV` defines in
   `agent-bashrc.sh`. They become invisible along with everything else. Shells outside the agent are

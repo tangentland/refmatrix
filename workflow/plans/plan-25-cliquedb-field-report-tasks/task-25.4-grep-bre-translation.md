@@ -5,17 +5,19 @@ title: "Task 25.4: rmx grep reads a BRE the way the platform grep does — any b
 tags: [task, plan-25, bug-167, grep, bre, drop-in, dialect, cliquedb]
 metadata:
   node_type: task
-  status: pending
+  status: superseded
   plan: plan-25-cliquedb-field-report
   created: 2026-11-08
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 25.4: grep BRE translation {#root}
 
 > Plan: [[plan-25-cliquedb-field-report]]
-> Status: Pending (spec drafted 2026-11-08; revision rounds 1-3 2026-11-09, [[#rev-round-1]],
-> [[#rev-round-2]], [[#rev-round-3]]; r3 folded, a short r4-lite confirm is next)
+> Status: **SUPERSEDED 2026-11-13 by task 16.5; not built** ([[#closed]]). Former status: Pending
+> (spec drafted 2026-11-08; revision rounds 1-3 2026-11-09, [[#rev-round-1]], [[#rev-round-2]],
+> [[#rev-round-3]]; r3 folded, a short r4-lite confirm was next). The text below is kept as
+> history.
 > Bug: bug-167 (BRE escapes; cliquedb priority 5). Out of scope and logged separately: bug-180
 > (the `# rmx grep fallback via rg` line on every call, cliquedb item 5). bug-174 (substring
 > mode reads unescaped BRE metas literally) is [[task-25.5-substring-bre-metas]], which reuses
@@ -33,6 +35,29 @@ rel: motivates -> [[task-25.5-substring-bre-metas]]
 rel: depends-on -> [[project_grep_surface_defect_family]]
 rel: related-to -> [[project_grep_output_shape_one_resolver]]
 rel: related-to -> [[plan-16-invisible-grep-shim]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[plan-review-2026-11-13#decisions]]
+rel: related-to -> [[task-16.5-explicit-grep-hands-off#rev-round-7]]
+
+## Closed: superseded by task 16.5 (2026-11-13) {#closed}
+
+The 2026-11-13 plan review closed this task (D-Q7, L32, L42; contra-d CD-1). Task 16.5, the user's
+decision of 2026-10-07 ([[plan-16-invisible-grep-shim#d-1]]), makes a named-path or piped `rmx grep`
+exec the platform grep and sends every path-less pattern with a BRE metacharacter, backslash
+escapes included, to the grep floor ([[task-16.5-explicit-grep-hands-off#r3]]). That deletes
+`_grep_stdin`, `_grep_delegate` and the `\|` refusal, the legs this task would translate in. Under
+L32's floor there is nothing left to build: no `grep_dialect.bre_to_py`, no translator tests.
+bug-167 closes when 16.5 lands, as a 16.5 R8 row (`fixed by task-16.5 R1-R3`). bug-180 was out of
+this task's scope and stays open on its own (T5 backlog). If 0.83.0 needs bug-167 fixed before
+16.5, D-Q7 allows an interim fix only, carrying a "deleted by 16.5" note. {#closed-body}
+
+**Premise correction (L24, CD-8).** This spec's urgency rested on "`rmx grep` … which agents and
+the PreToolUse rewrite reach directly". Since 2026-10-15 that is false: `~/.refmatrix/learn.off`
+exists, and with learning off the rewrite does not happen at all
+(`~/.claude/hooks/rmxgrep-rewrite.py`; [[plan-16-invisible-grep-shim#today-learn-off]]). Only
+explicit `rmx grep` calls reach it, and after plan-16 the rewrite feeds the passive shim, never
+`rmx grep` ([[plan-16-invisible-grep-shim#d-1]]). {#closed-premise}
+
 
 ## Why {#why}
 
