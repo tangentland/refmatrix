@@ -98,7 +98,7 @@ to the verb as `timeout`, whose busy message reads "recall not confirmed within 
 | k7 | "Removed at compaction" means a page written before `stm.last_marker(root, session).ts` is gone. The fetch reports it in one `Error:` line, and the next spill write deletes those pages (the spill writer is the only deleter). The marker writer moves nothing else (10.3 R3 stays true). An unreadable marker counts as "marker now", so every older page is gone (10.3 f5, the safe direction) {#k7} | 25.1 rev 8 R14; L15 (the marker is 10.3's) |
 | k8 | R15 is built only in the band L44 pre-registered; R0's table and the decision row are written before any R15 code | L44; [[feedback_go_no_go_ranges_not_predrop]] |
 | k9 | The three plan-2 riders are carried with their own ACs and re-read against 25.1's code, not re-derived: #s-2 (R16), #m-4 (R17), and 19.5's #w1c-rider (the scan-prompt rerank rate, R0) {#k9} | D-Q6; [[task-19.1-pack-recall-under-budget#w1c-riders]]; lead O4 |
-| k10 | **Spill page ids and retention.** `<seq>` is the page's write time in milliseconds, base 36: monotonic, never reused after a prune (so a stale token never resolves to a newer page). The file is created exclusively, and a collision takes `+1`. Every spill write prunes, as the only deleter: (a) this session's pages older than the marker ([[#k7]]); (b) this session's pages beyond its newest 50; (c) any other session's `spill/` directory whose newest page is older than 7 days. Each prune is counted on the call's row (`spill_pruned`). The 50 / 7-day values are PROVISIONAL, recorded beside the constants {#k10} | bsd-spec-t3ab M5 (no retention rule; `<seq>` unspecified) |
+| k10 | **Spill page ids and retention.** `<seq>` is the page's write time in milliseconds, base 36: monotonic, never reused after a prune (so a stale token never resolves to a newer page). The file is created exclusively, and a collision takes `+1`. Every spill write prunes, as the only deleter: (a) this session's pages older than the marker ([[#k7]]); (b) this session's pages beyond its newest 50; (c) any other session's `spill/` directory whose newest page is older than 7 days. Each prune is counted on the call's row (`spill_pruned`). The 50 / 7-day values are DECIDED (lead, L58) and recorded beside the constants {#k10} | bsd-spec-t3ab M5 (no retention rule; `<seq>` unspecified); values decided by the lead, L58 |
 
 ## Requirements {#requirements}
 
@@ -122,7 +122,8 @@ review's citations stay valid). R0 is this task's own measurement step (L44 name
      anything merges. The lead then merges the pair to `master` and deploys it ahead by
      fast-forward + `rmx daemon restart --relaunch`, a lead deploy step and not user-gated (a
      `query.log` field, not an argv change, so no hook is regenerated). Live production hook runs
-     are collected while R12-R14 are built, pooled over every store the deploy reaches (each store
+     are collected while R12-R14 are built, pooled over every store the deploy reaches (decided by
+     the lead, L58; each store
      reported apart). The collection window runs from the early deploy until R12-R14 are GREEN,
      and R15 is decided at the window's end, before this task's GREEN closes.
    - **Fallback (L54 S3):** if fewer than 100 scan-prompt hook runs are collected in the window,
@@ -373,7 +374,8 @@ rel: depends-on -> [[feedback_clear_pycache_after_mutation]]
 ## Decisions taken by the lead (2026-11-13) {#open-decisions}
 
 The five open decisions of the first draft were ruled by the lead on 2026-11-13, each on the
-recommended option. Each ruling is folded into the requirement it names. {#open-decisions-lead}
+recommended option, and the lead accepted two of the writer's later calls as decided (L58). Each
+ruling is folded into the requirement it names. {#open-decisions-lead}
 
 | # | decision | ruling | folded into |
 |---|---|---|---|
@@ -381,6 +383,8 @@ recommended option. Each ruling is folded into the requirement it names. {#open-
 | O2 | Page addressing: the agent's Bash call has no session id, and the newest-ring fallback is bug-100's defect | token `<session[:8]>-<seq>`, resolved by prefix under `stm/`; an ambiguous prefix gives one `Error:` line | [[#r14]], AC-18 |
 | O3 | Where R0's ≥ 100 runs come from | `legs_ms` is the branch's first commit, deployed ahead by fast-forward as a lead deploy step (not user-gated; no hook regeneration); live runs collected while R12-R14 build; R15 decided before GREEN closes | [[#r0]], AC-21 |
 | O4 | 19.5's #w1c-rider sat in frozen 19.5, so plan-2 could not close | R0 records the rerank leg's outcome and closes it here, as the third plan-2 rider | [[#r0]], [[#k9]], AC-21 |
+| L58-a | Spill retention values ([[#k10]]) | newest 50 pages per session; another session's `spill/` directory is dropped once its newest page is older than 7 days | [[#k10]] |
+| L58-b | R0's run set ([[#r0]]) | the ≥ 100 runs are pooled over every store the early deploy reaches, and each store is reported apart | [[#r0]], AC-21 |
 | O5 | How "sits in" is decided for L44 | dominant leg per > 5 s run; ≥ 50% controllable → bound every controllable leg dominating ≥ 10%; ≥ 50% waits → not built; split → both | [[#r15]] |
 
 ## Q8 {#q8}
@@ -418,5 +422,5 @@ rel: implements -> [[plan-review-2026-11-13#lead]]
 | S5 R15's bounds had no rule | s = min(1, (T − 0.5 s) / Σ p90ᵢ); bound = s × p90ᵢ | [[#r15]], AC-21 |
 | M3 title said two riders | three | title |
 | M4 ACs without mutations; `Packed` tiers unpinned | AC-21, AC-24 mutations; AC-25 pins full-run / rendered tiers and `overflow` | AC-21, AC-24, AC-25 |
-| M5 spill retention and `<seq>` | `<seq>` = write ms base 36, exclusive create; prune at marker, beyond the newest 50, and other sessions' dirs older than 7 days (PROVISIONAL values) | [[#k10]] |
+| M5 spill retention and `<seq>` | `<seq>` = write ms base 36, exclusive create; prune at marker, beyond the newest 50, and other sessions' dirs older than 7 days (values decided by the lead, L58) | [[#k10]] |
 | `form` value `held` (M2's 25.1b half) | `#k5` names it | [[#k5]] |
