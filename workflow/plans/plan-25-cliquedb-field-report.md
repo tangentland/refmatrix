@@ -291,7 +291,8 @@ Read from the plan-26 task specs' file lists on 2026-11-08 (drafts; re-read at 2
 - **Amended 2026-11-13 ([[#rev-round-6]]).** The `fixed` list is now: bug-164 (25.1 rev 7, with the
   hard cap in 25.1b), bug-181 (25.1 R10), bug-166's STM half (25.3 R1-R5); bug-165 and bug-166's
   helix half only if L34's replay passes (else both go to the T3 backlog, L43); bug-182 if L44's
-  band builds R15 (else the T4 backlog). bug-167 and bug-174 leave this plan: they close when 16.5
+  band builds R15 (else the T4 backlog; in O5's split case, bug-182's controllable share is fixed
+  by R15 and its row stays open on the T4 backlog for the wait share). bug-167 and bug-174 leave this plan: they close when 16.5
   lands, fixed by its R3 floor (L42). When 16.5 ships, cliquedb is told on `proj:refmatrix:bugs`
   (a reply to `ae9c57ed7f13`) that bug-167 is closed by 16.5 and not by a plan-25 task.
   {#acceptance-amended}
@@ -455,7 +456,18 @@ rel: derives-from -> [[bsd-pop-r4-d1614a8#x4]]
 | D-Q2 + L15 + D-Q6 + L39 + L44: revision 8 becomes 25.1b | new task (drafting): R12-R14 / AC-16-AC-18 from the 25.1 branch at `69da299`, with amends to 25.1 R3, R8, R9, AC-9 and AC-14 by name; `depends-on 10.3`; the kind-label clause restated so 10.6 adds labels later (no 10.6 edge); the `still in play` line owned here with two member kinds; R0 per-leg timing and R15 under L44's band; plan-2's #s-2 / #m-4 riders | [[#tasks]], [[task-25.1b-hook-output-ladder-and-spill]] |
 | L19, L34, L43: 25.2 | an R0 replay of the gate over the labelled and R12 explicit uses before any build, with L34's bands; the else-branch is pre-decided (not built; bug-165 to the T3 backlog) | [[task-25.2-thin-prompt-gate#rev-round-4]] |
 | L16, L43: 25.3 | R7's repeat memory moves to `stm/<session>.emitted/helix.json` and resets at 10.3's marker; the helix half depends on 10.3 and drops with 25.2 if L43 fires; the STM half always builds | q6, [[task-25.3-stm-ref-admission-and-helix-repeat#rev-round-4]] |
-| L42, L24, D-Q7, bsd-pop-r4 X4: 25.4 / 25.5 | closed as superseded by 16.5 (its R3 floor; L32). Under the floor nothing of either task remains to build. Their premise, "every agent grep reaches `rmx grep`", was false while `learn.off` exists (L24). bug-167 and bug-174 close when 16.5 lands. 25.5 R4's queued re-measure stays on the backlog as the trigger to reopen. The closing lines in the two task files are written by their owner | [[#tasks]], [[#acceptance-amended]], [[#non-goals]] |
+| L42, L24, D-Q7, bsd-pop-r4 X4: 25.4 / 25.5 | closed as superseded by 16.5 (its R3 floor; L32). Under the floor nothing of either task remains to build. Their premise, "every agent grep reaches `rmx grep`", was false while `learn.off` exists (L24). bug-167 and bug-174 close when 16.5 lands. The reopen trigger is no longer 25.5 R4's queued re-measure: L49 O-4 moved it to task 16.4's report ([[task-16.4-measurement#r4-reopen]]). The closing lines in the two task files are written by their owner | [[#tasks]], [[#acceptance-amended]], [[#non-goals]] |
 | D-Q5: plan-24 D1 superseded | "before plan-24" reads as before plan-24's re-plan; no plan-25 task waits on the mod | [[#approval-order-amended]] |
 | plan acceptance | the `fixed` list amended, and the cliquedb bus reply for bug-167 named | [[#acceptance-amended]] |
 | status | plan stays `approved` for 25.1-25.3. 25.1b is `drafting` and needs its own ch-bsd round and `approved` before it builds (the d9co route) | [[#tasks]] |
+
+## Revision round 7 (2026-11-13, ch-bsd joint spec review r1; lead ruling L54) {#rev-round-7}
+
+rel: derives-from -> [[bsd-spec-t3ab-ff1d453-369e0b5]]
+rel: implements -> [[plan-review-2026-11-13#lead]]
+
+| finding | change | anchor |
+|---|---|---|
+| M9 pre-L49 reopen trigger | the bug-174 reopen trigger is task 16.4's report (L49 O-4), not 25.5 R4's re-measure | [[#rev-round-6]] |
+| M9 bug-182's split case had no status | under O5's split, R15 fixes the controllable share and bug-182 stays open on the T4 backlog for the wait share | [[#acceptance-amended]] |
+| B1, S1-S5, M3-M5 (25.1b), S10 and M4 (25.2) | folded in each task | [[task-25.1b-hook-output-ladder-and-spill#rev-round-1]], [[task-25.2-thin-prompt-gate#rev-round-5]] |

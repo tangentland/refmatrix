@@ -478,7 +478,9 @@ rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r11-954f601]]
 plan-19 pieces and that this plan recorded none of it. A second implementer could have built 19.1
 again. This section is the record. Each task file carries its own short record. Task 19.6's file is
 NOT edited in this round, because plan-10's revival branch edits it and merges first (19.6
-`#split-plan-10`); its rows are recorded here only. {#rev-2026-11-13-lead}
+`#split-plan-10`); its rows are recorded here only. Later the same day (bsd-spec-t3ab M8), 19.6's
+status block alone gained the freeze and L18's Table C rule; plan-10's branch does not touch that
+block. {#rev-2026-11-13-lead}
 
 rel: implements -> [[plan-review-2026-11-13#lead]]
 rel: implements -> [[plan-review-2026-11-13#d-q3]]
@@ -501,7 +503,7 @@ rel: derives-from -> [[bsd-pop-r4-d1614a8#x2]]
 | 19.3 | [[task-26.7-memory-index-by-subject]] | queued (item 3). Scores are 19.3 R7's virtual scores until 19.2 lands, so the real score source stays open while 19.2 is frozen |
 | 19.4, the rest | [[task-26.6-compile-subject-hygiene]] | merged (`8a867bc`); its R3 residual is open. 19.4 R1's tick registration and AC-2 are hosted by 17.2 (L28) |
 | 19.6 R8a (the compaction-marker writer) | [[task-10.3-plan-10-injection-dedup]] | queued (item 4); writes on `compact` and `clear` too |
-| 19.6 R5 for the composite (`rev N unchanged`) | [[task-10.6-injection-presentation]] | queued (item 6), after Table A runs on the composite (L17) |
+| 19.6 R5 for the composite (`rev N unchanged`) | [[task-10.6-injection-presentation]], CONDITIONALLY | queued (item 6). Built only if 10.6 R0 (Table A on the composite, L17) is GO; NOT YET or NO-GO means it is not built, and 19.6 R5 for the composite stays unrealized |
 | 19.6 R5 / R6 for `prompt-recall`, `scan-prompt` | nobody | not used for those payloads (the user's Q11; plan-10 builds names-only dedupe instead) |
 
 ### What remains in plan-19, and its state {#remaining}
@@ -513,7 +515,7 @@ rel: derives-from -> [[bsd-pop-r4-d1614a8#x2]]
 | 19.2 | FROZEN until the handhold experiment reports | D-Q3 |
 | 19.5 R2-R4 | FROZEN: they need 19.1-19.3 and serve only frozen 19.6 work | L26 |
 | 19.5's folded rider #w1c-rider (plan-2 r5: scan-prompt rerank rate) | re-hosted in 25.1b R0, plan-2's third rider | lead, 2026-11-13 (25.1b O4) |
-| 19.6 phasing, topic cache, and Table C | FROZEN until the handhold experiment reports. When it thaws, Table C counts only R12 explicit uses plus `cited_in_answer` until 21.5's matcher is revised | D-Q3; L18 |
+| 19.6 phasing, topic cache, and Table C | FROZEN until the handhold experiment reports. When it thaws, Table C counts only R12 explicit uses plus `cited_in_answer` until 21.5's matcher is revised. The rule is written into 19.6's own status block (2026-11-13, bsd-spec-t3ab M8) | D-Q3; L18 |
 | 19.6 Table A on the composite | runs before 10.6 R3 (offline) | L17 |
 
 ### d9bi narrowed (D-Q3) and plan-24 D1 superseded (D-Q5) {#d9bi-narrowed}

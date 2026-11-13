@@ -13,7 +13,11 @@ metadata:
 # Task 19.6: phased context, topic cache and versioned injection {#root}
 
 > Plan: [plan-19-adaptive-memory-budget](../plan-19-adaptive-memory-budget.md)
-> Status: Pending (revision after the 2026-10-14 decision log)
+> Status: Pending (revision after the 2026-10-14 decision log). **2026-11-13: FROZEN** (phasing,
+> topic cache, Table C) until the handhold outcome experiment reports (the user's D-Q3). When it
+> thaws, **Table C counts only R12 explicit uses plus `cited_in_answer`** until 21.5's matcher is
+> revised (L18). R8a's writer is 10.3, and R5 for the composite is 10.6's if its R0 says GO
+> ([[plan-19-adaptive-memory-budget#rev-2026-11-13]]).
 > Wave: pulled from Wave 3 to directly after its own dependencies (d9bi, 2026-10-15; was Wave 3,
 > d5b). **Helix substrate (d9bi):** the helix plan (Wave 4 draft) builds on this task's frozen
 > snapshots (`<cid>`, label, first-collapse `turn`), its topic cache (one writer, one home) and

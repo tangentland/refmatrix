@@ -20,8 +20,9 @@ metadata:
 > Bug: bug-165 (cliquedb priority 2)
 > Depends on: [[task-25.1-recall-hook-byte-budget]] merged (it moves the per-prompt recall into
 > the verb, where this gate lives, and owns the hook generator; the after-measurement is taken on
-> the packed payload); task 3.7 merged; [[#r0]]'s replay PASSED (L34). R0 itself needs no code
-> and runs any time after the labelled sets exist.
+> the packed payload); task 3.7 merged; [[#r0]]'s replay PASSED (L34). R0 itself needs no code.
+> It runs on the labels as confirmed by the m1 confirm (plan review G32), which the queue orders
+> before this task's build (L54 S10).
 
 rel: part-of -> [[plan-25-cliquedb-field-report]]
 rel: depends-on -> [[task-25.1-recall-hook-byte-budget]]
@@ -90,8 +91,9 @@ goes in a separate, documented set applied IN ADDITION ([[feedback_reuse_shared_
      counts in its row. 25.3's helix half drops with it. Q10's rule (no separate gate) stands.
 
    The decision row is written in the measurement file and in [[#rev-round-4]] before any `src/`
-   commit. If the m1 confirm (plan review G32) changes the labels, R0 is re-run on the corrected
-   sets. {#r0}
+   commit. R0 runs AFTER the m1 confirm (plan review G32), on the labels as confirmed there. The
+   queue orders G32 before this task's build (L54 S10), so a built 25.2 can never rest on labels
+   that change afterwards. {#r0}
 1. **R1 The gate.** `terms.prompt_gate(prompt: str) -> PromptGate`, a frozen dataclass
    `(passed: bool, tokens: tuple[str, ...], reason: str)`. Tokens are the whitespace-split prompt
    with leading/trailing `.,;:!?"'()[]` stripped and lower-cased. `passed` is False iff g4 holds:
@@ -133,6 +135,14 @@ goes in a separate, documented set applied IN ADDITION ([[feedback_reuse_shared_
 
 ## Acceptance criteria {#acceptance}
 
+0. **AC-0 R0 before any build** (bsd-spec-t3ab M4). The R0 measurement file exists with n and
+   n gated per set, the window's gate rate, the script's sha256, and the PASS / FAIL row. A
+   structural check over the script fails if it imports anything from `refmatrix` (the replay
+   must not grade the code under test with itself). The file's commit, and G32's confirm report,
+   are older than this task's first `src/` commit (commit order checked). Mutations: the script
+   imports `refmatrix.terms` (AC-0's structural check fails); the decision row committed after the
+   first `src/` commit (commit order).
+
 Run in 23.0's sandbox on 25.1's fixture store, extended with 6 synthetic save-state-shaped memory
 rows whose bodies carry a «NEXT» section, so scan-prompt's content leg has the noise cliquedb saw.
 Run through the GENERATED UserPromptSubmit commands from `hooks._claude_hook_block(...)` with
@@ -173,8 +183,10 @@ fixture is changed until AC-1 is RED, and the route is recorded. {#acceptance-le
    `--stdin-json` as its twin.
 7b. **AC-7b R0 parity** (PASS branch only). At GREEN, R0's replay is re-run with
     `terms.prompt_gate` imported from `src/` in place of the standalone rule, on the same local
-    sets. It gives the same gated counts. A difference is a defect in one of the two, resolved
-    before merge.
+    sets. It gives the same gated counts. Both implementations also run over AC-3's committed
+    prompt table and must give identical verdicts row by row. A difference is a defect in one of
+    the two, resolved before merge. Mutation: `src/`'s gate with the "at least one ack word or
+    marker" clause dropped (AC-7b's row-by-row check differs on `where are we`).
 8. **AC-8 Mutations that must FAIL a test:** gate on "< 2 content terms" (AC-3: `push` gated);
    `ACK_WORDS` not applied (AC-3: `please continue` passes); punctuation not stripped (AC-3:
    `next.` passes); list-marker shape not recognised (AC-3: `a - next` passes); adding `push` to
@@ -277,3 +289,13 @@ that clause has nothing to point at, and 10.2's owner removes it.
 save-state «NEXT» content hits, no longer reaches scan-prompt. The acceptance lead's fixture of six
 synthetic save-state rows would then not be reachable through the production bridge, and AC-1's
 RED would need noise rows of another kind. Those are the lines that change under b. {#q8-b}
+
+## Revision round 5 (2026-11-13, ch-bsd joint spec review r1; lead ruling L54) {#rev-round-5}
+
+rel: derives-from -> [[bsd-spec-t3ab-ff1d453-369e0b5]]
+rel: implements -> [[plan-review-2026-11-13#lead]]
+
+| finding | change | anchor |
+|---|---|---|
+| S10 R0's re-run after a build was undecided | resolved by order: G32 runs before this task's build, and R0 runs on the confirmed labels; the re-run sentence is gone | [[#r0]], [[#root]] |
+| M4 R0 had no AC; AC-7b named no mutation | AC-0 (the file, a script that imports nothing from `refmatrix`, commit order) with two mutations; AC-7b adds a row-by-row check over AC-3's table and a mutation | AC-0, AC-7b |

@@ -73,7 +73,8 @@ ranks`) so those callers reuse it rather than building their own.
      its tool-call list is kept with the set's provenance, and a check fails the set if any Read of
      those paths appears. A question whose gold lies in those files is excluded. The tuner (the
      agent or session doing R3) never edits the set.
-   - **Approval:** the user approves the drafted set (redacted form) before it is frozen.
+   - **Approval (user-gated):** the user approves the drafted set (redacted form) before it is
+     frozen. The goal stops here for the user (L45; bsd-spec-t3ab M6).
    - **Privacy (d8f):** the RAW set stays local under `eval/production/context_nl/raw/`
      (gitignored). Committed: the sha256 of the raw set's canonical JSON, recorded in
      [[#frozen-hash]], and a REDACTED fixture (absolute paths, hostnames and non-refmatrix tree names
