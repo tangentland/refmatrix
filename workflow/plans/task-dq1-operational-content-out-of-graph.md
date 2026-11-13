@@ -13,7 +13,7 @@ metadata:
 
 # Task D-Q1: operational content stays in the partition, out of the skew {#root}
 
-> Status: Drafting. Revision 7 (2026-11-14) answers ch-bsd `bsd-spec-t56-r5` ([[#rev-7]]).
+> Status: Drafting. Revision 7 (2026-11-14) answers ch-bsd `bsd-spec-t56-r5` under L69 ([[#rev-7]]).
 > Revision 6 answered `bsd-spec-t56-r4` under the lead's L67 ruling, which amends L61 S3
 > ([[#rev-6]]); revision 5 answered r3 under L61 ([[#rev-5]]);
 > earlier revisions are in [[#history]].
@@ -463,7 +463,9 @@ R5's commit.
 - Committed on branch `task-dq1-operational-content-out-of-graph` and merged `--no-ff` to
   `master`; every project store's rollout row is recorded (done or `held`).
 
-## Revision 7 (2026-11-14, ch-bsd r5) {#rev-7}
+## Revision 7 (2026-11-14, ch-bsd r5 + L69) {#rev-7}
+
+The lead's ruling L69 (dev master `ab5f1c8`) adopts the reviewer's three fixes as written here.
 
 | finding | answered in |
 |---|---|
