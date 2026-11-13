@@ -12,7 +12,9 @@ metadata:
 # Exploration: an outcome experiment for refmatrix's handholds {#root}
 
 **Date:** 2026-11-13
-**Status:** Proposed. Runs after the user's decision on task 21.5; nothing is built yet.
+**Status:** Planned as [[plan-28-handhold-outcome-experiment]] (drafting, 2026-11-13, spec wave
+G17), which supersedes this document's design where they differ. Runs after the m1 confirm (L36)
+and 21.5 rev 4's re-measure (D-Q4, L35); nothing is built yet.
 **Motivation:** The user, 2026-11-13, after the 21.5 measurements: asked: does phase 1 debunk the premise?. The answer was no: the
 measurements refute one delivery mechanism (ambient push injection) and one measurement method
 (attribution by term or clique overlap), not the charter. The user: asked for the exploration. This
@@ -27,6 +29,7 @@ rel: derives-from -> [[measurement-task-21.5-usage-weight-2026-11-13]]
 rel: related-to -> [[task-21.5-tool-used-signal]]
 rel: related-to -> [[exploration-session-phased-context]]
 rel: related-to -> [[plan-25-cliquedb-field-report]]
+rel: specified-by -> [[plan-28-handhold-outcome-experiment]]
 
 ## The question, in one sentence {#question}
 
@@ -70,10 +73,18 @@ not the claim; it is one weak proxy for it. {#question-note}
 | B: no push | off | on | on |
 | C: bare | off | off | pull tools available, no primer, no hooks |
 
-A vs B tests ambient injection. B vs C tests the handholds the charter names. A full off-switch
-for push already exists in the hook layer's budget gates; arm C needs a hook-less settings
-profile, never hand-edited (generated, per [[constitution#no-workarounds]] and the hook rules).
+A vs B tests ambient injection. B vs C tests the handholds the charter names. ~~A full
+off-switch for push already exists in the hook layer's budget gates~~ (struck 2026-11-13, L20 /
+contra-b CB-15: no such switch exists, and 25.1 R8 makes the pack "never empty"; arm B's switch is
+specified on 10.2's arm table by [[task-28.1-session-arms-and-push-switch]]). Arm C needs a
+hook-less settings profile, never hand-edited (generated, per [[constitution#no-workarounds]] and
+the hook rules); it runs in the paired leg only ([[task-28.2-paired-reentry-runner]]).
 {#arms-note}
+
+**10.2's A/B is nested (L20, 2026-11-13).** Arm A splits into `A+dedupe` / `A+full` (10.2 R7). B
+has no dedupe factor, and C is never drawn. 10.2 is built before the experiment starts, and its
+≥ 14-day A/B is this experiment's run, not a serial step ([[plan-28-handhold-outcome-experiment#arms]]).
+{#arms-nested}
 
 ### Units and assignment {#assignment}
 
@@ -81,9 +92,9 @@ profile, never hand-edited (generated, per [[constitution#no-workarounds]] and t
   across real work sessions in refmatrix and cliquedb (Q5), arm drawn at SessionStart and
   recorded in the session's telemetry, so the comparison is within the same projects and weeks.
 - **Paired re-entry tasks** as a second, controlled leg: a task that a prior session left
-  mid-flight (a real handoff), resumed after `/clear` under each arm by fresh agents on isolated
-  clones. Same task, same starting commit, different arm. This isolates continuity, which
-  session-level randomisation dilutes.
+  mid-flight (a real handoff), resumed after `/clear` AND in a new session (Q3 folded fully, L20)
+  under each arm by fresh agents on isolated clones. Same task, same starting commit, different
+  arm and trigger. This isolates continuity, which session-level randomisation dilutes.
 
 ### Outcome measures (pre-registered before any run) {#outcomes}
 
@@ -101,8 +112,10 @@ Each is a proxy for the backtrack-to-rebuild tax, read from transcripts and tele
 5. **Cost of the handholds themselves:** injected bytes per prompt, hook latency, and the share of
    hook output budget consumed (plan-25's byte budget).
 
-Primary outcome: (1) on the paired re-entry leg. Secondary: (2)-(4) on the session leg; (5) is a
-baseline, not a gate ([[feedback_measurable_benefit_is_not_the_reason]]).
+Primary outcome: (1) on the paired re-entry leg, both triggers pooled (Q3, L20). Secondary:
+(2)-(4) on the session leg; (5) is a baseline, not a gate
+([[feedback_measurable_benefit_is_not_the_reason]]). "Used" counts only R12 explicit uses plus
+`cited_in_answer` (L18, L27).
 
 ### Labels and blinding {#labels}
 
@@ -144,3 +157,8 @@ period; the projects are refmatrix and cliquedb.
 After the user's decision on 21.5 (ch-bsd over the four 21.5 measurements first). bug-216's fix
 should land before arm A's baseline is taken, so the graph the handholds draw from is the one
 authors wrote.
+
+**Revised 2026-11-13 (plan-review queue item 7; CB-12 resolved by the user's D-Q4):** m1 r2-lite
+confirm (L36) → 21.5 rev 4 with its R12 re-measure (D-Q4, L35) → this experiment, user-gated
+start, with 10.2 built before it (L20). The order is carried by
+[[plan-28-handhold-outcome-experiment#ordering]]. {#sequence-rev}
