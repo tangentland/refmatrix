@@ -518,3 +518,133 @@ grepped back after the batch; `src/` clean at the end.
   `savestate_fx01` first. {#a-ac5}
 
 {#red-rev7-ambiguities-list}
+
+## GREEN rev 7 (green-251c, 2026-11-13) {#green-rev7}
+
+rel: implements -> [[task-25.1-recall-hook-byte-budget#rev-round-7]]
+rel: depends-on -> [[#red-rev7]]
+rel: amends -> [[#green]]
+
+The rev-7 REDs of [[#red-rev7-red-list]] made GREEN with `src/` code only; no test was edited.
+Commit `e5a516c` holds the code, the re-rendered `.claude/settings.json` and the regenerated
+README hooks table; this section and the run logs are the following docs commit. No 26.4 code
+was written here (lead a5). During this GREEN the lead merged dev master with 26.4 into the
+branch (`69da299`), so the full suite was run on that merge; AC-5 passes there. {#green-rev7-lead}
+
+### What changed, per rev-7 row {#green-rev7-map}
+
+| row | change | where |
+|---|---|---|
+| J3/J4 (#j3-subjects-exempt) | With `include_subjects`, when the dense leg's answer was reranked (a hit carries `reranked`), a second pass runs with `rerank=False`. `place_rerank_exempt(pre, ranked, k)` keeps each subject at its index in the unreranked answer (a-j4) and fills every other slot with the reranked answer's non-subject rows -- the rows the call without the opt-in returns, so non-subjects rerank as before. Subject rows carry `rerank_exempt: true` (their `score` is not a cross-encoder logit). Rows are fetched once across both passes. No rerank ran: one pass. The over-fetch pool is `3k` under the opt-in too, so the reranked pass fetches the pool the default call fetches | `verbs._memory_recall_rows`, `verbs._dense_rows`, `verbs._rank_order`, `verbs.place_rerank_exempt`, `verbs.RERANK_EXEMPT_MTYPES` |
+| J5 (#j5-session-start-k) | SessionStart `rmx memory recall --session-start --k 12 …`; PreCompact stays 30 | `hooks._claude_hook_block` |
+| J5 generated files | `.claude/settings.json`: re-rendered with the clone's generator (`hooks.render_managed`) for the owner root it records (`hooks.installed_root` = the dev checkout); exactly one entry differed, and after the write the managed multiset equals the render. README hooks table: `scripts/gen-cli-tree.py` under the clone's `PYTHONPATH`. `.claude/rmx-hooks.json`: unchanged (it records version and flags; no bump, same flags). `rmx install-hooks` was not run | `.claude/settings.json`, `README.md` |
+| F6 (#f6-leg-line) | `verbs.RECALL_LEG_PREFIX` / `is_recall_leg_line`. The verb keeps the `recall leg: …` line in `warnings`. `memory recall --verbose` (new) prints it as `# rmx: recall leg: …`; without `--verbose` it is not printed; every other warning prints as before (`# rmx: warning: …`) | `cli.memory_recall`, `cli._memory_recall_impl._say_verb_warnings` |
+| F6, the no-daemon leg | The step-3 line (no daemon; this process embedded the query) is a DEGRADE, so it is worded as a real warning: `no daemon: recall served from the replica snapshot (embedder: …)`. See [[#green-rev7-flags]] g7-1 | `verbs._dense_legs` |
+| F2 (R11) | `summarize_context` gains `by_producer`: every `hook_budget.CHANNEL_BUDGET_BYTES` channel, over `source == "hook"` cli.log rows, as `{n, total_bytes, max_bytes, budget, over_budget}`; `telemetry.hook_producer(command, argv)` maps a row to its channel (memory recall by `--session-start` / `--stdin-json` / `--recent`, `focus hook --event input`, `recall-state`, `scan-prompt`, `curator status`, `focus context`). The text form prints a producer table. A non-integer `RMX_HOOK_BUDGET_BYTES` is a `ClickException` naming it | `telemetry.hook_producer`, `telemetry.summarize_context`, `cli.telemetry` |
+| F1 (#r10-bus) | `verbs.bus_pub(root, channel, body, *, type, sender, about, reply_to)`: `about` is the message tag (hub row `project`; default the `X` of `proj:X:…`); no `project` parameter, so MCP's `project` is the transport target only. `rmx bus pub --about` | `verbs.bus_pub`, `cli.bus_pub` |
+
+{#green-rev7-map-table}
+
+### Signatures {#green-rev7-signatures}
+
+- `verbs.place_rerank_exempt(pre: list[dict], ranked: list[dict], k: int) -> list[dict]`;
+  `verbs.RERANK_EXEMPT_MTYPES = frozenset({"subject"})`; private `verbs._dense_rows(hits, fetch,
+  patterns, k, fetched) -> list[dict]`, `verbs._rank_order(hits) -> list[dict]`,
+  `verbs._hit_id(h) -> int | None`.
+- `verbs.RECALL_LEG_PREFIX = "recall leg: "`; `verbs.is_recall_leg_line(w: str) -> bool`.
+- `verbs.bus_pub(root, channel, body, *, type="announce", sender=None, about=None,
+  reply_to=None) -> dict` (was `project=None`).
+- `telemetry.hook_producer(command: str, argv: list) -> str | None`;
+  `telemetry.summarize_context(...)` returns `by_producer: {channel: {n, total_bytes, max_bytes,
+  budget, over_budget}}` beside `by_command`.
+- CLI: `rmx memory recall --verbose`; `rmx bus pub --about TEXT`.
+
+### Runs {#green-rev7-runs}
+
+| run (src = `e5a516c` unless said) | result | log |
+|---|---|---|
+| the 10 rev-7 REDs + the F1 guard, before the no-daemon rewording | 10 passed | `workflow/review-output/plan25/25.1-green7-reds1.log` |
+| the 13 touched files, before the no-daemon rewording | 2 failed, 308 passed: AC-5 and `test_ac4g_interactive_no_daemon_no_hub_uses_shared_embedder` (`AC-4 (g): no warning names the private worker`; F6 had silenced the no-daemon leg line too, see g7-1) | `workflow/review-output/plan25/25.1-green7-touched.log` |
+| ac4g ×2, F6, AC-4 (i), `test_verb_parity`, `test_docs_generated`, `test_repo_hooks_in_sync`, `test_mcp_bus_passthrough`, `test_context_cost`, after the rewording | 203 passed, 1 skipped (`test_installed_hooks_match_generated`: the clone's settings.json belongs to the dev checkout; SkipGate names it, as at GREEN) | `workflow/review-output/plan25/25.1-green7-reds2.log` |
+| family at `e5a516c`: 96 files (hooks, recall, verbs, MCP, scan, focus, handoff, save-state, budget, rerank, curator, bus, telemetry, context cost, docs-generated, 21.1, 3.7, plan-2/3 remedies, bigop, 25.1); includes all 13 touched files | **3 failed, 1601 passed, 1 skipped**: AC-5, and `test_task21_1_agent_usage_report` ×2 with the same E lines as `release-0.82.0-full.log` and `25.1-green-full.log` (pre-existing) | `workflow/review-output/plan25/25.1-green7-family.log` |
+| mutations (13), at `e5a516c` | 12 killed, 1 survived (j4) | `workflow/review-output/plan25/mutations/25.1-green7-mut-*.log` |
+| full suite at `e5a516c`, first attempt | DISCARDED: the dev-master merge `69da299` (26.4) landed in the clone mid-run, so the run mixed pre- and post-merge code | `workflow/review-output/plan25/25.1-green7-full-mixed.log` |
+| **full suite at `69da299`** (this GREEN + the 26.4 merge) | **6 failed, 4426 passed, 1 skipped** (49:51). Four pre-existing, same E lines as `release-0.82.0-full.log` and `25.1-green-full.log`: `test_brief_real_daemon::test_an_unknown_class_fails_loudly_through_the_daemon` (DuckDB `Could not set lock`), `test_gmd_lint_requires_version::test_the_repo_scope_is_clean_under_the_stricter_gate` (the same 21 dangling-doc errors as GREEN), `test_task21_1_agent_usage_report` ×2 (`chan('prompt_recall', 5)` empty). Two are 26.4 × 25.1 merge interactions, not this GREEN's code (g7-7, g7-8). **AC-5 passes** (26.4 types `savestate_fx01` `session/recall-state`). No other failure; against `25.1-green-full.log` (38 failed) every 25.1 contract failure is gone | `workflow/review-output/plan25/25.1-green7-full.log` |
+
+{#green-rev7-runs-table}
+
+### Mutations {#green-rev7-mutations}
+
+Code committed first (`e5a516c`); one mutation at a time by a scratch applier (exact-string
+replace, count asserted 1); `__pycache__` cleared before each run; each restored by
+`git checkout -- <file>` in its own command, `git diff --quiet -- src` checked; every fix line
+grepped back after the batch (one hit each; the `# rmx: {w}` echo has two, the leg line and its
+pre-existing sibling); `src/` clean at the end.
+
+| mutation | row | result (E line) |
+|---|---|---|
+| j1 rerank turned off under `include_subjects` (red-251b's m4) | J3/J4 | KILLED by both: `J3: the opt-in changed the order of the non-subject rows` (`['savestate_fx01', 'fx_mem_06']` vs `[…, 'fx_mem_00', …]`); `J4: non-subject rows not reranked as without the opt-in` |
+| j2 subjects appended after the reranked rows | J3/J4 | KILLED by both: no live subject named (the reranked rows fill k) |
+| j3 the exemption never runs | J3/J4 | KILLED by both: no live subject named |
+| j4 the reranked pass keeps the subjects (no `subject` filter) | J3/J4 | **SURVIVED**: on the fixture the cross-encoder ranks every subject below the top 3k, so the reranked rows hold none. Not equivalent: a subject the rerank lifts into the top k would appear twice. Finding g7-2 |
+| j5 subjects at their RERANKED rank (no placement) | J3/J4 | KILLED by both: no live subject named |
+| f1 the leg line printed as a warning again | F6 | KILLED: `F6: a normal interactive recall printed the leg line: "# rmx: warning: recall leg: daemon RPC …"` |
+| f2 `--verbose` prints nothing | F6 | KILLED: `F6: --verbose did not say which leg served: ''` |
+| f3 `--verbose` prints the leg line under `warning:` | F6 | KILLED: `assert not ["# rmx: warning: recall leg: daemon RPC …"]` |
+| f4 the leg line dropped from the verb's `warnings` | F6 / R5 | KILLED by three: F6 `--verbose did not say which leg served`; AC-4 (i) `[]`; `test_plan3_remedy::test_verb_dense_rows_carry_the_annotation` `[]` |
+| f5 the no-daemon line back under the `recall leg:` prefix | F6 / AC-4 (g) | KILLED: `AC-4 (g): no warning names the private worker: # rmx: warning: rerank skipped: …` (the MCP ac4g passes: the verb's warnings still name it) |
+| b1 `about` ignored (row `project` None) -- the spec's #r10-bus mutation | F1 | KILLED by three: verb + MCP `None == 'Y'`, CLI `--about` `None == 'Y'`, the `proj:X:` guard `None == 'X'` |
+| t1 interactive `recall-state` runs counted as the producer | F2 | KILLED: `({… 'n': 2 …}, 1)` / `assert 2 == 1` |
+| t2 `recall-state` mapped to no producer | F2 | KILLED: `({… 'n': 0 …}, 1)` / `assert 0 == 1` |
+
+{#green-rev7-mutations-table}
+
+### Flags for the lead and the test engineer {#green-rev7-flags}
+
+- **g7-1 the no-daemon leg is a warning, not a leg line (an F6 reading the lead should
+  confirm).** F6 silences `recall leg: …` on a normal run; AC-4 (g)'s CLI test still requires the
+  interactive no-daemon recall to name the private worker on stderr, and it failed once F6
+  landed. R5 says the warnings name the leg that served "and any degraded leg"; a recall with no
+  daemon, embedded by a private worker or an in-process model (6-33 s), is degraded. So step 3
+  of `_dense_legs` now says `no daemon: recall served from the replica snapshot (embedder: …)`,
+  printed as `# rmx: warning: …` on every run; the two healthy legs (hub-worker replica, daemon
+  RPC) keep the `recall leg:` prefix and print only under `--verbose`. The MCP AC-4 (g) test
+  passes either way. Mutation f5 pins it. {#g7-1}
+- **g7-2 mutation j4 survives.** If the reranked pass did not filter subjects, a subject the
+  cross-encoder lifted into the top k would be named twice (its exempt slot and its reranked
+  slot). The fixture's rerank buries every subject, so no test sees it. For the test engineer: a
+  no-duplicate-names assertion on the opt-in, or a fixture subject whose label matches the
+  query. {#g7-2}
+- **g7-3 the opt-in's cost.** With `include_subjects` and a rerank that ran, the dense leg runs
+  twice (a second embed + ANN, `rerank=False`; no second rerank); rows are fetched once across
+  both passes. The generated hooks never pass `--include-subjects`, so no hook pays it. No rerank
+  ran (`RMX_RERANK=0`, `--no-rerank`, a skipped rerank): one pass. {#g7-3}
+- **g7-4 `by_producer` is a superset of a-f2's shape.** Every budget channel is listed (a
+  silent producer has `n` 0), and each entry adds `over_budget` (runs above `budget`). The test
+  pins `n`, `total_bytes`, `max_bytes`, `budget`. {#g7-4}
+- **g7-5 a subject row carries `rerank_exempt: true`** under the opt-in when a rerank ran: its
+  `score` is the unreranked one, not a cross-encoder logit, so it is not comparable with its
+  neighbours'. {#g7-5}
+- **g7-6 rev 8 landed on the branch during this GREEN** (`cec8afe`, `4f95c23`: spec only, R12-R14,
+  AC-16-AC-18). Not in this dispatch; nothing of it is built. {#g7-6}
+- **g7-7 AC-4 (f) fails after the 26.4 merge (test-side parity call).** 26.4 stores
+  `savestate_fx01` as `session/recall-state`. The interactive CLI passes `include_session=True`
+  (the operator affordance pinned by `test_plan3_remedy::test_cli_recent_passes_include_session_
+  explicitly` and `test_verb_parity`'s `rmx_memory_recall` wiring), while the test calls the
+  verb with its default (`session/*` hidden). So the CLI names `savestate_fx01` first and the
+  verb does not: `('memory,doc', ['savestate_fx01', 'fx_mem_00', …], ['fx_mem_00', …])`. The
+  same query has the same rows once the verb gets the CLI's `include_session`. No `src/` change:
+  changing the interactive default would break the two pinned contracts. For the test engineer
+  (or the lead, if the interactive affordance should go). {#g7-7}
+- **g7-8 26.4's AC-2 hook test reads the per-prompt hook as JSON.**
+  `test_savestate_mtype.py::test_ac2_hook_mode_recall_hides_the_hand_typed_savestate_and_include_session_keeps_it`
+  builds the generated `--stdin-json` argv, which has printed `--pack` text since the 25.1 GREEN
+  (`16ace00`), and `json.loads` it: `JSONDecodeError: Expecting value: line 1 column 1`. The
+  same contract update red-251b made for the 21.1 tests (read names through
+  `task21_1_support.pack_rows`) applies. 26.4 was written before 25.1 changed the hook. For
+  the test engineer. {#g7-8}
+- **AC-5** failed at `e5a516c` (family: `assert 'savestate_fx01' not in ['savestate_fx01',
+  'fx_dup_x', …]`), as expected; no 26.4 code was written here. It PASSES at `69da299`, after
+  the lead merged 26.4. {#g7-ac5}
+
+{#green-rev7-flags-list}

@@ -1,0 +1,50 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________ test_ac15g_recall_state_is_counted_as_producer_recall_state __________
+
+rs = <tests.task25_1_support.Fixture object at 0x108f78c20>
+
+    def test_ac15g_recall_state_is_counted_as_producer_recall_state(rs):
+        """R11's last bullet (F2, rev 7, 2026-11-13): the compact|clear recall-state is "counted as
+        producer `recall_state` in `rmx telemetry --context`".
+    
+        The contract this test pins (red-251b's reading; the spec names the producer, not the
+        shape -- see the summary's #red-rev7): `rmx telemetry --context --format json` carries
+        `by_producer`, keyed by `hook_budget.CHANNEL_BUDGET_BYTES` names, whose `recall_state`
+        entry counts the HOOK-invoked `rmx recall-state` runs in `cli.log` (`source == "hook"`,
+        `out_bytes` recorded) as `n`, `total_bytes`, `max_bytes`, with `budget` =
+        `budget("recall_state")` beside them; an interactive `rmx recall-state` is not a producer
+        run. The text form names `recall_state`.
+    
+        HEAD (measured 2026-11-13): the run IS in `by_command` as `recall-state` (n 1, 4,946 B),
+        but nothing names the producer or reads it against its budget; there is no
+        `by_producer`."""
+        _m, cmd = _rs_entry(rs.root)
+        r = s.run_cmd(rs, cmd, env_in=s.envelope("", event="SessionStart", source="compact"))
+        _ok(r, "recall-state entry (compact)")
+        i = s.rmx(rs, "recall-state")                       # interactive: not a producer run
+        assert i.returncode == 0, i.stderr[-600:]
+        rows = [x for x in h.jsonl(rs.root / "cli.log")
+                if x.get("phase") != "start" and (x.get("argv") or [None])[0] == "recall-state"
+                and isinstance(x.get("out_bytes"), int)]
+        hook_rows = [x for x in rows if x.get("source") == "hook"]
+        assert hook_rows and len(hook_rows) < len(rows), (
+            "fixture: cli.log must hold hook AND interactive recall-state rows",
+            [(x.get("source"), x.get("out_bytes")) for x in rows])
+        assert len(r.stdout) in [x["out_bytes"] for x in hook_rows]
+        j = s.rmx(rs, "telemetry", "--context", "--format", "json")
+        assert j.returncode == 0, j.stderr[-600:]
+        data = json.loads(j.stdout)
+        assert "by_producer" in data, f"F2: no producer view in telemetry --context: {sorted(data)}"
+        got = data["by_producer"].get("recall_state")
+        assert got is not None, sorted(data["by_producer"])
+>       assert got["n"] == len(hook_rows), (got, len(hook_rows))
+E       AssertionError: ({'budget': 9000, 'max_bytes': 4507, 'n': 2, 'over_budget': 0, ...}, 1)
+E       assert 2 == 1
+E        +  where 1 = len([{'argv': ['recall-state', '--max-bytes', '9000'], 'cwd': '/private/tmp/rmx-_8vk6ijt/p25r-s7ndn5ga/fxrs', 'error': None, 'exit_code': 0, ...}])
+
+tests/test_task25_1_recall_budget.py:1649: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac15g_recall_state_is_counted_as_producer_recall_state
+1 failed in 1.72s
