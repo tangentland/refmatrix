@@ -1,11 +1,11 @@
 ---
 gmd: "0.1"
 id: impl-task-bug216-rule-docs-in-graph
-title: "Task bug-216: the rule docs reach the graph (implementation summary, RED stub)"
+title: "Task bug-216: the rule docs reach the graph (implementation summary)"
 tags: [implementation-summary, bug-216, gmd, ingest, ignore, linkages, tdd]
 metadata:
   node_type: implementation-summary
-  status: red
+  status: green
   created: 2026-11-13
 ---
 
@@ -290,7 +290,116 @@ The mock added is `_FakeObserver` (watchdog `Observer`, external), registered in
 
 ## GREEN {#green}
 
-(implementer)
+Implementer `green-216`, 2026-11-13. Commits on `task-bug216-rule-docs-in-graph`: `2fc5554`
+(src + scripts), `4994a37` (docs/INTEGRATION.md). Interpreter: the clone's `.venv-eval` with
+`PYTHONPATH=<clone>/src`. No test was authored or edited. {#green-commits}
+
+rel: implements -> [[task-bug216-rule-docs-in-graph#requirements]]
+rel: implements -> [[task-bug216-rule-docs-in-graph#rev-2]]
+rel: implements -> [[task-bug216-rule-docs-in-graph#rev-3]]
+rel: implements -> [[task-bug216-rule-docs-in-graph#rev-4]]
+
+### Where each requirement lives {#green-map}
+
+| R | code |
+|---|---|
+| R1 | `ingest.IgnoreSpec` (`reincludes`, `dir_reincludes`, `reincluded`, `matching_pattern`); `load_ignore_spec` reports a `!dir` line once per load on stderr |
+| R2 | `ingest.ignore_reason(p, root, *, base=None)` is THE rule; `should_ignore` wraps it. Callers: `_ingest_tree`, `sync._sync_one`, `watch.is_relevant` (no private list), the daemon handler `_start_watcher._maybe` (now `is_relevant(p, _owning_root(...))`), `ingest_gmd.collect_gmd_files` (project root = `ingest.find_project_root`, segment rules below the target via `base`, exclusions returned as `ignored` and named by `render_ignored_line` in the daemon/CLI reports) |
+| R3 | `scripts/check-gmd-parity.py`: `scan(..., exclusions)`, `[ingest-scope]` error line naming the file and the rule; spec read from the nearest `.refmatrix/`, else `.git`, else the script's checkout |
+| R5/R8 | `scripts/check-rel-landing.py` (new): copies the catalog (+WAL) to a temp dir and opens the copy read-only; live-edge join in SQL; categories, `stale`, `binding`, `unresolved_by_target_doc`, `files_not_ingested`, `parse_failures` |
+| R6 | `ingest_gmd._resolve_target_eid`: bare `doc, memory, concept`; anchored `concept, doc, memory`; a bare concept hit is never cached. `_resolve_ref` (ADR slash bridge) serves `rel:` lines, plain wikilinks and pending resolution alike |
+| R7 | `store.DENOTES`; `Store.link_denotes(names=None)` (variants = the concept's `same_as` group, two hops, AND the `_concept_variants` spellings, because a sync batch buffers `same_as` until commit); `daemon._op_denotes_link` = `OPS["denotes_link"]` -> `{added, concepts, targets, multi_target, partition}`; GMD ingest calls `link_denotes` for the ids it wrote, the wikilink-mention concepts, title tokens and tags it minted; `purge_entity` already deletes both sides of `entity_links` |
+| R9 | `Store.denotes_equivalents`; `content_rank` expansion (`_close`: zero-cost, never in the hop query, never decayed); `QueryEngine.neighbors` (equivalents join the same frontier; `denotes` dropped from the counted linkages); `pagerank.build_adjacency` (typed non-`mentions` in-edges of a denoting concept folded onto its targets, split evenly; `_ADJ_SHAPE` in both adjacency cache keys); `context.build_context` one-hop walk reads the denoting concepts' rows for a doc/memory anchor (the PPR degree walk inherits the fold through `cached_adjacency`) |
+| R10 | `pending_refs` table; `Store.add_pending_ref` / `clear_pending_refs_for_file` / `pending_refs_for` / `delete_pending_ref` / `entity_exists`; `ingest_gmd.resolve_pending_refs` after pass 2 over every name the batch registered (skipped docs included); `purge_entity` deletes the purged source's rows; resolution re-checks the source exists (dropped rows counted); a re-processed doc first clears its own pending rows and its `rel:` evidence (`Store.clear_rel_evidence`), so no line ever carries two evidence rows; report lines `pending refs resolved/dropped`, `unresolved refs: N (M recorded as pending …)`, `denotes links added` |
+| R11 | `ingest.BUILTIN_INCLUDES` + `is_gmd_file` (the one sniff; `sync._is_gmd_file` is now an alias), step 4 of `ignore_reason` |
+| R12 | `INGEST_IGNORE_DIRS = (node_modules, venv, __pycache__, dist, build)`; `watch.py` defines no ignore list |
+
+### Migration {#green-migration}
+
+One new table, `pending_refs`, in BOTH catalog DDLs (`store.CATALOG_DDL` for SQLite,
+`duckdb_catalog.CATALOG_DDL` for DuckDB) as `CREATE TABLE IF NOT EXISTS`, no key or index (it
+holds the unresolved residue; `add_pending_ref` keeps it duplicate-free). An existing store gains
+it the first time a writer opens it: the DuckDB backend runs `init_catalog` on every writer open,
+the SQLite backend runs `executescript(CATALOG_DDL)` on every connect. Read-only snapshot
+connections never touch it. The `denotes` linkage type is registered on first use by
+`link_denotes` (`add_linkage_type`, which logs a `linkage_type` event), so no store carries it
+until something is linked. Not migrated anywhere else, deliberately: `pending_refs` is not in
+`replica_merge`'s table lists nor replayed from facts.log (writer rotation is pinned to one slot
+for the daemon's life); its rows are re-derived by re-ingesting the citing file. {#green-migration-story}
+
+### Results {#green-results}
+
+- **bug-216 files + `test_workflow_ignore` + `test_bug179_anchor_parity`:** 149 passed
+  (`green-iter1.log`). With `test_watch`, `test_derive_coverage`, `test_memory_bridge`,
+  `test_session_ingest` added after the `base` fix: 212 passed, 1 failed — [[#green-flag-bridge]]
+  (`green-iter2.log`).
+- **Family** (112 files over ingest, ingest_gmd, sync, watch, daemon ops, pagerank / PPR,
+  neighbors / graph, context, store, replica, duckdb, rank, bridge, plus the scope and bug-179
+  files): 4 failed, 1511 passed, 1 skipped (`green-family.log`, BEFORE the `base` fix). Two were
+  mine and are fixed or flagged (`test_derive_coverage` -> [[#green-flag-base]];
+  `test_memory_bridge` AC-2 -> [[#green-flag-bridge]]); two are pre-existing (below).
+- **Full suite** at `4994a37`: **5 failed, 4377 passed, 1 skipped** in 46 min (`green-full.log`)
+  against `release-0.82.0-full.log`'s 14 failed, compared by E line:
+  `test_brief_real_daemon::test_an_unknown_class…` (DuckDB "Conflicting lock", same E line) and
+  `test_task21_1_agent_usage_report` ×2 (same E lines) are pre-existing;
+  `test_gmd_lint_requires_version::test_the_repo_scope_is_clean…` fails in the clone only
+  because lint namespaces ids by the checkout's directory name (`refmatrix-bug216`) — 9 passed on
+  a copy named `refmatrix` (`gmd-lint-requires-version-copy.log`);
+  `test_memory_bridge::test_ac2_doc_ingest_keeps_its_own_walk` is [[#green-flag-bridge]].
+  No other failure.
+- **`./scripts/lint-gmd.sh`:** exit 0 (`lint-gmd.log`) on a copy of the tree named `refmatrix`
+  with a COPY of the memdir under a scratch HOME. In place, the clone fails on the two
+  environmental causes alone: the memdir is keyed by the checkout path (1,067 memory-id
+  dangling-docs) and namespaced ids resolve by directory name (32). The scope check itself: 0
+  docs outside the ingest scope (the clone has no `.refmatrix/`, so R11 applies).
+
+### Mutations {#green-mutations}
+
+Each applied alone after the GREEN commit, run, restored with `git checkout -- <file>` in its own
+command, the fix grepped back; `__pycache__` cleared after the batch (src clean at `4994a37`).
+
+| id | mutation | killed by | log |
+|---|---|---|---|
+| R6 | bare ids concept-first again | 4: `test_ac7_target_ingested_earlier…`, `…citing_doc_ingested_first_then_resynced…`, `…two_citing_docs_in_one_batch…`, `…memory_target_binds_the_memory` | `mut-R6.log` |
+| R7 | `denotes` written as `same_as` | 3: all of AC-8 rev 3 | `mut-R7.log` |
+| R9 | `denotes` an ordinary counted, decayed hop (`_den = None`) | 1: `test_ac10_expansion_walk_reaches_b_at_one_hop` | `mut-R9.log` |
+| R10 | a resolved pending row never cleared | 1: `test_ac11_a_resolved_pending_row_is_cleared` | `mut-R10.log` |
+| R11 | no built-in include | 10: AC-12 (7, incl. the no-ignore-file gate), `test_ac4_fails_on_the_hidden_dir_rule…`, both bug-179 gate cases | `mut-R11.log` |
+
+{#green-mutation-table}
+
+### Flags {#green-flags}
+
+1. **Test conflict, for the test owner.** `tests/test_memory_bridge.py::test_ac2_doc_ingest_keeps_its_own_walk`
+   (task 26.1 AC-2) expects the DOC walk of a memdir to take `.organise-rollback-1/x.md` and
+   `.hidden/y.md`. R2 puts that walk through `should_ignore`, and the bug-216 e2e tests require
+   hidden-dir files below the target (`.claude/agents/x.md`) to be excluded; the two cannot both
+   hold. Under R2 the expected set is `{keep_top.md, keep_nested.md}` and the two paths are named
+   in the walk's `ignored` line. Sent to the lead. {#green-flag-bridge}
+2. **The gate goes red in the dev tree at merge, by design.** Its live `.refmatrix_ignore` lists
+   `CLAUDE.md` and `.claude`; `check-gmd-parity.py` there reports both rule docs
+   (`parity-dev-tree-live-ignore.log`). R4 clears it, and R4 is safe before the deploy: old code
+   reads `!.claude/PROJECT_PROFILE.md` as an anchored pattern matching nothing, and removing the
+   `CLAUDE.md` line lets the running daemon ingest CLAUDE.md. {#green-flag-gate}
+3. **Daemon watcher behaviour.** Its first filter now reads the spec, so a spec-ignored file's
+   fs event no longer reaches `sync_files` (which used to purge it). This is what `rmx watch`
+   already did; a path that BECOMES ignored is still purged by any sync that names it (AC-3).
+   {#green-flag-watcher}
+4. **`base` on the predicate.** `should_ignore(p, root, *, base=…)`: the doc walk applies the
+   segment rules below the target it was handed. Found by `test_derive_coverage`: `rmx session
+   ingest` walks `<project>/.refmatrix/sessions/` with the doc walk and indexed nothing once the
+   hidden-dir rule saw `.refmatrix` in the absolute path. {#green-flag-base}
+5. **No CLI for the derive op.** A new command needs a verb + MCP tool or an `INTERNAL_CLI`
+   entry (a frozen, user-decided set), so the op is run through the daemon:
+   `daemon.call(root, "denotes_link", {}, timeout=600)`, per partition (`{"partition": …}`).
+   {#green-flag-cli}
+6. **Prestage.** `prestage_hashes` (op and CLI) uses the same walk but does not take `ignored`;
+   its exclusions print on the process's stderr (the daemon's log for the op). {#green-flag-prestage}
+7. **Evidence re-derivation cost.** `clear_rel_evidence` scans `linkage_evidence` by `file` (no
+   index on it) once per re-processed GMD doc. {#green-flag-cost}
+8. **AC-6 run.** `check-rel-landing.py <catalog-copy> CLAUDE.md docs workflow eval
+   .claude/PROJECT_PROFILE.md --json` (it copies the catalog it is given again before opening).
+   `bound_via_denotes` needs the derive op first. {#green-flag-ac6}
 
 ## AC-6 (live) {#ac6}
 

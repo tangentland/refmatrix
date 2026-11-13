@@ -1,0 +1,30 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+.F...................................................                    [100%]
+=================================== FAILURES ===================================
+_________________ test_ac11_a_resolved_pending_row_is_cleared __________________
+
+store_env = (PosixPath('/private/tmp/b216p4ba1u8r25/proj'), PosixPath('/private/tmp/b216p4ba1u8r25/proj/.refmatrix'))
+
+    def test_ac11_a_resolved_pending_row_is_cleared(store_env):
+        """Mutation 'never clear pending rows': ingesting b-doc a second time (changed) must not
+        resolve the same line again — exactly one edge and one evidence row per line."""
+        proj, root = store_env
+        a = _write(proj, "docs/a.md", A_CITES)
+        _ingest(root, [a])
+        b = _write(proj, "docs/b.md", B_DOC)
+        _ingest(root, [b])
+        b.write_text(B_DOC + "\nEdited.\n")
+        _ingest(root, [b])
+        s = _open(root)
+        try:
+            src = _eid(s, "concept", "a#cite")
+            assert len(_rows_from(s, "derives-from", src)) == 1
+>           assert _evidence_at(s, a, DERIVES_LINE) == 1, "a cleared pending row resolved twice"
+E           AssertionError: a cleared pending row resolved twice
+E           assert 2 == 1
+E            +  where 2 = _evidence_at(<refmatrix.store.Store object at 0x123177cb0>, PosixPath('/private/tmp/b216p4ba1u8r25/proj/docs/a.md'), 16)
+
+tests/test_bug216_rev4.py:144: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_rev4.py::test_ac11_a_resolved_pending_row_is_cleared
+1 failed, 52 passed in 16.55s

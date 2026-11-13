@@ -1,0 +1,95 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+.........FFF..........                                                   [100%]
+=================================== FAILURES ===================================
+__ test_ac8_derive_op_links_the_misbound_concept_and_its_variants_to_the_doc ___
+
+env = (PosixPath('/private/tmp/b216bw2w_8g0g/proj'), PosixPath('/private/tmp/b216bw2w_8g0g/proj/.refmatrix'))
+
+    def test_ac8_derive_op_links_the_misbound_concept_and_its_variants_to_the_doc(env):
+        proj, root = env
+        st = _misbound_store(proj, root)
+        cids = list(st["concepts"].values())
+        s = _open(root)
+        try:
+            before = _denotes_rows(s, cids)
+            evid_before = s._connect().execute(
+                "SELECT count(*) FROM linkage_evidence").fetchone()[0]
+        finally:
+            s.close()
+        res = _run_op(root)
+        s = _open(root)
+        try:
+            after = _denotes_rows(s, cids)
+            # every variant of the concept denotes B's doc — "skip the variants" mutation
+>           assert after == {(c, st["doc"]) for c in cids}, after
+E           AssertionError: set()
+E           assert set() == {(21, 4), (22, 4), (23, 4)}
+E             
+E             Extra items in the right set:
+E             (23, 4)
+E             (21, 4)
+E             (22, 4)
+E             Use -v to get more diff
+
+tests/test_bug216_binding.py:335: AssertionError
+______________________ test_ac8_a_second_run_adds_nothing ______________________
+
+env = (PosixPath('/private/tmp/b216bm71whkd5/proj'), PosixPath('/private/tmp/b216bm71whkd5/proj/.refmatrix'))
+
+    def test_ac8_a_second_run_adds_nothing(env):
+        proj, root = env
+        st = _misbound_store(proj, root)
+        _run_op(root)
+        s = _open(root)
+        try:
+            n1 = s._connect().execute("SELECT count(*) FROM entity_links").fetchone()[0]
+        finally:
+            s.close()
+        res = _run_op(root)
+        s = _open(root)
+        try:
+            n2 = s._connect().execute("SELECT count(*) FROM entity_links").fetchone()[0]
+>           assert _denotes_rows(s, list(st["concepts"].values())), "first run linked nothing"
+E           AssertionError: first run linked nothing
+E           assert set()
+E            +  where set() = _denotes_rows(<refmatrix.store.Store object at 0x1309e6120>, [23, 21, 22])
+E            +    where [23, 21, 22] = list(dict_values([23, 21, 22]))
+E            +      where dict_values([23, 21, 22]) = <built-in method values of dict object at 0x136309c40>()
+E            +        where <built-in method values of dict object at 0x136309c40> = {'b doc': 22, 'b-doc': 23, 'b_doc': 21}.values
+
+tests/test_bug216_binding.py:367: AssertionError
+_______ test_ac8_ingest_links_a_preexisting_concept_and_purge_removes_it _______
+
+env = (PosixPath('/private/tmp/b216b89jzx0h8/proj'), PosixPath('/private/tmp/b216b89jzx0h8/proj/.refmatrix'))
+
+    def test_ac8_ingest_links_a_preexisting_concept_and_purge_removes_it(env):
+        """R7(b): the concept exists first; ingesting the doc with that id links every concept
+        named after it (variants too); purging the doc removes the links."""
+        proj, root = env
+        s = _open(root)
+        try:
+            s.add_concept("b-doc")
+            cids = [s.get_entity("concept", n).id for n in ("b-doc", "b_doc", "b doc")]
+        finally:
+            s.close()
+        b = _write(proj, "docs/b.md", B_MD)
+        _ingest(root, [b])
+        s = _open(root)
+        try:
+            doc = s.get_entity("doc", "b-doc").id
+>           assert _denotes_rows(s, cids) == {(c, doc) for c in cids}, _denotes_rows(s, cids)
+E           AssertionError: set()
+E           assert set() == {(1, 4), (2, 4), (3, 4)}
+E             
+E             Extra items in the right set:
+E             (2, 4)
+E             (3, 4)
+E             (1, 4)
+E             Use -v to get more diff
+
+tests/test_bug216_binding.py:388: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_binding.py::test_ac8_derive_op_links_the_misbound_concept_and_its_variants_to_the_doc
+FAILED tests/test_bug216_binding.py::test_ac8_a_second_run_adds_nothing - Ass...
+FAILED tests/test_bug216_binding.py::test_ac8_ingest_links_a_preexisting_concept_and_purge_removes_it
+3 failed, 19 passed in 8.76s

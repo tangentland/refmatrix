@@ -1,0 +1,259 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+.....F...FFFFFF..........F........................................FF.... [ 96%]
+...                                                                      [100%]
+=================================== FAILURES ===================================
+______________ test_ac12_no_ignore_file_includes_the_gmd_profile _______________
+
+bare_root = PosixPath('/private/tmp/b216r11rjdb4oqt')
+
+    def test_ac12_no_ignore_file_includes_the_gmd_profile(bare_root):
+        """No `.refmatrix_ignore` at all: a profile with GMD frontmatter is included, the rest of
+        `.claude/` is not, and CLAUDE.md (GMD) is included."""
+        from refmatrix.ingest import should_ignore
+        _tree(bare_root, {"CLAUDE.md": _gmd("claude"),
+                          ".claude/PROJECT_PROFILE.md": _gmd("project-profile"),
+                          ".claude/agents/x.md": _gmd("agent-x")})
+>       assert should_ignore(bare_root / ".claude/PROJECT_PROFILE.md", bare_root) is False
+E       AssertionError: assert True is False
+E        +  where True = <function should_ignore at 0x1133ea610>((PosixPath('/private/tmp/b216r11rjdb4oqt') / '.claude/PROJECT_PROFILE.md'), PosixPath('/private/tmp/b216r11rjdb4oqt'))
+
+tests/test_bug216_rev4.py:234: AssertionError
+____ test_ac12_every_walker_ingests_the_rule_docs_with_no_ignore_file[sync] ____
+
+route = 'sync'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x113350670>
+
+    @pytest.mark.parametrize("route", ["sync", "watcher", "op-ingest-gmd", "cli-ingest-gmd",
+                                       "ingest-path"])
+    def test_ac12_every_walker_ingests_the_rule_docs_with_no_ignore_file(route, monkeypatch):
+        base, proj, root = _make_proj()
+        try:
+            _run(route, proj, root, monkeypatch)
+            s = _open(root)
+            try:
+                got = _ingested(s, proj)
+            finally:
+                s.close()
+            want = {"CLAUDE.md", ".claude/PROJECT_PROFILE.md", "docs/finding.md", "docs/other.md",
+                    "src/refmatrix/templates/t.md"}
+>           assert got == want, f"{route}: missing {sorted(want - got)}, extra {sorted(got - want)}"
+E           AssertionError: sync: missing ['.claude/PROJECT_PROFILE.md'], extra []
+E           assert {'CLAUDE.md',...mplates/t.md'} == {'.claude/PRO...mplates/t.md'}
+E             
+E             Extra items in the right set:
+E             '.claude/PROJECT_PROFILE.md'
+E             Use -v to get more diff
+
+tests/test_bug216_rev4.py:280: AssertionError
+__ test_ac12_every_walker_ingests_the_rule_docs_with_no_ignore_file[watcher] ___
+
+route = 'watcher'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x13421d8d0>
+
+    @pytest.mark.parametrize("route", ["sync", "watcher", "op-ingest-gmd", "cli-ingest-gmd",
+                                       "ingest-path"])
+    def test_ac12_every_walker_ingests_the_rule_docs_with_no_ignore_file(route, monkeypatch):
+        base, proj, root = _make_proj()
+        try:
+            _run(route, proj, root, monkeypatch)
+            s = _open(root)
+            try:
+                got = _ingested(s, proj)
+            finally:
+                s.close()
+            want = {"CLAUDE.md", ".claude/PROJECT_PROFILE.md", "docs/finding.md", "docs/other.md",
+                    "src/refmatrix/templates/t.md"}
+>           assert got == want, f"{route}: missing {sorted(want - got)}, extra {sorted(got - want)}"
+E           AssertionError: watcher: missing ['.claude/PROJECT_PROFILE.md'], extra []
+E           assert {'CLAUDE.md',...mplates/t.md'} == {'.claude/PRO...mplates/t.md'}
+E             
+E             Extra items in the right set:
+E             '.claude/PROJECT_PROFILE.md'
+E             Use -v to get more diff
+
+tests/test_bug216_rev4.py:280: AssertionError
+_ test_ac12_every_walker_ingests_the_rule_docs_with_no_ignore_file[op-ingest-gmd] _
+
+route = 'op-ingest-gmd'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x115da5570>
+
+    @pytest.mark.parametrize("route", ["sync", "watcher", "op-ingest-gmd", "cli-ingest-gmd",
+                                       "ingest-path"])
+    def test_ac12_every_walker_ingests_the_rule_docs_with_no_ignore_file(route, monkeypatch):
+        base, proj, root = _make_proj()
+        try:
+            _run(route, proj, root, monkeypatch)
+            s = _open(root)
+            try:
+                got = _ingested(s, proj)
+            finally:
+                s.close()
+            want = {"CLAUDE.md", ".claude/PROJECT_PROFILE.md", "docs/finding.md", "docs/other.md",
+                    "src/refmatrix/templates/t.md"}
+>           assert got == want, f"{route}: missing {sorted(want - got)}, extra {sorted(got - want)}"
+E           AssertionError: op-ingest-gmd: missing ['.claude/PROJECT_PROFILE.md'], extra []
+E           assert {'CLAUDE.md',...mplates/t.md'} == {'.claude/PRO...mplates/t.md'}
+E             
+E             Extra items in the right set:
+E             '.claude/PROJECT_PROFILE.md'
+E             Use -v to get more diff
+
+tests/test_bug216_rev4.py:280: AssertionError
+_ test_ac12_every_walker_ingests_the_rule_docs_with_no_ignore_file[cli-ingest-gmd] _
+
+route = 'cli-ingest-gmd'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x115931010>
+
+    @pytest.mark.parametrize("route", ["sync", "watcher", "op-ingest-gmd", "cli-ingest-gmd",
+                                       "ingest-path"])
+    def test_ac12_every_walker_ingests_the_rule_docs_with_no_ignore_file(route, monkeypatch):
+        base, proj, root = _make_proj()
+        try:
+            _run(route, proj, root, monkeypatch)
+            s = _open(root)
+            try:
+                got = _ingested(s, proj)
+            finally:
+                s.close()
+            want = {"CLAUDE.md", ".claude/PROJECT_PROFILE.md", "docs/finding.md", "docs/other.md",
+                    "src/refmatrix/templates/t.md"}
+>           assert got == want, f"{route}: missing {sorted(want - got)}, extra {sorted(got - want)}"
+E           AssertionError: cli-ingest-gmd: missing ['.claude/PROJECT_PROFILE.md'], extra []
+E           assert {'CLAUDE.md',...mplates/t.md'} == {'.claude/PRO...mplates/t.md'}
+E             
+E             Extra items in the right set:
+E             '.claude/PROJECT_PROFILE.md'
+E             Use -v to get more diff
+
+tests/test_bug216_rev4.py:280: AssertionError
+_ test_ac12_every_walker_ingests_the_rule_docs_with_no_ignore_file[ingest-path] _
+
+route = 'ingest-path'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x132819d90>
+
+    @pytest.mark.parametrize("route", ["sync", "watcher", "op-ingest-gmd", "cli-ingest-gmd",
+                                       "ingest-path"])
+    def test_ac12_every_walker_ingests_the_rule_docs_with_no_ignore_file(route, monkeypatch):
+        base, proj, root = _make_proj()
+        try:
+            _run(route, proj, root, monkeypatch)
+            s = _open(root)
+            try:
+                got = _ingested(s, proj)
+            finally:
+                s.close()
+            want = {"CLAUDE.md", ".claude/PROJECT_PROFILE.md", "docs/finding.md", "docs/other.md",
+                    "src/refmatrix/templates/t.md"}
+>           assert got == want, f"{route}: missing {sorted(want - got)}, extra {sorted(got - want)}"
+E           AssertionError: ingest-path: missing ['.claude/PROJECT_PROFILE.md'], extra []
+E           assert {'CLAUDE.md',...mplates/t.md'} == {'.claude/PRO...mplates/t.md'}
+E             
+E             Extra items in the right set:
+E             '.claude/PROJECT_PROFILE.md'
+E             Use -v to get more diff
+
+tests/test_bug216_rev4.py:280: AssertionError
+___________ test_ac12_the_gate_passes_a_checkout_with_no_ignore_file ___________
+
+    def test_ac12_the_gate_passes_a_checkout_with_no_ignore_file():
+        """R11's point: a fresh clone / CI has no `.refmatrix/` at all, and the R3 gate must pass.
+        Green at HEAD (no scope check yet) — a guard against R3 landing without R11."""
+        import subprocess
+        root = _gate_root()
+        try:
+            assert not (root / ".refmatrix").exists()
+            env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+            p = subprocess.run(["bash", str(root / "scripts" / "lint-gmd.sh")], capture_output=True,
+                               text=True, cwd=root, env=env, timeout=600)
+>           assert p.returncode == 0, p.stdout + p.stderr
+E           AssertionError: .claude/PROJECT_PROFILE.md: error: [ingest-scope] a linted GMD doc the store ingest excludes, by built-in hidden-directory rule (segment `.claude`) — its anchors resolve for lint and dangle in the graph; re-include it (`!<path>` in .refmatrix/.refmatrix_ignore) or take it out of the lint scope
+E             
+E             gmd lint: 5 files, 5 GMD docs, 0 errors, 0 warnings [phase 2 cross-doc]
+E             gmd parity: 0 divergent doc(s), 0 parse failure(s), 1 doc(s) outside the ingest scope
+E             lint-gmd: lint exit 0, anchor parity exit 1
+E             
+E           assert 1 == 0
+E            +  where 1 = CompletedProcess(args=['bash', '/private/tmp/b216gkx82cww6/scripts/lint-gmd.sh'], returncode=1, stdout='.claude/PROJEC...ivergent doc(s), 0 parse failure(s), 1 doc(s) outside the ingest scope\nlint-gmd: lint exit 0, anchor parity exit 1\n').returncode
+
+tests/test_bug216_rev4.py:312: AssertionError
+______________ test_ac4_fails_on_the_hidden_dir_rule_and_names_it ______________
+
+roots = [PosixPath('/private/tmp/b216pk0ngreet')]
+
+    def test_ac4_fails_on_the_hidden_dir_rule_and_names_it(roots):
+        """A scanned GMD doc that only the built-in hidden-dir rule excludes. The finding must say so
+        — the rule is not in any file the user can grep. (Rev 4 R11: the PROFILE is now a built-in
+        include, so the hidden-dir case is another `.claude/` doc passed to the script.)"""
+        root = _root()
+        roots.append(root)
+        _small_repo(root)
+        (root / ".claude" / "NOTES.md").write_text(_gmd("claude-notes"))
+        _spec(root, ["!docs/notes-private.md"])
+        code, out = _run(root, str(root / ".claude" / "NOTES.md"))
+        assert code != 0, out
+        assert "hidden" in _line_naming(out, ".claude/NOTES.md").lower(), out
+>       assert ".claude/PROJECT_PROFILE.md" not in out, (
+            f"R11: the GMD profile is a built-in include, never a finding:\n{out}")
+E       AssertionError: R11: the GMD profile is a built-in include, never a finding:
+E         /private/tmp/b216pk0ngreet/.claude/PROJECT_PROFILE.md: error: [ingest-scope] a linted GMD doc the store ingest excludes, by built-in hidden-directory rule (segment `.claude`) — its anchors resolve for lint and dangle in the graph; re-include it (`!<path>` in .refmatrix/.refmatrix_ignore) or take it out of the lint scope
+E         /private/tmp/b216pk0ngreet/.claude/NOTES.md: error: [ingest-scope] a linted GMD doc the store ingest excludes, by built-in hidden-directory rule (segment `.claude`) — its anchors resolve for lint and dangle in the graph; re-include it (`!<path>` in .refmatrix/.refmatrix_ignore) or take it out of the lint scope
+E         gmd parity: 0 divergent doc(s), 0 parse failure(s), 2 doc(s) outside the ingest scope
+E         
+E       assert '.claude/PROJECT_PROFILE.md' not in '/private/tm...gest scope\n'
+E         
+E         '.claude/PROJECT_PROFILE.md' is contained here:
+E           /private/tmp/b216pk0ngreet/.claude/PROJECT_PROFILE.md: error: [ingest-scope] a linted GMD doc the store ingest excludes, by built-in hidden-directory rule (segment `.claude`) — its anchors resolve for lint and dangle in the graph; re-include it (`!<path>` in .refmatrix/.refmatrix_ignore) or take it out of the lint scope
+E         ?                            ++++++++++++++++++++++++++
+E           /private/tmp/b216pk0ngreet/.claude/NOTES.md: error: [ingest-scope] a linted GMD doc the store ingest excludes, by built-in hidden-directory rule (seg...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show
+
+tests/test_bug216_scope_parity.py:135: AssertionError
+______ test_ac10_the_gate_passes_when_the_planted_id_is_on_its_paragraph _______
+
+gate_roots = [PosixPath('/tmp/b17951gs08ki')]
+
+    def test_ac10_the_gate_passes_when_the_planted_id_is_on_its_paragraph(gate_roots):
+        root = _gate_root(lint_src=_base_lint_src(), doc=PLANTED_FIXED)
+        gate_roots.append(root)
+        code, out = _run_gate(root)
+>       assert code == 0, out
+E       AssertionError: .claude/PROJECT_PROFILE.md: error: [ingest-scope] a linted GMD doc the store ingest excludes, by built-in hidden-directory rule (segment `.claude`) — its anchors resolve for lint and dangle in the graph; re-include it (`!<path>` in .refmatrix/.refmatrix_ignore) or take it out of the lint scope
+E         
+E         gmd lint: 6 files, 6 GMD docs, 0 errors, 0 warnings [phase 2 cross-doc]
+E         gmd parity: 0 divergent doc(s), 0 parse failure(s), 1 doc(s) outside the ingest scope
+E         lint-gmd: lint exit 0, anchor parity exit 1
+E         
+E       assert 1 == 0
+
+tests/test_bug179_anchor_parity.py:572: AssertionError
+_______________ test_ac10_the_unmutated_gate_passes_a_clean_root _______________
+
+gate_roots = [PosixPath('/tmp/b179jvsauzf2')]
+
+    def test_ac10_the_unmutated_gate_passes_a_clean_root(gate_roots):
+        root = _gate_root(lint_src=None, doc=PLANTED_FIXED)
+        gate_roots.append(root)
+        code, out = _run_gate(root)
+>       assert code == 0, out
+E       AssertionError: .claude/PROJECT_PROFILE.md: error: [ingest-scope] a linted GMD doc the store ingest excludes, by built-in hidden-directory rule (segment `.claude`) — its anchors resolve for lint and dangle in the graph; re-include it (`!<path>` in .refmatrix/.refmatrix_ignore) or take it out of the lint scope
+E         
+E         gmd lint: 6 files, 6 GMD docs, 0 errors, 0 warnings [phase 2 cross-doc]
+E         gmd parity: 0 divergent doc(s), 0 parse failure(s), 1 doc(s) outside the ingest scope
+E         lint-gmd: lint exit 0, anchor parity exit 1
+E         
+E       assert 1 == 0
+
+tests/test_bug179_anchor_parity.py:579: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_rev4.py::test_ac12_no_ignore_file_includes_the_gmd_profile
+FAILED tests/test_bug216_rev4.py::test_ac12_every_walker_ingests_the_rule_docs_with_no_ignore_file[sync]
+FAILED tests/test_bug216_rev4.py::test_ac12_every_walker_ingests_the_rule_docs_with_no_ignore_file[watcher]
+FAILED tests/test_bug216_rev4.py::test_ac12_every_walker_ingests_the_rule_docs_with_no_ignore_file[op-ingest-gmd]
+FAILED tests/test_bug216_rev4.py::test_ac12_every_walker_ingests_the_rule_docs_with_no_ignore_file[cli-ingest-gmd]
+FAILED tests/test_bug216_rev4.py::test_ac12_every_walker_ingests_the_rule_docs_with_no_ignore_file[ingest-path]
+FAILED tests/test_bug216_rev4.py::test_ac12_the_gate_passes_a_checkout_with_no_ignore_file
+FAILED tests/test_bug216_scope_parity.py::test_ac4_fails_on_the_hidden_dir_rule_and_names_it
+FAILED tests/test_bug179_anchor_parity.py::test_ac10_the_gate_passes_when_the_planted_id_is_on_its_paragraph
+FAILED tests/test_bug179_anchor_parity.py::test_ac10_the_unmutated_gate_passes_a_clean_root
+10 failed, 65 passed in 17.59s

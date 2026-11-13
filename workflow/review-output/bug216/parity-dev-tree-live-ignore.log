@@ -1,0 +1,3 @@
+gmd parity: 0 divergent doc(s), 0 parse failure(s), 2 doc(s) outside the ingest scope
+CLAUDE.md: error: [ingest-scope] a linted GMD doc the store ingest excludes, by pattern `CLAUDE.md` in /Users/tholley/claude_tools/refmatrix/.refmatrix/.refmatrix_ignore — its anchors resolve for lint and dangle in the graph; re-include it (`!<path>` in .refmatrix/.refmatrix_ignore) or take it out of the lint scope
+.claude/PROJECT_PROFILE.md: error: [ingest-scope] a linted GMD doc the store ingest excludes, by pattern `.claude` in /Users/tholley/claude_tools/refmatrix/.refmatrix/.refmatrix_ignore — its anchors resolve for lint and dangle in the graph; re-include it (`!<path>` in .refmatrix/.refmatrix_ignore) or take it out of the lint scope
