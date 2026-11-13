@@ -49,3 +49,4 @@
 2026-11-13T14:30:55-0800 commit=d1614a8 verdict=DIRTY findings=7 (0B/3S/4M) report=2026-11-13-2245-pop-review-r4-d1614a8.md
 2026-11-13T14:34:10-0800 commit=1cf3b9f verdict=DIRTY findings=3 (0B/1S/2M) report=2026-11-13-2255-pop-review-r5-1cf3b9f.md
 2026-11-13T14:59:19-0800 commit=b5fe2d3 verdict=DIRTY findings=11 (0B/4S/7M) report=2026-11-13-2300-spec-t2-r1-b5fe2d3.md
+2026-11-13T15:01:18-0800 commit=7e67551 verdict=DIRTY findings=16 (1B/6S/9M) report=2026-11-13-2305-spec-t0-r1-7e67551.md
