@@ -20,8 +20,8 @@ metadata:
 > b-1: the Bash leg re-opened the clone leg D12 rules out) and re-runs [[#why-data]] under the
 > fix ([[#rev-3]]). Rev 3.1 (the same day) folds in the user's OD-4 and OD-5 decisions (OD-5: a
 > decay kernel replaces the hard window, [[#d18]]) and re-runs the data under it on two corpora
-> ([[#rev-3-1]]). It needs a spec re-review, and the user's answer on
-> [[#ofu-cliquedb]], before approval.
+> ([[#rev-3-1]]). It needs a spec re-review before approval; the user allowed AC-15's cliquedb
+> copy and runs R12's sample as a pilot in parallel ([[#ofu-cliquedb]], [[#ofu-pilot]]).
 > Wave: now. The user prioritised it on 2026-11-11, after reading `rmx telemetry --agent-usage`.
 > Depends on: 21.1 (completed: the ONE recall-event schema, `emit_recall_events`,
 > `delivered_in_session`, R12's three explicit evidences, the `--agent-usage` report), and 23.0
@@ -1208,9 +1208,9 @@ row ([[#d10]]); the kernel's shape within the user's OD-5 words ([[#d18]]); the 
 
 ## Open for the user {#open-for-user}
 
-OD-4 and OD-5 were decided by the user on 2026-11-13 ([[#od-4]], [[#od-5]]); their entries
-stay below as a record. One item still needs the user, and the kernel's shape has points the
-user should see before AC-15's output is read.
+Every item here was decided by the user on 2026-11-13 ([[#od-4]], [[#od-5]]); the entries stay
+below as a record. The kernel's shape has points the user should see before AC-15's output is
+read ([[#kernel-for-user]]).
 
 1. **OD-4: APPROVED (2026-11-13).** The decision-log row is d21-5a. {#ofu-od4}
 2. **OD-5: DECIDED (2026-11-13).** The kernel replaces `W = 2` ([[#d18]]); R12's other numbers
@@ -1219,9 +1219,12 @@ user should see before AC-15's output is read.
    copied read-only (APFS clones, deleted after) so the kernel's tail is checked on a store
    whose work does not run in clones. The project's rules say an agent never touches a fleet
    repo; a read-only copy writes nothing there, and the lead and this revision each ran one at
-   the lead's direction, but the implementer needs the user's yes, or AC-15 runs on this
-   project alone.
-   **Recommendation: allow it, read-only, counts only.** {#ofu-cliquedb}
+   the lead's direction. **ALLOWED by the user (2026-11-13):** AC-15 may copy cliquedb's store
+   read-only (APFS clone, `chmod a-w`, counts only, deleted after). {#ofu-cliquedb}
+4. **R12's labelled sample runs first as a hand-labelled PILOT (the user, 2026-11-13), not
+   instead of approval.** 21.5 stays on its track (spec re-review, then approval); the pilot
+   runs in parallel on the legacy window, its result feeds [[#why-data]] and [[#r12]]'s bands,
+   and it blocks approval only if it shows the instrument measures nothing. {#ofu-pilot}
 4. **What the user should see about the kernel (not blocking; lead-drawn from the user's
    words).** {#kernel-for-user}
    - **The plateau is not yet above the control.** On 2026-10-20 to 2026-11-13, lags 1-3
@@ -1246,6 +1249,8 @@ user should see before AC-15's output is read.
      rates exist for the control (it has no labels).
    - **An explicit R12 use weighs 1** at any lag: it names the item, so it is not inferred
      from proximity.
+   - **The user's hand-labelled pilot of R12's sample** ([[#ofu-pilot]]) tests the plateau and
+     the cliquedb finding before implementation, without holding approval.
 
 ## Non-goals {#non-goals}
 
@@ -1345,5 +1350,6 @@ whose exact shape (`k = 3`, `h = 2`, the bands, kernel-weighted `p_w`, explicit 
 1) was drawn by the lead from the user's words; the decision-log row d21-5a and the `tool`
 rename in 19.6, 21.1 and 19.2; the 21.5 and 21.6 rows of the plan and the deferral row without
 `W`; and [[#why-data-kernel]] on three windows, cliquedb included. What the user should still see
-is [[#kernel-for-user]]; what still needs the user is [[#ofu-cliquedb]].
+is [[#kernel-for-user]]. The user then allowed the cliquedb copy and chose a hand-labelled pilot
+of R12's sample in parallel with approval ([[#ofu-cliquedb]], [[#ofu-pilot]]).
 {#rev-3-1-note}
