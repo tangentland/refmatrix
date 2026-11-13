@@ -111,6 +111,17 @@ The user, 2026-11-13: "there have to be contradictions". Sweep dispatched (contr
   as `kind=doc` in the project partition; and each assertion is mutation-proven. The related,
   pre-existing hole is logged as bug-220: a doc walk over a memory dir lands memory files as
   `kind=doc`. It goes to T2. {#x1}
+- **X2 [K2] "memories into the graph" vs "operational content stays out of the graph".** The
+  user, 2026-11-13: "we should have a way to bridge memories into the graph as they are sometimes
+  relevant". The memory `feedback_operational_content_not_in_graph` lists "save-states, plan-of-plans,
+  task-status" and "a project's `workflow/` dir" as content that must NOT enter the graph. In this
+  store the bridge does put them in. Measured on `mentions:store_lock` (live, read path): of 247
+  mentioners, 211 are `workflow/` anchors, 29 are memory-dir section anchors and 3 are
+  `kind=memory` rows. viascope excludes `workflow/` and refmatrix does not. Which rule holds needs
+  a user decision. A third option: memories get IN (the bridge, correctly classified, per bug-220's
+  route-not-refuse fix) while save-states and `workflow/` stay OUT. One related observation:
+  `kind=memory` rows carry no `path` (only their section anchors do), and bug-216 R8's recount
+  class "doc / memory with a path" has to allow for that. {#x2}
 
 ## Proposal {#proposal}
 
