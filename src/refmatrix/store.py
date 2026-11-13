@@ -533,7 +533,7 @@ CREATE INDEX IF NOT EXISTS idx_pair_index_df
 -- cite the two rule docs alone. Ingesting a doc / memory / anchor whose name
 -- equals `target_name` resolves the row (edge + evidence) and deletes it; a
 -- purge of `source_id` deletes it; re-ingesting the citing file replaces its
--- rows. Replayed from facts.log (bug-216 R13): `pending_ref` /
+-- rows. Rebuilt from facts.log (bug-216 R13, `rebuild_index_from_log`): `pending_ref` /
 -- `pending_ref_delete` / `pending_refs_clear` events, source named by kind and
 -- name, partition-qualified; a source's `tombstone` drops its rows; the
 -- compaction dump re-emits the live rows. No PK or index: the table holds the
@@ -8597,28 +8597,6 @@ class Store:
                     file=ev.get("file"), line=ev.get("line"),
                     span_end=ev.get("span_end"), detail=ev.get("detail"),
                 )
-                return True
-            # bug-216 R13: the GMD path's evidence clear and pending refs.
-            if op == "rel_evidence_clear":
-                self.clear_rel_evidence(ev["file"])
-                return True
-            if op == "pending_refs_clear":
-                self.clear_pending_refs_for_file(ev["file"])
-                return True
-            if op in ("pending_ref", "pending_ref_delete"):
-                src = self.get_entity(ev["s_kind"], ev["s"])
-                if src is None:
-                    return False
-                if op == "pending_ref":
-                    self.add_pending_ref(
-                        src.id, ev["linkage"], ev["target_name"], ref=ev["ref"],
-                        file=ev["file"], line=int(ev["line"]), weight=ev.get("weight"),
-                        detail=ev.get("detail"))
-                else:
-                    self.delete_pending_ref({
-                        "source_id": src.id, "linkage": ev["linkage"],
-                        "target_name": ev["target_name"], "file": ev["file"],
-                        "line": int(ev["line"])})
                 return True
             if op == "memory_content":
                 # add_memory upserts the entity (idempotent — the prior

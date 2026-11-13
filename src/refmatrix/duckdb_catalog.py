@@ -238,7 +238,7 @@ CREATE INDEX IF NOT EXISTS idx_pair_index_df
 -- cite the two rule docs alone. Ingesting a doc / memory / anchor whose name
 -- equals `target_name` resolves the row (edge + evidence) and deletes it; a
 -- purge of `source_id` deletes it; re-ingesting the citing file replaces its
--- rows. Replayed from facts.log (bug-216 R13): `pending_ref` /
+-- rows. Rebuilt from facts.log (bug-216 R13, `rebuild_index_from_log`): `pending_ref` /
 -- `pending_ref_delete` / `pending_refs_clear` events, source named by kind and
 -- name, partition-qualified; a source's `tombstone` drops its rows; the
 -- compaction dump re-emits the live rows. No PK or index: the table holds the
