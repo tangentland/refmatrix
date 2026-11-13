@@ -1,0 +1,42 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc _______
+
+fx = <tests.task25_1_support.Fixture object at 0x10ace2900>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ab888a0>
+
+    def test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc(fx, monkeypatch):
+        """AC-4 (f): `rmx memory recall "q"` (table) and `--json` name the same hits as the verb
+        for the same query, and the `kind=doc` leg (moved from the CLI into the verb) is reachable:
+        `-K doc` returns the fixture's docs from the verb AND from the CLI.
+    
+        Rev 7 J2 (2026-11-13): AC-4 (f) is parity plus reachability of the doc leg; it does not
+        require a doc in the top 8 of a MIXED recall (measured at GREEN: the first doc ranks 32-33
+        of 40 under either rerank setting -- doc distances 0.52-0.57 against 0.29-0.35 for
+        memories). The rank assertion the RED wrote is gone; parity is asserted on BOTH kind sets."""
+        from refmatrix import verbs
+        monkeypatch.setenv("RMX_HOME", str(fx.home))
+        for kinds in ("memory,doc", "doc"):
+            r = s.rmx(fx, "memory", "recall", QUESTION, "--json", "-K", kinds, "--k", "8")
+            assert r.returncode == 0, (kinds, r.stderr[-800:])
+            cli_names = [m["name"] for m in json.loads(r.stdout)]
+            # The interactive CLI shows session/* rows (`include_session=True`, an operator
+            # affordance pinned by test_plan3_remedy and test_verb_parity); the verb's default
+            # hides them. Parity is like for like (g7-7, 2026-11-13: after 26.4 types
+            # savestate_fx01 session/recall-state, only the CLI side named it).
+            vres = verbs.memory_recall(fx.root, query=QUESTION, k=8, kinds=kinds.split(","),
+                                       include_session=True)
+            vnames = [m["name"] for m in vres["memories"]]
+            assert vnames, f"AC-4 (f): the verb returned nothing for -K {kinds}"
+>           assert cli_names == vnames, (kinds, cli_names, vnames)
+E           AssertionError: ('memory,doc', ['savestate_fx01', 'fx_mem_06', 'fx_mem_01', 'fx_mem_10', 'fx_mem_16', 'fx_mem_26', ...], ['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_03', 'fx_mem_23', ...])
+E           assert ['savestate_f..._mem_26', ...] == ['savestate_f..._mem_23', ...]
+E             
+E             At index 1 diff: 'fx_mem_06' != 'fx_mem_00'
+E             Use -v to get more diff
+
+tests/test_task25_1_recall_budget.py:828: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc
+1 failed in 19.02s
