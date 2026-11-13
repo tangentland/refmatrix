@@ -535,3 +535,77 @@ therefore an equivalent mutant.
   registry row yet.
 - Not touched: bug-209, bug-215, `search_hooks.py:254` (`_os.getcwd()`, the 25.1 clone's file),
   `telemetry.py:595/1317` (each already catches `OSError` on its own `os.getcwd()`).
+
+## RED r2 (GREEN r1's survivors G3/E1/E2/W1; a2 at the write control point) {#red-r2}
+
+Test commit `488a62d`, a new file `tests/test_bug212_r2_red.py` (no `src/` change, no existing
+test edited). At `b20f338` (src identical to `faabdfe`): **8 failed, 19 passed**
+(`bug212/red-r2-head.log`); with both earlier bug-212 files, **8 failed, 80 passed**
+(`bug212/red-r2-head-all3.log`; the 61 r1 tests unchanged). The 8 failures are the a2 REDs below,
+each for the right reason; every survivor-killing test passes at HEAD.
+
+rel: depends-on -> [[agent-brief-red-212r2]]
+rel: amends -> [[#green-r1-mutations]]
+rel: derives-from -> [[#green-r1-flags]]
+
+### The survivors, killed {#red-r2-survivors}
+
+Each test passes at `faabdfe` and fails under its mutation (driver `scratchpad/mut212r2.py`, the
+GREEN driver retargeted at the new file; restore by `git checkout -- <file>` in its own command,
+src checked clean and the fix text back after each; `__pycache__` cleared after the batch).
+
+| id | test(s) | under the mutation |
+|----|---------|--------------------|
+| G3 | `test_a_hook_whose_git_ls_files_fails_says_so_and_does_not_sync[<4 hooks>]` | 4 failed: `<hook>: git ls-files failed and the hook did not say ... on stderr` |
+| E2 | `test_git_tracked_catalogs_raises_when_ls_files_fails`; `test_an_in_process_sync_refuses_when_git_ls_files_fails` | `git_tracked_catalogs returned [] on a corrupt index`; ``rmx sync` wrote ['catalog.duckdb'] although git could not say whether it tracks them` |
+| E1 | `test_git_tracked_catalogs_ignores_a_foreign_git_dir_in_the_environment`; `test_a_worktree_hook_of_one_repo_cannot_vouch_for_a_store_in_another` | `answered from the hook's repository (GIT_DIR in the env)`; `the in-process sync wrote B's git-tracked ['catalog.duckdb']` |
+| W1 | `test_the_cwd_gone_remedy_depends_on_refmatrix_root`; `test_a_vanished_cwd_error_offers_refmatrix_root_only_when_unset[root-set]` | `with REFMATRIX_ROOT already set the remedy still says to set it` (function and `rmx stats` end to end) |
+| W2 (new) | `test_cctree_in_a_vanished_cwd_says_pass_project[root-set,root-unset]` | cctree's remedy dropped to the default: `cctree's remedy is not pass --project` |
+
+Batch log `bug212/red-r2-mutations.log`, per-mutation `bug212/red-r2-mut-<id>.log`. Each run also
+shows the 8 standing a2 REDs; nothing else failed.
+
+- G3/E2 fixture `corrupt_index_repo`: the store is COMMITTED (b-1 shape), then `.git/index` is
+  overwritten with non-index bytes; the fixture proves `ls-files` fails and
+  `rev-parse --show-toplevel` still works. A commit/checkout/merge cannot run on a corrupt index,
+  so the G3 test executes the installed GENERATED hook file directly, as git does (cwd = top
+  level; post-checkout gets `<prev> <head> 1`, post-rewrite gets `<old> <new>` on stdin).
+  Required: exit 0, no traceback, the exact line `refmatrix: <hook>: git ls-files failed; not
+  syncing` on stderr, no `rmx` call (shim), catalog bytes unchanged.
+- E1 fixture `two_repos`: repo A (store ignored) with a linked worktree holding its own ignored
+  store (so the generated gate passes), repo B with a committed `catalog.duckdb`. The commit in
+  A's worktree runs with `REFMATRIX_ROOT=<B store>`; a shim variant records `$GIT_DIR`, and the
+  test REQUIRES it absolute and under `/worktrees/` (the E1 shape, observed, not assumed).
+  Required: B's catalog byte-identical, one refusal `Error:` naming `catalog.duckdb` plus the
+  hook's `rmx sync FAILED` line.
+
+### a2 at the write control point {#red-r2-a2}
+
+- `test_every_in_process_writer_refuses_a_git_tracked_catalog[<slots|legacy>-<ingest|memory-add|bridge>]`
+  -- 6 RED. `rmx ingest <dir>`, `rmx memory add <name> -c <body>`, `rmx ingest-gmd --as-memory
+  <memdir>`, cwd = `tracked_repo`'s main checkout, no daemon, no `REFMATRIX_ROOT`. Required: no
+  traceback; catalog sha256 unchanged; exit non-zero; exactly ONE `Error:` line, and it names the
+  target (`catalog.A.duckdb` / `catalog.duckdb`) and both remedies (`untrack`/`rm --cached`, and
+  `daemon`) -- the r1 `_refusal_lines` predicate, which does not require the word "sync";
+  `git status` clean. HEAD line: `[<layout>] in-process `<writer>` wrote the git-tracked catalog
+  ['<target>'] (exit 0)`.
+- `test_the_write_control_point_itself_refuses_a_git_tracked_catalog[<layout>]` -- 2 RED. Calls
+  `cli._store_rw()` in-process (`REFMATRIX_ROOT` = the tracked store): it must raise
+  `ClickException` naming the target, catalog unchanged. HEAD line: `DID NOT RAISE`. This pins
+  the lead's decision that the check lives IN `_store_rw()`, not per command.
+- GUARD `test_every_in_process_writer_still_writes_an_untracked_catalog[<no-repo|ignored>-<writer>]`
+  -- 6, pass at HEAD: exit 0, no `Error:` line, the writer's row is in the catalog. Proven by
+  mutation O (`_store_rw()` raises unconditionally): all 6 guards fail
+  (`bug212/red-r2-mutations-O.log`).
+
+### For the implementer and the lead {#red-r2-flags}
+
+- Moving the check into `_store_rw()` runs `git rev-parse` + `git ls-files` on every in-process
+  write. Suite fixtures that `git add -A` a store (e.g. `test_bridge_move_safety_r1`'s
+  `gitproj`) would now be refused -- the GREEN family/wide run will show whether any do.
+- The sync refusal text says "refusing an in-process sync"; for `ingest`/`memory add`/the bridge
+  that verb is wrong. The tests do not pin the verb, so a neutral wording is free.
+- `memory add` reaches `_memory_intent` (a `cli.log` intent row) before the store; that file is
+  not a catalog and the tests do not count it.
+- Not covered: a corrupt index for the non-sync writers (same function after the move), and the
+  daemon-route write to a tracked catalog (lead decision a1/a2: bug-214's untracking).

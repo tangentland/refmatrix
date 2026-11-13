@@ -1,0 +1,426 @@
+FFFF.........FFFFFFFF......                                              [100%]
+=================================== FAILURES ===================================
+_ test_a_hook_whose_git_ls_files_fails_says_so_and_does_not_sync[post-checkout] _
+
+corrupt_index_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x105438980>
+hook = 'post-checkout'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_hook_whose_git_ls_files_fails_says_so_and_does_not_sync(corrupt_index_repo, hook):
+        """G3: the gate cannot ask git whether the catalog is tracked (corrupt index). Unknown is
+        not "untracked": the hook prints `refmatrix: <hook>: git ls-files failed; not syncing`,
+        runs no `rmx`, and exits 0 (a hook failure must not fail the user's git op)."""
+        repo = corrupt_index_repo
+        head, prev = _rev(repo.proj, "HEAD"), _rev(repo.proj, "HEAD~1")
+        argv = {"post-checkout": [prev, head, "1"]}.get(hook, [])
+        stdin = f"{prev} {head}\n" if hook == "post-rewrite" else None
+        before = _digests(repo.store)
+        r = subprocess.run([str(repo.proj / ".git" / "hooks" / hook), *argv], cwd=str(repo.proj),
+                           env=_hook_env(repo), input=stdin, capture_output=True, text=True,
+                           timeout=240)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}\nrmx calls: {_calls(repo)}"
+        assert r.returncode == 0, f"{hook} with a failing ls-files exited non-zero\n{text}"
+        assert TRACEBACK not in r.stderr, f"{hook} crashed\n{text}"
+        said = f"refmatrix: {hook}: git ls-files failed; not syncing"
+>       assert said in r.stderr.splitlines(), \
+            f"{hook}: `git ls-files` failed and the hook did not say `{said}` on stderr\n{text}"
+E       AssertionError: post-checkout: `git ls-files` failed and the hook did not say `refmatrix: post-checkout: git ls-files failed; not syncing` on stderr
+E         exit 0
+E         stdout:
+E         
+E         stderr:
+E         error: bad signature 0x20746f6e
+E         fatal: index file corrupt
+E         Error: refusing an in-process sync: cannot tell whether git tracks the catalog under /private/tmp/b212x-oistp1cn/proj/.refmatrix: git ls-files exited 128: error: bad signature 0x20746f6e fatal: index file corrupt; untrack the catalog (git rm --cached) if git tracks it, or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-checkout rmx sync FAILED (exit 1); its error is above
+E         
+E         rmx calls: [('/private/tmp/b212x-oistp1cn/proj', 'sync --since 6a97ea4d842899ebfd2a59e1081117f7121c1e81..b84679d6aafd1d288be28facbd3cf2f5f40823fa')]
+E       assert 'refmatrix: post-checkout: git ls-files failed; not syncing' in ['error: bad signature 0x20746f6e', 'fatal: index file corrupt', 'Error: refusing an in-process sync: cannot tell whet...mx daemon start) so the sync goes through it', 'refmatrix: post-checkout rmx sync FAILED (exit 1); its error is above']
+E        +  where ['error: bad signature 0x20746f6e', 'fatal: index file corrupt', 'Error: refusing an in-process sync: cannot tell whet...mx daemon start) so the sync goes through it', 'refmatrix: post-checkout rmx sync FAILED (exit 1); its error is above'] = <built-in method splitlines of str object at 0x10531b230>()
+E        +    where <built-in method splitlines of str object at 0x10531b230> = 'error: bad signature 0x20746f6e\nfatal: index file corrupt\nError: refusing an in-process sync: cannot tell whether g...rmx daemon start) so the sync goes through it\nrefmatrix: post-checkout rmx sync FAILED (exit 1); its error is above\n'.splitlines
+E        +      where 'error: bad signature 0x20746f6e\nfatal: index file corrupt\nError: refusing an in-process sync: cannot tell whether g...rmx daemon start) so the sync goes through it\nrefmatrix: post-checkout rmx sync FAILED (exit 1); its error is above\n' = CompletedProcess(args=['/private/tmp/b212x-oistp1cn/proj/.git/hooks/post-checkout', '6a97ea4d842899ebfd2a59e1081117f71...mx daemon start) so the sync goes through it\nrefmatrix: post-checkout rmx sync FAILED (exit 1); its error is above\n').stderr
+
+tests/test_bug212_r2_red.py:141: AssertionError
+_ test_a_hook_whose_git_ls_files_fails_says_so_and_does_not_sync[post-commit] __
+
+corrupt_index_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10543e850>
+hook = 'post-commit'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_hook_whose_git_ls_files_fails_says_so_and_does_not_sync(corrupt_index_repo, hook):
+        """G3: the gate cannot ask git whether the catalog is tracked (corrupt index). Unknown is
+        not "untracked": the hook prints `refmatrix: <hook>: git ls-files failed; not syncing`,
+        runs no `rmx`, and exits 0 (a hook failure must not fail the user's git op)."""
+        repo = corrupt_index_repo
+        head, prev = _rev(repo.proj, "HEAD"), _rev(repo.proj, "HEAD~1")
+        argv = {"post-checkout": [prev, head, "1"]}.get(hook, [])
+        stdin = f"{prev} {head}\n" if hook == "post-rewrite" else None
+        before = _digests(repo.store)
+        r = subprocess.run([str(repo.proj / ".git" / "hooks" / hook), *argv], cwd=str(repo.proj),
+                           env=_hook_env(repo), input=stdin, capture_output=True, text=True,
+                           timeout=240)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}\nrmx calls: {_calls(repo)}"
+        assert r.returncode == 0, f"{hook} with a failing ls-files exited non-zero\n{text}"
+        assert TRACEBACK not in r.stderr, f"{hook} crashed\n{text}"
+        said = f"refmatrix: {hook}: git ls-files failed; not syncing"
+>       assert said in r.stderr.splitlines(), \
+            f"{hook}: `git ls-files` failed and the hook did not say `{said}` on stderr\n{text}"
+E       AssertionError: post-commit: `git ls-files` failed and the hook did not say `refmatrix: post-commit: git ls-files failed; not syncing` on stderr
+E         exit 0
+E         stdout:
+E         
+E         stderr:
+E         error: bad signature 0x20746f6e
+E         fatal: index file corrupt
+E         Error: refusing an in-process sync: cannot tell whether git tracks the catalog under /private/tmp/b212x-wj1ckz1_/proj/.refmatrix: git ls-files exited 128: error: bad signature 0x20746f6e fatal: index file corrupt; untrack the catalog (git rm --cached) if git tracks it, or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         
+E         rmx calls: [('/private/tmp/b212x-wj1ckz1_/proj', 'sync --since HEAD~1')]
+E       assert 'refmatrix: post-commit: git ls-files failed; not syncing' in ['error: bad signature 0x20746f6e', 'fatal: index file corrupt', 'Error: refusing an in-process sync: cannot tell whet...(rmx daemon start) so the sync goes through it', 'refmatrix: post-commit rmx sync FAILED (exit 1); its error is above']
+E        +  where ['error: bad signature 0x20746f6e', 'fatal: index file corrupt', 'Error: refusing an in-process sync: cannot tell whet...(rmx daemon start) so the sync goes through it', 'refmatrix: post-commit rmx sync FAILED (exit 1); its error is above'] = <built-in method splitlines of str object at 0x10531b430>()
+E        +    where <built-in method splitlines of str object at 0x10531b430> = 'error: bad signature 0x20746f6e\nfatal: index file corrupt\nError: refusing an in-process sync: cannot tell whether g... (rmx daemon start) so the sync goes through it\nrefmatrix: post-commit rmx sync FAILED (exit 1); its error is above\n'.splitlines
+E        +      where 'error: bad signature 0x20746f6e\nfatal: index file corrupt\nError: refusing an in-process sync: cannot tell whether g... (rmx daemon start) so the sync goes through it\nrefmatrix: post-commit rmx sync FAILED (exit 1); its error is above\n' = CompletedProcess(args=['/private/tmp/b212x-wj1ckz1_/proj/.git/hooks/post-commit'], returncode=0, stdout='', stderr='er...(rmx daemon start) so the sync goes through it\nrefmatrix: post-commit rmx sync FAILED (exit 1); its error is above\n').stderr
+
+tests/test_bug212_r2_red.py:141: AssertionError
+__ test_a_hook_whose_git_ls_files_fails_says_so_and_does_not_sync[post-merge] __
+
+corrupt_index_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10543ead0>
+hook = 'post-merge'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_hook_whose_git_ls_files_fails_says_so_and_does_not_sync(corrupt_index_repo, hook):
+        """G3: the gate cannot ask git whether the catalog is tracked (corrupt index). Unknown is
+        not "untracked": the hook prints `refmatrix: <hook>: git ls-files failed; not syncing`,
+        runs no `rmx`, and exits 0 (a hook failure must not fail the user's git op)."""
+        repo = corrupt_index_repo
+        head, prev = _rev(repo.proj, "HEAD"), _rev(repo.proj, "HEAD~1")
+        argv = {"post-checkout": [prev, head, "1"]}.get(hook, [])
+        stdin = f"{prev} {head}\n" if hook == "post-rewrite" else None
+        before = _digests(repo.store)
+        r = subprocess.run([str(repo.proj / ".git" / "hooks" / hook), *argv], cwd=str(repo.proj),
+                           env=_hook_env(repo), input=stdin, capture_output=True, text=True,
+                           timeout=240)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}\nrmx calls: {_calls(repo)}"
+        assert r.returncode == 0, f"{hook} with a failing ls-files exited non-zero\n{text}"
+        assert TRACEBACK not in r.stderr, f"{hook} crashed\n{text}"
+        said = f"refmatrix: {hook}: git ls-files failed; not syncing"
+>       assert said in r.stderr.splitlines(), \
+            f"{hook}: `git ls-files` failed and the hook did not say `{said}` on stderr\n{text}"
+E       AssertionError: post-merge: `git ls-files` failed and the hook did not say `refmatrix: post-merge: git ls-files failed; not syncing` on stderr
+E         exit 0
+E         stdout:
+E         
+E         stderr:
+E         error: bad signature 0x20746f6e
+E         fatal: index file corrupt
+E         Error: refusing an in-process sync: cannot tell whether git tracks the catalog under /private/tmp/b212x-wu3ptiim/proj/.refmatrix: git ls-files exited 128: error: bad signature 0x20746f6e fatal: index file corrupt; untrack the catalog (git rm --cached) if git tracks it, or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-merge rmx sync FAILED (exit 1); its error is above
+E         
+E         rmx calls: [('/private/tmp/b212x-wu3ptiim/proj', 'sync --since ORIG_HEAD')]
+E       assert 'refmatrix: post-merge: git ls-files failed; not syncing' in ['error: bad signature 0x20746f6e', 'fatal: index file corrupt', 'Error: refusing an in-process sync: cannot tell whet... (rmx daemon start) so the sync goes through it', 'refmatrix: post-merge rmx sync FAILED (exit 1); its error is above']
+E        +  where ['error: bad signature 0x20746f6e', 'fatal: index file corrupt', 'Error: refusing an in-process sync: cannot tell whet... (rmx daemon start) so the sync goes through it', 'refmatrix: post-merge rmx sync FAILED (exit 1); its error is above'] = <built-in method splitlines of str object at 0x10531b630>()
+E        +    where <built-in method splitlines of str object at 0x10531b630> = 'error: bad signature 0x20746f6e\nfatal: index file corrupt\nError: refusing an in-process sync: cannot tell whether g...n (rmx daemon start) so the sync goes through it\nrefmatrix: post-merge rmx sync FAILED (exit 1); its error is above\n'.splitlines
+E        +      where 'error: bad signature 0x20746f6e\nfatal: index file corrupt\nError: refusing an in-process sync: cannot tell whether g...n (rmx daemon start) so the sync goes through it\nrefmatrix: post-merge rmx sync FAILED (exit 1); its error is above\n' = CompletedProcess(args=['/private/tmp/b212x-wu3ptiim/proj/.git/hooks/post-merge'], returncode=0, stdout='', stderr='err... (rmx daemon start) so the sync goes through it\nrefmatrix: post-merge rmx sync FAILED (exit 1); its error is above\n').stderr
+
+tests/test_bug212_r2_red.py:141: AssertionError
+_ test_a_hook_whose_git_ls_files_fails_says_so_and_does_not_sync[post-rewrite] _
+
+corrupt_index_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10547dcd0>
+hook = 'post-rewrite'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_hook_whose_git_ls_files_fails_says_so_and_does_not_sync(corrupt_index_repo, hook):
+        """G3: the gate cannot ask git whether the catalog is tracked (corrupt index). Unknown is
+        not "untracked": the hook prints `refmatrix: <hook>: git ls-files failed; not syncing`,
+        runs no `rmx`, and exits 0 (a hook failure must not fail the user's git op)."""
+        repo = corrupt_index_repo
+        head, prev = _rev(repo.proj, "HEAD"), _rev(repo.proj, "HEAD~1")
+        argv = {"post-checkout": [prev, head, "1"]}.get(hook, [])
+        stdin = f"{prev} {head}\n" if hook == "post-rewrite" else None
+        before = _digests(repo.store)
+        r = subprocess.run([str(repo.proj / ".git" / "hooks" / hook), *argv], cwd=str(repo.proj),
+                           env=_hook_env(repo), input=stdin, capture_output=True, text=True,
+                           timeout=240)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}\nrmx calls: {_calls(repo)}"
+        assert r.returncode == 0, f"{hook} with a failing ls-files exited non-zero\n{text}"
+        assert TRACEBACK not in r.stderr, f"{hook} crashed\n{text}"
+        said = f"refmatrix: {hook}: git ls-files failed; not syncing"
+>       assert said in r.stderr.splitlines(), \
+            f"{hook}: `git ls-files` failed and the hook did not say `{said}` on stderr\n{text}"
+E       AssertionError: post-rewrite: `git ls-files` failed and the hook did not say `refmatrix: post-rewrite: git ls-files failed; not syncing` on stderr
+E         exit 0
+E         stdout:
+E         
+E         stderr:
+E         error: bad signature 0x20746f6e
+E         fatal: index file corrupt
+E         Error: refusing an in-process sync: cannot tell whether git tracks the catalog under /private/tmp/b212x-jh7cbe_7/proj/.refmatrix: git ls-files exited 128: error: bad signature 0x20746f6e fatal: index file corrupt; untrack the catalog (git rm --cached) if git tracks it, or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-rewrite rmx sync FAILED (exit 1); its error is above
+E         
+E         rmx calls: [('/private/tmp/b212x-jh7cbe_7/proj', 'sync --since 5d486e045181c1703020f5a7a166f32affd42abc')]
+E       assert 'refmatrix: post-rewrite: git ls-files failed; not syncing' in ['error: bad signature 0x20746f6e', 'fatal: index file corrupt', 'Error: refusing an in-process sync: cannot tell whet...rmx daemon start) so the sync goes through it', 'refmatrix: post-rewrite rmx sync FAILED (exit 1); its error is above']
+E        +  where ['error: bad signature 0x20746f6e', 'fatal: index file corrupt', 'Error: refusing an in-process sync: cannot tell whet...rmx daemon start) so the sync goes through it', 'refmatrix: post-rewrite rmx sync FAILED (exit 1); its error is above'] = <built-in method splitlines of str object at 0x10531b030>()
+E        +    where <built-in method splitlines of str object at 0x10531b030> = 'error: bad signature 0x20746f6e\nfatal: index file corrupt\nError: refusing an in-process sync: cannot tell whether g...(rmx daemon start) so the sync goes through it\nrefmatrix: post-rewrite rmx sync FAILED (exit 1); its error is above\n'.splitlines
+E        +      where 'error: bad signature 0x20746f6e\nfatal: index file corrupt\nError: refusing an in-process sync: cannot tell whether g...(rmx daemon start) so the sync goes through it\nrefmatrix: post-rewrite rmx sync FAILED (exit 1); its error is above\n' = CompletedProcess(args=['/private/tmp/b212x-jh7cbe_7/proj/.git/hooks/post-rewrite'], returncode=0, stdout='', stderr='e...rmx daemon start) so the sync goes through it\nrefmatrix: post-rewrite rmx sync FAILED (exit 1); its error is above\n').stderr
+
+tests/test_bug212_r2_red.py:141: AssertionError
+___ test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-ingest] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x105483750>, 'slots')
+writer = 'ingest'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+>       assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+E       AssertionError: [slots] in-process `ingest` wrote the git-tracked catalog ['catalog.A.duckdb'] (exit 0)
+E         exit 0
+E         stdout:
+E         ingested 1 entities from /private/tmp/b212t-c_yowlmh/proj/pkg
+E         
+E         stderr:
+E         
+E       assert not ['catalog.A.duckdb']
+
+tests/test_bug212_r2_red.py:447: AssertionError
+_ test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-memory-add] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x105482650>, 'slots')
+writer = 'memory-add'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+>       assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+E       AssertionError: [slots] in-process `memory-add` wrote the git-tracked catalog ['catalog.A.duckdb'] (exit 0)
+E         exit 0
+E         stdout:
+E         memory bug212_r2_probe (id=1) observation
+E         
+E         stderr:
+E         
+E       assert not ['catalog.A.duckdb']
+
+tests/test_bug212_r2_red.py:447: AssertionError
+___ test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-bridge] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10549dd60>, 'slots')
+writer = 'bridge'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+>       assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+E       AssertionError: [slots] in-process `bridge` wrote the git-tracked catalog ['catalog.A.duckdb'] (exit 0)
+E         exit 0
+E         stdout:
+E         ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 15 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         new linkage types: lead, part-of
+E         memory embed: 1 row(s) now reachable by recall in proj
+E         
+E         stderr:
+E         
+E       assert not ['catalog.A.duckdb']
+
+tests/test_bug212_r2_red.py:447: AssertionError
+__ test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-ingest] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1054f4f50>, 'legacy')
+writer = 'ingest'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+>       assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+E       AssertionError: [legacy] in-process `ingest` wrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         exit 0
+E         stdout:
+E         ingested 1 entities from /private/tmp/b212t-argdcecb/proj/pkg
+E         
+E         stderr:
+E         
+E       assert not ['catalog.duckdb']
+
+tests/test_bug212_r2_red.py:447: AssertionError
+_ test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-memory-add] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x105285470>, 'legacy')
+writer = 'memory-add'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+>       assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+E       AssertionError: [legacy] in-process `memory-add` wrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         exit 0
+E         stdout:
+E         memory bug212_r2_probe (id=1) observation
+E         
+E         stderr:
+E         
+E       assert not ['catalog.duckdb']
+
+tests/test_bug212_r2_red.py:447: AssertionError
+__ test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-bridge] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x105285a90>, 'legacy')
+writer = 'bridge'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+>       assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+E       AssertionError: [legacy] in-process `bridge` wrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         exit 0
+E         stdout:
+E         ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 15 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         new linkage types: lead, part-of
+E         memory embed: 1 row(s) now reachable by recall in proj
+E         
+E         stderr:
+E         
+E       assert not ['catalog.duckdb']
+
+tests/test_bug212_r2_red.py:447: AssertionError
+___ test_the_write_control_point_itself_refuses_a_git_tracked_catalog[slots] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10560ab60>, 'slots')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1054b51d0>
+
+    def test_the_write_control_point_itself_refuses_a_git_tracked_catalog(tracked_repo,
+                                                                         monkeypatch):
+        """a2: the refusal lives IN `cli._store_rw()` -- the one in-process writer every command
+        reaches -- not per command. Called directly on a tracked store, it raises a
+        `ClickException` before the catalog opens; the bytes are unchanged."""
+        import click
+    
+        from refmatrix import cli
+        repo, layout = tracked_repo
+        monkeypatch.setenv("REFMATRIX_ROOT", str(repo.store))
+        monkeypatch.chdir(repo.proj)
+        before = _digests(repo.store)
+        opened = None
+        try:
+>           with pytest.raises(click.ClickException) as ei:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'click.exceptions.ClickException'>
+
+/Volumes/littlebig/refmatrix-bug212/tests/test_bug212_r2_red.py:473: Failed
+__ test_the_write_control_point_itself_refuses_a_git_tracked_catalog[legacy] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1053c3f50>, 'legacy')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10521b350>
+
+    def test_the_write_control_point_itself_refuses_a_git_tracked_catalog(tracked_repo,
+                                                                         monkeypatch):
+        """a2: the refusal lives IN `cli._store_rw()` -- the one in-process writer every command
+        reaches -- not per command. Called directly on a tracked store, it raises a
+        `ClickException` before the catalog opens; the bytes are unchanged."""
+        import click
+    
+        from refmatrix import cli
+        repo, layout = tracked_repo
+        monkeypatch.setenv("REFMATRIX_ROOT", str(repo.store))
+        monkeypatch.chdir(repo.proj)
+        before = _digests(repo.store)
+        opened = None
+        try:
+>           with pytest.raises(click.ClickException) as ei:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'click.exceptions.ClickException'>
+
+/Volumes/littlebig/refmatrix-bug212/tests/test_bug212_r2_red.py:473: Failed
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r2_red.py::test_a_hook_whose_git_ls_files_fails_says_so_and_does_not_sync[post-checkout]
+FAILED tests/test_bug212_r2_red.py::test_a_hook_whose_git_ls_files_fails_says_so_and_does_not_sync[post-commit]
+FAILED tests/test_bug212_r2_red.py::test_a_hook_whose_git_ls_files_fails_says_so_and_does_not_sync[post-merge]
+FAILED tests/test_bug212_r2_red.py::test_a_hook_whose_git_ls_files_fails_says_so_and_does_not_sync[post-rewrite]
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-ingest]
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-memory-add]
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-bridge]
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-ingest]
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-memory-add]
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-bridge]
+FAILED tests/test_bug212_r2_red.py::test_the_write_control_point_itself_refuses_a_git_tracked_catalog[slots]
+FAILED tests/test_bug212_r2_red.py::test_the_write_control_point_itself_refuses_a_git_tracked_catalog[legacy]
+12 failed, 15 passed in 25.15s
