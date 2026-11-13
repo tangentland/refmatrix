@@ -1,11 +1,11 @@
 ---
 gmd: "0.1"
 id: bsd-pattern-handoff-without-sibling-ac
-title: "PATTERN: work handed to a sibling task by decision or registry row, with no acceptance criterion in the sibling's spec (4 runs)"
+title: "PATTERN: work handed to a sibling task by decision or registry row, with no acceptance criterion in the sibling's spec (5 runs)"
 tags: [bsd, pattern, deferral, specs]
 metadata:
   node_type: bsd-pattern
-  occurrences: 4
+  occurrences: 5
   first_seen: 26.1-followup
   last_seen: 1caf3df
 ---
@@ -24,3 +24,7 @@ rel: evidence-for -> [[bsd-task-26.4-r1-savestate-mtype-1caf3df#b-1]]
 **Rule:** before accepting a deferral to a sibling task, grep the sibling's spec for the item; if it
 is absent, add the requirement and an AC there in the same change (as done for 26.5
 `#inherit-264-r1`), or do not defer. {#rule}
+
+Fifth sighting (2026-11-14, bsd-251 on 25.1 at `f656f78`, b-1): bug-224's row handed "say so in the payload" to 25.1b, whose approved spec had no requirement for it; L68 added 25.1b R18 / AC-28. {#fifth}
+
+rel: evidence-for -> [[bsd-plan25-task251-premerge-f656f78]]
