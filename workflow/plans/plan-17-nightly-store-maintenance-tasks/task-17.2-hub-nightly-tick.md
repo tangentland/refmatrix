@@ -7,16 +7,21 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-10-14
+  updated: 2026-11-13
 ---
 
 # Task 17.2: the nightly tick {#root}
 
 > Plan: [plan-17-nightly-store-maintenance](../plan-17-nightly-store-maintenance.md)
-> Status: Pending (revision round 3, 2026-10-14: re-review [[bsd-plan23-17-spec-rereview-r3-6091648]]
+> Status: Pending (**revision round 4, 2026-11-13**: hosts 26.6's 19.4 R1 tick registration
+> and its AC-2, [[#r9-compile-step]], AC-15 (plan review L28); see [[#rev-round-4]]. Earlier:
+> revision round 3, 2026-10-14: re-review [[bsd-plan23-17-spec-rereview-r3-6091648]]
 > (ns17-r3-3, nm17-r3-2, nm17-r3-3); see [[#rev-round-3]]. Round 2: [[#rev-round-2]])
 > Depends on: 17.1; 23.0 (test sandbox). NOT on 23.1: the hub's `maintenance_steps` is its own
-> registry, not 23.1's daemon `tick_registry` (ns17-1).
+> registry, not 23.1's daemon `tick_registry` (ns17-1). Round 4: [[#r9-compile-step]] also needs
+> 26.6's `memory_compile` op (merged, `8a867bc`) and the 26.6 R3 residual (the index regenerated
+> on apply, which 19.4 AC-2's day 2 reads; plan review `#queue` item 3, ahead of this task's
+> item 8).
 
 rel: part-of -> [[plan-17-nightly-store-maintenance]]
 rel: depends-on -> [[task-17.1-vectors-maintain-op]]
@@ -31,6 +36,8 @@ rel: derives-from -> [[bsd-plan17-spec-review-3104a81]]
 rel: derives-from -> [[plan-review-2026-10-14#t3]]
 rel: derives-from -> [[plan-review-2026-10-14#t8-amendments]]
 rel: related-to -> [[task-19.4-keep-derived-layers-current]]
+rel: implements -> [[task-19.4-keep-derived-layers-current#acceptance]]
+rel: depends-on -> [[task-26.6-compile-subject-hygiene#r3-residual]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#ns17-r3-3]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#nm17-r3-2]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r3-6091648#nm17-r3-3]]
@@ -184,6 +191,28 @@ single-flight op. Decision d3d makes an unarmed store dry-run only. {#why-body}
      `hub.log` line.
    - What this cannot see, stated: with the hub down, no alert is published; the daemon's health
      surface still reports the staleness.
+9. **R9 The memory compile step, hosted here for 26.6 (round 4, plan review L28).**
+   {#r9-compile-step}
+   Task 26.6 built 19.4 R1's op half (`memory_compile`: plan + apply, single-flight with the
+   `already_running` reply, `status=True` lock-free, `dry_run`, `invoked_by` in
+   `cli|mcp|hub`) and left the tick half open "pending 17.2"
+   ([[task-26.6-compile-subject-hygiene#plan-19-delta]], R1 row). This task closes it:
+   - **Registration**, third in R2's order (after `factslog_backup` and `vectors_maintain`,
+     before plan-18's step): `MaintenanceStep(name="memory_compile", op="memory_compile", args,
+     requires_arming=True, reason=…)`, exactly as 19.4's acceptance preamble states it
+     ([[task-19.4-keep-derived-layers-current#acceptance]]; reason: it rewrites `MEMORY.md` and
+     compiled subjects, user-visible state). The value and the reason are 19.4's; R7's table
+     row "stated by 19.4" is that.
+   - **R2's op obligations, checked against the merged op.** At `8a867bc` the op meets
+     `dry_run`, `invoked_by="hub"`, single-flight and `status=True`; it appends NO
+     `<root>/maintain/runs.jsonl` line. This task adds that append to `_op_memory_compile`
+     through 17.1 R12's writer (its shape, `step: "memory_compile"`, the single-flight
+     record's `run_id`), on every completed run and every invoker, so R7's arm gate can find the
+     hand runs. Nothing else in the op changes. An op that cannot meet R2 is not registered
+     (R2), so without the append the step is not registered and AC-15 fails.
+   - **19.4 AC-2 runs here** (AC-15): it is the "armed and unarmed days" AC 26.6 did not build.
+   - 26.6's `invoked_by="hub"` reservation ([[task-26.6-compile-subject-hygiene#rm-hub-invoker]])
+     is what this step passes.
 
 ## Acceptance criteria {#acceptance}
 
@@ -268,6 +297,18 @@ daemons with short roots.
    - default `retries` → AC-6;
    - a timeout counted as failed → AC-6;
    - stamps keyed by store only → AC-8.
+15. **AC-15 the memory compile step (round 4, [[#r9-compile-step]]).** On a sandbox store
+    with a tmp memory dir carrying the `.memory-layout` marker, 19.4's AC-2
+    ([[task-19.4-keep-derived-layers-current#acceptance]], item 2) runs as written through
+    THIS registry: day 1 unarmed (`dry_run:unarmed`, `MEMORY.md` and the compiled subjects
+    byte-identical), the hand dry run then real run each appending its `runs.jsonl` line,
+    `rmx hub maintain arm … --step memory_compile --run-id <real run>` (refused with the dry
+    run's id), day 2 armed (`ok`, and `MEMORY.md` read straight after the op names every
+    subject the plan created under `RMX_SNAPSHOT_DEBOUNCE_MS=60000`), and `already_running`
+    on a second call. Mutations, each FAILS this AC (19.4's two tick mutations, which 26.6's
+    AC-8 dropped): the step not registered; the step registered with
+    `requires_arming=False` (day 1 applies, `MEMORY.md` changes); and (round 4) the
+    `runs.jsonl` append removed from `_op_memory_compile` (the arm is refused). {#ac-15}
 
 ## Files to modify {#files-to-modify}
 
@@ -275,6 +316,9 @@ daemons with short roots.
 |---|---|
 | `src/refmatrix/hub.py` | `_maintain_loop`, the schedule check, `maintenance_steps`, the stamps, the `stuck` ceiling, the summary |
 | `src/refmatrix/verbs.py`, `cli.py`, `mcp.py` | `hub_maintain_arm` / `hub_maintain_disarm` verbs on both surfaces |
+| `src/refmatrix/hub.py` (round 4) | the `memory_compile` `MaintenanceStep` registration ([[#r9-compile-step]]) |
+| `src/refmatrix/daemon.py` (round 4) | `_op_memory_compile` appends its `runs.jsonl` line through 17.1 R12's writer |
+| `workflow/plans/plan-19-*-tasks/task-19.4-*.md`, 26.6's spec | nothing edited here; plan-19's owner records "19.4 R1 tick realized by 17.2" (plan review L14) |
 
 ## Test strategy {#test-strategy}
 
@@ -322,3 +366,19 @@ Source: [[bsd-plan23-17-spec-rereview-r3-6091648]].
 | nm17-r3-3 (R4 polls `vectors_maintain(status=True)` for every step) | [[#r4-call]], AC-13 |
 | nm17-r3-5 (19.4 AC-2 vs its own `requires_arming=True`) | not edited here (plan-19's file); handed to the 19/21 pair, see [[plan-17-nightly-store-maintenance#open-after-revision]] 6 |
 | d9c (release per capped dataset) | [[#r5-alert]] |
+
+## Revision round 4 (2026-11-13) {#rev-round-4}
+
+Source: [[plan-review-2026-11-13#lead]] L28 (bsd-pop-r2 N3: "26.6's 19.4 R1 tick registration and
+its AC-2 are hosted by 17.2"). Facts read on dev master `1cf3b9f`: `_op_memory_compile`
+(`daemon.py`, registered in `OPS` as `memory_compile`) and `_op_memory_compile_status` exist;
+no `runs.jsonl` writer exists anywhere in `src/` yet (17.1 R12 adds it). R1-R8 and AC-1..AC-14
+are unchanged.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | answered at | rationale |
+|---|---|---|
+| L28: 26.6 left 19.4 R1's tick half and AC-2 "pending 17.2" with no host spec | [[#r9-compile-step]], [[#ac-15]], [[#files-to-modify]] | without a host the scheduled compile is never registered and 19.4 R1 stays half-built; 17.2 owns the registry, so it registers the step |
+| R2's `runs.jsonl` obligation is unmet by the merged op | [[#r9-compile-step]] (the append added here) | the arm gate (R7) reads only `runs.jsonl`; without the line the step could never be armed |
+

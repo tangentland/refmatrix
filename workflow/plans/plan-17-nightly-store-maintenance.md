@@ -7,12 +7,17 @@ metadata:
   node_type: plan
   status: approved
   created: 2026-10-07
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Plan 17: nightly store maintenance from the hub {#root}
 
-> Status: DRAFTING, revision round 9 after the b84fd8d diff check ([[#rev-round-9]]; 17.1-17.3
+> Status: **Approved** (d9cn, 2026-10-15, after ch-bsd r10 `0dc2da3`; frontmatter `approved`;
+> every task pending). **Revision round 10 (2026-11-13):** the build order is 17.1 → 17.2 →
+> 17.4 → 17.3, 17.3 is user-gated, 17.2 hosts 26.6's 19.4 R1 tick registration, and 23.4 runs
+> before 17.1 (plan review L21, L28, L40, L45); body status line matched to the frontmatter
+> (Cc-9); see [[#rev-round-10]]. The "DRAFTING … Next: re-review" text this line carried through
+> round 9 is superseded. Earlier: revision round 9 after the b84fd8d diff check ([[#rev-round-9]]; 17.1-17.3
 > READY, 17.4 revised); revision round 7 after the 331b414 re-review ([[#rev-round-7]]); revision
 > round 6 after the 0e77da3 re-review ([[#rev-round-6]]); revision
 > round 5 after the 878647c re-review and d9z ([[#rev-round-5]]);
@@ -155,6 +160,16 @@ Wave 1 order ([[plan-review-2026-10-14#t8-wave1]]): 23.0 ∥ 23.4 → 23.2 → 2
 - **17.4** depends on 17.2 and 23.0.
 - **17.3** depends on 17.1, 17.2 and 17.4 being deployed.
 - **Option A revisit** ([[#option-a-revisit]]) is triggered by task 23.4's verdict.
+- **Build order (round 10, L40, L21; plan review `#queue` item 8):** 23.4 (read-only, cliquet
+  copy) → 17.1 → 17.2 (+ 26.6's 19.4 R1 tick registration, L28) → 17.4 → 17.3. The task table
+  below lists 17.3 before 17.4 by number, not by order.
+- **17.3 is user-gated** (L40, L45): the orphan release
+  ([[task-17.3-fleet-rollout#r1-hand-run]] step 4, `--confirm-orphans` only after the user
+  confirms), the backup deletion (R1's last line and AC-7), and the `sudo tmutil` exclusion the
+  user runs (step 6). An unattended goal stops at each.
+
+rel: depends-on -> [[task-23.4-option-a-measurement]]
+rel: derives-from -> [[plan-review-2026-11-13#queue]]
 
 rel: depends-on -> [[task-23.1-queue-and-drain]]
 rel: depends-on -> [[task-23.2-lock-hold-fixture]]
@@ -164,7 +179,7 @@ rel: depends-on -> [[task-23.2-lock-hold-fixture]]
 | task | what | acceptance (summary; the task spec is authoritative) | depends on |
 |---|---|---|---|
 | 17.1 | `vectors_maintain` + `vectors_restore` daemon ops, verbs, CLI/MCP, on 23.1's `bounded_steps` with `bind(partition_name)`: whole-catalog orphans with a ratio cap that skips only the reap and a `--confirm-orphans <sha>` release, orphan list with vectors, tagged rollback point, fingerprint gate before any cleanup, every partition by name, lock-free single-flight, a `runs.jsonl` ledger, no in-process fallback, no-match delete filter, reader retry | `older_than_s=0` → versions 1; default 24 h keeps a fresh version; forced mismatch → restored, old versions on disk; cross-partition entity's vector survives; capped dataset still compacts, a confirmed per-dataset sha reaps the confirmed ids still orphaned and leaves new ones to the cap; reap → restore round-trips, by same id and by `id_map` to new ids; competitor wins between datasets, `hold_s` per dataset; a reader opened before the pass scans to the end; a no-match re-sync commits 0 versions; pre-registered mutations FAIL | 23.0, 23.2, 23.1 |
-| 17.2 | hub maintenance thread with its own `maintenance_steps`: 03:30 + catch-up, injected roots and clock, serial with per-store budget, `retries=0`, still-running vs failed with a `stuck` ceiling, (store, step) stamps, per-step `requires_arming`, the `hub_maintain_arm` verb gated by a hand-run `run_id`, summary | one run per scheduled day; catch-up exactly once; alert interval ≤ 0 still maintains; an unarmed step that requires arming dry-runs, one that does not runs; the backup runs first and a blocked step does not stop later ones; a stale backup alerts once; a blocking op is received once and becomes `stuck` on the second budget while the next store runs; arm refused without a matching hand run; zero connects outside the sandbox; pre-registered mutations FAIL | 17.1, 23.0 |
+| 17.2 | (round 10: also registers 26.6's `memory_compile` step, 19.4 R1's tick half, and runs 19.4 AC-2, L28) hub maintenance thread with its own `maintenance_steps`: 03:30 + catch-up, injected roots and clock, serial with per-store budget, `retries=0`, still-running vs failed with a `stuck` ceiling, (store, step) stamps, per-step `requires_arming`, the `hub_maintain_arm` verb gated by a hand-run `run_id`, summary | one run per scheduled day; catch-up exactly once; alert interval ≤ 0 still maintains; an unarmed step that requires arming dry-runs, one that does not runs; the backup runs first and a blocked step does not stop later ones; a stale backup alerts once; a blocking op is received once and becomes `stuck` on the second budget while the next store runs; arm refused without a matching hand run; zero connects outside the sandbox; pre-registered mutations FAIL | 17.1, 23.0 |
 | 17.3 | fleet rollout over the 8 registered daemons: dry run, backup, hand run, user-confirmed orphan release, arm by `run_id`, Time Machine exclusion after the first backup copy; measure on a synthetic ≥ 30k-version clone; docs | before/after table per store; latency ratio ≤ 1/5 and a 0-version no-match re-sync on the synthetic clone; holds < `HEARTBEAT_STALE_S − 2 × HEARTBEAT_INTERVAL_S` (50 s; round 7); one night observed; backups removed only after the user confirms | 17.1, 17.2, 17.4 deployed |
 | 17.4 | `factslog_backup` step on 17.2's `maintenance_steps` (`requires_arming=False`): once-a-day copy of `facts.log` to `backups/facts.log.daily` (+ `.prev`), lock-free from an open descriptor, skipped when unchanged; the live log is then excluded from Time Machine (added 2026-10-14, user) | one copy per injected day; the copy equals the old inode's prefix under a concurrent compaction; replays to the source catalog's state; still copies while `vectors_maintain` blocks; stale alert; restore: a damaged log under a healthy catalog is a forced compaction, a lost catalog with an intact, parsing live log is rebuilt from the LIVE log (nothing lost; the copy only if that rebuild fails verification: exit 0, `*_unresolved == 0`, counts equal an independent strict fold; `*_skipped_dead` printed, never a failure; the source copy cut at its last newline so a crash's torn final line is not a verify failure; the fold's op set pinned to replay's by an AST test, an unknown op a named failure; counters read from `rmx rebuild --from-log --json`), a lost catalog with a lost or unparseable log is rebuilt from the copy, verified and promoted, and the daemon then holds the copy's learned rows; the daemon refusal and a read-only catalog probe come first; unchanged = untouched; loud non-destructive failure; runs unarmed, single-flight, ledger line; pre-registered mutations FAIL | 17.2, 23.0 |
 
@@ -451,3 +466,20 @@ Source: [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d]] (diff check of round 8 at `9
 | nm-x-r9-1 (bug-119 names the dead `apply_log_delta`; torn tail vs corrupt interior; 17.4 parsed rich output) | [[task-17.4-factslog-backup-snapshot#rev-round-9]]; the bug-119 registry row is for the registry owner |
 
 rel: derives-from -> [[bsd-plan23-17-spec-diffcheck-r9-b84fd8d]]
+
+## Revision round 10 (2026-11-13) {#rev-round-10}
+
+Source: the 2026-11-13 plan review ([[plan-review-2026-11-13#lead]] L21, L28, L40, L45) and
+contra-c Cc-6 and Cc-9. The facts were read on dev master `1cf3b9f`. 26.6 is merged
+(`8a867bc`), and `daemon.py` registers `memory_compile`. Requirements otherwise unchanged; the
+round-9 table above is unchanged history.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | answered at |
+|---|---|
+| Cc-9 (body "DRAFTING" vs frontmatter `approved`) | status line |
+| L40 (order 17.4 → 17.3; 17.3 user-gated) | [[#dependencies]]; [[task-17.3-fleet-rollout#rev-round-9]] |
+| L28 (26.6's 19.4 R1 tick and its AC-2 hosted by 17.2) | [[#tasks]] 17.2 row; [[task-17.2-hub-nightly-tick#r9-compile-step]] |
+| L21 / Cc-6 (23.4 before 17.1) | [[#dependencies]] |
+| L45 (user gates taken from the spec) | [[#dependencies]] (17.3's three gates) |
