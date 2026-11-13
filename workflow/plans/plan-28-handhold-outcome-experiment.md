@@ -192,15 +192,18 @@ beside this plan's result. They are recorded; nothing here reads them as a band.
 
 ## Cross-plan effects {#cross-plan}
 
-- **10.2 R7 (amended by 28.1).** `arms.draw(session_id)` has no store scope, but the period
-  covers two stores. 28.1 R2 adds the scope, and 10.2's outcome text is read under L27.
+- **10.2 R7 (settled with spec-t3b, 2026-11-13).** 10.2 creates `arms.py`: the full cell table
+  (`C` at weight 0), the store-scoped `draw(session_id, *, root, now=None)`, and the default
+  `A+dedupe` outside a period. Plan-28 owns the period's values, the user-gated start, arm B's
+  push-off, the scorer and the deletion
+  ([[task-28.1-session-arms-and-push-switch#ownership]]). 10.2's outcome follows L27.
 - **25.1 R8 (amended by 28.1).** "Never empty" holds wherever the pack runs. In cell `B` the pack
   is not called.
 - **19.6 `cited_in_answer`.** 28.3 implements 19.6's clause once, and 19.6's `score_readback.py`
   imports it when 19.6 is unfrozen (one implementation).
 {#cross-plan-body}
 
-rel: amends -> [[task-10.2-plan-10-injection-dedup]]
+rel: related-to -> [[task-10.2-plan-10-injection-dedup]]
 rel: amends -> [[task-25.1-recall-hook-byte-budget#r8]]
 rel: related-to -> [[task-19.6-phased-context-and-topic-cache#ranges]]
 

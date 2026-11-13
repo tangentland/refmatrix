@@ -84,10 +84,17 @@ imports it when unfrozen. {#why-body}
    - **R12 explicit uses** come from the session's `used` events whose evidence is one of
      R12's three (`memory_get_by_name`, `context_by_name`, `focus_note`), attributed to the
      delivering channel by `ref_query_id` (21.5 R6's rule).
-   - **`cited_in_answer`** is ONE function, `cited_in_answer(item, later_assistant_texts) ->
-     bool`, by 19.6's definition: the item's `name`, its path, or its `doc-id#anchor` appears as
-     a whole token (21.1 R12's `_NOTE_TOKEN_RE`, gated by `_matchable`) in an assistant message
-     after the delivery in the same session. 19.6's `score_readback.py` imports it.
+   - **`cited_in_answer` is HOSTED here, lifted from 19.6, which is frozen (D-Q3).** It is ONE
+     function, `cited_in_answer(item, later_assistant_texts) -> bool`. Its definition is 19.6's
+     read-back clause, verbatim ([[task-19.6-phased-context-and-topic-cache#ranges]]): an item is
+     read back when, "later in the same session, … [it is pointed at] by `name` (or, for a file,
+     its path or `doc-id#anchor`) … [by] a later assistant message that contains it as a whole
+     token". 19.6 does not name a tokeniser. This scorer uses 21.1 R12's `_NOTE_TOKEN_RE`, gated
+     by `_matchable`, the project's one definition of a whole-token name match. That choice is the
+     only part not lifted from 19.6, and it is named here for review. Like 19.6's scorer, it
+     reads local transcripts, commits hashes and counts, and never appends to a live log. When
+     19.6 is unfrozen, its `score_readback.py` imports this function, so there is no second
+     implementation.
    - **Never** a tool-call credit, and never 21.5's `tool_touches` (L27).
    - **The precision check (P-5).** Before outcome (6) is read, 50 `cited_in_answer` pairs,
      drawn by a frozen seed, are labelled blind with R12's rubric. If the CAUSED+INFORMED Wilson

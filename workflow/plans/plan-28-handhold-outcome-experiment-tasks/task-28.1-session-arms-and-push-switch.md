@@ -15,13 +15,14 @@ metadata:
 
 > Plan: [[plan-28-handhold-outcome-experiment]]
 > Status: Drafting (spec wave 2026-11-13, G17).
-> Depends on: [[task-10.2-plan-10-injection-dedup]] merged. Its R7 builds `arms.py`
-> (`SESSION_ARMS`, `draw`), the SessionStart `session_arm` row, and the `dedupe` / `full` branch
-> that the A cells use.
+> Depends on: [[task-10.2-plan-10-injection-dedup]] merged. Its R7 CREATES `arms.py`: the full
+> cell table (`A+dedupe`, `A+full`, `B`, `C` at weight 0), `arms.draw`, the SessionStart
+> `session_arm` row, and the `dedupe` / `full` branch that the A cells use. Its record shape and
+> draw signature are the ones settled with spec-t3b on 2026-11-13 ([[#ownership]]). This task
+> adds only the plan-28 period's wiring.
 
 rel: part-of -> [[plan-28-handhold-outcome-experiment]]
 rel: depends-on -> [[task-10.2-plan-10-injection-dedup]]
-rel: amends -> [[task-10.2-plan-10-injection-dedup]]
 rel: amends -> [[task-25.1-recall-hook-byte-budget#r8]]
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
 rel: derives-from -> [[exploration-handhold-outcome-experiment#arms]]
@@ -31,35 +32,45 @@ rel: derives-from -> [[exploration-handhold-outcome-experiment#arms]]
 Arm B (push off) needs a switch, and none exists: the exploration's "a full off-switch for push
 already exists" was false (contra-b CB-15; no env read in `hooks.py` or `scan.py`; 25.1 R8 makes
 the pack "never empty"). L20 puts the switch on 10.2's arm table, so the experiment and 10.2's
-A/B are one draw, not two. The draw must also be scoped to the two experiment stores. 10.2's
-`arms.draw(session_id)` sees only the session id, so a period active in the deployed code would
-randomise every store in the fleet. {#why-body}
+A/B are one draw, not two. The draw must also be scoped to the two experiment stores. A draw
+that saw only the session id would randomise every store in the fleet once a period was active
+in the deployed code, so 10.2 builds the store scope into the record ([[#ownership]]).
+{#why-body}
+
+## Who builds what in `arms.py` (settled with spec-t3b, 2026-11-13) {#ownership}
+
+| piece | owner |
+|---|---|
+| `src/refmatrix/arms.py` created: the period record shape (`id`, `salt`, `start`, `end`, `scope` as project slugs, `cells` with weights); the ONE cell enum (`A+dedupe`, `A+full`, `B`, `C`; `C` at weight 0, never drawn); `draw(session_id, *, root, now=None)`; default `A+dedupe` outside every active period; the SessionStart `session_arm` row; the dedupe factor read from the cell | 10.2 R7 (built before the experiment, L20; it ships with no active period) |
+| the plan-28 period's values (salt, weights per P-1, scope = refmatrix + cliquedb, start and end) | 28.4 freezes them; 28.5 commits them at the user's go |
+| the paired-leg record (scope = 28.2's clone roots, cells `A+dedupe` and `B`) | this task (R1) |
+| `arms.push_on` and arm B's push-off in the two per-prompt hooks | this task (R3) |
+| `session_arm` on every per-prompt row; `arm_period` on the SessionStart row | this task (R2, R4) |
+| deleting `arms.py` and every branch after the period | plan-28's close-out, 28.5 R8, under 10.2's deferral row widened by R5 |
+| the `cited_in_answer` scorer that both readings use | [[task-28.3-outcome-scorer#r7]] |
+{#ownership-table}
 
 ## Decisions {#decisions}
 
 | # | decision | reason |
 |---|---|---|
-| a1 | ONE arm table, `arms.SESSION_ARMS`, holds a period record: `id`, `salt`, `start`, `end`, `scope` (project slugs, as `handoff.default_memory_dir` derives them), `cells` with weights; outside every period, `draw` returns 10.2's default (`dedupe`) | L20: the experiment's draw IS 10.2's; one table, no second source |
-| a2 | `draw` stays pure: `arms.draw(session_id, *, root, now) -> str` is a function of `sha256(session_id + salt)`, the root's slug and `now`; no state file, no env flag | 10.2 R7's rule; a measurement switch must not create state that outlives the period |
+| a1 | ONE arm table, `arms.SESSION_ARMS` (10.2's), holds the period records; outside every active period, `draw` returns `A+dedupe` (push on, dedupe on) | L20: the experiment's draw IS 10.2's; one table, no second source |
+| a2 | `draw` stays pure: `arms.draw(session_id, *, root, now=None) -> str` is a function of `sha256(session_id + salt)`, the root's slug and `now`; no state file, no env flag | 10.2 R7's rule; a measurement switch must not create state that outlives the period |
 | a3 | ONE predicate, `arms.push_on(session_id, *, root, now) -> bool`, is false only in cell `B`. Both per-prompt hooks call it BEFORE retrieval | one decision point, so the two hooks cannot disagree; no retrieval in B, so outcome (5) measures B's real cost |
 | a4 | B suppresses the per-prompt payloads only. SessionStart recall, recall-state, PreCompact, `rmx context`, interactive and MCP recall, and `memory get` behave as in A | the arms table: B keeps boundary and pull |
 | a5 | Cell `C` is never drawn; it exists for 28.2's paired runs, which pin it by profile | 10.2 R7 already says C is never drawn; P-10 |
 
 ## Requirements {#requirements}
 
-1. **R1 The period record.** `arms.SESSION_ARMS` gains the plan-28 period. Its cells are
-   `A+dedupe`, `A+full` and `B`, weighted per P-1 (default: equal thirds). Its scope is the
-   refmatrix and cliquedb slugs. Salt, start and end come from 28.4's frozen pre-registration and
-   are committed by 28.5 at the user's go, never earlier. A second record, scoped to the paired
-   leg's clone roots, holds cells `A+dedupe` and `B` for 28.2. Every record names its cells
-   from ONE enum shared with 10.2 (`dedupe` is `A+dedupe` and `full` is `A+full` inside a
-   handhold period). {#r1}
-2. **R2 The store-scoped draw (amends 10.2 R7).** `arms.draw(session_id, *, root, now=None)`:
-   when `now` lies in a period's `[start, end)` and the root's slug is in its scope, it returns
-   the cell that `sha256(session_id + salt)` picks by weight; otherwise it returns `dedupe`.
-   10.2's callers pass `root`. The SessionStart focus hook records `session_arm` (the cell) and
-   `arm_period` (the period id) once per session on a `cli.log` row (10.2's row, two fields).
-   {#r2}
+1. **R1 The period records.** This task adds two records to 10.2's table, both inert, meaning no
+   active dates, until 28.5 commits them. The first is the plan-28 period: cells `A+dedupe`,
+   `A+full` and `B` at P-1's weights (default equal thirds; `C` stays at 0), scoped to the
+   refmatrix and cliquedb slugs. The second is the paired-leg record, scoped to 28.2's clone
+   roots, with cells `A+dedupe` and `B`. Salt, start and end come from 28.4's frozen
+   pre-registration. {#r1}
+2. **R2 The draw is 10.2's.** This task uses `arms.draw(session_id, *, root, now=None)` as 10.2
+   builds it ([[#ownership]]) and adds one field: the SessionStart focus hook's `session_arm` row
+   also carries `arm_period`, the active record's id, or none. {#r2}
 3. **R3 Arm B's push-off switch.** {#r3}
    - `rmx scan-prompt` (the UserPromptSubmit hook) and `rmx memory recall --stdin-json` (the
      per-prompt recall hook) call `arms.push_on` before any retrieval.
@@ -86,7 +97,8 @@ with a test period whose dates bracket `now`. {#acceptance-lead}
 
 1. **AC-1 The draw.** `draw` is deterministic per (session id, salt, slug, now). 600 synthetic
    ids in scope split by the weights within ±40 per cell. A session id under a root out of scope
-   draws `dedupe`, and so does one in scope before `start` or at `end`. `C` is never drawn.
+   draws `A+dedupe`, and so does one in scope before `start` or at `end`. `C` is never drawn.
+   (This AC exercises 10.2's draw with this task's records; it guards the records' scope.)
    **Mutations:** the scope ignored (out-of-scope draws a cell); a random source (non-deterministic);
    `C` added to the drawable cells. {#ac-1}
 2. **AC-2 Cell B prints nothing and retrieves nothing.** For a session drawn `B`, the generated
@@ -112,7 +124,7 @@ with a test period whose dates bracket `now`. {#acceptance-lead}
 
 | file | change |
 |---|---|
-| `src/refmatrix/arms.py` (10.2's) | the period record, `scope`, `draw(…, root, now)`, `push_on`, the plan-28 and paired-leg records |
+| `src/refmatrix/arms.py` (created by 10.2) | `push_on`; the plan-28 and paired-leg records (inert until 28.5) |
 | `src/refmatrix/cli.py` (`scan-prompt`, `_memory_recall_impl` stdin-json path, `focus hook --event session-start`) | `push_on` before retrieval; the suppressed row; `arm_period` on the SessionStart row |
 | `src/refmatrix/telemetry.py` | `session_arm`, `suppressed` row fields; the per-cell split in `--context` and the hook-cost report |
 | `workflow/deferral_registry.md` | 10.2's `arms.py` row widened (R5) |
