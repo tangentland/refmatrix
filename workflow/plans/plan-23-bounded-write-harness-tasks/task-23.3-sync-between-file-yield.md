@@ -15,8 +15,9 @@ metadata:
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
 > Status: Pending (**revision round 8, 2026-11-13**: freshness against the revised bug-185 (plan
 > review L31, L3, L4, L1): the GMD phase wraps FOUR bug-185 entry points (`gmd_finish` added);
-> AC-4b's hold count is `2 × documents + 1`; the gate narrowed; one open item,
-> [[task-bug185-bulk-gmd-ingest#open-finish-stop]], blocks RED; see [[#rev-round-8]]. Revision
+> AC-4b's hold count is `2 × documents + 1`; the gate narrowed; the hash stamps sit in
+> `gmd_finish` (lead ruling, [[task-bug185-bulk-gmd-ingest#open-finish-stop]]); see
+> [[#rev-round-8]]. Revision
 > round 7, 2026-11-09: bug-185 r1 m5 (AC-4b only), see [[#rev-round-7]]. Revision round 6,
 > 2026-11-09: freshness fold of
 > [[bsd-plan23-3-5-freshness-62a2465]] (b1, s1, m1, m4): each GMD document is its own
@@ -148,11 +149,15 @@ the same shape.
      **Round 8 (L31): then ONE `gmd_finish` step** for the batch
      ([[task-bug185-bulk-gmd-ingest#r7]]): bug-216's pending-ref resolution and `denotes`
      maintenance, which run once per batch after every pass 2, bulk by bug-185 R8. The GMD phase
-     is `2 × documents + 1` steps. The "stop between steps re-ingests" sentence above holds for
-     every boundary except the one between the last pass-2 step and `gmd_finish`, where the
-     documents are already hash-stamped; that boundary is
-     [[task-bug185-bulk-gmd-ingest#open-finish-stop]], settled before RED. This task adds
-     nothing inside the entry points;
+     is `2 × documents + 1` steps. **The hash stamps are written in `gmd_finish`**, by the
+     lead's ruling on [[task-bug185-bulk-gmd-ingest#open-finish-stop]]. A stop at ANY GMD step
+     boundary therefore leaves every document of the batch unstamped, and the next sync
+     re-processes the batch. That is R4's rule: the stamp is in the last step that owes the
+     document work. **Known consequence, accepted with the ruling:** a GMD batch whose steps do
+     not fit inside one `budget_s` never reaches `gmd_finish`, so it re-processes on every sync
+     without stamping. R9's measurement records the largest GMD batch's step count and wall
+     time against `budget_s`, so the case is seen. This task adds nothing inside the entry
+     points;
    - tldr: one step;
    - the ADR map build: one step;
    - `.pseudo` and `.md` semantics: one file per step;
@@ -251,6 +256,11 @@ the same shape.
 
    The GMD steps are one document each in every band ([[#r1]]). The batch setting applies to
    the per-file pass only.
+   - **Recorded, not banded (round 8):** the GMD phase's step count and its total wall time
+     for the fixture's 10 documents, each beside the default `budget_s`. The GMD stamps sit in
+     `gmd_finish` ([[#r1]]), so a GMD batch that does not fit inside one budget never stamps.
+     This figure shows how far the fixture is from that edge. The figure decides nothing, and
+     a batch over the budget is reported to the user.
    {#r9}
 
 ## Acceptance criteria {#acceptance}
@@ -454,7 +464,7 @@ rel: derives-from -> [[task-bug185-bulk-gmd-ingest#rev-round-2]]
 | finding | answered at | rationale |
 |---|---|---|
 | L31 / N17: bug-216 adds a batch-level tail (pending resolution, `denotes`) that 23.3's per-document steps did not cover | [[#r1]] (one `gmd_finish` step), [[#ac-4b]] (`2 × documents + 1`; equal unresolved-line count; fold mutation) | with no step of its own, the tail runs either outside every bounded step or inside the last document's step, which then grows with the batch's pending rows |
-| a stop before `gmd_finish` leaves stamped documents without their tail | [[#r1]] (named, not decided); [[task-bug185-bulk-gmd-ingest#open-finish-stop]] | the fix lives in bug-185's entry points (where the hash stamp sits), so it is decided there, once, for both callers |
+| a stop before `gmd_finish` leaves stamped documents without their tail | [[#r1]] (stamps in `gmd_finish`, by the lead's ruling; the budget consequence stated); [[task-bug185-bulk-gmd-ingest#open-finish-stop]], [[task-bug185-bulk-gmd-ingest#ac-13]] | the fix lives in bug-185's entry points, where the hash stamp sits, so it is decided there, once, for both callers |
 | L4 / L3 / L1: the build order in the header | header | "plan-26 merged" narrowed to 26.1 + 26.2; bug-216 before bug-185; 23.5 R9 after the 26.6 R3 residual |
 | the header named round 6 while round 7 existed (Cc-9's class) | header | status lines match the newest round |
 

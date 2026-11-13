@@ -28,8 +28,10 @@ metadata:
 > - bug-221 is fixed here: a re-ingest replaces the doc's own `rel:` edges ([[#r10]]);
 > - the cost of the per-file evidence clear is measured and bounded here ([[#r9]]).
 >
-> **One open item blocks RED:** [[#open-finish-stop]]. The lead settles it; this revision does
-> not pick an option.
+> - the stop before `gmd_finish` is ruled: the hash stamps move into `gmd_finish`
+>   ([[#open-finish-stop]], resolved; [[#ac-13]]).
+>
+> No open item remains.
 > Depends on (narrowed by L4, round 2; the old text was "plan-26 merged"):
 > - bug-178 merged to `master` ([[task-bug178-bulk-write-helper]]: `backend.bulk_write`, and
 >   `bulk_upsert_entity` lifted onto it). SATISFIED: `76ec748`.
@@ -188,7 +190,9 @@ document, and its per-document hold has the same cause: 29 s for one session car
       body term and an anchor), a `None` weight leaves the stored tf weight untouched under
       either flag, as at HEAD; and because the bit is not new, no `None` event is logged after
       the weighted one ([[#r6]]). `stats.mentions` is unchanged.
-   8. The `gmd_content_hash` stamp, as today (after pass 2 completes).
+   8. ~~The `gmd_content_hash` stamp, as today (after pass 2 completes).~~ **Moved to
+      [[#r7]]'s `gmd_finish`** (round 2, lead ruling on [[#open-finish-stop]]).
+      `gmd_pass2_document` writes no hash.
    {#r2}
 3. **R3 Semantics unchanged: the equivalence contract.** The same input, in the same calling
    context, produces, compared with HEAD:
@@ -196,9 +200,10 @@ document, and its per-document hold has the same cause: 29 s for one session car
      `linkage_evidence`, `bitmap_fragments`, `memory_content` and (round 2) bug-216's
      `pending_refs`, keyed by name. Also the same `IngestStats` (round 2: its `as_dict()` carries
      bug-216's `pending_recorded`, `pending_resolved`, `pending_dropped` and `denotes_added`),
-     the same `gmd_content_hash` stamps and resume behaviour (a hash is written only after
-     pass 2 completes; where it sits relative to [[#r7]]'s `gmd_finish` is
-     [[#open-finish-stop]]);
+     the same `gmd_content_hash` stamps once the call returns. Resume behaviour: a hash is
+     written only after `gmd_finish` completes (round 2, lead ruling, [[#open-finish-stop]]). At
+     HEAD the hash was written after each document's pass 2, so a stop now leaves MORE
+     documents unstamped than it did, never fewer ([[#ac-13]]);
    - (b) **a facts.log that names every row**: every `entity_links` row the call leaves has at
      least one `link` event naming it, and every entity event precedes any link event that names
      that entity;
@@ -261,15 +266,18 @@ document, and its per-document hold has the same cause: 29 s for one session car
 
      `GmdBatch` carries both name sets. Pass 2 adds the concept names it mints to the
      `denotes` set, in memory, as bug-216's loop does. This is the post-bug-216 HEAD
-     placement: the tail runs once, after every pass 2. Whether it moves into
-     `gmd_pass2_document` (with only the skipped-document residue left here) is
-     [[#open-finish-stop]]; the recommendation there is option 1.
+     placement: the tail runs once, after every pass 2.
+     - **then the `gmd_content_hash` stamps of every document this batch processed** (round 2,
+       lead ruling on [[#open-finish-stop]]). They are written with ONE batched write, last,
+       after the pending resolution and `denotes`. A stop anywhere before that leaves every
+       document of the batch unstamped, so the next run's resume gate re-processes them and the
+       tail runs. `GmdBatch` carries `(entity id, hash)` per processed document from pass 2.
 
    `ingest_gmd_paths` becomes `gmd_prepare` + every `gmd_pass1_document` + every
    `gmd_pass2_document` + `gmd_finish` + `stamp_derive("gmd")`, with its resume gate and yields
    where they are today. 23.3 wraps each entry point in its own `bounded_steps` step and adds
-   nothing inside them. A stop between the last pass-2 step and `gmd_finish` is
-   [[#open-finish-stop]]. {#r7}
+   nothing inside them. A stop before `gmd_finish` commits leaves the batch unstamped
+   ([[#ac-13]]). {#r7}
 8. **R8 bug-216's GMD writes are bulk too (round 2, L3).** These are the writes bug-216 adds to
    this path ([[task-bug216-rule-docs-in-graph#r10]], [[task-bug216-rule-docs-in-graph#r7-denotes]]).
    They join R1/R2's rule: per document, or per `gmd_finish`, a constant number of statements
@@ -625,6 +633,25 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
     - Mutations, each FAILS: `bulk_add_pending_refs` logs no pending-add events; the clear
       goes back to count-then-delete.
     {#ac-12}
+13. **AC-13 (a stop before `gmd_finish` leaves the batch unstamped; round 2, lead ruling on
+    [[#open-finish-stop]]).** Fixture: three documents. The second cites a missing target that
+    the third defines, so a pending row resolves only in `gmd_finish`'s tail. One document's
+    title spells another's id, which gives a `denotes` link.
+    - **Stop.** Call `gmd_prepare`, every `gmd_pass1_document` and every `gmd_pass2_document`,
+      each in its own transaction (AC-9's shape). Then stop: no `gmd_finish`. No document of the
+      batch has a `gmd_content_hash` stamp.
+    - **Re-run.** A following `ingest_gmd_paths` over the same paths processes all three (none
+      is a resume-gate skip; `IngestStats.skipped_unchanged == 0`). It resolves the pending
+      row, writes the `denotes` link, and stamps all three. The AC-2 dump then equals one
+      uninterrupted call's dump.
+    - **Context.** This AC runs in the direct context. In the sync context at this task's
+      merge, `_sync_paths` still wraps the whole call in one outer transaction, so a stop rolls
+      everything back. The per-step stop there is 23.3's to test, on its `gmd_finish` step
+      ([[task-23.3-sync-between-file-yield#r1]]).
+    - **Mutation:** the stamp written in `gmd_pass2_document`, before `gmd_finish` → FAILS (the
+      first two documents are stamped; the re-run skips them; the pending row stays and the
+      `denotes` link is missing).
+    {#ac-13}
 
 ## Merge order {#merge-order}
 
@@ -787,7 +814,16 @@ The options as first written:
    divergence until 22.2 lands. Cost: replay double-counts `rel:` evidence for several queue
    items, and every evidence recount (bug-216 R5/R8) reads a replayed store wrong.
 
-### Open item: a stop between the last pass-2 step and `gmd_finish` {#open-finish-stop}
+### Resolved: a stop between the last pass-2 step and `gmd_finish` {#open-finish-stop}
+
+**Ruled by the lead, 2026-11-13: the hash stamps move into `gmd_finish`** (option 2 below). A
+stop before `gmd_finish` leaves the documents unstamped, and the next run re-processes them.
+Folded into [[#r2]] step 8, [[#r3]] (a), [[#r7]] and [[#ac-13]] (mutation: stamp before finish
+→ FAIL). The cost option 2 names is accepted with the ruling. A stop throws away the whole
+batch's stamps, and under 23.3's `budget_s` a GMD batch larger than one budget re-ingests on
+every sync without stamping. 23.3 records it as a known consequence
+([[task-23.3-sync-between-file-yield#rev-round-8]]). The analysis and options as last written
+follow, as history. {#open-finish-stop-ruling}
 
 **The window.** At post-bug-216 HEAD, `ingest_gmd_paths` stamps each document's
 `gmd_content_hash` at the end of that document's pass 2. bug-216's batch tail runs only after
