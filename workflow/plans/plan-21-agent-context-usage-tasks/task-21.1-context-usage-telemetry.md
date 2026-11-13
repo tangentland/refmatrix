@@ -888,10 +888,11 @@ Without these, no change in 21.2–21.4 can be shown to change behaviour, and pl
     - **Destination.** A `used` event goes to the file of the delivered event's `scope`: a use of
       a GLOBAL memory is appended to `~/.refmatrix/recall-events.jsonl` with `scope=global`
       (d8e), so 19.2's global fold counts it; a project use to the project file.
-    - **Reserved, not emitted here:** `file_read` and `cited_in_answer`. Their only computation is
-      19.6's offline transcript scorer (`eval/production/phased_context/`, 19.6 Table C), which
-      writes its own report and never appends to `recall-events.jsonl`; so no live counter ever
-      depends on them.
+    - **Reserved, not emitted here:** `tool` (renamed from `file_read` by d21-5a, user 2026-11-13, [[plan-19-adaptive-memory-budget#decisions]]) and `cited_in_answer`. `tool` is owned by
+      21.5 and computed by its ONE matcher, `telemetry.tool_touches`, at report time and in
+      19.6's offline transcript scorer; `cited_in_answer` stays 19.6's
+      (`eval/production/phased_context/`, 19.6 Table C). Neither appends to
+      `recall-events.jsonl`; so no live counter ever depends on them.
 
 ## Acceptance criteria {#acceptance}
 

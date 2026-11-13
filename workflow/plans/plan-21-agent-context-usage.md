@@ -7,7 +7,7 @@ metadata:
   node_type: plan
   status: approved
   created: 2026-10-07
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Plan 21: agent context usage {#root}
@@ -53,6 +53,8 @@ hand-off, so the replay says nothing about reranked ranking (bsd #s-8). Once gre
 | 21.2 | 3 | precise identifier context: `path:line` on DEFINED BY, one id form, labels checked against emission direction, TESTED BY defined, no helix on code anchors, `--brief` | the frozen 9-name replay goes from the recorded baseline to ≥ 8 of 9 gold `path:line` hits | 21.1, 23.0 |
 | 21.3 | 3 | PostToolUse nudge for an identifier-shaped grep naming an indexed symbol with callers/tests, built per the band R0's measured hook wall time lands in | R0's band recorded before code; one line on indexed symbols, none on others; usage per session before/after | 16.1, 16.2, 21.1, 21.2, 23.0 |
 | 21.4 | 3 | the frozen NL question set (code + doc strata; the ONE ranking-eval harness, C9), both routes measured, ranking fixes kept only on a pre-registered win, then one rule on all five surfaces | the R2 table; every shipped change wins by the pre-registered margin; generated surfaces agree | 21.1, 21.2, 23.0 |
+| 21.5 | now (user, 2026-11-11) | a tool-level `used` signal: each session's `delivered` events joined at REPORT time with its STM tool events (Read/Edit/Write/Grep/Glob/Bash inputs naming the item's path or name, a Bash path or name only in a simple command based in the project; Agent and `mcp__refmatrix__` live from 24.6 R4), never emitted by a hook; `path` on delivered events (additive, `v` stays 1); a prompt clock from query.log (ambient prompts count); credit per (tool call, file) unit; `--agent-usage` prints used per channel per evidence and a headline rate excluding prior-touch beside the rate including it, with a retrieved-not-delivered control and every exclusion counted ([[task-21.5-tool-used-signal]], rev 3) | AC-3 end-to-end Read credited under its delivering channel; reads before delivery never credit; credit is weighted by the user's decay kernel on prompt lag (plateau to `k = 3`, half-life 2 prompts, no cutoff; OD-5, 2026-11-13); the exclusion identity holds; no `recall-events.jsonl` line from a hook (AC-13); one real-data run (AC-15); 19.2 counts nothing until R12's precision band | 21.1, 23.0 |
+| 21.6 | after 24.6 R4 ships (filed 2026-11-13, 21.5 rev 3) | the `match_on: tool_result` leg: 24.6 R4's raw `result_mentions` on a ring tool event credit a delivered unit only when the name is in the session's delivered events, checked at REPORT time against `recall-events.jsonl` (the ONE delivered-set source; `$.state` only pre-filters), never at observe time and never by a hook ([[task-21.5-tool-used-signal#d10]], [[deferral_registry#registry]]) | (a) a ring tool line whose `result_mentions` names `S`, delivered in the session before the call, credits `S`'s unit under `match_on: tool_result` at 21.5's kernel weight for its lag; (b) a mentioned name not delivered in the session credits nothing, counted `result_mentions_undelivered`; (c) a mention of a name delivered only AFTER the call credits nothing (21.5 R4's order); (d) the leg is its own stratum in the leg table and in 21.5 R12's draw, banded alone (20-pair stratum minimum), and is in neither `used_headline` nor any 19.2 column until its band is read; (e) mutations: crediting a mention without the delivered-set check fails (b); ignoring the order fails (c); 21.5 AC-18's `result_mentions_present` count is unchanged | 21.5, 24.6 |
 
 Task specs: `workflow/plans/plan-21-agent-context-usage-tasks/`. Waves follow
 [[plan-review-2026-10-14#t8-wave1]] (21.1 needs only 23.0) and the 2026-10-07 order
@@ -301,3 +303,14 @@ rel: derives-from -> [[bsd-plan19-21-spec-diffcheck-r10-f6400aa]]
 | r10 #m10-4 (21.3 side: the `"nudge"` entry of `OUTCOMES_BY_KIND`) | [[task-21.3-indexed-symbol-nudge#rev-round-10]] |
 | r10 #s10-3 (the sandbox preload and connect-log interfaces) | [[task-23.0-test-sandbox#rev-amend-r10]]; [[task-21.3-indexed-symbol-nudge#rev-round-10]] (AC-5's absolute path) |
 | r10 #s10-1, #m10-1 (19.6 side), #m10-5 (19.0, 19.2) | not plan-21 items ([[plan-19-adaptive-memory-budget#rev-round-10]]) |
+
+## Revision (2026-11-13, task 21.5 spec rev 3) {#rev-2026-11-13}
+
+rel: derives-from -> [[bsd-task-21.5-spec-r2-540ab50#s-5]]
+rel: related-to -> [[task-21.5-tool-used-signal#rev-3]]
+
+| change | why | where |
+|---|---|---|
+| task 21.6 row filed, with acceptance criteria: the `tool_result` leg over 24.6 R4's raw `result_mentions` | ch-bsd 21.5 spec r2 s-5: 21.5 D10 deferred the leg to "its own task", which did not exist (rule 9a) | [[#tasks]]; [[deferral_registry#registry]] |
+| 21.5 row: rev 3, a Bash path or name matches only in a simple command based in the project | ch-bsd 21.5 spec r2 b-1 | [[#tasks]]; [[task-21.5-tool-used-signal#d15]] |
+| 21.5 and 21.6 rows: the hard window `W = 2` replaced by a decay kernel | the user's OD-5 decision, 2026-11-13 | [[#tasks]]; [[task-21.5-tool-used-signal#d18]] |

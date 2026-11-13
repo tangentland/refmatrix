@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Task 19.2: memory usage, counted exactly, decayed safely {#root}
@@ -65,7 +65,8 @@ one without losing knowledge. {#why-body}
      daemon's currently bound partition.
    - **Raw, unweighted, per evidence.** Every count is an exact count of events of ONE kind,
      each event weighing 1. No weight, base, floor or half-life is stored; they apply at READ time
-     (R7). A future evidence kind (21.1 R12's reserved `file_read` / `cited_in_answer`) is a
+     (R7). A future evidence kind (21.1 R12's reserved `tool` / `cited_in_answer`; `tool` renamed from `file_read` by d21-5a, user
+     2026-11-13) is a
      migration adding its own column to BOTH tables, never folded into an existing one.
    - `lifetime_used` is not a column: where a single number is shown (R9, ADR-0004's text) it is
      the read-time sum of the three `used_*` columns.
