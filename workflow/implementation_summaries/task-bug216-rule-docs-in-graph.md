@@ -29,6 +29,12 @@ Branch `task-bug216-rule-docs-in-graph`, run with the clone's `src` on `PYTHONPA
   entity) at `b3f2572` (the merge of dev master `12c219a`; no `src/` change since `758bca1`):
   **52 failed, 23 passed** over 75 tests (`red-head-rev3-b3f2572.log`).
 
+- With rev 4 (AC-11, AC-12, AC-13, the `ingest-gmd <subdir>` root, and the fixture updates
+  R11/R12 require) at `4206137` (merge of dev master `3ddba55`; still no `src/` change since
+  `758bca1`): **bug-216 files 71 failed, 28 passed** over 99 tests; `test_workflow_ignore` 1
+  failed (its R12-updated default set), `test_bug179_anchor_parity` 43 passed
+  (`red-head-rev4-4206137.log`).
+
 Every failure is the missing mechanism, not the test's setup. The tests that pass at HEAD are
 guards (existing behaviour re-asserted, or mutation killers that can only fail once the
 mechanism exists); each is marked "guard" below. {#red-count}
@@ -36,6 +42,7 @@ mechanism exists); each is marked "guard" below. {#red-count}
 rel: specifies -> [[task-bug216-rule-docs-in-graph#acceptance]]
 rel: specifies -> [[task-bug216-rule-docs-in-graph#rev-2]]
 rel: specifies -> [[task-bug216-rule-docs-in-graph#rev-3]]
+rel: specifies -> [[task-bug216-rule-docs-in-graph#rev-4]]
 
 ### AC-1 (R1) — tests/test_bug216_ignore_reinclude.py {#red-ac1}
 
@@ -192,6 +199,55 @@ A's only route to B: A's root node `-derives-from->` path-less `b-doc` `-denotes
 
 {#red-ac10-table}
 
+### AC-11 (R10 pending refs) — tests/test_bug216_rev4.py {#red-ac11}
+
+Observed by behaviour, not by a table name: the edge appears, evidence is never duplicated, a
+purged citer leaves nothing. {#red-ac11-shape}
+
+| test | HEAD line |
+|---|---|
+| `test_ac11_a_pending_ref_resolves_when_its_target_is_ingested` | `the pending bare ref did not resolve (to B's doc) when B was ingested` |
+| `test_ac11_a_resolved_pending_row_is_cleared` | `assert 0 == 1` (no edge at all yet) |
+| `test_ac11_resolution_is_counted_in_the_ingest_report` | report has no `pending` line |
+| `test_ac11_the_rule_doc_lines_land_when_claude_md_is_unignored_without_touching_citers` | `` no `claude#no-silent-failures` node `` after syncing only CLAUDE.md |
+| `test_ac11_purging_the_citer_drops_its_pending_rows` | guard (nothing resolves at HEAD) |
+
+{#red-ac11-table}
+
+### AC-12 (R11 built-in include) — tests/test_bug216_rev4.py, tests/test_bug216_scope_parity.py {#red-ac12}
+
+| test | HEAD line |
+|---|---|
+| `test_ac12_no_ignore_file_includes_the_gmd_profile` | `assert True is False` |
+| `test_ac12_reinclude_beats_an_explicit_ignore` | `assert True is False` |
+| `test_ac12_every_walker_ingests_the_rule_docs_with_no_ignore_file[sync / watcher / ingest-path]` | `missing ['.claude/PROJECT_PROFILE.md']` |
+| `…[op-ingest-gmd / cli-ingest-gmd]` | extra `.claude/agents/x.md`, `node_modules/n.md` |
+| `test_ac12_guard_a_profile_without_frontmatter_is_not_included` | guard |
+| `test_ac12_guard_explicit_ignore_lines_beat_the_builtin_include` | guard |
+| `test_ac12_the_gate_passes_a_checkout_with_no_ignore_file` | guard (no scope check yet; fails if R3 lands without R11) |
+
+`test_ac4_fails_on_the_hidden_dir_rule_and_names_it` now scans a `.claude/NOTES.md` (the GMD
+profile is a built-in include under R11) and asserts the profile is never a finding. The bug-179
+gate fixture no longer writes a `.refmatrix_ignore` (it keeps `.git`): like a clone, it passes
+only through R11. {#red-ac12-updates}
+
+### AC-13 (R12 one ignore list) — tests/test_bug216_rev4.py, tests/test_workflow_ignore.py {#red-ac13}
+
+| test | HEAD line |
+|---|---|
+| `test_ac13_ingest_ignore_dirs_holds_the_watchers_dirs` | `('node_modules', 'venv')` |
+| `test_ac13_watch_py_defines_no_ignore_list` | `watch.py still defines its own ignore list: ['IGNORE_DIRS']` |
+| `test_ac13_tool_dirs_are_ignored_by_every_walker[sync / op-ingest-gmd / cli-ingest-gmd / ingest-path]` | `ingested ['__pycache__/x.md', 'build/x.md', 'dist/x.md', …]` |
+| `…[watcher]` | guard (the watcher's private list already drops them) |
+| `test_workflow_ignore.py::test_builtin_defaults_minimal_no_workflow` (updated) | `{'node_modules', 'venv'} == {… '__pycache__', 'dist', 'build'}` |
+
+{#red-ac13-table}
+
+### ingest-gmd on a subdir (#rev-4-accepted) — tests/test_bug216_rev4.py {#red-subdir}
+
+`test_ingest_gmd_on_a_subdir_reads_the_spec_from_the_project_root[op / cli]`: HEAD ingests
+`docs/private/p.md` (`{'docs/finding.md', 'docs/other.md', 'docs/private/p.md'}`). {#red-subdir-line}
+
 ### Satisfiability and mutations {#red-mutations}
 
 A scratch reference implementation (never committed; diffstat in
@@ -217,6 +273,17 @@ on the reference and at HEAD, `scratch-ref-related-files.log`): {#red-satisfiabl
 - M10 `denotes` written as `same_as`: 3. {#red-m10}
 - M11 variants skipped: 2. {#red-m11}
 - M12 the walk treats `denotes` as a counted hop: 1. {#red-m12}
+
+Rev 4, on the reference extended with R10-R12 and the subdir root
+(`scratch-ref-green-rev4.log`: 154 passed over every bug-216 file plus bug179 / workflow_ignore
+/ watch; 28 related existing files: the same 1 pre-existing failure and 206 passes,
+`scratch-ref-related-files-rev4.log`): {#red-satisfiable-rev4}
+
+- M13 resolved pending rows never cleared: 1. {#red-m13}
+- M14 no built-in include: 10 (incl. both bug-179 gate cases). {#red-m14}
+- M15 purge leaves pending rows AND resolution skips the source-liveness check: 1 (either
+  safeguard alone satisfies the AC). {#red-m15}
+- M16 ingest-gmd takes the target dir as the spec root: 2. {#red-m16}
 
 The mock added is `_FakeObserver` (watchdog `Observer`, external), registered in
 [[test_mock_registry]]. {#red-mocks}

@@ -1,0 +1,42 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/f0521bff-0006-479a-9e0f-6df02d50937e/scratchpad/ref216/src/refmatrix as checked-hash (bug-037)
+..F..................................................................... [ 96%]
+...                                                                      [100%]
+=================================== FAILURES ===================================
+______________ test_ac11_purging_the_citer_drops_its_pending_rows ______________
+
+store_env = (PosixPath('/private/tmp/b216p4nsdxu4tu/proj'), PosixPath('/private/tmp/b216p4nsdxu4tu/proj/.refmatrix'))
+
+    def test_ac11_purging_the_citer_drops_its_pending_rows(store_env):
+        """Purge A while its refs are pending; ingesting b-doc then writes nothing for A — no edge,
+        no evidence for A's file, and no `entity_links` row naming an entity that no longer
+        exists."""
+        proj, root = store_env
+        a = _write(proj, "docs/a.md", A_CITES)
+        _ingest(root, [a])
+        s = _open(root)
+        try:
+            s.purge_path(str(a))
+            assert _eid(s, "concept", "a#cite") is None, "precondition: the purge removed A"
+        finally:
+            s.close()
+        _ingest(root, [_write(proj, "docs/b.md", B_DOC)])
+        s = _open(root)
+        try:
+            con = s._connect()
+            ev = con.execute("SELECT count(*) FROM linkage_evidence WHERE file=?",
+                             (str(a),)).fetchone()[0]
+            dead = con.execute(
+                "SELECT count(*) FROM entity_links el WHERE NOT EXISTS "
+                "(SELECT 1 FROM entities e WHERE e.id = el.concept_id) OR NOT EXISTS "
+                "(SELECT 1 FROM entities e WHERE e.id = el.entity_id)").fetchone()[0]
+>           assert (ev, dead) == (0, 0), f"a purged citer's pending ref resolved: ev={ev} dead={dead}"
+E           AssertionError: a purged citer's pending ref resolved: ev=2 dead=2
+E           assert (2, 2) == (0, 0)
+E             
+E             At index 0 diff: 2 != 0
+E             Use -v to get more diff
+
+tests/test_bug216_rev4.py:173: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_rev4.py::test_ac11_purging_the_citer_drops_its_pending_rows
+1 failed, 74 passed in 16.78s
