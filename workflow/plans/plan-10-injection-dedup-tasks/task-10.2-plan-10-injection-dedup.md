@@ -70,7 +70,7 @@ labelled and 6 R12 uses. Chosen: names-only (Q13), applied to non-human turns to
 | h10 | The line, its cap of 15, its overflow and its spill page are 25.1b's (L15). 10.2 supplies only held members, and their bytes are inside the reservation 25.1b makes for the line, so the line is never cut. On scan-prompt, which has no ladder, the line holds held members only and is reserved in scan's own `fit_blocks` call | one owner per line (contra-b CB-1): two lines with one label, or one label with two meanings, is what L15 removes; a line dropped by the fitter would be removal by rule |
 | h11 | The live A/B lives HERE, not in 10.4 R7 | the arm switches THIS task's mechanism (`dedupe` vs `full`), and 10.4 ships before 10.2 |
 | h12 | `session_start`, `precompact` and explicit pulls (`rmx context`, interactive and MCP recall) never dedupe; `session_start` RECORDS its full deliveries (h1); `precompact` and explicit pulls record nothing | a boundary payload is what the window starts from; an explicit pull is the agent asking for the body, often because it lost it |
-| h13 | Order of operations on the recall channel (this CONTRADICTS 25.1b [[task-25.1b-hook-output-ladder-and-spill#k3]], which removes held rows BEFORE the ladder; see [[#open-held-order]]): (1) retrieval, the four-source merge and the exclusions, unchanged; (2) 25.1b's ladder over EVERY row, with the line reserved; (3) each held row leaves its tier and becomes a HELD member of 25.1b's `still in play` line; (4) the line renders its held and over-budget members as 25.1b defines; (5) 25.1b R12's clamp, the safety net. A held row whose `full`-run tier was already the line keeps its place and is marked held | contra-b CB-1 asks for the order of held removal and the ladder to be stated; the order follows from h9, and steps 2 and 3 cannot swap without re-spending |
+| h13 | Order of operations on the recall channel (the same order as 25.1b [[task-25.1b-hook-output-ladder-and-spill#k3]], converged with spec-t3a; [[#open-held-order]]): (1) retrieval, the four-source merge and the exclusions, unchanged; (2) 25.1b's ladder over EVERY row, with the line reserved; (3) each held row leaves its tier and becomes a HELD member of 25.1b's `still in play` line; (4) the line renders its held and over-budget members as 25.1b defines; (5) 25.1b R12's clamp, the safety net. A held row whose `full`-run tier was already the line keeps its place and is marked held | contra-b CB-1 asks for the order of held removal and the ladder to be stated; the order follows from h9, and steps 2 and 3 cannot swap without re-spending |
 | h14 | The live A/B's outcome counts only R12 explicit uses plus `cited_in_answer`, never 21.5's unbuilt legs | L27, L18's rule: 21.5's matcher measures proximity, not use (R12 pilot: 7% CAUSED) and is frozen until the experiment reports (D-Q3, D-Q4) |
 
 ## Open for the lead: which ladder tier makes an item held {#open-held-tier}
@@ -95,25 +95,31 @@ replaces, and it changes v3. This revision does not pick one. R2's `record_full`
 
 rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 
-## Open for the lead: held removal before or after the ladder {#open-held-order}
+## Held removal comes after the ladder (resolved) {#open-held-order}
 
-25.1b k3 orders the pack as: (1) held rows removed, (2) the ladder over the remaining rows. This
-task's h9/h13 order it the other way: the ladder runs over every row, and held rows then leave
-their tiers (tier-pinned). The two orders differ in one way. Under k3, the bytes freed by held
-rows let non-held rows reach richer tiers. Under tier pinning they do not. Both specs were written
-in parallel in this wave (spec-t3a, spec-t3b), and the lead's ruling decides which one changes.
-{#open-held-order-lead}
+25.1b's first draft (k3) removed held rows BEFORE the ladder. That would have re-spent freed bytes
+on promoting non-held rows, against h9 and Q13. spec-t3a changed k3 in `841ca70` to the
+tier-pinned order of h13: the ladder over every row first, then held rows leave their tiers, and
+the payload is never larger than the full run's. Nothing is left open here. The anchor stays
+because commit `537c7e2` cites it. {#open-held-order-lead}
 
-- **(a) Recommended: tier-pinned (this spec).** h9 already says "freed bytes are not re-spent".
-  v1/v2 scored that form (names-only at 0.469-0.470 of baseline block bytes). R7's byte band (≥
-  30% cut per human prompt) measures dedupe alone, not dedupe plus promotion. 25.1b's k3 step 1
-  then moves after its step 2, a one-line change there.
-- **(b) k3's order: re-spend on richer tiers.** No new candidate is pulled in, because the 4+3
-  failure came from candidates never delivered at baseline, and this is not that. Non-held items
-  get more content. But this is a different design from the one Q13 chose on the replay. v3 would
-  have to score it, R7's byte band would be measuring a mix, and h9 needs a decision row.
+rel: related-to -> [[task-25.1b-hook-output-ladder-and-spill#k3]]
 
-rel: contradicts -> [[task-25.1b-hook-output-ladder-and-spill#k3]]
+## Open for the lead: where held members sit on the line, and how they are marked {#open-held-mark}
+
+25.1b k2 leaves this to 10.2. 10.6 p2 (the user-agreed rule that labels never reorder and rank
+order is kept) settles the ORDER: one rank order across held and over-budget members, under the
+one cap of 15. It does not settle whether the agent can tell the two kinds apart on the line. The
+difference matters: a held member's content is already in the window, while an over-budget
+member's content is only on the spill page. {#open-held-mark-lead}
+
+- **(a) Recommended: mark held members.** Each held member carries one short marker in the line
+  (for example a trailing `·held`), and the marker's bytes count inside the line's reservation.
+  The agent then knows which names to fetch.
+- **(b) No marker.** The line stays as rev 5 drew it. The agent fetches from the page when it
+  cannot find a name in its window.
+
+This spec writes order = rank order. The marker waits on this item. {#open-held-mark-order}
 
 ## Requirements {#requirements}
 
@@ -134,7 +140,10 @@ rel: contradicts -> [[task-25.1b-hook-output-ladder-and-spill#k3]]
    renderings byte-for-byte (h9). The line's format, its one cap of 15 in rank order across both
    member kinds ([[task-25.1b-hook-output-ladder-and-spill#k2]]), 10.6's per-member labels (no
    regrouping, 10.6 p2), its overflow and its spill page are 25.1b's. A held member past the cap
-   is spilled and counted `(+N)`, because 25.1b R14 spills every item past the names cap.
+   is counted `(+N)`. Every held row's body is written to the spill page, inside the cap or past
+   it, because 25.1b k3 step 4 spills the body of every row below tier 1, held rows included.
+   Line members, held and over budget alike, sit in one rank order (10.6 p2;
+   [[#open-held-mark]]).
    `Packed` gains `held_named` and `held_overflow`. Held members carry the line span 25.1b defines
    for line members. The verb (25.1 R5) reads
    `internal.get("dedupe")` (CLI `--stdin-json` only, the way `embedder_policy` rides
@@ -240,9 +249,10 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
 5. **AC-5 The names line never refreshes held.** X full at prompt 1, named at 2..9; no entry for X
    is written at 2..9; after a marker at 10, X renders full.
 6. **AC-6 Cap and budget.** With 20 held items, 25.1b's line names its cap (15) in rank order,
-   and the overflow follows 25.1b (spill page, counted). On recall, the held overflow rows appear
-   on the spill page with their bodies (25.1b R14), and the line's fetch command (spelled per
-   25.1b O1) returns them. On scan-prompt they are counted `(+N)` and no page is written. The
+   and the 5 past the cap are counted `(+5)`. On recall, all 20 held rows are on the spill page
+   with their bodies (25.1b k3 step 4, R14), and the line's fetch command
+   ([[task-25.1b-hook-output-ladder-and-spill#r14]], spelling open as O1) returns them. On
+   scan-prompt the 5 are counted `(+5)`, and no page is written. The
    line is present at 2,000 / 4,000 / 9,000 B (25.1 AC-2's budgets), and the payload stays within
    each. Held overflow items have `retrieved` events and no `delivered` events. 25.1b R12's clamp
    does not fire (its `capped` row is absent).
@@ -324,7 +334,8 @@ rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 |---|---|---|
 | The line is 25.1b's; 10.2 adds held members and owns no line | L15, CB-1 | h10, R3, R4, AC-14 |
 | Tier-pinned: the ladder runs over every row first; held rows then leave their tiers; non-held rows never take freed bytes | h9 applied to the ladder (CB-1 asks for the order) | h9, h13, R3, AC-2 |
-| Held overflow goes to 25.1b's spill page under R14's own rule | L15 | R3, AC-6 |
+| Every held row's body goes to 25.1b's spill page (k3 step 4); held overflow is counted `(+N)` | L15 | R3, AC-6 |
+| One rank order across both member kinds (10.6 p2); the held marker is open | 25.1b k2 | R3, [[#open-held-mark]] |
 | `form: "held"` is distinct from 25.1b's over-budget form | CB-2's resolution in 25.1b | R6, AC-7 |
 | R8 parity target = 10.5 v3 (tier-pinned on 25.1b's pack), not v2 | L15 | R8, AC-12 |
 | The A/B is the handhold experiment's run (arm A × {dedupe, full}); the outcome is R12 explicit + `cited_in_answer` only | L20, L27 | R7, h14 |
