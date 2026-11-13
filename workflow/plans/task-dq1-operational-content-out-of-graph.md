@@ -8,12 +8,13 @@ metadata:
   status: drafting
   created: 2026-11-13
   updated: 2026-11-14
-  revision: 7
+  revision: 8
 ---
 
 # Task D-Q1: operational content stays in the partition, out of the skew {#root}
 
-> Status: Drafting. Revision 7 (2026-11-14) answers ch-bsd `bsd-spec-t56-r5` under L69 ([[#rev-7]]).
+> Status: Drafting. Revision 8 (2026-11-14) answers ch-bsd `bsd-spec-t56-r6` ([[#rev-8]]);
+> revision 7 answered `bsd-spec-t56-r5` under L69 ([[#rev-7]]).
 > Revision 6 answered `bsd-spec-t56-r4` under the lead's L67 ruling, which amends L61 S3
 > ([[#rev-6]]); revision 5 answered r3 under L61 ([[#rev-5]]);
 > earlier revisions are in [[#history]].
@@ -181,11 +182,22 @@ skew whats returned". So:
        would resolve to the LIVE project store. W's copy lives at
        `$SANDBOX_HOME/.claude/projects/<slug of W's unpacked root>/memory`, and N's at the same
        path under N's root's slug.
+     - **W and N are discoverable.** Each throwaway `.refmatrix/` is registered in the sandbox's
+       registry (`discovery.register_root`, which writes the redirected `registry.json`), so
+       `discovery.discover_roots`, and through it the slug resolver, can find it (r6 S1).
+     - **How the bridge is invoked (r6 S1).** `cli._root()` takes `REFMATRIX_ROOT` first, then the
+       slug of the CWD (not of a memdir argument), then the cwd walk. Task 23.0's autouse
+       fixture sets `REFMATRIX_ROOT`, which would otherwise decide the store on its own. So each
+       bridge run is a subprocess whose cwd is that build's memdir copy and whose environment has
+       `REFMATRIX_ROOT` UNSET. The slug of the copy then decides the store, as it does for a real
+       session. If ADR-0005's resolution from the memdir argument has shipped (task 26.5), the
+       bridge may be called with the copy as its argument instead; the guard below uses the same
+       resolution the bridge will use.
      - **The order inside `eval/dq1/build.py` (r5 S1).** Before each bridge run, it resolves the
        copy's store with the bridge's own resolver, `cli._root_from_projects_slug(<copy path>)`
        (the ADR-0005 slug match against discovered roots). It prints the result and asserts that
-       it equals that build's throwaway `.refmatrix/`. ONLY THEN does it run the bridge. On a
-       mismatch, or when nothing resolves, it exits non-zero with no write to any store
+       it equals that build's throwaway `.refmatrix/`. ONLY THEN does it run the bridge as above.
+       On a mismatch, or when nothing resolves, it exits non-zero with no write to any store
        (AC-13).
      - **W and N are both FRESH builds of one commit's tree** (`git archive <sha>` unpacked into
        the sandbox; no worktree, and never a copy of the live store). Each gets its own throwaway
@@ -373,12 +385,16 @@ sandbox.
 6. **AC-6 (R1) The cache follows the data** (`test_ac6_cache_invalidation`). With the daemon's
    `Store` holding a computed `operational_ids`, an in-process ingest of a new `workflow/plans/q.md`
    makes `q.md` a member at the next read. Mutation: leave `_operational_ids_cache` out of
-   `_invalidate_content_rank_caches`: FAILS (r3 M4). **On-disk adjacency (r4 M1, r5 M2):** on a
-   copy of the module tree (`_DERIVE_SRC_DIR`, as AC-4), an `adjacency.cache.npz` / `.json` pair
-   is written. Then `is_operational`'s prefix list gains a name, with no other change. The next
-   `cached_adjacency` call does not serve the old pair: it rebuilds and rewrites it, and the
-   rebuilt adjacency excludes the new name. Mutation: leave the code hash out of the disk key (the
-   stale file is served, and the new member is a node): FAILS.
+   `_invalidate_content_rank_caches`: FAILS (r3 M4). **On-disk adjacency (r4 M1, r5 M2, r6 M1):**
+   with `_DERIVE_SRC_DIR` pointing at a copy of the module tree (as AC-4), `cached_adjacency`
+   writes an `adjacency.cache.npz` / `.json` pair, and the test records the pair's key. Then
+   `is_operational`'s prefix list is edited in the COPY, with no other change, which moves
+   `derive_code_hash("pagerank")`. The next `cached_adjacency` call (in a fresh process, so no
+   instance cache) does not serve the old pair: it rebuilds and rewrites it under a new key that
+   carries the new hash. The test asserts the key change and the rewrite only. It does not assert
+   the new rule's effect, because the running code still imports the unedited predicate. Mutation:
+   leave the code hash out of the disk key (the old pair is served, its key unchanged, the file not
+   rewritten): FAILS.
    {#ac-6}
 7. **AC-7 (R4) The measuring code can fail** (`tests/test_dq1_measure.py`, against
    `eval/dq1/measure.py`). These are fixture list pairs; no store is involved:
@@ -422,12 +438,17 @@ sandbox.
 12. **AC-12 (R6) The rollout record.** `workflow/measurements/dq1-rollout-<date>.md` lists the
     marker search's output and, per project store, the derive stamps and the user's go (date) or
     `held`. The global store's deferral row exists. {#ac-12}
-13. **AC-13 (R4) The mis-slug guard runs before any write** (`tests/test_dq1_measure.py`, r5 S1).
-    In the sandbox, a second throwaway store `Z` exists (discovered). A memdir copy is placed under
-    the slug of Z's project root, and `build.py` is asked to bridge it for W. `build.py` exits
-    non-zero and names both roots, and Z's catalog files and `facts.log` are byte-identical
-    afterwards (W's too). A copy under W's own slug resolves to W, and the bridge runs. Mutation:
-    assert AFTER the bridge runs: FAILS (Z's `facts.log` changes). {#ac-13}
+13. **AC-13 (R4) The mis-slug guard runs before any write** (`tests/test_dq1_measure.py`, r5 S1,
+    r6 S1). In the sandbox, W and a second throwaway store `Z` are both registered. The bridge
+    subprocesses run with `REFMATRIX_ROOT` UNSET and cwd at the copy, as [[#r4]] invokes them.
+    - **Negative leg.** A memdir copy is placed under the slug of Z's project root, and `build.py`
+      is asked to bridge it for W. `build.py` exits non-zero and names both roots, and Z's and W's
+      catalog files and `facts.log` are byte-identical afterwards.
+    - **Positive leg.** A copy under W's own slug resolves to W, the bridge runs, and W gains the
+      copy's memory rows (their count equals the copy's memory files).
+
+    Mutation: assert AFTER the bridge runs: FAILS (the bridge resolves the copy to Z, so Z's
+    `facts.log` changes). {#ac-13}
 
 ## Open items {#open-items}
 
@@ -462,6 +483,15 @@ R5's commit.
   `workflow/implementation_summaries/task-dq1-operational-content-out-of-graph.md`.
 - Committed on branch `task-dq1-operational-content-out-of-graph` and merged `--no-ff` to
   `master`; every project store's rollout row is recorded (done or `held`).
+
+## Revision 8 (2026-11-14, ch-bsd r6) {#rev-8}
+
+| finding | answered in |
+|---|---|
+| S1 (`cli._root` takes `REFMATRIX_ROOT` first and the cwd's slug, so AC-13's bridge could never write Z) | [[#r4]]: W and N registered; the bridge runs as a subprocess with cwd at the copy and `REFMATRIX_ROOT` unset (or with ADR-0005's argument resolution once 26.5 ships it); [[#ac-13]] runs that way, and its positive leg asserts W gained the copy's rows |
+| M1 (AC-6's on-disk leg asserted an effect the imported code cannot show) | AC-6: assert only that the pair is rebuilt and rewritten under a new key carrying the new hash |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
 ## Revision 7 (2026-11-14, ch-bsd r5 + L69) {#rev-7}
 
@@ -527,6 +557,9 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 - **Revision 7** answers r5: `build.py`'s guard resolves and asserts before bridging (AC-13),
   the `rel:` channel draws only anchored sources with an explicit linkage and limit, and the
   adjacency caches key on the `pagerank` pass's code hash.
+- **Revision 8** answers r6: the bridge is invoked with cwd at the copy and `REFMATRIX_ROOT`
+  unset, W and N are registered, AC-13 has a positive leg, and AC-6's on-disk leg asserts the
+  rebuild only.
 {#history-revs}
 
 ## Appendix: the superseding memory's text {#appendix-memory}
