@@ -33,12 +33,12 @@ Next id: **Q11**.
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
 | Q10 | 2026-11-13 | Non-human gate (10.4): with the gate, 62% of prompt-channel injections disappear, 0 labelled uses lost, but 10 explicit R12 uses (2 within minutes, 8 hours later) rode agent-message turns with no other delivery — the pre-registered rule says you decide. In lead sessions, agent reports ARE read by the main loop. | (a) delta-only on non-human turns: send only items not already held (keeps all 10, cuts the 57.5% already-held share), live A/B against the full gate; (b) full gate as specced; (c) gate task-notifications only, keep agent-message | open |
-| Q9 | 2026-11-13 | plan-10 task 10.4 silences scan-prompt and the per-prompt recall on non-human turns (agent messages, task notifications, bus). Should `rmx curator status` — the second command in the per-prompt hook, up to 500 B every prompt — also go silent on them? It needs the hook envelope plumbed into that command, so it would be a small follow-on to 10.4. | (a) yes, follow-on to 10.4; (b) no, keep it on every prompt | open |
 
 ### Answered {#answered}
 
 | id | asked | question | answer | acted |
 |---|---|---|---|---|
+| Q9 | 2026-11-13 | `rmx curator status` silent on non-human turns too? | a: yes, follow-on to 10.4 | sent to `arch-10r`: a 10.4 follow-on plumbs the envelope into `curator status` |
 | Q1 | 2026-11-13 | Verbatim user prompts in today's docs, before the push to the public repo | a: paraphrase before the push | today's docs paraphrased (see the commit) |
 | Q2 | 2026-11-13 | Remove the `CLAUDE.md` ignore line fleet-wide after bug-216 deploys? | a: fleet-wide after deploy | recorded in task-bug216 `#fleet`; done at deploy, announced |
 | Q3 | 2026-11-13 | Handhold experiment primary outcome: orientation cost after `/clear` or a new session? | b: both; same measure | one measure, two triggers (session start and `/clear`) |
