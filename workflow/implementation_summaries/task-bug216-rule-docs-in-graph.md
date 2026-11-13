@@ -290,6 +290,33 @@ delta case — the rebuild never materializes a row for a dead source); the CLI 
 daemon-down error (1); the CLI bypasses the verb (2); the verb drops counts (3); the prestage op
 leaves exclusions on stderr (2); the prestage CLI does not print them (2). {#red-rev6-proof}
 
+### R13 on the rebuild only (d9bu) + AC-17 (watcher / sync `base=`) {#red-rev6b}
+
+Lead correction: d9bu RETIRED the incremental replay (`apply_log_delta` / `_apply_event_body`;
+no caller in `src/`, 16.6 deletes it), so `tests/test_bug216_replay_fidelity.py` now replays
+through `rebuild_index_from_log` ONLY — the `[delta]` cases were removed, not xfailed, and the
+mutations "the delta path ignores them" and "the tombstone replay leaves pending rows" (which
+killed only the delta case) are gone. The rebuild never materializes a citer that did not
+survive its tombstone, so the purge case pins the outcome. {#red-rev6b-d9bu}
+
+RED at `fa71087`, clean clone (`red-rev6b-fa71087.log`): 11 failed, 3 passed.
+
+| test | line at `fa71087` |
+|---|---|
+| `test_ac14_a_replay_after_a_changed_doc_matches_the_catalog` | the rebuild differs: an extra v1 evidence row, both pending rows missing |
+| `test_ac14_a_pending_ref_binds_identically_after_replay` | the rebuild differs |
+| `test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay` | the rebuild differs: the survivor's pending row missing |
+| `test_ac14_guard_a_log_without_the_new_events_replays_as_before` | guard |
+| `test_ac17_a_project_below_an_ignored_ancestor_still_syncs[.hidden / build × watcher / sync / ingest-path]` | `assert 'docs/d.md' in set()` — nothing synced |
+| `…[.hidden-op-ingest-gmd / build-op-ingest-gmd]` | guard (`ingest-gmd` already passes `base=`) |
+| `test_ac17_watch_is_relevant_judges_paths_below_the_root[.hidden / build]` | `is_relevant(docs/d.md)` is False |
+
+Scratch reference (`ignore_reason` defaults `base` to `root`; R13 on the rebuild): 210 passed over
+every bug-216 file + workflow_ignore / watch / bug179 (`scratch-rev6b-ref-green.log`). Mutations,
+each failing (`scratch-rev6b-mut-*.log`): drop `base=` (8), no segment rules under a root (10),
+drop the clear event (2), drop the pending events (3), the rebuild ignores them (3).
+{#red-rev6b-proof}
+
 ### Satisfiability and mutations {#red-mutations}
 
 A scratch reference implementation (never committed; diffstat in

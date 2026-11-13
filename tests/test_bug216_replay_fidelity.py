@@ -1,5 +1,5 @@
-"""bug-216 R13 — every GMD-path write bug-216 adds is a facts.log event that BOTH replay paths
-apply.
+"""bug-216 R13 — every GMD-path write bug-216 adds is a facts.log event that the rebuild
+(`rebuild_index_from_log`, the ONE replay path) applies.
 
 Spec: workflow/plans/task-bug216-rule-docs-in-graph.md (#r13, #ac-14).
 
@@ -13,10 +13,15 @@ never recorded:
 Before bug-216 both sides held the evidence duplicates and matched. "Declared outside replay" was
 rejected for pending refs: a rebuild would silently lose knowledge on a memory path.
 
-The two replay paths:
-  rebuild   `Store.rebuild_index_from_log()` — collapses the log, then materializes;
-  delta     `Store.apply_log_delta(0)` — event by event through `_apply_event_body` (the daemon's
-            rotation refresh).
+The replay is `Store.rebuild_index_from_log()` ONLY. The incremental path (`apply_log_delta` ->
+`_apply_one_event` -> `_apply_event_body`) is RETIRED by decision d9bu
+(workflow/plan-review-2026-10-14.md, CONFIRMED under d9ck): no caller in `src/`, task 16.6 owns
+its deletion, and spec clauses that extend it are dropped. An earlier draft of this file also
+parametrized every case over that path; the cases were removed (not xfailed) — a test of dead
+code would only pin something 16.6 is about to delete. `purge_entity`'s pending delete is
+therefore pinned through the rebuild alone, where a citer that did not survive its tombstone is
+never materialized, so its pending rows have no source to land on.
+
 Each replay is a FRESH catalog under a short `/tmp` mkdtemp root holding a byte copy of the
 source store's facts.log. Rows are compared by NAMES (partition, kinds, names, file, line), as a
 multiset, so a duplicate is a difference.
@@ -124,22 +129,19 @@ def _snapshot(root: Path) -> dict:
         s.close()
 
 
-def _replay(e, how: str, log_bytes: "bytes | None" = None) -> dict:
-    """A FRESH catalog replayed from (a byte copy of) the source store's facts.log."""
+def _replay(e, log_bytes: "bytes | None" = None) -> dict:
+    """A FRESH catalog rebuilt from (a byte copy of) the source store's facts.log."""
     e["n"][0] += 1
-    # `.../<n>-<how>/proj/.refmatrix`: the default partition is the project dir's name, so the
+    # `.../<n>/proj/.refmatrix`: the default partition is the project dir's name, so the
     # replay's default partition is `proj`, as the source's is (legacy events carry none).
-    root = e["base"] / f"r{e['n'][0]}-{how}" / "proj" / ".refmatrix"
+    root = e["base"] / f"r{e['n'][0]}" / "proj" / ".refmatrix"
     root.mkdir(parents=True)
     s = Store(root)
     s.init()
     try:
         s.log_path.write_bytes(log_bytes if log_bytes is not None
                                else (e["root"] / "facts.log").read_bytes())
-        if how == "rebuild":
-            s.rebuild_index_from_log()
-        else:
-            s.apply_log_delta(0)
+        s.rebuild_index_from_log()
     finally:
         s.close()
     return _snapshot(root)
@@ -179,31 +181,28 @@ def _v1_then_v2(e) -> dict:
 # ---------------------------------------------------------------- AC-14
 
 
-@pytest.mark.parametrize("how", ["rebuild", "delta"])
-def test_ac14_a_replay_after_a_changed_doc_matches_the_catalog(env, how):
+def test_ac14_a_replay_after_a_changed_doc_matches_the_catalog(env):
     """v1 then v2 of a doc with an existing and a missing `rel:` target: the replay holds the
     catalog's evidence rows (no v1 leftovers, no duplicates) and its pending rows."""
     want = _v1_then_v2(env)
-    got = _replay(env, how)
-    assert got == want, f"{how} replay differs from the catalog:\n{_diff(want, got)}"
+    got = _replay(env)
+    assert got == want, f"the rebuild differs from the catalog:\n{_diff(want, got)}"
 
 
-@pytest.mark.parametrize("how", ["rebuild", "delta"])
-def test_ac14_a_pending_ref_binds_identically_after_replay(env, how):
+def test_ac14_a_pending_ref_binds_identically_after_replay(env):
     """Then the missing target is ingested: the pending ref binds (edge + evidence, row gone) in
-    the catalog, and the replay holds exactly the same."""
+    the catalog, and the rebuild holds exactly the same."""
     _v1_then_v2(env)
     _ingest(env, [_write(env, "docs/c.md", C_MD)])
     want = _snapshot(env["root"])
     assert [k[4] for k in want["pending"]] == ["d-doc"], dict(want["pending"])
     assert any(k[0] == "depends-on" and k[3] == "doc" and k[4] == "c-doc"
                for k in want["rel_links"]), dict(want["rel_links"])
-    got = _replay(env, how)
-    assert got == want, f"{how} replay differs from the catalog:\n{_diff(want, got)}"
+    got = _replay(env)
+    assert got == want, f"the rebuild differs from the catalog:\n{_diff(want, got)}"
 
 
-@pytest.mark.parametrize("how", ["rebuild", "delta"])
-def test_ac14_guard_a_log_without_the_new_events_replays_as_before(env, how):
+def test_ac14_guard_a_log_without_the_new_events_replays_as_before(env):
     """GUARD: a log written before R13 (only the legacy ops) still replays, materializing one
     evidence row per `evidence` event as it always did."""
     _v1_then_v2(env)
@@ -211,7 +210,7 @@ def test_ac14_guard_a_log_without_the_new_events_replays_as_before(env, how):
               if ln.strip()]
     legacy = [ev for ev in events if ev.get("op") in LEGACY_OPS]
     data = ("\n".join(json.dumps(ev, sort_keys=True) for ev in legacy) + "\n").encode()
-    got = _replay(env, how, data)
+    got = _replay(env, data)
     n_ev = sum(1 for ev in legacy if ev.get("op") == "evidence")
     assert sum(got["evidence"].values()) == n_ev, (sum(got["evidence"].values()), n_ev)
     assert not got["pending"], "a legacy log carries no pending rows"
@@ -220,12 +219,12 @@ def test_ac14_guard_a_log_without_the_new_events_replays_as_before(env, how):
 A2_MD = _gmd("a2", "Other citer.\n\n## Cite {#cite}\n\nText.\n\nrel: depends-on -> [[d-doc]]\n")
 
 
-@pytest.mark.parametrize("how", ["rebuild", "delta"])
-def test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay(env, how):
+def test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay(env):
     """R13 (lead, 2026-11-13, from green-216): `purge_entity` deletes the source's pending rows
-    without an event of its own; its `tombstone` event exists, and replaying it must clear them
-    too. Two citers with pending refs; one is purged. The replay holds the survivor's row and
-    NONE of the purged citer's — no row by file, and no row left pointing at a dead source."""
+    without an event of its own; its `tombstone` event exists, and the rebuild must honour it for
+    pending rows too. Two citers with pending refs; one is purged. The rebuild holds the
+    survivor's row and NONE of the purged citer's — no row by file, and no row left pointing at a
+    dead source."""
     a = _write(env, "docs/a.md", A_V1)
     a2 = _write(env, "docs/a2.md", A2_MD)
     _ingest(env, [_write(env, "docs/b.md", B_MD)])
@@ -240,6 +239,6 @@ def test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay(env, how):
     assert [(k[2], k[4]) for k in want["pending"]] == [("a2#cite", "d-doc")], (
         f"precondition: only the survivor's pending row in the catalog: {dict(want['pending'])}")
     assert want["orphan_pending"] == 0
-    got = _replay(env, how)
+    got = _replay(env)
     assert not [k for k in got["pending"] if k[6] == str(a)], dict(got["pending"])
-    assert got == want, f"{how} replay differs from the catalog:\n{_diff(want, got)}"
+    assert got == want, f"the rebuild differs from the catalog:\n{_diff(want, got)}"
