@@ -218,10 +218,11 @@ beside this plan's result. They are recorded; nothing here reads them as a band.
   (`C` at weight 0), the store-scoped `draw(session_id, *, root, now=None)`, and the default
   `A+dedupe` outside a period. Plan-28 owns the period's values, the user-gated start, arm B's
   push-off, the scorer and the deletion
-  ([[task-28.1-session-arms-and-push-switch#ownership]]). 10.2's outcome follows L27. 10.2's
-  per-prompt dedupe read goes through `arms.session_cell`, so the factor is fixed for the
-  session (28.1 R2; a request to spec-t3b). 10.2 R7 still calls arm C "opt-in"; under P-10 it
-  is "paired leg only" (a request to spec-t3b, r1 #m7).
+  ([[task-28.1-session-arms-and-push-switch#ownership]]). 10.2's outcome follows L27. 10.2 R7
+  also builds the session cell fixed at SessionStart (one draw, `stm/<session>.arm.json`,
+  `arms.session_cell`), and its verb and scan-prompt read only that (spec-t3b `151c81e`); 28.1
+  R2 extends the file's fields. 10.2 R7 says C runs only on the paired leg (spec-t3b
+  `46b21fa`, r1 #m7).
 - **25.1 R8 (unchanged; r1 #m1).** "Never empty" holds on every call that packs. In cell `B`,
   SessionStart and PreCompact still pack; the per-prompt hooks do not pack.
 - **19.6 `cited_in_answer`.** 28.3 implements 19.6's clause once, and 19.6's `score_readback.py`

@@ -49,7 +49,7 @@ This task also settles three things the r1 review found:
 |---|---|
 | `src/refmatrix/arms.py` created, with: the period record shape (`id`, `salt`, `start`, `end`, `scope` as project slugs, `cells` with weights); the ONE cell enum (`A+dedupe`, `A+full`, `B`, `C`; `C` at weight 0, never drawn); `draw(session_id, *, root, now=None)`; the default `A+dedupe` outside every active period; the SessionStart `session_arm` row; the dedupe factor read from the cell | 10.2 R7 (built before the experiment, L20; it ships with no active period) |
 | the plan-28 session-leg record's values (salt, weights per P-1, scope = refmatrix + cliquedb, start, end) | 28.4 freezes them; 28.5 commits them at the user's go |
-| the session cell fixed at SessionStart (`stm/<session>.arm.json`, `arms.session_cell`) | this task (R2) |
+| the session cell fixed at SessionStart: the single draw at the SessionStart hook's time, `stm/<session>.arm.json` with `{cell, period, t}` (temp-file + replace), and `arms.session_cell` (a missing file gives `A+dedupe`; an unreadable one gives `A+dedupe` plus one stderr line); the verb and scan-prompt read only `session_cell` | 10.2 R7 creates it (spec-t3b `151c81e`); 28.1 R2 extends the file's fields |
 | the paired-run override (`arms.paired_override`: cell, run id, as-of) and the as-of memory filter | this task (R3, R4) |
 | `arms.push_on` and arm B's push-off in the two per-prompt hooks | this task (R5) |
 | `session_arm` on every per-prompt row; `arm_period`, `arm_source` and `arm_run` on the SessionStart row | this task (R2, R6) |
@@ -62,7 +62,7 @@ This task also settles three things the r1 review found:
 | # | decision | reason |
 |---|---|---|
 | a1 | ONE arm table, `arms.SESSION_ARMS` (10.2's). It holds ONE plan-28 record, for the session leg only | L20: the experiment's draw IS 10.2's. The paired leg is not drawn (a6) |
-| a2 | The cell is drawn ONCE, at SessionStart, with `now` = the hook's time, and recorded in `stm/<session>.arm.json`. Every later read in the session uses that file through `arms.session_cell` | r1 #m2: a draw per prompt against the wall clock flips a session that straddles `start` or `end` |
+| a2 | (built by 10.2 R7; used here) The cell is drawn ONCE, at SessionStart, with `now` = the hook's time, and recorded in `stm/<session>.arm.json`. Every later read in the session uses that file through `arms.session_cell` | r1 #m2: a draw per prompt against the wall clock flips a session that straddles `start` or `end` |
 | a3 | ONE predicate, `arms.push_on(session_id, *, root) -> bool`, is false only when the session's cell is `B`. Both per-prompt hooks call it BEFORE retrieval | one decision point, so the two hooks cannot disagree; no retrieval in B, so outcome (5) measures B's real cost |
 | a4 | B suppresses the per-prompt payloads only. SessionStart recall and PreCompact recall still run their `--pack` in B, and recall-state, `rmx context`, interactive and MCP recall, and `memory get` behave as in A | the arms table: B keeps boundary and pull (r1 #m1 corrected the earlier "the pack is not called in B") |
 | a5 | Cell `C` is never drawn. It exists for 28.2's paired runs, which set it through the runner's bare profile | 10.2 R7; P-10 |
@@ -77,23 +77,28 @@ This task also settles three things the r1 review found:
    salt, start and end from 28.4's frozen file. Scope is matched on the slug, which is the
    root's basename (10.2's shape). So before the start, 28.5 R2 lists every registered store
    whose slug matches and confirms that only the two intended roots exist (r1 #m9). {#r1}
-2. **R2 The cell is fixed at SessionStart.** The SessionStart focus hook computes the cell once
-   and writes `stm/<session>.arm.json`, `{cell, period, source, run, t}`. Its `source` is
-   `paired` when `arms.paired_override()` is set (then `period` is null and `run` is the run
-   id), and `draw` otherwise (`draw(session_id, root=…, now=t)`). The hook writes the file and
-   10.2's `session_arm` row, which this task extends with `arm_period`, `arm_source` and
-   `arm_run`.
+2. **R2 The session cell: 10.2 builds it, and this task extends it.** 10.2 R7 (spec-t3b
+   `151c81e`) builds the following:
+   - the SessionStart focus hook calls `arms.draw` ONCE, with `now` = the hook's time;
+   - it writes `stm/<session>.arm.json` as `{cell, period, t}` (temp-file + replace), plus
+     the `session_arm` row;
+   - `arms.session_cell(session_id, *, root)` reads that file: a missing file gives
+     `A+dedupe`, and an unreadable one gives `A+dedupe` plus one stderr line;
+   - the verb and scan-prompt read only `session_cell`, never `draw`.
 
-   `arms.session_cell(session_id, *, root) -> str` reads the file:
-   - no file: `A+dedupe`, because the session began outside any period;
-   - an unreadable file: `A+dedupe`, plus one `rmx: arm state: …` stderr line and `arm_error` on
-     the row. The analysis excludes such sessions, counted per cell.
+   This task extends it in four ways:
+   - **Two file fields.** The file gains `source` and `run`. `source` is `paired` when
+     `arms.paired_override()` is set (then `cell` is the override's, `period` is null and
+     `run` is the run id); otherwise `source` is `draw`.
+   - **Three row fields.** The `session_arm` row gains `arm_period`, `arm_source` and
+     `arm_run`.
+   - **`arm_error`.** An unreadable file also sets `arm_error` on the row. The analysis
+     excludes such sessions, counted per cell.
+   - **`push_on` reads `session_cell`.**
 
-   A `/clear` that mints a new session id runs SessionStart again, and draws anew: in the
-   session leg that is a new unit, and in the paired leg the override gives the same cell and
-   the same `run`. 10.2's per-prompt dedupe read uses `arms.session_cell` too, so the dedupe
-   factor cannot flip midway either. That is a request to 10.2's owner; until it is folded
-   there, this line amends 10.2 R7. {#r2}
+   A `/clear` that mints a new session id runs SessionStart again and draws anew. In the
+   session leg that is a new unit; in the paired leg the override gives the same cell and the
+   same `run`. {#r2}
 3. **R3 The paired-run override.** `arms.paired_override() -> PairedRun | None` reads
    `RMX_HANDHOLD_CELL`, `RMX_HANDHOLD_RUN` and `RMX_HANDHOLD_AS_OF`. It is the only code that
    reads them. A cell outside `{A+dedupe, B}`, a run id that does not match
@@ -122,7 +127,7 @@ This task also settles three things the r1 review found:
    `session_arm`, read through `arms.session_cell`. `rmx telemetry --context` and the hook-cost
    report split per channel by cell. {#r6}
 7. **R7 Deletion.** 10.2's deferral row (`arms.py` is deleted after the experiment's period) is
-   widened by this task to cover `push_on`, `session_cell`, the arm file, `paired_override`, the
+   widened by this task to cover `push_on`, `session_cell` and the arm file (10.2's), `paired_override`, the
    three env names and `as_of_admit`, with the plan-28 period's end date. If the charter decision
    keeps an arm, that decision amends the row. {#r7}
 
@@ -207,7 +212,7 @@ the mutation that must fail it (r1 #m3). {#acceptance-lead}
 
 | file | change |
 |---|---|
-| `src/refmatrix/arms.py` (created by 10.2) | `session_cell`, the arm file, `paired_override`, `as_of_admit`, `push_on`; the plan-28 record (inert until 28.5) |
+| `src/refmatrix/arms.py` (created by 10.2, with `session_cell` and the arm file) | the arm file's `source` and `run` fields, `paired_override`, `as_of_admit`, `push_on`; the plan-28 record (inert until 28.5) |
 | `src/refmatrix/cli.py` (`scan-prompt`, `_memory_recall_impl` stdin-json path, `focus hook --event session-start`) | the arm file at SessionStart; `push_on` before retrieval; the suppressed row; the SessionStart row fields |
 | the one memory-row read site (named before GREEN, R4) | `as_of_admit` |
 | `src/refmatrix/telemetry.py` | `session_arm`, `suppressed`, `arm_error`, `as_of_excluded` row fields; the per-cell split |
@@ -237,6 +242,6 @@ the mutation that must fail it (r1 #m3). {#acceptance-lead}
 | s1 the global store leaks later memories to A and B, not C | the as-of filter on every read path, both scopes, set by the runner (lead) | a7, [[#r4]], [[#ac-7]] |
 | s2 a paired record cannot be scoped to clone roots, is inert before 28.2 AC-6, and may lose the pin at `/clear` | no paired record; the runner sets the cell by env, which survives `/clear`; records serve the session leg only (lead) | a6, [[#r3]], [[#ac-6]] |
 | m1 "in cell B the pack is not called" is false | corrected: SessionStart and PreCompact still pack; the edge to 25.1 R8 is now `related-to`, not `amends` | a4, [[#r5]], [[#ac-3]] |
-| m2 a session can flip cell midway | the cell is fixed at SessionStart in the arm file; `push_on` and 10.2's dedupe read go through `session_cell` | a2, [[#r2]], [[#ac-5]], [[#ac-4]] |
+| m2 a session can flip cell midway | the cell is fixed at SessionStart in the arm file, which 10.2 R7 creates (`151c81e`) and this task extends; `push_on` and 10.2's dedupe read go through `session_cell` | a2, [[#r2]], [[#ownership]], [[#ac-5]], [[#ac-4]] |
 | m3 ACs without a named mutation | every AC names one | [[#acceptance]] |
 | m9 the scope is a basename slug | 28.5 R2 checks that only the two intended roots carry those slugs | [[#r1]] |
