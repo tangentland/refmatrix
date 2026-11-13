@@ -26,18 +26,19 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session 37b7498f (2026-11-13) {#session-37b7498f}
 
-Next id: **Q8**.
+Next id: **Q9**.
 
 ### Open {#open-37b7498f}
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q8 | 2026-11-13 | Q1 follow-up (ch-bsd bsd-pop-r2 N0): option a named viascope's rule, which keeps `workflow/` and save-states out at INGEST (`.refmatrix_ignore`). The lead then recorded a narrower reading (ingested, but excluded from co-mention weighting) without your confirmation. Which did you mean? | b: ingest-excluded (viascope's rule as written): `workflow/` and save-states never enter the store's graph; still reachable by grep floor, files, and `rmx memory recall`/`session recall` for save-states; `rmx context` stops finding plans/specs/bsd reports · a: ingested but excluded from co-mention / concept-weight derivation (`rmx context` keeps finding them by name, anchor and `rel:`); needs new derive code (G22) | open |
+| Q1 | 2026-11-13 | Which content may enter a project's concept graph? (X2 in [[plan-review-2026-11-13#x2]]: memories-in vs `feedback_operational_content_not_in_graph`) | ASSUMED (interpreted; open until Q8 is answered): a — memories IN, correctly classified; save-states and `workflow/` OUT (viascope's rule, fleet-wide) (user, 2026-11-13: "q1-a, q2-ship it, q-3-7 your recommendations") | lead's reading (stated to the user): OUT = excluded from co-mention / concept-weight derivation, not from ingest; `workflow/` docs stay addressable by name, anchor and `rel:` (corpus root per PROJECT_PROFILE); task stub to T6 |
 
 ### Answered {#answered-37b7498f}
 
 | id | asked | question | answer | acted |
 |---|---|---|---|---|
-| Q1 | 2026-11-13 | Which content may enter a project's concept graph? (X2 in [[plan-review-2026-11-13#x2]]: memories-in vs `feedback_operational_content_not_in_graph`) | a — memories IN, correctly classified; save-states and `workflow/` OUT of the concept graph fleet-wide (user, 2026-11-13: "q1-a, q2-ship it, q-3-7 your recommendations") | lead's reading (stated to the user): OUT = excluded from co-mention / concept-weight derivation, not from ingest; `workflow/` docs stay addressable by name, anchor and `rel:` (corpus root per PROJECT_PROFILE); task stub to T6 |
 | Q2 | 2026-11-13 | 25.1 rev 7 is built ahead of its recorded dependency on 26.7 and plan-27 (X3, [[plan-review-2026-11-13#x3]]); rev 8 is specced on the same branch, unbuilt. Ship rev 7 in 0.83.0? | "ship it" = b: rev 7 ships in 0.83.0; waiver recorded; 26.7 AC that 25.1's curated-hook lookup survives the regroup; rev 8 becomes task 25.1b on its own branch after 10.3 (user, 2026-11-13: "q1-a, q2-ship it, q-3-7 your recommendations") | green-251c told; rev-8 spec text moves off the 25.1 branch into task 25.1b before the merge |
 | Q3 | 2026-11-13 | P3 freezes context-delivery building, which narrows your d9bi (plan-19 leads Wave 1 as helix's substrate). Freeze what? (X4, [[plan-review-2026-11-13#x4]]) | a (lead's recommendation) (user, 2026-11-13: "q1-a, q2-ship it, q-3-7 your recommendations") | P3 narrowed: freeze 19.2, 19.6 phasing/cache + Table C, 21.3, 21.5 build only; d9bi narrowed, not reversed |
 | Q4 | 2026-11-13 | Your recorded order is 21.5 decision → handhold experiment; the pilot fired 21.5's lowest band (p_w 0.07 < 0.50), so rev 3.1 as written builds a matcher the labels reject (X5, [[plan-review-2026-11-13#x5]]). Which gates which? | a (lead's recommendation) (user, 2026-11-13: "q1-a, q2-ship it, q-3-7 your recommendations") | 21.5 rev 4 folds the pilot's seven matcher changes; 21.5 decision = no build until the handhold experiment reports; experiment runs after |
