@@ -225,11 +225,17 @@ verb-parity test covers both. No file is ever moved by hand, here or in plan-27.
     Create `src/refmatrix/memory_reroute.py` (queue and drain, R-220c) and
     `tests/test_ingest_gmd_memdir_route.py` (rev 10).
   - Modify `src/refmatrix/daemon.py`:
-    - the op/job boundaries (`Daemon._handle`'s OPS dispatch, `_run_detached_job`, the
-      `ingest_gmd_start` / `ingest_path_start` runners, the `flush_queue_async` runner thread,
-      the watcher flush iteration) open `memory_reroute.invocation()` and drain it in
-      `try/finally`. Job runners flip to `done` after their drain. No drain at a lock yield or
-      release (rev 11, x1);
+    - the op/job boundaries open `memory_reroute.invocation()` and drain it in `try/finally`,
+      each in its worker thread:
+      - the `run` callable that `Daemon._handle` submits to the pool (`daemon.py:3376`);
+        `_handle` itself opens none;
+      - ONE wrap in `_run_detached_job`, which `ingest_path_start` reaches, and which the
+        `ingest_gmd_start` runner reuses;
+      - the `flush_queue_async` runner thread;
+      - the watcher flush iteration.
+
+      Job runners flip to `done` after their drain. No drain at a lock yield or release (rev 11
+      x1; rev 12 y1, y5);
     - the internal same-store memory-job start that takes the parent job object, with its
       single-use guard exemption;
     - `_op_ingest_gmd_start` ignores parent/exempt keys;
@@ -560,16 +566,30 @@ m3, m6 and m7. {#bug220-why}
       `collect_gmd_files` drops nothing: prestage counts its `rerouted` files by `memdir_of`.
       Every caller of `ingest_gmd_paths` is covered by that one call.
     - **Per invocation, never global (x1).** The queue lives in a `contextvar`-scoped context
-      that the op or job boundary opens (`memory_reroute.invocation()`). `enqueue` with no open
-      invocation RAISES loudly, naming the caller. There is no silent process-wide queue, and an
-      unwrapped new route fails at runtime.
-    - **Daemon boundaries (x1).** Each boundary opens the invocation and drains it in
-      `try/finally`, in the thread where the work runs. `contextvars` do not cross into
-      `bg_pool` or new threads, so each threaded body opens its own. The boundaries are:
-      - the request handler that runs every `OPS` entry (`Daemon._handle` → `OPS.get(op)`,
-        `daemon.py:3332`), for synchronous ops;
-      - `_run_detached_job`, plus the `ingest_gmd_start` and `ingest_path_start` runners, for
-        detached jobs;
+      that the op or job boundary opens (`memory_reroute.invocation()`). There is no silent
+      process-wide queue.
+    - **The invocation check fires on every call (rev 12, y4, L63).** `ingest_gmd_paths`
+      (`as_memory=False`) checks for an open invocation on EVERY call, with or without memdir
+      files, and raises `memory_reroute.NoInvocationError` naming the caller. So an unwrapped
+      route fails on its first walk, not only once a memdir appears. `_ingest_path_inner`'s
+      fallback `except Exception:` (`ingest.py:1356` at `4b4b96e`) re-raises
+      `NoInvocationError` and never degrades it to doc registration. Direct library callers
+      (tests, eval, scripts) open `memory_reroute.invocation()` themselves.
+    - **Nested invocations are independent (rev 12, y5, L63).** An inner `invocation()` owns its
+      own queue and drains it at its own exit. The outer one drains only what was enqueued
+      outside any inner scope. Nothing an inner scope enqueued is drained twice or by the
+      outer.
+    - **Daemon boundaries (x1; rev 12 y1, y5, L63).** Each boundary opens the invocation and
+      drains it in `try/finally`, in the thread where the work runs. `ThreadPoolExecutor.submit`
+      does not copy `contextvars`, so each threaded body opens its own. The boundaries are:
+      - **synchronous ops:** the pool-submitted callable. `Daemon._handle` wraps `run` before
+        `target_pool.submit(run, self, args)` (`daemon.py:3376`), so the invocation opens and
+        drains INSIDE the worker where the handler runs. `_handle` itself, on the connection
+        thread, opens none. The drain result rides back on `run`'s return into the reply;
+      - **detached jobs:** ONE wrap in `_run_detached_job`, which covers every job submitted
+        through it, `ingest_path_start` included (its runner IS `_run_detached_job(…, lambda:
+        _op_ingest_path(d, args))`). The `ingest_gmd_start` runner, which submits its own
+        `_runner` to `bg_pool`, opens the same wrap. The wrap is one helper, named once;
       - the `flush_queue_async` runner thread (`rmxd-async-flush`, `daemon.py:3536`);
       - each flush iteration of the daemon's watcher loop (`Daemon._start_watcher`,
         `daemon.py:3095`).
@@ -589,12 +609,19 @@ m3, m6 and m7. {#bug220-why}
       branches), the standalone `rmx watch` flush, `rmx ingest`, `tldr-warm` / `graphify-warm`
       (`cli._ingest`) and `rmx ingest-gmd`. The standalone `rmx watch` loop may never exit, so,
       like the daemon watcher, it also opens and drains an invocation for each flush iteration.
-    - **The CLI reuses its own Store (x4).** A Store the invocation opens (`_store()` /
-      `_store_rw()`) is registered on the click context object. The drain's same-store leg uses
-      THAT Store. It never opens a second Store on the same root in one process (the bug-105
-      class). The invocation context closes the registered Store after the drain (the drain's
-      callback runs first). A CLI route that only talked to a daemon opened no Store and enqueued
-      nothing, so its queue is empty by construction.
+    - **Never two Stores open at once on one root (x4; rev 12 y3, L63).** That is the
+      invariant, the bug-105 class. A Store the invocation opens (`_store()` / `_store_rw()`) is
+      registered on the click context object.
+      - If that Store is still open at drain time, the drain's same-store leg REUSES it, and
+        does not close it (whoever closes it today still does).
+      - If it is already closed, the drain opens its own Store with `_store_rw()` and closes it
+        in the drain callback's `finally`. This is the `ingest-gmd` no-daemon route, where 26.2's
+        finally-close (`cli.py:10729`) has released DuckDB's lock, and that close stays. A
+        sequential reopen is legitimate.
+      - The drain never opens a Store while another is open on the same root.
+
+      A CLI route that only talked to a daemon opened no Store and enqueued nothing, so its queue
+      is empty by construction.
     - **The job reads `done` only after its own drain (rev 9 v1, kept).** A job's runner flips its
       record to `done` only after its boundary drain has written the result onto the record. The
       drain is synchronous and never waits on another store, so this stays bounded. A
@@ -811,10 +838,20 @@ m3, m6 and m7. {#bug220-why}
     - one that accepts, reads the request and never replies raises `ReplyTimeout`;
     - a refused connection does not;
     - a connect that times out does not.
-  - (p) Interleaving (rev 11, x1). Two ops X and Y each walk their own rerouted files through A's
-    daemon, with `RMX_INGEST_YIELD_EVERY=1` and a gate on X's second file, so Y runs inside X's
-    yield window. Then:
-    - each op's reply (and job record) carries exactly its own groups;
+  - (p) Interleaving (rev 11 x1; rev 12 y2, L63). The setup forces Y to run inside X's yield
+    window:
+    - X is an `ingest_gmd` op walking its own rerouted files, with `RMX_INGEST_YIELD_EVERY=1`.
+    - X's gate sits IN its yield window: a registered test-side patch of
+      `_partition_keeping_yield`'s sleep for X's thread, between the `release()` and the
+      re-`acquire()` (`daemon.py:3575-3579`). It never sits in per-file processing, which runs
+      under the lock. The gate has the Bounds deadline and releases in `finally`.
+    - Y is a `sync_files` op over its own (i)-shaped fixture. It is not an ingest job, so the
+      single-active guard never refuses it.
+
+    Then:
+    - Y's reply arrives while X's gate is still closed. This is asserted, so the interleave is
+      proven, not assumed;
+    - each op's reply (and X's job record) carries exactly its own groups;
     - each group is dispatched once;
     - an audit hook timestamps the starts: no same-store memory job starts before its parent's
       doc ingest has returned.
@@ -825,6 +862,15 @@ m3, m6 and m7. {#bug220-why}
     - Daemon: a synchronous op and a detached job that each raise after the enqueue. The
       boundary's `finally` dispatches the group, and the reply / job record carries both the
       error and the reroute result.
+  - (r) The invocation check (rev 12, y4, L63):
+    - `ingest_gmd_paths(as_memory=False)` called outside any invocation, over a batch with NO
+      memdir files, raises `NoInvocationError`;
+    - a planted `ingest_path` route with no invocation raises `NoInvocationError` out of
+      `_ingest_path_inner`, rather than the fallback degrading the batch to doc rows (0 `kind=doc`
+      rows written).
+  - (s) Nested invocations (rev 12, y5, L63). An inner `invocation()` inside an outer one, each
+    with its own rerouted group: the inner drain dispatches only the inner group, at the inner
+    exit, and the outer drain dispatches only the outer group. Each group is dispatched once.
   - (l) Prestage (n4): `rmx ingest-gmd --prestage <root>` over a root holding the (a) memdir
     reports `rerouted: 3` with the names on its result and its CLI line, dispatches nothing, and
     stages no `kind=doc` row for them.
@@ -861,8 +907,17 @@ m3, m6 and m7. {#bug220-why}
     - draining only on success kills (q) (rev 11, x2);
     - a global process-wide queue, or a silent no-op `enqueue` without an invocation, kills
       (n)'s must-fail fixture and (p) (rev 11, x1, x3);
-    - opening a second Store in the CLI drain kills (q)'s CLI leg, through a guard in the test
-      that counts Store opens per root (rev 11, x4);
+    - the CLI drain opening a Store while the command's Store is still open kills (q)'s CLI leg.
+      A test guard counts CONCURRENT open Stores per root, and fails above 1. The `ingest-gmd`
+      no-daemon run, where 26.2 has already closed the Store, passes it with one sequential
+      reopen (rev 11 x4; rev 12 y3);
+    - opening the invocation in `_handle` instead of inside the submitted `run` makes every daemon
+      row of (n) raise `NoInvocationError` (rev 12, y1);
+    - a global queue that still requires an open invocation kills (p): Y's drain takes X's groups
+      (rev 12, y2);
+    - checking the invocation only when there are groups kills (r)'s first leg; the fallback
+      swallowing `NoInvocationError` kills (r)'s second (rev 12, y4);
+    - joining an inner invocation to the outer one kills (s) (rev 12, y5);
     - skipping the drain on CLI exit (a result-callback drain) kills (n)'s CLI rows, the
       no-daemon runs of (a) and (g), and (q) (rev 10 w1; rev 11 x2);
     - dropping dispatch from `_op_flush_queue_async` (its runner thread opens no invocation)
@@ -963,14 +1018,14 @@ This table is not a dispatcher list. Every route below is covered by the queue a
 
 | context | route | reaches `ingest_gmd_paths` via | drained at |
 |---|---|---|---|
-| daemon | `sync_files`, `sync_since` | `sync._sync_paths` (`sync.py:308`) | the OPS handler's `finally` |
+| daemon | `sync_files`, `sync_since` | `sync._sync_paths` (`sync.py:308`) | the pool-submitted `run` wrap's `finally` |
 | daemon | the daemon's own watcher (`Daemon._start_watcher` → `sync_files`, `daemon.py:3095`) | `_sync_paths` | each flush iteration's `finally` |
-| daemon | `flush_queue` | `syncmod.flush_queue` → `_sync_paths` | the OPS handler's `finally` |
+| daemon | `flush_queue` | `syncmod.flush_queue` → `_sync_paths` | the pool-submitted `run` wrap's `finally` |
 | daemon | `flush_queue_async` (the Stop/SubagentStop hook route; runner thread `rmxd-async-flush`, `daemon.py:3536`) | `syncmod.flush_queue` → `_sync_paths` | the runner thread's `finally` |
-| daemon | `ingest_path` | `_ingest_path_inner` (`ingest.py:1354`) | the OPS handler's `finally` |
+| daemon | `ingest_path` | `_ingest_path_inner` (`ingest.py:1354`) | the pool-submitted `run` wrap's `finally` |
 | daemon | `ingest_path_start` (its runner IS `_op_ingest_path` under `_run_detached_job`, `daemon.py:3950`) | `_ingest_path_inner` | `_run_detached_job`'s `finally` |
-| daemon | `ingest_gmd` | `_run_ingest_gmd_body` | the OPS handler's `finally` |
-| daemon | `ingest_gmd_start` | `_run_ingest_gmd_body` on `bg_pool` | the runner's `finally` |
+| daemon | `ingest_gmd` | `_run_ingest_gmd_body` | the pool-submitted `run` wrap's `finally` |
+| daemon | `ingest_gmd_start` | `_run_ingest_gmd_body` on `bg_pool` | the runner's `finally`, through the same wrap `_run_detached_job` uses |
 | CLI in-process | `_sync_in_process`: the `sync_since`, `flush_queue` and `sync_files` branches (`cli.py:8763-8808`) | `_sync_paths` | root `ctx.call_on_close` |
 | CLI in-process | standalone `rmx watch` (`watch.run_watcher` → `sync_files`) | `_sync_paths` | root `ctx.call_on_close`, plus each flush iteration if the watch loop is long-lived (it opens its own invocation per flush) |
 | CLI in-process | `rmx ingest`, `tldr-warm`, `graphify-warm` (shared `cli._ingest`, `cli.py:510-525`) | `ingest_path` | root `ctx.call_on_close` |
@@ -1012,3 +1067,19 @@ rel: derives-from -> [[bsd-spec-t2-r5-e05f3a1]]
 | x4 (the CLI same-store leg had no Store, or would open a second one) | The drain reuses the invocation's registered Store, and never opens a second Store on one root in one process. A daemon-only CLI route has an empty queue | [[#r-220c]], [[#files]] |
 
 Also removed: a stale duplicate "library helper" bullet left over from rev 8.
+
+## Revision round 12 (2026-11-13): bsd-spec-t2 r6, lead rulings L63 {#rev-round-12}
+
+Answers [[bsd-spec-t2-r6-9589fa3]] (DIRTY 0B/2S/3M; X1-X3 closed) under the lead's rulings
+[[plan-review-2026-11-13#lead]] L63. Status is unchanged (`pending`).
+
+rel: derives-from -> [[bsd-spec-t2-r6-9589fa3]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | change (L63) | anchor |
+|---|---|---|
+| y1 (the named OPS boundary was the connection thread, not the pool worker) | The invocation opens and drains INSIDE the pool-submitted `run` (`daemon.py:3376`); `_handle` opens none. Mutation: opening it in `_handle` | [[#r-220c]], [[#files]], [[#reroute-routes]], [[#ac-220]] |
+| y2 ((p) could pass without interleaving) | X's gate sits in its yield window (`_partition_keeping_yield`, between release and re-acquire); Y is a `sync_files` op; Y's reply is asserted to arrive while the gate is closed. Mutation: a global queue | [[#ac-220]] |
+| y3 (Store reuse vs 26.2's close-in-finally; the guard counted opens) | The invariant is never two Stores open at once per root. Reuse the Store if it is still open, else open and close its own; 26.2's close stays; the guard counts concurrent opens | [[#r-220c]], [[#ac-220]] |
+| y4 (the fallback swallowed the no-invocation raise; the raise only fired with groups) | `NoInvocationError` on every call, groups or not; the fallback re-raises it. AC-220 (r) | [[#r-220c]], [[#ac-220]] |
+| y5 (nesting undefined) | Inner invocations are independent and drain their own groups at their own exit. `_run_detached_job` is the one detached-job wrap, which `ingest_path_start` reaches and the `ingest_gmd_start` runner reuses. AC-220 (s) | [[#r-220c]], [[#ac-220]] |
