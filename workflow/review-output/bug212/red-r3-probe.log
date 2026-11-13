@@ -1,0 +1,40 @@
+W: 117 passed in 78.02s (0:01:18)
+K5-connect-first: 18 failed, 99 passed in 78.63s (0:01:18)
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-files]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-since]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-files]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-since]
+    FAILED tests/test_bug212_r1_remedy.py::test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[slots]
+    FAILED tests/test_bug212_r1_remedy.py::test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[legacy]
+    FAILED tests/test_bug212_r2_red.py::test_an_in_process_sync_refuses_when_git_ls_files_fails
+    FAILED tests/test_bug212_r2_red.py::test_a_worktree_hook_of_one_repo_cannot_vouch_for_a_store_in_another
+    FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-ingest]
+    FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-memory-add]
+    FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-bridge]
+    FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-ingest]
+    FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-memory-add]
+    FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-bridge]
+    FAILED tests/test_bug212_r2_red.py::test_the_write_control_point_itself_refuses_a_git_tracked_catalog[slots]
+    FAILED tests/test_bug212_r2_red.py::test_the_write_control_point_itself_refuses_a_git_tracked_catalog[legacy]
+    FAILED tests/test_bug212_r2_red.py::test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open[pairs-show]
+    FAILED tests/test_bug212_r2_red.py::test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open[memory-get]
+K6-tracked-no-target: 17 failed, 100 passed in 77.15s (0:01:17)
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-files]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-since]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-files]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-since]
+    FAILED tests/test_bug212_r1_remedy.py::test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[slots]
+    FAILED tests/test_bug212_r1_remedy.py::test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[legacy]
+    FAILED tests/test_bug212_r2_red.py::test_a_worktree_hook_of_one_repo_cannot_vouch_for_a_store_in_another
+    FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-ingest]
+    FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-memory-add]
+    FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-bridge]
+    FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-ingest]
+    FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-memory-add]
+    FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-bridge]
+    FAILED tests/test_bug212_r2_red.py::test_the_write_control_point_itself_refuses_a_git_tracked_catalog[slots]
+    FAILED tests/test_bug212_r2_red.py::test_the_write_control_point_itself_refuses_a_git_tracked_catalog[legacy]
+    FAILED tests/test_bug212_r2_red.py::test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open[pairs-show]
+    FAILED tests/test_bug212_r2_red.py::test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open[memory-get]
+K8-lsfiles-no-target: 1 failed, 116 passed in 76.42s (0:01:16)
+    FAILED tests/test_bug212_r2_red.py::test_an_in_process_sync_refuses_when_git_ls_files_fails

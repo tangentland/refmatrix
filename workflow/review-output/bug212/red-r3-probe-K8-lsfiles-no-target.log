@@ -1,0 +1,39 @@
+..................................................................F..... [ 61%]
+.............................................                            [100%]
+=================================== FAILURES ===================================
+___________ test_an_in_process_sync_refuses_when_git_ls_files_fails ____________
+
+corrupt_index_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x11222ba50>
+
+    @pytest.mark.timeout(300)
+    def test_an_in_process_sync_refuses_when_git_ls_files_fails(corrupt_index_repo):
+        """E2, end to end: `rmx sync --files <f>`, no daemon. Whether git tracks the catalog is
+        unknown, so the in-process open is refused: ONE `Error:` line
+        `refusing to open <full catalog path> read-write in-process: ...` that names the failing
+        `ls-files` with its exit code and both remedies; exit non-zero, catalog bytes unchanged.
+        The full path is required because GREEN r2's mutation K8 (the target dropped from this
+        line) survived a basename check (r3 RED, lead 2026-11-13)."""
+        repo = corrupt_index_repo
+        f = repo.proj / "two.py"
+        before = _digests(repo.store)
+        r = subprocess.run([sys.executable, str(_entry(repo.base)), "sync", "--files", str(f)],
+                           cwd=str(repo.proj), env=_base_env(), capture_output=True, text=True,
+                           timeout=240)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"`rmx sync` crashed on a failing ls-files\n{text}"
+        assert not changed, f"`rmx sync` wrote {changed} although git could not say whether it " \
+                            f"tracks them\n{text}"
+        assert r.returncode != 0, f"`rmx sync` exited 0 on a failing ls-files\n{text}"
+        errs = _errors(r.stderr)
+        assert len(errs) == 1, f"expected exactly one `Error:` line, got {errs}\n{text}"
+        low = errs[0].lower()
+        head = _refusal_head(repo.store / "catalog.duckdb")
+>       assert head in errs[0], f"the refusal does not start `{head}`: {errs[0]!r}"
+E       AssertionError: the refusal does not start `refusing to open /private/tmp/b212x-ijtxpq9p/proj/.refmatrix/catalog.duckdb read-write in-process:`: 'Error: refusing to open read-write in-process: cannot tell whether git tracks the catalog under /private/tmp/b212x-ijtxpq9p/proj/.refmatrix: git ls-files exited 128: error: bad signature 0x20746f6e fatal: index file corrupt; untrack the catalog (git rm --cached) if git tracks it, or start the daemon (rmx daemon start) so the write goes through it'
+E       assert 'refusing to open /private/tmp/b212x-ijtxpq9p/proj/.refmatrix/catalog.duckdb read-write in-process:' in 'Error: refusing to open read-write in-process: cannot tell whether git tracks the catalog under /private/tmp/b212x-ij...ck the catalog (git rm --cached) if git tracks it, or start the daemon (rmx daemon start) so the write goes through it'
+
+tests/test_bug212_r2_red.py:187: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r2_red.py::test_an_in_process_sync_refuses_when_git_ls_files_fails
+1 failed, 116 passed in 76.42s (0:01:16)

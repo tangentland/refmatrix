@@ -726,3 +726,53 @@ HEAD.
   writer-wide scope and the new wording. Not edited here.
 - Unchanged from r1: the daemon route still writes a tracked catalog (a1/a2, bug-214), the
   daemon-op cwd defaults (a7), and the SkipGate UNPINNED skip (m-4).
+
+## RED r3 (GREEN r2's K5/K6/K8, the tldr fake, the read path) {#red-r3}
+
+Test commit `3f84c59` (tests and mock registry only). The 3 bug-212 files plus
+`tests/test_sync_and_extras.py` at `ed36b6a`: **18 failed, 99 passed**
+(`bug212/red-r3-head.log`). Every E line is the wording: stderr carries the GREEN r2 line
+`refusing an in-process write to <path>`, and the new contract is
+`refusing to open <full target path> read-write in-process: ...` (lead ruling, 2026-11-13).
+
+rel: derives-from -> [[#green-r2-mutations]]
+rel: derives-from -> [[#green-r2-flags]]
+
+### What changed {#red-r3-changes}
+
+- `_refusal_head(target)` and `_refusal_lines(stderr, target: Path)`
+  (`tests/test_bug212_r1_remedy.py`) require the FULL target path inside the head. The basename
+  alone also appears in the tracked-names list, which is why K6 survived. Every refusal
+  assertion uses them: r1 sync x4, stale socket x2, E1, writers x6, and read x2. The E2 sync test
+  requires the head plus `ls-files exited` (K8). The direct `_store_rw()` test requires the
+  head.
+- K5. The direct `_store_rw()` test wraps `Store._connect` with a RECORDER that calls the real
+  method, and it requires no connect to this store's catalog before the refusal. New
+  mock-registry row: `internal-active (observer)`, a collaborator double, not a SUT double.
+- Read path (flag 5). Measured at `ed36b6a`: "no `catalog.read.duckdb`" alone does NOT reach
+  `_store_rw()`. `_replica_reader_path()` falls back to the INACTIVE slot or the legacy
+  `catalog.duckdb` and opens that file read-only. In `tracked_repo`'s two layouts, `pairs show`
+  exits 0 and `memory get` answers "no memory matching". The fall-through needs every reader
+  file absent. So the RED `test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open`
+  uses `slot_only_tracked_repo`: `active` = A, only `catalog.A.duckdb`, which is committed. It
+  runs `pairs show` and `memory get`: ONE refusal line, no "in-process write", bytes unchanged.
+  GUARD `test_a_read_on_a_tracked_store_with_a_reader_file_is_served_not_refused` (both layouts)
+  passes at `ed36b6a`.
+- `test_tldr_warm_invokes_binary_and_ingests`: the `subprocess.run` fake answers only the fake
+  tldr binary's argv and delegates every other argv to the real `subprocess.run`. `invoked`
+  records only tldr calls, and the test asserts exactly one. Its registry row is updated. It
+  passes at `ed36b6a`.
+
+### Satisfiability and mutation probe {#red-r3-probe}
+
+Driver `scratchpad/probe212r3.py` (not committed). It applies W (the lead's wording on both
+lines, as GREEN will), then W+K, over the 4 files. src is restored by `git checkout --` in its
+own subprocess after each run, src is checked clean, and `__pycache__` is cleared after the
+batch. Log: `bug212/red-r3-probe.log`.
+
+| run | result |
+|-----|--------|
+| W | 117 passed: the contract is satisfiable by a wording-only change |
+| W+K5 (`s._connect()` before the refusal) | 18 failed, incl. control point x2: `` `_store_rw()` connected to [...catalog.A.duckdb] BEFORE refusing `` |
+| W+K6 (tracked line drops the target) | 17 failed |
+| W+K8 (`ls-files` line drops the target) | 1 failed: the E2 sync test, `the refusal does not start ...` |
