@@ -100,8 +100,12 @@ clause, inside 19.6's scope. The r1 review found three problems, and this revisi
 7. **R7 Used, outcome (6) (L18, L27; r1 #s4, #s5).** {#r7}
    - **R12 explicit uses** come from the session's `used` events whose evidence is one of R12's
      three (`memory_get_by_name`, `context_by_name`, `focus_note`). They are attributed to the
-     delivering channel by `ref_query_id`, through ONE function, `attribute_explicit_use`. This
-     is the canonical implementation of 21.5 R6's rule, and 21.5 phase B imports it (r1 #m4).
+     delivering channel by `ref_query_id`, through ONE function, `attribute_explicit_use`. It is
+     the one implementation of 21.5 R6's rule, and it follows phase M's precedent (lead ruling
+     on r2-s3). It is defined here in `score.py` while plan-28 runs, because plan-28 runs before
+     21.5's phase B. When phase B builds, it MOVES the function into
+     `src/refmatrix/telemetry.py`, and `score.py` then imports it from `refmatrix.telemetry`.
+     `src/` never imports from `eval/`. There is one definition at every point in time.
    - **`cited_in_answer` is hosted here, lifted from 19.6, which is frozen (D-Q3), and kept to
      19.6's scope: delivered MEMORY items.** 19.6's clause
      ([[task-19.6-phased-context-and-topic-cache#ranges]]) reads, in part: "A delivered memory
@@ -135,10 +139,13 @@ clause, inside 19.6's scope. The r1 review found three problems, and this revisi
    scored results and 28.4's frozen file and returns every band reading. It is the only code
    that reads a band. {#r9}
    - **Primary:** `B` vs `C` on outcome (1) (P-2), with P-8's CI rule.
-   - **Push:** `A+dedupe` vs `B` on outcomes (2)-(4) only (P-11). "A is better on an outcome"
-     means the session-bootstrap 95% CI of the A − B difference excludes 0 in A's favour. If A is
-     better on none of (2)-(4) while A's outcome (5) cost is higher, the reading is `shrink`
-     (shrink ambient injection to a gated or pointer-only form). Outcome (6) is not an input.
+   - **Push:** `A+dedupe` vs `B` on outcomes (2)-(4) only (P-11). **A Holm correction across
+     the three outcomes is pre-registered (lead ruling on r2-m5).** Each outcome's bootstrap
+     p-value for the A − B difference is Holm-adjusted over the three. "A is better on an
+     outcome" means its Holm-adjusted test rejects at family-wise α 0.05 in A's favour, and the
+     report prints the matching Holm-adjusted (simultaneous) CIs. If A is better on none of
+     (2)-(4) while A's outcome (5) cost is higher, the reading is `shrink` (shrink ambient
+     injection to a gated or pointer-only form). Outcome (6) is not an input.
    - **Nested:** 10.2 R7's bands on outcome (7), `A+dedupe` vs `A+full`.
 
 ## Acceptance criteria {#acceptance}
@@ -204,11 +211,17 @@ by the real hooks in 23.0's sandbox. Every AC names its mutation. {#acceptance-l
 8. **AC-8 The push reading can fire (r1 #b1).** A synthetic scored set where `A+dedupe` is not
    better than `B` on (2), (3) or (4) (each CI includes 0), costs more on (5), and has 3× B's
    outcome (6): `readings.py` returns `shrink`. A second set where A is better on (3), with the
-   CI excluding 0: not `shrink`. **Mutation:** outcome (6) added to the push inputs; the first
-   set reads not-`shrink` and AC-8 fails. {#ac-8}
-9. **AC-9 Explicit attribution is one function.** An AST scan of `eval/` and `src/` finds exactly
-   one definition of the `ref_query_id` → delivering-channel attribution: `attribute_explicit_use`.
-   **Mutation:** an inline copy in `score.py`; the scan finds two. {#ac-9}
+   CI excluding 0: not `shrink`. A third set where A's unadjusted p-value on (3) is 0.03 and on
+   (2) and (4) is 0.5 (Holm-adjusted 0.09 on (3)): `shrink`. **Mutations:** outcome (6) added
+   to the push inputs, so the first set reads not-`shrink`; the Holm step removed, so the third
+   set reads not-`shrink` on its raw 0.03. Either fails AC-8. {#ac-8}
+9. **AC-9 Explicit attribution has one definition across `eval/` and `src/` (r2-s3).** An AST
+   scan of `eval/` and `src/` together finds exactly one definition of the `ref_query_id` →
+   delivering-channel attribution, `attribute_explicit_use`, wherever it lives: in `score.py`
+   before 21.5's phase B, and in `refmatrix/telemetry.py` after it, with `score.py` importing
+   it. The scan also finds no `import` of an `eval` module anywhere under `src/`.
+   **Mutations:** an inline copy left in `score.py` after the move, so the scan finds two; a
+   `src/` module importing from `eval/`, so the import check fails. {#ac-9}
 
 ## Files {#files}
 
@@ -243,3 +256,10 @@ by the real hooks in 23.0's sandbox. Every AC names its mutation. {#acceptance-l
 | m3 ACs without a named mutation | every AC names one | [[#acceptance]] |
 | m4 a dead clock branch; a second attribution implementation | the transcript clock is THE clock; `attribute_explicit_use` is canonical and 21.5 phase B imports it | [[#r3]], [[#r7]], [[#ac-9]] |
 | m5 the labellers are not named | blind labeller agents; the pilot's rubric for the gate; frozen rubrics for (3), (4) and the endpoint | [[#r6]] |
+
+## Revision r2 (2026-11-13, `bsd-spec-t3c` r2; lead rulings) {#rev-r2}
+
+| finding | disposition | where |
+|---|---|---|
+| r2-s3 `src/` told to import from `eval/` | `attribute_explicit_use` lives in `score.py` until 21.5 phase B MOVES it into `refmatrix/telemetry.py`; `score.py` then imports it; AC-9 holds one definition across `eval/` and `src/`, plus no `src` → `eval` import | [[#r7]], [[#ac-9]] |
+| r2-m5 "better on any" over three uncorrected CIs | Holm across outcomes (2)-(4), pre-registered; AC-8 adds a set where only the Holm step yields `shrink` | [[#r9]], [[#ac-8]] |

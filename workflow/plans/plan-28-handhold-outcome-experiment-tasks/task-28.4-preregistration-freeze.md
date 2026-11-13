@@ -56,7 +56,9 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
      ratios, a bootstrap 95% CI over tasks, pooled over both triggers, with per-trigger results
      reported), and the band table with P-8's CI rule;
    - the push reading: `A+dedupe` vs `B` on outcomes (2)-(4) only (P-11; r1 #b1). "Better"
-     means a session-bootstrap CI of the A − B difference that excludes 0 in A's favour. `shrink`
+     means that the session-bootstrap test of the A − B difference, Holm-adjusted across the
+     three outcomes, rejects at family-wise α 0.05 in A's favour; Holm-adjusted CIs are printed
+     (r2-m5). `shrink`
      fires when A is better on none of them while costing more on (5). Outcome (6) is read
      within the A cells only;
    - 10.2 R7's nested bands, copied verbatim with their source;
@@ -76,7 +78,7 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
    - **the pause (P-12; r1 #s8).** It is a user-gated step that sets the active record's `end`
      to now, by one commit and a deploy. Sessions in flight keep the cell their SessionStart
      recorded (28.1 R2). A deploy that touches `scan.py`, `recall_pack.py`, `hook_budget.py`,
-     context rendering, the hooks generator or `arms.py` lands ONLY while no record is active.
+     context rendering, the hooks generator or `arms.py` lands ONLY while no record is active. The record's own start, pause and end commits, which set its dates in `arms.py`, are exempt by name (r2-m3).
      Resuming means a NEW record (new id, new salt) committed at the user's go. Readings are
      stratified by record id, and each record's deploy sha is recorded;
    - the transcript cleanup period that Claude Code is configured with, read before the start
@@ -135,3 +137,10 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
 | b1 / s5 / s8 the push reading, the `cited_in_answer` gate and the pause rule | frozen as the lead ruled them (P-11, the gate, P-12) | [[#r2]] |
 | m3 ACs without a named mutation | AC-1 and AC-2 name one | [[#acceptance]] |
 | m5 / m11 the labellers and the limits | written into the file | [[#r2]] |
+
+## Revision r2 (2026-11-13, `bsd-spec-t3c` r2; lead rulings) {#rev-r2}
+
+| finding | disposition | where |
+|---|---|---|
+| r2-m3 | the record's own commits are exempt from the pause ban | [[#r2]] |
+| r2-m5 | the push reading's Holm correction is frozen here | [[#r2]] |

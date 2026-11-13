@@ -67,7 +67,7 @@ This task also settles three things the r1 review found:
 | a4 | B suppresses the per-prompt payloads only. SessionStart recall and PreCompact recall still run their `--pack` in B, and recall-state, `rmx context`, interactive and MCP recall, and `memory get` behave as in A | the arms table: B keeps boundary and pull (r1 #m1 corrected the earlier "the pack is not called in B") |
 | a5 | Cell `C` is never drawn. It exists for 28.2's paired runs, which set it through the runner's bare profile | 10.2 R7; P-10 |
 | a6 | **The paired leg sets its cell explicitly** (lead ruling on r1 #s2). The runner exports `RMX_HANDHOLD_CELL` (`A+dedupe` or `B`), `RMX_HANDHOLD_RUN` (its run id) and `RMX_HANDHOLD_AS_OF` (the task's start time) into the `claude` process, which passes them to every hook, the MCP server and every Bash call. `arms.paired_override()` is the ONE reader of the three. When set, it decides the cell and no period record is consulted | a clone root's slug is unknown when a record is committed, a record is inert until 28.5, and `/clear` may mint a new session id; an env value passed by the runner survives all three |
-| a7 | **The as-of filter** (lead ruling on r1 #s1). When `RMX_HANDHOLD_AS_OF` is set, every memory row that leaves the store on any read path, in both scopes, is admitted only if its `created` and `updated` are earlier than that time. A row missing either stamp is not admitted, and every refusal is counted | the global store holds rows written after the task started; `--scope both` would leak them to A and B but not to C, which would bias the primary B-vs-C contrast |
+| a7 | **The as-of filter is carried as an argument, never read from env by a store process** (lead rulings on r1 #s1 and r2-s1). Only the CLIENT process reads `RMX_HANDHOLD_AS_OF`, through `paired_override`: the hook, CLI or MCP process the `claude` session spawned. It passes `as_of` as an explicit argument on every recall, context and scan verb call. The project daemon's op and the hub's global read honour that argument and never read env. A row is admitted only if its `created` and `updated` are both earlier than `as_of`. A row missing either stamp is not admitted, and every refusal is counted | the global store holds rows written after the task started, and `--scope both` would leak them to A and B but not to C. The hub runs under launchd and the clone's daemon may predate the session, so neither process ever sees the session's env; only an argument reaches them |
 
 ## Requirements {#requirements}
 
@@ -100,19 +100,37 @@ This task also settles three things the r1 review found:
    session leg that is a new unit; in the paired leg the override gives the same cell and the
    same `run`. {#r2}
 3. **R3 The paired-run override.** `arms.paired_override() -> PairedRun | None` reads
-   `RMX_HANDHOLD_CELL`, `RMX_HANDHOLD_RUN` and `RMX_HANDHOLD_AS_OF`. It is the only code that
-   reads them. A cell outside `{A+dedupe, B}`, a run id that does not match
-   `^[a-z0-9-]{8,64}$`, or an unparseable time gives `arm_error` and one stderr line, and falls
-   back to `A+dedupe`. 28.2's runner reads the SessionStart row and aborts any run whose row
-   does not show the cell it set. {#r3}
-4. **R4 The as-of filter.** When a paired run's as-of is set, ONE admit function,
-   `arms.as_of_admit(meta, as_of) -> bool`, is applied at the point where memory rows leave the
-   store for EVERY read path, in both scopes: `memory recall` (hook and interactive, CLI and
-   MCP), `memory get`, recall-state's memory reads, and the memories that `context` attaches.
-   Before GREEN, the builder names that one site, read from the code at the 10.2-merged base, in
-   the implementation summary. `created` and `updated` come from the row's GMD metadata; a
-   save-state's come from its frontmatter. Refusals are counted `as_of_excluded` on the call's
-   row. {#r4}
+   `RMX_HANDHOLD_CELL`, `RMX_HANDHOLD_RUN` and `RMX_HANDHOLD_AS_OF`, in the client process
+   only. It is the only code that reads them. `PairedRun` has three fields, `cell`, `run` and
+   `as_of`, each of which may be absent: {#r3}
+   - **`RUN` + `AS_OF`, no `CELL` (arm C's exact env, r2-s1).** This is valid. `cell` is None,
+     so no cell is recorded and the per-prompt hooks are not reached anyway, because C has no
+     hooks. `as_of` is set, so the as-of filter is ON for every pull call (R4).
+   - **`CELL` + `RUN` + `AS_OF` (`A+dedupe`, `B`).** The cell comes from the env, and the filter
+     is on.
+   - **Invalid values.** A cell outside `{A+dedupe, B}`, a run id that does not match
+     `^[a-z0-9-]{8,64}$`, or an unparseable time each give `arm_error` and one stderr line. A
+     bad cell or run falls back to `A+dedupe`, and a bad as-of turns the filter on at the
+     earliest representable time, which admits nothing, so the error can never leak a row.
+
+   28.2's runner reads the SessionStart row and aborts any run whose row does not show the cell
+   it set, or (for C) shows any rmx hook row.
+4. **R4 The as-of filter, carried as an argument (r2-s1).** {#r4}
+   - **The client passes it.** The client side (the hook, CLI and MCP adapters, through the
+     verbs) reads `paired_override().as_of` and passes `as_of=` as an explicit argument on
+     every verb call that returns memory rows: `memory recall` (hook and interactive, CLI and
+     MCP), `memory get`, recall-state's memory reads, `context` (its attached memories) and
+     `scan-prompt`.
+   - **The store side honours it.** The daemon op and the hub's global read accept `as_of` in
+     their op arguments and apply ONE admit function, `arms.as_of_admit(meta, as_of) -> bool`,
+     where rows leave the store, in both scopes. Neither ever reads an environment variable.
+     With no `as_of` argument they admit every row, exactly as today.
+   - **Naming the sites.** Before GREEN, the builder names, from the code at the 10.2-merged
+     base, the verb arguments added and the one admit site per store process, in the
+     implementation summary.
+   - `created` and `updated` come from the row's GMD metadata; a save-state's come from its
+     frontmatter. Refusals are counted `as_of_excluded` and returned in the op's result, so the
+     client's row prints the count.
 5. **R5 Arm B's push-off switch.** {#r5}
    - `rmx scan-prompt` (the UserPromptSubmit hook) and `rmx memory recall --stdin-json` (the
      per-prompt recall hook) call `arms.push_on(session_id, root=…)` before any retrieval.
@@ -177,16 +195,19 @@ the mutation that must fail it (r1 #m3). {#acceptance-lead}
 
    **Mutation:** `push_on` draws with the wall clock; both sessions flip. {#ac-5}
 6. **AC-6 The paired override (r1 #s2).**
-   - With `RMX_HANDHOLD_CELL=B` and `RMX_HANDHOLD_RUN=r-0001` in the environment, under a root
-     that no record scopes, the session's arm file says `B`, source `paired`, run `r-0001`, and
+   - With `RMX_HANDHOLD_CELL=B` and `RMX_HANDHOLD_RUN=r-000001` in the environment, under a root
+     that no record scopes, the session's arm file says `B`, source `paired`, run `r-000001`, and
      the per-prompt hooks print nothing.
+   - **The run id's length bound (r2-s2).** The same env with the 6-character `r-0001` gives
+     `A+dedupe`, `arm_error` and one stderr line, and the per-prompt hooks print their payloads.
    - A second SessionStart under a new session id, the `/clear` case, records the same cell and
      run.
    - An invalid cell value gives `A+dedupe`, `arm_error` and one stderr line.
 
    **Mutations:** the override ignored, so the draw gives `A+dedupe`; the env read in a second
-   place (an AST scan finds exactly one reader of each of the three names, `paired_override`).
-   {#ac-6}
+   place (an AST scan finds exactly one reader of each of the three names, `paired_override`);
+   the length bound dropped from the run-id check, so `r-0001` is accepted and the second leg
+   fails. {#ac-6}
 7. **AC-7 The as-of filter on every read path (r1 #s1).**
    - The fixture holds project and global memories, one in each scope created or updated after
      the as-of time, and one with no `updated`.
@@ -195,8 +216,21 @@ the mutation that must fail it (r1 #m3). {#acceptance-lead}
      memories `rmx context` attaches. Each call's row counts `as_of_excluded`.
    - Without the env, all are returned.
 
-   **Mutations:** the filter on the project scope only, so the global row leaks; the filter
-   admitting rows with no stamp. {#ac-7}
+   - **Arm C's exact env (r2-s1).** With `RMX_HANDHOLD_RUN=r-000001` and `RMX_HANDHOLD_AS_OF` set
+     and NO `RMX_HANDHOLD_CELL`, the pull paths (`rmx context`, interactive and MCP recall,
+     `memory get`) return none of the three, and the global leg is served by a real throwaway
+     hub-style global store under the sandbox (23.0's global root) whose process was started
+     BEFORE the env was set. No arm file records a cell.
+   - **The store side never reads env.** An AST scan of the daemon op and the global-read code
+     finds no read of any `RMX_HANDHOLD_*` name.
+
+   **Mutations:**
+   - the filter on the project scope only, so the global row leaks;
+   - the filter admitting rows with no stamp;
+   - the daemon or global read taking `as_of` from env instead of the argument, so under C's
+     env the global row leaks (its process never saw the env) and the AST scan fails;
+   - `paired_override` returning None when `CELL` is unset, so C's filter is off and the C leg
+     leaks. {#ac-7}
 8. **AC-8 Rows and reports.**
    - The SessionStart row carries `session_arm`, `arm_period`, `arm_source` and `arm_run`.
    - Every per-prompt row carries `session_arm`.
@@ -215,7 +249,8 @@ the mutation that must fail it (r1 #m3). {#acceptance-lead}
 |---|---|
 | `src/refmatrix/arms.py` (created by 10.2, with `session_cell` and the arm file) | the arm file's `source` and `run` fields, `paired_override`, `as_of_admit`, `push_on`; the plan-28 record (inert until 28.5) |
 | `src/refmatrix/cli.py` (`scan-prompt`, `_memory_recall_impl` stdin-json path, `focus hook --event session-start`) | the `source` and `run` fields on 10.2's arm file at SessionStart; `push_on` before retrieval; the suppressed row; the SessionStart row fields |
-| the one memory-row read site (named before GREEN, R4) | `as_of_admit` |
+| `src/refmatrix/verbs.py` (the verbs that return memory rows) and the CLI / MCP adapters | the client side: read `paired_override().as_of` and pass `as_of=` on every such call (R4) |
+| the project daemon's memory op and the hub's global read (sites named before GREEN, R4) | the store side: accept `as_of` as an op argument and apply `as_of_admit`; return `as_of_excluded`; never read env |
 | `src/refmatrix/telemetry.py` | `session_arm`, `suppressed`, `arm_error`, `as_of_excluded` row fields; the per-cell split |
 | `workflow/deferral_registry.md` | 10.2's `arms.py` row widened (R7) |
 | `tests/test_task28_1_session_arms.py` (new) | AC-1 to AC-9 |
@@ -246,3 +281,10 @@ the mutation that must fail it (r1 #m3). {#acceptance-lead}
 | m2 a session can flip cell midway | the cell is fixed at SessionStart in the arm file, which 10.2 R7 creates (`151c81e`) and this task extends; `push_on` and 10.2's dedupe read go through `session_cell` | a2, [[#r2]], [[#ownership]], [[#ac-5]], [[#ac-4]] |
 | m3 ACs without a named mutation | every AC names one | [[#acceptance]] |
 | m9 the scope is a basename slug | 28.5 R2 checks that only the two intended roots carry those slugs | [[#r1]] |
+
+## Revision r2 (2026-11-13, `bsd-spec-t3c` r2 DIRTY 0B/3S/7M; lead rulings) {#rev-r2}
+
+| finding | disposition | where |
+|---|---|---|
+| r2-s1 the as-of env never reaches the hub or the clone daemon; C's partial env is undefined | the client reads the env and passes `as_of` as an explicit verb/op argument; the daemon op and the hub's global read honour the argument and never read env; `RUN` + `AS_OF` without `CELL` (arm C) keeps the filter on; AC-7 has a leg under C's exact env against a global store started before the env, with the mutation "store reads env instead of the argument" | a7, [[#r3]], [[#r4]], [[#ac-7]], [[#files]] |
+| r2-s2 AC-6's run id fails R3's own regex | AC-6 uses `r-000001`; a second leg asserts that the 6-character `r-0001` falls back with `arm_error`; the length-bound mutation | [[#ac-6]] |

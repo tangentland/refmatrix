@@ -62,7 +62,8 @@ decision (G18), not a goal step. {#why-body}
    - A weekly count of sessions per cell per store, of suppressed rows and of `arm_error`
      sessions, posted to the user.
    - **The pause (P-12; r1 #s8).** A deploy that touches a module the pause rule names lands
-     only while no record is active. To pause, the lead asks the user, and on the user's word
+     only while no record is active. The record's own start, pause and end commits (R2, this
+     pause, R4) are exempt by name (r2-m3). To pause, the lead asks the user, and on the user's word
      one commit sets the active record's `end` to now and is deployed. Sessions in flight keep
      their cell (28.1 R2). Resuming is a NEW record (new id, new salt) committed at the user's
      go. Every deploy sha and date in the period is recorded, with the record id that was active.
@@ -124,3 +125,9 @@ decision (G18), not a goal step. {#why-body}
 | s7 the session-leg archive ran only at the end, after early transcripts may be pruned | a daily incremental sweep; the cleanup period is checked at the start; `no_transcript` is counted per cell | [[#r2]], [[#r3]], [[#r5]] |
 | s8 the pause is undefined | a user-gated end-now commit; sessions keep their cell; resuming is a new record; readings by record | [[#r3]] |
 | m9 the scope is a basename slug | the start lists the matching stores | [[#r2]] |
+
+## Revision r2 (2026-11-13, `bsd-spec-t3c` r2; lead rulings) {#rev-r2}
+
+| finding | disposition | where |
+|---|---|---|
+| r2-m3 | the record's own start, pause and end commits are exempt from the pause ban | [[#r3]] |

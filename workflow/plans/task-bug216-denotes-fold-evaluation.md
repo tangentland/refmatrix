@@ -94,15 +94,13 @@ agent actually made visible, and does what it moves rank better or worse than wh
      prompt in each arm. The counts: `use_kept_both`, `use_lost_on` (delivered by OFF, not ON),
      `use_gained_on` (delivered by ON, not OFF), `use_lost_both`, and `use_item_missing` (the
      item no longer exists in the corpus; excluded from both arms).
-   - **M2 What moves, and is it used (lead ruling on r1 #s6; L18).** Over calls whose delivered
-     sets differ between arms, the USE rate of ON-only items against OFF-only items. An item
-     counts as used when, after that prompt in the original session:
-     - an R12 explicit use names it; or
-     - it is a memory item and an assistant message cites it, by 28.3's `cited_in_answer`
-       function ([[task-28.3-outcome-scorer#r7]]), when that function has passed 28.3's precision
-       gate.
-
-     Citations of non-memory items are printed as an extension with no weight. Next-touch
+   - **M2 What moves, and is it used (lead rulings on r1 #s6 and r2-m2; L18).** Over calls whose
+     delivered sets differ between arms, the USE rate of ON-only items against OFF-only items.
+     An item counts as used when, after that prompt in the original session, an R12 explicit
+     use names it. **That is the only banded leg.** 28.3's `cited_in_answer`
+     ([[task-28.3-outcome-scorer#r7]]) is added REPORT-ONLY, for memory items and as an
+     extension for the rest, because 28.3's precision gate is read at plan-28's end, after this
+     task runs. It never enters the band. Next-touch
      proximity, the R12 pilot's refuted method, is not used. The difference's 95% CI comes
      from a bootstrap over sessions. M2 is `underpowered` (it reads no band) when the differing
      calls hold fewer than 10 used items in the two arms together.
@@ -217,3 +215,10 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 | s6 M2 bands on next-touch proximity, the refuted method | M2 counts R12 explicit uses plus gated `cited_in_answer` on memory items (L18); proximity is dropped; M2 has an `underpowered` floor | [[#r3]], [[#r4]] |
 | m6 an edge to 21.4's re-score (L51; t3a's 21.4 O-b) | `rel: related-to` to 21.4; this task's own bands stand, and 21.4's frozen harness re-scores the fold later as a note that gates nothing | header edges, [[#r4]] |
 | m6 the derive verb; how OFF removes `denotes`; the rerank limit; harm disabling the fold when FOLD-OFF could not run | names `rmx derive denotes` / `rmx_derive_denotes`; e1 removal on the throwaway copy, with e1b (no watcher, no sync) and R0's count; `RMX_RERANK=0` stated as a limit; an unattributed harm goes to the user, and nothing is disabled automatically | header, e1, e1b, e3, [[#r0]], [[#r4]], [[#ac-1]] |
+
+## Revision r2 (2026-11-13, `bsd-spec-t3c` r2; lead rulings) {#rev-r2}
+
+| finding | disposition | where |
+|---|---|---|
+| r2-m2 M2 waits on a gate that is read after this task runs | M2 bands on R12 explicit uses only; `cited_in_answer` is report-only | [[#r3]] |
+| r2-m4 the ADR-0004 line says "the architect" | it says "spec-t3c (spec wave G30)" | [[refmatrix/adr-0004-unified-location-space-index#d-2026-11-13-denotes]] |

@@ -751,9 +751,11 @@ rel: derives-from -> [[plan-review-2026-11-13#d-q3]]
    among the window's delivered events), and credits that event's unit. It is not counted under
    its own `channel` field, which is `context` for `context_by_name`. A `ref_query_id` with no
    delivered event in the window is counted `explicit_ref_unresolved`. The rule's ONE
-   implementation is `attribute_explicit_use` in plan-28's scorer
-   ([[task-28.3-outcome-scorer#r7]]), built first because plan-28 runs before phase B. Phase B
-   imports it and does not re-implement it (r1 #m4). {#r6}
+   implementation is `attribute_explicit_use`, built first in plan-28's scorer
+   ([[task-28.3-outcome-scorer#r7]]) because plan-28 runs before phase B. Phase B MOVES it into
+   `src/refmatrix/telemetry.py` (phase M's precedent, lead ruling on r2-s3), and the scorer then
+   imports it from `refmatrix.telemetry`. `src/` never imports from `eval/`, and there is one
+   definition across both (28.3 AC-9). {#r6}
 7. **R7: a control (m-4).** {#r7}
    - The same matcher, kernel and ordering run over **control units**: `retrieved` items with no
      `delivered` event for the same `query_id` and key (retrieved, then trimmed, so the agent
@@ -972,9 +974,16 @@ rel: derives-from -> [[plan-review-2026-11-13#d-q3]]
     - **Corpora and window (lead ruling on r1 #s3).** R14 runs on refmatrix and cliquedb, the
       pilot's two corpora. **The sample frame excludes every pair the R12 pilot labelled**,
       because the seven changes were fitted to those pairs. It does this by construction: only
-      sessions that START after the pilot's clone time (2026-11-13) enter the frame, up to phase
-      M's clone time. The pilot's working files are not needed, and nothing the pilot labelled
-      can be drawn. The pilot's own window is printed apart, unbanded, for comparison. cliquedb
+      sessions that START at or after an INSTANT enter the frame, up to phase M's clone time
+      (lead ruling on r2-m1). The instant is the pilot clone's recorded timestamp. The pilot
+      measurement records none, so the frame starts at the latest instant its clones can have
+      been taken: the commit time of the pilot measurement, `6725801`,
+      2026-11-13T11:35:59-08:00, because the clones were taken and deleted before that file was
+      written. If the pilot's working files turn out to hold an earlier clone timestamp,
+      `PREREG.md` may use it, recording the source. A later instant is never used. `PREREG.md`
+      records the instant used and its source. No pilot pair can be drawn, and the post-pilot
+      window may well yield `n_main < 50`; `PREREG.md` flags that as the likely, honest outcome
+      (the band table's first row). The pilot's own window is printed apart, unbanded, for comparison. cliquedb
       is a fleet repo: its
       store is copied read-only under the terms of AC-15's allowance ([[#ofu-cliquedb]]). The
       lead ruled that those terms cover phase M ([[#o-4]]), and the lead tells the user.
@@ -1410,7 +1419,7 @@ Each mutation must make at least one AC FAIL, not hang. Each restore runs as its
 | `src/refmatrix/context.py` | `_item` / `bundle_items` carry `item_path`; `ITEM_META_FIELDS` gains `path` and `source_path`; `annotate_items` fills `path` and `source_path` in its one catalog query (`context.py:1781`) (R2; r2 m-6) |
 | `src/refmatrix/store.py` | `Store.item_meta` selects `e.path` and the memory's `metadata->>'source_path'` (R2) |
 | `src/refmatrix/hooks.py` | `FOCUS_TOOL_MATCHER` constant, used by the generator; generated output byte-identical (D6) |
-| `src/refmatrix/telemetry.py` | `path` appended to `RECALL_EVENT_FIELDS_V1`; `item_path`, with relative `Entity.path` joined to the store root's parent, and `_item_fields` passing `path` (`telemetry.py:1386`) (R2; r2 m-6); `bash_segments` / `BashSegment` (D15); `tool_after_delivery` (R4; r2 m-1); `UsageIdentityBroken` (R9); `log_query` writes `t` (R13); `is_prompt_row`, `prompt_clock`, `PROMPT_PAIR_S` (R4); `tool_used_weight`, `TOOL_USED_PLATEAU_K = 3`, `TOOL_USED_HALF_LIFE_H = 2`, `TOOL_USED_SENSITIVITY_K = 4` (D18); `tool_touches`, `ToolTouches`, `ring_tool_call` (R3); `derive_tool_used(root, *, logical_root, global_root, since, until) -> ToolUsed` returning per-unit credit records (`unit`, `tool`, `match_on`, `ref_query_id`, `lag_turns`, `lag_s`, `prior_touch`, `origin`) plus the R9 counts, never written to any file; global legacy events resolved against `global_root`'s snapshot (R4-R7, R9, R10; r2 s-2); the `used by channel` block, the leg table, the reconciling line and the identity check in `agent_usage_report(..., logical_root=None)` (R8, R9, D11) |
+| `src/refmatrix/telemetry.py` | `path` appended to `RECALL_EVENT_FIELDS_V1`; `item_path`, with relative `Entity.path` joined to the store root's parent, and `_item_fields` passing `path` (`telemetry.py:1386`) (R2; r2 m-6); `bash_segments` / `BashSegment` (D15); `tool_after_delivery` (R4; r2 m-1); `UsageIdentityBroken` (R9); `log_query` writes `t` (R13); `is_prompt_row`, `prompt_clock`, `PROMPT_PAIR_S` (R4); `tool_used_weight`, `TOOL_USED_PLATEAU_K = 3`, `TOOL_USED_HALF_LIFE_H = 2`, `TOOL_USED_SENSITIVITY_K = 4` (D18); `tool_touches`, `ToolTouches`, `ring_tool_call` (R3); `derive_tool_used(root, *, logical_root, global_root, since, until) -> ToolUsed` returning per-unit credit records (`unit`, `tool`, `match_on`, `ref_query_id`, `lag_turns`, `lag_s`, `prior_touch`, `origin`) plus the R9 counts, never written to any file; global legacy events resolved against `global_root`'s snapshot (R4-R7, R9, R10; r2 s-2); the `used by channel` block, the leg table, the reconciling line and the identity check in `agent_usage_report(..., logical_root=None)` (R8, R9, D11); `attribute_explicit_use` MOVED here from `eval/production/handhold/score.py`, which then imports it (R6; r2-s3) |
 | `workflow/plans/plan-21-agent-context-usage-tasks/task-21.1-context-usage-telemetry.md` | R10's field table gains a `path` row (null allowed; absent before 21.5); a revision row naming this task (D3) |
 | `tests/test_task21_5_tool_used.py` | AC-1 to AC-19 except AC-15 (AC-20 is a real-data run, not a test) |
 | `workflow/implementation_summaries/task-21.5-tool-used-signal.md` | AC-15's run; AC-20's parity run; the deploy sha that opens R12's window |
@@ -1758,3 +1767,10 @@ The user is told and may overturn any of them, which would be a dated revision b
 | m10 the user's spot-check is unmarked as a user step | marked, under L45's catch-all | [[#r14-labels]] |
 | m8 plan-21's row says rev 3 | it says rev 4 | [[plan-21-agent-context-usage#tasks]] |
 | joint t3a/t3b review m8 (L56): "`cited_in_answer` stays 19.6's" | the owner is plan-28's 28.3 R7, lifted from the frozen 19.6; 21.1's twin line is the lead's (master-only) | [[#non-goals]], [[#od-4]] |
+
+### Revision r2 of rev 4 (2026-11-13, `bsd-spec-t3c` r2; lead rulings) {#rev-4-r2}
+
+| finding | disposition | where |
+|---|---|---|
+| r2-s3 phase B told to import from `eval/` | phase B MOVES `attribute_explicit_use` into `telemetry.py`; the scorer imports it from there | [[#r6]] |
+| r2-m1 the frame starts at a date, not an instant | it starts at the pilot clone's latest possible instant, the pilot measurement's commit `6725801` (2026-11-13T11:35:59-08:00), or an earlier recorded clone time; `n_main < 50` flagged as likely | [[#r14-window]] |

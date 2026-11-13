@@ -158,7 +158,8 @@ How the CI enters a reading is P-8.
 
 **Push (`A+dedupe` vs `B`, session leg; P-11, r1 #b1).** This compares the deployable default
 with no push, on outcomes (2)-(4) only. If `A+dedupe` is better than `B` on none of them (no
-session-bootstrap CI that excludes 0 in A's favour), while costing more on (5), the reading is
+Holm-adjusted test across the three rejecting in A's favour; pre-registered, r2-m5), while
+costing more on (5), the reading is
 `shrink`: shrink ambient injection to a gated or pointer-only form. Outcome (6) is not an input,
 because it counts uses of delivered items and B delivers nothing per prompt. 28.3 AC-8 holds a
 synthetic result set where `shrink` fires.
@@ -182,7 +183,8 @@ beside this plan's result. They are recorded; nothing here reads them as a band.
 3. **28.5 starts only on the user's go** (L45), with the period's salt and dates deployed.
 4. **During the period:** items 8-11 build and deploy. A deploy that touches `scan.py`,
    `recall_pack.py`, `hook_budget.py`, context rendering, the hooks generator or `arms.py`
-   lands only while no record is active. **Pausing (P-12, r1 #s8)** is a user-gated step: one
+   lands only while no record is active. The record's own start, pause and end commits, which
+   set its dates in `arms.py`, are exempt by name (r2-m3). **Pausing (P-12, r1 #s8)** is a user-gated step: one
    commit sets the active record's `end` to now, and it is deployed. Sessions in flight keep
    their cell. Resuming is a new record (new id, new salt) at the user's go. Readings are
    stratified by record id, and the end rule counts only active days. Every deploy sha in the
@@ -320,3 +322,12 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 | m1 "in B the pack is not called" | corrected; the edge to 25.1 R8 is `related-to` | [[#cross-plan]] |
 | m2, m3, m5, m9, m10, m11 | folded into 28.1-28.5 (session-fixed cell; a mutation per AC; blind labeller agents; the slug check; who re-specs after R0; the limits) | the task specs' `#rev-r1` |
 | m7 10.2 calls C "opt-in" | a request to spec-t3b | [[#cross-plan]] |
+
+## Revision r2 (2026-11-13, `bsd-spec-t3c` r2; lead rulings) {#rev-r2}
+
+| finding | disposition | where |
+|---|---|---|
+| r2-s1, r2-s2 | the as-of argument is carried client to store, never read from env by a store process; C's env keeps the filter on; the run-id format | [[task-28.1-session-arms-and-push-switch#rev-r2]], [[task-28.2-paired-reentry-runner#rev-r2]] |
+| r2-s3 | `attribute_explicit_use` moves into `src/` in 21.5 phase B | [[task-28.3-outcome-scorer#rev-r2]] |
+| r2-m3 | the record's own start, pause and end commits are exempt from the pause ban | [[#ordering]] |
+| r2-m5 | the push reading is Holm-adjusted across (2)-(4) | [[#bands]], [[task-28.3-outcome-scorer#r9]] |

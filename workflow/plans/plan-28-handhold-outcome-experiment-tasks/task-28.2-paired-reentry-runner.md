@@ -51,7 +51,11 @@ hazards shape it:
    synthetic task in a tmp git repo on littlebig, establish and record: {#r0}
    - (a) the three `RMX_HANDHOLD_*` values exported by the runner reach the hooks, the MCP
      server process and the agent's Bash calls in a real `claude` session, as the SessionStart
-     row's `arm_source: paired` and `arm_run` show;
+     row's `arm_source: paired` and `arm_run` show. **The as-of filter is also probed end to
+     end (r2-s1)** against the clone's real daemon and the hub's real global store, both started
+     before the session. A memory written to the global store after the probe's as-of is absent
+     from the paired run's recall, `memory get` and `rmx context`, in an A cell and under C's
+     env (`RUN` + `AS_OF`, no `CELL`). The same calls without the env return it;
    - (b) a `/clear` re-entry can be driven unattended (through a `screen` session that `stuff`s
      the text and then sends a separate `\r`, or headless) and fires SessionStart with source
      `clear`, while a fresh process fires `startup`;
@@ -85,7 +89,10 @@ hazards shape it:
    list's sha256 are frozen by 28.4. Calibration tasks are drawn apart and never reused. {#r1}
 3. **R2 One run.** For each task × paired cell (`A+dedupe`, `B`, `C`; P-6) × trigger: {#r2}
    - **The clone is cut at the start sha (r1 #s1).** A new clone at
-     `/Volumes/littlebig/<project>-handhold-<run-id>`, built so that the start sha is the only
+     `/Volumes/littlebig/<project>-handhold-<run-id>`, where `<run-id>` is the ONE run-id format,
+     `r-` plus six zero-padded digits (`r-000001`), which 28.1 R3's `^[a-z0-9-]{8,64}$` accepts
+     (r2-s2). The same id is exported as `RMX_HANDHOLD_RUN` and keys every archive path. The
+     clone is built so that the start sha is the only
      head and no later commit is reachable or even present:
      - clone, then reset ONE local branch to the start sha;
      - delete every other ref (remote-tracking refs, tags, notes, stash) and remove the remote;
@@ -213,3 +220,10 @@ R0's probe and AC-6 use the real `claude`. Every AC names its mutation. {#accept
 | s2 the paired cell cannot be pinned through a period record; `/clear` may change the id | the runner sets the cell by env (28.1 a6); R0 (g) probes id survival; records key on the run id | [[#r0]], [[#r2]], [[#ac-2]] |
 | m3 ACs without a named mutation | every AC names one | [[#acceptance]] |
 | m10 who re-specs after a "no" in R0 | the lead, by a dated revision and a ch-bsd round; the goal continues meanwhile | header |
+
+## Revision r2 (2026-11-13, `bsd-spec-t3c` r2; lead rulings) {#rev-r2}
+
+| finding | disposition | where |
+|---|---|---|
+| r2-s1 the as-of filter is never probed on the global leg | R0 (a) probes it end to end against the real daemon and global store, in an A cell and under C's env | [[#r0]] |
+| r2-s2 the run-id format is unnamed | `r-` plus six zero-padded digits, used by the clone path, the env and the archive | [[#r2]] |
