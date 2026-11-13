@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: plan-review-2026-11-13
-title: "Plan-of-plans re-evaluation and consolidation, 2026-11-13 (rev 2, provisional until ch-bsd)"
+title: "Plan-of-plans re-evaluation and consolidation, 2026-11-13 (rev 3, provisional until ch-bsd r2)"
 tags: [plan-review, decisions, consolidation, plan-of-plans, contradictions]
 metadata:
   node_type: review
@@ -85,8 +85,9 @@ it gets used. Three more are fallout from shipping plan-26 to the fleet. {#detou
   bug-216's `denotes` adds a ranking change that ADR-0004 gates (CD-3, CD-6, CD-7). {#f7}
 - **F8: the test instrument costs every round** (bug-215, 170, 168, 155, 127, 130, 190, 091;
   isolation rows 088/101 deferred by the user). {#f8}
-- **F9: no WIP limit, and 67 of 217 bug rows are not `fixed`.** Literal count: 60 `open`, 2
-  `recurring`, 2 "fix on branch", 1 `remedied`, 1 in progress, 1 suspected. The count is
+- **F9: no WIP limit, and 68 of 218 bug rows are not `fixed`** (bug-220 included). At rev 2:
+  60 `open`, 2 `recurring`, 2 "fix on branch", 1 `remedied`, 1 in progress, 1 suspected,
+  plus bug-220. The count is
   fragile: rows bug-183 and bug-209 hold unescaped `|` (Fx-4). {#f9}
 
 ## Contradictions found {#contradictions}
@@ -140,23 +141,23 @@ it gets used. Three more are fallout from shipping plan-26 to the fleet. {#detou
 | L4 | Cc-7 | bug-185's, 23.2's and POP's "plan-26 merged" gate narrows to "26.1 + 26.2 merged" (satisfied) |
 | L5 | CD-5 | bug-216 wins over 16.1: `corpus.is_relevant` delegates to `should_ignore`, and the hidden-dir prune keeps `!path` re-includes. Revised before T5 builds |
 | L6 | CD-6 | bug-219 ships only its "count joins a live edge" half (= bug-216 R8). Its delete half becomes census input for plan-22's dangling classes, and 22.1a widens to a dead entity side (7,752 rows) |
-| L7 | CD-7 | bug-216's ch-bsd round takes this up. Default: ship R7 (`denotes`) and R9's walker hop; hold R9's PageRank fold until a per-type evaluation (ADR-0004 `:297`). The handhold arm-A baseline is taken without the fold |
-| L8 | CD-3, Ce-7, Cc-3, Cc-4, Ca-5 | A bug's track = its owning task's track. T5: 081, 102, 167, 174, 180, 120. T6: 086, 107, 119, 121, 124, 218, 219. T4: 106, 186 (fixed by bug-185 R6), 097, 099, 136, 207. T3: 182 (measurement lane first), 164-166, 181, 100, 103, 104, 196. T2: 206 (single home), 208, 210, 213, 220 |
-| L9 | Ca-5, Ca-6 | bug-208 becomes a 26.5 precondition with its own AC (mirroring `#inherit-264-r1`); 26.5 or 26.8 names the restore of bug-202's two anchor sets, with a check |
+| L7 | CD-7; bsd-pop-r1 S1 | R7 and R9 (including the PageRank fold) ship as specced. The user accepted rev 3 and confirmed it in Q8 ("rev 3-4 stand"); AC-10 asserts the fold. CD-7's ADR-0004 gap is closed by a decision-log line in ADR-0004: `denotes` is a binding repair the user accepted, not an alias merge, and its fold is evaluated per type after deploy (rev-2 L7 held the fold, overriding Q8; withdrawn) |
+| L8 | CD-3, Ce-7, Cc-3, Cc-4, Ca-5 | A bug's track = its owning task's track. T1: 164, 181 (25.1 rev 7). T5: 081, 102, 167, 174, 180. T6: 086, 107, 119, 121, 124, 218, 219. T4: 106, 186 (fixed by bug-185 R6), 120 (16.6 R1f; the slice is in T4 per L2), 097, 099, 136, 207. T3: 182 (measurement lane first), 165, 166, 100, 103, 104, 196. T2: 206 (single home), 208, 210, 213, 220. Owner-less rows sit on their track's backlog line in `#queue` (bsd-pop-r1 S10) |
+| L9 | Ca-5, Ca-6 | bug-208 becomes a 26.5 precondition with its own AC (mirroring `#inherit-264-r1`). For bug-202's two anchor sets, 26.5 first checks whether the files still exist (bsd-pop-r1 M4: not found on disk). If they do, it restores them with a check; if not, the bug-202 row's restore note is closed with that reason |
 | L10 | Ca-7 | 26.9 runs in parallel with plan-27 after 26.8 |
 | L11 | Ca-4 | ADR-0005 Appendix A's MEMORY-RULES text carries the marker condition before 26.8 AC-8 (the user approves that text at AC-8) |
 | L12 | Ca-9 | put to the user at 26.8 AC-8 (same MEMORY-RULES window): forget flow step 5, `rmx memory forget <id>` |
 | L13 | Ca-8 | plan-27 refreshes `#survey`/`#facts` at 27.1's start; its Q3 is re-hosted on the marker-found install-hooks + 27.6 report, not plan-24 |
-| L14 | Ca-2, CB-10 | plan-19 records realized-by lines: 19.1 + 19.5 R1 by 25.1; 19.0 R1 by 25.3; 19.3 by 26.7; 19.4 by 26.6; 19.6 R8a by 10.3; 19.6 R5-composite by 10.6 |
-| L15 | CB-1, CB-2, CB-5 | the 25.1 rev-8 spec owns the "still in play" line (members: held / over budget); it amends R3, R8, R9, AC-9 and AC-14 by name with `rel: amends`; it gains `depends-on 10.3` (compaction marker); 10.2 is re-specced against rev 8 and its R8 parity figures re-derived |
+| L14 | Ca-2, CB-10; bsd-pop-r1 M3 | plan-19 records realized-by lines: 19.1 + 19.5 R1 + 19.4 AC-4's recall leg by 25.1; 19.0 R1 by 25.3; 19.3 by 26.7; 19.4 (the rest) by 26.6; 19.6 R8a by 10.3; 19.6 R5-composite by 10.6 |
+| L15 | CB-1, CB-2, CB-5; bsd-pop-r1 S5 | 25.1b (rev 8) owns the "still in play" line, whose members are either held or over budget. It amends R3, R8, R9, AC-9 and AC-14 by name with `rel: amends` and gains `depends-on 10.3` (the compaction marker). Its kind-label clause is restated so that 10.6 adds labels at every tier later, which means 25.1b does NOT depend on 10.6 (CB-5's restatement). 10.2 is re-specced against 25.1b and its R8 parity figures re-derived |
 | L16 | CB-6 | 25.3 R7's helix once-per-session resets at 10.3's compaction marker and keeps its state in `stm/<session>.emitted/` |
 | L17 | CB-7 | Table A runs on the composite (offline, cheap) before 10.6 R3. The exploration's `#vi-evidence` is revised against the 2026-11-13 numbers |
 | L18 | CB-9 | 19.6 Table C counts only R12 explicit uses + `cited_in_answer` until 21.5's matcher is revised |
 | L19 | CB-13 | 25.2's ack-only gate is scored against the labelled and R12 explicit uses that sank Q10's gate, before it is built |
-| L20 | CB-15 | the handhold exploration folds Q3 fully (a new-session trigger on the paired leg); arm B's push-off switch is specified (`arms.SESSION_ARMS`); the "switch already exists" premise is struck |
-| L21 | Cc-6 | 23.4 (read-only, cliquet copy) goes in the measurement lane before plan-17; not retired |
-| L22 | Cc-8, CD-9 | 22.4 and the two merge entry points become deferral rows under T6: "no host plan; plan-20 drafting". plan-20 is `drafting` (waiting on the user's 20.1 labels), not dormant |
-| L23 | Ce-12 | the plan-10 revival branch merges to master before any queue line cites 10.x; POP row 10 and W3-a are marked superseded by Q11/Q13 |
+| L20 | CB-12, CB-15; bsd-pop-r1 S8 | the handhold exploration folds Q3 fully (a new-session trigger on the paired leg). Arm B's push-off switch is specified (`arms.SESSION_ARMS`), and the "switch already exists" premise is struck. 10.2's live A/B is NESTED in the experiment as a declared factor (arm A splits into `A+dedupe` / `A+full`, 10.2 R7), so 10.2 is built before the experiment starts and its ≥ 14-day A/B is the experiment's run, not a serial step |
+| L21 | Cc-6; bsd-pop-r1 S3 | 23.4 (read-only, cliquet copy) runs before 17.1 is built, because its verdict is what reopens 17.1. Not retired |
+| L22 | Cc-8, CD-9; bsd-pop-r1 M5 | 22.4 and the two merge entry points become deferral rows under T6: "no host plan; plan-20 drafting" (d9j). plan-20 is `drafting` (waiting on the user's 20.1 labels), not dormant |
+| L23 | Ce-12; bsd-pop-r1 M6 | plan-10 rev 5 gets its ch-bsd spec review, then the revival branch merges to master (`#queue` item 4's head) before any 10.x builds. POP row 10 and W3-a are marked superseded by Q13 (names-only) and Q10 |
 | L24 | CD-8 | 25.4/25.5's premise ("every agent grep reaches `rmx grep`") is corrected, and so is `PROJECT_PROFILE.md:79` (the rewrite is off while `learn.off` exists) |
 | L25 | Ce-13, Ce-14, Cc-9, CD-9, Fx-1..5 | one bookkeeping commit: frontmatter and body status lines, POP rows, todo G2/G3/G5/G6, bug-081/bug-216 fix columns, the escaped `\|` in rows 183/209, plan-13 `drafting`/DORMANT, Q7/Q11 rows marked superseded |
 
@@ -164,9 +165,19 @@ it gets used. Three more are fallout from shipping plan-26 to the fleet. {#detou
 
 ### P1: one queue, tracks, POP rewritten {#p1}
 
-The rev-1 shape stands: one numbered queue (the only place order lives), a tracks table, and a
-closed/dormant list. Track membership follows L8. The POP rewrite lands after Q2-Q7 are answered,
-so it is written once. {#p1-body}
+One numbered queue (`#queue`) is the only place order lives, followed by the tracks table below and
+a closed/dormant list. Track membership follows L8. The POP rewrite lands once, after this review
+clears ch-bsd. {#p1-body}
+
+| track | holds |
+|---|---|
+| **T0 Instrument trust** (sweep) | bug-215, 170, 168, 155, 127, 130, 190, 091, the SkipGate UNPINNED row; plan gates W2-a (plan-6 r1), W2-b (plan-8 r5), W1-e (plan-15 clean suite), W2-c (plan-7 dense/fused re-run) per D-Q6; bug-088/101 stay deferred by the user |
+| **T1 Ship 0.83.0** | bug-212 r2, bug-216, 25.1 rev 7 (bug-164, bug-181) |
+| **T2 Memory organisation** | 26.5 (+ bug-208, 213, 220), 26.7, 26.6 R3, 26.8, 26.9, plan-27; D-Q1 belongs to T6; backlog 206, 210 |
+| **T3 Context delivery** | plan-10 (rev 5), 25.1b, 25.2, 25.3, 19.0 rest, 19.5 rest, 21.2, 21.4, 21.5 rev 4, handhold experiment; frozen per D-Q3: 19.2, 19.6 phasing/cache + Table C, 21.3, the 21.5 build; bug-182 measurement; backlog 100, 103, 104, 196 |
+| **T4 Write path** | bug-185 (+ 186), 23.1-23.5 (+ 099, 106, 136, 177), 16.6 Wave-1 slice (+ 120), plan-17, plan-18; backlog 097, 207 |
+| **T5 Grep surface** | 16.1-16.5, 16.4, 25.4/25.5 index leg (D-Q7); bugs 081, 102, 167, 174; backlog 180 |
+| **T6 Graph integrity** | bug-218, bug-219 (count half = bug-216 R8; census to plan-22), D-Q1 co-mention exclusion, plan-22 (22.1 after 16.1), 22.4 as deferral rows; bugs 086, 107; backlog 119, 121, 124 |
 
 ### P2: legacy plans close per their recorded gates (Q6) {#p2}
 
@@ -196,26 +207,41 @@ and 25.1-25.3 (CB-14). {#p4-body}
    to the backlog.
 4. **Any insertion into the queue is a user decision with a Q-id**, dated in the queue line.
 
-## Proposed queue (rev 2; items marked by a Q move with its answer) {#queue}
+## Queue (rev 3: the user's recorded order restored) {#queue}
 
-1. **T1 0.83.0:** bug-212 r2 + bug-216 (its ch-bsd takes L7 and the X1 pins; R4 applied with
-   the merge); 25.1 rev 7 per **Q2**; then the fleet `install-hooks`, with repos found by hook
-   marker.
-2. **T2:** 26.5 (+ bug-208 AC, bug-213, bug-220) ∥ T0 suite-trust sweep.
-3. **T2:** 26.7 → 26.6 R3 residual (L1).
-4. **T4:** bug-185 (freshness rev, L3) → 23.2 → 23.1 (bug-177) → 23.3 ∥ 23.5 → 16.6 Wave-1
-   slice → 17.1 (L2).
-5. **T3:** 10.3 ∥ 10.5 probe → 25.1 rev 8 (L15) → 10.6 (after L17) → 10.4 → 10.2; 25.2 (after
-   L19) → 25.3 (L16); bug-182 measurement.
-6. **T3:** 21.5 / handhold experiment, in the order set by **Q4**, then the charter decision; plan-24
-   per **Q5**.
-7. **T2:** 26.8 → 26.9 ∥ plan-27.
-8. **T6:** bug-218; plan-22 with bug-219 as census (L6).
-9. **T5:** 16.1 (L5) → 16.2 ∥ 16.3 → 16.5 → 16.4; 25.4/25.5 per **Q7**.
-10. **T4 tail:** 23.4 (measurement lane, L21) → 17.2 → 17.4; plan-18.
+bsd-pop-r1 B1/S2: rev 2 put T4 and the 25.x items ahead of plan-27, which reverses the user's order
+of 2026-11-08 (b) and 2026-11-09: plan-26 → plan-27 → plan-25 → bug-177 (23.1) / 23.3 / 23.5 /
+bug-185. D-Q2 waives that order for 25.1 rev 7 ONLY. Rev 3 restores it. Lines a user decision
+placed carry its id. {#queue-lead}
 
-Measurement lane, alongside: 23.4, the bug-182 per-leg timing, the 10.5 read-back probe, and
-L17's Table A on the composite.
+1. **T1 0.83.0:** bug-212 r2 + bug-216 (R7/R9 as specced, L7; its ch-bsd round takes the X1
+   pins; R4 applied with the merge) + 25.1 rev 7 (D-Q2). Then the fleet `install-hooks`, with
+   repos found by hook marker. **User-gated:** the install window and bug-216's live re-ingest.
+2. **T2:** 26.5 (+ bug-208 AC, bug-213, bug-220) ∥ T0 sweep.
+3. **T2:** 26.7 (+ the AC that 25.1's lookup survives, D-Q2) → 26.6 R3 residual (L1) → 26.8
+   (**user-gated:** AC-8 MEMORY-RULES apply, with L11/L12) → 26.9 ∥ plan-27 (L10; **user-gated:**
+   27.2a, cliquedb at its session boundary).
+4. **T3, plan-25 + plan-10:** plan-10 rev 5 ch-bsd spec review → revival branch merged (L23) →
+   10.3 ∥ 10.5 probe → 25.1b (L15; hosts plan-2's riders, D-Q6) → 10.6 (after L17's Table A) →
+   10.4 → 10.2 (built; its live A/B is item 7's nested factor, L20); 25.2 (after L19) → 25.3 (L16);
+   19.0 R0, R2-R7 (d9bi, D-Q3). bug-182 measurement in the lane.
+5. **T4:** bug-185 (freshness rev, L3; gate per L4) → 23.2 → 23.1 (bug-177) → 23.3 ∥ 23.5
+   (R9/AC-9 on the real hold, L1).
+6. **T3 pull side (D-Q3):** 19.5 rest → 21.2 → 21.4.
+7. **T3:** 21.5 rev 4 (D-Q4) → handhold experiment, arm A × {dedupe, full} nested (L20); it runs
+   ≥ 14 days in the background while items 8-11 build. **Goal stop:** the charter decision on
+   its result, then the T3 re-plan and the plan-24 re-plan (D-Q5).
+8. **T4:** 23.4 (L21) → 16.6 Wave-1 slice (L2) → 17.1 → 17.2 → 17.4.
+9. **T6:** bug-218; D-Q1 co-mention exclusion (**user-gated:** live purge via plan-22's path);
+   22.1a (widened, L6) → 22.2 (after 16.6 slice, 17.1, 23.1, 23.2) → 22.5 ∥ 22.6 → 22.3.
+10. **T5:** 16.1 (L5) → 16.2 ∥ 16.3 → 16.5 → 16.4; then 22.1 (needs 16.1, bsd-pop-r1 S4);
+    25.4/25.5 index leg (D-Q7).
+11. **T4 tail:** plan-18 (18.2, 18.3).
+
+**Backlog lines** (picked up at their track's slot, never inserted ahead of it): T2 206, 210; T3
+100, 103, 104, 196; T4 097, 207; T5 180; T6 119, 121, 124; plan-7 deferrals and todo G11 re-owned to
+T0 (W2-c) and T5 (`--like` selector) per D-Q6. **Measurement lane:** 23.4, bug-182 per-leg timing,
+the 10.5 read-back probe, L17's Table A, L19's 25.2 gate scoring.
 {#queue-body}
 
 ## User decisions, 2026-11-13 {#decisions}
@@ -271,32 +297,34 @@ L-row first; **new** = no spec yet; **review** = written but not through ch-bsd.
 | G5 | 2 | T0 suite-trust sweep | **new** | task spec: bug-215, 170, 168, 155, 127, 130, 190, 091 + the SkipGate UNPINNED row; plus the plan-gate remedies W2-a (plan-6 r1), W2-b (plan-8 r5), W1-e (plan-15 clean suite) as named sub-tasks (D-Q6) |
 | G6 | 3 | 26.7 | rev | AC: 25.1's curated-hook lookup survives the regroup (D-Q2) |
 | G7 | 3 | 26.6 R3 residual | ok | spec in 26.6 `#r3-residual` |
-| G8 | 4 | bug-185 | rev | freshness revision against post-bug-216 HEAD (L3); gate narrowed (L4) |
-| G9 | 4 | 23.2, 23.1, 23.3, 23.5 | rev | body status lines (Cc-9); `#merge-order` per L1; otherwise approved |
-| G10 | 4 | 16.6 Wave-1 slice, 17.1 | ok | approved; moved by L2 |
-| G11 | 5 | 10.3, 10.5 probe, 10.6, 10.4, 10.2 | review | plan-10 rev 5 is on its clone branch, never spec-reviewed; 10.2 re-spec against 25.1b (L15); L17 Table A before 10.6; branch merged to master (L23) |
-| G12 | 5 | 25.1b | **new** | task spec from rev 8's R12-R14/AC-16-18 + L15 amends + `depends-on 10.3` + plan-2 #s-2/#m-4 riders (D-Q6) |
-| G13 | 5 | 25.2, 25.3 | rev | 25.2: L19 scoring of its gate first (a measurement); 25.3: R7 reset on 10.3's marker (L16) |
-| G14 | 5 | bug-182 | **new** | measurement task (per-leg timing in `query.log`); measurement lane |
-| G15 | 2/T2 | bug-220 | **new** | spec: location-based classification (route-not-refuse); likely folded into 26.5 |
-| G16 | 6 | 21.5 rev 4 | rev | fold the pilot's seven matcher changes; decision row "no build until the experiment reports" (D-Q4) |
-| G17 | 6 | handhold outcome experiment | **new** | plan + task specs from the exploration (arms, outcomes, bands, the arm-B switch, Q3 fully folded per L20, 10.2's nested arm) |
-| G18 | 6 | charter decision, T3 re-plan, plan-24 re-plan | — | a USER gate: the goal stops here; cannot be pre-specced |
-| G19 | 7 | 26.8, 26.9, plan-27 | rev | 26.8: ADR-0005 Appendix A marker condition (L11), forget step for the user at AC-8 (L12), counts re-read; plan-27: survey refresh + Q3 re-host (L13) |
-| G20 | 8 | bug-218 | **new** | task spec (reinforcement reads edges reversed; currently "suspected") |
-| G21 | 8 | bug-219 count half + plan-22 | rev | bug-219 = bug-216 R8 (no new spec); 22.1a widened to a dead entity side (L6); plan-22 body status (CD-9); 22.4 deferral rows (L22) |
-| G22 | 8 | D-Q1 co-mention exclusion | **new** | spec: save-states + `workflow/` excluded from co-mention / concept-weight derivation fleet-wide; still addressable; live purge via plan-22's audited path |
-| G23 | 9 | 16.1-16.5, 16.4 | rev | 16.1 vs bug-216 (L5); plan-16 body status (CD-9) |
-| G24 | 9 | 25.4/25.5 | rev | shrink to the path-less index leg (D-Q7); premise corrected (L24) |
-| G25 | 10 | 23.4, 17.2, 17.4, plan-18 | rev | plan-17/18 body status lines (Cc-9); 18.2/18.3 PROVISIONAL marks cleared against the CONFIRMED rows |
-| G26 | — | bug-206, bug-210, plan-7 deferrals + G11 | backlog | explicit backlog rows with owners (Ca-5, D-Q6) |
+| G8 | 5 | bug-185 | rev | freshness revision against post-bug-216 HEAD (L3); gate narrowed (L4) |
+| G9 | 5 | 23.2, 23.1, 23.3, 23.5 | rev | body status lines (Cc-9); `#merge-order` per L1; otherwise approved |
+| G10 | 8 | 16.6 Wave-1 slice, 17.1 | ok | approved; moved by L2 |
+| G11 | 4 | 10.3, 10.5 probe, 10.6, 10.4, 10.2 | review | plan-10 rev 5 is on its clone branch, never spec-reviewed; 10.2 re-spec against 25.1b (L15); L17 Table A before 10.6; branch merged to master (L23) |
+| G12 | 4 | 25.1b | **new** | task spec from rev 8's R12-R14/AC-16-18 + L15 amends + `depends-on 10.3` + plan-2 #s-2/#m-4 riders (D-Q6) |
+| G13 | 4 | 25.2, 25.3 | rev | 25.2: L19 scoring of its gate first (a measurement); 25.3: R7 reset on 10.3's marker (L16) |
+| G14 | 4 | bug-182 | **new** | measurement task (per-leg timing in `query.log`); measurement lane |
+| G15 | 2 | bug-220 | **new** | spec: location-based classification (route-not-refuse); likely folded into 26.5 |
+| G16 | 7 | 21.5 rev 4 | rev | fold the pilot's seven matcher changes; decision row "no build until the experiment reports" (D-Q4) |
+| G17 | 7 | handhold outcome experiment | **new** | plan + task specs from the exploration (arms, outcomes, bands, the arm-B switch, Q3 fully folded per L20, 10.2's nested arm) |
+| G18 | 7 | charter decision, T3 re-plan, plan-24 re-plan | — | a USER gate: the goal stops here; cannot be pre-specced |
+| G19 | 3 | 26.8, 26.9, plan-27 | rev | 26.8: ADR-0005 Appendix A marker condition (L11), forget step for the user at AC-8 (L12), counts re-read; plan-27: survey refresh + Q3 re-host (L13) |
+| G20 | 9 | bug-218 | **new** | task spec (reinforcement reads edges reversed; currently "suspected") |
+| G21 | 9 | bug-219 count half + plan-22 | rev | bug-219 = bug-216 R8 (no new spec); 22.1a widened to a dead entity side (L6); plan-22 body status (CD-9); 22.4 deferral rows (L22) |
+| G22 | 9 | D-Q1 co-mention exclusion | **new** | spec: save-states + `workflow/` excluded from co-mention / concept-weight derivation fleet-wide; still addressable; live purge via plan-22's audited path |
+| G23 | 10 | 16.1-16.5, 16.4 | rev | 16.1 vs bug-216 (L5); plan-16 body status (CD-9) |
+| G24 | 10 | 25.4/25.5 | rev | shrink to the path-less index leg (D-Q7); premise corrected (L24) |
+| G25 | 8, 11 | 23.4, 17.2, 17.4, plan-18 | rev | plan-17/18 body status lines (Cc-9); 18.2/18.3 PROVISIONAL marks cleared against the CONFIRMED rows |
+| G26 | backlog | bug-206, bug-210, plan-7 deferrals + G11 | backlog | explicit backlog rows with owners (Ca-5, D-Q6) |
 | G27 | — | bookkeeping | rev | L14 realized-by lines, L25 status sweep, POP rewrite (P1) |
+| G28 | 4, 6 | 19.0 R0/R2-R7, 19.5 rest, 21.2, 21.4 | rev | approved plans; each spec records what 25.1/25.3/26.6/26.7 already realize (L14) and drops plan-24 D1's hold (D-Q5); 21.2/21.4 re-read against bug-216's resolver |
 
-**Proposed goal horizon:** queue items 1-10, plus the T0 sweep. That includes 21.5 rev 4 and
-the handhold experiment's build and its time-boxed run, which goes on in parallel while later
-items build. The goal stops at G18 (the charter decision, taken on the experiment's result) and at every user-gated live step: 26.8 AC-8's MEMORY-RULES apply, 27.2a
-conversions, cliquedb at its session boundary, bug-216's live re-ingest, D-Q1's live purge, and
-the fleet `install-hooks` windows. {#goal-horizon}
+**Proposed goal horizon:** queue items 1-11 plus the T0 sweep, run in `#queue` order. The goal
+stops for the user at item 7's charter decision (G18), which is taken on the handhold experiment's
+result, and at every user-gated live step `#queue` marks: the fleet `install-hooks` windows,
+bug-216's live re-ingest, 26.8 AC-8's MEMORY-RULES apply, 27.2a, cliquedb at its session boundary,
+and D-Q1's live purge. Items 8-11 build while the experiment runs; any item that needs the
+charter's answer waits. {#goal-horizon}
 
 ## Questions {#questions}
 
