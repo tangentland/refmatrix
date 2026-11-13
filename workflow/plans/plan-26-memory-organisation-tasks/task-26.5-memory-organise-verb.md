@@ -248,6 +248,42 @@ verb-parity test covers both. No file is ever moved by hand, here or in plan-27.
   - Only if R-202a finds bug-202's files: `ingest-gmd --as-memory --force-rebridge <file>` on the
     single-file bridge ([[#r-202b]]); the live restore is 27.5's.
   - Create `workflow/review-output/26.5-bug202-existence.log` ([[#bug202-restore]]).
+  - **Wrap only, no assertion change (rev 13, z1, L64).** Each direct call site below gains one
+    `with memory_reroute.invocation():` and nothing else. The list was enumerated with `git grep`
+    at the bug-216 head `b556bf3` (`task-bug216-rule-docs-in-graph`). Re-run the grep at 26.5's
+    RED, because bug-216 may move again before it merges; any new direct caller joins the list.
+    - Flagless `ingest_gmd_paths(` calls:
+      - `tests/test_bug216_binding.py`, `test_bug216_rel_landing.py`,
+        `test_bug216_replay_fidelity.py`, `test_bug216_rev4.py`, `test_bug216_surfaces.py`;
+      - `tests/test_derive_history.py`, `test_derive_stamp.py`, `test_derive_surface.py`;
+      - `tests/test_memory_bridge.py`, `test_rank_modifiers.py`,
+        `test_bug111_repair_dead_concept_links.py` (its flagless calls only),
+        `test_ingest_gmd_root_rel_mirror.py`.
+
+      Calls whose `as_memory=True` sits on a continuation line are checked by hand and excluded.
+    - Direct `_op_ingest_gmd` / `_op_ingest_path` / `_op_sync_*` calls from the test thread:
+      - `tests/test_bug216_hidden_no_pollution.py` (the X1 pins), `test_bug216_rev4.py`,
+        `test_bug216_rule_docs_e2e.py`;
+      - `tests/test_ingest_partition_yield_race.py`, `test_memory_only_guard.py`.
+    - Direct `ingest_path(` callers:
+      - `tests/test_bug216_rule_docs_e2e.py`, `test_context_rerank_off_the_writer_lock.py`,
+        `test_derive_stamp.py`, `test_ingest_adr.py`, `test_ingest_graphify.py`,
+        `test_ingest_markdown.py`, `test_ingest_progress.py`, `test_memory_only_guard.py`;
+      - `tests/test_read_path_partition_and_budget.py`,
+        `test_rerank_degrades_are_surfaced.py`, `test_rerank_warning_routes.py`,
+        `test_sync_and_extras.py`, `test_verb_parity.py`.
+    - Direct `_sync_paths` / `sync_files` / `sync_since` / `flush_queue` callers:
+      - `tests/test_bug216_binding.py`, `test_bug216_rev4.py`, `test_bug216_rule_docs_e2e.py`,
+        `test_lance_drop_failures_loud.py`, `test_memory_only_guard.py`;
+      - `tests/test_sync_and_extras.py`, `test_sync_semantic_bulk.py`, `test_v2_features.py`.
+    - Eval harnesses, wrapped at their entry point:
+      - `eval/production/csn_code.py` (the production benchmark path; its corpus is code-only,
+        but it is wrapped so the boundary matches production);
+      - `eval/run_graphify_eval.py`;
+      - `eval/spike_hypertree/m6_placement_write.py`.
+    - `scripts/`: no direct caller at `b556bf3`.
+    - Editing bug-216's merged pin tests is named here as this task's change, and it is wrap only
+      (AC-220 (f)). It is not a change to bug-216's assertions.
 
 ## Test Strategy {#test-strategy}
 
@@ -573,8 +609,17 @@ m3, m6 and m7. {#bug220-why}
       files, and raises `memory_reroute.NoInvocationError` naming the caller. So an unwrapped
       route fails on its first walk, not only once a memdir appears. `_ingest_path_inner`'s
       fallback `except Exception:` (`ingest.py:1356` at `4b4b96e`) re-raises
-      `NoInvocationError` and never degrades it to doc registration. Direct library callers
-      (tests, eval, scripts) open `memory_reroute.invocation()` themselves.
+      `NoInvocationError` and never degrades it to doc registration.
+    - **Migration of direct callers (rev 13, z1, L64).** A direct library caller (a test, an eval
+      harness, a script) opens the invocation itself, with one explicit
+      `with memory_reroute.invocation():` at each direct call site. A small test helper that
+      returns that context manager is allowed.
+      - No autouse fixture and no `conftest.py` ever opens an invocation implicitly. That would
+        hand every in-thread call a boundary and mask the missing-boundary class that AC-220 (n)
+        and (r) exist to catch. AC-220 (t) is the guard.
+      - Eval harnesses wrap at their entry point, the same boundary the production path has (the
+        benchmark path IS the production path).
+      - The affected files are listed in [[#files]] as "wrap only, no assertion change".
     - **Nested invocations are independent (rev 12, y5, L63).** An inner `invocation()` owns its
       own queue and drains it at its own exit. The outer one drains only what was enqueued
       outside any inner scope. Nothing an inner scope enqueued is drained twice or by the
@@ -761,7 +806,9 @@ m3, m6 and m7. {#bug220-why}
     and only the memdir's files reroute.
   - (e) A store that holds a `kind=doc` twin from a HEAD-built doc walk: after the next walk there
     are 0 twins and one `kind=memory` row per file.
-  - (f) bug-216's X1 pins re-run green.
+  - (f) The bug-216 family, the X1 pins included, re-runs green with only the invocation wrap
+    added (rev 13, z1, L64). The diff to those files adds `with memory_reroute.invocation():`
+    lines and nothing else, and no assertion changes.
   - (g) Cross-store (T2-O1): `rmx ingest-gmd <B's memdir>` run from root A, with no
     `--as-memory`, A seeded with a HEAD-built twin, and B's daemon up. The result carries B's
     `job_id`. After that job completes, the memories are in B as `kind=memory`, in B's memory
@@ -845,8 +892,9 @@ m3, m6 and m7. {#bug220-why}
       `_partition_keeping_yield`'s sleep for X's thread, between the `release()` and the
       re-`acquire()` (`daemon.py:3575-3579`). It never sits in per-file processing, which runs
       under the lock. The gate has the Bounds deadline and releases in `finally`.
-    - Y is a `sync_files` op over its own (i)-shaped fixture. It is not an ingest job, so the
-      single-active guard never refuses it.
+    - Y is a `sync_files` op over its own (i)-shaped fixture, whose slug maps to store B (rev 13,
+      z2, L64). Y's group is a cross-store dispatch, so X's active ingest job cannot refuse it.
+      Y is not an ingest job, so the single-active guard never refuses Y itself.
 
     Then:
     - Y's reply arrives while X's gate is still closed. This is asserted, so the interleave is
@@ -862,6 +910,12 @@ m3, m6 and m7. {#bug220-why}
     - Daemon: a synchronous op and a detached job that each raise after the enqueue. The
       boundary's `finally` dispatches the group, and the reply / job record carries both the
       error and the reroute result.
+      - **The synchronous carrier (rev 13, z3, L64).** On an error, the `run` wrap attaches the
+        drain result to the raised exception (an attribute, e.g. `exc.reroute`) before
+        re-raising. `Daemon._handle`'s `except` (`daemon.py:3394-3395` at `4b4b96e`) copies it
+        into the `{"ok": False, …}` reply as `reroute`. The leg asserts that the error reply
+        carries `reroute` with the group's counts.
+      - The detached job writes it onto the job record, next to the error.
   - (r) The invocation check (rev 12, y4, L63):
     - `ingest_gmd_paths(as_memory=False)` called outside any invocation, over a batch with NO
       memdir files, raises `NoInvocationError`;
@@ -871,6 +925,12 @@ m3, m6 and m7. {#bug220-why}
   - (s) Nested invocations (rev 12, y5, L63). An inner `invocation()` inside an outer one, each
     with its own rerouted group: the inner drain dispatches only the inner group, at the inner
     exit, and the outer drain dispatches only the outer group. Each group is dispatched once.
+  - (t) No implicit invocation in test plumbing (rev 13, z1, L64). The test imports every
+    `conftest.py` under `tests/` and `eval/`, collects their fixtures, and fails if any autouse
+    fixture, or any fixture at all, enters `memory_reroute.invocation()`. It checks both by AST
+    scan for the call and by running each autouse fixture and asserting no invocation is open
+    afterwards. Must-fail proof: a planted conftest with an autouse fixture that opens one makes
+    the test fail ([[feedback_clean_corpus_hides_a_dead_gate]]).
   - (l) Prestage (n4): `rmx ingest-gmd --prestage <root>` over a root holding the (a) memdir
     reports `rerouted: 3` with the names on its result and its CLI line, dispatches nothing, and
     stages no `kind=doc` row for them.
@@ -918,6 +978,11 @@ m3, m6 and m7. {#bug220-why}
     - checking the invocation only when there are groups kills (r)'s first leg; the fallback
       swallowing `NoInvocationError` kills (r)'s second (rev 12, y4);
     - joining an inner invocation to the outer one kills (s) (rev 12, y5);
+    - an autouse conftest fixture that opens an invocation kills (t) (rev 13, z1);
+    - dropping the drain result from `_handle`'s error reply kills (q)'s synchronous daemon leg
+      (rev 13, z3);
+    - mapping Y's fixture to A kills (p)'s "dispatched once" assertion, because X's active job
+      refuses Y's same-store group (rev 13, z2);
     - skipping the drain on CLI exit (a result-callback drain) kills (n)'s CLI rows, the
       no-daemon runs of (a) and (g), and (q) (rev 10 w1; rev 11 x2);
     - dropping dispatch from `_op_flush_queue_async` (its runner thread opens no invocation)
@@ -1083,3 +1148,17 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 | y3 (Store reuse vs 26.2's close-in-finally; the guard counted opens) | The invariant is never two Stores open at once per root. Reuse the Store if it is still open, else open and close its own; 26.2's close stays; the guard counts concurrent opens | [[#r-220c]], [[#ac-220]] |
 | y4 (the fallback swallowed the no-invocation raise; the raise only fired with groups) | `NoInvocationError` on every call, groups or not; the fallback re-raises it. AC-220 (r) | [[#r-220c]], [[#ac-220]] |
 | y5 (nesting undefined) | Inner invocations are independent and drain their own groups at their own exit. `_run_detached_job` is the one detached-job wrap, which `ingest_path_start` reaches and the `ingest_gmd_start` runner reuses. AC-220 (s) | [[#r-220c]], [[#ac-220]] |
+
+## Revision round 13 (2026-11-14): bsd-spec-t2 r7, lead rulings L64 {#rev-round-13}
+
+Answers [[bsd-spec-t2-r7-41ebe1e]] (DIRTY 0B/1S/2M; Y1-Y5 closed) under the lead's rulings
+[[plan-review-2026-11-13#lead]] L64. Status is unchanged (`pending`).
+
+rel: derives-from -> [[bsd-spec-t2-r7-41ebe1e]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | change (L64) | anchor |
+|---|---|---|
+| z1 (every-call `NoInvocationError` with no migration rule) | Keep the every-call check. One explicit `with memory_reroute.invocation():` per direct call site, and never an autouse/conftest fixture. Every affected file (at bug-216 head `b556bf3`, re-grepped at RED) is listed as "wrap only, no assertion change"; eval harnesses wrap at their entry. AC-220 (f) reworded; new (t) guards against implicit invocations, with a must-fail fixture | [[#r-220c]], [[#files]], [[#ac-220]] |
+| z2 ((p)'s Y same-store group is refused while X's job runs) | Y's fixture maps to store B | [[#ac-220]] |
+| z3 (no carrier for the drain result on an error reply) | The `run` wrap attaches the result to the raised exception; `_handle`'s `except` (`daemon.py:3394-3395`) copies it into the `{"ok": False}` reply as `reroute`; (q) asserts it | [[#ac-220]] |
