@@ -235,6 +235,10 @@ values are synthetic. {#acceptance-lead}
 - Implementation summary at `workflow/implementation_summaries/task-10.4-non-human-prompt-gate.md`.
 - R5's measurement file written (before at RED, after at deploy).
 - Committed on branch `task-10.4-non-human-prompt-gate`; merged `--no-ff` to `master`.
+- **Install: user-gated.** R4's separate curator entry regenerates the hook config, so it reaches
+  live stores only through the user-gated `install-hooks` window that queue item 6 marks for
+  10.4, batched with 21.4's per C11 (plan-review G31). R5's "after" measurement starts only after
+  that window has run.
 
 ## Revision round 6 (2026-11-13, spec wave, spec-t3b) {#rev-round-6}
 
@@ -244,3 +248,8 @@ such a command, so 10.4 depends on 25.1b and AC-4 re-runs 25.1b's AC-16 enumerat
 10.4 builds after T4, between 10.6 and 10.2.
 
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+**bsd-spec-t3ab r1 folded (2026-11-13, m7).** The DoD names 10.4's user-gated install window
+(L45: gates come from the specs). {#rev-round-6-bsd}
+
+rel: derives-from -> [[bsd-spec-t3ab-ff1d453-369e0b5]]

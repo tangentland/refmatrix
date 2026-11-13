@@ -78,8 +78,11 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
    longer exists in the store copy is counted and left out of BOTH arms, and the count is
    reported. "Held" is tier-aware (lead ruling 2026-11-13, 10.2 h15,
    [[task-10.2-plan-10-injection-dedup#open-held-tier]]): an item is held only at the tier it was
-   shown and poorer ones. The replay applies that rule in its own code, and the line's bytes
-   include h16's `·held` marker. {#r1b}
+   shown and poorer ones. The replay applies that rule in its own code. The line is rendered by
+   25.1b's line renderer, built in queue item 4 before 10.5 runs. The replay passes held members
+   through the renderer's held slot (25.1b k2, which prints `·held`, 10.2 h16), so the line's
+   bytes are the real ones without 10.2 existing (bsd-spec-t3ab B1). The line sits last in the
+   payload (S2). {#r1b}
 2. **R2b The rule is unchanged.** v1/v2's pre-registered rule applies as written: every labelled
    use stays visible and at most 1 R12 explicit use is lost. "Visible" means rendered at any
    tier, or named on the line. An item only on the spill page is NOT visible. The run reports
@@ -89,9 +92,16 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
    reads PASSED (v3). If it fails, Part 1 reads FAILED (v3), 10.2 is not built, and the result goes
    to the user with an id in `workflow/open-questions.md`. That is the existing precondition
    gate ("10.2 starts only on 10.5's GO"), so no new rule is added. {#r3b}
-4. **R4b Order.** v3 runs in the measurement lane after 25.1b merges and before 10.2's RED. Its
-   result is appended to [[measurement-injection-already-held-2026-11-13]] as a dated `v3`
-   addendum, with counts only. {#r4b}
+4. **R4b Order and re-run.** v3 runs in the measurement lane after 25.1b merges and before
+   10.2's RED. Its result is appended to [[measurement-injection-already-held-2026-11-13]] as a
+   dated `v3` addendum, with counts only.
+
+   Q8 is decided as a: `workflow/` leaves at ingest (G22). v3 is therefore RE-RUN, on the same
+   code and windows re-read from the post-exclusion store, after G22's ingest exclusion deploys
+   ([[plan-10-injection-dedup#q8-b]]). The re-run's figures replace v3's as 10.2 R8's parity
+   target. If the re-run fails R2b's rule, Part 1 reads FAILED (v3, re-run): 10.2 is not built,
+   or if it has already merged, the result goes to the user with an id, which is R3b's path.
+   {#r4b}
 
 ## Part 2: read-back probe — to run, bands written first {#part-2}
 
@@ -99,7 +109,9 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
    SCRATCH Claude Code project (never this repo's settings, 25.1 R0's rule), on 25.1's synthetic
    fixture memories and code. Each session: a prompt whose hook output carries item X in full;
    1-7 filler prompts; then a prompt whose hook output names X only as a held member of 25.1b's
-   `still in play` line, rendered by 25.1b's line renderer exactly as 10.2 will print it, and
+   `still in play` line (the payload's last block, marked `X·held`). It is rendered by 25.1b's
+   line renderer through its held slot, which exists from queue item 4, so it is exactly what
+   10.2 will print, and
    whose question needs a fact that appears only in X's earlier full rendering. Scored by a script:
    correct when the answer carries that fact, or the agent fetches X (`rmx memory get` / `Read` /
    `rmx context`) and then carries it, without asking. Synthetic text only; transcripts stay
@@ -112,17 +124,32 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
 ## Acceptance criteria {#acceptance}
 
-1. **AC-1 Order.** R3's bands are in a commit older than the first commit holding any probe result.
+1. **AC-1 Order.** R3's bands are in a commit older than the first commit holding any probe
+   result. Mutation: a result committed in or before the bands' commit (the order check fails).
 2. **AC-2 Scorer.** The scorer, run on 6 hand-labelled transcripts (3 correct, 3 not, synthetic),
-   reproduces the labels.
-3. **AC-3 Counts only.** No committed file holds prompt, answer or memory text.
+   reproduces the labels. Mutations: the scorer counts a fetch without the fact as correct; it
+   counts "asked the user" as correct.
+3. **AC-3 Counts only.** No committed file holds prompt, answer or memory text. Mutation: a
+   fixture prompt string written into the result file (a scan of committed files for the
+   fixture's sentinel strings fails).
+4. **AC-4 v3 independence (Part 1b).** A structural test parses the v3 replay script. It imports
+   25.1b's `recall_pack.pack` and line renderer from `src/`, and it does NOT import
+   `stm.held_items`, `stm.record_full` or `pack(held=…)`'s held path for the v3 run (only the R8
+   parity mode may). Mutation: the v3 run imports `stm.held_items`. That is the tautology R1b
+   warns against, and the test fails.
+5. **AC-5 v3 arithmetic.** On a 3-call synthetic fixture with hand-computed held sets (one
+   pointer-then-body item, one body-then-pointer item, one over-cap held item), the replay's
+   tier-pinned payload, visible counts and block bytes equal the hand values. Mutations: tier
+   ignored in held (the pointer-then-body item is named instead of bodied); a non-held row
+   promoted into freed bytes.
 
 ## Files {#files}
 
 | file | change |
 |---|---|
 | `eval/production/names_only/probe/` (new) | R1's scratch-project harness and scorer |
-| `tests/test_task10_5_probe_scorer.py` (new) | AC-2 |
+| `tests/test_task10_5_probe_scorer.py` (new) | AC-1, AC-2, AC-3 |
+| `tests/test_task10_5_v3_replay.py` (new) | AC-4, AC-5 |
 | `workflow/measurements/names-only-2026-11.md` (new; 10.2 appends its live run) | part 2's result and verdict |
 
 ## Definition of done {#done}
@@ -263,3 +290,10 @@ figures become 10.2 R8's parity target, and a failure is the existing preconditi
 prints X the way 10.2 will, as a held member of 25.1b's line. Under L30 the probe runs after T4.
 
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+**bsd-spec-t3ab r1 folded (2026-11-13, lead rulings).** B1: v3 and the probe render the line
+through 25.1b's held slot, which prints `·held`, so the gate runs before 10.2 exists. S2: the
+line is last. S6: Q8 = a, so v3 is re-run after G22's ingest exclusion deploys (R4b). m4: AC-1 to
+AC-3 gain mutations, and AC-4/AC-5 cover Part 1b. {#rev-round-6-bsd}
+
+rel: derives-from -> [[bsd-spec-t3ab-ff1d453-369e0b5]]

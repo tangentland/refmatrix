@@ -19,6 +19,11 @@ metadata:
 > Depends on: nothing beyond `master`. It is the ONLY plan-10 task that builds early (L30). It
 > follows the revival merge in queue item 4 and lands before 25.1b and 25.3, which read its
 > marker. The rest of plan-10 builds after T4.
+> **Install: user-gated.** R1's new PreCompact entry regenerates the hook config, so it reaches
+> live stores only through an `install-hooks` window. It rides 25.1b's user-gated window in queue
+> item 4, batched per C11 (bsd-spec-t3ab S7, lead ruling; the lead adds it to G31). Until that
+> window runs, no live marker is written, so the readers see "no marker". That is safe: 10.2 is
+> not built yet, and 25.1b ships in the same window.
 > Builds: [[task-19.6-phased-context-and-topic-cache]] R8a's writer, as 19.6 names it. Its readers
 > are listed in R2.
 
@@ -124,6 +129,8 @@ such tests exist only in addition. {#acceptance-lead}
 - RED run recorded, GREEN run recorded, mutation table in the implementation summary.
 - Implementation summary at `workflow/implementation_summaries/task-10.3-plan-10-injection-dedup.md`.
 - Committed on branch `task-10.3-plan-10-injection-dedup`; merged `--no-ff` to `master`.
+- Installed fleet-wide only in 25.1b's user-gated `install-hooks` window (C11), never by this
+  task alone. `rmx install-hooks --check` runs clean in the sandbox after `--apply` (AC-1).
 
 ## Revision round 6 (2026-11-13, spec wave, spec-t3b) {#rev-round-6}
 
@@ -136,3 +143,8 @@ lists every reader, and each reads through `stm.last_marker`. Nothing in the wri
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
 rel: motivates -> [[task-25.1b-hook-output-ladder-and-spill]]
 rel: motivates -> [[task-25.3-stm-ref-admission-and-helix-repeat#r7]]
+
+**bsd-spec-t3ab r1 folded (2026-11-13, lead ruling S7).** The install is user-gated and rides
+25.1b's window in queue item 4, recorded in the header and the DoD. {#rev-round-6-bsd}
+
+rel: derives-from -> [[bsd-spec-t3ab-ff1d453-369e0b5]]

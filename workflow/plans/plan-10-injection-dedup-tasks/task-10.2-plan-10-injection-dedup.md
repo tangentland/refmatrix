@@ -72,8 +72,8 @@ labelled and 6 R12 uses. Chosen: names-only (Q13), applied to non-human turns to
 | h12 | `session_start`, `precompact` and explicit pulls (`rmx context`, interactive and MCP recall) never dedupe; `session_start` RECORDS its full deliveries (h1); `precompact` and explicit pulls record nothing | a boundary payload is what the window starts from; an explicit pull is the agent asking for the body, often because it lost it |
 | h13 | Order of operations on the recall channel (the same order as 25.1b [[task-25.1b-hook-output-ladder-and-spill#k3]], converged with spec-t3a; [[#open-held-order]]): (1) retrieval, the four-source merge and the exclusions, unchanged; (2) 25.1b's ladder over EVERY row, with the line reserved; (3) each held row leaves its tier and becomes a HELD member of 25.1b's `still in play` line; (4) the line renders its held and over-budget members as 25.1b defines; (5) 25.1b R12's clamp, the safety net. A held row whose `full`-run tier was already the line keeps its place and is marked held | contra-b CB-1 asks for the order of held removal and the ladder to be stated; the order follows from h9, and steps 2 and 3 cannot swap without re-spending |
 | h14 | The live A/B's outcome counts only R12 explicit uses plus `cited_in_answer`, never 21.5's unbuilt legs | L27, L18's rule: 21.5's matcher measures proximity, not use (R12 pilot: 7% CAUSED) and is frozen until the experiment reports (D-Q3, D-Q4) |
-| h15 | **Tier-aware held (lead ruling, 2026-11-13, on [[#open-held-tier]] (a)).** An item is held for a call only when the tier it was shown at is the same as, or richer than, the tier the `full` run gives it now. Full shown → held at every tier. Excerpt shown → held at excerpt, pointer and names, not at full. Pointer shown → held at pointer and names. A held state with several deliveries keeps the RICHEST tier shown since the marker. Cross-block tiers: a recall or `session_start` row records its 25.1b tier (`full` / `excerpt` / `pointer`). A scan-prompt anchor block (anchor line, tldr, body) records `full`, and a scan group entry (one line) records `pointer` | the agent never loses content it was never shown; (b) would name an item whose body it never saw, and (c) would almost never dedupe `prompt_recall`, which is mostly pointers at 4,000 B (25.1 d3). The scan mapping is the nearest 25.1b tier by content, derived to apply the ruling across blocks, and is called out for review |
-| h16 | **Held names are marked (lead ruling, 2026-11-13, on [[#open-held-mark]] (a)).** Each held member on the line carries the suffix `·held`, rendered by 25.1b's one line renderer and counted inside the line's bytes. Over-budget members carry no marker. Members keep one rank order across both kinds (10.6 p2). On scan-prompt every member is held and marked | a held member's content is already in the window, while an over-budget member's is only on the spill page; the marker tells the agent which names to fetch |
+| h15 | **Tier-aware held (lead ruling, 2026-11-13, on [[#open-held-tier]] (a)).** An item is held for a call only when the tier it was shown at is the same as, or richer than, the tier the `full` run gives it now. Full shown → held at every tier. Excerpt shown → held at excerpt, pointer and names, not at full. Pointer shown → held at pointer and names. A held state with several deliveries keeps the RICHEST tier shown since the marker. Cross-block tiers: a recall or `session_start` row records its 25.1b tier (`full` / `excerpt` / `pointer`). A scan-prompt anchor block (anchor line, tldr, body) records `full`, and a scan group entry (one line: name, kind, location) records `pointer`. 25.1b's tier shapes are: tier 1 = hook line + full body; tier 2 = hook line + excerpt; tier 3 = hook line + pointer; tier 4 = the name on the line (bsd-spec-t3ab S1, lead ruling). Rank for `covers`: `full` > `excerpt` > `pointer` > `names` ≥ `overflow`. `names` and `overflow` are never recorded (h4), so a held state is always `full`, `excerpt` or `pointer` | the agent never loses content it was never shown; (b) would name an item whose body it never saw, and (c) would almost never dedupe `prompt_recall`, which is mostly pointers at 4,000 B (25.1 d3). The scan mapping is the nearest 25.1b tier by content, derived to apply the ruling across blocks, and is called out for review |
+| h16 | **Held names are marked (lead ruling, 2026-11-13, on [[#open-held-mark]] (a)).** Each held member on the line carries the suffix `·held`. 10.2 supplies the held flag per member, and 25.1b's one line renderer prints the marker ([[task-25.1b-hook-output-ladder-and-spill#k2]] adopts h16; bsd-spec-t3ab B1, lead ruling), counted inside the line's bytes. The line is the LAST block of the payload (S2). Over-budget members carry no marker. Members keep one rank order across both kinds (10.6 p2). On scan-prompt every member is held and marked | a held member's content is already in the window, while an over-budget member's is only on the spill page; the marker tells the agent which names to fetch |
 
 ## Which ladder tier makes an item held (resolved: h15) {#open-held-tier}
 
@@ -133,9 +133,11 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
    for line members. The verb (25.1 R5) reads
    `internal.get("dedupe")` (CLI `--stdin-json` only, the way `embedder_policy` rides
    `**internal`), calls `stm.held_items` once and passes `held`. With `held` empty, the output is
-   byte-identical to 25.1b's (the `full` arm). 10.2 changes nothing in `hook_budget`, the budgets,
-   the ladder, the line's format, the spill page, the generator, the argv or the trailer. It
-   supplies the line's held members and nothing else (L15, contra-b CB-1). {#r3}
+   byte-identical to 25.1b's (the `full` arm). 10.2 supplies held members and the held flag on
+   each. 25.1b's renderer prints `·held` for a flagged member (h16, adopted by 25.1b k2). 10.2
+   changes nothing in `hook_budget`, the budgets, the ladder, the spill page, the generator or the
+   argv (L15, contra-b CB-1; bsd-spec-t3ab B1). The line is the payload's LAST block, after the
+   hits (S2). {#r3}
 4. **R4 scan-prompt.** `scan.scan_prompt(..., held=None)`. A held group ENTRY is removed from
    its bundle by the same group filter that drops entries an earlier section rendered. That
    filter (`shown`) is now keyed by `telemetry.item_key` instead of the entity name. A held ANCHOR
@@ -144,8 +146,8 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
    with nothing is not rendered. A held item here is one whose `held.covers` is true at its scan
    tier (an anchor block is `full`, a group entry `pointer`, h15). Every held item becomes a held
    member of ONE line, marked `·held` (h16), rendered by 25.1b's line renderer. scan-prompt has no ladder (25.1 R0b), so that line holds held members
-   only. It is appended as its own block and reserved in scan's `fit_blocks` call so it is never
-   cut. 25.1b's spill page belongs to the pack, and scan-prompt writes none. Past the cap, scan's
+   only. It is appended as scan's LAST block (S2) and reserved in scan's `fit_blocks` call so it
+   is never cut. 25.1b's spill page belongs to the pack, and scan-prompt writes none. Past the cap, scan's
    held items are counted `(+N)` with `retrieved` events only, which is rev 5's rule kept. The
    composite is untouched (10.6 owns it). {#r4}
 5. **R5 Every turn, human or not.** The dedupe runs on every prompt that reaches the two hooks,
@@ -198,12 +200,28 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
      scorer exists (recorded, not a band). 21.5's legs (`tool`, `bash_name` and the rest) are NOT
      an outcome: they are unbuilt and frozen (D-Q3, D-Q4). `cited_in_answer` comes from the
      experiment's ONE transcript scorer ([[task-28.3-outcome-scorer#r7]]), and 10.2 has no copy.
-   - **Bands, written here before the run:** `dedupe` cuts bytes per human prompt ≥ 30% and its
-     used rate is within −5% of `full` (or above) → keep; used rate 5-15% below → the user decides;
-     more than 15% below → the user decides whether the names line needs more than names.
+   - **Bands, written here before the run** (S9 rows added by lead ruling, 2026-11-13). Rows
+     are checked in this order:
+     1. **The n-floor.** If either of `A+dedupe` / `A+full` has fewer than 40 sessions in a store
+        at the period's end, the period is extended ONCE by 14 days. If the floor still fails, the
+        result is reported as INCONCLUSIVE, with no default change.
+     2. **Bytes.** If `dedupe` cuts bytes per human prompt by less than 30%, there is no default
+        change: the run does not confirm `A+dedupe` as the default, and the result is reported.
+     3. **Used rate (only when bytes cut ≥ 30%):**
+        - within −5% of `full` (or above) → keep;
+        - 5-15% below → the user decides;
+        - more than 15% below → the user decides whether the names line needs more than
+          names.
    - **The switch is for measurement only:** `arms.py` and its branches are deleted after the
-     experiment's period, by the experiment's close-out (a row in `workflow/deferral_registry.md`
-     with the end date), as [[task-28.5-run-and-report#r8]] specifies. Outside every active
+     experiment's period, by the experiment's close-out, as [[task-28.5-run-and-report#r8]]
+     specifies. **10.2 creates the deferral row as part of its build** (S8): a row in
+     `workflow/deferral_registry.md` with these fields:
+     - module `src/refmatrix/arms.py` (measurement only);
+     - owner plan-28;
+     - deletion at 28.5 R8;
+     - end date "written by 28.5 at the period's commit".
+
+     28.1 R5 widens the row and 28.5 R8 closes it. Outside every active
      period, and for every out-of-scope store, `draw` returns `A+dedupe` (push on, dedupe on).
      Correctness never depends on it.
    - **Future arm (Q13), not built:** `4+3b` — baseline-delivered non-held rows first, then new
@@ -227,7 +245,8 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
 
 1. **AC-1 Held is named, not rendered.** Prompt 1 renders X (both payloads). Prompt 2 retrieves X
    and Y: it renders Y as the `full` run would, and X only as a held member of 25.1b's line,
-   printed `X·held`; an over-budget member on the same line carries no marker.
+   printed `X·held`; an over-budget member on the same line carries no marker; the line is the
+   payload's last block, after every hit (S2).
    Prompt 3 behaves the same. RED at the 25.1b + 10.3 + 10.4 + 10.6 base.
 2. **AC-2 Nothing vanishes; tier-pinned.** A property test runs over the fixture with 200 random
    held subsets (plus the empty and the full one) on both payloads. Every item the `full` run
@@ -254,7 +273,8 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
 6. **AC-6 Cap and budget.** With 20 held items, 25.1b's line names its cap (15) in rank order,
    and the 5 past the cap are counted `(+5)`. On recall, all 20 held rows are on the spill page
    with their bodies (25.1b k3 step 4, R14), and the line's fetch command
-   ([[task-25.1b-hook-output-ladder-and-spill#r14]], spelling open as O1) returns them. On
+   ([[task-25.1b-hook-output-ladder-and-spill#r14]], `rmx memory recall --page <token>`)
+   returns them. On
    scan-prompt the 5 are counted `(+5)`, and no page is written. The
    line is present at 2,000 / 4,000 / 9,000 B (25.1 AC-2's budgets), and the payload stays within
    each. Held overflow items have `retrieved` events and no `delivered` events. 25.1b R12's clamp
@@ -276,6 +296,8 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
     root is `A+dedupe`. With a test period scoped to one slug, an in-scope root at `now` inside
     `[start, end)` draws the four cells at their table weights, and C is never drawn. An
     out-of-scope root draws `A+dedupe`, and so does an in-scope root at `now` = `end`.
+    `workflow/deferral_registry.md` holds the `arms.py` row (owner plan-28, deletion 28.5 R8),
+    added in 10.2's branch (S8).
 12. **AC-12 Offline parity** (R8): the replay with `src/` imports reproduces 10.5's v3 figures on
     the same clones.
 13. **AC-13 Mutations that must FAIL a test:** a held item dropped without a name (AC-2); a
@@ -291,7 +313,9 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
     promotion); held members printed on a second, 10.2-owned line (AC-14); a held member recorded
     with 25.1b's over-budget `form` (AC-7); the tier ignored in `HeldSet.covers` (AC-2, the
     pointer-then-body leg); the poorest tier kept instead of the richest (AC-2, the body-then-pointer
-    leg); the `·held` marker missing, or put on an over-budget member (AC-1).
+    leg); the `·held` marker missing, or put on an over-budget member (AC-1); the line placed
+    above the hits instead of last (AC-1); `overflow` ranked richer than `names` in `covers`
+    (AC-2).
 14. **AC-14 One line.** A structural test parses `src/refmatrix/`. The literal `still in play`
     appears only in 25.1b's line renderer. The pack and scan-prompt both call that renderer, and
     neither builds a line of its own. The marker literal `·held` likewise appears only in that
@@ -302,13 +326,14 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
 | file | change |
 |---|---|
 | `src/refmatrix/stm.py` | `held_items`, `record_full`, `HeldSet` (beside 10.3's marker in `.emitted/`) |
-| `src/refmatrix/telemetry.py` | `item_key`; `form` in `RECALL_EVENT_FIELDS_V1` and `call_events`; `held_*` row fields; the hook-cost report's held share and bytes |
+| `src/refmatrix/telemetry.py` | `item_key`; the value `held` added to 25.1b's `form` (k5; the field itself is 25.1b's); `held_*` row fields; the hook-cost report's held share and bytes |
 | `src/refmatrix/recall_pack.py` (25.1, 25.1b) | `pack(held=…)` tier-pinned (h13); held members passed to 25.1b's line renderer; `Packed` fields |
 | `src/refmatrix/hook_budget.py` (25.1, 25.1b) | none |
 | `src/refmatrix/verbs.py` (`memory_recall`, `_memory_recall_rows`) | `internal["dedupe"]` → `held_items` → `pack(held=…)` |
 | `src/refmatrix/cli.py` (`_memory_recall_impl`, `_RecallCall`, `scan-prompt`, `focus hook --event session-start`) | the dedupe context; `record_full` after the print; event fields; the `session_arm` row |
 | `src/refmatrix/scan.py` | the held filter through `shown`, the names block |
 | `src/refmatrix/context.py` (`render_text_spans`) | `omit_anchor=` |
+| `workflow/deferral_registry.md` | the `arms.py` row (S8): measurement only, owner plan-28, deletion 28.5 R8, end date written by 28.5 |
 | `src/refmatrix/arms.py` (new, measurement only; deleted by 28.5 R8 after the period) | `SESSION_ARMS`, period records (`id`, `salt`, `start`, `end`, `scope`, `cells`), none active; `draw(session_id, *, root, now=None)` |
 | `tests/test_task10_2_names_only.py` (new) | AC-1..AC-14 |
 | `workflow/measurements/names-only-2026-11.md` (new) | R7's live run and R8's parity |
@@ -324,6 +349,7 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
 
 - RED run recorded, GREEN run recorded, mutation table in the implementation summary.
 - Implementation summary at `workflow/implementation_summaries/task-10.2-plan-10-injection-dedup.md`.
+- The `arms.py` deferral row is in `workflow/deferral_registry.md` at merge (S8).
 - R8's parity against v3 at GREEN; R7's live verdict after the experiment's period, each band
   named.
 - Committed on branch `task-10.2-plan-10-injection-dedup`; merged `--no-ff` to `master`.
@@ -346,6 +372,7 @@ rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 | Every held row's body goes to 25.1b's spill page (k3 step 4); held overflow is counted `(+N)` | L15 | R3, AC-6 |
 | One rank order across both member kinds (10.6 p2); held members marked `·held` | 25.1b k2; lead ruling on [[#open-held-mark]] (a) | h16, R3, R4, AC-1, AC-14 |
 | `arms.draw(session_id, *, root, now=None)` store-scoped: period records carry `scope`; ships with no active period; out of scope or out of period → `A+dedupe` | spec-t3c, plan-28 handshake (`5ac42e5`): arms.py ships to every store | R7, AC-11 |
+| bsd-spec-t3ab r1 (DIRTY 1B/10S/10M) folded, lead rulings: B1 (10.2 supplies the held flag; 25.1b's renderer prints `·held`); S1 (tier shapes, `covers` rank incl. `overflow`); S2 (line LAST); S8 (deferral row created here); S9 (n-floor + < 30% rows); m1, m2 | [[bsd-spec-t3ab-ff1d453-369e0b5]] | h15, h16, R3, R4, R7, AC-1, AC-2, AC-6, AC-11, AC-13, Files, DoD |
 | Tier-aware held: held only at the tier shown and poorer ones | lead ruling on [[#open-held-tier]] (a) | h1, h4, h15, R1, R2, R3, R4, AC-2 |
 | `form: "held"` is distinct from 25.1b's over-budget form | CB-2's resolution in 25.1b | R6, AC-7 |
 | R8 parity target = 10.5 v3 (tier-pinned on 25.1b's pack), not v2 | L15 | R8, AC-12 |

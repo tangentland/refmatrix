@@ -76,9 +76,13 @@ On every prompt, human or not ([[task-10.2-plan-10-injection-dedup]]):
 
 ```
 <25.1b's header>
-<25.1b's `still in play` line: the held members (this plan) and the over-budget members (25.1b)>
 <the non-held hits, at the tier the full run gives them, in rank order, as 25.1b renders them>
+<25.1b's `still in play` line, LAST: held members (this plan, marked `·held`) and over-budget
+ members (25.1b), one rank order, ending with the spill page's fetch command>
 ```
+
+The line comes LAST, after the hits, under the user-agreed presentation rule "most important
+first" (bsd-spec-t3ab S2, lead ruling). scan-prompt's line is likewise its last block.
 
 The line, its format, its cap of 15, its overflow and its spill page belong to 25.1b (L15,
 contra-b CB-1). Plan-10 adds only the held members. {#names-only-owner}
@@ -251,15 +255,24 @@ rel: derives-from -> [[agent-brief-arch-10r]]
 
 ## Q8 {#q8}
 
-Plan-10 holds under Q8 a and c. No spec line changes under b either. Per-prompt recall already
-excludes `session/*` in hook modes (25.1 R2/R2b), so no save-state is ever held, named or spilled.
-`session_start` records only what it rendered. {#q8-body}
+**Q8 is decided: a (user, 2026-11-13).** `workflow/` leaves the store at INGEST, which is G22's
+work. No plan-10 rule changes. Per-prompt recall already excludes `session/*` in hook modes (25.1
+R2/R2b), so no save-state is ever held, named or spilled, and `session_start` records only what it
+rendered. {#q8-body}
 
-**Under Q8 b (`workflow/` excluded at ingest), the figures move but the rules do not.**
-scan-prompt would stop surfacing `workflow/` docs. The 2026-11-13 held share (48.0%), the v1/v2
-replay and 10.5's v3 were all computed on stores that ingest `workflow/`. v3 and R7's live run
-measure whichever store state exists when they run. If b lands first, v3 is re-run on that state
-and the figures are not carried over. {#q8-b}
+**The figures move, the rules do not.** {#q8-b}
+
+- Once G22's ingest exclusion deploys, scan-prompt stops surfacing `workflow/` docs.
+- The 2026-11-13 held share (48.0%), the v1/v2 replay and 10.5's v3 were all computed on stores
+  that still ingest `workflow/`.
+- **The re-run trigger:** v3 is re-run after G22's ingest exclusion deploys
+  ([[task-10.5-versioned-block-gate#r4b]]).
+- R7's live run measures whatever store state exists while it runs.
+
+The anchor keeps its name because earlier commits cite it. The earlier text keyed this to Q8 b,
+but option a removes `workflow/` at ingest too (bsd-spec-t3ab S6).
+
+rel: depends-on -> [[plan-review-2026-11-13#d-q1]]
 
 ## Revision round 6 (2026-11-13, spec wave, spec-t3b) {#rev-round-6}
 
