@@ -26,14 +26,15 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session f0521bff (2026-11-13) {#session-f0521bff}
 
-Next id: **Q12**.
+Next id: **Q13**.
 
 ### Open {#open}
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
-| Q10 | 2026-11-13 | Non-human gate (10.4): with the gate 62% of prompt-channel injections go, 0 labelled uses lost, 10 explicit R12 uses (2 near-term) rode agent-message turns with no other delivery — rule trips. Now a single policy table in 10.4 (none / delta / full per family and surface); a live A/B (arms nested in the handhold experiment, ≥14 days, ≥40 sessions/arm/store, bands pre-written) follows ship. | (b) full gate (none for every family), shipped inside the live A/B; (c) none for task-notifications only, full for agent messages; (a) delta on non-human turns — needs 10.2's block state even if Q11 says no 10.2, and that state holds little, so it cuts far less than 57.5% | open |
-| Q11 | 2026-11-13 | plan-10 dedupe of the per-prompt payloads. 19.6's context diff as confirmed does almost nothing there (whole blocks never repeat; the half-block rule fires on ~88% of revs; 6-11% of re-deliveries omitted). Waiving three 19.6 rules for these two blocks omits 38-40% of re-deliveries (16-21% of item bytes) at a labelled cost of 3 of 13. | (a) ship 10.4 first, re-measure on human prompts only, then choose; (b) relax the three 19.6 rules for these two blocks and run 10.5; (c) another design (pointer, or delta + names-only line) | open |
+| Q10 | 2026-11-13 | Non-human gate (10.4): with the gate 62% of prompt-channel injections go, 0 labelled uses lost, 10 explicit R12 uses (2 near-term) rode agent-message turns with no other delivery — rule trips. Now a single policy table in 10.4 (none / delta / full per family and surface); a live A/B (arms nested in the handhold experiment, ≥14 days, ≥40 sessions/arm/store, bands pre-written) follows ship. | (b) full gate (none for every family), shipped inside the live A/B; (c) none for task-notifications only, full for agent messages; (a) delta on non-human turns — needs 10.2's block state even if Q11 says no 10.2, and that state holds little, so it cuts far less than 57.5% | on hold — user: wait for Q11 |
+| Q11 | 2026-11-13 | plan-10 dedupe of the per-prompt payloads. 19.6's block diff fails there (lists change every turn). User asked for design options; seven laid out (pointer, suppress+refresh, names-only line, rank-by-novelty, item diff+keyframe, session-aware retrieval, pull-only). | lead recommends 4+3: rank new items first, collapse held ones into one 'still in play' line — pending Q12 | open (options given) |
+| Q12 | 2026-11-13 | How to choose among the Q11 designs? | (a) replay-score 1 / 3 / 4+3 / 5 on the same sessions (bytes saved, new items gained, labelled + explicit uses kept visible), then decide; (b) go straight to 4+3; (c) pick another | open |
 
 ### Answered {#answered}
 
