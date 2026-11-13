@@ -8,7 +8,7 @@ metadata:
   status: pending
   plan: plan-25-cliquedb-field-report
   created: 2026-11-08
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 25.1: recall hook byte budget {#root}
@@ -19,10 +19,12 @@ metadata:
 > [[#rev-round-5]] folds bug-181 as [[#r10]] on the user's decision of 2026-11-09 (d12 closed);
 > plan-25 approved 2026-11-09, [[plan-25-cliquedb-field-report#approval]]; not built)
 > Bugs: bug-164 (cliquedb priority 1); bug-181 (MCP `project=` silent cwd fallback, folded r5)
-> Depends on: task 3.7 MERGED to `master` ([[plan-25-cliquedb-field-report#overlap]]); plan-26
-> merged (its 26.4 owns the save-state mtype fix this task re-asserts on the packed path, and its
-> 26.7 regroups `MEMORY.md`, which R3's curated-hook lookup reads); 23.0's
-> test sandbox (completed 0.79.1); 21.1's single `delivered` emission site (released 0.80.0).
+> Depends on: task 3.7 MERGED to `master` ([[plan-25-cliquedb-field-report#overlap]]); 26.4
+> merged (`0c74872`; it owns the save-state mtype fix this task re-asserts on the packed path);
+> 23.0's test sandbox (completed 0.79.1); 21.1's single `delivered` emission site (released
+> 0.80.0). **Not awaited (waived by the user, 2026-11-13, D-Q2, [[#rev-dq2]]):** 26.7 and
+> plan-27. R4's lookup already reads both key shapes (relative path and id), and 26.7 carries
+> the AC that this task's curated-hook lookup survives its regroup.
 > Builds: [[task-19.1-pack-recall-under-budget]] R1-R8 with the deltas in [[#deltas]]; runs
 > [[task-19.5-measure-delivery]] R1 (the probe) as R0.
 
@@ -31,7 +33,7 @@ rel: depends-on -> [[task-3.7-verb-it-backlog]]
 rel: depends-on -> [[task-23.0-test-sandbox]]
 rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 rel: depends-on -> [[task-26.4-savestate-mtype-normalisation]]
-rel: depends-on -> [[task-26.7-memory-index-by-subject]]
+rel: related-to -> [[task-26.7-memory-index-by-subject]]
 rel: realizes -> [[task-19.4-keep-derived-layers-current]]
 rel: related-to -> [[task-26.6-compile-subject-hygiene]]
 rel: realizes -> [[task-19.1-pack-recall-under-budget#requirements]]
@@ -103,7 +105,7 @@ mutation is carried (AC-14 maps them) unless a row below says otherwise.
 | 19.4 AC-4, recall leg (moved from plan-26, `696c3cb` `#plan-19`) | AC-6: a subject marked `stale` (19.4 R5, written by 26.6) is absent from recall, including with `--include-subjects`; mutation "stale subject visible in recall" in AC-14 | it needs 19.1 R2, which this task builds; plan-26 r2 hands it here |
 | R3 bodies for the top hits | per-prompt pack carries POINTERS only under its budget; bodies are tested on `session_start` | 12 hook lines at 250-370 B each fill 3.0-4.4 kB; no 2.0 kB body fits ([[bsd-plan25-spec-r1-2f4a1df#m1]]) |
 | AC-2 reach on the local 20-prompt set, ≥ 5x | reported, not gating; AC-3 gates on the frozen fixture | the committed fixture is the reproducible gate |
-| folded riders #w1c-s2, #w1c-m4 | stay with 19.1 | they are time budgets, not byte budgets |
+| folded riders #w1c-s2, #w1c-m4 | not here: hosted by [[task-25.1b-hook-output-ladder-and-spill]] (D-Q6, 2026-11-13) | they are time budgets, not byte budgets |
 
 ## Requirements {#requirements}
 
@@ -687,3 +689,24 @@ rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720#n5]]
 | mutation | HEAD's silent fallback restored fails AC-4 (e) R10 legs (1)-(3) | AC-14 |
 | d12 | closed as decided by the user | [[#open-decisions]] |
 | files | `mcp.py` resolver, `verbs.py` error class + transport description, the routing test, bug-181's registry row closes at merge | [[#files-to-modify]] |
+
+## Revision (2026-11-13, D-Q2): the 26.7 / plan-27 order waived; rev 8 becomes task 25.1b {#rev-dq2}
+
+The user, 2026-11-13, on the plan review's Q2: "q2-ship it" ([[plan-review-2026-11-13#d-q2]]).
+This task ships in 0.83.0 at revision 7, ahead of 26.7 and plan-27. Record only: no requirement or
+AC of revisions 1-7 changes here. {#rev-dq2-lead}
+
+rel: implements -> [[plan-review-2026-11-13#d-q2]]
+rel: derives-from -> [[plan-review-2026-11-13#x3]]
+rel: related-to -> [[task-25.1b-hook-output-ladder-and-spill]]
+
+| item | change | why |
+|---|---|---|
+| header "Depends on" (was: "plan-26 merged … and its 26.7 regroups `MEMORY.md`") | 26.4 merged (`0c74872`) is the plan-26 dependency that stays; 26.7 and plan-27 are not awaited | D-Q2 waives the order on the record. R4's lookup reads both key shapes, so the edge was not load-bearing (contra-b CB-4) |
+| `rel: depends-on -> task-26.7` | now `related-to` | the dependency is reversed: 26.7 gains an AC that this task's curated-hook lookup survives its regroup (D-Q2; spec owner of 26.7) |
+| revision 8 (R12-R14, AC-16-AC-18: the 9,500 B clamp, the degrade ladder, the spill page) | moves to [[task-25.1b-hook-output-ladder-and-spill]], with its own branch, after 10.3. Its text leaves this task's branch before the merge (the lead resolves that at merge) | D-Q2: one task, one branch, one release; rev 8 is unbuilt and needs 10.3's marker (L15) |
+| the 19.1 riders #w1c-s2 / #w1c-m4 (the deltas table said "stay with 19.1") | hosted by 25.1b | D-Q6: plan-2 closes when its riders land in 25.1b |
+| bug-164 | closes at this task's merge for the per-prompt overflow (revision 7's budgets). The hard cap and the ladder are 25.1b's, and bug-164's row says so | one bug row, two tasks, both named |
+
+**Q8 note:** nothing here changes under Q8 a or c. Under Q8 b, R2b's packed-path exclusion has no
+save-state rows left to exclude. AC-5 still holds, but trivially. {#q8-b}

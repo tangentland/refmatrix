@@ -8,24 +8,30 @@ metadata:
   status: pending
   plan: plan-25-cliquedb-field-report
   created: 2026-11-08
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 25.3: STM ref admission and the helix repeat {#root}
 
 > Plan: [[plan-25-cliquedb-field-report]]
 > Status: Pending (spec drafted 2026-11-08; revision rounds 1-3 2026-11-09, [[#rev-round-1]],
-> [[#rev-round-2]], [[#rev-round-3]]; r3 folded, a short r4-lite confirm is next)
+> [[#rev-round-2]], [[#rev-round-3]]; r3 folded, a short r4-lite confirm is next; revision round 4
+> 2026-11-13, [[#rev-round-4]]: R7 resets at 10.3's marker, and the helix half follows 25.2 or drops
+> with it)
 > Bug: bug-166 (cliquedb priority 4), both halves: junk topic members AND the stale helix line
 > "whatever the topic".
 > Depends on: [[task-25.2-thin-prompt-gate]] merged for the helix half (its ACs need prompts that
-> pass the gate). The STM half (R1-R5) has no dependency and may be built first in its own clone.
-> Task 3.7 merged.
+> pass the gate), and [[task-10.3-plan-10-injection-dedup]] merged for the helix half (R7's reset
+> is 10.3's compaction marker, L16). If 25.2's replay fails L34's band, 25.2 is not built and the
+> helix half (R6-R9) drops with it, to the T3 backlog with bug-166's helix part (L43). The STM half
+> (R1-R5) has no dependency and always builds, in its own clone if need be; 19.0's remainder
+> follows it (L41). Task 3.7 merged.
 > Builds: [[task-19.0-stm-cluster-hygiene]] R1 (`stm.command_refs` and the code-noise set), with
 > the extensions in [[#beyond-19-0]].
 
 rel: part-of -> [[plan-25-cliquedb-field-report]]
 rel: depends-on -> [[task-25.2-thin-prompt-gate]]
+rel: depends-on -> [[task-10.3-plan-10-injection-dedup]]
 rel: depends-on -> [[task-3.7-verb-it-backlog]]
 rel: realizes -> [[task-19.0-stm-cluster-hygiene#requirements]]
 rel: amends -> [[task-19.0-stm-cluster-hygiene]]
@@ -145,12 +151,17 @@ pre-registered. So every suppression is logged and the criterion reads rendered 
    there is one resolution per call. With `session=None` (no envelope session; manual
    `rmx context`) there is no sidecar and no repeat suppression, and the row carries
    `cur_session: null`; the newest-ring fallback is never used for suppression. {#r6}
-7. **R7 The repeat memory.** A per-session sidecar `.refmatrix/stm/<session>.helix.json` (the
-   existing `<session>.<kind>.json` pattern; not `*.jsonl`, so `_ring_files` and `stm.py:1059`
-   never read it as a ring) holds the keys already RENDERED this session: key = (normalised
-   concept, touch ring_stem, touch line_no). A key is marked at `flush` only (a note built for a
-   bundle that does not render never suppresses the next one). Written atomically (tmp + rename).
-   A NEWER stale touch of the same concept is a new key and renders. A sidecar read or write
+7. **R7 The repeat memory** (home and reset amended 2026-11-13, L16, [[#rev-round-4]]). A
+   per-session file `.refmatrix/stm/<session>.emitted/helix.json`, under 10.3's `.emitted`
+   directory helper (one writer: scan-prompt's helix `flush`; not `*.jsonl`, and inside a
+   subdirectory, so `_ring_files` and `stm.py:1059` never read it as a ring), holds the keys
+   already RENDERED this session: key = (normalised concept, touch ring_stem, touch line_no), each
+   with the ts at which it was marked. A key is marked at `flush` only (a note built for a bundle
+   that does not render never suppresses the next one). Written atomically (tmp + rename).
+   **Compaction is the reset:** a key marked before `stm.last_marker(root, session).ts` suppresses
+   nothing, the same rule as 10.2's held set (10.2 h3). An unreadable marker counts as "marker now"
+   (10.3 f5), so nothing is suppressed. The compaction marker itself is written only by 10.3's
+   writers. A NEWER stale touch of the same concept is a new key and renders. A sidecar read or write
    failure lets the note render and is recorded ON THE ROW (`sidecar_error: "<ExcType>"`) and in
    the scan-prompt `query.log` row, because the hook's stderr is discarded
    (`hooks.py:249`, `2>/dev/null || true`). {#r7}
@@ -242,11 +253,17 @@ from the ring file the hook wrote, never from a helper. {#acceptance-lead}
     total stays ≤ 5 (no sixth neighbour rendered because one was suppressed); every row carries
     `cur_session`.
 12. **AC-11 Session from the envelope.** With two sessions' rings present and the OTHER session's
-    ring newer, the sidecar written is `<envelope session>.helix.json`. With no envelope session,
+    ring newer, the sidecar written is `<envelope session>.emitted/helix.json`. With no envelope session,
     no sidecar is written, nothing is suppressed as a repeat, and rows carry `cur_session: null`.
 13. **AC-12 Sidecar failure is on the row.** With the sidecar path made unwritable (a directory of
     that name), the note renders and the helix.log row and the scan-prompt `query.log` row carry
     `sidecar_error`.
+13b. **AC-12b Compaction resets the repeat memory** (L16). In one session: prompt 1 prints the
+    `[helix]` line; the generated PreCompact `compact-marker` entry (10.3) runs; prompt 2 prints
+    it again; prompt 3 does not. The same holds with the generated SessionStart focus entry on
+    `{"source": "compact"}` and on `{"source": "clear"}` in place of PreCompact. With a marker file
+    holding `{`, prompt 2 prints it again and the stderr line from `stm.last_marker` is recorded.
+    The marker file is byte-identical before and after the helix flushes (helix never writes it).
 14. **AC-13 Mutations that must FAIL a test:** remove the `_PATH_RE` boundary (AC-1b only); drop
     the existence check (AC-2 `S/as.sh`); extract from heredoc bodies (AC-4); keep
     `_PATH_RE.findall` at `_tool_event_fields` (AC-1); skip the render-time filter (AC-3); mark the
@@ -254,7 +271,9 @@ from the ring file the hook wrote, never from a helper. {#acceptance-lead}
     only (AC-7 newer touch); disable the hub rule (AC-9); p99 by `statistics.quantiles`' default method or a `>=` comparison (AC-9 unit row); fall back to the newest ring for the
     sidecar (AC-11); print the sidecar error to stderr only (AC-12); suppressed notes not counted
     toward the neighbour cap (AC-10: a sixth neighbour renders); the head rule applied to a slashed
-    ref (AC-2: `S/as.sh` dropped without the existence check).
+    ref (AC-2: `S/as.sh` dropped without the existence check); the marker ignored (AC-12b prompt 2
+    silent); key ts not compared with the marker (AC-12b); an unreadable marker read as "no marker"
+    (AC-12b); the repeat memory written outside `.emitted/` (AC-11).
 
 ## Measurement {#measurement}
 
@@ -272,7 +291,7 @@ from the ring file the hook wrote, never from a helper. {#acceptance-lead}
 | `src/refmatrix/stm.py` | `_PATH_RE` boundary; `CODE_NOISE_HEADS`; `is_code_noise`, `admit_ref`, `command_refs`; `_extract_refs` filter; `rebuild_focus` filter |
 | `src/refmatrix/composite.py` | render-time gate adds `is_code_noise` |
 | `src/refmatrix/cli.py` (`_tool_event_fields`, `:2012`; `scan_prompt_cmd`, `:9424`) | `stm.command_refs(cmd, root=, cwd=)`; pass the resolved session to scan |
-| `src/refmatrix/helix.py` | `session` params; sidecar repeat memory; suppressed rows; `cur_session`; `sidecar_error`; p99 degree in the index |
+| `src/refmatrix/helix.py` | `session` params; the repeat memory under `stm/<session>.emitted/` through 10.3's directory helper, reset by `stm.last_marker`; suppressed rows; `cur_session`; `sidecar_error`; p99 degree in the index |
 | `src/refmatrix/context.py` (`:218-222`, `_helix_neighbor_sweep` `:1008-1035`, `_helix_flush` `:1547`) | session through annotate / flush; hub rule in the neighbor sweep |
 | `src/refmatrix/scan.py` | pass the session to `build_context` / helix |
 | `src/refmatrix/telemetry.py` | `sidecar_error` on the scan-prompt row; dated note on `overlap` |
@@ -331,3 +350,26 @@ rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
 |---|---|---|
 | M5 "above the p99" has no method; on a small fixture the method decides AC-9 | nearest-rank over sorted degrees, strict `>`, n recorded beside the threshold; AC-9 fixture ≥ 200 linked entities with the hub the unique maximum, asserted before the prompts; a unit row pins the method at n = 41; mutation | [[#r8]], AC-9, AC-13 |
 
+## Revision round 4 (2026-11-13, the plan review: L16, L43) {#rev-round-4}
+
+contra-b CB-6 found this task building a second "already said, don't repeat" memory. It had no
+compaction reset and lived outside the per-session emitted directory that plan-10 and 19.6 share,
+so after a compaction a stale-line warning would stay silent for the rest of the session. L16
+adopts 10.3's marker as the reset and `.emitted/` as the home. L43 settles what happens to the
+helix half if 25.2 is not built. {#rev-round-4-lead}
+
+rel: implements -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[bsd-pop-r4-d1614a8#x2]]
+rel: related-to -> [[task-10.2-plan-10-injection-dedup]]
+
+| item | change | anchor |
+|---|---|---|
+| L16: reset | a key marked before `stm.last_marker(...).ts` suppresses nothing; an unreadable marker resets; AC-12b + three mutations | [[#r7]], AC-12b, AC-13 |
+| L16: home | `stm/<session>.emitted/helix.json` (was `stm/<session>.helix.json`), one writer; AC-11's path; plan-25 q6 amended | [[#r7]], AC-11, [[plan-25-cliquedb-field-report#open-decisions]] |
+| L16: dependency | the helix half depends on 10.3 merged | [[#root]] |
+| L43: independence checked | the STM half (R1-R5) imports nothing from 25.2 and none of its ACs need a gated prompt, so it always builds. The helix half (R6-R9) follows 25.2, and if L34's replay fails, it drops with 25.2 to the T3 backlog with bug-166's helix part. 19.0's remainder waits only on the STM half (L41; bsd-pop-r4 X2) | [[#root]] |
+
+Not adopted: contra-b CB-6's "better still" (a suppressed helix note moves to plan-10's names line).
+No L-row decides it, and nothing here builds it.
+
+**Q8 note:** nothing here changes under Q8 a, b or c. Helix reads ring touches, not save-states.
