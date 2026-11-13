@@ -1,8 +1,8 @@
 ---
 gmd: "0.1"
 id: task-t0-suite-trust-sweep
-title: "Task T0: the suite-trust sweep: eight instrument bugs, the SkipGate clone row, and the plan-6/7/8/15 closure gates (W2-a, W2-b, W2-c, W1-e)"
-tags: [task, t0, tests, instrument, skipgate, flaky, plan-6, plan-7, plan-8, plan-15, bug-215, bug-170, bug-168, bug-155, bug-127, bug-130, bug-190, bug-091]
+title: "Task T0: the suite-trust sweep: nine instrument bugs and the plan-6/7/8/15 closure gates (W2-a, W2-b, W2-c, W1-e)"
+tags: [task, t0, tests, instrument, skipgate, flaky, plan-6, plan-7, plan-8, plan-15, bug-215, bug-170, bug-168, bug-155, bug-127, bug-130, bug-190, bug-091, bug-196]
 metadata:
   node_type: task
   status: drafting
@@ -16,12 +16,12 @@ metadata:
 > queue item 2, run in parallel with 26.5 ([[plan-review-2026-11-13#queue-body]]). Spec gap G5
 > ([[plan-review-2026-11-13#spec-gaps]]).
 > Status: **Drafting.** It is approved only after a clean ch-bsd spec round (the d9co route,
-> [[plan-review-2026-11-13#goal-horizon]]). [[#open-items]] lists five choices for the lead
-> before then.
+> [[plan-review-2026-11-13#goal-horizon]]). The lead ruled on the five choices the first draft
+> raised; [[#rulings]] records them.
 > Depends on: queue item 1 merged to `master` (bug-212, bug-216, 25.1 rev 7). Their branches
 > edit `src/refmatrix/store.py` and `src/refmatrix/hooks.py`, which T0.4 also edits. Every T0
 > branch starts from the `master` sha that holds those merges.
-> Closes: bug-215 (it is also the SkipGate UNPINNED row), 170, 168, 155, 127, 130, 190 and 091.
+> Closes: bug-215, 170, 168, 155, 127, 130, 190, 091 and 196 ([[#ruling-o1]]).
 > It also closes the recorded closure gates of plans 6, 7, 8 and 15 (D-Q6).
 > User gates: none. No step opens a live store, starts a fleet daemon, or needs a hook install
 > window ([[#rules]] R0.7).
@@ -31,7 +31,7 @@ rel: derives-from -> [[plan-review-2026-11-13#f8]]
 rel: derives-from -> [[plan-review-2026-11-13#spec-gaps]]
 rel: part-of -> [[plan-review-2026-11-13#queue-body]]
 rel: derives-from -> [[plan-review-2026-10-14#t11-folded-waves]]
-rel: derives-from -> [[bug_registry]] {bugs: "bug-215, bug-170, bug-168, bug-155, bug-127, bug-130, bug-190, bug-091"}
+rel: derives-from -> [[bug_registry]] {bugs: "bug-215, bug-170, bug-168, bug-155, bug-127, bug-130, bug-190, bug-091, bug-196"}
 rel: derives-from -> [[bsd-plan6-deferrals-docs-benchmark-r1-e0b7df6]]
 rel: derives-from -> [[bsd-plan8-9-10-r5-e0b7df6]]
 rel: derives-from -> [[bsd-r1-remedy-r13-dcf7115]]
@@ -52,7 +52,7 @@ ended **14 failed, 4265 passed**. None of the 14 failures was a regression:
 - bug-170: 1 (the hooks test renders under the sandbox HOME);
 - bug-127: 1 (a DuckDB `Conflicting lock` held by the test's own daemon);
 - bug-155's test: 1. Its E line that day was bug-211, which is now fixed;
-- bug-196: 2 (see [[#open-items]] O1).
+- bug-196: 2 (now [[#t0-8]], per [[#ruling-o1]]).
 
 In a littlebig clone every run exits 1 on a skip the gate cannot place (bug-215), and the
 repo-scope GMD gate fails on 32 dangling ids (bug-155). Three tests fail only under load (bug-130,
@@ -72,16 +72,18 @@ schedules them here:
 
 | sub-task | closes | branch | merges |
 |---|---|---|---|
-| [[#t0-1]] Skip gate and checkout identity | bug-215 (= the SkipGate UNPINNED row, bug-212 r2 flag 8 / r1 #m-4), bug-155 | `task-t0.1-skip-gate-checkout-identity` | first |
+| [[#t0-1]] Skip gate and checkout identity | bug-215, bug-155 | `task-t0.1-skip-gate-checkout-identity` | first |
 | [[#t0-2]] Dev-tree-only tests stop reading the real HOME and cwd ancestry | bug-170, bug-168, bug-127 | `task-t0.2-dev-tree-test-isolation` | any order after T0.1 |
 | [[#t0-3]] Load-dependent flakes | bug-130, bug-190, bug-091 | `task-t0.3-load-flakes` | any order after T0.1 |
 | [[#t0-4]] W2-a: the plan-6 remedy | plan-6 r1 #b-1, #b-2, #s-1, #s-2, #s-3, #m-1..#m-5; todo G7/G8 | `task-t0.4-plan6-remedy` | any order after T0.1 |
 | [[#t0-5]] W2-b: the plan-8 remedy | plan-8 r5 #b-2, #b-3, #s-4, #s-9, #m-10 (+ #s-6 check) | `task-t0.5-plan8-remedy` | after T0.4 (both edit `cli.py`; T0.4's registry lint lands first) |
 | [[#t0-6]] W2-c: the plan-7 dense/fused re-run | task 7.4's missing rows; REPORT.md completed | `task-t0.6-plan7-dense-rerun` | any time after T0.1; long-running |
+| [[#t0-8]] bug-196: the cli.log recall leg split per channel | bug-196 ([[#ruling-o1]]) | `task-t0.8-bug196-recall-channels` | any order after T0.1 |
 | [[#t0-7]] W1-e: plan-15 r13 remedy + the clean full suite | plan-15 r13 #s-1, #m-1, #m-2; the clean-suite gate for plans 15, and the trust proof for T0 | `task-t0.7-plan15-close-clean-suite` | **last** |
 
 T0.1 goes first because until it lands, every clone run exits 1 and no sub-task can quote a
-clean exit code. T0.2 to T0.6 are independent of each other, apart from the T0.4 → T0.5 order.
+clean exit code. T0.2 to T0.6 and T0.8 are independent of each other, apart from the T0.4 → T0.5
+order.
 They may run in parallel littlebig clones (each in its own `/Volumes/littlebig/refmatrix-t0-<n>`).
 T0.7 runs the closing suite, so it merges last. {#scope-order}
 
@@ -123,11 +125,10 @@ T0.7 runs the closing suite, so it merges last. {#scope-order}
 
 ## T0.1 Skip gate and checkout identity (bug-215, bug-155) {#t0-1}
 
-**bug-215 = the SkipGate UNPINNED row.** The plan review lists "the SkipGate UNPINNED row" as a
-separate item. Its source, flag 8 of the bug-212 GREEN r2 notes, reads "Unchanged from r1: … the
-SkipGate UNPINNED skip (m-4)". The bug-212 summary first called it "no registry row yet". The
-bug-215 row was then logged on master from ch-bsd bug-212 r1 #m-4. So these are one defect with
-one fix, and closing bug-215 closes the flag. {#t0-1-identity}
+**bug-215.** This sweep tracks it as one item. It is the defect the bug-212 notes call the
+SkipGate UNPINNED skip (ch-bsd bug-212 r1 #m-4, carried as flag 8 of GREEN r2), and the plan
+review's separate "SkipGate UNPINNED row" is the same defect (lead ruling, 2026-11-13). Closing
+bug-215 closes it. {#t0-1-identity}
 
 **bug-155, root-caused while writing this spec (probe, 2026-11-13).** Two `git archive` copies of
 `1cf3b9f` were made: one in a dir named `refmatrix`, one in a dir named `refmatrix-clone`, each
@@ -139,7 +140,8 @@ with an empty `.git/`. The repo-scope lint ran over the same scope and the main 
 The cause is `tools/gmd/lint.py` `project_name()`. With no `project:` key it takes the repo
 directory's basename as the id namespace. The ADRs carry ids like `refmatrix/adr-0000-adr-overview`.
 So in any checkout not named `refmatrix`, `[[adr-0000-adr-overview]]` does not resolve. The
-remaining 1, in both copies, is `[[agent-brief-bsd-pop-r1]]`, which [[#open-items]] O4 covers.
+remaining 1, in both copies, was `[[agent-brief-bsd-pop-r1]]`; the lead fixed it on dev master
+at `35e1e0d` ([[#ruling-o4]]).
 {#t0-1-bug155-cause}
 
 ### Requirements {#t0-1-requirements}
@@ -183,9 +185,9 @@ remaining 1, in both copies, is `[[agent-brief-bsd-pop-r1]]`, which [[#open-item
   and the output names both reasons. {#ac-1-3}
 - **AC-1.4 (bug-155, clone).** In the T0.1 clone (not named `refmatrix`),
   `test_the_repo_scope_is_clean_under_the_stricter_gate` is RED at base. Its E line lists the 32
-  ADR / architecture-index `dangling-doc` errors, which R0.2 quotes. It is green after R1.3, as
-  long as O4's two lead-owned errors are fixed on the base. If they are not, the remaining E lines
-  are exactly those, quoted by E line. `./scripts/lint-gmd.sh` exits 0 under the same condition.
+  ADR / architecture-index `dangling-doc` errors, which R0.2 quotes. It is green after R1.3. The
+  base holds `35e1e0d`, where the main-tree gate is green ([[#ruling-o4]]), so any other E line
+  is a new finding, not an assumed residue. `./scripts/lint-gmd.sh` exits 0 in the clone.
   {#ac-1-4}
 - **Mutations (each FAILS):**
   - M1.1: restore the single `is_dir()` switch (AC-1.1 and AC-1.2 red);
@@ -287,7 +289,7 @@ written ([[feedback_go_no_go_ranges_not_predrop]]). {#t0-3-lead}
    reproducer's captured error decides the fix:
    - a harness defect in `eval/catalog_maint/measure_catalogs.py` is fixed there;
    - a product defect gets its own registry row with the error. Its fix is NOT absorbed into T0,
-     and T0.7 records it under [[#open-items]] O5. {#r3-1}
+     and it is handled as [[#ruling-o5]] says. {#r3-1}
 2. **R3.2 bug-190.** For
    `tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning`,
    the reproducer records the stack of every spawn. The route follows that evidence:
@@ -454,14 +456,14 @@ found:
    `tests/test_plan7_10_remedy_r4.py`) and passes `plan=` to `compile_briefs`. The
    "every class" test then asserts all four classes, `corroborated` and `singleton` included.
    {#r5-1}
-2. **R5.2 #b-3: the second direction is either built or deleted, as [[#open-items]] O2 ratifies.**
-   - **(a) delete:** remove `parse_gmd` and `_parse_evidence`. Amend
-     [[plan-8-derived-coverage-notes#proposed-approach]] to claim one direction, with a dated
-     note citing this task.
-   - **(b) expose:** `rmx memory brief --from <doc>` as a verb action, with an MCP parameter and a
-     parity row, plus an `--out` path so the index really is "on disk".
-
-   Either way, `names=` / `ids_by_name` is dropped. {#r5-2}
+2. **R5.2 #b-3: delete the second direction ([[#ruling-o2]]).** `brief.parse_gmd` and
+   `_parse_evidence` (with `names=` / `ids_by_name`) have no production caller, so they go under
+   plan-6 Q1's rule for code no production path reaches
+   ([[plan-6-deferrals-docs-benchmark#q1]]). Their tests go with them. R0 confirms there is still
+   no caller in `src/`, `scripts/`, `eval/` or the templates. `ingest_gmd.parse_gmd` is a different
+   function and is untouched. [[plan-8-derived-coverage-notes#proposed-approach]] gains a dated
+   note: the brief index is one-directional (store → GMD), citing this task. A no-caller check
+   pins the deletion ([[#ac-5-3]]). {#r5-2}
 3. **R5.3 #s-4: `brief` is verb-first.** The compile plan is built inside the verb or op when the
    caller asks for compile-backed classes. The way it asks is the implementer's choice: an action
    or a `do_compile` flag. The CLI `--compile` becomes a pass-through, and an MCP caller reaches
@@ -477,8 +479,11 @@ found:
 6. **R5.6 The plan-8 deferral rows have a live owner before plan-8 closes.**
    `workflow/deferral_registry.md` rows 43 (answer-usefulness) and 44 (`brief/stale`) say
    "Owner: plan 8". Their host in the 2026-10-19 fold was W3-b, built on 19.2/21.1 usage records,
-   and D-Q3 froze 19.2. Plan-8 flips only after those rows carry the owner [[#open-items]] O3
-   names. T0 does not edit the deferral registry, which spec-t56 owns in this wave. {#r5-6}
+   and D-Q3 froze 19.2. Per [[#ruling-o3]] both rows are re-owned to **T3, held with the frozen
+   19.2 under the D-Q3 hold** ([[plan-review-2026-11-13#d-q3]]: frozen until the handhold
+   experiment reports). Plan-8 flips only after both rows read that owner. T0 does not edit the
+   deferral registry, which spec-t56 owns in this wave; T0.5 checks the rows before the flip.
+   {#r5-6}
 
 ### Acceptance {#t0-5-acceptance}
 
@@ -488,9 +493,11 @@ found:
 - **AC-5.2.** Through the MCP surface, on a throwaway store with a seeded memory set,
   `rmx_memory` brief returns `corroborated` and `singleton` with no `classes_not_run` entry for
   either. At base it returns both under `classes_not_run`. {#ac-5-2}
-- **AC-5.3.** O2 (a): `rmx grep -rn "parse_gmd" src/refmatrix/brief.py` is empty, and plan-8's
-  note is in place. O2 (b): a round-trip test through the CLI and MCP recovers every brief with
-  its evidence ids from a rendered index. {#ac-5-3}
+- **AC-5.3 (no-caller pin).** `parse_gmd` and `_parse_evidence` are absent from
+  `src/refmatrix/brief.py`, and plan-8's note is in place. A test asserts that `brief` exports
+  no function that `src/` never calls, scoped to `brief.py`'s public functions plus an explicit
+  allow-list of entry points (each with a reason). Mutation M5.3: re-add a `parse_gmd` stub to
+  `brief.py`, and the test goes red, naming it. {#ac-5-3}
 - **AC-5.4.** M7 from r5 (CLI `--class` defaults to `("contradicted",)`) turns the parity gate
   red. {#ac-5-4}
 - **AC-5.5.** The verb parity test is green. Because the MCP tool changes, a deploy and `/mcp`
@@ -505,8 +512,8 @@ found:
 - Tests: `tests/test_brief_detectors.py`, `tests/test_brief_surfaces.py`,
   `tests/test_verb_parity.py` (pairing).
 - Docs and registries: `workflow/test_mock_registry.md`,
-  `workflow/plans/plan-8-derived-coverage-notes.md` (O2 a's note), and `docs/` CLI reference if
-  O2 b adds a flag.
+  `workflow/plans/plan-8-derived-coverage-notes.md` (the one-direction note), and a new
+  `tests/test_brief_no_dead_exports.py`.
 - `workflow/implementation_summaries/task-t0.5-plan8-remedy.md`.
 
 ## T0.6 W2-c: the plan-7 dense/fused re-run {#t0-6}
@@ -536,9 +543,10 @@ was built by 0.69.1. {#t0-6-lead}
    exactly as the symbolic rows are when it hits its ceiling ([[longmemeval-report#next]] item 1:
    the depth-200 re-run is not part of W2-c). {#r6-3}
 4. **R6.4 Every number carries its provenance** (task 7.4 `#requirements`, plan-7 `#execution`):
-   the harness command, corpus size, scoring mode, rmx version and date. If the dense rows'
-   version differs from the symbolic rows' 0.69.1, the table says so. [[#open-items]] O3 decides
-   whether the symbolic rows are re-taken on the same build. {#r6-4}
+   the harness command, corpus size, scoring mode, rmx version and date. Per [[#ruling-o3]] the
+   symbolic rows (`context`, `scan`) are re-taken on the same build in the same run, so one table
+   holds one build. The 0.69.1 rows move to a dated history section with their own provenance;
+   they are not deleted. {#r6-4}
 5. **R6.5 Artifacts and citations.** Results JSON goes under
    `eval/production/longmemeval/results/`. README and `docs/PERFORMANCE.md` cite the committed
    path. `tests/test_eval_artifact_cited.py` covers every new figure it cites, compared over the
@@ -550,9 +558,10 @@ was built by 0.69.1. {#t0-6-lead}
 
 ### Acceptance {#t0-6-acceptance}
 
-- **AC-6.1.** REPORT.md's `#restricted` and `#union` tables hold all four dense/fused methods,
-  each with a ceiling column. The setup table names the build, the store path taken (R6.2) and
-  the embed wall time. {#ac-6-1}
+- **AC-6.1.** REPORT.md's `#restricted` and `#union` tables hold `context`, `scan` and all four
+  dense/fused methods, every row from one build, each with a ceiling column. The setup table names
+  that build, the store path taken (R6.2) and the embed wall time. The 0.69.1 symbolic rows sit
+  in a dated history section with their original provenance. {#ac-6-1}
 - **AC-6.2.** `tests/test_eval_artifact_cited.py` is RED before the results are committed (README
   or PERFORMANCE cites a figure with no artifact) and green after. Mutation M6.1: edit one cited
   dense figure in README, and the test goes red. {#ac-6-2}
@@ -595,8 +604,8 @@ Source: [[bsd-r1-remedy-r13-dcf7115]] (DIRTY 3: 1 SKETCHY, 2 MEH), plus plan-15'
    - **Mock registry:** the `_FakePrivate` row graduates, or says why not. The
      `rerank_available` fake is registered for its file. {#r7-3}
 4. **R7.4 The clean full suite (plan-15's gate).** This is one run of the full suite, in the
-   **main tree** (`~/claude_tools/refmatrix`) at a committed `master` sha that holds T0.1 to T0.6
-   and T0.7's own merge. Preconditions:
+   **main tree** (`~/claude_tools/refmatrix`) at a committed `master` sha that holds T0.1 to T0.6,
+   T0.8 and T0.7's own merge. Preconditions:
    - `git status --porcelain` lists nothing under `src/ tests/ docs/ workflow/ eval/ CLAUDE.md
      .claude/PROJECT_PROFILE.md`, both at start and at end;
    - HEAD is unchanged across the run;
@@ -618,8 +627,9 @@ Source: [[bsd-r1-remedy-r13-dcf7115]] (DIRTY 3: 1 SKETCHY, 2 MEH), plus plan-15'
 6. **R7.6 A failure in R7.4 or R7.5 does not get explained away.** Every failing E line is matched
    to a row by E line (R0.2).
    - A match to an open T0 row means that sub-task's fix did not hold: it reopens.
-   - A failure with no matching row is logged as a new row, and the run stops there. The
-     handling is [[#open-items]] O5.
+   - A failure with no matching row is handled per [[#ruling-o5]]: it is logged as a new row,
+     T0's closure stops there (plan-15 stays `in-progress`), and it is raised to the lead. The
+     goal continues with its other items; T0 does not fix it without a spec.
 
    R7.4 is re-run only after the cause is fixed. {#r7-6}
 7. **R7.7 Plan closures.** Plan-15 flips to `completed` when R7.4 is clean and the T0.7 ch-bsd round
@@ -651,68 +661,74 @@ frontmatter and body status lines for plans 6, 7, 8 and 15. The summaries are
 `workflow/implementation_summaries/task-t0-suite-trust-sweep.md` (the T0 roll-up: each sub-task,
 its rows, its exit codes).
 
+## T0.8 bug-196: the cli.log recall leg is split per channel {#t0-8}
+
+Added by [[#ruling-o1]]: without it R7.4 cannot be clean. In the 0.82.0 release suite (main tree)
+both RED tests failed: `test_ac6_frozen_fixture_prints_the_exact_counts` (the report prints
+`cli.log: memory recall commands=244`, and no line holds the fixture's 34 agent recalls) and
+`test_ac6_cli_log_recalls_are_split_per_channel` (`assert []` from its `chan('prompt_recall', 5)`
+lookup). The bug-196 row names the cause and the fix. {#t0-8-lead}
+
+rel: derives-from -> [[bug_registry]] {bug: "bug-196"}
+
+### Requirements {#t0-8-requirements}
+
+1. **R8.1 One line per channel.** `telemetry.agent_usage_report`'s cli.log leg counts each
+   `memory recall` end row under its channel. The channel comes from
+   `recall_channel(session_start=, stdin_json=, recent=, invocation=source)`
+   (`telemetry.py:1246`), fed from the row's argv flag names (they survive redaction) and its
+   `source`. It replaces the single total. This applies 21.1 R7's per-invocation, per-R11-channel
+   rule to the cli.log leg as well as to `kind=recall` query.log rows. {#r8-1}
+2. **R8.2 No double count.** When a store has both 21.1 `kind=recall` query.log rows and cli.log
+   end rows for the same calls, each call is counted once. R0 records which key pairs the two
+   (the bug-196 row warns of this). {#r8-2}
+3. **R8.3 Tests are already RED.** The two AC-6 tests named above are the RED record. They are
+   not edited to pass. Any new test for R8.2 is RED first. {#r8-3}
+
+### Acceptance {#t0-8-acceptance}
+
+- **AC-8.1.** Both AC-6 tests pass. On the frozen fixture the report prints one line per channel:
+  201 `prompt_recall`, 6 `session_start`, 3 `precompact`, 34 agent `recall` (the row's
+  breakdown), and they sum to the old 244. {#ac-8-1}
+- **AC-8.2.** A fixture holding the same calls as cli.log rows and as `kind=recall` rows counts
+  each call once. {#ac-8-2}
+- **Mutations (each FAILS):** M8.1: every cli.log recall falls to one channel (AC-8.1 red); M8.2:
+  both legs count the same call (AC-8.2 red). {#t0-8-mutations}
+
+### Files {#t0-8-files}
+
+`src/refmatrix/telemetry.py`, `tests/test_task21_1_agent_usage_report.py` (only a new R8.2
+test), `workflow/bug_registry.md` (row 196),
+`workflow/implementation_summaries/task-t0.8-bug196-recall-channels.md`.
+
 ## Merge order {#merge-order}
 
-queue item 1 (bug-212, bug-216, 25.1 rev 7) → **T0.1** → T0.2 ∥ T0.3 ∥ T0.4 ∥ T0.6 → T0.5
-(after T0.4) → **T0.7** (last; R7.4 runs on the sha after its merge). T0 runs alongside 26.5,
+queue item 1 (bug-212, bug-216, 25.1 rev 7) → **T0.1** → T0.2 ∥ T0.3 ∥ T0.4 ∥ T0.6 ∥ T0.8 →
+T0.5 (after T0.4) → **T0.7** (last; R7.4 runs on the sha after its merge). T0 runs alongside 26.5,
 and 26.5's merges may land between T0 merges. R7.4 runs on whatever `master` holds at that point
 and is clean only if 26.5's tests are too. Each sub-task merges `--no-ff` from its own branch. T0
 needs no hook install window (R0.7). T0.5 changes an MCP tool, so it rides the next release with
 a `/mcp` reconnect. {#merge-order-body}
 
-## Open items for the lead (no D-Q or L-row settles them) {#open-items}
+## Lead rulings, 2026-11-13 {#rulings}
 
-- **O1: bug-196 blocks R7.4.** Its two RED tests (`test_ac6_frozen_fixture_prints_the_exact_counts`
-  and `test_ac6_cli_log_recalls_are_split_per_channel`) failed in the 0.82.0 release suite. L8 puts
-  bug-196 on the T3 backlog, outside the goal, so W1-e's "clean full suite" cannot pass inside the
-  goal. Options:
-  - **(a) bug-196 joins T0 as T0.8** (recommended). It is a `src/` fix in `telemetry.py`
-    `agent_usage_report`, with its RED tests already committed and the fix named in its row.
-  - (b) W1-e moves to the backlog with bug-196, and plan-15 stays `in-progress`.
-  - (c) R7.4 admits bug-196's two E lines as named exceptions. This contradicts "clean" and
-    CLAUDE.md `#system-dependent-tests`.
+The first draft raised five choices that no D-Q or L-row settled. The lead ruled on all five, on
+the user's pattern (correct first, no dead code, nothing parked without a host), and they are
+folded into the sections each one names. {#rulings-lead}
 
-  {#o1}
-- **O2: plan-8 #b-3, delete or expose `brief.parse_gmd`.**
-  - **(a) delete** (recommended). This is plan-6 Q1's recorded rule for code no production path
-    reaches ("an env-flag facade nobody sets is a second path"). Plan-8 records no consumer of
-    the reverse direction.
-  - (b) expose it as `rmx memory brief --from <doc>`, with `--out`.
-
-  {#o2}
-- **O3: the owner of plan-8's deferral rows 43 and 44 (and whether T0.6 re-takes the symbolic
-  rows).**
-  - Rows 43/44: **(a) re-own them to T3, held with 19.2 under D-Q3** (recommended: their
-    dependency is 19.2/21.1 usage records). (b) Plan-8 stays `in-progress` until W3-b. Either
-    way, spec-t56 or the lead edits the registry, not T0.
-  - T0.6's symbolic rows: **(a) re-take `context` and `scan` on the same build in the same run**
-    (recommended: one build per table, and the symbolic re-run is cheap next to the embed).
-    (b) Keep the 0.69.1 rows, labelled by version.
-
-  {#o3}
-- **O4: master fails its own repo-scope GMD gate today (lead-owned files).** At `1cf3b9f` the
-  lint over the gate's scope gives:
-  - 5 `no-gmd-version` errors: `workflow/review-output/pop-2026-11-13/contra-{a..e}.md` have no
-    frontmatter;
-  - 1 `dangling-doc` error, `[[agent-brief-bsd-pop-r1]]` in
-    `workflow/bullshit/2026-11-13-2215-pop-review-r1-c56782f.md`. The target brief
-    `workflow/agents/bsd-pop-r1.md` exists only untracked in the main tree.
-
-  `test_the_repo_scope_is_clean_under_the_stricter_gate` fails on these at any checkout of
-  master. Recommended: the lead fixes them in G27 bookkeeping (frontmatter or a `not-gmd`
-  opt-out line on the five; commit the brief) before T0.1's AC-1.4 runs. {#o4}
-- **O5: a failure R7.4 finds that no T0 row owns.** P5 rule 2 sends a new bug to its owning
-  task's track. P5 rule 4 makes any queue insertion a user decision.
-  - **(a) Recommended:** log the row, stop T0's closure there (plan-15 stays `in-progress`), and
-    raise it to the lead. The goal continues with its other items.
-  - (b) Fold the fix into T0 without a spec. The goal cannot do this unattended
-    (CLAUDE.md `#plans-pre-written`).
-
-  {#o5}
-- **Also for the lead (not a choice):** bug-170's fix column also proposes a standing rule: "the
-  release gate runs the dev-tree-only tests in the owning checkout". T0 meets it once, through
-  R7.4. The standing rule has no home document, since there is no release checklist in
-  `workflow/`. Recommended: one line in the POP release section during the P1 rewrite. {#o-release-rule}
+- **O1 → (a).** bug-196 joins T0 as [[#t0-8]], so W1-e's clean-suite gate (R7.4) can be met.
+  Its RED tests are the two AC-6 tests named in the bug-196 row. {#ruling-o1}
+- **O2 → (a).** `brief.parse_gmd` is deleted under plan-6 Q1's rule for code with no production
+  caller, and the deletion is pinned with a no-caller check ([[#r5-2]], [[#ac-5-3]]).
+  {#ruling-o2}
+- **O3 → (a), both halves.** Plan-8's deferral rows 43 and 44 are re-owned to T3, held with the
+  frozen 19.2 under the D-Q3 hold ([[#r5-6]]). T0.6 re-takes the symbolic rows on the same build
+  for one comparable table ([[#r6-4]], [[#ac-6-1]]). {#ruling-o3}
+- **O4: fixed by the lead** on dev master at `35e1e0d`: frontmatter on the pop-2026-11-13
+  reports, the bsd-pop-r1 brief committed, `./scripts/lint-gmd.sh` exit 0. T0.1's AC-1.4 assumes
+  a green master gate ([[#ac-1-4]]). {#ruling-o4}
+- **O5 → (a).** A failure that no T0 row owns is logged, stops T0's closure, and is raised to the
+  lead ([[#r7-6]], [[#r3-1]]). {#ruling-o5}
 
 ## Q8 note {#q8-b}
 
@@ -727,11 +743,12 @@ store, so live `brief` counts would shift. No T0 acceptance criterion asserts a 
   with its exit code (R0.3). Every sub-task has its own implementation summary, named in its Files
   section, and the roll-up `workflow/implementation_summaries/task-t0-suite-trust-sweep.md`
   exists.
-- Rows 215, 170, 168, 155, 127, 130, 190 and 091 read `fixed <sha>` with evidence, or (T0.3 only)
-  `open / diagnosed-loud` with the band counts.
+- Rows 215, 170, 168, 155, 127, 130, 190, 091 and 196 read `fixed <sha>` with evidence, or (T0.3
+  only) `open / diagnosed-loud` with the band counts.
 - R7.4 and R7.5 are committed and clean.
 - Plans 6, 7, 8 and 15 are `completed` in frontmatter and body, or still `in-progress` with the
-  named open item that holds each.
+  named reason that holds each (a ch-bsd round not yet CLEAN, an unmet deferral owner, or an O5
+  stop).
 - Every sub-task's ch-bsd round is CLEAN, or MEH-only where its plan allows.
 - GMD lint shows 0 errors on every touched `.md`.
 - Each branch is merged `--no-ff` to `master`.
