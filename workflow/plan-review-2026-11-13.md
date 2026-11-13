@@ -218,6 +218,42 @@ Measurement lane, alongside: 23.4, the bug-182 per-leg timing, the 10.5 read-bac
 L17's Table A on the composite.
 {#queue-body}
 
+## User decisions, 2026-11-13 {#decisions}
+
+The user: "q1-a, q2-ship it, q-3-7 your recommendations". These are final. They supersede the
+proposal text above wherever it differs. {#decisions-quote}
+
+- **D-Q1 (X2):** memories go INTO the graph, correctly classified (bug-220 route-not-refuse).
+  Save-states and `workflow/` stay OUT of the concept graph fleet-wide. The lead's reading, stated
+  to the user: OUT means excluded from co-mention / concept-weight derivation, the pollution
+  `feedback_operational_content_not_in_graph` names. It does not mean excluded from ingest:
+  `workflow/` is a corpus root (`PROJECT_PROFILE.md#corpus`), so its docs stay addressable by name,
+  anchor and `rel:`. A T6 task stub specs it. Live purges go through plan-22's audited path, and
+  every live step is announced and backed up. {#d-q1}
+- **D-Q2 (X3):** 25.1 rev 7 ships in 0.83.0.
+  - The 26.7 / plan-27 order is waived on the record: plan-25 `#ordering`, the 25.1 spec
+    `:22-24`/`:34`, and POP row 25.
+  - 26.7 gains an AC that 25.1's curated-hook lookup survives the regroup.
+  - Rev 8 (R12-R14, AC-16-18) becomes task **25.1b**, on its own branch after 10.3. Its spec
+    text leaves the 25.1 branch before the merge.
+  - 25.1b also hosts plan-2's #s-2/#m-4 riders (D-Q6). {#d-q2}
+- **D-Q3 (X4):** P3 as revised. Frozen until the handhold experiment reports: 19.2, the
+  19.6 phasing/cache work plus Table C, 21.3, and the 21.5 build. d9bi is narrowed, not reversed.
+  {#d-q3}
+- **D-Q4 (X5):** the user's order stands: 21.5 decision → handhold experiment. 21.5 rev 4
+  folds the pilot's seven matcher changes and drops or gates `bash_name`. The 21.5 decision is
+  "no build until the experiment reports". {#d-q4}
+- **D-Q5 (X6):** plan-24 D1 is superseded. Verb-side logic builds on the hook transport now,
+  and plan-24 is re-planned after the charter decision. plan-24 gains `rel: supersedes` /
+  amends notes on `#decisions` and `#phasing`, and 24.8 R5 gains rows for plan-10 and
+  25.1-25.3. {#d-q5}
+- **D-Q6 (X7):** plans 3 and 9 close now. Plans 6, 7, 8 and 15 keep their gates (W2-a, W2-c,
+  W2-b, W1-e), which are scheduled in the T0 sweep or the backlog. Plan-2 closes when its riders
+  land in 25.1b. Plan-7's deferrals and todo G11 are re-owned. {#d-q6}
+- **D-Q7 (X8):** 16.5 wins on the named-path and stdin legs. 25.4/25.5 shrink to the
+  path-less index leg, where translate vs floor is decided. bug-167 ships as an interim fix only
+  if 0.83.0 needs it, with a "deleted by 16.5" note. {#d-q7}
+
 ## Questions {#questions}
 
 Asked in [[open-questions]] under session 37b7498f: Q1 (X2), Q2 (X3), Q3 (X4), Q4 (X5), Q5 (X6),
