@@ -1,0 +1,73 @@
+.......................F.................F...................            [100%]
+=================================== FAILURES ===================================
+__ test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[sync---since] __
+
+named_store = (PosixPath('/private/tmp/b212s-opt08q02'), PosixPath('/private/tmp/b212s-opt08q02/st/.refmatrix'))
+argv = ['sync', '--since', 'HEAD~1']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", CWD_ARGVS, ids=lambda a: "-".join(a[:2]).replace("~", ""))
+    def test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error(named_store, argv):
+        """s-1: the cwd error says "cd to a project, or set REFMATRIX_ROOT". Set it, and the
+        command must still not traceback: the partition is resolved from the cwd
+        (`discovery.partition_marker`), and that cwd is gone -- a clean `Error:` naming it."""
+        base, root = named_store
+        entry = _entry(base)
+        env = {**_base_env(), "REFMATRIX_ROOT": str(root)}
+        r = _vanished([sys.executable, str(entry), *argv], env)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw " \
+            f"traceback\n{text}"
+        assert r.returncode != 0, f"`rmx {' '.join(argv)}` in a vanished cwd exited 0\n{text}"
+        err = [ln for ln in r.stderr.splitlines() if ln.startswith("Error:")]
+>       assert any(_says_cwd_gone(ln) for ln in err), \
+            f"`rmx {' '.join(argv)}`: no `Error:` line saying the working directory is gone\n{text}"
+E       AssertionError: `rmx sync --since HEAD~1`: no `Error:` line saying the working directory is gone
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212s-opt08q02/st/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb, catalog.db), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         
+E       assert False
+E        +  where False = any(<generator object test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error.<locals>.<genexpr> at 0x118610ba0>)
+
+tests/test_bug212_r1_remedy.py:362: AssertionError
+_____ test_an_in_process_sync_of_a_store_outside_any_git_repo_still_writes _____
+
+    @pytest.mark.timeout(300)
+    def test_an_in_process_sync_of_a_store_outside_any_git_repo_still_writes():
+        """GUARD (passes at HEAD) against an over-broad a2 fix: a store that is not inside any git
+        repository (`git ls-files` fails there) is not "tracked" -- the in-process sync indexes."""
+        base = Path(tempfile.mkdtemp(prefix="b212n-", dir="/tmp")).resolve()
+        try:
+            proj = base / "proj"
+            root = proj / ".refmatrix"
+            s = Store(root)
+            s.init()
+            s.close()
+            probe = subprocess.run(["git", "-C", str(proj), "rev-parse", "--git-dir"],
+                                   env=_base_env(), capture_output=True, text=True)
+            assert probe.returncode != 0, f"fixture: {proj} is inside a git repo: {probe.stdout}"
+            f = proj / "loose.py"
+            f.write_text("def loose():\n    return 5\n", encoding="utf-8")
+            r = subprocess.run([sys.executable, str(_entry(base)), "sync", "--files", str(f)],
+                               cwd=str(proj), env=_base_env(), capture_output=True, text=True,
+                               timeout=240)
+            text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>           assert r.returncode == 0 and TRACEBACK not in r.stderr, \
+                f"in-process `rmx sync --files` on a store outside git failed\n{text}"
+E               AssertionError: in-process `rmx sync --files` on a store outside git failed
+E                 stdout:
+E                 
+E                 stderr:
+E                 Error: refusing an in-process sync into /private/tmp/b212n-nudr0uuw/proj/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb, catalog.db), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E                 
+E               assert (1 == 0)
+E                +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212n-nudr0uuw/rmx...atalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it\n").returncode
+
+tests/test_bug212_r1_remedy.py:687: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[sync---since]
+FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_of_a_store_outside_any_git_repo_still_writes
+2 failed, 59 passed in 50.45s

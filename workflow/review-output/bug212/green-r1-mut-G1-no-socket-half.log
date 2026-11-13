@@ -1,0 +1,76 @@
+....................FF.......................................            [100%]
+=================================== FAILURES ===================================
+_ test_a_repo_that_tracks_its_catalog_still_syncs_through_a_live_daemon[slots] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a5760d0>, 'slots')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a56c3d0>
+
+    @pytest.mark.timeout(300)
+    def test_a_repo_that_tracks_its_catalog_still_syncs_through_a_live_daemon(tracked_repo,
+                                                                              monkeypatch):
+        """GUARD (passes at HEAD): the socket half of the remedy's gate. With a live daemon the
+        sync goes through it (no in-process write by the hook's process), so a repo that tracks its
+        catalog is still kept fresh. A gate reduced to "untracked catalog only" fails this."""
+        repo, layout = tracked_repo
+        monkeypatch.setenv("PYTHONPATH", absolute_pythonpath(os.environ.get("PYTHONPATH")))
+        assert len(str(dm.socket_path(repo.store))) < 100, dm.socket_path(repo.store)
+        pid = dm.spawn_daemon_subprocess(repo.store, watch_root=[])
+        assert pid and dm.ping(repo.store), "fixture: the daemon did not come up"
+        path = repo.proj / "main_new.py"
+        path.write_text("def main_new():\n    return 3\n", encoding="utf-8")
+        _quiet(repo.proj, repo, "add", "main_new.py")
+        r = _hooked(repo.proj, repo, "commit", "-q", "-m", "commit with the daemon up")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert TRACEBACK not in r.stderr and FAILED_LINE not in r.stderr, text
+        syncs = [c for c in _calls(repo) if c[1].startswith("sync")]
+>       assert syncs and all(Path(pwd).resolve() == repo.proj for pwd, _ in syncs), \
+            f"[{layout}] post-commit with a live daemon (catalog tracked) ran no sync: " \
+            f"{_calls(repo)}\n{text}"
+E       AssertionError: [slots] post-commit with a live daemon (catalog tracked) ran no sync: []
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert ([])
+
+tests/test_bug212_r1_remedy.py:252: AssertionError
+_ test_a_repo_that_tracks_its_catalog_still_syncs_through_a_live_daemon[legacy] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a4d1910>, 'legacy')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a550210>
+
+    @pytest.mark.timeout(300)
+    def test_a_repo_that_tracks_its_catalog_still_syncs_through_a_live_daemon(tracked_repo,
+                                                                              monkeypatch):
+        """GUARD (passes at HEAD): the socket half of the remedy's gate. With a live daemon the
+        sync goes through it (no in-process write by the hook's process), so a repo that tracks its
+        catalog is still kept fresh. A gate reduced to "untracked catalog only" fails this."""
+        repo, layout = tracked_repo
+        monkeypatch.setenv("PYTHONPATH", absolute_pythonpath(os.environ.get("PYTHONPATH")))
+        assert len(str(dm.socket_path(repo.store))) < 100, dm.socket_path(repo.store)
+        pid = dm.spawn_daemon_subprocess(repo.store, watch_root=[])
+        assert pid and dm.ping(repo.store), "fixture: the daemon did not come up"
+        path = repo.proj / "main_new.py"
+        path.write_text("def main_new():\n    return 3\n", encoding="utf-8")
+        _quiet(repo.proj, repo, "add", "main_new.py")
+        r = _hooked(repo.proj, repo, "commit", "-q", "-m", "commit with the daemon up")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert TRACEBACK not in r.stderr and FAILED_LINE not in r.stderr, text
+        syncs = [c for c in _calls(repo) if c[1].startswith("sync")]
+>       assert syncs and all(Path(pwd).resolve() == repo.proj for pwd, _ in syncs), \
+            f"[{layout}] post-commit with a live daemon (catalog tracked) ran no sync: " \
+            f"{_calls(repo)}\n{text}"
+E       AssertionError: [legacy] post-commit with a live daemon (catalog tracked) ran no sync: []
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert ([])
+
+tests/test_bug212_r1_remedy.py:252: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r1_remedy.py::test_a_repo_that_tracks_its_catalog_still_syncs_through_a_live_daemon[slots]
+FAILED tests/test_bug212_r1_remedy.py::test_a_repo_that_tracks_its_catalog_still_syncs_through_a_live_daemon[legacy]
+2 failed, 59 passed in 47.70s

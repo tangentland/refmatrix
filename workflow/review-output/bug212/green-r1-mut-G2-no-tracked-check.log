@@ -1,0 +1,776 @@
+FFFFFFFFFFFFFFFFFFFF.........................................            [100%]
+=================================== FAILURES ===================================
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-checkout-worktree] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x108324830>, 'slots')
+hook = 'post-checkout', where = 'worktree'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [slots] post-checkout in a worktree of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-azs8s65u/wt', 'sync --since f5b158572a49073ee3885186cad8a16120e8906b..5cfd13c55f8b655840d4d7e0a50b5c435b1f736d')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-azs8s65u/wt/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-checkout rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-azs8s65u/wt', 'sync --since f5b158572a49073ee3885186cad8a16120e8906b..5cfd13c55f8b655840d4d7e0a50b5c435b1f736d')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-checkout-clone] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10831a5d0>, 'slots')
+hook = 'post-checkout', where = 'clone'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [slots] post-checkout in a clone of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-z52ko8bj/clone', 'sync --since 9299fb77e94191652a4799b38cb97db6d5a39810..1f6b822969a2f8dd694d2277e6168c99996ed249')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-z52ko8bj/clone/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-checkout rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-z52ko8bj/clone', 'sync --since 9299fb77e94191652a4799b38cb97db6d5a39810..1f6b822969a2f8dd694d2277e6168c99996ed249')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-commit-worktree] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10831a850>, 'slots')
+hook = 'post-commit', where = 'worktree'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [slots] post-commit in a worktree of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-4va8xj2a/wt', 'sync --since HEAD~1')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-4va8xj2a/wt/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-4va8xj2a/wt', 'sync --since HEAD~1')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-commit-clone] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x108378e90>, 'slots')
+hook = 'post-commit', where = 'clone'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [slots] post-commit in a clone of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-2kk1sje9/clone', 'sync --since HEAD~1')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-2kk1sje9/clone/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-2kk1sje9/clone', 'sync --since HEAD~1')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-merge-worktree] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x108379350>, 'slots')
+hook = 'post-merge', where = 'worktree'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [slots] post-merge in a worktree of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-tymot9cp/wt', 'sync --since ORIG_HEAD')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-tymot9cp/wt/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-merge rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-tymot9cp/wt', 'sync --since ORIG_HEAD')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-merge-clone] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x108343410>, 'slots')
+hook = 'post-merge', where = 'clone'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [slots] post-merge in a clone of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-9u79hanv/clone', 'sync --since ORIG_HEAD')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-9u79hanv/clone/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-merge rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-9u79hanv/clone', 'sync --since ORIG_HEAD')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-rewrite-worktree] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x108090050>, 'slots')
+hook = 'post-rewrite', where = 'worktree'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [slots] post-rewrite in a worktree of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-4g30q8wf/wt', 'sync --since 4b825dc642cb6eb9a060e54bf8d69288fbee4904'), ('/private/tmp/b212t-4g30q8wf/wt', 'sync --since fba58bae471efe6009068ab1c3b5a7550c2b1578')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-4g30q8wf/wt/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         Error: refusing an in-process sync into /private/tmp/b212t-4g30q8wf/wt/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         refmatrix: post-rewrite rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-4g30q8wf/wt', 'sync --since 4b825dc642cb6eb9a060e54bf8d69288fbee4904'), ('/private/tmp/b212t-4g30q8wf/wt', 'sync --since fba58bae471efe6009068ab1c3b5a7550c2b1578')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-rewrite-clone] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1080907c0>, 'slots')
+hook = 'post-rewrite', where = 'clone'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [slots] post-rewrite in a clone of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-rn71445r/clone', 'sync --since 4b825dc642cb6eb9a060e54bf8d69288fbee4904'), ('/private/tmp/b212t-rn71445r/clone', 'sync --since 12e7c578481052ce6c6ea6ba8a41a053eefbaa8c')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-rn71445r/clone/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         Error: refusing an in-process sync into /private/tmp/b212t-rn71445r/clone/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         refmatrix: post-rewrite rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-rn71445r/clone', 'sync --since 4b825dc642cb6eb9a060e54bf8d69288fbee4904'), ('/private/tmp/b212t-rn71445r/clone', 'sync --since 12e7c578481052ce6c6ea6ba8a41a053eefbaa8c')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-checkout-worktree] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10839b050>, 'legacy')
+hook = 'post-checkout', where = 'worktree'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [legacy] post-checkout in a worktree of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-9vnpav5w/wt', 'sync --since bb8e7d0affd69ff2e7f6e0f2609c70fa5290b563..fea1ad77a0c30eea74a6e10cfe48489daa0753ae')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-9vnpav5w/wt/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-checkout rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-9vnpav5w/wt', 'sync --since bb8e7d0affd69ff2e7f6e0f2609c70fa5290b563..fea1ad77a0c30eea74a6e10cfe48489daa0753ae')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-checkout-clone] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10839bb50>, 'legacy')
+hook = 'post-checkout', where = 'clone'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [legacy] post-checkout in a clone of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-ww4zyo73/clone', 'sync --since 1ec865da5d90b0104f46942b33abfe266895c2b8..84e51a4851f051320ec3af155b7c3a75ef2f0c62')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-ww4zyo73/clone/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-checkout rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-ww4zyo73/clone', 'sync --since 1ec865da5d90b0104f46942b33abfe266895c2b8..84e51a4851f051320ec3af155b7c3a75ef2f0c62')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-commit-worktree] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10809dd60>, 'legacy')
+hook = 'post-commit', where = 'worktree'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [legacy] post-commit in a worktree of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-gvjorkes/wt', 'sync --since HEAD~1')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-gvjorkes/wt/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-gvjorkes/wt', 'sync --since HEAD~1')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-commit-clone] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10809f110>, 'legacy')
+hook = 'post-commit', where = 'clone'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [legacy] post-commit in a clone of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-60llrleb/clone', 'sync --since HEAD~1')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-60llrleb/clone/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-60llrleb/clone', 'sync --since HEAD~1')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-merge-worktree] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1080d7230>, 'legacy')
+hook = 'post-merge', where = 'worktree'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [legacy] post-merge in a worktree of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-7nmvchpn/wt', 'sync --since ORIG_HEAD')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-7nmvchpn/wt/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-merge rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-7nmvchpn/wt', 'sync --since ORIG_HEAD')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-merge-clone] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1080d6eb0>, 'legacy')
+hook = 'post-merge', where = 'clone'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [legacy] post-merge in a clone of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-6aj5bxwi/clone', 'sync --since ORIG_HEAD')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-6aj5bxwi/clone/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-merge rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-6aj5bxwi/clone', 'sync --since ORIG_HEAD')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-rewrite-worktree] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1085cfc70>, 'legacy')
+hook = 'post-rewrite', where = 'worktree'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [legacy] post-rewrite in a worktree of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-zf8adf1d/wt', 'sync --since 4b825dc642cb6eb9a060e54bf8d69288fbee4904'), ('/private/tmp/b212t-zf8adf1d/wt', 'sync --since 1892620262c6f5ab80076f1c789af7ba056dbdaa')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-zf8adf1d/wt/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         Error: refusing an in-process sync into /private/tmp/b212t-zf8adf1d/wt/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         refmatrix: post-rewrite rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-zf8adf1d/wt', 'sync --since 4b825dc642cb6eb9a060e54bf8d69288fbee4904'), ('/private/tmp/b212t-zf8adf1d/wt', 'sync --since 1892620262c6f5ab80076f1c789af7ba056dbdaa')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-rewrite-clone] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1082afc50>, 'legacy')
+hook = 'post-rewrite', where = 'clone'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [legacy] post-rewrite in a clone of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-85l921u8/clone', 'sync --since 4b825dc642cb6eb9a060e54bf8d69288fbee4904'), ('/private/tmp/b212t-85l921u8/clone', 'sync --since 9510506b047ebb2aff6db8301f018d83c2498aaa')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-85l921u8/clone/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         Error: refusing an in-process sync into /private/tmp/b212t-85l921u8/clone/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         refmatrix: post-rewrite rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-85l921u8/clone', 'sync --since 4b825dc642cb6eb9a060e54bf8d69288fbee4904'), ('/private/tmp/b212t-85l921u8/clone', 'sync --since 9510506b047ebb2aff6db8301f018d83c2498aaa')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[slots-post-commit] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10813c4d0>, 'slots')
+hook = 'post-commit'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("hook", ["post-commit", "post-checkout"])
+    def test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync(
+            tracked_repo, hook):
+        """b-1, the main checkout: the catalog is tracked and NO daemon answers. An in-process sync
+        would write the tracked binary (the remedy's gate: a live socket OR an untracked catalog;
+        here there is neither), so the hook runs no `rmx` and `.refmatrix/` stays clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        if hook == "post-commit":
+            (repo.proj / "main_new.py").write_text("def main_new():\n    return 3\n",
+                                                    encoding="utf-8")
+            _quiet(repo.proj, repo, "add", "main_new.py")
+            r = _hooked(repo.proj, repo, "commit", "-q", "-m", "commit in the main checkout")
+        else:
+            r = _hooked(repo.proj, repo, "checkout", "-q", "other")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), f"fixture: git never ran {hook} (GIT_TRACE)"
+        status = _status_refmatrix(repo.proj)
+>       assert not _calls(repo), (f"[{layout}] {hook} in the main checkout (catalog tracked, no "
+                                  f"daemon) ran rmx: {_calls(repo)}\ngit status .refmatrix/:\n"
+                                  f"{status}\n{text}")
+E       AssertionError: [slots] post-commit in the main checkout (catalog tracked, no daemon) ran rmx: [('/private/tmp/b212t-jawdk37c/proj', 'sync --since HEAD~1')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-jawdk37c/proj/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-jawdk37c/proj', 'sync --since HEAD~1')]
+E        +  where [('/private/tmp/b212t-jawdk37c/proj', 'sync --since HEAD~1')] = _calls(<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10813c4d0>)
+
+tests/test_bug212_r1_remedy.py:227: AssertionError
+_ test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[slots-post-checkout] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10815ec50>, 'slots')
+hook = 'post-checkout'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("hook", ["post-commit", "post-checkout"])
+    def test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync(
+            tracked_repo, hook):
+        """b-1, the main checkout: the catalog is tracked and NO daemon answers. An in-process sync
+        would write the tracked binary (the remedy's gate: a live socket OR an untracked catalog;
+        here there is neither), so the hook runs no `rmx` and `.refmatrix/` stays clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        if hook == "post-commit":
+            (repo.proj / "main_new.py").write_text("def main_new():\n    return 3\n",
+                                                    encoding="utf-8")
+            _quiet(repo.proj, repo, "add", "main_new.py")
+            r = _hooked(repo.proj, repo, "commit", "-q", "-m", "commit in the main checkout")
+        else:
+            r = _hooked(repo.proj, repo, "checkout", "-q", "other")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), f"fixture: git never ran {hook} (GIT_TRACE)"
+        status = _status_refmatrix(repo.proj)
+>       assert not _calls(repo), (f"[{layout}] {hook} in the main checkout (catalog tracked, no "
+                                  f"daemon) ran rmx: {_calls(repo)}\ngit status .refmatrix/:\n"
+                                  f"{status}\n{text}")
+E       AssertionError: [slots] post-checkout in the main checkout (catalog tracked, no daemon) ran rmx: [('/private/tmp/b212t-k0lpsncl/proj', 'sync --since fbdbe9cffda571c6b89394af506ab7a1bb64c3f5..50e8006ae5cf04d2d21aceef5aa5ca1b0f639c42')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-k0lpsncl/proj/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-checkout rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-k0lpsncl/proj', 'sync --since fbdbe9cffda571c6b89394af506ab7a1bb64c3f5..50e8006ae5cf04d2d21aceef5aa5ca1b0f639c42')]
+E        +  where [('/private/tmp/b212t-k0lpsncl/proj', 'sync --since fbdbe9cffda571c6b89394af506ab7a1bb64c3f5..50e8006ae5cf04d2d21aceef5aa5ca1b0f639c42')] = _calls(<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10815ec50>)
+
+tests/test_bug212_r1_remedy.py:227: AssertionError
+_ test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[legacy-post-commit] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10815f3e0>, 'legacy')
+hook = 'post-commit'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("hook", ["post-commit", "post-checkout"])
+    def test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync(
+            tracked_repo, hook):
+        """b-1, the main checkout: the catalog is tracked and NO daemon answers. An in-process sync
+        would write the tracked binary (the remedy's gate: a live socket OR an untracked catalog;
+        here there is neither), so the hook runs no `rmx` and `.refmatrix/` stays clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        if hook == "post-commit":
+            (repo.proj / "main_new.py").write_text("def main_new():\n    return 3\n",
+                                                    encoding="utf-8")
+            _quiet(repo.proj, repo, "add", "main_new.py")
+            r = _hooked(repo.proj, repo, "commit", "-q", "-m", "commit in the main checkout")
+        else:
+            r = _hooked(repo.proj, repo, "checkout", "-q", "other")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), f"fixture: git never ran {hook} (GIT_TRACE)"
+        status = _status_refmatrix(repo.proj)
+>       assert not _calls(repo), (f"[{layout}] {hook} in the main checkout (catalog tracked, no "
+                                  f"daemon) ran rmx: {_calls(repo)}\ngit status .refmatrix/:\n"
+                                  f"{status}\n{text}")
+E       AssertionError: [legacy] post-commit in the main checkout (catalog tracked, no daemon) ran rmx: [('/private/tmp/b212t-k8wq8qda/proj', 'sync --since HEAD~1')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-k8wq8qda/proj/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-k8wq8qda/proj', 'sync --since HEAD~1')]
+E        +  where [('/private/tmp/b212t-k8wq8qda/proj', 'sync --since HEAD~1')] = _calls(<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10815f3e0>)
+
+tests/test_bug212_r1_remedy.py:227: AssertionError
+_ test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[legacy-post-checkout] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1080ee850>, 'legacy')
+hook = 'post-checkout'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("hook", ["post-commit", "post-checkout"])
+    def test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync(
+            tracked_repo, hook):
+        """b-1, the main checkout: the catalog is tracked and NO daemon answers. An in-process sync
+        would write the tracked binary (the remedy's gate: a live socket OR an untracked catalog;
+        here there is neither), so the hook runs no `rmx` and `.refmatrix/` stays clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        if hook == "post-commit":
+            (repo.proj / "main_new.py").write_text("def main_new():\n    return 3\n",
+                                                    encoding="utf-8")
+            _quiet(repo.proj, repo, "add", "main_new.py")
+            r = _hooked(repo.proj, repo, "commit", "-q", "-m", "commit in the main checkout")
+        else:
+            r = _hooked(repo.proj, repo, "checkout", "-q", "other")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), f"fixture: git never ran {hook} (GIT_TRACE)"
+        status = _status_refmatrix(repo.proj)
+>       assert not _calls(repo), (f"[{layout}] {hook} in the main checkout (catalog tracked, no "
+                                  f"daemon) ran rmx: {_calls(repo)}\ngit status .refmatrix/:\n"
+                                  f"{status}\n{text}")
+E       AssertionError: [legacy] post-checkout in the main checkout (catalog tracked, no daemon) ran rmx: [('/private/tmp/b212t-827pr6v_/proj', 'sync --since d51607d4db1de7ee5cf6771ac4f3802139ba3fb8..53dd39c81d3443234bb843a376dd583f70236db8')]
+E         git status .refmatrix/:
+E         ?? .refmatrix/cli.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process sync into /private/tmp/b212t-827pr6v_/proj/.refmatrix/catalog.duckdb: git tracks this store's catalog (catalog.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the sync goes through it
+E         refmatrix: post-checkout rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-827pr6v_/proj', 'sync --since d51607d4db1de7ee5cf6771ac4f3802139ba3fb8..53dd39c81d3443234bb843a376dd583f70236db8')]
+E        +  where [('/private/tmp/b212t-827pr6v_/proj', 'sync --since d51607d4db1de7ee5cf6771ac4f3802139ba3fb8..53dd39c81d3443234bb843a376dd583f70236db8')] = _calls(<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1080ee850>)
+
+tests/test_bug212_r1_remedy.py:227: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-checkout-worktree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-checkout-clone]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-commit-worktree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-commit-clone]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-merge-worktree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-merge-clone]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-rewrite-worktree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-rewrite-clone]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-checkout-worktree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-checkout-clone]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-commit-worktree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-commit-clone]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-merge-worktree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-merge-clone]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-rewrite-worktree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-rewrite-clone]
+FAILED tests/test_bug212_r1_remedy.py::test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[slots-post-commit]
+FAILED tests/test_bug212_r1_remedy.py::test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[slots-post-checkout]
+FAILED tests/test_bug212_r1_remedy.py::test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[legacy-post-commit]
+FAILED tests/test_bug212_r1_remedy.py::test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[legacy-post-checkout]
+20 failed, 41 passed in 55.20s

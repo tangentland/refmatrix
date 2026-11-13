@@ -396,3 +396,142 @@ counts).
   3475/3496/3582/4002/4563) read the DAEMON's cwd. They are not part of this remedy.
 - **a8 accepted.** The library-level s-1 tests pin a behaviour (a non-OSError naming the working
   directory), not a class.
+
+## GREEN r1 (remedy for ch-bsd r1: b-1, a2, s-1, m-3, s-3) {#green-r1}
+
+Fix commit `faabdfe` (src only, by pathspec); docs commit `69333d2` (`docs/INTEGRATION.md`). No
+test was edited. Both bug-212 test files: **61 passed, pytest exit 0**
+(`workflow/review-output/bug212/green-r1.log`; at `62db88f` they were 37 failed / 24 passed).
+
+rel: derives-from -> [[bsd-bug212-r1-b024a95]]
+rel: depends-on -> [[agent-brief-green-212r1]]
+rel: implements -> [[#red-r1]]
+
+### What changed {#green-r1-changes}
+
+- **b-1** `src/refmatrix/hooks.py` -- `_store_gate() -> str` now renders, for all four hooks:
+  `if [ ! -S "$ROOT/.refmatrix/rmxd.sock" ]; then <a WRITER_CATALOG_FILES file present> || exit
+  0; TRACKED="$(git -C "$ROOT" ls-files -- <those names>)" || { echo "refmatrix: ${0##*/}: git
+  ls-files failed; not syncing" >&2; exit 0; }; [ -z "$TRACKED" ] || exit 0; fi`. The socket
+  name comes from `daemon.SOCKET_NAME`, the catalog names from `store.WRITER_CATALOG_FILES`.
+- **m-3** `hooks.GIT_HOOK_SCRIPTS["post-commit"]` -- `SINCE=HEAD~1; git rev-parse -q --verify
+  HEAD~1 >/dev/null || SINCE="$(git hash-object -t tree /dev/null)"`, then `rmx sync --since
+  "$SINCE"`. `hash-object` gives the empty tree in the repo's own hash (SHA-1 or SHA-256).
+- **a2** `src/refmatrix/store.py` -- `git_tracked_catalogs(root: Path) -> list[str]` (the
+  tracked `WRITER_CATALOG_FILES` names under `root`). It returns `[]` when git is missing, when
+  `root` is not a dir, or when `root` is in no work tree. It raises
+  `TrackedCatalogCheckError(RuntimeError)` when `ls-files` fails inside a repo. It drops the
+  repo-local `GIT_*` variables (`_GIT_LOCAL_ENV_VARS`), so the hook's repository cannot answer
+  for the store's. `src/refmatrix/cli.py` -- `_refuse_in_process_write_to_tracked_catalog(root:
+  Path) -> None` raises one `ClickException` that names the target file (the active slot, else
+  the legacy catalog), the tracked names and both remedies. The `sync` command calls it when
+  `daemon.ping` fails, before `_store()` opens the catalog. `-i` can reach `_store()` with a
+  daemon up, and `_store()` then returns the daemon writer, so the ping gate keeps that path
+  unrefused.
+- **s-1** `src/refmatrix/workdir.py` (new, stdlib only):
+  - `class WorkingDirectoryGone(RuntimeError)`, `__init__(self, remedy: str | None = None)`.
+  - `cwd_gone_message(remedy: str | None = None) -> str` names `$PWD`. Its default remedy is
+    "cd to a project, or set REFMATRIX_ROOT"; with `REFMATRIX_ROOT` already set it is "cd to an
+    existing project directory (REFMATRIX_ROOT is set, but this command also reads the working
+    directory)".
+  - `current_dir(remedy: str | None = None) -> Path` translates only `Path.cwd()`'s
+    `FileNotFoundError`.
+  - Routed through it: `cli._cwd()` (now `-> Path`, raising `WorkingDirectoryGone`),
+    `discovery._cwd_root`, `discovery.partition_marker`, `sync.sync_since`, `sync._sync_paths`
+    (remedy "pass project_root ..."), `mcp._resolve_root` (remedy names `root`/`project`/
+    `REFMATRIX_ROOT`), `cctree._project_base(args) -> Path` (new; the five former
+    `Path.cwd()` fallbacks; remedy "pass --project <dir>"; the standalone `__main__` prints
+    `cctree: <msg>`), and `cli._grep_rg_fallback` (a6 census).
+  - `class _RmxGroup(click.Group)` (`main` is now `cls=_RmxGroup`) turns `WorkingDirectoryGone`
+    into one `Error:` line, exit 1, for every command.
+  - `cli_entry` catches `WorkingDirectoryGone` for the cwd-less telemetry row.
+  - `cli._cwd_gone_message` is gone, and with it the old `_cwd()`'s unreachable
+    `exc.filename` branch (m-1, mutation E).
+  - `discover_roots` raises on a vanished cwd rather than dropping it (a5): dropping it would
+    answer without the store the caller stands in, silently.
+- **s-3** `docs/INTEGRATION.md#git-integration` -- rewritten: `#hooks-installed` (was the
+  line-range anchor `#hooks-installed-hooks-py-23-59`; nothing linked it), `#store-gate`,
+  `#hook-failures`, `#sync-tracked-catalog`, `#vanished-cwd`, `#rmx-sync-since-ref`. GMD lint:
+  0 errors (3 single-file `dangling-doc` warnings, pre-existing).
+
+### Runs {#green-r1-runs}
+
+- `bug212/green-r1.log` -- both bug-212 files at `faabdfe`: 61 passed, exit 0.
+- `bug212/green-r1-family.log` -- 52 files (hooks, sync, discovery/hub, cctree, mcp, cli,
+  telemetry, launchctl, bridge-move-safety, docs_generated, verb_parity; list in
+  `green-r1-family.files`): **780 passed, 1 skipped, pytest exit 1**. The skip is the SkipGate
+  UNPINNED `test_repo_hooks_in_sync::test_installed_hooks_match_generated`, the clone artifact
+  from ch-bsd r1 m-4. One src edit (the ping gate around the a2 refusal) landed while this run was
+  in flight; the wide run below is the authoritative one on the committed code. An earlier family
+  run was killed and discarded, because a `git stash` for a lint comparison briefly reverted src
+  under it.
+- `bug212/green-r1-wide.log` -- the full suite at `faabdfe`: **4 failed, 4340 passed, 1
+  skipped, pytest exit 1**, in 45 min. Compared by E line against `release-0.82.0-full.log`:
+  - `test_brief_real_daemon::test_an_unknown_class_fails_loudly_through_the_daemon` -- same E
+    (`Could not set lock on file .../catalog.A.duckdb`).
+  - `test_task21_1_agent_usage_report` x2 -- same E lines.
+  - `test_gmd_lint_requires_version::test_the_repo_scope_is_clean_under_the_stricter_gate` --
+    the first E line differs from 0.82.0's: `docs/INDEX.md` / `docs/adr/*` dangling ids, not
+    the 0.82.0 ledger reference. That is clone scope. The test copies no memory dir for a clone
+    slug, so memory refs dangle "as the script intends", and the branch tree differs from
+    0.82.0's. It is not this change: `./scripts/lint-gmd.sh` gives 1049 errors both with this
+    diff and with it stashed, and the changed docs lint at 0 errors.
+  - The 0.82.0 bug-168 rewriter x9 and the `test_installed_hooks_match_generated` failure did not
+    reproduce. The latter is a skip here (m-4).
+
+### Mutations {#green-r1-mutations}
+
+Against `faabdfe`, each run over both bug-212 files. The driver
+`scratchpad/mut212.py` (not committed) applied one exact single-occurrence replace, ran pytest
+to `bug212/green-r1-mut-<id>.log`, then ran `git checkout -- <file>` as its own subprocess,
+then checked that `git status --short src` was empty and that the fix text was back. Batch log
+`bug212/green-r1-mutations.log`. `__pycache__` was cleared after the batch, and src == HEAD.
+
+| id | mutation | result |
+|----|----------|--------|
+| G1 | gate: socket half dropped (`if true; then`) | killed: live-daemon guard 2/2 |
+| G2 | gate: `[ -z "$TRACKED" ] \|\| exit 0` removed | killed: 20 (16 worktree/clone + 4 main checkout) |
+| G3 | gate: ls-files failure branch made a silent `:` | **survived** 61/61 |
+| Z | post-commit: empty-tree fallback removed | killed: root-commit test |
+| R1 | refusal disabled (`if True: return`) | killed: a2 4 + stale socket 2 |
+| P1 | ping gate inverted | killed: same 6 |
+| E1 | `git_tracked_catalogs` keeps the hook's `GIT_*` env | **survived** 61/61 |
+| E2 | `ls-files` failure read as untracked | **survived** 61/61 |
+| E3 | outside a repo read as tracked | killed: outside-git guard + vanished-cwd `sync --since` |
+| C1 | `_RmxGroup` converts nothing | killed: 9 (s-1 CLI x7 + contract-4 x2) |
+| C2 | `partition_marker` raw `Path.cwd()` | killed: REFMATRIX_ROOT s-1 x5 |
+| C3 | `_cwd_root` raw `Path.cwd()` | killed: hub-pause |
+| C4 | `mcp._resolve_root` raw `Path.cwd()` | killed: MCP test |
+| C5 | `cctree._project_base` raw `Path.cwd()` | killed: cctree |
+| C6 | `sync.sync_since` raw `Path.cwd()` | killed: lib `sync_since` |
+| C7 | `sync._sync_paths` raw `Path.cwd()` | killed: lib `sync_files` |
+| C8 | `current_dir` translates nothing | killed: 14 |
+| C9 | `cli_entry` does not catch the cwd error | killed: 12 (incl. the m-1 telemetry guard) |
+| W1 | remedy ignores `REFMATRIX_ROOT` (always "set REFMATRIX_ROOT") | **survived** 61/61 |
+
+Not mutated: `_grep_rg_fallback`'s `_cwd()`, which is unreachable in a vanished cwd (a6) and
+therefore an equivalent mutant.
+
+### For the lead, the test engineer and the reviewers {#green-r1-flags}
+
+- **Survivors are findings for the test engineer, not papered over.** G3 and E2 are both
+  fail-closed `ls-files` failure paths (shell and Python), and no test makes `ls-files` fail; a
+  corrupt `.git/index` would. E1: the env strip matters only when the store's repository is not
+  the hook's, for example `REFMATRIX_ROOT` naming a store in another repo while a hook runs with
+  `GIT_DIR` set (a worktree hook exports an absolute `GIT_DIR`, measured). In the main checkout,
+  git's relative `GIT_INDEX_FILE=.git/index` still resolves, because git changes to the top level
+  first; that is why E1 survives the current fixtures. W1: no test reads the remedy text, which
+  is the very finding behind ch-bsd's "an error message's remedy is a test case".
+- **The daemon route still writes a tracked catalog.** With a live daemon the gate passes and
+  the daemon writes `catalog.<active>.duckdb`, which git tracks, so `git status` shows it
+  modified. That is lead decision a1/a2 as written: the live-daemon guard requires the sync.
+  Only bug-214's untracking removes it.
+- **a2 covers `rmx sync` only.** Other in-process writers (`rmx ingest`, `memory add`, the
+  bridge, ...) reach `_store_rw()` on a tracked catalog unrefused. Putting the check in
+  `_store_rw()` would cover them all; that is out of this brief's scope and needs a decision.
+- **Daemon-op cwd defaults** (`daemon.py`, a7) still read `Path.cwd()` raw. They are out of scope
+  as decided.
+- The SkipGate UNPINNED skip (m-4) still turns every clone run into pytest exit 1. There is no
+  registry row yet.
+- Not touched: bug-209, bug-215, `search_hooks.py:254` (`_os.getcwd()`, the 25.1 clone's file),
+  `telemetry.py:595/1317` (each already catches `OSError` on its own `os.getcwd()`).

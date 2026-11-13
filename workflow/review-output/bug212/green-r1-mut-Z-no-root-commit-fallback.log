@@ -1,0 +1,38 @@
+......................F......................................            [100%]
+=================================== FAILURES ===================================
+____________ test_a_root_commit_is_synced_not_reported_as_a_failure ____________
+
+fresh_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10906ce50>
+
+    @pytest.mark.timeout(300)
+    def test_a_root_commit_is_synced_not_reported_as_a_failure(fresh_repo):
+        repo = fresh_repo
+        path = repo.proj / "root_file.py"
+        path.write_text("def root_file():\n    return 0\n", encoding="utf-8")
+        _quiet(repo.proj, repo, "add", "-A")
+        r = _hooked(repo.proj, repo, "commit", "-q", "-m", "the root commit")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the root commit itself failed\n{text}"
+        assert "hooks/post-commit" in _hooks_ran(repo), "fixture: git never ran post-commit"
+        assert TRACEBACK not in r.stderr, f"post-commit on a root commit crashed\n{text}"
+>       assert FAILED_LINE not in r.stderr and "Error:" not in r.stderr, \
+            f"post-commit on a root commit (no HEAD~1) reported a failure\n{text}\n" \
+            f"rmx calls: {_calls(repo)}"
+E       AssertionError: post-commit on a root commit (no HEAD~1) reported a failure
+E         stdout:
+E         
+E         stderr:
+E         Error: sync --since HEAD~1 failed: git diff exited 128: fatal: ambiguous argument 'HEAD~1': unknown revision or path not in the working tree. Use '--' to separate paths from revisions, like this: 'git <command> [<revision>...] -- [<file>...]'
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         
+E         rmx calls: [('/private/tmp/b212f-hz6c1kbi/proj', 'sync --since HEAD~1')]
+E       assert ('rmx sync FAILED' not in 'Error: sync...r is above\n'
+E         
+E         'rmx sync FAILED' is contained here:
+E           st-commit rmx sync FAILED (exit 1); its error is above
+E         ?           +++++++++++++++)
+
+tests/test_bug212_r1_remedy.py:295: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r1_remedy.py::test_a_root_commit_is_synced_not_reported_as_a_failure
+1 failed, 60 passed in 49.70s
