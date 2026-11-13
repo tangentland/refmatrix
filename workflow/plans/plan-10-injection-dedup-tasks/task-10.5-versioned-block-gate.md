@@ -62,7 +62,7 @@ page. It also owns the `still in play` line, whose members are held or over budg
 CB-1). The baseline that names-only is measured against has therefore changed, and so has 10.2
 R8's parity target. v3 re-derives both. {#part-1b-why}
 
-rel: depends-on -> [[task-25.1b-hook-output-ladder]]
+rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
 1. **R1b The run.** It is v2's replay: the same windows, the same 1,472 prompt calls, the same 11

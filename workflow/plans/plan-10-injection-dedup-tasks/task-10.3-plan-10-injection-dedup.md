@@ -134,5 +134,5 @@ that only 10.2 and 19.6 read the file, while 10.4 R4 and 10.6 R3 already read it
 lists every reader, and each reads through `stm.last_marker`. Nothing in the writer changes.
 
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
-rel: motivates -> [[task-25.1b-hook-output-ladder]]
+rel: motivates -> [[task-25.1b-hook-output-ladder-and-spill]]
 rel: motivates -> [[task-25.3-stm-ref-admission-and-helix-repeat#r7]]

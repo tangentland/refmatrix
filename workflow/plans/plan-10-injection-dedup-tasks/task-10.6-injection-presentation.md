@@ -16,7 +16,7 @@ metadata:
 > Status: Pending (drafted 2026-11-13 on presentation rules the user agreed the same day; ch-bsd
 > spec review next)
 > Depends on: [[task-25.1-recall-hook-byte-budget]] merged (the pack and its hook lines);
-> [[task-25.1b-hook-output-ladder]] merged (the ladder's tiers and the `still in play` line, which R1 labels; L15);
+> [[task-25.1b-hook-output-ladder-and-spill]] merged (the ladder's tiers and the `still in play` line, which R1 labels; L15);
 > [[task-10.3-plan-10-injection-dedup]] (the `.emitted` directory and the marker, for the composite
 > part). R3 is built only if R0 says GO (L17). Built after T4 and after 10.5's probe (L30). Lands
 > before [[task-10.2-plan-10-injection-dedup]], whose held members are labelled by this task's
@@ -24,7 +24,7 @@ metadata:
 
 rel: part-of -> [[plan-10-injection-dedup]]
 rel: depends-on -> [[task-25.1-recall-hook-byte-budget]]
-rel: depends-on -> [[task-25.1b-hook-output-ladder]]
+rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 rel: depends-on -> [[task-10.3-plan-10-injection-dedup]]
 rel: implements -> [[exploration-session-phased-context#vi-unchanged]]
 rel: realizes -> [[task-19.6-phased-context-and-topic-cache]]
@@ -79,8 +79,9 @@ rel: depends-on -> [[task-19.6-phased-context-and-topic-cache#ranges-a]]
      and hashes only, [[feedback_no_raw_prompts_in_public_repo]]).
 1. **R1 Item labels, at every tier (L15).** Every tier of 25.1b's ladder carries the label: the
    full body's hook line, the excerpt, the pointer, and each member of the `still in play` line,
-   held or over budget, grouped by label with rank order kept inside each group. 25.1b's renderers
-   call `telemetry.kind_label`, and 25.1b owns the tiers' shapes. 25.1's hook line becomes
+   held or over budget. Every member is labelled where it stands, and rank order is kept (p2: no
+   regrouping by label). 25.1b's tier renderers call `telemetry.kind_label`
+   ([[task-25.1b-hook-output-ladder-and-spill#k4]]), and 25.1b owns the tiers' shapes. 25.1's hook line becomes
    `- [<label>] <name> — <title> — <hook>  (<fetch>)`;
    scan-prompt's entry line `  [<label>] <name>  [<kind>]…` and anchor line `anchor: [<label>]
    <name>`; the pack and the scan render fit as before (labels count in the budget). {#r1}
@@ -112,7 +113,7 @@ Through the GENERATED UserPromptSubmit commands in 23.0's sandbox on 25.1's fixt
    one project memory, a doc and a code symbol: each line carries `rule`, `rule`, `decision`,
    `decision`, `memory`, `doc`, `code`; the order equals the unlabelled run's. On 25.1b AC-17's
    fixture (40 rows, 20 KB) at 4,000 B, every tier present (full, excerpt, pointer, line member)
-   carries its label, and the line's members are grouped by label in rank order.
+   carries its label, and the line's members keep rank order.
 2. **AC-2 Headers.** scan-prompt's output has no `refmatrix content matches for prompt` and no
    `=== context for`; `rmx context X` still prints `=== context for` and its row's `cardinality` is
    unchanged.
@@ -158,4 +159,4 @@ the CONFIRMED bands decide whether R3 ships (L17). L15 restates 25.1b's kind-lab
 depends on 25.1b. Under L30 10.6 builds after T4, after 10.5's probe.
 
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
-rel: depends-on -> [[task-25.1b-hook-output-ladder]]
+rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]

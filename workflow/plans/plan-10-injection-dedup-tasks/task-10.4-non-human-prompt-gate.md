@@ -17,7 +17,7 @@ metadata:
 > Status: Pending (drafted 2026-11-13; rev 3 the same day: no injection gate, Q10; ch-bsd spec
 > review next). The id keeps "gate" because other docs address it.
 > Depends on: [[task-25.1-recall-hook-byte-budget]] merged (curator status's budget and the hook
-> command table, R4); [[task-25.1b-hook-output-ladder]] merged (R12's shared emitter, which every generated hook
+> command table, R4); [[task-25.1b-hook-output-ladder-and-spill]] merged (R12's shared emitter, which every generated hook
 > command goes through, the new curator entry included; revision round 6, [[#rev-round-6]]);
 > [[task-10.3-plan-10-injection-dedup]] (the `.emitted` directory and the marker, for R4's
 > change-only check). Built after T4, after 10.6 and before 10.2 (L30).
@@ -26,7 +26,7 @@ metadata:
 
 rel: part-of -> [[plan-10-injection-dedup]]
 rel: depends-on -> [[task-25.1-recall-hook-byte-budget]]
-rel: depends-on -> [[task-25.1b-hook-output-ladder]]
+rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 rel: derives-from -> [[measurement-injection-already-held-2026-11-13]]
 rel: derives-from -> [[measurement-injection-already-held-2026-11-13#gate-comparison]]
 rel: derives-from -> [[measurement-injection-already-held-2026-11-13#design-replay-v2]]

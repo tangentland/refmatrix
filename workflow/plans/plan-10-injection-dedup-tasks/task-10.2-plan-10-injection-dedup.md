@@ -20,7 +20,7 @@ metadata:
 > 7's pack and must PASS again on 25.1b's (v3, [[task-10.5-versioned-block-gate#part-1b]]). The
 > 50-probe read-back test is still to run.
 > Depends on: [[task-25.1-recall-hook-byte-budget]] merged (rev 7, 0.83.0);
-> [[task-25.1b-hook-output-ladder]] MERGED (the ladder, the spill page and the `still in play`
+> [[task-25.1b-hook-output-ladder-and-spill]] MERGED (the ladder, the spill page and the `still in play`
 > line that this task adds held members to, L15); [[task-10.3-plan-10-injection-dedup]] (the compaction marker);
 > [[task-10.4-non-human-prompt-gate]] (the family field the A/B splits by);
 > [[task-10.6-injection-presentation]] (kind labels at every tier); 21.1's events.
@@ -31,7 +31,7 @@ rel: part-of -> [[plan-10-injection-dedup]]
 rel: depends-on -> [[task-10.5-versioned-block-gate]]
 rel: depends-on -> [[task-25.1-recall-hook-byte-budget]]
 rel: amends -> [[task-25.1-recall-hook-byte-budget#r4]]
-rel: depends-on -> [[task-25.1b-hook-output-ladder]]
+rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
 rel: depends-on -> [[task-10.3-plan-10-injection-dedup]]
 rel: depends-on -> [[task-10.4-non-human-prompt-gate]]
@@ -70,7 +70,7 @@ labelled and 6 R12 uses. Chosen: names-only (Q13), applied to non-human turns to
 | h10 | The line, its cap of 15, its overflow and its spill page are 25.1b's (L15). 10.2 supplies only held members, and their bytes are inside the reservation 25.1b makes for the line, so the line is never cut. On scan-prompt, which has no ladder, the line holds held members only and is reserved in scan's own `fit_blocks` call | one owner per line (contra-b CB-1): two lines with one label, or one label with two meanings, is what L15 removes; a line dropped by the fitter would be removal by rule |
 | h11 | The live A/B lives HERE, not in 10.4 R7 | the arm switches THIS task's mechanism (`dedupe` vs `full`), and 10.4 ships before 10.2 |
 | h12 | `session_start`, `precompact` and explicit pulls (`rmx context`, interactive and MCP recall) never dedupe; `session_start` RECORDS its full deliveries (h1); `precompact` and explicit pulls record nothing | a boundary payload is what the window starts from; an explicit pull is the agent asking for the body, often because it lost it |
-| h13 | Order of operations on the recall channel: (1) retrieval, the four-source merge and the exclusions, unchanged; (2) 25.1b's ladder over EVERY row, with the line reserved; (3) each held row leaves its tier and becomes a HELD member of 25.1b's `still in play` line; (4) the line renders its held and over-budget members as 25.1b defines; (5) 25.1b R12's clamp, the safety net. A held row whose `full`-run tier was already the line keeps its place and is marked held | contra-b CB-1 asks for the order of held removal and the ladder to be stated; the order follows from h9, and steps 2 and 3 cannot swap without re-spending |
+| h13 | Order of operations on the recall channel (this CONTRADICTS 25.1b [[task-25.1b-hook-output-ladder-and-spill#k3]], which removes held rows BEFORE the ladder; see [[#open-held-order]]): (1) retrieval, the four-source merge and the exclusions, unchanged; (2) 25.1b's ladder over EVERY row, with the line reserved; (3) each held row leaves its tier and becomes a HELD member of 25.1b's `still in play` line; (4) the line renders its held and over-budget members as 25.1b defines; (5) 25.1b R12's clamp, the safety net. A held row whose `full`-run tier was already the line keeps its place and is marked held | contra-b CB-1 asks for the order of held removal and the ladder to be stated; the order follows from h9, and steps 2 and 3 cannot swap without re-spending |
 | h14 | The live A/B's outcome counts only R12 explicit uses plus `cited_in_answer`, never 21.5's unbuilt legs | L27, L18's rule: 21.5's matcher measures proximity, not use (R12 pilot: 7% CAUSED) and is frozen until the experiment reports (D-Q3, D-Q4) |
 
 ## Open for the lead: which ladder tier makes an item held {#open-held-tier}
@@ -93,7 +93,27 @@ replaces, and it changes v3. This revision does not pick one. R2's `record_full`
 - **(c) Only a body (tier 1) sets held.** Safe, but on `prompt_recall` at 4,000 B the pack is
   mostly pointers (25.1 d3), so recall would almost never dedupe.
 
-rel: depends-on -> [[task-25.1b-hook-output-ladder]]
+rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
+
+## Open for the lead: held removal before or after the ladder {#open-held-order}
+
+25.1b k3 orders the pack as: (1) held rows removed, (2) the ladder over the remaining rows. This
+task's h9/h13 order it the other way: the ladder runs over every row, and held rows then leave
+their tiers (tier-pinned). The two orders differ in one way. Under k3, the bytes freed by held
+rows let non-held rows reach richer tiers. Under tier pinning they do not. Both specs were written
+in parallel in this wave (spec-t3a, spec-t3b), and the lead's ruling decides which one changes.
+{#open-held-order-lead}
+
+- **(a) Recommended: tier-pinned (this spec).** h9 already says "freed bytes are not re-spent".
+  v1/v2 scored that form (names-only at 0.469-0.470 of baseline block bytes). R7's byte band (≥
+  30% cut per human prompt) measures dedupe alone, not dedupe plus promotion. 25.1b's k3 step 1
+  then moves after its step 2, a one-line change there.
+- **(b) k3's order: re-spend on richer tiers.** No new candidate is pulled in, because the 4+3
+  failure came from candidates never delivered at baseline, and this is not that. Non-held items
+  get more content. But this is a different design from the one Q13 chose on the replay. v3 would
+  have to score it, R7's byte band would be measuring a mix, and h9 needs a decision row.
+
+rel: contradicts -> [[task-25.1b-hook-output-ladder-and-spill#k3]]
 
 ## Requirements {#requirements}
 
@@ -111,11 +131,12 @@ rel: depends-on -> [[task-25.1b-hook-output-ladder]]
    None" = None)` follows h13. The pack runs 25.1b's ladder over every row exactly as it does with
    `held=None`. Each row whose `telemetry.item_key` is held then leaves its tier and becomes a
    HELD member of 25.1b's `still in play` line. Non-held rows keep their tiers, rank order and
-   renderings byte-for-byte (h9). The line's format, its cap, its grouping by 10.6's
-   `telemetry.kind_label`, its overflow and its spill page are 25.1b's. A held member past the cap
-   goes to the spill page with its body, under 25.1b R14's own rule, because dedupe has degraded
-   that row to the names tier. `Packed` gains `held_named` and `held_overflow`. Held members carry
-   the line span that 25.1b defines for line members. The verb (25.1 R5) reads
+   renderings byte-for-byte (h9). The line's format, its one cap of 15 in rank order across both
+   member kinds ([[task-25.1b-hook-output-ladder-and-spill#k2]]), 10.6's per-member labels (no
+   regrouping, 10.6 p2), its overflow and its spill page are 25.1b's. A held member past the cap
+   is spilled and counted `(+N)`, because 25.1b R14 spills every item past the names cap.
+   `Packed` gains `held_named` and `held_overflow`. Held members carry the line span 25.1b defines
+   for line members. The verb (25.1 R5) reads
    `internal.get("dedupe")` (CLI `--stdin-json` only, the way `embedder_policy` rides
    `**internal`), calls `stm.held_items` once and passes `held`. With `held` empty, the output is
    byte-identical to 25.1b's (the `full` arm). 10.2 changes nothing in `hook_budget`, the budgets,
@@ -129,20 +150,21 @@ rel: depends-on -> [[task-25.1b-hook-output-ladder]]
    with nothing is not rendered. Every held item becomes a held member of ONE line, rendered by
    25.1b's line renderer. scan-prompt has no ladder (25.1 R0b), so that line holds held members
    only. It is appended as its own block and reserved in scan's `fit_blocks` call so it is never
-   cut. Overflow past the cap follows 25.1b's renderer. The composite is untouched (10.6 owns
-   it). {#r4}
+   cut. 25.1b's spill page belongs to the pack, and scan-prompt writes none. Past the cap, scan's
+   held items are counted `(+N)` with `retrieved` events only, which is rev 5's rule kept. The
+   composite is untouched (10.6 owns it). {#r4}
 5. **R5 Every turn, human or not.** The dedupe runs on every prompt that reaches the two hooks,
    non-human turns included (Q10); the call's row carries 10.4's `prompt_family` so the effect is
    split by family. If 25.2 is built (its gate passes L34's bands), its ack-only gate runs first
    where it applies. If L43's else-branch fires, 25.2 is not built and nothing runs first. {#r5}
 6. **R6 Events and counts.** Every named item emits a `delivered` event. A rendered item's span
-   is its rendering, with the `form` of its tier as 25.1b records it. A held member's span is the
-   line span 25.1b defines, with `form: "held"`. 10.2 adds that one value to 25.1b's `form` field
-   (contra-b CB-2 resolution), so held members and over-budget members are told apart. Held
-   members past the cap are treated as 25.1b treats its own over-cap members: a `retrieved` event,
-   a spill-page entry and a count, and never a `delivered` event. If 25.1b has not added `form` by
-   10.2's RED, `form` joins `telemetry.RECALL_EVENT_FIELDS_V1` here (nullable, `v` stays 1). In
-   either case 19.2's fold, 21.5's reader and the hook-cost report run clean over a mixed file.
+   is its rendering, with the `form` of its tier (`full` / `excerpt` / `pointer`, from
+   [[task-25.1b-hook-output-ladder-and-spill#k5]], which adds the field). A held member's span is
+   the line span, with `form: "held"`. That one value is added to 25.1b's k5 set, so held members
+   are told apart from 25.1b's over-budget `names` members. Held members past the cap are treated
+   as 25.1b treats its own over-cap members (a `retrieved` event only, counted, and spilled on
+   recall) and never get a `delivered` event. 19.2's fold, 21.5's reader and the hook-cost report
+   run clean over a mixed file.
    The row carries `held_n`, `held_named`, `held_overflow` and `held_saved_bytes`: the bytes the
    held rows would have rendered as at their `full`-run tiers, minus their bytes on the line.
    `rmx telemetry --context` shows the held share and the bytes saved per channel. {#r6}
@@ -219,7 +241,8 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
    is written at 2..9; after a marker at 10, X renders full.
 6. **AC-6 Cap and budget.** With 20 held items, 25.1b's line names its cap (15) in rank order,
    and the overflow follows 25.1b (spill page, counted). On recall, the held overflow rows appear
-   on the spill page with their bodies (25.1b R14), and `rmx recall --page N` returns them. The
+   on the spill page with their bodies (25.1b R14), and the line's fetch command (spelled per
+   25.1b O1) returns them. On scan-prompt they are counted `(+N)` and no page is written. The
    line is present at 2,000 / 4,000 / 9,000 B (25.1 AC-2's budgets), and the payload stays within
    each. Held overflow items have `retrieved` events and no `delivered` events. 25.1b R12's clamp
    does not fire (its `capped` row is absent).
@@ -295,7 +318,7 @@ reproduced figures from a pack without the ladder. 25.1b's ladder and spill page
 (CB-1).
 
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
-rel: depends-on -> [[task-25.1b-hook-output-ladder]]
+rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 
 | change | driver | where |
 |---|---|---|

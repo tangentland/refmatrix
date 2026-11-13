@@ -40,7 +40,7 @@ rel: derives-from -> [[measurement-injection-already-held-2026-11-13#design-repl
 rel: derives-from -> [[measurement-injection-already-held-2026-11-13#design-replay-v2]]
 rel: related-to -> [[task-19.6-phased-context-and-topic-cache#split-plan-10]]
 rel: depends-on -> [[task-25.1-recall-hook-byte-budget]]
-rel: depends-on -> [[task-25.1b-hook-output-ladder]]
+rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 rel: related-to -> [[task-21.5-tool-used-signal]]
 rel: related-to -> [[exploration-handhold-outcome-experiment]]
@@ -83,7 +83,7 @@ On every prompt, human or not ([[task-10.2-plan-10-injection-dedup]]):
 The line, its format, its cap of 15, its overflow and its spill page belong to 25.1b (L15,
 contra-b CB-1). Plan-10 adds only the held members. {#names-only-owner}
 
-rel: depends-on -> [[task-25.1b-hook-output-ladder]]
+rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 
 - **Held** = delivered FULL on `scan_prompt`, `prompt_recall` or `session_start` on an EARLIER
   prompt of the session, after the last compaction marker (cross-block).
