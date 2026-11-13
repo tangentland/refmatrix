@@ -72,7 +72,7 @@ labelled and 6 R12 uses. Chosen: names-only (Q13), applied to non-human turns to
 | h12 | `session_start`, `precompact` and explicit pulls (`rmx context`, interactive and MCP recall) never dedupe; `session_start` RECORDS its full deliveries (h1); `precompact` and explicit pulls record nothing | a boundary payload is what the window starts from; an explicit pull is the agent asking for the body, often because it lost it |
 | h13 | Order of operations on the recall channel (the same order as 25.1b [[task-25.1b-hook-output-ladder-and-spill#k3]], converged with spec-t3a; [[#open-held-order]]): (1) retrieval, the four-source merge and the exclusions, unchanged; (2) 25.1b's ladder over EVERY row, with the line reserved; (3) each held row leaves its tier and becomes a HELD member of 25.1b's `still in play` line; (4) the line renders its held and over-budget members as 25.1b defines; (5) 25.1b R12's clamp, the safety net. A held row whose `full`-run tier was already the line keeps its place and is marked held | contra-b CB-1 asks for the order of held removal and the ladder to be stated; the order follows from h9, and steps 2 and 3 cannot swap without re-spending |
 | h14 | The live A/B's outcome counts only R12 explicit uses plus `cited_in_answer`, never 21.5's unbuilt legs | L27, L18's rule: 21.5's matcher measures proximity, not use (R12 pilot: 7% CAUSED) and is frozen until the experiment reports (D-Q3, D-Q4) |
-| h15 | **Tier-aware held (lead ruling, 2026-11-13, on [[#open-held-tier]] (a)).** An item is held for a call only when the tier it was shown at is the same as, or richer than, the tier the `full` run gives it now. Full shown → held at every tier. Excerpt shown → held at excerpt, pointer and names, not at full. Pointer shown → held at pointer and names. A held state with several deliveries keeps the RICHEST tier shown since the marker. Cross-block tiers: a recall or `session_start` row records its 25.1b tier (`full` / `excerpt` / `pointer`). A scan-prompt anchor block (anchor line, tldr, body) records `full`, and a scan group entry (one line: name, kind, location) records `pointer`. 25.1b's tier shapes are: tier 1 = hook line + full body; tier 2 = hook line + excerpt; tier 3 = hook line + pointer; tier 4 = the name on the line (bsd-spec-t3ab S1, lead ruling). Rank for `covers`: `full` > `excerpt` > `pointer` > `names` ≥ `overflow`. `names` and `overflow` are never recorded (h4), so a held state is always `full`, `excerpt` or `pointer` | the agent never loses content it was never shown; (b) would name an item whose body it never saw, and (c) would almost never dedupe `prompt_recall`, which is mostly pointers at 4,000 B (25.1 d3). The scan mapping is the nearest 25.1b tier by content, derived to apply the ruling across blocks, and is called out for review |
+| h15 | **Tier-aware held (lead ruling, 2026-11-13, on [[#open-held-tier]] (a)).** An item is held for a call only when the tier it was shown at is the same as, or richer than, the tier the `full` run gives it now. Full shown → held at every tier. Excerpt shown → held at excerpt, pointer and names, not at full. Pointer shown → held at pointer and names. A held state with several deliveries keeps the RICHEST tier shown since the marker. Cross-block tiers: a recall or `session_start` row records its 25.1b tier (`full` / `excerpt` / `pointer`). A scan-prompt anchor block (anchor line, tldr, body) records `full`, and a scan group entry (one line: name, kind, location) records `pointer`. 25.1b's tier shapes are: tier 1 = hook line + full body; tier 2 = hook line + excerpt; tier 3 = hook line + pointer; tier 4 = the name on the line (bsd-spec-t3ab S1, lead ruling). Rank for `covers`: `full` > `excerpt` > `pointer` > `names` > `overflow`. `overflow` ranks LOWEST (lead ruling, 2026-11-13, bsd-spec-t3ab m4): an overflow row was never rendered, so it never makes an item held, and `covers` never treats it as shown. `names` and `overflow` are never recorded (h4), so a held state is always `full`, `excerpt` or `pointer` | the agent never loses content it was never shown; (b) would name an item whose body it never saw, and (c) would almost never dedupe `prompt_recall`, which is mostly pointers at 4,000 B (25.1 d3). The scan mapping is the nearest 25.1b tier by content, derived to apply the ruling across blocks, and is called out for review |
 | h16 | **Held names are marked (lead ruling, 2026-11-13, on [[#open-held-mark]] (a)).** Each held member on the line carries the suffix `·held`. 10.2 supplies the held flag per member, and 25.1b's one line renderer prints the marker ([[task-25.1b-hook-output-ladder-and-spill#k2]] adopts h16; bsd-spec-t3ab B1, lead ruling), counted inside the line's bytes. The line is the LAST block of the payload (S2). Over-budget members carry no marker. Members keep one rank order across both kinds (10.6 p2). On scan-prompt every member is held and marked | a held member's content is already in the window, while an over-budget member's is only on the spill page; the marker tells the agent which names to fetch |
 
 ## Which ladder tier makes an item held (resolved: h15) {#open-held-tier}
@@ -170,8 +170,10 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
      cliquedb.
    - **The run is the handhold experiment's run (L20).** The A/B is not a serial step and has no
      period of its own. It is a declared factor of the experiment: arm A (push on) splits into
-     `A+dedupe` / `A+full`, arm B (no push) has no dedupe factor, and arm C (bare, opt-in) is never
-     drawn. The experiment's spec owns the period values (≥ 14 days, and ≥ 40 sessions per cell
+     `A+dedupe` / `A+full`, arm B (no push) has no dedupe factor, and arm C (bare) is never drawn on
+     the session leg. Per Q4 (randomised) and L53 P-10, C runs only on plan-28's paired leg, where
+     the runner sets the cell explicitly per run. `SESSION_ARMS` holds C at weight 0 for that
+     reason. The experiment's spec owns the period values (≥ 14 days, and ≥ 40 sessions per cell
      per store, whichever is later, frozen before the start by
      [[task-28.4-preregistration-freeze]]), its salt, and its user-gated start
      ([[task-28.5-run-and-report]]). That spec is [[plan-28-handhold-outcome-experiment]], from
@@ -262,6 +264,9 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
      excerpt or a pointer.
    - X shown as an excerpt is held at excerpt and pointer, not at full.
    - On scan-prompt, an item seen only as a group entry is not held for an anchor block.
+   - X that fell to `overflow` (past the cap, `(+N)` only) at prompt 1 is NOT held at prompt 2. It
+     renders at whatever tier the `full` run gives it, and no state entry for X was written at
+     prompt 1.
 3. **AC-3 Earlier prompts only.** scan-prompt and recall run concurrently on one prompt: neither
    names the other's same-prompt items; a `session_start` delivery is held on the first prompt; an
    identical prompt text re-sent later than `PRE_PROMPT_SKEW_S` does hold; an agent-message turn
@@ -315,7 +320,8 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
     pointer-then-body leg); the poorest tier kept instead of the richest (AC-2, the body-then-pointer
     leg); the `·held` marker missing, or put on an over-budget member (AC-1); the line placed
     above the hits instead of last (AC-1); `overflow` ranked richer than `names` in `covers`
-    (AC-2).
+    (AC-2); an `overflow` row counted as held, i.e. recorded or treated as shown (AC-2, the
+    overflow leg).
 14. **AC-14 One line.** A structural test parses `src/refmatrix/`. The literal `still in play`
     appears only in 25.1b's line renderer. The pack and scan-prompt both call that renderer, and
     neither builds a line of its own. The marker literal `·held` likewise appears only in that
@@ -372,6 +378,7 @@ rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 | Every held row's body goes to 25.1b's spill page (k3 step 4); held overflow is counted `(+N)` | L15 | R3, AC-6 |
 | One rank order across both member kinds (10.6 p2); held members marked `·held` | 25.1b k2; lead ruling on [[#open-held-mark]] (a) | h16, R3, R4, AC-1, AC-14 |
 | `arms.draw(session_id, *, root, now=None)` store-scoped: period records carry `scope`; ships with no active period; out of scope or out of period → `A+dedupe` | spec-t3c, plan-28 handshake (`5ac42e5`): arms.py ships to every store | R7, AC-11 |
+| `overflow` ranks lowest in `covers` and never sets held; arm C runs only on plan-28's paired leg (runner-set), never drawn | lead rulings, 2026-11-13 (bsd-spec-t3ab m4; plan-28 review, Q4, L53 P-10) | h15, R7, AC-2, AC-13 |
 | bsd-spec-t3ab r1 (DIRTY 1B/10S/10M) folded, lead rulings: B1 (10.2 supplies the held flag; 25.1b's renderer prints `·held`); S1 (tier shapes, `covers` rank incl. `overflow`); S2 (line LAST); S8 (deferral row created here); S9 (n-floor + < 30% rows); m1, m2 | [[bsd-spec-t3ab-ff1d453-369e0b5]] | h15, h16, R3, R4, R7, AC-1, AC-2, AC-6, AC-11, AC-13, Files, DoD |
 | Tier-aware held: held only at the tier shown and poorer ones | lead ruling on [[#open-held-tier]] (a) | h1, h4, h15, R1, R2, R3, R4, AC-2 |
 | `form: "held"` is distinct from 25.1b's over-budget form | CB-2's resolution in 25.1b | R6, AC-7 |
