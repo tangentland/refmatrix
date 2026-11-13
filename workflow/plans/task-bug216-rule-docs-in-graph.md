@@ -13,7 +13,7 @@ metadata:
 
 # Task bug-216: the rule docs reach the graph {#root}
 
-> Status: Approved by the lead on the user's direction (2026-11-13: asked for bug-216 to be fixed); revision 2 ([[#rev-2]]) widens it to the misbound bare doc-id class; decisions
+> Status: Approved by the lead on the user's direction (2026-11-13: fix bug-216); revision 2 ([[#rev-2]]) widens it to the misbound bare doc-id class; decisions
 > taken as the user would, with reasons. Fleet ignore files are NOT changed by this task
 > ([[#fleet]]); that is the user's decision.
 > Depends on: none.

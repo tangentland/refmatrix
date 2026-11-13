@@ -455,7 +455,7 @@ bands, labelled, decide; these counts do not. [[#kernel-for-user]] carries this 
       unmatched, counted per tool.
 18. **D18: credit is weighted by a decay kernel on prompt lag, not cut at a window (the user,
     2026-11-13, OD-5).** {#d18}
-    - **The user's decision.** proposed a gradually decaying score instead of a hard window, refined: proposed a plateau of 3 or 4 prompts before the decay begins. It replaces rev 2's hard window `W = 2`. The shape below was drawn up by the lead
+    - **The user's decision.** decay, not a hard window, refined: plateau 3-4 prompts, then decay. It replaces rev 2's hard window `W = 2`. The shape below was drawn up by the lead
       from those two sentences and pre-registered here before any labelling; [[#rev-3]] lists
       what about it the user should still see.
     - **The kernel.** `telemetry.tool_used_weight(lag, *, k, h) -> float` is the ONE weight
@@ -1187,8 +1187,8 @@ when it is built; this task does not build it.
    - R12's other numbers are CONFIRMED as written: the 21 / 42-day source window, the
      report-only default under 50 main-loop pairs, the Wilson bounds, the 20-pair stratum
      minimum and the 10% subagent ceiling.
-   - `W = 2` is REPLACED by a decay kernel: the user proposed a gradually decaying score instead of a hard
-     window, then proposed a plateau of 3 or 4 prompts before the decay begins. The lead drew the shape from those sentences ([[#d18]]): a plateau of
+   - `W = 2` is REPLACED by a decay kernel: the user proposed decay, not a hard
+     window, then plateau 3-4 prompts, then decay. The lead drew the shape from those sentences ([[#d18]]): a plateau of
      weight 1 to `k = 3`, then a half-life of `h = 2` prompts, no cutoff, raw lag stored, a
      `k = 4` sensitivity row, the control scored by the same kernel, and R12's sample
      stratified by lag band 0 / 1-3 / 4-6 / 7+. What about it the user should still see is

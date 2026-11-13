@@ -11,7 +11,7 @@ metadata:
 
 # Usage-amplified term weight, 2026-11-13 {#root}
 
-Phase 3 of `tc-215` (brief `#amendment-2`), at the user's question: asked for a usage-amplified secondary weight for widely linked terms. Persisted by the lead from the agent's text. Counts
+Phase 3 of `tc-215` (brief `#amendment-2`), at the user's question: usage-amplified weight for hub terms. Persisted by the lead from the agent's text. Counts
 only. Pre-registration written 12:03, before any phase-3 result (session scratchpad
 `tc/PREREG_phase3.txt`). **Provisional** until ch-bsd.
 

@@ -13,9 +13,9 @@ metadata:
 
 **Date:** 2026-11-13
 **Status:** Proposed. Runs after the user's decision on task 21.5; nothing is built yet.
-**Motivation:** The user, 2026-11-13, after the 21.5 measurements: asked whether the phase-1 result debunks refmatrix's premise. The answer was no: the
+**Motivation:** The user, 2026-11-13, after the 21.5 measurements: asked: does phase 1 debunk the premise?. The answer was no: the
 measurements refute one delivery mechanism (ambient push injection) and one measurement method
-(attribution by term or clique overlap), not the charter. The user: asked for the exploration to be added. This
+(attribution by term or clique overlap), not the charter. The user: asked for the exploration. This
 document designs the experiment that COULD confirm or refute the premise.
 
 rel: related-to -> [[project_refmatrix_mission_charter]]
