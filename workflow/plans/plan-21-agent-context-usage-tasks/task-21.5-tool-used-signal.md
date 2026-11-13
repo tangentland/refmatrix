@@ -1669,6 +1669,12 @@ did not fire. {#rev-4-lead}
 | m1 review of the pilot ([[measurement-task-21.5-r12-pilot-2026-11-13#review-m1]]) | "proximity, not use" holds for "caused the touch"; the rubric cannot see a detour a delivery prevented, which is what plan-28 measures; phase M adds a blind second rater on 20% | [[#r14-labels]] |
 {#rev-4-table}
 
+### Under Q8 b {#q8-b}
+
+No requirement changes under Q8 b. A save-state that is no longer bridged is no longer a
+`kind=memory` delivery, so it simply stops forming units. [[#r2]]'s memory path rule and
+[[#r14]]'s method are unchanged.
+
 ### Open for the lead (rev 4) {#rev-4-open}
 
 These choices are not settled by a D-Q or L-row. The text above is written to the

@@ -204,6 +204,19 @@ rel: amends -> [[task-10.2-plan-10-injection-dedup]]
 rel: amends -> [[task-25.1-recall-hook-byte-budget#r8]]
 rel: related-to -> [[task-19.6-phased-context-and-topic-cache#ranges]]
 
+## Under Q8 b {#q8-b}
+
+This plan holds under Q8 a or c, where save-states stay bridged as `session/recall-state` rows. Under
+Q8 b (save-states and digests out at ingest), these lines change, and nothing else does:
+- [[task-28.2-paired-reentry-runner#r2]]'s memory snapshot: save-states before the start are
+  still copied into the clone's memory dir, but the bridge no longer ingests them, so in arms A
+  and B they reach the agent only through `rmx recall-state` and grep, not through SessionStart
+  recall.
+- [[#arms]]'s "boundary" column: SessionStart recall no longer returns `session/recall-state`
+  rows in any cell. The arms still differ in exactly the same handholds, so the design holds,
+  but the boundary cells deliver less than under a or c. The frozen pre-registration
+  (28.4) records which Q8 answer was live at the start.
+
 ## Open for the lead (P-items, frozen by 28.4) {#open}
 
 Choices no D-Q or L-row settles. The tasks are written to option (a), the recommendation, so
