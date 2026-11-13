@@ -417,7 +417,11 @@ document, and its per-document hold has the same cause: 29 s for one session car
         means. So a dropped `rel: part-of -> [[#parent]]` line whose key the hierarchy writes
         again keeps its edge;
       - no `linkage_evidence` row supports it after those writes (another file or another
-        producer states the same edge). The unlink is ONE batched write per document,
+        producer states the same edge). **This UNLESS clause stays in force under the
+        "stated = steps 5-7's write set" rule; the write-set rule does not replace it**
+        (bsd-spec-t56 r2 M3, lead). It is the only thing that keeps a `memory_link` edge
+        alive: once bug-218 lands, that edge has the same key as a memory's `{#root}` `rel:`
+        line ([[#ac-15]]). The unlink is ONE batched write per document,
       `Store.bulk_unlink(items)`. It mirrors `bulk_link`: the bitmap fragments are updated
       in-process, there is one relational delete, and one `unlink` event is logged per bit
       actually cleared through one `_names_of`, as `unlink()` logs. Nothing is unlinked for a
@@ -804,6 +808,22 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
       asserts that every entry's bug id has a registry row whose status is not `fixed`, so a
       fixed owner's entry cannot linger.
     {#ac-14}
+15. **AC-15 (a `memory_link` edge with its own evidence survives a dropped `rel:` line;
+    bsd-spec-t56 r2 M3, lead).**
+    - **Fixture.** A memory `m` is ingested `--as-memory`. Its v1 carries `{#root}`
+      `rel: reinforces -> [[c]]`, so the root mirror writes the key `(reinforces, m, c)`.
+    - The same key is then written the way bug-218 S3 specifies for `memory_link`: GMD
+      orientation, plus its own `linkage_evidence` row with `memory_link`'s detail. bug-218
+      merges after this task (`#queue` item 9 vs 5), so the fixture writes it through
+      `Store.link` + `Store.add_evidence`, the real APIs, in bug-218's shape. Switching the
+      fixture to the real `memory_link` op is bug-218's, once its S3 lands.
+    - **v2 drops the line**, and `m` is re-ingested on the job path.
+    - **Expected:** the edge `(reinforces, m, c)` is still linked; its `memory_link` evidence
+      row is untouched (R9's clear removes only `rel: `-detail rows);
+      `rel_unlink_skipped_unowned == 0`. The survival is the evidence clause's doing, not the
+      unowned skip's: the fixture's signature is not in `UNOWNED_REL_PRODUCERS`.
+    - **Mutation:** drop R10's evidence check → FAILS (the edge is unlinked).
+    {#ac-15}
 
 ## Merge order {#merge-order}
 
@@ -838,7 +858,7 @@ rel: depends-on -> [[plan-review-2026-11-13#queue]]
   `idx_evidence_file`, ONLY if R9's band calls for it.
   - (`add_memory`'s switch is 26.2 n1's, already merged per the dependency.)
 - New `tests/test_bug185_bulk_gmd_ingest.py`, `tests/test_bug186_replay_link_weight.py` and
-  (round 2) `tests/test_bug221_rel_replace.py` (AC-11, AC-12, AC-14),
+  (round 2) `tests/test_bug221_rel_replace.py` (AC-11, AC-12, AC-14, AC-15),
   plus `tests/fixtures/bug185_*` (generated fixtures and the HEAD golden).
 - `src/refmatrix/ingest_gmd.py` (round 2): `UNOWNED_REL_PRODUCERS` and the R10 skip + counter;
   each in-reach no-evidence producer's file gains its evidence write ([[#ac-14]] (a)).
@@ -1101,6 +1121,7 @@ rel: implements -> [[bug_registry]] {bug: "bug-221"}
 | R9's 50 ms band accepted | [[#r9]] | pre-registered before any run |
 | `#open-finish-stop` = option 1 (the first ruling, option 2, withdrawn) | [[#open-finish-stop]], [[#r2]] steps 8-9, [[#r7]], [[#ac-13]] | a stamped document is always complete; per-document progress survives every stop; option 2 livelocks under 23.3's `budget_s` |
 | r1 S4 wording: `stamp_derive("gmd")` is the LAST WRITE of `gmd_finish`, not a step of its own | [[#r7]]; [[task-23.3-sync-between-file-yield#r1]] (`N + A + 1`) | the ruling text "its own step inside gmd_finish" was contradictory; the writer's reading stands |
+| bsd-spec-t56 r2 M3: R10's "UNLESS a `linkage_evidence` row still supports it" clause is kept explicitly under the write-set rule, with its own AC | [[#r10]], [[#ac-15]] | bug-218's `memory_link` edges survive R10 only through that clause; without an AC of its own, a later simplification to "stated = write set" alone would pass every other test |
 | r1 S2 census: no user stop. Every producer of a `rel:`-verb edge writes an evidence row; an in-reach producer is fixed here; an unowned one gets a bug row and is skipped by signature, counted `rel_unlink_skipped_unowned` | [[#r10]], [[#ac-14]], [[#r3]] (a), [[#files-list]] | evidence is the only provenance R10 can read. Making it universal removes the ambiguity, matches bug-218 S3's `memory_link` fix, and the counted skip keeps an unowned edge from being unlinked silently before its owner lands |
 
 **Two further lead rulings, 2026-11-13** (the decision table above records them):
