@@ -343,7 +343,7 @@ without a write per event. {#amend-helix-body}
   relation taxonomy mapped onto L0–L3; proximity tiers as a tier family; directory/extension facets;
   Aster's decaying approximate counters and per-key eager/lazy merge; and the gates prior
   measurements impose. The ADR stays Proposed. {#d-2026-10-07-amend}
-- **2026-11-13 (user, via bug-216 rev 3; recorded by the architect per plan-review L7 and L29):
+- **2026-11-13 (user, via bug-216 rev 3; recorded by the architect, spec-t3c, in spec wave G30, per plan-review L7 and L29):
   `denotes` is a binding repair, not an alias merge.** bug-216 R7's `denotes` link joins a
   path-less concept, minted by a bare doc-id `rel:` target or by a doc title that spells its id,
   to the doc or memory whose GMD id it spells. It adds no term-space alias and no `same_as` row,

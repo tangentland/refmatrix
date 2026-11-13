@@ -13,9 +13,10 @@ metadata:
 # Task bug-216b: evaluate the `denotes` fold per type {#root}
 
 > Status: Drafting (spec wave 2026-11-13, G30). A measurement-lane task (plan-review L29).
-> Depends on: [[task-bug216-rule-docs-in-graph]] merged and deployed, its `denotes_link` derive
-> op run on the live refmatrix store, and its live recount (AC-6) recorded. Nothing here runs
-> before that.
+> Depends on: [[task-bug216-rule-docs-in-graph]] merged and deployed; its derive, run on the live
+> refmatrix store through the production verb `rmx derive denotes` (the verb
+> `rmx_derive_denotes`, bug-216 R14, over the daemon op `denotes_link`); and its live recount
+> (AC-6) recorded. Nothing here runs before that.
 > Builds no `src/`. Its harness is an `eval/production/` script over throwaway copies.
 
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
@@ -50,9 +51,10 @@ agent actually made visible, and does what it moves rank better or worse than wh
 
 | # | decision | reason |
 |---|---|---|
-| e1 | Two arms over throwaway copies, the SAME code in both: **ON**, a read-only APFS clone of the live catalog after the derive op; **OFF**, a second clone with every `denotes` row deleted, then PageRank and the adjacency cache rebuilt on that copy by the production command | the benchmark path is the production path; only the data differs, so no `src/` switch is added for a measurement |
+| e1 | Two arms over throwaway copies, the SAME code in both. **ON** is a read-only APFS clone of the live catalog after `rmx derive denotes`. **OFF** is a second clone of the same catalog from which every `denotes` link is removed (r1 #m6). No production verb removes `denotes`, so the harness removes it on the THROWAWAY copy only, never on a live store. It opens the copy's own store under its `mkdtemp()` root and deletes the `denotes` linkage from every place R0 finds it stored: its `entity_links` rows, its bitmap cells, its `linkage_evidence` rows, and its lines in the copy's `facts.log`. PageRank and the adjacency cache are then rebuilt on that copy by the production command (`rmx pagerank`) | the benchmark path is the production path for ranking; only the data differs, so no `src/` switch is added for a measurement |
+| e1b | Neither copy is ever synced or watched: both throwaway daemons run with no watcher, and no `sync` or `ingest` is issued. bug-216 R7 (b) re-links `denotes` at ingest, so a sync on OFF would restore the rows. The copy roots hold no source tree, so a sync would also purge every entity. R0 proves both: entity counts and `denotes` counts are unchanged after a full arm run | r1 #m6 |
 | e2 | The code is bug-216's deploy sha, run by the dev interpreter checked out at that sha against stores under a short `mkdtemp()` root. The sha and `refmatrix.__file__` are recorded per arm and asserted equal | the version must not differ between arms (`scanprompt_graph_delta.py`'s rule); never a dev-venv `rmx` against a live store |
-| e3 | Confounds held down as in `eval/production/scanprompt_graph_delta.py`: `RMX_RERANK=0`, composite intra-edges 0, one frozen prompt set, same order in both arms | the cross-encoder is nondeterministic under load; STM is session state a re-derive does not change |
+| e3 | Confounds held down as in `eval/production/scanprompt_graph_delta.py`: `RMX_RERANK=0`, composite intra-edges 0, one frozen prompt set, same order in both arms. **Limit (r1 #m6):** production reranks, so the arms' delivered sets are the pre-rerank ranking, and the report says so | the cross-encoder is nondeterministic under load; STM is session state a re-derive does not change |
 | e4 | The fold-isolated arm (**FOLD-OFF**: ON with its `pagerank` table and adjacency cache taken from OFF) runs only if R0 finds those two are the fold's only inputs. It is report-only | L29 names the fold; R9's walker transparency also reads `denotes`. If they cannot be separated by data, a harm reading is attributed by the user, not guessed |
 | e5 | Uses come from the labelled sets already on record: 10.5's design-replay sets (11 labelled CAUSED+INFORMED and 16 R12 explicit uses on prompt channels) plus 21.5 phase M's labelled CAUSED+INFORMED pairs when phase M has reported | a "use" must be an act the agent made, not a proximity count (L18's rule) |
 | e6 | Corpus: refmatrix. cliquedb only if its store has had the derive op AND the user allows the read-only copy (ruled, [[#o-2]]) | bug-216's derive op runs on the refmatrix store first; a fleet store is the user's |
@@ -60,9 +62,12 @@ agent actually made visible, and does what it moves rank better or worse than wh
 ## Requirements {#requirements}
 
 1. **R0 Probe the arms (read-only).** On throwaway clones only, establish and record:
-   - that deleting `denotes` rows on a copy, then running the production PageRank command and
-     invalidating the adjacency cache there, leaves a store that `rmx scan-prompt`, `rmx context`
-     and `rmx neighbors` open cleanly;
+   - every place the deploy-sha code stores a `denotes` link (read from its store code; e1 names
+     the expected four). After OFF's removal, a count over each place reads 0;
+   - that the removal, then `rmx pagerank` and the adjacency-cache invalidation on the copy,
+     leaves a store that `rmx scan-prompt`, `rmx context` and `rmx neighbors` open cleanly;
+   - that neither copy's daemon watches or syncs (e1b): entity and `denotes` counts are equal
+     before and after one full arm run;
    - whether the `pagerank` table plus the adjacency cache are the fold's only inputs, which
      decides whether e4's FOLD-OFF arm can run;
    - the wall time of one arm over the prompt set;
@@ -88,12 +93,18 @@ agent actually made visible, and does what it moves rank better or worse than wh
      prompt in each arm. The counts: `use_kept_both`, `use_lost_on` (delivered by OFF, not ON),
      `use_gained_on` (delivered by ON, not OFF), `use_lost_both`, and `use_item_missing` (the
      item no longer exists in the corpus; excluded from both arms).
-   - **M2 What moves, and is it relevant.** Over calls whose delivered sets differ between arms,
-     the next-touch rate of ON-only items against OFF-only items. An item counts as touched when
-     the main loop, in the original session, touched its file at prompt lag 0-3 after that
-     prompt, excluding files touched earlier in the session (the method of
-     [[measurement-task-21.5-relation-gaps-2026-11-13#method]]). The difference's 95% CI comes from
-     a bootstrap over sessions.
+   - **M2 What moves, and is it used (lead ruling on r1 #s6; L18).** Over calls whose delivered
+     sets differ between arms, the USE rate of ON-only items against OFF-only items. An item
+     counts as used when, after that prompt in the original session:
+     - an R12 explicit use names it; or
+     - it is a memory item and an assistant message cites it, by 28.3's `cited_in_answer`
+       function ([[task-28.3-outcome-scorer#r7]]), when that function has passed 28.3's precision
+       gate.
+
+     Citations of non-memory items are printed as an extension with no weight. Next-touch
+     proximity, the R12 pilot's refuted method, is not used. The difference's 95% CI comes
+     from a bootstrap over sessions. M2 is `underpowered` (it reads no band) when the differing
+     calls hold fewer than 10 used items in the two arms together.
    - **M3 Citation reach (the repair's benefit).** For every authored `rel:` line that bug-216's
      recount classes `bound_via_denotes`: whether `rmx context <citing doc>` returns the cited
      doc in its top 20, and whether `rmx neighbors <citing doc>` lists it, in each arm.
@@ -105,8 +116,8 @@ agent actually made visible, and does what it moves rank better or worse than wh
    | condition | reading | action |
    |---|---|---|
    | fewer than 10 uses resolvable in both arms, OR fewer than 100 calls whose delivered sets differ | not established | report-only; re-run once 21 days of post-deploy data add uses (21.5 phase M's labels count) |
-   | M1: `use_lost_on ≥ 1`, OR M2: the ON-only rate is below the OFF-only rate with the CI excluding 0 | `denotes` harms ranking | a new task spec disables the PageRank fold (R9's fold sentence), while R7's link and R6's binding stay (L7: the fold, not the link). If FOLD-OFF ran and does not reproduce the harm, the walker transparency is the cause, and the user decides. The user is told before any change |
-   | M1: `use_lost_on = 0`, AND M2: the ON-only rate is at least the OFF-only rate, or the CI includes 0 | `denotes` holds | nothing changes. ADR-0004's decision log records the result, and the `denotes` per-type prior stays flat (1.0) |
+   | M1: `use_lost_on ≥ 1`, OR M2 (when not `underpowered`): the ON-only use rate is below the OFF-only use rate with the CI excluding 0 | `denotes` harms ranking | **If FOLD-OFF ran and reproduces the harm:** a new task spec disables the PageRank fold (R9's fold sentence), while R7's link and R6's binding stay (L7: the fold, not the link), and the user is told before the change. **If FOLD-OFF ran and does not reproduce it**, the walker transparency is the cause, and the user decides. **If FOLD-OFF could not run**, the harm is not attributed: the reading goes to the user, and nothing is disabled automatically (e4; r1 #m6) |
+   | M1: `use_lost_on = 0`, AND M2: `underpowered`, or the ON-only use rate is at least the OFF-only rate, or the CI includes 0 | `denotes` holds | nothing changes. ADR-0004's decision log records the result, and the `denotes` per-type prior stays flat (1.0) |
 
    M3 and M4 are reported and carry no band: M3 is the repair working as designed, and M4
    is the size of the change. A `use_gained_on` count is reported beside `use_lost_on` and never
@@ -124,8 +135,11 @@ the real CLI. AC-5 is the run on real data. {#acceptance-lead}
    through a misbound concept with a `denotes` link (bug-216 AC-10's shape). The ON arm's
    `rmx neighbors A` lists B and its PageRank gives B the in-edge; the OFF arm's does neither.
    The harness refuses to report when no call's delivered set differs between arms and no M3
-   line differs (`arms identical`, exit 1). **Mutation:** OFF built without deleting the
-   `denotes` rows: AC-1 fails on `arms identical`. {#ac-1}
+   line differs (`arms identical`, exit 1). After a full arm run, OFF still counts 0 `denotes`
+   links in every storage place R0 named, and both arms' entity counts are unchanged (e1b).
+   **Mutations:** OFF built without deleting the `denotes` rows, so AC-1 fails on
+   `arms identical`; the OFF daemon started with its watcher on, so a re-ingest restores links
+   and the 0-count check fails. {#ac-1}
 2. **AC-2 Same code.** Each arm's record carries the sha and `refmatrix.__file__`, and the harness
    exits 1 when they differ. **Mutation:** one arm run from another checkout: exit 1. {#ac-2}
 3. **AC-3 The use counter.** A fixture use whose item is delivered only in OFF counts
@@ -187,3 +201,12 @@ The options are kept below as the record. {#open-rulings}
 - Implementation summary at `workflow/implementation_summaries/task-bug216-denotes-fold-evaluation.md`
   (the run's sha, the band, the mutation table).
 - Committed on branch `task-bug216-denotes-fold-evaluation`, merged `--no-ff` to `master`.
+
+## Revision r1 (2026-11-13, `bsd-spec-t3c`; lead rulings) {#rev-r1}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | disposition | where |
+|---|---|---|
+| s6 M2 bands on next-touch proximity, the refuted method | M2 counts R12 explicit uses plus gated `cited_in_answer` on memory items (L18); proximity is dropped; M2 has an `underpowered` floor | [[#r3]], [[#r4]] |
+| m6 the derive verb; how OFF removes `denotes`; the rerank limit; harm disabling the fold when FOLD-OFF could not run | names `rmx derive denotes` / `rmx_derive_denotes`; e1 removal on the throwaway copy, with e1b (no watcher, no sync) and R0's count; `RMX_RERANK=0` stated as a limit; an unattributed harm goes to the user, and nothing is disabled automatically | header, e1, e1b, e3, [[#r0]], [[#r4]], [[#ac-1]] |

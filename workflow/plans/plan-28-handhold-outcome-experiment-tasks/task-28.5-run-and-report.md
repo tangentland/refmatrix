@@ -36,33 +36,45 @@ decision (G18), not a goal step. {#why-body}
 1. **R1 The go.** The lead asks the user to start, citing the frozen pre-registration's sha,
    the cells, the stores, the minimum period, and what cell `B` feels like (no per-prompt push).
    The user's answer is recorded verbatim with its date. Without it, nothing below runs. {#r1}
-2. **R2 Start.** One commit on `master` sets the plan-28 period's salt (from the frozen file)
-   and its start, then a deploy per the project's deploy rules. `rmx install-hooks --check`
-   stays clean (28.1 AC-6). The first SessionStart rows in each store show `arm_period`, and
-   they are checked within one day. {#r2}
+2. **R2 Start.** Before the commit, three checks are recorded:
+   - Claude Code's transcript cleanup period is read, and the start needs it to be at least 7
+     days, longer than R3's sweep interval (r1 #s7);
+   - every registered store whose slug is in the record's scope is listed, and only the
+     refmatrix and cliquedb roots may match (r1 #m9);
+   - the session-leg archive's creation is announced to the user.
+
+   Then one commit on `master` sets the plan-28 record's salt (from the frozen file) and its
+   start, followed by a deploy per the project's deploy rules. `rmx install-hooks --check` stays
+   clean (28.1 AC-9). The first SessionStart rows in each store show `arm_period`, and they are
+   checked within one day. {#r2}
 3. **R3 During the period.** {#r3}
-   - A weekly count of sessions per cell per store and of suppressed rows, posted to the user.
-   - Every deploy sha and date in the period is recorded. A deploy that touches a module the
-     pause rule names pauses the period; the period extends by the paused days.
+   - **The archive runs incrementally (lead ruling on r1 #s7).** A daily sweep copies into the
+     LOCAL session-leg archive at
+     `/Volumes/littlebig/refmatrix-measurement-archive/plan-28/session/`:
+     - every transcript of an in-scope session that has ended or gained lines since the last
+       sweep, meaning the parent file and every subagent file;
+     - the read-only copies of the stores' telemetry.
+
+     The archive is outside the repo and outside every watched tree, mode `0700`, and never
+     committed; only a sha256 manifest is. Each sweep counts sessions per cell whose transcript
+     was already gone (`no_transcript`). The weekly count reports them, and the report lists
+     them as a limit.
+   - A weekly count of sessions per cell per store, of suppressed rows and of `arm_error`
+     sessions, posted to the user.
+   - **The pause (P-12; r1 #s8).** A deploy that touches a module the pause rule names lands
+     only while no record is active. To pause, the lead asks the user, and on the user's word
+     one commit sets the active record's `end` to now and is deployed. Sessions in flight keep
+     their cell (28.1 R2). Resuming is a NEW record (new id, new salt) committed at the user's
+     go. Every deploy sha and date in the period is recorded, with the record id that was active.
    - The paired runs (28.2) execute in the frozen shuffled order.
    - A defect that blocks work in any cell stops the period loudly: the user is told, the period
      record's `end` is set, nothing is read, and the stop is recorded.
 4. **R4 End.** At the end rule, a commit sets `end` (if it was not already set) and deploys.
    After that, `arms.draw` returns the default for every session (checked on a new session in
    each store). {#r4}
-5. **R5 Archive, then score and read.** At the period's end, before any scoring, every
-   session-leg transcript of the period is copied into a LOCAL archive. That covers both
-   stores, the parent file and every subagent file, plus the read-only copies of the stores'
-   telemetry. The archive is at
-   `/Volumes/littlebig/refmatrix-measurement-archive/plan-28/session/`:
-   - it is outside the repo and outside every watched tree;
-   - it is mode `0700`, and nothing in it is ever committed; only a sha256 manifest is
-     committed;
-   - its creation is announced to the user before the first copy (lead ruling 2026-11-13, on
-     the report's contradiction 7).
-
-   Claude Code prunes old transcripts, so without the archive a re-score could not be
-   reproduced. 28.3's scorer then runs over the archive. Every outcome is computed, every band is read as frozen, and every deviation from the
+5. **R5 Final sweep, then score and read.** At the end, one last sweep runs (R3), then 28.3's
+   scorer runs over the archive and `readings.py` (28.3 R9) reads every band. Readings are
+   stratified by record id. Every outcome is computed, every band is read as frozen, and every deviation from the
    pre-registration is listed. 10.2 R7's nested bands are read and handed to 10.2's
    implementation summary. {#r5}
 6. **R6 Report.** `workflow/measurements/handhold-experiment-<date>.md` (GMD) holds the counts,
@@ -104,3 +116,11 @@ decision (G18), not a goal step. {#why-body}
   pause log, the readings).
 - The start, end and cleanup commits are each made on branch `task-28.5-run-and-report` and
   merged `--no-ff` to `master`, then deployed.
+
+## Revision r1 (2026-11-13, `bsd-spec-t3c`; lead rulings) {#rev-r1}
+
+| finding | disposition | where |
+|---|---|---|
+| s7 the session-leg archive ran only at the end, after early transcripts may be pruned | a daily incremental sweep; the cleanup period is checked at the start; `no_transcript` is counted per cell | [[#r2]], [[#r3]], [[#r5]] |
+| s8 the pause is undefined | a user-gated end-now commit; sessions keep their cell; resuming is a new record; readings by record | [[#r3]] |
+| m9 the scope is a basename slug | the start lists the matching stores | [[#r2]] |

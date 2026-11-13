@@ -750,7 +750,10 @@ rel: derives-from -> [[plan-review-2026-11-13#d-q3]]
    counted under the channel of the delivered event its `ref_query_id` points to (looked up
    among the window's delivered events), and credits that event's unit. It is not counted under
    its own `channel` field, which is `context` for `context_by_name`. A `ref_query_id` with no
-   delivered event in the window is counted `explicit_ref_unresolved`. {#r6}
+   delivered event in the window is counted `explicit_ref_unresolved`. The rule's ONE
+   implementation is `attribute_explicit_use` in plan-28's scorer
+   ([[task-28.3-outcome-scorer#r7]]), built first because plan-28 runs before phase B. Phase B
+   imports it and does not re-implement it (r1 #m4). {#r6}
 7. **R7: a control (m-4).** {#r7}
    - The same matcher, kernel and ordering run over **control units**: `retrieved` items with no
      `delivered` event for the same `query_id` and key (retrieved, then trimmed, so the agent
@@ -928,7 +931,14 @@ rel: derives-from -> [[plan-review-2026-11-13#d-q3]]
       origin and delivering-call origin ([[#d13]]), bodies, variables and worktrees ([[#d15]]),
       no `bash_name` and the excluded kinds ([[#r3]]), and ordering by `t_start` ([[#r4]]).
       Phase B moves them into `src/refmatrix/telemetry.py`, and [[#ac-20]] holds the two equal.
-      {#r14-instrument}
+      **The prototype is tested before any band is read (lead ruling on r1 #s3).**
+      `tests/test_task21_5_phase_m_prototype.py` runs AC-19's case table, cases (a) to (h), plus
+      AC-6 (b)'s re-delivery case and AC-14's origin cases, against `remeasure.py`'s functions.
+      The table is a held-out fixture: written from this spec, before the prototype, and never
+      from the pilot's pairs. It must pass before the draw. The run's log
+      (`workflow/review-output/pytest-task21-5-phase-m.log`) and its sha are recorded in
+      `PREREG.md`. **Mutation:** `bash_name` left in `tool_touches`; case (g) fails, and the draw
+      does not run. {#r14-instrument}
     - **Where the tool calls come from.** Phase B reads the ring ([[#d2]]). The legacy ring has
       no `t_start`, `origin` or `cwd`, and rev 4 credits no line without them ([[#r10]]). So
       phase M reads each session's tool calls from its local transcripts, which R12's labeller
@@ -959,8 +969,13 @@ rel: derives-from -> [[plan-review-2026-11-13#d-q3]]
       the announcement, and its date is recorded in the measurement file. If the volume is not
       mounted, phase M refuses to run; there is no fallback path. The archive is deleted only
       on the user's word, after phase B's AC-20 has run. {#r14-archive}
-    - **Corpora and window.** R14 runs on refmatrix and cliquedb, the pilot's two corpora,
-      each from its events file's first line to the clone time. cliquedb is a fleet repo: its
+    - **Corpora and window (lead ruling on r1 #s3).** R14 runs on refmatrix and cliquedb, the
+      pilot's two corpora. **The sample frame excludes every pair the R12 pilot labelled**,
+      because the seven changes were fitted to those pairs. It does this by construction: only
+      sessions that START after the pilot's clone time (2026-11-13) enter the frame, up to phase
+      M's clone time. The pilot's working files are not needed, and nothing the pilot labelled
+      can be drawn. The pilot's own window is printed apart, unbanded, for comparison. cliquedb
+      is a fleet repo: its
       store is copied read-only under the terms of AC-15's allowance ([[#ofu-cliquedb]]). The
       lead ruled that those terms cover phase M ([[#o-4]]), and the lead tells the user.
       {#r14-window}
@@ -973,14 +988,15 @@ rel: derives-from -> [[plan-review-2026-11-13#d-q3]]
       - the rubric, the banded label (CAUSED+INFORMED, with CAUSED printed beside it; [[#o-2]])
         and the band table below.
 
-      The pair list's sha256 is committed and frozen before labelling. Overlap with the pilot's
-      pairs is allowed and reported. {#r14-prereg}
+      The pair list's sha256 is committed and frozen before labelling. No pair can overlap the
+      pilot's, because of the frame ([[#r14-window]]). {#r14-prereg}
     - **Labels.** R14 uses the pilot's four labels (CAUSED / INFORMED / CONSISTENT /
       UNRELATED). The pilot's open call (a subagent opening a file for its own brief) cannot
       arise, because subagent calls are not credited. The labeller never reads the matcher
       code ([[#od-2]]). A blind second rater labels 20% of the pairs, as in the m1 practice, and
       agreement on CAUSED+INFORMED vs not is reported. The user spot-checks 10 pairs
-      ([[#od-2]]). {#r14-labels}
+      ([[#od-2]]). That is a user step inside queue item 7, covered by the goal horizon's
+      catch-all for user steps (L45; r1 #m10). {#r14-labels}
     - **Bands: R12's own (L35).** The bands are read on the pooled kernel-weighted `p_w` over
       main-loop pairs (Kish `n_eff`), on CAUSED+INFORMED ([[#o-2]]), with the CAUSED-only `p_w`
       printed beside it:
@@ -1404,7 +1420,8 @@ Each mutation must make at least one AC FAIL, not hang. Each restore runs as its
 | file | change |
 |---|---|
 | `eval/spikes/task-21.5-r12-remeasure/remeasure.py` (new) | the prototype: rev 4's matcher functions under phase B's names, the transcript-sourced tool calls, the draw, the R9 counts it can compute ([[#r14]]) |
-| `eval/spikes/task-21.5-r12-remeasure/PREREG.md` (new, GMD) | seed, sort key, draw, rubric, banded label, band table; committed and its sha recorded before the draw |
+| `eval/spikes/task-21.5-r12-remeasure/PREREG.md` (new, GMD) | seed, sort key, the post-pilot frame, draw, rubric, banded label, band table, and the prototype test run's log sha; committed and its sha recorded before the draw |
+| `tests/test_task21_5_phase_m_prototype.py` (new) | the held-out case table against `remeasure.py`, run before the draw ([[#r14-instrument]]) |
 | `eval/spikes/task-21.5-r12-remeasure/pairs.sha256`, `calls.sha256`, `labels.csv` (new) | the frozen pair-list hash, the call-hash list for AC-20, labels by pair id (no text) |
 | `workflow/measurements/task-21.5-r12-remeasure-<date>.md` (new, GMD) | the counts, the band reading and the comparison with the pilot ([[#r14-output]]) |
 | `/Volumes/littlebig/refmatrix-measurement-archive/task-21.5-r12-remeasure/` (LOCAL, `0700`, never committed; creation announced to the user) | the archived transcripts and `calls.jsonl` that AC-20 replays ([[#r14-archive]]) |
@@ -1534,8 +1551,9 @@ read ([[#kernel-for-user]]).
 
 ## Definition of done {#done}
 
-- **Phase M (queue item 7, before plan-28 starts):** `PREREG.md` committed and its sha recorded
-  before the draw; the pair list frozen; labels committed by pair id; the measurement file
+- **Phase M (queue item 7, before plan-28 starts):** the prototype's held-out test passes and
+  its log is recorded; `PREREG.md` is committed and its sha recorded before the draw; the pair
+  list is frozen; labels are committed by pair id; the measurement file is
   written with the band reading ([[#r14-output]]); a ch-bsd round over it CLEAN or MEH-only; the
   band reading recorded in plan-28's pre-registration as an input to the charter decision, never
   as one of plan-28's outcomes. {#done-m}
@@ -1727,3 +1745,12 @@ The user is told and may overturn any of them, which would be a dated revision b
    also copied cliquedb at the user's direction. (a, recommended) Treat phase M as covered by the
    same terms (read-only APFS clone, counts only, deleted after) and say so to the user when
    phase M starts. (b) Ask the user first. {#o-4}
+
+### Revision r1 of rev 4 (2026-11-13, `bsd-spec-t3c`; lead rulings) {#rev-4-r1}
+
+| finding | disposition | where |
+|---|---|---|
+| s3 phase M re-measures on the data its changes were fitted to; the prototype is untested | the frame is sessions starting after the pilot's clone time, so no pilot pair can be drawn; a held-out case table runs against the prototype before the draw | [[#r14-window]], [[#r14-instrument]], [[#r14-prereg]], [[#done-m]] |
+| m4 a second implementation of R6's attribution | `attribute_explicit_use` in 28.3 is canonical; phase B imports it | [[#r6]] |
+| m10 the user's spot-check is unmarked as a user step | marked, under L45's catch-all | [[#r14-labels]] |
+| m8 plan-21's row says rev 3 | it says rev 4 | [[plan-21-agent-context-usage#tasks]] |
