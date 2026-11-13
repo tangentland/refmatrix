@@ -26,18 +26,21 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session f0521bff (2026-11-13) {#session-f0521bff}
 
-Next id: **Q11**.
+Next id: **Q14**.
 
 ### Open {#open}
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
-| Q10 | 2026-11-13 | Non-human gate (10.4): with the gate, 62% of prompt-channel injections disappear, 0 labelled uses lost, but 10 explicit R12 uses (2 within minutes, 8 hours later) rode agent-message turns with no other delivery — the pre-registered rule says you decide. In lead sessions, agent reports ARE read by the main loop. | (a) delta-only on non-human turns: send only items not already held (keeps all 10, cuts the 57.5% already-held share), live A/B against the full gate; (b) full gate as specced; (c) gate task-notifications only, keep agent-message | open |
 
 ### Answered {#answered}
 
 | id | asked | question | answer | acted |
 |---|---|---|---|---|
+| Q13 | 2026-11-13 | Dedupe design after the replay rejected 4+3 | a: names-only (design 3) now; 4+3b later as a live A/B arm | `arch-10r` re-specs 10.2 as names-only; 4+3b recorded as a future A/B arm |
+| Q10 | 2026-11-13 | Non-human turns | a: no separate gate — same dedupe as human prompts | 10.4 keeps the focus-graph change and curator silence (Q9); its injection gate is dropped |
+| Q11 | 2026-11-13 | plan-10 dedupe design for the per-prompt payloads (seven options) | 4+3: rank new items first, collapse held ones into one 'still in play' names line | `arch-10r` re-specs 10.2 on it after the replay; 19.6 block diff not used for these payloads |
+| Q12 | 2026-11-13 | How to choose among the Q11 designs? | a: replay-score 1 / 3 / 4+3 / 5 first | `dd-10r` replay, pre-registered; also scores Q10's non-human policies (none / 4+3 / full) |
 | Q9 | 2026-11-13 | `rmx curator status` silent on non-human turns too? | a: yes, follow-on to 10.4 | sent to `arch-10r`: a 10.4 follow-on plumbs the envelope into `curator status` |
 | Q1 | 2026-11-13 | Verbatim user prompts in today's docs, before the push to the public repo | a: paraphrase before the push | today's docs paraphrased (see the commit) |
 | Q2 | 2026-11-13 | Remove the `CLAUDE.md` ignore line fleet-wide after bug-216 deploys? | a: fleet-wide after deploy | recorded in task-bug216 `#fleet`; done at deploy, announced |
