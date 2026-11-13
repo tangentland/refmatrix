@@ -345,8 +345,8 @@ for the daemon's life); its rows are re-derived by re-ingesting the citing file.
   `test_gmd_lint_requires_version::test_the_repo_scope_is_clean…` fails in the clone only
   because lint namespaces ids by the checkout's directory name (`refmatrix-bug216`) — 9 passed on
   a copy named `refmatrix` (`gmd-lint-requires-version-copy.log`);
-  `test_memory_bridge::test_ac2_doc_ingest_keeps_its_own_walk` is [[#green-flag-bridge]].
-  No other failure.
+  `test_memory_bridge::test_ac2_doc_ingest_keeps_its_own_walk` was the R2 conflict, since
+  re-specified by the lead and passing ([[#green-flag-bridge]]). No other failure.
 - **`./scripts/lint-gmd.sh`:** exit 0 (`lint-gmd.log`) on a copy of the tree named `refmatrix`
   with a COPY of the memdir under a scratch HOME. In place, the clone fails on the two
   environmental causes alone: the memdir is keyed by the checkout path (1,067 memory-id
@@ -370,12 +370,12 @@ command, the fix grepped back; `__pycache__` cleared after the batch (src clean 
 
 ### Flags {#green-flags}
 
-1. **Test conflict, for the test owner.** `tests/test_memory_bridge.py::test_ac2_doc_ingest_keeps_its_own_walk`
-   (task 26.1 AC-2) expects the DOC walk of a memdir to take `.organise-rollback-1/x.md` and
-   `.hidden/y.md`. R2 puts that walk through `should_ignore`, and the bug-216 e2e tests require
-   hidden-dir files below the target (`.claude/agents/x.md`) to be excluded; the two cannot both
-   hold. Under R2 the expected set is `{keep_top.md, keep_nested.md}` and the two paths are named
-   in the walk's `ignored` line. Sent to the lead. {#green-flag-bridge}
+1. **Test conflict — RESOLVED by the lead's ruling.** `tests/test_memory_bridge.py::test_ac2_doc_ingest_keeps_its_own_walk`
+   (task 26.1 AC-2) expected the DOC walk of a memdir to take `.organise-rollback-1/x.md` and
+   `.hidden/y.md`, which R2 forbids. Ruling 2026-11-13 (`64d70bc`, spec #r2-supersedes-261): R2
+   wins; the test now expects `{keep_top.md, keep_nested.md}` with the two paths named. The
+   user's condition is pinned by `tests/test_bug216_hidden_no_pollution.py` (`f75cbc3`). Both
+   pass on this src unchanged: 54 passed (`green-after-ruling.log`). {#green-flag-bridge}
 2. **The gate goes red in the dev tree at merge, by design.** Its live `.refmatrix_ignore` lists
    `CLAUDE.md` and `.claude`; `check-gmd-parity.py` there reports both rule docs
    (`parity-dev-tree-live-ignore.log`). R4 clears it, and R4 is safe before the deploy: old code
