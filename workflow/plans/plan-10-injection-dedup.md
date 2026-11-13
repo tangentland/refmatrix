@@ -119,10 +119,14 @@ omitted ([[task-10.5-versioned-block-gate#provisional]]). The way forward is the
 
 ### Non-human prompts get no per-prompt injection {#non-human}
 
-User decision (arch-10r brief, 2026-11-13; unchanged by Q7): scan-prompt and the per-prompt
-recall inject nothing on teammate, agent, cross-session, bus or task-notification turns. One
-predicate (`terms.ambient_family`, behind `stm.is_ambient_text`) through 25.2's one prompt gate
-([[task-10.4-non-human-prompt-gate]]). A gated call writes a `skipped_non_human` row.
+Direction (D2, unchanged by Q7): no per-prompt injection on teammate, agent, cross-session, bus
+or task-notification turns. One predicate (`terms.ambient_family`, behind `stm.is_ambient_text`)
+through 25.2's one prompt gate, and ONE policy table that says what each surface emits per family
+([[task-10.4-non-human-prompt-gate#policy]]). The with/without comparison
+([[measurement-injection-already-held-2026-11-13#gate-comparison]]): the full gate removes 62.3% of
+prompt-channel units, loses 0 labelled uses and 10 R12 explicit uses, so its pre-registered rule
+tripped and the per-family values are the user's (Q10, open). Curator status goes silent too (Q9).
+After ship, a per-session live A/B sharing one arm table with the handhold experiment.
 
 ## Open Questions {#open-questions}
 
@@ -146,6 +150,10 @@ prompt_recall 57.6% / 77.3%. `session-start` stays fixed (prompt-less, as 19.6 R
 ### Q4: What is a non-human prompt, exactly? {#q4}
 **Status:** RESOLVED 2026-11-13 by a read-only census ([[task-10.4-non-human-prompt-gate#census]]).
 
+### Q6: What does a non-human turn get, per family? {#q6}
+**Status:** OPEN — Q10 with the user; 10.4's policy table takes the answer
+([[task-10.4-non-human-prompt-gate#policy]]).
+
 ### Q5: Does Table A's NO-GO close the per-prompt blocks? {#q5}
 **Status:** OPEN — needs the user ([[task-10.5-versioned-block-gate#d1]], and after the provisional
 run [[task-10.5-versioned-block-gate#d4]]: accept NO-GO, change three confirmed rules for these two
@@ -160,7 +168,12 @@ ids, or another design).
 | Q3 | scan-prompt vs grep | Moot for dedup. Separate finding: 28% of scan-prompt calls return nothing. | 2026-09-15 |
 | Q1' | Already-held share (against the session) | **48.0%** held, ≥ 30% band → reopen; cost check tripped → the user decides | 2026-11-13 |
 | D1 | What a re-delivered item becomes | ~~one-line pointer, never suppress~~ — SUPERSEDED by R1', R2' | 2026-11-13 |
-| D2 | Non-human prompts | **No per-prompt injection** on teammate / agent / cross-session / bus / task-notification turns; counted as `skipped_non_human`; stands after Q7 | 2026-11-13 |
+| D2 | Non-human prompts | direction: **no per-prompt injection** on teammate / agent / cross-session / bus / task-notification turns; stands after Q7; per-family values → Q10 | 2026-11-13 |
+| Q9 | Curator status on non-human turns | silent too (Q9); its own hook entry reading the envelope (10.4 R8) | 2026-11-13 |
+| Q10 | Per-family behaviour on non-human turns | OPEN: delta-only / full gate / task-notifications only; 10.4's policy table takes the answer | — |
+| L1 | Focus graph and agent-message turns (lead) | not counted as STM input turns, same principle as `is_ambient_text` | 2026-11-13 |
+| L2 | Envelope origin field (lead) | read before the prefix table when present (10.4 R0) | 2026-11-13 |
+| W1 | With/without the gate (user asked for the comparison) | offline before ship (pre-registered rule tripped → Q10); live per-session A/B after ship, one arm table with the handhold experiment (10.4 R6, R7) | 2026-11-13 |
 | R2' | "Degrade, never suppress" | degrade-only reopened (open-questions `#pre-ledger`); folded into the delta model: omission from a delta, bounded by keyframe and compaction, gated by 10.5's pre-registered labelled-use check | 2026-11-13 |
 | R1' | The dedupe mechanism | context diff over pointer (Q7): 19.6 R5 / R6 on `prompt-recall` and `scan-prompt`, pulled forward; no per-item pointer, no separate ledger | 2026-11-13 |
 | Q2' | State location | 19.6's last-emitted state (per session, per block); marker in the same store | 2026-11-13 |
@@ -173,7 +186,8 @@ ids, or another design).
 | Task ID | Title | Depends On |
 |---------|-------|------------|
 | 10.1 | **Measure the overlap** — consecutive-call replay (complete; history) | plan 9 |
-| 10.4 | **Non-human prompt gate** — one predicate through 25.2's gate | 25.1, 25.2 merged |
+| 10.4 | **Non-human prompt gate** — one predicate through 25.2's gate; the per-family policy table (Q10); offline comparison before ship, live A/B after | 25.1, 25.2 merged; Q10 answered before ship |
+| 10.4b | **Curator status silent on non-human turns** (Q9) — its own hook entry reading the envelope; specified in [[task-10.4-non-human-prompt-gate#r8]] | 10.4 |
 | 10.5 | **Gate for versioned per-prompt blocks** — Table A / B on `prompt-recall` and `scan-prompt`, read-back correctness probe, labelled-use check; GO / NO-GO for 10.2 | the user's Q5 answer; 21.1's events (exist) |
 | 10.3 | **Compaction marker** — 19.6 R8a's writer (PreCompact + SessionStart `compact\|clear`) into the last-emitted state | none beyond master; before 10.2 |
 | 10.2 | **Versioned per-prompt blocks** — 19.6 R5 / R6 on 25.1's pack and scan-prompt; live before / after | 25.1 merged; 10.3; 10.4; 10.5 GO |

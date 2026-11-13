@@ -351,9 +351,9 @@ pays is unmeasured; this task measures first and builds against pre-registered r
     the frozen session sets of R1 records, for every prompt, how many of the session's live STM
     clusters its terms hit under [[#ranges-thresholds]]'s warm threshold: 0, 1, or ≥ 2. Table D
     decides single-expand vs expand-top-2. This is a NEW measurement: the near-zero overlap
-    figure (median carried 0.000) is plan-10's, between CONSECUTIVE scan-prompt content hits
-    ([[plan-10-injection-dedup]]), not between STM clusters, and is not cited as an STM-cluster
-    number here.
+    figure (median carried 0.000) is plan-10 task 10.1's (2026-09-15, history), between
+    CONSECUTIVE scan-prompt content hits ([[plan-10-injection-dedup]]), not between STM
+    clusters, and is not cited as an STM-cluster number here.
 
 ## Pre-registered go/no-go ranges, CONFIRMED (d9v) {#ranges}
 
@@ -681,9 +681,10 @@ the warm threshold):** {#ranges-d}
 
 - **Expanding a subject hit into its members** (d8a): not planned. `rmx memory recall --subject
   <slug>` is the expansion; recall excludes subject rows (19.1 R2).
-- Dedup of scan-prompt's RANKED entries across turns: measured and closed by plan-10 (median
-  carried 0.000 against 0.40, [[plan-10-injection-dedup]]). That number is consecutive
-  scan-prompt CONTENT overlap; it says nothing about overlap between STM clusters (R10).
+- Dedup of the per-prompt blocks' items across turns: owned by plan-10, reopened 2026-11-13
+  (48.0% of delivered items already held; R5 / R6 for `prompt-recall` / `scan-prompt` built
+  there, gated by its 10.5, [[#split-plan-10]]). Plan-10's 2026-09 figure (consecutive overlap
+  0.000) is history and says nothing about STM clusters (R10).
 - Retracting or replacing earlier context: a hook can only append (#vi-premise).
 
 ## Revision (2026-10-14 decision log) {#rev-2026-10-14}
@@ -871,5 +872,7 @@ rel: related-to -> [[task-10.5-versioned-block-gate]]
 
 Unchanged: block ids, `rev`, `unchanged` (21.1's fields; plan-10 adds `rev_kind` and `held_rev`),
 the header and `supersedes` lines, the delta grammar, `K = 8`, keyframe after a marker, the
-half-block rule. The out-of-scope line about plan-10 (consecutive overlap 0.000) is history:
-plan-10 now measures the item-level held share (48.0%).
+half-block rule. R10's and [[#out-of-scope]]'s plan-10 lines were updated the same day.
+10.5's provisional replay (2026-11-13) puts the per-prompt blocks at NO-GO under Tables A and B
+as confirmed (Table B median delta / full 1.000; the half-block rule fires on ~87% of revs);
+the way forward for those two ids is the user's (plan-10 10.5 d4).
