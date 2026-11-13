@@ -183,8 +183,9 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
      is a pure function with no state file. Its inputs are `sha256(session_id + salt)`, the slug
      of `root` and `now` in `[start, end)`. It returns `A+dedupe` when `root`'s slug is outside
      the active period's `scope`, or when no period is active at `now`. The scope matters because
-     `arms.py` ships in the deployed code to every store: a store-blind draw would randomise the
-     whole fleet. The SessionStart focus hook records the arm once (`session_arm` on a `cli.log`
+     the user's Q5 limits the experiment to refmatrix and cliquedb, while `arms.py` ships in the
+     deployed code to every store: a store-blind draw would randomise the whole fleet (lead
+     ruling, 2026-11-13, on spec-t3c's request). The SessionStart focus hook records the arm once (`session_arm` on a `cli.log`
      row). The verb and scan-prompt ask `arms.draw` for the dedupe factor. The experiment's
      [[task-28.1-session-arms-and-push-switch]] adds only `arms.push_on` (arm B's push-off), its
      own inert period records and `arm_period` on the SessionStart row. `session_arm` is not
