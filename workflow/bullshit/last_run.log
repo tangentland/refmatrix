@@ -66,3 +66,4 @@
 2026-11-13T15:31:50-0800 commit=97dc7fa+5a2e6e2 verdict=CLEAN findings=0 report=2026-11-14-0015-spec-t3ab-r4.md
 2026-11-13T15:32:28-0800 verdict=DIRTY findings=10 (0B/3S/7M) report=2026-11-14-0020-spec-t4-r2-4133f35.md
 2026-11-13T15:32:28-0800 verdict=CLEAN findings=0 report=2026-11-14-0025-spec-t3ab-r5.md
+2026-11-13T15:33:05-0800 commit=e05f3a1 verdict=DIRTY findings=4 (0B/2S/2M) report=2026-11-14-0030-spec-t2-r5-e05f3a1.md
