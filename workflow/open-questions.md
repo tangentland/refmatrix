@@ -20,7 +20,9 @@ Established 2026-11-13 after the user: "on my yes that is ambiguous, you need to
 list of questions you ask me ... we need a way to track my responses to questions not yet
 answered."
 
-rel: related-to -> [[handoff#open]]
+rel: related-to -> [[plan-of-plans]]
+
+The session handoff (`handoff.md` `#open`) points here instead of keeping its own question list.
 
 ## Open {#open}
 
