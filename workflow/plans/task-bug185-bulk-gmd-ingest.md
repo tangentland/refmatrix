@@ -451,11 +451,18 @@ document, and its per-document hold has the same cause: 29 s for one session car
       such producer exists, the same fix bug-218 S3 applies to `memory_link`. There is no
       user stop:
       - **Census, at RED, bounded (r2 S3 (a), lead ruling).** The implementer walks the
-        `link` / `bulk_link` / `link_batch` callers in `src/` that are OTHER producers, able to
-        write an edge whose CONCEPT side is a GMD entity: a doc, a memory, or a node (`doc#id`)
-        entity. Excluded: this document's own pass-2 write set (steps 5-7: `rel:` edges, the
-        `part-of` hierarchy, `imports`, mentions), which "stated" already protects. They get
-        no new evidence, so [[#ac-2]]'s golden is untouched. The census covers callers on the
+        `link` / `bulk_link` / `link_batch` callers in `src/` that are OTHER producers and
+        meet BOTH conditions (r3 M3 restores the first):
+        - their linkage can be a GMD `rel:` verb: a literal that matches `_REL_RE`
+          (`[a-z][a-z0-9-]*`) after `_canonical_verb`, or a caller-supplied (computed)
+          linkage, which counts as `"*"`;
+        - the edge's CONCEPT side can be a GMD entity: a doc, a memory, or a node (`doc#id`).
+
+        Excluded: this document's WHOLE own write set, pass 1 included (r3 M3). That covers
+        pass 1's ADR-alias `store.link("same_as", doc_eid, slash_eid)` (`same_as` can never be
+        a `rel:` verb anyway), the doc-level and node rows, and pass 2's steps 5-7 (`rel:`
+        edges, the `part-of` hierarchy, `imports`, mentions), which "stated" already protects.
+        None of them gets new evidence, so [[#ac-2]]'s golden is untouched. The census covers callers on the
         sync path and the job path alike. Each call site is classified as writes-evidence /
         no-evidence-in-reach / no-evidence-unowned and listed in the implementation summary
         with its path, symbol and sha.
@@ -466,8 +473,10 @@ document, and its per-document hold has the same cause: 29 s for one session car
         owns (for example `memory_link`, owned by bug-218) gets its own bug row in
         `workflow/bug_registry.md`. It is also entered in
         `ingest_gmd.UNOWNED_REL_PRODUCERS`, a list of signatures:
-        `(linkage, source kind, target kind)` plus the owning bug id. `linkage` may be `"*"`
-        (r2 S3 (b)) for a producer whose linkage comes from its caller.
+        `(linkage, concept-side kind, entity-side kind)` plus the owning bug id (r3 M2: the
+        sides as `entity_links` stores them, `concept_id` / `entity_id`, not source and target,
+        because `memory_link` writes its source memory on the ENTITY side today). `linkage` may
+        be `"*"` (r2 S3 (b)) for a producer whose linkage comes from its caller.
         - **The shipped list, pinned to the shape `memory_link` ACTUALLY writes at the merge
           base (lead ruling, 2026-11-13):** exactly one entry,
           `("*", "concept", "memory", "bug-218")`. Verified in the code: the daemon op
@@ -745,9 +754,12 @@ live store is opened. Logs go to `workflow/review-output/pytest-bug185.log`.
       source's `tombstone` drops it.
 
     - **Concurrent resolver (r2 M4).** The batch caches its pending rows. Before a document's
-      tail, the test resolves and deletes one cached row through bug-216's per-row
-      `resolve_pending_refs` on the same store, between two `gmd_pass2_document` calls (AC-9's
-      step shape, no transaction spanning them). That is the window another writer has when
+      tail, the test plays the other writer with the real per-row Store calls bug-216's
+      per-row resolver made (r3 M1: this task rewrites `resolve_pending_refs` into the
+      batched shape, so the per-row version is gone after GREEN): `Store.delete_pending_ref(row)`,
+      `Store.link(…)` and `Store.add_evidence(…)` for one cached row. It does this on the same
+      store, between two `gmd_pass2_document` calls (AC-9's step shape, no transaction
+      spanning them). That is the window another writer has when
       the lock is released between steps. The tail then writes no edge or evidence for that row: one
       evidence row in total, and no `pending_ref_delete` event from this batch for it.
 
@@ -1206,6 +1218,7 @@ rel: implements -> [[bug_registry]] {bug: "bug-221"}
 | r2 S3: census = OTHER producers of an edge whose concept side is a GMD entity, the document's own write set excluded; `*` linkage allowed; shipped list = `("*", "concept", "memory", "bug-218")` (see the next row); AC-15 pins `c` a concept, plus a memory-target leg | [[#r10]], [[#ac-14]], [[#ac-15]] | bounds the lead's c8deca7 rule (its wording was too wide); AC-2's golden is untouched |
 | r2 M4: pending resolution by `DELETE … RETURNING`, linking only the returned rows | [[#r8]] (b), [[#ac-10]] | the per-batch cache can be stale across a released lock |
 | UNOWNED entry pinned to the shape `memory_link` writes at the merge base, `("*", "concept", "memory", "bug-218")`, verified at `1cf3b9f` and `4b4b96e`; bug-218 removes it when it re-orients; the partial-bug-221 cost (a stale node → memory `rel:` key with no other evidence is skipped and counted until then) is accepted | [[#r10]], [[#ac-15]] (second leg on a node → memory key) | the skip list must describe what the unowned producer actually writes, or it either misses that producer's edges or skips edges no producer wrote |
+| bsd-spec-t4 r3 (MEH-only, 4M): M1 AC-10's other writer uses `Store.delete_pending_ref` + `link` + `add_evidence`; M2 the signature is `(linkage, concept-side kind, entity-side kind)`; M3 the census keeps the `rel:`-verb (or `"*"`) condition and excludes the document's whole write set, pass 1's `same_as` ADR alias included. M4 is the lead's | [[#r10]], [[#ac-10]] | the per-row resolver does not survive GREEN; `memory_link`'s source is on the entity side; without the verb condition the census catches pass 1's alias and breaks AC-2's golden |
 | r1 S2 census: no user stop. Every producer of a `rel:`-verb edge writes an evidence row; an in-reach producer is fixed here; an unowned one gets a bug row and is skipped by signature, counted `rel_unlink_skipped_unowned` | [[#r10]], [[#ac-14]], [[#r3]] (a), [[#files-list]] | evidence is the only provenance R10 can read. Making it universal removes the ambiguity, matches bug-218 S3's `memory_link` fix, and the counted skip keeps an unowned edge from being unlinked silently before its owner lands |
 
 **Two further lead rulings, 2026-11-13** (the decision table above records them):
