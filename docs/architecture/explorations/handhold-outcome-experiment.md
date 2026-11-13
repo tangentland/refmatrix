@@ -13,10 +13,9 @@ metadata:
 
 **Date:** 2026-11-13
 **Status:** Proposed. Runs after the user's decision on task 21.5; nothing is built yet.
-**Motivation:** The user, 2026-11-13, after the 21.5 measurements: "so with phase-1's result,
-you could interpret that as debunking refmatrix's whole premise". The answer was no: the
+**Motivation:** The user, 2026-11-13, after the 21.5 measurements: asked whether the phase-1 result debunks refmatrix's premise. The answer was no: the
 measurements refute one delivery mechanism (ambient push injection) and one measurement method
-(attribution by term or clique overlap), not the charter. The user: "add the exploration". This
+(attribution by term or clique overlap), not the charter. The user: asked for the exploration to be added. This
 document designs the experiment that COULD confirm or refute the premise.
 
 rel: related-to -> [[project_refmatrix_mission_charter]]
@@ -78,8 +77,9 @@ profile, never hand-edited (generated, per [[constitution#no-workarounds]] and t
 
 ### Units and assignment {#assignment}
 
-- **Session-level randomisation** across real work sessions, arm drawn at SessionStart and recorded
-  in the session's telemetry, so the comparison is within the same projects and weeks.
+- **Session-level randomisation for a fixed period** (user decision, Q-4: randomised, not opt-in)
+  across real work sessions in refmatrix and cliquedb (Q-5), arm drawn at SessionStart and
+  recorded in the session's telemetry, so the comparison is within the same projects and weeks.
 - **Paired re-entry tasks** as a second, controlled leg: a task that a prior session left
   mid-flight (a real handoff), resumed after `/clear` under each arm by fresh agents on isolated
   clones. Same task, same starting commit, different arm. This isolates continuity, which
@@ -89,7 +89,8 @@ profile, never hand-edited (generated, per [[constitution#no-workarounds]] and t
 
 Each is a proxy for the backtrack-to-rebuild tax, read from transcripts and telemetry:
 
-1. **Orientation cost:** tool calls, tokens and wall time from session start (or `/clear`) to the
+1. **Orientation cost:** tool calls, tokens and wall time from a session (re)start — a new session
+   or a `/clear`, one measure with two triggers (user decision, Q-3: both are relevant) — to the
    first productive edit or the first correct statement of the resume point.
 2. **Exploratory churn:** Read / Grep / Glob / `rmx grep` calls that touch a file and are not
    followed by an edit or a citation of that file within W prompts.
@@ -132,13 +133,11 @@ moved prompt_recall to pointers).
 - Sample size: write the minimum detectable effect for the paired leg before running (paired
   tasks are expensive; 10-20 pairs per arm is the likely ceiling).
 
-## Open questions for the user {#open}
+## Decisions (user, 2026-11-13) {#open}
 
-1. Is orientation cost after a clear or a new session the right primary outcome, or is there a
-   different symptom of the tax you care about more?
-2. May real sessions be randomised into arm B (no push) for a period, or should the session leg be
-   opt-in only?
-3. Which projects: refmatrix and cliquedb (where the 21.5 data lives), or others in the fleet?
+Asked as Q-3 to Q-5 in [[open-questions]]: the primary outcome is orientation cost at a session
+(re)start, new session and `/clear` alike; real sessions are randomised into arms for a fixed
+period; the projects are refmatrix and cliquedb.
 
 ## Sequence {#sequence}
 

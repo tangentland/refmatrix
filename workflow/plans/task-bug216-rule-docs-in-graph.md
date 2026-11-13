@@ -13,7 +13,7 @@ metadata:
 
 # Task bug-216: the rule docs reach the graph {#root}
 
-> Status: Approved by the lead on the user's direction (2026-11-13: "lets fix 216"); revision 2 ([[#rev-2]]) widens it to the misbound bare doc-id class; decisions
+> Status: Approved by the lead on the user's direction (2026-11-13: asked for bug-216 to be fixed); revision 2 ([[#rev-2]]) widens it to the misbound bare doc-id class; decisions
 > taken as the user would, with reasons. Fleet ignore files are NOT changed by this task
 > ([[#fleet]]); that is the user's decision.
 > Depends on: none.
@@ -107,6 +107,8 @@ stays out. {#why-consistent}
 Every fleet store's `.refmatrix_ignore` carries the same `.claude` / `CLAUDE.md` lines (cliquedb,
 viascope, cliquet, atldb checked 2026-11-13). Changing them is a fleet action and the user's call;
 this task ships the mechanism (R1-R3) and a recommendation, not the edits.
+**Decided (user, Q-2): after bug-216 deploys, the `CLAUDE.md` ignore line is removed fleet-wide** (announced
+first, each store's ignore file backed up), and each store's recount is reported.
 
 ## Out of scope {#out-of-scope}
 

@@ -12,8 +12,8 @@ metadata:
 # Task 21.5: term and clique overlap as the `used` comparison {#root}
 
 Phase 1 of `tc-215` (brief `workflow/agents/tc-215.md` on dev master), run at the user's
-direction (2026-11-13: "the used comparison really needs always be on the terms and cliques";
-"can we measure 1, 2, and 3 before deciding?"). Persisted by the lead from the agent's text.
+direction (2026-11-13: asked that the used comparison be made on terms and cliques;
+asked to measure all three clique sources before deciding). Persisted by the lead from the agent's text.
 Counts only. **Provisional** until ch-bsd reviews it with phases 2-3 and the R12 pilot.
 
 rel: evidence-for -> [[task-21.5-tool-used-signal#r7]]

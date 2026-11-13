@@ -11,7 +11,7 @@ metadata:
 
 # Task 21.5 R12 labelled pilot, 2026-11-13 {#root}
 
-Run by `lbl-215` at the user's direction ("b, but not a denial of a": pilot before
+Run by `lbl-215` at the user's direction (chose the labelled pilot first without withdrawing the approval track: pilot before
 implementation, approval track kept). Persisted by the lead from the agent's text. Counts and
 labels only; no prompt, command or memory text. **Provisional** until ch-bsd reviews it with the
 term/clique measurement (`tc-215`).

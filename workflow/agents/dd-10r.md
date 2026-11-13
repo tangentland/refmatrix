@@ -7,7 +7,7 @@ tags: [agent-brief, dispatch, measurement, plan-10]
 
 # Brief: dd-10r — already-held share of injected context {#root}
 
-The user, 2026-11-13: "do we dedupe injected context based on the current representation?" — no.
+The user, 2026-11-13: asked whether injected context is deduped against the session's current representation — no.
 Task 10.1 (2026-09-15, `workflow/measurements/injection-overlap.md`) stopped plan-10 on
 consecutive-call overlap (median 0.000). It never measured injections against what the SESSION
 already holds. Measure that, read-only, counts only. Report as text.

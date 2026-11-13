@@ -11,9 +11,7 @@ metadata:
 
 # Usage-amplified term weight, 2026-11-13 {#root}
 
-Phase 3 of `tc-215` (brief `#amendment-2`), at the user's question: "collect an inverse score of
-the inverted widely linked terms — when they are used collect an amplified secondary score that can
-be used as an alternate weight mechanism". Persisted by the lead from the agent's text. Counts
+Phase 3 of `tc-215` (brief `#amendment-2`), at the user's question: asked for a usage-amplified secondary weight for widely linked terms. Persisted by the lead from the agent's text. Counts
 only. Pre-registration written 12:03, before any phase-3 result (session scratchpad
 `tc/PREREG_phase3.txt`). **Provisional** until ch-bsd.
 
