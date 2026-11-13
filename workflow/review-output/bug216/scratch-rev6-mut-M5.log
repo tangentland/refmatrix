@@ -1,0 +1,46 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/r13/src/refmatrix as checked-hash (bug-037)
+.......F................................................................ [ 38%]
+........................................................................ [ 77%]
+.........................................                                [100%]
+=================================== FAILURES ===================================
+_____ test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay[delta] ______
+
+env = {'base': PosixPath('/private/tmp/b216lvamefmvm'), 'n': [1], 'proj': PosixPath('/private/tmp/b216lvamefmvm/proj'), 'root': PosixPath('/private/tmp/b216lvamefmvm/proj/.refmatrix')}
+how = 'delta'
+
+    @pytest.mark.parametrize("how", ["rebuild", "delta"])
+    def test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay(env, how):
+        """R13 (lead, 2026-11-13, from green-216): `purge_entity` deletes the source's pending rows
+        without an event of its own; its `tombstone` event exists, and replaying it must clear them
+        too. Two citers with pending refs; one is purged. The replay holds the survivor's row and
+        NONE of the purged citer's — no row by file, and no row left pointing at a dead source."""
+        a = _write(env, "docs/a.md", A_V1)
+        a2 = _write(env, "docs/a2.md", A2_MD)
+        _ingest(env, [_write(env, "docs/b.md", B_MD)])
+        _ingest(env, [a, a2])
+        s = Store(env["root"])
+        s.init()
+        try:
+            assert s.purge_path(str(a)) > 0, "precondition: the purge removed A"
+        finally:
+            s.close()
+        want = _snapshot(env["root"])
+        assert [(k[2], k[4]) for k in want["pending"]] == [("a2#cite", "d-doc")], (
+            f"precondition: only the survivor's pending row in the catalog: {dict(want['pending'])}")
+        assert want["orphan_pending"] == 0
+        got = _replay(env, how)
+        assert not [k for k in got["pending"] if k[6] == str(a)], dict(got["pending"])
+>       assert got == want, f"{how} replay differs from the catalog:\n{_diff(want, got)}"
+E       AssertionError: delta replay differs from the catalog:
+E         orphan pending rows: 1 vs 0
+E       assert {'evidence': ...s': Counter()} == {'evidence': ...s': Counter()}
+E         
+E         Omitting 3 identical items, use -vv to show
+E         Differing items:
+E         {'orphan_pending': 1} != {'orphan_pending': 0}
+E         Use -v to get more diff
+
+tests/test_bug216_replay_fidelity.py:245: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_replay_fidelity.py::test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay[delta]
+1 failed, 184 passed in 17.18s

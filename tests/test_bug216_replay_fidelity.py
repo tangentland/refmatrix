@@ -215,3 +215,31 @@ def test_ac14_guard_a_log_without_the_new_events_replays_as_before(env, how):
     n_ev = sum(1 for ev in legacy if ev.get("op") == "evidence")
     assert sum(got["evidence"].values()) == n_ev, (sum(got["evidence"].values()), n_ev)
     assert not got["pending"], "a legacy log carries no pending rows"
+
+
+A2_MD = _gmd("a2", "Other citer.\n\n## Cite {#cite}\n\nText.\n\nrel: depends-on -> [[d-doc]]\n")
+
+
+@pytest.mark.parametrize("how", ["rebuild", "delta"])
+def test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay(env, how):
+    """R13 (lead, 2026-11-13, from green-216): `purge_entity` deletes the source's pending rows
+    without an event of its own; its `tombstone` event exists, and replaying it must clear them
+    too. Two citers with pending refs; one is purged. The replay holds the survivor's row and
+    NONE of the purged citer's — no row by file, and no row left pointing at a dead source."""
+    a = _write(env, "docs/a.md", A_V1)
+    a2 = _write(env, "docs/a2.md", A2_MD)
+    _ingest(env, [_write(env, "docs/b.md", B_MD)])
+    _ingest(env, [a, a2])
+    s = Store(env["root"])
+    s.init()
+    try:
+        assert s.purge_path(str(a)) > 0, "precondition: the purge removed A"
+    finally:
+        s.close()
+    want = _snapshot(env["root"])
+    assert [(k[2], k[4]) for k in want["pending"]] == [("a2#cite", "d-doc")], (
+        f"precondition: only the survivor's pending row in the catalog: {dict(want['pending'])}")
+    assert want["orphan_pending"] == 0
+    got = _replay(env, how)
+    assert not [k for k in got["pending"] if k[6] == str(a)], dict(got["pending"])
+    assert got == want, f"{how} replay differs from the catalog:\n{_diff(want, got)}"

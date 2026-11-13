@@ -295,3 +295,41 @@ rel: reinforces -> [[feedback_decay_never_loses_knowledge]]
   replays one evidence row per `evidence` event. Mutations, each failing: drop the clear event;
   drop the pending events; either replay path ignores them.
   Test: `tests/test_bug216_replay_fidelity.py`. {#ac-14}
+
+## Revision 6 (2026-11-13, green-216 #green-flags 5 and 6 + an R13 gap; lead decisions) {#rev-6}
+
+Three items before merge, one revision. {#rev-6-lead}
+
+- **R13 covers `purge_entity` too.** It deletes the source's `pending_refs` rows without an event
+  of its own; its `tombstone` event exists, and replaying that tombstone must clear the source's
+  pending rows on both replay paths. R13's full list of writes: `clear_rel_evidence`,
+  `add_pending_ref`, `delete_pending_ref`, `clear_pending_refs_for_file`, and `purge_entity`'s
+  pending delete. AC-14 adds: two citers with pending refs, one purged; both replays hold the
+  survivor's row and none of the purged citer's, with no row left on a dead source. Mutation:
+  the tombstone replay leaves pending rows. {#r13-purge}
+14. **R14 The `denotes` derive is a verb** (flag 5; ".claude/PROJECT_PROFILE.md" #constraints:
+    every capability an agent can call is a verb first, CLI and MCP expose it). Verb
+    `rmx_derive_denotes` (`verbs.derive_denotes(root, *, partition=None, timeout=None)`), CLI
+    twin `rmx derive denotes` (partition via `rmx -p`, as `memory compile`), MCP tool generated
+    from the verb; all return the op's counts `{added, concepts, targets, multi_target}`, the CLI
+    printing each as `key=value`. Daemon down: the CLI exits non-zero with the reason on stderr
+    and writes nothing; the MCP tool returns an `error`. {#r14}
+15. **R6b Prestage names its exclusions in the result** (flag 6, #no-silent-failures). The
+    `prestage_hashes` op and the CLI's `ingest-gmd --prestage` (both branches) pass `ignored=` to
+    the walk as ingest does; the op's result carries `ignored` (count) and `ignored_paths`
+    (names), and the CLI prints `render_ignored_line` on stdout. {#r6b}
+
+rel: amends -> [[#r13]]
+rel: amends -> [[#r2]]
+
+- **AC-15 (R14).** `rmx_derive_denotes` is a verb with CLI twin `("derive", "denotes")`, wiring
+  `calls`, and an MCP tool; `tests/test_verb_parity.py` covers it (PAIRING + CLI_INVOKE rows). On
+  a store with one doc `b-doc` and the concept `b-doc` (3 spellings) the verb, the CLI and the
+  MCP tool return / print added 3, concepts 3, targets 1, multi_target 0; a second run adds 0.
+  Daemon down: CLI non-zero, stderr names the daemon, no link written; MCP returns an error.
+  Mutations: the CLI swallows the error; the CLI bypasses the verb; the verb drops counts.
+  Test: `tests/test_bug216_surfaces.py`. {#ac-15}
+- **AC-16 (R6b).** A memdir with `.hidden/y.md`, prestaged (doc walk) through the op and through
+  the CLI (daemon down and daemon up): the result / stdout counts 1 and names the path. Guard:
+  `--as-memory` prestage still names it in `walk_skipped`. Mutations: the op leaves it on
+  stderr; the CLI does not print it. Test: `tests/test_bug216_surfaces.py`. {#ac-16}

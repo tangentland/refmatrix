@@ -264,6 +264,32 @@ test_factslog_compaction (29), and every bug-216 file + bridge-move + log tests 
 each failing: drop the clear event (4), drop the pending events (4), the rebuild ignores them (2),
 the delta path ignores them (2) (`scratch-r13-*.log`). {#red-ac14-proof}
 
+### Rev 6: AC-14 purge, AC-15 (R14), AC-16 (R6b) {#red-rev6}
+
+RED at `f79dab1`, run in a clean clone of the committed tip (green-216's uncommitted R13 work in
+the shared tree excluded): `red-rev6-f79dab1.log` (replay + surfaces + verb parity: 20 failed,
+165 passed) and `red-rev6-surfaces-f79dab1.log` (surfaces alone: 9 failed, 1 guard passed).
+
+| test | line at `f79dab1` |
+|---|---|
+| `test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay[rebuild / delta]` | replay differs: the survivor's pending row is missing (nothing logged) |
+| `test_ac15_the_derive_is_a_verb_with_cli_and_mcp_twins` | `` no `rmx_derive_denotes` verb `` |
+| `test_ac15_the_verb_returns_the_ops_counts` / `…mcp_tool_returns_the_ops_counts` | `KeyError: 'rmx_derive_denotes'` |
+| `test_ac15_the_cli_prints_the_ops_counts` | `Usage: main derive [OPTIONS] COMMAND` (no `denotes`) |
+| `test_ac15_daemon_down_the_cli_fails_loudly_and_writes_nothing` | `the command does not exist` |
+| `test_ac15_daemon_down_the_mcp_tool_returns_an_error` | `` no `rmx_derive_denotes` tool `` |
+| `test_ac16_the_prestage_op_names_its_ignored_path_in_the_result` | result has no `ignored` / `ignored_paths` |
+| `test_ac16_the_prestage_cli_names_its_ignored_path_daemon_down / _daemon_up` | stdout is only `prestaged: considered=1 …` |
+| `test_ac16_guard_the_memory_prestage_still_names_its_skips` | guard |
+| `test_verb_parity`: pairing / exclusions / click defaults / wiring / `cli_twin_calls_its_verb[rmx_derive_denotes]` | the new PAIRING and CLI_INVOKE rows name a verb that does not exist |
+
+A scratch reference (R13 events incl. the purge, the verb + `rmx derive denotes`, prestage
+`ignored`) passes these three files (185) and 31 cli / tree / mcp / verb / bug-216 files (565).
+Mutations, each failing (`scratch-rev6-mut-*.log`): tombstone replay leaves pending rows (1, the
+delta case — the rebuild never materializes a row for a dead source); the CLI swallows the
+daemon-down error (1); the CLI bypasses the verb (2); the verb drops counts (3); the prestage op
+leaves exclusions on stderr (2); the prestage CLI does not print them (2). {#red-rev6-proof}
+
 ### Satisfiability and mutations {#red-mutations}
 
 A scratch reference implementation (never committed; diffstat in

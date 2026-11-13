@@ -128,6 +128,9 @@ PAIRING = {
     "rmx_memory_compile": (("memory", "compile"), {"apply": "do_apply"},
                            {"exclude_mtypes", "prune", "invoked_by", "status", "partition",
                             "timeout"}),
+    # bug-216 R14: the `denotes_link` derive as a verb. `partition` rides on the `rmx` group
+    # (`-p`), as for `memory compile`; `timeout` is a verb duty with no CLI option.
+    "rmx_derive_denotes": (("derive", "denotes"), {}, {"partition", "timeout"}),
 }
 # A no_twin param that DOES have a same-named click option must be one of
 # these declared shape differences (a click `multiple=True` option defaults
@@ -400,6 +403,11 @@ CLI_INVOKE = {
                             "subjects_gmd": MEMORY_COMPILE_GMD},
                            {"scope": "pattern", "apply": True, "min_size": 3, "k": 5,
                             "invoked_by": "cli"}, "CANARY-subj"),
+    # bug-216 R14: `rmx derive denotes` CALLS the verb and prints the op's counts as key=value.
+    "rmx_derive_denotes": (["derive", "denotes"],
+                           {"added": 7, "concepts": 5, "targets": 3, "multi_target": 2,
+                            "partition": "proj"},
+                           {}, "added=7"),
 }
 # payload-class twins: argv + the daemon op the click command must issue with
 # a payload built by the verb's helper (recorded by wrapping the helper).

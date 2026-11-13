@@ -1,0 +1,71 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/r13/src/refmatrix as checked-hash (bug-037)
+.........FFF............................................................ [ 38%]
+........................................................................ [ 77%]
+.........................................                                [100%]
+=================================== FAILURES ===================================
+__________________ test_ac15_the_verb_returns_the_ops_counts ___________________
+
+env = {'base': PosixPath('/private/tmp/b216sa728_t7w'), 'proj': PosixPath('/private/tmp/b216sa728_t7w/proj'), 'root': PosixPath('/private/tmp/b216sa728_t7w/proj/.refmatrix')}
+in_process_daemon = <refmatrix.daemon.Daemon object at 0x120a4de80>
+
+    def test_ac15_the_verb_returns_the_ops_counts(env, in_process_daemon):
+        res = verbs.VERBS[VERB].fn(env["root"])
+>       assert {k: res.get(k) for k in COUNT_KEYS} == \
+            {"added": 3, "concepts": 3, "targets": 1, "multi_target": 0}, res
+E       AssertionError: {'added': 3, 'partition': 'proj'}
+E       assert {'added': 3, ...argets': None} == {'added': 3, ... 'targets': 1}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'concepts': None} != {'concepts': 3}
+E         {'targets': None} != {'targets': 1}
+E         {'multi_target': None} != {'multi_target': 0}
+E         Use -v to get more diff
+
+tests/test_bug216_surfaces.py:120: AssertionError
+___________________ test_ac15_the_cli_prints_the_ops_counts ____________________
+
+env = {'base': PosixPath('/private/tmp/b216sv8rmn7w5'), 'proj': PosixPath('/private/tmp/b216sv8rmn7w5/proj'), 'root': PosixPath('/private/tmp/b216sv8rmn7w5/proj/.refmatrix')}
+in_process_daemon = <refmatrix.daemon.Daemon object at 0x123cb7a10>
+
+    def test_ac15_the_cli_prints_the_ops_counts(env, in_process_daemon):
+        r = CliRunner().invoke(cli_mod.main, ["derive", "denotes"], catch_exceptions=False)
+        assert r.exit_code == 0, r.output
+        for k, v in {"added": 3, "concepts": 3, "targets": 1, "multi_target": 0}.items():
+>           assert re.search(rf"\b{k}=({v})\b", r.output), f"`{k}={v}` not in:\n{r.output}"
+E           AssertionError: `concepts=3` not in:
+E             added=3 concepts=None targets=None multi_target=None partition=proj
+E             
+E           assert None
+E            +  where None = <function search at 0x100667cc0>('\\bconcepts=(3)\\b', 'added=3 concepts=None targets=None multi_target=None partition=proj\n')
+E            +    where <function search at 0x100667cc0> = re.search
+E            +    and   'added=3 concepts=None targets=None multi_target=None partition=proj\n' = <Result okay>.output
+
+tests/test_bug216_surfaces.py:129: AssertionError
+________________ test_ac15_the_mcp_tool_returns_the_ops_counts _________________
+
+env = {'base': PosixPath('/private/tmp/b216sz5kksi6p'), 'proj': PosixPath('/private/tmp/b216sz5kksi6p/proj'), 'root': PosixPath('/private/tmp/b216sz5kksi6p/proj/.refmatrix')}
+in_process_daemon = <refmatrix.daemon.Daemon object at 0x127e142f0>
+
+    def test_ac15_the_mcp_tool_returns_the_ops_counts(env, in_process_daemon):
+        import refmatrix.mcp as mcp
+        res = mcp.TOOLS[VERB]["fn"]({"root": str(env["root"])})
+        assert "error" not in res, res
+>       assert {k: res.get(k) for k in COUNT_KEYS} == \
+            {"added": 3, "concepts": 3, "targets": 1, "multi_target": 0}, res
+E       AssertionError: {'added': 3, 'partition': 'proj'}
+E       assert {'added': 3, ...argets': None} == {'added': 3, ... 'targets': 1}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'concepts': None} != {'concepts': 3}
+E         {'targets': None} != {'targets': 1}
+E         {'multi_target': None} != {'multi_target': 0}
+E         Use -v to get more diff
+
+tests/test_bug216_surfaces.py:138: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_surfaces.py::test_ac15_the_verb_returns_the_ops_counts
+FAILED tests/test_bug216_surfaces.py::test_ac15_the_cli_prints_the_ops_counts
+FAILED tests/test_bug216_surfaces.py::test_ac15_the_mcp_tool_returns_the_ops_counts
+3 failed, 182 passed in 16.34s
