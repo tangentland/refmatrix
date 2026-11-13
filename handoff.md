@@ -28,7 +28,7 @@ gone; their next artifact is a commit on the clone's branch, reports come back a
 | `green-216` · ch-implementer | `refmatrix-bug216` · `task-bug216-rule-docs-in-graph` | `f1aa796` | src + docs + `#green`; R1-R12 GREEN | `green-216.md` |
 | `green-251c` · ch-implementer | `refmatrix-plan25-1` · `task-25.1-recall-hook-byte-budget` | spec `4f95c23` | rev-7 GREEN + regenerated hooks + `#green-rev7` | `green-251c.md` |
 | `green-212r2` · ch-implementer | `refmatrix-bug212` · `task-bug212-worktree-hook-crashes` | `deafd6d` | `_store_rw` refusal + survivors + `#green-r2` | `green-212r2.md` |
-| `arch-10r` · ch-architect | `refmatrix-plan10` · `task-plan10-revival` | rev 4 `a401924` | DONE: plan-10 rev 4 (names-only Q13, no gate Q10, 10.4b curator Q9, 10.5 replay passed + 50-probe read-back to run, 10.6 presentation); lead accepted its L4 (earlier prompt = prompt identity) | `arch-10r.md` (+ amendments) |
+| `arch-10r` · ch-architect | `refmatrix-plan10` · `task-plan10-revival` | rev 5 `c04c9b9` | DONE: plan-10 rev 4 (`a401924`) + rev 5 (10.6 kind labels, composite `rev N unchanged`, curator prints only on change; order 25.1 → 10.6 → 10.4 → 10.2); (names-only Q13, no gate Q10, 10.4b curator Q9, 10.5 replay passed + 50-probe read-back to run, 10.6 presentation); lead accepted its L4 (earlier prompt = prompt identity) | `arch-10r.md` (+ amendments) |
 | `bsd-264r1` · ch-bsd | `refmatrix-plan26-4` | `1caf3df` | DONE: r1 DIRTY 6, code sound; b-1 anchored in 26.5 (`b587f77`); **26.4 MERGED `0c74872`** | `bsd-264r1.md` |
 | `adj-215` · general-purpose | none | — | DONE: graph-neighbour leg does not separate from control → keep out of 21.5 (`workflow/measurements/task-21.5-adjacency-2026-11-13.md`) | `adj-215.md` |
 
@@ -57,7 +57,7 @@ gone; their next artifact is a commit on the clone's branch, reports come back a
 
 - **Questions:** none open (next id Q15).
 - **PAUSED by the user (2026-11-13: update the handoff then pause).** No new agents. The three running implementers may finish; collect their reports, then stop.
-- **Next, in order, when resumed:** merge master (`0c74872`, 26.4) into the 25.1 branch so AC-5 can go green → collect `green-216`, `green-251c`, `green-212r2` → ch-bsd each (bug-216, 25.1 rev 7, bug-212 r2) → merge 25.1 → bug-212 → bug-216 → release 0.83.0 → fleet `install-hooks --apply --force` (find repos by hook marker; bug-209) → bug-216 live steps (`denotes_link` derive, recount AC-6, fleet CLAUDE.md un-ignore per Q2) → 25.1 rev 8 RED/GREEN (Q14 ladder + spill) → plan-10 rev 4 to ch-bsd (spec review) → 10.5 read-back probe → 26.5 (now carries bug-213, `#inherit-264-r1`) → 21.5 approval decision → handhold outcome experiment.
+- **Next, in order, when resumed:** merge master (`0c74872`, 26.4) into the 25.1 branch so AC-5 can go green → collect `green-216`, `green-251c`, `green-212r2` → ch-bsd each (bug-216, 25.1 rev 7, bug-212 r2) → merge 25.1 → bug-212 → bug-216 → release 0.83.0 → fleet `install-hooks --apply --force` (find repos by hook marker; bug-209) → bug-216 live steps (`denotes_link` derive, recount AC-6, fleet CLAUDE.md un-ignore per Q2) → 25.1 rev 8 RED/GREEN (Q14 ladder + spill) → plan-10 rev 5 (`c04c9b9`) to ch-bsd (spec review) → 10.5 read-back probe → 26.5 (now carries bug-213, `#inherit-264-r1`) → 21.5 approval decision → handhold outcome experiment.
 - **Not pushed:** dev master is ~75 commits ahead of `origin/main`; fleet commits from bug-214 too.
 
 ## Resume {#resume}
