@@ -30,6 +30,11 @@ metadata:
 > sequence leg for a live session. The file name and id keep `offline-reclaim` so inbound links
 > stay stable.
 > Wave: 4 ([[plan-review-2026-10-14#t10-waves]]).
+> **User-gated (round 6, bsd-spec-t4 r1 M5; plan review L45, `#queue` item 11):** R12's hand
+> rollout swaps the writer slot of four LIVE stores (refmatrix, global, cliquedb, viascope). An
+> unattended run stops before each store's `--confirm` and before its arm, and the user goes
+> ahead store by store. "Announced to the user first" is not enough on its own: R12 says the
+> procedure is not a control.
 > Depends on:
 > - **bug-112 FIXED and reachable from `master`** (an in-process `duckdb.connect` of a path that
 >   is already open returns the cached database; [[bug_registry]]). **SATISFIED** (round 6):
@@ -1443,3 +1448,4 @@ rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 | d9bp/d9bq/d9br "PROVISIONAL" (header and the d9 rows of the 18.1-verdict table) | CONFIRMED, plan-18 r4 |
 | "needs a fresh ch-bsd spec review and the user's approval" | given: d9co |
 | bug-112 "in progress on branch" | SATISFIED, `74f8f98` |
+| R12's live slot swaps, "announced" only (bsd-spec-t4 r1 M5) | header: USER-GATED per store before `--confirm` and before the arm |

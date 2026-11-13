@@ -396,7 +396,9 @@ read-only in the 3.7 clone (`task-3.7-verb-it-backlog` at `e4faf32`) and the bug
   call, after its `con.commit()`. A digest name (`focus_summary_<slug>`) is one row per session,
   re-promoted every turn, by two writers once R11 lands (the dial and the queue).
 - **Every write op requests a snapshot (m4).** `_op_memory_add`, `_op_subject_upsert`,
-  `_op_subject_link` and `_op_memory_compile_apply` end in `d._request_snapshot()`, and so does
+  `_op_subject_link` and `_op_memory_compile_apply` (since 26.6: `_op_memory_compile`, which
+  ends its hold block in `d._request_snapshot()` at `1cf3b9f`; round 15, r1 M3) end in
+  `d._request_snapshot()`, and so does
   `_drain_learn_queue` after a drain that applied rows. A write that does not request one is
   invisible to every replica reader (`memory recall`, `recall-state`, scan-prompt) until an
   unrelated write does.
@@ -1306,7 +1308,9 @@ Added in round 11 (m6), from [[bsd-plan23-1-2-freshness-9bcf464#overlap]]:
 7. **23.3 ∥ 23.5** after 23.1 ([[plan-23-bounded-write-harness#merge-order]]; 23.5 R9/AC-9
    after the 26.6 R3 residual, which follows 26.7, round 15, L1).
 
-**Holder census addition (m6; owner fixed in round 12, b-n1).** `daemon.py::_op_memory_compile_apply`
+**Holder census addition (m6; owner fixed in round 12, b-n1; symbol updated in round 15, r1
+M3: 26.6 replaced it with `_op_memory_compile`, which holds the same block at `1cf3b9f`).**
+`daemon.py::_op_memory_compile_apply`
 (the same symbol at `77c9f04`, on 3.7 at `e4faf32` and on bug-178 at `ae7c0c7`) holds
 `_store_lock` with the memory partition bound for the WHOLE `consolidate.apply_plan(…)`, and 26.6
 adds scope-filtered stale-marking to that apply. It is OWNED by 23.5 as a NAMED HOLDER with a

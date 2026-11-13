@@ -887,7 +887,9 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
      are `lance_versions == 0` and `statements <= K` (R9's pre-registered K, through
      `@pytest.mark.max_writes_per_hold(statements=K, lance_versions=0)`, with the setup ops'
      holds below K too);
-   - with `RMX_HOLD_ALARM_S=0` the release logs `lock hold: memory_compile_apply <s>s`, and
+   - with `RMX_HOLD_ALARM_S=0` the release logs `lock hold: <that op's registered name> <s>s`
+     (round 14, r1 M3: `memory_compile` at `1cf3b9f`; no `memory_compile_apply` op survives
+     26.6), and
      during the hold (a seam pauses `apply_plan` after its prune loop) `stats(include_health=True)`
      answers within 1 s with `writer_holder.op == <that op's own registered name>` (and the
      alarm line names the same op);
@@ -927,7 +929,7 @@ tmp socket, with `RMX_HEARTBEAT_S=0.2` and `RMX_HUB_HEARTBEAT_STALE_S=3` unless 
 | `tests/test_inflight_registry.py`, `tests/test_daemon_shutdown_drain.py` | 2-tuples → `InflightEntry`; the `== {}` assertion filters `kind == "op"` (R4; nm23-r9-1) |
 | `tests/test_snapshot_tier.py` | `test_op_snapshot_registered_in_ops_and_cli_ops` asserts `snapshot` is NOT in `CLI_OPS` (R1.4) |
 | `tests/` | AC-1..AC-8 and AC-1b in a new `tests/test_read_path_holder_bounds.py`; the transitive AST test (R7) |
-| `src/refmatrix/daemon.py` (round 11) | `_op_memory_compile_apply`'s docstring states the whole-apply hold decision and cites R9 / AC-9 (R9; b-n1). No lock or code-path change: R4 already names the op |
+| `src/refmatrix/daemon.py` (round 11; symbol updated round 14, r1 M3) | the docstring of every op R9's RED read lists (at `1cf3b9f`: `_op_memory_compile`, whose plan and apply run in one `with d._store_lock, d._st().with_partition(part):` block) states the whole-apply hold decision and cites R9 / AC-9 (R9; b-n1). No lock or code-path change: R4 already names the op |
 | `tests/test_read_path_holder_bounds.py` (round 11) | AC-9, with K and the fixture's `(clusters, members, pruned_leaves)` pre-registered at RED in the implementation summary |
 | `src/refmatrix/daemon.py`, `tests/test_read_path_holder_bounds.py` (round 12) | R9's docstring on EVERY op that runs the compile hold (the list read from 26.6's merged code at RED, recorded with its sha); AC-9 parametrized over that list, marker-ON, `K_off` recorded; the implementation summary records `(clusters, members, pruned_leaves, marker)`, K, `K_off` and the sha (s3, m1) |
 
@@ -1130,6 +1132,7 @@ rel: depends-on -> [[task-26.6-compile-subject-hygiene#r3-residual]]
 
 | finding | answered at | rationale |
 |---|---|---|
+| r1 M3 (AC-9 and the files row still named the removed `memory_compile_apply`) | [[#ac-9]], [[#files]] | the op name is read from the registry, and the symbol is the one that holds the block at `1cf3b9f` |
 | L1 / Cc-2: R9/AC-9 gated on "26.6 merged", but the in-hold render is 26.6's R3 residual, after 26.7 | header, [[#r9-compile-apply]] (Order bullet) | K is a ratchet; measured before the render exists it equals `K_off` and breaks when the render lands |
 | Cc-9: d9bn shown as PROVISIONAL | header | d9bn is CONFIRMED (`plan-review-2026-10-14`, "plan-23/17 r10") |
 

@@ -306,4 +306,4 @@ rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 | DRAFTING; 18.1 IN-PROGRESS | status line | Approved (d9co); 18.1 COMPLETED (`530660e`) |
 | 18.3 "PROVISIONAL" | [[#tasks]] 18.3 row | CONFIRMED (d9bf, d9bp) |
 | d9bf/d9bp, d9bg/d9bq, d9br "(PROVISIONAL)" | [[#rev-18-1-verdict]] table | "PROVISIONAL at the time; CONFIRMED, plan-18 r4" |
-| 18.2 / 18.3 headers | [[task-18.2-catalog-maintain-step#rev-round-5]], [[task-18.3-offline-reclaim#rev-round-5]] | same |
+| 18.2 / 18.3 headers | [[task-18.2-catalog-maintain-step#rev-round-5]], [[task-18.3-offline-reclaim#rev-round-6]] | same |
