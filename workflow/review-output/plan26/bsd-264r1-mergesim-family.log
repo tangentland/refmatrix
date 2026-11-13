@@ -1,0 +1,12 @@
+merge-sim f84c9dc = af4a4b6 + task-26.4 (1caf3df); files: tests/test_savestate_mtype.py tests/test_savestate_subfolder.py tests/test_bridge_move_safety.py tests/test_bridge_move_safety_r1.py tests/test_bridge_move_safety_ac4c.py tests/test_memory_bridge.py tests/test_memory_layout.py tests/test_memory_index.py tests/test_memory_index_layout.py tests/test_memory_index_char_budget.py tests/test_ingest_gmd_root_rel_mirror.py tests/test_save_state.py tests/test_save_state_embeds_memories.py tests/test_memory_recall_exclude_mtype.py tests/test_verbs_memory_recall.py tests/test_sync_gmd_routing.py tests/test_verb_parity.py
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan26-4/src/refmatrix as checked-hash (bug-037)
+........................................................................ [ 13%]
+........................................................................ [ 27%]
+........................................................................ [ 40%]
+........................................................................ [ 54%]
+........................................................................ [ 67%]
+........................................................................ [ 81%]
+........................................................................ [ 94%]
+...........................                                              [100%]
+531 passed in 694.62s (0:11:34)
+pytest exit=0
