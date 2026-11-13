@@ -19,8 +19,8 @@ metadata:
 > 2026-10-15, [[#rev-round-10]], round 11, 2026-10-15, [[#rev-round-11]], round 12,
 > 2026-10-15, [[#rev-round-12]], round 13, 2026-10-15, [[#rev-round-13]], round 14,
 > 2026-10-15, [[#rev-round-14]], round 17, 2026-11-13: R10, the stale-evidence cleanup,
-> [[#rev-round-17]], round 18, 2026-11-13: R10's own row op, [[#rev-round-18]], and round 19:
-> r2's S1/M1/M2, [[#rev-round-19]])
+> [[#rev-round-17]], round 18, 2026-11-13: R10's own row op, [[#rev-round-18]], round 19:
+> r2's S1/M1/M2, [[#rev-round-19]], and round 20, 2026-11-14: r3's M7, [[#rev-round-20]])
 > Wave: 1, after 22.2 (it needs the engine, the intent-record form and restore); parallel to
 > 22.5. R4 (the sync edit fix) needs only 16.6's Wave-1 slice and may land first.
 > Depends on: 22.2 (engine, primitives, R4 intent-record form, `removal_restore`), 22.1a
@@ -846,8 +846,11 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
     `stale_drop_live_holder: 1`. `rebuild_index_from_log` on a copy holds no copy of (e) under
     `doc X` or `concept X`, holds exactly one copy of (f), and so equals the catalog's evidence
     rows at that `(linkage, file, line, detail)` (r2 M2: no extra copy). **Legacy live holder
-    (r2 M2):** a variant where (f)'s own append is LEGACY and resolves to `concept X` gives the
-    drop at `concept X` `keep: 1`, and the rebuild again holds one copy, (f)'s. Mutations, each FAILS it: "drop the learned exclusion" ((b) removed);
+    (r2 M2; r3 M7):** a variant where (f)'s own append is LEGACY and resolves to `concept X`.
+    By [[#r10-op]]'s rule (one drop per DISTINCT `(partition field, c_kind, c, e_kind, e)`),
+    the scan then yields TWO drops at `concept X`, told apart by `e_kind`. The drop with (f)'s
+    `e_kind` (its target's kind) carries `keep: 1`, and the drop with (e)'s `e_kind` carries
+    `keep: 0`. The rebuild again holds exactly one copy, (f)'s. Mutations, each FAILS it: "drop the learned exclusion" ((b) removed);
     "skip the `evidence_stale_drop` event" (the rebuild resurrects (a)); "key the drop on the
     catalog's kind" (the rebuild resurrects (e) under `concept X`); "drop a live holder's key"
     (the rebuild loses (f)); "guard on the catalog's key instead of the resolved one" (the
@@ -1095,6 +1098,16 @@ claims re-read at `1cf3b9f`. `src/` unchanged.
 
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
 rel: related-to -> [[task-22.1a-provenance-free-classes#r1-stale-evidence]]
+
+## Revision round 20 (2026-11-14) {#rev-round-20}
+
+Answers `bsd-spec-t56-r3` M7 (lead ruling L61).
+
+| finding | answered in |
+|---|---|
+| M7 (the legacy live-holder variant yields two drops at `concept X`; the AC did not say which keeps 1) | [[#ac-10]]: the drop with (f)'s `e_kind` carries `keep: 1`, the one with (e)'s carries `keep: 0`, from [[#r10-op]]'s per-distinct-key rule |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
 ## Revision round 19 (2026-11-13) {#rev-round-19}
 
