@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: plan-review-2026-11-13
-title: "Plan-of-plans re-evaluation and consolidation, 2026-11-13 (rev 5, provisional until ch-bsd r4)"
+title: "Plan-of-plans re-evaluation and consolidation, 2026-11-13 (rev 6, provisional until ch-bsd r5)"
 tags: [plan-review, decisions, consolidation, plan-of-plans, contradictions]
 metadata:
   node_type: review
@@ -170,14 +170,14 @@ it gets used. Three more are fallout from shipping plan-26 to the fleet. {#detou
 | L33 | N9 | plan-7's W4-a deferrals stay with the plan-20 evals (order of record). G11 (the universal `--like` selector) is a curation-verb backlog row. Both sit outside the goal |
 | L34 | N11 | L19's bands, pre-registered: 25.2's gate is built only if, replayed on the labelled and R12 sets, it drops 0 CAUSED/INFORMED and 0 explicit uses. Otherwise 25.2 is re-specced, and Q10's rule stands |
 | L35 | N13 | 21.5 rev 4 includes the R12 re-measure on the revised matcher, with the spec's own bands, before the experiment starts |
-| L36 | N14; bsd-pop-r3 R3 | the m1 round at `4b57796` was DIRTY 13 (2B), and its corrections (`36f0251`, `8db3497`, `3ddba55`) landed after the audited range with no confirm row. An r2-lite confirm over `4b57796..36f0251` runs in the measurement lane before G17 draws its bands (G32). The rev-4 rejection is withdrawn |
+| L36 | N14; bsd-pop-r3 R3 | the m1 round at `4b57796` was DIRTY 13 (2B), and its corrections (`36f0251`, `8db3497`, `3ddba55`) landed after the audited range with no confirm row. An r2-lite confirm over `4b57796..` the files' current head runs in the measurement lane before G17 draws its bands (G32). The rev-4 rejection is withdrawn |
 | L37 | N15 | bug-220 folds into 26.5 (same memdir walk, same marker gate) as its own requirement and AC |
 | L38 | N16 | G27 adds: plan-24 `#decisions`/`#phasing` amends notes (D-Q5); the ADR-0004 decision-log line (L7, L29); and per D-Q1, after Q8, a new memory that amends `feedback_operational_content_not_in_graph` |
 | L39 | N20 | bug-182's fix is hosted by 25.1b as R15 (scan-prompt wall bound per leg; one budget module, one hook window), with the per-leg timing measurement as its R0 |
 | L40 | bsd-pop-r3 R2 | plan-17 order is 17.1 → 17.2 → 17.4 → 17.3 (task-17.3:20: depends on 17.4). 17.3 is user-gated (the orphan release `:57`; backup deletion `:70`, `:177`) |
 | L41 | R6, R7 | 19.0's remainder follows 25.3 (its ACs assume R1 is built, task-19.0:423) and includes R1's rebuild remainder (`:925`). bugs 100, 103 and 104 are owned by 19.0 (R5, R2, R1), so they leave the backlog and ride item 4 |
 | L42 | R9 | under L32's floor nothing of 25.4/25.5 remains to build. Both close as superseded by 16.5; bug-167 and bug-174 close when 16.5 lands (fixed by its R3 floor). The 25.5 R4 re-measure stays in the backlog as the trigger to reopen |
-| L43 | R10 | L34's else-branch is pre-decided: if the gate fails its bands, 25.2 is not built and bug-165 moves to the T3 backlog. 25.3 is checked independent of 25.2 at its spec revision; if it is not, that is a goal stop |
+| L43 | R10; bsd-pop-r4 X2 | L34's else-branch is pre-decided: if the gate fails its bands, 25.2 is not built and bug-165 moves to the T3 backlog. 25.3's STM half has no dependency on 25.2 (task-25.3:21-22) and always builds; only its helix half follows 25.2, and it drops with 25.2 if L43 fires |
 | L44 | R11 | R15's band, pre-registered: R0 records per-leg scan-prompt wall time on ≥ 100 hook runs. If the overrun (bug-182: 36 of 101 > 5 s) sits in a leg 25.1b's budget module controls, R15 bounds that leg. If it sits in a lock or daemon wait, R15 is not built and bug-182 moves to the T4 backlog |
 | L45 | R4, R12 | user gates are taken from the specs, not only from `#queue`: the horizon restores the catch-all, and `#queue` marks 17.3, 22.5 R4 (the no-owner forget, d9b), the experiment start (randomises live sessions ≥ 14 days in refmatrix and cliquedb), 18.3's per-store announcements and 27.2's viascope2 archive go |
 
@@ -244,7 +244,7 @@ by a user decision carries its id, and a line placed by an L-row carries that ro
    session boundary).
 4. **T3, plan-25:** plan-10 rev 5 ch-bsd spec review → revival branch merged (L23) → 10.3 →
    25.1b (L15; + bug-182 fix as R15 under L44's band, L39; + plan-2's riders, D-Q6; **user-gated:** install
-   window) ∥ 25.2 (after L34's scoring; else-branch L43) → 25.3 (after 10.3; L16); 19.0 R0, R2-R7 + R1's rebuild remainder, after 25.3 (d9bi, D-Q3; L41; bugs 100, 103, 104).
+   window) ∥ 25.2 (after L34's scoring; else-branch L43) → 25.3 (after 10.3; L16); 19.0 R0, R2-R7 + R1's rebuild remainder, after 25.3's STM half (d9bi, D-Q3; L41, L43; bugs 100, 103, 104).
 5. **T4:** bug-185 (freshness rev L3; gate per L4) → 23.2 → 23.1 (bug-177) → 23.3 (fresh vs
    bug-185, L31) ∥ 23.5 (R9/AC-9 on the real hold, L1).
 6. **T3:** 10.5 probe → 10.6 (after L17's Table A) → 10.4 (**user-gated:** install window) →
@@ -280,7 +280,7 @@ until Q8 is answered. They supersede the proposal text above wherever it differs
   to the user: OUT means excluded from co-mention / concept-weight derivation, the pollution
   `feedback_operational_content_not_in_graph` names. It does not mean excluded from ingest:
   `workflow/` is a corpus root (`PROJECT_PROFILE.md#corpus`), so its docs stay addressable by name,
-  anchor and `rel:`. Option a's text named viascope's rule, which excludes at INGEST, so this reading is put back to the user as Q8 and G22 is held until then. A T6 task stub specs whichever Q8 picks. Live purges go through plan-22's audited path, and
+  anchor and `rel:`. Option a's text named viascope's rule, which excludes at INGEST, so this reading is put back to the user as Q8 (restated twice for honest costs) and G22 is held until then. A T6 task stub specs whichever Q8 picks. Live purges go through plan-22's audited path, and
   every live step is announced and backed up. {#d-q1}
 - **D-Q2 (X3):** 25.1 rev 7 ships in 0.83.0.
   - The 26.7 / plan-27 order is waived on the record: plan-25 `#ordering`, the 25.1 spec
@@ -330,7 +330,6 @@ L-row first; **new** = no spec yet; **review** = written but not through ch-bsd.
 | G11 | 4 | 10.3, 10.5 probe, 10.6, 10.4, 10.2 | review | plan-10 rev 5 ch-bsd spec review + branch merge (L23); 10.3 early (L30); 10.2 re-spec vs 25.1b (L15) with L27's outcome; L17 Table A before 10.6 |
 | G12 | 4 | 25.1b | **new** | task spec from rev 8's R12-R14/AC-16-18 + L15 amends + `depends-on 10.3` + R15 bug-182 wall bound under L44's band (L39) + plan-2 #s-2/#m-4 riders (D-Q6) |
 | G13 | 4 | 25.2, 25.3 | rev | 25.2: L34 scoring with L43's else-branch; 25.3: R7 reset on 10.3's marker (L16), independence from 25.2 checked (L43) |
-| G14 | 4 | bug-182 | **new** | measurement task (per-leg timing in `query.log`); measurement lane |
 | G15 | 2 | bug-220 | rev | folded into 26.5 as its own requirement + AC (L37) |
 | G16 | 7 | 21.5 rev 4 | rev | fold the pilot's seven matcher changes; R12 re-measure with the spec's bands (L35); decision row "no build until the experiment reports" (D-Q4) |
 | G17 | 7 | handhold outcome experiment | **new** | plan + task specs from the exploration (arms, outcomes, bands, the arm-B switch, Q3 fully folded per L20, 10.2's nested arm) |
@@ -340,7 +339,7 @@ L-row first; **new** = no spec yet; **review** = written but not through ch-bsd.
 | G21 | 9 | bug-219 count half + plan-22 | rev | bug-219 = bug-216 R8 (no new spec); 22.1a widened to a dead entity side (L6); plan-22 body status (CD-9); 22.4 deferral rows (L22) |
 | G22 | 9 | D-Q1 co-mention exclusion | held | waits on Q8 (ingest exclusion vs co-mention exclusion); then spec; live purge after 22.2 via plan-22's path |
 | G23 | 10 | 16.1-16.5, 16.4 | rev | 16.1 vs bug-216 (L5); plan-16 body status (CD-9) |
-| G24 | 10 | 25.4/25.5 | close | 25.4/25.5 close as superseded by 16.5 (L42); premise note (L24) recorded in the closing line |
+| G24 | 10 | 25.4/25.5 | close | 25.4/25.5 close as superseded by 16.5 (L42); premise note (L24) in the closing line; plan-25's task table, fixed list and `#approval-order` amended by name; cliquedb told on the bus (bug-167 closed by 16.5) when 16.5 ships |
 | G25 | 8, 11 | 23.4, 17.2, 17.4, plan-18 | rev | plan-17/18 body status lines (Cc-9); 18.2/18.3 PROVISIONAL marks cleared against the CONFIRMED rows |
 | G26 | backlog | bug-206, bug-210, plan-7 deferrals + G11 | backlog | explicit backlog rows with owners (Ca-5, D-Q6) |
 | G27 | — | bookkeeping | rev | L14 realized-by lines, L25 status sweep, POP rewrite (P1), plan-24 amends notes, ADR-0004 decision-log line (L7/L29), D-Q1 memory amendment after Q8 (L38) |
@@ -348,12 +347,20 @@ L-row first; **new** = no spec yet; **review** = written but not through ch-bsd.
 | G29 | 8 | 17.3 fleet rollout; 26.6's 19.4 R1 tick via 17.2 | rev | 17.3 approved; order 17.4 → 17.3 (L40), user-gated; 26.6 AC-2's tick registration named in 17.2 (L28) |
 | G30 | lane | `denotes` fold per-type evaluation | **new** | measurement task with pre-registered bands (L29) |
 | G31 | 1, 4, 6, 10 | install windows (0.83.0, 25.1b, 10.4, 16.3) | — | user-gated; batched where they fall together (C11) |
-| G32 | lane, before 7 | m1 r2-lite confirm over `4b57796..36f0251` | **new** | ch-bsd confirm of the folded 21.5 measurement corrections before G17 draws bands (L36) |
+| G32 | lane, before 7 | m1 r2-lite confirm over `4b57796..` the four measurement files' current head (incl. `36f0251`, `8db3497`, `3ddba55`) | **new** | ch-bsd confirm of the folded 21.5 measurement corrections before G17 draws bands (L36) |
 
 **Proposed goal horizon:** queue items 1-11 plus the T0 sweep, in `#queue` order, with the
 measurement lane alongside. The goal stops for the user at item 7's charter decision (G18), at every step `#queue` marks
-**user-gated**, and at every user step a spec names, whether `#queue` marks it or not (L45). The backlog is outside the goal. Q8 must be answered
-before item 9's D-Q1 work starts. {#goal-horizon}
+**user-gated**, and at every user step a spec names, whether `#queue` marks it or not (L45). The backlog is outside the goal.
+
+**Preconditions for launching the goal** (bsd-pop-r4 W2, W3):
+1. **Q8 is answered.** Option b changes what items 1-3 build: 25.1 rev 7's packed save-states,
+   26.5's re-bridge, and 26.8/plan-27's fleet rollout.
+2. **Every spec the goal reaches is `approved`.** That covers the new ones (G5, G12, G17 as a
+   whole plan, G20, G30, G32) and every `rev` row. The precedent of record is d9co: a CLEAN or
+   MEH-only ch-bsd round over the spec, then `approved` set by the orchestrator on the user's
+   pattern, with the decision row written. Only G18 and the user-gated steps stay with the user.
+{#goal-horizon}
 
 ## Questions {#questions}
 
