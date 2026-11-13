@@ -321,8 +321,8 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
 10. **AC-10 State failures.** An unreadable channel file → everything full, one stderr line,
     `held_error` on the row, exit 0; an unreadable marker → full (10.3's reset).
 11. **AC-11 The arm draw.** `arms.draw` is deterministic per session id, salt, root and `now`; 400 synthetic
-    ids split between `A+dedupe` and `A+full` within ± 30 of their table share; a `full` session's payloads equal the no-dedupe render; the SessionStart
-    entry records one `session_arm` row. As shipped (no active period), every session on every
+    ids split between `A+dedupe` and `A+full` within ± 30 of their table share; a `full` session's payloads equal the no-dedupe render; with an in-scope test period, the
+    SessionStart entry records one `session_arm` row. As shipped (no active period), every session on every
     root is `A+dedupe`. With a test period scoped to one slug, an in-scope root at `now` inside
     `[start, end)` draws the four cells at their table weights, and C is never drawn. An
     out-of-scope root draws `A+dedupe`, and so does an in-scope root at `now` = `end`.
