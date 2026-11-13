@@ -32,12 +32,12 @@ Next id: **Q15**.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
-| Q14 | 2026-11-13 | How should hook output live within the 9.5k hard limit (25.1 rev 8)? Options: clamp; rank-and-pack (today); degrade ladder (full → lead excerpt → pointer → names line); one budget across producers; spill to a pull page; defer; shrink at source. | (a) degrade ladder + spill-to-pull, clamp as a counted safety net; (b) clamp only (rev 8 as written); (c) another combination | open |
 
 ### Answered {#answered}
 
 | id | asked | question | answer | acted |
 |---|---|---|---|---|
+| Q14 | 2026-11-13 | How should hook output live within the 9.5k hard limit? | a: degrade ladder + spill to pull; clamp as counted safety net | 25.1 rev 8: R12-R14, AC-16..AC-18; RED/GREEN after the rev-7 GREEN |
 | Q13 | 2026-11-13 | Dedupe design after the replay rejected 4+3 | a: names-only (design 3) now; 4+3b later as a live A/B arm | `arch-10r` re-specs 10.2 as names-only; 4+3b recorded as a future A/B arm |
 | Q10 | 2026-11-13 | Non-human turns | a: no separate gate — same dedupe as human prompts | 10.4 keeps the focus-graph change and curator silence (Q9); its injection gate is dropped |
 | Q11 | 2026-11-13 | plan-10 dedupe design for the per-prompt payloads (seven options) | 4+3: rank new items first, collapse held ones into one 'still in play' names line | `arch-10r` re-specs 10.2 on it after the replay; 19.6 block diff not used for these payloads |
