@@ -63,6 +63,7 @@ Next id: **Q15**.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q22 | 2026-11-14 | The user, after stopping the bug-241 RED dispatch: "convert those to gmd" — which files? | a: the fleet `CLAUDE.md` files that are plain markdown (cliquedb, atldb), so they enter each graph as GMD rule docs; b: other (the user names them) | open |
 
 ### Answered {#answered}
 
