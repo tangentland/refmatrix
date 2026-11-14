@@ -26,12 +26,13 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session 37b7498f (2026-11-13) {#session-37b7498f}
 
-Next id: **Q10**.
+Next id: **Q11**.
 
 ### Open {#open-37b7498f}
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q10 | 2026-11-14 | Fleet-repo discovery for the 0.83.0 hook re-install after "don't scan ~/github its too big and includes the other directories listed" + "and drop enduris as well": is the candidate list = hub/launchd roots + the repos named in the fleet memory (incl. bdep/atlftpd, bdep/thiquet) + `~/claude_tools` children + this repo, with no walk of `~/github` or `~/enduris`? | a: yes, that list (lead's reading); b: name the repos yourself | assumed a, open until confirmed (L77 written to a) |
 
 ### Answered {#answered-37b7498f}
 
