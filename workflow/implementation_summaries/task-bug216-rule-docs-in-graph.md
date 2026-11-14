@@ -721,6 +721,68 @@ Mutations, each alone in a throwaway clone of `4cf2cfe` (not this tree), restore
 
 {#green-remedy-r3-mutations}
 
+### GREEN remedy r4: bsd-216 r4 (ruling L99) {#green-remedy-r4}
+
+Commit: `9def24a` (src). RED: `11ba53d` (red-216). Audit: `f1b1bc3`
+(`workflow/bullshit/2026-11-14-0333-bug216-r4-dfbaa2d.md`). No test edited. {#green-remedy-r4-commits}
+
+- **B1a.** `merge_slots` step 12 passes A's fragment rows through `remap_fragment(row, remap_a)`,
+  as B's go through `remap_b`; every merged fragment row equals its `entity_links` pairs.
+  {#green-remedy-r4-b1a}
+- **B1b.** After the fresh-id loop, `remap_a = {k: fresh_b.get(v, v) …}`, before the temp tables
+  are filled, so every place that remaps A ids reads the chained map: `memory_content` (step 7c),
+  `entity_links`, `linkage_evidence`, `pending_refs` (9b) and the fragments (B1a). Entities and
+  concepts drop A losers, so they need no chain. No A entity inherits a loser's body, links,
+  evidence, pending refs or bits. {#green-remedy-r4-b1b}
+- **Vectors (the lead's extension of L99).** `merge_slots` reports `vector_rows` =
+  `[[partition, kind, id], …]`, the Lance rows whose OWNER the merge changed, from ONE set-based
+  query over the remap temp tables (bug-178: a per-id lookup cost 10,081 `execute()` calls on its
+  5,000-row fixture):
+  - a fresh move X -> Z: X in the A entity's table and in the B entity's table (the B entity left
+    it), and Z in the B entity's table;
+  - an A loser's vacated id Y: Y in the loser's table and in the table of whatever entity now
+    holds Y (B1a's `b1`).
+  The canonical id an A loser maps to is NOT listed: its owner did not change. The same ids are
+  re-queued (`vectors_updated_at = NULL`: both ids of a move, and Y's new holder). The op deletes
+  `vector_rows` after the swap (the r3 timing); the reply carries `a_losers` and `vector_rows`, and
+  `re_embed` names the vacated ids. Not extended: a B NAME-loser's id L, held in A by a different
+  entity (r2's B2e shape), may hold B's loser's vector if B embedded last; `remap_b`'s name-losers
+  are not in `vector_rows` (outside the lead's extension, which names `remap_a`).
+  {#green-remedy-r4-vectors}
+- **M1.** `vectors.delete_vector_rows(lance, path, ids)` is THE batched IN-list delete: ONE
+  `delete("id IN (…)")` per table (bug-085), returning the rows actually removed (Lance's
+  `DeleteResult.num_deleted_rows`, else the row count before minus after). The three former copies
+  converge on it: `LanceVectorStore.drop_for` calls it directly; `Store._drop_lance_for_purge_batch`
+  and the merge's `Store.drop_vector_rows` (which replaces r3's `drop_vectors_for_ids`) reach it
+  through one group executor, `Store._delete_vector_groups`, which names and counts a failed
+  table. `_drop_lance_for_purge_batch` now returns rows removed, not ids issued.
+  {#green-remedy-r4-m1}
+- **M2.** red-216's three pins (read-only Lance dir, a real Lance error) pass. {#green-remedy-r4-m2}
+
+Runs (absolute `PYTHONPATH=/Volumes/littlebig/refmatrix-bug216/src`; logs in
+`workflow/review-output/bug216/`): (1) r4 file: 6 passed (`remedy-r4-step1.log`); (1-2) r4 + r3 +
+r2 + r1 + L86: 41 passed (`remedy-r4-step1-2.log`); (3) bug178 + the three merge files +
+store_vectors + purge_path_batched_lance + lance_drop_failures_loud + vectors + dual_write_purge +
+memory_compile: 150 passed (`remedy-r4-step3.log`; a first run caught the per-id lookup above,
+`test_bug178_bulk_write` AC-1); (4) the bug-216 family: **758 passed**
+(`remedy-r4-step4-family.log`); (5) full suite at `9def24a`: **4 failed, 4477 passed, 1 skipped**
+(`remedy-r4-step5-full.log`), every failure with release-0.82.0's E line: `test_brief_real_daemon`
+(DuckDB lock conflict), `test_task21_1_agent_usage_report` ×2, `test_gmd_lint_requires_version`
+(bug-155's memdir half in a clone). bug-228 did not fail. `lint-gmd.sh` on a copy named
+`refmatrix`: `lint-gmd-remedy-r4.log`. {#green-remedy-r4-results}
+
+Mutations, each alone in a throwaway clone of `9def24a`, restored with `git checkout -- src` in its
+own command, `__pycache__` cleared; suite = `test_bug216_remedy_r4.py` (+ r3 for the last):
+
+| mutation | result | log |
+|---|---|---|
+| drop the A-row remap | 2 failed | `mut-r4-A-row.log` |
+| drop the remap_a chaining | 1 failed | `mut-r4-chain.log` |
+| count ids instead of rows | 1 failed | `mut-r4-count-ids.log` |
+| drop the A-loser ids from the vector delete | **survived** (9 passed): no RED pins the lead's vector extension; a pin was requested from red-216 | `mut-r4-a-loser-vec.log` |
+
+{#green-remedy-r4-mutations}
+
 ## AC-6 (live) {#ac6}
 
 (lead, after deploy and R4)
