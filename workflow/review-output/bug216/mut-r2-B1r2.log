@@ -1,0 +1,79 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/mut2/refmatrix/src/refmatrix as checked-hash (bug-037)
+FFF........                                                              [100%]
+=================================== FAILURES ===================================
+________ test_b1r2_ingest_path_of_an_outside_memdir_stores_no_doc_rows _________
+
+outside_memdir = {'mem': PosixPath('/private/tmp/b216qbn4zzu83/home/.claude/projects/x/memory'), 'proj': PosixPath('/private/tmp/b216qbn4zzu83/github/proj'), 'root': PosixPath('/private/tmp/b216qbn4zzu83/github/proj/.refmatrix')}
+
+    def test_b1r2_ingest_path_of_an_outside_memdir_stores_no_doc_rows(outside_memdir):
+        """`ingest_path(store, <memdir>)` — the op `rmx ingest <memdir>` and MCP `rmx_ingest` run.
+        Judged on its absolute path, every file carries `.claude`."""
+        from refmatrix.ingest import ingest_path
+        o = outside_memdir
+        s = _open(o["root"])
+        try:
+            ingest_path(s, o["mem"])
+        finally:
+            s.close()
+        docs = [r for r in _rows_from(o["root"], o["mem"]) if r[0] == "doc"]
+>       assert docs == [], f"an outside memdir landed kind=doc rows: {docs}"
+E       AssertionError: an outside memdir landed kind=doc rows: [('doc', 'feedback/feedback_b.md'), ('doc', 'feedback_a'), ('doc', 'feedback_a.md'), ('doc', 'feedback_b')]
+E       assert [('doc', 'fee...'feedback_b')] == []
+E         
+E         Left contains 4 more items, first extra item: ('doc', 'feedback/feedback_b.md')
+E         Use -v to get more diff
+
+tests/test_bug216_remedy_r2.py:123: AssertionError
+_________ test_b1r2_cli_ingest_of_an_outside_memdir_stores_no_doc_rows _________
+
+outside_memdir = {'mem': PosixPath('/private/tmp/b216qay6ukylr/home/.claude/projects/x/memory'), 'proj': PosixPath('/private/tmp/b216qay6ukylr/github/proj'), 'root': PosixPath('/private/tmp/b216qay6ukylr/github/proj/.refmatrix')}
+
+    def test_b1r2_cli_ingest_of_an_outside_memdir_stores_no_doc_rows(outside_memdir):
+        o = outside_memdir
+        r = CliRunner().invoke(cli_mod.main, ["ingest", str(o["mem"])], catch_exceptions=False)
+        assert r.exit_code == 0, r.output
+        docs = [x for x in _rows_from(o["root"], o["mem"]) if x[0] == "doc"]
+>       assert docs == [], f"`rmx ingest <outside memdir>` landed kind=doc rows: {docs}"
+E       AssertionError: `rmx ingest <outside memdir>` landed kind=doc rows: [('doc', 'feedback/feedback_b.md'), ('doc', 'feedback_a'), ('doc', 'feedback_a.md'), ('doc', 'feedback_b')]
+E       assert [('doc', 'fee...'feedback_b')] == []
+E         
+E         Left contains 4 more items, first extra item: ('doc', 'feedback/feedback_b.md')
+E         Use -v to get more diff
+
+tests/test_bug216_remedy_r2.py:131: AssertionError
+_______ test_b1r2_an_outside_tree_is_not_judged_by_a_foreign_stores_spec _______
+
+base = PosixPath('/private/tmp/b216q5m26g34o')
+
+    def test_b1r2_an_outside_tree_is_not_judged_by_a_foreign_stores_spec(base):
+        new = _foreign_layout(base / "new" / "home")
+        old = _foreign_layout(base / "old" / "home")
+        p = subprocess.run([sys.executable, "-c", _OLD_INGEST, str(_old_src(base)),
+                            str(old["root"]), str(old["tree"])],
+                           capture_output=True, text=True, env=dict(os.environ), timeout=600)
+        assert p.returncode == 0, p.stdout + p.stderr
+        want = _files_from(old["root"], old["tree"])
+        assert want, "precondition: 758bca1 ingests the outside tree's doc (bsd r2 measured 1 file)"
+        from refmatrix.ingest import ingest_path
+        s = _open(new["root"])
+        try:
+            ingest_path(s, new["tree"])
+        finally:
+            s.close()
+        got = _files_from(new["root"], new["tree"])
+>       assert got == want, (
+            f"the outside tree was judged by the PARENT store's spec (`claude_tools`): 758bca1 "
+            f"ingested files {sorted(want)}, this code {sorted(got)}")
+E       AssertionError: the outside tree was judged by the PARENT store's spec (`claude_tools`): 758bca1 ingested files ['SPEC.md'], this code []
+E       assert set() == {'SPEC.md'}
+E         
+E         Extra items in the right set:
+E         'SPEC.md'
+E         Use -v to get more diff
+
+tests/test_bug216_remedy_r2.py:184: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r2.py::test_b1r2_ingest_path_of_an_outside_memdir_stores_no_doc_rows
+FAILED tests/test_bug216_remedy_r2.py::test_b1r2_cli_ingest_of_an_outside_memdir_stores_no_doc_rows
+FAILED tests/test_bug216_remedy_r2.py::test_b1r2_an_outside_tree_is_not_judged_by_a_foreign_stores_spec
+3 failed, 8 passed in 3.81s

@@ -1,0 +1,33 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/mut2/refmatrix/src/refmatrix as checked-hash (bug-037)
+....F......                                                              [100%]
+=================================== FAILURES ===================================
+______________ test_b2b_b_only_fragment_rows_follow_the_moved_id _______________
+
+base = PosixPath('/private/tmp/b216qtmyc253m')
+
+    def test_b2b_b_only_fragment_rows_follow_the_moved_id(base):
+        """`zz-b-only` exists only in B, so step 12 copies B's fragment row verbatim. Its bit for
+        mem-b must sit on mem-b's FRESH id; at the old id it names mem-a."""
+        pair = _slot_pair(base)
+        _merge(pair)
+        new_id = _bodies(pair["target"])["mem-b"][0]
+        probe = base / "P" / "proj" / ".refmatrix"
+        probe.mkdir(parents=True)
+        shutil.copy2(pair["target"], probe / "catalog.duckdb")
+        s = Store(probe)
+        s.init()
+        try:
+            with s.with_partition("proj"):
+                bm = set(s.load_bitmap("zz-b-only", pair["topic"]))
+        finally:
+            s.close()
+>       assert new_id in bm and pair["id"] not in bm, (
+            f"zz-b-only[topic] = {sorted(bm)}: mem-b moved {pair['id']} -> {new_id}; the bit must "
+            f"follow it (a bit at {pair['id']} now names mem-a)")
+E       AssertionError: zz-b-only[topic] = [2]: mem-b moved 2 -> 3; the bit must follow it (a bit at 2 now names mem-a)
+E       assert (3 in {2})
+
+tests/test_bug216_remedy_r2.py:268: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r2.py::test_b2b_b_only_fragment_rows_follow_the_moved_id
+1 failed, 10 passed in 3.19s

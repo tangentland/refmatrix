@@ -1,0 +1,90 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+FF.F                                                                     [100%]
+=================================== FAILURES ===================================
+__________ test_ac14_a_replay_after_a_changed_doc_matches_the_catalog __________
+
+env = {'base': PosixPath('/private/tmp/b216lrndidr7z'), 'n': [1], 'proj': PosixPath('/private/tmp/b216lrndidr7z/proj'), 'root': PosixPath('/private/tmp/b216lrndidr7z/proj/.refmatrix')}
+
+    def test_ac14_a_replay_after_a_changed_doc_matches_the_catalog(env):
+        """v1 then v2 of a doc with an existing and a missing `rel:` target: the replay holds the
+        catalog's evidence rows (no v1 leftovers, no duplicates) and its pending rows."""
+        want = _v1_then_v2(env)
+        got = _replay(env)
+>       assert got == want, f"the rebuild differs from the catalog:\n{_diff(want, got)}"
+E       AssertionError: the rebuild differs from the catalog:
+E         pending: replay has extra {}; replay is missing {('proj', 'concept', 'a#cite', 'amends', 'd-doc', 'd-doc', '/private/tmp/b216lrndidr7z/proj/docs/a.md', 20, None, 'rel: amends -> d-doc'): 1, ('proj', 'concept', 'a#cite', 'depends-on', 'c-doc', 'c-doc', '/private/tmp/b216lrndidr7z/proj/docs/a.md', 19, None, 'rel: depends-on -> c-doc'): 1}
+E       assert {'evidence': ...'b-doc'): 1})} == {'evidence': ...'b-doc'): 1})}
+E         
+E         Omitting 3 identical items, use -vv to show
+E         Differing items:
+E         {'pending': Counter()} != {'pending': Counter({('proj', 'concept', 'a#cite', 'amends', 'd-doc', 'd-doc', '/private/tmp/b216lrndidr7z/proj/docs/a...depends-on', 'c-doc', 'c-doc', '/private/tmp/b216lrndidr7z/proj/docs/a.md', 19, None, 'rel: depends-on -> c-doc'): 1})}
+E         Use -v to get more diff
+
+tests/test_bug216_replay_fidelity.py:189: AssertionError
+____________ test_ac14_a_pending_ref_binds_identically_after_replay ____________
+
+env = {'base': PosixPath('/private/tmp/b216lz31ptlio'), 'n': [1], 'proj': PosixPath('/private/tmp/b216lz31ptlio/proj'), 'root': PosixPath('/private/tmp/b216lz31ptlio/proj/.refmatrix')}
+
+    def test_ac14_a_pending_ref_binds_identically_after_replay(env):
+        """Then the missing target is ingested: the pending ref binds (edge + evidence, row gone) in
+        the catalog, and the rebuild holds exactly the same."""
+        _v1_then_v2(env)
+        _ingest(env, [_write(env, "docs/c.md", C_MD)])
+        want = _snapshot(env["root"])
+        assert [k[4] for k in want["pending"]] == ["d-doc"], dict(want["pending"])
+        assert any(k[0] == "depends-on" and k[3] == "doc" and k[4] == "c-doc"
+                   for k in want["rel_links"]), dict(want["rel_links"])
+        got = _replay(env)
+>       assert got == want, f"the rebuild differs from the catalog:\n{_diff(want, got)}"
+E       AssertionError: the rebuild differs from the catalog:
+E         pending: replay has extra {}; replay is missing {('proj', 'concept', 'a#cite', 'amends', 'd-doc', 'd-doc', '/private/tmp/b216lz31ptlio/proj/docs/a.md', 20, None, 'rel: amends -> d-doc'): 1}
+E       assert {'evidence': ...'b-doc'): 1})} == {'evidence': ...'b-doc'): 1})}
+E         
+E         Omitting 3 identical items, use -vv to show
+E         Differing items:
+E         {'pending': Counter()} != {'pending': Counter({('proj', 'concept', 'a#cite', 'amends', 'd-doc', 'd-doc', '/private/tmp/b216lz31ptlio/proj/docs/a.md', 20, None, 'rel: amends -> d-doc'): 1})}
+E         Use -v to get more diff
+
+tests/test_bug216_replay_fidelity.py:202: AssertionError
+_________ test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay _________
+
+env = {'base': PosixPath('/private/tmp/b216lwdjngidl'), 'n': [1], 'proj': PosixPath('/private/tmp/b216lwdjngidl/proj'), 'root': PosixPath('/private/tmp/b216lwdjngidl/proj/.refmatrix')}
+
+    def test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay(env):
+        """R13 (lead, 2026-11-13, from green-216): `purge_entity` deletes the source's pending rows
+        without an event of its own; its `tombstone` event exists, and the rebuild must honour it for
+        pending rows too. Two citers with pending refs; one is purged. The rebuild holds the
+        survivor's row and NONE of the purged citer's — no row by file, and no row left pointing at a
+        dead source."""
+        a = _write(env, "docs/a.md", A_V1)
+        a2 = _write(env, "docs/a2.md", A2_MD)
+        _ingest(env, [_write(env, "docs/b.md", B_MD)])
+        _ingest(env, [a, a2])
+        s = Store(env["root"])
+        s.init()
+        try:
+            assert s.purge_path(str(a)) > 0, "precondition: the purge removed A"
+        finally:
+            s.close()
+        want = _snapshot(env["root"])
+        assert [(k[2], k[4]) for k in want["pending"]] == [("a2#cite", "d-doc")], (
+            f"precondition: only the survivor's pending row in the catalog: {dict(want['pending'])}")
+        assert want["orphan_pending"] == 0
+        got = _replay(env)
+        assert not [k for k in got["pending"] if k[6] == str(a)], dict(got["pending"])
+>       assert got == want, f"the rebuild differs from the catalog:\n{_diff(want, got)}"
+E       AssertionError: the rebuild differs from the catalog:
+E         pending: replay has extra {}; replay is missing {('proj', 'concept', 'a2#cite', 'depends-on', 'd-doc', 'd-doc', '/private/tmp/b216lwdjngidl/proj/docs/a2.md', 16, None, 'rel: depends-on -> d-doc'): 1}
+E       assert {'evidence': ...s': Counter()} == {'evidence': ...s': Counter()}
+E         
+E         Omitting 3 identical items, use -vv to show
+E         Differing items:
+E         {'pending': Counter()} != {'pending': Counter({('proj', 'concept', 'a2#cite', 'depends-on', 'd-doc', 'd-doc', '/private/tmp/b216lwdjngidl/proj/docs/a2.md', 16, None, 'rel: depends-on -> d-doc'): 1})}
+E         Use -v to get more diff
+
+tests/test_bug216_replay_fidelity.py:244: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_replay_fidelity.py::test_ac14_a_replay_after_a_changed_doc_matches_the_catalog
+FAILED tests/test_bug216_replay_fidelity.py::test_ac14_a_pending_ref_binds_identically_after_replay
+FAILED tests/test_bug216_replay_fidelity.py::test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay
+3 failed, 1 passed in 3.22s

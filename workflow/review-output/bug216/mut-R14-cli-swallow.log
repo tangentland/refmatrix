@@ -1,0 +1,21 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+....F.....                                                               [100%]
+=================================== FAILURES ===================================
+________ test_ac15_daemon_down_the_cli_fails_loudly_and_writes_nothing _________
+
+env = {'base': PosixPath('/private/tmp/b216s3rwpck1o'), 'proj': PosixPath('/private/tmp/b216s3rwpck1o/proj'), 'root': PosixPath('/private/tmp/b216s3rwpck1o/proj/.refmatrix')}
+
+    def test_ac15_daemon_down_the_cli_fails_loudly_and_writes_nothing(env):
+        """No daemon for this throwaway store: non-zero exit, the reason on stderr, and no
+        in-process fallback (the store is untouched)."""
+        r = CliRunner().invoke(cli_mod.main, ["derive", "denotes"])
+>       assert r.exit_code != 0, f"exit 0 with no daemon:\n{r.output}"
+E       AssertionError: exit 0 with no daemon:
+E         
+E       assert 0 != 0
+E        +  where 0 = <Result okay>.exit_code
+
+tests/test_bug216_surfaces.py:146: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_surfaces.py::test_ac15_daemon_down_the_cli_fails_loudly_and_writes_nothing
+1 failed, 9 passed in 2.01s

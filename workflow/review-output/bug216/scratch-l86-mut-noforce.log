@@ -1,0 +1,91 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/l86/src/refmatrix as checked-hash (bug-037)
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+___ test_l86_ingest_of_dot_claude_lands_exactly_the_builtin_included_profile ___
+
+base = PosixPath('/private/tmp/b216rtza6ukjg')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1138649d0>
+
+    def test_l86_ingest_of_dot_claude_lands_exactly_the_builtin_included_profile(base, monkeypatch):
+        proj = base / "proj"
+        _write(proj, "docs/d.md", _gmd("d"))
+        _write(proj, ".claude/PROJECT_PROFILE.md", PROFILE_MD)
+        _write(proj, ".claude/agents/x.md", _gmd("agent-x"))
+        _write(proj, f"{MEM}/feedback_a.md", _gmd("feedback_a", extra_fm="metadata:\n  type: feedback\n"))
+        root = proj / ".refmatrix"
+        _new_store(root)
+        _point_cli_at(monkeypatch, root)
+        r = CliRunner().invoke(cli_mod.main, ["ingest", str(proj / ".claude")], catch_exceptions=False)
+        assert r.exit_code == 0, r.output
+        # "Exactly the profile" is judged by FILE: `ingest_path` also writes a relpath twin doc row
+        # for every markdown file it walks (`rmx ingest <proj>` gives both `docs/d.md` and `d`,
+        # measured 2026-11-14) — pre-existing, not bug-216's, so the twin is allowed; any doc row
+        # from another file under `.claude/` is not.
+        prof = (proj / ".claude" / "PROJECT_PROFILE.md").resolve()
+        s = _open(root)
+        try:
+            rows = [(str(k), str(n), str(Path(pth).resolve())) for k, n, pth in s._connect().execute(
+                "SELECT kind, name, path FROM entities WHERE kind = 'doc' AND path IS NOT NULL")
+                .fetchall() if str(Path(pth).resolve()).startswith(str(proj / ".claude") + "/")]
+        finally:
+            s.close()
+        others = sorted({(n, pth) for _k, n, pth in rows if pth != str(prof)})
+>       assert others == [], f"`rmx ingest <proj>/.claude` landed doc rows from other files: {others}"
+E       AssertionError: `rmx ingest <proj>/.claude` landed doc rows from other files: [('agent-x', '/private/tmp/b216rtza6ukjg/proj/.claude/agents/x.md'), ('agents/x.md', '/private/tmp/b216rtza6ukjg/proj/.claude/agents/x.md'), ('feedback_a', '/private/tmp/b216rtza6ukjg/proj/.claude/projects/x/memory/feedback_a.md'), ('projects/x/memory/feedback_a.md', '/private/tmp/b216rtza6ukjg/proj/.claude/projects/x/memory/feedback_a.md')]
+E       assert [('agent-x', ...edback_a.md')] == []
+E         
+E         Left contains 4 more items, first extra item: ('agent-x', '/private/tmp/b216rtza6ukjg/proj/.claude/agents/x.md')
+E         Use -v to get more diff
+
+tests/test_bug216_remedy_l86.py:78: AssertionError
+____________ test_l86_r4_edit_then_reingest_force_binds_both_citers ____________
+
+gmd_built_old_store = {'proj': PosixPath('/private/tmp/b216ryjmgvffj/proj'), 'root': PosixPath('/private/tmp/b216ryjmgvffj/proj/.refmatrix')}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1164feea0>
+
+    def test_l86_r4_edit_then_reingest_force_binds_both_citers(gmd_built_old_store, monkeypatch):
+        o = gmd_built_old_store
+        f = o["root"] / ".refmatrix_ignore"
+        t = f.stat().st_mtime
+        f.write_text(R4_SPEC)
+        os.utime(f, (t + 5, t + 5))
+        _point_cli_at(monkeypatch, o["root"])
+        monkeypatch.chdir(o["proj"])
+        r = CliRunner().invoke(cli_mod.main, ["reingest", "--force", "--no-sessions"],
+                               catch_exceptions=False)
+        got = _bound(o["root"])
+>       assert all(v > 0 for v in got.values()), (
+            f"the R4 procedure (edit, then `rmx reingest --force --no-sessions`) left citers "
+            f"unbound: {got}\n--- reingest output (exit {r.exit_code}) ---\n{r.output[-3000:]}")
+E       AssertionError: the R4 procedure (edit, then `rmx reingest --force --no-sessions`) left citers unbound: {'claude#no-silent-failures': 0, 'project-profile#constraints': 0}
+E         --- reingest output (exit 0) ---
+E         » 1/5 code+docs
+E         ingested 3 entities from /private/tmp/b216ryjmgvffj/proj
+E         » 2/5 memory: no dir at 
+E         /private/tmp/rmx-daji1yxt/h/.claude/projects/-private-tmp-b216ryjmgvffj-proj/mem
+E         ory, skipped
+E         » 3/5 sessions: skipped (--no-sessions)
+E         # rmx: warning: memory-partition probe failed (no daemon for /private/tmp/b216ryjmgvffj/proj/.refmatrix, and its catalog could not be read to find the memory partition (BinderException: Binder Error: Unique file handle conflict: Cannot attach "rmx_ro" - the database file "/private/tmp/b216ryjmgvffj/proj/.refmatrix/catalog.duckdb" is already attached by database "catalog") — another process holds it; retry shortly); assuming the project partition for THIS command only
+E         » 4/5 embed 
+E         no daemon up — embed runs faster through `rmx daemon start` so the model stays 
+E         loaded between calls.
+E         embedding kinds=code,doc,concept,memory partition=proj (batch=256); the first 
+E         batch warms the model (~134MB)…
+E           ⋯ embed batch 1: +31 (31 done, 0 left)
+E         done embedded=31 kinds=code,doc,concept,memory
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory — skipped (no dir)
+E           ✓ 4/5 embed 
+E           ✓ 5/5 pagerank 
+E         
+E       assert False
+E        +  where False = all(<generator object test_l86_r4_edit_then_reingest_force_binds_both_citers.<locals>.<genexpr> at 0x125d80c70>)
+
+/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/l86/tests/test_bug216_remedy_l86.py:123: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_l86.py::test_l86_ingest_of_dot_claude_lands_exactly_the_builtin_included_profile
+FAILED tests/test_bug216_remedy_l86.py::test_l86_r4_edit_then_reingest_force_binds_both_citers
+2 failed in 4.38s

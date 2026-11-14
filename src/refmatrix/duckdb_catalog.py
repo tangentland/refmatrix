@@ -230,6 +230,32 @@ CREATE TABLE IF NOT EXISTS pair_index (
 );
 CREATE INDEX IF NOT EXISTS idx_pair_index_df
     ON pair_index(partition_id, df);
+
+-- `rel:` lines whose target did not resolve when their doc was ingested
+-- (bug-216 R10, 2026-11-13). GMD ingest skips unchanged files, so a target
+-- that appears LATER (a rule doc un-ignored, a doc written after its citer)
+-- left the citing line dangling until someone edited the citer: 247 lines
+-- cite the two rule docs alone. Ingesting a doc / memory / anchor whose name
+-- equals `target_name` resolves the row (edge + evidence) and deletes it; a
+-- purge of `source_id` deletes it; re-ingesting the citing file replaces its
+-- rows. Rebuilt from facts.log (bug-216 R13, `rebuild_index_from_log`): `pending_ref` /
+-- `pending_ref_delete` / `pending_refs_clear` events, source named by kind and
+-- name, partition-qualified; a source's `tombstone` drops its rows; the
+-- compaction dump re-emits the live rows. No PK or index: the table holds the
+-- unresolved residue (hundreds of rows), and the writer keeps it duplicate-free
+-- (`Store.add_pending_ref`).
+CREATE TABLE IF NOT EXISTS pending_refs (
+    partition_id INTEGER NOT NULL DEFAULT 1,
+    source_id    INTEGER NOT NULL,
+    linkage      TEXT NOT NULL,
+    target_name  TEXT NOT NULL,
+    ref          TEXT NOT NULL,
+    file         TEXT NOT NULL,
+    line         INTEGER NOT NULL,
+    weight       DOUBLE,
+    detail       TEXT,
+    created_at   DOUBLE NOT NULL
+);
 """
 
 # Tables in the order they need to be (re-)populated so foreign keys resolve.

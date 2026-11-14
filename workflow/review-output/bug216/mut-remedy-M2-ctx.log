@@ -1,0 +1,23 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/f0521bff-0006-479a-9e0f-6df02d50937e/scratchpad/mut216/refmatrix/src/refmatrix as checked-hash (bug-037)
+.............F.......                                                    [100%]
+=================================== FAILURES ===================================
+__________ test_m2_build_context_mention_chain_does_not_cross_denotes __________
+
+walk = {'b': 4, 'c': 23, 'cite': 3, 'root': PosixPath('/private/tmp/b216r0ob6g6qd/proj/.refmatrix'), ...}
+
+    def test_m2_build_context_mention_chain_does_not_cross_denotes(walk):
+        """L81 M2: a doc that merely MENTIONS the term concept is not B's neighbour (PageRank folds
+        typed edges only; until G30 decides the fold, build_context does the same)."""
+        got = _context_ids(walk)
+        # `content` is the CONTENT MATCH group: a lexical hit of the ref's own term (X mentions the
+        # term `b-doc`), which reaches X with or without `denotes` (measured: still there with the
+        # denotes chain switched off). It is not a graph chain, so it is not what M2 is about.
+        via = got.get(walk["x"], set()) - {"content"}
+>       assert not via, f"a plain `mentions` of the denoting concept reached B's context via {via}"
+E       AssertionError: a plain `mentions` of the denoting concept reached B's context via {'mentions'}
+E       assert not {'mentions'}
+
+tests/test_bug216_remedy_r1.py:516: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r1.py::test_m2_build_context_mention_chain_does_not_cross_denotes
+1 failed, 20 passed in 13.10s

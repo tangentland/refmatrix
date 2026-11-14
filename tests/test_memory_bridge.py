@@ -413,15 +413,51 @@ def test_ac2_prestage_through_the_daemon_walks_the_same_set(ac2_daemon):
     assert _considered(out) == 2, out
 
 
-def test_ac2_doc_ingest_keeps_its_own_walk():
-    """Without `as_memory` the walk is unchanged: a doc tree's dot-dirs are not the memory
-    rule's business (spec AC-2: "Doc ingest keeps its own walk")."""
+def test_ac2_doc_ingest_keeps_its_own_walk(capfd):
+    """Without `as_memory` the directory walk is the DOC walk, and the doc walk follows
+    `ingest.should_ignore` (bug-216 R2, 2026-11-13; spec
+    workflow/plans/task-bug216-rule-docs-in-graph.md #r2, which supersedes this test's original
+    26.1 assertion that doc ingest reads dot-dirs). So the two dot-dir files are excluded by the
+    hidden-dir rule -- and counted and named, never dropped silently (CLAUDE.md
+    #no-silent-failures): into `ignored=` when the caller passes it, else on stderr.
+
+    What 26.1 AC-2 actually protected ("Doc ingest keeps its own walk") still holds and is pinned
+    by the discriminating case below: files the MEMORY walk drops for memory-specific reasons
+    (`README.md`, a nested `MEMORY.md`, a `.gmd` file -- none a dot-dir or an ignore-spec match)
+    are kept by the doc walk. The memory rule does not leak into doc ingest.
+
+    The expected `{keep_top, keep_nested}` is what the doc WALK returns, not an endorsement of
+    ingesting a memdir as docs: that lands its memory files as kind=doc rows, a pre-existing
+    defect logged as bug-220. The store-level conditions — hidden-dir files never reach the
+    store by any route, the re-included profile lands once as a doc, the bridge still lands
+    memories under a `.claude` path — are pinned in tests/test_bug216_hidden_no_pollution.py."""
     from refmatrix.ingest_gmd import collect_gmd_files
-    base = Path(tempfile.mkdtemp(prefix="rmx261-"))
+    base = Path(tempfile.mkdtemp(prefix="rmx261-", dir="/tmp")).resolve()
     try:
         memdir = _ac2_memdir(base)
+        dot = {memdir / ".organise-rollback-1" / "x.md", memdir / ".hidden" / "y.md"}
+
+        ignored: list = []
+        got = {p.name for p in collect_gmd_files([memdir], ignored=ignored)}
+        assert got == {"keep_top.md", "keep_nested.md"}, got
+        assert {Path(p) for p in ignored} == dot, ignored
+
+        capfd.readouterr()
         got = {p.name for p in collect_gmd_files([memdir])}
-        assert got == {"keep_top.md", "keep_nested.md", "x.md", "y.md"}
+        err = capfd.readouterr().err
+        assert got == {"keep_top.md", "keep_nested.md"}, got
+        assert "ignored 2 path(s)" in err and all(str(p) in err for p in dot), err
+
+        # The discriminating case: memory-only exclusions the doc walk must keep.
+        (memdir / "README.md").write_text(GMD.format(id="readme", body="a readme"))
+        (memdir / "feedback" / "MEMORY.md").write_text(
+            GMD.format(id="nested_index", body="a nested index"))
+        (memdir / "notes.gmd").write_text(GMD.format(id="notes", body="a .gmd file"))
+        memory_only = {"README.md", "MEMORY.md", "notes.gmd"}
+        mem_walk = {p.name for p in collect_gmd_files([memdir], as_memory=True, skipped=[])}
+        assert not (mem_walk & memory_only), f"precondition: the memory walk drops them: {mem_walk}"
+        doc_walk = {p.name for p in collect_gmd_files([memdir], ignored=[])}
+        assert doc_walk == {"keep_top.md", "keep_nested.md"} | memory_only, doc_walk
     finally:
         shutil.rmtree(base, ignore_errors=True)
 

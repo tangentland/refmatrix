@@ -1,0 +1,33 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/mut4/refmatrix/src/refmatrix as checked-hash (bug-037)
+.....F                                                                   [100%]
+=================================== FAILURES ===================================
+___________ test_m1_vectors_deleted_counts_the_rows_actually_removed ___________
+
+op_env = {'d': <refmatrix.daemon.Daemon object at 0x11c3d3a10>, 'droot': PosixPath('/private/tmp/b216tmzkbs0xn/D/proj/.refmatri...zkbs0xn/A/proj/.refmatrix'), 'b': PosixPath('/private/tmp/b216tmzkbs0xn/B/proj/.refmatrix'), 'ids': [2, 3], 'keep': 1}}
+
+    def test_m1_vectors_deleted_counts_the_rows_actually_removed(op_env):
+        """Two moves -> four ids to delete; only THREE of them have a vector row. The reply's
+        `vectors_deleted.deleted` must be 3 (rows removed), not 4 (ids issued)."""
+        from refmatrix import daemon as dm
+        m, d, droot = op_env["m"], op_env["d"], op_env["droot"]
+        fresh_guess = list(range(max(m["ids"]) + 1, max(m["ids"]) + 1 + len(m["ids"])))
+        seeded = [m["ids"][0], m["ids"][1], fresh_guess[0], m["keep"]]   # fresh_guess[1] has none
+        _seed_vectors(droot, seeded)
+        before = _vector_ids(droot)
+        r = dm._op_replica_merge(d, {"dry_run": False})
+        assert r.get("ok") is True and not r.get("vector_delete_error"), r
+        moved = [(int(o), int(n)) for o, n in (r.get("fresh_moved") or [])]
+        both = {i for pair in moved for i in pair}
+        assert both == set(m["ids"]) | set(fresh_guess), f"precondition: moves {moved}"
+        removed = len(before - _vector_ids(droot))
+        assert removed == 3, f"precondition: 3 rows actually deleted, measured {removed}"
+>       assert r["vectors_deleted"]["deleted"] == removed, (
+            f"`deleted` = {r['vectors_deleted']['deleted']} for {removed} rows removed "
+            f"({len(both)} ids issued): it must count rows, not ids")
+E       AssertionError: `deleted` = 4 for 3 rows removed (4 ids issued): it must count rows, not ids
+E       assert 4 == 3
+
+tests/test_bug216_remedy_r4.py:348: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r4.py::test_m1_vectors_deleted_counts_the_rows_actually_removed
+1 failed, 5 passed in 3.54s

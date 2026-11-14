@@ -1,0 +1,77 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+.FFF......                                                               [100%]
+=================================== FAILURES ===================================
+__________________ test_ac15_the_verb_returns_the_ops_counts ___________________
+
+env = {'base': PosixPath('/private/tmp/b216sth76kbfq'), 'proj': PosixPath('/private/tmp/b216sth76kbfq/proj'), 'root': PosixPath('/private/tmp/b216sth76kbfq/proj/.refmatrix')}
+in_process_daemon = <refmatrix.daemon.Daemon object at 0x125185940>
+
+    def test_ac15_the_verb_returns_the_ops_counts(env, in_process_daemon):
+        res = verbs.VERBS[VERB].fn(env["root"])
+>       assert {k: res.get(k) for k in COUNT_KEYS} == \
+                   ^^^^^^^
+            {"added": 3, "concepts": 3, "targets": 1, "multi_target": 0}, res
+E       AttributeError: 'NoneType' object has no attribute 'get'
+
+tests/test_bug216_surfaces.py:120: AttributeError
+___________________ test_ac15_the_cli_prints_the_ops_counts ____________________
+
+env = {'base': PosixPath('/private/tmp/b216skse6c1zv'), 'proj': PosixPath('/private/tmp/b216skse6c1zv/proj'), 'root': PosixPath('/private/tmp/b216skse6c1zv/proj/.refmatrix')}
+in_process_daemon = <refmatrix.daemon.Daemon object at 0x1260e7620>
+
+    def test_ac15_the_cli_prints_the_ops_counts(env, in_process_daemon):
+>       r = CliRunner().invoke(cli_mod.main, ["derive", "denotes"], catch_exceptions=False)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_bug216_surfaces.py:126: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/testing.py:596: in invoke
+    return_value = cli.main(args=args or (), prog_name=prog_name, **extra)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py:1435: in main
+    rv = self.invoke(ctx)
+         ^^^^^^^^^^^^^^^^
+/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py:1902: in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py:1902: in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py:1298: in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py:853: in invoke
+    return callback(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/cli.py:7378: in derive_denotes_cmd
+    click.echo(" ".join(f"{k}={res.get(k)}"
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <tuple_iterator object at 0x104a07df0>
+
+    click.echo(" ".join(f"{k}={res.get(k)}"
+                        for k in ("added", "concepts", "targets", "multi_target")
+>                       if k in res)
+                           ^^^^^^^^
+               + (f" partition={res['partition']}" if res.get("partition") else ""))
+E   TypeError: argument of type 'NoneType' is not a container or iterable
+
+src/refmatrix/cli.py:7380: TypeError
+________________ test_ac15_the_mcp_tool_returns_the_ops_counts _________________
+
+env = {'base': PosixPath('/private/tmp/b216s7dm2xv7o'), 'proj': PosixPath('/private/tmp/b216s7dm2xv7o/proj'), 'root': PosixPath('/private/tmp/b216s7dm2xv7o/proj/.refmatrix')}
+in_process_daemon = <refmatrix.daemon.Daemon object at 0x135460050>
+
+    def test_ac15_the_mcp_tool_returns_the_ops_counts(env, in_process_daemon):
+        import refmatrix.mcp as mcp
+        res = mcp.TOOLS[VERB]["fn"]({"root": str(env["root"])})
+>       assert "error" not in res, res
+               ^^^^^^^^^^^^^^^^^^
+E       TypeError: argument of type 'NoneType' is not a container or iterable
+
+tests/test_bug216_surfaces.py:137: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_surfaces.py::test_ac15_the_verb_returns_the_ops_counts
+FAILED tests/test_bug216_surfaces.py::test_ac15_the_cli_prints_the_ops_counts
+FAILED tests/test_bug216_surfaces.py::test_ac15_the_mcp_tool_returns_the_ops_counts
+3 failed, 7 passed in 2.42s

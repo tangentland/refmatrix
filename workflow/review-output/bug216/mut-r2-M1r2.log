@@ -1,0 +1,77 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/mut2/refmatrix/src/refmatrix as checked-hash (bug-037)
+.........FF                                                              [100%]
+=================================== FAILURES ===================================
+_ test_m1r2_removing_the_profiles_frontmatter_purges_it_on_the_next_watcher_event _
+
+base = PosixPath('/private/tmp/b216qjk5vdsrv')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12010c590>
+
+    def test_m1r2_removing_the_profiles_frontmatter_purges_it_on_the_next_watcher_event(base,
+                                                                                       monkeypatch):
+        """No ignore file: the GMD profile is in by R11. Its author removes the frontmatter and
+        keeps the file. The watcher's modify event must reach `_sync_one` (is_relevant True for a
+        BUILTIN_INCLUDES path, whatever its content), which purges the now-ignored path. At
+        25ceacd the include needs `is_gmd_file`, the hidden-dir rule wins, and the event is dropped."""
+        import watchdog.observers as wo
+        from watchdog.events import FileModifiedEvent
+    
+        from refmatrix import daemon as daemon_mod
+        from refmatrix.sync import sync_files
+        from tests.test_bug216_remedy_r1 import PROFILE_MD
+        from tests.test_bug216_rule_docs_e2e import _FakeObserver
+        proj = base / "proj"
+        root = proj / ".refmatrix"
+        _new_store(root)
+        prof = _write(proj, ".claude/PROJECT_PROFILE.md", PROFILE_MD)
+        s = _open(root)
+        try:
+            sync_files(s, [str(prof)], project_root=proj)
+            assert s.get_entity("doc", "project-profile") is not None, "precondition: profile in"
+        finally:
+            s.close()
+        prof.write_text("# Project profile\n\nPlain markdown now, no frontmatter.\n")
+        t = prof.stat().st_mtime + 10
+        os.utime(prof, (t, t))
+        _FakeObserver.instances = []
+        monkeypatch.setattr(wo, "Observer", _FakeObserver)
+        d = daemon_mod.Daemon(root, watch_root=proj, watch_debounce_ms=50)
+        d.store = _open(root)
+        try:
+            d._start_watcher()
+            (handler, _p), = _FakeObserver.instances[0].handlers
+            handler.on_modified(FileModifiedEvent(str(prof)))
+            d._watch_stop.set()
+            d._watch_thread.join(timeout=30)
+            assert not d._watch_thread.is_alive()
+            assert d.sync_errors() == [], d.sync_errors()
+        finally:
+            d.store.close()
+        s = _open(root)
+        try:
+            left = s.get_entity("doc", "project-profile")
+        finally:
+            s.close()
+>       assert left is None, "the profile lost its frontmatter but its doc survived the watcher"
+E       AssertionError: the profile lost its frontmatter but its doc survived the watcher
+E       assert Entity(id=1, kind='doc', name='project-profile', path='/private/tmp/b216qjk5vdsrv/proj/.claude/PROJECT_PROFILE.md', tl... 'gmd_content_hash': '255c5ee6a556495ae62c05c19890911c3a0400c8', 'gmd_pass2_done': True}, protected=False, noise=False) is None
+
+tests/test_bug216_remedy_r2.py:437: AssertionError
+_ test_m1r2_watch_is_relevant_for_a_builtin_include_path_whatever_its_content __
+
+base = PosixPath('/private/tmp/b216q0p_ebatp')
+
+    def test_m1r2_watch_is_relevant_for_a_builtin_include_path_whatever_its_content(base):
+        from refmatrix.watch import is_relevant
+        proj = base / "proj"
+        prof = _write(proj, ".claude/PROJECT_PROFILE.md", "# Plain\n\nNo frontmatter.\n")
+>       assert is_relevant(prof, proj) is True, (
+            "a BUILTIN_INCLUDES path must reach `_sync_one`, which decides include vs purge")
+E       AssertionError: a BUILTIN_INCLUDES path must reach `_sync_one`, which decides include vs purge
+E       assert False is True
+E        +  where False = <function is_relevant at 0x123dde400>(PosixPath('/private/tmp/b216q0p_ebatp/proj/.claude/PROJECT_PROFILE.md'), PosixPath('/private/tmp/b216q0p_ebatp/proj'))
+
+tests/test_bug216_remedy_r2.py:444: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r2.py::test_m1r2_removing_the_profiles_frontmatter_purges_it_on_the_next_watcher_event
+FAILED tests/test_bug216_remedy_r2.py::test_m1r2_watch_is_relevant_for_a_builtin_include_path_whatever_its_content
+2 failed, 9 passed in 3.41s

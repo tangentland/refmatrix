@@ -1,0 +1,445 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /Volumes/littlebig/refmatrix-bug216
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collecting ... collected 12 items
+
+tests/test_bug216_remedy_r2.py::test_b1r2_ingest_path_of_an_outside_memdir_stores_no_doc_rows FAILED [  8%]
+tests/test_bug216_remedy_r2.py::test_b1r2_cli_ingest_of_an_outside_memdir_stores_no_doc_rows FAILED [ 16%]
+tests/test_bug216_remedy_r2.py::test_b1r2_an_outside_tree_is_not_judged_by_a_foreign_stores_spec FAILED [ 25%]
+tests/test_bug216_remedy_r2.py::test_b2a_a_fresh_id_move_keeps_each_memory_its_own_body FAILED [ 33%]
+tests/test_bug216_remedy_r2.py::test_b2b_b_only_fragment_rows_follow_the_moved_id FAILED [ 41%]
+tests/test_bug216_remedy_r2.py::test_b2c_the_moved_ids_are_reported_apart_from_the_loser_count FAILED [ 50%]
+tests/test_bug216_remedy_r2.py::test_b2d_pin_merge_refused_past_the_headroom_leaves_no_target PASSED [ 58%]
+tests/test_bug216_remedy_r2.py::test_b2d_pin_the_replica_merge_op_refuses_loudly_and_unlinks_the_target PASSED [ 66%]
+tests/test_bug216_remedy_r2.py::test_b2e_a_name_loser_id_held_by_a_different_a_entity_merges FAILED [ 75%]
+tests/test_bug216_remedy_r2.py::test_m1r2_removing_the_profiles_frontmatter_purges_it_on_the_next_watcher_event FAILED [ 83%]
+tests/test_bug216_remedy_r2.py::test_m1r2_watch_is_relevant_for_a_builtin_include_path_whatever_its_content FAILED [ 91%]
+tests/test_bug216_remedy_r1.py::test_s2_both_slot_audits_count_pending_refs PASSED [100%]
+
+=================================== FAILURES ===================================
+________ test_b1r2_ingest_path_of_an_outside_memdir_stores_no_doc_rows _________
+
+outside_memdir = {'mem': PosixPath('/private/tmp/b216qsm4b2ots/home/.claude/projects/x/memory'), 'proj': PosixPath('/private/tmp/b216qsm4b2ots/github/proj'), 'root': PosixPath('/private/tmp/b216qsm4b2ots/github/proj/.refmatrix')}
+
+    def test_b1r2_ingest_path_of_an_outside_memdir_stores_no_doc_rows(outside_memdir):
+        """`ingest_path(store, <memdir>)` — the op `rmx ingest <memdir>` and MCP `rmx_ingest` run.
+        Judged on its absolute path, every file carries `.claude`."""
+        from refmatrix.ingest import ingest_path
+        o = outside_memdir
+        s = _open(o["root"])
+        try:
+            ingest_path(s, o["mem"])
+        finally:
+            s.close()
+        docs = [r for r in _rows_from(o["root"], o["mem"]) if r[0] == "doc"]
+>       assert docs == [], f"an outside memdir landed kind=doc rows: {docs}"
+E       AssertionError: an outside memdir landed kind=doc rows: [('doc', 'feedback/feedback_b.md'), ('doc', 'feedback_a'), ('doc', 'feedback_a.md'), ('doc', 'feedback_b')]
+E       assert [('doc', 'fee...'feedback_b')] == []
+E         
+E         Left contains 4 more items, first extra item: ('doc', 'feedback/feedback_b.md')
+E         
+E         Full diff:
+E         - []
+E         + [
+E         +     (...
+E         
+E         ...Full output truncated (16 lines hidden), use '-vv' to show
+
+tests/test_bug216_remedy_r2.py:123: AssertionError
+_________ test_b1r2_cli_ingest_of_an_outside_memdir_stores_no_doc_rows _________
+
+outside_memdir = {'mem': PosixPath('/private/tmp/b216qwfkx_7lc/home/.claude/projects/x/memory'), 'proj': PosixPath('/private/tmp/b216qwfkx_7lc/github/proj'), 'root': PosixPath('/private/tmp/b216qwfkx_7lc/github/proj/.refmatrix')}
+
+    def test_b1r2_cli_ingest_of_an_outside_memdir_stores_no_doc_rows(outside_memdir):
+        o = outside_memdir
+        r = CliRunner().invoke(cli_mod.main, ["ingest", str(o["mem"])], catch_exceptions=False)
+        assert r.exit_code == 0, r.output
+        docs = [x for x in _rows_from(o["root"], o["mem"]) if x[0] == "doc"]
+>       assert docs == [], f"`rmx ingest <outside memdir>` landed kind=doc rows: {docs}"
+E       AssertionError: `rmx ingest <outside memdir>` landed kind=doc rows: [('doc', 'feedback/feedback_b.md'), ('doc', 'feedback_a'), ('doc', 'feedback_a.md'), ('doc', 'feedback_b')]
+E       assert [('doc', 'fee...'feedback_b')] == []
+E         
+E         Left contains 4 more items, first extra item: ('doc', 'feedback/feedback_b.md')
+E         
+E         Full diff:
+E         - []
+E         + [
+E         +     (...
+E         
+E         ...Full output truncated (16 lines hidden), use '-vv' to show
+
+tests/test_bug216_remedy_r2.py:131: AssertionError
+_______ test_b1r2_an_outside_tree_is_not_judged_by_a_foreign_stores_spec _______
+
+base = PosixPath('/private/tmp/b216qweu_pzad')
+
+    def test_b1r2_an_outside_tree_is_not_judged_by_a_foreign_stores_spec(base):
+        new = _foreign_layout(base / "new" / "home")
+        old = _foreign_layout(base / "old" / "home")
+        p = subprocess.run([sys.executable, "-c", _OLD_INGEST, str(_old_src(base)),
+                            str(old["root"]), str(old["tree"])],
+                           capture_output=True, text=True, env=dict(os.environ), timeout=600)
+        assert p.returncode == 0, p.stdout + p.stderr
+        want = _files_from(old["root"], old["tree"])
+        assert want, "precondition: 758bca1 ingests the outside tree's doc (bsd r2 measured 1 file)"
+        from refmatrix.ingest import ingest_path
+        s = _open(new["root"])
+        try:
+            ingest_path(s, new["tree"])
+        finally:
+            s.close()
+        got = _files_from(new["root"], new["tree"])
+>       assert got == want, (
+            f"the outside tree was judged by the PARENT store's spec (`claude_tools`): 758bca1 "
+            f"ingested files {sorted(want)}, this code {sorted(got)}")
+E       AssertionError: the outside tree was judged by the PARENT store's spec (`claude_tools`): 758bca1 ingested files ['SPEC.md'], this code []
+E       assert set() == {'SPEC.md'}
+E         
+E         Extra items in the right set:
+E         'SPEC.md'
+E         
+E         Full diff:
+E         + set()
+E         - {
+E         -     'SPEC.md',
+E         - }
+
+tests/test_bug216_remedy_r2.py:184: AssertionError
+___________ test_b2a_a_fresh_id_move_keeps_each_memory_its_own_body ____________
+
+base = PosixPath('/private/tmp/b216qv32klcjm')
+
+    def test_b2a_a_fresh_id_move_keeps_each_memory_its_own_body(base):
+        pair = _slot_pair(base)
+        _merge(pair)
+        got = _bodies(pair["target"])
+>       assert {n: c for n, (_i, c) in got.items()} == {"mem-a": "BODY OF A", "mem-b": "BODY OF B"}, (
+            f"merged memory bodies: {got}")
+E       AssertionError: merged memory bodies: {'mem-a': (2, 'BODY OF B'), 'mem-b': (3, 'BODY OF B')}
+E       assert {'mem-a': 'BO...: 'BODY OF B'} == {'mem-a': 'BO...: 'BODY OF B'}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'mem-a': 'BODY OF B'} != {'mem-a': 'BODY OF A'}
+E         
+E         Full diff:
+E           {...
+E         
+E         ...Full output truncated (6 lines hidden), use '-vv' to show
+
+tests/test_bug216_remedy_r2.py:247: AssertionError
+______________ test_b2b_b_only_fragment_rows_follow_the_moved_id _______________
+
+base = PosixPath('/private/tmp/b216qyrqghxxb')
+
+    def test_b2b_b_only_fragment_rows_follow_the_moved_id(base):
+        """`zz-b-only` exists only in B, so step 12 copies B's fragment row verbatim. Its bit for
+        mem-b must sit on mem-b's FRESH id; at the old id it names mem-a."""
+        pair = _slot_pair(base)
+        _merge(pair)
+        new_id = _bodies(pair["target"])["mem-b"][0]
+        probe = base / "P" / "proj" / ".refmatrix"
+        probe.mkdir(parents=True)
+        shutil.copy2(pair["target"], probe / "catalog.duckdb")
+        s = Store(probe)
+        s.init()
+        try:
+            with s.with_partition("proj"):
+                bm = set(s.load_bitmap("zz-b-only", pair["topic"]))
+        finally:
+            s.close()
+>       assert new_id in bm and pair["id"] not in bm, (
+            f"zz-b-only[topic] = {sorted(bm)}: mem-b moved {pair['id']} -> {new_id}; the bit must "
+            f"follow it (a bit at {pair['id']} now names mem-a)")
+E       AssertionError: zz-b-only[topic] = [2]: mem-b moved 2 -> 3; the bit must follow it (a bit at 2 now names mem-a)
+E       assert (3 in {2})
+
+tests/test_bug216_remedy_r2.py:268: AssertionError
+________ test_b2c_the_moved_ids_are_reported_apart_from_the_loser_count ________
+
+base = PosixPath('/private/tmp/b216qm3b734ln')
+
+    def test_b2c_the_moved_ids_are_reported_apart_from_the_loser_count(base):
+        pair = _slot_pair(base)
+        res = _merge(pair)
+        new_id = _bodies(pair["target"])["mem-b"][0]
+        moved = res.get("fresh_moved", (res.get("remap") or {}).get("fresh_moved"))
+>       assert moved is not None and [list(m) for m in moved] == [[pair["id"], new_id]], (
+            f"the merge must name the moved ids (to re-embed them): {res.get('remap')}")
+E       AssertionError: the merge must name the moved ids (to re-embed them): {'a_loser_count': 0, 'b_loser_count': 1, 'fresh_alloc_edge_cases': 0}
+E       assert (None is not None)
+
+tests/test_bug216_remedy_r2.py:278: AssertionError
+_________ test_b2e_a_name_loser_id_held_by_a_different_a_entity_merges _________
+
+base = PosixPath('/private/tmp/b216qq4jxdrf8')
+
+    def test_b2e_a_name_loser_id_held_by_a_different_a_entity_merges(base):
+        """Shape 4 of bsd r2 #b2: `shared` is id 101 in A (newer, wins) and id 100 in B, so B's 100
+        is a name-loser remapped to 101 — while A holds a DIFFERENT entity, `a-x`, at 100. The
+        entity UPDATE (it excludes only the fresh moves) writes B's `shared` row over `a-x` and dies
+        on the unique (partition, kind, name) key. Expected: both of A's entities, untouched."""
+        from refmatrix.replica_merge import merge_slots
+        a_root = base / "A" / "proj" / ".refmatrix"
+        _new_store(a_root)
+        a = a_root / "catalog.duckdb"
+        b = base / "B" / "catalog.duckdb"
+        b.parent.mkdir()
+        shutil.copy2(a, b)
+        _seed(a, [(100, "a-x", 1.0), (101, "shared", 9.0)])
+        _seed(b, [(100, "shared", 5.0)])
+        target = base / "T" / "catalog.duckdb"
+        target.parent.mkdir()
+        try:
+>           merge_slots(a, b, target)
+
+tests/test_bug216_remedy_r2.py:376: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/replica_merge.py:137: in merge_slots
+    merged_counts, remap_a, remap_b, fresh_alloc_count = _merge_into(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+con = <_duckdb.DuckDBPyConnection object at 0x10cfe8d30>
+a_path = PosixPath('/private/tmp/b216qq4jxdrf8/A/proj/.refmatrix/catalog.duckdb')
+b_path = PosixPath('/private/tmp/b216qq4jxdrf8/B/catalog.duckdb')
+tables = ('partitions', 'linkage_types', 'entities', 'concepts', 'memory_content', 'entity_links', ...)
+
+    def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
+                    max_entity: int, max_partition: int, max_lt: int) -> tuple:
+        """Build the merge on `con` (the target). Rows are copied BY NAME: the
+        target's schema is `init_catalog`'s, the Store's own (bug-113), and a
+        positional `SELECT *` silently misplaces same-typed columns whenever a
+        slot's column order differs."""
+        init_catalog(con, sequence_starts={
+            "seq_partitions_id":    max_partition + 1,
+            "seq_entities_id":      max_entity + REMAP_HEADROOM + 1,
+            # headroom: B linkage names that lose their id to A get fresh ids
+            "seq_linkage_types_id": max_lt + REMAP_HEADROOM + 1,
+        })
+    
+        attach_file(con, a_path, "a")
+        attach_file(con, b_path, "b")
+    
+        # ---- 3. Lookup tables: partitions + linkage_types ------------------
+        con.execute("INSERT INTO partitions BY NAME SELECT * FROM a.partitions")
+        con.execute("""
+            INSERT INTO partitions BY NAME
+            SELECT * FROM b.partitions
+            WHERE id NOT IN (SELECT id FROM partitions)
+        """)
+        _merge_linkage_types(con)
+    
+        # ---- 4. Build entity-id remap --------------------------------------
+        coll_rows = con.execute("""
+            SELECT
+                ae.id AS a_id, be.id AS b_id,
+                ae.updated_at AS a_u, be.updated_at AS b_u
+            FROM a.entities ae JOIN b.entities be
+            ON ae.partition_id = be.partition_id
+               AND ae.kind = be.kind
+               AND ae.name = be.name
+            WHERE ae.id <> be.id
+        """).fetchall()
+    
+        # Set of ids shared between slots (so we can detect "loser id taken
+        # in winner slot by a different entity"). Used purely for the fresh-
+        # id allocation accounting reported back.
+        shared_ids = set(r[0] for r in con.execute(
+            "SELECT id FROM a.entities WHERE id IN (SELECT id FROM b.entities)"
+        ).fetchall())
+    
+        remap_a: dict[int, int] = {}  # A-side loser_id -> canonical (in B)
+        remap_b: dict[int, int] = {}  # B-side loser_id -> canonical (in A)
+        fresh_alloc_count = 0
+        for a_id, b_id, a_u, b_u in coll_rows:
+            if a_u >= b_u:
+                # A wins; B's loser_id remaps to A's winner id.
+                remap_b[b_id] = a_id
+                if b_id in shared_ids:
+                    fresh_alloc_count += 1
+            else:
+                remap_a[a_id] = b_id
+                if a_id in shared_ids:
+                    fresh_alloc_count += 1
+    
+        # Two DIFFERENT entities under one id (bug-216 S2 fixture, 2026-11-13): slots
+        # that diverged from one copy both allocate the next ids from the same
+        # sequence state, so A's new row and B's new row share an id with
+        # different (partition, kind, name). The entity steps below read a shared
+        # id as ONE entity -- B's newer row overwrote A's, and A's entity, with
+        # every row naming it, was lost. B's row moves to a fresh id inside the
+        # sequence headroom, and `remap_b` carries every B-side reference to it.
+        # A loser on either side frees or keeps its id under the remaps above, so
+        # it is never a candidate.
+        fresh_b: dict[int, int] = {}
+        next_fresh = max_entity + 1
+        for (bid,) in con.execute("""
+            SELECT be.id FROM a.entities ae JOIN b.entities be ON ae.id = be.id
+            WHERE NOT (ae.partition_id = be.partition_id AND ae.kind = be.kind
+                       AND ae.name = be.name)
+            ORDER BY be.id
+        """).fetchall():
+            bid = int(bid)
+            if bid in remap_b or bid in remap_a:
+                continue
+            fresh_b[bid] = next_fresh
+            next_fresh += 1
+        if len(fresh_b) > REMAP_HEADROOM:
+            raise MergeRefused(
+                f"{len(fresh_b)} distinct entities share an id across the slots — more than "
+                f"the {REMAP_HEADROOM}-id headroom the merge target reserves")
+        remap_b.update(fresh_b)
+    
+        # Materialize remap as temp tables for SQL joins.
+        con.execute("CREATE TEMP TABLE remap_fresh_b (old_id BIGINT, new_id BIGINT)")
+        _fill_remap(con, "remap_fresh_b", "old_id", "new_id", fresh_b)
+        con.execute("CREATE TEMP TABLE remap_a (loser_id BIGINT, canonical_id BIGINT)")
+        con.execute("CREATE TEMP TABLE remap_b (loser_id BIGINT, canonical_id BIGINT)")
+        _fill_remap(con, "remap_a", "loser_id", "canonical_id", remap_a)
+        _fill_remap(con, "remap_b", "loser_id", "canonical_id", remap_b)
+    
+        # ---- 5. entities: drop losers, union, newer-wins on shared ids -----
+        con.execute("""
+            INSERT INTO entities BY NAME
+            SELECT ae.* FROM a.entities ae
+            LEFT JOIN remap_a r ON r.loser_id = ae.id
+            WHERE r.loser_id IS NULL
+        """)
+        con.execute("""
+            INSERT INTO entities BY NAME
+            SELECT be.* FROM b.entities be
+            LEFT JOIN remap_b r ON r.loser_id = be.id
+            LEFT JOIN entities m ON m.id = be.id
+            WHERE r.loser_id IS NULL AND m.id IS NULL
+        """)
+        con.execute("""
+            INSERT INTO entities BY NAME
+            SELECT be.* EXCLUDE (id), f.new_id AS id
+            FROM b.entities be JOIN remap_fresh_b f ON f.old_id = be.id
+        """)
+>       con.execute(f"""
+            UPDATE entities AS m
+            SET {_set_all(con, "entities", "b", "be", "id")}
+            FROM b.entities be
+            WHERE m.id = be.id AND be.updated_at > m.updated_at
+                  AND be.id NOT IN (SELECT old_id FROM remap_fresh_b)
+        """)
+E       _duckdb.ConstraintException: Constraint Error: Duplicate key "partition_id: 1, kind: doc, name: shared" violates unique constraint.
+
+src/refmatrix/replica_merge.py:413: ConstraintException
+
+During handling of the above exception, another exception occurred:
+
+base = PosixPath('/private/tmp/b216qq4jxdrf8')
+
+    def test_b2e_a_name_loser_id_held_by_a_different_a_entity_merges(base):
+        """Shape 4 of bsd r2 #b2: `shared` is id 101 in A (newer, wins) and id 100 in B, so B's 100
+        is a name-loser remapped to 101 — while A holds a DIFFERENT entity, `a-x`, at 100. The
+        entity UPDATE (it excludes only the fresh moves) writes B's `shared` row over `a-x` and dies
+        on the unique (partition, kind, name) key. Expected: both of A's entities, untouched."""
+        from refmatrix.replica_merge import merge_slots
+        a_root = base / "A" / "proj" / ".refmatrix"
+        _new_store(a_root)
+        a = a_root / "catalog.duckdb"
+        b = base / "B" / "catalog.duckdb"
+        b.parent.mkdir()
+        shutil.copy2(a, b)
+        _seed(a, [(100, "a-x", 1.0), (101, "shared", 9.0)])
+        _seed(b, [(100, "shared", 5.0)])
+        target = base / "T" / "catalog.duckdb"
+        target.parent.mkdir()
+        try:
+            merge_slots(a, b, target)
+        except Exception as e:  # noqa: BLE001 — the crash is the defect; said plainly
+>           pytest.fail(f"merge_slots died on a name-loser id held by another A entity: "
+                        f"{type(e).__name__}: {str(e)[:300]}")
+E           Failed: merge_slots died on a name-loser id held by another A entity: ConstraintException: Constraint Error: Duplicate key "partition_id: 1, kind: doc, name: shared" violates unique constraint.
+
+tests/test_bug216_remedy_r2.py:378: Failed
+_ test_m1r2_removing_the_profiles_frontmatter_purges_it_on_the_next_watcher_event _
+
+base = PosixPath('/private/tmp/b216qyvzivufi')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1186b3e70>
+
+    def test_m1r2_removing_the_profiles_frontmatter_purges_it_on_the_next_watcher_event(base,
+                                                                                       monkeypatch):
+        """No ignore file: the GMD profile is in by R11. Its author removes the frontmatter and
+        keeps the file. The watcher's modify event must reach `_sync_one` (is_relevant True for a
+        BUILTIN_INCLUDES path, whatever its content), which purges the now-ignored path. At
+        25ceacd the include needs `is_gmd_file`, the hidden-dir rule wins, and the event is dropped."""
+        import watchdog.observers as wo
+        from watchdog.events import FileModifiedEvent
+    
+        from refmatrix import daemon as daemon_mod
+        from refmatrix.sync import sync_files
+        from tests.test_bug216_remedy_r1 import PROFILE_MD
+        from tests.test_bug216_rule_docs_e2e import _FakeObserver
+        proj = base / "proj"
+        root = proj / ".refmatrix"
+        _new_store(root)
+        prof = _write(proj, ".claude/PROJECT_PROFILE.md", PROFILE_MD)
+        s = _open(root)
+        try:
+            sync_files(s, [str(prof)], project_root=proj)
+            assert s.get_entity("doc", "project-profile") is not None, "precondition: profile in"
+        finally:
+            s.close()
+        prof.write_text("# Project profile\n\nPlain markdown now, no frontmatter.\n")
+        t = prof.stat().st_mtime + 10
+        os.utime(prof, (t, t))
+        _FakeObserver.instances = []
+        monkeypatch.setattr(wo, "Observer", _FakeObserver)
+        d = daemon_mod.Daemon(root, watch_root=proj, watch_debounce_ms=50)
+        d.store = _open(root)
+        try:
+            d._start_watcher()
+            (handler, _p), = _FakeObserver.instances[0].handlers
+            handler.on_modified(FileModifiedEvent(str(prof)))
+            d._watch_stop.set()
+            d._watch_thread.join(timeout=30)
+            assert not d._watch_thread.is_alive()
+            assert d.sync_errors() == [], d.sync_errors()
+        finally:
+            d.store.close()
+        s = _open(root)
+        try:
+            left = s.get_entity("doc", "project-profile")
+        finally:
+            s.close()
+>       assert left is None, "the profile lost its frontmatter but its doc survived the watcher"
+E       AssertionError: the profile lost its frontmatter but its doc survived the watcher
+E       assert Entity(id=1, kind='doc', name='project-profile', path='/private/tmp/b216qyvzivufi/proj/.claude/PROJECT_PROFILE.md', tldr='Fixture document', meta={'gmd_version': '0.1', 'tags': ['t'], 'gmd_content_hash': '255c5ee6a556495ae62c05c19890911c3a0400c8', 'gmd_pass2_done': True}, protected=False, noise=False) is None
+
+tests/test_bug216_remedy_r2.py:437: AssertionError
+_ test_m1r2_watch_is_relevant_for_a_builtin_include_path_whatever_its_content __
+
+base = PosixPath('/private/tmp/b216qk69lacug')
+
+    def test_m1r2_watch_is_relevant_for_a_builtin_include_path_whatever_its_content(base):
+        from refmatrix.watch import is_relevant
+        proj = base / "proj"
+        prof = _write(proj, ".claude/PROJECT_PROFILE.md", "# Plain\n\nNo frontmatter.\n")
+>       assert is_relevant(prof, proj) is True, (
+            "a BUILTIN_INCLUDES path must reach `_sync_one`, which decides include vs purge")
+E       AssertionError: a BUILTIN_INCLUDES path must reach `_sync_one`, which decides include vs purge
+E       assert False is True
+E        +  where False = <function is_relevant at 0x1190cb690>(PosixPath('/private/tmp/b216qk69lacug/proj/.claude/PROJECT_PROFILE.md'), PosixPath('/private/tmp/b216qk69lacug/proj'))
+
+tests/test_bug216_remedy_r2.py:444: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r2.py::test_b1r2_ingest_path_of_an_outside_memdir_stores_no_doc_rows
+FAILED tests/test_bug216_remedy_r2.py::test_b1r2_cli_ingest_of_an_outside_memdir_stores_no_doc_rows
+FAILED tests/test_bug216_remedy_r2.py::test_b1r2_an_outside_tree_is_not_judged_by_a_foreign_stores_spec
+FAILED tests/test_bug216_remedy_r2.py::test_b2a_a_fresh_id_move_keeps_each_memory_its_own_body
+FAILED tests/test_bug216_remedy_r2.py::test_b2b_b_only_fragment_rows_follow_the_moved_id
+FAILED tests/test_bug216_remedy_r2.py::test_b2c_the_moved_ids_are_reported_apart_from_the_loser_count
+FAILED tests/test_bug216_remedy_r2.py::test_b2e_a_name_loser_id_held_by_a_different_a_entity_merges
+FAILED tests/test_bug216_remedy_r2.py::test_m1r2_removing_the_profiles_frontmatter_purges_it_on_the_next_watcher_event
+FAILED tests/test_bug216_remedy_r2.py::test_m1r2_watch_is_relevant_for_a_builtin_include_path_whatever_its_content
+========================= 9 failed, 3 passed in 3.61s ==========================

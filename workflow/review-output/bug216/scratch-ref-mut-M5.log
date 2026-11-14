@@ -1,0 +1,32 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/f0521bff-0006-479a-9e0f-6df02d50937e/scratchpad/ref216/src/refmatrix as checked-hash (bug-037)
+...F.................................................                    [100%]
+=================================== FAILURES ===================================
+_ test_a_reinclude_naming_a_directory_is_reported_once_and_reincludes_nothing __
+
+root = PosixPath('/private/tmp/b216ie_fhh9na')
+capfd = <_pytest.capture.CaptureFixture object at 0x1109fc590>
+
+    def test_a_reinclude_naming_a_directory_is_reported_once_and_reincludes_nothing(root, capfd):
+        """R1: a re-include applies to files only; a `!dir` line re-includes nothing and is reported
+        ONCE, loudly (stderr), when the spec loads — not once per walked file."""
+        (root / ".claude" / "agents").mkdir(parents=True)
+        inside = _touch(root, ".claude/agents/a.md")
+        _spec(root, ".claude", "!.claude/agents")
+        capfd.readouterr()
+        load_ignore_spec(root)
+        load_ignore_spec(root)          # cached: same (path, mtime)
+        for _ in range(3):
+            should_ignore(inside, root)
+        err = capfd.readouterr().err
+>       assert err.count("!.claude/agents") == 1, (
+            f"a `!dir` line must be reported exactly once on stderr; got:\n{err!r}")
+E       AssertionError: a `!dir` line must be reported exactly once on stderr; got:
+E         ''
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x101d176f0>('!.claude/agents')
+E        +    where <built-in method count of str object at 0x101d176f0> = ''.count
+
+tests/test_bug216_ignore_reinclude.py:117: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_ignore_reinclude.py::test_a_reinclude_naming_a_directory_is_reported_once_and_reincludes_nothing
+1 failed, 52 passed in 13.87s

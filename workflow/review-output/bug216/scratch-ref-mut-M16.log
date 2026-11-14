@@ -1,0 +1,94 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/f0521bff-0006-479a-9e0f-6df02d50937e/scratchpad/ref216/src/refmatrix as checked-hash (bug-037)
+......................FF................................................ [ 96%]
+...                                                                      [100%]
+=================================== FAILURES ===================================
+_____ test_ingest_gmd_on_a_subdir_reads_the_spec_from_the_project_root[op] _____
+
+route = 'op'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10eed7e70>
+
+    @pytest.mark.parametrize("route", ["op", "cli"])
+    def test_ingest_gmd_on_a_subdir_reads_the_spec_from_the_project_root(route, monkeypatch):
+        """`rmx ingest-gmd docs/` must find the project root by walking up to `.refmatrix/` and
+        apply the spec relative to IT: the anchored `docs/private` line excludes
+        `docs/private/p.md`. (Taking the target dir as the root would anchor the line at
+        `docs/docs/private` and let it through.)"""
+        base, proj, root = _make_proj()
+        try:
+            _write(proj, "docs/private/p.md", _gmd("private-p"))
+            _write_spec(proj, [".claude", "!.claude/PROJECT_PROFILE.md", "docs/private"])
+            target = proj / "docs"
+            if route == "op":
+                from refmatrix.daemon import Daemon, _op_ingest_gmd
+                d = Daemon(root)
+                d.store = _open(root)
+                try:
+                    _op_ingest_gmd(d, {"targets": [str(target)]})
+                finally:
+                    d.store.close()
+            else:
+                from click.testing import CliRunner
+    
+                from refmatrix import cli as cli_mod
+                monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+                monkeypatch.delenv("RMX_PARTITION", raising=False)
+                r = CliRunner().invoke(cli_mod.main, ["ingest-gmd", str(target)],
+                                       catch_exceptions=False)
+                assert r.exit_code == 0, r.output
+            s = _open(root)
+            try:
+                got = _ingested(s, proj)
+            finally:
+                s.close()
+>           assert "docs/private/p.md" not in got, got
+E           AssertionError: {'docs/finding.md', 'docs/other.md', 'docs/private/p.md'}
+E           assert 'docs/private/p.md' not in {'docs/finding.md', 'docs/other.md', 'docs/private/p.md'}
+
+tests/test_bug216_rev4.py:393: AssertionError
+____ test_ingest_gmd_on_a_subdir_reads_the_spec_from_the_project_root[cli] _____
+
+route = 'cli'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x118dddef0>
+
+    @pytest.mark.parametrize("route", ["op", "cli"])
+    def test_ingest_gmd_on_a_subdir_reads_the_spec_from_the_project_root(route, monkeypatch):
+        """`rmx ingest-gmd docs/` must find the project root by walking up to `.refmatrix/` and
+        apply the spec relative to IT: the anchored `docs/private` line excludes
+        `docs/private/p.md`. (Taking the target dir as the root would anchor the line at
+        `docs/docs/private` and let it through.)"""
+        base, proj, root = _make_proj()
+        try:
+            _write(proj, "docs/private/p.md", _gmd("private-p"))
+            _write_spec(proj, [".claude", "!.claude/PROJECT_PROFILE.md", "docs/private"])
+            target = proj / "docs"
+            if route == "op":
+                from refmatrix.daemon import Daemon, _op_ingest_gmd
+                d = Daemon(root)
+                d.store = _open(root)
+                try:
+                    _op_ingest_gmd(d, {"targets": [str(target)]})
+                finally:
+                    d.store.close()
+            else:
+                from click.testing import CliRunner
+    
+                from refmatrix import cli as cli_mod
+                monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+                monkeypatch.delenv("RMX_PARTITION", raising=False)
+                r = CliRunner().invoke(cli_mod.main, ["ingest-gmd", str(target)],
+                                       catch_exceptions=False)
+                assert r.exit_code == 0, r.output
+            s = _open(root)
+            try:
+                got = _ingested(s, proj)
+            finally:
+                s.close()
+>           assert "docs/private/p.md" not in got, got
+E           AssertionError: {'docs/finding.md', 'docs/other.md', 'docs/private/p.md'}
+E           assert 'docs/private/p.md' not in {'docs/finding.md', 'docs/other.md', 'docs/private/p.md'}
+
+tests/test_bug216_rev4.py:393: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_rev4.py::test_ingest_gmd_on_a_subdir_reads_the_spec_from_the_project_root[op]
+FAILED tests/test_bug216_rev4.py::test_ingest_gmd_on_a_subdir_reads_the_spec_from_the_project_root[cli]
+2 failed, 73 passed in 16.62s

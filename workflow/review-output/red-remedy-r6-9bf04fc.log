@@ -1,0 +1,147 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /Volumes/littlebig/refmatrix-bug216
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collecting ... collected 50 items
+
+tests/test_bug216_remedy_r6.py::test_m1_a_purge_with_lance_missing_but_the_table_present_is_counted_and_said[batch] FAILED [  2%]
+tests/test_bug216_remedy_r6.py::test_m1_a_purge_with_lance_missing_but_the_table_present_is_counted_and_said[single] FAILED [  4%]
+tests/test_lance_drop_failures_loud.py::test_a_failed_batch_delete_is_printed_and_counted PASSED [  6%]
+tests/test_lance_drop_failures_loud.py::test_a_broken_lance_import_is_not_read_as_not_installed PASSED [  8%]
+tests/test_lance_drop_failures_loud.py::test_the_single_id_delete_is_loud_too PASSED [ 10%]
+tests/test_lance_drop_failures_loud.py::test_sync_prune_and_fold_report_the_failures PASSED [ 12%]
+tests/test_lance_drop_failures_loud.py::test_the_forget_paths_and_vacuum_return_the_count PASSED [ 14%]
+tests/test_lance_drop_failures_loud.py::test_rmx_forget_prints_the_failure_on_the_callers_terminal PASSED [ 16%]
+tests/test_lance_drop_failures_loud.py::test_each_cli_render_site_prints_the_count[argv0-prune-noise] PASSED [ 18%]
+tests/test_lance_drop_failures_loud.py::test_each_cli_render_site_prints_the_count[argv1-vacuum] PASSED [ 20%]
+tests/test_lance_drop_failures_loud.py::test_each_cli_render_site_prints_the_count[argv2-memory dedup] PASSED [ 22%]
+tests/test_lance_drop_failures_loud.py::test_each_cli_render_site_prints_the_count[argv3-memory bulk-forget] PASSED [ 24%]
+tests/test_lance_drop_failures_loud.py::test_each_cli_render_site_prints_the_count[argv4-untrack] PASSED [ 26%]
+tests/test_lance_drop_failures_loud.py::test_the_daemon_sync_render_prints_the_count PASSED [ 28%]
+tests/test_lance_drop_failures_loud.py::test_memory_forget_carries_the_count_from_the_daemon PASSED [ 30%]
+tests/test_lance_drop_failures_loud.py::test_the_memory_forget_op_returns_the_count PASSED [ 32%]
+tests/test_lance_drop_failures_loud.py::test_untrack_returns_the_count PASSED [ 34%]
+tests/test_lance_drop_failures_loud.py::test_the_watch_flush_line_carries_the_count PASSED [ 36%]
+tests/test_purge_path_batched_lance.py::test_purge_path_issues_one_lance_delete_per_kind_not_per_entity PASSED [ 38%]
+tests/test_purge_path_batched_lance.py::test_prune_noise_drop_issues_one_lance_delete PASSED [ 40%]
+tests/test_purge_path_batched_lance.py::test_fold_concept_dups_issues_one_lance_delete PASSED [ 42%]
+tests/test_dual_write_purge.py::test_drop_lance_for_purge_skips_when_dataset_missing PASSED [ 44%]
+tests/test_dual_write_purge.py::test_drop_lance_for_purge_batch_skips_empty_input PASSED [ 46%]
+tests/test_dual_write_purge.py::test_purge_entity_invokes_lance_drop_with_entity_kind PASSED [ 48%]
+tests/test_dual_write_purge.py::test_purge_entity_skip_lance_flag_suppresses_drop PASSED [ 50%]
+tests/test_dual_write_purge.py::test_purge_entity_lance_drop_failure_does_not_block_catalog_purge PASSED [ 52%]
+tests/test_dual_write_purge.py::test_forget_memory_chains_through_purge_entity_lance_drop PASSED [ 54%]
+tests/test_dual_write_purge.py::test_bulk_forget_uses_batched_lance_drop_grouped_by_kind PASSED [ 56%]
+tests/test_dual_write_purge.py::test_bulk_forget_dry_run_does_not_touch_lance PASSED [ 58%]
+tests/test_dual_write_purge.py::test_drop_lance_for_purge_actually_removes_row_when_dataset_exists PASSED [ 60%]
+tests/test_memory_bulk_forget.py::test_bulk_forget_by_mtypes_deletes_matching_rows PASSED [ 62%]
+tests/test_memory_bulk_forget.py::test_bulk_forget_dry_run_resolves_without_deleting PASSED [ 64%]
+tests/test_memory_bulk_forget.py::test_bulk_forget_by_ids_works PASSED   [ 66%]
+tests/test_memory_bulk_forget.py::test_bulk_forget_by_names_works PASSED [ 68%]
+tests/test_memory_bulk_forget.py::test_bulk_forget_unions_ids_names_mtypes PASSED [ 70%]
+tests/test_memory_bulk_forget.py::test_bulk_forget_empty_filter_returns_zero PASSED [ 72%]
+tests/test_memory_bulk_forget.py::test_bulk_forget_mtype_filter_is_partition_scoped PASSED [ 74%]
+tests/test_memory_bulk_forget.py::test_daemon_memory_bulk_forget_op_registered PASSED [ 76%]
+tests/test_store_vectors.py::test_vectors_updated_at_column_present PASSED [ 78%]
+tests/test_store_vectors.py::test_upsert_vector_marks_embedded_timestamp PASSED [ 80%]
+tests/test_store_vectors.py::test_pending_embeddings_filters_to_stale PASSED [ 82%]
+tests/test_store_vectors.py::test_ann_search_returns_inserted_entity PASSED [ 84%]
+tests/test_store_vectors.py::test_drop_vectors_clears_timestamp PASSED   [ 86%]
+tests/test_vectors.py::test_upsert_and_search_roundtrip PASSED           [ 88%]
+tests/test_vectors.py::test_upsert_is_idempotent_on_repeated_ids PASSED  [ 90%]
+tests/test_vectors.py::test_drop_for_removes_vectors PASSED              [ 92%]
+tests/test_vectors.py::test_search_across_multiple_kinds PASSED          [ 94%]
+tests/test_vectors.py::test_search_kind_filter PASSED                    [ 96%]
+tests/test_vectors.py::test_empty_kind_returns_empty PASSED              [ 98%]
+tests/test_vectors.py::test_partition_isolation PASSED                   [100%]
+
+=================================== FAILURES ===================================
+_ test_m1_a_purge_with_lance_missing_but_the_table_present_is_counted_and_said[batch] _
+
+store_with_vectors = {'ids': [1, 2, 3], 'root': PosixPath('/private/tmp/b216vc6ta0_kk/proj/.refmatrix')}
+mode = 'batch'
+
+    @pytest.mark.parametrize("mode", ["batch", "single"])
+    def test_m1_a_purge_with_lance_missing_but_the_table_present_is_counted_and_said(
+            store_with_vectors, mode):
+        st = store_with_vectors
+        p = subprocess.run([sys.executable, "-c", _CHILD, str(st["root"]), mode,
+                            ",".join(str(i) for i in st["ids"])],
+                           capture_output=True, text=True, env=dict(os.environ), timeout=600)
+        parts = p.stdout.split("@@RESULT@@")
+        assert len(parts) == 2, f"child failed (rc {p.returncode}):\n{p.stdout}\n{p.stderr}"
+        res = json.loads(parts[1])
+        assert _lance_ids(st["root"]) == sorted(st["ids"]), (
+            "precondition: with lance unavailable the purge cannot have deleted any vector row")
+        err = p.stderr
+        problems = []
+        if not res["failures"] >= len(st["ids"]):
+            problems.append(f"vector_delete_failures = {res['failures']} for {len(st['ids'])} rows "
+                            f"left behind (the purge returned {res['result']})")
+        if not (re.search(r"\blance\b", err)
+                and re.search(r"not installed|missing|unavailable", err, re.I)):
+            problems.append("stderr does not say lance is missing")
+        if not ("memory" in err and "proj" in err):
+            problems.append("stderr does not name the (partition, kind) table proj/memory")
+        if not re.search(r"orphan|left behind|not deleted", err, re.I):
+            problems.append("stderr does not say the rows were left behind")
+>       assert not problems, f"{mode} purge with lance missing:\n- " + "\n- ".join(problems) + (
+            f"\nstderr: {err!r}")
+E       AssertionError: batch purge with lance missing:
+E         - vector_delete_failures = 0 for 3 rows left behind (the purge returned {'forgotten': 3, 'dry_run': False, 'vector_delete_failed': 0})
+E         - stderr does not say lance is missing
+E         - stderr does not name the (partition, kind) table proj/memory
+E         - stderr does not say the rows were left behind
+E         stderr: ''
+E       assert not ["vector_delete_failures = 0 for 3 rows left behind (the purge returned {'forgotten': 3, 'dry_run': False, 'vector_delete_failed': 0})", 'stderr does not say lance is missing', 'stderr does not name the (partition, kind) table proj/memory', 'stderr does not say the rows were left behind']
+
+tests/test_bug216_remedy_r6.py:112: AssertionError
+_ test_m1_a_purge_with_lance_missing_but_the_table_present_is_counted_and_said[single] _
+
+store_with_vectors = {'ids': [1, 2, 3], 'root': PosixPath('/private/tmp/b216vdgbfu2k_/proj/.refmatrix')}
+mode = 'single'
+
+    @pytest.mark.parametrize("mode", ["batch", "single"])
+    def test_m1_a_purge_with_lance_missing_but_the_table_present_is_counted_and_said(
+            store_with_vectors, mode):
+        st = store_with_vectors
+        p = subprocess.run([sys.executable, "-c", _CHILD, str(st["root"]), mode,
+                            ",".join(str(i) for i in st["ids"])],
+                           capture_output=True, text=True, env=dict(os.environ), timeout=600)
+        parts = p.stdout.split("@@RESULT@@")
+        assert len(parts) == 2, f"child failed (rc {p.returncode}):\n{p.stdout}\n{p.stderr}"
+        res = json.loads(parts[1])
+        assert _lance_ids(st["root"]) == sorted(st["ids"]), (
+            "precondition: with lance unavailable the purge cannot have deleted any vector row")
+        err = p.stderr
+        problems = []
+        if not res["failures"] >= len(st["ids"]):
+            problems.append(f"vector_delete_failures = {res['failures']} for {len(st['ids'])} rows "
+                            f"left behind (the purge returned {res['result']})")
+        if not (re.search(r"\blance\b", err)
+                and re.search(r"not installed|missing|unavailable", err, re.I)):
+            problems.append("stderr does not say lance is missing")
+        if not ("memory" in err and "proj" in err):
+            problems.append("stderr does not name the (partition, kind) table proj/memory")
+        if not re.search(r"orphan|left behind|not deleted", err, re.I):
+            problems.append("stderr does not say the rows were left behind")
+>       assert not problems, f"{mode} purge with lance missing:\n- " + "\n- ".join(problems) + (
+            f"\nstderr: {err!r}")
+E       AssertionError: single purge with lance missing:
+E         - vector_delete_failures = 0 for 3 rows left behind (the purge returned [0, 0, 0])
+E         - stderr does not say lance is missing
+E         - stderr does not name the (partition, kind) table proj/memory
+E         - stderr does not say the rows were left behind
+E         stderr: ''
+E       assert not ['vector_delete_failures = 0 for 3 rows left behind (the purge returned [0, 0, 0])', 'stderr does not say lance is missing', 'stderr does not name the (partition, kind) table proj/memory', 'stderr does not say the rows were left behind']
+
+tests/test_bug216_remedy_r6.py:112: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r6.py::test_m1_a_purge_with_lance_missing_but_the_table_present_is_counted_and_said[batch]
+FAILED tests/test_bug216_remedy_r6.py::test_m1_a_purge_with_lance_missing_but_the_table_present_is_counted_and_said[single]
+========================= 2 failed, 48 passed in 4.96s =========================

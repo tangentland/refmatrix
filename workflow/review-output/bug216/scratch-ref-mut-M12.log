@@ -1,0 +1,26 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/f0521bff-0006-479a-9e0f-6df02d50937e/scratchpad/ref216/src/refmatrix as checked-hash (bug-037)
+............F......................................                      [100%]
+=================================== FAILURES ===================================
+________________ test_ac10_expansion_walk_reaches_b_at_one_hop _________________
+
+env = (PosixPath('/private/tmp/b216bnz1lfctx/proj'), PosixPath('/private/tmp/b216bnz1lfctx/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x104933650>
+
+    def test_ac10_expansion_walk_reaches_b_at_one_hop(env, monkeypatch):
+        proj, root = env
+        st = _walk_store(proj, root)
+        monkeypatch.setenv("RMX_EXPAND_HOPS", "1")
+        s = _open(root)
+        try:
+            base = {e for e, _ in s.content_rank([WALK_TERM], limit=200)}
+            assert st["c"] in base or st["a_root"] in base or st["a_doc"] in base, base
+>           assert st["b_doc"] in base, (
+                "hops=1 from A must reach B through the path-less concept: `denotes` is a "
+                "zero-cost hop")
+E               AssertionError: hops=1 from A must reach B through the path-less concept: `denotes` is a zero-cost hop
+E               assert 3 in {1, 2, 8, 9, 10, 17}
+
+tests/test_bug216_binding.py:430: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_binding.py::test_ac10_expansion_walk_reaches_b_at_one_hop
+1 failed, 50 passed in 16.29s

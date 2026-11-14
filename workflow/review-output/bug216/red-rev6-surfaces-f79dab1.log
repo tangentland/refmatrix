@@ -1,0 +1,179 @@
+pyc-guard: recompiled 16 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/tip/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/tip
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collecting ... collected 10 items
+
+tests/test_bug216_surfaces.py::test_ac15_the_derive_is_a_verb_with_cli_and_mcp_twins FAILED [ 10%]
+tests/test_bug216_surfaces.py::test_ac15_the_verb_returns_the_ops_counts FAILED [ 20%]
+tests/test_bug216_surfaces.py::test_ac15_the_cli_prints_the_ops_counts FAILED [ 30%]
+tests/test_bug216_surfaces.py::test_ac15_the_mcp_tool_returns_the_ops_counts FAILED [ 40%]
+tests/test_bug216_surfaces.py::test_ac15_daemon_down_the_cli_fails_loudly_and_writes_nothing FAILED [ 50%]
+tests/test_bug216_surfaces.py::test_ac15_daemon_down_the_mcp_tool_returns_an_error FAILED [ 60%]
+tests/test_bug216_surfaces.py::test_ac16_the_prestage_op_names_its_ignored_path_in_the_result FAILED [ 70%]
+tests/test_bug216_surfaces.py::test_ac16_the_prestage_cli_names_its_ignored_path_daemon_down FAILED [ 80%]
+tests/test_bug216_surfaces.py::test_ac16_the_prestage_cli_names_its_ignored_path_daemon_up FAILED [ 90%]
+tests/test_bug216_surfaces.py::test_ac16_guard_the_memory_prestage_still_names_its_skips PASSED [100%]
+
+=================================== FAILURES ===================================
+____________ test_ac15_the_derive_is_a_verb_with_cli_and_mcp_twins _____________
+
+    def test_ac15_the_derive_is_a_verb_with_cli_and_mcp_twins():
+        """Registration — after which tests/test_verb_parity.py's generic gates (tool == verb,
+        schema, CLI twin resolves, wiring, click defaults) cover it."""
+        import refmatrix.mcp as mcp
+>       assert VERB in verbs.VERBS, f"no `{VERB}` verb"
+E       AssertionError: no `rmx_derive_denotes` verb
+E       assert 'rmx_derive_denotes' in {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x10775be20>, description='Archive bus messages (still readable via bus_history status=archived): by `id`, or a whole `channel` (optionally only those with ts < `before_ts`).', schema={'type': 'object', 'properties': {'id': {'type': 'string'}, 'channel': {'type': 'string'}, 'before_ts': {'type': 'number'}, 'root': {'type': 'string', 'description': "Store root (path to a project or its .refmatrix); default: the server's project"}, 'project': {'type': 'string', 'description': 'Target another project by NAME (any live store)'}}, 'required': []}, defaults={'id': None, 'channel': None, 'before_ts': None}, aliases={}), 'rmx_bus_channels': Verb(name='rmx_bus_channels', fn=<function bus_channels at 0x10775b8a0>, description='List live bus channels (with message counts), optionally filtered by a glob like `proj:*` or `proj:cliquedb:*`. Channel discovery for the bus.', schema={'type': 'object', 'properties': {'glob': {'type': 'string'}, 'root': {'type': 'string', 'description': "Store root (path to a project or its .refmatrix); default: the server's project"}, 'project': {'type': 'string', 'description': 'Target a...: []}, defaults={'glob': None}, aliases={}), 'rmx_bus_delete': Verb(name='rmx_bus_delete', fn=<function bus_delete at 0x10775bcc0>, description='Soft-delete a bus message by id — hidden from history/read, recoverable until purge.', schema={'type': 'object', 'properties': {'id': {'type': 'string'}, 'root': {'type': 'string', 'description': "Store root (path to a project or its .refmatrix); default: the server's project"}, 'project': {'type': 'string', 'description': 'Target another project by NAME (any live store)'}}, 'required': ['id']}, defaults={}, aliases={}), 'rmx_bus_history': Verb(name='rmx_bus_history', fn=<function bus_history at 0x10775b740>, description='Read recent messages on a bus channel.', schema={'type': 'object', 'properties': {'channel': {'type': 'string'}, 'n': {'type': 'integer'}, 'status': {'type': 'string', 'enum': ['active', 'archived', 'deleted', 'all']}, 'root': {'type': 'string', 'description': "Store root (path to a project or its .refmatrix); default: the server's project"}, 'project': {'type': 'string', 'description': 'Target another project by NAME (any live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...}
+E        +  where {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x10775be20>, description='Archive bus messages (still readable via bus_history status=archived): by `id`, or a whole `channel` (optionally only those with ts < `before_ts`).', schema={'type': 'object', 'properties': {'id': {'type': 'string'}, 'channel': {'type': 'string'}, 'before_ts': {'type': 'number'}, 'root': {'type': 'string', 'description': "Store root (path to a project or its .refmatrix); default: the server's project"}, 'project': {'type': 'string', 'description': 'Target another project by NAME (any live store)'}}, 'required': []}, defaults={'id': None, 'channel': None, 'before_ts': None}, aliases={}), 'rmx_bus_channels': Verb(name='rmx_bus_channels', fn=<function bus_channels at 0x10775b8a0>, description='List live bus channels (with message counts), optionally filtered by a glob like `proj:*` or `proj:cliquedb:*`. Channel discovery for the bus.', schema={'type': 'object', 'properties': {'glob': {'type': 'string'}, 'root': {'type': 'string', 'description': "Store root (path to a project or its .refmatrix); default: the server's project"}, 'project': {'type': 'string', 'description': 'Target a...: []}, defaults={'glob': None}, aliases={}), 'rmx_bus_delete': Verb(name='rmx_bus_delete', fn=<function bus_delete at 0x10775bcc0>, description='Soft-delete a bus message by id — hidden from history/read, recoverable until purge.', schema={'type': 'object', 'properties': {'id': {'type': 'string'}, 'root': {'type': 'string', 'description': "Store root (path to a project or its .refmatrix); default: the server's project"}, 'project': {'type': 'string', 'description': 'Target another project by NAME (any live store)'}}, 'required': ['id']}, defaults={}, aliases={}), 'rmx_bus_history': Verb(name='rmx_bus_history', fn=<function bus_history at 0x10775b740>, description='Read recent messages on a bus channel.', schema={'type': 'object', 'properties': {'channel': {'type': 'string'}, 'n': {'type': 'integer'}, 'status': {'type': 'string', 'enum': ['active', 'archived', 'deleted', 'all']}, 'root': {'type': 'string', 'description': "Store root (path to a project or its .refmatrix); default: the server's project"}, 'project': {'type': 'string', 'description': 'Target another project by NAME (any live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...} = verbs.VERBS
+
+tests/test_bug216_surfaces.py:111: AssertionError
+__________________ test_ac15_the_verb_returns_the_ops_counts ___________________
+
+env = {'base': PosixPath('/private/tmp/b216sidqeg9pz'), 'proj': PosixPath('/private/tmp/b216sidqeg9pz/proj'), 'root': PosixPath('/private/tmp/b216sidqeg9pz/proj/.refmatrix')}
+in_process_daemon = <refmatrix.daemon.Daemon object at 0x11234c050>
+
+    def test_ac15_the_verb_returns_the_ops_counts(env, in_process_daemon):
+>       res = verbs.VERBS[VERB].fn(env["root"])
+              ^^^^^^^^^^^^^^^^^
+E       KeyError: 'rmx_derive_denotes'
+
+tests/test_bug216_surfaces.py:119: KeyError
+___________________ test_ac15_the_cli_prints_the_ops_counts ____________________
+
+env = {'base': PosixPath('/private/tmp/b216s5ms6fozx'), 'proj': PosixPath('/private/tmp/b216s5ms6fozx/proj'), 'root': PosixPath('/private/tmp/b216s5ms6fozx/proj/.refmatrix')}
+in_process_daemon = <refmatrix.daemon.Daemon object at 0x11234d550>
+
+    def test_ac15_the_cli_prints_the_ops_counts(env, in_process_daemon):
+        r = CliRunner().invoke(cli_mod.main, ["derive", "denotes"], catch_exceptions=False)
+>       assert r.exit_code == 0, r.output
+E       AssertionError: Usage: main derive [OPTIONS] COMMAND [ARGS]...
+E         Try 'main derive -h' for help.
+E         
+E         Error: No such command 'denotes'.
+E         
+E       assert 2 == 0
+E        +  where 2 = <Result SystemExit(2)>.exit_code
+
+tests/test_bug216_surfaces.py:127: AssertionError
+________________ test_ac15_the_mcp_tool_returns_the_ops_counts _________________
+
+env = {'base': PosixPath('/private/tmp/b216sryhlxwky'), 'proj': PosixPath('/private/tmp/b216sryhlxwky/proj'), 'root': PosixPath('/private/tmp/b216sryhlxwky/proj/.refmatrix')}
+in_process_daemon = <refmatrix.daemon.Daemon object at 0x121469e80>
+
+    def test_ac15_the_mcp_tool_returns_the_ops_counts(env, in_process_daemon):
+        import refmatrix.mcp as mcp
+>       res = mcp.TOOLS[VERB]["fn"]({"root": str(env["root"])})
+              ^^^^^^^^^^^^^^^
+E       KeyError: 'rmx_derive_denotes'
+
+tests/test_bug216_surfaces.py:136: KeyError
+________ test_ac15_daemon_down_the_cli_fails_loudly_and_writes_nothing _________
+
+env = {'base': PosixPath('/private/tmp/b216s4zm6lvca'), 'proj': PosixPath('/private/tmp/b216s4zm6lvca/proj'), 'root': PosixPath('/private/tmp/b216s4zm6lvca/proj/.refmatrix')}
+
+    def test_ac15_daemon_down_the_cli_fails_loudly_and_writes_nothing(env):
+        """No daemon for this throwaway store: non-zero exit, the reason on stderr, and no
+        in-process fallback (the store is untouched)."""
+        r = CliRunner().invoke(cli_mod.main, ["derive", "denotes"])
+        assert r.exit_code != 0, f"exit 0 with no daemon:\n{r.output}"
+>       assert r.exit_code != 2 or "No such command" not in (r.stderr or ""), (
+            f"the command does not exist:\n{r.stderr}")
+E       AssertionError: the command does not exist:
+E         Usage: main derive [OPTIONS] COMMAND [ARGS]...
+E         Try 'main derive -h' for help.
+E         
+E         Error: No such command 'denotes'.
+E         
+E       assert (2 != 2 or 'No such command' not in "Usage: main...'denotes'.\n"
+E        +  where 2 = <Result SystemExit(2)>.exit_code
+E         
+E         'No such command' is contained here:
+E           Usage: main derive [OPTIONS] COMMAND [ARGS]...
+E           Try 'main derive -h' for help.
+E           
+E           Error: No such command 'denotes'.)
+
+tests/test_bug216_surfaces.py:147: AssertionError
+_____________ test_ac15_daemon_down_the_mcp_tool_returns_an_error ______________
+
+env = {'base': PosixPath('/private/tmp/b216sbd7b4if0'), 'proj': PosixPath('/private/tmp/b216sbd7b4if0/proj'), 'root': PosixPath('/private/tmp/b216sbd7b4if0/proj/.refmatrix')}
+
+    def test_ac15_daemon_down_the_mcp_tool_returns_an_error(env):
+        import refmatrix.mcp as mcp
+>       assert VERB in mcp.TOOLS, f"no `{VERB}` tool"
+E       AssertionError: no `rmx_derive_denotes` tool
+E       assert 'rmx_derive_denotes' in {'rmx_bus_archive': {'description': 'Archive bus messages (still readable via bus_history status=archived): by `id`, or a whole `channel` (optionally only those with ts < `before_ts`).', 'fn': <function _verb_tool.<locals>.fn at 0x11236e6c0>, 'schema': {'properties': {'before_ts': {'type': 'number'}, 'channel': {'type': 'string'}, 'id': {'type': 'string'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type': 'string'}, ...}, 'required': [], 'type': 'object'}}, 'rmx_bus_channels': {'description': 'List live bus channels (with message counts), optionally filtered by a glob like `proj:*` or `proj:cliquedb:*`. Channel discovery for the bus.', 'fn': <function _verb_tool.<locals>.fn at 0x11236e140>, 'schema': {'properties': {'glob': {'type': 'string'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type': 'string'}, 'root': {'description': "Store root (path to a project or its .refmatrix); default: the server's project", 'type': 'string'}}, 'required': [], 'type': 'object'}}, 'rmx_bus_delete': {'description': 'Soft-delete a bus message by id — hidden from history/read, recoverable until purge.', 'fn': <function _verb_tool.<locals>.fn at 0x11236e560>, 'schema': {'properties': {'id': {'type': 'string'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type': 'string'}, 'root': {'description': "Store root (path to a project or its .refmatrix); default: the server's project", 'type': 'string'}}, 'required': ['id'], 'type': 'object'}}, 'rmx_bus_history': {'description': 'Read recent messages on a bus channel.', 'fn': <function _verb_tool.<locals>.fn at 0x11236dfe0>, 'schema': {'properties': {'channel': {'type': 'string'}, 'n': {'type': 'integer'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type': 'string'}, 'root': {'description': "Store root (path to a project or its .refmatrix); default: the server's project", 'type': 'string'}, ...}, 'required': ['channel'], 'type': 'object'}}, ...}
+E        +  where {'rmx_bus_archive': {'description': 'Archive bus messages (still readable via bus_history status=archived): by `id`, or a whole `channel` (optionally only those with ts < `before_ts`).', 'fn': <function _verb_tool.<locals>.fn at 0x11236e6c0>, 'schema': {'properties': {'before_ts': {'type': 'number'}, 'channel': {'type': 'string'}, 'id': {'type': 'string'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type': 'string'}, ...}, 'required': [], 'type': 'object'}}, 'rmx_bus_channels': {'description': 'List live bus channels (with message counts), optionally filtered by a glob like `proj:*` or `proj:cliquedb:*`. Channel discovery for the bus.', 'fn': <function _verb_tool.<locals>.fn at 0x11236e140>, 'schema': {'properties': {'glob': {'type': 'string'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type': 'string'}, 'root': {'description': "Store root (path to a project or its .refmatrix); default: the server's project", 'type': 'string'}}, 'required': [], 'type': 'object'}}, 'rmx_bus_delete': {'description': 'Soft-delete a bus message by id — hidden from history/read, recoverable until purge.', 'fn': <function _verb_tool.<locals>.fn at 0x11236e560>, 'schema': {'properties': {'id': {'type': 'string'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type': 'string'}, 'root': {'description': "Store root (path to a project or its .refmatrix); default: the server's project", 'type': 'string'}}, 'required': ['id'], 'type': 'object'}}, 'rmx_bus_history': {'description': 'Read recent messages on a bus channel.', 'fn': <function _verb_tool.<locals>.fn at 0x11236dfe0>, 'schema': {'properties': {'channel': {'type': 'string'}, 'n': {'type': 'integer'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type': 'string'}, 'root': {'description': "Store root (path to a project or its .refmatrix); default: the server's project", 'type': 'string'}, ...}, 'required': ['channel'], 'type': 'object'}}, ...} = <module 'refmatrix.mcp' from '/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/tip/src/refmatrix/mcp.py'>.TOOLS
+
+tests/test_bug216_surfaces.py:155: AssertionError
+________ test_ac16_the_prestage_op_names_its_ignored_path_in_the_result ________
+
+env = {'base': PosixPath('/private/tmp/b216szgo5olq_'), 'proj': PosixPath('/private/tmp/b216szgo5olq_/proj'), 'root': PosixPath('/private/tmp/b216szgo5olq_/proj/.refmatrix')}
+memdir = PosixPath('/private/tmp/b216szgo5olq_/proj/notes/memory')
+
+    def test_ac16_the_prestage_op_names_its_ignored_path_in_the_result(env, memdir):
+        from refmatrix.daemon import Daemon, _op_prestage_hashes
+        d = Daemon(env["root"])
+        d.store = Store(env["root"])
+        d.store.init()
+        try:
+            res = _op_prestage_hashes(d, {"targets": [str(memdir)]})
+        finally:
+            d.store.close()
+        hidden = str(memdir / ".hidden" / "y.md")
+>       assert res.get("ignored") == 1, res
+E       AssertionError: {'considered': 1, 'missing': 1, 'skipped': 0, 'walk_skipped': {'skipped': 0, 'skipped_paths': []}, ...}
+E       assert None == 1
+E        +  where None = <built-in method get of dict object at 0x121bca740>('ignored')
+E        +    where <built-in method get of dict object at 0x121bca740> = {'considered': 1, 'missing': 1, 'skipped': 0, 'walk_skipped': {'skipped': 0, 'skipped_paths': []}, ...}.get
+
+tests/test_bug216_surfaces.py:183: AssertionError
+----------------------------- Captured stderr call -----------------------------
+ingest-gmd: ignored 1 path(s) excluded by the ignore rules (INGEST_IGNORE_DIRS, .refmatrix_ignore, hidden directories): /private/tmp/b216szgo5olq_/proj/notes/memory/.hidden/y.md
+________ test_ac16_the_prestage_cli_names_its_ignored_path_daemon_down _________
+
+env = {'base': PosixPath('/private/tmp/b216s6slqczrb'), 'proj': PosixPath('/private/tmp/b216s6slqczrb/proj'), 'root': PosixPath('/private/tmp/b216s6slqczrb/proj/.refmatrix')}
+memdir = PosixPath('/private/tmp/b216s6slqczrb/proj/notes/memory')
+
+    def test_ac16_the_prestage_cli_names_its_ignored_path_daemon_down(env, memdir):
+        """The CLI's no-daemon branch: the line is in the command's STDOUT (what it reports), not
+        left to a stderr print inside the walk."""
+        out = _prestage_cli(memdir)
+>       assert "ignored 1 path(s)" in out and str(memdir / ".hidden" / "y.md") in out, out
+E       AssertionError: prestaged: considered=1 written=0 skipped=0 missing=1
+E         
+E       assert ('ignored 1 path(s)' in 'prestaged: considered=1 written=0 skipped=0 missing=1\n')
+
+tests/test_bug216_surfaces.py:197: AssertionError
+_________ test_ac16_the_prestage_cli_names_its_ignored_path_daemon_up __________
+
+env = {'base': PosixPath('/private/tmp/b216supelpezp'), 'proj': PosixPath('/private/tmp/b216supelpezp/proj'), 'root': PosixPath('/private/tmp/b216supelpezp/proj/.refmatrix')}
+memdir = PosixPath('/private/tmp/b216supelpezp/proj/notes/memory')
+in_process_daemon = <refmatrix.daemon.Daemon object at 0x12146aa50>
+
+    def test_ac16_the_prestage_cli_names_its_ignored_path_daemon_up(env, memdir, in_process_daemon):
+        """The CLI's daemon branch prints what the OP returned."""
+        out = _prestage_cli(memdir)
+>       assert "ignored 1 path(s)" in out and str(memdir / ".hidden" / "y.md") in out, out
+E       AssertionError: prestaged: considered=1 written=0 skipped=0 missing=1
+E         
+E       assert ('ignored 1 path(s)' in 'prestaged: considered=1 written=0 skipped=0 missing=1\n')
+
+tests/test_bug216_surfaces.py:203: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_surfaces.py::test_ac15_the_derive_is_a_verb_with_cli_and_mcp_twins
+FAILED tests/test_bug216_surfaces.py::test_ac15_the_verb_returns_the_ops_counts
+FAILED tests/test_bug216_surfaces.py::test_ac15_the_cli_prints_the_ops_counts
+FAILED tests/test_bug216_surfaces.py::test_ac15_the_mcp_tool_returns_the_ops_counts
+FAILED tests/test_bug216_surfaces.py::test_ac15_daemon_down_the_cli_fails_loudly_and_writes_nothing
+FAILED tests/test_bug216_surfaces.py::test_ac15_daemon_down_the_mcp_tool_returns_an_error
+FAILED tests/test_bug216_surfaces.py::test_ac16_the_prestage_op_names_its_ignored_path_in_the_result
+FAILED tests/test_bug216_surfaces.py::test_ac16_the_prestage_cli_names_its_ignored_path_daemon_down
+FAILED tests/test_bug216_surfaces.py::test_ac16_the_prestage_cli_names_its_ignored_path_daemon_up
+========================= 9 failed, 1 passed in 1.76s ==========================

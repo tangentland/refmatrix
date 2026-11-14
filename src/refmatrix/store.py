@@ -275,6 +275,23 @@ def _concept_variants(name: str) -> tuple[str, list[str]]:
 _CONCEPT_SHIFT = 32
 _ENTITY_MASK = (1 << 32) - 1
 
+def remap_fragment(bm: "BitMap64", id_map: "dict[int, int]") -> "tuple[BitMap64, int]":
+    """`bm` with `id_map` (old entity id -> new) applied to BOTH halves of every
+    packed (concept, entity) bit; returns `(remapped, bits_changed)`. THE kernel
+    for moving fragment bits with their entities: `Store.repair_fragments(id_map=)`
+    (merge_partition's collisions) and `replica_merge` step 12 (B-only rows after
+    B's ids were remapped, bug-216 remedy B2b) both call it."""
+    from pyroaring import BitMap64 as _BM
+    out = _BM()
+    changed = 0
+    for bit in bm:
+        c, e = bit >> _CONCEPT_SHIFT, bit & _ENTITY_MASK
+        nb = (id_map.get(c, c) << _CONCEPT_SHIFT) | id_map.get(e, e)
+        changed += nb != bit
+        out.add(nb)
+    return out, changed
+
+
 # Append-only fact log. Source-of-truth-in-progress: every mutation also
 # writes a JSON line to .refmatrix/facts.log unless RMX_LOG=0. The log is
 # keyed by names (not auto-IDs), so two branches that ingest disjoint
@@ -525,7 +542,47 @@ CREATE TABLE IF NOT EXISTS pair_index (
 );
 CREATE INDEX IF NOT EXISTS idx_pair_index_df
     ON pair_index(partition_id, df);
+
+-- `rel:` lines whose target did not resolve when their doc was ingested
+-- (bug-216 R10, 2026-11-13). GMD ingest skips unchanged files, so a target
+-- that appears LATER (a rule doc un-ignored, a doc written after its citer)
+-- left the citing line dangling until someone edited the citer: 247 lines
+-- cite the two rule docs alone. Ingesting a doc / memory / anchor whose name
+-- equals `target_name` resolves the row (edge + evidence) and deletes it; a
+-- purge of `source_id` deletes it; re-ingesting the citing file replaces its
+-- rows. Rebuilt from facts.log (bug-216 R13, `rebuild_index_from_log`): `pending_ref` /
+-- `pending_ref_delete` / `pending_refs_clear` events, source named by kind and
+-- name, partition-qualified; a source's `tombstone` drops its rows; the
+-- compaction dump re-emits the live rows. No PK or index: the table holds the
+-- unresolved residue (hundreds of rows), and the writer keeps it duplicate-free
+-- (`Store.add_pending_ref`).
+CREATE TABLE IF NOT EXISTS pending_refs (
+    partition_id INTEGER NOT NULL DEFAULT 1,
+    source_id    INTEGER NOT NULL,
+    linkage      TEXT NOT NULL,
+    target_name  TEXT NOT NULL,
+    ref          TEXT NOT NULL,
+    file         TEXT NOT NULL,
+    line         INTEGER NOT NULL,
+    weight       REAL,
+    detail       TEXT,
+    created_at   REAL NOT NULL
+);
 """
+
+# A path-less concept -> the doc/memory whose GMD id is the concept's name
+# (bug-216 R7, 2026-11-13). Registered on first use (`Store.link_denotes`), so a
+# store that never had a misbound concept never carries the type.
+DENOTES = "denotes"
+# Linkages whose concept side is a TERM -- the concept occurs in the entity's
+# text or heading, it is not a relation the author asserted. The zero-cost
+# `denotes` hop never carries these (bug-216 remedy M2, ruling L81,
+# 2026-11-13): PageRank's fold, `build_context`'s one-hop walk and
+# `QueryEngine.neighbors` all read this ONE set. Without it the term concept
+# `claude` (808 mentions) denoting CLAUDE.md made every doc that says "Claude"
+# in prose a neighbour of CLAUDE.md. G30 decides whether a term hop ever
+# crosses; until then none does.
+DENOTES_TERM_LINKAGES = frozenset({"mentions", "titles", "aliases", "lead", "coref"})
 
 DEFAULT_LINKAGES = [
     ("mentions",     1, None, "entity mentions concept"),
@@ -1745,6 +1802,47 @@ class Store:
         if self._partition_name == old:
             self._partition_name = new
 
+    def _merge_pending_refs(self, con, src_id: int, dst_id: int,
+                            collisions: "list[tuple[int, int]]") -> "tuple[int, int]":
+        """`merge_partition`'s `pending_refs` step (bug-216 S2, ruling L81,
+        2026-11-13): repoint SRC's rows to DST (a collided source entity's rows
+        to the DST entity that survives it), collapse rows the move made
+        identical, and delete -- counting -- every DST row whose source entity
+        no longer exists. Before this the rows kept SRC's dropped
+        `partition_id` (and a deleted `source_id` on a collision): they could
+        never resolve and nothing cleaned them up. Returns `(merged, dropped)`."""
+        merged = int(con.execute("SELECT count(*) FROM pending_refs WHERE partition_id=?",
+                                 (src_id,)).fetchone()[0])
+        for src_eid, dst_eid in collisions:
+            con.execute("UPDATE pending_refs SET source_id=? WHERE source_id=?",
+                        (dst_eid, src_eid))
+        con.execute("UPDATE pending_refs SET partition_id=? WHERE partition_id=?",
+                    (dst_id, src_id))
+        key = "partition_id, source_id, linkage, target_name, file, line"
+        for row in con.execute(
+                # min(), not any_value(): SQLite has no any_value (both backends
+                # run merge_partition).
+                f"SELECT {key}, min(created_at) AS c, min(ref) AS ref, "
+                f"min(weight) AS w, min(detail) AS d, count(*) AS n "
+                f"FROM pending_refs WHERE partition_id=? GROUP BY {key} HAVING count(*) > 1",
+                (dst_id,)).fetchall():
+            ident = tuple(row[i] for i in range(6))
+            con.execute(
+                "DELETE FROM pending_refs WHERE partition_id=? AND source_id=? AND linkage=? "
+                "AND target_name=? AND file=? AND line=?", ident)
+            con.execute(
+                "INSERT INTO pending_refs(partition_id, source_id, linkage, target_name, file, "
+                "line, ref, weight, detail, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (*ident, row[7], row[8], row[9], row[6]))
+        dropped = int(con.execute(
+            "SELECT count(*) FROM pending_refs pr WHERE pr.partition_id=? AND NOT EXISTS "
+            "(SELECT 1 FROM entities e WHERE e.id = pr.source_id)", (dst_id,)).fetchone()[0])
+        if dropped:
+            con.execute(
+                "DELETE FROM pending_refs WHERE partition_id=? AND source_id NOT IN "
+                "(SELECT id FROM entities)", (dst_id,))
+        return merged, dropped
+
     def merge_partition(
         self, src_name: str, dst_name: str, *, dry_run: bool = False,
         lock=None, chunk: int = 200, progress=None,
@@ -2024,6 +2122,10 @@ class Store:
                 "DELETE FROM tracked_files WHERE partition_id=?", (src_id,),
             )
 
+            # ---- pending_refs (bug-216 S2) -------------------------------
+            pending_merged, pending_dropped = self._merge_pending_refs(
+                con, src_id, dst_id, [(se, de) for se, de, _k, _n in collisions])
+
             # ---- on-disk side: vectors + fragments -----------------------
             import shutil as _shutil
             for base in (self.root / "vectors", self.fragments_dir):
@@ -2078,6 +2180,10 @@ class Store:
             "dry_run": False,
             # r2 #s2-1: the repair's counts and manifest path reach the caller.
             "fragments_repair": repair,
+            # bug-216 S2: SRC's pending refs now in DST; rows whose source
+            # entity is gone, deleted and counted.
+            "pending_refs_merged": pending_merged,
+            "pending_refs_dropped": pending_dropped,
         }
 
     def with_partition(self, name: str):
@@ -3829,33 +3935,45 @@ class Store:
             con.commit()
         return n
 
-    def _lance_for_purge(self, kind: str, n: int):
-        """`lance`, or None when the [dense] extra is not installed. A lance
-        that IS installed but fails to import (a missing transitive dependency
-        under `python -I`: `typing_inspection`) is a FAILURE, counted and
-        printed — it used to read as "not installed" and skip every vector
-        delete without a word (ch-bsd r7 #s-2)."""
+    def _lance_for_purge(self, kind: str, n: int, *, partition: "str | None" = None):
+        """`lance`, or None -- and None is ALWAYS a counted, printed failure.
+
+        Every caller asks only after finding the (partition, kind) table on
+        disk, so None means `n` rows are left behind. A lance that IS installed
+        but fails to import (a missing transitive dependency under `python -I`:
+        `typing_inspection`) is a failure (ch-bsd r7 #s-2); so is a lance that
+        is not installed at all (no [dense] extra) while the table exists --
+        written by an interpreter that had it, purged by one that does not.
+        That branch returned None in silence and both purge paths read it as
+        "nothing to delete" (bug-216 remedy r6 M1, ruling L103)."""
         import importlib.util
         if importlib.util.find_spec("lance") is None:
+            self._note_vector_delete_failure(kind, n, ModuleNotFoundError(
+                "lance is not installed (no [dense] extra) but the vector table exists"),
+                partition=partition)
             return None
         try:
             import lance
         except Exception as e:  # noqa: BLE001 — named and counted below
-            self._note_vector_delete_failure(kind, n, e)
+            self._note_vector_delete_failure(kind, n, e, partition=partition)
             return None
         return lance
 
-    def _note_vector_delete_failure(self, kind: str, n: int, exc: BaseException) -> None:
+    def _note_vector_delete_failure(self, kind: str, n: int, exc: BaseException, *,
+                                    partition: "str | None" = None) -> None:
         """A failed vector delete leaves `n` orphan vectors for purged ids. The
         catalog purge still proceeds (the row must go), so the failure is
         PRINTED with its remedy and COUNTED on `vector_delete_failures`, which
-        sync / prune / fold report (ch-bsd r7 #s-2: it was `except: pass`)."""
+        sync / prune / fold report (ch-bsd r7 #s-2: it was `except: pass`). The
+        message names the table, `<partition>/<kind>.lance` (default: the bound
+        partition), and says the rows were left behind."""
         import sys as _sys
+        part = partition or self._partition_name
         self.vector_delete_failures = getattr(self, "vector_delete_failures", 0) + n
         print(f"rmx: vector delete FAILED for {n} {kind} id(s) in partition "
-              f"{self._partition_name!r} ({type(exc).__name__}: {exc}); their vectors "
-              f"are orphaned until `rmx embed --gc` reaps them (which needs a "
-              f"working `import lance`)", file=_sys.stderr)
+              f"{part!r} (table {part}/{kind}.lance; {type(exc).__name__}: {exc}); "
+              f"their vector rows were left behind, orphaned until `rmx embed --gc` "
+              f"reaps them (which needs a working `import lance`)", file=_sys.stderr)
 
     def _drop_lance_for_purge(self, entity_id: int, kind: str) -> bool:
         """Drop entity_id's vector from its (partition, kind) Lance dataset.
@@ -3863,10 +3981,13 @@ class Store:
         corresponding dense vector instead of leaving an orphan for the next
         `embed --gc`.
 
-        Quiet only when there is nothing to delete: `lance` not installed (no
-        [dense] extra) or the dataset directory absent (kind never embedded in
-        this partition). Any other failure is printed and counted
-        (`_note_vector_delete_failure`) and the catalog purge proceeds.
+        Quiet only when there is nothing to delete: the dataset directory is
+        absent (kind never embedded in this partition). When the table exists,
+        every failure -- `lance` not installed (no [dense] extra), a lance that
+        will not import, a delete that raises -- is printed and counted
+        (`_note_vector_delete_failure`, via `_lance_for_purge` for the first
+        two) and the catalog purge proceeds (bug-216 remedy r6 M1: "`lance`
+        not installed" was wrongly listed as nothing to delete).
 
         Returns True when a delete was issued, False otherwise.
         """
@@ -3887,33 +4008,60 @@ class Store:
     def _drop_lance_for_purge_batch(
         self, ids_by_kind: "dict[str, list[int]]",
     ) -> int:
-        """Batched form of `_drop_lance_for_purge`: one Lance dataset open and
-        ONE delete per kind. Since bug-085 it is the only vector delete on file
-        re-sync, concept fold, noise prune and bulk memory forget. Same failure
-        semantics as the single-id variant: quiet only when there is nothing to
-        delete, otherwise printed and counted. Returns the number of ids whose
-        delete was issued."""
-        total = 0
-        for kind, ids in ids_by_kind.items():
-            if not ids:
+        """Batched form of `_drop_lance_for_purge`, in the BOUND partition: one
+        delete per kind (bug-085). Since bug-085 it is the only vector delete on
+        file re-sync, concept fold, noise prune and bulk memory forget. A failed
+        delete is printed and counted (`_note_vector_delete_failure`); quiet only
+        when there is nothing to delete. Returns the rows actually removed."""
+        return self._delete_vector_groups(
+            {(self._partition_name, kind): ids for kind, ids in ids_by_kind.items()})["deleted"]
+
+    def drop_vector_rows(self, rows: "Iterable") -> dict:
+        """Delete Lance vector rows named as `(partition, kind, id)`: ONE batched
+        delete per (partition, kind) table (bug-085). Returns `{"deleted": rows
+        actually removed, "tables": tables touched, "errors": [...]}`; a failed
+        table is named in `errors` and counted, never swallowed.
+
+        `replica_merge` (bug-216 remedy r3 M1 + r4, rulings L97 / L99) passes
+        the rows whose OWNER the merge changed (`merge_slots`' `vector_rows`):
+        both slots' tables at a fresh-moved id, the moved entity's table at its
+        fresh id, and the id an A loser vacated. The vector there was another
+        entity's; deleted, a dense read misses it until `rmx embed` (the merge
+        marks those ids unembedded) writes the right one."""
+        groups: "dict[tuple[str, str], list[int]]" = {}
+        for pname, kind, eid in rows:
+            groups.setdefault((str(pname), str(kind)), []).append(int(eid))
+        return self._delete_vector_groups(groups)
+
+    def _delete_vector_groups(self, groups: "dict[tuple[str, str], list[int]]") -> dict:
+        """The one executor behind both deletes above: per (partition, kind),
+        `vectors.delete_vector_rows` (THE IN-list delete). Failures named,
+        counted on `vector_delete_failures`, and returned."""
+        from refmatrix.vectors import delete_vector_rows
+        out: dict = {"deleted": 0, "tables": 0, "errors": []}
+        for (pname, kind), gids in sorted(groups.items()):
+            if not gids:
                 continue
-            path = (
-                self.root / "vectors" / self._partition_name
-                / f"{kind}.lance"
-            )
+            path = self.root / "vectors" / pname / f"{kind}.lance"
             if not path.exists():
                 continue
-            lance = self._lance_for_purge(kind, len(ids))
+            lance = self._lance_for_purge(kind, len(gids), partition=pname)
             if lance is None:
+                # The table EXISTS (checked above), so rows are left behind:
+                # printed and counted by `_lance_for_purge`, and named in
+                # `errors`, which the replica merge turns into
+                # `vector_delete_error` and a non-zero exit (bug-216 remedy r5 M1,
+                # ruling L101: r4 dropped this line and the skip went silent).
+                out["errors"].append(f"{pname}/{kind}.lance: lance unavailable; "
+                                     f"{len(gids)} vector(s) not deleted")
                 continue
             try:
-                ds = lance.dataset(str(path))
-                in_list = ",".join(str(int(i)) for i in ids)
-                ds.delete(f"id IN ({in_list})")
-                total += len(ids)
-            except Exception as e:  # noqa: BLE001 — named and counted
-                self._note_vector_delete_failure(kind, len(ids), e)
-        return total
+                out["deleted"] += delete_vector_rows(lance, path, gids)
+                out["tables"] += 1
+            except Exception as e:  # noqa: BLE001 — named, counted and returned
+                self._note_vector_delete_failure(kind, len(gids), e, partition=pname)
+                out["errors"].append(f"{pname}/{kind}.lance: {type(e).__name__}: {e}")
+        return out
 
     def _pending_embeddings_where(
         self, kinds: "list[str] | None",
@@ -4599,13 +4747,9 @@ class Store:
         if id_map:
             remapped: dict = {}
             for key, bm in old.items():
-                out = BitMap64()
-                for bit in bm:
-                    c, e = bit >> _CONCEPT_SHIFT, bit & mask
-                    nb = self._pack(id_map.get(c, c), id_map.get(e, e))
-                    remapped_bits += nb != bit     # r5 #s5-2: visible; overlaps kept/moved, pre-dedup
-                    out.add(nb)
-                remapped[key] = out
+                # r5 #s5-2: visible; overlaps kept/moved, pre-dedup
+                remapped[key], n = remap_fragment(bm, id_map)
+                remapped_bits += n
             old_for_change = old
             old = remapped
         else:
@@ -5670,18 +5814,48 @@ class Store:
                     _sa = self.get_linkage_id("same_as")
                 except Exception:
                     pass
+                # `denotes` is NOT a hop (bug-216 R9, 2026-11-13): a path-less
+                # concept and the doc it denotes are one node to the walk, so
+                # the edge is crossed at zero cost by `_close` below -- never
+                # counted against RMX_EXPAND_HOPS, never decayed. As a counted
+                # hop, a doc whose only in-edge is a misbound `[[doc-id]]`
+                # (bsd-215m1: 1,909+ live rows) sat one hop further than its
+                # citer meant, and fell out of every hops=1 walk.
+                _den = self._denotes_lid()
                 _lex_order = [e for e, _ in sorted(
                     scores.items(), key=lambda kv: (-kv[1], kv[0]))]
                 _frontier = _lex_order[:_nseed]
                 _seen = set(scores)
                 _walk_order: list[int] = []
+                # zero-cost member -> the walked id it stands in for
+                _origin: dict[int, int] = {}
+
+                def _close(ids: list[int]) -> list[int]:
+                    if _den is None or not ids:
+                        return []
+                    eq = self.denotes_equivalents(ids)
+                    added: list[int] = []
+                    for x in ids:
+                        for q in sorted(eq.get(x, ())):
+                            if q in _seen:
+                                continue
+                            _seen.add(q)
+                            added.append(q)
+                            _walk_order.append(q)
+                            _origin[q] = _origin.get(x, x)
+                            if _mode == "decay":
+                                scores[q] = scores.get(_origin[q], 0.0)
+                    return added
+
+                _frontier = _frontier + _close(_frontier)
                 _w = 1.0
                 for _ in range(_hops):
                     _w *= 0.3
                     if not _frontier:
                         break
                     _fp = ",".join("?" * len(_frontier))
-                    _skip = [mlid] + ([_sa] if _sa is not None else [])
+                    _skip = [mlid] + ([_sa] if _sa is not None else []) \
+                        + ([_den] if _den is not None else [])
                     _sp = ",".join("?" * len(_skip))
                     # Bidirectional: a typed edge is stored (target, source),
                     # so a document is reachable from either slot.
@@ -5694,6 +5868,7 @@ class Store:
                     _next = []
                     for _a, _b in _rows:
                         for _cand, _src in ((int(_a), int(_b)), (int(_b), int(_a))):
+                            _src = _origin.get(_src, _src)
                             if _cand in _seen or _src not in scores:
                                 continue
                             _seen.add(_cand)
@@ -5701,7 +5876,7 @@ class Store:
                             _walk_order.append(_cand)
                             if _mode == "decay":
                                 scores[_cand] = scores.get(_src, 0.0) * _w
-                    _frontier = _next
+                    _frontier = _next + _close(_next)
                 if _mode != "decay" and _walk_order:
                     # Scale-free: fuse the lexical ranking with the walk order
                     # as two RANKED LISTS. No constant has to claim what a hop
@@ -5775,6 +5950,285 @@ class Store:
                     **edge_fields(linkage, cn[0], cn[1], en[0], en[1],
                                   file=file, line=line, span_end=span_end, detail=detail),
                 )
+
+    def clear_rel_evidence(self, file: str) -> int:
+        """Delete the GMD `rel:` evidence rows (`detail` = `rel: <verb> -> ...`)
+        recorded for `file`, active partition's entities only, and return how
+        many went. The GMD ingest calls it before it re-derives a changed doc's
+        `rel:` lines (bug-216 R10, 2026-11-13): `add_evidence` appends, so a
+        re-ingest -- or a pending line resolved earlier and then re-resolved by
+        the edit -- wrote a second row for the same line, and every count over
+        evidence (the R5/R8 recount) double-counted it."""
+        con = self._connect()
+        n = con.execute(
+            "SELECT count(*) FROM linkage_evidence le JOIN entities e "
+            "ON e.id = le.concept_id WHERE le.file = ? AND le.detail LIKE 'rel: %' "
+            "AND e.partition_id = ?", (file, self._partition_id)).fetchone()[0]
+        if n:
+            con.execute(
+                "DELETE FROM linkage_evidence WHERE file = ? AND detail LIKE 'rel: %' "
+                "AND concept_id IN (SELECT id FROM entities WHERE partition_id = ?)",
+                (file, self._partition_id))
+            self._maybe_commit(con)
+        # Logged whether or not rows went (bug-216 R13): a replay applies it in
+        # log order against the `evidence` events, so a log that carries more
+        # than this catalog did still converges on one row per `rel:` line.
+        self._log_event("rel_evidence_clear", partition=self._partition_name, file=file)
+        return int(n)
+
+    # ---- pending `rel:` references (bug-216 R10) ----------------------------
+
+    def add_pending_ref(self, source_id: int, linkage: str, target_name: str, *,
+                        ref: str, file: str, line: int, weight: "float | None" = None,
+                        detail: "str | None" = None) -> bool:
+        """Record one unresolved `rel:` line of `source_id` (active partition).
+        Returns False when the same (source, verb, target, file, line) row is
+        already recorded -- the table stays duplicate-free without a key."""
+        linkage = _canonical_verb(linkage)
+        con = self._connect()
+        if con.execute(
+                "SELECT 1 FROM pending_refs WHERE partition_id=? AND source_id=? "
+                "AND linkage=? AND target_name=? AND file=? AND line=?",
+                (self._partition_id, source_id, linkage, target_name, file, line),
+        ).fetchone() is not None:
+            return False
+        con.execute(
+            "INSERT INTO pending_refs(partition_id, source_id, linkage, target_name, ref, "
+            "file, line, weight, detail, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (self._partition_id, source_id, linkage, target_name, ref, file, line,
+             weight, detail, time.time()))
+        self._maybe_commit(con)
+        self._log_pending("pending_ref", source_id, linkage, target_name, file, line,
+                          ref=ref, weight=weight, detail=detail)
+        return True
+
+    def _log_pending(self, op: str, source_id: int, linkage: str, target_name: str,
+                     file: str, line: int, **extra) -> None:
+        """One pending-ref facts.log event (bug-216 R13), its source named by
+        (kind, name) -- never by id -- and partition-qualified, like every
+        replayable event. A source with no name (already gone) logs nothing:
+        replay could not place the row either."""
+        if self._replay_mode or not _log_enabled():
+            return
+        sn = self._name_of(source_id)
+        if not sn:
+            return
+        self._log_event(op, partition=self._partition_name, s_kind=sn[0], s=sn[1],
+                        linkage=linkage, target_name=target_name, file=file, line=line,
+                        **extra)
+
+    def clear_pending_refs_for_file(self, file: str) -> int:
+        """Drop the active partition's pending rows recorded from `file`: the
+        GMD ingest is about to re-derive that file's `rel:` lines, so its old
+        rows describe a version of the file that is gone."""
+        con = self._connect()
+        n = con.execute("SELECT count(*) FROM pending_refs WHERE partition_id=? AND file=?",
+                        (self._partition_id, file)).fetchone()[0]
+        if n:
+            con.execute("DELETE FROM pending_refs WHERE partition_id=? AND file=?",
+                        (self._partition_id, file))
+            self._maybe_commit(con)
+        # Logged whether or not rows went, as `rel_evidence_clear` is (R13).
+        self._log_event("pending_refs_clear", partition=self._partition_name, file=file)
+        return int(n)
+
+    def pending_refs_for(self, names: "Iterable[str]") -> "list[dict]":
+        """The active partition's pending rows whose `target_name` is in
+        `names`. The table is the unresolved residue, so it is read whole and
+        filtered here rather than with an N-way IN list."""
+        want = set(names)
+        if not want:
+            return []
+        rows = self._connect().execute(
+            "SELECT source_id, linkage, target_name, ref, file, line, weight, detail "
+            "FROM pending_refs WHERE partition_id=?", (self._partition_id,)).fetchall()
+        return [{"source_id": int(r[0]), "linkage": r[1], "target_name": r[2],
+                 "ref": r[3], "file": r[4], "line": int(r[5]), "weight": r[6],
+                 "detail": r[7]} for r in rows if r[2] in want]
+
+    def delete_pending_ref(self, row: dict) -> None:
+        """Delete one pending row (as returned by `pending_refs_for`)."""
+        # Named BEFORE the delete: a row dropped because its source is gone
+        # logs nothing (`_log_pending`), and replay drops it with the source's
+        # tombstone instead.
+        self._log_pending("pending_ref_delete", row["source_id"], row["linkage"],
+                          row["target_name"], row["file"], row["line"])
+        con = self._connect()
+        con.execute(
+            "DELETE FROM pending_refs WHERE partition_id=? AND source_id=? AND linkage=? "
+            "AND target_name=? AND file=? AND line=?",
+            (self._partition_id, row["source_id"], row["linkage"], row["target_name"],
+             row["file"], row["line"]))
+        self._maybe_commit(con)
+
+    def entity_exists(self, entity_id: int) -> bool:
+        return self._connect().execute(
+            "SELECT 1 FROM entities WHERE id=?", (entity_id,)).fetchone() is not None
+
+    # ---- `denotes`: path-less concept -> the doc / memory it names (bug-216 R7) --
+
+    def _denotes_lid(self) -> "int | None":
+        try:
+            return self.get_linkage_id(DENOTES)
+        except KeyError:
+            return None
+
+    def denotes_equivalents(self, ids: "Iterable[int]") -> "dict[int, set[int]]":
+        """For each id in `ids`, the ids one `denotes` edge away in EITHER
+        direction (a concept -> the docs/memories it denotes; a doc/memory ->
+        the concepts denoting it). The walkers treat these as the same node
+        (bug-216 R9): a zero-cost hop, never counted, never decayed. Empty when
+        the store has no `denotes` linkage yet."""
+        ids = [int(i) for i in ids]
+        lid = self._denotes_lid() if ids else None
+        out: dict[int, set[int]] = {}
+        if lid is None:
+            return out
+        con = self._connect()
+        want = set(ids)
+        CHUNK = 450
+        if len(ids) > CHUNK:
+            # A wide frontier (a depth-2 `neighbors` walk off a hub): the
+            # `denotes` set is small -- one row per misbound concept -- so one
+            # read of it beats hundreds of IN-list queries.
+            pairs = con.execute(
+                "SELECT concept_id, entity_id FROM entity_links WHERE linkage_id=?",
+                (lid,)).fetchall()
+        else:
+            ph = ",".join("?" * len(ids))
+            pairs = con.execute(
+                f"SELECT concept_id, entity_id FROM entity_links WHERE linkage_id=? "
+                f"AND (concept_id IN ({ph}) OR entity_id IN ({ph}))",
+                (lid, *ids, *ids)).fetchall()
+        for c, e in pairs:
+            c, e = int(c), int(e)
+            if c in want:
+                out.setdefault(c, set()).add(e)
+            if e in want:
+                out.setdefault(e, set()).add(c)
+        return out
+
+    def link_denotes(self, names: "Iterable[str] | None" = None) -> dict:
+        """Link every PATH-LESS concept named after an ingested doc or memory id
+        (and the concept's spelling variants) to that doc/memory with a
+        `denotes` edge, active partition. `names` None = every doc/memory id in
+        the partition (the one-time derive op, `OPS["denotes_link"]`); else only
+        those ids (GMD ingest, for the ids it just wrote or the concepts it just
+        minted). Idempotent. Returns `{added, concepts, targets, multi_target}`
+        -- `multi_target` counts concepts that name BOTH a doc and a memory
+        (each is linked to both; spec #r7-denotes (c)).
+
+        WHY (bug-216 rev 3, 2026-11-13). A bare `[[doc-id]]` used to bind a
+        same-named path-less concept (minted by a plain wikilink mention, by
+        title terms, by extraction), so 1,909+ live `rel:` rows reach only
+        other citers of that concept, never the doc. R6 stops new ones; this
+        edge repairs the existing ones and covers every producer that will
+        ever mint such a concept, without rewriting any edge. NOT `same_as`:
+        the typed-edge walk excludes `same_as` by design (variant aliasing, not
+        a relation), and the walkers must cross this hop.
+
+        Variants: the concept's `same_as` group AND the names `_concept_variants`
+        spells (`b-doc` / `b_doc` / `b doc`). The names are read too because a
+        sync batch buffers its `same_as` links until it commits, so a concept
+        minted in the same batch has no visible group yet."""
+        con = self._connect()
+        pid = self._partition_id
+        if names is None:
+            trows = con.execute(
+                "SELECT id, name FROM entities WHERE partition_id=? AND kind IN ('doc','memory')",
+                (pid,)).fetchall()
+        else:
+            nl = sorted({str(n) for n in names if n})
+            trows = []
+            CH = 450
+            for i in range(0, len(nl), CH):
+                part = nl[i:i + CH]
+                trows += con.execute(
+                    f"SELECT id, name FROM entities WHERE partition_id=? "
+                    f"AND kind IN ('doc','memory') AND name IN ({','.join('?' * len(part))})",
+                    (pid, *part)).fetchall()
+        targets: dict[str, set[int]] = {}
+        for tid, tname in trows:
+            targets.setdefault(str(tname), set()).add(int(tid))
+        if not targets:
+            return {"added": 0, "concepts": 0, "targets": 0, "multi_target": 0}
+        # spelling -> the target names it stands for
+        spell: dict[str, set[str]] = {}
+        for tname in targets:
+            canonical, variants = _concept_variants(tname)
+            for v in {tname, canonical, *variants}:
+                spell.setdefault(v, set()).add(tname)
+        concept_for: dict[int, set[str]] = {}
+        sl = sorted(spell)
+        CH = 450
+        for i in range(0, len(sl), CH):
+            part = sl[i:i + CH]
+            for cid, cname in con.execute(
+                    f"SELECT id, name FROM entities WHERE partition_id=? AND kind='concept' "
+                    f"AND path IS NULL AND name IN ({','.join('?' * len(part))})",
+                    (pid, *part)).fetchall():
+                concept_for.setdefault(int(cid), set()).update(spell[str(cname)])
+        # the concepts' same_as groups (two hops: variant -> canonical -> variants)
+        try:
+            sa = self.get_linkage_id("same_as")
+        except KeyError:
+            sa = None
+        frontier = list(concept_for)
+        for _hop in range(2):
+            if sa is None or not frontier:
+                break
+            nxt: list[int] = []
+            for i in range(0, len(frontier), CH):
+                part = frontier[i:i + CH]
+                ph = ",".join("?" * len(part))
+                for c, e in con.execute(
+                        f"SELECT el.concept_id, el.entity_id FROM entity_links el "
+                        f"JOIN entities x ON x.id = el.concept_id "
+                        f"JOIN entities y ON y.id = el.entity_id "
+                        f"WHERE el.linkage_id=? AND (el.concept_id IN ({ph}) "
+                        f"OR el.entity_id IN ({ph})) "
+                        f"AND x.kind='concept' AND x.path IS NULL AND x.partition_id=? "
+                        f"AND y.kind='concept' AND y.path IS NULL AND y.partition_id=?",
+                        (sa, *part, *part, pid, pid)).fetchall():
+                    c, e = int(c), int(e)
+                    for a, b in ((c, e), (e, c)):
+                        if a in concept_for and b not in concept_for:
+                            concept_for[b] = set(concept_for[a])
+                            nxt.append(b)
+                        elif a in concept_for:
+                            concept_for[b] |= concept_for[a]
+            frontier = nxt
+        want: set[tuple[int, int]] = set()
+        multi = 0
+        for cid, tnames in concept_for.items():
+            tids = {t for n in tnames for t in targets.get(n, ())}
+            if len(tids) > 1:
+                multi += 1
+            for t in tids:
+                if t != cid:
+                    want.add((cid, t))
+        if not want:
+            return {"added": 0, "concepts": 0, "targets": len(targets), "multi_target": 0}
+        lid = self._denotes_lid()
+        have: set[tuple[int, int]] = set()
+        if lid is None:
+            self.add_linkage_type(
+                DENOTES, directed=True,
+                description="path-less concept denotes the doc/memory its name is the id of "
+                            "(bug-216 R7)")
+        else:
+            cl = sorted({c for c, _t in want})
+            for i in range(0, len(cl), CH):
+                part = cl[i:i + CH]
+                have |= {(int(c), int(e)) for c, e in con.execute(
+                    f"SELECT concept_id, entity_id FROM entity_links WHERE linkage_id=? "
+                    f"AND concept_id IN ({','.join('?' * len(part))})",
+                    (lid, *part)).fetchall()}
+        add = sorted(want - have)
+        for cid, tid in add:
+            self.link(DENOTES, cid, tid)
+        return {"added": len(add), "concepts": len({c for c, _t in want}),
+                "targets": len(targets), "multi_target": multi}
 
     def get_evidence(
         self, entity_id: int, linkage: str | None = None, concept_id: int | None = None
@@ -6245,6 +6699,9 @@ class Store:
         con.execute("DELETE FROM entity_links WHERE concept_id=?", (entity_id,))
         con.execute("DELETE FROM entities WHERE id=?", (entity_id,))
         con.execute("DELETE FROM concepts WHERE id=?", (entity_id,))
+        # A purged citer's unresolved `rel:` lines go with it (bug-216 R10): a
+        # later ingest of their target must not write an edge from a dead id.
+        con.execute("DELETE FROM pending_refs WHERE source_id=?", (entity_id,))
         # Memory sidecar (no-op for non-memory rows; sqlite has FK CASCADE
         # set but the daemon does not turn PRAGMA foreign_keys on, and
         # DuckDB's memory_content has no FK clause at all — so the explicit
@@ -7911,6 +8368,7 @@ class Store:
         counts = {
             "entity": 0, "protect": 0, "noise": 0, "memory_content": 0,
             "link": 0, "evidence": 0, "track": 0, "linkage_type": 0,
+            "pending_ref": 0,
         }
         default_linkages = {row[0] for row in DEFAULT_LINKAGES}
         # Stream into a temp file then atomic-rename so a crash mid-dump
@@ -8047,6 +8505,26 @@ class Store:
                                      span_end=row["span_end"], detail=row["detail"]),
                     })
                     counts["evidence"] += 1
+
+                # Pending `rel:` refs (bug-216 R13): a compaction must not drop
+                # the dangling refs that bind when their target is ingested.
+                for row in con.execute(
+                    "SELECT s.kind AS s_kind, s.name AS s_name, pr.linkage, "
+                    "       pr.target_name, pr.ref, pr.file, pr.line, pr.weight, "
+                    "       pr.detail, pr.created_at AS ts "
+                    "FROM pending_refs pr JOIN entities s ON s.id = pr.source_id "
+                    "WHERE pr.partition_id=? "
+                    "ORDER BY pr.created_at, s.name, pr.file, pr.line",
+                    (pid,),
+                ):
+                    emit({
+                        "ts": row["ts"], "op": "pending_ref", "partition": pname,
+                        "s_kind": row["s_kind"], "s": row["s_name"],
+                        "linkage": row["linkage"], "target_name": row["target_name"],
+                        "ref": row["ref"], "file": row["file"], "line": row["line"],
+                        "weight": row["weight"], "detail": row["detail"],
+                    })
+                    counts["pending_ref"] += 1
 
                 for row in con.execute(
                     "SELECT path, mtime, last_synced FROM tracked_files "
@@ -8277,8 +8755,12 @@ class Store:
         - LINK/UNLINK: OR-Set with tombstones — for each
           (linkage, c, e_kind, e), keep the event with the largest ts
         - TRACK/UNTRACK: LWW per-path
-        - EVIDENCE: replayed unconditionally (idempotent in practice — the
-          source-side ingester writes the same evidence each scan)
+        - EVIDENCE: replayed in log order, together with `rel_evidence_clear`
+          (bug-216 R13): a clear drops the `rel:` evidence its partition holds
+          for that file so far, exactly as `Store.clear_rel_evidence` did
+        - PENDING REFS (bug-216 R13): `pending_ref` / `pending_ref_delete` /
+          `pending_refs_clear` and the `tombstone` of a source applied in log
+          order; the surviving rows whose source survives are written
         """
         if not self.log_path.exists():
             raise FileNotFoundError(self.log_path)
@@ -8324,6 +8806,8 @@ class Store:
         link_state: dict[tuple, tuple[float, str, float | None]] = {}
         track_state: dict[tuple[str, str], tuple[float, str, float | None]] = {}
         evidence_events: list[dict] = []
+        # bug-216 R13: pending rows by identity, folded in log order.
+        pending_state: dict[tuple, dict] = {}
         # Memory bodies, LWW by (partition, entity name).
         memory_content_lww: dict[tuple[str, str], tuple[float, dict]] = {}
         # Linkage types referenced anywhere in the log (partition-independent).
@@ -8364,6 +8848,28 @@ class Store:
                 key = (part, ev["kind"], ev["name"])
                 if ts > tombstone_ts.get(key, -1):
                     tombstone_ts[key] = ts
+                # `purge_entity` deletes the purged source's pending rows.
+                for pk in [k for k in pending_state if k[:3] == key]:
+                    del pending_state[pk]
+            elif op in ("pending_ref", "pending_ref_delete"):
+                pk = (part, ev["s_kind"], ev["s"], ev["linkage"], ev["target_name"],
+                      ev["file"], int(ev["line"]))
+                if op == "pending_ref":
+                    pending_state[pk] = ev
+                else:
+                    pending_state.pop(pk, None)
+            elif op == "pending_refs_clear":
+                for pk in [k for k in pending_state
+                           if k[0] == part and k[5] == ev["file"]]:
+                    del pending_state[pk]
+            elif op == "rel_evidence_clear":
+                # Same predicate as `clear_rel_evidence`: this partition's
+                # `rel:` evidence for the file, as of this point in the log.
+                f_ = ev["file"]
+                evidence_events = [
+                    x for x in evidence_events
+                    if not ((x.get("partition") or dpart) == part and x.get("file") == f_
+                            and str(x.get("detail") or "").startswith("rel: "))]
             elif op == "protect":
                 key = (part, ev["kind"], ev["name"])
                 prev = protect_lww.get(key)
@@ -8448,6 +8954,7 @@ class Store:
             "links_unresolved": links_unresolved,
             "evidence_unresolved": evidence_unresolved,
             "links_skipped_dead": 0, "evidence_skipped_dead": 0,
+            "pending_refs": 0, "pending_refs_skipped_dead": 0,
         }
         self._replay_mode = True
         try:
@@ -8529,6 +9036,19 @@ class Store:
                         )
                         counts["evidence"] += 1
 
+                    for pk, pev in pending_state.items():
+                        if pk[0] != pname:
+                            continue
+                        sid = name_to_id.get((pk[1], pk[2]))
+                        if sid is None:
+                            counts["pending_refs_skipped_dead"] += 1
+                            continue
+                        self.add_pending_ref(
+                            sid, pev["linkage"], pev["target_name"], ref=pev["ref"],
+                            file=pev["file"], line=int(pev["line"]),
+                            weight=pev.get("weight"), detail=pev.get("detail"))
+                        counts["pending_refs"] += 1
+
                     for key, (_, op, mtime) in track_state.items():
                         if key[0] != pname:
                             continue
@@ -8565,4 +9085,6 @@ class Store:
             "evidence_unresolved": counts["evidence_unresolved"],
             "links_skipped_dead": counts["links_skipped_dead"],
             "evidence_skipped_dead": counts["evidence_skipped_dead"],
+            "pending_refs": counts["pending_refs"],
+            "pending_refs_skipped_dead": counts["pending_refs_skipped_dead"],
         }

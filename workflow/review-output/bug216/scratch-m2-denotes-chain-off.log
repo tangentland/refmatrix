@@ -1,0 +1,19 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/l86/src/refmatrix as checked-hash (bug-037)
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+____________ test_m1_build_context_crosses_denotes_for_typed_edges _____________
+
+walk = {'b': 4, 'c': 23, 'cite': 3, 'root': PosixPath('/private/tmp/b216r9k589pvx/proj/.refmatrix'), ...}
+
+    def test_m1_build_context_crosses_denotes_for_typed_edges(walk):
+        """R9 / M1a: B's context lists A's `#cite` — reached only through the concept that
+        denotes B, by its typed `derives-from` in-edge."""
+        got = _context_ids(walk)
+>       assert walk["cite"] in got, f"the typed edge through `denotes` is missing: {got}"
+E       AssertionError: the typed edge through `denotes` is missing: {1: {'mentions'}, 2: {'mentions'}, 5: {'mentions', 'part-of'}, 8: {'mentions'}, 10: {'mentions'}, 9: {'mentions'}, 23: {'denotes'}, 6: {'content'}}
+E       assert 3 in {1: {'mentions'}, 2: {'mentions'}, 5: {'mentions', 'part-of'}, 6: {'content'}, ...}
+
+tests/test_bug216_remedy_r1.py:505: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r1.py::test_m1_build_context_crosses_denotes_for_typed_edges
+1 failed, 1 passed, 17 deselected in 1.13s

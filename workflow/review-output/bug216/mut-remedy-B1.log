@@ -1,0 +1,147 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/f0521bff-0006-479a-9e0f-6df02d50937e/scratchpad/mut216/refmatrix/src/refmatrix as checked-hash (bug-037)
+FFF................F.                                                    [100%]
+=================================== FAILURES ===================================
+_____ test_b1_cli_ingest_of_a_memdir_under_the_project_stores_no_doc_rows ______
+
+b1 = {'claude': PosixPath('/private/tmp/b216r0jogf4k4/proj/.claude'), 'mem': PosixPath('/private/tmp/b216r0jogf4k4/proj/.cl... 'proj': PosixPath('/private/tmp/b216r0jogf4k4/proj'), 'root': PosixPath('/private/tmp/b216r0jogf4k4/proj/.refmatrix')}
+
+    def test_b1_cli_ingest_of_a_memdir_under_the_project_stores_no_doc_rows(b1):
+        """`rmx ingest <proj>/.claude/projects/x/memory` (daemon down: the CLI's in-process branch).
+        Judged against the project root, every path carries `.claude`."""
+        r = CliRunner().invoke(cli_mod.main, ["ingest", str(b1["mem"])], catch_exceptions=False)
+        assert r.exit_code == 0, r.output
+>       _assert_no_rows_under(b1["root"], b1["claude"], "rmx ingest <memdir>")
+
+tests/test_bug216_remedy_r1.py:141: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/b216r0jogf4k4/proj/.refmatrix')
+under = PosixPath('/private/tmp/b216r0jogf4k4/proj/.claude')
+what = 'rmx ingest <memdir>'
+
+    def _assert_no_rows_under(root: Path, under: Path, what: str) -> None:
+        rows = _rows_under(root, under)
+        docs = [r for r in rows if r[0] == "doc"]
+>       assert docs == [], f"{what}: kind=doc rows from under {under.name}/: {docs}"
+E       AssertionError: rmx ingest <memdir>: kind=doc rows from under .claude/: [('doc', 'feedback/feedback_b.md'), ('doc', 'feedback_a'), ('doc', 'feedback_a.md'), ('doc', 'feedback_b')]
+E       assert [('doc', 'fee...'feedback_b')] == []
+E         
+E         Left contains 4 more items, first extra item: ('doc', 'feedback/feedback_b.md')
+E         Use -v to get more diff
+
+tests/test_bug216_remedy_r1.py:132: AssertionError
+_____________ test_b1_cli_ingest_of_dot_claude_stores_no_doc_rows ______________
+
+b1 = {'claude': PosixPath('/private/tmp/b216rnfzvifsu/proj/.claude'), 'mem': PosixPath('/private/tmp/b216rnfzvifsu/proj/.cl... 'proj': PosixPath('/private/tmp/b216rnfzvifsu/proj'), 'root': PosixPath('/private/tmp/b216rnfzvifsu/proj/.refmatrix')}
+
+    def test_b1_cli_ingest_of_dot_claude_stores_no_doc_rows(b1):
+        r = CliRunner().invoke(cli_mod.main, ["ingest", str(b1["claude"])], catch_exceptions=False)
+        assert r.exit_code == 0, r.output
+>       _assert_no_rows_under(b1["root"], b1["claude"], "rmx ingest <proj>/.claude")
+
+tests/test_bug216_remedy_r1.py:147: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/b216rnfzvifsu/proj/.refmatrix')
+under = PosixPath('/private/tmp/b216rnfzvifsu/proj/.claude')
+what = 'rmx ingest <proj>/.claude'
+
+    def _assert_no_rows_under(root: Path, under: Path, what: str) -> None:
+        rows = _rows_under(root, under)
+        docs = [r for r in rows if r[0] == "doc"]
+>       assert docs == [], f"{what}: kind=doc rows from under {under.name}/: {docs}"
+E       AssertionError: rmx ingest <proj>/.claude: kind=doc rows from under .claude/: [('doc', 'agent-x'), ('doc', 'agents/x.md'), ('doc', 'feedback_a'), ('doc', 'feedback_b'), ('doc', 'projects/x/memory/feedback/feedback_b.md'), ('doc', 'projects/x/memory/feedback_a.md')]
+E       assert [('doc', 'age...edback_a.md')] == []
+E         
+E         Left contains 6 more items, first extra item: ('doc', 'agent-x')
+E         Use -v to get more diff
+
+tests/test_bug216_remedy_r1.py:132: AssertionError
+____________ test_b1_mcp_rmx_ingest_of_a_memdir_stores_no_doc_rows _____________
+
+b1 = {'claude': PosixPath('/private/tmp/b216r48a9jzcb/proj/.claude'), 'mem': PosixPath('/private/tmp/b216r48a9jzcb/proj/.cl... 'proj': PosixPath('/private/tmp/b216r48a9jzcb/proj'), 'root': PosixPath('/private/tmp/b216r48a9jzcb/proj/.refmatrix')}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x112c61490>
+
+    def test_b1_mcp_rmx_ingest_of_a_memdir_stores_no_doc_rows(b1, monkeypatch):
+        """MCP `rmx_ingest(path=<memdir>)`, the REAL `_op_ingest_path` on an in-process daemon. The
+        transport fake answers `ingest_path_start` by running the op body synchronously (the
+        detached job runs the same `_op_ingest_path`)."""
+        import refmatrix.mcp as mcp
+        d = daemon_mod.Daemon(b1["root"])
+        d.store = _open(b1["root"])
+    
+        def _call(root, op, args, **kw):
+            if op == "ingest_path_start":
+                daemon_mod._op_ingest_path(d, dict(args))
+                return {"ok": True, "result": {"job_id": "sync", "status": "done"}}
+            return {"ok": True, "result": daemon_mod.OPS[op](d, dict(args))}
+        monkeypatch.setattr(verbs, "require_daemon", lambda *a, **k: None)
+        monkeypatch.setattr(daemon_mod, "call", _call)
+        try:
+            res = mcp.TOOLS["rmx_ingest"]["fn"]({"root": str(b1["root"]), "path": str(b1["mem"])})
+            assert "error" not in res, res
+        finally:
+            d.store.close()
+>       _assert_no_rows_under(b1["root"], b1["claude"], "MCP rmx_ingest(<memdir>)")
+
+tests/test_bug216_remedy_r1.py:170: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/b216r48a9jzcb/proj/.refmatrix')
+under = PosixPath('/private/tmp/b216r48a9jzcb/proj/.claude')
+what = 'MCP rmx_ingest(<memdir>)'
+
+    def _assert_no_rows_under(root: Path, under: Path, what: str) -> None:
+        rows = _rows_under(root, under)
+        docs = [r for r in rows if r[0] == "doc"]
+>       assert docs == [], f"{what}: kind=doc rows from under {under.name}/: {docs}"
+E       AssertionError: MCP rmx_ingest(<memdir>): kind=doc rows from under .claude/: [('doc', 'feedback/feedback_b.md'), ('doc', 'feedback_a'), ('doc', 'feedback_a.md'), ('doc', 'feedback_b')]
+E       assert [('doc', 'fee...'feedback_b')] == []
+E         
+E         Left contains 4 more items, first extra item: ('doc', 'feedback/feedback_b.md')
+E         Use -v to get more diff
+
+tests/test_bug216_remedy_r1.py:132: AssertionError
+___ test_l86_ingest_of_dot_claude_lands_exactly_the_builtin_included_profile ___
+
+base = PosixPath('/private/tmp/b216rkb81nra2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x112c454d0>
+
+    def test_l86_ingest_of_dot_claude_lands_exactly_the_builtin_included_profile(base, monkeypatch):
+        proj = base / "proj"
+        _write(proj, "docs/d.md", _gmd("d"))
+        _write(proj, ".claude/PROJECT_PROFILE.md", PROFILE_MD)
+        _write(proj, ".claude/agents/x.md", _gmd("agent-x"))
+        _write(proj, f"{MEM}/feedback_a.md", _gmd("feedback_a", extra_fm="metadata:\n  type: feedback\n"))
+        root = proj / ".refmatrix"
+        _new_store(root)
+        _point_cli_at(monkeypatch, root)
+        r = CliRunner().invoke(cli_mod.main, ["ingest", str(proj / ".claude")], catch_exceptions=False)
+        assert r.exit_code == 0, r.output
+        # "Exactly the profile" is judged by FILE: `ingest_path` also writes a relpath twin doc row
+        # for every markdown file it walks (`rmx ingest <proj>` gives both `docs/d.md` and `d`,
+        # measured 2026-11-14) — pre-existing, not bug-216's, so the twin is allowed; any doc row
+        # from another file under `.claude/` is not.
+        prof = (proj / ".claude" / "PROJECT_PROFILE.md").resolve()
+        s = _open(root)
+        try:
+            rows = [(str(k), str(n), str(Path(pth).resolve())) for k, n, pth in s._connect().execute(
+                "SELECT kind, name, path FROM entities WHERE kind = 'doc' AND path IS NOT NULL")
+                .fetchall() if str(Path(pth).resolve()).startswith(str(proj / ".claude") + "/")]
+        finally:
+            s.close()
+        others = sorted({(n, pth) for _k, n, pth in rows if pth != str(prof)})
+>       assert others == [], f"`rmx ingest <proj>/.claude` landed doc rows from other files: {others}"
+E       AssertionError: `rmx ingest <proj>/.claude` landed doc rows from other files: [('agent-x', '/private/tmp/b216rkb81nra2/proj/.claude/agents/x.md'), ('agents/x.md', '/private/tmp/b216rkb81nra2/proj/.claude/agents/x.md'), ('feedback_a', '/private/tmp/b216rkb81nra2/proj/.claude/projects/x/memory/feedback_a.md'), ('projects/x/memory/feedback_a.md', '/private/tmp/b216rkb81nra2/proj/.claude/projects/x/memory/feedback_a.md')]
+E       assert [('agent-x', ...edback_a.md')] == []
+E         
+E         Left contains 4 more items, first extra item: ('agent-x', '/private/tmp/b216rkb81nra2/proj/.claude/agents/x.md')
+E         Use -v to get more diff
+
+tests/test_bug216_remedy_l86.py:78: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r1.py::test_b1_cli_ingest_of_a_memdir_under_the_project_stores_no_doc_rows
+FAILED tests/test_bug216_remedy_r1.py::test_b1_cli_ingest_of_dot_claude_stores_no_doc_rows
+FAILED tests/test_bug216_remedy_r1.py::test_b1_mcp_rmx_ingest_of_a_memdir_stores_no_doc_rows
+FAILED tests/test_bug216_remedy_l86.py::test_l86_ingest_of_dot_claude_lands_exactly_the_builtin_included_profile
+4 failed, 17 passed in 14.68s

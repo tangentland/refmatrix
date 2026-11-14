@@ -1,0 +1,25 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/mut2/refmatrix/src/refmatrix as checked-hash (bug-037)
+...F.......                                                              [100%]
+=================================== FAILURES ===================================
+___________ test_b2a_a_fresh_id_move_keeps_each_memory_its_own_body ____________
+
+base = PosixPath('/private/tmp/b216qkniaua4u')
+
+    def test_b2a_a_fresh_id_move_keeps_each_memory_its_own_body(base):
+        pair = _slot_pair(base)
+        _merge(pair)
+        got = _bodies(pair["target"])
+>       assert {n: c for n, (_i, c) in got.items()} == {"mem-a": "BODY OF A", "mem-b": "BODY OF B"}, (
+            f"merged memory bodies: {got}")
+E       AssertionError: merged memory bodies: {'mem-a': (2, 'BODY OF B'), 'mem-b': (3, 'BODY OF B')}
+E       assert {'mem-a': 'BO...: 'BODY OF B'} == {'mem-a': 'BO...: 'BODY OF B'}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'mem-a': 'BODY OF B'} != {'mem-a': 'BODY OF A'}
+E         Use -v to get more diff
+
+tests/test_bug216_remedy_r2.py:247: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r2.py::test_b2a_a_fresh_id_move_keeps_each_memory_its_own_body
+1 failed, 10 passed in 3.33s

@@ -1,0 +1,43 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+....F..                                                                  [100%]
+=================================== FAILURES ===================================
+_________ test_s2_a_slot_merge_keeps_every_pending_row_with_its_source _________
+
+slots = {'a': PosixPath('/private/tmp/b216rwo4i2w3v/A/proj/.refmatrix/catalog.duckdb'), 'b': PosixPath('/private/tmp/b216rwo4i2w3v/B/proj/.refmatrix/catalog.duckdb'), 'target': PosixPath('/private/tmp/b216rwo4i2w3v/T/catalog.duckdb')}
+
+    def test_s2_a_slot_merge_keeps_every_pending_row_with_its_source(slots):
+        import duckdb
+    
+        from refmatrix.replica_merge import merge_slots
+        want = Counter()
+        for k in ("a", "b"):
+            con = duckdb.connect(str(slots[k]), read_only=True)
+            try:
+                want |= _pending(con)
+            finally:
+                con.close()
+        assert {r[4] for r in want} == {"missing-1", "missing-a", "missing-b"}, want
+        slots["target"].parent.mkdir()
+        res = merge_slots(slots["a"], slots["b"], slots["target"])
+        assert res["merged_counts"].get("pending_refs") == 3, res["merged_counts"]
+        con = duckdb.connect(str(slots["target"]), read_only=True)
+        try:
+            got = _pending(con)
+            orphans = _orphans(con)
+        finally:
+            con.close()
+>       assert got == want, f"merged pending rows by name: missing {dict(want - got)}, extra {dict(got - want)}"
+E       AssertionError: merged pending rows by name: missing {('proj', 'concept', 'a-only#cite', 'depends-on', 'missing-a', '/private/tmp/b216rwo4i2w3v/proj/docs/a-only.md', 16): 1}, extra {('proj', 'concept', 'b-only#cite', 'depends-on', 'missing-a', '/private/tmp/b216rwo4i2w3v/proj/docs/a-only.md', 16): 1}
+E       assert Counter({('pr....md', 16): 1}) == Counter({('pr....md', 16): 1})
+E         
+E         Omitting 2 identical items, use -vv to show
+E         Left contains 1 more item:
+E         {('proj', 'concept', 'b-only#cite', 'depends-on', 'missing-a', '/private/tmp/b216rwo4i2w3v/proj/docs/a-only.md', 16): 1}
+E         Right contains 1 more item:
+E         {('proj', 'concept', 'a-only#cite', 'depends-on', 'missing-a', '/private/tmp/b216rwo4i2w3v/proj/docs/a-only.md', 16): 1}
+E         Use -v to get more diff
+
+tests/test_bug216_remedy_r1.py:387: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r1.py::test_s2_a_slot_merge_keeps_every_pending_row_with_its_source
+1 failed, 6 passed, 13 deselected in 2.15s

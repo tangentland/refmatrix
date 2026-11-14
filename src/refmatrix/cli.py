@@ -7387,6 +7387,33 @@ def derive_cmd():
     """
 
 
+@derive_cmd.command("denotes")
+def derive_denotes_cmd():
+    """Link path-less concepts to the doc/memory whose id they name (`denotes`).
+
+    A bare `[[doc-id]]` citation written before bug-216's fix bound a same-named
+    concept instead of the doc; this derive gives every such concept (and its
+    spelling variants) a `denotes` edge to the doc, which the graph walks cross
+    at no cost. Idempotent; needs the daemon. Partition: `rmx -p NAME derive
+    denotes` (default: the daemon's bound partition).
+    """
+    # bug-216 R14 (2026-11-13): a thin adapter over the `rmx_derive_denotes`
+    # verb. Daemon down is an ERROR, not an in-process fallback: the derive
+    # writes links, and a write goes through the daemon.
+    from refmatrix import verbs as _verbs
+    try:
+        res = _verbs.derive_denotes(
+            _root(), partition=_partition_override or os.environ.get("RMX_PARTITION") or None)
+    except _verbs.VerbError as e:
+        raise click.ClickException(f"derive denotes: {e} — start it with `rmx daemon start`"
+                                   if isinstance(e, _verbs.VerbAbsentError) else
+                                   f"derive denotes: {e}")
+    click.echo(" ".join(f"{k}={res.get(k)}"
+                        for k in ("added", "concepts", "targets", "multi_target")
+                        if k in res)
+               + (f" partition={res['partition']}" if res.get("partition") else ""))
+
+
 @derive_cmd.command("log")
 @click.option("--pass", "pass_name", default=None, help="One pass only.")
 @click.option("--limit", default=20, type=int, help="Rows (newest first).")
@@ -9141,6 +9168,8 @@ def replica_merge(dry_run, as_json, yes):
 
     if as_json:
         click.echo(_json.dumps(report, indent=2))
+        if report.get("vector_delete_error"):
+            raise click.ClickException(f"replica merge: {report['vector_delete_error']}")
         return
 
     elapsed = report.get("elapsed_ms_total", report.get("elapsed_ms", 0))
@@ -9162,6 +9191,11 @@ def replica_merge(dry_run, as_json, yes):
         f"B-loser={rm['b_loser_count']} "
         f"edge_cases={rm['fresh_alloc_edge_cases']}"
     )
+    if report.get("re_embed"):
+        console.print(f"[yellow]{rich_escape(report['re_embed'])}[/]")
+    if report.get("vector_delete_error"):
+        # Loud (exit non-zero), after the summary: the merge itself DID land.
+        raise click.ClickException(f"replica merge: {report['vector_delete_error']}")
     if not report.get("dry_run"):
         console.print(
             f"\n[bold]writer:[/] slot {report['writer_slot']}, "
@@ -10488,7 +10522,7 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
     from refmatrix import daemon as daemon_mod
     from refmatrix.ingest_gmd import (
         collect_gmd_files, ingest_gmd_paths, prestage_hashes,
-        render_memory_skip_line,
+        render_ignored_line, render_memory_skip_line,
     )
 
     root = _root()
@@ -10523,17 +10557,24 @@ def ingest_gmd(targets: tuple[Path, ...], verbose: bool,
                 )
             report = resp["result"]
             walk_skipped = list((report.get("walk_skipped") or {}).get("skipped_paths") or [])
+            walk_ignored = list(report.get("ignored_paths") or [])
         else:
             s = _store()
             # the no-daemon twin of the `prestage_hashes` op: same walk (r3 m7)
             walk_skipped = []
-            files = collect_gmd_files(resolved, as_memory=as_memory, skipped=walk_skipped)
+            walk_ignored = []
+            files = collect_gmd_files(resolved, as_memory=as_memory, skipped=walk_skipped,
+                                      ignored=walk_ignored)
             with s.with_partition(ingest_partition):
                 report = prestage_hashes(s, files)
-        # what the memory walk did not take, counted and named (ch-bsd 26.1 #s-3)
+        # what the memory walk did not take, counted and named (ch-bsd 26.1 #s-3),
+        # and what the doc walk's ignore rules excluded (bug-216 R6b)
         skip_line = render_memory_skip_line(walk_skipped)
         if skip_line:
             click.echo(skip_line)
+        ign_line = render_ignored_line(walk_ignored)
+        if ign_line:
+            click.echo(ign_line)
         console.print(
             f"prestaged: considered={report['considered']} "
             f"written={report['written']} skipped={report['skipped']} "
@@ -10818,12 +10859,18 @@ def _ingest_gmd_in_process(s: Store, root: Path, resolved: list[Path], *, as_mem
                            with_stats: bool):
     """The daemon-down body of `_ingest_gmd_sync` (the caller owns and closes `s`)."""
     from refmatrix.ingest_gmd import (collect_gmd_files, ingest_gmd_paths,
-                                      render_memory_skip_line)
+                                      render_ignored_line, render_memory_skip_line)
     # THE memory walk on the memory path (task 26.1 AC-2, ADR-0005 #one-walk);
-    # every skip is counted and named in the report (ch-bsd 26.1 #s-3)
+    # every skip is counted and named in the report (ch-bsd 26.1 #s-3), and so
+    # is every path the doc walk's ignore rules excluded (bug-216 R2)
     skipped_paths: list = []
-    files = collect_gmd_files(resolved, as_memory=as_memory, skipped=skipped_paths)
+    ignored_paths: list = []
+    files = collect_gmd_files(resolved, as_memory=as_memory, skipped=skipped_paths,
+                              ignored=ignored_paths)
     skip_line = render_memory_skip_line(skipped_paths)
+    ign_line = render_ignored_line(ignored_paths)
+    if ign_line:
+        skip_line = f"{skip_line}\n{ign_line}" if skip_line else ign_line
     if not files:
         rep = "no candidate files found" + (f"\n{skip_line}" if skip_line else "")
         return (rep, {"skipped": len(skipped_paths),

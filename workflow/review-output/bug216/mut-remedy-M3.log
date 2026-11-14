@@ -1,0 +1,56 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/f0521bff-0006-479a-9e0f-6df02d50937e/scratchpad/mut216/refmatrix/src/refmatrix as checked-hash (bug-037)
+.................F...                                                    [100%]
+=================================== FAILURES ===================================
+________ test_m3_the_watcher_purges_a_deleted_builtin_included_profile _________
+
+base = PosixPath('/private/tmp/b216r194yfbx7')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12305aa30>
+
+    def test_m3_the_watcher_purges_a_deleted_builtin_included_profile(base, monkeypatch):
+        """No ignore file: the GMD profile is in by the R11 built-in include. Delete it: the
+        watcher's delete event must reach `_sync_one`, which purges the doc. At df092ac the include
+        sniffs the (gone) file, the hidden-dir rule wins, and the event is dropped."""
+        import watchdog.observers as wo
+        from watchdog.events import FileDeletedEvent
+    
+        from refmatrix.sync import sync_files
+        from tests.test_bug216_rule_docs_e2e import _FakeObserver
+        proj = base / "proj"
+        root = proj / ".refmatrix"
+        _new_store(root)
+        prof = _write(proj, ".claude/PROJECT_PROFILE.md", PROFILE_MD)
+        s = _open(root)
+        try:
+            sync_files(s, [str(prof)], project_root=proj)
+            assert s.get_entity("doc", "project-profile") is not None, "precondition: profile in"
+        finally:
+            s.close()
+        prof.unlink()
+        _FakeObserver.instances = []
+        monkeypatch.setattr(wo, "Observer", _FakeObserver)
+        d = daemon_mod.Daemon(root, watch_root=proj, watch_debounce_ms=50)
+        d.store = _open(root)
+        try:
+            d._start_watcher()
+            (handler, _p), = _FakeObserver.instances[0].handlers
+            handler.on_deleted(FileDeletedEvent(str(prof)))
+            d._watch_stop.set()
+            d._watch_thread.join(timeout=30)
+            assert not d._watch_thread.is_alive()
+            assert d.sync_errors() == [], d.sync_errors()
+        finally:
+            d.store.close()
+        s = _open(root)
+        try:
+            left = s.get_entity("doc", "project-profile")
+            node = s.get_entity("concept", "project-profile#constraints")
+        finally:
+            s.close()
+>       assert left is None and node is None, "the deleted profile's doc / node survived the watcher"
+E       AssertionError: the deleted profile's doc / node survived the watcher
+E       assert (Entity(id=1, kind='doc', name='project-profile', path='/private/tmp/b216r194yfbx7/proj/.claude/PROJECT_PROFILE.md', tl... 'gmd_content_hash': '255c5ee6a556495ae62c05c19890911c3a0400c8', 'gmd_pass2_done': True}, protected=False, noise=False) is None)
+
+tests/test_bug216_remedy_r1.py:633: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r1.py::test_m3_the_watcher_purges_a_deleted_builtin_included_profile
+1 failed, 20 passed in 12.64s

@@ -1,0 +1,657 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/tip/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/tip
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collecting ... collected 185 items
+
+tests/test_bug216_replay_fidelity.py::test_ac14_a_replay_after_a_changed_doc_matches_the_catalog[rebuild] FAILED [  0%]
+tests/test_bug216_replay_fidelity.py::test_ac14_a_replay_after_a_changed_doc_matches_the_catalog[delta] FAILED [  1%]
+tests/test_bug216_replay_fidelity.py::test_ac14_a_pending_ref_binds_identically_after_replay[rebuild] FAILED [  1%]
+tests/test_bug216_replay_fidelity.py::test_ac14_a_pending_ref_binds_identically_after_replay[delta] FAILED [  2%]
+tests/test_bug216_replay_fidelity.py::test_ac14_guard_a_log_without_the_new_events_replays_as_before[rebuild] PASSED [  2%]
+tests/test_bug216_replay_fidelity.py::test_ac14_guard_a_log_without_the_new_events_replays_as_before[delta] PASSED [  3%]
+tests/test_bug216_replay_fidelity.py::test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay[rebuild] FAILED [  3%]
+tests/test_bug216_replay_fidelity.py::test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay[delta] FAILED [  4%]
+tests/test_bug216_surfaces.py::test_ac15_the_derive_is_a_verb_with_cli_and_mcp_twins FAILED [  4%]
+tests/test_bug216_surfaces.py::test_ac15_the_verb_returns_the_ops_counts FAILED [  5%]
+tests/test_bug216_surfaces.py::test_ac15_the_cli_prints_the_ops_counts FAILED [  5%]
+tests/test_bug216_surfaces.py::test_ac15_the_mcp_tool_returns_the_ops_counts FAILED [  6%]
+tests/test_bug216_surfaces.py::test_ac15_daemon_down_the_cli_fails_loudly_and_writes_nothing FAILED [  7%]
+tests/test_bug216_surfaces.py::test_ac15_daemon_down_the_mcp_tool_returns_an_error FAILED [  7%]
+tests/test_bug216_surfaces.py::test_ac16_the_prestage_op_names_its_ignored_path_in_the_result FAILED [  8%]
+tests/test_bug216_surfaces.py::test_ac16_the_prestage_cli_names_its_ignored_path_daemon_down FAILED [  8%]
+tests/test_bug216_surfaces.py::test_ac16_the_prestage_cli_names_its_ignored_path_daemon_up FAILED [  9%]
+tests/test_bug216_surfaces.py::test_ac16_guard_the_memory_prestage_still_names_its_skips PASSED [  9%]
+tests/test_verb_parity.py::test_tools_and_verbs_are_the_same_set PASSED  [ 10%]
+tests/test_verb_parity.py::test_every_tool_dispatches_to_its_verb PASSED [ 10%]
+tests/test_verb_parity.py::test_tool_schemas_are_exactly_the_generated_ones PASSED [ 11%]
+tests/test_verb_parity.py::test_schema_exposes_every_verb_kwarg_and_alias PASSED [ 11%]
+tests/test_verb_parity.py::test_every_verb_names_its_cli_twin PASSED     [ 12%]
+tests/test_verb_parity.py::test_pairing_covers_every_cli_twin FAILED     [ 12%]
+tests/test_verb_parity.py::test_no_twin_exclusions_are_honest FAILED     [ 13%]
+tests/test_verb_parity.py::test_click_defaults_match_verb_defaults FAILED [ 14%]
+tests/test_verb_parity.py::test_every_cli_twin_declares_its_wiring_class FAILED [ 14%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_archive] PASSED [ 15%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_channels] PASSED [ 15%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_delete] PASSED [ 16%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_history] PASSED [ 16%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_mark_read] PASSED [ 17%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_pub] PASSED [ 17%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_purge] PASSED [ 18%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_read] PASSED [ 18%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_stats] PASSED [ 19%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_bus_unarchive] PASSED [ 20%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_canon] PASSED [ 20%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_change_subject] PASSED [ 21%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_curate] PASSED [ 21%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_curator] PASSED [ 22%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_derive_denotes] FAILED [ 22%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_focus] PASSED [ 23%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_focus_note] PASSED [ 23%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_graph] PASSED [ 24%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_ingest_status] PASSED [ 24%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_locate] PASSED [ 25%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_matrix] PASSED [ 25%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_memory] PASSED [ 26%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_memory_add] PASSED [ 27%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_memory_compile] PASSED [ 27%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_memory_recall] PASSED [ 28%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_projects] PASSED [ 28%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_queues] PASSED [ 29%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_recall_state] PASSED [ 29%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_refine] PASSED [ 30%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_save_state] PASSED [ 30%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_session] PASSED [ 31%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_task] PASSED [ 31%]
+tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_taxonomy] PASSED [ 32%]
+tests/test_verb_parity.py::test_cli_memory_compile_writes_the_verbs_subjects_gmd PASSED [ 32%]
+tests/test_verb_parity.py::test_cli_routed_twin_builds_its_payload_through_the_verb_helper[rmx_context] PASSED [ 33%]
+tests/test_verb_parity.py::test_cli_routed_twin_builds_its_payload_through_the_verb_helper[rmx_query] PASSED [ 34%]
+tests/test_verb_parity.py::test_daemon_writer_ingest_uses_the_verb_payload PASSED [ 34%]
+tests/test_verb_parity.py::test_payload_query_uses_expr PASSED           [ 35%]
+tests/test_verb_parity.py::test_payload_context_explicitness_tracks_none_sentinels PASSED [ 35%]
+tests/test_verb_parity.py::test_alias_args_reach_the_verb_param PASSED   [ 36%]
+tests/test_verb_parity.py::test_every_invocable_cli_path_is_classified_exactly_once PASSED [ 36%]
+tests/test_verb_parity.py::test_a_new_command_in_no_class_fails_naming_it_and_both_remedies PASSED [ 37%]
+tests/test_verb_parity.py::test_removing_an_internal_entry_fails_the_walk PASSED [ 37%]
+tests/test_verb_parity.py::test_internal_cli_is_exactly_the_seeded_set_and_quotes_the_decision PASSED [ 38%]
+tests/test_verb_parity.py::test_a_path_listed_twice_fails_naming_both_classes PASSED [ 38%]
+tests/test_verb_parity.py::test_the_five_maps_have_no_stale_keys PASSED  [ 39%]
+tests/test_verb_parity.py::test_a_stale_key_in_any_map_fails_hygiene[CLI_MAP] PASSED [ 40%]
+tests/test_verb_parity.py::test_a_stale_key_in_any_map_fails_hygiene[CLI_ACTIONS] PASSED [ 40%]
+tests/test_verb_parity.py::test_a_stale_key_in_any_map_fails_hygiene[INTERNAL_CLI] PASSED [ 41%]
+tests/test_verb_parity.py::test_a_stale_key_in_any_map_fails_hygiene[HIDDEN_ALIASES] PASSED [ 41%]
+tests/test_verb_parity.py::test_a_stale_key_in_any_map_fails_hygiene[LEGACY_UNPAIRED] PASSED [ 42%]
+tests/test_verb_parity.py::test_a_stale_key_in_any_map_fails_hygiene[HIDDEN_ALIASES-target] PASSED [ 42%]
+tests/test_verb_parity.py::test_cli_actions_are_the_seeded_dispatcher_twins PASSED [ 43%]
+tests/test_verb_parity.py::test_hidden_aliases_are_the_six_alias_copies PASSED [ 43%]
+tests/test_verb_parity.py::test_legacy_unpaired_carries_a_category_and_can_only_shrink PASSED [ 44%]
+tests/test_verb_parity.py::test_every_cli_action_has_a_wiring_row PASSED [ 44%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[add-entity] PASSED [ 45%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[add-linkage-type] PASSED [ 45%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[canon-link] PASSED [ 46%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[canon-siblings] PASSED [ 47%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[co-occur] PASSED [ 47%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[concept-timeline] PASSED [ 48%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[curator-drain] PASSED [ 48%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[describe] PASSED [ 49%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-clear] PASSED [ 49%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-clear-subject] PASSED [ 50%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-composite] PASSED [ 50%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-detour] PASSED [ 51%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-detours] PASSED [ 51%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-export] PASSED [ 52%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-return] PASSED [ 52%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-show] PASSED [ 53%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-subject] PASSED [ 54%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-subjects] PASSED [ 54%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-tail] PASSED [ 55%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[focus-topics] PASSED [ 55%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[forget] PASSED [ 56%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[link] PASSED [ 56%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[list-entities] PASSED [ 57%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[list-linkages] PASSED [ 57%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[list-queries] PASSED [ 58%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-brief] PASSED [ 58%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-bulk-forget] PASSED [ 59%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-dedup] PASSED [ 60%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-forget] PASSED [ 60%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-link] PASSED [ 61%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-list] PASSED [ 61%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-promote] PASSED [ 62%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-reclassify] PASSED [ 62%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-retag] PASSED [ 63%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-score] PASSED [ 63%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[memory-search] PASSED [ 64%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[noise] PASSED [ 64%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[recall] PASSED [ 65%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[refine-show] PASSED [ 65%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[run] PASSED [ 66%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[save-query] PASSED [ 67%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[search-dense] PASSED [ 67%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[session-recall] PASSED [ 68%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[session-show] PASSED [ 68%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[stats] PASSED [ 69%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[task-current] PASSED [ 69%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[task-pop] PASSED [ 70%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[task-push] PASSED [ 70%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[task-swap] PASSED [ 71%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[taxonomy-add] PASSED [ 71%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[taxonomy-remove] PASSED [ 72%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[top] PASSED [ 72%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[unlink] PASSED [ 73%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[unnoise] PASSED [ 74%]
+tests/test_verb_parity.py::test_cli_action_twin_calls_its_dispatcher_verb[unprotect] PASSED [ 74%]
+tests/test_verb_parity.py::test_every_cli_action_twin_has_an_action_pairing_row PASSED [ 75%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[add-entity] PASSED [ 75%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[add-linkage-type] PASSED [ 76%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[canon-link] PASSED [ 76%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[canon-siblings] PASSED [ 77%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[co-occur] PASSED [ 77%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[concept-timeline] PASSED [ 78%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[curator-drain] PASSED [ 78%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[describe] PASSED [ 79%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-clear] PASSED [ 80%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-clear-subject] PASSED [ 80%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-composite] PASSED [ 81%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-detour] PASSED [ 81%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-detours] PASSED [ 82%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-export] PASSED [ 82%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-return] PASSED [ 83%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-show] PASSED [ 83%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-subject] PASSED [ 84%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-subjects] PASSED [ 84%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-tail] PASSED [ 85%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[focus-topics] PASSED [ 85%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[forget] PASSED [ 86%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[link] PASSED [ 87%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[list-entities] PASSED [ 87%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[list-linkages] PASSED [ 88%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[list-queries] PASSED [ 88%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[noise] PASSED [ 89%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[recall] PASSED [ 89%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[refine-show] PASSED [ 90%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[run] PASSED [ 90%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[save-query] PASSED [ 91%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[search-dense] PASSED [ 91%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[session-recall] PASSED [ 92%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[session-show] PASSED [ 92%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[stats] PASSED [ 93%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[task-current] PASSED [ 94%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[task-pop] PASSED [ 94%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[task-push] PASSED [ 95%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[task-swap] PASSED [ 95%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[taxonomy-add] PASSED [ 96%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[taxonomy-remove] PASSED [ 96%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[top] PASSED [ 97%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[unlink] PASSED [ 97%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[unnoise] PASSED [ 98%]
+tests/test_verb_parity.py::test_cli_action_click_defaults_equal_the_resolved_verb_default[unprotect] PASSED [ 98%]
+tests/test_verb_parity.py::test_action_shape_differences_name_real_click_options PASSED [ 99%]
+tests/test_verb_parity.py::test_legacy_shrinks_by_exactly_the_batched_paths PASSED [100%]
+
+=================================== FAILURES ===================================
+_____ test_ac14_a_replay_after_a_changed_doc_matches_the_catalog[rebuild] ______
+
+env = {'base': PosixPath('/private/tmp/b216laheqybk1'), 'n': [1], 'proj': PosixPath('/private/tmp/b216laheqybk1/proj'), 'root': PosixPath('/private/tmp/b216laheqybk1/proj/.refmatrix')}
+how = 'rebuild'
+
+    @pytest.mark.parametrize("how", ["rebuild", "delta"])
+    def test_ac14_a_replay_after_a_changed_doc_matches_the_catalog(env, how):
+        """v1 then v2 of a doc with an existing and a missing `rel:` target: the replay holds the
+        catalog's evidence rows (no v1 leftovers, no duplicates) and its pending rows."""
+        want = _v1_then_v2(env)
+        got = _replay(env, how)
+>       assert got == want, f"{how} replay differs from the catalog:\n{_diff(want, got)}"
+E       AssertionError: rebuild replay differs from the catalog:
+E         evidence: replay has extra {('proj', 'derives-from', 'concept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216laheqybk1/proj/docs/a.md', 16, 'rel: derives-from -> b-doc'): 1}; replay is missing {}
+E         pending: replay has extra {}; replay is missing {('proj', 'concept', 'a#cite', 'amends', 'd-doc', 'd-doc', '/private/tmp/b216laheqybk1/proj/docs/a.md', 20, None, 'rel: amends -> d-doc'): 1, ('proj', 'concept', 'a#cite', 'depends-on', 'c-doc', 'c-doc', '/private/tmp/b216laheqybk1/proj/docs/a.md', 19, None, 'rel: depends-on -> c-doc'): 1}
+E       assert {'evidence': ...'b-doc'): 1})} == {'evidence': ...'b-doc'): 1})}
+E         
+E         Omitting 2 identical items, use -vv to show
+E         Differing items:
+E         {'pending': Counter()} != {'pending': Counter({('proj', 'concept', 'a#cite', 'amends', 'd-doc', 'd-doc', '/private/tmp/b216laheqybk1/proj/docs/a...depends-on', 'c-doc', 'c-doc', '/private/tmp/b216laheqybk1/proj/docs/a.md', 19, None, 'rel: depends-on -> c-doc'): 1})}
+E         {'evidence': Counter({('proj', 'related-to', 'concept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216laheqybk1/proj/doc...oncept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216laheqybk1/proj/docs/a.md', 16, 'rel: derives-from -> b-doc'): 1})} != {'evide...
+E         
+E         ...Full output truncated (21 lines hidden), use '-vv' to show
+
+tests/test_bug216_replay_fidelity.py:188: AssertionError
+______ test_ac14_a_replay_after_a_changed_doc_matches_the_catalog[delta] _______
+
+env = {'base': PosixPath('/private/tmp/b216l_mnopzis'), 'n': [1], 'proj': PosixPath('/private/tmp/b216l_mnopzis/proj'), 'root': PosixPath('/private/tmp/b216l_mnopzis/proj/.refmatrix')}
+how = 'delta'
+
+    @pytest.mark.parametrize("how", ["rebuild", "delta"])
+    def test_ac14_a_replay_after_a_changed_doc_matches_the_catalog(env, how):
+        """v1 then v2 of a doc with an existing and a missing `rel:` target: the replay holds the
+        catalog's evidence rows (no v1 leftovers, no duplicates) and its pending rows."""
+        want = _v1_then_v2(env)
+        got = _replay(env, how)
+>       assert got == want, f"{how} replay differs from the catalog:\n{_diff(want, got)}"
+E       AssertionError: delta replay differs from the catalog:
+E         evidence: replay has extra {('proj', 'derives-from', 'concept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216l_mnopzis/proj/docs/a.md', 16, 'rel: derives-from -> b-doc'): 1}; replay is missing {}
+E         pending: replay has extra {}; replay is missing {('proj', 'concept', 'a#cite', 'amends', 'd-doc', 'd-doc', '/private/tmp/b216l_mnopzis/proj/docs/a.md', 20, None, 'rel: amends -> d-doc'): 1, ('proj', 'concept', 'a#cite', 'depends-on', 'c-doc', 'c-doc', '/private/tmp/b216l_mnopzis/proj/docs/a.md', 19, None, 'rel: depends-on -> c-doc'): 1}
+E       assert {'evidence': ...'b-doc'): 1})} == {'evidence': ...'b-doc'): 1})}
+E         
+E         Omitting 2 identical items, use -vv to show
+E         Differing items:
+E         {'pending': Counter()} != {'pending': Counter({('proj', 'concept', 'a#cite', 'amends', 'd-doc', 'd-doc', '/private/tmp/b216l_mnopzis/proj/docs/a...depends-on', 'c-doc', 'c-doc', '/private/tmp/b216l_mnopzis/proj/docs/a.md', 19, None, 'rel: depends-on -> c-doc'): 1})}
+E         {'evidence': Counter({('proj', 'related-to', 'concept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216l_mnopzis/proj/doc...oncept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216l_mnopzis/proj/docs/a.md', 16, 'rel: derives-from -> b-doc'): 1})} != {'evide...
+E         
+E         ...Full output truncated (21 lines hidden), use '-vv' to show
+
+tests/test_bug216_replay_fidelity.py:188: AssertionError
+_______ test_ac14_a_pending_ref_binds_identically_after_replay[rebuild] ________
+
+env = {'base': PosixPath('/private/tmp/b216lijpd_r9e'), 'n': [1], 'proj': PosixPath('/private/tmp/b216lijpd_r9e/proj'), 'root': PosixPath('/private/tmp/b216lijpd_r9e/proj/.refmatrix')}
+how = 'rebuild'
+
+    @pytest.mark.parametrize("how", ["rebuild", "delta"])
+    def test_ac14_a_pending_ref_binds_identically_after_replay(env, how):
+        """Then the missing target is ingested: the pending ref binds (edge + evidence, row gone) in
+        the catalog, and the replay holds exactly the same."""
+        _v1_then_v2(env)
+        _ingest(env, [_write(env, "docs/c.md", C_MD)])
+        want = _snapshot(env["root"])
+        assert [k[4] for k in want["pending"]] == ["d-doc"], dict(want["pending"])
+        assert any(k[0] == "depends-on" and k[3] == "doc" and k[4] == "c-doc"
+                   for k in want["rel_links"]), dict(want["rel_links"])
+        got = _replay(env, how)
+>       assert got == want, f"{how} replay differs from the catalog:\n{_diff(want, got)}"
+E       AssertionError: rebuild replay differs from the catalog:
+E         evidence: replay has extra {('proj', 'derives-from', 'concept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216lijpd_r9e/proj/docs/a.md', 16, 'rel: derives-from -> b-doc'): 1}; replay is missing {}
+E         pending: replay has extra {}; replay is missing {('proj', 'concept', 'a#cite', 'amends', 'd-doc', 'd-doc', '/private/tmp/b216lijpd_r9e/proj/docs/a.md', 20, None, 'rel: amends -> d-doc'): 1}
+E       assert {'evidence': ...'b-doc'): 1})} == {'evidence': ...'b-doc'): 1})}
+E         
+E         Omitting 2 identical items, use -vv to show
+E         Differing items:
+E         {'pending': Counter()} != {'pending': Counter({('proj', 'concept', 'a#cite', 'amends', 'd-doc', 'd-doc', '/private/tmp/b216lijpd_r9e/proj/docs/a.md', 20, None, 'rel: amends -> d-doc'): 1})}
+E         {'evidence': Counter({('proj', 'related-to', 'concept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216lijpd_r9e/proj/doc...oncept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216lijpd_r9e/proj/docs/a.md', 16, 'rel: derives-from -> b-doc'): 1})} != {'evidence': Counter({('proj', 'related-to', 'concept', 'a#cite', 'doc', 'b-doc', '/...
+E         
+E         ...Full output truncated (22 lines hidden), use '-vv' to show
+
+tests/test_bug216_replay_fidelity.py:202: AssertionError
+________ test_ac14_a_pending_ref_binds_identically_after_replay[delta] _________
+
+env = {'base': PosixPath('/private/tmp/b216lc1a1rkkd'), 'n': [1], 'proj': PosixPath('/private/tmp/b216lc1a1rkkd/proj'), 'root': PosixPath('/private/tmp/b216lc1a1rkkd/proj/.refmatrix')}
+how = 'delta'
+
+    @pytest.mark.parametrize("how", ["rebuild", "delta"])
+    def test_ac14_a_pending_ref_binds_identically_after_replay(env, how):
+        """Then the missing target is ingested: the pending ref binds (edge + evidence, row gone) in
+        the catalog, and the replay holds exactly the same."""
+        _v1_then_v2(env)
+        _ingest(env, [_write(env, "docs/c.md", C_MD)])
+        want = _snapshot(env["root"])
+        assert [k[4] for k in want["pending"]] == ["d-doc"], dict(want["pending"])
+        assert any(k[0] == "depends-on" and k[3] == "doc" and k[4] == "c-doc"
+                   for k in want["rel_links"]), dict(want["rel_links"])
+        got = _replay(env, how)
+>       assert got == want, f"{how} replay differs from the catalog:\n{_diff(want, got)}"
+E       AssertionError: delta replay differs from the catalog:
+E         evidence: replay has extra {('proj', 'derives-from', 'concept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216lc1a1rkkd/proj/docs/a.md', 16, 'rel: derives-from -> b-doc'): 1}; replay is missing {}
+E         pending: replay has extra {}; replay is missing {('proj', 'concept', 'a#cite', 'amends', 'd-doc', 'd-doc', '/private/tmp/b216lc1a1rkkd/proj/docs/a.md', 20, None, 'rel: amends -> d-doc'): 1}
+E       assert {'evidence': ...'b-doc'): 1})} == {'evidence': ...'b-doc'): 1})}
+E         
+E         Omitting 2 identical items, use -vv to show
+E         Differing items:
+E         {'pending': Counter()} != {'pending': Counter({('proj', 'concept', 'a#cite', 'amends', 'd-doc', 'd-doc', '/private/tmp/b216lc1a1rkkd/proj/docs/a.md', 20, None, 'rel: amends -> d-doc'): 1})}
+E         {'evidence': Counter({('proj', 'related-to', 'concept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216lc1a1rkkd/proj/doc...oncept', 'a#cite', 'doc', 'b-doc', '/private/tmp/b216lc1a1rkkd/proj/docs/a.md', 16, 'rel: derives-from -> b-doc'): 1})} != {'evidence': Counter({('proj', 'related-to', 'concept', 'a#cite', 'doc', 'b-doc', '/...
+E         
+E         ...Full output truncated (22 lines hidden), use '-vv' to show
+
+tests/test_bug216_replay_fidelity.py:202: AssertionError
+____ test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay[rebuild] _____
+
+env = {'base': PosixPath('/private/tmp/b216lz330mabn'), 'n': [1], 'proj': PosixPath('/private/tmp/b216lz330mabn/proj'), 'root': PosixPath('/private/tmp/b216lz330mabn/proj/.refmatrix')}
+how = 'rebuild'
+
+    @pytest.mark.parametrize("how", ["rebuild", "delta"])
+    def test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay(env, how):
+        """R13 (lead, 2026-11-13, from green-216): `purge_entity` deletes the source's pending rows
+        without an event of its own; its `tombstone` event exists, and replaying it must clear them
+        too. Two citers with pending refs; one is purged. The replay holds the survivor's row and
+        NONE of the purged citer's — no row by file, and no row left pointing at a dead source."""
+        a = _write(env, "docs/a.md", A_V1)
+        a2 = _write(env, "docs/a2.md", A2_MD)
+        _ingest(env, [_write(env, "docs/b.md", B_MD)])
+        _ingest(env, [a, a2])
+        s = Store(env["root"])
+        s.init()
+        try:
+            assert s.purge_path(str(a)) > 0, "precondition: the purge removed A"
+        finally:
+            s.close()
+        want = _snapshot(env["root"])
+        assert [(k[2], k[4]) for k in want["pending"]] == [("a2#cite", "d-doc")], (
+            f"precondition: only the survivor's pending row in the catalog: {dict(want['pending'])}")
+        assert want["orphan_pending"] == 0
+        got = _replay(env, how)
+        assert not [k for k in got["pending"] if k[6] == str(a)], dict(got["pending"])
+>       assert got == want, f"{how} replay differs from the catalog:\n{_diff(want, got)}"
+E       AssertionError: rebuild replay differs from the catalog:
+E         pending: replay has extra {}; replay is missing {('proj', 'concept', 'a2#cite', 'depends-on', 'd-doc', 'd-doc', '/private/tmp/b216lz330mabn/proj/docs/a2.md', 16, None, 'rel: depends-on -> d-doc'): 1}
+E       assert {'evidence': ...s': Counter()} == {'evidence': ...s': Counter()}
+E         
+E         Omitting 3 identical items, use -vv to show
+E         Differing items:
+E         {'pending': Counter()} != {'pending': Counter({('proj', 'concept', 'a2#cite', 'depends-on', 'd-doc', 'd-doc', '/private/tmp/b216lz330mabn/proj/docs/a2.md', 16, None, 'rel: depends-on -> d-doc'): 1})}
+E         
+E         Full diff:
+E           {...
+E         
+E         ...Full output truncated (10 lines hidden), use '-vv' to show
+
+tests/test_bug216_replay_fidelity.py:245: AssertionError
+_____ test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay[delta] ______
+
+env = {'base': PosixPath('/private/tmp/b216l7uw99uzk'), 'n': [1], 'proj': PosixPath('/private/tmp/b216l7uw99uzk/proj'), 'root': PosixPath('/private/tmp/b216l7uw99uzk/proj/.refmatrix')}
+how = 'delta'
+
+    @pytest.mark.parametrize("how", ["rebuild", "delta"])
+    def test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay(env, how):
+        """R13 (lead, 2026-11-13, from green-216): `purge_entity` deletes the source's pending rows
+        without an event of its own; its `tombstone` event exists, and replaying it must clear them
+        too. Two citers with pending refs; one is purged. The replay holds the survivor's row and
+        NONE of the purged citer's — no row by file, and no row left pointing at a dead source."""
+        a = _write(env, "docs/a.md", A_V1)
+        a2 = _write(env, "docs/a2.md", A2_MD)
+        _ingest(env, [_write(env, "docs/b.md", B_MD)])
+        _ingest(env, [a, a2])
+        s = Store(env["root"])
+        s.init()
+        try:
+            assert s.purge_path(str(a)) > 0, "precondition: the purge removed A"
+        finally:
+            s.close()
+        want = _snapshot(env["root"])
+        assert [(k[2], k[4]) for k in want["pending"]] == [("a2#cite", "d-doc")], (
+            f"precondition: only the survivor's pending row in the catalog: {dict(want['pending'])}")
+        assert want["orphan_pending"] == 0
+        got = _replay(env, how)
+        assert not [k for k in got["pending"] if k[6] == str(a)], dict(got["pending"])
+>       assert got == want, f"{how} replay differs from the catalog:\n{_diff(want, got)}"
+E       AssertionError: delta replay differs from the catalog:
+E         pending: replay has extra {}; replay is missing {('proj', 'concept', 'a2#cite', 'depends-on', 'd-doc', 'd-doc', '/private/tmp/b216l7uw99uzk/proj/docs/a2.md', 16, None, 'rel: depends-on -> d-doc'): 1}
+E       assert {'evidence': ...s': Counter()} == {'evidence': ...s': Counter()}
+E         
+E         Omitting 3 identical items, use -vv to show
+E         Differing items:
+E         {'pending': Counter()} != {'pending': Counter({('proj', 'concept', 'a2#cite', 'depends-on', 'd-doc', 'd-doc', '/private/tmp/b216l7uw99uzk/proj/docs/a2.md', 16, None, 'rel: depends-on -> d-doc'): 1})}
+E         
+E         Full diff:
+E           {...
+E         
+E         ...Full output truncated (10 lines hidden), use '-vv' to show
+
+tests/test_bug216_replay_fidelity.py:245: AssertionError
+____________ test_ac15_the_derive_is_a_verb_with_cli_and_mcp_twins _____________
+
+    def test_ac15_the_derive_is_a_verb_with_cli_and_mcp_twins():
+        """Registration — after which tests/test_verb_parity.py's generic gates (tool == verb,
+        schema, CLI twin resolves, wiring, click defaults) cover it."""
+        import refmatrix.mcp as mcp
+>       assert VERB in verbs.VERBS, f"no `{VERB}` verb"
+E       AssertionError: no `rmx_derive_denotes` verb
+E       assert 'rmx_derive_denotes' in {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1099f24b0>, description='Archive bus messages (still readable via bus_history status=archived): by `id`, or a whole `channel` (optionally only those with ts < `before_ts`).', schema={'type': 'object', 'properties': {'id': {'type': 'string'}, 'channel': {'type': 'string'}, 'before_ts': {'type': 'number'}, 'root': {'type': 'string', 'description': "Store root (path to a project or its .refmatrix); default: the server's project"}, 'project': {'type': 'string', 'description': 'Target another project by NAME (any live store)'}}, 'required': []}, defaults={'id': None, 'channel': None, 'before_ts': None}, aliases={}), 'rmx_bus_channels': Verb(name='rmx_bus_channels', fn=<function bus_channels at 0x1099f1f30>, description='List live bus channels (with message counts), optionally filtered by a glob like `proj:*` or `proj:cliquedb:*`. Channel discovery for the bus.', schema={'type': 'object', 'properties': {'glob': {'type': 'string'}, 'root': {'type': 'string', 'description': "Store root (path to a project or its .refmatrix); default: the server's project"}, 'project': {'type': 'string', 'description': 'Target a...: []}, defaults={'glob': None}, aliases={}), 'rmx_bus_delete': Verb(name='rmx_bus_delete', fn=<function bus_delete at 0x1099f2350>, description='Soft-delete a bus message by id — hidden from history/read, recoverable until purge.', schema={'type': 'object', 'properties': {'id': {'type': 'string'}, 'root': {'type': 'string', 'description': "Store root (path to a project or its .refmatrix); default: the server's project"}, 'project': {'type': 'string', 'description': 'Target another project by NAME (any live store)'}}, 'required': ['id']}, defaults={}, aliases={}), 'rmx_bus_history': Verb(name='rmx_bus_history', fn=<function bus_history at 0x1099f1dd0>, description='Read recent messages on a bus channel.', schema={'type': 'object', 'properties': {'channel': {'type': 'string'}, 'n': {'type': 'integer'}, 'status': {'type': 'string', 'enum': ['active', 'archived', 'deleted', 'all']}, 'root': {'type': 'string', 'description': "Store root (path to a project or its .refmatrix); default: the server's project"}, 'project': {'type': 'string', 'description': 'Target another project by NAME (any live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...}
+E        +  where {'rmx_bus_archive': Verb(name='rmx_bus_archive', fn=<function bus_archive at 0x1099f24b0>, description='Archive bus messages (still readable via bus_history status=archived): by `id`, or a whole `channel` (optionally only those with ts < `before_ts`).', schema={'type': 'object', 'properties': {'id': {'type': 'string'}, 'channel': {'type': 'string'}, 'before_ts': {'type': 'number'}, 'root': {'type': 'string', 'description': "Store root (path to a project or its .refmatrix); default: the server's project"}, 'project': {'type': 'string', 'description': 'Target another project by NAME (any live store)'}}, 'required': []}, defaults={'id': None, 'channel': None, 'before_ts': None}, aliases={}), 'rmx_bus_channels': Verb(name='rmx_bus_channels', fn=<function bus_channels at 0x1099f1f30>, description='List live bus channels (with message counts), optionally filtered by a glob like `proj:*` or `proj:cliquedb:*`. Channel discovery for the bus.', schema={'type': 'object', 'properties': {'glob': {'type': 'string'}, 'root': {'type': 'string', 'description': "Store root (path to a project or its .refmatrix); default: the server's project"}, 'project': {'type': 'string', 'description': 'Target a...: []}, defaults={'glob': None}, aliases={}), 'rmx_bus_delete': Verb(name='rmx_bus_delete', fn=<function bus_delete at 0x1099f2350>, description='Soft-delete a bus message by id — hidden from history/read, recoverable until purge.', schema={'type': 'object', 'properties': {'id': {'type': 'string'}, 'root': {'type': 'string', 'description': "Store root (path to a project or its .refmatrix); default: the server's project"}, 'project': {'type': 'string', 'description': 'Target another project by NAME (any live store)'}}, 'required': ['id']}, defaults={}, aliases={}), 'rmx_bus_history': Verb(name='rmx_bus_history', fn=<function bus_history at 0x1099f1dd0>, description='Read recent messages on a bus channel.', schema={'type': 'object', 'properties': {'channel': {'type': 'string'}, 'n': {'type': 'integer'}, 'status': {'type': 'string', 'enum': ['active', 'archived', 'deleted', 'all']}, 'root': {'type': 'string', 'description': "Store root (path to a project or its .refmatrix); default: the server's project"}, 'project': {'type': 'string', 'description': 'Target another project by NAME (any live store)'}}, 'required': ['channel']}, defaults={'n': 20, 'status': 'active'}, aliases={}), ...} = verbs.VERBS
+
+tests/test_bug216_surfaces.py:111: AssertionError
+__________________ test_ac15_the_verb_returns_the_ops_counts ___________________
+
+env = {'base': PosixPath('/private/tmp/b216s8eppwyty'), 'proj': PosixPath('/private/tmp/b216s8eppwyty/proj'), 'root': PosixPath('/private/tmp/b216s8eppwyty/proj/.refmatrix')}
+in_process_daemon = <refmatrix.daemon.Daemon object at 0x11a13c050>
+
+    def test_ac15_the_verb_returns_the_ops_counts(env, in_process_daemon):
+>       res = verbs.VERBS[VERB].fn(env["root"])
+              ^^^^^^^^^^^^^^^^^
+E       KeyError: 'rmx_derive_denotes'
+
+tests/test_bug216_surfaces.py:119: KeyError
+___________________ test_ac15_the_cli_prints_the_ops_counts ____________________
+
+env = {'base': PosixPath('/private/tmp/b216srsnr559p'), 'proj': PosixPath('/private/tmp/b216srsnr559p/proj'), 'root': PosixPath('/private/tmp/b216srsnr559p/proj/.refmatrix')}
+in_process_daemon = <refmatrix.daemon.Daemon object at 0x118113b60>
+
+    def test_ac15_the_cli_prints_the_ops_counts(env, in_process_daemon):
+        r = CliRunner().invoke(cli_mod.main, ["derive", "denotes"], catch_exceptions=False)
+>       assert r.exit_code == 0, r.output
+E       AssertionError: Usage: main derive [OPTIONS] COMMAND [ARGS]...
+E         Try 'main derive -h' for help.
+E         
+E         Error: No such command 'denotes'.
+E         
+E       assert 2 == 0
+E        +  where 2 = <Result SystemExit(2)>.exit_code
+
+tests/test_bug216_surfaces.py:127: AssertionError
+________________ test_ac15_the_mcp_tool_returns_the_ops_counts _________________
+
+env = {'base': PosixPath('/private/tmp/b216sus6slmi3'), 'proj': PosixPath('/private/tmp/b216sus6slmi3/proj'), 'root': PosixPath('/private/tmp/b216sus6slmi3/proj/.refmatrix')}
+in_process_daemon = <refmatrix.daemon.Daemon object at 0x107b4fcb0>
+
+    def test_ac15_the_mcp_tool_returns_the_ops_counts(env, in_process_daemon):
+        import refmatrix.mcp as mcp
+>       res = mcp.TOOLS[VERB]["fn"]({"root": str(env["root"])})
+              ^^^^^^^^^^^^^^^
+E       KeyError: 'rmx_derive_denotes'
+
+tests/test_bug216_surfaces.py:136: KeyError
+________ test_ac15_daemon_down_the_cli_fails_loudly_and_writes_nothing _________
+
+env = {'base': PosixPath('/private/tmp/b216syqq6j_ii'), 'proj': PosixPath('/private/tmp/b216syqq6j_ii/proj'), 'root': PosixPath('/private/tmp/b216syqq6j_ii/proj/.refmatrix')}
+
+    def test_ac15_daemon_down_the_cli_fails_loudly_and_writes_nothing(env):
+        """No daemon for this throwaway store: non-zero exit, the reason on stderr, and no
+        in-process fallback (the store is untouched)."""
+>       r = CliRunner(mix_stderr=False).invoke(cli_mod.main, ["derive", "denotes"])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: CliRunner.__init__() got an unexpected keyword argument 'mix_stderr'
+
+tests/test_bug216_surfaces.py:145: TypeError
+_____________ test_ac15_daemon_down_the_mcp_tool_returns_an_error ______________
+
+env = {'base': PosixPath('/private/tmp/b216s8yszuwfa'), 'proj': PosixPath('/private/tmp/b216s8yszuwfa/proj'), 'root': PosixPath('/private/tmp/b216s8yszuwfa/proj/.refmatrix')}
+
+    def test_ac15_daemon_down_the_mcp_tool_returns_an_error(env):
+        import refmatrix.mcp as mcp
+>       assert VERB in mcp.TOOLS, f"no `{VERB}` tool"
+E       AssertionError: no `rmx_derive_denotes` tool
+E       assert 'rmx_derive_denotes' in {'rmx_bus_archive': {'description': 'Archive bus messages (still readable via bus_history status=archived): by `id`, or a whole `channel` (optionally only those with ts < `before_ts`).', 'fn': <function _verb_tool.<locals>.fn at 0x108f0d0c0>, 'schema': {'properties': {'before_ts': {'type': 'number'}, 'channel': {'type': 'string'}, 'id': {'type': 'string'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type': 'string'}, ...}, 'required': [], 'type': 'object'}}, 'rmx_bus_channels': {'description': 'List live bus channels (with message counts), optionally filtered by a glob like `proj:*` or `proj:cliquedb:*`. Channel discovery for the bus.', 'fn': <function _verb_tool.<locals>.fn at 0x108f0cb40>, 'schema': {'properties': {'glob': {'type': 'string'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type': 'string'}, 'root': {'description': "Store root (path to a project or its .refmatrix); default: the server's project", 'type': 'string'}}, 'required': [], 'type': 'object'}}, 'rmx_bus_delete': {'description': 'Soft-delete a bus message by id — hidden from history/read, recoverable until purge.', 'fn': <function _verb_tool.<locals>.fn at 0x108f0cf60>, 'schema': {'properties': {'id': {'type': 'string'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type': 'string'}, 'root': {'description': "Store root (path to a project or its .refmatrix); default: the server's project", 'type': 'string'}}, 'required': ['id'], 'type': 'object'}}, 'rmx_bus_history': {'description': 'Read recent messages on a bus channel.', 'fn': <function _verb_tool.<locals>.fn at 0x108f0c9e0>, 'schema': {'properties': {'channel': {'type': 'string'}, 'n': {'type': 'integer'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type': 'string'}, 'root': {'description': "Store root (path to a project or its .refmatrix); default: the server's project", 'type': 'string'}, ...}, 'required': ['channel'], 'type': 'object'}}, ...}
+E        +  where {'rmx_bus_archive': {'description': 'Archive bus messages (still readable via bus_history status=archived): by `id`, or a whole `channel` (optionally only those with ts < `before_ts`).', 'fn': <function _verb_tool.<locals>.fn at 0x108f0d0c0>, 'schema': {'properties': {'before_ts': {'type': 'number'}, 'channel': {'type': 'string'}, 'id': {'type': 'string'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type': 'string'}, ...}, 'required': [], 'type': 'object'}}, 'rmx_bus_channels': {'description': 'List live bus channels (with message counts), optionally filtered by a glob like `proj:*` or `proj:cliquedb:*`. Channel discovery for the bus.', 'fn': <function _verb_tool.<locals>.fn at 0x108f0cb40>, 'schema': {'properties': {'glob': {'type': 'string'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type': 'string'}, 'root': {'description': "Store root (path to a project or its .refmatrix); default: the server's project", 'type': 'string'}}, 'required': [], 'type': 'object'}}, 'rmx_bus_delete': {'description': 'Soft-delete a bus message by id — hidden from history/read, recoverable until purge.', 'fn': <function _verb_tool.<locals>.fn at 0x108f0cf60>, 'schema': {'properties': {'id': {'type': 'string'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type': 'string'}, 'root': {'description': "Store root (path to a project or its .refmatrix); default: the server's project", 'type': 'string'}}, 'required': ['id'], 'type': 'object'}}, 'rmx_bus_history': {'description': 'Read recent messages on a bus channel.', 'fn': <function _verb_tool.<locals>.fn at 0x108f0c9e0>, 'schema': {'properties': {'channel': {'type': 'string'}, 'n': {'type': 'integer'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type': 'string'}, 'root': {'description': "Store root (path to a project or its .refmatrix); default: the server's project", 'type': 'string'}, ...}, 'required': ['channel'], 'type': 'object'}}, ...} = <module 'refmatrix.mcp' from '/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/tip/src/refmatrix/mcp.py'>.TOOLS
+
+tests/test_bug216_surfaces.py:155: AssertionError
+________ test_ac16_the_prestage_op_names_its_ignored_path_in_the_result ________
+
+env = {'base': PosixPath('/private/tmp/b216smor63tn7'), 'proj': PosixPath('/private/tmp/b216smor63tn7/proj'), 'root': PosixPath('/private/tmp/b216smor63tn7/proj/.refmatrix')}
+memdir = PosixPath('/private/tmp/b216smor63tn7/proj/notes/memory')
+
+    def test_ac16_the_prestage_op_names_its_ignored_path_in_the_result(env, memdir):
+        from refmatrix.daemon import Daemon, _op_prestage_hashes
+        d = Daemon(env["root"])
+        d.store = Store(env["root"])
+        d.store.init()
+        try:
+            res = _op_prestage_hashes(d, {"targets": [str(memdir)]})
+        finally:
+            d.store.close()
+        hidden = str(memdir / ".hidden" / "y.md")
+>       assert res.get("ignored") == 1, res
+E       AssertionError: {'considered': 1, 'missing': 1, 'skipped': 0, 'walk_skipped': {'skipped': 0, 'skipped_paths': []}, ...}
+E       assert None == 1
+E        +  where None = <built-in method get of dict object at 0x109dcef40>('ignored')
+E        +    where <built-in method get of dict object at 0x109dcef40> = {'considered': 1, 'missing': 1, 'skipped': 0, 'walk_skipped': {'skipped': 0, 'skipped_paths': []}, ...}.get
+
+tests/test_bug216_surfaces.py:183: AssertionError
+----------------------------- Captured stderr call -----------------------------
+ingest-gmd: ignored 1 path(s) excluded by the ignore rules (INGEST_IGNORE_DIRS, .refmatrix_ignore, hidden directories): /private/tmp/b216smor63tn7/proj/notes/memory/.hidden/y.md
+________ test_ac16_the_prestage_cli_names_its_ignored_path_daemon_down _________
+
+env = {'base': PosixPath('/private/tmp/b216seq0ksolb'), 'proj': PosixPath('/private/tmp/b216seq0ksolb/proj'), 'root': PosixPath('/private/tmp/b216seq0ksolb/proj/.refmatrix')}
+memdir = PosixPath('/private/tmp/b216seq0ksolb/proj/notes/memory')
+
+    def test_ac16_the_prestage_cli_names_its_ignored_path_daemon_down(env, memdir):
+        """The CLI's no-daemon branch: the line is in the command's OUTPUT (stdout), not left to
+        a stderr print inside the walk."""
+>       out = _prestage_cli(memdir)
+              ^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_bug216_surfaces.py:197: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+memdir = PosixPath('/private/tmp/b216seq0ksolb/proj/notes/memory')
+
+    def _prestage_cli(memdir: Path) -> str:
+>       r = CliRunner(mix_stderr=False).invoke(cli_mod.main, ["ingest-gmd", "--prestage",
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                                              str(memdir)])
+E       TypeError: CliRunner.__init__() got an unexpected keyword argument 'mix_stderr'
+
+tests/test_bug216_surfaces.py:188: TypeError
+_________ test_ac16_the_prestage_cli_names_its_ignored_path_daemon_up __________
+
+env = {'base': PosixPath('/private/tmp/b216se7nxnhww'), 'proj': PosixPath('/private/tmp/b216se7nxnhww/proj'), 'root': PosixPath('/private/tmp/b216se7nxnhww/proj/.refmatrix')}
+memdir = PosixPath('/private/tmp/b216se7nxnhww/proj/notes/memory')
+in_process_daemon = <refmatrix.daemon.Daemon object at 0x11a13c980>
+
+    def test_ac16_the_prestage_cli_names_its_ignored_path_daemon_up(env, memdir, in_process_daemon):
+        """The CLI's daemon branch prints what the OP returned."""
+>       out = _prestage_cli(memdir)
+              ^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_bug216_surfaces.py:203: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+memdir = PosixPath('/private/tmp/b216se7nxnhww/proj/notes/memory')
+
+    def _prestage_cli(memdir: Path) -> str:
+>       r = CliRunner(mix_stderr=False).invoke(cli_mod.main, ["ingest-gmd", "--prestage",
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                                              str(memdir)])
+E       TypeError: CliRunner.__init__() got an unexpected keyword argument 'mix_stderr'
+
+tests/test_bug216_surfaces.py:188: TypeError
+______________________ test_pairing_covers_every_cli_twin ______________________
+
+    def test_pairing_covers_every_cli_twin():
+        twins = {n for n, p in verbs.CLI_MAP.items() if p is not None}
+>       assert twins == set(PAIRING), sorted(twins ^ set(PAIRING))
+E       AssertionError: ['rmx_derive_denotes']
+E       assert {'rmx_bus_arc...bus_pub', ...} == {'rmx_bus_arc...bus_pub', ...}
+E         
+E         Extra items in the right set:
+E         'rmx_derive_denotes'
+E         
+E         Full diff:
+E           {
+E               'rmx_bus_archive',...
+E         
+E         ...Full output truncated (36 lines hidden), use '-vv' to show
+
+tests/test_verb_parity.py:205: AssertionError
+______________________ test_no_twin_exclusions_are_honest ______________________
+
+    def test_no_twin_exclusions_are_honest():
+        """A verb param may only be excluded from the defaults comparison when
+        the click command has no option by that (renamed) name, or the pair is a
+        declared shape difference. Excluding a same-named option hid the k=8 vs
+        k=10 drift the gate exists to catch (#bs-2)."""
+        bad = []
+        for vname, (path, renames, no_twin) in PAIRING.items():
+            if no_twin == "ALL":
+                continue
+>           cdefs = _click_defaults(_click_cmd(path))
+                                    ^^^^^^^^^^^^^^^^
+
+tests/test_verb_parity.py:219: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = ('derive', 'denotes')
+
+    def _click_cmd(path):
+        cmd = cli_main
+        for name in path:
+>           cmd = cmd.commands[name]  # type: ignore[attr-defined]
+                  ^^^^^^^^^^^^^^^^^^
+E           KeyError: 'denotes'
+
+tests/test_verb_parity.py:155: KeyError
+___________________ test_click_defaults_match_verb_defaults ____________________
+
+    def test_click_defaults_match_verb_defaults():
+        mismatches = []
+        for vname, (path, renames, no_twin) in PAIRING.items():
+            if no_twin == "ALL":
+                continue
+>           v = verbs.VERBS[vname]
+                ^^^^^^^^^^^^^^^^^^
+E           KeyError: 'rmx_derive_denotes'
+
+tests/test_verb_parity.py:232: KeyError
+________________ test_every_cli_twin_declares_its_wiring_class _________________
+
+    def test_every_cli_twin_declares_its_wiring_class():
+        twins = {n for n, p in verbs.CLI_MAP.items() if p is not None}
+        assert set(verbs.CLI_WIRING) == twins, sorted(set(verbs.CLI_WIRING) ^ twins)
+        assert set(verbs.CLI_WIRING.values()) <= {"calls", "payload"}
+        calls = {n for n, w in verbs.CLI_WIRING.items() if w == "calls"}
+        payload = {n for n, w in verbs.CLI_WIRING.items() if w == "payload"}
+>       assert calls == set(CLI_INVOKE), sorted(calls ^ set(CLI_INVOKE))
+E       AssertionError: ['rmx_derive_denotes']
+E       assert {'rmx_bus_arc...bus_pub', ...} == {'rmx_bus_arc...bus_pub', ...}
+E         
+E         Extra items in the right set:
+E         'rmx_derive_denotes'
+E         
+E         Full diff:
+E           {
+E               'rmx_bus_archive',...
+E         
+E         ...Full output truncated (33 lines hidden), use '-vv' to show
+
+tests/test_verb_parity.py:428: AssertionError
+_______________ test_cli_twin_calls_its_verb[rmx_derive_denotes] _______________
+
+vname = 'rmx_derive_denotes'
+_cli_env = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1132/test_cli_twin_calls_its_verb_r14/proj/.refmatrix')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11a11f070>
+
+    @pytest.mark.parametrize("vname", sorted(CLI_INVOKE))
+    def test_cli_twin_calls_its_verb(vname, _cli_env, monkeypatch):
+        """Three properties per twin: the verb is CALLED (with a root), the argv's
+        options ARRIVE as the verb's own parameters (bound against the real
+        signature), and the CLI RENDERS the verb's result (canary)."""
+        import inspect
+        argv, canned, expect, canary = CLI_INVOKE[vname]
+>       v = verbs.VERBS[vname]
+            ^^^^^^^^^^^^^^^^^^
+E       KeyError: 'rmx_derive_denotes'
+
+/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/tip/tests/test_verb_parity.py:459: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_replay_fidelity.py::test_ac14_a_replay_after_a_changed_doc_matches_the_catalog[rebuild]
+FAILED tests/test_bug216_replay_fidelity.py::test_ac14_a_replay_after_a_changed_doc_matches_the_catalog[delta]
+FAILED tests/test_bug216_replay_fidelity.py::test_ac14_a_pending_ref_binds_identically_after_replay[rebuild]
+FAILED tests/test_bug216_replay_fidelity.py::test_ac14_a_pending_ref_binds_identically_after_replay[delta]
+FAILED tests/test_bug216_replay_fidelity.py::test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay[rebuild]
+FAILED tests/test_bug216_replay_fidelity.py::test_ac14_a_purged_citer_leaves_no_pending_rows_after_replay[delta]
+FAILED tests/test_bug216_surfaces.py::test_ac15_the_derive_is_a_verb_with_cli_and_mcp_twins
+FAILED tests/test_bug216_surfaces.py::test_ac15_the_verb_returns_the_ops_counts
+FAILED tests/test_bug216_surfaces.py::test_ac15_the_cli_prints_the_ops_counts
+FAILED tests/test_bug216_surfaces.py::test_ac15_the_mcp_tool_returns_the_ops_counts
+FAILED tests/test_bug216_surfaces.py::test_ac15_daemon_down_the_cli_fails_loudly_and_writes_nothing
+FAILED tests/test_bug216_surfaces.py::test_ac15_daemon_down_the_mcp_tool_returns_an_error
+FAILED tests/test_bug216_surfaces.py::test_ac16_the_prestage_op_names_its_ignored_path_in_the_result
+FAILED tests/test_bug216_surfaces.py::test_ac16_the_prestage_cli_names_its_ignored_path_daemon_down
+FAILED tests/test_bug216_surfaces.py::test_ac16_the_prestage_cli_names_its_ignored_path_daemon_up
+FAILED tests/test_verb_parity.py::test_pairing_covers_every_cli_twin - Assert...
+FAILED tests/test_verb_parity.py::test_no_twin_exclusions_are_honest - KeyErr...
+FAILED tests/test_verb_parity.py::test_click_defaults_match_verb_defaults - K...
+FAILED tests/test_verb_parity.py::test_every_cli_twin_declares_its_wiring_class
+FAILED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_derive_denotes]
+======================= 20 failed, 165 passed in 15.89s ========================

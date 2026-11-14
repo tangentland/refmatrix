@@ -192,10 +192,77 @@ with `pip install -e '.[watch]'`).
 |----------------------|----------------------------------------------------------------------|
 | Root                 | `project_root` (recursive)                                           |
 | Events monitored     | `on_created`, `on_modified`, `on_deleted`, `on_moved`                |
-| Relevant extensions  | `CODE_EXTS ∪ DOC_EXTS` (defined in `watch.py:26-40`)                 |
-| Ignored directories  | `.git`, `.venv`, `venv`, `node_modules`, `.tldr`, `.refmatrix`, `__pycache__`, `.mypy_cache`, `.pytest_cache`, `.ruff_cache`, `dist`, `build`, `.tox`, `.nox` |
+| Relevant extensions  | `CODE_EXTS ∪ DOC_EXTS` (`watch.SUPPORTED_EXTS`)                      |
+| Ignored paths        | whatever `ingest.should_ignore(p, root)` excludes — see [[#ignore-rules]] |
 | Debounce             | Configurable window (default 500ms); coalesces bursts into one batch |
 | Handler              | Calls `sync_files(paths, semantic=True)` on the coalesced batch      |
+
+### Ignore rules (`.refmatrix_ignore`) {#ignore-rules}
+
+Every walker — the `rmx ingest` tree walk, both watchers (`watch.is_relevant`), `sync`
+(including its purge of a path that became ignored) and the `rmx ingest-gmd` doc walk — asks
+ONE predicate, `ingest.should_ignore(p, root)`; `ingest.ignore_reason` says why. The
+per-project file is `<project>/.refmatrix/.refmatrix_ignore`, one line each, `#` comments:
+
+| Line                 | Meaning                                                                    |
+|----------------------|----------------------------------------------------------------------------|
+| `name`               | a path SEGMENT anywhere (`workflow`, `.claude`)                            |
+| `*.glob`             | fnmatch on the file name (`*.log`)                                         |
+| `a/b`                | anchored to the project root: that path and everything under it           |
+| `!path`              | RE-INCLUDE: anchored to the project root, a glob allowed; files only       |
+
+Precedence, first match wins (bug-216 R1 + R11):
+
+1. `INGEST_IGNORE_DIRS` (`node_modules`, `venv`, `__pycache__`, `dist`, `build`) — always
+   ignored; nothing re-includes them. One list: the watcher keeps none of its own (R12).
+2. A `!path` line — included, whatever ignore line matches and wherever it sits.
+3. An ignore line — ignored.
+4. The BUILT-IN include: `CLAUDE.md` at the project root and `.claude/PROJECT_PROFILE.md`, when
+   the file carries GMD frontmatter, are included with no ignore file at all (a fresh clone, CI).
+5. The built-in hidden-directory rule — any segment starting with `.` is ignored.
+
+So `.claude` + `!.claude/PROJECT_PROFILE.md` ingests the profile and nothing else under
+`.claude/`; a `CLAUDE.md` line keeps excluding CLAUDE.md (the fleet's files carry one until it
+is removed) and `!CLAUDE.md` beats it. A `!dir` line re-includes NOTHING — list each file — and
+is reported once on stderr when the spec loads. `scripts/check-gmd-parity.py`, run by
+`scripts/lint-gmd.sh`, fails when a GMD doc in the lint scope is excluded by these rules, naming
+the file and the rule (R3).
+
+**Which root a path is judged against.** The spec is read from, and the segment rules (1 and 5)
+apply BELOW, the PROJECT root — never the ingest target (bug-216 R2-base + remedy B1):
+
+- `rmx ingest <dir>` and MCP `rmx_ingest`: ALWAYS the project the store belongs to (the parent
+  of its `.refmatrix/`). A `<dir>` inside it is judged by that project's spec, segment rules below
+  the root: `rmx ingest <proj>/.claude[/projects/x/memory]` stores nothing but a built-in-included
+  GMD `.claude/PROJECT_PROFILE.md`. A `<dir>` OUTSIDE it is judged on its absolute path, as
+  before bug-216: a memdir under any `.claude/` stores nothing, and no other store's ignore file
+  is ever read for it (remedy B1-r2). The store's OWN ignore file still applies to an outside
+  file, but by FILE NAME only (an outside path has no project-relative path): a bare-name or
+  glob line (`*.log`, `NOTES.md`) matches it, an anchored line (`docs/private`) and a `!path`
+  re-include never do (remedy r3 M3). Memories go through `ingest-gmd --as-memory`, never as
+  `kind=doc`.
+- the watcher and `sync`: the watch root / project root, so a project under `<x>/.hidden/` or
+  `<x>/build/` syncs, while a `build/` INSIDE the project stays out.
+- `rmx ingest-gmd <dir>`: the spec from the project root (the nearest `.refmatrix/` above
+  `<dir>`); the segment rules below `<dir>` itself — a directory handed in explicitly is taken as
+  given (`rmx session ingest` indexes cards under `.refmatrix/sessions/` this way). Every path it
+  excluded is named in its report, prestage's included.
+
+A deleted file at a built-in-include path stays in scope, so its delete event reaches `sync`,
+which purges it.
+
+**Changing the ignore file on a live store.** An edit to `.refmatrix_ignore` is not a file event
+the daemon acts on, and docs ingested before the edit are not re-judged. Re-including a doc that
+others already cite (R4: the rule docs) is: back up the file, edit it, then run `rmx reingest
+--force --no-sessions` through the daemon. The forced pass clears the mtime stamps AND the GMD
+content hashes, so every citer is re-processed and its pending `rel:` lines bind; a plain `rmx
+ingest .` skips a citer whose GMD content hash still matches. Then measure with
+`scripts/check-rel-landing.py` on a copy of the catalog.
+
+rel: specified-by -> [[task-bug216-rule-docs-in-graph#r1]]
+rel: specified-by -> [[task-bug216-rule-docs-in-graph#r4]]
+rel: specified-by -> [[task-bug216-rule-docs-in-graph#r11]]
+rel: specified-by -> [[task-bug216-rule-docs-in-graph#r12]]
 
 ### Embedded vs standalone {#embedded-vs-standalone}
 

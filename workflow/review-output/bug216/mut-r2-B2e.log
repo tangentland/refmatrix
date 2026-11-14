@@ -1,0 +1,193 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/mut2/refmatrix/src/refmatrix as checked-hash (bug-037)
+........F..                                                              [100%]
+=================================== FAILURES ===================================
+_________ test_b2e_a_name_loser_id_held_by_a_different_a_entity_merges _________
+
+base = PosixPath('/private/tmp/b216qov3xjzc0')
+
+    def test_b2e_a_name_loser_id_held_by_a_different_a_entity_merges(base):
+        """Shape 4 of bsd r2 #b2: `shared` is id 101 in A (newer, wins) and id 100 in B, so B's 100
+        is a name-loser remapped to 101 — while A holds a DIFFERENT entity, `a-x`, at 100. The
+        entity UPDATE (it excludes only the fresh moves) writes B's `shared` row over `a-x` and dies
+        on the unique (partition, kind, name) key. Expected: both of A's entities, untouched."""
+        from refmatrix.replica_merge import merge_slots
+        a_root = base / "A" / "proj" / ".refmatrix"
+        _new_store(a_root)
+        a = a_root / "catalog.duckdb"
+        b = base / "B" / "catalog.duckdb"
+        b.parent.mkdir()
+        shutil.copy2(a, b)
+        _seed(a, [(100, "a-x", 1.0), (101, "shared", 9.0)])
+        _seed(b, [(100, "shared", 5.0)])
+        target = base / "T" / "catalog.duckdb"
+        target.parent.mkdir()
+        try:
+>           merge_slots(a, b, target)
+
+tests/test_bug216_remedy_r2.py:376: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/replica_merge.py:137: in merge_slots
+    merged_counts, remap_a, remap_b, fresh_alloc_count, fresh_b, frag_remapped = _merge_into(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+con = <_duckdb.DuckDBPyConnection object at 0x118559770>
+a_path = PosixPath('/private/tmp/b216qov3xjzc0/A/proj/.refmatrix/catalog.duckdb')
+b_path = PosixPath('/private/tmp/b216qov3xjzc0/B/catalog.duckdb')
+tables = ('partitions', 'linkage_types', 'entities', 'concepts', 'memory_content', 'entity_links', ...)
+
+    def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
+                    max_entity: int, max_partition: int, max_lt: int) -> tuple:
+        """Build the merge on `con` (the target). Rows are copied BY NAME: the
+        target's schema is `init_catalog`'s, the Store's own (bug-113), and a
+        positional `SELECT *` silently misplaces same-typed columns whenever a
+        slot's column order differs."""
+        init_catalog(con, sequence_starts={
+            "seq_partitions_id":    max_partition + 1,
+            "seq_entities_id":      max_entity + REMAP_HEADROOM + 1,
+            # headroom: B linkage names that lose their id to A get fresh ids
+            "seq_linkage_types_id": max_lt + REMAP_HEADROOM + 1,
+        })
+    
+        attach_file(con, a_path, "a")
+        attach_file(con, b_path, "b")
+    
+        # ---- 3. Lookup tables: partitions + linkage_types ------------------
+        con.execute("INSERT INTO partitions BY NAME SELECT * FROM a.partitions")
+        con.execute("""
+            INSERT INTO partitions BY NAME
+            SELECT * FROM b.partitions
+            WHERE id NOT IN (SELECT id FROM partitions)
+        """)
+        _merge_linkage_types(con)
+    
+        # ---- 4. Build entity-id remap --------------------------------------
+        coll_rows = con.execute("""
+            SELECT
+                ae.id AS a_id, be.id AS b_id,
+                ae.updated_at AS a_u, be.updated_at AS b_u
+            FROM a.entities ae JOIN b.entities be
+            ON ae.partition_id = be.partition_id
+               AND ae.kind = be.kind
+               AND ae.name = be.name
+            WHERE ae.id <> be.id
+        """).fetchall()
+    
+        # Set of ids shared between slots (so we can detect "loser id taken
+        # in winner slot by a different entity"). Used purely for the fresh-
+        # id allocation accounting reported back.
+        shared_ids = set(r[0] for r in con.execute(
+            "SELECT id FROM a.entities WHERE id IN (SELECT id FROM b.entities)"
+        ).fetchall())
+    
+        remap_a: dict[int, int] = {}  # A-side loser_id -> canonical (in B)
+        remap_b: dict[int, int] = {}  # B-side loser_id -> canonical (in A)
+        fresh_alloc_count = 0
+        for a_id, b_id, a_u, b_u in coll_rows:
+            if a_u >= b_u:
+                # A wins; B's loser_id remaps to A's winner id.
+                remap_b[b_id] = a_id
+                if b_id in shared_ids:
+                    fresh_alloc_count += 1
+            else:
+                remap_a[a_id] = b_id
+                if a_id in shared_ids:
+                    fresh_alloc_count += 1
+    
+        # Two DIFFERENT entities under one id (bug-216 S2 fixture, 2026-11-13): slots
+        # that diverged from one copy both allocate the next ids from the same
+        # sequence state, so A's new row and B's new row share an id with
+        # different (partition, kind, name). The entity steps below read a shared
+        # id as ONE entity -- B's newer row overwrote A's, and A's entity, with
+        # every row naming it, was lost. B's row moves to a fresh id inside the
+        # sequence headroom, and `remap_b` carries every B-side reference to it. A
+        # B id that is already a name-loser needs no move (it maps to A's twin);
+        # every step that reads B by raw id excludes ALL remap_b losers, moved or
+        # name-lost (bug-216 remedy B2, bug-227): an A row at that id is A's.
+        fresh_b: dict[int, int] = {}
+        next_fresh = max_entity + 1
+        for (bid,) in con.execute("""
+            SELECT be.id FROM a.entities ae JOIN b.entities be ON ae.id = be.id
+            WHERE NOT (ae.partition_id = be.partition_id AND ae.kind = be.kind
+                       AND ae.name = be.name)
+            ORDER BY be.id
+        """).fetchall():
+            bid = int(bid)
+            if bid in remap_b or bid in remap_a:
+                continue
+            fresh_b[bid] = next_fresh
+            next_fresh += 1
+        if len(fresh_b) > REMAP_HEADROOM:
+            raise MergeRefused(
+                f"{len(fresh_b)} distinct entities share an id across the slots — more than "
+                f"the {REMAP_HEADROOM}-id headroom the merge target reserves")
+        remap_b.update(fresh_b)
+    
+        # Materialize remap as temp tables for SQL joins.
+        con.execute("CREATE TEMP TABLE remap_fresh_b (old_id BIGINT, new_id BIGINT)")
+        _fill_remap(con, "remap_fresh_b", "old_id", "new_id", fresh_b)
+        con.execute("CREATE TEMP TABLE remap_a (loser_id BIGINT, canonical_id BIGINT)")
+        con.execute("CREATE TEMP TABLE remap_b (loser_id BIGINT, canonical_id BIGINT)")
+        _fill_remap(con, "remap_a", "loser_id", "canonical_id", remap_a)
+        _fill_remap(con, "remap_b", "loser_id", "canonical_id", remap_b)
+    
+        # ---- 5. entities: drop losers, union, newer-wins on shared ids -----
+        con.execute("""
+            INSERT INTO entities BY NAME
+            SELECT ae.* FROM a.entities ae
+            LEFT JOIN remap_a r ON r.loser_id = ae.id
+            WHERE r.loser_id IS NULL
+        """)
+        con.execute("""
+            INSERT INTO entities BY NAME
+            SELECT be.* FROM b.entities be
+            LEFT JOIN remap_b r ON r.loser_id = be.id
+            LEFT JOIN entities m ON m.id = be.id
+            WHERE r.loser_id IS NULL AND m.id IS NULL
+        """)
+        con.execute("""
+            INSERT INTO entities BY NAME
+            SELECT be.* EXCLUDE (id), f.new_id AS id
+            FROM b.entities be JOIN remap_fresh_b f ON f.old_id = be.id
+        """)
+>       con.execute(f"""
+            UPDATE entities AS m
+            SET {_set_all(con, "entities", "b", "be", "id")}
+            FROM b.entities be
+            WHERE m.id = be.id AND be.updated_at > m.updated_at
+                  AND be.id NOT IN (SELECT old_id FROM remap_fresh_b)
+        """)
+E       _duckdb.ConstraintException: Constraint Error: Duplicate key "partition_id: 1, kind: doc, name: shared" violates unique constraint.
+
+src/refmatrix/replica_merge.py:422: ConstraintException
+
+During handling of the above exception, another exception occurred:
+
+base = PosixPath('/private/tmp/b216qov3xjzc0')
+
+    def test_b2e_a_name_loser_id_held_by_a_different_a_entity_merges(base):
+        """Shape 4 of bsd r2 #b2: `shared` is id 101 in A (newer, wins) and id 100 in B, so B's 100
+        is a name-loser remapped to 101 — while A holds a DIFFERENT entity, `a-x`, at 100. The
+        entity UPDATE (it excludes only the fresh moves) writes B's `shared` row over `a-x` and dies
+        on the unique (partition, kind, name) key. Expected: both of A's entities, untouched."""
+        from refmatrix.replica_merge import merge_slots
+        a_root = base / "A" / "proj" / ".refmatrix"
+        _new_store(a_root)
+        a = a_root / "catalog.duckdb"
+        b = base / "B" / "catalog.duckdb"
+        b.parent.mkdir()
+        shutil.copy2(a, b)
+        _seed(a, [(100, "a-x", 1.0), (101, "shared", 9.0)])
+        _seed(b, [(100, "shared", 5.0)])
+        target = base / "T" / "catalog.duckdb"
+        target.parent.mkdir()
+        try:
+            merge_slots(a, b, target)
+        except Exception as e:  # noqa: BLE001 — the crash is the defect; said plainly
+>           pytest.fail(f"merge_slots died on a name-loser id held by another A entity: "
+                        f"{type(e).__name__}: {str(e)[:300]}")
+E           Failed: merge_slots died on a name-loser id held by another A entity: ConstraintException: Constraint Error: Duplicate key "partition_id: 1, kind: doc, name: shared" violates unique constraint.
+
+tests/test_bug216_remedy_r2.py:378: Failed
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r2.py::test_b2e_a_name_loser_id_held_by_a_different_a_entity_merges
+1 failed, 10 passed in 3.17s

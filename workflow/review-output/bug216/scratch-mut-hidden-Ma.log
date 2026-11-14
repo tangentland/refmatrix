@@ -1,0 +1,159 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/mut2/src/refmatrix as checked-hash (bug-037)
+.........FF...FFFF.F............                                         [100%]
+=================================== FAILURES ===================================
+__ test_a_dot_dir_files_reach_the_store_through_no_route[visible-doc-walk-op] __
+
+route = 'doc-walk-op'
+env = {'agent': PosixPath('/private/tmp/b216hbadfdnq2/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216hbadfd.../tmp/b216hbadfdnq2/proj/notes/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216hbadfdnq2/proj/notes/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x13304ef90>
+
+    @pytest.mark.parametrize("route", list(ROUTES))
+    def test_a_dot_dir_files_reach_the_store_through_no_route(route, env, monkeypatch):
+        ROUTES[route](env, monkeypatch)
+        got = _pollution(env)
+>       assert got == {"entities": [], "evidence": [], "links": 0}, f"{route}: {got}"
+E       AssertionError: doc-walk-op: {'entities': [('doc', 'hidden_aside_q7', '/private/tmp/b216hbadfdnq2/proj/notes/memory/.hidden/y.md'), ('concept', 'hidden_aside_q7#root', '/private/tmp/b216hbadfdnq2/proj/notes/memory/.hidden/y.md'), ('concept', 'hidden_aside_q7#part', '/private/tmp/b216hbadfdnq2/proj/notes/memory/.hidden/y.md'), ('doc', 'rollback_aside_q7', '/private/tmp/b216hbadfdnq2/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'rollback_aside_q7#root', '/private/tmp/b216hbadfdnq2/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'rollback_aside_q7#part', '/private/tmp/b216hbadfdnq2/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'quodlibetzanzibar', None)], 'evidence': [], 'links': 36}
+E       assert {'entities': ..., 'links': 36} == {'entities': ...], 'links': 0}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'entities': [('doc', 'hidden_aside_q7', '/private/tmp/b216hbadfdnq2/proj/notes/memory/.hidden/y.md'), ('concept', 'hi... ('concept', 'rollback_aside_q7#part', '/private/tmp/b216hbadfdnq2/proj/notes/memory/.organise-rollback-1/x.md'), ...]} != {'entities': []}
+E         {'links': 36} != {'links': 0}
+E         Use -v to get more diff
+
+tests/test_bug216_hidden_no_pollution.py:227: AssertionError
+_ test_a_dot_dir_files_reach_the_store_through_no_route[visible-doc-walk-cli] __
+
+route = 'doc-walk-cli'
+env = {'agent': PosixPath('/private/tmp/b216h23w936qf/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216h23w93.../tmp/b216h23w936qf/proj/notes/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216h23w936qf/proj/notes/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x13304f4d0>
+
+    @pytest.mark.parametrize("route", list(ROUTES))
+    def test_a_dot_dir_files_reach_the_store_through_no_route(route, env, monkeypatch):
+        ROUTES[route](env, monkeypatch)
+        got = _pollution(env)
+>       assert got == {"entities": [], "evidence": [], "links": 0}, f"{route}: {got}"
+E       AssertionError: doc-walk-cli: {'entities': [('doc', 'hidden_aside_q7', '/private/tmp/b216h23w936qf/proj/notes/memory/.hidden/y.md'), ('concept', 'hidden_aside_q7#root', '/private/tmp/b216h23w936qf/proj/notes/memory/.hidden/y.md'), ('concept', 'hidden_aside_q7#part', '/private/tmp/b216h23w936qf/proj/notes/memory/.hidden/y.md'), ('doc', 'rollback_aside_q7', '/private/tmp/b216h23w936qf/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'rollback_aside_q7#root', '/private/tmp/b216h23w936qf/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'rollback_aside_q7#part', '/private/tmp/b216h23w936qf/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'quodlibetzanzibar', None)], 'evidence': [], 'links': 36}
+E       assert {'entities': ..., 'links': 36} == {'entities': ...], 'links': 0}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'entities': [('doc', 'hidden_aside_q7', '/private/tmp/b216h23w936qf/proj/notes/memory/.hidden/y.md'), ('concept', 'hi... ('concept', 'rollback_aside_q7#part', '/private/tmp/b216h23w936qf/proj/notes/memory/.organise-rollback-1/x.md'), ...]} != {'entities': []}
+E         {'links': 36} != {'links': 0}
+E         Use -v to get more diff
+
+tests/test_bug216_hidden_no_pollution.py:227: AssertionError
+_ test_a_dot_dir_files_reach_the_store_through_no_route[visible-project-sync] __
+
+route = 'project-sync'
+env = {'agent': PosixPath('/private/tmp/b216h8h82v8e1/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216h8h82v.../tmp/b216h8h82v8e1/proj/notes/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216h8h82v8e1/proj/notes/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x141c0c680>
+
+    @pytest.mark.parametrize("route", list(ROUTES))
+    def test_a_dot_dir_files_reach_the_store_through_no_route(route, env, monkeypatch):
+        ROUTES[route](env, monkeypatch)
+        got = _pollution(env)
+>       assert got == {"entities": [], "evidence": [], "links": 0}, f"{route}: {got}"
+E       AssertionError: project-sync: {'entities': [('doc', 'hidden_aside_q7', '/private/tmp/b216h8h82v8e1/proj/notes/memory/.hidden/y.md'), ('concept', 'hidden_aside_q7#root', '/private/tmp/b216h8h82v8e1/proj/notes/memory/.hidden/y.md'), ('concept', 'hidden_aside_q7#part', '/private/tmp/b216h8h82v8e1/proj/notes/memory/.hidden/y.md'), ('doc', 'rollback_aside_q7', '/private/tmp/b216h8h82v8e1/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'rollback_aside_q7#root', '/private/tmp/b216h8h82v8e1/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'rollback_aside_q7#part', '/private/tmp/b216h8h82v8e1/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'quodlibetzanzibar', None), ('doc', 'notes/memory/.hidden/y.md', '/private/tmp/b216h8h82v8e1/proj/notes/memory/.hidden/y.md'), ('doc', 'notes/memory/.organise-rollback-1/x.md', '/private/tmp/b216h8h82v8e1/proj/notes/memory/.organise-rollback-1/x.md')], 'evidence': [], 'links': 36}
+E       assert {'entities': ..., 'links': 36} == {'entities': ...], 'links': 0}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'entities': [('doc', 'hidden_aside_q7', '/private/tmp/b216h8h82v8e1/proj/notes/memory/.hidden/y.md'), ('concept', 'hi... ('concept', 'rollback_aside_q7#part', '/private/tmp/b216h8h82v8e1/proj/notes/memory/.organise-rollback-1/x.md'), ...]} != {'entities': []}
+E         {'links': 36} != {'links': 0}
+E         Use -v to get more diff
+
+tests/test_bug216_hidden_no_pollution.py:227: AssertionError
+_ test_a_dot_dir_files_reach_the_store_through_no_route[visible-project-watcher] _
+
+route = 'project-watcher'
+env = {'agent': PosixPath('/private/tmp/b216hh1fnri55/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216hh1fnr.../tmp/b216hh1fnri55/proj/notes/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216hh1fnri55/proj/notes/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1419f6af0>
+
+    @pytest.mark.parametrize("route", list(ROUTES))
+    def test_a_dot_dir_files_reach_the_store_through_no_route(route, env, monkeypatch):
+        ROUTES[route](env, monkeypatch)
+        got = _pollution(env)
+>       assert got == {"entities": [], "evidence": [], "links": 0}, f"{route}: {got}"
+E       AssertionError: project-watcher: {'entities': [('doc', 'hidden_aside_q7', '/private/tmp/b216hh1fnri55/proj/notes/memory/.hidden/y.md'), ('concept', 'hidden_aside_q7#root', '/private/tmp/b216hh1fnri55/proj/notes/memory/.hidden/y.md'), ('concept', 'hidden_aside_q7#part', '/private/tmp/b216hh1fnri55/proj/notes/memory/.hidden/y.md'), ('doc', 'rollback_aside_q7', '/private/tmp/b216hh1fnri55/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'rollback_aside_q7#root', '/private/tmp/b216hh1fnri55/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'rollback_aside_q7#part', '/private/tmp/b216hh1fnri55/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'quodlibetzanzibar', None), ('doc', 'notes/memory/.hidden/y.md', '/private/tmp/b216hh1fnri55/proj/notes/memory/.hidden/y.md'), ('doc', 'notes/memory/.organise-rollback-1/x.md', '/private/tmp/b216hh1fnri55/proj/notes/memory/.organise-rollback-1/x.md')], 'evidence': [], 'links': 36}
+E       assert {'entities': ..., 'links': 36} == {'entities': ...], 'links': 0}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'entities': [('doc', 'hidden_aside_q7', '/private/tmp/b216hh1fnri55/proj/notes/memory/.hidden/y.md'), ('concept', 'hi... ('concept', 'rollback_aside_q7#part', '/private/tmp/b216hh1fnri55/proj/notes/memory/.organise-rollback-1/x.md'), ...]} != {'entities': []}
+E         {'links': 36} != {'links': 0}
+E         Use -v to get more diff
+
+tests/test_bug216_hidden_no_pollution.py:227: AssertionError
+_ test_a_dot_dir_files_reach_the_store_through_no_route[visible-project-ingest-gmd] _
+
+route = 'project-ingest-gmd'
+env = {'agent': PosixPath('/private/tmp/b216hqzio9_qt/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216hqzio9.../tmp/b216hqzio9_qt/proj/notes/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216hqzio9_qt/proj/notes/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x141c10690>
+
+    @pytest.mark.parametrize("route", list(ROUTES))
+    def test_a_dot_dir_files_reach_the_store_through_no_route(route, env, monkeypatch):
+        ROUTES[route](env, monkeypatch)
+        got = _pollution(env)
+>       assert got == {"entities": [], "evidence": [], "links": 0}, f"{route}: {got}"
+E       AssertionError: project-ingest-gmd: {'entities': [('doc', 'hidden_aside_q7', '/private/tmp/b216hqzio9_qt/proj/notes/memory/.hidden/y.md'), ('concept', 'hidden_aside_q7#root', '/private/tmp/b216hqzio9_qt/proj/notes/memory/.hidden/y.md'), ('concept', 'hidden_aside_q7#part', '/private/tmp/b216hqzio9_qt/proj/notes/memory/.hidden/y.md'), ('doc', 'rollback_aside_q7', '/private/tmp/b216hqzio9_qt/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'rollback_aside_q7#root', '/private/tmp/b216hqzio9_qt/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'rollback_aside_q7#part', '/private/tmp/b216hqzio9_qt/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'quodlibetzanzibar', None)], 'evidence': [], 'links': 36}
+E       assert {'entities': ..., 'links': 36} == {'entities': ...], 'links': 0}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'entities': [('doc', 'hidden_aside_q7', '/private/tmp/b216hqzio9_qt/proj/notes/memory/.hidden/y.md'), ('concept', 'hi... ('concept', 'rollback_aside_q7#part', '/private/tmp/b216hqzio9_qt/proj/notes/memory/.organise-rollback-1/x.md'), ...]} != {'entities': []}
+E         {'links': 36} != {'links': 0}
+E         Use -v to get more diff
+
+tests/test_bug216_hidden_no_pollution.py:227: AssertionError
+_ test_a_dot_dir_files_reach_the_store_through_no_route[visible-project-ingest-path] _
+
+route = 'project-ingest-path'
+env = {'agent': PosixPath('/private/tmp/b216hwtnoa0n8/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216hwtnoa.../tmp/b216hwtnoa0n8/proj/notes/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216hwtnoa0n8/proj/notes/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x141c10f50>
+
+    @pytest.mark.parametrize("route", list(ROUTES))
+    def test_a_dot_dir_files_reach_the_store_through_no_route(route, env, monkeypatch):
+        ROUTES[route](env, monkeypatch)
+        got = _pollution(env)
+>       assert got == {"entities": [], "evidence": [], "links": 0}, f"{route}: {got}"
+E       AssertionError: project-ingest-path: {'entities': [('doc', 'hidden_aside_q7', '/private/tmp/b216hwtnoa0n8/proj/notes/memory/.hidden/y.md'), ('concept', 'hidden_aside_q7#root', '/private/tmp/b216hwtnoa0n8/proj/notes/memory/.hidden/y.md'), ('concept', 'hidden_aside_q7#part', '/private/tmp/b216hwtnoa0n8/proj/notes/memory/.hidden/y.md'), ('doc', 'rollback_aside_q7', '/private/tmp/b216hwtnoa0n8/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'rollback_aside_q7#root', '/private/tmp/b216hwtnoa0n8/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'rollback_aside_q7#part', '/private/tmp/b216hwtnoa0n8/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'quodlibetzanzibar', None), ('doc', 'notes/memory/.hidden/y.md', '/private/tmp/b216hwtnoa0n8/proj/notes/memory/.hidden/y.md'), ('doc', 'notes/memory/.organise-rollback-1/x.md', '/private/tmp/b216hwtnoa0n8/proj/notes/memory/.organise-rollback-1/x.md')], 'evidence': [], 'links': 36}
+E       assert {'entities': ..., 'links': 36} == {'entities': ...], 'links': 0}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'entities': [('doc', 'hidden_aside_q7', '/private/tmp/b216hwtnoa0n8/proj/notes/memory/.hidden/y.md'), ('concept', 'hi... ('concept', 'rollback_aside_q7#part', '/private/tmp/b216hwtnoa0n8/proj/notes/memory/.organise-rollback-1/x.md'), ...]} != {'entities': []}
+E         {'links': 36} != {'links': 0}
+E         Use -v to get more diff
+
+tests/test_bug216_hidden_no_pollution.py:227: AssertionError
+_ test_a_dot_dir_files_reach_the_store_through_no_route_all_routes_in_turn[visible] _
+
+env = {'agent': PosixPath('/private/tmp/b216hhk7w7mv9/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216hhk7w7.../tmp/b216hhk7w7mv9/proj/notes/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216hhk7w7mv9/proj/notes/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11481a150>
+
+    def test_a_dot_dir_files_reach_the_store_through_no_route_all_routes_in_turn(env,
+                                                                                 monkeypatch):
+        for name, fn in ROUTES.items():
+            fn(env, monkeypatch)
+            got = _pollution(env)
+>           assert got == {"entities": [], "evidence": [], "links": 0}, f"after {name}: {got}"
+E           AssertionError: after doc-walk-op: {'entities': [('doc', 'hidden_aside_q7', '/private/tmp/b216hhk7w7mv9/proj/notes/memory/.hidden/y.md'), ('concept', 'hidden_aside_q7#root', '/private/tmp/b216hhk7w7mv9/proj/notes/memory/.hidden/y.md'), ('concept', 'hidden_aside_q7#part', '/private/tmp/b216hhk7w7mv9/proj/notes/memory/.hidden/y.md'), ('doc', 'rollback_aside_q7', '/private/tmp/b216hhk7w7mv9/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'rollback_aside_q7#root', '/private/tmp/b216hhk7w7mv9/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'rollback_aside_q7#part', '/private/tmp/b216hhk7w7mv9/proj/notes/memory/.organise-rollback-1/x.md'), ('concept', 'quodlibetzanzibar', None)], 'evidence': [], 'links': 36}
+E           assert {'entities': ..., 'links': 36} == {'entities': ...], 'links': 0}
+E             
+E             Omitting 1 identical items, use -vv to show
+E             Differing items:
+E             {'entities': [('doc', 'hidden_aside_q7', '/private/tmp/b216hhk7w7mv9/proj/notes/memory/.hidden/y.md'), ('concept', 'hi... ('concept', 'rollback_aside_q7#part', '/private/tmp/b216hhk7w7mv9/proj/notes/memory/.organise-rollback-1/x.md'), ...]} != {'entities': []}
+E             {'links': 36} != {'links': 0}
+E             Use -v to get more diff
+
+tests/test_bug216_hidden_no_pollution.py:235: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_hidden_no_pollution.py::test_a_dot_dir_files_reach_the_store_through_no_route[visible-doc-walk-op]
+FAILED tests/test_bug216_hidden_no_pollution.py::test_a_dot_dir_files_reach_the_store_through_no_route[visible-doc-walk-cli]
+FAILED tests/test_bug216_hidden_no_pollution.py::test_a_dot_dir_files_reach_the_store_through_no_route[visible-project-sync]
+FAILED tests/test_bug216_hidden_no_pollution.py::test_a_dot_dir_files_reach_the_store_through_no_route[visible-project-watcher]
+FAILED tests/test_bug216_hidden_no_pollution.py::test_a_dot_dir_files_reach_the_store_through_no_route[visible-project-ingest-gmd]
+FAILED tests/test_bug216_hidden_no_pollution.py::test_a_dot_dir_files_reach_the_store_through_no_route[visible-project-ingest-path]
+FAILED tests/test_bug216_hidden_no_pollution.py::test_a_dot_dir_files_reach_the_store_through_no_route_all_routes_in_turn[visible]
+7 failed, 25 passed in 59.12s

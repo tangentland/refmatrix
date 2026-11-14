@@ -1,0 +1,172 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/f0521bff-0006-479a-9e0f-6df02d50937e/scratchpad/ref216/src/refmatrix as checked-hash (bug-037)
+..F...........................F.FFF.....F............                    [100%]
+=================================== FAILURES ===================================
+________________ test_reinclude_never_beats_ingest_ignore_dirs _________________
+
+root = PosixPath('/private/tmp/b216i994t3fp7')
+
+    def test_reinclude_never_beats_ingest_ignore_dirs(root):
+        """`!node_modules/x.md` stays ignored (mutation M2). Every INGEST_IGNORE_DIRS member, at the
+        root and nested."""
+        assert set(INGEST_IGNORE_DIRS) >= {"node_modules", "venv"}
+        lines = []
+        paths = []
+        for d in INGEST_IGNORE_DIRS:
+            for rel in (f"{d}/x.md", f"pkg/{d}/y.md"):
+                lines.append(f"!{rel}")
+                paths.append(_touch(root, rel))
+        _spec(root, *lines)
+        for p in paths:
+>           assert should_ignore(p, root) is True, f"re-include beat INGEST_IGNORE_DIRS: {p}"
+E           AssertionError: re-include beat INGEST_IGNORE_DIRS: /private/tmp/b216i994t3fp7/node_modules/x.md
+E           assert False is True
+E            +  where False = should_ignore(PosixPath('/private/tmp/b216i994t3fp7/node_modules/x.md'), PosixPath('/private/tmp/b216i994t3fp7'))
+
+tests/test_bug216_ignore_reinclude.py:102: AssertionError
+____ test_r2_every_walker_ingests_the_same_files_under_the_new_config[sync] ____
+
+route = 'sync'
+proj_new = (PosixPath('/private/tmp/b216kqoh4tz6/proj'), PosixPath('/private/tmp/b216kqoh4tz6/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x106d05a20>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_r2_every_walker_ingests_the_same_files_under_the_new_config(route, proj_new,
+                                                                         monkeypatch):
+        """One fixture tree, one spec, the SAME included set on every walk. The tree has a spec
+        re-include under a hidden dir (the profile), a hidden-dir file the spec also ignores (the
+        agent template), an anchored spec exclusion (templates) and a re-include that must lose to
+        INGEST_IGNORE_DIRS (`!node_modules/n.md`)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert got == EXPECTED_NEW, (
+            f"{route}: missing {sorted(EXPECTED_NEW - got)}, extra {sorted(got - EXPECTED_NEW)}")
+E       AssertionError: sync: missing [], extra ['node_modules/n.md']
+E       assert {'.claude/PRO...modules/n.md'} == {'.claude/PRO...ocs/other.md'}
+E         
+E         Extra items in the left set:
+E         'node_modules/n.md'
+E         Use -v to get more diff
+
+tests/test_bug216_rule_docs_e2e.py:477: AssertionError
+_ test_r2_every_walker_ingests_the_same_files_under_the_new_config[op-ingest-gmd] _
+
+route = 'op-ingest-gmd'
+proj_new = (PosixPath('/private/tmp/b216hek53e6q/proj'), PosixPath('/private/tmp/b216hek53e6q/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x106d43e00>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_r2_every_walker_ingests_the_same_files_under_the_new_config(route, proj_new,
+                                                                         monkeypatch):
+        """One fixture tree, one spec, the SAME included set on every walk. The tree has a spec
+        re-include under a hidden dir (the profile), a hidden-dir file the spec also ignores (the
+        agent template), an anchored spec exclusion (templates) and a re-include that must lose to
+        INGEST_IGNORE_DIRS (`!node_modules/n.md`)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert got == EXPECTED_NEW, (
+            f"{route}: missing {sorted(EXPECTED_NEW - got)}, extra {sorted(got - EXPECTED_NEW)}")
+E       AssertionError: op-ingest-gmd: missing [], extra ['node_modules/n.md']
+E       assert {'.claude/PRO...modules/n.md'} == {'.claude/PRO...ocs/other.md'}
+E         
+E         Extra items in the left set:
+E         'node_modules/n.md'
+E         Use -v to get more diff
+
+tests/test_bug216_rule_docs_e2e.py:477: AssertionError
+_ test_r2_every_walker_ingests_the_same_files_under_the_new_config[cli-ingest-gmd] _
+
+route = 'cli-ingest-gmd'
+proj_new = (PosixPath('/private/tmp/b216wrzej6cx/proj'), PosixPath('/private/tmp/b216wrzej6cx/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x106d43c40>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_r2_every_walker_ingests_the_same_files_under_the_new_config(route, proj_new,
+                                                                         monkeypatch):
+        """One fixture tree, one spec, the SAME included set on every walk. The tree has a spec
+        re-include under a hidden dir (the profile), a hidden-dir file the spec also ignores (the
+        agent template), an anchored spec exclusion (templates) and a re-include that must lose to
+        INGEST_IGNORE_DIRS (`!node_modules/n.md`)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert got == EXPECTED_NEW, (
+            f"{route}: missing {sorted(EXPECTED_NEW - got)}, extra {sorted(got - EXPECTED_NEW)}")
+E       AssertionError: cli-ingest-gmd: missing [], extra ['node_modules/n.md']
+E       assert {'.claude/PRO...modules/n.md'} == {'.claude/PRO...ocs/other.md'}
+E         
+E         Extra items in the left set:
+E         'node_modules/n.md'
+E         Use -v to get more diff
+
+tests/test_bug216_rule_docs_e2e.py:477: AssertionError
+_ test_r2_every_walker_ingests_the_same_files_under_the_new_config[ingest-path] _
+
+route = 'ingest-path'
+proj_new = (PosixPath('/private/tmp/b2165x3i2e3v/proj'), PosixPath('/private/tmp/b2165x3i2e3v/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c9964a0>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_r2_every_walker_ingests_the_same_files_under_the_new_config(route, proj_new,
+                                                                         monkeypatch):
+        """One fixture tree, one spec, the SAME included set on every walk. The tree has a spec
+        re-include under a hidden dir (the profile), a hidden-dir file the spec also ignores (the
+        agent template), an anchored spec exclusion (templates) and a re-include that must lose to
+        INGEST_IGNORE_DIRS (`!node_modules/n.md`)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert got == EXPECTED_NEW, (
+            f"{route}: missing {sorted(EXPECTED_NEW - got)}, extra {sorted(got - EXPECTED_NEW)}")
+E       AssertionError: ingest-path: missing [], extra ['node_modules/n.md']
+E       assert {'.claude/PRO...modules/n.md'} == {'.claude/PRO...ocs/other.md'}
+E         
+E         Extra items in the left set:
+E         'node_modules/n.md'
+E         Use -v to get more diff
+
+tests/test_bug216_rule_docs_e2e.py:477: AssertionError
+_____________ test_r2_watch_is_relevant_agrees_with_should_ignore ______________
+
+proj_new = (PosixPath('/private/tmp/b2162hjiir3h/proj'), PosixPath('/private/tmp/b2162hjiir3h/proj/.refmatrix'))
+
+    def test_r2_watch_is_relevant_agrees_with_should_ignore(proj_new):
+        """The `rmx watch` (watch.py) handler's filter, file by file, against the one predicate."""
+        from refmatrix.ingest import should_ignore
+        from refmatrix.watch import is_relevant
+        proj, _root = proj_new
+        diff = [p.relative_to(proj).as_posix() for p in _all_files(proj)
+                if is_relevant(p, proj) == should_ignore(p, proj)]
+>       assert diff == [], f"is_relevant disagrees with should_ignore on {diff}"
+E       AssertionError: is_relevant disagrees with should_ignore on ['node_modules/n.md']
+E       assert ['node_modules/n.md'] == []
+E         
+E         Left contains one more item: 'node_modules/n.md'
+E         Use -v to get more diff
+
+tests/test_bug216_rule_docs_e2e.py:502: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_ignore_reinclude.py::test_reinclude_never_beats_ingest_ignore_dirs
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_new_config[sync]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_new_config[op-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_new_config[cli-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_new_config[ingest-path]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_watch_is_relevant_agrees_with_should_ignore
+6 failed, 47 passed in 13.42s

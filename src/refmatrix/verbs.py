@@ -2324,6 +2324,37 @@ def memory_compile(root: Path, *,
                  retries=0, write=bool(apply))
 
 
+# The `denotes` derive reads every doc/memory id and path-less concept of a
+# partition and writes one link per pair; seconds on a live store, plus the
+# writer queue. One attempt (retries=0) bounded by this.
+DERIVE_DENOTES_TIMEOUT_S = 600.0
+
+
+@verb("rmx_derive_denotes",
+      "Link every path-less concept named after an ingested doc or memory id (and its "
+      "spelling variants) to that doc/memory with a `denotes` edge, so graph walks treat "
+      "a misbound [[doc-id]] citation as reaching the doc. Idempotent: a second run adds "
+      "nothing. Returns {added, concepts, targets, multi_target}. Needs the daemon.",
+      descriptions={
+          "partition": "partition to derive (default: the daemon's bound partition)",
+      })
+def derive_denotes(root: Path, *, partition: str | None = None,
+                   timeout: float | None = None) -> dict:
+    """The `denotes` derive as a verb (bug-216 R14, 2026-11-13). Before this it
+    ran only as `daemon.call(root, "denotes_link", ...)`, a capability no agent
+    and no operator command could reach (.claude/PROJECT_PROFILE.md
+    #constraints: every capability is a verb first; CLI and MCP expose it).
+    Daemon-only by design: the derive writes links, and a write never opens the
+    store in-process behind a daemon's back -- daemon down raises
+    `VerbAbsentError`, which the CLI turns into a non-zero exit and the MCP
+    tool into an `error`. ONE attempt (`retries=0`,
+    feedback_daemon_call_retries_multiply_timeouts)."""
+    payload = {"partition": partition} if partition else {}
+    return _call(root, "denotes_link", payload,
+                 timeout=float(timeout) if timeout is not None else DERIVE_DENOTES_TIMEOUT_S,
+                 retries=0, write=True)
+
+
 def emit_memory_get_used(root: Path, name: str, *, scope: str = "project") -> int:
     """R12 `memory_get_by_name`: an explicit, BY-NAME memory read (the CLI `rmx memory get`
     on its verb path AND its replica fall-through, and the MCP `rmx_memory get` action) of a
@@ -3336,6 +3367,8 @@ CLI_MAP: dict[str, "tuple[str, ...] | None"] = {
     "rmx_refine": ("refine", "list"),
     # task 26.6 R-D (19.4 R1's op half): `memory compile` left LEGACY_UNPAIRED.
     "rmx_memory_compile": ("memory", "compile"),
+    # bug-216 R14: the `denotes` derive (the op `denotes_link`).
+    "rmx_derive_denotes": ("derive", "denotes"),
 }
 # How each twin is WIRED to its verb (asserted by test_verb_parity.py by
 # recording the call while the click command runs — ch-bsd plan-3 r1 #bs-1
