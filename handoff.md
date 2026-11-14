@@ -32,7 +32,7 @@ disk (29.5's merge, a derive-hash flip), which needs its own go (L106).
 |---|---|---|---|
 | `green-216` · ch-implementer | `refmatrix-bug241` · `task-bug241-rule-docs-gmd-on-reingest` | `7145c19` + uncommitted src | bug-241 + bug-240 GREEN, summary |
 | `spec-29a` · ch-architect (Fable) | `refmatrix-spec-plan29a` · `spec-plan29a` | `bdd9cd8` + uncommitted | 29.1/29.4/29.5 r2 + new 29.6 |
-| `spec-29b` · ch-architect (Fable) | `refmatrix-spec-plan29b` · `spec-plan29b` | `11e9f9f` + uncommitted | 29.2/29.3 r2 |
+| `spec-29b` · ch-architect (Fable) | `refmatrix-spec-plan29b` · `spec-plan29b` | `6089b46` (r2 folded; L106 D4 (c) pending) | 29.2/29.3 r2 |
 
 ## What this session did {#did}
 

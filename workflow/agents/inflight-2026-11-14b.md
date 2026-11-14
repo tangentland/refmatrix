@@ -60,8 +60,11 @@ standing go excludes store-changing releases; 29.5 R5 still needs one re-stamp);
 
 ## spec-29b (ch-architect, Fable) — plan-29 specs r2 {#spec-29b}
 
-Clone `/Volumes/littlebig/refmatrix-spec-plan29b`, branch `spec-plan29b`, tip `11e9f9f` at save
-time (uncommitted revision work in the tree). Revise 29.2 / 29.3 per ch-bsd r1 and L105: S3
+Clone `/Volumes/littlebig/refmatrix-spec-plan29b`, branch `spec-plan29b`. Round 2 (L105) folded at
+`6089b46` (after the save); still to fold: L106's plan-29 D4 = (c) (the normalised-AST derive hash as
+a 29.2 requirement — `6089b46` still calls (c) "a separate task") and plan-review-fable-store D5 as
+decided. Open with spec-29a: 29.5 excludes `typing_store.py` from its `store_*` rules and accepts the
+`TYPE_CHECKING` host base; 29.4 AC-11 admits a keyword-argument bound for `feature-bound` tests. Revise 29.2 / 29.3 per ch-bsd r1 and L105: S3
 (embed/pagerank/compile pass modules; AC-18 provably fails), S4 (29.2 AC-7 RED at its start;
 29.3(b) AC), M5, M6 (three seams, coordinated with spec-29a), M7 (outcome checks, not
 wall-clock), M9; the B1 extension (`#needs-295` rewritten: the three functions do not move);
