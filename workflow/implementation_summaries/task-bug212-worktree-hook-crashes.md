@@ -831,3 +831,79 @@ rel: amends -> [[#green-r2-changes]]
   forbids only "in-process write").
 - No mutation batch this round. The change is wording only, and RED r3's probe already ran W,
   W+K5, W+K6 and W+K8 on this exact wording (`#red-r3-probe`).
+
+## RED r4 (ch-bsd r2 at 67f55cb: b-1, m-1, m-3, m-4; ruling L72) {#red-r4}
+
+The test commit is `1c7cf4c`. It adds the new file `tests/test_bug212_r4_red.py` and edits one
+assertion in `tests/test_bug212_r2_red.py` for m-1. Results at `67f55cb`:
+
+- r4 file: **30 failed, 6 passed** (`bug212/red-r4-head.log`).
+- The 4 earlier files: **2 failed, 115 passed** (`bug212/red-r4-head-prior4.log`). The 2
+  failures are the m-1 read pair.
+
+Every RED fails for the reason it names. The E lines are below.
+
+rel: derives-from -> [[bsd-bug212-r2-67f55cb]]
+rel: amends -> [[#red-r3]]
+
+### RED at 67f55cb, by item {#red-r4-items}
+
+| item | test(s) | E line at 67f55cb |
+|------|---------|-------------------|
+| b-1 CLI | `test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[<slots/legacy>-<add-concept, add-entity, protect, noise, focus-change-subject, init, partition-drop>]` (14) | `` `rmx <argv>` wrote the git-tracked catalog ['catalog.A.duckdb' / 'catalog.duckdb'] (exit 0) `` |
+| b-1 MCP | `test_the_mcp_memory_add_fallback_refuses_a_git_tracked_catalog[slots, legacy]` | `MCP rmx_memory_add wrote the git-tracked catalog [...]: '{"id": 1}'` |
+| b-1 promote | `test_the_save_state_promote_fallback_refuses_a_git_tracked_catalog[slots, legacy]` | `the promote wrote the git-tracked catalog [...]: {'name': 'focus_summary_…', 'id': 1}` |
+| b-1 AST | `test_no_read_write_store_open_outside_the_allowlist` | `cli:init (951)`, `cli:partition_drop (4266)`, `handoff:_promote_digest (381)`, `mcp:_t_memory_add (121)`, `verbs:change_subject (1574)` |
+| b-1 AST | `test_both_checked_openers_call_the_one_store_level_check` | `store.py has no function that calls git_tracked_catalogs` |
+| m-1 | `test_bug212_r2_red.py::test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open[pairs-show, memory-get]` | `a READ's refusal claims a write: "... and the write would modify a committed file ..."` |
+| m-3 | `test_a_hanging_git_raises_the_check_error_within_the_timeout[<layout>-<rev-parse-hangs, ls-files-hangs>]` (4) | `git_tracked_catalogs did not return within 45s with git hanging` |
+| m-3 | `test_an_in_process_writer_with_a_hanging_git_fails_loudly[slots, legacy]` | `` `rmx sync --files` with git hanging did not finish within 45s: a silent hang `` |
+| m-4 | `test_a_failing_rev_parse_inside_a_repository_raises[slots, legacy]` | `git_tracked_catalogs returned [] with a corrupt .git/HEAD` |
+| m-4 | `test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses[slots, legacy]` | `the in-process sync wrote the tracked catalog (corrupt HEAD read as 'not a repository')` |
+
+The six passing tests:
+
+- **GUARDs** that pass at `67f55cb`:
+  - `test_a_foreign_git_dir_in_the_env_does_not_hide_a_tracked_catalog[slots, legacy]`;
+  - `test_a_writer_with_a_foreign_git_dir_in_the_env_still_refuses[slots, legacy]`.
+
+  HEAD already strips the env on both calls, so these cannot be RED there. Mutation X3 proves
+  them: X3 keeps `os.environ` on the `rev-parse` call, and all 4 fail with "the check answered []"
+  / "wrote the git-tracked catalog" (`bug212/red-r4-mut-X3.log`, 34 failed). src was restored with
+  `git checkout --` in its own command and checked clean, and `__pycache__` was cleared.
+- **Scanner guards:**
+  - `test_the_census_scanner_sees_the_known_openers`: the scanner is shown to FIND opens;
+  - `test_the_allowlist_names_no_site_that_no_longer_opens`: stale allowlist entries fail.
+
+### Design notes {#red-r4-notes}
+
+- The census is alias-aware: `Store` under any name bound in the module, `<mod>.Store`, and
+  `X = Store`. It found a fifth hand-rolled writer that ch-bsd r2 did not list:
+  `cli.partition_drop` opens `Store` imported as `_Store` and DELETEs a partition row. It got
+  a CLI RED of its own (`partition-drop`), seeded with an empty partition.
+- The allowlist has two parts:
+  - CHECKED: `cli:_store_rw` and `verbs:local_write`.
+  - UNCHECKED, each with a reason: `daemon:Daemon._reopen_writer`, `Daemon.serve_forever` and
+    `Daemon._bootstrap_rotation_if_needed` (the daemon is the accepted writer, a1/bug-214);
+    `hub:_bootstrap_global_store`; `store:Store.link_canon`.
+- "One store-level check" means a function in store.py, other than `git_tracked_catalogs`
+  itself, that calls `git_tracked_catalogs`. Each checked opener must call it directly or
+  through one wrapper. A CLI wrapper that turns the refusal into a `ClickException` therefore
+  passes; the name of the check is not pinned.
+- m-3's bound is 45 s against L72's fixed `timeout=10`. No override is exposed, so it is a
+  timing test. At HEAD the 6 hang tests cost about 4.5 min, because each runs to the bound.
+  After the fix they should cost about 10 s each. The shim is registered as `external`.
+
+### For the implementer and the lead {#red-r4-flags}
+
+- `cli.partition_drop` is a fifth bypass. L72 names four. It needs routing too; the AST test
+  already fails on it.
+- `sync.changed_since` runs `git diff` with no timeout. The post-commit hook's `rmx sync
+  --since` calls it before any store opens, so a hanging git still hangs that background sync.
+  This is outside L72's m-3 scope (which covers `git_tracked_catalogs` only); it is a
+  candidate row.
+- `_promote_digest` keeps its "never raises, returns {error}" contract, and the test pins the
+  refusal inside `error`. Whether `rmx save-state` prints that error loudly is not tested here.
+- `rmx focus change-subject` has no `VerbError` -> `ClickException` translation. Once
+  `change_subject` routes through `local_write`, the CLI must still print exactly one `Error:`
+  line, not a traceback (the test requires one).
