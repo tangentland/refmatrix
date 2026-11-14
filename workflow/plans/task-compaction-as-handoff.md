@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: task-compaction-as-handoff
-title: "Compaction as a handoff: PreCompact saves state and shrinks the summary to one line; SessionStart(compact) injects recall-state"
+title: "Compaction and /clear as a handoff: PreCompact saves state and shrinks the summary to one line; SessionStart(compact|clear) points at the full recall-state file"
 tags: [task, hooks, compaction, handoff, save-state, recall-state]
 metadata:
   node_type: task
@@ -49,8 +49,10 @@ removed; it can be steered to a single line, with the handoff carrying the state
    authoritative state". The model then pulls it with a file read, which carries no hook cap and no
    Bash output cap at this size. The PreCompact summary instruction (R2) names the same first
    action. If the write fails, the injected block says so and falls back to 25.1's budgeted inline
-   recall-state. The `clear` trigger keeps 25.1's inline handoff unchanged (only compaction uses the
-   pulled form, per the user's "only for").
+   recall-state. **`/clear` uses the same pulled form (L92; the user, 2026-11-14: "add the clear to
+   that idea"):** the SessionStart `clear` entry writes the same per-session file and injects the
+   same pointer, so 25.1's inline recall-state on `compact|clear` is replaced by the pulled form on
+   both triggers; the inline budgeted handoff remains only as the fallback when the write fails.
 4. **R4 Manual /compact.** {#r4} A manual `/compact <instructions>` keeps the user's instructions:
    the R2 instruction applies to the `auto` trigger only, unless the user passes none.
 5. **R5 Generated and installed.** {#r5} Emitted by `hooks.py`, covered by `install-hooks --check`,
@@ -60,7 +62,7 @@ removed; it can be steered to a single line, with the handoff carrying the state
 
 - **AC-1:** the generated PreCompact entries print exactly the R2 text to stdout and nothing else
   (mutation: a second stdout writer → fails); save-state runs before the print.
-- **AC-2:** the SessionStart `compact` entry writes the full handoff file (byte-identical to `rmx recall-state` stdout) and injects only the pointer block naming its path and size; a failed write injects the fallback (mutation: the inline handoff on `compact` → fails); `clear` is unchanged.
+- **AC-2:** the SessionStart `compact` entry writes the full handoff file (byte-identical to `rmx recall-state` stdout) and injects only the pointer block naming its path and size; a failed write injects the fallback (mutation: the inline handoff on `compact` → fails); the `clear` entry does the same (mutation: `clear` left inline → fails).
 - **AC-3:** a sandbox session forced to auto-compact shows a summary of at most a few lines and the
   injected handoff after it (an R0-style probe recorded under `workflow/measurements/`, hashes not
   raw prompts).
