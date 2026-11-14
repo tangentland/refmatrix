@@ -1,0 +1,240 @@
+....F......F............................                                 [100%]
+=================================== FAILURES ===================================
+_ test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-focus-change-subject] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1120823f0>, 'slots')
+writer = 'focus-change-subject'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", list(CLI_WRITERS))
+    def test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """b-1: the CLI writers that reach `verbs.local_write` (`add concept|entity`, `protect`,
+        `noise`) or hand-roll `Store(...)` (`focus change-subject` -> `verbs.change_subject`;
+        `init`; `partition drop`), run in-process (no daemon) in the main checkout of a repo that commits its
+        catalog. At 67f55cb every one of them writes the committed file."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        _seed_and_commit(repo)
+        before = _digests(repo.store)
+        argv = list(CLI_WRITERS[writer])
+        r = _cli(repo, argv)
+>       _assert_refused_cli(repo, layout, f"`rmx {' '.join(argv)}`", r, before)
+
+tests/test_bug212_r4_red.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x1120823f0>
+layout = 'slots'
+what = '`rmx focus change-subject bug212 r4 subject -s bug212-r4-session`'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-3y6pityt/rmx...log*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead\n')
+before = {'catalog.A.duckdb': 'a843b57d3fc2890e43974b177724ef88a5cb6605bb00f8972108d71e60a1a0a9', 'catalog.B.duckdb': 'f1ad55f8...1f773d8be85672ce608d32e5d2cf5e9', 'catalog.duckdb': 'f1ad55f8b135f8ab1715d4224a7b3456b1f773d8be85672ce608d32e5d2cf5e9'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+>       assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+E       AssertionError: [slots] `rmx focus change-subject bug212 r4 subject -s bug212-r4-session` crashed
+E         exit 1
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/verbs.py", line 1578, in change_subject
+E             r = _call(root, "subject_upsert", {"label": label, "partition": part},
+E                       timeout=30.0)
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/verbs.py", line 269, in _call
+E             require_daemon(root, retries=0 if retries == 0 else 2)
+E             ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/verbs.py", line 205, in require_daemon
+E             raise VerbAbsentError(f"daemon not running for {root}")
+E         refmatrix.verbs.VerbAbsentError: daemon not running for /private/tmp/b212t-3y6pityt/proj/.refmatrix
+E         
+E         During handling of the above exception, another exception occurred:
+E         
+E         Traceback (most recent call last):
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/verbs.py", line 555, in local_write
+E             refuse_tracked_catalog_open(s.root, s.db_path)
+E             ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/store.py", line 179, in refuse_tracked_catalog_open
+E             raise TrackedCatalogRefused(
+E             ...<3 lines>...
+E                 f"files), or {remedy}")
+E         refmatrix.store.TrackedCatalogRefused: refusing to open /private/tmp/b212t-3y6pityt/proj/.refmatrix/catalog.A.duckdb read-write in-process: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead
+E         
+E         The above exception was the direct cause of the following exception:
+E         
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212t-3y6pityt/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/cli.py", line 15098, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/cli.py", line 118, in invoke
+E             return super().invoke(ctx)
+E                    ~~~~~~~~~~~~~~^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/cli.py", line 1841, in focus_change_subject
+E             rec = _verbs.change_subject(_root(), label, session=session)
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/verbs.py", line 1586, in change_subject
+E             eid = local_write(root, lambda s2: {"id": s2.upsert_subject(label)["id"]},
+E                   ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                               partition=part)["id"]
+E                               ^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/verbs.py", line 557, in local_write
+E             raise VerbError(str(exc)) from exc
+E         refmatrix.verbs.VerbError: refusing to open /private/tmp/b212t-3y6pityt/proj/.refmatrix/catalog.A.duckdb read-write in-process: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (...it instead\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/verbs.py", line 1578, in change_subject
+E               r = _call(root, "subject_upsert", {"label": label, "partition": part},
+E                         timeout=30.0)
+E             File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/verbs.py", line 269, in _call...
+E         
+E         ...Full output truncated (56 lines hidden), use '-vv' to show
+
+tests/test_bug212_r4_red.py:87: AssertionError
+_ test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-focus-change-subject] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1121432f0>, 'legacy')
+writer = 'focus-change-subject'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", list(CLI_WRITERS))
+    def test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """b-1: the CLI writers that reach `verbs.local_write` (`add concept|entity`, `protect`,
+        `noise`) or hand-roll `Store(...)` (`focus change-subject` -> `verbs.change_subject`;
+        `init`; `partition drop`), run in-process (no daemon) in the main checkout of a repo that commits its
+        catalog. At 67f55cb every one of them writes the committed file."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        _seed_and_commit(repo)
+        before = _digests(repo.store)
+        argv = list(CLI_WRITERS[writer])
+        r = _cli(repo, argv)
+>       _assert_refused_cli(repo, layout, f"`rmx {' '.join(argv)}`", r, before)
+
+tests/test_bug212_r4_red.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x1121432f0>
+layout = 'legacy'
+what = '`rmx focus change-subject bug212 r4 subject -s bug212-r4-session`'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-w6gmkhxf/rmx...log*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead\n')
+before = {'catalog.duckdb': 'f4b951b9a0a22e6d6e7e952f899dcdfd152ba3f8f5e4adc38eaf21f583922538'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+>       assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+E       AssertionError: [legacy] `rmx focus change-subject bug212 r4 subject -s bug212-r4-session` crashed
+E         exit 1
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/verbs.py", line 1578, in change_subject
+E             r = _call(root, "subject_upsert", {"label": label, "partition": part},
+E                       timeout=30.0)
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/verbs.py", line 269, in _call
+E             require_daemon(root, retries=0 if retries == 0 else 2)
+E             ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/verbs.py", line 205, in require_daemon
+E             raise VerbAbsentError(f"daemon not running for {root}")
+E         refmatrix.verbs.VerbAbsentError: daemon not running for /private/tmp/b212t-w6gmkhxf/proj/.refmatrix
+E         
+E         During handling of the above exception, another exception occurred:
+E         
+E         Traceback (most recent call last):
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/verbs.py", line 555, in local_write
+E             refuse_tracked_catalog_open(s.root, s.db_path)
+E             ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/store.py", line 179, in refuse_tracked_catalog_open
+E             raise TrackedCatalogRefused(
+E             ...<3 lines>...
+E                 f"files), or {remedy}")
+E         refmatrix.store.TrackedCatalogRefused: refusing to open /private/tmp/b212t-w6gmkhxf/proj/.refmatrix/catalog.duckdb read-write in-process: git tracks this store's catalog (catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead
+E         
+E         The above exception was the direct cause of the following exception:
+E         
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212t-w6gmkhxf/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/cli.py", line 15098, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/cli.py", line 118, in invoke
+E             return super().invoke(ctx)
+E                    ~~~~~~~~~~~~~~^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/cli.py", line 1841, in focus_change_subject
+E             rec = _verbs.change_subject(_root(), label, session=session)
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/verbs.py", line 1586, in change_subject
+E             eid = local_write(root, lambda s2: {"id": s2.upsert_subject(label)["id"]},
+E                   ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                               partition=part)["id"]
+E                               ^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/verbs.py", line 557, in local_write
+E             raise VerbError(str(exc)) from exc
+E         refmatrix.verbs.VerbError: refusing to open /private/tmp/b212t-w6gmkhxf/proj/.refmatrix/catalog.duckdb read-write in-process: git tracks this store's catalog (catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (...it instead\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/verbs.py", line 1578, in change_subject
+E               r = _call(root, "subject_upsert", {"label": label, "partition": part},
+E                         timeout=30.0)
+E             File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/verbs.py", line 269, in _call...
+E         
+E         ...Full output truncated (56 lines hidden), use '-vv' to show
+
+tests/test_bug212_r4_red.py:87: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-focus-change-subject]
+FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-focus-change-subject]
+2 failed, 38 passed in 108.94s (0:01:48)

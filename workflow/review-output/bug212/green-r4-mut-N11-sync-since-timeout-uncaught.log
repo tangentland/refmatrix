@@ -1,0 +1,100 @@
+pyc-guard: recompiled 5 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix as checked-hash (bug-037)
+.......................................F                                 [100%]
+=================================== FAILURES ===================================
+_____________ test_sync_since_with_a_hanging_git_diff_fails_loudly _____________
+
+ignored_store_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a1b4d50>
+
+    @pytest.mark.timeout(180)
+    def test_sync_since_with_a_hanging_git_diff_fails_loudly(ignored_store_repo):
+        """L82, end to end -- the post-commit path: `rmx sync --since HEAD~1`, no daemon, an
+        ignored catalog (so the store opens), `git diff` hanging. One `Error:` line naming the
+        timeout, exit non-zero, within the bound; never a silent hang in the backgrounded hook."""
+        repo = ignored_store_repo
+        _hanging_git(repo.base / "hangbin", "diff")
+        env = _base_env()
+        env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
+        r = _run_bounded([sys.executable, str(_entry(repo.base)), "sync", "--since", "HEAD~1"],
+                         cwd=repo.proj, env=env, bound=HANG_BOUND_S)
+        assert r is not None, (f"`rmx sync --since HEAD~1` with `git diff` hanging did not finish "
+                               f"within {HANG_BOUND_S}s: a silent hang")
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr and r.returncode != 0, text
+E       AssertionError: exit 1
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/sync.py", line 172, in changed_since
+E             out = subprocess.run(
+E                 ["git", "-C", str(project_root), "diff", "--name-only", git_ref],
+E                 capture_output=True, text=True, timeout=GIT_DIFF_TIMEOUT_S,
+E             )
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py", line 557, in run
+E             stdout, stderr = process.communicate(input, timeout=timeout)
+E                              ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py", line 1221, in communicate
+E             stdout, stderr = self._communicate(input, endtime, timeout)
+E                              ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py", line 2154, in _communicate
+E             self._check_timeout(endtime, orig_timeout, stdout, stderr)
+E             ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py", line 1268, in _check_timeout
+E             raise TimeoutExpired(
+E             ...<2 lines>...
+E                     stderr=b''.join(stderr_seq) if stderr_seq else None)
+E         subprocess.TimeoutExpired: Command '['git', '-C', '/private/tmp/b212d-o48y9bil/proj', 'diff', '--name-only', 'HEAD~1']' timed out after 10 seconds
+E         
+E         The above exception was the direct cause of the following exception:
+E         
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212d-o48y9bil/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/cli.py", line 15098, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/cli.py", line 118, in invoke
+E             return super().invoke(ctx)
+E                    ~~~~~~~~~~~~~~^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/cli.py", line 8829, in sync
+E             _sync_in_process(s, proot, files=files, since=since, flush_queue=flush_queue,
+E             ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                              invalidate=invalidate, semantic=semantic)
+E                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/cli.py", line 8872, in _sync_in_process
+E             report = syncmod.sync_since(s, since, project_root=proot, semantic=semantic)
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/sync.py", line 195, in sync_since
+E             files = changed_since(project_root, git_ref)
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/sync.py", line 177, in changed_since
+E             raise GitTimeoutError(git_ref, project_root, GIT_DIFF_TIMEOUT_S) from exc
+E         refmatrix.sync.GitTimeoutError: sync --since HEAD~1 failed: git diff timed out after 10s in /private/tmp/b212d-o48y9bil/proj
+E         
+E       assert ('Traceback (...t call last)' not in 'Traceback (...y9bil/proj\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/sync.py", line 172, in changed_since
+E               out = subprocess.run(
+E                   ["git", "-C", str(project_root), "diff", "--name-only", git_ref],
+E                   capture_output=True, text=True, timeout=GIT_DIFF_TIMEOUT_S,...
+E         
+E         ...Full output truncated (53 lines hidden), use '-vv' to show)
+
+tests/test_bug212_r4_red.py:684: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r4_red.py::test_sync_since_with_a_hanging_git_diff_fails_loudly
+1 failed, 39 passed in 107.60s (0:01:47)

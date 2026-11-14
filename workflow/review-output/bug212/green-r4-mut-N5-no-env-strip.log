@@ -1,0 +1,126 @@
+............................FF..........                                 [100%]
+=================================== FAILURES ===================================
+___ test_a_foreign_git_dir_in_the_env_does_not_hide_a_tracked_catalog[slots] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x11b683250>, 'slots')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10eb74050>
+
+    def test_a_foreign_git_dir_in_the_env_does_not_hide_a_tracked_catalog(tracked_repo,
+                                                                          monkeypatch):
+        """m-4 / X3 (GUARD at 67f55cb -- both calls are stripped there; the mutation X3, which kept
+        the hook's `GIT_*` on `rev-parse` only, survived 117/117): with `GIT_DIR=/nonexistent` in
+        the environment, `rev-parse` must still ask the store's own repository."""
+        repo, layout = tracked_repo
+        monkeypatch.setenv("GIT_DIR", "/nonexistent")
+        want = sorted(Path(p).name for p in subprocess.run(
+            ["git", "-C", str(repo.proj), "ls-files", "--", ".refmatrix"], env=_base_env(),
+            capture_output=True, text=True).stdout.split() if Path(p).name in WRITER_CATALOG_FILES)
+>       got = store_mod.git_tracked_catalogs(repo.store)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_bug212_r4_red.py:512: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/b212t-v303ix8y/proj/.refmatrix')
+
+    def git_tracked_catalogs(root: Path) -> list[str]:
+        """The `WRITER_CATALOG_FILES` names under the store dir `root` that git TRACKS, in that
+        tuple's order; `[]` when none is, when no `.git` exists at or above `root`, or when git is
+        not installed.
+    
+        Why (bug-212 r1, lead decision a2, 2026-11-13): fleet repos (cliquet, atldb,
+        prep_prolific) commit their catalog files. The generated git hooks' gate lets a stale
+        daemon socket through (it cannot tell live from stale), and the CLI then fell to an
+        in-process sync that wrote the committed binary -- the b-1 incident behind the new gate.
+        So every in-process opener asks git first (`refuse_tracked_catalog_open`).
+    
+        "Not in a repository" and "git not installed" answer `[]`: nothing commits the file then,
+        and a store outside any repo must keep its in-process writes. Everything else that leaves
+        the answer unknown raises `TrackedCatalogCheckError` (fail closed, never "untracked"):
+        a failed `ls-files`; a failed `rev-parse` while a `.git` exists at or above `root` (r4,
+        ch-bsd r2 m-4: a corrupt `.git/HEAD` read as "not a repository" let the write through);
+        and either call running past `GIT_CHECK_TIMEOUT_S` (r4, m-3). Both calls run without the
+        caller's repository-local `GIT_*` variables (`_GIT_LOCAL_ENV_VARS`), so a hook's
+        repository cannot answer for the store's."""
+        import shutil
+    
+        root = Path(root)
+        if shutil.which("git") is None or not root.is_dir():
+            return []
+        env = dict(os.environ)
+        inside = _run_git_check(["rev-parse", "--is-inside-work-tree"], root=root, env=env)
+        if inside.returncode != 0:
+            dotgit = _git_dir_at_or_above(root.resolve())
+            if dotgit is None:
+                return []
+            said = " ".join(ln.strip() for ln in inside.stderr.splitlines() if ln.strip())
+>           raise TrackedCatalogCheckError(
+                f"cannot tell whether git tracks the catalog under {root}: git rev-parse exited "
+                f"{inside.returncode} although {dotgit} exists: {said or '(git printed nothing)'}")
+E           refmatrix.store.TrackedCatalogCheckError: cannot tell whether git tracks the catalog under /private/tmp/b212t-v303ix8y/proj/.refmatrix: git rev-parse exited 128 although /private/tmp/b212t-v303ix8y/proj/.git exists: fatal: not a git repository: '/nonexistent'
+
+src/refmatrix/store.py:139: TrackedCatalogCheckError
+__ test_a_foreign_git_dir_in_the_env_does_not_hide_a_tracked_catalog[legacy] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10ff00250>, 'legacy')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10edaf230>
+
+    def test_a_foreign_git_dir_in_the_env_does_not_hide_a_tracked_catalog(tracked_repo,
+                                                                          monkeypatch):
+        """m-4 / X3 (GUARD at 67f55cb -- both calls are stripped there; the mutation X3, which kept
+        the hook's `GIT_*` on `rev-parse` only, survived 117/117): with `GIT_DIR=/nonexistent` in
+        the environment, `rev-parse` must still ask the store's own repository."""
+        repo, layout = tracked_repo
+        monkeypatch.setenv("GIT_DIR", "/nonexistent")
+        want = sorted(Path(p).name for p in subprocess.run(
+            ["git", "-C", str(repo.proj), "ls-files", "--", ".refmatrix"], env=_base_env(),
+            capture_output=True, text=True).stdout.split() if Path(p).name in WRITER_CATALOG_FILES)
+>       got = store_mod.git_tracked_catalogs(repo.store)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_bug212_r4_red.py:512: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/b212t-tiz0crxw/proj/.refmatrix')
+
+    def git_tracked_catalogs(root: Path) -> list[str]:
+        """The `WRITER_CATALOG_FILES` names under the store dir `root` that git TRACKS, in that
+        tuple's order; `[]` when none is, when no `.git` exists at or above `root`, or when git is
+        not installed.
+    
+        Why (bug-212 r1, lead decision a2, 2026-11-13): fleet repos (cliquet, atldb,
+        prep_prolific) commit their catalog files. The generated git hooks' gate lets a stale
+        daemon socket through (it cannot tell live from stale), and the CLI then fell to an
+        in-process sync that wrote the committed binary -- the b-1 incident behind the new gate.
+        So every in-process opener asks git first (`refuse_tracked_catalog_open`).
+    
+        "Not in a repository" and "git not installed" answer `[]`: nothing commits the file then,
+        and a store outside any repo must keep its in-process writes. Everything else that leaves
+        the answer unknown raises `TrackedCatalogCheckError` (fail closed, never "untracked"):
+        a failed `ls-files`; a failed `rev-parse` while a `.git` exists at or above `root` (r4,
+        ch-bsd r2 m-4: a corrupt `.git/HEAD` read as "not a repository" let the write through);
+        and either call running past `GIT_CHECK_TIMEOUT_S` (r4, m-3). Both calls run without the
+        caller's repository-local `GIT_*` variables (`_GIT_LOCAL_ENV_VARS`), so a hook's
+        repository cannot answer for the store's."""
+        import shutil
+    
+        root = Path(root)
+        if shutil.which("git") is None or not root.is_dir():
+            return []
+        env = dict(os.environ)
+        inside = _run_git_check(["rev-parse", "--is-inside-work-tree"], root=root, env=env)
+        if inside.returncode != 0:
+            dotgit = _git_dir_at_or_above(root.resolve())
+            if dotgit is None:
+                return []
+            said = " ".join(ln.strip() for ln in inside.stderr.splitlines() if ln.strip())
+>           raise TrackedCatalogCheckError(
+                f"cannot tell whether git tracks the catalog under {root}: git rev-parse exited "
+                f"{inside.returncode} although {dotgit} exists: {said or '(git printed nothing)'}")
+E           refmatrix.store.TrackedCatalogCheckError: cannot tell whether git tracks the catalog under /private/tmp/b212t-tiz0crxw/proj/.refmatrix: git rev-parse exited 128 although /private/tmp/b212t-tiz0crxw/proj/.git exists: fatal: not a git repository: '/nonexistent'
+
+src/refmatrix/store.py:139: TrackedCatalogCheckError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r4_red.py::test_a_foreign_git_dir_in_the_env_does_not_hide_a_tracked_catalog[slots]
+FAILED tests/test_bug212_r4_red.py::test_a_foreign_git_dir_in_the_env_does_not_hide_a_tracked_catalog[legacy]
+2 failed, 38 passed in 106.88s (0:01:46)

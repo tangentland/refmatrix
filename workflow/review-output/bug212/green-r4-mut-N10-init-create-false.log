@@ -1,0 +1,302 @@
+.......FFFFFFFFF............................................             [100%]
+=================================== FAILURES ===================================
+___________________ test_session_list_shows_ingested_session ___________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_list_shows_ingest0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x121078c80>
+
+    def test_session_list_shows_ingested_session(tmp_path, monkeypatch):
+>       _setup_indexed_store(tmp_path, monkeypatch)
+
+tests/test_session_cli.py:176: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_list_shows_ingest0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x121078c80>
+
+    def _setup_indexed_store(tmp_path, monkeypatch) -> Path:
+        """Init a store + ingest one fixture session end-to-end. Returns the
+        JSONL source path so tests can re-reference it."""
+        monkeypatch.setenv("REFMATRIX_ROOT", str(tmp_path / ".refmatrix"))
+        src = tmp_path / "abc123.jsonl"
+        _write_fixture_jsonl(src)
+        runner = CliRunner()
+        # init resolves its target dir from cwd or --path, not REFMATRIX_ROOT.
+        # Point it at tmp_path so the resulting .refmatrix matches the env var.
+        r0 = runner.invoke(main, ["init", "--path", str(tmp_path),
+                                  "--no-hooks", "--no-agents"])
+>       assert r0.exit_code == 0, r0.output
+E       AssertionError: Error: no refmatrix catalog at /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_list_shows_ingest0/.refmatrix (catalog.duckdb missing) — run `rmx init` first
+E         
+E       assert 1 == 0
+E        +  where 1 = <Result SystemExit(1)>.exit_code
+
+tests/test_session_cli.py:169: AssertionError
+____________________________ test_session_list_json ____________________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_list_json0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1175e74d0>
+
+    def test_session_list_json(tmp_path, monkeypatch):
+>       _setup_indexed_store(tmp_path, monkeypatch)
+
+tests/test_session_cli.py:185: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_list_json0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1175e74d0>
+
+    def _setup_indexed_store(tmp_path, monkeypatch) -> Path:
+        """Init a store + ingest one fixture session end-to-end. Returns the
+        JSONL source path so tests can re-reference it."""
+        monkeypatch.setenv("REFMATRIX_ROOT", str(tmp_path / ".refmatrix"))
+        src = tmp_path / "abc123.jsonl"
+        _write_fixture_jsonl(src)
+        runner = CliRunner()
+        # init resolves its target dir from cwd or --path, not REFMATRIX_ROOT.
+        # Point it at tmp_path so the resulting .refmatrix matches the env var.
+        r0 = runner.invoke(main, ["init", "--path", str(tmp_path),
+                                  "--no-hooks", "--no-agents"])
+>       assert r0.exit_code == 0, r0.output
+E       AssertionError: Error: no refmatrix catalog at /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_list_json0/.refmatrix (catalog.duckdb missing) — run `rmx init` first
+E         
+E       assert 1 == 0
+E        +  where 1 = <Result SystemExit(1)>.exit_code
+
+tests/test_session_cli.py:169: AssertionError
+______________________ test_session_recall_finds_by_query ______________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_recall_finds_by_q0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1126c3930>
+
+    def test_session_recall_finds_by_query(tmp_path, monkeypatch):
+>       _setup_indexed_store(tmp_path, monkeypatch)
+
+tests/test_session_cli.py:196: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_recall_finds_by_q0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1126c3930>
+
+    def _setup_indexed_store(tmp_path, monkeypatch) -> Path:
+        """Init a store + ingest one fixture session end-to-end. Returns the
+        JSONL source path so tests can re-reference it."""
+        monkeypatch.setenv("REFMATRIX_ROOT", str(tmp_path / ".refmatrix"))
+        src = tmp_path / "abc123.jsonl"
+        _write_fixture_jsonl(src)
+        runner = CliRunner()
+        # init resolves its target dir from cwd or --path, not REFMATRIX_ROOT.
+        # Point it at tmp_path so the resulting .refmatrix matches the env var.
+        r0 = runner.invoke(main, ["init", "--path", str(tmp_path),
+                                  "--no-hooks", "--no-agents"])
+>       assert r0.exit_code == 0, r0.output
+E       AssertionError: Error: no refmatrix catalog at /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_recall_finds_by_q0/.refmatrix (catalog.duckdb missing) — run `rmx init` first
+E         
+E       assert 1 == 0
+E        +  where 1 = <Result SystemExit(1)>.exit_code
+
+tests/test_session_cli.py:169: AssertionError
+__________________ test_session_recall_branch_filter_excludes __________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_recall_branch_fil0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11250b770>
+
+    def test_session_recall_branch_filter_excludes(tmp_path, monkeypatch):
+>       _setup_indexed_store(tmp_path, monkeypatch)
+
+tests/test_session_cli.py:204: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_recall_branch_fil0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11250b770>
+
+    def _setup_indexed_store(tmp_path, monkeypatch) -> Path:
+        """Init a store + ingest one fixture session end-to-end. Returns the
+        JSONL source path so tests can re-reference it."""
+        monkeypatch.setenv("REFMATRIX_ROOT", str(tmp_path / ".refmatrix"))
+        src = tmp_path / "abc123.jsonl"
+        _write_fixture_jsonl(src)
+        runner = CliRunner()
+        # init resolves its target dir from cwd or --path, not REFMATRIX_ROOT.
+        # Point it at tmp_path so the resulting .refmatrix matches the env var.
+        r0 = runner.invoke(main, ["init", "--path", str(tmp_path),
+                                  "--no-hooks", "--no-agents"])
+>       assert r0.exit_code == 0, r0.output
+E       AssertionError: Error: no refmatrix catalog at /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_recall_branch_fil0/.refmatrix (catalog.duckdb missing) — run `rmx init` first
+E         
+E       assert 1 == 0
+E        +  where 1 = <Result SystemExit(1)>.exit_code
+
+tests/test_session_cli.py:169: AssertionError
+____________________________ test_session_show_card ____________________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_show_card0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12109de60>
+
+    def test_session_show_card(tmp_path, monkeypatch):
+>       _setup_indexed_store(tmp_path, monkeypatch)
+
+tests/test_session_cli.py:214: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_show_card0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12109de60>
+
+    def _setup_indexed_store(tmp_path, monkeypatch) -> Path:
+        """Init a store + ingest one fixture session end-to-end. Returns the
+        JSONL source path so tests can re-reference it."""
+        monkeypatch.setenv("REFMATRIX_ROOT", str(tmp_path / ".refmatrix"))
+        src = tmp_path / "abc123.jsonl"
+        _write_fixture_jsonl(src)
+        runner = CliRunner()
+        # init resolves its target dir from cwd or --path, not REFMATRIX_ROOT.
+        # Point it at tmp_path so the resulting .refmatrix matches the env var.
+        r0 = runner.invoke(main, ["init", "--path", str(tmp_path),
+                                  "--no-hooks", "--no-agents"])
+>       assert r0.exit_code == 0, r0.output
+E       AssertionError: Error: no refmatrix catalog at /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_show_card0/.refmatrix (catalog.duckdb missing) — run `rmx init` first
+E         
+E       assert 1 == 0
+E        +  where 1 = <Result SystemExit(1)>.exit_code
+
+tests/test_session_cli.py:169: AssertionError
+___________________ test_session_show_raw_returns_jsonl_path ___________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_show_raw_returns_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1177f2150>
+
+    def test_session_show_raw_returns_jsonl_path(tmp_path, monkeypatch):
+>       src = _setup_indexed_store(tmp_path, monkeypatch)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_session_cli.py:223: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_show_raw_returns_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1177f2150>
+
+    def _setup_indexed_store(tmp_path, monkeypatch) -> Path:
+        """Init a store + ingest one fixture session end-to-end. Returns the
+        JSONL source path so tests can re-reference it."""
+        monkeypatch.setenv("REFMATRIX_ROOT", str(tmp_path / ".refmatrix"))
+        src = tmp_path / "abc123.jsonl"
+        _write_fixture_jsonl(src)
+        runner = CliRunner()
+        # init resolves its target dir from cwd or --path, not REFMATRIX_ROOT.
+        # Point it at tmp_path so the resulting .refmatrix matches the env var.
+        r0 = runner.invoke(main, ["init", "--path", str(tmp_path),
+                                  "--no-hooks", "--no-agents"])
+>       assert r0.exit_code == 0, r0.output
+E       AssertionError: Error: no refmatrix catalog at /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_show_raw_returns_0/.refmatrix (catalog.duckdb missing) — run `rmx init` first
+E         
+E       assert 1 == 0
+E        +  where 1 = <Result SystemExit(1)>.exit_code
+
+tests/test_session_cli.py:169: AssertionError
+____________________ test_session_show_turns_reparses_jsonl ____________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_show_turns_repars0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1177f3b90>
+
+    def test_session_show_turns_reparses_jsonl(tmp_path, monkeypatch):
+>       _setup_indexed_store(tmp_path, monkeypatch)
+
+tests/test_session_cli.py:231: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_show_turns_repars0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1177f3b90>
+
+    def _setup_indexed_store(tmp_path, monkeypatch) -> Path:
+        """Init a store + ingest one fixture session end-to-end. Returns the
+        JSONL source path so tests can re-reference it."""
+        monkeypatch.setenv("REFMATRIX_ROOT", str(tmp_path / ".refmatrix"))
+        src = tmp_path / "abc123.jsonl"
+        _write_fixture_jsonl(src)
+        runner = CliRunner()
+        # init resolves its target dir from cwd or --path, not REFMATRIX_ROOT.
+        # Point it at tmp_path so the resulting .refmatrix matches the env var.
+        r0 = runner.invoke(main, ["init", "--path", str(tmp_path),
+                                  "--no-hooks", "--no-agents"])
+>       assert r0.exit_code == 0, r0.output
+E       AssertionError: Error: no refmatrix catalog at /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_show_turns_repars0/.refmatrix (catalog.duckdb missing) — run `rmx init` first
+E         
+E       assert 1 == 0
+E        +  where 1 = <Result SystemExit(1)>.exit_code
+
+tests/test_session_cli.py:169: AssertionError
+_____________________ test_session_show_unknown_id_errors ______________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_show_unknown_id_e0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1210c6af0>
+
+    def test_session_show_unknown_id_errors(tmp_path, monkeypatch):
+>       _setup_indexed_store(tmp_path, monkeypatch)
+
+tests/test_session_cli.py:240: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_show_unknown_id_e0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1210c6af0>
+
+    def _setup_indexed_store(tmp_path, monkeypatch) -> Path:
+        """Init a store + ingest one fixture session end-to-end. Returns the
+        JSONL source path so tests can re-reference it."""
+        monkeypatch.setenv("REFMATRIX_ROOT", str(tmp_path / ".refmatrix"))
+        src = tmp_path / "abc123.jsonl"
+        _write_fixture_jsonl(src)
+        runner = CliRunner()
+        # init resolves its target dir from cwd or --path, not REFMATRIX_ROOT.
+        # Point it at tmp_path so the resulting .refmatrix matches the env var.
+        r0 = runner.invoke(main, ["init", "--path", str(tmp_path),
+                                  "--no-hooks", "--no-agents"])
+>       assert r0.exit_code == 0, r0.output
+E       AssertionError: Error: no refmatrix catalog at /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_show_unknown_id_e0/.refmatrix (catalog.duckdb missing) — run `rmx init` first
+E         
+E       assert 1 == 0
+E        +  where 1 = <Result SystemExit(1)>.exit_code
+
+tests/test_session_cli.py:169: AssertionError
+______________________________ test_session_stats ______________________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_stats0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1175ca410>
+
+    def test_session_stats(tmp_path, monkeypatch):
+>       _setup_indexed_store(tmp_path, monkeypatch)
+
+tests/test_session_cli.py:248: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_stats0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1175ca410>
+
+    def _setup_indexed_store(tmp_path, monkeypatch) -> Path:
+        """Init a store + ingest one fixture session end-to-end. Returns the
+        JSONL source path so tests can re-reference it."""
+        monkeypatch.setenv("REFMATRIX_ROOT", str(tmp_path / ".refmatrix"))
+        src = tmp_path / "abc123.jsonl"
+        _write_fixture_jsonl(src)
+        runner = CliRunner()
+        # init resolves its target dir from cwd or --path, not REFMATRIX_ROOT.
+        # Point it at tmp_path so the resulting .refmatrix matches the env var.
+        r0 = runner.invoke(main, ["init", "--path", str(tmp_path),
+                                  "--no-hooks", "--no-agents"])
+>       assert r0.exit_code == 0, r0.output
+E       AssertionError: Error: no refmatrix catalog at /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1297/test_session_stats0/.refmatrix (catalog.duckdb missing) — run `rmx init` first
+E         
+E       assert 1 == 0
+E        +  where 1 = <Result SystemExit(1)>.exit_code
+
+tests/test_session_cli.py:169: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_session_cli.py::test_session_list_shows_ingested_session - ...
+FAILED tests/test_session_cli.py::test_session_list_json - AssertionError: Er...
+FAILED tests/test_session_cli.py::test_session_recall_finds_by_query - Assert...
+FAILED tests/test_session_cli.py::test_session_recall_branch_filter_excludes
+FAILED tests/test_session_cli.py::test_session_show_card - AssertionError: Er...
+FAILED tests/test_session_cli.py::test_session_show_raw_returns_jsonl_path - ...
+FAILED tests/test_session_cli.py::test_session_show_turns_reparses_jsonl - As...
+FAILED tests/test_session_cli.py::test_session_show_unknown_id_errors - Asser...
+FAILED tests/test_session_cli.py::test_session_stats - AssertionError: Error:...
+9 failed, 51 passed in 6.29s

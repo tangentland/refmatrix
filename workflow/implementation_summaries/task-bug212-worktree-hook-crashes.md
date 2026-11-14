@@ -933,3 +933,147 @@ earlier r4 REDs are unchanged.
   `rmx sync --since HEAD~1`.
   - Required: one `Error:` line naming the timeout, and a non-zero exit, within 45 s.
   - HEAD line: `did not finish within 45s: a silent hang`.
+
+## GREEN r4 (one store-level check, two openers; rulings L72 + L82) {#green-r4}
+
+Fix commits `8b23c5a` (src + `docs/INTEGRATION.md`) and `ef8b38c` (the `create=True` fixup the
+family run asked for). No test was edited.
+
+- The r4 file plus the 4 earlier bug-212-related files (`test_bug212_hooks_in_worktrees`,
+  `_r1_remedy`, `_r2_red`, `test_sync_and_extras`): **157 passed** at `8b23c5a`
+  (`bug212/green-r4-first.log`). At `f7578dd` the r4 file alone was 34 failed / 6 passed.
+- The AST bypass guard is green with the test's allowlist unchanged. So are its census-sees
+  and stale-allowlist guards.
+
+rel: implements -> [[#red-r4]]
+rel: implements -> [[#red-r4-l82]]
+rel: amends -> [[#green-r3-changes]]
+
+### What changed {#green-r4-changes}
+
+- `store.py` (the one store-level check, L72 b-1):
+  - `class TrackedCatalogRefused(RuntimeError)`;
+  - `refuse_tracked_catalog_open(root: Path, target: Path) -> None`. It raises the refusal
+    line `refusing to open <target> read-write in-process: ...`. The tail is now neutral (m-1):
+    "...and opening it read-write would modify a committed file. Untrack it (...), or start
+    the daemon (rmx daemon start) so the daemon opens it instead". No "the write" remains.
+  - `git_tracked_catalogs` now runs both git calls through
+    `_run_git_check(args, *, root, env)`, with `timeout=GIT_CHECK_TIMEOUT_S` (10). A timeout
+    raises `TrackedCatalogCheckError` ("git <call> timed out after 10s") (m-3).
+  - A `rev-parse` failure is `[]` only when `_git_dir_at_or_above(root)` finds no `.git` at
+    `root` or any parent; otherwise it raises (m-4). The env strip covers both calls (X3).
+- The two checked openers both call that function and translate its refusal:
+  - `cli._store_rw()` turns `TrackedCatalogRefused` into a `ClickException`. The cli-level
+    `_refuse_in_process_write_to_tracked_catalog` is gone; its r3 docstring flag is closed with
+    it.
+  - `verbs.local_write(root, fn, *, partition: str | None, create: bool = False)` raises it
+    as a `VerbError` before `fn` runs. `partition=None` gives the store's default partition.
+    `create=True` allows a missing catalog.
+- The five bypasses route through `local_write`:
+  - `cli.init` (`create=True`; a missing store dir answers `[]` without running git);
+  - `cli.partition_drop` (`partition=None` keeps the hand-rolled open's ACTIVE partition;
+    `create=False`);
+  - `mcp._t_memory_add`'s no-daemon fallback (a refusal is `{"error"}`, which becomes
+    `isError`);
+  - `handoff._promote_digest` (a refusal is `{"error": "VerbError: refusing ..."}`);
+  - `verbs.change_subject`.
+
+  The last three pass `create=True` (`ef8b38c`). Their hand-rolled `Store(root)` created a
+  missing catalog, and the family run caught `local_write` refusing that:
+  `test_mcp_session_pointer::test_every_stm_write_verb_reports_its_source[change_subject]`,
+  E `no refmatrix catalog ... run rmx init first`.
+- L82:
+  - `rmx focus change-subject` turns a `VerbError` into one `Error:` line.
+  - `sync.changed_since` runs `git diff` with `timeout=GIT_DIFF_TIMEOUT_S` (10) and raises
+    `GitTimeoutError(RuntimeError)`: `sync --since <ref> failed: git diff timed out after 10s
+    in <project>`. `rmx sync`'s in-process route catches it next to `GitRefError`.
+  - `rmx save-state` with a promote error prints `promote FAILED ...` on stdout, finishes (the
+    handoff is already written; the bridge and `--commit` still run), then raises one
+    `Error: save-state wrote <target> but its promote failed: <error>` on stderr, exit 1. This
+    applies to every promote error, not only refusals.
+- `docs/INTEGRATION.md#sync-tracked-catalog` now covers:
+  - both openers and who reaches each, and the AST census;
+  - the real reader order (with an `active` marker, only the inactive slot; without one,
+    legacy `catalog.duckdb`) (m-2);
+  - the measured cost;
+  - the unknown-answer cases (ls-files failure, rev-parse failure under a `.git`, 10 s
+    timeout);
+  - the bounded `--since` diff.
+
+  GMD lint: 0 errors.
+
+### Runs {#green-r4-runs}
+
+- `bug212/green-r4-family.log`: 107 files (r2's list plus every save-state, handoff, focus,
+  partition, init, subject, verb, matrix, stm, promote, recall-state, protect and noise file;
+  `green-r4-family.files`), at `8b23c5a`. Result: **1 failed, 1574 passed, 1 skipped**. The
+  failure is `test_mcp_session_pointer[change_subject]`, above, and it is fixed in `ef8b38c`.
+  `bug212/green-r4-fixup.log` (`test_mcp_session_pointer.py` + the r4 file at `ef8b38c`): **102
+  passed**.
+- `bug212/green-r4-check-cost.log`: `refuse_tracked_catalog_open` on a small repo, n=20. Median
+  23.8 ms tracked and 27.0 ms ignored. INTEGRATION.md states "about 25 ms on a small idle
+  repository, roughly 30-100 ms on a large or busy one".
+- `bug212/green-r4-wide.log`: the full suite at `ef8b38c` (`__pycache__` cleared), **5 failed,
+  4410 passed, 1 skipped**, 58m01s. The machine was loaded (r3 took 46m35s). The skip is the
+  SkipGate UNPINNED (m-4). By E line (`green-r4-wide-elines-vs-0820.txt`, `-vs-r3.txt`):
+  - SAME E lines as 0.82.0: `test_brief_real_daemon::test_an_unknown_class_fails_loudly_through_the_daemon`,
+    and `test_task21_1_agent_usage_report` x2.
+  - `test_gmd_lint_requires_version::test_the_repo_scope_is_clean_under_the_stricter_gate`:
+    the E lines differ from 0.82.0's (clone scope: `docs/INDEX.md` / `docs/adr/*` dangling ids,
+    as r1-r3 recorded) and are IDENTICAL to green-r3's (22/22).
+  - 0.82.0's bug-168 rewriter x9, `test_env_assignments_survive_in_place` and
+    `test_installed_hooks_match_generated` do not fail here; the last is the clone's skip.
+  - **NEW vs r3:** `test_task21_1_recall_skip::test_ac2b_live_daemon_recall_writes_one_ok_recall_row`,
+    E `assert 'skipped_budget' == 'ok'`, a live-daemon recall over its 5 s budget. Re-run
+    alone at `ef8b38c` it is **8 passed** (`bug212/green-r4-recall-skip-rerun.log`). The test
+    goes through no in-process opener (the file names none of `local_write`, `_store_rw` or the
+    check). Read as load, not this change: one rerun, not proven.
+
+### Mutations {#green-r4-mutations}
+
+The spot-checks ran in a THROWAWAY clone, `/Volumes/littlebig/refmatrix-bug212-mut4`, at
+`8b23c5a`. `ef8b38c` touches none of the mutated lines. The driver was `scratchpad/mut212g4.py`
+(not committed). For each mutation it applied every replace as an exact single occurrence, ran
+pytest to `bug212/green-r4-mut-<id>.log`, restored each file with `git checkout --` in its own
+command, then checked `git status --short src` empty and the fix text back. The batch log is
+`bug212/green-r4-mutations.log`. The copy's `__pycache__` was never imported by the real
+clone, and the real clone's was cleared before the wide run.
+
+| id | mutation | result |
+|----|----------|--------|
+| N1 | `local_write` skips the check | killed: 21 (CLI writers x14, MCP x2, promote x2, save-state x2, both-openers AST) |
+| N2 | `_store_rw` skips the check | killed: 13 (both-openers AST, sync hang/GIT_DIR/corrupt-HEAD x6, r1 sync/stale-socket x6) |
+| N3 | no git timeout in the check | killed: 6 (hang tests, each at the 45 s bound) |
+| N4 | rev-parse failure always `[]` | killed: 4 (corrupt-HEAD x4) |
+| N5 | env strip dropped | killed: 2 (GIT_DIR guards) |
+| N6 | the tail says "the write" again | killed: 2 (r2 read pair) |
+| N7 | save-state promote error not raised | killed: 2 |
+| N8 | `changed_since` unbounded | killed: 2 |
+| N9 | change-subject CLI translates nothing | killed: 2 |
+| N10 | `init` with `create=False` | killed: 9 (`test_session_cli` / `test_v2_features`) |
+| N11 | `GitTimeoutError` uncaught in `rmx sync` | killed: 1 |
+
+11 of 11 killed.
+
+### For the lead and the reviewers {#green-r4-flags}
+
+- **The throwaway mutation clone was not removed.** `rm -r /Volumes/littlebig/refmatrix-bug212-mut4`
+  was blocked by a safety check that flags top-level paths on a mounted drive. It is a clean
+  clone at `8b23c5a` with a `.venv-eval` symlink. Delete it by hand.
+- **`create=True` at the three bootstrap fallbacks** keeps their old behaviour on a store
+  with no catalog: they create one. Whether `change-subject`, an MCP memory add or a promote
+  should ever create a catalog is a separate question; "store creation is explicit (`rmx
+  init`)" says no. `partition_drop` keeps `create=False`, so on a missing catalog it is now
+  `Error: no refmatrix catalog ...` instead of silently creating one.
+- **The save-state promote failure is loud for EVERY promote error** (busy daemon, refused,
+  crash), not only the tracked-catalog refusal. A busy-daemon promote now exits 1 where it
+  printed `promote skipped:` and exited 0. No test pinned the old line. MCP `rmx_save_state`
+  still returns `promoted.error` inside a non-error reply. That path is not covered by L82.
+- **`change_subject` sets the STM subject before the store write.** A refused subject write
+  leaves the session's STM subject set and the durable subject row absent, with one `Error:`
+  line saying so.
+- **`partition_drop` and `init` still gate on `daemon_mod.ping`, not `require_daemon`.** A
+  busy daemon (alive, not answering) still sends them to the in-process route. That route is
+  now checked for tracking, but it still opens the writer slot under a busy daemon. This is
+  pre-existing and out of the rulings' scope.
+- The recall-skip flake: one rerun passed; it was not re-run in a full suite.

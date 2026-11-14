@@ -1,0 +1,51 @@
+......................................FF                                 [100%]
+=================================== FAILURES ===================================
+______ test_changed_since_with_a_hanging_git_diff_raises_within_the_bound ______
+
+ignored_store_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x1166ec750>
+
+    @pytest.mark.timeout(180)
+    def test_changed_since_with_a_hanging_git_diff_raises_within_the_bound(ignored_store_repo):
+        """L82: `sync.changed_since` (what the post-commit hook's `rmx sync --since` runs) with
+        `git diff` hanging raises within the bound -- a `RuntimeError` (every `--since` caller
+        turns a RuntimeError into one `Error:` line; a bare `subprocess.TimeoutExpired` would be a
+        traceback) saying it timed out. At 67f55cb `git diff` has no timeout: it hangs."""
+        repo = ignored_store_repo
+        _hanging_git(repo.base / "hangbin", "diff")
+        probe = repo.base / "changed_since_probe.py"
+        probe.write_text(_CHANGED_SINCE_PROBE, encoding="utf-8")
+        env = _base_env()
+        env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
+        r = _run_bounded([sys.executable, str(probe), str(repo.proj), "HEAD~1"], cwd=repo.proj,
+                         env=env, bound=HANG_BOUND_S)
+>       assert r is not None, (f"sync.changed_since did not return within {HANG_BOUND_S}s with "
+                               f"`git diff` hanging: no timeout on the git call")
+E       AssertionError: sync.changed_since did not return within 45s with `git diff` hanging: no timeout on the git call
+E       assert None is not None
+
+tests/test_bug212_r4_red.py:660: AssertionError
+_____________ test_sync_since_with_a_hanging_git_diff_fails_loudly _____________
+
+ignored_store_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x1166ed2d0>
+
+    @pytest.mark.timeout(180)
+    def test_sync_since_with_a_hanging_git_diff_fails_loudly(ignored_store_repo):
+        """L82, end to end -- the post-commit path: `rmx sync --since HEAD~1`, no daemon, an
+        ignored catalog (so the store opens), `git diff` hanging. One `Error:` line naming the
+        timeout, exit non-zero, within the bound; never a silent hang in the backgrounded hook."""
+        repo = ignored_store_repo
+        _hanging_git(repo.base / "hangbin", "diff")
+        env = _base_env()
+        env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
+        r = _run_bounded([sys.executable, str(_entry(repo.base)), "sync", "--since", "HEAD~1"],
+                         cwd=repo.proj, env=env, bound=HANG_BOUND_S)
+>       assert r is not None, (f"`rmx sync --since HEAD~1` with `git diff` hanging did not finish "
+                               f"within {HANG_BOUND_S}s: a silent hang")
+E       AssertionError: `rmx sync --since HEAD~1` with `git diff` hanging did not finish within 45s: a silent hang
+E       assert None is not None
+
+tests/test_bug212_r4_red.py:681: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r4_red.py::test_changed_since_with_a_hanging_git_diff_raises_within_the_bound
+FAILED tests/test_bug212_r4_red.py::test_sync_since_with_a_hanging_git_diff_fails_loudly
+2 failed, 38 passed in 175.90s (0:02:55)
