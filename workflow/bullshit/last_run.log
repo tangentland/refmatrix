@@ -99,3 +99,12 @@
 2026-11-14T02:10:19-0800 commit=db411ad verdict=DIRTY findings=5 (0B/1S/4M) report=2026-11-14-0210-bug225-r1-db411ad.md
 2026-11-14T03:34:27-0800 commit=9c952eb verdict=DIRTY findings=2 (0B/1S/1M) report=2026-11-14-0334-bug225-r2-9c952eb.md
 2026-11-14T04:34:59-0800 commit=6004d36 verdict=MEH-only findings=1 (0B/0S/1M) report=2026-11-14-0434-bug225-r3-6004d36.md
+2026-11-14T02:10:20-0800 commit=bff34c1 verdict=DIRTY findings=4 (0B/1S/3M) report=2026-11-14-0210-bug216-r3-bff34c1.md
+2026-11-14T03:18:44-0800 commit=355eb1f verdict=DIRTY findings=4 (0B/1S/3M) report=2026-11-14-0318-bug212-r5-355eb1f.md
+2026-11-14T03:33:20-0800 commit=dfbaa2d verdict=DIRTY findings=3 (1B/0S/2M) report=2026-11-14-0333-bug216-r4-dfbaa2d.md
+2026-11-14T04:56:50-0800 commit=aaa1ba5 verdict=DIRTY findings=2 (0B/1S/1M) report=2026-11-14-0456-bug216-r5-aaa1ba5.md
+2026-11-14T05:33:03-0800 commit=282589b verdict=DIRTY findings=2 (0B/0S/2M) report=2026-11-14-0533-bug212-r6-282589b.md
+2026-11-14T07:14:59-0800 commit=f8db8f6 verdict=MEH-only findings=1 (0B/0S/1M) report=2026-11-14-0714-bug216-r6-f8db8f6.md
+2026-11-14T08:54:56-0800 commit=79b0ac3 verdict=CLEAN findings=0 report=2026-11-14-0714-bug216-r6-f8db8f6.md#addendum-79b0ac3
+2026-11-14T09:20:20-0800 commit=8670daf verdict=MEH-only findings=2 (0B/0S/2M) report=2026-11-14-0920-bug230-r1-8670daf.md
+2026-11-14T10:02:54-0800 commit=323304d verdict=DIRTY findings=1 (0B/0S/1M) report=2026-11-14-1002-bug212-r7-323304d.md
