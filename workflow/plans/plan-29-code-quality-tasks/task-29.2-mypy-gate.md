@@ -1100,11 +1100,11 @@ registers it in `plan-29-code-quality#decisions` at merge. {#d27}
   `vectors.py` is touched. The exact list is the NEUTRAL / REAL table of [[#derive-hash]] at
   the release commit.
 - **Cost, as the ruling cites it.** This is how every release that edits `ingest.py` already
-  ships: 0.83.0's forced reingest of the refmatrix store took about 22 minutes, embed included
-  (L109, from `workflow/review-output/r4-reingest-0.83.0.log` on master; that log shows its five
-  steps and 50,608 rows embedded but carries no wall time, so the figure is the ruling's). It is
-  one store and the whole reingest; with `embed` unaffected, deploy B's re-derive of that store
-  should cost less. The other stores are not measured.
+  ships: 0.83.0's forced reingest of the refmatrix store took about 22 minutes, embed included,
+  11:29 to 11:51 (the lead, L109, from `workflow/review-output/r4-reingest-0.83.0.log` on
+  master; the log shows its five steps and 50,608 rows embedded, and its file time is 11:51; the
+  start time is the lead's). It is one store and the whole reingest; with `embed` unaffected,
+  deploy B's re-derive of that store should cost less. The other stores are not measured.
 - **What the re-derive has to be.** A forced one: an unforced reingest skips files whose mtime
   has not changed and would re-stamp passes without deriving them. The memory compile is not a
   step of `rmx reingest`; its two scopes are re-compiled by their own existing command. The
