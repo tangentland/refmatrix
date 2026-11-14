@@ -1,0 +1,45 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b225mut2/src/refmatrix as checked-hash (bug-037)
+...............FF.........                                               [100%]
+=================================== FAILURES ===================================
+______ test_r2_s1b_origin_head_to_a_missing_object_falls_back_and_is_said ______
+
+repos = (PosixPath('/private/tmp/b225-zvsct3vc'), PosixPath('/private/tmp/b225-zvsct3vc/work'))
+
+    def test_r2_s1b_origin_head_to_a_missing_object_falls_back_and_is_said(repos):
+        """origin/HEAD → origin/develop, and origin/develop holds a missing object id.
+        At d735ce5 it verifies, the ahead `git log` fails and is swallowed, and the
+        handoff says "0 commit(s) ahead of origin/develop — in sync"."""
+        base, work = repos
+        _git(work, "remote", "set-head", "origin", "develop")
+        _point_at_missing_object(work, "refs/remotes/origin/develop")
+        facts = handoff._ss_git_facts(work, None)
+>       assert facts["ahead_base"] == "origin/master", facts
+E       AssertionError: {'ahead': '', 'ahead_base': '', 'branch': 'feature', 'dirty': '', ...}
+E       assert '' == 'origin/master'
+E         
+E         - origin/master
+
+tests/test_bug225_handoff_trunk.py:440: AssertionError
+__________ test_r2_s1b_list_candidate_to_a_missing_object_is_skipped ___________
+
+repos = (PosixPath('/private/tmp/b225-8ihokn8h'), PosixPath('/private/tmp/b225-8ihokn8h/work'))
+
+    def test_r2_s1b_list_candidate_to_a_missing_object_is_skipped(repos):
+        """origin/HEAD unset; origin/main (first in the list) holds a missing object
+        id. It must not verify: the list goes on to origin/master. At d735ce5 it picks
+        origin/main and reports 0 ahead, in sync."""
+        base, work = repos
+        _git(work, "remote", "set-head", "origin", "-d")
+        _point_at_missing_object(work, "refs/remotes/origin/main")
+        facts = handoff._ss_git_facts(work, None)
+>       assert facts["ahead_base"] == "origin/master", facts
+E       AssertionError: {'ahead': '', 'ahead_base': '', 'branch': 'feature', 'dirty': '', ...}
+E       assert '' == 'origin/master'
+E         
+E         - origin/master
+
+tests/test_bug225_handoff_trunk.py:458: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_s1b_origin_head_to_a_missing_object_falls_back_and_is_said
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_s1b_list_candidate_to_a_missing_object_is_skipped
+2 failed, 24 passed in 16.34s
