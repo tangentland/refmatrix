@@ -1,0 +1,95 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug230/src/refmatrix as checked-hash (bug-037)
+........FFF.................................................             [100%]
+=================================== FAILURES ===================================
+_ test_2a_guard_a_write_open_of_the_ignore_spec_is_still_a_violation[rdonly-creat] _
+
+checkout = {'deny': {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/g...low': ['/private/tmp/b230nov1kcox/.refmatrix/.refmatrix_ignore'], ...}, 'root': PosixPath('/private/tmp/b230nov1kcox')}
+args = (None, 512)
+
+    @pytest.mark.parametrize("args", [
+        ("w", os.O_WRONLY | os.O_CREAT | os.O_TRUNC),
+        ("a", os.O_WRONLY | os.O_CREAT | os.O_APPEND),
+        ("r+", os.O_RDWR),
+        (None, os.O_RDWR),
+        (None, os.O_WRONLY),
+        ("r", None),                                                   # flags unknown: refused
+        # bsd-216 bug-230 r1 #m2: flags that modify a file opened O_RDONLY — O_CREAT creates an
+        # absent spec, O_TRUNC can empty it (BSD-derived kernels truncate) — each pinned alone.
+        (None, os.O_RDONLY | os.O_CREAT),
+        (None, os.O_RDONLY | os.O_TRUNC),
+        (None, os.O_RDONLY | os.O_EXCL),
+    ], ids=["w", "a", "r+", "os-rdwr", "os-wronly", "no-flags", "rdonly-creat", "rdonly-trunc",
+            "rdonly-excl"])
+    def test_2a_guard_a_write_open_of_the_ignore_spec_is_still_a_violation(checkout, args):
+        p = str(checkout["root"] / IGNORE_REL)
+>       assert rmx_sandbox.violation("open", (p, *args), checkout["deny"]) is not None, (
+            f"a non-read open of the ignore spec must stay denied: {args}")
+E       AssertionError: a non-read open of the ignore spec must stay denied: (None, 512)
+E       assert None is not None
+E        +  where None = <function violation at 0x106c2dd20>('open', ('/private/tmp/b230nov1kcox/.refmatrix/.refmatrix_ignore', None, 512), {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/github/ato...92, 54302, 54340, ...], 'ports': [7777], 'read_allow': ['/private/tmp/b230nov1kcox/.refmatrix/.refmatrix_ignore'], ...})
+E        +    where <function violation at 0x106c2dd20> = rmx_sandbox.violation
+
+tests/test_bug230_repo_scope_gate.py:135: AssertionError
+_ test_2a_guard_a_write_open_of_the_ignore_spec_is_still_a_violation[rdonly-trunc] _
+
+checkout = {'deny': {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/g...low': ['/private/tmp/b2309z5c7q6i/.refmatrix/.refmatrix_ignore'], ...}, 'root': PosixPath('/private/tmp/b2309z5c7q6i')}
+args = (None, 1024)
+
+    @pytest.mark.parametrize("args", [
+        ("w", os.O_WRONLY | os.O_CREAT | os.O_TRUNC),
+        ("a", os.O_WRONLY | os.O_CREAT | os.O_APPEND),
+        ("r+", os.O_RDWR),
+        (None, os.O_RDWR),
+        (None, os.O_WRONLY),
+        ("r", None),                                                   # flags unknown: refused
+        # bsd-216 bug-230 r1 #m2: flags that modify a file opened O_RDONLY — O_CREAT creates an
+        # absent spec, O_TRUNC can empty it (BSD-derived kernels truncate) — each pinned alone.
+        (None, os.O_RDONLY | os.O_CREAT),
+        (None, os.O_RDONLY | os.O_TRUNC),
+        (None, os.O_RDONLY | os.O_EXCL),
+    ], ids=["w", "a", "r+", "os-rdwr", "os-wronly", "no-flags", "rdonly-creat", "rdonly-trunc",
+            "rdonly-excl"])
+    def test_2a_guard_a_write_open_of_the_ignore_spec_is_still_a_violation(checkout, args):
+        p = str(checkout["root"] / IGNORE_REL)
+>       assert rmx_sandbox.violation("open", (p, *args), checkout["deny"]) is not None, (
+            f"a non-read open of the ignore spec must stay denied: {args}")
+E       AssertionError: a non-read open of the ignore spec must stay denied: (None, 1024)
+E       assert None is not None
+E        +  where None = <function violation at 0x106c2dd20>('open', ('/private/tmp/b2309z5c7q6i/.refmatrix/.refmatrix_ignore', None, 1024), {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/github/ato...92, 54302, 54340, ...], 'ports': [7777], 'read_allow': ['/private/tmp/b2309z5c7q6i/.refmatrix/.refmatrix_ignore'], ...})
+E        +    where <function violation at 0x106c2dd20> = rmx_sandbox.violation
+
+tests/test_bug230_repo_scope_gate.py:135: AssertionError
+_ test_2a_guard_a_write_open_of_the_ignore_spec_is_still_a_violation[rdonly-excl] _
+
+checkout = {'deny': {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/g...low': ['/private/tmp/b230sh8lmhlp/.refmatrix/.refmatrix_ignore'], ...}, 'root': PosixPath('/private/tmp/b230sh8lmhlp')}
+args = (None, 2048)
+
+    @pytest.mark.parametrize("args", [
+        ("w", os.O_WRONLY | os.O_CREAT | os.O_TRUNC),
+        ("a", os.O_WRONLY | os.O_CREAT | os.O_APPEND),
+        ("r+", os.O_RDWR),
+        (None, os.O_RDWR),
+        (None, os.O_WRONLY),
+        ("r", None),                                                   # flags unknown: refused
+        # bsd-216 bug-230 r1 #m2: flags that modify a file opened O_RDONLY — O_CREAT creates an
+        # absent spec, O_TRUNC can empty it (BSD-derived kernels truncate) — each pinned alone.
+        (None, os.O_RDONLY | os.O_CREAT),
+        (None, os.O_RDONLY | os.O_TRUNC),
+        (None, os.O_RDONLY | os.O_EXCL),
+    ], ids=["w", "a", "r+", "os-rdwr", "os-wronly", "no-flags", "rdonly-creat", "rdonly-trunc",
+            "rdonly-excl"])
+    def test_2a_guard_a_write_open_of_the_ignore_spec_is_still_a_violation(checkout, args):
+        p = str(checkout["root"] / IGNORE_REL)
+>       assert rmx_sandbox.violation("open", (p, *args), checkout["deny"]) is not None, (
+            f"a non-read open of the ignore spec must stay denied: {args}")
+E       AssertionError: a non-read open of the ignore spec must stay denied: (None, 2048)
+E       assert None is not None
+E        +  where None = <function violation at 0x106c2dd20>('open', ('/private/tmp/b230sh8lmhlp/.refmatrix/.refmatrix_ignore', None, 2048), {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/github/ato...92, 54302, 54340, ...], 'ports': [7777], 'read_allow': ['/private/tmp/b230sh8lmhlp/.refmatrix/.refmatrix_ignore'], ...})
+E        +    where <function violation at 0x106c2dd20> = rmx_sandbox.violation
+
+tests/test_bug230_repo_scope_gate.py:135: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_write_open_of_the_ignore_spec_is_still_a_violation[rdonly-creat]
+FAILED tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_write_open_of_the_ignore_spec_is_still_a_violation[rdonly-trunc]
+FAILED tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_write_open_of_the_ignore_spec_is_still_a_violation[rdonly-excl]
+3 failed, 57 passed in 4.47s

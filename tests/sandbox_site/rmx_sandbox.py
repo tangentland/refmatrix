@@ -260,8 +260,18 @@ def build_deny(repo: Path, env=None) -> dict:
 # configuration, not store data: a read-only open of it cannot lock a catalog, write a row or
 # reach a socket. Read-only opens of exactly these paths are allowed (`violation`); a write-mode
 # open, any `os.*` mutation of it, and every other file under the store stay denied.
+#
+# bsd-216 bug-230 r1 #m1: `_variants` adds the realpath, so a spec that is a SYMLINK put its
+# target (e.g. `catalog.A.duckdb`) into the allow. A symlinked spec gets NO allow: an open of the
+# link reads whatever it names, so no read through it is safe to wave through, and the gate then
+# fails loudly (exit 86, which the exit-0 verdict reports) instead of reading a stand-in. For a
+# regular file only the variants that are still the spec itself are kept (`/tmp` vs
+# `/private/tmp`, or a symlinked `.refmatrix/` dir), never a different file name.
 def read_allow(repo: Path) -> list:
-    return sorted(_variants(Path(repo) / ".refmatrix" / ".refmatrix_ignore"))
+    spec = Path(repo) / ".refmatrix" / ".refmatrix_ignore"
+    if spec.is_symlink():
+        return []
+    return sorted(v for v in _variants(spec) if os.path.basename(v) == ".refmatrix_ignore")
 
 
 # ---- R1: the redirect --------------------------------------------------------------------
