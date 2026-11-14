@@ -557,6 +557,15 @@ CREATE TABLE IF NOT EXISTS pending_refs (
 # (bug-216 R7, 2026-11-13). Registered on first use (`Store.link_denotes`), so a
 # store that never had a misbound concept never carries the type.
 DENOTES = "denotes"
+# Linkages whose concept side is a TERM -- the concept occurs in the entity's
+# text or heading, it is not a relation the author asserted. The zero-cost
+# `denotes` hop never carries these (bug-216 remedy M2, ruling L81,
+# 2026-11-13): PageRank's fold, `build_context`'s one-hop walk and
+# `QueryEngine.neighbors` all read this ONE set. Without it the term concept
+# `claude` (808 mentions) denoting CLAUDE.md made every doc that says "Claude"
+# in prose a neighbour of CLAUDE.md. G30 decides whether a term hop ever
+# crosses; until then none does.
+DENOTES_TERM_LINKAGES = frozenset({"mentions", "titles", "aliases", "lead", "coref"})
 
 DEFAULT_LINKAGES = [
     ("mentions",     1, None, "entity mentions concept"),
@@ -1776,6 +1785,45 @@ class Store:
         if self._partition_name == old:
             self._partition_name = new
 
+    def _merge_pending_refs(self, con, src_id: int, dst_id: int,
+                            collisions: "list[tuple[int, int]]") -> "tuple[int, int]":
+        """`merge_partition`'s `pending_refs` step (bug-216 S2, ruling L81,
+        2026-11-13): repoint SRC's rows to DST (a collided source entity's rows
+        to the DST entity that survives it), collapse rows the move made
+        identical, and delete -- counting -- every DST row whose source entity
+        no longer exists. Before this the rows kept SRC's dropped
+        `partition_id` (and a deleted `source_id` on a collision): they could
+        never resolve and nothing cleaned them up. Returns `(merged, dropped)`."""
+        merged = int(con.execute("SELECT count(*) FROM pending_refs WHERE partition_id=?",
+                                 (src_id,)).fetchone()[0])
+        for src_eid, dst_eid in collisions:
+            con.execute("UPDATE pending_refs SET source_id=? WHERE source_id=?",
+                        (dst_eid, src_eid))
+        con.execute("UPDATE pending_refs SET partition_id=? WHERE partition_id=?",
+                    (dst_id, src_id))
+        key = "partition_id, source_id, linkage, target_name, file, line"
+        for row in con.execute(
+                f"SELECT {key}, min(created_at) AS c, any_value(ref) AS ref, "
+                f"any_value(weight) AS w, any_value(detail) AS d, count(*) AS n "
+                f"FROM pending_refs WHERE partition_id=? GROUP BY {key} HAVING count(*) > 1",
+                (dst_id,)).fetchall():
+            ident = tuple(row[i] for i in range(6))
+            con.execute(
+                "DELETE FROM pending_refs WHERE partition_id=? AND source_id=? AND linkage=? "
+                "AND target_name=? AND file=? AND line=?", ident)
+            con.execute(
+                "INSERT INTO pending_refs(partition_id, source_id, linkage, target_name, file, "
+                "line, ref, weight, detail, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (*ident, row[7], row[8], row[9], row[6]))
+        dropped = int(con.execute(
+            "SELECT count(*) FROM pending_refs pr WHERE pr.partition_id=? AND NOT EXISTS "
+            "(SELECT 1 FROM entities e WHERE e.id = pr.source_id)", (dst_id,)).fetchone()[0])
+        if dropped:
+            con.execute(
+                "DELETE FROM pending_refs WHERE partition_id=? AND source_id NOT IN "
+                "(SELECT id FROM entities)", (dst_id,))
+        return merged, dropped
+
     def merge_partition(
         self, src_name: str, dst_name: str, *, dry_run: bool = False,
         lock=None, chunk: int = 200, progress=None,
@@ -2055,6 +2103,10 @@ class Store:
                 "DELETE FROM tracked_files WHERE partition_id=?", (src_id,),
             )
 
+            # ---- pending_refs (bug-216 S2) -------------------------------
+            pending_merged, pending_dropped = self._merge_pending_refs(
+                con, src_id, dst_id, [(se, de) for se, de, _k, _n in collisions])
+
             # ---- on-disk side: vectors + fragments -----------------------
             import shutil as _shutil
             for base in (self.root / "vectors", self.fragments_dir):
@@ -2109,6 +2161,10 @@ class Store:
             "dry_run": False,
             # r2 #s2-1: the repair's counts and manifest path reach the caller.
             "fragments_repair": repair,
+            # bug-216 S2: SRC's pending refs now in DST; rows whose source
+            # entity is gone, deleted and counted.
+            "pending_refs_merged": pending_merged,
+            "pending_refs_dropped": pending_dropped,
         }
 
     def with_partition(self, name: str):

@@ -278,17 +278,21 @@ class QueryEngine:
     ) -> BitMap:
         """The depth-N linkage closure of `concept_name`, seeds excluded.
 
-        `denotes` is transparent (bug-216 R9, 2026-11-13): a path-less concept
-        and the doc/memory it denotes are ONE node, so every member of a
-        frontier brings its `denotes` equivalents into the same frontier at
-        zero cost and the edge itself is never a counted hop. A seed's own
-        equivalents are the seed, not neighbours."""
-        from refmatrix.store import DENOTES
+        `denotes` (bug-216 R9 + remedy M2, 2026-11-13): the raw `denotes` link
+        is an ordinary linkage here, so a concept lists the doc it denotes.
+        On top of that the hop is zero-cost: every member of a frontier brings
+        its `denotes` equivalents into the SAME frontier, and an equivalent
+        that arrived only that way is expanded through typed linkages alone
+        (`DENOTES_TERM_LINKAGES` stay out, as in PageRank's fold) -- a doc that
+        merely mentions the denoting term is not a neighbour of the doc. A
+        seed's own equivalents are listed (`rmx neighbors <concept>` names the
+        doc it denotes) and walked at the seed's depth."""
+        from refmatrix.store import DENOTES_TERM_LINKAGES
         cids = self.s.resolve_concept_ids(concept_name, strict=self.strict)
         if not cids:
             return BitMap()
-        link_names = [ln for ln in (linkages or [lk["name"] for lk in self.s.list_linkages()])
-                      if ln != DENOTES]
+        link_names = list(linkages or [lk["name"] for lk in self.s.list_linkages()])
+        typed_names = [ln for ln in link_names if ln not in DENOTES_TERM_LINKAGES]
         noise = self._noise_ids()
         noise_bm = BitMap(noise) if noise else BitMap()
 
@@ -299,17 +303,19 @@ class QueryEngine:
             return out
 
         seed_ids = BitMap(cids)
-        seed_ids |= _equivalents(seed_ids) - noise_bm
-        frontier = BitMap(seed_ids)
-        seen = BitMap(seed_ids)
+        eq_only = _equivalents(seed_ids) - seed_ids - noise_bm
+        frontier = seed_ids | eq_only
+        seen = BitMap(frontier)
         for _ in range(depth):
             next_frontier = BitMap()
             for cid in frontier:
-                for ln in link_names:
+                for ln in (typed_names if cid in eq_only else link_names):
                     next_frontier |= self.s.load_bitmap(ln, cid)
             next_frontier -= seen
             next_frontier -= noise_bm
-            next_frontier |= _equivalents(next_frontier) - seen - noise_bm
+            new_eq = _equivalents(next_frontier) - seen - noise_bm - next_frontier
+            eq_only = new_eq
+            next_frontier |= new_eq
             if len(next_frontier) == 0:
                 break
             seen |= next_frontier

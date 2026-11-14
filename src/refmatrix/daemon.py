@@ -4809,11 +4809,9 @@ def _op_denotes_link(d: Daemon, args: dict) -> dict:
     adds nothing. Returns `{added, concepts, targets, multi_target}` and logs
     the same counts. GMD ingest maintains the links from then on; this op
     repairs what was written before it (1,909+ misbound live rows), without
-    rewriting a single existing edge. Run through the daemon, announced and
-    backed up first:
-
-        daemon.call(root, "denotes_link", {}, timeout=600)
-    """
+    rewriting a single existing edge. Run it as `rmx derive denotes` (or the
+    MCP verb `rmx_derive_denotes`, bug-216 R14) -- announced and backed up
+    first on a live store."""
     part = args.get("partition") or d._st()._partition_name
     with d._store_lock, d._st().with_partition(part):
         result = d._st().link_denotes(None)

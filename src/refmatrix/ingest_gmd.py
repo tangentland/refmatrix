@@ -553,8 +553,12 @@ def resolve_pending_refs(store: Store, names: "set[str]", eid_by_name: dict,
     target still does not resolve stays pending.
 
     WHY: GMD ingest skips unchanged files and nothing retried a dangling
-    target when it appeared, so un-ignoring the rule docs (R4) alone would
-    have left all 247 lines citing them dangling until each citer was edited."""
+    target when it appeared. A pending row exists only for a citer this code
+    (re)processed, though: the citers an older build ingested carry none and a
+    matching GMD content hash, so un-ignoring the rule docs (R4) binds them
+    only after `rmx reingest --force --no-sessions` re-processes every citer
+    (ruling L81 S1 / L86); from then on a late target binds here with no edit
+    to its citers."""
     rows = store.pending_refs_for(names)
     for row in rows:
         src = row["source_id"]

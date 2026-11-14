@@ -52,8 +52,25 @@ def _scalar(cur: Any) -> Any:
     return row[0]
 
 
-def _table_count(con: duckdb.DuckDBPyConnection, table: str) -> int:
-    return _scalar(con.execute(f'SELECT COUNT(*) FROM "{table}"'))
+# Tables a slot written before they existed does not have (bug-216 S2,
+# 2026-11-13): `pending_refs` arrived with bug-216 R10, and every writer open
+# adds it, but a slot nobody has opened since predates it. Such a slot counts
+# 0 rows and contributes none; a missing CORE table still raises.
+OPTIONAL_TABLES = frozenset({"pending_refs"})
+
+
+def _has_table(con, table: str, db: "str | None" = None) -> bool:
+    return bool(con.execute(
+        "SELECT count(*) FROM duckdb_tables() "
+        "WHERE database_name = COALESCE(?, current_database()) AND schema_name = 'main' "
+        "AND table_name = ?", [db, table]).fetchone()[0])
+
+
+def _table_count(con: duckdb.DuckDBPyConnection, table: str, db: "str | None" = None) -> int:
+    if table in OPTIONAL_TABLES and not _has_table(con, table, db):
+        return 0
+    ref = f'{db}."{table}"' if db else f'"{table}"'
+    return _scalar(con.execute(f"SELECT COUNT(*) FROM {ref}"))
 
 
 def merge_slots(
@@ -85,6 +102,7 @@ def merge_slots(
         "partitions", "linkage_types", "entities", "concepts",
         "memory_content", "entity_links", "tracked_files",
         "linkage_evidence", "saved_queries", "bitmap_fragments",
+        "pending_refs",
     )
     # Every connection this function opens is closed on every exit path
     # (bug-113): a connection left open after an error kept slot A ATTACHed,
@@ -337,7 +355,37 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
             if a_id in shared_ids:
                 fresh_alloc_count += 1
 
+    # Two DIFFERENT entities under one id (bug-216 S2 fixture, 2026-11-13): slots
+    # that diverged from one copy both allocate the next ids from the same
+    # sequence state, so A's new row and B's new row share an id with
+    # different (partition, kind, name). The entity steps below read a shared
+    # id as ONE entity -- B's newer row overwrote A's, and A's entity, with
+    # every row naming it, was lost. B's row moves to a fresh id inside the
+    # sequence headroom, and `remap_b` carries every B-side reference to it.
+    # A loser on either side frees or keeps its id under the remaps above, so
+    # it is never a candidate.
+    fresh_b: dict[int, int] = {}
+    next_fresh = max_entity + 1
+    for (bid,) in con.execute("""
+        SELECT be.id FROM a.entities ae JOIN b.entities be ON ae.id = be.id
+        WHERE NOT (ae.partition_id = be.partition_id AND ae.kind = be.kind
+                   AND ae.name = be.name)
+        ORDER BY be.id
+    """).fetchall():
+        bid = int(bid)
+        if bid in remap_b or bid in remap_a:
+            continue
+        fresh_b[bid] = next_fresh
+        next_fresh += 1
+    if len(fresh_b) > REMAP_HEADROOM:
+        raise MergeRefused(
+            f"{len(fresh_b)} distinct entities share an id across the slots — more than "
+            f"the {REMAP_HEADROOM}-id headroom the merge target reserves")
+    remap_b.update(fresh_b)
+
     # Materialize remap as temp tables for SQL joins.
+    con.execute("CREATE TEMP TABLE remap_fresh_b (old_id BIGINT, new_id BIGINT)")
+    _fill_remap(con, "remap_fresh_b", "old_id", "new_id", fresh_b)
     con.execute("CREATE TEMP TABLE remap_a (loser_id BIGINT, canonical_id BIGINT)")
     con.execute("CREATE TEMP TABLE remap_b (loser_id BIGINT, canonical_id BIGINT)")
     _fill_remap(con, "remap_a", "loser_id", "canonical_id", remap_a)
@@ -357,11 +405,17 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
         LEFT JOIN entities m ON m.id = be.id
         WHERE r.loser_id IS NULL AND m.id IS NULL
     """)
+    con.execute("""
+        INSERT INTO entities BY NAME
+        SELECT be.* EXCLUDE (id), f.new_id AS id
+        FROM b.entities be JOIN remap_fresh_b f ON f.old_id = be.id
+    """)
     con.execute(f"""
         UPDATE entities AS m
         SET {_set_all(con, "entities", "b", "be", "id")}
         FROM b.entities be
         WHERE m.id = be.id AND be.updated_at > m.updated_at
+              AND be.id NOT IN (SELECT old_id FROM remap_fresh_b)
     """)
 
     # ---- 6. concepts: drop loser ids, union --------------------------
@@ -377,6 +431,11 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
         LEFT JOIN remap_b r ON r.loser_id = bc.id
         LEFT JOIN concepts m ON m.id = bc.id
         WHERE r.loser_id IS NULL AND m.id IS NULL
+    """)
+    con.execute("""
+        INSERT INTO concepts BY NAME
+        SELECT bc.* EXCLUDE (id), f.new_id AS id
+        FROM b.concepts bc JOIN remap_fresh_b f ON f.old_id = bc.id
     """)
 
     # ---- 7. memory_content: newer-wins on entity_id; remap losers ------
@@ -470,6 +529,29 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
         )
     """)
 
+    # ---- 9b. pending_refs (bug-216 S2): remap the source id, dedupe ----
+    # A dangling `rel:` ref that binds when its target is ingested; losing it
+    # on a merge is the silent loss rev 5 rejected for the rebuild. Same
+    # source-id remap as `linkage_evidence`; a row recorded in both slots
+    # becomes one (earliest `created_at`). A slot predating the table gives
+    # none.
+    _pending_sides = [
+        f"""SELECT pr.* EXCLUDE (source_id),
+                   COALESCE(r.canonical_id, pr.source_id) AS source_id
+            FROM {side}.pending_refs pr
+            LEFT JOIN {remap_t} r ON r.loser_id = pr.source_id"""
+        for side, remap_t in (("a", "remap_a"), ("b", "remap_b"))
+        if _has_table(con, "pending_refs", side)]
+    if _pending_sides:
+        con.execute(f"""
+            INSERT INTO pending_refs BY NAME
+            SELECT partition_id, source_id, linkage, target_name, file, line,
+                   any_value(ref) AS ref, any_value(weight) AS weight,
+                   any_value(detail) AS detail, min(created_at) AS created_at
+            FROM ({" UNION ALL ".join(_pending_sides)})
+            GROUP BY partition_id, source_id, linkage, target_name, file, line
+        """)
+
     # ---- 10. tracked_files: composite PK, newer last_synced wins ------
     con.execute("INSERT INTO tracked_files BY NAME SELECT * FROM a.tracked_files ON CONFLICT DO NOTHING")
     con.execute("INSERT INTO tracked_files BY NAME SELECT * FROM b.tracked_files ON CONFLICT DO NOTHING")
@@ -510,7 +592,6 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
 
 def audit_via_writer(
     writer_conn: "duckdb.DuckDBPyConnection",
-    *,
     writer_slot: str,
     reader_path: Path,
     reader_slot: str,
@@ -528,6 +609,7 @@ def audit_via_writer(
         "partitions", "linkage_types", "entities", "concepts",
         "memory_content", "entity_links", "tracked_files",
         "linkage_evidence", "saved_queries", "bitmap_fragments",
+        "pending_refs",
     )
     # Use a unique attach alias so we never collide with whatever schema
     # name the writer happens to be using. Also DETACH at the end so a
@@ -535,14 +617,9 @@ def audit_via_writer(
     alias = "_audit_reader"
     attach_file(writer_conn, reader_path, alias)
     try:
-        writer_counts = {
-            t: _scalar(writer_conn.execute(f'SELECT COUNT(*) FROM "{t}"'))
-            for t in tables
-        }
+        writer_counts = {t: _table_count(writer_conn, t) for t in tables}
         reader_counts = {
-            t: _scalar(writer_conn.execute(
-                f'SELECT COUNT(*) FROM {alias}."{t}"'
-            ))
+            t: _table_count(writer_conn, t, alias)
             for t in tables
         }
         # Entity overlap shape — express both sides symmetrically.
@@ -630,6 +707,7 @@ def audit_slots(a_path: Path, b_path: Path) -> dict[str, Any]:
         "partitions", "linkage_types", "entities", "concepts",
         "memory_content", "entity_links", "tracked_files",
         "linkage_evidence", "saved_queries", "bitmap_fragments",
+        "pending_refs",
     )
     # Closed on every path, as in merge_slots (bug-113).
     with closing(open_duckdb(a_path, read_only=True)) as a_ro, \

@@ -253,6 +253,31 @@ def find_project_root(start: Path) -> "Path | None":
     return None
 
 
+def ingest_ignore_root(s: "Store", target: Path) -> Path:
+    """The PROJECT ROOT an ingest of `target` is judged against -- the spec is
+    read there and the segment rules apply below it -- never the target
+    itself (bug-216 remedy B1, ch-bsd bsd-216 r1, ruling L81, 2026-11-13).
+
+    With the target as the root, R2-base's `base = root` default meant a
+    target's OWN hidden ancestors were never checked: `rmx ingest
+    <proj>/.claude/projects/x/memory` and MCP `rmx_ingest` on a memdir stored
+    the memories as kind=doc, and `rmx ingest <proj>/.claude` stored the agent
+    templates -- where 758bca1, reading the absolute path, stored nothing.
+
+    The store's own project (the parent of its `.refmatrix/`) when the target
+    lies inside it; otherwise the nearest `.refmatrix/` above the target;
+    otherwise the target. `ingest-gmd <dir>` keeps its explicit `base=<dir>`
+    carve-out (`collect_gmd_files`), which `rmx session ingest` needs."""
+    t = target.resolve()
+    try:
+        store_proj = Path(s.root).resolve().parent
+    except (AttributeError, OSError):
+        store_proj = None
+    if store_proj is not None and (t == store_proj or store_proj in t.parents):
+        return store_proj
+    return find_project_root(t) or t
+
+
 def ignore_reason(p: Path, root: Path | None = None, *,
                   base: Path | None = None) -> "str | None":
     """Why `p` is excluded from ingest, or None when it is included. The ONE
@@ -298,7 +323,13 @@ def ignore_reason(p: Path, root: Path | None = None, *,
         pat = spec.matching_pattern(rel if rel is not None else Path(p.name))
         if pat is not None:
             return f"pattern `{pat}` in {root / '.refmatrix' / IGNORE_FILE}"
-    if rel is not None and rel.as_posix() in BUILTIN_INCLUDES and is_gmd_file(p):
+    # A MISSING file at a built-in path stays included (bug-216 remedy M3,
+    # 2026-11-13): the sniff cannot read a deleted file, so the hidden-dir rule
+    # won, the watcher dropped the delete event, and the deleted profile's doc
+    # stayed in the store. Kept in, the event reaches `_sync_one`, which purges
+    # a path that no longer exists.
+    if (rel is not None and rel.as_posix() in BUILTIN_INCLUDES
+            and (is_gmd_file(p) or not p.exists())):
         return None
     hidden = _hidden_segment(parts)
     if hidden is not None:
@@ -417,6 +448,8 @@ def _ingest_path_inner(
     *, yield_lock=None, yield_every: int = 200, progress_cb=None,
 ) -> int:
     path = path.resolve()
+    # Every walk below is judged against the PROJECT root, not `path` (B1).
+    ign_root = ingest_ignore_root(s, path)
 
     def _phase(name: str, done: int = 0, total: int = 0) -> None:
         if progress_cb is not None:
@@ -438,12 +471,14 @@ def _ingest_path_inner(
     _phase("code+docs: tldr/tree")
     if source in ("auto", "metadata") and metadata_path.exists():
         n = _ingest_tldr_metadata(s, path, pre_tracked=_pre_tracked,
+                                  ignore_root=ign_root,
                                   yield_lock=yield_lock,
                                   yield_every=yield_every)
     if n == 0 and source in ("auto", "tldr") and call_graph_path.exists():
-        n = _ingest_tldr(s, path, yield_lock=yield_lock, yield_every=yield_every)
+        n = _ingest_tldr(s, path, yield_lock=yield_lock, yield_every=yield_every,
+                         ignore_root=ign_root)
     if source in ("auto", "tree") and n == 0:
-        n = _ingest_tree(s, path)
+        n = _ingest_tree(s, path, ignore_root=ign_root)
     # Graphify is additive — when source=auto and the cache is present, layer
     # its cross-modal edges (rationale_for, semantically_similar_to, etc.) on
     # top of whatever the primary source produced. source=graphify forces it
@@ -468,7 +503,7 @@ def _ingest_path_inner(
         # captured before any pass writes (same rationale as the md gate).
         changed_py: list[tuple[Path, float]] = []
         for p in path.rglob("*.py"):
-            if should_ignore(p, path):
+            if should_ignore(p, ign_root):
                 continue
             try:
                 cur = p.stat().st_mtime
@@ -513,7 +548,7 @@ def _ingest_path_inner(
     # _pre_tracked, captured before any pass writes.
     changed_pseudo: list[tuple[Path, float]] = []
     for p in path.rglob("*.pseudo"):
-        if should_ignore(p, path):
+        if should_ignore(p, ign_root):
             continue
         try:
             cur = p.stat().st_mtime
@@ -557,7 +592,7 @@ def _ingest_path_inner(
     # pass, no --semantic flag) so DDL structure is graphed by default.
     changed_sql: list[tuple[Path, float]] = []
     for p in path.rglob("*.sql"):
-        if should_ignore(p, path):
+        if should_ignore(p, ign_root):
             continue
         try:
             cur = p.stat().st_mtime
@@ -597,7 +632,7 @@ def _ingest_path_inner(
     adr_files: list[tuple[Path, str]] = []
     adr_num_to_eid: dict[str, int] = {}
     for p in path.rglob("*.md"):
-        if should_ignore(p, path):
+        if should_ignore(p, ign_root):
             continue
         adr_num = _is_adr_file(p)
         if adr_num is None:
@@ -638,7 +673,7 @@ def _ingest_path_inner(
     # against the daemon-owned Store under the active transaction.
     md_files: list[Path] = []
     for p in path.rglob("*.md"):
-        if should_ignore(p, path):
+        if should_ignore(p, ign_root):
             continue
         if _is_adr_file(p) is not None:
             continue
@@ -754,7 +789,8 @@ class _CommitWindow:
 
 
 def _ingest_tldr_metadata(s: Store, project: Path, *, pre_tracked=None,
-                          yield_lock=None, yield_every: int = 200) -> int:
+                          yield_lock=None, yield_every: int = 200,
+                          ignore_root: "Path | None" = None) -> int:
     """Ingest llm-tldr's per-unit semantic dump. Returns the number of units
     processed (not linkages). See the module docstring for source priority.
 
@@ -792,7 +828,8 @@ def _ingest_tldr_metadata(s: Store, project: Path, *, pre_tracked=None,
     # bypassed it and re-added ignored units — e.g. a vendored duplicate tree).
     units = [
         u for u in units
-        if u.get("file") and not should_ignore(project / u["file"], project)
+        if u.get("file") and not should_ignore(project / u["file"],
+                                                 ignore_root or project)
     ]
     if not units:
         return 0
@@ -1020,7 +1057,7 @@ def _bulk_add_concepts(s: Store, named_descs) -> dict[str, int]:
 
 
 def _ingest_tldr(s: Store, project: Path, *, yield_lock=None,
-                 yield_every: int = 200) -> int:
+                 yield_every: int = 200, ignore_root: "Path | None" = None) -> int:
     """Ingest llm-tldr's `call_graph.json` (edge list).
 
     Bulk path: one scan collects the unique files / functions / concepts and
@@ -1053,9 +1090,9 @@ def _ingest_tldr(s: Store, project: Path, *, yield_lock=None,
         to_func = e.get("to_func") or ""
 
         # Honor `.refmatrix_ignore` on the cache path too (see metadata ingest).
-        if from_file and should_ignore(project / from_file, project):
+        if from_file and should_ignore(project / from_file, ignore_root or project):
             continue
-        if to_file and should_ignore(project / to_file, project):
+        if to_file and should_ignore(project / to_file, ignore_root or project):
             continue
 
         if from_file:
@@ -1285,7 +1322,7 @@ def _ingest_graphify(s: Store, project: Path, *, pre_tracked=None) -> int:
 # --- tree -------------------------------------------------------------------
 
 
-def _ingest_tree(s: Store, root: Path) -> int:
+def _ingest_tree(s: Store, root: Path, *, ignore_root: "Path | None" = None) -> int:
     """Walk the tree, batching entity upserts.
 
     Per-row upsert_entity was O(N) cursor + (pre-transaction-wrap) commit
@@ -1311,7 +1348,7 @@ def _ingest_tree(s: Store, root: Path) -> int:
     for p in root.rglob("*"):
         if not p.is_file():
             continue
-        if should_ignore(p, root):
+        if should_ignore(p, ignore_root or root):
             continue
         rel = p.relative_to(root).as_posix()
         ext = p.suffix.lower()

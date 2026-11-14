@@ -327,12 +327,16 @@ def build_context(
     # walk also reads those concepts' edges -- the `rel:` lines that cite the
     # doc by bare id but were bound to the concept before R6 (bsd-215m1:
     # 1,909+ live rows) -- both their outbound and their inbound side.
+    # Typed linkages only (remedy M2, matching PageRank's fold): a doc that
+    # merely MENTIONS the denoting term concept is not this doc's neighbour.
     if e.kind in ("doc", "memory"):
+        from refmatrix.store import DENOTES_TERM_LINKAGES
+        _typed = [ln for ln in ordered if ln not in DENOTES_TERM_LINKAGES]
         for _cid in sorted(s.denotes_equivalents([e.id]).get(e.id, ())):
             rows_iter = itertools.chain(
                 rows_iter,
-                _concept_rows(s, _cid, ordered, max_entities),
-                _entity_anchored_rows(s, _cid, ordered, max_entities))
+                _concept_rows(s, _cid, _typed, max_entities),
+                _entity_anchored_rows(s, _cid, _typed, max_entities))
 
     # Pull evidence rows for the anchor concept up front so we don't issue
     # one SELECT per entry. Keyed by (entity_id, linkage_name); when an

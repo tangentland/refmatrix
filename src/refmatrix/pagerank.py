@@ -153,7 +153,7 @@ _EMPTY_VIEW = _NeighborView(_np.empty(0, dtype=_np.int64),
 # The adjacency's SHAPE version, part of both cache keys: a cache file built
 # before `build_adjacency` folded `denotes` (bug-216 R9, 2026-11-13) has the
 # same facts.log size key as a fresh one and would be served as current.
-_ADJ_SHAPE = "denotes-fold-1"
+_ADJ_SHAPE = "denotes-fold-2"
 
 
 def _adj_disk_paths(store: "Store"):
@@ -348,16 +348,19 @@ def build_adjacency(
     # misbound `rel: X verb -> [[doc-id]]`, stored entity_id = concept) is
     # credited to the denoted target instead, split evenly when the concept
     # denotes several. The `denotes` edge itself carries no centrality.
-    # `mentions` rows are never folded: the concept is their term side.
-    from refmatrix.store import DENOTES
+    # Term linkages (`DENOTES_TERM_LINKAGES`, `mentions` first) are never
+    # folded: the concept is their term side (remedy M2: one set, three walkers).
+    from refmatrix.store import DENOTES, DENOTES_TERM_LINKAGES
     try:
         den_lid = store.get_linkage_id(DENOTES)
     except Exception:
         den_lid = None
-    try:
-        men_lid = store.get_linkage_id("mentions")
-    except Exception:
-        men_lid = None
+    term_lids: set = set()
+    for _ln in DENOTES_TERM_LINKAGES:
+        try:
+            term_lids.add(store.get_linkage_id(_ln))
+        except Exception:
+            continue
     fold: dict[int, list[int]] = {}
     if den_lid is not None:
         for r in rows:
@@ -371,7 +374,7 @@ def build_adjacency(
         # Negative weights (contradicts) still contribute connectivity; use
         # magnitude for the undirected centrality graph.
         wt = link_weight * abs(float(w))
-        tgts = fold.get(eid) if r[3] != men_lid else None
+        tgts = fold.get(eid) if r[3] not in term_lids else None
         if tgts:
             for t in tgts:
                 add(cid, t, wt / len(tgts))
