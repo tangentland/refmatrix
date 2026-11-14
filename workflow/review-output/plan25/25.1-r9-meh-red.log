@@ -1,0 +1,69 @@
+pyc-guard: recompiled 9 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+....F                                                                    [100%]
+=================================== FAILURES ===================================
+______________ test_mb_fall_through_verb_error_is_one_error_line _______________
+
+offline = {'a': <tests.task25_1_support.Fixture object at 0x118b3f390>, 'b': <tests.task25_1_support.Fixture object at 0x118b284...('/private/tmp/rmx-8jmcl1ce/p25o-zvk3kfrg'), 'home': PosixPath('/private/tmp/rmx-8jmcl1ce/p25o-zvk3kfrg/g/.refmatrix')}
+
+    def test_mb_fall_through_verb_error_is_one_error_line(offline):
+        """bsd-251 r9 m-b: the `--session-start` replica fall-through of `rmx memory recall` (the
+        path a busy OR absent daemon takes; both land in ONE `except (VerbBusyError,
+        VerbAbsentError)` handler) calls `verbs.pack_recall` INSIDE that handler, so a `VerbError`
+        raised there escapes its sibling `except VerbError`. The user's 2026-11-10 rule: a failure is
+        ONE `Error:` line and a non-zero exit, never a traceback, and the hook injects nothing.
+    
+        The generated SessionStart argv runs on store B of `offline` (replica on disk, no daemon:
+        `VerbAbsentError`, then the fall-through, proven by "reading the replica" on stderr), in a
+        child whose `verbs.pack_recall` raises `VerbError`. HEAD 988e96d: the traceback."""
+        b = offline["b"]
+        argv = shlex.split(s.after_env(s.recall_cmd(b.root, "SessionStart")))
+        assert argv[0] == "rmx", argv
+        env = h.rmx_env(b.root, RMX_HOME=str(offline["home"]), RMX_INVOCATION_SOURCE="hook",
+                        RMX_MODEL_SOCK=str(offline["base"] / "none.sock"),
+                        OBJC_DISABLE_INITIALIZE_FORK_SAFETY="YES")
+        r = subprocess.run([sys.executable, "-c", _PACK_RAISES_RUN, *argv[1:]], env=env,
+                           cwd=str(b.proj), capture_output=True, timeout=300,
+                           input=json.dumps(s.envelope("", event="SessionStart",
+                                                       source="resume")).encode())
+        err = r.stderr.decode("utf-8", "replace")
+        assert "reading the replica" in err, f"fixture: the fall-through did not serve: {err[-800:]}"
+>       assert "Traceback" not in err, f"m-b: a traceback, not one Error: line: {err[-1500:]}"
+E       AssertionError: m-b: a traceback, not one Error: line:  text, stdin_json, k, recent, since,
+E             ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                                 session_start, as_json, as_gmd, kinds, exclude_mtype,
+E                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                                 include_session, degree, fuse, scope, subject, rerank,
+E                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                                 timeout, rec=rec, include_subjects=include_subjects,
+E                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                                 pack=pack, max_bytes=max_bytes, verbose=verbose)
+E                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/cli.py", line 12807, in _memory_recall_impl
+E             packed = {"memories": rows, **_verbs.pack_recall(
+E                                           ~~~~~~~~~~~~~~~~~~^
+E                 _root(), rows, k=k, query=None, max_bytes=pack_bytes,
+E                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E             ...<2 lines>...
+E                       "session-start" if session_start else "recent"),
+E                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                 warnings=_pack_ws)}
+E                 ^^^^^^^^^^^^^^^^^^
+E           File "<string>", line 5, in _raise
+E             raise verbs.VerbError("curated hooks unreadable (PermissionError: injected by the m-b test)")
+E         refmatrix.verbs.VerbError: curated hooks unreadable (PermissionError: injected by the m-b test)
+E         
+E       assert 'Traceback' not in '# rmx: daem... m-b test)\n'
+E         
+E         'Traceback' is contained here:
+E           undError)
+E           Traceback (most recent call last):
+E         ? +++++++++
+E             File "/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/cli.py", line 12751, in _memory_recall_impl
+E               res = _verbs.memory_recall(...
+E         
+E         ...Full output truncated (82 lines hidden), use '-vv' to show
+
+tests/test_task25_1_recall_budget.py:474: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_mb_fall_through_verb_error_is_one_error_line
+1 failed, 4 passed, 137 deselected in 24.10s

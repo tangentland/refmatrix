@@ -179,6 +179,61 @@ def test_r1_env_override_and_non_integer(monkeypatch):
         hb.budget("prompt_recall")
 
 
+# bsd-251 r9 m-a (2026-11-14): `_check_tables`' import guards, each proven to FIRE. The shipped
+# table never trips them, so a test of the clean import cannot tell a deleted check from a
+# working one (feedback_clean_corpus_hides_a_dead_gate). Each case is ONE edit to the module's
+# own source, executed as a fresh module; the control case is the unedited source.
+_TABLE_EDITS = {
+    "clean": (None, None, None),
+    "recall-floor": ('    "prompt_recall": 4_000,\n', '    "prompt_recall": 1_500,\n',
+                     "under MIN_USEFUL_RECALL_BYTES"),
+    "no-event": ('    "recall_state": 9_000,\n}',
+                 '    "recall_state": 9_000,\n    "newchan": 100,\n}',
+                 "sit on no EVENT_SPLIT event"),
+    "share-over-cap": ("# Bytes the user's NON-rmx hooks add per event",
+                       'EVENT_SPLIT["UserPromptSubmit"]["focus_input"] = 99_999\n'
+                       "# Bytes the user's NON-rmx hooks add per event",
+                       "exceeds the channel's own cap"),
+}
+
+
+@pytest.mark.parametrize("case", sorted(_TABLE_EDITS))
+def test_ma_hook_budget_import_checks_fire_on_a_bad_table(case):
+    """R1 / bsd-251 m-4 + r9 m-a: a recall channel under MIN_USEFUL_RECALL_BYTES, a channel on
+    no EVENT_SPLIT event (precompact aside), and an EVENT_SPLIT share above its channel's cap
+    each raise ValueError AT IMPORT; the unedited table imports. The "no-event" edit also gives
+    the new channel a hook command, so it is the placement check -- not "belongs to no hook
+    command" -- that must catch it."""
+    import importlib.util
+    import types
+    from refmatrix import hook_budget
+    src = Path(hook_budget.__file__).read_text(encoding="utf-8")
+    old, new, want = _TABLE_EDITS[case]
+    if old is not None:
+        assert src.count(old) == 1, f"fixture: the {case} edit's anchor is not unique in the source"
+        src = src.replace(old, new)
+        if case == "no-event":
+            cmd_old = '    "recall_state_cmd": ("recall_state",),\n}'
+            assert src.count(cmd_old) == 1
+            src = src.replace(cmd_old, '    "recall_state_cmd": ("recall_state",),\n'
+                                       '    "newchan_cmd": ("newchan",),\n}')
+    name = f"_hb_probe_{case.replace('-', '_')}"
+    mod = types.ModuleType(name)
+    mod.__file__ = hook_budget.__file__
+    sys.modules[name] = mod                      # dataclasses resolves annotations through it
+    try:
+        code = compile(src, hook_budget.__file__, "exec")
+        if want is None:
+            exec(code, mod.__dict__)
+            assert mod.CHANNEL_BUDGET_BYTES == hook_budget.CHANNEL_BUDGET_BYTES
+        else:
+            with pytest.raises(ValueError, match=re.escape(want)):
+                exec(code, mod.__dict__)
+    finally:
+        sys.modules.pop(name, None)
+    assert importlib.util.find_spec("refmatrix.hook_budget") is not None
+
+
 # ---- AC-9 / AC-2 unit: the fitter -------------------------------------------------------------------
 
 
@@ -377,6 +432,50 @@ def test_s2_busy_fall_through_says_a_curated_hooks_failure(offline):
     assert p.named, "fixture: the fall-through named no hit"
     assert "curated hooks unreadable" in err, (
         f"s-2: the fall-through dropped a load_hooks failure silently: {err[-800:]!r}")
+
+
+# bsd-251 r9 m-b (2026-11-14): a child that runs the REAL `cli_entry` with ONE fault injected:
+# `verbs.pack_recall` raises `VerbError` (the s-2 contract's raise -- no production caller
+# reaches it today, both pass a list). Replaced in the CHILD only; this process is untouched.
+_PACK_RAISES_RUN = r"""
+import sys
+from refmatrix import verbs
+def _raise(*a, **kw):
+    raise verbs.VerbError("curated hooks unreadable (PermissionError: injected by the m-b test)")
+verbs.pack_recall = _raise
+from refmatrix.cli import cli_entry
+sys.argv = ["rmx", *sys.argv[1:]]
+cli_entry()
+"""
+
+
+def test_mb_fall_through_verb_error_is_one_error_line(offline):
+    """bsd-251 r9 m-b: the `--session-start` replica fall-through of `rmx memory recall` (the
+    path a busy OR absent daemon takes; both land in ONE `except (VerbBusyError,
+    VerbAbsentError)` handler) calls `verbs.pack_recall` INSIDE that handler, so a `VerbError`
+    raised there escapes its sibling `except VerbError`. The user's 2026-11-10 rule: a failure is
+    ONE `Error:` line and a non-zero exit, never a traceback, and the hook injects nothing.
+
+    The generated SessionStart argv runs on store B of `offline` (replica on disk, no daemon:
+    `VerbAbsentError`, then the fall-through, proven by "reading the replica" on stderr), in a
+    child whose `verbs.pack_recall` raises `VerbError`. HEAD 988e96d: the traceback."""
+    b = offline["b"]
+    argv = shlex.split(s.after_env(s.recall_cmd(b.root, "SessionStart")))
+    assert argv[0] == "rmx", argv
+    env = h.rmx_env(b.root, RMX_HOME=str(offline["home"]), RMX_INVOCATION_SOURCE="hook",
+                    RMX_MODEL_SOCK=str(offline["base"] / "none.sock"),
+                    OBJC_DISABLE_INITIALIZE_FORK_SAFETY="YES")
+    r = subprocess.run([sys.executable, "-c", _PACK_RAISES_RUN, *argv[1:]], env=env,
+                       cwd=str(b.proj), capture_output=True, timeout=300,
+                       input=json.dumps(s.envelope("", event="SessionStart",
+                                                   source="resume")).encode())
+    err = r.stderr.decode("utf-8", "replace")
+    assert "reading the replica" in err, f"fixture: the fall-through did not serve: {err[-800:]}"
+    assert "Traceback" not in err, f"m-b: a traceback, not one Error: line: {err[-1500:]}"
+    assert r.returncode == 1, (r.returncode, err[-600:])
+    errs = [ln for ln in err.splitlines() if ln.startswith("Error:")]
+    assert len(errs) == 1 and "curated hooks unreadable" in errs[0], err[-800:]
+    assert r.stdout == b"", f"m-b: the hook printed {len(r.stdout)} B: {r.stdout[:200]!r}"
 
 
 def test_ac10_pack_spans_are_utf8_byte_ranges():
