@@ -1,0 +1,201 @@
+pyc-guard: recompiled 21 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b240/c/src/refmatrix as checked-hash (bug-037)
+FFFFFF..                                                                 [100%]
+=================================== FAILURES ===================================
+_ test_ingest_of_a_file_by_absolute_path_ingests_it_or_refuses[daemon-CLAUDE.md] _
+
+proj = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ixPath('/private/tmp/b240.jyj5zwh7/proj'), 'root': PosixPath('/private/tmp/b240.jyj5zwh7/proj/.refmatrix'), 'up': True}
+rel = 'CLAUDE.md'
+
+    @pytest.mark.parametrize("rel", ["CLAUDE.md", "docs/notes.md"])
+    def test_ingest_of_a_file_by_absolute_path_ingests_it_or_refuses(proj, rel):
+        target = proj["proj"] / rel
+>       _verdict(proj, _rmx(proj["env"], "ingest", str(target)), target)
+
+tests/test_bug240_ingest_file_arg.py:129: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+c = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ixPath('/private/tmp/b240.jyj5zwh7/proj'), 'root': PosixPath('/private/tmp/b240.jyj5zwh7/proj/.refmatrix'), 'up': True}
+r = CompletedProcess(args=['/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660e... '/private/tmp/b240.jyj5zwh7/proj/CLAUDE.md'], returncode=1, stdout='', stderr='Error: rmx ingest takes a directory\n')
+target = PosixPath('/private/tmp/b240.jyj5zwh7/proj/CLAUDE.md')
+
+    def _verdict(c, r: subprocess.CompletedProcess, target: Path) -> None:
+        out = r.stdout + r.stderr
+        if r.returncode == 0:
+            _stop(c)
+            rows = _rows_for(c, target)
+            assert rows, (f"`rmx ingest {target.name}` exited 0 and ingested nothing "
+                          f"(no entity has path {target}); output:\n{out}")
+        else:
+            errs = [ln for ln in out.splitlines() if ln.startswith("Error:")]
+            assert len(errs) == 1, f"a refusal prints exactly one Error: line; got {errs}\n{out}"
+>           assert "rmx sync -f" in errs[0], f"the refusal must name `rmx sync -f`: {errs[0]!r}"
+E           AssertionError: the refusal must name `rmx sync -f`: 'Error: rmx ingest takes a directory'
+E           assert 'rmx sync -f' in 'Error: rmx ingest takes a directory'
+
+tests/test_bug240_ingest_file_arg.py:123: AssertionError
+_ test_ingest_of_a_file_by_absolute_path_ingests_it_or_refuses[daemon-docs/notes.md] _
+
+proj = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ixPath('/private/tmp/b240._nsvqqae/proj'), 'root': PosixPath('/private/tmp/b240._nsvqqae/proj/.refmatrix'), 'up': True}
+rel = 'docs/notes.md'
+
+    @pytest.mark.parametrize("rel", ["CLAUDE.md", "docs/notes.md"])
+    def test_ingest_of_a_file_by_absolute_path_ingests_it_or_refuses(proj, rel):
+        target = proj["proj"] / rel
+>       _verdict(proj, _rmx(proj["env"], "ingest", str(target)), target)
+
+tests/test_bug240_ingest_file_arg.py:129: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+c = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ixPath('/private/tmp/b240._nsvqqae/proj'), 'root': PosixPath('/private/tmp/b240._nsvqqae/proj/.refmatrix'), 'up': True}
+r = CompletedProcess(args=['/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660e...rivate/tmp/b240._nsvqqae/proj/docs/notes.md'], returncode=1, stdout='', stderr='Error: rmx ingest takes a directory\n')
+target = PosixPath('/private/tmp/b240._nsvqqae/proj/docs/notes.md')
+
+    def _verdict(c, r: subprocess.CompletedProcess, target: Path) -> None:
+        out = r.stdout + r.stderr
+        if r.returncode == 0:
+            _stop(c)
+            rows = _rows_for(c, target)
+            assert rows, (f"`rmx ingest {target.name}` exited 0 and ingested nothing "
+                          f"(no entity has path {target}); output:\n{out}")
+        else:
+            errs = [ln for ln in out.splitlines() if ln.startswith("Error:")]
+            assert len(errs) == 1, f"a refusal prints exactly one Error: line; got {errs}\n{out}"
+>           assert "rmx sync -f" in errs[0], f"the refusal must name `rmx sync -f`: {errs[0]!r}"
+E           AssertionError: the refusal must name `rmx sync -f`: 'Error: rmx ingest takes a directory'
+E           assert 'rmx sync -f' in 'Error: rmx ingest takes a directory'
+
+tests/test_bug240_ingest_file_arg.py:123: AssertionError
+_ test_ingest_of_a_file_by_absolute_path_ingests_it_or_refuses[in_process-CLAUDE.md] _
+
+proj = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...xPath('/private/tmp/b240.rvza8vli/proj'), 'root': PosixPath('/private/tmp/b240.rvza8vli/proj/.refmatrix'), 'up': False}
+rel = 'CLAUDE.md'
+
+    @pytest.mark.parametrize("rel", ["CLAUDE.md", "docs/notes.md"])
+    def test_ingest_of_a_file_by_absolute_path_ingests_it_or_refuses(proj, rel):
+        target = proj["proj"] / rel
+>       _verdict(proj, _rmx(proj["env"], "ingest", str(target)), target)
+
+tests/test_bug240_ingest_file_arg.py:129: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+c = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...xPath('/private/tmp/b240.rvza8vli/proj'), 'root': PosixPath('/private/tmp/b240.rvza8vli/proj/.refmatrix'), 'up': False}
+r = CompletedProcess(args=['/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660e... '/private/tmp/b240.rvza8vli/proj/CLAUDE.md'], returncode=1, stdout='', stderr='Error: rmx ingest takes a directory\n')
+target = PosixPath('/private/tmp/b240.rvza8vli/proj/CLAUDE.md')
+
+    def _verdict(c, r: subprocess.CompletedProcess, target: Path) -> None:
+        out = r.stdout + r.stderr
+        if r.returncode == 0:
+            _stop(c)
+            rows = _rows_for(c, target)
+            assert rows, (f"`rmx ingest {target.name}` exited 0 and ingested nothing "
+                          f"(no entity has path {target}); output:\n{out}")
+        else:
+            errs = [ln for ln in out.splitlines() if ln.startswith("Error:")]
+            assert len(errs) == 1, f"a refusal prints exactly one Error: line; got {errs}\n{out}"
+>           assert "rmx sync -f" in errs[0], f"the refusal must name `rmx sync -f`: {errs[0]!r}"
+E           AssertionError: the refusal must name `rmx sync -f`: 'Error: rmx ingest takes a directory'
+E           assert 'rmx sync -f' in 'Error: rmx ingest takes a directory'
+
+tests/test_bug240_ingest_file_arg.py:123: AssertionError
+_ test_ingest_of_a_file_by_absolute_path_ingests_it_or_refuses[in_process-docs/notes.md] _
+
+proj = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...xPath('/private/tmp/b240.6d31re8x/proj'), 'root': PosixPath('/private/tmp/b240.6d31re8x/proj/.refmatrix'), 'up': False}
+rel = 'docs/notes.md'
+
+    @pytest.mark.parametrize("rel", ["CLAUDE.md", "docs/notes.md"])
+    def test_ingest_of_a_file_by_absolute_path_ingests_it_or_refuses(proj, rel):
+        target = proj["proj"] / rel
+>       _verdict(proj, _rmx(proj["env"], "ingest", str(target)), target)
+
+tests/test_bug240_ingest_file_arg.py:129: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+c = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...xPath('/private/tmp/b240.6d31re8x/proj'), 'root': PosixPath('/private/tmp/b240.6d31re8x/proj/.refmatrix'), 'up': False}
+r = CompletedProcess(args=['/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660e...rivate/tmp/b240.6d31re8x/proj/docs/notes.md'], returncode=1, stdout='', stderr='Error: rmx ingest takes a directory\n')
+target = PosixPath('/private/tmp/b240.6d31re8x/proj/docs/notes.md')
+
+    def _verdict(c, r: subprocess.CompletedProcess, target: Path) -> None:
+        out = r.stdout + r.stderr
+        if r.returncode == 0:
+            _stop(c)
+            rows = _rows_for(c, target)
+            assert rows, (f"`rmx ingest {target.name}` exited 0 and ingested nothing "
+                          f"(no entity has path {target}); output:\n{out}")
+        else:
+            errs = [ln for ln in out.splitlines() if ln.startswith("Error:")]
+            assert len(errs) == 1, f"a refusal prints exactly one Error: line; got {errs}\n{out}"
+>           assert "rmx sync -f" in errs[0], f"the refusal must name `rmx sync -f`: {errs[0]!r}"
+E           AssertionError: the refusal must name `rmx sync -f`: 'Error: rmx ingest takes a directory'
+E           assert 'rmx sync -f' in 'Error: rmx ingest takes a directory'
+
+tests/test_bug240_ingest_file_arg.py:123: AssertionError
+_____ test_ingest_of_a_file_by_relative_path_ingests_it_or_refuses[daemon] _____
+
+proj = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ixPath('/private/tmp/b240.3fkfdk6t/proj'), 'root': PosixPath('/private/tmp/b240.3fkfdk6t/proj/.refmatrix'), 'up': True}
+
+    def test_ingest_of_a_file_by_relative_path_ingests_it_or_refuses(proj):
+        """The live form: `rmx ingest CLAUDE.md` from the project root."""
+        target = proj["proj"] / "CLAUDE.md"
+>       _verdict(proj, _rmx(proj["env"], "ingest", "CLAUDE.md", cwd=proj["proj"]), target)
+
+tests/test_bug240_ingest_file_arg.py:135: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+c = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ixPath('/private/tmp/b240.3fkfdk6t/proj'), 'root': PosixPath('/private/tmp/b240.3fkfdk6t/proj/.refmatrix'), 'up': True}
+r = CompletedProcess(args=['/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660e...c/.venv-eval/bin/rmx', 'ingest', 'CLAUDE.md'], returncode=1, stdout='', stderr='Error: rmx ingest takes a directory\n')
+target = PosixPath('/private/tmp/b240.3fkfdk6t/proj/CLAUDE.md')
+
+    def _verdict(c, r: subprocess.CompletedProcess, target: Path) -> None:
+        out = r.stdout + r.stderr
+        if r.returncode == 0:
+            _stop(c)
+            rows = _rows_for(c, target)
+            assert rows, (f"`rmx ingest {target.name}` exited 0 and ingested nothing "
+                          f"(no entity has path {target}); output:\n{out}")
+        else:
+            errs = [ln for ln in out.splitlines() if ln.startswith("Error:")]
+            assert len(errs) == 1, f"a refusal prints exactly one Error: line; got {errs}\n{out}"
+>           assert "rmx sync -f" in errs[0], f"the refusal must name `rmx sync -f`: {errs[0]!r}"
+E           AssertionError: the refusal must name `rmx sync -f`: 'Error: rmx ingest takes a directory'
+E           assert 'rmx sync -f' in 'Error: rmx ingest takes a directory'
+
+tests/test_bug240_ingest_file_arg.py:123: AssertionError
+___ test_ingest_of_a_file_by_relative_path_ingests_it_or_refuses[in_process] ___
+
+proj = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...xPath('/private/tmp/b240.j1mlczrm/proj'), 'root': PosixPath('/private/tmp/b240.j1mlczrm/proj/.refmatrix'), 'up': False}
+
+    def test_ingest_of_a_file_by_relative_path_ingests_it_or_refuses(proj):
+        """The live form: `rmx ingest CLAUDE.md` from the project root."""
+        target = proj["proj"] / "CLAUDE.md"
+>       _verdict(proj, _rmx(proj["env"], "ingest", "CLAUDE.md", cwd=proj["proj"]), target)
+
+tests/test_bug240_ingest_file_arg.py:135: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+c = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...xPath('/private/tmp/b240.j1mlczrm/proj'), 'root': PosixPath('/private/tmp/b240.j1mlczrm/proj/.refmatrix'), 'up': False}
+r = CompletedProcess(args=['/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660e...c/.venv-eval/bin/rmx', 'ingest', 'CLAUDE.md'], returncode=1, stdout='', stderr='Error: rmx ingest takes a directory\n')
+target = PosixPath('/private/tmp/b240.j1mlczrm/proj/CLAUDE.md')
+
+    def _verdict(c, r: subprocess.CompletedProcess, target: Path) -> None:
+        out = r.stdout + r.stderr
+        if r.returncode == 0:
+            _stop(c)
+            rows = _rows_for(c, target)
+            assert rows, (f"`rmx ingest {target.name}` exited 0 and ingested nothing "
+                          f"(no entity has path {target}); output:\n{out}")
+        else:
+            errs = [ln for ln in out.splitlines() if ln.startswith("Error:")]
+            assert len(errs) == 1, f"a refusal prints exactly one Error: line; got {errs}\n{out}"
+>           assert "rmx sync -f" in errs[0], f"the refusal must name `rmx sync -f`: {errs[0]!r}"
+E           AssertionError: the refusal must name `rmx sync -f`: 'Error: rmx ingest takes a directory'
+E           assert 'rmx sync -f' in 'Error: rmx ingest takes a directory'
+
+tests/test_bug240_ingest_file_arg.py:123: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_absolute_path_ingests_it_or_refuses[daemon-CLAUDE.md]
+FAILED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_absolute_path_ingests_it_or_refuses[daemon-docs/notes.md]
+FAILED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_absolute_path_ingests_it_or_refuses[in_process-CLAUDE.md]
+FAILED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_absolute_path_ingests_it_or_refuses[in_process-docs/notes.md]
+FAILED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_relative_path_ingests_it_or_refuses[daemon]
+FAILED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_relative_path_ingests_it_or_refuses[in_process]
+6 failed, 2 passed in 27.33s
