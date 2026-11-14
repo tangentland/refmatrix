@@ -241,7 +241,11 @@ def test_the_save_state_promote_fallback_refuses_a_git_tracked_catalog(tracked_r
 #   move  -- `.rename(` / `.replace(` / `.unlink(` / `os.replace|rename|remove|unlink(` /
 #            `shutil.move(` whose source or target is a catalog path: an expression whose text
 #            names a writer catalog (`catalog.duckdb`, `catalog.{slot}.duckdb`, `catalog.db`,
-#            `db_path`), or a local bound to one.
+#            `db_path`), or a local bound to one;
+#   copy  -- `shutil.copy|copy2|copyfile|copyfileobj(` whose DESTINATION is a catalog path, and
+#            `<catalog path>.write_bytes(` (ch-bsd r5 m-3, L98, 2026-11-14: a copy onto a slot
+#            replaces its bytes as surely as a rename; a copy FROM a catalog writes nothing
+#            guarded). `os` / `shutil` count under any import alias (daemon.py's `_shutil`).
 
 # Sites (`module:qualname`) that must call the one store-level check (directly or via one
 # wrapper) before they open or replace a catalog:
@@ -264,8 +268,10 @@ UNCHECKED_ALLOWED = {
     # Daemon-only: merges the A/B slots inside the daemon (held by
     # `test_daemon_only_sites_are_called_only_from_the_daemon`).
     "replica_merge:merge_slots",
-    # The daemon's replica-merge op installs the merged file over its own slots, and its slot
-    # repair re-clones a missing slot (the daemon owns both files).
+    # The daemon's replica-merge op installs the merged file over its own slots (os.replace,
+    # then `_shutil.copy2` of A onto B), and its slot repair re-clones a missing slot; the
+    # rotation bootstrap above copies the legacy catalog onto A and B (`shutil.copy2`). The
+    # daemon owns those files.
     "daemon:_op_replica_merge",
     "daemon:Daemon._repair_missing_slot_locked",
     # The hub's global store (`~/.refmatrix/global`), created and owned by the hub.
@@ -303,6 +309,18 @@ def _store_aliases(tree: ast.AST) -> set[str]:
     return names
 
 
+def _module_aliases(tree: ast.AST, module: str) -> set[str]:
+    """Every name the stdlib `module` (`os`, `shutil`) is bound to: itself and `import X as Y`."""
+    names = {module}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            names |= {a.asname for a in n.names if a.name == module and a.asname}
+    return names
+
+
+_COPY_FUNCS = ("copy", "copy2", "copyfile", "copyfileobj")
+
+
 def _is_memory_literal(node: "ast.AST | None") -> bool:
     return isinstance(node, ast.Constant) and node.value == ":memory:"
 
@@ -311,6 +329,8 @@ def _scan_source(mod: str, text: str) -> list[tuple[str, int, str]]:
     """The census of ONE module's source: (`module:qualname`, line, family) per site."""
     tree = ast.parse(text, mod)
     aliases = _store_aliases(tree)
+    os_names = _module_aliases(tree, "os")
+    shutil_names = _module_aliases(tree, "shutil")
     found: list[tuple[str, int, str]] = []
     stack: list[str] = []
     catalog_names: list[set[str]] = [set()]
@@ -358,10 +378,19 @@ def _scan_source(mod: str, text: str) -> list[tuple[str, int, str]]:
                 if not read_only and not _is_memory_literal(path):
                     found.append((site, n.lineno, "raw"))
             elif (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)
-                  and f.value.id in ("os", "shutil")
-                  and f.attr in ("replace", "rename", "remove", "unlink", "move")):
+                  and f.value.id in shutil_names and f.attr in _COPY_FUNCS):
+                dst = n.args[1] if len(n.args) > 1 else (kw.get("dst") or kw.get("fdst"))
+                if is_catalog(dst):
+                    found.append((site, n.lineno, "copy"))
+            elif (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)
+                  and ((f.value.id in os_names
+                        and f.attr in ("replace", "rename", "remove", "unlink"))
+                       or (f.value.id in shutil_names and f.attr == "move"))):
                 if any(is_catalog(a) for a in n.args):
                     found.append((site, n.lineno, "move"))
+            elif isinstance(f, ast.Attribute) and f.attr == "write_bytes":
+                if is_catalog(f.value):
+                    found.append((site, n.lineno, "copy"))
             elif isinstance(f, ast.Attribute) and f.attr in ("rename", "replace", "unlink"):
                 if is_catalog(f.value) or (f.attr != "unlink" and n.args
                                            and is_catalog(n.args[0])):
@@ -527,6 +556,73 @@ def test_the_census_scanner_finds_every_family_in_a_synthetic_module():
     never = {"read_only_ok", "memory_ok", "raw_read_only_ok", "not_a_catalog"}
     false = sorted(x for x in got if x[0] in never)
     assert not false, f"the scanner flagged sites that open nothing read-write: {false}"
+
+
+_SYNTHETIC_COPY = """
+import shutil
+import shutil as _sh
+import os as _os
+
+def copy2_onto(root, src):
+    shutil.copy2(src, root / "catalog.A.duckdb")
+
+def copy_onto_slot(root, src):
+    slot = root / f"catalog.{'B'}.duckdb"
+    shutil.copy(src, slot)
+
+def copyfile_aliased(root, src):
+    _sh.copyfile(src, root / "catalog.duckdb")
+
+def copyfileobj_onto(root, fsrc):
+    with open(root / "catalog.db", "wb") as fdst:
+        shutil.copyfileobj(fsrc, open(root / "catalog.db", "wb"))
+
+def write_bytes_onto(root):
+    (root / "catalog.duckdb").write_bytes(b"")
+
+def move_aliased(root, tmp):
+    _sh.move(tmp, root / "catalog.duckdb")
+    _os.replace(tmp, root / "catalog.A.duckdb")
+
+def copy_from_catalog_ok(root, backup):
+    shutil.copy2(root / "catalog.duckdb", backup)
+    _sh.copyfile(root / "catalog.A.duckdb", root / "snapshot.tmp")
+
+def copy_to_the_read_replica_ok(root, active):
+    shutil.copy2(active, root / "catalog.read.duckdb")
+
+def write_bytes_elsewhere_ok(root):
+    (root / "notes.bin").write_bytes(b"")
+"""
+
+
+def test_the_census_scanner_finds_the_copy_family_on_the_destination():
+    """m-3 (ch-bsd r5, L98, 2026-11-14): `shutil.copy` / `copy2` / `copyfile` / `copyfileobj`
+    and `Path.write_bytes` ONTO a writer-catalog path replace its bytes as surely as a rename,
+    and the census did not scan them (today only the daemon does it, so nothing escaped; a
+    future CLI copy onto `catalog.A.duckdb` would have passed). Keyed on the DESTINATION: a copy
+    FROM a catalog (a backup, a snapshot) writes nothing guarded. `shutil` / `os` under an alias
+    (`import shutil as _shutil`, as daemon.py does) count too."""
+    got = {(site.split(":")[1], fam)
+           for site, _, fam in _scan_source("synthetic", _SYNTHETIC_COPY)}
+    want = {("copy2_onto", "copy"), ("copy_onto_slot", "copy"), ("copyfile_aliased", "copy"),
+            ("copyfileobj_onto", "copy"), ("write_bytes_onto", "copy"),
+            ("move_aliased", "move")}
+    assert want <= got, f"the scanner missed {sorted(want - got)}"
+    never = {"copy_from_catalog_ok", "copy_to_the_read_replica_ok", "write_bytes_elsewhere_ok"}
+    false = sorted(x for x in got if x[0] in never)
+    assert not false, f"the scanner flagged copies that write no writer catalog: {false}"
+
+
+def test_the_census_sees_the_daemons_slot_copies():
+    """m-3: the real copies onto writer slots -- the daemon's replica merge
+    (`_shutil.copy2(d._replica_file("A"), slot_path)`) and its rotation bootstrap
+    (`shutil.copy2(legacy, a)` / `(legacy, b)`) -- are in the census, so the allowlist's
+    reasons for those two sites cover what they actually do."""
+    seen = {(site, fam) for site, _, fam in _census()}
+    for must in (("daemon:_op_replica_merge", "copy"),
+                 ("daemon:Daemon._bootstrap_rotation_if_needed", "copy")):
+        assert must in seen, f"the census does not see {must}"
 
 
 def test_no_read_write_store_open_outside_the_allowlist():
