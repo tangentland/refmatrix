@@ -487,8 +487,18 @@ def _ingest_path_inner(
     if n == 0 and source in ("auto", "tldr") and call_graph_path.exists():
         n = _ingest_tldr(s, path, yield_lock=yield_lock, yield_every=yield_every,
                          ignore_root=ign_root)
-    if source in ("auto", "tree") and n == 0:
-        n = _ingest_tree(s, path, ignore_root=ign_root)
+    tree_ran = source in ("auto", "tree") and n == 0
+    if tree_ran:
+        n = _ingest_tree(s, path, ignore_root=ign_root)   # routes markdown itself
+    else:
+        # A tldr cache answered (or `--source metadata|tldr|graphify` was
+        # explicit): markdown still goes to the GMD pass (bug-241). `source`
+        # chooses where CODE structure comes from; none of those sources
+        # covers markdown, and every markdown pass below already runs whatever
+        # `source` is, so the GMD routing does too -- skipping it under an
+        # explicit source would be this bug again.
+        _phase("code+docs: markdown/gmd")
+        n += _ingest_markdown_gmd(s, path, ignore_root=ign_root)
     # Graphify is additive — when source=auto and the cache is present, layer
     # its cross-modal edges (rationale_for, semantically_similar_to, etc.) on
     # top of whatever the primary source produced. source=graphify forces it
@@ -1354,7 +1364,6 @@ def _ingest_tree(s: Store, root: Path, *, ignore_root: "Path | None" = None) -> 
         track_payload.clear()
 
     n = 0
-    gmd_paths: list[Path] = []
     for p in root.rglob("*"):
         if not p.is_file():
             continue
@@ -1362,27 +1371,9 @@ def _ingest_tree(s: Store, root: Path, *, ignore_root: "Path | None" = None) -> 
             continue
         rel = p.relative_to(root).as_posix()
         ext = p.suffix.lower()
-        # Markdown goes to the GMD pass, ALWAYS -- not just when it carries
-        # `gmd:` frontmatter. Registering it here as a plain `doc` gives it an
-        # entity with NO body terms, so it is unretrievable by its own content
-        # at any k, AND stamps `mark_tracked(mtime)` below, which makes the
-        # sync mtime gate skip it forever afterwards. That pairing is what
-        # stranded 43-72% of the doc/memory entities in every store measured.
-        # The parser handles plain markdown fine (`lenient=True`); the only
-        # thing frontmatter adds that matters is the explicit id, and
-        # `_lenient_doc_id` derives a collision-free one from the path.
+        # Markdown is routed to the GMD pass by `_ingest_markdown_gmd` below,
+        # never registered here as a plain `doc` (see its docstring).
         if ext in GMD_EXTS:
-            # Purge a LEGACY plain-doc row for this path first. The GMD pass
-            # names entities by doc-id (`charter`), the old tree pass named
-            # them by relpath (`CHARTER.md`), so without this the two coexist
-            # and the stale one keeps its zero body terms -- manufacturing the
-            # very stranding this change exists to remove. Guarded on the
-            # relpath row actually existing, so a re-ingest of an
-            # already-correct store does not churn the graph. Mirrors the
-            # same guard in `sync._sync_paths`.
-            if s.get_entity("doc", rel) is not None:
-                s.purge_path(str(p))
-            gmd_paths.append(p)
             continue
         if ext in DOC_EXTS:
             kind = "doc"
@@ -1400,26 +1391,74 @@ def _ingest_tree(s: Store, root: Path, *, ignore_root: "Path | None" = None) -> 
         if len(batch) >= BATCH:
             _flush()
     _flush()
-    if gmd_paths:
-        # Batched so cross-doc `[[doc-id#anchor]]` refs resolve within the run.
-        from refmatrix.ingest_gmd import ingest_gmd_paths
-        try:
-            st = ingest_gmd_paths(s, gmd_paths, lenient=True, project_root=root)
-            n += st.docs
-        except Exception:
-            # Never let a bad markdown file abort the whole tree pass; the
-            # plain registration above is gone for these, so a failure here
-            # costs their body terms, not the ingest.
-            for gp in gmd_paths:
-                try:
-                    s.upsert_entity(kind="doc",
-                                    name=gp.relative_to(root).as_posix(),
-                                    path=str(gp))
-                    s.mark_tracked(str(gp), gp.stat().st_mtime)
-                    n += 1
-                except Exception:
-                    pass
-    return n
+    return n + _ingest_markdown_gmd(s, root, ignore_root=ignore_root)
+
+
+def _ingest_markdown_gmd(s: Store, root: Path, *, ignore_root: "Path | None" = None) -> int:
+    """THE code+docs routing of markdown to the GMD pass; returns the docs it
+    ingested. Every markdown file under `root` that `should_ignore` keeps
+    (judged against `ignore_root`, the project root) goes to ONE batched
+    `ingest_gmd_paths` call, so cross-doc `[[doc-id#anchor]]` refs resolve
+    within the run.
+
+    WHY one routing (bug-241, 2026-11-14): it lived inside `_ingest_tree`, and
+    `_ingest_path_inner` runs the tree pass only when no tldr cache answered.
+    On a tree with `.tldr/cache/semantic/metadata.json` or `call_graph.json` --
+    the live refmatrix tree -- no markdown was ever GMD-parsed by `rmx ingest`
+    or `rmx reingest --force`: the rule docs stayed plain relpath rows with no
+    anchors, and bug-216's repair-by-reingest was a no-op. `_ingest_tree` and
+    `_ingest_path_inner` (when the tree pass did not run) both call this.
+
+    Markdown goes to the GMD pass ALWAYS -- not just when it carries `gmd:`
+    frontmatter. Registered as a plain `doc` it has NO body terms, so it is
+    unretrievable by its own content at any k, and its `mark_tracked(mtime)`
+    makes the sync mtime gate skip it forever afterwards; that pairing
+    stranded 43-72% of the doc/memory entities in every store measured. The
+    parser handles plain markdown (`lenient=True`); `_lenient_doc_id` derives a
+    collision-free id from the path when there is no frontmatter.
+
+    A LEGACY plain-doc row for a path (named by relpath, as the old tree pass
+    named it) is purged first, guarded on the row existing so a re-ingest of
+    an already-correct store does not churn the graph; mirrors the same guard
+    in `sync._sync_one`. A GMD pass that raises does not abort the ingest: its
+    files are registered as plain docs, and the failure is printed and counted
+    -- it is a memory path (CLAUDE.md #no-silent-failures)."""
+    import sys as _sys
+    judge = ignore_root or root
+    gmd_paths: list[Path] = []
+    for ext in sorted(GMD_EXTS):
+        for p in sorted(root.rglob(f"*{ext}")):
+            if not p.is_file() or should_ignore(p, judge):
+                continue
+            rel = p.relative_to(root).as_posix()
+            if s.get_entity("doc", rel) is not None:
+                s.purge_path(str(p))
+            gmd_paths.append(p)
+    if not gmd_paths:
+        return 0
+    from refmatrix.ingest_gmd import ingest_gmd_paths
+    try:
+        return ingest_gmd_paths(s, gmd_paths, lenient=True, project_root=root).docs
+    except Exception as exc:  # noqa: BLE001 — printed, counted, and the files kept
+        print(f"rmx ingest: GMD pass failed ({type(exc).__name__}: {exc}); "
+              f"registering {len(gmd_paths)} markdown file(s) as plain docs",
+              file=_sys.stderr)
+        n = 0
+        failed = 0
+        for gp in gmd_paths:
+            try:
+                s.upsert_entity(kind="doc", name=gp.relative_to(root).as_posix(),
+                                path=str(gp))
+                s.mark_tracked(str(gp), gp.stat().st_mtime)
+                n += 1
+            except Exception as e2:  # noqa: BLE001 — counted and printed below
+                failed += 1
+                print(f"rmx ingest: could not register {gp}: {type(e2).__name__}: {e2}",
+                      file=_sys.stderr)
+        if failed:
+            print(f"rmx ingest: {failed} markdown file(s) not registered at all",
+                  file=_sys.stderr)
+        return n
 
 
 # --- Python semantic enrichment --------------------------------------------
