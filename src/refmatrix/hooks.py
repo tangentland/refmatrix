@@ -379,7 +379,8 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                 # jq/python dependency. Empty prompt = no-op exit 0.
                 # --timeout 5: the hook fires on EVERY prompt and held the
                 # turn ~20 s p50 unbounded on 2026-09-14 (bsd-plan2-r5
-                # #b-1); past the budget it warns, answers [], exits 0.
+                # #b-1); past the budget it warns on stderr, prints NOTHING on
+                # stdout (25.1 d8: no context injected this turn), exits 0.
                 # Task 25.1 R7: `--pack` (12 pointer lines under hook_budget's
                 # prompt_recall bytes, d3) replaces 5 whole JSON rows that printed
                 # 15-59 kB, i.e. a 2 kB preview of the first row.

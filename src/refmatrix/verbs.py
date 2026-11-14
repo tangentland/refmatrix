@@ -1115,7 +1115,13 @@ def pack_recall(root: Path, rows: "list[dict]", *, mode: str, query: "str | None
 
     The budget is `max_bytes` when given, else `hook_budget.budget(<channel>)` (the env
     override included; a non-integer `RMX_HOOK_BUDGET_BYTES` raises `VerbArgsError` naming it).
-    Returns the pack fields: `text`, `spans`, `named`, `more`, `payload_bytes`."""
+    Returns the pack fields: `text`, `spans`, `named`, `more`, `payload_bytes`.
+
+    An unreadable curated-hooks index is SAID, never dropped (bsd-251 s-2, ruling L68,
+    2026-11-14; CLAUDE.md #no-silent-failures): with a `warnings` list it is appended there and
+    the pack falls back to each memory's first sentence; with none -- a caller that has nowhere
+    to say it -- it raises `VerbError` naming the cause. The CLI's busy fall-through used to pass
+    no list, so a broken MEMORY.md silently degraded every hook line."""
     from refmatrix import handoff, hook_budget, memory_index, recall_pack
     label = channel or _PACK_CHANNEL_OF_MODE.get(mode, "prompt_recall")
     key = label if label in hook_budget.CHANNEL_BUDGET_BYTES else \
@@ -1129,10 +1135,12 @@ def pack_recall(root: Path, rows: "list[dict]", *, mode: str, query: "str | None
     if memdir.is_dir():
         try:
             hooks = memory_index.load_hooks(memdir)
-        except Exception as e:  # noqa: BLE001 -- said; every hit falls back to its first sentence
-            if warnings is not None:
-                warnings.append(f"curated hooks unreadable ({type(e).__name__}: {e}); "
-                                f"hook lines use each memory's first sentence")
+        except Exception as e:  # noqa: BLE001 -- said (warnings) or raised, never dropped
+            msg = f"curated hooks unreadable ({type(e).__name__}: {e})"
+            if warnings is None:
+                raise VerbError(f"{msg}; pass a warnings list to pack with first "
+                                f"sentences instead") from e
+            warnings.append(f"{msg}; hook lines use each memory's first sentence")
     p = recall_pack.pack(rows, hooks=hooks, global_hooks={}, max_bytes=n, channel=label,
                          query=query, mode=mode, k_more=k, since=since, subject=subject)
     return {"text": p.text, "spans": p.spans, "named": list(p.named), "more": p.more,

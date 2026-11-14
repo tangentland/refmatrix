@@ -12800,11 +12800,18 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
             if pack:
                 # The verb's packer on the fall-through's final rows (R4: once, after the
                 # merge and the exclusion) -- never a CLI renderer of its own.
+                # Its warnings (an unreadable curated-hooks index) go to stderr like the
+                # verb's (bsd-251 s-2, 2026-11-14: this call passed no list and the failure
+                # was dropped).
+                _pack_ws: list[str] = []
                 packed = {"memories": rows, **_verbs.pack_recall(
                     _root(), rows, k=k, query=None, max_bytes=pack_bytes,
                     channel=rec_channel, since=since, subject=subject,
                     mode=("subject" if subject else
-                          "session-start" if session_start else "recent"))}
+                          "session-start" if session_start else "recent"),
+                    warnings=_pack_ws)}
+                for w in _pack_ws:
+                    _warn(w)
             else:
                 rows = _attach_context(rows)
         except _verbs.VerbError as e:
@@ -14005,23 +14012,30 @@ def recall_state(session, memory_dir, as_json, max_bytes):
     """
     root = _root()
     from refmatrix import handoff as _handoff, verbs as _verbs
-    # The verb resolves (bug-109 r2 #s-2: a CLI-resolved session reached it as `explicit`),
-    # after it has read the pointer-error clauses (task 21.1 D6).
+    # ANY failure is one `Error:` line (bsd-251 m-5, ruling L68, 2026-11-14): only the verb's
+    # `VerbError`s were converted, so a save-state with non-UTF-8 bytes (`UnicodeDecodeError`)
+    # put a traceback into the compact|clear hook. A `VerbError` keeps its own words; anything
+    # else is named by its type. The output is built before anything is written, so a failure
+    # never leaves half a report on stdout.
     try:
+        # The verb resolves (bug-109 r2 #s-2: a CLI-resolved session reached it as
+        # `explicit`), after it has read the pointer-error clauses (task 21.1 D6).
         rep = _verbs.recall_state(root, session=session,
                                   memory_dir=str(memory_dir) if memory_dir else None,
                                   max_bytes=max_bytes)
+        if as_json:
+            import json as _json
+            out, nl = _json.dumps(rep, default=str, indent=2), True
+        elif max_bytes is not None:
+            out, nl = rep["text"], False
+        else:
+            out, nl = _handoff.fit_recall_state(rep, None)[0], False
     except _verbs.VerbError as e:
         raise click.ClickException(" ".join(str(e).split())) from e
-
-    if as_json:
-        import json as _json
-        click.echo(_json.dumps(rep, default=str, indent=2))
-        return
-    if max_bytes is not None:
-        click.echo(rep["text"], nl=False)
-        return
-    click.echo(_handoff.fit_recall_state(rep, None)[0], nl=False)
+    except Exception as e:  # noqa: BLE001 -- converted to ONE named Error: line, exit 1
+        raise click.ClickException(
+            " ".join(f"recall-state: {type(e).__name__}: {e}".split())) from e
+    click.echo(out, nl=nl)
 
 
 @main.group("session")

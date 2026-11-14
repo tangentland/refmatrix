@@ -65,10 +65,11 @@ HOOK_COMMAND_CHANNELS: "dict[str, tuple[str, ...]]" = {
 }
 
 # The rmx producers on each event, with the share each would get under a PER-EVENT cap
-# (outcomes B / C). R0 found outcome (A) on both events, so these do not bind any formula
-# today; they are recorded so a Claude Code version that moves to a per-event cap has the
-# split next to the constants (#reserve-binding), and every share is still a hard cap its
-# producer enforces on itself.
+# (spec R1 requires the constant; R0 (B) is the only formula that would consume it:
+# EVENT_BUDGET[event] split across the event's producers). R0 found outcome (A) on both events,
+# so no budget is computed from it today. What IS read, at import (`_check_tables`, bsd-251 m-4,
+# 2026-11-14): every share is a known channel's own cap (never more), and every budgeted channel
+# but PreCompact's sits on an R0 event, so a new channel cannot be added without a place here.
 EVENT_SPLIT: "dict[str, dict[str, int]]" = {
     "UserPromptSubmit": {c: CHANNEL_BUDGET_BYTES[c]
                          for c in ("scan_prompt", "curator_status", "focus_input",
@@ -89,6 +90,7 @@ NON_RMX_RESERVE_BYTES: "dict[str, int]" = {
 }
 
 # Header + 6 hook lines: below this a recall payload is not worth printing (outcome C's floor).
+# Read at import (`_check_tables`): no recall channel's table budget may sit under it.
 MIN_USEFUL_RECALL_BYTES = 2_000
 
 ENV_VAR = "RMX_HOOK_BUDGET_BYTES"
@@ -96,8 +98,10 @@ ENV_VAR = "RMX_HOOK_BUDGET_BYTES"
 
 def _check_tables() -> None:
     """Fail at import if the table contradicts itself: a channel no command carries, a command
-    over R0's per-command budget, a reserve not on the 512 B grid. Cheap, and it turns an edit
-    that breaks the contract into an import error rather than a truncated hook."""
+    over R0's per-command budget, a reserve not on the 512 B grid, an event share above its
+    channel's cap or a budgeted channel on no event, a recall channel under the useful floor.
+    Cheap, and it turns an edit that breaks the contract into an import error rather than a
+    truncated hook."""
     for cmd, chans in HOOK_COMMAND_CHANNELS.items():
         unknown = [c for c in chans if c not in CHANNEL_BUDGET_BYTES]
         if unknown:
@@ -114,6 +118,34 @@ def _check_tables() -> None:
         if v % 512:
             raise ValueError(f"hook_budget: NON_RMX_RESERVE_BYTES[{ev!r}] = {v} is not a "
                              f"multiple of 512")
+    # R0 (B): an event's split is over ITS producers, each share a hard cap the producer
+    # enforces on itself -- so a share is a known channel and never above that channel's cap.
+    if set(EVENT_SPLIT) != set(NON_RMX_RESERVE_BYTES):
+        raise ValueError(f"hook_budget: EVENT_SPLIT events {sorted(EVENT_SPLIT)} != "
+                         f"NON_RMX_RESERVE_BYTES events {sorted(NON_RMX_RESERVE_BYTES)}")
+    for ev, split in EVENT_SPLIT.items():
+        for c, share in split.items():
+            if c not in CHANNEL_BUDGET_BYTES:
+                raise ValueError(f"hook_budget: EVENT_SPLIT[{ev!r}] names unknown channel {c!r}")
+            if share > CHANNEL_BUDGET_BYTES[c]:
+                raise ValueError(f"hook_budget: EVENT_SPLIT[{ev!r}][{c!r}] = {share} B exceeds "
+                                 f"the channel's own cap {CHANNEL_BUDGET_BYTES[c]} B")
+    placed = {c for split in EVENT_SPLIT.values() for c in split} | set(_NON_R0_EVENT_CHANNELS)
+    unplaced = sorted(set(CHANNEL_BUDGET_BYTES) - placed)
+    if unplaced:
+        raise ValueError(f"hook_budget: channel(s) {unplaced} sit on no EVENT_SPLIT event")
+    # R0 (C)'s floor: a recall payload under MIN_USEFUL_RECALL_BYTES is not worth printing.
+    for c in _RECALL_CHANNELS:
+        if CHANNEL_BUDGET_BYTES[c] < MIN_USEFUL_RECALL_BYTES:
+            raise ValueError(f"hook_budget: recall channel {c!r} budget "
+                             f"{CHANNEL_BUDGET_BYTES[c]} B is under MIN_USEFUL_RECALL_BYTES "
+                             f"{MIN_USEFUL_RECALL_BYTES} B")
+
+
+# PreCompact is not an R0 outcome event (its cap cuts; `#outcome-precompact`), so its channel is
+# placed on no EVENT_SPLIT. The recall channels are the `memory recall --pack` producers.
+_NON_R0_EVENT_CHANNELS = ("precompact",)
+_RECALL_CHANNELS = ("prompt_recall", "session_start", "precompact")
 
 
 _check_tables()
