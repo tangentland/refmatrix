@@ -151,5 +151,8 @@ rides on these tasks. {#non-goals-list}
 3. **D3 = Q21: about 3,000 lines** per `src/refmatrix` module after 29.5 ("d3 - agree").
 {#decisions-list}
 
+4. **plan-29 D4 = (c)** (The user, 2026-11-14: "go with your recommendations on all of them".): `store.derive_code_hash` ignores comments, docstrings and annotations (a normalised AST of each pass module), landed in 29.2 BEFORE its annotation and 29.3's comment edits, so neither flips the fleet to `behind_code`; 29.5's module-list change still needs one announced re-stamp.
+5. **plan-29 D17 = the default** (same quote): assess daemon.py, verbs.py, ingest.py by fixed criteria (incl. the sixth: no `_DERIVE_PASS_MODULES` module is split in 29.5), split those that pass, dated exceptions with owner tasks for the rest.
+
 Recorded as L104 in [[plan-review-2026-11-13#lead]]. Next: one task spec per task under
 `workflow/plans/plan-29-code-quality-tasks/`, then the plan's own ch-bsd spec review. {#decisions-next}

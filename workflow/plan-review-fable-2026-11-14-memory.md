@@ -351,6 +351,8 @@ All build tasks also wait on the spec merges and plan-29 (L104).
 
 ## Decisions for the user {#decisions-for-the-user}
 
+**Decided (The user, 2026-11-14: "go with your recommendations on all of them".):** memory D1 yes (bug-241 first, as 0.83.1). memory D2 yes — 25.1b's `legs_ms` timing pair lands before 29.5 so R0's window accrues during plan-29. memory D3 probe first (one probe of a project doc's `rel:` to a memory id across partitions), then decide. {#decided}
+
 - **plan-review-fable-memory D1: does bug-241 go ahead of plan-29?** L104 puts all of plan-29
   first on your word. I recommend the exception: measure and fix bug-241 before 29.5's freeze.
   The catch is a code change ahead of the split, though its likely site is `ingest.py`, not

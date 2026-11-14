@@ -760,6 +760,8 @@ the ACs are falsifiable and mutation-backed.
 
 ## Decisions for the user {#decisions-for-the-user}
 
+**Decided (The user, 2026-11-14: "go with your recommendations on all of them".):** store D1 released (bug-241 RED ran; 0.83.1 in progress). store D2 (a) refuse real reclaim on a git-tracked catalog by rule (`refused:catalog_tracked`), rehearsal allowed. store D3 (b) walk only registered store roots; the rest `unverifiable (not-walked)`, kept — this changes the 2026-10-07 global-store recover/forget decision. store D4 approve 23.4's op table ("mapped shape, or skipped and counted in both reference and measured runs"); confirmed ranges stand. store D5 upgrade `.venv-eval` duckdb to 1.5.3 after the in-flight 0.83.1 runs, before plan-29's baselines. {#decided}
+
 Settled as the user would, not asked: 23.1's three-way split; reinstating 16.6 R1c; retiring the
 idle `rmx schedule` in 17.2; no fleet tree walks in bug-218, D-Q1, 17.3 and 18.2.
 {#decisions-settled}

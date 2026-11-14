@@ -415,6 +415,8 @@ All line cites are stale. No spec is "ready" in the goal sense until merged and 
 
 ## Decisions for the user {#decisions-for-the-user}
 
+**Decided (The user, 2026-11-14: "go with your recommendations on all of them".):** D1 yes — plan-29 also precedes compaction-as-handoff, agent-start-context and the linked read-only store; the two hook tasks are built in one later install window. D2 measure agent usage first (go/no-go bands) before building the linked store; its spec is fixed either way. D3 (a) shard only once the conftest recorder fails a session on any live touch. D4 standing deploy go for plan-29 releases whose suite equals the baseline by E line, the user told first — EXCLUDING any release that changes the store on disk (29.5's merge, a derive-hash flip; L105), which keeps a per-release go. {#decided}
+
 - **plan-review-fable D1.** Does "plan-29 first" (Q19) also come ahead of the three Q15-Q17 tasks that L85, L88 and L90 queued "right after 0.83.0"? I recommend yes, with compaction-as-handoff and agent-start built in the step-8 hook window: one install, no rework against 25.1b and 10.3. The alternative is compaction-as-handoff now, alongside 29.1/29.4. That gives the benefit sooner but costs an extra fleet install window and a re-touch.
 - **plan-review-fable D2.** The linked read-only store (Q16 a) was decided while the MCP offer to subagents was unverified. It is now verified. Build as decided, or first re-measure agent usage on this session's transcripts with go/no-go bands? I recommend measuring first; the spec needs [[#b6]] fixed either way.
 - **plan-review-fable D3.** 29.4 shards the suite about 4×, which multiplies its reach to live sockets (bug-088 and bug-101, deferred by you).
