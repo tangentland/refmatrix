@@ -1,0 +1,21 @@
+top-level names: 90 | unmapped: [] | mapped but absent: []
+module          lines  callbacks  helpers n_helpers  top-level names
+_core            1689          0     1434        49  main group, cli_entry, shared helpers, imports, constants
+memory_cmds      2238       1149     1089        22  memory, taxonomy
+session_cmds     2223       1791      432        24  focus, session, task, save-state, recall-state, scan-prom
+grep_cmds        1504        250     1254        21  grep
+search_cmds       431        392       39         2  context, recall, locate
+vectors_cmds      290        250       40         2  embed, search-dense
+catalog_cmds     1461       1399       62         4  partition, replica, derive, repair-index, compact, compac
+removal_cmds      264        221       43         4  forget, untrack, vacuum, prune-noise, noise, unnoise, pro
+graph_cmds        312        303        9         1  link, unlink, add, add-concept, add-entity, add-linkage-t
+ingest_cmds      1362        973      389        10  ingest, ingest-gmd, ingest-status, sync, reingest, tldr-w
+daemon_cmds      1352       1201      151         5  daemon, queue, watch, log, cli-log, telemetry, fingerprin
+learn_cmds        114         98       16         1  learn
+hub_cmds         1019        911      108         9  hub, bus, schedule, ui, projects, mcp, curator, refine
+query_cmds        809        674      135         4  query, describe, neighbors, top, co-occur, stats, info, l
+admin_cmds        144        144        0         0  install-hooks, upgrade, version
+sum 15212 of 15212 | non-def top-level lines (to _core): 255
+_core helpers: 48 | used by >=2 command modules: 30 | with no user inside cli.py: 6
+largest _core helpers: [(168, '_DaemonWriter'), (83, 'cli_entry'), (73, '_parse_memory_md_frontmatter'), (70, 
+helpers with no in-file user: ['_alias', '_ann_similarity', '_parse_memory_md_frontmatter', '_recall_display_s

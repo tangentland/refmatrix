@@ -1,0 +1,4 @@
+test functions that assert an `outcome` against a string: 13 (asserts: 13 )
+... of which use a real daemon (SandboxDaemon / spawn_daemon_subprocess, directly or through a fixture in the file): 1
+outcome values asserted in those: {'ok': 1}
+    ('test_task21_1_recall_skip.py', 'test_ac2b_live_daemon_recall_writes_one_ok_recall_row', ['ok'])

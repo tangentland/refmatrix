@@ -1,0 +1,54 @@
+53 asserts in 21 files
+test_bug112_duckdb_reopen.py:347: took < 10.0
+test_bug112_duckdb_reopen.py:584: took < 10.0
+test_bug115_liveness_under_load.py:230: took < 0.6
+test_bug129_hub_pidfile.py:345: _t.monotonic() - t0 < 15.0
+test_daemon_liveness.py:46: time.time() - t0 < 0.2
+test_daemon_shutdown.py:45: elapsed < 1.0
+test_daemon_shutdown.py:64: elapsed < 1.0
+test_daemon_shutdown_drain.py:66: elapsed < 3.0
+test_ingest_async.py:60: elapsed < 1.0
+test_learn_broker_bounded.py:73: elapsed < 5.0
+test_learn_broker_bounded.py:145: elapsed < 0.5
+test_plan2_remedy.py:287: _time.monotonic() - t0 < 3.0
+test_plan2_remedy.py:310: elapsed < 2.5
+test_plan2_remedy.py:347: elapsed < 3.0
+test_plan2_remedy.py:351: abs(float(m.group(1)) - elapsed) < 0.6
+test_plan2_remedy.py:381: _time.monotonic() - t0 < 1.2
+test_plan2_remedy.py:440: elapsed < 4.0
+test_plan2_remedy.py:495: elapsed < 1.2
+test_plan2_remedy.py:542: elapsed < 1.6
+test_plan2_remedy.py:583: _time.monotonic() - t0 < 1.5
+test_plan2_remedy.py:600: elapsed < 2.5
+test_plan2_remedy_r6.py:244: time.monotonic() - t0 < 1.0
+test_plan2_remedy_r7.py:180: time.monotonic() - t0 < 0.8
+test_plan2_remedy_r7.py:195: time.monotonic() - t0 < 0.8
+test_plan2_remedy_r7.py:206: time.monotonic() - t0 < 3.0
+test_plan2_remedy_r7.py:225: elapsed < 2.5
+test_plan3_remedy_r4.py:101: time.monotonic() - t0 < 16.0
+test_plan3_remedy_r4.py:109: time.monotonic() - t0 < 36.0
+test_plan3_remedy_r4.py:121: elapsed < 16.0
+test_plan3_remedy_r4.py:132: elapsed < 12.0
+test_plan3_remedy_r4.py:147: elapsed < 36.0
+test_plan3_remedy_r4.py:184: time.monotonic() - t0 < 16.0
+test_plan3_remedy_r4.py:196: time.monotonic() - t0 < 1.0
+test_plan3_remedy_r5.py:74: elapsed < 16.0
+test_plan3_remedy_r5.py:114: elapsed < 36.0
+test_plan3_remedy_r5.py:139: elapsed < 25.0
+test_plan3_remedy_r5.py:153: elapsed < 12.0
+test_plan3_remedy_r5.py:173: elapsed < 2.5
+test_plan3_remedy_r5.py:184: time.monotonic() - t0 < 10.0
+test_plan3_remedy_r6.py:127: elapsed < 36.0
+test_plan3_remedy_r6.py:143: elapsed < 36.0
+test_plan3_remedy_r6.py:172: elapsed < 20.0
+test_plan3_remedy_r6.py:269: elapsed < 4.0
+test_plan4_remedy.py:93: time.monotonic() - t0 < 8.0
+test_plan4_remedy.py:129: time.monotonic() - t0 < 8.0
+test_plan4_remedy_r2.py:264: time.monotonic() - t0 < 4.0
+test_plan4_remedy_r3.py:255: time.monotonic() - t0 < 0.3
+test_plan4_remedy_r3.py:400: time.monotonic() - t0 < 10.0
+test_read_path_partition_and_budget.py:254: time.time() - t0 < 1.0
+test_rerank_budget_real_clients.py:586: wall < 0.5
+test_rerank_budget_real_clients.py:955: wall < 1.5
+test_subproc_workers.py:189: time.time() - t0 < 20
+test_task25_1_recall_budget.py:735: took < 5.0
