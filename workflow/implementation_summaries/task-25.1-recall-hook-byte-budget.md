@@ -741,3 +741,60 @@ No other failure was found. Both earlier merge-interaction failures (g7-7 `test_
   {#green-r8-focus-input}
 
 {#green-r8-flags-list}
+
+## GREEN r9 MEH (green-251c, 2026-11-14) {#green-r9-meh}
+
+rel: implements -> [[bsd-plan25-task251-r9-confirm-8b134c6#m-b]]
+rel: amends -> [[#green-r8]]
+
+bsd-251's r9 confirm round (`8b134c6`) closed every r8 finding, gave a MEH-only GO, and left
+two follow-ups: m-a and m-b. 25.1 was merged to dev master as `d44e359`. This round is on
+branch `task-25.1-r9-meh`, cut from master `988e96d`.
+- red-251b committed the m-b RED and the m-a pin in `bacc0ef`, and its logs in `67092bd`.
+- At `988e96d` the 25.1 file ran 1 failed (m-b) and 141 passed.
+- This GREEN is `83e5aa5`: `src/` only, and no test was edited. {#green-r9-meh-lead}
+
+### The fix {#green-r9-meh-fix}
+
+The busy/absent replica fall-through of `rmx memory recall` runs inside `except
+(VerbBusyError, VerbAbsentError)` in `cli._memory_recall_impl`. A `VerbError` raised by its
+`verbs.pack_recall` step escaped the sibling `except VerbError` as a traceback. That step could
+raise a curated-hooks failure or a budget `VerbArgsError`.
+
+The pack step now catches `VerbError` and raises `click.ClickException(str(e))`, the same
+conversion the sibling handler applies. The result is exit 1, one `Error:` line, and nothing on
+stdout, because nothing has been echoed yet.
+
+No other catch was widened. The other steps of the fall-through raise no `VerbError`:
+`_global_rows` converts its own errors to `ClickException`, and the row filters raise nothing
+typed. {#green-r9-meh-fix-text}
+
+### Runs {#green-r9-meh-runs}
+
+| run (at `83e5aa5`) | result | log |
+|---|---|---|
+| `test_mb_fall_through_verb_error_is_one_error_line` alone | 1 passed | `workflow/review-output/plan25/25.1-r9-mb-one.log` |
+| `tests/test_task25_1_recall_budget.py`, whole file | **142 passed** | `workflow/review-output/plan25/25.1-r9-green-file.log` |
+| 19-file family, as in r8 | **548 passed, 1 skipped** (`test_installed_hooks_match_generated`: the clone guard) | `workflow/review-output/plan25/25.1-r9-green-family.log` |
+| mutation: the fix reverted (`git revert --no-commit 83e5aa5`) in a throwaway clone under `/private/tmp/claude-501/`, since removed | KILLED: `m-b: a traceback, not one Error: line`, with `refmatrix.verbs.VerbError: curated hooks unreadable (PermissionError: injected by the m-b test)` in the traceback | `workflow/review-output/plan25/mutations/25.1-r9-mut-mb-fix-reverted.log` |
+| full suite | **4 failed, 4444 passed, 1 skipped** (48:32) | `workflow/review-output/plan25/25.1-r9-green-full.log` |
+
+{#green-r9-meh-runs-table}
+
+The full-suite failures compared with `release-0.82.0-full.log` by E line:
+
+- `test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon`: the same
+  E line, `_duckdb.IOException: … Could not set lock on file … catalog.A.duckdb`.
+- `test_task21_1_agent_usage_report.py::test_ac6_frozen_fixture_prints_the_exact_counts` and
+  `::test_ac6_cli_log_recalls_are_split_per_channel`: the same E line, `AssertionError: agent
+  usage · window 2026-09-23 .. 2026-10-07T11:06:35 …`.
+- `test_gmd_lint_requires_version.py::test_the_repo_scope_is_clean_under_the_stricter_gate`:
+  reported, not counted, as briefed. The `docs/INDEX.md` errors are gone (bug-155, `988e96d`).
+  The 20 that remain are the memdir half that `44d1a34` fixes, which this branch does not carry:
+  `docs/adr/0001` ×4, `0002` ×11 and `0003` ×5. All 20 cite memory ids, for example
+  `[[feedback_prefer_existing_infra]]` and `[[project_shared_memory_daemon_plan]]`, and the
+  clone's scanned set does not include the memory dir. This branch changes no file under
+  `docs/`.
+
+`test_installed_hooks_match_generated` skipped (the clone guard) and did not fail. The
+bug-228 `ac2b_live` flake did not occur. {#green-r9-meh-eline}
