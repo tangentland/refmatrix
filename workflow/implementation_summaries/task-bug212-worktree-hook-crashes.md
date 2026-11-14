@@ -907,3 +907,29 @@ The six passing tests:
 - `rmx focus change-subject` has no `VerbError` -> `ClickException` translation. Once
   `change_subject` routes through `local_write`, the CLI must still print exactly one `Error:`
   line, not a traceback (the test requires one).
+
+### L82 additions {#red-r4-l82}
+
+Two more RED tests, ordered by ruling L82 on 2026-11-13, are in `tests/test_bug212_r4_red.py`.
+Run at `67f55cb`, the r4 file gives **34 failed, 6 passed** (`bug212/red-r4b-head.log`). The 30
+earlier r4 REDs are unchanged.
+
+- `test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[slots, legacy]`.
+  It runs `rmx save-state -s <s> --memory-dir <tmp> --no-sync --no-lint` with no daemon, on a
+  tracked catalog. `--no-sync` leaves the promote as the only store write.
+  - Required: the handoff file is written, the catalog bytes are unchanged, the refusal head
+    appears on STDERR, and the exit is non-zero.
+  - HEAD line: `save-state's promote wrote the git-tracked catalog [...]`. The stdout shows
+    `promoted focus_summary_… (id=1)`.
+  - A promote error is printed today as `promote skipped:` on stdout, with exit 0. That is the
+    silent path this test closes.
+- `test_changed_since_with_a_hanging_git_diff_raises_within_the_bound`, run with the `git` shim
+  in `diff` mode on a repo whose store is ignored.
+  - Required: `sync.changed_since` raises a `RuntimeError` naming the timeout within 45 s. It must
+    be a `RuntimeError` because every `--since` caller turns one into a single `Error:` line; a
+    bare `TimeoutExpired` would surface as a traceback.
+  - HEAD line: `did not return within 45s with git diff hanging`.
+- `test_sync_since_with_a_hanging_git_diff_fails_loudly` covers the post-commit path end to end:
+  `rmx sync --since HEAD~1`.
+  - Required: one `Error:` line naming the timeout, and a non-zero exit, within 45 s.
+  - HEAD line: `did not finish within 45s: a silent hang`.
