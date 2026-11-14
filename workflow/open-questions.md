@@ -63,12 +63,12 @@ Next id: **Q15**.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
-| Q22 | 2026-11-14 | The user, after stopping the bug-241 RED dispatch: "convert those to gmd" — which files? | a: the fleet `CLAUDE.md` files that are plain markdown (cliquedb, atldb), so they enter each graph as GMD rule docs; b: other (the user names them) | open |
 
 ### Answered {#answered}
 
 | id | asked | question | answer | acted |
 |---|---|---|---|---|
+| Q22 | 2026-11-14 | The user, after stopping the bug-241 RED dispatch: "convert those to gmd" — which files? | "nevermind" (user, 2026-11-14): withdrawn | nothing converted; the bug-241 RED dispatch the user stopped stays held until the user says otherwise |
 | Q21 | 2026-11-14 | (plan-29 D3; the Q id is a harmless duplicate — the user is fine with plan D labels, 2026-11-14) Module size target for 29.5's split? | "d3 - agree" (user, 2026-11-14): about 3,000 lines | plan-29 #decisions D3 decided; L104 |
 | Q20 | 2026-11-14 | (plan-29 D1; the Q id is a harmless duplicate — the user is fine with plan D labels, 2026-11-14) Type checker for 29.2: mypy or pyright? | "d1-mypy" (user, 2026-11-14) | plan-29 #decisions D1 decided; L104 |
 | Q19 | 2026-11-14 | Where does plan-29 (code quality, [[plan-29-code-quality]]) land in the post-0.83.0 queue? | first assumed from "my gut says do all of it first, but recommend splitting it. My concern is that waiting will make the follow on work slower."; CONFIRMED "q19 - first" (user, 2026-11-14): all of it first | L104: plan-29 runs right after the 0.83.0 deploy and the spec-branch merges, before queue item 2, order 29.1 → 29.4 → 29.5 → 29.2 ∥ 29.3 |
