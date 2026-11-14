@@ -1,0 +1,6 @@
+scan-prompts since 2026-11-07: 391; consecutive pairs with NO write signal between (disk tier would hit): 25; with a write between (miss -> rebuild): 365
+write signals counted: 26194
+watch-flush only (code/doc edits): (192, 198)
+non-skip ingest only: (333, 57)
+session indexer only: (262, 128)
+watch-flush + non-skip ingest (excl. session indexer): (173, 217)

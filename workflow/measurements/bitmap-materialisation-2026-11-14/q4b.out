@@ -1,0 +1,8 @@
+load at start: 4.78 4.73 4.66
+forward pre-split build (fragments warm): med 195.32ms p90 200.50ms (min 192.73, max 200.50, n=5) rows 82067
+63 entities: SQL med 0.40ms p90 0.66ms (min 0.27, max 0.82, n=63) | forward rows med 2.92us p90 3.88us (min 2.08, max 12.92, n=63); set mismatches 0
+  mentions (834472 bits) BitMap64 mask build (add_range 2^32): med 3110.40us p90 3188.08us (min 2016.71, max 3260.67, n=20)
+  mentions (834472 bits) frag & mask: med 5.75us p90 5.96us (min 5.04, max 7.42, n=20)
+  mentions (834472 bits) frag.range_cardinality: med 0.58us p90 0.63us (min 0.54, max 0.71, n=20)
+  mentions (834472 bits) load_bitmap(big, c) total: med 6015.58us p90 6069.29us (min 5926.92, max 6399.00, n=20)
+load at end: 4.78 4.73 4.66

@@ -1,0 +1,8 @@
+load at start: 5.67 6.02 5.77
+mask stats: {'n_containers': 65536, 'n_run_containers': 65536, 'n_values_run_containers': 4294967296, 'n_bytes_run_containers': 393216}
+mask build+free med 3167.44us p90 3230.54us (min 3015.12, max 3259.62, n=20); build only med 2227.15us p90 2269.75us (min 2091.25, max 2358.54, n=20); free of 20 masks 1262 us each
+  mentions row c=13550 (|row|=317): load_bitmap today: med 6062.54us p90 6452.08us (min 5896.54, max 6811.71, n=20)
+  mentions row c=13550 (|row|=317): iter_equal_or_larger: med 2797.94us p90 2805.00us (min 2778.83, max 2896.08, n=20)
+identity: 123448 rows vs fragment decode, mismatches 0; 406 sampled rows vs load_bitmap, mismatches 0
+20 concepts x 34 linkages: load_bitmap med 2149.30ms p90 2170.14ms (min 2125.94, max 2170.14, n=5) | iter_equal_or_larger med 101.83ms p90 103.77ms (min 99.65, max 103.77, n=5)
+load at end: 9.21 7.39 6.35

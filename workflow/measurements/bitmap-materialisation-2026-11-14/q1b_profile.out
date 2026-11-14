@@ -1,0 +1,30 @@
+load at start: 3.85 4.24 4.67
+  phase op_ids_sql: med 8.67ms p90 11.74ms (min 8.39, max 11.74, n=5)
+  phase iterate_mentions_bits_only: med 30.11ms p90 59.50ms (min 29.99, max 59.50, n=5)
+  phase typed_rows_sql_fetchall: med 135.47ms p90 149.28ms (min 131.92, max 149.28, n=5)
+  typed rows: 333027 mention bits: 834472
+vectorised CSR build (fragment already loaded): med 504.13ms p90 553.94ms (min 490.50, max 559.79, n=7)
+vectorised CSR build (fresh Store): med 531.18ms p90 533.00ms (min 525.27, max 533.00, n=5)
+IDENTICAL edge set: nodes 116552 directed edges 1888764; max |dw| 0
+load at end: 4.02 4.27 4.67
+         24502 function calls in 0.551 seconds
+
+   Ordered by: internal time
+   List reduced from 154 to 12 due to restriction <12>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.378    0.378    0.551    0.551 /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/070141d0-80c6-4c13-95a2-56f192e2a1de/scratchpad/perf-bitmap/q1b_vector_build.py:31(vec_build)
+        7    0.090    0.013    0.090    0.013 {method 'argsort' of 'numpy.ndarray' objects}
+       18    0.034    0.002    0.036    0.002 /Users/tholley/claude_tools/refmatrix/src/refmatrix/backend.py:238(tracked)
+        7    0.014    0.002    0.112    0.016 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/numpy/lib/_arraysetops_impl.py:350(_unique1d)
+        1    0.011    0.011    0.011    0.011 {method 'reduceat' of 'numpy.ufunc' objects}
+        3    0.007    0.002    0.007    0.002 {method 'cumsum' of 'numpy.ndarray' objects}
+        7    0.003    0.000    0.003    0.000 {method 'astype' of 'numpy.ndarray' objects}
+        4    0.003    0.001    0.109    0.027 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/numpy/lib/_arraysetops_impl.py:806(_isin)
+        1    0.002    0.002    0.002    0.002 /Users/tholley/claude_tools/refmatrix/src/refmatrix/backend.py:536(fetchall)
+        1    0.001    0.001    0.001    0.001 {method 'nonzero' of 'numpy.ndarray' objects}
+        7    0.001    0.000    0.001    0.000 {method 'flatten' of 'numpy.ndarray' objects}
+        6    0.001    0.000    0.001    0.000 {method 'tolist' of 'numpy.ndarray' objects}
+
+
+

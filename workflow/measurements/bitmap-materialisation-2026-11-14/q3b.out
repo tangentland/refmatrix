@@ -1,0 +1,38 @@
+load at start: 8.67 7.35 6.35
+pre-split build fresh Store: med 233.82ms p90 241.70ms (min 232.45, max 241.70, n=5); fragments warm: med 169.31ms p90 172.18ms (min 161.24, max 172.18, n=5)
+rows 123448 across 34 linkages, bits 1177027 (== fragment bits); serialized rows 6615417 B vs fragments 7139742 B; traced Python alloc 14.6 MB (peak 41.5)
+seed in-degree spectrum: [4, 6, 8, 10, 11, 13, 30, 33, 33, 62, 161, 174, 177, 212, 243]
+degree quantiles of partition concepts: p50 1 p90 13 p99 255 max 5445
+depth 1 indeg      4 |result|      4  today    124.18/   128.28 ms   proto    15.09/   15.60 ms  (med/p90) IDENTICAL
+depth 1 indeg      6 |result|      4  today    122.75/   123.15 ms   proto    17.20/   18.07 ms  (med/p90) IDENTICAL
+depth 1 indeg      8 |result|      8  today    134.86/   135.95 ms   proto    18.12/   18.66 ms  (med/p90) IDENTICAL
+depth 1 indeg     10 |result|      9  today    125.57/   126.70 ms   proto    16.54/   16.63 ms  (med/p90) IDENTICAL
+depth 1 indeg     11 |result|     11  today    124.19/   128.12 ms   proto    16.09/   16.24 ms  (med/p90) IDENTICAL
+depth 1 indeg     13 |result|     13  today    124.45/   126.28 ms   proto    16.36/   16.49 ms  (med/p90) IDENTICAL
+depth 1 indeg     30 |result|     30  today    125.98/   129.46 ms   proto    18.93/   19.79 ms  (med/p90) IDENTICAL
+depth 1 indeg     33 |result|     24  today    119.13/   122.30 ms   proto    18.20/   18.80 ms  (med/p90) IDENTICAL
+depth 1 indeg     33 |result|     27  today    125.11/   129.12 ms   proto    18.02/   18.12 ms  (med/p90) IDENTICAL
+depth 1 indeg     62 |result|     55  today    129.51/   130.88 ms   proto    21.41/   21.94 ms  (med/p90) IDENTICAL
+depth 1 indeg    161 |result|    121  today    140.17/   148.43 ms   proto    32.67/   35.51 ms  (med/p90) IDENTICAL
+depth 1 indeg    174 |result|    174  today    150.20/   155.94 ms   proto    37.32/   37.51 ms  (med/p90) IDENTICAL
+depth 1 indeg    177 |result|    177  today    144.52/   145.31 ms   proto    37.28/   38.93 ms  (med/p90) IDENTICAL
+depth 1 indeg    212 |result|    182  today    138.57/   144.00 ms   proto    33.72/   34.10 ms  (med/p90) IDENTICAL
+depth 1 indeg    243 |result|    199  today    142.47/   154.65 ms   proto    38.25/   38.68 ms  (med/p90) IDENTICAL
+load: 8.26 7.32 6.36
+depth 2 indeg      4 |result|      7  today    551.00/   582.74 ms   proto    17.15/   18.28 ms  (med/p90) IDENTICAL
+depth 2 indeg      6 |result|      9  today    547.27/   569.87 ms   proto    16.97/   17.52 ms  (med/p90) IDENTICAL
+depth 2 indeg      8 |result|      8  today    976.35/  1012.95 ms   proto    16.84/   17.90 ms  (med/p90) IDENTICAL
+depth 2 indeg     10 |result|     31  today   1085.73/  1123.20 ms   proto    18.54/   18.96 ms  (med/p90) IDENTICAL
+depth 2 indeg     11 |result|     11  today   1276.19/  1286.34 ms   proto    16.40/   18.13 ms  (med/p90) IDENTICAL
+depth 2 indeg     13 |result|     13  today   1493.86/  1535.63 ms   proto    18.30/   18.74 ms  (med/p90) IDENTICAL
+depth 2 indeg     30 |result|     30  today   3285.20/  3293.87 ms   proto    18.55/   19.11 ms  (med/p90) IDENTICAL
+depth 2 indeg     33 |result|     63  today   2636.03/  2699.86 ms   proto    20.90/   21.16 ms  (med/p90) IDENTICAL
+depth 2 indeg     33 |result|     89  today   2962.70/  2981.85 ms   proto    23.37/   25.18 ms  (med/p90) IDENTICAL
+depth 2 indeg     62 |result|     91  today   5855.79/  5887.32 ms   proto    26.61/   27.05 ms  (med/p90) IDENTICAL
+depth 2 indeg    161 |result|    278  today  12623.13/ 12711.48 ms   proto    44.33/   44.68 ms  (med/p90) IDENTICAL
+depth 2 indeg    174 |result|    174  today  18243.16/ 18345.62 ms   proto    35.64/   36.68 ms  (med/p90) IDENTICAL
+depth 2 indeg    177 |result|    177  today  18604.44/ 18721.82 ms   proto    38.09/   39.14 ms  (med/p90) IDENTICAL
+depth 2 indeg    212 |result|    620  today  18878.34/ 19082.79 ms   proto    70.08/   70.51 ms  (med/p90) IDENTICAL
+depth 2 indeg    243 |result|    502  today  20828.47/ 20957.64 ms   proto    66.33/   66.95 ms  (med/p90) IDENTICAL
+load: 5.49 6.16 6.11
+load at end: 5.49 6.16 6.11

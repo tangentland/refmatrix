@@ -1,0 +1,54 @@
+query.log since 2026-11-07
+('recall', 'memory-recall') n= 438 p50= 1408 p90= 3084 max= 9242 per-day= {'2026-11-08': 39, '2026-11-09': 133, '2026-11-10': 56, '2026-11-11': 26, '2026-11-13': 120, '2026-11-14': 64}
+('scan', 'scan-prompt') n= 389 p50= 2818 p90= 13042 max= 28808 per-day= {'2026-11-08': 37, '2026-11-09': 125, '2026-11-10': 50, '2026-11-11': 20, '2026-11-13': 106, '2026-11-14': 51}
+('grep', 'grep-replica') n= 302 p50= 6 p90= 11 max= 182 per-day= {'2026-11-08': 40, '2026-11-09': 68, '2026-11-10': 9, '2026-11-11': 1, '2026-11-13': 184}
+('grep', 'grep-stdin') n= 127 p50= 67 p90= 3009 max= 3070 per-day= {'2026-11-09': 20, '2026-11-13': 107}
+('context', 'context-replica') n= 96 p50= 688 p90= 779 max= 1955 per-day= {'2026-11-09': 91, '2026-11-13': 5}
+('used-lookup', 'used-context_by_name') n= 96 p50= 0 p90= 0 max= 0 per-day= {'2026-11-09': 91, '2026-11-13': 5}
+('used-lookup', 'used-focus_note') n= 33 p50= 0 p90= 0 max= 0 per-day= {'2026-11-08': 1, '2026-11-09': 2, '2026-11-10': 4, '2026-11-11': 4, '2026-11-13': 8, '2026-11-14': 14}
+('dsl', 'query-replica') n= 15 p50= 59 p90= 76 max= 77 per-day= {'2026-11-08': 1, '2026-11-13': 14}
+('used-lookup', 'used-memory_get_by_name') n= 7 p50= 0 p90= 0 max= 0 per-day= {'2026-11-08': 1, '2026-11-14': 6}
+('neighbors', 'neighbors') n= 1 p50= 406 p90= 406 max= 406 per-day= {'2026-11-13': 1}
+('recall', 'memory-recall-mcp') n= 1 p50= 45 p90= 45 max= 45 per-day= {'2026-11-14': 1}
+
+cli.log since 2026-11-07T00:05:56
+focus hook                     n= 34761 p50=2 p90=6
+sync                           n=  2415 p50=18 p90=2743
+memory recall                  n=   881 p50=2 p90=2684
+focus summarize                n=   871 p50=114 p90=730
+session                        n=   723 p50=2259 p90=3682
+grep                           n=   472 p50=33 p90=97
+curator                        n=   391 p50=7 p90=15
+scan-prompt                    n=   389 p50=2850 p90=13091
+context                        n=    98 p50=771 p90=866
+hub status                     n=    91 p50=20 p90=31
+version                        n=    41 p50=3 p90=5
+ingest-gmd                     n=    26 p50=282 p90=34200
+memory get                     n=    24 p50=32 p90=89
+install-hooks                  n=    22 p50=7 p90=12
+daemon status                  n=    21 p50=45 p90=57
+save-state                     n=    20 p50=18495 p90=25200
+query                          n=    16 p50=185 p90=224
+recall-state                   n=    15 p50=157 p90=275
+daemon restart                 n=    12 p50=2927 p90=7729
+hub relaunch-fleet             n=    11 p50=23655 p90=50360
+memory list                    n=    11 p50=0 p90=47
+memory compile                 n=    11 p50=4 p90=811
+derive                         n=    11 p50=19 p90=32
+reingest                       n=     6 p50=1 p90=1314606
+hub stop                       n=     6 p50=2290 p90=3494
+mcp                            n=     5 p50=14763474 p90=87163724
+--help                         n=     5 p50=5 p90=6
+focus context                  n=     5 p50=26 p90=35
+hub launchctl                  n=     4 p50=77 p90=5658
+hub --help                     n=     4 p50=4 p90=4
+bus                            n=     4 p50=56 p90=124
+telemetry                      n=     3 p50=337 p90=909
+memory search                  n=     2 p50=85 p90=85
+primer                         n=     2 p50=417 p90=417
+daemon launchctl               n=     2 p50=4 p90=4
+pagerank                       n=     2 p50=2022 p90=2022
+partition                      n=     2 p50=14 p90=14
+locate                         n=     2 p50=770 p90=770
+memory --help                  n=     1 p50=4 p90=4
+dump-log                       n=     1 p50=4 p90=4

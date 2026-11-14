@@ -1,0 +1,7 @@
+load at start: 3.75 4.22 4.98
+decode all 34 fragments to sorted uint64 arrays: 80.3 ms, 9.4 MB
+identity: 123448 rows mismatches 0; 280 sampled vs load_bitmap mismatches 0
+mentions row: load_bitmap med 6887.54us p90 7069.46us (min 6112.58, max 7202.00, n=20) | searchsorted med 23.98us p90 25.08us (min 18.58, max 29.21, n=20)
+40 recent prompts: load_bitmap calls per match_concepts {'n': 40, 'med': 3.5, 'p90': 7, 'min': 1, 'max': 18}
+match_concepts today med 234.56ms p90 504.78ms (min 57.88, max 1652.14, n=40) | with searchsorted rows med 206.01ms p90 460.82ms (min 51.09, max 1471.77, n=40); identical outputs 40/40
+load at end: 5.95 4.65 5.11
