@@ -395,12 +395,14 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
     stopped daemon first and `require_daemon` pings it again, so the leg first asserts that the two
     ping timeouts together sum below the generated command's budget. That keeps the recorded type
     a plain `VerbBusyError`, not a deadline (L75 m1).
-  - **(c2) The deadline expires INSIDE the verb** (L75 S1). `verbs.memory_recall(root, query=…,
-    timeout=1e-6, pack=True)` (the production function, called directly on the sandbox store with
-    the daemon up, hook-mode `embedder_policy="hub_only"` through `**internal`). The verb's first
-    `_left` fires, and the call raises `VerbDeadlineError`, asserted on type. If it leaves through
-    the deadline re-wrap, that re-wrap is also a `VerbDeadlineError`, with the inner one as its
-    `__cause__`. `cli._raw_transport_cause` applied to the raised error returns a
+  - **(c2) The deadline expires INSIDE the verb** (L75 S1; L76). `verbs.memory_recall(root,
+    query=…, timeout=1e-6, pack=True, partition=<the resolved memory partition>)` (the production
+    function, called directly on the sandbox store with the daemon up, hook-mode
+    `embedder_policy="hub_only"` through `**internal`). Passing `partition=` is how the CLI calls
+    it (`cli.py:12759`, `:12865` on the 25.1 branch), so the verb skips its own partition probe and
+    the first `_left` fires inside the body the deadline re-wrap guards (`verbs.py:1522-1526`). The
+    call raises `VerbDeadlineError`, asserted on type, and its `__cause__` is the inner
+    `VerbDeadlineError`: the deadline went through the re-wrap, which the leg asserts. `cli._raw_transport_cause` applied to the raised error returns a
     `VerbDeadlineError`, and the cause map gives `budget spent`. A structural check asserts that
     the re-wrap branch raises `VerbDeadlineError` when the caught error is one.
   - **(e) Guard: SessionStart and PreCompact with NO daemon** (a reader store present, as 25.1
@@ -425,8 +427,8 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
     pack);
   - the 300 B cut removed (FAIL: (g));
   - the verb's `_left` raises a plain `VerbBusyError` (FAIL: (c2) sees `daemon busy`);
-  - the verb's deadline re-wrap drops the subclass (FAIL: (c2)'s structural check, and its type
-    check when the re-wrap path is taken). {#ac-28}
+  - the verb's deadline re-wrap drops the subclass (FAIL: (c2)'s type check, behaviourally,
+    because the deadline goes through the re-wrap; also the structural check). {#ac-28}
 - **AC-17 (R13).** 40 retrieved items at 20 KB total, with 25.1-shaped hook lines of 250-370 B, at
   a 9,000 B budget. Every item is visible: at tiers 1-3 (its hook line printed, carrying its curated
   hook), as a names-line member, or, past the cap of 15, counted in `(+N)` and on the spill page.
@@ -678,3 +680,17 @@ rel: implements -> [[plan-review-2026-11-13#lead]]
 |---|---|---|
 | S1 the verb's own deadline still raised a plain `VerbBusyError` | `verbs.memory_recall`'s `_left` raises `VerbDeadlineError`; its re-wrap keeps the subclass; `recall.py` only re-raises, so the Files row moved to `verbs.py`; AC-28 (c2) has the deadline expire inside the verb, with the mutations "the verb's `_left` raises a plain `VerbBusyError`" and "the re-wrap drops the subclass" | [[#r18]], AC-28, [[#files]] |
 | m1 leg (d) had two pings racing the deadline | (d) asserts that the partition-probe ping and the `require_daemon` ping timeouts sum below the budget | AC-28 |
+
+## Revision round 6 (2026-11-14, confirm-lite r3 on R18, MEH-only; lead ruling L76) {#rev-round-6}
+
+L76: confirm-lite r3 was MEH-only, so the approval bar is met. Folds its m1: AC-28 (c2) passes
+`partition=`, as the CLI does, so the deadline goes through the verb's re-wrap. The mutation "the
+re-wrap drops the subclass" is then killed behaviourally, not only by the structural check.
+`metadata.status` stays `approved`; the lead adds the approval row for revision rounds 3-6.
+{#rev-round-6-lead}
+
+rel: implements -> [[plan-review-2026-11-13#lead]]
+
+| finding | change | anchor |
+|---|---|---|
+| r3 m1 (c2) could leave before the re-wrap | (c2) calls the verb with `partition=` (as `cli.py:12759` / `:12865` do) and asserts that the deadline went through the re-wrap (`__cause__` is the inner `VerbDeadlineError`) | AC-28 |
