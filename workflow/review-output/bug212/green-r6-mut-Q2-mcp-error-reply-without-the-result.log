@@ -1,0 +1,40 @@
+pyc-guard: recompiled 24 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix as checked-hash (bug-037)
+...................F.....                                                [100%]
+=================================== FAILURES ===================================
+______________ test_mcp_save_state_error_reply_carries_the_result ______________
+
+busy_store = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x105d78a50>
+
+    @pytest.mark.timeout(300)
+    def test_mcp_save_state_error_reply_carries_the_result(busy_store):
+        """m-1 (L98): a busy daemon makes the promote fail. MCP `rmx_save_state` replies `isError`,
+        and its body is the RESULT with the error added -- `target` (the handoff file, which
+        exists), `remove_failed`, `lint`, `promoted`, and `error` naming the failure -- not the bare
+        message. At c854bad the body is `{"error": "<message>"}` only."""
+        from refmatrix import stm
+        repo = busy_store
+        session = "bug212-r6-mcp"
+        stm.Stm(repo.store, session).record("note", "a focus event for the bug-212 r6 MCP probe")
+        memdir = repo.base / "memdir"
+        memdir.mkdir()
+        replies, text = _mcp(repo, repo.proj, [("rmx_save_state", {
+            "session": session, "memory_dir": str(memdir), "sync": False, "lint": False,
+            "message": "bug-212 r6 MCP probe"})])
+        assert 2 in replies and 99 in replies, f"the MCP server stopped answering\n{text}"
+        res = replies[2].get("result") or {}
+        raw = " ".join(c.get("text", "") for c in res.get("content", []))
+        assert res.get("isError") is True, f"not an isError reply: {raw[:600]!r}"
+        try:
+            body = json.loads(raw)
+        except json.JSONDecodeError:
+            pytest.fail(f"the isError reply body is not the JSON result: {raw[:600]!r}")
+        missing = sorted(k for k in ("target", "remove_failed", "lint", "promoted", "error")
+                         if k not in body)
+>       assert not missing, f"the isError reply dropped {missing} of the result: {raw[:600]!r}"
+E       AssertionError: the isError reply dropped ['lint', 'promoted', 'remove_failed', 'target'] of the result: '{"error": "save-state wrote /private/tmp/b212d-cnaq2926/memdir/savestate_bug212r6mcp.md but its promote failed: VerbBusyError: daemon busy pid=15350 for /private/tmp/b212d-cnaq2926/proj/.refmatrix (alive, not answering \\u2014 starting, rebuilding an index, or holding the store lock); retry shortly"}'
+E       assert not ['lint', 'promoted', 'remove_failed', 'target']
+
+tests/test_bug212_r6_red.py:175: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r6_red.py::test_mcp_save_state_error_reply_carries_the_result
+1 failed, 24 passed in 75.64s (0:01:15)

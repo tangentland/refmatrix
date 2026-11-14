@@ -1,0 +1,180 @@
+.....FF................FF                                                [100%]
+=================================== FAILURES ===================================
+_ test_save_state_whose_memory_bridge_is_refused_says_so_on_stderr_and_exits_non_zero[slots] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1152e5490>, 'slots')
+
+    @pytest.mark.timeout(300)
+    def test_save_state_whose_memory_bridge_is_refused_says_so_on_stderr_and_exits_non_zero(
+            tracked_repo):
+        """s-1 (L95): a real `rmx save-state --no-promote` (lint off; the bridge ON, as
+        `/save-state` runs it) on a tracked catalog, no daemon. The handoff is written; the memory
+        bridge (`ingest-gmd --as-memory` of the memory dir) is refused -- and that refusal is on
+        STDERR with a non-zero exit. At 03d7b27: `memory bridge FAILED ...` on stdout, exit 0."""
+        from refmatrix import stm
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        session = "bug212-r5-bridge"
+        stm.Stm(repo.store, session).record("note", "a focus event for the bug-212 r5 bridge probe")
+        memdir = repo.base / "memdir"
+        memdir.mkdir()
+        before = _digests(repo.store)
+        r = _cli(repo, ["save-state", "-s", session, "--memory-dir", str(memdir), "--no-promote",
+                        "--no-lint", "-m", "bug-212 r5 bridge probe"])
+        text = _text(r)
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] save-state crashed\n{text}"
+        assert not changed and _status_refmatrix_catalogs(repo.proj) == "", \
+            f"[{layout}] save-state's bridge wrote the git-tracked catalog {changed}\n{text}"
+        assert sorted(memdir.rglob("savestate_*.md")), \
+            f"[{layout}] save-state wrote no handoff file under {memdir}\n{text}"
+        head = _refusal_head(repo.store / _target_catalog(layout))
+        assert any(head in ln for ln in r.stderr.splitlines()), \
+            f"[{layout}] the bridge refusal (`{head} ...`) is not on stderr\n{text}"
+>       assert r.returncode != 0, \
+            f"[{layout}] save-state exited 0 although its memory bridge was refused\n{text}"
+E       AssertionError: [slots] save-state exited 0 although its memory bridge was refused
+E         exit 0
+E         stdout:
+E         save-state /private/tmp/b212t-z1oty1y2/memdir/savestate_bug212r5brid.md  (1 
+E         events, session bug212-r5-bridge, explicit)
+E         
+E         stderr:
+E         MEMORY.md: 1 -> 1 lines, 134 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+E         warning: memory bridge deferred: ClickException: refusing to open /private/tmp/b212t-z1oty1y2/proj/.refmatrix/catalog.A.duckdb read-write in-process: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-z1oty1y2/rmx...log*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead\n").returncode
+
+tests/test_bug212_r5_red.py:221: AssertionError
+_ test_save_state_whose_memory_bridge_is_refused_says_so_on_stderr_and_exits_non_zero[legacy] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1152f78a0>, 'legacy')
+
+    @pytest.mark.timeout(300)
+    def test_save_state_whose_memory_bridge_is_refused_says_so_on_stderr_and_exits_non_zero(
+            tracked_repo):
+        """s-1 (L95): a real `rmx save-state --no-promote` (lint off; the bridge ON, as
+        `/save-state` runs it) on a tracked catalog, no daemon. The handoff is written; the memory
+        bridge (`ingest-gmd --as-memory` of the memory dir) is refused -- and that refusal is on
+        STDERR with a non-zero exit. At 03d7b27: `memory bridge FAILED ...` on stdout, exit 0."""
+        from refmatrix import stm
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        session = "bug212-r5-bridge"
+        stm.Stm(repo.store, session).record("note", "a focus event for the bug-212 r5 bridge probe")
+        memdir = repo.base / "memdir"
+        memdir.mkdir()
+        before = _digests(repo.store)
+        r = _cli(repo, ["save-state", "-s", session, "--memory-dir", str(memdir), "--no-promote",
+                        "--no-lint", "-m", "bug-212 r5 bridge probe"])
+        text = _text(r)
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] save-state crashed\n{text}"
+        assert not changed and _status_refmatrix_catalogs(repo.proj) == "", \
+            f"[{layout}] save-state's bridge wrote the git-tracked catalog {changed}\n{text}"
+        assert sorted(memdir.rglob("savestate_*.md")), \
+            f"[{layout}] save-state wrote no handoff file under {memdir}\n{text}"
+        head = _refusal_head(repo.store / _target_catalog(layout))
+        assert any(head in ln for ln in r.stderr.splitlines()), \
+            f"[{layout}] the bridge refusal (`{head} ...`) is not on stderr\n{text}"
+>       assert r.returncode != 0, \
+            f"[{layout}] save-state exited 0 although its memory bridge was refused\n{text}"
+E       AssertionError: [legacy] save-state exited 0 although its memory bridge was refused
+E         exit 0
+E         stdout:
+E         save-state /private/tmp/b212t-v37ddvt_/memdir/savestate_bug212r5brid.md  (1 
+E         events, session bug212-r5-bridge, explicit)
+E         
+E         stderr:
+E         MEMORY.md: 1 -> 1 lines, 134 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+E         warning: memory bridge deferred: ClickException: refusing to open /private/tmp/b212t-v37ddvt_/proj/.refmatrix/catalog.duckdb read-write in-process: git tracks this store's catalog (catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-v37ddvt_/rmx...log*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead\n").returncode
+
+tests/test_bug212_r5_red.py:221: AssertionError
+________ test_a_refused_bridge_still_fails_the_save_verb_and_mcp[slots] ________
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x115311810>, 'slots')
+
+    @pytest.mark.timeout(300)
+    def test_a_refused_bridge_still_fails_the_save_verb_and_mcp(tracked_repo):
+        """GUARD (passes at c854bad; against a fix that reads every bridge error as a deferral): a
+        bridge REFUSED on a tracked catalog is a failure -- `verbs.save_state` raises
+        `SaveStateIncompleteError` naming the memory bridge, and MCP `rmx_save_state` replies
+        isError. (The CLI's exit 1 for the same case is the r5 test
+        `test_save_state_whose_memory_bridge_is_refused_says_so_on_stderr_and_exits_non_zero`.)"""
+        from refmatrix import stm
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        stm.Stm(repo.store, "bug212-r6-guard").record("note", "guard probe")
+        memdir = repo.base / "memdir"
+        memdir.mkdir()
+        probe = repo.base / "verb_probe.py"
+        probe.write_text(
+            "import json, sys\nfrom refmatrix import verbs\n"
+            "try:\n"
+            "    verbs.save_state(__import__('pathlib').Path(sys.argv[1]), session='bug212-r6-guard',"
+            " memory_dir=sys.argv[2], promote=False, lint=False, sync=True)\n"
+            "except verbs.SaveStateIncompleteError as e:\n"
+            "    print(json.dumps({'raised': True, 'msg': str(e), 'deferred': "
+            "(e.result.get('sync') or {}).get('deferred')}))\n"
+            "else:\n"
+            "    print(json.dumps({'raised': False}))\n", encoding="utf-8")
+        r = subprocess.run([sys.executable, str(probe), str(repo.store), str(memdir)],
+                           cwd=str(repo.proj), env=_base_env(), capture_output=True, text=True,
+                           timeout=240)
+        assert r.returncode == 0, _text(r)
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+>       assert out["raised"] and "memory bridge failed" in out["msg"] and not out.get("deferred"), \
+            f"[{layout}] a refused bridge did not fail the save verb: {out}"
+E       AssertionError: [slots] a refused bridge did not fail the save verb: {'raised': False}
+E       assert (False)
+
+tests/test_bug212_r6_red.py:305: AssertionError
+_______ test_a_refused_bridge_still_fails_the_save_verb_and_mcp[legacy] ________
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x115357da0>, 'legacy')
+
+    @pytest.mark.timeout(300)
+    def test_a_refused_bridge_still_fails_the_save_verb_and_mcp(tracked_repo):
+        """GUARD (passes at c854bad; against a fix that reads every bridge error as a deferral): a
+        bridge REFUSED on a tracked catalog is a failure -- `verbs.save_state` raises
+        `SaveStateIncompleteError` naming the memory bridge, and MCP `rmx_save_state` replies
+        isError. (The CLI's exit 1 for the same case is the r5 test
+        `test_save_state_whose_memory_bridge_is_refused_says_so_on_stderr_and_exits_non_zero`.)"""
+        from refmatrix import stm
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        stm.Stm(repo.store, "bug212-r6-guard").record("note", "guard probe")
+        memdir = repo.base / "memdir"
+        memdir.mkdir()
+        probe = repo.base / "verb_probe.py"
+        probe.write_text(
+            "import json, sys\nfrom refmatrix import verbs\n"
+            "try:\n"
+            "    verbs.save_state(__import__('pathlib').Path(sys.argv[1]), session='bug212-r6-guard',"
+            " memory_dir=sys.argv[2], promote=False, lint=False, sync=True)\n"
+            "except verbs.SaveStateIncompleteError as e:\n"
+            "    print(json.dumps({'raised': True, 'msg': str(e), 'deferred': "
+            "(e.result.get('sync') or {}).get('deferred')}))\n"
+            "else:\n"
+            "    print(json.dumps({'raised': False}))\n", encoding="utf-8")
+        r = subprocess.run([sys.executable, str(probe), str(repo.store), str(memdir)],
+                           cwd=str(repo.proj), env=_base_env(), capture_output=True, text=True,
+                           timeout=240)
+        assert r.returncode == 0, _text(r)
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+>       assert out["raised"] and "memory bridge failed" in out["msg"] and not out.get("deferred"), \
+            f"[{layout}] a refused bridge did not fail the save verb: {out}"
+E       AssertionError: [legacy] a refused bridge did not fail the save verb: {'raised': False}
+E       assert (False)
+
+tests/test_bug212_r6_red.py:305: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r5_red.py::test_save_state_whose_memory_bridge_is_refused_says_so_on_stderr_and_exits_non_zero[slots]
+FAILED tests/test_bug212_r5_red.py::test_save_state_whose_memory_bridge_is_refused_says_so_on_stderr_and_exits_non_zero[legacy]
+FAILED tests/test_bug212_r6_red.py::test_a_refused_bridge_still_fails_the_save_verb_and_mcp[slots]
+FAILED tests/test_bug212_r6_red.py::test_a_refused_bridge_still_fails_the_save_verb_and_mcp[legacy]
+4 failed, 21 passed in 78.67s (0:01:18)

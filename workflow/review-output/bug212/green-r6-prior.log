@@ -1,0 +1,27 @@
+........................................................................ [ 30%]
+..................................F..................................... [ 60%]
+........................................................................ [ 91%]
+.....................                                                    [100%]
+=================================== FAILURES ===================================
+___________________ test_bridge_reports_a_wait_that_ran_out ____________________
+
+live = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-mdtkm427'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-mdtkm427/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107c6bd90>
+
+    def test_bridge_reports_a_wait_that_ran_out(live, monkeypatch):
+        base, root = live
+        memdir = _big_dir(base, "memory", 350)
+        part = verbs.memory_partition(root)
+        resp = dm.call(root, "ingest_gmd_start", {"targets": [str(memdir)], "as_memory": True,
+                                                  "memory_mtype": "curated", "partition": part}, timeout=30)
+        assert resp.get("ok"), resp
+        monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "0.2")
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["waited"] is True
+>       assert out["error"] and "still running" in out["error"] and resp["result"]["job_id"] in out["error"]
+E       assert (None)
+
+tests/test_memory_bridge.py:143: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_bridge.py::test_bridge_reports_a_wait_that_ran_out
+1 failed, 236 passed in 366.22s (0:06:06)

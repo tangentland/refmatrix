@@ -1352,3 +1352,104 @@ rel: amends -> [[#red-r5]]
   (`bug212/red-r6-census-old-scanner.log`). With the extended scanner all 9 census tests pass,
   and the real tree has no stray site (`bug212/red-r6-census-new-scanner.log`).
 - **GREEN has nothing to build for m-3.**
+
+## GREEN r6 (ruling L98: migrate's destination, the MCP result body, a deferred bridge) {#green-r6}
+
+Fix commit `ebe9fc2` (`src/refmatrix/cli.py`, `src/refmatrix/mcp.py`, `docs/INTEGRATION.md`,
+by pathspec). No test was edited. One pre-existing test contradicted L98 m-2. It was reported
+to the lead during the run, and the test owner updated it in `eb97445`.
+
+rel: implements -> [[#red-r6]]
+rel: derives-from -> [[bsd-bug212-r5-355eb1f]]
+rel: amends -> [[#green-r5-changes]]
+
+### What changed {#green-r6-changes}
+
+- **s-1.** `migrate_to_duckdb` calls `_refuse_tracked_catalog_open(dst.parent.resolve(),
+  dst.resolve())`, which asks about the directory of the file `migrate_catalog` replaces, not
+  the source store. The default `dst` (`<root>/catalog.duckdb`) keeps the refusal. `--out` into
+  another repo's committed catalog is refused. `--out` to an untracked path runs from a tracked
+  store.
+- **m-1.** `mcp._verb_tool` catches `SaveStateIncompleteError` before `VerbError` and returns
+  `{**e.result, "error": str(e)}`. The dispatcher replies `isError` on the `error` key, so the
+  body is the full result (`target`, `promoted`, `sync`, `lint`, `remove_failed`, ...). Other
+  VerbErrors still return `{"error"}` only.
+- **m-2, a typed deferral.** The bridge result (`cli._sync_memory_dir`) always carries a
+  `deferred` field, `None` by default. `_bridge_wait_for_active_job` sets
+  `out["deferred"] = {"job": <id>, "reason": "ingest job <id> still running after Ns ..."}`
+  and leaves `error` unset ONLY when the other job is still `running` at the end of the wait.
+  Nothing matches on message text.
+  - Every other bridge outcome still sets `error`: no job id in the refusal, a failed status
+    call, the other job ended non-done, the bridge refused, or any exception.
+  - `verbs.save_state`'s failure rule is unchanged (`sync.error`), so a deferral does not
+    raise.
+  - `rmx save-state` and `rmx memory sync-disk` print `warning: memory bridge deferred:
+    <reason>` on stderr and exit 0. `sync-disk` would otherwise have echoed an empty report
+    for a deferral.
+  - MCP replies normally, carrying `sync.deferred`.
+- **INTEGRATION.md#sync-tracked-catalog** now covers the migrate destination check, the census
+  copy family, the MCP result body and the deferral. GMD lint: 0 errors.
+- **Merge prep, not changed here.** Master's `VerbUnknownProjectError` docstring
+  (`verbs.py:55` on master) still says "`mcp._t_memory_add`'s in-process `Store` open". After
+  the merge it should read "`mcp._t_memory_add`'s no-daemon fallback through
+  `verbs.local_write`". This is a one-phrase edit, left for the merge as the lead ruled.
+
+### Runs {#green-r6-runs}
+
+- `bug212/green-r6-r4r5r6.log`: the r4, r5 and r6 files at the tree that became `ebe9fc2`,
+  **72 passed**. At `c854bad` it was 6 failed / 66 passed. The refused-bridge GUARD stays
+  green.
+- `bug212/green-r6-prior.log`: `test_bug212_hooks_in_worktrees`, `_r1_remedy`, `_r2_red`,
+  `test_plan3_remedy_r3`, `test_memory_bridge` and the 9 MCP files. Result: **1 failed, 236
+  passed**.
+  - The failure was `test_memory_bridge.py::test_bridge_reports_a_wait_that_ran_out` (line
+    143), E `assert (None)`. It asserted the plan-5 contract: a timed-out wait is
+    `out["error"]`. L98 makes it `deferred` with `error` empty, and the r6 RED asserts
+    exactly that.
+  - Reported to the lead mid-run and updated by the test owner in `eb97445`. Re-run at
+    `eb97445`: `bug212/green-r6-memory-bridge-at-eb97445.log`, **22 passed**.
+- `bug212/green-r6-family.log`: r5's 108 files plus the r6 file and `test_plan3_remedy_r3`
+  (`green-r6-family.files`, 110 files). Result: **1 failed, 1616 passed, 1 skipped**. The
+  failure is the same `test_memory_bridge` test, collected before `eb97445`.
+- `bug212/green-r6-wide.log`: the full suite at the tree with `ebe9fc2` src (the run collected
+  `eb97445`'s test update; `__pycache__` cleared). Result: **4 failed, 4443 passed, 1
+  skipped**, 47m58s. The skip is the SkipGate UNPINNED clone artifact. By E line:
+  - Against `release-0.82.0-full.log` (`green-r6-wide-elines-vs-0820.txt`):
+    `test_brief_real_daemon` and `test_task21_1_agent_usage_report` x2 have the SAME E lines.
+    `test_gmd_lint_requires_version` differs: it is bug-155, fixed on master, and this branch
+    predates the fix. Reported, not counted. Nothing failed here that did not fail in 0.82.0.
+  - Against `green-r5-wide.log` (`green-r6-wide-elines-vs-r5.txt`): the 4 match, all E lines
+    the same. r5's `test_plan3_remedy_r3` failure is gone (the test followed L95 in
+    `f58ac6b`). Nothing new.
+  - bug-228 (`ac2b_live`) did not recur.
+
+### Mutations {#green-r6-mutations}
+
+The spot-checks ran in the throwaway clone `/Volumes/littlebig/refmatrix-bug212-mut4`,
+fast-forwarded to `ebe9fc2`. The driver was `scratchpad/mut212g6.py` (not committed); every
+mutant was compiled before the batch. Each mutation ran the r5 + r6 files and was logged to
+`bug212/green-r6-mut-<id>.log`. Each touched file was restored with `git checkout --` in its
+own command, then `src` was checked clean with the fix text back. `__pycache__` was cleared in
+the copy afterwards and in the clone before the full suite. Batch log:
+`bug212/green-r6-mutations.log`.
+
+| id | mutation | result |
+|----|----------|--------|
+| Q1 | migrate check aimed back at the source store (`root`) | killed: 2 (`--out` into repo B refused; `--out` untracked allowed) |
+| Q2 | MCP returns only `{"error"}` for `SaveStateIncompleteError` | killed: 1 (`test_mcp_save_state_error_reply_carries_the_result`) |
+| Q3 | every bridge error read as deferred (the ClickException branch sets `deferred`) | killed: 4, incl. the GUARD `test_a_refused_bridge_still_fails_the_save_verb_and_mcp` x2 and the r5 bridge test x2 |
+| Q4 | a deferral raises again (`sync.deferred` joins the failure rule) | killed: 3 (the m-2 verb, CLI and MCP tests) |
+
+4 of 4 killed.
+
+### For the lead and the reviewers {#green-r6-flags}
+
+- **The migrate check is still name-based.** `git_tracked_catalogs(dst.parent)` asks whether
+  git tracks a `WRITER_CATALOG_FILES` name in that directory. A `--out` onto a committed file
+  with another name (`--out <repo>/x.duckdb`, where `x.duckdb` is tracked) is not refused. A
+  `--out foo.duckdb` beside a tracked `catalog.duckdb` IS refused (fail closed). The ruling
+  prescribed exactly this call.
+- **`deferred` is also the outcome for `rmx memory sync-disk`** (stderr warning, exit 0),
+  matching save-state. Before r6 a run-out wait counted as a failed path there, with exit 1.
+- The throwaway clone `/Volumes/littlebig/refmatrix-bug212-mut4` is still present (the r4
+  safety block). It is clean at `ebe9fc2`.

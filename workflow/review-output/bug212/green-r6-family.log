@@ -1,0 +1,91 @@
+pyc-guard: recompiled 10 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug212/src/refmatrix as checked-hash (bug-037)
+........................................................................ [  4%]
+........................................................................ [  8%]
+........................................................................ [ 13%]
+........................................................................ [ 17%]
+........................................................................ [ 22%]
+........................................................................ [ 26%]
+........................................................................ [ 31%]
+........................................................................ [ 35%]
+............F........................................................... [ 40%]
+........................................................................ [ 44%]
+........................................................................ [ 48%]
+........................................................................ [ 53%]
+........................................................................ [ 57%]
+........................................................................ [ 62%]
+.............................................s.......................... [ 66%]
+........................................................................ [ 71%]
+........................................................................ [ 75%]
+........................................................................ [ 80%]
+........................................................................ [ 84%]
+........................................................................ [ 88%]
+........................................................................ [ 93%]
+........................................................................ [ 97%]
+..................................                                       [100%]SkipGate: 1 skip(s) not in the pinned list (tests/conftest.py ALLOWED_SKIPS); a skip is a test that stopped running:
+  SKIPPED-UNPINNED tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated: Skipped: hooks belong to another checkout of this commit
+
+=================================== FAILURES ===================================
+___________________ test_bridge_reports_a_wait_that_ran_out ____________________
+
+live = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-b3n_bpb_'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-b3n_bpb_/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a0460b0>
+
+    def test_bridge_reports_a_wait_that_ran_out(live, monkeypatch):
+        """plan-5 5.2 first pinned a wait that ran out (the other ingest job still running past
+        RMX_BRIDGE_WAIT_S) as a bridge FAILURE in `out["error"]`. bug-212 r6, ruling L98 m-2
+        (2026-11-14), reversed that: the wait running out is a DEFERRAL -- the other job holds the
+        single-active-ingest slot and is still working, nothing was refused, and the next
+        save-state / SessionStart bridges the dir, so it self-heals; it is printed on every run
+        (a stderr warning naming the job), so it stays visible without failing the save. Pinned
+        as a typed `out["deferred"] = {job, reason}` with `out["error"]` empty -- the save-state
+        failure rule reads `sync.error`, so a deferral that also set `error` would fail the save."""
+        base, root = live
+>       memdir = _big_dir(base, "memory", 350)
+E       assert (None)
+
+tests/test_memory_bridge.py:143: AssertionError
+=============================== warnings summary ===============================
+tests/test_cctree_web.py:17
+  /Volumes/littlebig/refmatrix-bug212/tests/test_cctree_web.py:17: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient  # noqa: E402
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/lance/__init__.py:298: UserWarning: lance is not fork-safe. If you are using multiprocessing, use spawn or forkserver instead.
+    warnings.warn(
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Volumes/littlebig/refmatrix-bug212/tests/test_bug129_hub_pidfile.py:227: DeprecationWarning: This process (pid=8424) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    pid = os.fork()
+
+tests/test_rerank_budget_real_clients.py::test_a_header_that_eats_the_budget_sends_no_rerank
+  /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-79 (one)
+  
+  Traceback (most recent call last):
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Volumes/littlebig/refmatrix-bug212/tests/test_rerank_budget_real_clients.py", line 361, in one
+      send_frame(rw, {"ok": True, "model": "stub/ce",
+      ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      "cost_s_per_doc": None, "queue_depth": 0})
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/subproc.py", line 126, in send_frame
+      fh.flush()
+      ~~~~~~~~^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 747, in write
+      return self._sock.send(b)
+             ~~~~~~~~~~~~~~~^^^
+  BrokenPipeError: [Errno 32] Broken pipe
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_memory_bridge.py::test_bridge_reports_a_wait_that_ran_out
+1 failed, 1616 passed, 1 skipped, 4 warnings in 1428.06s (0:23:48)
+exit=1
