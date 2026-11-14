@@ -23,7 +23,7 @@ metadata:
 > ([[#fold]]). Decided: `plan-29 D4` = (c) (user, ruling L106; [[task-29.2-mypy-gate#d4]]).
 > Revision round 2 (ruling L105, on ch-bsd spec review r1): [[#rev-round-2]].
 > Revision round 3 (ruling L108, on ch-bsd spec review r2): [[#rev-round-3]].
-> Open for the user: `plan-29 D27` ([[task-29.2-mypy-gate#d27]]).
+> Decided: `plan-29 D27` = (a) (lead, ruling L109; [[task-29.2-mypy-gate#d27]]).
 
 rel: part-of -> [[plan-29-code-quality]]
 rel: implements -> [[tdd-governance]]
@@ -596,7 +596,9 @@ justified / silent, per module, at the start commit and at the end, produced by
 many were narrowed. {#c-r5}
 
 **c-R6: the unowned registry row of this class.** bug-096: `rmx reingest` exits 1 when any step
-failed and names the failed steps on stderr. (bug-240, the other unowned row the queue review
+failed and names the failed steps on stderr. This fix ships in deploy B of R7's release or
+earlier, because deploy B's closing re-derive is read by that exit code
+([[task-29.2-mypy-gate#d27]]). (bug-240, the other unowned row the queue review
 names, rides 0.83.1.) {#c-r6}
 
 **c-R7: edits to the derive-hash files are batched, for every pass.** {#c-r7}
@@ -624,11 +626,12 @@ names, rides 0.83.1.) {#c-r6}
   deploy B of R7's release (rulings L107 and L108).
   - Its neutral edits (justifications) show nothing on the fleet.
   - Its real edits (surfaced or narrowed handlers) make each pass they touch read `behind_code`
-    on every store. What clears that is `plan-29 D27` ([[task-29.2-mypy-gate#d27]]), open for
-    the user; this slice does not depend on the answer.
+    on every store. Deploy B's closing step, run by the lead, re-derives exactly those passes
+    on every store (`plan-29 D27` = a, ruling L109; [[task-29.2-mypy-gate#d27]]).
 - An edit that is not ready for deploy B WAITS: it is not merged into an ordinary later release,
-  and ships only in a release with its own announced, user-gated go. No release lets a pass read
-  `behind_code` fleet-wide without one. The slice's other groups do not wait for it; the ratchet
+  and ships only in a release with its own announced, user-gated go that closes with the same
+  re-derive. A pass reads `behind_code` only inside such a window (ruling L109, amending L107
+  item 4), never as a state the fleet is left in between releases. The slice's other groups do not wait for it; the ratchet
   of c-R4 keeps the waiting handlers counted.
 - The summary lists, per derive file, each handler edited and whether the edit is neutral or
   real.
@@ -673,8 +676,8 @@ private-name census's allow list, each with this anchor as its owner. The rows a
   `gmd`, `sessions`, `pagerank` and both memory-compile scopes read `behind_code` on every
   store, whatever this slice does with its handlers. The rehash of
   [[task-29.2-mypy-gate#r8]] does not convert those stamps, by design: it proves a stamp only
-  against unchanged files. What clears them is `plan-29 D27`
-  ([[task-29.2-mypy-gate#d27]]).
+  against unchanged files. What clears them is deploy B's closing re-derive (`plan-29 D27`
+  = a; [[task-29.2-mypy-gate#d27]]).
 - **Then the rows are deleted** from the private-name census's allow list. The census keeps its
   "an entry's owner must resolve" and "an entry that matches no use fails" checks.
 
@@ -1088,6 +1091,7 @@ under ruling L108 ([[plan-review-2026-11-13#lead]]).
 | M6: 29.4's runner would turn the git census red | `scripts/ptest.py` and `scripts/derive-digest.py` are rows of the adoption table; the script list is re-read at the start commit and anything that spawns git is adopted, not allow-listed | [[#a-r4]], [[#a-r6]], AC-a9 |
 | NB2 and NS1, as they reach this spec | c-R7 follows 29.2's two-deploy release: no pass-file edit before the fleet is rehashed; this slice's group ships in deploy B; its real edits lead to `plan-29 D27` | [[#c-r7]]; [[task-29.2-mypy-gate#r7-release]], [[task-29.2-mypy-gate#d27]] |
 
+| `plan-29 D27` decided (a) (lead, L109) | c-R7 and c-R8 say deploy B closes with a forced re-derive of the affected passes; c-R6 (bug-096) ships no later than deploy B | [[#c-r7]], [[#c-pass-rows]], [[#c-r6]] |
 | NS1 and the lead's ruling of 2026-11-14: 29.5's 22 declared pass-module rows need an owner | this slice owns them: one anchored list naming 29.5's rows, what is edited, and an AC; they are real edits in deploy B | [[#c-pass-rows]], AC-c12 |
 
 The other round-3 items (NB2's rehash, NS2, NS3, M9, M10) are in 29.2

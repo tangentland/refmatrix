@@ -24,7 +24,7 @@ metadata:
 > Decided: `plan-29 D4` = (c), a normalised-AST derive hash (user, ruling L106; [[#d4]], [[#r7]]).
 > Revision round 2 (ruling L105, on ch-bsd spec review r1): [[#rev-round-2]].
 > Revision round 3 (ruling L108, on ch-bsd spec review r2): [[#rev-round-3]].
-> Open for the user: `plan-29 D27` ([[#d27]]).
+> Decided: `plan-29 D27` = (a), re-derive the affected passes as deploy B's closing step (lead, ruling L109; [[#d27]]).
 
 rel: part-of -> [[plan-29-code-quality]]
 rel: implements -> [[tdd-governance]]
@@ -444,13 +444,19 @@ equal" case of AC-20. No assertion in them is weakened.
   store-changing release, outside the standing go of L106) with TWO deploys in this order:
   1. **Deploy A:** this requirement and [[#r8]], and no edit to any file `_DERIVE_PASS_MODULES`
      names. Then the lead runs `rmx derive rehash` on every store and reads its counts.
-  2. **Deploy B:** every edit either task makes to a pass file ([[#derive-hash]]).
+  2. **Deploy B:** every edit either task makes to a pass file ([[#derive-hash]]), under its
+     own go (it is store-changing too).
+  3. **Deploy B's closing step:** the lead re-derives exactly the affected passes on every
+     store, through the existing `rmx reingest` path, forced, so every file is derived again
+     (`plan-29 D27` = a, [[#d27]]).
 - After deploy B a neutral edit shows nothing. A REAL edit to a pass file makes that pass read
-  `behind_code` on every store, because the code that derives did change. What clears that is
-  `plan-29 D27` ([[#d27]]).
+  `behind_code` on every store, correctly: the code that derives did change. Step 3 clears it.
+- **`behind_code` is allowed only inside this announced window** (ruling L109, amending L107
+  item 4): between deploy B and the end of its closing step, never as a state the fleet is left
+  in between releases.
 - 29.5's release is not part of this: its module-list change alters no stamped pass's hash
   ([[#derive-hash]]).
-- No agent rehashes, re-stamps or re-derives a live store.
+- No agent rehashes, re-stamps or re-derives a live store. The lead runs all three steps.
 
 ### R8: `rmx derive rehash` (ch-bsd spec review r2 NB2; ruling L108) {#r8}
 
@@ -747,7 +753,7 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 | `tests/test_derive_hash_normalised.py`; `tests/test_derive_pass_identity.py`, `tests/test_plan12_remedy.py`, `tests/test_derive_stamp.py` | create: AC-20 to AC-23; the three existing files get their comment-only edits re-pointed (test engineer) |
 | the verbs module, the daemon op registry, the CLI `derive` group, the store derive module (`derive_history` and its readers) | R8: `rmx_derive_rehash`, `derive_rehash`, `rmx derive rehash`; the rehash mark and the readers that skip it |
 | `tests/test_derive_rehash.py` | create: AC-24 to AC-28 |
-| `.claude/PROJECT_PROFILE.md` (`#commands`, the Deploy line), `docs/SYSTEM.md` (the derive section), the generated CLI tree | the deploy checklist: R7's two deploys; `rmx derive rehash` after a Python upgrade, with no pass-file change in that deploy |
+| `.claude/PROJECT_PROFILE.md` (`#commands`, the Deploy line), `docs/SYSTEM.md` (the derive section), the generated CLI tree | the deploy checklist: R7's window (deploy A, `rmx derive rehash`, deploy B, the forced re-derive of the affected passes with the exact command per pass); `rmx derive rehash` after a Python upgrade, with no pass-file change in that deploy; a later release that makes a real edit to a pass file closes with the same re-derive |
 | `tests/test_type_gate.py`, `tests/fixtures/type_gate/` | create: AC-1 to AC-5, AC-13 |
 | `tests/test_bug235_pql_count.py` | create: AC-6 to AC-8 |
 | `tests/test_store_writer_protocol.py` | create: AC-9 to AC-12, AC-16, AC-17 |
@@ -961,8 +967,8 @@ Rules for this task:
     `#ac-6`; premise at `#fact-derive`; branch `spec-plan29a` at `75ef65d`). Their owner is
     [[task-29.3-converge-shapes#c-pass-rows]] (lead ruling, 2026-11-14).
 
-  After deploy B the passes they touch read `behind_code` on every store: `plan-29 D27`
-  ([[#d27]]).
+  After deploy B the passes they touch read `behind_code` on every store, until deploy B's
+  closing re-derive ([[#r7-release]] step 3; `plan-29 D27`, [[#d27]]).
 - One that is not ready for deploy B waits for a release with its own announced, user-gated go.
   No release lets a pass read `behind_code` fleet-wide without one.
 - This task's own real edits (the `isinstance` narrowing, `ingest_path`, the declared host) are
@@ -1050,9 +1056,9 @@ shared by 29.2 and 29.3.
 - **AC-18 itself:** at this task's end commit, and at 29.3's, the four legs equal the golden.
   That is the evidence that the edits of [[#derive-hash]], the real ones included, left the
   derived state alone on the fixture. It is NOT what moves a stamp: [[#r8]] moves a stamp only
-  on its own proof, and `plan-29 D27` decides what is done for a pass with a real edit.
+  on its own proof, and a pass with a real edit is re-derived (`plan-29 D27`).
 
-## Decisions: `plan-29 D4` decided, `plan-29 D27` open {#open-decisions}
+## Decisions: `plan-29 D4` and `plan-29 D27`, both decided {#open-decisions}
 
 **plan-29 D4 = (c): the derive hash is computed over a normalised syntax tree.** Decided by the
 user, 2026-11-14 (ruling L106, [[plan-review-2026-11-13#lead]]). The lead registers it in
@@ -1066,44 +1072,57 @@ user, 2026-11-14 (ruling L106, [[plan-review-2026-11-13#lead]]). The lead regist
 - **What it does not remove.**
   1. The deploy that carries [[#r7]] changes the hash tag, so every existing stamp reads
      `code_unknown` until [[#r8]] rehashes it ([[#r7-release]]).
-  2. A real edit to a pass file changes that pass's hash: `plan-29 D27`.
+  2. A real edit to a pass file changes that pass's hash: `plan-29 D27`, below.
 - 29.5's module-list change is not on this list: it changes no stamped pass's hash
   ([[#derive-hash]]; ruling L108, which supersedes the 29.5 half of L107's re-stamp rule).
 - **Cited for reference, decided in L106:** `plan-review-fable D4` (a standing go, except for
   store-changing releases; R7's release is one) and `plan-review-fable-store D5` (duckdb 1.5.3
   in the dev venv before baselines).
 
-**plan-29 D27 (open, for the user): what clears `behind_code` for a pass whose file got a real
-edit.** {#d27}
+**plan-29 D27 = (a): a pass whose file got a real edit is re-derived, as deploy B's closing
+step.** Decided by the lead, 2026-11-14 (ruling L109, [[plan-review-2026-11-13#lead]]). The lead
+registers it in `plan-29-code-quality#decisions` at merge. {#d27}
 
-- **Why it exists.** Ruling L107 has the real edits to pass files ship in R7's release, and
-  ruling L108 has that release use the rehash. The rehash, as ruled, converts a stamp only when
-  the old scheme's hash of the current files equals the stored one. A pass file with a real edit
-  never satisfies that, in whichever deploy the edit ships. So after deploy B of
-  [[#r7-release]], each pass with a real edit reads `behind_code` on every store, correctly: the
-  code that derives it changed.
-- **Which passes.** It is not hypothetical. The 22 declared rows of
-  [[task-29.3-converge-shapes#c-pass-rows]] are renames, which are real edits, in `ingest.py`,
-  `ingest_gmd.py`, `pagerank.py` and `consolidate.py`. So after deploy B the passes `ingest`,
-  `semantic`, `gmd`, `sessions`, `pagerank` and both memory-compile scopes read `behind_code` on
-  every store. Slice c's handlers in the same files (26 candidates) add no pass to that list.
-  `embed` is not affected unless `embedder.py` or `vectors.py` is touched. The exact list is the
-  NEUTRAL / REAL table of [[#derive-hash]] at the start commit.
-- **Options.**
-  - (a) Re-derive the affected passes on every store, announced. It is what a stamp means, and
-    it needs no new mechanism. Cost per store is not measured here.
-  - (b) An "accept" form of the rehash: it would convert a stamp whose stored hash equals the
-    hash of the files as they were BEFORE the edit (named explicitly by the operator), keeping
-    `version` and `derived_at`, with a history row of its own kind that carries the evidence
-    (AC-18's equal digest). It does not exist and is not specified here; it would be a new
-    requirement with its own tests.
-  - (c) Make no real edit to a pass file in plan-29: slice c would have to justify every handler
-    there, which conflicts with `CLAUDE.md#no-silent-failures` on the ingest paths, and the 22
-    declared rows would stay in 29.5's allow list with no date.
-- **Recommended:** (a).
-- **What the specs do meanwhile.** They are complete without the answer: deploy B is gated on
-  the user's go, and that go is where D27 is answered. Nothing in 29.2 or 29.3 changes under
-  (a) or (c); (b) would add a requirement to [[#r8]].
+- **The question.** Ruling L107 has the real edits to pass files ship in R7's release, and
+  ruling L108 has that release use the rehash. The rehash converts a stamp only when the old
+  scheme's hash of the current files equals the stored one, so it never converts the stamp of a
+  pass whose file got a real edit. After deploy B such a pass reads `behind_code` on every
+  store, correctly. What clears it?
+- **The answer.** The release is one announced window: deploy A (R7 and R8, no pass-file edit),
+  the rehash, deploy B (every pass-file edit), and then a re-derive of exactly the affected
+  passes on every store through the existing `rmx reingest` path, under deploy B's own go
+  ([[#r7-release]]).
+- **Which passes.** The 22 declared rows of [[task-29.3-converge-shapes#c-pass-rows]] are
+  renames, which are real edits, in `ingest.py`, `ingest_gmd.py`, `pagerank.py` and
+  `consolidate.py`. So `ingest`, `semantic`, `gmd`, `sessions`, `pagerank` and both
+  memory-compile scopes are affected on every store. Slice c's handlers in the same files (26
+  candidates) add no pass to that list. `embed` is not affected unless `embedder.py` or
+  `vectors.py` is touched. The exact list is the NEUTRAL / REAL table of [[#derive-hash]] at
+  the release commit.
+- **Cost, as the ruling cites it.** This is how every release that edits `ingest.py` already
+  ships: 0.83.0's forced reingest of the refmatrix store took about 22 minutes, embed included
+  (L109, from `workflow/review-output/r4-reingest-0.83.0.log` on master; that log shows its five
+  steps and 50,608 rows embedded but carries no wall time, so the figure is the ruling's). It is
+  one store and the whole reingest; with `embed` unaffected, deploy B's re-derive of that store
+  should cost less. The other stores are not measured.
+- **What the re-derive has to be.** A forced one: an unforced reingest skips files whose mtime
+  has not changed and would re-stamp passes without deriving them. The memory compile is not a
+  step of `rmx reingest`; its two scopes are re-compiled by their own existing command. The
+  deploy checklist names the exact command line per pass, read from the CLI at the release
+  commit ([[#files]]).
+- **It depends on bug-096 being fixed.** The closing step reads `rmx reingest`'s exit code, and
+  at `f3709d2` that command exits 0 with failed steps. 29.3 slice c fixes it
+  ([[task-29.3-converge-shapes#c-r6]]); that fix is in deploy B or earlier.
+- **Rejected, with the ruling's reasons.**
+  - (b) an "accept" form of the rehash keyed on the pre-edit hash: it would invent an unproven
+    write to every store's stamps.
+  - (c) no real edit to a pass file in plan-29: it would push the real fixes (slice c's
+    handlers, 29.5's 22 rows) out of the plan.
+- **L107 item 4 as amended by L109:** a release may leave passes reading `behind_code` only
+  inside its own announced window, with the re-derive as its closing step.
+
+**Also settled by L109:** the three design choices of [[#k9]], [[#k10]] and R7's dropping of
+`TYPE_CHECKING` blocks and `typing` imports are accepted.
 
 ## Review findings folded on 2026-11-14 {#fold}
 
@@ -1184,7 +1203,8 @@ The rehash proves a stamp against the current files. Rulings L107 (real edits sh
 release) and L108 (R7's release uses the rehash) therefore cannot both clear a pass whose file
 changes in that release. This spec resolves the part it can: R7's release is two deploys, with
 the rehash between them ([[#r7-release]], [[#k11]]), so every neutral edit is covered. The part
-it cannot resolve is a real edit to a pass file, which is put to the user as `plan-29 D27`
+it could not resolve was a real edit to a pass file; that became `plan-29 D27`, which the lead
+decided (a) in ruling L109: deploy B closes with a forced re-derive of the affected passes
 ([[#d27]]).
 
 ## Out of scope {#out-of-scope}
