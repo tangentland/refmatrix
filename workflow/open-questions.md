@@ -26,12 +26,13 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session 37b7498f (2026-11-13) {#session-37b7498f}
 
-Next id: **Q15**.
+Next id: **Q16**.
 
 ### Open {#open-37b7498f}
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q15 | 2026-11-14 | Agents get refmatrix only as a Bash CLI (no MCP tools in the ch-* tool lists, no prompt/SessionStart hook injection, no store in littlebig clones; 16/30 used `rmx`, 522 of 662 calls `rmx grep`). How should agents get it? | 1 now (read-only refmatrix MCP tools — rmx_context, rmx_query, rmx_memory_recall, neighbors — in the ch-* frontmatter + a brief line; answers about master) and 2 as a planned task (a generated agent-start hook injecting the primer + a recall for the brief); 3 (a store per clone) costs a daemon and an ingest per clone | open |
 
 ### Answered {#answered-37b7498f}
 
