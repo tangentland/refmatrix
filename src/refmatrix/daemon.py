@@ -5925,16 +5925,21 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
             # the old id until `rmx embed` re-embeds them (the merge marks both
             # ids unembedded).
             _moved = report.get("fresh_moved") or []
-            # ids an A loser vacated whose new holder is another entity (r4)
+            # Every other id `vector_rows` names is one a NAME-LOSER vacated --
+            # A's (r4) or B's (r5 S1, ruling L101): `vector_rows` holds exactly
+            # the moves' two ids and those, so the vacated set is the rows' ids
+            # minus the moved ones. (r4 intersected with `a_losers`, which never
+            # named a B loser's id.)
+            _moved_ids = {int(i) for pair in _moved for i in pair}
             _vacated = sorted({int(i) for _p, _k, i in (report.get("vector_rows") or [])}
-                              & {int(o) for o, _n in (report.get("a_losers") or [])})
+                              - _moved_ids)
             if _moved or _vacated:
                 parts = []
                 if _moved:
                     parts.append(f"{len(_moved)} entity id(s) moved to a fresh id: "
                                  + ", ".join(f"{o}->{n}" for o, n in _moved))
                 if _vacated:
-                    parts.append(f"{len(_vacated)} id(s) an A loser vacated: "
+                    parts.append(f"{len(_vacated)} id(s) a name-loser vacated: "
                                  + ", ".join(str(i) for i in _vacated))
                 report["re_embed"] = (
                     "; ".join(parts) + " — their vectors were not moved (stale rows are "

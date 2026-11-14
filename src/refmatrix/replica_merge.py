@@ -450,20 +450,25 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
     # entities unembedded so `pending_embeddings` hands them to the next
     # `rmx embed` (bug-216 remedy B2c). Until it runs a dense read can return the
     # old id's vector for either entity -- the merge reply names the ids.
-    # Also every id an A LOSER vacated (bug-216 remedy r4, the lead's extension
-    # of L99): a different B entity may now hold it (`b1` at A-shared's old id),
-    # and the Lance row there may be A-shared's vector. The canonical entity an
-    # A loser maps to keeps its own vector: its owner did not change.
+    # Also every id a NAME-LOSER vacated, on either side (bug-216 remedy r4, the
+    # lead's extension of L99, and r5 S1, ruling L101 -- its B mirror): a
+    # different entity of the other slot may now hold it (`b1` at A-shared's old
+    # id; A's `x-only-a` at B-shared's), and the Lance row there may be the
+    # loser's vector, since both slots write one `vectors/` dir. remap_b's keys
+    # include the fresh moves' old ids, already listed above. The canonical
+    # entity a loser maps to keeps its own vector: its owner did not change.
     con.execute("""
         UPDATE entities SET vectors_updated_at = NULL
         WHERE id IN (SELECT new_id FROM remap_fresh_b)
            OR id IN (SELECT old_id FROM remap_fresh_b)
            OR id IN (SELECT loser_id FROM remap_a)
+           OR id IN (SELECT loser_id FROM remap_b)
     """)
     # The Lance rows whose OWNER changed, as (partition, kind, id): at a moved
     # id, both slots' tables (the A entity that keeps it, the B entity that
-    # left); the moved entity's table at its fresh id; at an id an A loser
-    # vacated, the loser's table and the table of whatever entity now holds it.
+    # left); the moved entity's table at its fresh id; at an id a name-loser
+    # (A's or B's) vacated, the loser's table and the table of whatever entity
+    # now holds it.
     # Ids whose owner did not change are never listed. The daemon deletes these
     # rows after the swap (`Store.drop_vector_rows`).
     # ONE set-based query over the remap temp tables (bug-178: no per-row
@@ -480,6 +485,10 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
               FROM remap_a r JOIN a.entities ae ON ae.id = r.loser_id
             UNION SELECT te.partition_id, te.kind, r.loser_id
               FROM remap_a r JOIN entities te ON te.id = r.loser_id
+            UNION SELECT be.partition_id, be.kind, r.loser_id
+              FROM remap_b r JOIN b.entities be ON be.id = r.loser_id
+            UNION SELECT te.partition_id, te.kind, r.loser_id
+              FROM remap_b r JOIN entities te ON te.id = r.loser_id
         ) x JOIN partitions p ON p.id = x.partition_id
     """).fetchall()}
 

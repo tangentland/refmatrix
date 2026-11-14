@@ -4032,6 +4032,12 @@ class Store:
                 continue
             lance = self._lance_for_purge(kind, len(gids))
             if lance is None:
+                # The table EXISTS (checked above), so rows are left behind:
+                # named in `errors`, which the replica merge turns into
+                # `vector_delete_error` and a non-zero exit (bug-216 remedy r5 M1,
+                # ruling L101: r4 dropped this line and the skip went silent).
+                out["errors"].append(f"{pname}/{kind}.lance: lance unavailable; "
+                                     f"{len(gids)} vector(s) not deleted")
                 continue
             try:
                 out["deleted"] += delete_vector_rows(lance, path, gids)
