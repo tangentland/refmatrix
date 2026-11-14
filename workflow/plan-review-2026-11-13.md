@@ -210,6 +210,7 @@ it gets used. Three more are fallout from shipping plan-26 to the fleet. {#detou
 | L73 | spec-t3a's 25.1b rev-round-4 choice | ACCEPTED: "a held sandbox daemon" is one paused with SIGSTOP; the leg first asserts the daemon's ping timeout is below the hook budget, so busy cannot read as budget spent |
 | L74 | bsd-spec-t56 r7 confirm-lite (0B/0S/1M, MEH-only) | T56 meets the approval bar. spec-t56 folds M1 (AC-6's on-disk leg runs in the same process with the instance cache dropped by a new `Store` on the same root while `_DERIVE_SRC_DIR` still points at the copy; mutation unchanged) and the lead sets `approved` on that fold with no further round |
 | L75 | bsd-spec-t3ab 25.1b R18 r2 (0B/1S/1M) | (S1) `verbs.memory_recall`'s own `_left` (verbs.py:1386-1394) raises `VerbDeadlineError`; the verb's re-wrap under its deadline (verbs.py:1522-1526) keeps the subclass (raises `VerbDeadlineError` when the caught error is one); the Files row names verbs.py, not recall.py; AC-28 gains a leg where the deadline expires inside the verb, mutation "verb `_left` raises plain `VerbBusyError`". (m1) leg (d) asserts the partition-probe ping plus `require_daemon`'s ping together fit inside the budget. A confirm-lite r3 follows |
+| L76 | bsd-spec-t3ab 25.1b R18 r3 (0B/0S/1M, MEH-only) | 25.1b's R18 amendment meets the approval bar. spec-t3a folds m1 (AC-28 (c2) passes `partition=` so the deadline goes through the verb's re-wrap, as the live CLI does) and the lead records the amendment's approval on that fold with no further round |
 
 ## Revised proposal {#proposal}
 
