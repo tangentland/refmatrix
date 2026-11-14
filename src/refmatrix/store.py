@@ -1803,8 +1803,10 @@ class Store:
                     (dst_id, src_id))
         key = "partition_id, source_id, linkage, target_name, file, line"
         for row in con.execute(
-                f"SELECT {key}, min(created_at) AS c, any_value(ref) AS ref, "
-                f"any_value(weight) AS w, any_value(detail) AS d, count(*) AS n "
+                # min(), not any_value(): SQLite has no any_value (both backends
+                # run merge_partition).
+                f"SELECT {key}, min(created_at) AS c, min(ref) AS ref, "
+                f"min(weight) AS w, min(detail) AS d, count(*) AS n "
                 f"FROM pending_refs WHERE partition_id=? GROUP BY {key} HAVING count(*) > 1",
                 (dst_id,)).fetchall():
             ident = tuple(row[i] for i in range(6))
