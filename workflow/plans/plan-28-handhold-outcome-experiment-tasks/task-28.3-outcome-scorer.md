@@ -48,11 +48,12 @@ clause, inside 19.6's scope. The r1 review found three problems, and this revisi
 ## Requirements {#requirements}
 
 1. **R1 One scorer.** `eval/production/handhold/score.py` exposes one function per outcome. Each
-   takes a session's (or run's) archived transcript files and its telemetry copy and returns
+   takes one paired run's archived transcript files and its telemetry copy and returns
    counts. Nothing in it appends to `recall-events.jsonl`, `query.log` or any store file. It reads
    main-loop calls from `<session>.jsonl` and subagent calls from
    `<session>/subagents/agent-<id>.jsonl`. Outcomes (1)-(4) count the main loop only, and subagent
-   activity is reported apart. **Sessions after the end are dropped (L82).** A session-leg session whose SessionStart `t` is at or after its period record's `end` is dropped from every outcome and counted per cell as `after_end`. {#r1}
+   activity is reported apart. **Every input is a paired run (L83).** There is no live session
+   input, so L82's `after_end` rule has no object and is gone. {#r1}
 2. **R2 Orientation cost, outcome (1).** It runs from the trigger (the first prompt after
    `startup` or after `/clear`) to the **endpoint**, which is the earlier of:
    - the first `Edit` / `Write` / `MultiEdit` / `NotebookEdit` to a file in the run's reference
@@ -71,13 +72,13 @@ clause, inside 19.6's scope. The r1 review found three problems, and this revisi
    sequence**, the only clock during the period, because 21.5's phase B is frozen (r1 #m4).
    {#r3}
 4. **R4 Labelled outcomes (3) and (4): the samplers.** {#r4}
-   - (3) Re-derivation: sessions are sampled per cell per store (sizes frozen by 28.4). For each
-     sampled session, a labeller gets the blinded transcript (R6) and the memories and handoff
-     that existed at the session's start (titles and bodies, read locally). The labeller marks
+   - (3) Re-derivation: paired runs are sampled per cell (sizes frozen by 28.4). For each
+     sampled run, a labeller gets the blinded transcript (R6) and the memories and handoff that
+     existed at the task's start, the run's memory snapshot (titles and bodies, read locally). The labeller marks
      each event where the agent re-establishes, by search or reading, a fact one of those
      already held.
    - (4) Repeated mistakes: the same sample. A labeller gets the feedback memories that existed
-     at the session's start, and marks each event where the agent broke a rule that applied.
+     at the task's start, and marks each event where the agent broke a rule that applied.
    - Both are reported per 100 prompts. Labels and their pair ids are committed; excerpts and
      memory bodies are not.
 5. **R5 Cost of the handholds, outcome (5).** Read from the telemetry copies, per prompt and per
@@ -131,19 +132,20 @@ clause, inside 19.6's scope. The r1 review found three problems, and this revisi
    - **Within the A cells only (lead ruling on r1 #b1).** Outcome (6) compares `A+dedupe` with
      `A+full` (10.2's nested reading). It is NOT compared across cells with and without push,
      where it is larger in A by construction. In `B` it is reported descriptively only.
-8. **R8 10.2's nested outcomes, outcome (7).** Injected bytes per human prompt: all per-prompt
-   bytes of the session, non-human turns included, over its human prompts. Used per 100 human
-   prompts, under R7's rule. Both are split by 10.4's `prompt_family`, within the A cells, with
-   names-line items apart. {#r8}
+8. **R8 10.2's nested outcomes, outcome (7), from the paired series (L83).** Injected bytes per
+   prompt: all per-prompt bytes of the run over its prompts. Used per 100 prompts, under R7's
+   rule. Both are compared `A+dedupe` vs `A+full`, paired by task, split by 10.4's
+   `prompt_family`, with names-line items apart. {#r8}
 9. **R9 The readings, one module (r1 #b1).** `eval/production/handhold/readings.py` takes the
    scored results and 28.4's frozen file and returns every band reading. It is the only code
-   that reads a band. **Every reading first checks the frozen minimum n of each cell and outcome
-   it uses (L79).** Below it, the reading is `underpowered` ("underpowered, no verdict"), and the
+   that reads a band. **Every reading first checks the frozen minimum n of paired tasks per cell
+   for the cells it uses (L79, L83).** Below it, the reading is `underpowered` ("underpowered, no verdict"), and the
    n reached per cell is returned with it. {#r9}
    - **Primary:** `B` vs `C` on outcome (1) (P-2), with P-8's CI rule.
    - **Push:** `A+dedupe` vs `B` on outcomes (2)-(4) only (P-11). **A Holm correction across
-     the three outcomes is pre-registered (lead ruling on r2-m5).** Each outcome's bootstrap
-     p-value for the A − B difference is Holm-adjusted over the three. "A is better on an
+     the three outcomes is pre-registered (lead ruling on r2-m5).** Each outcome's paired
+     bootstrap over tasks gives a p-value for the A − B difference, and the three p-values
+     are Holm-adjusted. "A is better on an
      outcome" means its Holm-adjusted test rejects at family-wise α 0.05 in A's favour, and the
      report prints the matching Holm-adjusted (simultaneous) CIs. If A is better on none of
      (2)-(4) while A's outcome (5) cost is higher, the reading is `shrink` (shrink ambient
@@ -193,8 +195,8 @@ by the real hooks in 23.0's sandbox. Every AC names its mutation. {#acceptance-l
    - the memory scope dropped, so the code symbol enters outcome (6);
    - `tool_touches` added, so the Read counts.
 5. **AC-5 Cost and cells.**
-   - A `B` session's suppressed rows give 0 bytes per prompt.
-   - An `A+full` session's bytes equal the sum of its rows' payload bytes, split by
+   - A `B` run's suppressed rows give 0 bytes per prompt.
+   - An `A+full` run's bytes equal the sum of its rows' payload bytes, split by
      `prompt_family`.
 
    **Mutation:** suppressed rows read as missing rather than 0, so B's per-prompt mean is taken
@@ -224,15 +226,15 @@ by the real hooks in 23.0's sandbox. Every AC names its mutation. {#acceptance-l
    it. The scan also finds no `import` of an `eval` module anywhere under `src/`.
    **Mutations:** an inline copy left in `score.py` after the move, so the scan finds two; a
    `src/` module importing from `eval/`, so the import check fails. {#ac-9}
-10. **AC-10 Underpowered, no verdict (L79).** A synthetic scored set where `B` has 12 sessions
-    in a store against a frozen minimum of 40 makes the push reading and 10.2's nested reading
-    both return `underpowered`, with the n reached per cell, never `shrink`, keep or fail. At
-    40 sessions the band is read. **Primary-reading case (L80 m2).** The primary's minimum n is
+10. **AC-10 Underpowered, no verdict (L79, L83).** A synthetic scored set where `B` and `A+full`
+    each have 6 paired tasks against a frozen minimum of 10 makes the push reading and 10.2's
+    nested reading both return `underpowered`, with the n reached per cell, never `shrink`, keep
+    or fail. At 10 tasks the band is read. **Primary-reading case (L80 m2).** The primary's minimum n is
     28.4 R1's n per cell per trigger, counted AFTER `leak_suspect` and `arm_error` exclusions. A
     synthetic paired set where `C` has 11 runs, 2 of them `leak_suspect`, against a frozen n of
     10 keeps 9 and returns `underpowered` for the primary, with the n reached per cell and
     trigger. At 10 kept runs the band is read. **Mutations:** the minimum check removed, so the
-    12-session set returns a band; the primary's n counted before exclusions, so the 11-run set
+    6-task set returns a band; the primary's n counted before exclusions, so the 11-run set
     returns a band. Either fails AC-10. {#ac-10}
 
 ## Files {#files}
@@ -321,3 +323,17 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 | The 3-calendar-day session period (L79, Q11 answered a), the orchestrator-run start under L78 (L80) and the end committed with the start (L82) are approved by the lead on the user's pattern (d9co) after the L80 confirm-lite MEH-only (0B/0S/2M), folded at `49a603c` per L82 with no further round | `workflow/bullshit/2026-11-14-0200-spec-t3c-r5-l80-d42c72b.md` (with the L79 confirm-lite `2026-11-14-0150-spec-t3c-r4-l79-7758d2a.md`, over `spec-wave-t3c` `be03148..d42c72b`) | status unchanged; Q14 (where the verdicts come from) may amend this plan again |
 
 rel: derives-from -> [[bsd-spec-t3c-r5-l80-d42c72b]]
+
+## Revision L83 (2026-11-14, the user, Q14: "drop the live part"; lead ruling L83) {#rev-l83}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite.
+
+| change | where |
+|---|---|
+| every input is a paired run; L82's `after_end` drop has no object and is removed | [[#r1]] |
+| the labelled samplers draw paired runs per cell, and memories are those at the task's start | [[#r4]] |
+| 10.2's nested outcome comes from the paired series, paired by task | [[#r8]] |
+| the readings check the minimum n of paired tasks per cell; the push test bootstraps over tasks | [[#r9]] |
+| AC-5 and AC-10 speak of runs and paired tasks, not sessions | [[#ac-5]], [[#ac-10]] |

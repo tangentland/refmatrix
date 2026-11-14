@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: task-28.4-preregistration-freeze
-title: "Task 28.4: calibrate the paired leg, settle every P-item, and freeze the handhold experiment's pre-registration (outcomes, bands, sizes, period) with its sha, before the experiment starts (the orchestrator's start, L78)"
+title: "Task 28.4: calibrate the paired leg, settle every P-item, and freeze the handhold experiment's pre-registration (outcomes, bands, minimum n per cell, sizes) with its sha, before the paired series starts (the orchestrator's start, L78)"
 tags: [task, plan-28, experiment, preregistration, calibration, bands]
 metadata:
   node_type: task
@@ -39,70 +39,71 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
 ## Requirements {#requirements}
 
 1. **R1 Calibration powers the PRIMARY contrast, `B` vs `C` (lead ruling on r1 #s9).** K
-   calibration tasks (28.2 R1; never reused) run under `B` and `C`, both triggers, and under
-   `A+dedupe` beside them for the secondary contrast. 28.2's AC-6 runs count toward them.
+   calibration tasks (28.2 R1; never reused) run under all four cells (`A+dedupe`, `A+full`,
+   `B`, `C`; L83) and both triggers. 28.2's AC-6 runs count toward them.
    - From the variance of the `B`/`C` per-task log cost ratio, compute the number of tasks that
      distinguishes a 30% cut from a 10% cut, at two-sided α 0.05 and power 0.8, on P-3's scalar.
-   - The same computation for `A+dedupe` vs `C` is reported, and it is secondary.
+   - The same computation is reported for `A+dedupe` vs `C` (secondary), `A+dedupe` vs `B` (the
+     push reading's pairs) and `A+dedupe` vs `A+full` (10.2's nested reading).
    - n is capped at 20 tasks per cell per trigger. If the cap binds for `B` vs `C`, the paired
-     leg can read only whether "≥ 30%" holds, and that is written into the file before the
+     series can read only whether "≥ 30%" holds, and that is written into the file before the
      start.
    {#r1}
 2. **R2 The file.** `workflow/measurements/handhold-experiment-prereg.md` (GMD,
    `node_type: measurement`, `status: frozen`) holds: {#r2}
    - every P-item's chosen value, with the lead's (or the user's) decision row cited;
-   - outcomes (1)-(7) as 28.3 computes them, with their function names and the scorer's sha;
+   - outcomes (1)-(7) as 28.3 computes them over the paired runs, with their function names and
+     the scorer's sha;
    - the primary comparison (P-2), the effect estimator (1 − the geometric mean of per-task cost
      ratios, a bootstrap 95% CI over tasks, pooled over both triggers, with per-trigger results
      reported), and the band table with P-8's CI rule;
-   - the push reading: `A+dedupe` vs `B` on outcomes (2)-(4) only (P-11; r1 #b1). "Better"
-     means that the session-bootstrap test of the A − B difference, Holm-adjusted across the
-     three outcomes, rejects at family-wise α 0.05 in A's favour; Holm-adjusted CIs are printed
-     (r2-m5). `shrink`
-     fires when A is better on none of them while costing more on (5). Outcome (6) is read
-     within the A cells only;
-   - 10.2 R7's nested bands, copied verbatim with their source;
+   - the push reading: `A+dedupe` vs `B` on outcomes (2)-(4) only (P-11; r1 #b1), paired by
+     task. "Better" means that the paired bootstrap test over tasks of the A − B difference,
+     Holm-adjusted across the three outcomes, rejects at family-wise α 0.05 in A's favour.
+     Holm-adjusted CIs are printed (r2-m5). `shrink` fires when A is better on none of them
+     while costing more on (5). Outcome (6) is read within the A cells only;
+   - 10.2 R7's nested bands, copied verbatim with their source, read on `A+dedupe` vs `A+full`
+     from the paired series (L83);
    - the `cited_in_answer` gate: 50 blind labels, weight only at precision ≥ 0.80 with a Wilson
      lower bound ≥ 0.65, else outcome (6) is R12 explicit only (r1 #s5);
    - the labellers: blind labeller agents (28.3 R6), the R12 pilot's rubric for the gate, and the
      rubrics for (3), (4) and the endpoint's "correct statement of the resume point", each
      written here with its label set and two worked examples;
-   - sizes: paired tasks per cell and trigger (R1; the paired leg is not time-boxed by the
-     3-day period); labelled sessions per cell per store for
-     outcomes (3)-(4); the gate's 50 pairs; the 20% second-rater share;
+   - sizes: paired tasks per cell and trigger (R1); labelled runs per cell for outcomes (3)-(4);
+     the gate's 50 pairs; the 20% second-rater share;
    - the leak rule (28.2 R5): `leak_suspect` runs are excluded, and a per-cell exclusion count
      that differs by more than one run between `B` and `C` voids the primary reading;
-   - the period: the salt (generated at freeze, committed), the start (set by 28.5 when
-     plan-28's Depends-on holds; the orchestrator tells the user first, L78), and the end rule. **The end is 3 calendar days (72 hours) after the start
-     (L79, refined), never extended.** A pause does not extend it, and paused time is not made
-     up;
-   - **the minimum n of every cell and outcome (L79)**, for the session leg, each frozen here:
-     - outcomes (2)-(4) and (6);
-     - 10.2 R7's nested outcome (7), whose minimum is 40 sessions per cell per store, copied
-       from 10.2.
+   - **the minimum n of paired tasks per cell, for EVERY reading (L79, L83),** each frozen here
+     and counted after the `leak_suspect` and `arm_error` exclusions:
+     - the primary (`B`, `C`): R1's n per cell per trigger;
+     - the push reading (`A+dedupe`, `B`);
+     - 10.2's nested reading (`A+dedupe`, `A+full`), whose minimum is restated in paired tasks
+       per cell by 10.2's owner and copied from 10.2.
 
      Any reading below its minimum is "underpowered, no verdict": neither pass nor fail, and no
-     default changes. The report states the n reached per cell. A power note records what 3
-     days of the user's usual session rate is expected to reach, so that "underpowered" is
-     foreseen and not a surprise;
-   - **the pause (P-12; r1 #s8).** It is a user-gated step that sets the active record's `end`
-     to now, by one commit and a deploy. Sessions in flight keep the cell their SessionStart
-     recorded (28.1 R2). A deploy that touches `scan.py`, `recall_pack.py`, `hook_budget.py`,
-     context rendering, the hooks generator or `arms.py` lands ONLY while no record is active. The record's own start, pause and end commits, which set its dates in `arms.py`, are exempt by name (r2-m3).
-     Resuming means a NEW record (new id, new salt) committed at the user's go, whose `end`
-     is the original window's end (start + 72 hours). Readings are
-     stratified by record id, and each record's deploy sha is recorded;
-   - the transcript cleanup period that Claude Code is configured with, read before the start
-     (28.5 R2), and the session-leg archive's sweep interval (28.5 R3);
-   - **limits (r1 #m11):**
-     - the user is not blind: they know their cell, because `B` has no per-prompt push;
-     - the goal's own orchestration sessions in refmatrix fall inside the session leg;
+     default changes. The report states the n reached per cell. **A power note** records, from
+     R1's calibration and 28.2 R0 (f)'s cost per run, how many runs and how much agent time each
+     minimum costs (tasks × 4 cells × 2 triggers), so that "underpowered" is foreseen;
+   - **the series' end (L83):** the series is not time-boxed. It ends when every reading's
+     minimum n is reached, at R1's cap, or when the user stops it;
+   - **the pause (P-12, restated by L83).** It is user-gated: on the user's word, the runner
+     finishes or aborts the run in flight (recorded) and starts no new run. Resuming is on the
+     user's word. A deploy that touches `scan.py`, `recall_pack.py`, `hook_budget.py`, context
+     rendering, the hooks generator or `arms.py` lands ONLY while the series is paused. Every run
+     records its deployed `rmx` sha, and readings are stratified by sha when the series spans
+     more than one;
+   - the paired archive (28.2 R2) and its announcement to the user;
+   - **limits (r1 #m11, restated by L83):**
+     - the runs are fresh agents resuming real handoffs, not the user's own live work, so the
+       result speaks to re-entry by an agent and generalises to live sessions only by argument;
+     - the user's own sessions are never assigned to an arm, so the earlier blinding concern
+       about the user no longer applies;
      - the as-of filter and the clone cut cannot stop an agent from reasoning from what the
        model already knows;
    - the task set's seed and the task-id list's sha256; the resume and warm-up prompt templates;
      the run caps;
-   - the abort rule: the user may stop at any time, and a defect in a cell that blocks work
-     stops the period (recorded, nothing read);
+   - the abort rule: the user may stop at any time, and a defect in a cell that breaks runs
+     stops the series (recorded, nothing read);
    - the charter-decision inputs that are not outcomes: 21.5 phase M's band reading, and the
      `denotes` evaluation's, if run.
 3. **R3 Freeze.** The file is committed and its sha is written into plan-28's `#ordering` notes
@@ -122,7 +123,7 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
    its n are in the file, and recomputing n from the committed ratios reproduces it.
    **Mutation:** one committed ratio altered by 10%; the recomputed n differs and the checker
    exits 1. {#ac-2}
-3. **AC-3** The file's sha is recorded in plan-28 before 28.5's start commit, as the git order
+3. **AC-3** The file's sha is recorded in plan-28 before 28.5 starts the series, as the git order
    shows. {#ac-3}
 4. **AC-4** The ch-bsd round over the file is CLEAN or MEH-only. {#ac-4}
 
@@ -193,3 +194,16 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 | The 3-calendar-day session period (L79, Q11 answered a), the orchestrator-run start under L78 (L80) and the end committed with the start (L82) are approved by the lead on the user's pattern (d9co) after the L80 confirm-lite MEH-only (0B/0S/2M), folded at `49a603c` per L82 with no further round | `workflow/bullshit/2026-11-14-0200-spec-t3c-r5-l80-d42c72b.md` (with the L79 confirm-lite `2026-11-14-0150-spec-t3c-r4-l79-7758d2a.md`, over `spec-wave-t3c` `be03148..d42c72b`) | status unchanged; Q14 (where the verdicts come from) may amend this plan again |
 
 rel: derives-from -> [[bsd-spec-t3c-r5-l80-d42c72b]]
+
+## Revision L83 (2026-11-14, the user, Q14: "drop the live part"; lead ruling L83) {#rev-l83}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite.
+
+| change | where |
+|---|---|
+| calibration runs all four cells, and reports n for the push and nested pairs beside the primary | [[#r1]] |
+| a minimum n of paired tasks per cell for every reading (10.2's restated by its owner), with a power note in runs and agent time | [[#r2]] |
+| the period, its 72-hour end and the record-based pause are removed; the series ends at its minimum n, at the cap, or by the user; the pause is restated for the series | [[#r2]] |
+| the push test is a paired bootstrap over tasks; the limits are restated for an agent-only experiment | [[#r2]] |

@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: plan-28-handhold-outcome-experiment
-title: "Plan 28: the handhold outcome experiment: do refmatrix's handholds cut the backtrack-to-rebuild-understanding tax, and which ones (push, boundary, pull)? Randomised real sessions plus paired re-entry runs, with 10.2's dedupe A/B nested"
+title: "Plan 28: the handhold outcome experiment: do refmatrix's handholds cut the backtrack-to-rebuild-understanding tax, and which ones (push, boundary, pull)? One leg: paired re-entry runs by fresh agents on real handoffs, with 10.2's dedupe A/B nested (L83)"
 tags: [plan, experiment, charter, recall, scan-prompt, telemetry, handhold, plan-21, plan-10]
 metadata:
   node_type: plan
@@ -13,16 +13,20 @@ metadata:
 # Plan 28: the handhold outcome experiment {#root}
 
 **Date:** 2026-11-13
-**Status:** Approved (2026-11-14, [[#approval]]); spec wave G17. Its tasks are `pending`, which means approved to build. **The START (28.5): the orchestrator starts the experiment when plan-28's Depends-on holds and tells the user first (L78).** Every pause, the end and G18 stay user-gated. Written from
+**Status:** Approved (2026-11-14, [[#approval]]); spec wave G17; amended by L83 ([[#rev-l83]],
+pending a confirm-lite). Its tasks are `pending`, which means approved to build. **The START
+(28.5): the orchestrator starts the paired series when plan-28's Depends-on holds and tells the
+user first (L78, L80).** Pausing the series and G18 stay user-gated. Written from
 [[exploration-handhold-outcome-experiment]] and the plan review's decisions. The lead set
 `approved` on the d9co route after a clean (MEH-only) ch-bsd round
 ([[plan-review-2026-11-13#goal-horizon]]).
 **Location:** `workflow/plans/plan-28-handhold-outcome-experiment.md`; tasks in
 `workflow/plans/plan-28-handhold-outcome-experiment-tasks/`.
 **Queue:** item 7 of [[plan-review-2026-11-13#queue]]. The m1 confirm (L36) and 21.5 phase M come
-first. The session leg then runs **3 calendar days** (L79, the user 2026-11-14: "the plan 28 arms
-should only be 3 days") in the background while items 8-11 build. The paired leg is not
-time-boxed by that period. **The goal stops** at its charter decision (G18).
+first. **There is ONE leg, the paired re-entry series (L83; the user, 2026-11-14, Q14: "drop the
+live part").** It is not time-boxed: it ends when its frozen n is reached or the user pauses it.
+It runs in littlebig clones while items 8-11 build. **The user's own sessions are never assigned
+to an arm.** **The goal stops** at its charter decision (G18).
 **Depends on:** bug-216 live; 10.2 built (its `arms.py` and the dedupe it nests, L20); 21.5
 phase M reported (D-Q4); the m1 r2-lite confirm CLEAN or MEH-only (G32, L36).
 
@@ -63,14 +67,15 @@ delivered item, is one weak proxy for it, and the R12 pilot found that proxy mea
 | source | decision | where it lands |
 |---|---|---|
 | Q3 (user, 2026-11-13) | the primary outcome is orientation cost at a session (re)start, one measure with two triggers: a new session and `/clear` | [[#legs]], [[#outcomes]] |
-| Q4 (user) | real sessions are randomised into arms for a fixed period, not opt-in | [[#legs]] |
-| Q5 (user) | the projects are refmatrix and cliquedb | [[#legs]] |
+| Q4 (user) | real sessions are randomised into arms for a fixed period, not opt-in. **Superseded by Q14 / L83:** no real session is randomised | history |
+| Q5 (user) | the projects are refmatrix and cliquedb; under L83 they are the sources of the paired tasks (their real handoffs) | [[#legs]] |
 | D-Q4 (user) | 21.5 decision → this experiment; no 21.5 build until it reports | [[#ordering]] |
-| L20 (lead, CB-12, CB-15) | Q3 folded fully: a new-session trigger on the paired leg. Arm B's push-off switch is specified by extending `arms.SESSION_ARMS`, and the "switch already exists" premise is struck. 10.2's A/B is nested: arm A splits into `A+dedupe` / `A+full`, so 10.2 is built before the start and its A/B IS this run (L20 said ≥ 14 days; 3 calendar days since L79) | [[#arms]], [[task-28.1-session-arms-and-push-switch]] |
+| L20 (lead, CB-12, CB-15) | Q3 folded fully: a new-session trigger on the paired leg. Arm B's push-off switch is specified on 10.2's `arms`, and the "switch already exists" premise is struck. 10.2's A/B is nested: arm A splits into `A+dedupe` / `A+full`, so 10.2 is built before the start and its A/B is read from this experiment (from the paired series since L83) | [[#arms]], [[task-28.1-session-arms-and-push-switch]] |
 | L18, L27 (lead, CB-9) | "used" counts only R12 explicit uses + `cited_in_answer`, never 21.5's unbuilt legs | [[#outcomes]], [[task-28.3-outcome-scorer]] |
 | L36 (lead) | the m1 r2-lite confirm runs before this plan draws its bands | [[task-28.4-preregistration-freeze]] |
-| L45 (lead), as delegated by L78 (the user, 2026-11-14) | L45 made the start user-gated; under L78, the orchestrator starts the experiment when plan-28's Depends-on holds and tells the user first (L78). It randomises live sessions in refmatrix and cliquedb for 3 calendar days (L79; L45's text said ≥ 14 days). Every pause, the end and G18 stay user-gated | [[task-28.5-run-and-report]] |
-| L79 (the user, 2026-11-14: "the plan 28 arms should only be 3 days"; Q11 answered (a), "3 real days will be sufficent") | the session leg runs 3 calendar days, concurrently, as the whole period; the n-floor no longer extends the period, and a cell or outcome below its pre-registered minimum n reads "underpowered, no verdict"; the paired leg is unchanged | [[#legs]], [[#bands]], [[#ordering]], [[#rev-l79]] |
+| L45 (lead), as delegated by L78 (the user, 2026-11-14) | L45 made the start user-gated; under L78 and L80, the orchestrator starts the paired series when plan-28's Depends-on holds and tells the user first. Pausing the series and G18 stay user-gated | [[task-28.5-run-and-report]] |
+| L79 (the user, 2026-11-14: "the plan 28 arms should only be 3 days"; Q11 answered (a)) | the live session leg ran 3 calendar days. **Superseded by L83**, which removed that leg; L79's text is kept only as history in [[#rev-l79]] | history |
+| L83 (the user, 2026-11-14, Q14: "drop the live part"; measured rates refmatrix ~0.5 sessions/day, cliquedb ~0.1/day) | ONE leg, the paired re-entry series. Every reading (primary, push, 10.2's nested) comes from it, each against its own pre-registered minimum n of paired tasks per cell. It is not time-boxed, and below a minimum n a reading is "underpowered, no verdict". The live session leg, live randomisation, the 3-day period and `end`/`after_end` are removed. The user's own sessions are never assigned to an arm | [[#legs]], [[#bands]], [[#ordering]], [[#rev-l83]] |
 | G18 | the charter decision on the result is the user's; the goal stops there | [[task-28.5-run-and-report]] |
 {#decided-table}
 
@@ -78,41 +83,36 @@ delivered item, is one weak proxy for it, and the R12 pilot found that proxy mea
 
 ### Arms and cells {#arms}
 
-| cell | push (per-prompt `scan_prompt`, `prompt_recall`) | boundary (SessionStart, recall-state, PreCompact) | pull (CLI / MCP context, memory get, recall) | where |
-|---|---|---|---|---|
-| `A+dedupe` | on, 10.2's names-only dedupe | on | on | session leg (drawn); paired leg |
-| `A+full` | on, no dedupe (10.2's `full`) | on | on | session leg (drawn) |
-| `B` | **off** ([[task-28.1-session-arms-and-push-switch#r3]]) | on | on | session leg (drawn); paired leg |
-| `C` | off | off: no rmx hook, no primer | tools available | paired leg only; never drawn |
+Every cell runs only in paired runs, set explicitly by the runner (L83); no session is drawn.
+
+| cell | push (per-prompt `scan_prompt`, `prompt_recall`) | boundary (SessionStart, recall-state, PreCompact) | pull (CLI / MCP context, memory get, recall) |
+|---|---|---|---|
+| `A+dedupe` | on, 10.2's names-only dedupe | on | on |
+| `A+full` | on, no dedupe (10.2's `full`) | on | on |
+| `B` | **off** ([[task-28.1-session-arms-and-push-switch#r5]]) | on | on |
+| `C` | off | off: no rmx hook, no primer | tools available |
 
 A vs B tests ambient push. B vs C tests the handholds the charter names (boundary + pull).
 `A+dedupe` vs `A+full` is 10.2 R7's A/B, nested. **No push-off switch existed before this plan.**
 The exploration's "a full off-switch for push already exists in the hook layer's budget gates" is
 struck: no such switch is in `hooks.py` or `scan.py`, and 25.1 R8 says the pack is "never empty"
-(contra-b CB-15). Arm B's switch is built by 28.1 on 10.2's `arms` table. Arm C is a
-hook-less settings profile generated by the runner, never hand-edited (28.2). {#arms-note}
+(contra-b CB-15). Arm B's switch is built by 28.1 on 10.2's `arms`. Arm C is a hook-less
+settings profile generated by the runner, never hand-edited (28.2). {#arms-note}
 
-### Two legs {#legs}
+### One leg: the paired re-entry series (L83) {#legs}
 
-- **Session leg.** Real work sessions in refmatrix and cliquedb, randomised at SessionStart into
-  `A+dedupe`, `A+full` or `B` by `arms.draw` (a pure function of the session id, the period salt
-  and the store; [[task-28.1-session-arms-and-push-switch#r2]]). **The period is 3 calendar days
-  from its start (L79; "3 real days", Q11 a).** The cells run concurrently, so 3 days is the
-  whole period, not 3 days per cell in
-  sequence. No session count extends it. A cell or outcome below its pre-registered minimum n
-  (28.4), including 10.2 R7's 40 sessions per cell per store, reads "underpowered, no verdict",
-  and the report states the n reached per cell. It measures
-  outcomes (2)-(5), the `used` outcome within the A cells, and 10.2's nested outcomes. A session's
-  cell is drawn once, at SessionStart, and fixed for the whole session
-  ([[task-28.1-session-arms-and-push-switch#r2]]). It is recorded on the session's telemetry, so
-  arms are compared within the same projects and days.
-- **Paired re-entry leg.** Each paired task is a real handoff that a prior session left
-  mid-flight. Fresh agents resume it on isolated littlebig clones at the same starting commit,
-  under each paired cell (`A+dedupe`, `B`, `C`) and each trigger, a **new session** and **after
-  `/clear`** (Q3, folded fully per L20). It measures outcome (1), the primary. This leg isolates
-  continuity, which session-level randomisation dilutes. The runner sets each run's cell
-  explicitly; no period record is used. Later knowledge is guarded on three paths, the same in
-  every cell:
+- **What a paired task is.** A real handoff that a prior session in refmatrix or cliquedb left
+  mid-flight. Fresh agents resume it on isolated littlebig clones, all at the same starting
+  commit. Each task runs under every cell (`A+dedupe`, `A+full`, `B`, `C`) and each trigger, a
+  **new session** and **after `/clear`** (Q3, folded fully per L20).
+- **Every reading comes from this series.** That covers the primary (`B` vs `C`), push
+  (`A+dedupe` vs `B`) and 10.2's nested `A+dedupe` vs `A+full`. Each reading is checked against
+  its own pre-registered minimum n of paired tasks per cell (28.4). Below it, the reading is
+  "underpowered, no verdict".
+- **Not time-boxed.** The series ends when the frozen n is reached, or when the user pauses it.
+- **The runner sets each run's cell explicitly** through `arms` (28.1). No session is drawn,
+  and the user's own sessions are never assigned to an arm.
+- **Later knowledge is guarded on three paths, the same in every cell:**
   - the clone is cut at the start commit, with no later commit reachable or present;
   - the memory snapshot holds only memories older than the start;
   - every memory read, global store included, is filtered to the start time.
@@ -123,32 +123,31 @@ hook-less settings profile generated by the runner, never hand-edited (28.2). {#
 
 ### Outcomes {#outcomes}
 
-Each outcome is a proxy for the backtrack-to-rebuild tax, read from transcripts and telemetry
-by ONE scorer ([[task-28.3-outcome-scorer]]):
+Each outcome is a proxy for the backtrack-to-rebuild tax, read from the paired runs' transcripts
+and telemetry by ONE scorer ([[task-28.3-outcome-scorer]]):
 
-1. **Orientation cost (primary, paired leg, both triggers pooled):** tool calls, tokens and wall
-   time from the (re)start to the first productive edit or the first correct statement of the
-   resume point. P-3 settles which of the three is the banded scalar.
-2. **Exploratory churn (session leg):** Read / Grep / Glob / `rmx grep` calls that touch a
-   project file and are not followed within W prompts by an edit or a citation of that file, per
-   100 prompts (W per P-4).
-3. **Re-derivation (session leg, labelled):** facts that a memory or handoff already held and the
-   agent re-establishes by search, per 100 prompts.
-4. **Repeated mistakes (session leg, labelled):** violations of a feedback memory's rule that
-   existed and applied, per 100 prompts.
-5. **Cost of the handholds (both legs):** injected bytes per prompt, hook latency, and the share
-   of the hook output budget. This is a baseline, not a gate
+1. **Orientation cost (primary, both triggers pooled):** tool calls, tokens and wall time from
+   the (re)start to the first productive edit or the first correct statement of the resume
+   point. P-3 settles which of the three is the banded scalar.
+2. **Exploratory churn:** Read / Grep / Glob / `rmx grep` calls that touch a project file and
+   are not followed within W prompts by an edit or a citation of that file, per 100 prompts of
+   the run (W per P-4).
+3. **Re-derivation (labelled):** facts that a memory or handoff already held and the agent
+   re-establishes by search, per 100 prompts.
+4. **Repeated mistakes (labelled):** violations of a feedback memory's rule that existed and
+   applied, per 100 prompts.
+5. **Cost of the handholds:** injected bytes per prompt, hook latency, and the share of the hook
+   output budget. This is a baseline, not a gate
    ([[feedback_measurable_benefit_is_not_the_reason]]).
-6. **Used (session leg, within the A cells only; L18, L27, r1 #b1):** R12 explicit uses plus
-   `cited_in_answer` on delivered memory items (19.6's scope) per 100 human prompts, with
-   names-line items apart. 21.5's tool legs are never counted. `cited_in_answer` carries weight
-   only if its 50-pair blind precision is at least 0.80 with a Wilson lower bound of at least
-   0.65 (r1 #s5); otherwise (6) is R12 explicit uses only. Outcome (6) depends on what was
-   delivered, so it is never compared between cells with and without push. In `B` it is
-   reported descriptively.
-7. **10.2's nested outcomes:** injected bytes per human prompt, and used per 100 human prompts
-   under rule 6, split by 10.4's `prompt_family`. 10.2 R7 owns their bands, and this plan reads
-   them.
+6. **Used (within the A cells only; L18, L27, r1 #b1):** R12 explicit uses plus
+   `cited_in_answer` on delivered memory items (19.6's scope) per 100 prompts, with names-line
+   items apart. 21.5's tool legs are never counted. `cited_in_answer` carries weight only if its
+   50-pair blind precision is at least 0.80 with a Wilson lower bound of at least 0.65 (r1 #s5);
+   otherwise (6) is R12 explicit uses only. Outcome (6) depends on what was delivered, so it is
+   never compared between cells with and without push. In `B` it is reported descriptively.
+7. **10.2's nested outcomes:** injected bytes per prompt, and used per 100 prompts under rule 6,
+   `A+dedupe` vs `A+full`, split by 10.4's `prompt_family`. 10.2 R7 owns their bands, and this
+   plan reads them from the paired series (L83).
 {#outcomes-list}
 
 ### Bands (frozen in 28.4 before the start) {#bands}
@@ -163,21 +162,20 @@ The primary reading compares the handhold cell named by P-2 against `C` on outco
 
 How the CI enters a reading is P-8.
 
-**Push (`A+dedupe` vs `B`, session leg; P-11, r1 #b1).** This compares the deployable default
-with no push, on outcomes (2)-(4) only. If `A+dedupe` is better than `B` on none of them (no
-Holm-adjusted test across the three rejecting in A's favour; pre-registered, r2-m5), while
-costing more on (5), the reading is
-`shrink`: shrink ambient injection to a gated or pointer-only form. Outcome (6) is not an input,
-because it counts uses of delivered items and B delivers nothing per prompt. 28.3 AC-8 holds a
-synthetic result set where `shrink` fires.
+**Push (`A+dedupe` vs `B`; P-11, r1 #b1).** This compares the deployable default with no push, on
+outcomes (2)-(4) only, paired by task. If `A+dedupe` is better than `B` on none of them (no
+Holm-adjusted test across the three, with a bootstrap over tasks, rejecting in A's favour;
+r2-m5), while costing more on (5), the reading is `shrink`: shrink ambient injection to a gated
+or pointer-only form. Outcome (6) is not an input, because it counts uses of delivered items and
+B delivers nothing per prompt. 28.3 AC-8 holds a synthetic result set where `shrink` fires.
 
-**Nested (10.2 R7, `A+dedupe` vs `A+full`):** 10.2's own bands (dedupe cuts bytes per human
-prompt ≥ 30% with used within −5% of `full` → keep; …), read on outcome 7.
+**Nested (10.2 R7, `A+dedupe` vs `A+full`):** 10.2's own bands (dedupe cuts bytes per prompt
+≥ 30% with used within −5% of `full` → keep; …), read on outcome 7 from the paired series.
 
-**Underpowered (L79).** Every reading above, the primary, push and nested readings included,
-first checks the pre-registered minimum n of each cell and outcome it uses (28.4 R2). Below the
-minimum, the reading is "underpowered, no verdict": neither pass nor fail, and no default
-changes. The report states the n reached per cell.
+**Underpowered (L79, L83).** Every reading above, the primary, push and nested readings
+included, first checks the pre-registered minimum n of paired tasks per cell for the cells it
+uses (28.4 R2). Below the minimum, the reading is "underpowered, no verdict": neither pass nor
+fail, and no default changes. The report states the n reached per cell.
 {#bands-body}
 
 ### Inputs to the charter decision that are not outcomes {#charter-inputs}
@@ -192,22 +190,17 @@ beside this plan's result. They are recorded; nothing here reads them as a band.
 2. 28.4 freezes the pre-registration after: bug-216 is live; 21.5 phase M has reported; the m1
    r2-lite confirm (G32) is CLEAN or MEH-only; 28.2's probe and calibration are recorded; and
    a ch-bsd round over the pre-registration is CLEAN or MEH-only.
-3. **28.5 starts when plan-28's Depends-on holds** (L78, L80): the orchestrator tells the user
-   first, then deploys the period's salt and dates. Every pause, the end and G18 stay user-gated.
-4. **During the period:** items 8-11 build and deploy. A deploy that touches `scan.py`,
-   `recall_pack.py`, `hook_budget.py`, context rendering, the hooks generator or `arms.py`
-   lands only while no record is active. The record's own start, pause and end commits, which
-   set its dates in `arms.py`, are exempt by name (r2-m3). **Pausing (P-12, r1 #s8)** is a user-gated step: one
-   commit sets the active record's `end` to now, and it is deployed. Sessions in flight keep
-   their cell. Resuming is a new record (new id, new salt) at the user's go. Readings are
-   stratified by record id. A pause does NOT extend the period (L79 refined): a resumed record
-   ends at the original window's end. Every deploy sha in the
-   period is recorded, with its date and record id.
-   **The end rule (L79): the session leg ends 3 calendar days (72 hours) after its start.** It is
-   never extended for pauses,
-   sessions or n. The paired runs are not part of that period, and they run to completion on
-   their own schedule.
-5. **At the end:** scoring, readings, the report and its ch-bsd round. Then the goal stops for
+3. **28.5 starts the paired series when plan-28's Depends-on holds** (L78, L80): the
+   orchestrator tells the user first, then runs the frozen series. Nothing is deployed to start
+   it, and no live session is touched.
+4. **During the series:** items 8-11 build and deploy. Every run records the deployed `rmx` sha
+   it ran with. A deploy that touches `scan.py`, `recall_pack.py`, `hook_budget.py`, context
+   rendering, the hooks generator or `arms.py` changes what a cell delivers, so it lands only
+   while the series is paused. **Pausing (P-12)** is user-gated: on the user's word, the runner
+   finishes or aborts the run in flight (recorded) and starts no new one. Resuming is also on
+   the user's word. Readings are stratified by deploy sha when a series spans more than one.
+5. **The series ends** when the frozen n of paired tasks per cell is reached, or the user stops
+   it (L83). Scoring, readings, the report and its ch-bsd round follow. Then the goal stops for
    the user's charter decision (G18). The T3 re-plan and the plan-24 re-plan (D-Q5) follow it.
 {#ordering-body}
 
@@ -215,35 +208,36 @@ beside this plan's result. They are recorded; nothing here reads them as a band.
 
 | task | what | builds | depends on |
 |---|---|---|---|
-| [[task-28.1-session-arms-and-push-switch]] | the session-leg record; the cell fixed at SessionStart; the paired-run override (cell, run, as-of) and the as-of memory filter; arm B's push-off switch; the per-prompt `session_arm` field | `src/` | 10.2 |
-| [[task-28.2-paired-reentry-runner]] | R0 probe; the paired task set; the runner (clones cut at the start sha, stores, memory snapshots, env pinning, triggers, archive, teardown, leak control); arm C's generated bare profile | `eval/production/handhold/` | 28.1 |
-| [[task-28.3-outcome-scorer]] | the ONE scorer for outcomes 1-7, blinding, blind labeller agents, `cited_in_answer`, and the ONE reading module | `eval/production/handhold/` | 28.1 |
-| [[task-28.4-preregistration-freeze]] | the calibration, the MDE, every P-item value, and the frozen pre-registration with its sha | measurement file | 28.1-28.3, G32, 21.5 phase M, bug-216 live |
-| [[task-28.5-run-and-report]] | the orchestrator's start (L78; the user is told first), the period, the paired runs, the readings, the report, the cleanup | measurement file | 28.4; Depends-on (L78) |
+| [[task-28.1-session-arms-and-push-switch]] | the paired-run override (cell, run, as-of) read by `arms.session_cell`; the as-of memory filter; arm B's push-off switch; the paired rows' `session_arm` fields. No SessionStart draw (L83) | `src/` | 10.2 |
+| [[task-28.2-paired-reentry-runner]] | R0 probe; the paired task set; the runner (clones cut at the start sha, stores, memory snapshots, env pinning of all four cells, triggers, archive, teardown, leak control); arm C's generated bare profile | `eval/production/handhold/` | 28.1 |
+| [[task-28.3-outcome-scorer]] | the ONE scorer for outcomes 1-7 over the paired runs, blinding, blind labeller agents, `cited_in_answer`, and the ONE reading module | `eval/production/handhold/` | 28.1 |
+| [[task-28.4-preregistration-freeze]] | the calibration, the minimum n of paired tasks per cell for every reading (with a power note), every P-item value, and the frozen pre-registration with its sha | measurement file | 28.1-28.3, G32, 21.5 phase M, bug-216 live |
+| [[task-28.5-run-and-report]] | the orchestrator's start of the paired series (L78; the user is told first), the series, the readings, the report, the cleanup | measurement file | 28.4; Depends-on (L78) |
 
 ## Acceptance for the plan {#acceptance}
 
-- Each reading whose cell or outcome reached its pre-registered minimum n is read as frozen.
-  Each that did not reads "underpowered, no verdict", and the report states the n reached per
-  cell (L79). Nothing is re-specified after an outcome is seen.
+- Each reading whose cells reached their pre-registered minimum n of paired tasks is read as
+  frozen. Each that did not reads "underpowered, no verdict", and the report states the n
+  reached per cell (L79, L83). Nothing is re-specified after an outcome is seen.
+- The user's own sessions are never assigned to an arm (L83).
 - Committed results are counts, labels and hashes only. Transcripts and prompts stay local.
 - No experiment agent writes to a live store. Paired runs happen only in littlebig clones.
 - The report is through ch-bsd, and the charter decision is put to the user with the readings.
-- `arms.py` and arm B's branch are deleted after the period, per 10.2's deferral row, unless
-  the charter decision keeps an arm.
+- `arms.py`'s measurement branches are deleted after the series, per 10.2's deferral row,
+  unless the charter decision keeps an arm.
 {#acceptance-list}
 
 ## Cross-plan effects {#cross-plan}
 
-- **10.2 R7 (settled with spec-t3b, 2026-11-13).** 10.2 creates `arms.py`: the full cell table
-  (`C` at weight 0), the store-scoped `draw(session_id, *, root, now=None)`, and the default
-  `A+dedupe` outside a period. Plan-28 owns the period's values, the start (the orchestrator's under L78), arm B's
-  push-off, the scorer and the deletion
-  ([[task-28.1-session-arms-and-push-switch#ownership]]). 10.2's outcome follows L27. 10.2 R7
-  also builds the session cell fixed at SessionStart (one draw, `stm/<session>.arm.json`,
-  `arms.session_cell`), and its verb and scan-prompt read only that (spec-t3b `151c81e`); 28.1
-  R2 extends the file's fields. 10.2 R7 says C runs only on the paired leg (spec-t3b
-  `46b21fa`, r1 #m7).
+- **10.2 R7 (L83; the shape is proposed to spec-t3b, see [[#rev-l83]]).** 10.2 creates
+  `arms.py`: the cell enum (`A+dedupe`, `A+full`, `B`, `C`) and `session_cell(session_id, *,
+  root)`, which returns `A+dedupe` as shipped. Its verb and scan-prompt read the dedupe factor
+  from `session_cell`. There is no draw, no period record, no salt, no scope and no arm file
+  (L83: no SessionStart draw). 28.1 extends `session_cell` to return the paired override's
+  cell, and adds `push_on`, `paired_override` and the as-of filter. Plan-28 owns the start (the
+  orchestrator's under L78), arm B's push-off, the scorer and the deletion
+  ([[task-28.1-session-arms-and-push-switch#ownership]]). 10.2's outcome follows L27, and its
+  nested reading is read from the paired series.
 - **25.1 R8 (unchanged; r1 #m1).** "Never empty" holds on every call that packs. In cell `B`,
   SessionStart and PreCompact still pack; the per-prompt hooks do not pack.
 - **19.6 `cited_in_answer`.** 28.3 implements 19.6's clause once, and 19.6's `score_readback.py`
@@ -279,18 +273,18 @@ frozen file, with this section cited. The options are kept below as the record. 
 
 | item | ruling |
 |---|---|
-| P-1 | equal thirds `A+dedupe` / `A+full` / `B` (`C` at 0) |
+| P-1 | equal thirds `A+dedupe` / `A+full` / `B` (`C` at 0). **Superseded by L83:** no session is drawn, so there are no draw weights; every paired task runs under all four cells |
 | P-2 | the primary comparison is `B` vs `C` |
 | P-3 | the banded scalar for orientation cost is tool calls; tokens and wall time are printed |
 | P-4 | W = 3 prompts |
 | P-5 | **overridden by the lead's r1 #s5 ruling:** 50 blind `cited_in_answer` labels first; it carries weight only at precision ≥ 0.80 with a Wilson lower bound ≥ 0.65 (21.5's bar); otherwise outcome 6 counts R12 explicit uses only |
-| P-6 | the paired leg's A cell is `A+dedupe` only |
+| P-6 | the paired leg's A cell is `A+dedupe` only. **Superseded by L83:** the paired series runs `A+dedupe` AND `A+full`, because 10.2's nested reading now comes from it |
 | P-7 | the curator status line stays on in `B` |
 | P-8 | "holds" and "holds weakly" need the effect's 95% CI to exclude 0 |
 | P-9 | Cohen's κ < 0.6 makes that outcome report-only |
-| P-10 | `C` runs only in the paired leg |
+| P-10 | `C` runs only in the paired leg (since L83, every cell does) |
 | P-11 (r1 #s8, #b1) | the push reading compares `A+dedupe` (the deployable default) with `B`, on outcomes (2)-(4) only |
-| P-12 (r1 #s8) | the pause is a user-gated commit that sets the active record's `end` to now; sessions in flight keep their cell; resuming is a new record |
+| P-12 (r1 #s8; restated by L83) | the pause is user-gated: on the user's word the runner finishes or aborts the run in flight (recorded) and starts no new run; resuming is on the user's word. The period-record form (an `end`-now commit, a new record to resume) went with the live leg |
 | contradiction 7 | every transcript the experiment uses is archived locally, outside the repo and every watched tree, never committed; the archive's creation is announced to the user ([[task-28.2-paired-reentry-runner#r2]], [[task-28.5-run-and-report#r5]]) |
 {#p-rulings-table}
 
@@ -407,3 +401,22 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 | The 3-calendar-day session period (L79, Q11 answered a), the orchestrator-run start under L78 (L80) and the end committed with the start (L82) are approved by the lead on the user's pattern (d9co) after the L80 confirm-lite MEH-only (0B/0S/2M), folded at `49a603c` per L82 with no further round | `workflow/bullshit/2026-11-14-0200-spec-t3c-r5-l80-d42c72b.md` (with the L79 confirm-lite `2026-11-14-0150-spec-t3c-r4-l79-7758d2a.md`, over `spec-wave-t3c` `be03148..d42c72b`) | status unchanged; Q14 (where the verdicts come from) may amend this plan again |
 
 rel: derives-from -> [[bsd-spec-t3c-r5-l80-d42c72b]]
+
+## Revision L83 (2026-11-14, the user, Q14: "drop the live part"; lead ruling L83) {#rev-l83}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[open-questions]]
+
+L83 (dev master `715e356`): plan-28 has ONE leg, the paired re-entry series. Measured session
+rates (refmatrix ~0.5/day, cliquedb ~0.1/day) put every live reading below its minimum. The
+status stays `approved` pending a confirm-lite ch-bsd round.
+
+| change | where |
+|---|---|
+| ONE leg: every reading (primary `B` vs `C`, push `A+dedupe` vs `B`, 10.2's nested `A+dedupe` vs `A+full`) comes from the paired series, each against its own pre-registered minimum n of paired tasks per cell; not time-boxed; below a minimum, "underpowered, no verdict" | header, [[#legs]], [[#outcomes]], [[#bands]], [[#acceptance]] |
+| REMOVED: the live session leg, live SessionStart randomisation, the 3-day period (L79's period text, kept as history in [[#rev-l79]]), `end` and `after_end` (L82 m2, kept as history in [[#rev-l82]]), and every live-leg outcome. The user's own sessions are never assigned to an arm | everywhere; the Q4 and L79 rows are marked superseded in [[#decided]] |
+| KEPT: the L78/L80 start rule, applied to the paired series; pausing and G18 stay user-gated; the series ends when its frozen n is reached or the user pauses or stops it | header, [[#ordering]] |
+| the paired cells are now all four (`A+dedupe`, `A+full`, `B`, `C`); P-1 and P-6 are superseded, P-12 is restated | [[#arms]], [[#open]] |
+| deploys of the treatment modules land only while the series is paused; every run records its deployed `rmx` sha | [[#ordering]] |
+| `arms` shape for 10.2: the enum plus a default-only `session_cell`, with no draw, period, salt, scope or arm file. 28.1 extends `session_cell` with the paired override. Proposed to spec-t3b; the lead rules if they differ | [[#cross-plan]], [[task-28.1-session-arms-and-push-switch#ownership]] |
+| 28.1-28.5 and the exploration doc follow | each task's `#rev-l83` |

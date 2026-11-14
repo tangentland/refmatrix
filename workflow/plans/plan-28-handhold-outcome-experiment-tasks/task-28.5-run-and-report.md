@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: task-28.5-run-and-report
-title: "Task 28.5: the run: the orchestrator starts the period when plan-28's Depends-on holds and tells the user first (L78), runs both legs, read every band as frozen, report, and stop the goal for the user's charter decision"
+title: "Task 28.5: the run: the orchestrator starts the paired series when plan-28's Depends-on holds and tells the user first (L78), runs it to its frozen n (L83), reads every band as frozen, reports, and stops the goal for the user's charter decision"
 tags: [task, plan-28, experiment, run, report, charter, user-gated]
 metadata:
   node_type: task
@@ -14,9 +14,12 @@ metadata:
 # Task 28.5: run and report {#root}
 
 > Plan: [[plan-28-handhold-outcome-experiment]]
-> Status: Pending: approved to build (2026-11-14, [[#approval]]; spec wave 2026-11-13, G17).
-> Depends on: [[task-28.4-preregistration-freeze]] frozen and reviewed. **The start:** the orchestrator starts the experiment when plan-28's Depends-on holds and tells the user first (L78).
-> **User-gated:** every pause and the end. **Goal stop:** the charter decision (G18).
+> Status: Pending: approved to build (2026-11-14, [[#approval]]; spec wave 2026-11-13, G17);
+> amended by L83 ([[#rev-l83]], pending a confirm-lite).
+> Depends on: [[task-28.4-preregistration-freeze]] frozen and reviewed. **The start:** the
+> orchestrator starts the paired series when plan-28's Depends-on holds and tells the user first
+> (L78, L80). **User-gated:** every pause (and resuming) and stopping the series early. **Goal
+> stop:** the charter decision (G18).
 
 rel: part-of -> [[plan-28-handhold-outcome-experiment]]
 rel: depends-on -> [[task-28.4-preregistration-freeze]]
@@ -27,105 +30,83 @@ rel: reinforces -> [[feedback_errors_fail_loudly_on_the_console]]
 
 ## Why {#why}
 
-The experiment randomises the user's own work sessions in two projects for 3 calendar days (L79).
-L45 made its start a user step. L78 (the user, 2026-11-14: "the start of the plan-28 experiment
-can proceed when you feel its time") delegated it to the orchestrator, who tells the user first. Its
-result is an input to a user decision (G18), not a goal step. {#why-body}
+Under L83 (the user, 2026-11-14, Q14: "drop the live part"), the experiment is the paired
+re-entry series alone: fresh agents resuming real handoffs on littlebig clones. The user's own
+sessions are never assigned to an arm. L45 made the start a user step. L78 (the user,
+2026-11-14: "the start of the plan-28 experiment can proceed when you feel its time")
+delegated it to the orchestrator, who tells the user first. The result is an input to a user
+decision (G18), not a goal step. {#why-body}
 
 ## Requirements {#requirements}
 
-1. **R1 The start (L78, L80).** The orchestrator starts the experiment when plan-28's
+1. **R1 The start (L78, L80).** The orchestrator starts the paired series when plan-28's
    Depends-on holds: bug-216 live; 10.2 built; 21.5 phase M reported; the m1 r2-lite confirm
    CLEAN or MEH-only (G32); and 28.4's file frozen and reviewed. For each precondition it
    records the evidence (a sha, a file, a verdict). It never changes a precondition to start
    sooner. It **tells the user first**, citing:
    - the frozen pre-registration's sha;
-   - the cells and the stores;
-   - the period (3 calendar days);
-   - what cell `B` feels like (no per-prompt push);
-   - the backups and the archive;
-   - the stop condition (the user may stop at any time).
+   - the four cells and the task set (refmatrix and cliquedb handoffs);
+   - the frozen minimum n per cell, and the power note's estimate of runs and agent time;
+   - that the user's own sessions are not touched;
+   - the paired archive;
+   - the stop condition (the user may pause or stop at any time).
 
-   The tell is recorded with its date. Every pause, the end and G18 stay user-gated. {#r1}
-2. **R2 Start.** Before the commit, three checks are recorded:
-   - Claude Code's transcript cleanup period is read, and the start needs it to be at least 7
-     days, longer than R3's sweep interval (r1 #s7);
-   - every registered store whose slug is in the record's scope is listed, and only the
-     refmatrix and cliquedb roots may match (r1 #m9);
-   - the session-leg archive's creation is announced to the user.
+   The tell is recorded with its date. {#r1}
+2. **R2 Start checks.** Before the first run, these are recorded:
+   - `/Volumes/littlebig/` is mounted;
+   - the paired archive's creation was announced to the user (28.2 R2);
+   - the deployed `rmx` sha the series starts on.
 
-   Then one commit on `master` sets the plan-28 record's salt (from the frozen file), its
-   `start`, AND its `end = start + 72 hours` in the same record (L82). That commit is followed
-   by a deploy per the project's deploy rules. The period therefore closes on time without a
-   later commit. `rmx install-hooks --check` stays
-   clean (28.1 AC-9). The first SessionStart rows in each store show `arm_period`, and they are
-   checked within one day. {#r2}
-3. **R3 During the period.** {#r3}
-   - **The archive runs incrementally (lead ruling on r1 #s7).** A daily sweep copies into the
-     LOCAL session-leg archive at
-     `/Volumes/littlebig/refmatrix-measurement-archive/plan-28/session/`:
-     - every transcript of an in-scope session that has ended or gained lines since the last
-       sweep, meaning the parent file and every subagent file;
-     - the read-only copies of the stores' telemetry.
-
-     The archive is outside the repo and outside every watched tree, mode `0700`, and never
-     committed; only a sha256 manifest is. Each sweep counts sessions per cell whose transcript
-     was already gone (`no_transcript`). The daily count reports them, and the report lists
-     them as a limit.
-   - A daily count (the period is 3 calendar days, L79) of sessions per cell per store, of
-     suppressed rows and of `arm_error` sessions, posted to the user.
-   - **The pause (P-12; r1 #s8).** A deploy that touches a module the pause rule names lands
-     only while no record is active. The record's own start and pause commits (R2, this pause)
-     are exempt by name (r2-m3). The end needs no commit (L82). To pause, the lead asks the user, and on the user's word
-     one commit sets the active record's `end` to now and is deployed. Sessions in flight keep
-     their cell (28.1 R2). A pause does not extend the period (L79, refined). Resuming is a NEW
-     record (new id, new salt), with its `end` at the original window's end, committed at the user's
-     go. Every deploy sha and date in the period is recorded, with the record id that was active.
-   - The paired runs (28.2) execute in the frozen shuffled order.
-   - A defect that blocks work in any cell stops the period loudly: the user is told, the period
-     record's `end` is set, nothing is read, and the stop is recorded.
-4. **R4 End: the check and the user step (L82).** `end` was written by R2's start commit, at
-   3 calendar days after the start (the end rule, L79 refined; never extended for sessions, n or
-   pauses). No end commit is needed.
-   - At `end`, a new session in each store is checked to draw the default, and the result is
-     recorded.
-   - The user is told that the session leg has ended, with the n reached per cell. This is the
-     end's user step. The user may also end earlier, by the pause step.
-   - **Late sessions are dropped.** 28.3's scorer drops any session whose SessionStart `t` is at
-     or after its record's `end`, and counts it per cell (`after_end`). A late check therefore
-     cannot admit sessions randomised past 72 hours.
-   {#r4}
-5. **R5 Final sweep, then score and read (L80 m1).** Scoring waits for BOTH legs: the session
-   period has ended (R4), AND the frozen paired series has completed or was stopped, with the
-   reason recorded. The paired series may outrun the 72 hours. Then one last sweep runs (R3), and
-   28.3's
-   scorer runs over the archive and `readings.py` (28.3 R9) reads every band. Readings are
-   stratified by record id. Every outcome is computed, every band is read as frozen, and every deviation from the
-   pre-registration is listed. 10.2 R7's nested bands are read and handed to 10.2's
-   implementation summary. {#r5}
+   Nothing is committed or deployed to start the series. No period record exists, and no live
+   session is touched (L83). {#r2}
+3. **R3 During the series.** {#r3}
+   - The runs execute in 28.2's frozen shuffled order. Each records its deployed `rmx` sha,
+     cell, trigger, task id and run id. A per-cell count of runs completed, aborted,
+     `leak_suspect` and `arm_error` is posted to the user daily while runs are executing.
+   - **The pause (P-12, restated by L83).** It is user-gated. On the user's word, the runner
+     finishes or aborts the run in flight (recorded) and starts no new run. Resuming is also on
+     the user's word.
+   - A deploy that touches `scan.py`, `recall_pack.py`, `hook_budget.py`, context rendering,
+     the hooks generator or `arms.py` lands only while the series is paused. Readings are
+     stratified by deploy sha when the series spans more than one.
+   - A defect that breaks runs in any cell stops the series loudly: the user is told, nothing is
+     read, and the stop is recorded.
+4. **R4 End (L83).** The series ends when every reading's frozen minimum n of paired tasks per
+   cell is reached (counted after exclusions), when R1's cap is reached, or when the user stops
+   it. It is not time-boxed. The user is told that the series has ended, with the n reached per
+   cell. No commit is needed. {#r4}
+5. **R5 Score and read.** Scoring starts only after R4's end. Then 28.3's scorer runs over the
+   paired archive, and `readings.py` (28.3 R9) reads every band.
+   - Every outcome is computed.
+   - Every band is read as frozen, and every deviation from the pre-registration is listed.
+   - A reading below its minimum n is "underpowered, no verdict".
+   - 10.2 R7's nested bands are read on `A+dedupe` vs `A+full` and handed to 10.2's
+     implementation summary.
+   {#r5}
 6. **R6 Report.** `workflow/measurements/handhold-experiment-<date>.md` (GMD) holds the counts,
-   the readings and the CIs, the charter-decision inputs that are not outcomes, and the
-   limits. Only counts, labels and hashes are committed. A ch-bsd round over it must come back
-   CLEAN or MEH-only. {#r6}
+   the readings and the CIs, the n reached per cell, the charter-decision inputs that are not
+   outcomes, and the limits. Only counts, labels and hashes are committed. A ch-bsd round over
+   it must come back CLEAN or MEH-only. {#r6}
 7. **R7 The goal stops.** The report goes to the user as a charter decision with the readings
    and the inputs (G18). The T3 re-plan and the plan-24 re-plan (D-Q5) follow the user's
    decision, not this task. {#r7}
-8. **R8 Cleanup.** If the charter decision keeps no arm, `arms.py` (10.2's), arm B's branch,
-   `push_on` and the period records are deleted per the widened deferral row (28.1 R5), and the
-   row is closed. If it keeps one, the decision amends the row. {#r8}
+8. **R8 Cleanup.** If the charter decision keeps no arm, the measurement branches of `arms.py`
+   (`push_on`, `paired_override`, `parse_paired`, `as_of_admit`, the paired rows) and arm B's
+   branch are deleted per the widened deferral row (28.1 R7), and the row is closed. If it keeps
+   one, the decision amends the row. {#r8}
 
 ## Acceptance criteria {#acceptance}
 
-1. **AC-1** The tell to the user (R1) and each precondition's evidence are recorded, with
-   their dates, BEFORE the start commit, as the git order shows (L80). {#ac-1}
-2. **AC-2** The period ended after 3 calendar days. Every reading whose cell or outcome is
-   below its frozen minimum n says "underpowered, no verdict", and the report states the n
-   reached per cell (L79). {#ac-2}
+1. **AC-1** The tell to the user (R1) and each precondition's evidence are recorded, with their
+   dates, BEFORE the first paired run starts, as the run log's timestamps show (L80). {#ac-1}
+2. **AC-2** The series ended per R4. Every reading whose cells are below their frozen minimum n
+   says "underpowered, no verdict", and the report states the n reached per cell (L79, L83).
+   {#ac-2}
 3. **AC-3** Every band in the frozen file has a reading in the report, and no reading uses a
    rule absent from the frozen file. {#ac-3}
-4. **AC-4** The start commit holds `end = start + 72 hours` (L82). After `end`, a new session
-   in each store draws the default, checked and recorded. The scorer's `after_end` count per cell
-   is in the report. {#ac-4}
+4. **AC-4** No live session was assigned to an arm (L83). Across the period of the series, the
+   live stores' `query.log` and `cli.log` hold no `session_arm`, `arm_run` or `suppressed: "arm"`
+   field, which is checked and recorded. {#ac-4}
 5. **AC-5** The report passes its ch-bsd round, and the charter decision is put to the user.
    {#ac-5}
 
@@ -133,17 +114,17 @@ result is an input to a user decision (G18), not a goal step. {#why-body}
 
 | file | change |
 |---|---|
-| `src/refmatrix/arms.py` | the period's salt, start and end, in one start commit (R2, L82); the deletion (R8) |
+| `src/refmatrix/arms.py` | the deletion of the measurement branches (R8) |
 | `workflow/measurements/handhold-experiment-<date>.md` (new) | R6 |
 | `workflow/deferral_registry.md` | the `arms.py` row closed or amended (R8) |
 
 ## Definition of done {#done}
 
 - AC-1 to AC-5 met. Implementation summary at
-  `workflow/implementation_summaries/task-28.5-run-and-report.md` (the start and end shas, the
-  pause log, the readings).
-- The start, end and cleanup commits are each made on branch `task-28.5-run-and-report` and
-  merged `--no-ff` to `master`, then deployed.
+  `workflow/implementation_summaries/task-28.5-run-and-report.md` (the series' start and end
+  times, its deploy shas, the pause log, the readings).
+- The cleanup commit is made on branch `task-28.5-run-and-report`, merged `--no-ff` to
+  `master`, then deployed.
 
 ## Revision r1 (2026-11-13, `bsd-spec-t3c`; lead rulings) {#rev-r1}
 
@@ -206,3 +187,18 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 | The 3-calendar-day session period (L79, Q11 answered a), the orchestrator-run start under L78 (L80) and the end committed with the start (L82) are approved by the lead on the user's pattern (d9co) after the L80 confirm-lite MEH-only (0B/0S/2M), folded at `49a603c` per L82 with no further round | `workflow/bullshit/2026-11-14-0200-spec-t3c-r5-l80-d42c72b.md` (with the L79 confirm-lite `2026-11-14-0150-spec-t3c-r4-l79-7758d2a.md`, over `spec-wave-t3c` `be03148..d42c72b`) | status unchanged; Q14 (where the verdicts come from) may amend this plan again |
 
 rel: derives-from -> [[bsd-spec-t3c-r5-l80-d42c72b]]
+
+## Revision L83 (2026-11-14, the user, Q14: "drop the live part"; lead ruling L83) {#rev-l83}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite. L79's 3-day period and L82's `end`/`after_end`
+are removed; they are kept above as history.
+
+| change | where |
+|---|---|
+| the run is the paired series alone; the user's own sessions are never assigned to an arm | title, [[#why]], [[#r1]], [[#ac-4]] |
+| the start (L78/L80) applies to the series. Nothing is committed or deployed to start it; R2 records the mount, the archive announcement and the deploy sha | [[#r1]], [[#r2]] |
+| the series ends at its frozen minimum n, at the cap, or by the user; it is not time-boxed; scoring waits for that end | [[#r4]], [[#r5]], [[#ac-2]] |
+| the pause is restated for the series (user-gated; treatment-module deploys only while paused) | [[#r3]] |
+| AC-4 (the end commit, `after_end`) is replaced by "no live session was assigned to an arm"; the Files row and the done list drop the period commits | [[#ac-4]], [[#files]], [[#done]] |

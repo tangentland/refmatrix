@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: task-28.2-paired-reentry-runner
-title: "Task 28.2: the paired re-entry runner: real handoffs resumed by fresh agents on littlebig clones cut at the task's start commit, under cells A+dedupe, B and C set by the runner, after a new session and after /clear, with every memory read filtered to the task's start"
+title: "Task 28.2: the paired re-entry runner: real handoffs resumed by fresh agents on littlebig clones cut at the task's start commit, under cells A+dedupe, A+full, B and C set by the runner (the experiment's only leg, L83), after a new session and after /clear, with every memory read filtered to the task's start"
 tags: [task, plan-28, experiment, paired, clones, littlebig, handoff, hooks]
 metadata:
   node_type: task
@@ -87,7 +87,8 @@ hazards shape it:
    A task is excluded when its continuation deployed, touched a live store or a fleet repo, or
    needed the user mid-task. The draw (seed, date range, count per project) and the task-id
    list's sha256 are frozen by 28.4. Calibration tasks are drawn apart and never reused. {#r1}
-3. **R2 One run.** For each task × paired cell (`A+dedupe`, `B`, `C`; P-6) × trigger: {#r2}
+3. **R2 One run.** For each task × cell (`A+dedupe`, `A+full`, `B`, `C`; all four since L83, because
+   every reading, 10.2's nested one included, comes from this series) × trigger: {#r2}
    - **The clone is cut at the start sha (r1 #s1).** A new clone at
      `/Volumes/littlebig/<project>-handhold-<run-id>`, where `<run-id>` is the ONE run-id format,
      `r-` plus six zero-padded digits (`r-000001`), which 28.1 R3's `^[a-z0-9-]{8,64}$` accepts
@@ -109,7 +110,7 @@ hazards shape it:
    - **Every memory read is filtered to the as-of (r1 #s1).** The runner exports
      `RMX_HANDHOLD_AS_OF` = the task's as-of into the `claude` process in EVERY cell, so 28.1
      R4's filter applies to the global store and to every pull path, in C too.
-   - **Cell (r1 #s2).** For `A+dedupe` and `B` the runner exports `RMX_HANDHOLD_CELL` and
+   - **Cell (r1 #s2).** For `A+dedupe`, `A+full` and `B` the runner exports `RMX_HANDHOLD_CELL` and
      `RMX_HANDHOLD_RUN`. `C` gets the generated bare profile from R0 (c), plus
      `RMX_HANDHOLD_RUN` and `RMX_HANDHOLD_AS_OF`. No period record is used.
    - **Validated before launch, checked after (r3 m1).** Before it launches `claude`, the
@@ -140,8 +141,9 @@ hazards shape it:
      The hub, launchd and registry state are verified unchanged against the pre-run reading. A
      teardown mismatch stops the series loudly.
 4. **R3 Order and blinding of the series.** The run order is shuffled by a frozen seed, so time
-   trends spread across cells. Runs execute any time after 28.4's freeze. They are not
-   time-boxed by the session leg's 3-day period (L79) and run to completion. The scorer never
+   trends spread across cells. Runs execute any time after 28.5 starts the series. The series
+   is not time-boxed (L83): it ends when the frozen n of paired tasks per cell is reached, or
+   when the user pauses or stops it. The scorer never
    sees the cell (28.3 R6). {#r3}
 5. **R4 Isolation.** No experiment agent writes outside its clone and its clone memory dir, and
    no live store is opened. Every `find` is scoped to the clone. The runner refuses a clone path
@@ -163,7 +165,7 @@ R0's probe and AC-6 use the real `claude`. Every AC names its mutation. {#accept
    after, and straddling the as-of (created before, updated after). Only the "before" files are
    copied. The straddling one is excluded and counted `updated_after_start`. **Mutation:** a
    filter on `created` only, which copies the straddling file. {#ac-1}
-2. **AC-2 The cell reaches the process.** For each of `A+dedupe` and `B`, the stub sees
+2. **AC-2 The cell reaches the process.** For each of `A+dedupe`, `A+full` and `B`, the stub sees
    `RMX_HANDHOLD_CELL`, `RMX_HANDHOLD_RUN` and `RMX_HANDHOLD_AS_OF` in its environment, with the
    values set. For `C` it sees the run id and as-of, and no cell. A stubbed SessionStart row
    whose cell differs from the one set aborts the run. **Mutations:** the cell not exported, so
@@ -180,8 +182,8 @@ R0's probe and AC-6 use the real `claude`. Every AC names its mutation. {#accept
    outside `/Volumes/littlebig/`, when the volume is unmounted, or when the clone still has a
    remote or a ref other than the start branch. **Mutation:** the path check removed; a clone is
    created under the tmp root and AC-5 fails. {#ac-5}
-6. **AC-6 One real run per cell and trigger** on a calibration task, with the real `claude`: six
-   runs whose transcripts and SessionStart sources match their trigger, whose rows match their
+6. **AC-6 One real run per cell and trigger** on a calibration task, with the real `claude`: eight
+   runs (four cells × two triggers, L83) whose transcripts and SessionStart sources match their trigger, whose rows match their
    cell (C: no rmx hook row), and whose teardowns are clean. It is recorded in the implementation
    summary and is 28.4's calibration input. **Mutation:** the `clear` trigger driven without
    `/clear`; the SessionStart source reads `startup` and AC-6 fails. {#ac-6}
@@ -223,7 +225,7 @@ R0's probe and AC-6 use the real `claude`. Every AC names its mutation. {#accept
 
 ## Definition of done {#done}
 
-- R0 recorded (a)-(h); AC-1 to AC-5 and AC-7 to AC-9 RED then GREEN; AC-6's six runs recorded with
+- R0 recorded (a)-(h); AC-1 to AC-5 and AC-7 to AC-9 RED then GREEN; AC-6's eight runs recorded with
   clean teardowns.
 - Implementation summary at `workflow/implementation_summaries/task-28.2-paired-reentry-runner.md`.
 - Committed on branch `task-28.2-paired-reentry-runner`, merged `--no-ff` to `master`.
@@ -285,3 +287,16 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 | The 3-calendar-day session period (L79, Q11 answered a), the orchestrator-run start under L78 (L80) and the end committed with the start (L82) are approved by the lead on the user's pattern (d9co) after the L80 confirm-lite MEH-only (0B/0S/2M), folded at `49a603c` per L82 with no further round | `workflow/bullshit/2026-11-14-0200-spec-t3c-r5-l80-d42c72b.md` (with the L79 confirm-lite `2026-11-14-0150-spec-t3c-r4-l79-7758d2a.md`, over `spec-wave-t3c` `be03148..d42c72b`) | status unchanged; Q14 (where the verdicts come from) may amend this plan again |
 
 rel: derives-from -> [[bsd-spec-t3c-r5-l80-d42c72b]]
+
+## Revision L83 (2026-11-14, the user, Q14: "drop the live part"; lead ruling L83) {#rev-l83}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite. The paired series is now the experiment's
+only leg.
+
+| change | where |
+|---|---|
+| the cells are all four (`A+dedupe`, `A+full`, `B`, `C`); P-6 is superseded, because 10.2's nested reading comes from this series | title, [[#r2]], [[#ac-2]] |
+| the series is not time-boxed: it ends when the frozen n per cell is reached or the user pauses or stops it; the 3-day period wording is gone | [[#r3]] |
+| AC-6's real calibration runs are eight (four cells × two triggers) | [[#ac-6]], [[#done]] |

@@ -12,8 +12,10 @@ metadata:
 # Exploration: an outcome experiment for refmatrix's handholds {#root}
 
 **Date:** 2026-11-13
-**Status:** Planned as [[plan-28-handhold-outcome-experiment]] (drafting, 2026-11-13, spec wave
-G17), which supersedes this document's design where they differ. Runs after the m1 confirm (L36)
+**Status:** Planned as [[plan-28-handhold-outcome-experiment]] (approved 2026-11-14; spec wave
+G17), which supersedes this document's design where they differ. **Since L83 (the user,
+2026-11-14, Q14: "drop the live part"), plan-28 has ONE leg, the paired re-entry series; the
+session-level randomisation below is history.** Runs after the m1 confirm (L36)
 and 21.5 rev 4's re-measure (D-Q4, L35); nothing is built yet.
 **Motivation:** The user, 2026-11-13, after the 21.5 measurements: asked: does phase 1 debunk the premise?. The answer was no: the
 measurements refute one delivery mechanism (ambient push injection) and one measurement method
@@ -78,22 +80,24 @@ off-switch for push already exists in the hook layer's budget gates~~ (struck 20
 contra-b CB-15: no such switch exists, and 25.1 R8 makes the pack "never empty"; arm B's switch is
 specified on 10.2's arm table by [[task-28.1-session-arms-and-push-switch]]). Arm C needs a
 hook-less settings profile, never hand-edited (generated, per [[constitution#no-workarounds]] and
-the hook rules); it runs in the paired leg only ([[task-28.2-paired-reentry-runner]]).
+the hook rules); it runs in paired runs ([[task-28.2-paired-reentry-runner]]), where, since L83,
+every cell runs.
 {#arms-note}
 
 **10.2's A/B is nested (L20, 2026-11-13).** Arm A splits into `A+dedupe` / `A+full` (10.2 R7). B
-has no dedupe factor, and C is never drawn. 10.2 is built before the experiment starts, and its
-A/B is this experiment's run, not a serial step ([[plan-28-handhold-outcome-experiment#arms]]).
-The session leg's period is 3 calendar days (L79, the user 2026-11-14), not ≥ 14 days.
+has no dedupe factor. 10.2 is built before the experiment starts, and its A/B is read from this
+experiment, not run as a serial step ([[plan-28-handhold-outcome-experiment#arms]]). Since L83 it
+is read from the paired series (`A+dedupe` vs `A+full`, paired by task). L79's 3-day session
+period was removed with the live leg.
 {#arms-nested}
 
 ### Units and assignment {#assignment}
 
-- **Session-level randomisation for a fixed period of 3 calendar days** (L79, 2026-11-14; user
-  decision, Q4: randomised, not opt-in)
-  across real work sessions in refmatrix and cliquedb (Q5), arm drawn at SessionStart and
-  recorded in the session's telemetry, so the comparison is within the same projects and days.
-- **Paired re-entry tasks** as a second, controlled leg: a task that a prior session left
+- ~~**Session-level randomisation**~~ of real work sessions **is dropped (L83; the user,
+  2026-11-14, Q14: "drop the live part")**. The measured session rates (refmatrix ~0.5/day,
+  cliquedb ~0.1/day) left every live reading underpowered. The user's own sessions are never
+  assigned to an arm. (History: Q4 chose randomised over opt-in; L79 set a 3-day period.)
+- **Paired re-entry tasks, the ONLY leg since L83:** a task that a prior session left
   mid-flight (a real handoff), resumed after `/clear` AND in a new session (Q3 folded fully, L20)
   under each arm by fresh agents on isolated clones. Same task, same starting commit, different
   arm and trigger. This isolates continuity, which session-level randomisation dilutes.
@@ -115,7 +119,7 @@ Each is a proxy for the backtrack-to-rebuild tax, read from transcripts and tele
    hook output budget consumed (plan-25's byte budget).
 
 Primary outcome: (1) on the paired re-entry leg, both triggers pooled (Q3, L20). Secondary:
-(2)-(4) on the session leg; (5) is a baseline, not a gate
+(2)-(4), read from the paired runs since L83; (5) is a baseline, not a gate
 ([[feedback_measurable_benefit_is_not_the_reason]]). "Used" counts only R12 explicit uses plus
 `cited_in_answer` (L18, L27).
 
