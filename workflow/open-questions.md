@@ -26,7 +26,7 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session 37b7498f (2026-11-13) {#session-37b7498f}
 
-Next id: **Q12**.
+Next id: **Q14**.
 
 ### Open {#open-37b7498f}
 
@@ -36,6 +36,7 @@ Next id: **Q12**.
 ### Answered {#answered-37b7498f}
 
 | id | asked | question | answer | acted |
+| Q13 | 2026-11-14 | bug-225 (handoff trunk ignores origin/HEAD): in 0.83.0 or a later release? | "225 is in 0.83" (user, 2026-11-14): b | clone `/Volumes/littlebig/refmatrix-bug225`, branch `task-bug225-handoff-trunk-from-origin-head`; RED → GREEN → ch-bsd, then merged with the 0.83.0 set |
 | Q10 | 2026-11-14 | Fleet-repo discovery for the 0.83.0 hook re-install after "don't scan ~/github its too big and includes the other directories listed" + "and drop enduris as well": is the candidate list = hub/launchd roots + the repos named in the fleet memory (incl. bdep/atlftpd, bdep/thiquet) + `~/claude_tools` children + this repo, with no walk of `~/github` or `~/enduris`? | the user reviewed the listed projects (2026-11-14): "drop the enduris/thiquet daemon", "and drop bdep/prep_prolific" | L77's resolved list is the 8 projects; `~/enduris/thiquet`'s LaunchAgent uninstalled (plist backed up), store kept; prep_prolific excluded |
 | Q11 | 2026-11-14 | "the plan 28 arms should only be 3 days": the arms run at the same time (each session drawn into one), so is the whole session leg 3 days, with any under-filled cell reported as underpowered? | "3 real days will be sufficent" (user, 2026-11-14): a, 3 calendar days total | L79 updated: 3 calendar days from the start, concurrent arms, a pause does not extend it; underpowered cells get no verdict; spec-t3c amends plan-28 |
 |---|---|---|---|---|
