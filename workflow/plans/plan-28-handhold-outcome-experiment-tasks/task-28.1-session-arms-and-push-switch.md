@@ -48,7 +48,7 @@ This task also settles three things the r1 review found:
 | piece | owner |
 |---|---|
 | `src/refmatrix/arms.py` created, with: the period record shape (`id`, `salt`, `start`, `end`, `scope` as project slugs, `cells` with weights); the ONE cell enum (`A+dedupe`, `A+full`, `B`, `C`; `C` at weight 0, never drawn); `draw(session_id, *, root, now=None)`; the default `A+dedupe` outside every active period; the SessionStart `session_arm` row; the dedupe factor read from the cell | 10.2 R7 (built before the experiment, L20; it ships with no active period) |
-| the plan-28 session-leg record's values (salt, weights per P-1, scope = refmatrix + cliquedb, start, end) | 28.4 freezes them; 28.5 commits them at the user's go |
+| the plan-28 session-leg record's values (salt, weights per P-1, scope = refmatrix + cliquedb, start, end) | 28.4 freezes them; 28.5 commits them when plan-28's Depends-on holds, after telling the user (L78) |
 | the session cell fixed at SessionStart: the single draw at the SessionStart hook's time, `stm/<session>.arm.json` with `{cell, period, t}` (temp-file + replace), and `arms.session_cell` (a missing file gives `A+dedupe`; an unreadable one gives `A+dedupe` plus one stderr line); the verb and scan-prompt read only `session_cell` | 10.2 R7 creates it (spec-t3b `151c81e`); 28.1 R2 extends the file's fields |
 | the paired-run override (`arms.paired_override`: cell, run id, as-of) and the as-of memory filter | this task (R3, R4) |
 | `arms.push_on` and arm B's push-off in the two per-prompt hooks | this task (R5) |
@@ -330,3 +330,12 @@ rel: derives-from -> [[bsd-spec-t3c-r3-c5d1b79]]
 rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
 
 **Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. This task is `pending`, which means approved to build in plan-28's order. {#approval-row}
+
+## Revision L80 (2026-11-14, `bsd-spec-t3c` L79 confirm-lite 0B/1S/4M; lead ruling L80) {#rev-l80}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | disposition | where |
+|---|---|---|
+| S1 the start is delegated (L78) | the ownership row says 28.5 commits the period's values when Depends-on holds, after telling the user | [[#ownership]] |
+

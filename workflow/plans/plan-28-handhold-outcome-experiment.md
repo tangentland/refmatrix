@@ -13,7 +13,7 @@ metadata:
 # Plan 28: the handhold outcome experiment {#root}
 
 **Date:** 2026-11-13
-**Status:** Approved (2026-11-14, [[#approval]]); spec wave G17. Its tasks are `pending`, which means approved to build. **The START (28.5) remains user-gated.** Written from
+**Status:** Approved (2026-11-14, [[#approval]]); spec wave G17. Its tasks are `pending`, which means approved to build. **The START (28.5): the orchestrator starts the experiment when plan-28's Depends-on holds and tells the user first (L78).** Every pause, the end and G18 stay user-gated. Written from
 [[exploration-handhold-outcome-experiment]] and the plan review's decisions. The lead set
 `approved` on the d9co route after a clean (MEH-only) ch-bsd round
 ([[plan-review-2026-11-13#goal-horizon]]).
@@ -69,8 +69,8 @@ delivered item, is one weak proxy for it, and the R12 pilot found that proxy mea
 | L20 (lead, CB-12, CB-15) | Q3 folded fully: a new-session trigger on the paired leg. Arm B's push-off switch is specified by extending `arms.SESSION_ARMS`, and the "switch already exists" premise is struck. 10.2's A/B is nested: arm A splits into `A+dedupe` / `A+full`, so 10.2 is built before the start and its A/B IS this run (L20 said ≥ 14 days; 3 calendar days since L79) | [[#arms]], [[task-28.1-session-arms-and-push-switch]] |
 | L18, L27 (lead, CB-9) | "used" counts only R12 explicit uses + `cited_in_answer`, never 21.5's unbuilt legs | [[#outcomes]], [[task-28.3-outcome-scorer]] |
 | L36 (lead) | the m1 r2-lite confirm runs before this plan draws its bands | [[task-28.4-preregistration-freeze]] |
-| L45 (lead) | the start is user-gated: it randomises live sessions in refmatrix and cliquedb (for 3 calendar days since L79; L45's text said ≥ 14 days) | [[task-28.5-run-and-report]] |
-| L79 (the user, 2026-11-14: "the plan 28 arms should only be 3 days"; Q11 assumed) | the session leg runs 3 calendar days, concurrently, as the whole period; the n-floor no longer extends the period, and a cell or outcome below its pre-registered minimum n reads "underpowered, no verdict"; the paired leg is unchanged | [[#legs]], [[#bands]], [[#ordering]], [[#rev-l79]] |
+| L45 (lead), as delegated by L78 (the user, 2026-11-14) | L45 made the start user-gated; under L78, the orchestrator starts the experiment when plan-28's Depends-on holds and tells the user first (L78). It randomises live sessions in refmatrix and cliquedb for 3 calendar days (L79; L45's text said ≥ 14 days). Every pause, the end and G18 stay user-gated | [[task-28.5-run-and-report]] |
+| L79 (the user, 2026-11-14: "the plan 28 arms should only be 3 days"; Q11 answered (a), "3 real days will be sufficent") | the session leg runs 3 calendar days, concurrently, as the whole period; the n-floor no longer extends the period, and a cell or outcome below its pre-registered minimum n reads "underpowered, no verdict"; the paired leg is unchanged | [[#legs]], [[#bands]], [[#ordering]], [[#rev-l79]] |
 | G18 | the charter decision on the result is the user's; the goal stops there | [[task-28.5-run-and-report]] |
 {#decided-table}
 
@@ -192,7 +192,8 @@ beside this plan's result. They are recorded; nothing here reads them as a band.
 2. 28.4 freezes the pre-registration after: bug-216 is live; 21.5 phase M has reported; the m1
    r2-lite confirm (G32) is CLEAN or MEH-only; 28.2's probe and calibration are recorded; and
    a ch-bsd round over the pre-registration is CLEAN or MEH-only.
-3. **28.5 starts only on the user's go** (L45), with the period's salt and dates deployed.
+3. **28.5 starts when plan-28's Depends-on holds** (L78, L80): the orchestrator tells the user
+   first, then deploys the period's salt and dates. Every pause, the end and G18 stay user-gated.
 4. **During the period:** items 8-11 build and deploy. A deploy that touches `scan.py`,
    `recall_pack.py`, `hook_budget.py`, context rendering, the hooks generator or `arms.py`
    lands only while no record is active. The record's own start, pause and end commits, which
@@ -218,7 +219,7 @@ beside this plan's result. They are recorded; nothing here reads them as a band.
 | [[task-28.2-paired-reentry-runner]] | R0 probe; the paired task set; the runner (clones cut at the start sha, stores, memory snapshots, env pinning, triggers, archive, teardown, leak control); arm C's generated bare profile | `eval/production/handhold/` | 28.1 |
 | [[task-28.3-outcome-scorer]] | the ONE scorer for outcomes 1-7, blinding, blind labeller agents, `cited_in_answer`, and the ONE reading module | `eval/production/handhold/` | 28.1 |
 | [[task-28.4-preregistration-freeze]] | the calibration, the MDE, every P-item value, and the frozen pre-registration with its sha | measurement file | 28.1-28.3, G32, 21.5 phase M, bug-216 live |
-| [[task-28.5-run-and-report]] | the user-gated start, the period, the paired runs, the readings, the report, the cleanup | measurement file | 28.4, the user's go |
+| [[task-28.5-run-and-report]] | the orchestrator's start (L78; the user is told first), the period, the paired runs, the readings, the report, the cleanup | measurement file | 28.4, the user's go |
 
 ## Acceptance for the plan {#acceptance}
 
@@ -236,7 +237,7 @@ beside this plan's result. They are recorded; nothing here reads them as a band.
 
 - **10.2 R7 (settled with spec-t3b, 2026-11-13).** 10.2 creates `arms.py`: the full cell table
   (`C` at weight 0), the store-scoped `draw(session_id, *, root, now=None)`, and the default
-  `A+dedupe` outside a period. Plan-28 owns the period's values, the user-gated start, arm B's
+  `A+dedupe` outside a period. Plan-28 owns the period's values, the start (the orchestrator's under L78), arm B's
   push-off, the scorer and the deletion
   ([[task-28.1-session-arms-and-push-switch#ownership]]). 10.2's outcome follows L27. 10.2 R7
   also builds the session cell fixed at SessionStart (one draw, `stm/<session>.arm.json`,
@@ -355,9 +356,9 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 rel: derives-from -> [[bsd-spec-t3c-r3-c5d1b79]]
 rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
 
-**Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. Plan-28 is `approved`, and tasks 28.1-28.5 are `pending`: approved to build in queue order. The experiment's START stays user-gated (L45, 28.5 R1), and so do the other user steps the tasks name. {#approval-row}
+**Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. Plan-28 is `approved`, and tasks 28.1-28.5 are `pending`: approved to build in queue order. The experiment's START: the orchestrator starts the experiment when plan-28's Depends-on holds and tells the user first (L78) (28.5 R1, L80). Every pause, the end, G18 and the other user steps the tasks name stay user-gated. {#approval-row}
 
-## Revision L79 (2026-11-14, the user: "the plan 28 arms should only be 3 days"; Q11 assumed) {#rev-l79}
+## Revision L79 (2026-11-14, the user: "the plan 28 arms should only be 3 days"; Q11 answered (a)) {#rev-l79}
 
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
@@ -379,3 +380,13 @@ The status stays `approved` pending a confirm-lite ch-bsd round. Ruling L79 (dev
 
 
 **Refinement (dev master `8d88d29`; the user, the same day: "3 real days will be sufficent", Q11 a):** the period is 3 CALENDAR days from its start, with the arms concurrent. A pause does NOT extend it: the period ends 3 calendar days (72 hours) after the start, whatever was paused, and paused time is not made up. The "active days" wording is replaced. The rest of L79 is unchanged. {#rev-l79-refined}
+
+## Revision L80 (2026-11-14, `bsd-spec-t3c` L79 confirm-lite 0B/1S/4M; lead ruling L80) {#rev-l80}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | disposition | where |
+|---|---|---|
+| S1 L78 delegated the start, but the specs still required the user's go | the status line, the L45 row, #ordering item 3, the task table, #cross-plan and #approval-row now read "the orchestrator starts the experiment when plan-28's Depends-on holds and tells the user first (L78)"; pause, end and G18 stay user-gated | header, [[#decided]], [[#ordering]], [[#approval]] |
+| m3 the L79 row says "Q11 assumed" | "Q11 answered (a)" | [[#decided]], [[#rev-l79]] |
+

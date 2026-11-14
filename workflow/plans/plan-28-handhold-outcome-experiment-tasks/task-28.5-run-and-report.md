@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: task-28.5-run-and-report
-title: "Task 28.5: the user-gated run: start the period on the user's go, run both legs, read every band as frozen, report, and stop the goal for the user's charter decision"
+title: "Task 28.5: the run: the orchestrator starts the period when plan-28's Depends-on holds and tells the user first (L78), runs both legs, read every band as frozen, report, and stop the goal for the user's charter decision"
 tags: [task, plan-28, experiment, run, report, charter, user-gated]
 metadata:
   node_type: task
@@ -15,8 +15,8 @@ metadata:
 
 > Plan: [[plan-28-handhold-outcome-experiment]]
 > Status: Pending: approved to build (2026-11-14, [[#approval]]; spec wave 2026-11-13, G17).
-> Depends on: [[task-28.4-preregistration-freeze]] frozen and reviewed. **User-gated:** the
-> start (L45). **Goal stop:** the charter decision (G18).
+> Depends on: [[task-28.4-preregistration-freeze]] frozen and reviewed. **The start:** the orchestrator starts the experiment when plan-28's Depends-on holds and tells the user first (L78).
+> **User-gated:** every pause and the end. **Goal stop:** the charter decision (G18).
 
 rel: part-of -> [[plan-28-handhold-outcome-experiment]]
 rel: depends-on -> [[task-28.4-preregistration-freeze]]
@@ -28,14 +28,25 @@ rel: reinforces -> [[feedback_errors_fail_loudly_on_the_console]]
 ## Why {#why}
 
 The experiment randomises the user's own work sessions in two projects for 3 calendar days (L79).
-That is a user step by the plan review's rule (L45), and its result is an input to a user
-decision (G18), not a goal step. {#why-body}
+L45 made its start a user step. L78 (the user, 2026-11-14: "the start of the plan-28 experiment
+can proceed when you feel its time") delegated it to the orchestrator, who tells the user first. Its
+result is an input to a user decision (G18), not a goal step. {#why-body}
 
 ## Requirements {#requirements}
 
-1. **R1 The go.** The lead asks the user to start, citing the frozen pre-registration's sha,
-   the cells, the stores, the minimum period, and what cell `B` feels like (no per-prompt push).
-   The user's answer is recorded verbatim with its date. Without it, nothing below runs. {#r1}
+1. **R1 The start (L78, L80).** The orchestrator starts the experiment when plan-28's
+   Depends-on holds: bug-216 live; 10.2 built; 21.5 phase M reported; the m1 r2-lite confirm
+   CLEAN or MEH-only (G32); and 28.4's file frozen and reviewed. For each precondition it
+   records the evidence (a sha, a file, a verdict). It never changes a precondition to start
+   sooner. It **tells the user first**, citing:
+   - the frozen pre-registration's sha;
+   - the cells and the stores;
+   - the period (3 calendar days);
+   - what cell `B` feels like (no per-prompt push);
+   - the backups and the archive;
+   - the stop condition (the user may stop at any time).
+
+   The tell is recorded with its date. Every pause, the end and G18 stay user-gated. {#r1}
 2. **R2 Start.** Before the commit, three checks are recorded:
    - Claude Code's transcript cleanup period is read, and the start needs it to be at least 7
      days, longer than R3's sweep interval (r1 #s7);
@@ -76,7 +87,10 @@ decision (G18), not a goal step. {#why-body}
    commit sets `end` (if it was not already set) and deploys.
    After that, `arms.draw` returns the default for every session (checked on a new session in
    each store). {#r4}
-5. **R5 Final sweep, then score and read.** At the end, one last sweep runs (R3), then 28.3's
+5. **R5 Final sweep, then score and read (L80 m1).** Scoring waits for BOTH legs: the session
+   period has ended (R4), AND the frozen paired series has completed or was stopped, with the
+   reason recorded. The paired series may outrun the 72 hours. Then one last sweep runs (R3), and
+   28.3's
    scorer runs over the archive and `readings.py` (28.3 R9) reads every band. Readings are
    stratified by record id. Every outcome is computed, every band is read as frozen, and every deviation from the
    pre-registration is listed. 10.2 R7's nested bands are read and handed to 10.2's
@@ -94,8 +108,8 @@ decision (G18), not a goal step. {#why-body}
 
 ## Acceptance criteria {#acceptance}
 
-1. **AC-1** The user's go is recorded verbatim with its date before the start commit, as the
-   git order shows. {#ac-1}
+1. **AC-1** The tell to the user (R1) and each precondition's evidence are recorded, with
+   their dates, BEFORE the start commit, as the git order shows (L80). {#ac-1}
 2. **AC-2** The period ended after 3 calendar days. Every reading whose cell or outcome is
    below its frozen minimum n says "underpowered, no verdict", and the report states the n
    reached per cell (L79). {#ac-2}
@@ -143,13 +157,26 @@ rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
 
 **Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. This task is `pending`, which means approved to build in plan-28's order. Its user steps stay user-gated: the go, every pause, and the end. {#approval-row}
 
-## Revision L79 (2026-11-14, the user: "the plan 28 arms should only be 3 days"; Q11 assumed) {#rev-l79}
+## Revision L79 (2026-11-14, the user: "the plan 28 arms should only be 3 days"; Q11 answered (a)) {#rev-l79}
 
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
-The status stays `pending` pending a confirm-lite ch-bsd round. | change | where |
+The status stays `pending` pending a confirm-lite ch-bsd round.
+
+| change | where |
 |---|---|
 | 3 calendar days; a daily count; the end after 3 calendar days, never extended; AC-2 reads "underpowered, no verdict" below the minimum n | [[#why]], [[#r3]], [[#r4]], [[#ac-2]] |
 
 
 **Refinement (dev master `8d88d29`; the user, the same day: "3 real days will be sufficent", Q11 a):** the period is 3 CALENDAR days from its start, with the arms concurrent. A pause does NOT extend it: the period ends 3 calendar days (72 hours) after the start, whatever was paused, and paused time is not made up. The "active days" wording is replaced. The rest of L79 is unchanged. {#rev-l79-refined}
+
+## Revision L80 (2026-11-14, `bsd-spec-t3c` L79 confirm-lite 0B/1S/4M; lead ruling L80) {#rev-l80}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | disposition | where |
+|---|---|---|
+| S1 the start still required the user's go | title, Depends-on, #why, R1 and AC-1: the orchestrator starts the experiment when plan-28's Depends-on holds and tells the user first (L78); AC-1 checks that the tell and the evidence precede the start commit; pause, end and G18 stay user-gated | header, [[#why]], [[#r1]], [[#ac-1]] |
+| m1 the report could score before the paired series ends | R5 waits for the session period's end AND the paired series' completion (or recorded stop) | [[#r5]] |
+| m3 the #rev-l79 table did not render; "Q11 assumed" | blank line added; "Q11 answered (a)" | [[#rev-l79]] |
+

@@ -227,8 +227,13 @@ by the real hooks in 23.0's sandbox. Every AC names its mutation. {#acceptance-l
 10. **AC-10 Underpowered, no verdict (L79).** A synthetic scored set where `B` has 12 sessions
     in a store against a frozen minimum of 40 makes the push reading and 10.2's nested reading
     both return `underpowered`, with the n reached per cell, never `shrink`, keep or fail. At
-    40 sessions the band is read. **Mutation:** the minimum check removed; the 12-session set
-    returns a band and AC-10 fails. {#ac-10}
+    40 sessions the band is read. **Primary-reading case (L80 m2).** The primary's minimum n is
+    28.4 R1's n per cell per trigger, counted AFTER `leak_suspect` and `arm_error` exclusions. A
+    synthetic paired set where `C` has 11 runs, 2 of them `leak_suspect`, against a frozen n of
+    10 keeps 9 and returns `underpowered` for the primary, with the n reached per cell and
+    trigger. At 10 kept runs the band is read. **Mutations:** the minimum check removed, so the
+    12-session set returns a band; the primary's n counted before exclusions, so the 11-run set
+    returns a band. Either fails AC-10. {#ac-10}
 
 ## Files {#files}
 
@@ -278,13 +283,25 @@ rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
 
 **Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. This task is `pending`, which means approved to build in plan-28's order. {#approval-row}
 
-## Revision L79 (2026-11-14, the user: "the plan 28 arms should only be 3 days"; Q11 assumed) {#rev-l79}
+## Revision L79 (2026-11-14, the user: "the plan 28 arms should only be 3 days"; Q11 answered (a)) {#rev-l79}
 
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
-The status stays `pending` pending a confirm-lite ch-bsd round. | change | where |
+The status stays `pending` pending a confirm-lite ch-bsd round.
+
+| change | where |
 |---|---|
 | every reading checks the frozen minimum n first and returns "underpowered, no verdict" below it; AC-10 | [[#r9]], [[#ac-10]] |
 
 
 **Refinement (dev master `8d88d29`; the user, the same day: "3 real days will be sufficent", Q11 a):** the period is 3 CALENDAR days from its start, with the arms concurrent. A pause does NOT extend it: the period ends 3 calendar days (72 hours) after the start, whatever was paused, and paused time is not made up. The "active days" wording is replaced. The rest of L79 is unchanged. {#rev-l79-refined}
+
+## Revision L80 (2026-11-14, `bsd-spec-t3c` L79 confirm-lite 0B/1S/4M; lead ruling L80) {#rev-l80}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | disposition | where |
+|---|---|---|
+| m2 AC-10 had no primary-reading case | the primary's minimum n is 28.4 R1's n per cell per trigger after exclusions, with a case and a mutation | [[#ac-10]] |
+| m3 the #rev-l79 table did not render; "Q11 assumed" | blank line added; "Q11 answered (a)" | [[#rev-l79]] |
+

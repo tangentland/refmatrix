@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: task-28.4-preregistration-freeze
-title: "Task 28.4: calibrate the paired leg, settle every P-item, and freeze the handhold experiment's pre-registration (outcomes, bands, sizes, period) with its sha, before the user-gated start"
+title: "Task 28.4: calibrate the paired leg, settle every P-item, and freeze the handhold experiment's pre-registration (outcomes, bands, sizes, period) with its sha, before the experiment starts (the orchestrator's start, L78)"
 tags: [task, plan-28, experiment, preregistration, calibration, bands]
 metadata:
   node_type: task
@@ -72,8 +72,8 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
      outcomes (3)-(4); the gate's 50 pairs; the 20% second-rater share;
    - the leak rule (28.2 R5): `leak_suspect` runs are excluded, and a per-cell exclusion count
      that differs by more than one run between `B` and `C` voids the primary reading;
-   - the period: the salt (generated at freeze, committed), the start (set by 28.5 at the
-     user's go), and the end rule. **The end is 3 calendar days (72 hours) after the start
+   - the period: the salt (generated at freeze, committed), the start (set by 28.5 when
+     plan-28's Depends-on holds; the orchestrator tells the user first, L78), and the end rule. **The end is 3 calendar days (72 hours) after the start
      (L79, refined), never extended.** A pause does not extend it, and paused time is not made
      up;
    - **the minimum n of every cell and outcome (L79)**, for the session leg, each frozen here:
@@ -110,7 +110,7 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
    reason, committed before any outcome is computed. A change after an outcome is computed
    voids that outcome's reading. {#r3}
 4. **R4 Review.** A ch-bsd round over the file comes back CLEAN or MEH-only before the user is
-   asked to start. {#r4}
+   told the experiment is starting (L78). {#r4}
 
 ## Acceptance criteria {#acceptance}
 
@@ -163,14 +163,26 @@ rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
 
 **Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. This task is `pending`, which means approved to build in plan-28's order. {#approval-row}
 
-## Revision L79 (2026-11-14, the user: "the plan 28 arms should only be 3 days"; Q11 assumed) {#rev-l79}
+## Revision L79 (2026-11-14, the user: "the plan 28 arms should only be 3 days"; Q11 answered (a)) {#rev-l79}
 
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
-The status stays `pending` pending a confirm-lite ch-bsd round. | change | where |
+The status stays `pending` pending a confirm-lite ch-bsd round.
+
+| change | where |
 |---|---|
 | the end rule: 3 calendar days, never extended; the 14-day / 40-session / 42-day rule removed | [[#r2]] |
 | a minimum n per cell and outcome (10.2 R7's 40 sessions included), below which a reading is "underpowered, no verdict" | [[#r2]] |
 
 
 **Refinement (dev master `8d88d29`; the user, the same day: "3 real days will be sufficent", Q11 a):** the period is 3 CALENDAR days from its start, with the arms concurrent. A pause does NOT extend it: the period ends 3 calendar days (72 hours) after the start, whatever was paused, and paused time is not made up. The "active days" wording is replaced. The rest of L79 is unchanged. {#rev-l79-refined}
+
+## Revision L80 (2026-11-14, `bsd-spec-t3c` L79 confirm-lite 0B/1S/4M; lead ruling L80) {#rev-l80}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | disposition | where |
+|---|---|---|
+| S1 the start is delegated (L78) | the title, R2's period line and R4 now say the orchestrator's start, with the user told first | header, [[#r2]], [[#r4]] |
+| m3 the #rev-l79 table did not render; "Q11 assumed" | blank line added; "Q11 answered (a)" | [[#rev-l79]] |
+
