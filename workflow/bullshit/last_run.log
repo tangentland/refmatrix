@@ -85,3 +85,4 @@
 2026-11-13T16:02:32-0800 commit=808ef00 verdict=MEH-only findings=1 (0B/0S/1M) report=2026-11-14-0145-spec-t3a-25.1b-r18-r3-808ef00.md
 2026-11-13T16:18:25-0800 commit=7758d2a verdict=DIRTY findings=5 (0B/1S/4M) report=2026-11-14-0150-spec-t3c-r4-l79-7758d2a.md
 2026-11-13T16:19:04-0800 commit=ca4b9a7 verdict=CLEAN findings=0 report=2026-11-14-0155-spec-t3b-l79-ca4b9a7.md
+2026-11-13T16:19:08-0800 commit=df092ac verdict=DIRTY findings=7 (1B/2S/4M) report=2026-11-13-1619-bug216-r1-df092ac.md
