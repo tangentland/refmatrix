@@ -75,7 +75,10 @@ memory `project_0830_release_ready`):
 
 ## Open {#open}
 
-- **Questions:** none open (next id Q19 in `workflow/open-questions.md`).
+- **Questions:** none open (next id Q22 in `workflow/open-questions.md`; Q19-Q21 answered: plan-29
+  first, mypy, ~3,000-line modules).
+- **plan-29 (code quality, L104) runs first after the deploy + spec merges:** write its task
+  specs and ch-bsd them, then 29.1 → 29.4 → 29.5 → 29.2 ∥ 29.3; queue item 2 waits for it.
 - **After the deploy:** merge the 7 frozen spec branches (T0 `fa1227d`, T2 `0fd8a2f`, T3a
   `8e8e307`, T3b `5559d20`, T3c `01c1f63`, T4 `b409d98`, T56 `fa1af7d`; T56 before T3a, expect an
   ADR-0004 conflict) → G27 bookkeeping and the POP rewrite → the goal text for the user.

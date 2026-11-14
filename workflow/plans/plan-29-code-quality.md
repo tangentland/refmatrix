@@ -18,8 +18,8 @@ task under `workflow/plans/plan-29-code-quality-tasks/`.
 plan. That assessment drew on the 0.83.0 review rounds (bug-212, bug-216/227, bug-225, bug-230,
 25.1), a reading of `query.py` prompted by an external model's review (bug-234..bug-238), and the
 measurements in [[#baseline]].
-**Sequencing:** after the 0.83.0 deploy and the seven frozen spec-branch merges. Where it sits
-against plan-27, plan-28 and the queue is the user's call ([[#decisions]]).
+**Sequencing:** after the 0.83.0 deploy and the seven frozen spec-branch merges. The user placed it
+first, before queue item 2 ([[#decisions]] D2).
 
 rel: depends-on -> [[constitution]]
 rel: implements -> [[tdd-governance]]
@@ -131,24 +131,25 @@ announced first, so the move does not set off a merge-conflict storm. {#t5-accep
 
 ## Order {#order}
 
-29.1 first (docs only, informs the rest) → 29.2 and 29.4 in parallel → 29.3 (types make its
-helpers safer) → 29.5 last and alone. Each task runs RED → GREEN → ch-bsd as usual. {#order-list}
+29.1 (docs only, informs the rest) → 29.4 (suite health, so every later run is faster) → 29.5
+(the split, alone, while nothing else is in flight) → 29.2 ∥ 29.3 (types and helpers land in the
+final modules). Each task runs RED → GREEN → ch-bsd as usual ([[#decisions]] D2). {#order-list}
 
 ## Non-goals {#non-goals}
 
 No behaviour change in 29.5; no formatter gate; no rewrite of a working subsystem; no new feature
 rides on these tasks. {#non-goals-list}
 
-## Decisions for the user {#decisions}
+## Decisions (user, 2026-11-14) {#decisions}
 
-1. **D1, the type checker:** mypy (recommended: mature, per-module strictness and baselines) or
-   pyright (faster, stricter inference).
-2. **D2, placement (open as Q19 in [[open-questions]]):** all of it first, right after the 0.83.0
-   deploy and the spec-branch merges and before queue item 2 (recommended, revised 2026-11-14 on
-   the user's concern that waiting makes the follow-on work slower: the split is cheapest while
-   nothing is in flight, and every later item gains from the faster suite and the gates); split
-   across the queue; or after it. If all first, the order becomes 29.1 → 29.4 → 29.5 → 29.2 ∥
-   29.3, so the split's equal-by-E-line runs use the healed suite and the new helpers and
-   annotations land in their final modules.
-3. **D3, module size target for 29.5:** about 3,000 lines (recommended) or another number.
+1. **D1 = Q20: mypy** ("d1-mypy"). Per-module strictness and a shrinking baseline file.
+2. **D2 = Q19: all of it first** ("q19 - first"): right after the 0.83.0 deploy and the
+   spec-branch merges, before queue item 2 of [[plan-review-2026-11-13#queue]], in the order
+   29.1 → 29.4 → 29.5 → 29.2 ∥ 29.3, so the split's equal-by-E-line runs use the healed suite and
+   the new helpers and annotations land in their final modules. The user's reason: waiting makes
+   the follow-on work slower.
+3. **D3 = Q21: about 3,000 lines** per `src/refmatrix` module after 29.5 ("d3 - agree").
 {#decisions-list}
+
+Recorded as L104 in [[plan-review-2026-11-13#lead]]. Next: one task spec per task under
+`workflow/plans/plan-29-code-quality-tasks/`, then the plan's own ch-bsd spec review. {#decisions-next}
