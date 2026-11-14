@@ -37,14 +37,28 @@ def pingonly():
 # ---- #b-1 promote never opens the slot under a busy daemon ---------------------
 
 def test_promote_digest_reports_busy_and_never_opens_the_store(silent):
+    """#b-1: under a busy daemon the promote reports busy and never opens the writer slot.
+
+    `handoff._promote_digest` keeps its contract (best-effort: it RETURNS `{"error"}`). The
+    verb's half changed: this test first pinned that `verbs.save_state` RETURNED the result
+    with `promoted.error`. bug-212 r5, ruling L95 (2026-11-14), reversed that returned-error
+    contract -- a save-state that wrote its handoff but whose promote (or memory bridge)
+    failed RAISES `verbs.SaveStateIncompleteError`, carrying the full `result`, so the CLI
+    exits 1 and MCP replies `isError` on the same outcome (ch-bsd r4 m-3: MCP had replied
+    SUCCESS while the CLI exited 1). So the busy word is read from the raised error and its
+    attached result; the handoff is still written; the slot is still never opened."""
     from refmatrix import handoff, stm as stm_mod
     s = stm_mod.Stm(silent.root, "s1"); s.record("input", "hi")
     out = handoff._promote_digest(silent.root, s)
     assert "busy" in (out.get("error") or ""), out
     assert not list(silent.root.glob("catalog*.duckdb")), "opened the writer slot under a busy daemon"
-    res = verbs.save_state(silent.root, session="s1", memory_dir=str(silent.base / "mem"),
-                           lint=False, sync=False)
+    with pytest.raises(verbs.SaveStateIncompleteError) as ei:
+        verbs.save_state(silent.root, session="s1", memory_dir=str(silent.base / "mem"),
+                         lint=False, sync=False)
+    res = ei.value.result
     assert "busy" in ((res.get("promoted") or {}).get("error") or ""), res
+    assert "busy" in str(ei.value), str(ei.value)
+    assert Path(res["target"]).is_file(), f"the handoff was not written: {res.get('target')}"
     assert not list(silent.root.glob("catalog*.duckdb"))
 
 
