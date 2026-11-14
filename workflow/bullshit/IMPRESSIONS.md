@@ -310,3 +310,12 @@ Each id resolves here so historical citations stay valid; the content lives at t
 - 2026-11-13 (bug-216 r1, df092ac): A DEFAULT CHANGED IN THE ONE PREDICATE CHANGES EVERY CALLER, SO
 - 2026-11-13 (bug-216 r1): A "RESOLVES ON INGEST" MECHANISM ONLY HELPS ROWS THAT NEW CODE HAS
 - 2026-11-13 (bug-216 r1): A NEW TABLE NEEDS A CENSUS OF EVERY TABLE-COPY PATH, NOT ONLY THE LOG.
+- 2026-11-14 (bug-216 r2, 25ceacd): A REMEDY RED THAT REBUILDS THE REPRO IN A MORE CONVENIENT
+  PLACE TESTS A DIFFERENT BUG. r1's memdir sat outside the project. The RED put it under
+  `<proj>/.claude/`, the fix handled only "inside the project", and the original repro is still red.
+  Re-run the finding's own probe against the remedy before reading its tests.
+  {#imp-rerun-the-findings-probe}
+- 2026-11-14 (bug-216 r2): AN ID-COLLISION FIX IS A COLUMN CENSUS. The fresh-id move remapped 6
+  tables, but step 7b's newer-wins UPDATE on `memory_content` still keyed on the raw id, so A's
+  memory kept its name and took B's body. Fragments and vectors hold the id too. List every
+  statement that reads the other slot's id before calling a merge fix done. {#imp-collision-column-census}

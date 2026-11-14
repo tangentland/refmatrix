@@ -92,3 +92,5 @@
 2026-11-13T16:41:16-0800 commit=30633d5 verdict=DIRTY findings=6 (0B/2S/4M) report=2026-11-14-0220-spec-t3c-r7-l86-30633d5.md
 2026-11-13T16:46:57-0800 commit=1a219cb verdict=MEH-only findings=3 (0B/0S/3M) report=2026-11-14-0225-spec-t3c-r8-l87-1a219cb.md
 2026-11-13T16:48:32-0800 commit=1a219cb verdict=MEH-only findings=4 (0B/0S/4M) report=2026-11-14-0230-spec-t3c-r9-l83-l87-1a219cb.md
+2026-11-14T00:03:00-0800 commit=8b134c6 verdict=MEH-only findings=2 (0B/0S/2M) report=2026-11-14-0003-task25.1-r9-confirm-8b134c6.md
+2026-11-14T00:41:42-0800 commit=25ceacd verdict=DIRTY findings=4 (2B/0S/2M) report=2026-11-14-0041-bug216-r2-25ceacd.md
