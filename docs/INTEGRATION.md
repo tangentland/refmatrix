@@ -236,7 +236,10 @@ apply BELOW, the PROJECT root — never the ingest target (bug-216 R2-base + rem
   the root: `rmx ingest <proj>/.claude[/projects/x/memory]` stores nothing but a built-in-included
   GMD `.claude/PROJECT_PROFILE.md`. A `<dir>` OUTSIDE it is judged on its absolute path, as
   before bug-216: a memdir under any `.claude/` stores nothing, and no other store's ignore file
-  is ever read for it (remedy B1-r2). Memories go through `ingest-gmd --as-memory`, never as
+  is ever read for it (remedy B1-r2). The store's OWN ignore file still applies to an outside
+  file, but by FILE NAME only (an outside path has no project-relative path): a bare-name or
+  glob line (`*.log`, `NOTES.md`) matches it, an anchored line (`docs/private`) and a `!path`
+  re-include never do (remedy r3 M3). Memories go through `ingest-gmd --as-memory`, never as
   `kind=doc`.
 - the watcher and `sync`: the watch root / project root, so a project under `<x>/.hidden/` or
   `<x>/build/` syncs, while a `build/` INSIDE the project stays out.
