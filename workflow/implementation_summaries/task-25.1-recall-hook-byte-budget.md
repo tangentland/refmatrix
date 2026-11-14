@@ -648,3 +648,96 @@ pre-existing sibling); `src/` clean at the end.
   the lead merged 26.4. {#g7-ac5}
 
 {#green-rev7-flags-list}
+
+## GREEN remedy r8 (green-251c, 2026-11-14) {#green-r8}
+
+rel: implements -> [[bsd-plan25-task251-premerge-f656f78]]
+rel: amends -> [[#green-rev7]]
+
+The remedy for bsd-251's pre-merge audit at `f656f78` (DIRTY 1B/2S/5M), per the lead's ruling
+L68 in `workflow/plan-review-2026-11-13.md` on dev master. red-251b wrote the REDs and pins at
+`6b48b94` (tests) and `e354957` (its mutation logs). This GREEN is `src/` only, in commit
+`dc66a04`; no test was edited. {#green-r8-lead}
+
+### Per finding {#green-r8-map}
+
+| finding | change | where |
+|---|---|---|
+| s-2: a curated-hooks read failure dropped when no `warnings` list | `pack_recall` raises `VerbError("curated hooks unreadable (<Type>: <msg>); pass a warnings list …")` when the caller passes no list. With a list, it appends the warning and falls back to first sentences, as before. The CLI's busy/absent replica fall-through for `--session-start` / `--recent` / `--subject` now passes a list and prints each entry as `# rmx: warning: …` | `verbs.pack_recall`, `cli._memory_recall_impl` (the fall-through pack) |
+| m-5: only `VerbError` became an `Error:` line | `rmx recall-state` builds its whole output inside the guard. A `VerbError` keeps its own words. Any other exception becomes `Error: recall-state: <Type>: <msg>` (whitespace collapsed to one line) with exit 1 and no traceback. Nothing is written to stdout before the guard succeeds | `cli.recall_state` |
+| m-3: stale comment | The per-prompt hook comment now says a skip "warns on stderr, prints NOTHING on stdout (25.1 d8: no context injected this turn), exits 0" | `hooks._claude_hook_block` |
+| m-4: `EVENT_SPLIT` and `MIN_USEFUL_RECALL_BYTES` read only by tests | Kept, because a requirement names both: R1 lists them as contents of `hook_budget` (spec lines 162-165). R0 (B)/(C) is the only place the spec gives them a formula (spec lines 137-145, the per-event split and the recall floor), and R0 recorded outcome (A) on both events (`hook-output-cap-probe.md#outcome-not-bc`), so no budget can be computed from `EVENT_SPLIT` today. They are now read in production at import by `hook_budget._check_tables` (see the list below the table). The `focus_input` cap is left to 25.1b AC-26, as ruled | `hook_budget._check_tables`, `_NON_R0_EVENT_CHANNELS`, `_RECALL_CHANNELS` |
+| b-1: bug-224's empty-stdout degrade | No change. d8 stands for 25.1, and 25.1b gains the skip line (L68) | none |
+
+{#green-r8-map-table}
+
+The import-time checks that m-4 added:
+
+- `EVENT_SPLIT` and `NON_RMX_RESERVE_BYTES` must name the same events.
+- Each share must be a known channel, at or under that channel's own cap. R0 (B) makes every
+  share "a hard byte cap it enforces on itself".
+- Every budgeted channel except `precompact` must sit on an event. PreCompact is not an R0
+  outcome event.
+- No recall channel (`prompt_recall`, `session_start`, `precompact`) may have a table budget
+  under `MIN_USEFUL_RECALL_BYTES`. This is R0 (C)'s floor.
+
+Each check was shown to fail on must-fail input by editing the tables in-process and calling
+`_check_tables()`:
+
+- a share over its cap: `EVENT_SPLIT['SessionStart']['focus_context'] = 2000 B exceeds the
+  channel's own cap 1500 B`;
+- an unknown channel;
+- `recall_state` removed from the split: `sit on no EVENT_SPLIT event`;
+- the floor raised to 5,000: `recall channel 'prompt_recall' budget 4000 B is under …`.
+
+The clean table passes. {#green-r8-m4-proof}
+
+### Runs {#green-r8-runs}
+
+| run (at `dc66a04`) | result | log |
+|---|---|---|
+| `tests/test_task25_1_recall_budget.py`, whole file | **137 passed**. The three REDs now pass: `test_s2_pack_recall_never_drops_a_curated_hooks_failure`, `test_s2_busy_fall_through_says_a_curated_hooks_failure`, `test_ac15h_any_failure_is_one_error_line_never_a_traceback`. So do the s-1 / m-1 / m-2 pins | `workflow/review-output/plan25/25.1-r8-green-file.log` |
+| family of 19 files: the 14 test files 25.1 touches, plus `test_verb_parity`, `test_repo_hooks_in_sync`, `test_mcp_bus_passthrough`, `test_context_cost`, `test_docs_generated` | **543 passed, 1 skipped**. The skip is `test_installed_hooks_match_generated`, which skips in clones because the hooks belong to the dev checkout | `workflow/review-output/plan25/25.1-r8-green-family.log` |
+| full suite | **4 failed, 4439 passed, 1 skipped** (49:08). All four are pre-existing; see the E-line comparison below | `workflow/review-output/plan25/25.1-r8-green-full.log` |
+
+{#green-r8-runs-table}
+
+E-line comparison against `release-0.82.0-full.log`, the four failures by test:
+
+- `test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon`: the same
+  E line as release-0.82.0, `_duckdb.IOException: … Could not set lock on file …
+  catalog.A.duckdb: Conflicting lock`.
+- `test_task21_1_agent_usage_report.py::test_ac6_frozen_fixture_prints_the_exact_counts`: the
+  same E lines as release-0.82.0, `AssertionError: agent usage · window 2026-09-23 ..
+  2026-10-07T11:06:35 …` / `assert []`.
+- `test_task21_1_agent_usage_report.py::test_ac6_cli_log_recalls_are_split_per_channel`: the
+  same E line, `chan('prompt_recall', 5)` is `[]`.
+- `test_gmd_lint_requires_version.py::test_the_repo_scope_is_clean_under_the_stricter_gate`:
+  the same test name as in 0.82.0, but a DIFFERENT error set.
+  - 0.82.0 had 3 dangling-doc errors in a `workflow/bullshit/` report.
+  - This run has the same 21 errors as `25.1-green7-full.log` (sorted lists diffed: identical):
+    12 in `docs/INDEX.md`, 6 in `docs/adr/0000-adr-overview.md` and 2 in
+    `docs/adr/0001-intuition-lance-integration.md`.
+  - 25.1 changes no file under `docs/` (`git diff --name-only 0d2a270..HEAD -- docs` is empty).
+    bsd-251 reproduced the same set at the master base `0d2a270`.
+  - So this failure belongs to master, not to 25.1.
+
+No other failure was found. Both earlier merge-interaction failures (g7-7 `test_ac4f`, g7-8
+`test_savestate_mtype` AC-2) pass, as does AC-5. {#green-r8-eline}
+
+### Spec lines not satisfied, and flags {#green-r8-flags}
+
+- **m-4, a partial reading.** "Read them where the spec names them": the spec's only formula
+  that consumes `EVENT_SPLIT` is R0 (B)'s per-event budget split, and it does not apply under
+  outcome (A). So `EVENT_SPLIT` is now read only by the import-time consistency check. It
+  computes no budget. Deleting it would contradict R1 (spec lines 162-165) and fail
+  `test_r1_hook_budget_table_names_every_channel_event_and_command`, which pins it. If the lead
+  wants it gone, R1 needs an amendment first. {#green-r8-m4-flag}
+- **s-2's raise path has no production caller today.** Both callers now pass a list: the verb
+  passes its own `warnings`, and the CLI fall-through passes a new list. The raise guards future
+  callers, and `test_s2_pack_recall_never_drops…` pins it. {#green-r8-s2-flag}
+- **The `focus_input` comment still says "its share is a cap"**, which is not enforced. It was
+  left untouched, because the ruling gives the `focus_input` cap to 25.1b AC-26.
+  {#green-r8-focus-input}
+
+{#green-r8-flags-list}
