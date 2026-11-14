@@ -1,0 +1,35 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /private/tmp/claude-501/m25-0jSW/r/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_m1_include_subjects_never_names_a_subject_twice _____________
+
+few = <tests.task25_1_support.Fixture object at 0x11458d2b0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11458a3f0>
+
+    def test_m1_include_subjects_never_names_a_subject_twice(few, monkeypatch):
+        """bsd-251 m-1 / green flag g7-2 (2026-11-14): under `include_subjects` the exempt pass
+        places each subject at its unreranked index and fills the other slots from the reranked
+        answer WITHOUT subjects. Drop that filter (bsd-251 m8) and a subject the reranked answer
+        also reaches is named twice (`place_rerank_exempt([s1, a, b], [s1, b, a], 3)` →
+        `[s1, s1, b]`). Preconditions: the rerank ran and the exempt pass placed the subject
+        (`rerank_exempt` on its row)."""
+        from refmatrix import verbs
+        monkeypatch.setenv("RMX_HOME", str(few.home))
+        monkeypatch.setenv("RMX_MODEL_SOCK", str(few.base / "none.sock"))
+        res = verbs.memory_recall(few.root, query=QUESTION, k=12, include_subjects=True)
+        names = [m["name"] for m in res["memories"]]
+        subj = [m for m in res["memories"] if m["name"] == "subject_few_0"]
+        assert subj and subj[0].get("rerank_exempt") is True, (
+            "fixture: the exempt pass did not place the subject (no rerank ran?)", names,
+            res.get("warnings"))
+>       assert len(names) == len(set(names)), f"m-1: a row is named twice: {names}"
+E       AssertionError: m-1: a row is named twice: ['subject_few_0', 'fx_mem_00', 'fx_mem_01', 'fx_mem_02', 'subject_few_0']
+E       assert 5 == 4
+E        +  where 5 = len(['subject_few_0', 'fx_mem_00', 'fx_mem_01', 'fx_mem_02', 'subject_few_0'])
+E        +  and   4 = len({'fx_mem_00', 'fx_mem_01', 'fx_mem_02', 'subject_few_0'})
+E        +    where {'fx_mem_00', 'fx_mem_01', 'fx_mem_02', 'subject_few_0'} = set(['subject_few_0', 'fx_mem_00', 'fx_mem_01', 'fx_mem_02', 'subject_few_0'])
+
+tests/test_task25_1_recall_budget.py:1268: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_m1_include_subjects_never_names_a_subject_twice
+1 failed, 136 deselected in 11.38s
