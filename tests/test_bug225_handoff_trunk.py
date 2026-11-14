@@ -191,3 +191,105 @@ def test_recall_state_anomaly_names_origin_develop(repos):
     ahead = [a for a in rep["anomalies"] if "ahead of" in a]
     assert ahead == ["2 commit(s) ahead of origin/develop (unmerged/undeployed?)"], \
         rep["anomalies"]
+
+
+# ---- trunk_error: origin/HEAD unreadable is surfaced, never dropped ---------
+#
+# Pins the GREEN path (81c3e95) that the implementation summary left open
+# (workflow/implementation_summaries/bug-225-handoff-trunk.md #open-test): when
+# `git symbolic-ref` exits other than 0 (a symref) or 1 (unset), `_ss_origin_head`
+# returns the error, `_ss_git_facts` stores it as `trunk_error`, the fallback list
+# still picks the trunk, the save-state doc prints a `- trunk:` line and
+# recall-state adds an anomaly. These guard GREEN code, so they pass at HEAD; each
+# is proven by mutation (workflow/review-output/bug225-trunk-error-mut*.log).
+#
+# Fixture: the loose ref file is overwritten so git cannot read it as a ref. Probed
+# with git 2.50.1 on 2026-11-14: each content below makes `git symbolic-ref --quiet
+# --short refs/remotes/origin/HEAD` exit 128 with "fatal: No such ref:
+# refs/remotes/origin/HEAD", while `rev-parse --verify origin/master` and
+# `git status` still succeed. (`ref: outside/thing`, by contrast, exits 0.)
+
+UNREADABLE = {
+    "outside-refs": "ref: ../outside\n",   # a symref pointing outside refs/
+    "self-loop": "ref: refs/remotes/origin/HEAD\n",
+    "garbage": "garbage\n",                # neither `ref:` nor an object id
+}
+TRUNK_LINE = "trunk: origin/HEAD unreadable, measured by the fallback list"
+
+
+def _break_origin_head(work: Path, content: str) -> None:
+    (work / ".git" / "refs" / "remotes" / "origin" / "HEAD").write_text(content)
+    r = subprocess.run(["git", "symbolic-ref", "--quiet", "--short",
+                        "refs/remotes/origin/HEAD"],
+                       cwd=str(work), capture_output=True, text=True)
+    assert r.returncode == 128, f"precondition: exit 128, got {r.returncode}: {r.stderr}"
+
+
+@pytest.mark.parametrize("content", list(UNREADABLE.values()), ids=list(UNREADABLE))
+def test_unreadable_origin_head_sets_trunk_error_and_list_still_picks(repos, content):
+    """AC-6: the facts carry the error, and the list still decides the trunk:
+    origin/master (no origin/main on this remote), 5 commits ahead."""
+    _, work = repos
+    _break_origin_head(work, content)
+    facts = handoff._ss_git_facts(work, None)
+    err = facts["trunk_error"]
+    assert "exited 128" in err, facts
+    assert "No such ref: refs/remotes/origin/HEAD" in err, facts
+    assert "git symbolic-ref --quiet --short refs/remotes/origin/HEAD" in err, facts
+    assert facts["ahead_base"] == "origin/master", facts
+    assert _subjects(facts["ahead"]) == list(reversed(FEATURE)) + list(reversed(DEVELOP))
+
+
+def test_origin_head_unset_or_readable_has_no_trunk_error(repos):
+    """AC-6b: exit 1 (unset) and exit 0 (a readable symref, dangling or not) are
+    not errors: `trunk_error` stays empty in all three."""
+    _, work = repos
+    assert handoff._ss_git_facts(work, None)["trunk_error"] == ""      # origin/master
+    _git(work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/gone")
+    assert handoff._ss_git_facts(work, None)["trunk_error"] == ""      # dangling
+    _git(work, "remote", "set-head", "origin", "-d")
+    assert handoff._ss_git_facts(work, None)["trunk_error"] == ""      # unset
+
+
+def test_save_state_doc_prints_the_trunk_error(repos):
+    """AC-7: the save-state handoff says origin/HEAD could not be read and which
+    command failed, under the ahead-of line the fallback list produced."""
+    base, work = repos
+    _break_origin_head(work, UNREADABLE["outside-refs"])
+    s, root = _stm(base, "sess-b225-terr-save")
+    res = handoff.compose_save_state(s, root, repo=work, memdir=base / "memory",
+                                     today="2026-11-14", promote=False, dry_run=True)
+    lines = res["doc"].splitlines()
+    trunk = [ln for ln in lines if TRUNK_LINE in ln]
+    assert len(trunk) == 1, res["doc"]
+    assert trunk[0].startswith(f"- {TRUNK_LINE} — `git symbolic-ref"), trunk
+    assert "exited 128" in trunk[0] and "No such ref" in trunk[0], trunk
+    assert "- **5** commit(s) ahead of `origin/master`" in lines, res["doc"]
+
+
+def test_recall_state_reports_the_trunk_error_as_an_anomaly(repos):
+    """AC-8: recall-state lists the unreadable origin/HEAD as an anomaly, next to
+    the ahead-of anomaly measured against the fallback trunk."""
+    base, work = repos
+    _break_origin_head(work, UNREADABLE["outside-refs"])
+    s, root = _stm(base, "sess-b225-terr-recall")
+    rep = handoff.compose_recall_state(s, root, repo=work, memdir=base / "memory",
+                                       pointer_anomalies=[])
+    trunk = [a for a in rep["anomalies"] if a.startswith("trunk:")]
+    assert len(trunk) == 1, rep["anomalies"]
+    assert trunk[0].startswith(f"{TRUNK_LINE} (`git symbolic-ref"), trunk
+    assert "exited 128" in trunk[0] and "No such ref" in trunk[0], trunk
+    assert "5 commit(s) ahead of origin/master (unmerged/undeployed?)" in rep["anomalies"]
+
+
+def test_no_trunk_error_line_when_origin_head_reads(repos):
+    """AC-7/8 negative: a readable origin/HEAD adds no trunk line to either surface."""
+    base, work = repos
+    _git(work, "remote", "set-head", "origin", "develop")
+    s, root = _stm(base, "sess-b225-terr-clean")
+    doc = handoff.compose_save_state(s, root, repo=work, memdir=base / "memory",
+                                     today="2026-11-14", promote=False, dry_run=True)["doc"]
+    rep = handoff.compose_recall_state(s, root, repo=work, memdir=base / "memory",
+                                       pointer_anomalies=[])
+    assert TRUNK_LINE not in doc, doc
+    assert not [a for a in rep["anomalies"] if a.startswith("trunk:")], rep["anomalies"]

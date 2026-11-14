@@ -1,0 +1,159 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b225mut/src/refmatrix as checked-hash (bug-037)
+......FFF.FF.                                                            [100%]
+=================================== FAILURES ===================================
+_ test_unreadable_origin_head_sets_trunk_error_and_list_still_picks[outside-refs] _
+
+repos = (PosixPath('/private/tmp/b225-f3td87t8'), PosixPath('/private/tmp/b225-f3td87t8/work'))
+content = 'ref: ../outside\n'
+
+    @pytest.mark.parametrize("content", list(UNREADABLE.values()), ids=list(UNREADABLE))
+    def test_unreadable_origin_head_sets_trunk_error_and_list_still_picks(repos, content):
+        """AC-6: the facts carry the error, and the list still decides the trunk:
+        origin/master (no origin/main on this remote), 5 commits ahead."""
+        _, work = repos
+        _break_origin_head(work, content)
+        facts = handoff._ss_git_facts(work, None)
+        err = facts["trunk_error"]
+>       assert "exited 128" in err, facts
+E       AssertionError: {'ahead': 'dcb07f7 feature commit 2
+E         8a710df feature commit 1
+E         252dd37 develop commit 3
+E         c4347c8 develop commit 2
+E         2cb8b54 develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'exited 128' in ''
+
+tests/test_bug225_handoff_trunk.py:236: AssertionError
+_ test_unreadable_origin_head_sets_trunk_error_and_list_still_picks[self-loop] _
+
+repos = (PosixPath('/private/tmp/b225-9tcx7x44'), PosixPath('/private/tmp/b225-9tcx7x44/work'))
+content = 'ref: refs/remotes/origin/HEAD\n'
+
+    @pytest.mark.parametrize("content", list(UNREADABLE.values()), ids=list(UNREADABLE))
+    def test_unreadable_origin_head_sets_trunk_error_and_list_still_picks(repos, content):
+        """AC-6: the facts carry the error, and the list still decides the trunk:
+        origin/master (no origin/main on this remote), 5 commits ahead."""
+        _, work = repos
+        _break_origin_head(work, content)
+        facts = handoff._ss_git_facts(work, None)
+        err = facts["trunk_error"]
+>       assert "exited 128" in err, facts
+E       AssertionError: {'ahead': 'dcb07f7 feature commit 2
+E         8a710df feature commit 1
+E         252dd37 develop commit 3
+E         c4347c8 develop commit 2
+E         2cb8b54 develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'exited 128' in ''
+
+tests/test_bug225_handoff_trunk.py:236: AssertionError
+__ test_unreadable_origin_head_sets_trunk_error_and_list_still_picks[garbage] __
+
+repos = (PosixPath('/private/tmp/b225-alx35lta'), PosixPath('/private/tmp/b225-alx35lta/work'))
+content = 'garbage\n'
+
+    @pytest.mark.parametrize("content", list(UNREADABLE.values()), ids=list(UNREADABLE))
+    def test_unreadable_origin_head_sets_trunk_error_and_list_still_picks(repos, content):
+        """AC-6: the facts carry the error, and the list still decides the trunk:
+        origin/master (no origin/main on this remote), 5 commits ahead."""
+        _, work = repos
+        _break_origin_head(work, content)
+        facts = handoff._ss_git_facts(work, None)
+        err = facts["trunk_error"]
+>       assert "exited 128" in err, facts
+E       AssertionError: {'ahead': '95615dd feature commit 2
+E         351d631 feature commit 1
+E         d61faa2 develop commit 3
+E         8852127 develop commit 2
+E         dedc345 develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'exited 128' in ''
+
+tests/test_bug225_handoff_trunk.py:236: AssertionError
+__________________ test_save_state_doc_prints_the_trunk_error __________________
+
+repos = (PosixPath('/private/tmp/b225-xtp6bqan'), PosixPath('/private/tmp/b225-xtp6bqan/work'))
+
+    def test_save_state_doc_prints_the_trunk_error(repos):
+        """AC-7: the save-state handoff says origin/HEAD could not be read and which
+        command failed, under the ahead-of line the fallback list produced."""
+        base, work = repos
+        _break_origin_head(work, UNREADABLE["outside-refs"])
+        s, root = _stm(base, "sess-b225-terr-save")
+        res = handoff.compose_save_state(s, root, repo=work, memdir=base / "memory",
+                                         today="2026-11-14", promote=False, dry_run=True)
+        lines = res["doc"].splitlines()
+        trunk = [ln for ln in lines if TRUNK_LINE in ln]
+>       assert len(trunk) == 1, res["doc"]
+E       AssertionError: ---
+E         gmd: "0.1"
+E         id: savestate_sessb225terr
+E         title: "Save-state 2026-11-14: work @ 07337e0"
+E         tags: ["session:sess-b225-terr-save"]
+E         metadata:
+E           node_type: memory
+E           type: session/recall-state
+E           originSessionId: sess-b225-terr-save
+E           created: 2026-11-14
+E           updated: 2026-11-14T02:02:59-08:00
+E         ---
+E         
+E         # Save-state 2026-11-14: work @ 07337e0 {#root}
+E         
+E         ## Session {#session}
+E         
+E         - branch **feature** · HEAD `07337e0 feature commit 2`
+E         - **5** commit(s) ahead of `origin/master`
+E         - working tree: clean
+E         
+E         ## Git activity {#git}
+E         
+E         Commits (this session):
+E         
+E         ```
+E         07337e0 feature commit 2
+E         0e6a594 feature commit 1
+E         7a416d9 develop commit 3
+E         492520e develop commit 2
+E         f58f0c4 develop commit 1
+E         c196060 root commit
+E         ```
+E         
+E         ## Focus {#focus}
+E         
+E         Top of the working-memory graph (1 events):
+E         
+E         - `bug` [concept] ×1 (w=2.3)
+E         - `handoff` [concept] ×1 (w=2.3)
+E         - `trunk` [concept] ×1 (w=2.3)
+E         
+E         rel: realizes -> [[feedback_save_state_means_handoff]]
+E         rel: related-to -> [[feedback_recall_state_means_resume]]
+E         
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_bug225_handoff_trunk.py:264: AssertionError
+___________ test_recall_state_reports_the_trunk_error_as_an_anomaly ____________
+
+repos = (PosixPath('/private/tmp/b225-4xfvtxsp'), PosixPath('/private/tmp/b225-4xfvtxsp/work'))
+
+    def test_recall_state_reports_the_trunk_error_as_an_anomaly(repos):
+        """AC-8: recall-state lists the unreadable origin/HEAD as an anomaly, next to
+        the ahead-of anomaly measured against the fallback trunk."""
+        base, work = repos
+        _break_origin_head(work, UNREADABLE["outside-refs"])
+        s, root = _stm(base, "sess-b225-terr-recall")
+        rep = handoff.compose_recall_state(s, root, repo=work, memdir=base / "memory",
+                                           pointer_anomalies=[])
+        trunk = [a for a in rep["anomalies"] if a.startswith("trunk:")]
+>       assert len(trunk) == 1, rep["anomalies"]
+E       AssertionError: ['5 commit(s) ahead of origin/master (unmerged/undeployed?)']
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_bug225_handoff_trunk.py:279: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug225_handoff_trunk.py::test_unreadable_origin_head_sets_trunk_error_and_list_still_picks[outside-refs]
+FAILED tests/test_bug225_handoff_trunk.py::test_unreadable_origin_head_sets_trunk_error_and_list_still_picks[self-loop]
+FAILED tests/test_bug225_handoff_trunk.py::test_unreadable_origin_head_sets_trunk_error_and_list_still_picks[garbage]
+FAILED tests/test_bug225_handoff_trunk.py::test_save_state_doc_prints_the_trunk_error
+FAILED tests/test_bug225_handoff_trunk.py::test_recall_state_reports_the_trunk_error_as_an_anomaly
+5 failed, 8 passed in 7.20s
