@@ -129,6 +129,11 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
        about the user no longer applies;
      - the as-of filter and the clone cut cannot stop an agent from reasoning from what the
        model already knows;
+     - **10.2's nested reading sees only first-prompt dedupe (L87 m1):** a paired run has one
+       resume prompt, so dedupe is measured only against the run's SessionStart (and, under
+       `clear`, warm-up) deliveries, never across a long live session;
+     - the push reading's δ (0.8 calibration SD per outcome) is a wide margin: `shrink` can be
+       read while push still helps by up to δ. The report prints δ in natural units (28.3 R9);
    - the task set's seed and the task-id list's sha256; the resume and warm-up prompt templates;
      the run caps;
    - the abort rule: the user may stop at any time, and a defect in a cell that breaks runs
@@ -259,3 +264,16 @@ The status stays `pending` pending a confirm-lite.
 | S3 the push minimum has no rule; the nested minimum is powered on (1) | each secondary reading is powered on its own outcomes' calibration variance; push's `n_power` bounds its CIs below δ | [[#r1]], [[#r2]] |
 | S3 `shrink` fires on noise | `shrink` needs every Holm-adjusted upper bound below δ (frozen as 0.8 × the calibration SD of each outcome's paired difference), and A costing more; otherwise `keep push` or "no verdict" | [[#r2]] |
 | S2 units | the push outcomes are per 100 main-loop tool calls; a push acts once per run, stated | [[#r2]] |
+
+## Revision r7 (2026-11-14, `bsd-spec-t3c` r7 through `30633d5`; lead rulings on L87) {#rev-r7}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The report is on master, `workflow/bullshit/2026-11-14-0220-spec-t3c-r7-l86-30633d5.md`.
+`d251fe6` had already folded most of L87. This round adds the remaining items. The status is
+unchanged.
+
+| finding | disposition | where |
+|---|---|---|
+| m1 the nested limit in 28.4's limits | added, beside the width of δ | [[#r2]] |
+

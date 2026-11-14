@@ -87,8 +87,9 @@ decision (G18), not a goal step. {#why-body}
      implementation summary.
    {#r5}
 6. **R6 Report.** `workflow/measurements/handhold-experiment-<date>.md` (GMD) holds the counts,
-   the readings and the CIs, the n reached per cell, the charter-decision inputs that are not
-   outcomes, and the limits. Only counts, labels and hashes are committed. A ch-bsd round over
+   the readings and the CIs, the n reached per cell, the push reading's δ in each outcome's
+   natural unit beside its verdict, with the plain statement that this margin is wide (28.3
+   R9), the charter-decision inputs that are not outcomes, and the limits. Only counts, labels and hashes are committed. A ch-bsd round over
    it must come back CLEAN or MEH-only. {#r6}
 7. **R7 The goal stops.** The report goes to the user as a charter decision with the readings
    and the inputs (G18). The T3 re-plan and the plan-24 re-plan (D-Q5) follow the user's
@@ -226,3 +227,16 @@ The status stays `pending` pending a confirm-lite.
 | finding | disposition | where |
 |---|---|---|
 | m3 the start message to the user | R1 names that treatment-module deploys from items 8-11 need a user pause while the series runs | [[#r1]] |
+
+## Revision r7 (2026-11-14, `bsd-spec-t3c` r7 through `30633d5`; lead rulings on L87) {#rev-r7}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The report is on master, `workflow/bullshit/2026-11-14-0220-spec-t3c-r7-l86-30633d5.md`.
+`d251fe6` had already folded most of L87. This round adds the remaining items. The status is
+unchanged.
+
+| finding | disposition | where |
+|---|---|---|
+| lead (on accepting L87's values) | the report prints δ in natural units beside the push verdict, and says the margin is wide | [[#r6]] |
+

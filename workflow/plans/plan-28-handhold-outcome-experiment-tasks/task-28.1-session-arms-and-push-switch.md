@@ -258,12 +258,17 @@ mutation that must fail it. {#acceptance-lead}
      test), no SessionStart row is written.
    - `rmx telemetry --context` prints a per-cell split.
    - Without the env, no row gains any of these fields.
+   - **An invalid run id (L87 m4).** With `RMX_HANDHOLD_CELL=B` and `RMX_HANDHOLD_RUN=r-0001`
+     (6 characters), there is no paired SessionStart row and no `arm_run`, and the call's row
+     carries `arm_error`.
 
    **Mutations:**
    - `arm_run` omitted on suppressed rows, so the per-run count of `B` prompts reads 0;
    - a second cell field (`session_arm`) written beside `handhold_cell`, so the "no second cell
      field" check fails;
-   - rows written without an override, so the no-env leg fails.
+   - rows written without an override, so the no-env leg fails;
+   - the paired row written whenever `RMX_HANDHOLD_RUN` is set, valid or not, so the invalid-id
+     leg finds a SessionStart row.
    {#ac-8}
 9. **AC-9 Hook config unchanged.** `rmx install-hooks --check` is clean, and the generated hook
    block is byte-identical before and after. The switch lives inside the commands, and the env
@@ -395,3 +400,16 @@ The status stays `pending` pending a confirm-lite.
 | finding | disposition | where |
 |---|---|---|
 | S1 two cell field names; the paired SessionStart row vs 10.2 AC-11 | ONE field, 10.2's `handhold_cell` (`30633d5`); the paired SessionStart row and `arm_run` are written only while a paired run is active (`RMX_HANDHOLD_RUN` set AND valid); a cell without a run id writes no row, so 10.2 AC-11 at spec-t3b `5559d20` stays as approved | [[#ownership]], [[#r2]], [[#r6]] |
+
+## Revision r7 (2026-11-14, `bsd-spec-t3c` r7 through `30633d5`; lead rulings on L87) {#rev-r7}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The report is on master, `workflow/bullshit/2026-11-14-0220-spec-t3c-r7-l86-30633d5.md`.
+`d251fe6` had already folded most of L87. This round adds the remaining items. The status is
+unchanged.
+
+| finding | disposition | where |
+|---|---|---|
+| m4 "set AND valid", with an AC case | R2 and R6 already say "set AND valid" (`d251fe6`); AC-8 adds the invalid-id leg (no paired row, `arm_error`) and its mutation | [[#ac-8]] |
+

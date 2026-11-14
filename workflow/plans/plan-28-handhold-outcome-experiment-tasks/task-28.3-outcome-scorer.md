@@ -159,8 +159,12 @@ clause, inside 19.6's scope. The r1 review found three problems, and this revisi
        to be better by δ or more;
      - "no verdict" otherwise.
 
-     Noise gives wide CIs that reach δ, so it reads "no verdict", never `shrink`. Outcome (6)
-     is not an input.
+     Noise gives wide CIs that reach δ, so it reads "no verdict", never `shrink`. So does a
+     reading run at the clamp of 20 tasks when `n_power` > 20. Outcome (6) is not an input.
+     **The reading returns δ in each outcome's natural unit** (for example "churn calls per 100
+     tool calls"), and the report prints it beside the verdict. The report also states plainly
+     that a 0.8 SD margin is wide: `shrink` can be read while push still helps by up to δ on
+     each outcome. The user weighs that at G18 (lead, accepting L87's values).
    - **Nested:** 10.2 R7's bands on outcome (7), `A+dedupe` vs `A+full`.
 
 ## Acceptance criteria {#acceptance}
@@ -242,7 +246,9 @@ by the real hooks in 23.0's sandbox. Every AC names its mutation. {#acceptance-l
    **Mutations:**
    - outcome (6) added to the push inputs, so the first set reads `keep push`;
    - the Holm step removed, so the third set reads `keep push`;
-   - `shrink` on "not better" alone, without the δ bound, so the noisy set reads `shrink`.
+   - **non-inferiority removed** (`shrink` on "not better" alone, without the δ bound), so
+     the noisy set reads `shrink`. This also covers a reading clamped to 20 tasks when
+     `n_power` > 20: its wide CIs read "no verdict".
 
    Each fails AC-8. {#ac-8}
 9. **AC-9 Explicit attribution has one definition across `eval/` and `src/` (r2-s3).** An AST
@@ -386,3 +392,17 @@ The status stays `pending` pending a confirm-lite.
 | S2 per-prompt units in a one-prompt run | outcomes per run and per 100 main-loop tool calls; churn's W = 10 tool calls, with right-censoring counted; AC-2's cases fit inside one prompt | [[#r3]], [[#r4]], [[#r5]], [[#r8]], [[#ac-2]] |
 | S3 `shrink` fires on noise | push reads `keep push`, `shrink` (non-inferiority: every Holm-adjusted upper bound below δ, and A costs more) or "no verdict"; AC-8 adds the noisy set and the "shrink without δ" mutation | [[#r9]], [[#ac-8]] |
 | m1 the nested reading's reach | first-prompt dedupe only, stated as a limit | [[#r8]] |
+
+## Revision r7 (2026-11-14, `bsd-spec-t3c` r7 through `30633d5`; lead rulings on L87) {#rev-r7}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The report is on master, `workflow/bullshit/2026-11-14-0220-spec-t3c-r7-l86-30633d5.md`.
+`d251fe6` had already folded most of L87. This round adds the remaining items. The status is
+unchanged.
+
+| finding | disposition | where |
+|---|---|---|
+| S3 the clamp case and the AC-8 mutation's name | the clamp case reads "no verdict"; AC-8's mutation is named "non-inferiority removed" | [[#r9]], [[#ac-8]] |
+| lead (on accepting L87's values) | δ is printed in each outcome's natural unit beside the verdict, with the plain statement that a 0.8 SD margin is wide | [[#r9]] |
+
