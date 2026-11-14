@@ -282,7 +282,7 @@ review's citations stay valid). R0 is this task's own measurement step (L44 name
 
       | exception type | cause |
       |---|---|
-      | `verbs.VerbDeadlineError` (new, a subclass of `VerbBusyError`), raised by `_left`'s deadline (`cli.py:12622-12628` on the 25.1 branch) and by `recall.replica_memory_recall`'s deadline (`recall.py:1094-1095`) | `budget spent` |
+      | `verbs.VerbDeadlineError` (new, a subclass of `VerbBusyError`), raised by the CLI's `_left` (`cli.py:12622-12628` on the 25.1 branch) and by `verbs.memory_recall`'s own `_left` (`verbs.py:1386-1394`), which is where a live budget is usually spent. The verb's re-wrap under its deadline (`verbs.py:1522-1526`) raises `VerbDeadlineError` when the caught error is one, and a plain `VerbBusyError` otherwise. `recall.replica_memory_recall` (`recall.py:1094-1095`) only re-raises the verb's deadline. `_raw_transport_cause` returns the outermost error when the chain holds no transport cause, so it records the `VerbDeadlineError` | `budget spent` |
       | plain `VerbBusyError` (for example `require_daemon`'s busy ping) | `daemon busy` |
       | a daemon op `TimeoutError` / `socket.timeout` | `daemon timeout` |
       | `VerbAbsentError`; `ConnectionRefusedError` | `daemon absent` |
@@ -391,7 +391,18 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
     deterministically. One line, `budget spent`; the row's outcome is `skipped_budget`.
   - **(d) SessionStart and PreCompact, busy daemon AND no reader store** (the `SIGSTOP` daemon of
     (b), with the sandbox store's replica / reader file absent): each generated command prints one
-    `daemon busy` skip line.
+    `daemon busy` skip line. With no reader store, `_memory_intent`'s partition probe pings the
+    stopped daemon first and `require_daemon` pings it again, so the leg first asserts that the two
+    ping timeouts together sum below the generated command's budget. That keeps the recorded type
+    a plain `VerbBusyError`, not a deadline (L75 m1).
+  - **(c2) The deadline expires INSIDE the verb** (L75 S1). `verbs.memory_recall(root, query=…,
+    timeout=1e-6, pack=True)` (the production function, called directly on the sandbox store with
+    the daemon up, hook-mode `embedder_policy="hub_only"` through `**internal`). The verb's first
+    `_left` fires, and the call raises `VerbDeadlineError`, asserted on type. If it leaves through
+    the deadline re-wrap, that re-wrap is also a `VerbDeadlineError`, with the inner one as its
+    `__cause__`. `cli._raw_transport_cause` applied to the raised error returns a
+    `VerbDeadlineError`, and the cause map gives `budget spent`. A structural check asserts that
+    the re-wrap branch raises `VerbDeadlineError` when the caught error is one.
   - **(e) Guard: SessionStart and PreCompact with NO daemon** (a reader store present, as 25.1
     leaves it): each generated command prints its pack and NO skip line.
   - **(f) The cause map:** a unit table over the one cause function, from real exception
@@ -412,7 +423,10 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
   - `VerbBusyError` matched before `VerbDeadlineError` (FAIL: (c) and (f));
   - absent treated as a skip on the session-start path (FAIL: (e) prints a skip line and no
     pack);
-  - the 300 B cut removed (FAIL: (g)). {#ac-28}
+  - the 300 B cut removed (FAIL: (g));
+  - the verb's `_left` raises a plain `VerbBusyError` (FAIL: (c2) sees `daemon busy`);
+  - the verb's deadline re-wrap drops the subclass (FAIL: (c2)'s structural check, and its type
+    check when the re-wrap path is taken). {#ac-28}
 - **AC-17 (R13).** 40 retrieved items at 20 KB total, with 25.1-shaped hook lines of 250-370 B, at
   a 9,000 B budget. Every item is visible: at tiers 1-3 (its hook line printed, carrying its curated
   hook), as a names-line member, or, past the cap of 15, counted in `(+N)` and on the spill page.
@@ -507,8 +521,7 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
 | `src/refmatrix/stm.py` | spill page write, read and prune ([[#k10]]) under 10.3's `.emitted` directory helper; reads `stm.last_marker` |
 | `src/refmatrix/hooks.py` | `HOOK_COMMAND_CHANNELS` shares for every generated command with rmx stdout (via `hook_budget`) |
 | `src/refmatrix/cli.py` (`_memory_recall_impl._degrade_or_raise`, `_left`) | R18: the skip line through `hook_budget.emit` on the pack path; the one exception-to-cause function and the one line builder (beside `_raw_transport_cause`); `_left` raises `VerbDeadlineError` |
-| `src/refmatrix/verbs.py` (error classes) | `VerbDeadlineError(VerbBusyError)` (R18) |
-| `src/refmatrix/recall.py` (`replica_memory_recall`) | its deadline raises `VerbDeadlineError` (R18) |
+| `src/refmatrix/verbs.py` (error classes; `memory_recall._left`; the deadline re-wrap) | `VerbDeadlineError(VerbBusyError)`; the verb's `_left` raises it; the re-wrap keeps the subclass (R18). `recall.py` needs no change, because it only re-raises |
 | `src/refmatrix/cli.py` (the ten writer functions, [[#r12]]) | `_echo_pack`, `recall_state`, `scan_prompt_cmd`, `curator_status`, `focus_context`, `focus_hook` (session-start), `focus summarize`, `ingest-gmd --as-memory --detach`, `save_state` write through `hook_budget.emit` |
 | `src/refmatrix/verbs.py` (`memory_recall`) | the `page` parameter; the global leg's reserve and `global_omitted`; the degrade wording (R17) |
 | `src/refmatrix/cli.py` | `rmx memory recall --page <token>`; `legs_ms` on scan-prompt's and the per-prompt recall's rows; the R17 wording around `RECALL_DAEMON_SLICE_S` |
@@ -652,3 +665,16 @@ rel: implements -> [[plan-review-2026-11-13#lead]]
 | S1 the cause map could not be built from the type | new `VerbDeadlineError(VerbBusyError)` from `_left` and the replica deadline → `budget spent`; plain `VerbBusyError` → `daemon busy`; daemon op `TimeoutError` → `daemon timeout`; `VerbAbsentError` / refused → `daemon absent`; reset / other → `transport error`; "worker timeout" dropped; every leg names its setup and asserts on type (a `SIGSTOP` sandbox daemon for busy, `--timeout 0` for the deadline) | [[#r18]], AC-28, [[#files]] |
 | m1 the skip writer was outside R12's list | `_degrade_or_raise` joins R12 (ten writers) and AC-26's structural check (nested `def`s walked); the mutation's FAIL reason corrected | [[#r12]], AC-26, AC-28 |
 | m2 the over-300 B mutation had no fixture | unit leg (g) on the line builder with > 400 B of words | AC-28 |
+
+## Revision round 5 (2026-11-14, confirm-lite r2 on R18; lead ruling L75) {#rev-round-5}
+
+Folds `workflow/bullshit/2026-11-14-0140-spec-t3a-25.1b-r18-r2-f88b650.md` (DIRTY 0B/1S/1M) on
+L75. `metadata.status` stays `approved` pending a confirm-lite r3. {#rev-round-5-lead}
+
+rel: derives-from -> [[bsd-spec-251b-r18-r2-f88b650]]
+rel: implements -> [[plan-review-2026-11-13#lead]]
+
+| finding | change | anchor |
+|---|---|---|
+| S1 the verb's own deadline still raised a plain `VerbBusyError` | `verbs.memory_recall`'s `_left` raises `VerbDeadlineError`; its re-wrap keeps the subclass; `recall.py` only re-raises, so the Files row moved to `verbs.py`; AC-28 (c2) has the deadline expire inside the verb, with the mutations "the verb's `_left` raises a plain `VerbBusyError`" and "the re-wrap drops the subclass" | [[#r18]], AC-28, [[#files]] |
+| m1 leg (d) had two pings racing the deadline | (d) asserts that the partition-probe ping and the `require_daemon` ping timeouts sum below the budget | AC-28 |
