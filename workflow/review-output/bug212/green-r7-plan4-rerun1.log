@@ -1,0 +1,36 @@
+................                                                         [100%]
+============================== slowest durations ===============================
+5.29s call     tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly
+5.24s call     tests/test_plan4_remedy.py::test_plist_marks_the_daemon_supervised_and_adoption_is_gated
+5.17s call     tests/test_plan4_remedy.py::test_boot_repair_runs_on_a_spawned_daemon
+3.74s teardown tests/test_plan4_remedy.py::test_stop_daemon_reports_why_it_could_not_ask
+2.73s teardown tests/test_plan4_remedy.py::test_adoption_never_kills_a_busy_predecessor
+2.05s call     tests/test_plan4_remedy.py::test_adoption_never_kills_a_busy_predecessor
+2.02s call     tests/test_plan4_remedy.py::test_repair_index_entities_refuses_a_busy_daemon
+1.55s call     tests/test_plan4_remedy.py::test_graceful_stop_signals_first_then_waits_the_grace
+1.33s call     tests/test_plan4_remedy.py::test_heartbeat_stops_when_the_serving_pool_is_dead
+1.03s call     tests/test_plan4_remedy.py::test_stop_daemon_reports_why_it_could_not_ask
+0.86s call     tests/test_plan4_remedy.py::test_degraded_learn_arms_a_deferred_exit
+0.61s setup    tests/test_plan4_remedy.py::test_adoption_never_kills_a_busy_predecessor
+0.54s setup    tests/test_plan4_remedy.py::test_graceful_stop_signals_first_then_waits_the_grace
+0.41s setup    tests/test_plan4_remedy.py::test_stop_daemon_reports_why_it_could_not_ask
+0.08s setup    tests/test_plan4_remedy.py::test_plist_marks_the_daemon_supervised_and_adoption_is_gated
+0.07s teardown tests/test_plan4_remedy.py::test_graceful_stop_signals_first_then_waits_the_grace
+0.07s setup    tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly
+0.06s setup    tests/test_plan4_remedy.py::test_boot_repair_runs_on_a_spawned_daemon
+0.05s setup    tests/test_plan4_remedy.py::test_watchdog_restart_order_is_signal_then_grace_then_kick
+0.05s setup    tests/test_plan4_remedy.py::test_repair_index_entities_refuses_a_busy_daemon
+0.05s setup    tests/test_plan4_remedy.py::test_relaunch_fleet_relaunches_every_supervised_store
+0.04s setup    tests/test_plan4_remedy.py::test_repair_entities_op_raises_so_the_dispatcher_answers_ok_false
+0.04s setup    tests/test_plan4_remedy.py::test_degraded_learn_arms_a_deferred_exit
+0.04s setup    tests/test_plan4_remedy.py::test_heartbeat_stops_when_the_serving_pool_is_dead
+0.04s setup    tests/test_plan4_remedy.py::test_repair_index_entities_cli_reports_the_abort
+0.04s call     tests/test_plan4_remedy.py::test_repair_entities_op_raises_so_the_dispatcher_answers_ok_false
+0.04s setup    tests/test_plan4_remedy.py::test_fast_exit_queues_the_boot_repair
+0.04s setup    tests/test_plan4_remedy.py::test_hub_status_shows_each_daemons_version_and_flags_stale
+0.04s setup    tests/test_plan4_remedy.py::test_rebuild_entities_refuses_sqlite
+0.01s call     tests/test_plan4_remedy.py::test_repair_index_entities_cli_reports_the_abort
+0.01s call     tests/test_plan4_remedy.py::test_rebuild_entities_refuses_sqlite
+
+(17 durations < 0.005s hidden.  Use -vv to show these durations.)
+16 passed in 33.37s

@@ -1,0 +1,89 @@
+.........................FF.                                             [100%]
+=================================== FAILURES ===================================
+_____ test_migrate_out_onto_a_committed_non_catalog_named_file_is_refused ______
+
+two_migrate_repos = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1049d3650>, PosixPath('/private/tmp/b212n-tgsonv8g/repob'))
+
+    @pytest.mark.timeout(300)
+    def test_migrate_out_onto_a_committed_non_catalog_named_file_is_refused(two_migrate_repos):
+        """m-1 (a): `rmx migrate-to-duckdb --out <repo B>/x.duckdb --overwrite`, where repo B
+        COMMITS `x.duckdb`: one `Error:` line `refusing to open <that file> read-write in-process:
+        ...`, exit non-zero, `x.duckdb` byte-identical, repo B's status clean. At bcd861c the check
+        asks only about writer-catalog NAMES in repo B's top level, finds none, and the migration
+        rewrites the committed `x.duckdb`."""
+        a, b = two_migrate_repos
+        dst = (b / "x.duckdb").resolve()
+        before = _sha(dst)
+        r = _cli(a, ["migrate-to-duckdb", "--out", str(dst), "--overwrite"])
+        text = _text(r)
+        status = _status(b)
+        assert TRACEBACK not in r.stderr, f"migrate-to-duckdb crashed\n{text}"
+>       assert _sha(dst) == before and status == "", (
+            f"`--out` onto repo B's committed x.duckdb rewrote it (exit {r.returncode})\n"
+            f"repo B git status:\n{status}\n{text}")
+E       AssertionError: `--out` onto repo B's committed x.duckdb rewrote it (exit 0)
+E         repo B git status:
+E          M x.duckdb
+E         
+E         exit 0
+E         stdout:
+E         ┏━━━━━━━━━━━━━━━━━━┳━━━━━━┓
+E         ┃ table            ┃ rows ┃
+E         ┡━━━━━━━━━━━━━━━━━━╇━━━━━━┩
+E         │ partitions       │    1 │
+E         │ linkage_types    │   14 │
+E         │ entities         │    3 │
+E         │ concepts         │    3 │
+E         │ memory_content   │    0 │
+E         │ entity_links     │    2 │
+E         │ tracked_files    │    0 │
+E         │ linkage_evidence │    0 │
+E         │ saved_queries    │    0 │
+E         │ bitmap_fragments │    1 │
+E         └──────────────────┴──────┘
+E         wrote /private/tmp/b212n-tgsonv8g/repob/x.duckdb
+E         
+E         stderr:
+E         
+E       assert ('16ad6513d9df...1707f6269884b' == '139442f267f5...aa1a8dcb69ce0'
+E         
+E         - 139442f267f5e753b4c5d0b5bbc6b825e0381f8c1e553958467aa1a8dcb69ce0
+E         + 16ad6513d9df1537b3ea2a1d056ef9ce56134c6eba5065912841707f6269884b)
+
+tests/test_bug212_r7_red.py:106: AssertionError
+__ test_migrate_out_to_an_untracked_file_beside_a_tracked_catalog_is_allowed ___
+
+two_migrate_repos = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10492e950>, PosixPath('/private/tmp/b212n-_c8p6ot0/repob'))
+
+    @pytest.mark.timeout(300)
+    def test_migrate_out_to_an_untracked_file_beside_a_tracked_catalog_is_allowed(two_migrate_repos):
+        """m-1 (b): `rmx migrate-to-duckdb --out <repo B>/.refmatrix/foo.duckdb`, beside repo B's
+        TRACKED `catalog.duckdb`; `foo.duckdb` is untracked, so nothing committed changes: exit 0,
+        `foo.duckdb` written, repo B's `catalog.duckdb` byte-identical and not modified in git. At
+        bcd861c it is refused, because the folder holds a tracked writer-catalog name."""
+        a, b = two_migrate_repos
+        dst = (b / ".refmatrix" / "foo.duckdb").resolve()
+        assert not dst.exists()
+        before = _digests(b / ".refmatrix")
+        r = _cli(a, ["migrate-to-duckdb", "--out", str(dst)])
+        text = _text(r)
+        assert _changed(before, _digests(b / ".refmatrix")) == [], \
+            f"repo B's tracked catalog changed\n{text}"
+        assert _status_refmatrix_catalogs(b) == "", f"repo B's catalog shows modified\n{text}"
+>       assert r.returncode == 0 and TRACEBACK not in r.stderr and not _errors(r.stderr), \
+            f"`--out` to an untracked file beside a tracked catalog was refused or failed\n{text}"
+E       AssertionError: `--out` to an untracked file beside a tracked catalog was refused or failed
+E         exit 1
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing to open /private/tmp/b212n-_c8p6ot0/repob/.refmatrix/foo.duckdb read-write in-process: git tracks this store's catalog (catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212n-_c8p6ot0/rmx...log*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead\n").returncode
+
+tests/test_bug212_r7_red.py:130: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r7_red.py::test_migrate_out_onto_a_committed_non_catalog_named_file_is_refused
+FAILED tests/test_bug212_r7_red.py::test_migrate_out_to_an_untracked_file_beside_a_tracked_catalog_is_allowed
+2 failed, 26 passed in 90.24s (0:01:30)

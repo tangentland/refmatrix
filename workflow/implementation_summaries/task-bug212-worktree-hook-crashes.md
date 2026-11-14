@@ -1466,3 +1466,92 @@ r6 tests (Q4/Q4b).
   matching save-state. Before r6 a run-out wait counted as a failed path there, with exit 1.
 - The throwaway clone `/Volumes/littlebig/refmatrix-bug212-mut4` is still present (the r4
   safety block). It is clean at `ebe9fc2`.
+
+## GREEN r7 (ruling L102: migrate asks git about the file it replaces) {#green-r7}
+
+Fix commit `9ed0d6b` (`src/refmatrix/store.py`, `src/refmatrix/cli.py`,
+`docs/INTEGRATION.md`, by pathspec). No test was edited. m-2 needs no code: the r7 GUARD
+`test_memory_sync_disk_deferred_behind_a_running_job_warns_on_stderr` passes, as at `bcd861c`.
+
+rel: implements -> [[#red-r7]]
+rel: amends -> [[#green-r6-changes]]
+
+### What changed {#green-r7-changes}
+
+- `store.git_tracked_catalogs(root, names=WRITER_CATALOG_FILES) -> list[str]` asks `git
+  ls-files -- *names` in `root` and returns the tracked ones in `names`' order.
+- `store.refuse_tracked_catalog_open(root, target, names=WRITER_CATALOG_FILES)` passes `names`
+  to `git_tracked_catalogs`.
+- `cli._refuse_tracked_catalog_open(root, target, names=WRITER_CATALOG_FILES)` threads it
+  through to the store check.
+- The default keeps every existing caller unchanged: `_store_rw`, `local_write`, `compact`,
+  the hooks' Python check.
+- `migrate_to_duckdb` calls `_refuse_tracked_catalog_open(dst.parent.resolve(), dst.resolve(),
+  names=(dst.name,))`.
+  - A committed `x.duckdb` is refused.
+  - An untracked `foo.duckdb` beside a tracked `catalog.duckdb` is allowed.
+  - The default `dst` (`<root>/catalog.duckdb`) keeps the refusal (r5 test green).
+- `docs/INTEGRATION.md#sync-tracked-catalog`: migrate asks about the destination file itself.
+  GMD lint: 0 errors.
+
+### Runs {#green-r7-runs}
+
+- `bug212/green-r7.log`: the r7 file, **3 passed**. At `bcd861c` it was 2 failed / 1 passed.
+- `bug212/green-r7-r4tor7.log`: the r4, r5, r6 and r7 files, **75 passed**.
+- `bug212/green-r7-family.log`: r6's 110 files plus the r7 file (`green-r7-family.files`), at
+  `9ed0d6b`. Result: **1620 passed, 1 skipped**, no failure. The skip is the SkipGate
+  UNPINNED clone artifact.
+- `bug212/green-r7-wide.log`: the full suite at `9ed0d6b` (`__pycache__` cleared). Result: **5
+  failed, 4445 passed, 1 skipped**, 57m21s. It ran at load 12-20, beside bsd216-r6's
+  mergesim suite and a leaked bug212-clone test daemon from an earlier run (bug-229, stopped by
+  the lead). By E line:
+  - Against `green-r6-wide.log` (`green-r7-wide-elines-vs-r6.txt`): `test_brief_real_daemon`
+    (1/1), `test_task21_1_agent_usage_report` x2 (29/29, 16/16) and `test_gmd_lint_requires_version`
+    (22/22; bug-155, fixed on master, which this branch predates; reported, not counted) have
+    the SAME E lines.
+  - Against `release-0.82.0-full.log` (`green-r7-wide-elines-vs-0820.txt`): the same three
+    match; gmd_lint differs (clone scope, bug-155).
+  - **NEW vs r6 and 0.82.0, timing-bound:**
+    `test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly`. E:
+    `assert (667488.70560075 - 667478.654565041) < 8.0`: `hub.graceful_stop` on a freshly
+    spawned daemon took 10.05 s against the test's 8 s bound.
+    - Re-run of the file alone after load dropped (load ~6, the other suites done): run 1
+      `bug212/green-r7-plan4-rerun1.log` gave **16 passed**, with the test's whole call
+      (spawn + stop) taking 5.29 s. Run 2 `bug212/green-r7-plan4-rerun2.log` gave **16
+      passed** at 5.27 s.
+    - r7's diff cannot reach it. `9ed0d6b` changes only `store.git_tracked_catalogs`,
+      `refuse_tracked_catalog_open`, the CLI wrapper and the migrate call. `hub.py` names
+      none of them, and the test spawns a daemon and stops it through `hub.graceful_stop`.
+      Read as load: two clean reruns, and no code path from the diff.
+
+### Mutations {#green-r7-mutations}
+
+The spot-checks ran in the throwaway clone `/Volumes/littlebig/refmatrix-bug212-mut4`,
+fast-forwarded to `9ed0d6b`. The driver was `scratchpad/mut212g7.py` (not committed); every
+mutant compiled. Each mutation ran the r5, r6 and r7 files, logged to
+`bug212/green-r7-mut-<id>.log`. Each touched file was restored with `git checkout --` in its
+own command, then `src` was checked clean with the fix text back, and `__pycache__` was cleared
+in the copy. Batch log: `bug212/green-r7-mutations.log`.
+
+| id | mutation | result |
+|----|----------|--------|
+| R1 | migrate back to the default name list (no `names=`) | killed: 2 (the r7 migrate tests (a) and (b)) |
+| R2a | `refuse_tracked_catalog_open` ignores `names` (calls `git_tracked_catalogs(root)`) | killed: 2 (same) |
+| R2b | `git_tracked_catalogs` ignores `names` (ls-files and the result use `WRITER_CATALOG_FILES`) | killed: 2 (same) |
+
+3 of 3 killed. The r5/r6 migrate tests (the default dst is refused; s-1 (a)/(b)) pass under
+all three, as expected: for those fixtures the default name list and `(dst.name,)` give the
+same answer.
+
+### For the lead and the reviewers {#green-r7-flags}
+
+- **Leftover processes after the run: none.** No process matches `refmatrix-bug212/src/
+  refmatrix/cli.py daemon` or the `-mut4` clone, none has a cwd in either clone, and no Python
+  process has either clone's `src/refmatrix/` open. The bug-229 daemon the lead stopped
+  (pid 89734, `/private/tmp/r1-hcn81cf7`) predates this run.
+- **The refusal wording on a non-store destination.** For `--out <repo>/x.duckdb` the line
+  says "git tracks this store's catalog (x.duckdb) ... Untrack it (git rm --cached
+  .refmatrix/catalog*, ...)", which reads oddly for a file outside any store. The head (target
+  path) and both remedies are right. Not changed (out of L102's scope).
+- The throwaway clone `/Volumes/littlebig/refmatrix-bug212-mut4` is still in place (the r4
+  safety block on removing it). It is clean at `9ed0d6b`.

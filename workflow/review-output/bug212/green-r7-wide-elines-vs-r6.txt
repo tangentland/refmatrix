@@ -1,0 +1,6 @@
+only in A: []
+only in B: ['test_graceful_stop_on_a_live_daemon_returns_quickly']
+test_ac6_cli_log_recalls_are_split_per_channel: SAME E lines (16/16)
+test_ac6_frozen_fixture_prints_the_exact_counts: SAME E lines (29/29)
+test_an_unknown_class_fails_loudly_through_the_daemon: SAME E lines (1/1)
+test_the_repo_scope_is_clean_under_the_stricter_gate: SAME E lines (22/22)
