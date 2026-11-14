@@ -1,0 +1,82 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b225r3mut.tAda/src/refmatrix as checked-hash (bug-037)
+..........................F..........                                    [100%]
+=================================== FAILURES ===================================
+______ test_r3_s1a_corrupt_list_candidate_stops_the_walk_with_gits_error _______
+
+main_and_master = (PosixPath('/private/tmp/b225-gz819rq7'), PosixPath('/private/tmp/b225-gz819rq7/work'))
+
+    def test_r3_s1a_corrupt_list_candidate_stops_the_walk_with_gits_error(main_and_master):
+        """origin/HEAD unset; origin/main is corrupt (verify exits 128). At e2505f3 the
+        walk reads 128 as "not found" and measures against origin/master, silently
+        (bsd-225 r2 probe: ahead_base='origin/master' trunk_error='')."""
+        base, work = main_and_master
+        _corrupt_origin_main(work)
+        facts = handoff._ss_git_facts(work, None)
+        assert "is corrupt" in facts["trunk_error"], facts
+        assert "origin/main" in facts["trunk_error"], facts
+        _assert_walk_stopped(facts)
+        s, root = _stm(base, "sess-b225-r3-corrupt")
+        doc = handoff.compose_save_state(s, root, repo=work, memdir=base / "memory",
+                                         today="2026-11-14", promote=False, dry_run=True)["doc"]
+        assert "ahead of `origin/master`" not in doc, doc
+        assert "is corrupt" in _flat(doc), doc
+>       assert NO_TRUNK_LINE not in doc, doc        # a failure is not "no trunk"
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: ---
+E         gmd: "0.1"
+E         id: savestate_sessb225r3co
+E         title: "Save-state 2026-11-14: work @ 8b0ee77"
+E         tags: ["session:sess-b225-r3-corrupt"]
+E         metadata:
+E           node_type: memory
+E           type: session/recall-state
+E           originSessionId: sess-b225-r3-corrupt
+E           created: 2026-11-14
+E           updated: 2026-11-14T04:33:38-08:00
+E         ---
+E         
+E         # Save-state 2026-11-14: work @ 8b0ee77 {#root}
+E         
+E         ## Session {#session}
+E         
+E         - branch **feature** · HEAD `8b0ee77 feature commit 2`
+E         - trunk: could not verify trunk candidate `origin/main`; nothing measured — `git rev-parse --verify --quiet origin/main^{commit}` exited 128: error: inflate: data stream error (invalid block type) / error: unable to unpack d3d500056dab2d7148ea3e9b774c237bda1fc835 header / error: inflate: data stream error (invalid block type) / error: unable to unpack d3d500056dab2d7148ea3e9b774c237bda1fc835 header / fatal: loose object d3d500056dab2d7148ea3e9b774c237bda1fc835 (stored in .git/objects/d3/d500056dab2d7148ea3e9b774c237bda1fc835) is corrupt
+E         - trunk: none (origin/HEAD unset; no origin/main, origin/master, main or master)
+E         - working tree: clean
+E         
+E         ## Git activity {#git}
+E         
+E         Commits (this session):
+E         
+E         ```
+E         8b0ee77 feature commit 2
+E         5d4ce8c feature commit 1
+E         db66173 develop commit 3
+E         ```
+E         
+E         ## Focus {#focus}
+E         
+E         Top of the working-memory graph (1 events):
+E         
+E         - `bug` [concept] ×1 (w=2.3)
+E         - `handoff` [concept] ×1 (w=2.3)
+E         - `trunk` [concept] ×1 (w=2.3)
+E         
+E         rel: realizes -> [[feedback_save_state_means_handoff]]
+E         rel: related-to -> [[feedback_recall_state_means_resume]]
+E         
+E       assert '- trunk: no...n or master)' not in '---\ngmd: "...s_resume]]\n'
+E         
+E         '- trunk: none (ori...er, main or master)' is contained here:
+E           s corrupt
+E           - trunk: none (origin/HEAD unset; no origin/main, origin/master, main or master)
+E           - working tree: clean
+E           
+E           ## Git activity {#git}...
+E         
+E         ...Full output truncated (19 lines hidden), use '-vv' to show
+
+tests/test_bug225_handoff_trunk.py:707: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug225_handoff_trunk.py::test_r3_s1a_corrupt_list_candidate_stops_the_walk_with_gits_error
+1 failed, 36 passed in 21.57s
