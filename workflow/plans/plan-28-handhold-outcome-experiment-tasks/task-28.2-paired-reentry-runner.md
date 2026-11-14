@@ -265,3 +265,5 @@ The status stays `pending` pending a confirm-lite ch-bsd round. | change | where
 |---|---|
 | the paired leg is unchanged, and not time-boxed by the 3-day session period | [[#r3]] |
 
+
+**Refinement (dev master `8d88d29`; the user, the same day: "3 real days will be sufficent", Q11 a):** the period is 3 CALENDAR days from its start, with the arms concurrent. A pause does NOT extend it: the period ends 3 calendar days (72 hours) after the start, whatever was paused, and paused time is not made up. The "active days" wording is replaced. The rest of L79 is unchanged. {#rev-l79-refined}

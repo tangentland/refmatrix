@@ -73,8 +73,9 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
    - the leak rule (28.2 R5): `leak_suspect` runs are excluded, and a per-cell exclusion count
      that differs by more than one run between `B` and `C` voids the primary reading;
    - the period: the salt (generated at freeze, committed), the start (set by 28.5 at the
-     user's go), and the end rule. **The end is 3 active days (L79), never extended.** Active
-     days are days with an active record, so paused days do not count;
+     user's go), and the end rule. **The end is 3 calendar days (72 hours) after the start
+     (L79, refined), never extended.** A pause does not extend it, and paused time is not made
+     up;
    - **the minimum n of every cell and outcome (L79)**, for the session leg, each frozen here:
      - outcomes (2)-(4) and (6);
      - 10.2 R7's nested outcome (7), whose minimum is 40 sessions per cell per store, copied
@@ -88,7 +89,8 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
      to now, by one commit and a deploy. Sessions in flight keep the cell their SessionStart
      recorded (28.1 R2). A deploy that touches `scan.py`, `recall_pack.py`, `hook_budget.py`,
      context rendering, the hooks generator or `arms.py` lands ONLY while no record is active. The record's own start, pause and end commits, which set its dates in `arms.py`, are exempt by name (r2-m3).
-     Resuming means a NEW record (new id, new salt) committed at the user's go. Readings are
+     Resuming means a NEW record (new id, new salt) committed at the user's go, whose `end`
+     is the original window's end (start + 72 hours). Readings are
      stratified by record id, and each record's deploy sha is recorded;
    - the transcript cleanup period that Claude Code is configured with, read before the start
      (28.5 R2), and the session-leg archive's sweep interval (28.5 R3);
@@ -167,6 +169,8 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
 The status stays `pending` pending a confirm-lite ch-bsd round. | change | where |
 |---|---|
-| the end rule: 3 active days, never extended; the 14-day / 40-session / 42-day rule removed | [[#r2]] |
+| the end rule: 3 calendar days, never extended; the 14-day / 40-session / 42-day rule removed | [[#r2]] |
 | a minimum n per cell and outcome (10.2 R7's 40 sessions included), below which a reading is "underpowered, no verdict" | [[#r2]] |
 
+
+**Refinement (dev master `8d88d29`; the user, the same day: "3 real days will be sufficent", Q11 a):** the period is 3 CALENDAR days from its start, with the arms concurrent. A pause does NOT extend it: the period ends 3 calendar days (72 hours) after the start, whatever was paused, and paused time is not made up. The "active days" wording is replaced. The rest of L79 is unchanged. {#rev-l79-refined}

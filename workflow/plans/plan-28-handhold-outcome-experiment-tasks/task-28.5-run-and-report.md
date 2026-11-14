@@ -27,7 +27,7 @@ rel: reinforces -> [[feedback_errors_fail_loudly_on_the_console]]
 
 ## Why {#why}
 
-The experiment randomises the user's own work sessions in two projects for 3 active days (L79).
+The experiment randomises the user's own work sessions in two projects for 3 calendar days (L79).
 That is a user step by the plan review's rule (L45), and its result is an input to a user
 decision (G18), not a goal step. {#why-body}
 
@@ -59,18 +59,20 @@ decision (G18), not a goal step. {#why-body}
      committed; only a sha256 manifest is. Each sweep counts sessions per cell whose transcript
      was already gone (`no_transcript`). The daily count reports them, and the report lists
      them as a limit.
-   - A daily count (the period is 3 active days, L79) of sessions per cell per store, of
+   - A daily count (the period is 3 calendar days, L79) of sessions per cell per store, of
      suppressed rows and of `arm_error` sessions, posted to the user.
    - **The pause (P-12; r1 #s8).** A deploy that touches a module the pause rule names lands
      only while no record is active. The record's own start, pause and end commits (R2, this
      pause, R4) are exempt by name (r2-m3). To pause, the lead asks the user, and on the user's word
      one commit sets the active record's `end` to now and is deployed. Sessions in flight keep
-     their cell (28.1 R2). Resuming is a NEW record (new id, new salt) committed at the user's
+     their cell (28.1 R2). A pause does not extend the period (L79, refined). Resuming is a NEW
+     record (new id, new salt), with its `end` at the original window's end, committed at the user's
      go. Every deploy sha and date in the period is recorded, with the record id that was active.
    - The paired runs (28.2) execute in the frozen shuffled order.
    - A defect that blocks work in any cell stops the period loudly: the user is told, the period
      record's `end` is set, nothing is read, and the stop is recorded.
-4. **R4 End.** After 3 active days (the end rule, L79; never extended for sessions or n), a
+4. **R4 End.** 3 calendar days after the start (the end rule, L79 refined; never extended
+   for sessions, n or pauses), a
    commit sets `end` (if it was not already set) and deploys.
    After that, `arms.draw` returns the default for every session (checked on a new session in
    each store). {#r4}
@@ -94,7 +96,7 @@ decision (G18), not a goal step. {#why-body}
 
 1. **AC-1** The user's go is recorded verbatim with its date before the start commit, as the
    git order shows. {#ac-1}
-2. **AC-2** The period ended after 3 active days. Every reading whose cell or outcome is
+2. **AC-2** The period ended after 3 calendar days. Every reading whose cell or outcome is
    below its frozen minimum n says "underpowered, no verdict", and the report states the n
    reached per cell (L79). {#ac-2}
 3. **AC-3** Every band in the frozen file has a reading in the report, and no reading uses a
@@ -147,5 +149,7 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
 The status stays `pending` pending a confirm-lite ch-bsd round. | change | where |
 |---|---|
-| 3 active days; a daily count; the end after 3 active days, never extended; AC-2 reads "underpowered, no verdict" below the minimum n | [[#why]], [[#r3]], [[#r4]], [[#ac-2]] |
+| 3 calendar days; a daily count; the end after 3 calendar days, never extended; AC-2 reads "underpowered, no verdict" below the minimum n | [[#why]], [[#r3]], [[#r4]], [[#ac-2]] |
 
+
+**Refinement (dev master `8d88d29`; the user, the same day: "3 real days will be sufficent", Q11 a):** the period is 3 CALENDAR days from its start, with the arms concurrent. A pause does NOT extend it: the period ends 3 calendar days (72 hours) after the start, whatever was paused, and paused time is not made up. The "active days" wording is replaced. The rest of L79 is unchanged. {#rev-l79-refined}

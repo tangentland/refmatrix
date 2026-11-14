@@ -286,3 +286,5 @@ The status stays `pending` pending a confirm-lite ch-bsd round. | change | where
 |---|---|
 | every reading checks the frozen minimum n first and returns "underpowered, no verdict" below it; AC-10 | [[#r9]], [[#ac-10]] |
 
+
+**Refinement (dev master `8d88d29`; the user, the same day: "3 real days will be sufficent", Q11 a):** the period is 3 CALENDAR days from its start, with the arms concurrent. A pause does NOT extend it: the period ends 3 calendar days (72 hours) after the start, whatever was paused, and paused time is not made up. The "active days" wording is replaced. The rest of L79 is unchanged. {#rev-l79-refined}
