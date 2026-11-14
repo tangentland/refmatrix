@@ -389,11 +389,15 @@ BEFORE any annotation this task adds and before any comment 29.3 adds to a deriv
   stand-in modules. Under this requirement a comment is no change, so `@ch-test-engineer`
   re-points each to a statement edit in the RED commit and lists them; the comment form becomes
   the "stays equal" case of AC-20. No assertion in them is weakened.
-- **What the fleet shows.** After the release that carries this requirement every existing stamp
-  reads `code_unknown` until its pass is next derived or re-stamped. That is a quieter state than
-  `behind_code` and it is one-time. Whether the lead re-stamps then, and how that is combined
-  with the announced re-stamp 29.5's module-list change needs (L106), is the lead's release
-  plan, not this spec's ([[#d4]]).
+- **What the fleet shows, and the re-stamp.** After the release that carries this requirement
+  every existing stamp reads `code_unknown` until its pass is next derived or re-stamped.
+  - **This release carries its own announced, user-gated re-stamp under the new tag** (ruling
+    L107). A derive-hash change is a store-changing release, outside the standing go (L106).
+    The evidence is AC-18's equal digest and AC-20.
+  - 29.5's release carries its own announced re-stamp, after its split, for its module-list
+    change. The two are not merged into one deferred re-stamp: the window between them would
+    show `behind_code`, then `code_unknown`, on every store's `derive status`.
+  - The lead runs both. No agent re-stamps or re-derives a live store.
 
 ## Acceptance criteria {#acceptance}
 
@@ -588,7 +592,7 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 | `tests/test_type_gate.py`, `tests/fixtures/type_gate/` | create: AC-1 to AC-5, AC-13 |
 | `tests/test_bug235_pql_count.py` | create: AC-6 to AC-8 |
 | `tests/test_store_writer_protocol.py` | create: AC-9 to AC-12, AC-16, AC-17 |
-| `tests/test_derive_digest_unchanged.py`, `scripts/derive-digest.py`, `tests/fixtures/derive_digest/` | create (by whichever of 29.3 slice K or this task comes first): AC-18 |
+| `tests/test_derive_digest_unchanged.py`, `scripts/derive-digest.py`, `tests/fixtures/derive_digest/` | created by 29.5 at its R0 (L107), to the requirements of [[#derive-digest]]; the golden is re-recorded by 29.3 slice K; this task only runs AC-18 against it |
 | `workflow/bug_registry.md`, `workflow/test_mock_registry.md` | bug-235; the mypy stand-in |
 | `workflow/implementation_summaries/task-29.2-mypy-gate.md` | the summary, with the before / after tables |
 
@@ -696,13 +700,13 @@ written); that answer is marked "29.5 side".
    `src/refmatrix` with `ast`. This task adds no census walk of its own outside the kit: AC-5,
    AC-12 and AC-16 are written as kit families if the kit exists when they are written
    ([[#seam]] says it does), and are moved onto it by 29.3's slice K otherwise.
-4. **The derive digest's golden** ([[#derive-digest]]). Asked of 29.5 on 2026-11-14: record it at
-   R0 with this spec's tool and check it after the last store move, so that it is evidence for
-   29.5's module-list change as L106 intends. Not yet answered.
+4. **The derive digest's golden** ([[#derive-digest]]). Ruled in L107: 29.5 records it at its R0
+   with `scripts/derive-digest.py record` and checks it after its last store move; 29.3 slice K
+   re-records it on the post-29.5 tree. 29.5's author was given the script path on 2026-11-14.
 5. **The three handoff helpers and `telemetry`'s read of `cli.main`** are 29.5's two declared
-   layering exceptions (L105, B1). Their owner follow-up is
-   [[task-29.3-converge-shapes#slice-h]], which starts after this task's [[#r5]] because it
-   needs the daemon-absent accessor and the writer Protocol.
+   layering exceptions (L105, B1). Their owner is [[task-29.3-converge-shapes#slice-h]] (ruling
+   L107), which starts after this task's [[#r5]] because it needs the daemon-absent accessor
+   and the writer Protocol.
 
 ## The seam with 29.3 {#seam}
 
@@ -771,9 +775,11 @@ Rules for this task, with [[#r7]] in place:
   justifies ([[task-29.3-converge-shapes#c-r7]]).
 - **One release carries [[#r7]] and every real edit both tasks make to a derive file.** In that
   release the tag changes, so every existing stamp reads `code_unknown`; the real edits ride
-  inside that one-time state instead of producing a separate `behind_code` event later. A real
-  edit to a pass file that ships in a LATER release marks that pass `behind_code` on every
-  store; that needs the lead's go before it is merged.
+  inside that one-time state and are cleared by that release's re-stamp ([[#r7]]).
+- **A real edit to a pass file never ships outside such a release** (ruling L107). It does not
+  ship before [[#r7]]. One that is not ready for [[#r7]]'s release waits: it ships only in a
+  later release that carries its own announced, user-gated re-stamp. No release lets a pass read
+  `behind_code` fleet-wide without its own go.
 - No agent re-stamps or re-derives a live store.
 
 ### AC-18: the derived state did not move, and the check can fail {#derive-digest}
@@ -795,20 +801,22 @@ shared by 29.2 and 29.3.
 - **Every pass is shown to have run.** The test asserts a derive stamp exists for each pass of
   the table before it digests. A pass that did not run fails the test by name; it never
   contributes an empty leg.
-- **How the earlier digest exists at a later commit: a committed golden.** The tool, the corpus
-  and `tests/fixtures/derive_digest/golden.json` are committed by `@ch-test-engineer` before the
-  code they are evidence about changes.
-  - L106 names this digest as the evidence for 29.5's module-list change. For that, the golden
-    has to be recorded BEFORE 29.5's first store move (at its R0, on the `pre-split-29.5` tree)
-    and checked after its last. That is asked of 29.5's spec ([[#seams-295]] item 4); this spec
-    cannot make 29.5 do it.
-  - If 29.5 does not record it, 29.3 slice K does, before the first plan-29 edit to any file of
-    the table after 29.5's release ([[task-29.3-converge-shapes#k-r6]]). The digest is then
-    evidence for 29.2 and 29.3 only, and the summary says so.
+- **How the earlier digest exists at a later commit: a committed golden** (ruling L107).
+  - The recording script is `scripts/derive-digest.py`. `scripts/derive-digest.py record` derives
+    the corpus and writes `tests/fixtures/derive_digest/golden.json`; `scripts/derive-digest.py
+    check` derives it again and compares the four legs. The test calls the same code.
+  - **First recorded at 29.5's R0**, on the pre-split tree, by `@ch-test-engineer`, and **checked
+    after 29.5's last store move**. That check is what backs 29.5's announced re-stamp. 29.5's
+    spec carries the requirement and cites this script path.
+  - **Re-recorded by 29.3 slice K on the post-29.5 tree**
+    ([[task-29.3-converge-shapes#k-r6]]), before any `src/` edit of 29.2 or 29.3. The
+    re-recorded legs must EQUAL the R0 golden's; a difference is a finding, reported before
+    anything else is done. The re-record only moves the golden's recorded commit forward.
   - The golden names the commit it was recorded at, the embed model id and the duckdb version.
     At a different model or duckdb version the test FAILS with the re-record procedure (a
-    `git worktree` of the recorded commit under a short temp root, the tool run with that tree
-    on `PYTHONPATH`); it is never skipped and never re-recorded from the current tree.
+    `git worktree` of the recorded commit under a short temp root, `scripts/derive-digest.py
+    record` run with that tree on `PYTHONPATH`); it is never skipped and never re-recorded from
+    the current tree outside the two points above.
 - **It is proven to fail on input that must fail.** A second corpus,
   `tests/fixtures/derive_digest/corpus_changed/`, differs from the first by four small edits, one
   aimed at each leg (a new `def`; one changed sentence in a doc; one new call edge; one new
@@ -817,8 +825,9 @@ shared by 29.2 and 29.3.
 - **And on code that must fail.** Four mutations, each planted and seen red, one per leg (table
   in [[#test-strategy]]).
 - **AC-18 itself:** at this task's end commit, and at 29.3's, the four legs equal the golden.
-  That is the evidence that the real edits of [[#derive-hash]] left the derived state alone, and
-  (when 29.5 records the golden) the evidence for the announced re-stamp after 29.5.
+  That is the evidence for [[#r7]]'s re-stamp: the real edits of [[#derive-hash]] left the
+  derived state alone. The same digest, recorded at 29.5's R0 and checked after its last store
+  move, is the evidence for 29.5's re-stamp.
 
 ## `plan-29 D4`: decided {#open-decisions}
 
@@ -838,8 +847,9 @@ user, 2026-11-14 (ruling L106, [[plan-review-2026-11-13#lead]]). The lead regist
      `code_unknown` once ([[#r7]], "What the fleet shows").
   3. Real edits to a pass file change that pass's hash ([[#derive-hash]]); they ship inside the
      release of item 2.
-- **Left to the lead's release plan, not decided here:** whether one announced re-stamp after
-  the second release can serve for both 1 and 2, or each release gets its own.
+- **Re-stamps (ruling L107):** each of the two releases carries its own announced, user-gated
+  re-stamp: 29.5's after its split, and [[#r7]]'s under the new tag. There is no single deferred
+  re-stamp.
 - **Cited for reference, decided in the same ruling:** `plan-review-fable D4` (a standing go,
   except for store-changing releases; both releases above are of that kind) and
   `plan-review-fable-store D5` (duckdb 1.5.3 in the dev venv before baselines).
@@ -887,9 +897,16 @@ span for the reason in [[#fold-cites]].
 `plan-review-fable D4` and `plan-review-fable-store D5` are cited as decided in L106; nothing
 here decides them.
 
-**Still waiting on 29.5's author.** Item 4 of [[#seams-295]] (who records the digest golden) and
-the `feature-bound` wording 29.3's AC-a1 relies on. 29.5 and 29.4 are being revised in the same
-round; if their merged text differs from the "29.5 side" lines, this section is amended.
+### Round 2b (ruling L107) {#rev-round-2b}
+
+| ruling | change | anchor |
+|---|---|---|
+| the R7 release and 29.5's release each carry their own announced, user-gated re-stamp; no deferred single one | stated in R7 and in the D4 section | [[#r7]], [[#d4]] |
+| a real edit to a pass file ships with R7, or waits for a release with its own go | a requirement, not a fork for the lead | [[#derive-hash]] |
+| the digest golden is first recorded at 29.5's R0, checked after its last store move, and re-recorded by slice K | the script path is named (`scripts/derive-digest.py`, `record` and `check`); the re-record must equal the R0 golden | [[#derive-digest]], [[#seams-295]] item 4 |
+| slice h owns 29.5's two layering exceptions | cited as ruled | [[#seams-295]] item 5 |
+
+Nothing in this spec is waiting on another author after round 2b.
 
 ## Out of scope {#out-of-scope}
 

@@ -198,13 +198,15 @@ proof is the mutations and planted bypasses below, each seen red.
   shows the three things a new family supplies (predicate, allowlist with reasons, synthetic
   module). Those tasks add their family; this task does not.
 
-- **K-R6: the derive digest exists before any `src/` edit of 29.2 or 29.3.** The tool, the two
-  corpora, the golden and the test of [[task-29.2-mypy-gate#derive-digest]] are in the tree when
-  this slice ends. If 29.5 recorded the golden at its R0 (asked of it, so the digest is also
-  evidence for 29.5's module-list change, as ruling L106 intends), this slice only checks that
-  it is green. If not, this slice records it, as the first plan-29 work after 29.5's release.
-  Either way it precedes slice a's edit to the store module and slice c's edits to the derive
-  files. {#k-r6}
+- **K-R6: the derive digest is re-recorded here, on the post-29.5 tree** (ruling L107). {#k-r6}
+  - The tool (`scripts/derive-digest.py`), the two corpora, the golden and the test of
+    [[task-29.2-mypy-gate#derive-digest]] are already in the tree: 29.5 recorded the golden at
+    its R0 and checked it after its last store move.
+  - This slice runs `scripts/derive-digest.py record` on the post-29.5 tree, as the first
+    plan-29 work after 29.5's release and before any `src/` edit of 29.2 or 29.3. The four
+    re-recorded legs must equal the R0 golden's; a difference is a finding, reported before
+    slice a starts. The commit changes only the golden's recorded commit.
+  - It precedes slice a's edit to the store module and slice c's edits to the derive files.
 - **K-R7: which source-walking tests move onto the kit** (ch-bsd spec review r1 M6, stated once
   for 29.2, 29.3 and 29.5). {#k-r7}
   - The scope of AC-K5 is a test under `tests/` that walks `src/refmatrix` with `ast`.
@@ -242,9 +244,9 @@ Acceptance:
   the censuses). Every entry of K-R7's list is on the kit, and each still fails on its own
   planted bypass after the move. The allow list of AC-K5 itself is empty unless the summary
   gives a reason per entry.
-- **AC-K6:** [[task-29.2-mypy-gate#derive-digest]]'s test is green on the golden, its
-  changed-corpus test shows all four legs differ, and its four mutations are red, all before
-  slice a starts.
+- **AC-K6:** after K-R6's re-record, the four legs equal the golden 29.5 recorded at its R0;
+  [[task-29.2-mypy-gate#derive-digest]]'s test is green; its changed-corpus test shows all four
+  legs differ; and its four mutations are red. All before slice a starts.
 
 ## Slice a: one git runner {#slice-a}
 
@@ -329,11 +331,13 @@ The allowlist is empty when the slice lands. {#a-r6}
   binary (`why == "missing"`). Omitting `timeout` is a `TypeError`.
   - **The timeout leg is a `feature-bound` test** in 29.4's terms
     (`task-29.4-suite-health#r3-kinds`): the bound is the feature. The shim blocks until the
-    test releases it; the test passes a small `timeout=` (the bound is `run_git`'s own argument;
-    there is no environment knob) and asserts the OUTCOME: `rc is None`, `why == "timeout"`,
+    test releases it; the test passes a small literal `timeout=` (the bound is `run_git`'s own
+    argument) and asserts the OUTCOME: `rc is None`, `why == "timeout"`,
     `err` names the bound, the shim's process is gone, and the call returned while the shim's
     release file was still absent. It asserts nothing about elapsed time. If 29.4's census wants
-    an allow-list entry for it, the entry is `feature-bound` and names this AC.
+    an allow-list entry for it, the entry is `feature-bound`, names this AC, and has
+    `knob: arg:timeout` (ruling L107: 29.4's `knob` field admits `arg:<parameter>`, a literal
+    argument no larger than the entry's `max_s`, and the census checks the call's literal).
 - **AC-a2 (env):** with `GIT_DIR` pointing at another repository, `strip_local_env=True` answers
   for the `-C` repository and the default does not.
 - **AC-a3 (handoff facts):** with a shim whose `status` exits 128, the save-state document and
@@ -599,10 +603,14 @@ names, rides 0.83.1.) {#c-r6}
 - The choice between justify, surface and narrow is made by c-R2 and c-R3 on what the handler
   swallows. It is never made to keep a hash still; a handler on an ingest path is surfaced.
 - All of this slice's edits to these files land in ONE commit group, and that group ships in
-  the SAME release as [[task-29.2-mypy-gate#r7]]. In that release every stamp reads
-  `code_unknown` once because the hash tag changes, and the real edits ride inside that state.
-  If the group cannot make that release, the passes it touches read `behind_code` fleet-wide
-  afterwards; that needs the lead's go before the group is merged.
+  the SAME release as [[task-29.2-mypy-gate#r7]] (ruling L107). In that release every stamp
+  reads `code_unknown` once because the hash tag changes; the real edits ride inside that state
+  and are cleared by that release's announced re-stamp.
+- A real edit to a pass file does not ship before [[task-29.2-mypy-gate#r7]]. One that is not
+  ready for that release WAITS: it is not merged into an ordinary later release, and ships only
+  in a release that carries its own announced, user-gated re-stamp. No release lets a pass read
+  `behind_code` fleet-wide without its own go. The slice's other groups do not wait for it; the
+  ratchet of c-R4 keeps the waiting handlers counted.
 - The summary lists, per derive file, each handler edited and whether the edit is neutral or
   real.
 - They are covered by [[task-29.2-mypy-gate#derive-digest]] (AC-18): the graph, vector,
@@ -904,8 +912,8 @@ D6 and D23 upward are free).
 11. **Slice h is taken although it is not a ledger class**. L105 requires an owner for 29.5's
     two declared layering exceptions, the work has this task's shape (one helper, one bypass
     census), and it touches the same functions as slice d. It depends on 29.2's R5, so it is
-    last. The lead may move it to its own task; 29.5 cites [[#slice-h]] as the owner either
-    way. {#k11}
+    last. Ruling L107 keeps it a slice of this task; 29.5's AC-13 allow-list entries name
+    [[#slice-h]] as owner. {#k11}
 12. **A handler's class is never chosen to keep a derive hash still**
     ([[#c-r7]]). {#k12}
 
@@ -983,6 +991,16 @@ span for the reason in [[#fold-cites]].
 
 `plan-review-fable D4` and `plan-review-fable-store D5` are decided in L106 and are only cited
 here ([[task-29.2-mypy-gate#d4]]).
+
+### Round 2b (ruling L107) {#rev-round-2b}
+
+| ruling | change | anchor |
+|---|---|---|
+| slice h stays a slice of this task and owns 29.5's two declared layering exceptions | cited as ruled | [[#slice-h]], [[#k11]] |
+| pass-file handler edits ship with 29.2's R7; one that cannot waits | a requirement in c-R7; the "lead's go" fork is gone | [[#c-r7]] |
+| the digest golden: recorded at 29.5's R0, re-recorded by slice K | K-R6 re-records with `scripts/derive-digest.py record` and requires equality with the R0 golden | [[#k-r6]] |
+| `feature-bound` admits `knob: arg:<parameter>` | AC-a1's timeout leg names `knob: arg:timeout` | [[#a-ac]] |
+
 
 ## Out of scope {#out-of-scope}
 
