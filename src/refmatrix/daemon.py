@@ -5925,11 +5925,20 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
             # the old id until `rmx embed` re-embeds them (the merge marks both
             # ids unembedded).
             _moved = report.get("fresh_moved") or []
-            if _moved:
+            # ids an A loser vacated whose new holder is another entity (r4)
+            _vacated = sorted({int(i) for _p, _k, i in (report.get("vector_rows") or [])}
+                              & {int(o) for o, _n in (report.get("a_losers") or [])})
+            if _moved or _vacated:
+                parts = []
+                if _moved:
+                    parts.append(f"{len(_moved)} entity id(s) moved to a fresh id: "
+                                 + ", ".join(f"{o}->{n}" for o, n in _moved))
+                if _vacated:
+                    parts.append(f"{len(_vacated)} id(s) an A loser vacated: "
+                                 + ", ".join(str(i) for i in _vacated))
                 report["re_embed"] = (
-                    f"{len(_moved)} entity id(s) moved to a fresh id; their vectors were "
-                    f"not moved — run `rmx embed` to re-embed: "
-                    + ", ".join(f"{o}->{n}" for o, n in _moved))
+                    "; ".join(parts) + " — their vectors were not moved (stale rows are "
+                    "deleted on a real merge); run `rmx embed` to re-embed them")
                 d._log(f"replica merge{' (dry run)' if dry_run else ''}: {report['re_embed']}")
         except Exception as exc:
             err = f"merge build: {exc!r}"
@@ -6049,13 +6058,13 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
             # is named in the reply (`vector_delete_error`, which the CLI turns
             # into a non-zero exit) and logged; the ids stay marked unembedded,
             # so `rmx embed` rewrites them.
-            _moved = report.get("fresh_moved") or []
-            if _moved:
-                vres = d.store.drop_vectors_for_ids(
-                    [i for pair in _moved for i in pair])
+            _vrows = report.get("vector_rows") or []
+            if _vrows:
+                vres = d.store.drop_vector_rows(_vrows)
                 report["vectors_deleted"] = vres
-                d._log(f"replica merge: deleted {vres['deleted']} vector row(s) of "
-                       f"{len(_moved)} moved id pair(s) in {vres['tables']} table(s)")
+                d._log(f"replica merge: deleted {vres['deleted']} vector row(s) whose owner "
+                       f"changed ({len(_vrows)} (partition, kind, id) row(s) named) in "
+                       f"{vres['tables']} table(s)")
                 if vres["errors"]:
                     report["vector_delete_error"] = (
                         "the catalog merge IS committed and installed, but deleting the "

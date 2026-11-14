@@ -138,7 +138,8 @@ def merge_slots(
         _unlink_target(target_path)
         con = open_duckdb(target_path)
     try:
-        merged_counts, remap_a, remap_b, fresh_alloc_count, fresh_b, frag_remapped = _merge_into(
+        (merged_counts, remap_a, remap_b, fresh_alloc_count, fresh_b, frag_remapped,
+         vector_rows) = _merge_into(
             con, a_path, b_path, tables, dry_run=dry_run,
             max_entity=max_entity, max_partition=max_partition, max_lt=max_lt)
     except BaseException:
@@ -164,6 +165,11 @@ def merge_slots(
         # marks both ids unembedded so the next `rmx embed` re-embeds them.
         "fresh_moved": [[int(o), int(n)] for o, n in sorted(fresh_b.items())],
         "fragment_bits_remapped": frag_remapped,
+        # A losers, chained through the fresh moves: `[[loser_id, canonical_id], ...]`.
+        "a_losers": [[int(o), int(n)] for o, n in sorted(remap_a.items())],
+        # The Lance rows whose owner changed, `[[partition, kind, id], ...]`; the daemon
+        # deletes them after the swap (bug-216 remedy r3 M1 + r4).
+        "vector_rows": [[p, k, int(i)] for p, k, i in vector_rows],
         "remap": {
             "a_loser_count": len(remap_a),
             # name-losers only (remap_b also carries the fresh moves)
@@ -395,6 +401,14 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
             f"{len(fresh_b)} distinct entities share an id across the slots — more than "
             f"the {REMAP_HEADROOM}-id headroom the merge target reserves")
     remap_b.update(fresh_b)
+    # Chain A's losers through the move (bug-216 remedy r4 B1b, ruling L99):
+    # A's `shared` lost to B's `shared` at id X -- but if X is also A's
+    # `only-a`, B's `shared` was just moved to a fresh id, and an unchained
+    # remap_a sent the loser's body, links, evidence and pending refs to
+    # `only-a`. Every table that remaps A ids (memory_content, entity_links,
+    # linkage_evidence, pending_refs, fragments) reads THIS map; entities and
+    # concepts drop A losers outright, so no chain is needed there.
+    remap_a = {k: fresh_b.get(v, v) for k, v in remap_a.items()}
 
     # Materialize remap as temp tables for SQL joins.
     con.execute("CREATE TEMP TABLE remap_fresh_b (old_id BIGINT, new_id BIGINT)")
@@ -436,11 +450,38 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
     # entities unembedded so `pending_embeddings` hands them to the next
     # `rmx embed` (bug-216 remedy B2c). Until it runs a dense read can return the
     # old id's vector for either entity -- the merge reply names the ids.
+    # Also every id an A LOSER vacated (bug-216 remedy r4, the lead's extension
+    # of L99): a different B entity may now hold it (`b1` at A-shared's old id),
+    # and the Lance row there may be A-shared's vector. The canonical entity an
+    # A loser maps to keeps its own vector: its owner did not change.
     con.execute("""
         UPDATE entities SET vectors_updated_at = NULL
         WHERE id IN (SELECT new_id FROM remap_fresh_b)
            OR id IN (SELECT old_id FROM remap_fresh_b)
+           OR id IN (SELECT loser_id FROM remap_a)
     """)
+    # The Lance rows whose OWNER changed, as (partition, kind, id): at a moved
+    # id, both slots' tables (the A entity that keeps it, the B entity that
+    # left); the moved entity's table at its fresh id; at an id an A loser
+    # vacated, the loser's table and the table of whatever entity now holds it.
+    # Ids whose owner did not change are never listed. The daemon deletes these
+    # rows after the swap (`Store.drop_vector_rows`).
+    # ONE set-based query over the remap temp tables (bug-178: no per-row
+    # round trips -- a 5,000-loser merge must not issue 10,000 SELECTs).
+    vector_rows = {(str(pn), str(k), int(i)) for pn, k, i in con.execute("""
+        SELECT p.name, x.kind, x.id FROM (
+            SELECT ae.partition_id, ae.kind, f.old_id AS id
+              FROM remap_fresh_b f JOIN a.entities ae ON ae.id = f.old_id
+            UNION SELECT be.partition_id, be.kind, f.old_id
+              FROM remap_fresh_b f JOIN b.entities be ON be.id = f.old_id
+            UNION SELECT be.partition_id, be.kind, f.new_id
+              FROM remap_fresh_b f JOIN b.entities be ON be.id = f.old_id
+            UNION SELECT ae.partition_id, ae.kind, r.loser_id
+              FROM remap_a r JOIN a.entities ae ON ae.id = r.loser_id
+            UNION SELECT te.partition_id, te.kind, r.loser_id
+              FROM remap_a r JOIN entities te ON te.id = r.loser_id
+        ) x JOIN partitions p ON p.id = x.partition_id
+    """).fetchall()}
 
     # ---- 6. concepts: drop loser ids, union --------------------------
     con.execute("""
@@ -596,7 +637,7 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
     con.execute("INSERT INTO saved_queries BY NAME SELECT * FROM a.saved_queries ON CONFLICT DO NOTHING")
     con.execute("INSERT INTO saved_queries BY NAME SELECT * FROM b.saved_queries ON CONFLICT DO NOTHING")
 
-    # ---- 12. bitmap_fragments: A's rows + every B bit, remapped ---------
+    # ---- 12. bitmap_fragments: A's rows + every B bit, both remapped ----
     # Nothing recomputes fragments after the merge (a flush rewrites only the
     # rows the running daemon dirties), so every B bit must land here. B's bits
     # carry B's ids: each goes through `store.remap_fragment(row, remap_b)` --
@@ -606,13 +647,23 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
     # row BOTH hold gets B's remapped bits OR-ed in and A's bits unchanged
     # (bug-216 remedy B2b + r3 S1, bug-227: at bff34c1 a shared row kept A's
     # bits only, so B's moved entity was in `entity_links` and in no bitmap).
-    con.execute("INSERT INTO bitmap_fragments BY NAME SELECT * FROM a.bitmap_fragments")
+    # A's rows go through `remap_fragment(row, remap_a)` too (bug-216 remedy r4
+    # B1a): an A loser's bit otherwise stays on its OLD id, which a different B
+    # entity may now hold, and names that entity. remap_a's keys are A's own
+    # loser ids (chained through the fresh moves), so it is the right map for
+    # A's rows as remap_b is for B's.
     from pyroaring import BitMap64
 
     from refmatrix.store import remap_fragment
-    a_rows = {(int(pid), str(lk)): bytes(blob) for pid, lk, blob in con.execute(
-        "SELECT partition_id, linkage, blob FROM bitmap_fragments").fetchall()}
     fragment_bits_remapped = 0
+    a_rows: "dict[tuple[int, str], bytes]" = {}
+    for pid, linkage, blob in con.execute(
+            "SELECT partition_id, linkage, blob FROM a.bitmap_fragments").fetchall():
+        bm, n = remap_fragment(BitMap64.deserialize(bytes(blob)), remap_a)
+        fragment_bits_remapped += n
+        a_rows[(int(pid), str(linkage))] = bm.serialize()
+        con.execute("INSERT INTO bitmap_fragments (partition_id, linkage, blob) "
+                    "VALUES (?, ?, ?)", [pid, linkage, a_rows[(int(pid), str(linkage))]])
     for pid, linkage, blob in con.execute(
             "SELECT partition_id, linkage, blob FROM b.bitmap_fragments").fetchall():
         bm, n = remap_fragment(BitMap64.deserialize(bytes(blob)), remap_b)
@@ -634,7 +685,8 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
     con.execute("DETACH b")
     if not dry_run:
         con.execute("CHECKPOINT")
-    return merged_counts, remap_a, remap_b, fresh_alloc_count, fresh_b, fragment_bits_remapped
+    return (merged_counts, remap_a, remap_b, fresh_alloc_count, fresh_b,
+            fragment_bits_remapped, sorted(vector_rows))
 
 
 def audit_via_writer(

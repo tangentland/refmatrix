@@ -3993,71 +3993,50 @@ class Store:
     def _drop_lance_for_purge_batch(
         self, ids_by_kind: "dict[str, list[int]]",
     ) -> int:
-        """Batched form of `_drop_lance_for_purge`: one Lance dataset open and
-        ONE delete per kind. Since bug-085 it is the only vector delete on file
-        re-sync, concept fold, noise prune and bulk memory forget. Same failure
-        semantics as the single-id variant: quiet only when there is nothing to
-        delete, otherwise printed and counted. Returns the number of ids whose
-        delete was issued."""
-        total = 0
-        for kind, ids in ids_by_kind.items():
-            if not ids:
-                continue
-            path = (
-                self.root / "vectors" / self._partition_name
-                / f"{kind}.lance"
-            )
-            if not path.exists():
-                continue
-            lance = self._lance_for_purge(kind, len(ids))
-            if lance is None:
-                continue
-            try:
-                ds = lance.dataset(str(path))
-                in_list = ",".join(str(int(i)) for i in ids)
-                ds.delete(f"id IN ({in_list})")
-                total += len(ids)
-            except Exception as e:  # noqa: BLE001 — named and counted
-                self._note_vector_delete_failure(kind, len(ids), e)
-        return total
+        """Batched form of `_drop_lance_for_purge`, in the BOUND partition: one
+        delete per kind (bug-085). Since bug-085 it is the only vector delete on
+        file re-sync, concept fold, noise prune and bulk memory forget. A failed
+        delete is printed and counted (`_note_vector_delete_failure`); quiet only
+        when there is nothing to delete. Returns the rows actually removed."""
+        return self._delete_vector_groups(
+            {(self._partition_name, kind): ids for kind, ids in ids_by_kind.items()})["deleted"]
 
-    def drop_vectors_for_ids(self, ids: "Iterable[int]") -> dict:
-        """Delete the Lance vector rows of `ids`, whatever partition and kind each
-        entity has: ONE batched delete per (partition, kind) table, never one per
-        entity (bug-085). Returns `{"deleted": n, "tables": k, "errors": [str]}`;
-        a failed table is named in `errors` and counted, never swallowed.
+    def drop_vector_rows(self, rows: "Iterable") -> dict:
+        """Delete Lance vector rows named as `(partition, kind, id)`: ONE batched
+        delete per (partition, kind) table (bug-085). Returns `{"deleted": rows
+        actually removed, "tables": tables touched, "errors": [...]}`; a failed
+        table is named in `errors` and counted, never swallowed.
 
-        `replica_merge` (bug-216 remedy r3 M1, ruling L97) calls it for both ids
-        of every fresh-id move: the vector at the old id is whichever slot
-        embedded last, so a dense read returned A's entity for B's text until the
-        re-embed; deleted, the read misses instead (the merge also marks both ids
-        unembedded, so `rmx embed` restores them)."""
-        ids = sorted({int(i) for i in ids})
-        out: dict = {"deleted": 0, "tables": 0, "errors": []}
-        if not ids:
-            return out
+        `replica_merge` (bug-216 remedy r3 M1 + r4, rulings L97 / L99) passes
+        the rows whose OWNER the merge changed (`merge_slots`' `vector_rows`):
+        both slots' tables at a fresh-moved id, the moved entity's table at its
+        fresh id, and the id an A loser vacated. The vector there was another
+        entity's; deleted, a dense read misses it until `rmx embed` (the merge
+        marks those ids unembedded) writes the right one."""
         groups: "dict[tuple[str, str], list[int]]" = {}
-        ph = ",".join("?" * len(ids))
-        for eid, kind, pname in self._connect().execute(
-                f"SELECT e.id, e.kind, p.name FROM entities e "
-                f"JOIN partitions p ON p.id = e.partition_id WHERE e.id IN ({ph})",
-                ids).fetchall():
+        for pname, kind, eid in rows:
             groups.setdefault((str(pname), str(kind)), []).append(int(eid))
+        return self._delete_vector_groups(groups)
+
+    def _delete_vector_groups(self, groups: "dict[tuple[str, str], list[int]]") -> dict:
+        """The one executor behind both deletes above: per (partition, kind),
+        `vectors.delete_vector_rows` (THE IN-list delete). Failures named,
+        counted on `vector_delete_failures`, and returned."""
+        from refmatrix.vectors import delete_vector_rows
+        out: dict = {"deleted": 0, "tables": 0, "errors": []}
         for (pname, kind), gids in sorted(groups.items()):
+            if not gids:
+                continue
             path = self.root / "vectors" / pname / f"{kind}.lance"
             if not path.exists():
                 continue
             lance = self._lance_for_purge(kind, len(gids))
             if lance is None:
-                out["errors"].append(f"{pname}/{kind}.lance: lance unavailable; "
-                                     f"{len(gids)} vector(s) not deleted")
                 continue
             try:
-                lance.dataset(str(path)).delete(
-                    "id IN (" + ",".join(str(i) for i in gids) + ")")
-                out["deleted"] += len(gids)
+                out["deleted"] += delete_vector_rows(lance, path, gids)
                 out["tables"] += 1
-            except Exception as e:  # noqa: BLE001 — returned, named and counted
+            except Exception as e:  # noqa: BLE001 — named, counted and returned
                 self._note_vector_delete_failure(kind, len(gids), e)
                 out["errors"].append(f"{pname}/{kind}.lance: {type(e).__name__}: {e}")
         return out
