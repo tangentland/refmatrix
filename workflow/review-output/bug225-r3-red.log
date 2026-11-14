@@ -1,0 +1,201 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug225/src/refmatrix as checked-hash (bug-037)
+..........................FFFFF..F..F                                    [100%]
+=================================== FAILURES ===================================
+______ test_r3_s1a_corrupt_list_candidate_stops_the_walk_with_gits_error _______
+
+main_and_master = (PosixPath('/private/tmp/b225-isn0m_3w'), PosixPath('/private/tmp/b225-isn0m_3w/work'))
+
+    def test_r3_s1a_corrupt_list_candidate_stops_the_walk_with_gits_error(main_and_master):
+        """origin/HEAD unset; origin/main is corrupt (verify exits 128). At e2505f3 the
+        walk reads 128 as "not found" and measures against origin/master, silently
+        (bsd-225 r2 probe: ahead_base='origin/master' trunk_error='')."""
+        base, work = main_and_master
+        _corrupt_origin_main(work)
+        facts = handoff._ss_git_facts(work, None)
+>       assert "is corrupt" in facts["trunk_error"], facts
+E       AssertionError: {'ahead': '695f481 feature commit 2
+E         6c96f2e feature commit 1
+E         b8e007b develop commit 3
+E         91a2d83 develop commit 2
+E         d77b967 develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'is corrupt' in ''
+
+tests/test_bug225_handoff_trunk.py:699: AssertionError
+_________ test_r3_s1b_origin_head_naming_a_corrupt_ref_says_gits_error _________
+
+main_and_master = (PosixPath('/private/tmp/b225-ah3izg_4'), PosixPath('/private/tmp/b225-ah3izg_4/work'))
+
+    def test_r3_s1b_origin_head_naming_a_corrupt_ref_says_gits_error(main_and_master):
+        """origin/HEAD → origin/main, which is corrupt. The message carries git's error,
+        not "does not resolve" (the wrong cause, at e2505f3), and nothing is measured."""
+        _, work = main_and_master
+        _corrupt_origin_main(work)
+        _git(work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+        facts = handoff._ss_git_facts(work, None)
+>       assert "is corrupt" in facts["trunk_error"], facts
+E       AssertionError: {'ahead': 'a8216ce feature commit 2
+E         6e434e1 feature commit 1
+E         dcbe232 develop commit 3
+E         6c3339d develop commit 2
+E         6079b65 develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'is corrupt' in 'origin/HEAD names `origin/main`, which does not resolve; measured against `origin/master`'
+
+tests/test_bug225_handoff_trunk.py:721: AssertionError
+_____________ test_r3_s1_ref_to_a_tree_is_a_failure_not_not_found ______________
+
+main_and_master = (PosixPath('/private/tmp/b225-p0kzksbp'), PosixPath('/private/tmp/b225-p0kzksbp/work'))
+
+    def test_r3_s1_ref_to_a_tree_is_a_failure_not_not_found(main_and_master):
+        """Real git, exit 1 WITH stderr: origin/main names a TREE. git says "expected
+        commit type"; L100 lists this as a failure that stops the walk. At e2505f3 it
+        is skipped and origin/master is measured."""
+        _, work = main_and_master
+        tree = _git(work, "rev-parse", "HEAD^{tree}")
+        (work / ".git" / "refs" / "remotes" / "origin" / "main").write_text(tree + "\n")
+        r = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "origin/main^{commit}"],
+                           cwd=str(work), capture_output=True, text=True)
+        assert r.returncode == 1 and "expected commit type" in r.stderr, (r.returncode, r.stderr)
+        facts = handoff._ss_git_facts(work, None)
+>       assert "expected commit type" in facts["trunk_error"], facts
+E       AssertionError: {'ahead': '813b1a0 feature commit 2
+E         7cf82e6 feature commit 1
+E         bbe1626 develop commit 3
+E         e0e58ad develop commit 2
+E         5e80407 develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'expected commit type' in ''
+
+tests/test_bug225_handoff_trunk.py:737: AssertionError
+______ test_r3_s1c_verify_failure_with_stderr_is_surfaced[exit128-stderr] ______
+
+main_and_master = (PosixPath('/private/tmp/b225-xrs551h4'), PosixPath('/private/tmp/b225-xrs551h4/work'))
+git_shim = <function git_shim.<locals>.arm at 0x11495a610>, rc = 128
+
+    @pytest.mark.parametrize("rc", [128, 1], ids=["exit128-stderr", "exit1-stderr"])
+    def test_r3_s1c_verify_failure_with_stderr_is_surfaced(main_and_master, git_shim, rc):
+        """The shim fails ONLY origin/main's verify, writing stderr. Exit 128 and exit 1
+        with stderr are both failures: said in trunk_error, the walk stops. At e2505f3
+        both are read as "not found" and origin/master is measured. Kills the mutants
+        `rc in (1, 128)` (both cases) and `rc == 1` without the stderr test (exit 1)."""
+        _, work = main_and_master
+        git_shim("verify", rc=rc, match="origin/main^{commit}")
+        facts = handoff._ss_git_facts(work, None)
+>       assert SHIM_MARK in facts["trunk_error"], facts
+E       AssertionError: {'ahead': '86c08f7 feature commit 2
+E         d6c1809 feature commit 1
+E         598242c develop commit 3
+E         6493bde develop commit 2
+E         b899e92 develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'b225-shim: forced failure' in ''
+
+tests/test_bug225_handoff_trunk.py:750: AssertionError
+_______ test_r3_s1c_verify_failure_with_stderr_is_surfaced[exit1-stderr] _______
+
+main_and_master = (PosixPath('/private/tmp/b225-uixdqydb'), PosixPath('/private/tmp/b225-uixdqydb/work'))
+git_shim = <function git_shim.<locals>.arm at 0x114958eb0>, rc = 1
+
+    @pytest.mark.parametrize("rc", [128, 1], ids=["exit128-stderr", "exit1-stderr"])
+    def test_r3_s1c_verify_failure_with_stderr_is_surfaced(main_and_master, git_shim, rc):
+        """The shim fails ONLY origin/main's verify, writing stderr. Exit 128 and exit 1
+        with stderr are both failures: said in trunk_error, the walk stops. At e2505f3
+        both are read as "not found" and origin/master is measured. Kills the mutants
+        `rc in (1, 128)` (both cases) and `rc == 1` without the stderr test (exit 1)."""
+        _, work = main_and_master
+        git_shim("verify", rc=rc, match="origin/main^{commit}")
+        facts = handoff._ss_git_facts(work, None)
+>       assert SHIM_MARK in facts["trunk_error"], facts
+E       AssertionError: {'ahead': 'cdcef7d feature commit 2
+E         afc4480 feature commit 1
+E         33791bd develop commit 3
+E         409a20e develop commit 2
+E         8a24e9f develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'b225-shim: forced failure' in ''
+
+tests/test_bug225_handoff_trunk.py:750: AssertionError
+_______________ test_r3_m1_no_trunk_is_one_info_line_in_the_doc ________________
+
+trunkless = (PosixPath('/private/tmp/b225t-pp3n9023'), PosixPath('/private/tmp/b225t-pp3n9023/work'))
+
+    def test_r3_m1_no_trunk_is_one_info_line_in_the_doc(trunkless):
+        """At e2505f3 the doc says nothing, so "no trunk exists" reads the same as
+        "the measurement is missing"."""
+        base, work = trunkless
+        facts = handoff._ss_git_facts(work, None)
+        assert facts["trunk_error"] == "" and facts["ahead_base"] == "", facts
+        s, root = _stm(base, "sess-b225-r3-none")
+        doc = handoff.compose_save_state(s, root, repo=work, memdir=base / "memory",
+                                         today="2026-11-14", promote=False, dry_run=True)["doc"]
+>       assert doc.splitlines().count(NO_TRUNK_LINE) == 1, doc
+E       AssertionError: ---
+E         gmd: "0.1"
+E         id: savestate_sessb225r3no
+E         title: "Save-state 2026-11-14: work @ 1dd1739"
+E         tags: ["session:sess-b225-r3-none"]
+E         metadata:
+E           node_type: memory
+E           type: session/recall-state
+E           originSessionId: sess-b225-r3-none
+E           created: 2026-11-14
+E           updated: 2026-11-14T03:38:45-08:00
+E         ---
+E         
+E         # Save-state 2026-11-14: work @ 1dd1739 {#root}
+E         
+E         ## Session {#session}
+E         
+E         - branch **trunkless** · HEAD `1dd1739 only commit`
+E         - working tree: clean
+E         
+E         ## Git activity {#git}
+E         
+E         Commits (this session):
+E         
+E         ```
+E         1dd1739 only commit
+E         ```
+E         
+E         ## Focus {#focus}
+E         
+E         Top of the working-memory graph (1 events):
+E         
+E         - `bug` [concept] ×1 (w=2.3)
+E         - `handoff` [concept] ×1 (w=2.3)
+E         - `trunk` [concept] ×1 (w=2.3)
+E         
+E         rel: realizes -> [[feedback_save_state_means_handoff]]
+E         rel: related-to -> [[feedback_recall_state_means_resume]]
+E         
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of list object at 0x1149784c0>('- trunk: none (origin/HEAD unset; no origin/main, origin/master, main or master)')
+E        +    where <built-in method count of list object at 0x1149784c0> = ['---', 'gmd: "0.1"', 'id: savestate_sessb225r3no', 'title: "Save-state 2026-11-14: work @ 1dd1739"', 'tags: ["session:sess-b225-r3-none"]', 'metadata:', ...].count
+E        +      where ['---', 'gmd: "0.1"', 'id: savestate_sessb225r3no', 'title: "Save-state 2026-11-14: work @ 1dd1739"', 'tags: ["session:sess-b225-r3-none"]', 'metadata:', ...] = <built-in method splitlines of str object at 0x113436930>()
+E        +        where <built-in method splitlines of str object at 0x113436930> = '---\ngmd: "0.1"\nid: savestate_sessb225r3no\ntitle: "Save-state 2026-11-14: work @ 1dd1739"\ntags: ["session:sess-b22...n\nrel: realizes -> [[feedback_save_state_means_handoff]]\nrel: related-to -> [[feedback_recall_state_means_resume]]\n'.splitlines
+
+tests/test_bug225_handoff_trunk.py:810: AssertionError
+_________ test_r3_template_step2_names_the_local_main_master_fallback __________
+
+    def test_r3_template_step2_names_the_local_main_master_fallback():
+        """Content check on the SHIPPED template only (never ~/.claude). The code's
+        list is origin/main, origin/master, main, master; step 2 at e2505f3 names only
+        the two origin/ names."""
+        import refmatrix
+        tpl = Path(refmatrix.__file__).parent / "templates" / "commands" / "recall-state.md"
+        m = re.search(r"^2\. \*\*Git state\*\*(.*?)^3\. ", tpl.read_text(), re.S | re.M)
+        assert m, "step 2 (Git state) not found in the shipped recall-state template"
+        step2 = _flat(m.group(1))
+        for name in ("main", "master"):
+>           assert re.search(rf"(?<![\w/]){name}\b", step2), (name, step2)
+E           AssertionError: ('main', '— branch, `git log --oneline -5`, `git status --short` (raw git), and how far ahead of the trunk (`git rev-l... still prints a name); else the first of `origin/main` / `origin/master` that resolves. Report a skipped origin/HEAD.')
+E           assert None
+E            +  where None = <function search at 0x103337cc0>('(?<![\\w/])main\\b', '— branch, `git log --oneline -5`, `git status --short` (raw git), and how far ahead of the trunk (`git rev-list --cou...h still prints a name); else the first of `origin/main` / `origin/master` that resolves. Report a skipped origin/HEAD.')
+E            +    where <function search at 0x103337cc0> = re.search
+
+tests/test_bug225_handoff_trunk.py:845: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug225_handoff_trunk.py::test_r3_s1a_corrupt_list_candidate_stops_the_walk_with_gits_error
+FAILED tests/test_bug225_handoff_trunk.py::test_r3_s1b_origin_head_naming_a_corrupt_ref_says_gits_error
+FAILED tests/test_bug225_handoff_trunk.py::test_r3_s1_ref_to_a_tree_is_a_failure_not_not_found
+FAILED tests/test_bug225_handoff_trunk.py::test_r3_s1c_verify_failure_with_stderr_is_surfaced[exit128-stderr]
+FAILED tests/test_bug225_handoff_trunk.py::test_r3_s1c_verify_failure_with_stderr_is_surfaced[exit1-stderr]
+FAILED tests/test_bug225_handoff_trunk.py::test_r3_m1_no_trunk_is_one_info_line_in_the_doc
+FAILED tests/test_bug225_handoff_trunk.py::test_r3_template_step2_names_the_local_main_master_fallback
+7 failed, 30 passed in 22.61s

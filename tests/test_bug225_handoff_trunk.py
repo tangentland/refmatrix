@@ -331,13 +331,17 @@ def _flat(text: str) -> str:
 
 @pytest.fixture
 def git_shim(tmp_path, monkeypatch):
-    """Install a `git` on PATH that fails chosen calls with exit 2 and execs the
-    real git for everything else. Returns `arm(mode, log=None)`:
+    """Install a `git` on PATH that fails chosen calls and execs the real git for
+    everything else. Returns `arm(mode, log=None, rc=2, stderr=True, match=None)`:
 
     - mode "verify": `rev-parse` carrying `--verify` or a `^{...}` peel, and any
-      `cat-file` (every way to verify a candidate ref) exit 2.
-    - mode "ahead": `log` / `rev-list` with a `A..B` range exit 2.
+      `cat-file` (every way to verify a candidate ref) fail.
+    - mode "ahead": `log` / `rev-list` with a `A..B` range fail.
     - mode "": nothing fails; with `log`, every argv is recorded as a JSON line.
+    A failing call exits `rc` (r3, ruling L100: 128, and 1, besides the default 2)
+    and writes a `b225-shim: forced failure` stderr line unless `stderr=False`.
+    With `match`, only a call that has an argument containing `match` fails (r3:
+    fail ONE candidate, e.g. `origin/main^{commit}`, and let the rest resolve).
     PATH is changed only when `arm` is called, after the fixture repos are built."""
     real = shutil.which("git")
     assert real, "git must be installed"
@@ -363,16 +367,25 @@ if mode == "verify":
         or sub == "cat-file"
 elif mode == "ahead":
     fail = sub in ("log", "rev-list") and any(".." in a for a in rest)
+match = os.environ.get("B225_GIT_MATCH", "")
+if fail and match:
+    fail = any(match in a for a in rest)
 if fail:
-    sys.stderr.write({SHIM_MARK!r} + " of git " + " ".join(args) + "\\n")
-    sys.exit(2)
+    if os.environ.get("B225_GIT_STDERR", "1") == "1":
+        sys.stderr.write({SHIM_MARK!r} + " of git " + " ".join(args) + "\\n")
+    sys.exit(int(os.environ.get("B225_GIT_RC", "2")))
 os.execv(REAL, [REAL] + args)
 """)
     shim.chmod(0o755)
 
-    def arm(mode: str, log: "Path | None" = None) -> None:
+    def arm(mode: str, log: "Path | None" = None, *, rc: int = 2, stderr: bool = True,
+            match: "str | None" = None) -> None:
         monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
         monkeypatch.setenv("B225_GIT_FAIL", mode)
+        monkeypatch.setenv("B225_GIT_RC", str(rc))
+        monkeypatch.setenv("B225_GIT_STDERR", "1" if stderr else "0")
+        if match:
+            monkeypatch.setenv("B225_GIT_MATCH", match)
         if log is not None:
             monkeypatch.setenv("B225_GIT_LOG", str(log))
         assert shutil.which("git") == str(shim), shutil.which("git")
@@ -622,3 +635,211 @@ def test_r2_m2_shipped_recall_template_checks_origin_head_resolves_to_a_commit()
     step2 = _flat(m.group(1))
     assert "refs/remotes/origin/HEAD" in step2, step2
     assert "^{commit}" in step2 or "resolves to a commit" in step2, step2
+
+
+# ==== remedy r3 (ruling L100, on bsd-225 r2 at 9c952eb) =======================
+#
+# bsd-225 r2 #s-1: `_ss_trunk` reads a verify exit of 1 OR 128 as "does not
+# resolve" and walks on. Under `--quiet`, git 2.50.1 exits 1 with an EMPTY stderr
+# only for a missing name or a ref to a missing sha; a corrupt object exits 128,
+# and an unreadable object, a broken ref or a ref to a tree exit 1 WITH stderr.
+# L100: only (exit 1, empty stderr) is "not found"; everything else stops the
+# walk and is said with git's own text. #m-1: "no trunk at all" gets one info
+# line in the save-state doc, kept out of recall-state's anomalies.
+
+NO_TRUNK_LINE = "- trunk: none (origin/HEAD unset; no origin/main, origin/master, main or master)"
+
+
+@pytest.fixture
+def main_and_master(repos):
+    """`repos` plus a REAL origin/main (master's commit, pushed as `main`), with
+    origin/HEAD unset, so origin/main is the first list candidate and resolves."""
+    base, work = repos
+    _git(base / "seed", "push", "-q", "origin", "master:main")
+    _git(work, "fetch", "-q", "origin")
+    _git(work, "remote", "set-head", "origin", "-d")
+    assert _git(work, "rev-parse", "--verify", "--quiet", "origin/main^{commit}")
+    return base, work
+
+
+def _corrupt_origin_main(work: Path) -> str:
+    """Point origin/main at a NEW loose commit object, then overwrite that object
+    with bytes zlib cannot inflate. Returns git's stderr for the verify, which must
+    exit 128 (probed on git 2.50.1: "error: inflate: data stream error … fatal:
+    loose object <sha> … is corrupt"). The object is unreachable from HEAD, so
+    every other git call in the repo still works."""
+    tree = _git(work, "rev-parse", "HEAD^{tree}")
+    sha = _git(work, "commit-tree", tree, "-p", "HEAD", "-m", "to be corrupted")
+    obj = work / ".git" / "objects" / sha[:2] / sha[2:]
+    obj.chmod(0o644)
+    obj.write_bytes(b"x\x9cnot-zlib-at-all")
+    ref = work / ".git" / "refs" / "remotes" / "origin" / "main"
+    ref.parent.mkdir(parents=True, exist_ok=True)
+    ref.write_text(sha + "\n")
+    r = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "origin/main^{commit}"],
+                       cwd=str(work), capture_output=True, text=True)
+    assert r.returncode == 128 and "corrupt" in r.stderr, (r.returncode, r.stderr)
+    assert _git(work, "rev-parse", "--verify", "--quiet", "origin/master^{commit}")
+    return r.stderr
+
+
+def _assert_walk_stopped(facts: dict) -> None:
+    """Not measured at all -- in particular NOT against the next name, origin/master."""
+    assert facts["ahead_base"] == "", facts
+    assert facts["ahead"] == "", facts
+
+
+def test_r3_s1a_corrupt_list_candidate_stops_the_walk_with_gits_error(main_and_master):
+    """origin/HEAD unset; origin/main is corrupt (verify exits 128). At e2505f3 the
+    walk reads 128 as "not found" and measures against origin/master, silently
+    (bsd-225 r2 probe: ahead_base='origin/master' trunk_error='')."""
+    base, work = main_and_master
+    _corrupt_origin_main(work)
+    facts = handoff._ss_git_facts(work, None)
+    assert "is corrupt" in facts["trunk_error"], facts
+    assert "origin/main" in facts["trunk_error"], facts
+    _assert_walk_stopped(facts)
+    s, root = _stm(base, "sess-b225-r3-corrupt")
+    doc = handoff.compose_save_state(s, root, repo=work, memdir=base / "memory",
+                                     today="2026-11-14", promote=False, dry_run=True)["doc"]
+    assert "ahead of `origin/master`" not in doc, doc
+    assert "is corrupt" in _flat(doc), doc
+    assert NO_TRUNK_LINE not in doc, doc        # a failure is not "no trunk"
+    _no_zero_ahead(doc)
+    rep = handoff.compose_recall_state(s, root, repo=work, memdir=base / "memory",
+                                       pointer_anomalies=[])
+    assert [a for a in rep["anomalies"] if "is corrupt" in a], rep["anomalies"]
+
+
+def test_r3_s1b_origin_head_naming_a_corrupt_ref_says_gits_error(main_and_master):
+    """origin/HEAD → origin/main, which is corrupt. The message carries git's error,
+    not "does not resolve" (the wrong cause, at e2505f3), and nothing is measured."""
+    _, work = main_and_master
+    _corrupt_origin_main(work)
+    _git(work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+    facts = handoff._ss_git_facts(work, None)
+    assert "is corrupt" in facts["trunk_error"], facts
+    assert "does not resolve" not in facts["trunk_error"], facts
+    _assert_walk_stopped(facts)
+
+
+def test_r3_s1_ref_to_a_tree_is_a_failure_not_not_found(main_and_master):
+    """Real git, exit 1 WITH stderr: origin/main names a TREE. git says "expected
+    commit type"; L100 lists this as a failure that stops the walk. At e2505f3 it
+    is skipped and origin/master is measured."""
+    _, work = main_and_master
+    tree = _git(work, "rev-parse", "HEAD^{tree}")
+    (work / ".git" / "refs" / "remotes" / "origin" / "main").write_text(tree + "\n")
+    r = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "origin/main^{commit}"],
+                       cwd=str(work), capture_output=True, text=True)
+    assert r.returncode == 1 and "expected commit type" in r.stderr, (r.returncode, r.stderr)
+    facts = handoff._ss_git_facts(work, None)
+    assert "expected commit type" in facts["trunk_error"], facts
+    _assert_walk_stopped(facts)
+
+
+@pytest.mark.parametrize("rc", [128, 1], ids=["exit128-stderr", "exit1-stderr"])
+def test_r3_s1c_verify_failure_with_stderr_is_surfaced(main_and_master, git_shim, rc):
+    """The shim fails ONLY origin/main's verify, writing stderr. Exit 128 and exit 1
+    with stderr are both failures: said in trunk_error, the walk stops. At e2505f3
+    both are read as "not found" and origin/master is measured. Kills the mutants
+    `rc in (1, 128)` (both cases) and `rc == 1` without the stderr test (exit 1)."""
+    _, work = main_and_master
+    git_shim("verify", rc=rc, match="origin/main^{commit}")
+    facts = handoff._ss_git_facts(work, None)
+    assert SHIM_MARK in facts["trunk_error"], facts
+    assert f"exited {rc}" in facts["trunk_error"], facts
+    _assert_walk_stopped(facts)
+
+
+def test_r3_s1c_guard_exit1_without_stderr_is_not_found(main_and_master, git_shim):
+    """GUARD: exit 1 with an EMPTY stderr is "not found" (a missing name, a missing
+    sha), even for a name that exists: the walk goes on to origin/master, no error."""
+    _, work = main_and_master
+    git_shim("verify", rc=1, stderr=False, match="origin/main^{commit}")
+    facts = handoff._ss_git_facts(work, None)
+    assert facts["trunk_error"] == "", facts
+    assert facts["ahead_base"] == "origin/master", facts
+    assert _subjects(facts["ahead"]) == list(reversed(FEATURE)) + list(reversed(DEVELOP))
+
+
+def test_r3_s1c_guard_real_missing_sha_is_not_found(main_and_master):
+    """GUARD on real git: origin/main → a missing sha exits 1 with an empty stderr
+    and is skipped without a word. (A missing NAME, the other silent exit 1, is
+    pinned by `test_origin_head_unset_falls_back_to_the_list`: no origin/main.)"""
+    _, work = main_and_master
+    _point_at_missing_object(work, "refs/remotes/origin/main")
+    r = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "origin/main^{commit}"],
+                       cwd=str(work), capture_output=True, text=True)
+    assert (r.returncode, r.stderr) == (1, ""), (r.returncode, r.stderr)
+    facts = handoff._ss_git_facts(work, None)
+    assert facts["trunk_error"] == "", facts
+    assert facts["ahead_base"] == "origin/master", facts
+
+
+# ---- M1: no trunk at all is one info line in the doc, not an anomaly ---------
+
+
+@pytest.fixture
+def trunkless(hermetic_git):
+    """A local-only repo: no remote, one branch `trunkless`, no main or master."""
+    base = Path(tempfile.mkdtemp(prefix="b225t-", dir="/tmp")).resolve()
+    try:
+        work = base / "work"
+        _git(base, "init", "-q", "-b", "trunkless", str(work))
+        _commit(work, "only commit")
+        assert _git(work, "remote") == ""
+        for ref in ("main", "master"):
+            r = subprocess.run(["git", "rev-parse", "--verify", "--quiet", ref],
+                               cwd=str(work), capture_output=True, text=True)
+            assert r.returncode == 1, ref
+        yield base, work
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_r3_m1_no_trunk_is_one_info_line_in_the_doc(trunkless):
+    """At e2505f3 the doc says nothing, so "no trunk exists" reads the same as
+    "the measurement is missing"."""
+    base, work = trunkless
+    facts = handoff._ss_git_facts(work, None)
+    assert facts["trunk_error"] == "" and facts["ahead_base"] == "", facts
+    s, root = _stm(base, "sess-b225-r3-none")
+    doc = handoff.compose_save_state(s, root, repo=work, memdir=base / "memory",
+                                     today="2026-11-14", promote=False, dry_run=True)["doc"]
+    assert doc.splitlines().count(NO_TRUNK_LINE) == 1, doc
+    assert len([ln for ln in doc.splitlines() if ln.startswith("- trunk:")]) == 1, doc
+
+
+def test_r3_m1_no_trunk_is_not_a_recall_anomaly(trunkless):
+    """GUARD: kept OUT of recall-state's anomalies (it is not a fault)."""
+    base, work = trunkless
+    s, root = _stm(base, "sess-b225-r3-none-recall")
+    rep = handoff.compose_recall_state(s, root, repo=work, memdir=base / "memory",
+                                       pointer_anomalies=[])
+    assert not [a for a in rep["anomalies"] if "trunk" in a], rep["anomalies"]
+
+
+def test_r3_m1_a_resolved_trunk_has_no_none_line(repos):
+    """GUARD: the info line is only for "no trunk": a normal repo does not get it."""
+    base, work = repos
+    s, root = _stm(base, "sess-b225-r3-some")
+    doc = handoff.compose_save_state(s, root, repo=work, memdir=base / "memory",
+                                     today="2026-11-14", promote=False, dry_run=True)["doc"]
+    assert "trunk: none" not in doc, doc
+
+
+# ---- template: step 2 names the local main/master fallback -------------------
+
+
+def test_r3_template_step2_names_the_local_main_master_fallback():
+    """Content check on the SHIPPED template only (never ~/.claude). The code's
+    list is origin/main, origin/master, main, master; step 2 at e2505f3 names only
+    the two origin/ names."""
+    import refmatrix
+    tpl = Path(refmatrix.__file__).parent / "templates" / "commands" / "recall-state.md"
+    m = re.search(r"^2\. \*\*Git state\*\*(.*?)^3\. ", tpl.read_text(), re.S | re.M)
+    assert m, "step 2 (Git state) not found in the shipped recall-state template"
+    step2 = _flat(m.group(1))
+    for name in ("main", "master"):
+        assert re.search(rf"(?<![\w/]){name}\b", step2), (name, step2)
