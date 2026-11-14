@@ -619,8 +619,24 @@ commit's parent and at the commit, and compared:
      leg that differs stops the phase like any red gate.
    - The golden names its commit, the embed model id and the duckdb version. It is recorded
      after the dev venv is on duckdb 1.5.3 (`plan-review-fable-store D5`, decided).
-   - 29.3's slice K then re-records on the tree this task leaves and requires the re-recorded
-     legs to equal this golden (`task-29.3-converge-shapes#k-r6`; ruling L107).
+   - **The tool's contract is 29.2's**, completed at `spec-plan29b` `cbb4ff8`
+     (`task-29.2-mypy-gate#derive-digest`), and this task builds to it exactly:
+     - it works in a throwaway store under a short temp root and **never opens a live store**;
+     - `--corpus` and `--golden` choose other paths (the changed corpus; a worktree);
+     - `check` exits **0** when all four legs are equal; **1** when a leg differs, naming the leg
+       and the first differing key; **2** when it could not compare (a pass left no stamp, the
+       embed model id or the duckdb version differs from the golden's, the corpus is missing).
+       It never reports equal for a leg it did not compute;
+     - `record` refuses, exit 2 and the golden untouched, when a pass left no stamp.
+
+     G11 is green only on exit 0. Exit 2 is a red gate, not a skipped one.
+   - **29.3's slice K re-records the golden on the tree this task leaves**
+     (`task-29.3-converge-shapes#k-r6`; ruling L107): `scripts/derive-digest.py record` is the
+     first plan-29 work after this task's release, before any `src/` edit of 29.2 or 29.3. The
+     four re-recorded legs must **equal this task's R0 golden**; a difference is a finding,
+     reported before 29.3's slice a starts. Slice K does not merely check that the digest is
+     green: it records again and compares, and the re-record only moves the golden's recorded
+     commit forward.
 
 ### R6: private names used across modules {#r6}
 
@@ -953,8 +969,9 @@ is quoted in the summary. {#r10-body}
   `ch-test-engineer` on the `pre-split-29.5` tree, before any move commit ([[#r5-digest]]). Its
   four legs equal the golden after phase 1's last commit and after every phase-2 commit (gate
   G11), and the summary gives each leg's digest at R0 and at the final sha. The check is shown
-  able to fail as 29.2's section specifies: the changed corpus differs from the golden leg by
-  leg. This is the evidence the lead cites for the announced re-stamp. {#ac-16}
+  able to fail as 29.2's section specifies: the changed corpus (`--corpus`) differs from the
+  golden leg by leg, with exit 1 and the leg named; a corpus derived with one pass left out
+  gives exit 2, and `record` on it leaves the golden untouched. This is the evidence the lead cites for the announced re-stamp. {#ac-16}
 - **AC-17: the re-stamp is on the record.** The release record holds: the announcement and the
   user's go, both dated before the deploy; per fleet store, the backup path and `derive status`
   before and after the re-stamp; that no store was re-derived; and the list of stores not
@@ -1261,3 +1278,11 @@ already in `321954b` ([[#rev-note-3]]). New here: R0 item 14 and the `record` / 
 for the derive digest ([[#r5-digest]]); the re-stamp as this release's own, user-gated step
 ([[#r9-restamp]], [[#ac-17]]), with no deferral; plan-29 D24 recorded as decided by the lead;
 plan-29 D23 asked at the store event with the count in hand. {#rev-note-4-body}
+
+## Revision note 5 (2026-11-14, the digest's contract) {#rev-note-5}
+
+[[#r5-digest]] now quotes the tool contract 29.2 completed at `spec-plan29b` `cbb4ff8` (exit
+codes 0 / 1 / 2, `--corpus` and `--golden`, `record` refusing with no stamp, never a live
+store) and says that 29.3's slice K **re-records** the golden on the post-29.5 tree and
+requires equality with this task's R0 golden (`task-29.3-converge-shapes#k-r6`), reported
+before slice a starts. [[#ac-16]] names the exit codes. {#rev-note-5-body}
