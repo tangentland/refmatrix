@@ -302,11 +302,15 @@ def test_s1_on_an_old_code_store_the_r4_edit_and_a_sync_of_the_docs_bind_nothing
                                          "project-profile#constraints": 0}
 
 
+@pytest.mark.parametrize("old_store", ["ingest", "sync"], indirect=True)
 def test_s1_on_an_old_code_store_the_r4_edit_then_ingest_dot_binds_the_citers(old_store):
-    """R4 at merge (L81 S1): the ignore edit THEN `rmx ingest .` (here `ingest_path(proj)`, the
-    op `rmx ingest .` runs): both citing lines bind on the rule docs' nodes — for a store whose
-    citers came in through the watcher / sync too, where the citer's GMD doc carries a matching
-    content hash and nothing else forces it to be re-processed."""
+    """The legacy-row path (L86: kept as a pin): on a store whose citers still carry the plain
+    relpath row old `ingest_path` / `sync_files` wrote, the ignore edit THEN `rmx ingest .`
+    (`ingest_path(proj)`) binds both citing lines — the purge of that row is what defeats the
+    content-hash resume skip. The ingest-gmd-built store has no such row and `rmx ingest .`
+    binds nothing there; L86 made R4's live procedure `rmx reingest --force --no-sessions`,
+    pinned in tests/test_bug216_remedy_l86.py, so that build is not parametrized here (no
+    skip: the suite's skip gate names every skip)."""
     from refmatrix.ingest import ingest_path
     _r4(old_store)
     s = _open(old_store["root"])
@@ -454,7 +458,12 @@ def walk(base):
     _new_store(root)
     a = _write(proj, "docs/a.md", _gmd("a", "Intro.\n\n## Cite {#cite}\n\nText.\n"))
     b = _write(proj, "docs/b.md", _gmd("b-doc", "The target.\n"))
-    x = _write(proj, "docs/x.md", _gmd("x-doc", "Unrelated prose.\n"))
+    # X shares NO title, tag or body term with B (green-216, 2026-11-14): with the shared
+    # `_gmd` title "Fixture document" and tag `t`, X was B's own mention sibling under
+    # (mentions, 'Fixture') and reached B's context with no `denotes` at all.
+    x = _write(proj, "docs/x.md",
+               '---\ngmd: "0.1"\nid: x-doc\ntitle: "Zebra quokka"\ntags: [zq]\n---\n\n'
+               "# Zebra quokka {#root}\n\nPangolin wombat.\n")
     s = _open(root)
     try:
         ingest_gmd_paths(s, [a, b, x])
@@ -500,8 +509,11 @@ def test_m2_build_context_mention_chain_does_not_cross_denotes(walk):
     """L81 M2: a doc that merely MENTIONS the term concept is not B's neighbour (PageRank folds
     typed edges only; until G30 decides the fold, build_context does the same)."""
     got = _context_ids(walk)
-    assert walk["x"] not in got, (
-        f"a plain `mentions` of the denoting concept reached B's context via {got.get(walk['x'])}")
+    # `content` is the CONTENT MATCH group: a lexical hit of the ref's own term (X mentions the
+    # term `b-doc`), which reaches X with or without `denotes` (measured: still there with the
+    # denotes chain switched off). It is not a graph chain, so it is not what M2 is about.
+    via = got.get(walk["x"], set()) - {"content"}
+    assert not via, f"a plain `mentions` of the denoting concept reached B's context via {via}"
 
 
 def test_m2_neighbors_of_the_concept_lists_its_raw_denotes_link(walk):
