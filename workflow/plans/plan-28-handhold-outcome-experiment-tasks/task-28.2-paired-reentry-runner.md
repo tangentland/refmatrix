@@ -140,7 +140,8 @@ hazards shape it:
      The hub, launchd and registry state are verified unchanged against the pre-run reading. A
      teardown mismatch stops the series loudly.
 4. **R3 Order and blinding of the series.** The run order is shuffled by a frozen seed, so time
-   trends spread across cells. Runs execute any time during 28.5's period. The scorer never
+   trends spread across cells. Runs execute any time after 28.4's freeze. They are not
+   time-boxed by the session leg's 3-day period (L79) and run to completion. The scorer never
    sees the cell (28.3 R6). {#r3}
 5. **R4 Isolation.** No experiment agent writes outside its clone and its clone memory dir, and
    no live store is opened. Every `find` is scoped to the clone. The runner refuses a clone path
@@ -255,3 +256,12 @@ rel: derives-from -> [[bsd-spec-t3c-r3-c5d1b79]]
 rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
 
 **Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. This task is `pending`, which means approved to build in plan-28's order. {#approval-row}
+
+## Revision L79 (2026-11-14, the user: "the plan 28 arms should only be 3 days"; Q11 assumed) {#rev-l79}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite ch-bsd round. | change | where |
+|---|---|
+| the paired leg is unchanged, and not time-boxed by the 3-day session period | [[#r3]] |
+

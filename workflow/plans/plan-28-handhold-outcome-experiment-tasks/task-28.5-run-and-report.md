@@ -27,7 +27,7 @@ rel: reinforces -> [[feedback_errors_fail_loudly_on_the_console]]
 
 ## Why {#why}
 
-The experiment randomises the user's own work sessions in two projects for at least 14 days.
+The experiment randomises the user's own work sessions in two projects for 3 active days (L79).
 That is a user step by the plan review's rule (L45), and its result is an input to a user
 decision (G18), not a goal step. {#why-body}
 
@@ -57,10 +57,10 @@ decision (G18), not a goal step. {#why-body}
 
      The archive is outside the repo and outside every watched tree, mode `0700`, and never
      committed; only a sha256 manifest is. Each sweep counts sessions per cell whose transcript
-     was already gone (`no_transcript`). The weekly count reports them, and the report lists
+     was already gone (`no_transcript`). The daily count reports them, and the report lists
      them as a limit.
-   - A weekly count of sessions per cell per store, of suppressed rows and of `arm_error`
-     sessions, posted to the user.
+   - A daily count (the period is 3 active days, L79) of sessions per cell per store, of
+     suppressed rows and of `arm_error` sessions, posted to the user.
    - **The pause (P-12; r1 #s8).** A deploy that touches a module the pause rule names lands
      only while no record is active. The record's own start, pause and end commits (R2, this
      pause, R4) are exempt by name (r2-m3). To pause, the lead asks the user, and on the user's word
@@ -70,7 +70,8 @@ decision (G18), not a goal step. {#why-body}
    - The paired runs (28.2) execute in the frozen shuffled order.
    - A defect that blocks work in any cell stops the period loudly: the user is told, the period
      record's `end` is set, nothing is read, and the stop is recorded.
-4. **R4 End.** At the end rule, a commit sets `end` (if it was not already set) and deploys.
+4. **R4 End.** After 3 active days (the end rule, L79; never extended for sessions or n), a
+   commit sets `end` (if it was not already set) and deploys.
    After that, `arms.draw` returns the default for every session (checked on a new session in
    each store). {#r4}
 5. **R5 Final sweep, then score and read.** At the end, one last sweep runs (R3), then 28.3's
@@ -93,8 +94,9 @@ decision (G18), not a goal step. {#why-body}
 
 1. **AC-1** The user's go is recorded verbatim with its date before the start commit, as the
    git order shows. {#ac-1}
-2. **AC-2** The period's minimums are met, or the session leg's readings say report-only, as
-   frozen. {#ac-2}
+2. **AC-2** The period ended after 3 active days. Every reading whose cell or outcome is
+   below its frozen minimum n says "underpowered, no verdict", and the report states the n
+   reached per cell (L79). {#ac-2}
 3. **AC-3** Every band in the frozen file has a reading in the report, and no reading uses a
    rule absent from the frozen file. {#ac-3}
 4. **AC-4** After the end, a new session in each store draws the default, checked and recorded.
@@ -138,3 +140,12 @@ rel: derives-from -> [[bsd-spec-t3c-r3-c5d1b79]]
 rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
 
 **Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. This task is `pending`, which means approved to build in plan-28's order. Its user steps stay user-gated: the go, every pause, and the end. {#approval-row}
+
+## Revision L79 (2026-11-14, the user: "the plan 28 arms should only be 3 days"; Q11 assumed) {#rev-l79}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite ch-bsd round. | change | where |
+|---|---|
+| 3 active days; a daily count; the end after 3 active days, never extended; AC-2 reads "underpowered, no verdict" below the minimum n | [[#why]], [[#r3]], [[#r4]], [[#ac-2]] |
+

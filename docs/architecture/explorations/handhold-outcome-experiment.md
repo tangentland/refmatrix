@@ -83,14 +83,16 @@ the hook rules); it runs in the paired leg only ([[task-28.2-paired-reentry-runn
 
 **10.2's A/B is nested (L20, 2026-11-13).** Arm A splits into `A+dedupe` / `A+full` (10.2 R7). B
 has no dedupe factor, and C is never drawn. 10.2 is built before the experiment starts, and its
-≥ 14-day A/B is this experiment's run, not a serial step ([[plan-28-handhold-outcome-experiment#arms]]).
+A/B is this experiment's run, not a serial step ([[plan-28-handhold-outcome-experiment#arms]]).
+The session leg's period is 3 active days (L79, the user 2026-11-14), not ≥ 14 days.
 {#arms-nested}
 
 ### Units and assignment {#assignment}
 
-- **Session-level randomisation for a fixed period** (user decision, Q4: randomised, not opt-in)
+- **Session-level randomisation for a fixed period of 3 active days** (L79, 2026-11-14; user
+  decision, Q4: randomised, not opt-in)
   across real work sessions in refmatrix and cliquedb (Q5), arm drawn at SessionStart and
-  recorded in the session's telemetry, so the comparison is within the same projects and weeks.
+  recorded in the session's telemetry, so the comparison is within the same projects and days.
 - **Paired re-entry tasks** as a second, controlled leg: a task that a prior session left
   mid-flight (a real handoff), resumed after `/clear` AND in a new session (Q3 folded fully, L20)
   under each arm by fresh agents on isolated clones. Same task, same starting commit, different

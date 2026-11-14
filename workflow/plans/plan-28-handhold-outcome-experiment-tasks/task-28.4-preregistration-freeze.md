@@ -67,14 +67,23 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
    - the labellers: blind labeller agents (28.3 R6), the R12 pilot's rubric for the gate, and the
      rubrics for (3), (4) and the endpoint's "correct statement of the resume point", each
      written here with its label set and two worked examples;
-   - sizes: paired tasks per cell and trigger (R1); labelled sessions per cell per store for
+   - sizes: paired tasks per cell and trigger (R1; the paired leg is not time-boxed by the
+     3-day period); labelled sessions per cell per store for
      outcomes (3)-(4); the gate's 50 pairs; the 20% second-rater share;
    - the leak rule (28.2 R5): `leak_suspect` runs are excluded, and a per-cell exclusion count
      that differs by more than one run between `B` and `C` voids the primary reading;
    - the period: the salt (generated at freeze, committed), the start (set by 28.5 at the
-     user's go), and the end rule. The end is the later of 14 active days and 40 sessions per
-     cell per store; at 42 active days without the minimums, the session leg reads report-only.
-     Active days are days with an active record, so paused days do not count;
+     user's go), and the end rule. **The end is 3 active days (L79), never extended.** Active
+     days are days with an active record, so paused days do not count;
+   - **the minimum n of every cell and outcome (L79)**, for the session leg, each frozen here:
+     - outcomes (2)-(4) and (6);
+     - 10.2 R7's nested outcome (7), whose minimum is 40 sessions per cell per store, copied
+       from 10.2.
+
+     Any reading below its minimum is "underpowered, no verdict": neither pass nor fail, and no
+     default changes. The report states the n reached per cell. A power note records what 3
+     days of the user's usual session rate is expected to reach, so that "underpowered" is
+     foreseen and not a surprise;
    - **the pause (P-12; r1 #s8).** It is a user-gated step that sets the active record's `end`
      to now, by one commit and a deploy. Sessions in flight keep the cell their SessionStart
      recorded (28.1 R2). A deploy that touches `scan.py`, `recall_pack.py`, `hook_budget.py`,
@@ -151,3 +160,13 @@ rel: derives-from -> [[bsd-spec-t3c-r3-c5d1b79]]
 rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
 
 **Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. This task is `pending`, which means approved to build in plan-28's order. {#approval-row}
+
+## Revision L79 (2026-11-14, the user: "the plan 28 arms should only be 3 days"; Q11 assumed) {#rev-l79}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite ch-bsd round. | change | where |
+|---|---|
+| the end rule: 3 active days, never extended; the 14-day / 40-session / 42-day rule removed | [[#r2]] |
+| a minimum n per cell and outcome (10.2 R7's 40 sessions included), below which a reading is "underpowered, no verdict" | [[#r2]] |
+

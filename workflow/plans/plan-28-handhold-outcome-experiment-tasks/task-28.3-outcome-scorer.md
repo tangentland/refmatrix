@@ -137,7 +137,9 @@ clause, inside 19.6's scope. The r1 review found three problems, and this revisi
    names-line items apart. {#r8}
 9. **R9 The readings, one module (r1 #b1).** `eval/production/handhold/readings.py` takes the
    scored results and 28.4's frozen file and returns every band reading. It is the only code
-   that reads a band. {#r9}
+   that reads a band. **Every reading first checks the frozen minimum n of each cell and outcome
+   it uses (L79).** Below it, the reading is `underpowered` ("underpowered, no verdict"), and the
+   n reached per cell is returned with it. {#r9}
    - **Primary:** `B` vs `C` on outcome (1) (P-2), with P-8's CI rule.
    - **Push:** `A+dedupe` vs `B` on outcomes (2)-(4) only (P-11). **A Holm correction across
      the three outcomes is pre-registered (lead ruling on r2-m5).** Each outcome's bootstrap
@@ -222,6 +224,11 @@ by the real hooks in 23.0's sandbox. Every AC names its mutation. {#acceptance-l
    it. The scan also finds no `import` of an `eval` module anywhere under `src/`.
    **Mutations:** an inline copy left in `score.py` after the move, so the scan finds two; a
    `src/` module importing from `eval/`, so the import check fails. {#ac-9}
+10. **AC-10 Underpowered, no verdict (L79).** A synthetic scored set where `B` has 12 sessions
+    in a store against a frozen minimum of 40 makes the push reading and 10.2's nested reading
+    both return `underpowered`, with the n reached per cell, never `shrink`, keep or fail. At
+    40 sessions the band is read. **Mutation:** the minimum check removed; the 12-session set
+    returns a band and AC-10 fails. {#ac-10}
 
 ## Files {#files}
 
@@ -231,7 +238,7 @@ by the real hooks in 23.0's sandbox. Every AC names its mutation. {#acceptance-l
 | `eval/production/handhold/blind.py` (new) | R6's excerpts |
 | `eval/production/handhold/labels.py` (new) | R4's samplers, the P-5 gate's draw, the labeller-agent briefs, κ |
 | `eval/production/handhold/readings.py` (new) | R9 |
-| `tests/test_task28_3_scorer.py` (new) | AC-1 to AC-9 |
+| `tests/test_task28_3_scorer.py` (new) | AC-1 to AC-10 |
 | `tests/fixtures/handhold/transcripts/` (new, test-only) | synthetic transcripts |
 
 ## Test strategy {#test-strategy}
@@ -270,3 +277,12 @@ rel: derives-from -> [[bsd-spec-t3c-r3-c5d1b79]]
 rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
 
 **Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. This task is `pending`, which means approved to build in plan-28's order. {#approval-row}
+
+## Revision L79 (2026-11-14, the user: "the plan 28 arms should only be 3 days"; Q11 assumed) {#rev-l79}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite ch-bsd round. | change | where |
+|---|---|
+| every reading checks the frozen minimum n first and returns "underpowered, no verdict" below it; AC-10 | [[#r9]], [[#ac-10]] |
+
