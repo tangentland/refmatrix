@@ -1,0 +1,30 @@
+== store.py lines 9246; top-level statements 73
+   class TrackedCatalogCheckError: lines 4 (L67-70), methods 0, private methods 0
+   class TrackedCatalogRefused: lines 5 (L73-77), methods 0, private methods 0
+   class RepairAbort: lines 4 (L819-822), methods 0, private methods 0
+   class MemoryOwnershipError: lines 10 (L825-834), methods 0, private methods 0
+   class Entity: lines 9 (L838-846), methods 0, private methods 0
+   class Store: lines 7968 (L1279-9246), methods 191, private methods 63
+   kinds: {'Expr': 1, 'ImportFrom': 7, 'Import': 5, 'If': 1, 'Assign': 19, 'AnnAssign': 8, 'ClassDef': 6, 'FunctionDef': 26} | lines by kind: {'Expr': 17, 'ImportFrom': 9, 'Import': 6, 'If': 3, 'Assign': 376, 'AnnAssign': 136, 'ClassDef': 8013, 'FunctionDef': 686}
+   top-level functions: 26 private: 13 | _op_* functions: 0 lines 0
+== daemon.py lines 7355; top-level statements 193
+   class DeadlineExceeded: lines 3 (L78-80), methods 0, private methods 0
+   class _StopDeadline: lines 37 (L114-150), methods 3, private methods 0
+   class _FairLock: lines 83 (L258-340), methods 7, private methods 1
+   class _MemMirror: lines 184 (L343-526), methods 8, private methods 1
+   class SlotRepairError: lines 10 (L724-733), methods 1, private methods 0
+   class Daemon: lines 2668 (L736-3403), methods 70, private methods 64
+   kinds: {'Expr': 1, 'ImportFrom': 9, 'Import': 10, 'Assign': 18, 'FunctionDef': 145, 'ClassDef': 6, 'AnnAssign': 4} | lines by kind: {'Expr': 20, 'ImportFrom': 18, 'Import': 11, 'Assign': 90, 'FunctionDef': 4075, 'ClassDef': 2997, 'AnnAssign': 144}
+   top-level functions: 145 private: 121 | _op_* functions: 89 lines 2339
+Store banner comments: 18
+Store methods by NAME-regex concern (first match; a rough cut, R0 re-cuts by call graph):
+   other      methods=  69 lines= 2834
+   entities   methods=  42 lines= 1457
+   slots      methods=  12 lines=  719
+   fragments  methods=  25 lines=  648
+   memory     methods=  14 lines=  615
+   log        methods=   9 lines=  581
+   partition  methods=   6 lines=  497
+   vectors    methods=  14 lines=  361
+largest Store methods: [(366, 'content_rank'), (345, 'rebuild_index_from_log'), (342, 'merge_partition'), (190, 'dump_catalog_to_log'), (177, 'grep_evidence'), (177, 'describe_entity'), (165, 'derive_status'), (152, 'repair_fragments'), (138, '_connect'), (134, 'bulk_upsert_entity')]
+non-Store top-level defs: 31 lines 663 | largest: [('verify_evidence_rows', 106), ('derive_code_hash', 56), ('git_tracked_catalogs', 51), ('_expand_cfg', 43), ('_collapse_entity_payload', 42), ('refuse_tracked_catalog_open', 33), ('_term_boost_linkages', 31), ('identifier_variant_regex', 28), ('evidence_line_matches', 25), ('_concept_variants', 23)]

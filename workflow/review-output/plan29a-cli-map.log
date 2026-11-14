@@ -1,0 +1,16 @@
+top-level names: 90 | unmapped: [] | mapped but absent: []
+module          lines  callbacks  helpers n_helpers  top-level names
+_core            1622          0     1367        48  main group, cli_entry, shared helpers, imports, constants
+memory_cmds      2238       1149     1089        22  memory, taxonomy
+session_cmds     2223       1791      432        24  focus, session, task, save-state, recall-state, scan-prompt, cctree
+daemon_cmds      1466       1299      167         6  daemon, queue, learn, watch, log, cli-log, telemetry, fingerprint
+hub_cmds         1019        911      108         9  hub, bus, schedule, ui, projects, mcp, curator, refine
+ingest_cmds      1745       1309      436        13  ingest, ingest-gmd, ingest-status, sync, reingest, embed, tldr-warm, graphify-warm, init, untrack, import, export, coref, pairs
+search_cmds      2036        676     1360        24  context, grep, recall, search-dense, locate
+query_cmds        877        742      135         4  query, describe, neighbors, top, co-occur, concept, stats, info, list, run, save-query, primer, tools-primer, pagerank, list-entities, list-linkages, list-queries
+store_cmds       1842       1735      107         8  partition, replica, derive, canon, repair-index, compact, compact-log, rebuild, vacuum, checkpoint, dump-log, migrate-to-duckdb, merge-verb-aliases, audit-same-as, prune-noise, forget, protect, unprotect, noise, unnoise, link, unlink, add, add-concept, add-entity, add-linkage-type
+admin_cmds        144        144        0         0  install-hooks, upgrade, version
+sum 15212 of 15212 | non-def top-level lines (to _core): 255
+_core helpers: 47 | used by >=2 command modules: 29 | with no user inside cli.py: 6
+largest _core helpers: [(168, '_DaemonWriter'), (83, 'cli_entry'), (73, '_parse_memory_md_frontmatter'), (70, '_ingest_gmd_sync'), (68, '_ingest_gmd_in_process'), (57, '_replica_read'), (50, '_stamp_derive_pass'), (42, '_resolve_query_env'), (42, '_replica_reader_path'), (40, '_read_store'), (39, '_store_rw'), (39, '_reexec_for_fork_safety')]
+helpers with no in-file user: ['_alias', '_ann_similarity', '_parse_memory_md_frontmatter', '_recall_display_score', '_resolve_query', 'cli_entry']

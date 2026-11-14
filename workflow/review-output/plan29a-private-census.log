@@ -1,0 +1,59 @@
+
+== src -> src: private cross-module uses: 76 sites, 55 distinct (module, name) pairs, in 24 files
+   -> launchctl      sites=  14 distinct names=10
+   -> scan           sites=  10 distinct names=5
+   -> store          sites=   9 distinct names=4
+   -> ingest         sites=   9 distinct names=7
+   -> daemon         sites=   6 distinct names=5
+   -> handoff        sites=   5 distinct names=4
+   -> verbs          sites=   4 distinct names=4
+   -> pagerank       sites=   3 distinct names=1
+   -> cli            sites=   3 distinct names=3
+   -> consolidate    sites=   2 distinct names=2
+   -> hub            sites=   2 distinct names=2
+   -> memory_index   sites=   2 distinct names=1
+   src files importing private names FROM cli: [('handoff.py', '_subject_link'), ('handoff.py', '_subject_upsert'), ('handoff.py', '_sync_memory_dir')]
+   src private names taken FROM store: ['_CONCEPT_SHIFT', '_ENTITY_MASK', '_VERB_ALIASES', '_concept_variants']
+
+== tests -> src: private cross-module uses: 742 sites, 244 distinct (module, name) pairs, in 170 files
+   -> daemon         sites= 152 distinct names=40
+   -> cli            sites= 150 distinct names=45
+   -> mcp            sites=  58 distinct names=20
+   -> recall         sites=  46 distinct names=9
+   -> handoff        sites=  40 distinct names=8
+   -> hooks          sites=  33 distinct names=8
+   -> scan           sites=  33 distinct names=15
+   -> store          sites=  32 distinct names=12
+   -> hub            sites=  29 distinct names=7
+   -> context        sites=  22 distinct names=14
+   -> stm            sites=  19 distinct names=6
+   -> ingest         sites=  16 distinct names=9
+   patch sites (setattr/patch on a refmatrix module attr): 1081 sites in 142 files
+   -> patch daemon       sites= 248 distinct names=23 (private: 6)  top: [('ping', 76), ('call', 72), ('stop_daemon', 11), ('spawn_daemon', 11), ('read_pid', 10), ('_op_embed', 9)]
+   -> patch cli          sites= 191 distinct names=13 (private: 12)  top: [('_root', 160), ('_partition_override', 7), ('_resolve_partition', 6), ('main', 3), ('_reexec_for_fork_safety', 3), ('_store', 3)]
+   -> patch launchctl    sites= 124 distinct names=29 (private: 10)  top: [('is_loaded', 26), ('hub_plist_path', 11), ('kickstart', 10), ('LAUNCH_AGENTS_DIR', 10), ('hub_is_loaded', 9), ('plist_path', 6)]
+   -> patch discovery    sites=  95 distinct names=8 (private: 1)  top: [('discover_roots', 49), ('daemon_status', 20), ('store_name', 15), ('all_projects', 4), ('_read_pid', 3), ('pid_is_rmx', 2)]
+   -> patch hub          sites=  92 distinct names=17 (private: 4)  top: [('rpc', 17), ('is_running', 16), ('_pid_on_port', 11), ('global_store_root', 9), ('global_call', 8), ('_log', 5)]
+   -> patch verbs        sites=  61 distinct names=18 (private: 2)  top: [('memory', 13), ('_LONG_LIVED', 11), ('require_daemon', 8), ('_call', 7), ('memory_partition', 5), ('queues', 3)]
+   -> patch modelsrv     sites=  58 distinct names=7 (private: 1)  top: [('shared_available', 17), ('shared_enabled', 12), ('SharedWorkerClient', 12), ('PROBE_TIMEOUT_S', 8), ('WorkerClient', 7), ('_ENV_WARNED', 1)]
+   -> patch reranker     sites=  30 distinct names=8 (private: 1)  top: [('rerank_enabled', 9), ('rerank_available', 8), ('shared_reranker', 7), ('collect_rerank_docs', 2), ('rerank_entity_hits', 1), ('Reranker', 1)]
+
+== tests patching refmatrix.cli attributes: 191 sites, 13 names
+   _root                         160  -> _core
+   _partition_override             7  -> (module-level name, not a def)
+   _resolve_partition              6  -> _core
+   main                            3  -> _core
+   _reexec_for_fork_safety         3  -> _core
+   _store                          3  -> _core
+   _memory_partition_default       2  -> _core
+   _grep_stdin_addendum            2  -> query_cmds
+   _should_via_replica             1  -> query_cmds
+   _memory_intent                  1  -> memory_cmds
+   _memory_daemon_call             1  -> session_cmds
+   _reader_store                   1  -> _core
+   _global_recall_rows             1  -> memory_cmds
+tests reading cli privates: 150 sites, 45 names; of those, names the proposed map moves OUT of the package core: 27 names, 101 sites
+   by target module: [('query_cmds', 13), ('session_cmds', 7), ('memory_cmds', 5), ('ingest_cmds', 2)]
+   names with no def in cli.py (module-level state or imported): ['_PHASE_MARKS', '_PROC_T0', '_focus_digest', '_partition_override']
+tests patching refmatrix.store module attributes: 15 sites; [('_DERIVE_SRC_DIR', 4), ('derive_code_hash', 4), ('time', 2), ('_DERIVE_CODE_MODULES', 2), ('__file__', 2), ('is_memory_only_root', 1)]
+tests reading store module privates: 32 sites; [('_DERIVE_CODE_HASH_CACHE', 13), ('_DERIVE_EXPECTED_PASSES', 4), ('_DERIVE_PASS_MODULES', 4), ('_CONCEPT_SHIFT', 2), ('_DERIVE_VERDICT_EXCLUDED', 2), ('_canonical_for_kind', 1), ('_ENTITY_MASK', 1), ('_DERIVE_CODE_MODULES', 1), ('_concept_variants', 1), ('_doc_prior_weights', 1), ('_term_boost_linkages', 1), ('_canonical_verb', 1)]

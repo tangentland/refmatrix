@@ -1,0 +1,14 @@
+rule v3 (final draft rule of task-29.4 R1), at f3709d2:
+  devtree = a _CLONE_ONLY_SKIPS file, or reads the real home, or listed (test_search_hooks.py, test_bug230_repo_scope_gate.py)
+  timing  = holds an upper bound on elapsed time other than the hang guard (literal or non-literal limit)
+  daemon  = spawn / daemon / socket / hub / model signal in the file or in a tests/ helper it imports
+  unit    = the rest
+unit     files= 196 tests= 2022  (41.4%)
+daemon   files= 121 tests= 2153  (44.1%)
+devtree  files=  15 tests=  161  (3.3%)
+timing   files=  25 tests=  547  (11.2%)
+total 357 4883 | timing asserts in allow list: 77
+daemon tier: real daemon/serve signal: 61 files; model signal: 14 ; only via a tests/ helper: 18
+all tiers: files with a real daemon/serve signal: 81 | model signal: 19
+devtree files: ['test_brief_real_daemon.py', 'test_bug230_repo_scope_gate.py', 'test_gmd_lint_requires_version.py', 'test_grep_argv_order_e2e.py', 'test_grep_count_rows_e2e.py', 'test_grep_evidence_verified.py', 'test_grep_learning_replay.py', 'test_grep_no_flag_bundle.py', 'test_repo_hooks_in_sync.py', 'test_sandbox_child_extensions.py', 'test_sandbox_children.py', 'test_sandbox_hardening.py', 'test_sandbox_redirect.py', 'test_sandbox_refusal.py', 'test_search_hooks.py']
+timing files: ['test_bug112_duckdb_reopen.py', 'test_bug115_liveness_under_load.py', 'test_bug129_hub_pidfile.py', 'test_daemon_liveness.py', 'test_daemon_shutdown.py', 'test_daemon_shutdown_drain.py', 'test_ingest_async.py', 'test_learn_broker_bounded.py', 'test_plan2_remedy.py', 'test_plan2_remedy_r6.py', 'test_plan2_remedy_r7.py', 'test_plan3_remedy_r4.py', 'test_plan3_remedy_r5.py', 'test_plan3_remedy_r6.py', 'test_plan3_remedy_r7.py', 'test_plan4_remedy.py', 'test_plan4_remedy_r2.py', 'test_plan4_remedy_r3.py', 'test_read_path_partition_and_budget.py', 'test_rerank_budget_real_clients.py', 'test_subproc_workers.py', 'test_task25_1_recall_budget.py', 'test_task3_5_r8_remedy.py', 'test_task3_6_r9_remedy.py', 'test_task3_7_remedy_r4.py']

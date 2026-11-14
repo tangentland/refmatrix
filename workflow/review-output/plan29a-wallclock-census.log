@@ -1,0 +1,43 @@
+70 wall-clock upper-bound asserts in 22 files; by kind {'bound-name': 44, 'clockdiff': 21, 'elapsed-name': 5}
+by bound: {'5-20s': 15, '<=1s': 22, '1-5s': 27, '>20s': 6}
+  2 test_bug112_duckdb_reopen.py: L347<10.0, L584<10.0
+  1 test_bug115_liveness_under_load.py: L230<0.6
+  1 test_bug129_hub_pidfile.py: L345<15.0
+  1 test_daemon_liveness.py: L46<0.2
+  2 test_daemon_shutdown.py: L45<1.0, L64<1.0
+  1 test_daemon_shutdown_drain.py: L66<3.0
+  1 test_ingest_async.py: L60<1.0
+  2 test_learn_broker_bounded.py: L73<5.0, L145<0.5
+ 11 test_plan2_remedy.py: L287<3.0, L310<2.5, L347<3.0, L351<0.6, L381<1.2, L440<4.0, L495<1.2, L542<1.6, L583<1.5, L600<2.5, L602<0.6
+  5 test_plan2_remedy_r6.py: L69<1.6, L127<1.6, L176<2.6, L244<1.0, L346<1.6
+  4 test_plan2_remedy_r7.py: L180<0.8, L195<0.8, L206<3.0, L225<2.5
+  7 test_plan3_remedy_r4.py: L101<16.0, L109<36.0, L121<16.0, L132<12.0, L147<36.0, L184<16.0, L196<1.0
+  6 test_plan3_remedy_r5.py: L74<16.0, L114<36.0, L139<25.0, L153<12.0, L173<2.5, L184<10.0
+  4 test_plan3_remedy_r6.py: L127<36.0, L143<36.0, L172<20.0, L269<4.0
+  3 test_plan4_remedy.py: L93<8.0, L120<3.0, L129<8.0
+  2 test_plan4_remedy_r2.py: L239<1.5, L264<4.0
+  2 test_plan4_remedy_r3.py: L255<0.3, L400<10.0
+  1 test_read_path_partition_and_budget.py: L254<1.0
+ 11 test_rerank_budget_real_clients.py: L172<1.2, L195<0.6, L220<0.5, L242<1.2, L269<0.6, L282<0.3, L300<0.3, L403<1.2, L586<0.5, L836<0.2, L955<1.5
+  1 test_subproc_workers.py: L189<20
+  1 test_task25_1_recall_budget.py: L735<5.0
+  1 test_task3_7_remedy_r4.py: L192<1.0
+upper bound, numeric literal: 70 in 22 files
+upper bound, NON-literal limit (a named constant or expression): 8 in 4 files
+    ('test_bug212_r4_red.py', 771, 'time.monotonic() - t0 < HANG_BOUND_S')
+    ('test_plan3_remedy_r7.py', 190, 'elapsed < verbs.MEMORY_READ_BUDGET_S + 3.0')
+    ('test_plan3_remedy_r7.py', 216, 'elapsed < verbs.MEMORY_READ_BUDGET_S + 3.0')
+    ('test_task3_5_r8_remedy.py', 213, 'elapsed < verbs.MEMORY_READ_BUDGET_S + 3.0')
+    ('test_task3_6_r9_remedy.py', 494, 'elapsed < 3.0 + 2.0')
+    ('test_task3_6_r9_remedy.py', 511, 'elapsed < verbs.MEMORY_READ_BUDGET_S + 3.0')
+    ('test_task3_6_r9_remedy.py', 543, 'elapsed < verbs.MEMORY_READ_BUDGET_S + 3.0')
+    ('test_task3_6_r9_remedy.py', 565, 'elapsed < verbs.MEMORY_READ_BUDGET_S + 3.0')
+LOWER bounds on elapsed (it waited at least N): 8 in 6 files
+    ('test_plan2_remedy_r7.py', 95, 'time.monotonic() - t0 >= 1.4')
+    ('test_plan4_remedy.py', 120, '0.9 < elapsed < 3.0')
+    ('test_plan4_remedy_r2.py', 315, 'time.monotonic() - t_start >= 0.4')
+    ('test_plan4_remedy_r3.py', 184, 'time.monotonic() - t0 >= 6.5')
+    ('test_plan4_remedy_r3.py', 239, 'elapsed >= 1.5')
+    ('test_plan4_remedy_r3.py', 281, 'elapsed >= 3.0')
+    ('test_rerank_budget_real_clients.py', 261, 'view.overrun_s > 0.2')
+    ('test_rerank_cost_budget.py', 193, "out[2]['cost_s_per_doc'] >= 0.0")

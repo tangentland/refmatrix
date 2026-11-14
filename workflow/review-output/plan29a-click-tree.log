@@ -1,0 +1,37 @@
+commands+groups in the tree: 219 | visible: 213 | hidden aliases: 6 | groups: 25 | params: 627
+callbacks defined outside refmatrix.cli: Counter()
+
+top-level name: entries (hidden) / callback lines
+  (top-level)         68 ( 6)   4386
+  memory              17 ( 0)   1104
+  focus               22 ( 0)    745
+  daemon              11 ( 0)    737
+  session             10 ( 0)    530
+  partition            7 ( 0)    409
+  hub                 12 ( 0)    342
+  replica              6 ( 0)    271
+  derive               6 ( 0)    227
+  bus                 12 ( 0)    177
+  curator              4 ( 0)    160
+  refine               5 ( 0)    118
+  learn                4 ( 0)     98
+  canon                4 ( 0)     82
+  concept              2 ( 0)     68
+  task                 6 ( 0)     65
+  queue                2 ( 0)     64
+  list                 4 ( 0)     54
+  add                  4 ( 0)     49
+  schedule             4 ( 0)     46
+  taxonomy             4 ( 0)     45
+  pairs                3 ( 0)     43
+  coref                2 ( 0)     29
+
+visible top-level commands: 62
+  context:267, ingest-gmd:251, grep:250, embed:216, scan-prompt:181, save-state:176, query:170, sync:167, reingest:166, tools-primer:166, telemetry:156, repair-index:122, compact:119, cli-log:101, tldr-warm:94, init:90, merge-verb-aliases:84, install-hooks:75, recall:70, log:69, recall-state:66, describe:61, graphify-warm:56, compact-log:55, locate:55, ingest-status:52, migrate-to-duckdb:51, untrack:48, import:45, primer:42, prune-noise:42, audit-same-as:41, forget:41, stats:41, fingerprint:40, upgrade:36, pagerank:34, search-dense:34, watch:34, version:33, projects:31, neighbors:30, run:29, cctree:28, export:28, rebuild:28, ui:28, ingest:24, link:21, dump-log:17, checkpoint:16, co-occur:14, protect:13, save-query:12, top:12, unlink:11, vacuum:11, info:9, mcp:9, noise:9, unnoise:8, unprotect:8
+hidden top-level aliases: 6 add-concept, add-entity, add-linkage-type, list-entities, list-linkages, list-queries
+
+callback defs: 213 lines 9756 | non-callback top-level defs/classes: 158 lines 5201
+tree dump bytes: 282261 sha256: 4f26f33b0b4abeca
+second process, same tree: tree dump bytes: 282261 sha256: a67a53f566e7592f
+note: same byte count, different hash: this naive dump uses repr() of parameter types and defaults, which carries object addresses. task-29.5 G1 requires a deterministic dump.
+measured: a diff of two such dumps shows 28 differing lines, all of the form "type": "<click.types.Path object at 0x...>".
