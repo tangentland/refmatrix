@@ -86,11 +86,16 @@ def _resolve_root(args: dict) -> Path:
 
 def _verb_tool(name: str):
     def fn(args: dict) -> dict:
-        from refmatrix.verbs import VERBS, VerbArgsError, VerbError
+        from refmatrix.verbs import VERBS, SaveStateIncompleteError, VerbArgsError, VerbError
         try:
             return VERBS[name].run(_resolve_root(args), args)
         except VerbArgsError:
             raise          # caller bug: the dispatcher reports it as isError
+        except SaveStateIncompleteError as e:
+            # The handoff WAS written (bug-212 r6, ch-bsd r5 m-1, L98, 2026-11-14): the
+            # isError reply carries the result -- `target`, `promoted`, `sync`, ... -- with
+            # the error added, the same facts the CLI prints before its `Error:` line.
+            return {**e.result, "error": str(e)}
         except VerbError as e:
             return {"error": str(e)}
     fn.__name__ = f"_t_{name[4:]}"

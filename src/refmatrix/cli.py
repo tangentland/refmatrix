@@ -4090,8 +4090,11 @@ def migrate_to_duckdb(out_path: Path | None, overwrite: bool):
         )
     dst = out_path or (root / "catalog.duckdb")
     # Before `migrate_catalog` unlinks and rebuilds `dst` with the raw `open_duckdb` (bug-212
-    # r5, ch-bsd r4 b-1, L95, 2026-11-14): a store whose catalog git tracks is refused.
-    _refuse_tracked_catalog_open(root.resolve(), dst.resolve())
+    # r5, ch-bsd r4 b-1, L95, 2026-11-14), the check asks about the directory of the file
+    # being REPLACED (r6, ch-bsd r5 s-1, L98): r5 asked about the source store, so `--out`
+    # into another repo's committed catalog went through, and `--out` to an untracked path
+    # from a tracked store was refused. The default `dst` (<root>/catalog.duckdb) is unchanged.
+    _refuse_tracked_catalog_open(dst.parent.resolve(), dst.resolve())
     fragments_dir = root / "fragments"
     counts = migrate_catalog(
         src, dst,
@@ -10943,7 +10946,11 @@ def _sync_memory_dir(memdir: Path) -> dict:
                  "partition": None, "embed": None,
                  # task 26.2: refresh terms + refused duplicate ids (_bridge_stats)
                  "moved": 0, "stale_before": 0, "forced": 0, "moved_legacy": 0,
-                 "skipped_unchanged": 0, "duplicate_ids": []}
+                 "skipped_unchanged": 0, "duplicate_ids": [],
+                 # bug-212 r6 (L98): set ONLY by `_bridge_wait_for_active_job` when the bridge
+                 # is deferred behind another ingest job still running at the end of the wait:
+                 # {"job", "reason"}. Not a failure, so `error` stays None.
+                 "deferred": None}
     if not memdir.is_dir():
         out["error"] = f"memory dir not found: {memdir}"
         return out
@@ -11031,10 +11038,17 @@ def _bridge_wait_for_active_job(memdir: Path, partition: str, err: str, out: dic
         if job.get("status") != "running":
             break
         if _time.monotonic() - t0 > budget:
-            out["error"] = (f"ingest job {jid} still running after {budget:g}s "
-                            f"({job.get('files_done')}/{job.get('files_total')} files); "
-                            f"the memory dir will be bridged by the next save-state / "
-                            f"SessionStart, or run `rmx ingest-gmd --as-memory {memdir}`")
+            # DEFERRED, not failed (bug-212 r6, ch-bsd r5 m-2, L98, 2026-11-14): another ingest
+            # job holds the single-active-ingest slot and is still working, so nothing was
+            # refused and nothing broke -- the next save-state / SessionStart bridges the dir.
+            # A typed field the callers read, never a message they pattern-match: save-state's
+            # failure rule stays `sync.error`, and every other bridge failure still sets it.
+            out["deferred"] = {
+                "job": jid,
+                "reason": (f"ingest job {jid} still running after {budget:g}s "
+                           f"({job.get('files_done')}/{job.get('files_total')} files); the "
+                           f"memory dir will be bridged by the next save-state / "
+                           f"SessionStart, or run `rmx ingest-gmd --as-memory {memdir}`")}
             return
         _time.sleep(0.5)
     jargs = job.get("args") or {}
@@ -13513,6 +13527,11 @@ def memory_sync_disk(paths: tuple[Path, ...]):
         if out.get("error"):
             failed += 1
             console.print(f"[red]memory bridge FAILED:[/] {out['error']}")
+        elif out.get("deferred"):
+            # Deferred behind another running ingest job (bug-212 r6, L98): said on stderr,
+            # never an empty report; not a failure.
+            click.echo(f"warning: memory bridge deferred: {out['deferred']['reason']}",
+                       err=True)
         else:
             click.echo(out.get("report") or "")
     if failed:
@@ -14131,6 +14150,11 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
             # (bug-212 r5, ch-bsd r4 s-1: this line was the whole report, on stdout, exit 0).
             console.print(f"[red]memory bridge FAILED[/] -- the error follows on stderr; "
                           f"run `rmx ingest-gmd --as-memory {memdir}` by hand once it is fixed")
+        elif sync.get("deferred"):
+            # Deferred behind another running ingest job (bug-212 r6, L98): a warning on
+            # stderr naming the job, exit 0 -- not an `Error:` line, not a failure.
+            click.echo(f"warning: memory bridge deferred: {sync['deferred']['reason']}",
+                       err=True)
         else:
             # Report may quote unresolved `[[wikilinks]]`; keep them out of
             # Rich markup (which renders `[[foo]]` as `[]`).

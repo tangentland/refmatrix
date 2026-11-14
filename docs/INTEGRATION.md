@@ -181,8 +181,10 @@ check, `store.refuse_tracked_catalog_open` (bug-212 r2-r5, rulings L72, L82 and 
 - The same wrapper, called directly by the two commands that open the file without a `Store`:
   - `rmx compact`, which checks before it pings or stops the daemon, so a tracked catalog
     never costs the daemon it names as the remedy;
-  - `rmx migrate-to-duckdb`, which checks before `migrate.migrate_catalog` replaces
-    `catalog.duckdb`.
+  - `rmx migrate-to-duckdb`, which checks the DESTINATION'S directory before
+    `migrate.migrate_catalog` replaces the destination file. The default destination is the
+    store's own `catalog.duckdb`. `--out` into another repo's committed catalog is refused;
+    `--out` to an untracked path runs even from a tracked store.
 - `verbs.local_write` serves every no-daemon verb write (`rmx add concept|entity`,
   `rmx protect`, `rmx noise`, ...). It also serves `rmx init`, `rmx partition drop`,
   `rmx focus change-subject`, the MCP `rmx_memory_add` fallback and the save-state promote,
@@ -195,7 +197,8 @@ An AST census test keys on the guarded resource, not on one constructor. It fail
 
 - a read-write `Store(`, under any alias;
 - a non-`:memory:` `open_duckdb` / `duckdb.connect`;
-- a rename or unlink onto a writer-catalog path.
+- a rename or unlink onto a writer-catalog path;
+- a copy (`shutil.copy*`, `write_bytes`) whose destination is a writer-catalog path.
 
 `rmx init` and `rmx partition drop` take the in-process route only when the daemon is ABSENT.
 A daemon that is alive but not answering is busy, not absent, and they refuse with one
@@ -216,7 +219,15 @@ refusal arrives through a later step:
   one error: `save-state wrote <target> but its promote failed: ...` (or `its memory bridge
   failed: ...`, or both).
 - The CLI prints what was written, runs `--commit`, then prints that line on stderr and exits
-  1. MCP replies `isError`.
+  1. MCP replies `isError`, and the reply body is the full result (`target`, `promoted`,
+  `sync`, ...) with that `error` added.
+- A bridge that is only DEFERRED is not a failure. This happens when another ingest job still
+  holds the single-active-ingest slot at the end of the wait (`RMX_BRIDGE_WAIT_S`, 120 s).
+  - The result carries `sync.deferred = {job, reason}` and no `sync.error`.
+  - The CLI prints `warning: memory bridge deferred: ingest job <id> still running ...` on
+    stderr and exits 0.
+  - MCP replies normally.
+  - The next save-state or SessionStart bridges the dir.
 
 A refused `rmx focus change-subject` leaves the session's STM subject as it was. The store
 row is written before the STM subject is switched, and the line ends `the session's subject
