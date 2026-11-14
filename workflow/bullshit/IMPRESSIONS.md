@@ -328,3 +328,7 @@ Each id resolves here so historical citations stay valid; the content lives at t
   ITS ALIAS LOGIC. Deleting `_store_aliases`' body left the census green, because `partition_drop` now
   routes through `local_write`. When a fix removes a scanner's only positive example, add a synthetic
   one. {#imp-scanner-needs-synthetic-positives}
+- 2026-11-14 (task 25.1 r10, 574c64e) — A HANDLER BODY IS ITS OWN TRY SCOPE. Work done inside an
+  `except X:` clause is invisible to that try's sibling `except Y:` clauses; when a fall-through
+  lives in a handler, census every typed raise in it and wrap each one at the call, or the
+  "one Error: line" rule quietly becomes a traceback there. {#imp-handler-body-own-try-scope}
