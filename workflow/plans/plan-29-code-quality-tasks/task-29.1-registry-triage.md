@@ -22,8 +22,8 @@ metadata:
 > Runs first in plan-29's order: 29.1 → 29.4 → 29.5 → 29.2 ∥ 29.3 ([[plan-29-code-quality#order]]).
 > Closes: bug-239 ([[#r6]]).
 > Other documents are cited as in [[task-29.4-suite-health#citing]]: **T0**, the **queue**,
-> **store** and **memory reviews**, and the sibling specs `task-29.2-mypy-gate` and
-> `task-29.3-converge-shapes` are not on this spec's branch, so their ids are written as code.
+> **store** and **memory reviews**, and the sibling specs [[task-29.2-mypy-gate]] and
+> [[task-29.3-converge-shapes]] are not on this spec's branch, so their ids are written as code.
 
 rel: part-of -> [[plan-29-code-quality]]
 rel: implements -> [[plan-29-code-quality#t1]]
@@ -301,7 +301,7 @@ recorded for them. Step 2 of [[#r2]] confirms each one. "Closed?" rows are check
 | T4: bug-185 (+186), 23.x (099, 106, 136, 177), 16.6 slice (120), plan-18 18.3 R8 (123, named in its own row); backlog 097, 207 | 097, 099, 106, 120, 123, 136, 177, 185, 186, 207 | 10 |
 | T5: 16.5 (081, 102, 167, 174 closed by 16.5; 222 = 16.5 R2 per L48); backlog 180 | 081, 102, 167, 174, 180, 222 | 6 |
 | T6: 218 (+223, the broad except the bug-218 spec owns), 219, 086, 107; backlog 119, 121, 124 | 086, 107, 119, 121, 124, 218, 219, 223 | 8 |
-| plan-29: 29.4 (228, 229, 231); `task-29.3-converge-shapes` (233 slice a; 234, 236, 238 slice b); `task-29.2-mypy-gate` (235); this task (239) | 228, 229, 231, 233, 234, 235, 236, 238, 239 | 9 |
+| plan-29: 29.4 (228, 229, 231); [[task-29.3-converge-shapes]] (233 slice a; 234, 236, 238 slice b); [[task-29.2-mypy-gate]] (235); this task (239) | 228, 229, 231, 233, 234, 235, 236, 238, 239 | 9 |
 | row says the fix landed or is due: closed? | 085 (split, R2.6), 087, 188 (3.7 merged), 189 (3.7 merged), 209 ("0.83.0 must land this") | 5 |
 | **no recorded owner: triage decides** | 055, 075, 089, 096, 125, 151, 152, 153, 154, 161, 169, 194, 201, 203, 221, 226, 232, 237, 240 | 19 |
 | **total** | | **81** |
@@ -342,12 +342,12 @@ that suggests a home has not made one.
 | Rows | Proposed home | Proposed by | For the triage |
 |---|---|---|---|
 | 240, 241 | one hotfix branch, released as 0.83.1 before 29.5 | queue review `#b4` | `scheduled` when that task has a spec; until then `deferred: owner 0.83.1 hotfix has no spec yet; review <date>`. 240 is a silent failure on an ingest path and does not go to the backlog |
-| 235 | `task-29.2-mypy-gate` (R4, AC-6) | that spec | `scheduled`, `P29` |
-| 233 | `task-29.3-converge-shapes`, slice a (a-R5, AC-a7) | that spec | `scheduled`, `P29` |
-| 234, 236, 238 | `task-29.3-converge-shapes`, slice b | that spec | `scheduled`, `P29` |
+| 235 | [[task-29.2-mypy-gate]] (R4, AC-6) | that spec | `scheduled`, `P29` |
+| 233 | [[task-29.3-converge-shapes]], slice a (a-R5, AC-a7) | that spec | `scheduled`, `P29` |
+| 234, 236, 238 | [[task-29.3-converge-shapes]], slice b | that spec | `scheduled`, `P29` |
 | 232 | 29.3 slice f (that spec); the linked read-only store, with bug-125 (queue review `#dup-2`); 17.4's promote guard needs it (store review) | three claimants | 29.3 slice f takes it in its text, so it is the owner. The other two are notes on the row |
 | 237 | 29.3's query half | queue review `#dup-3`; **not taken** by 29.3's spec | no owner yet: `deferred`, with the review's suggestion in the note, unless 29.3 is revised to take it |
-| 096 | `task-29.3-converge-shapes`, slice c (`#c-r6`, AC-c9: `rmx reingest` exits 1 when any step failed) | that spec | `scheduled`, `P29` |
+| 096 | [[task-29.3-converge-shapes]], slice c (`#c-r6`, AC-c9: `rmx reingest` exits 1 when any step failed) | that spec | `scheduled`, `P29` |
 | 201, 188 | 29.3 (201 as an incorrect outcome; 188 as a fourth shape, `envknob`) | queue review `#dup-3`; **not taken** by 29.3's spec (its author, 2026-11-14) | as 237 |
 | 223 | the bug-218 spec (it owns that broad except); 29.3's census allow-lists it by task id | queue review `#p29-4` | `scheduled` to the bug-218 spec, `T6` |
 | 164, 181 | already shipped by 25.1 (`VerbUnknownProjectError` is in `verbs.py` and `mcp.py`) | queue review `#st-5`, memory review | `fixed <sha> (<test>)` by [[#r3-fixed]], if the sha and the test check out |
@@ -529,7 +529,7 @@ shape ([[#r7]]); a `scheduled` target that is `completed` fails the checker. {#r
 
 ## Revision note 3 (2026-11-14, after ch-bsd r1 and ruling L105) {#rev-note-3}
 
-`bsd-plan29-spec-r1` (dev `master` `549458e`) reviewed `dba9afd`. This spec's share:
+[[bsd-plan29-spec-r1]] (dev `master` `549458e`) reviewed `dba9afd`. This spec's share:
 
 | Finding | Change here |
 |---|---|

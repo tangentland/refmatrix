@@ -18,9 +18,9 @@ metadata:
 > Depends on: 29.4 (the healed suite) and 29.5 (the module split), per
 > [[plan-29-code-quality#order]]. Runs AFTER the query half of [[task-29.3-converge-shapes]];
 > the files both touch are ordered in [[#seam]].
-> Review input folded 2026-11-14: `plan-review-fable-2026-11-14-queue#b1`,
-> `plan-review-fable-2026-11-14-queue#p29-4`,
-> `plan-review-fable-2026-11-14-store#plan29-converge-candidates` ([[#fold]]).
+> Review input folded 2026-11-14: [[plan-review-fable-2026-11-14-queue#b1]],
+> [[plan-review-fable-2026-11-14-queue#p29-4]],
+> [[plan-review-fable-2026-11-14-store#plan29-converge-candidates]] ([[#fold]]).
 > Decided: `plan-29 D4` = (c), a normalised-AST derive hash (user, ruling L106; [[#d4]], [[#r7]]).
 > Revision round 2 (ruling L105, on ch-bsd spec review r1): [[#rev-round-2]].
 > Revision round 3 (ruling L108, on ch-bsd spec review r2): [[#rev-round-3]].
@@ -891,7 +891,7 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 None of these needs the user; each records the choice and why. The one that did, `plan-29 D4`,
 is decided ([[#d4]]). A reviewer who disagrees with one below raises it as a new
 `plan-29 D<n>` (D7 to D26 are taken by the 29.1 / 29.4 / 29.5 / 29.6 specs; D5 and D6 are free; D27 is this
-spec's). The lead registers D4, D27 and D7 to D26 in `plan-29-code-quality#decisions` at merge (L105,
+spec's). The lead registers D4, D27 and D7 to D26 in [[plan-29-code-quality#decisions]] at merge (L105,
 M11).
 
 1. **Strict is per module, whole module**. The plan says "strict on the public API"; the
@@ -938,7 +938,7 @@ M11).
   `Store` and the cast sites by name in whichever module holds them, and read `Store`'s methods
   through its base classes (checked on a synthetic mixin tree).
 - **The layout 29.5 produces** (from its author, 2026-11-14, and
-  `plan-review-fable-2026-11-14-queue#b1`):
+  [[plan-review-fable-2026-11-14-queue#b1]]):
   - `refmatrix/cli/` is a package. Shared helpers stay in `cli/__init__.py` (`_store`,
     `_store_rw`, `_DaemonWriter` and `_ingest` are shared helpers today, so that is where this
     spec expects them); commands move to `cli/<group>_cmds.py`.
@@ -961,7 +961,7 @@ M11).
 Confirmed by 29.5's spec (branch `spec-plan29a` at `dba9afd`; cited as code spans for the reason
 in [[#fold-cites]]):
 
-- `task-29.5-split-giant-modules#ac-11`: the summary carries `symbol → old module → new module`
+- [[task-29.5-split-giant-modules#ac-11]]: the summary carries `symbol → old module → new module`
   for every moved top-level class and function and every moved `Store` method; the same rows are
   in `docs/architecture/module-split-map.md` and `tools/split_maps/symbol_map.json`; and
   `refmatrix.store.Store`, `refmatrix.query.QueryEngine` and `refmatrix.cli:cli_entry` stay
@@ -985,7 +985,7 @@ branch `spec-plan29a` at `321954b` (2026-11-14); the confirming anchor is given 
      nothing. 29.5's mixin census and its "store family" rule key on the same pattern.
    - Because its name is outside that pattern, this task's strict enumeration names it
      explicitly (AC-5), and a test asserts it is in neither derive table.
-   - 29.5 side (`task-29.5-split-giant-modules#r5` item 1, `#ac-5`): its AC-5 is keyed on
+   - 29.5 side ([[task-29.5-split-giant-modules#r5]] item 1, `#ac-5`): its AC-5 is keyed on
      "defines a `Store` mixin", not on the file name, so this module is not put in
      `_DERIVE_CODE_MODULES`; it is not in 29.5's store family (`store`, `store_*`). 29.5's AC-5
      tests the file lists, not the hash function, so it holds before and after [[#r7]].
@@ -997,14 +997,14 @@ branch `spec-plan29a` at `321954b` (2026-11-14); the confirming anchor is given 
      not one. This task adds the base line to the mixin modules; 29.5 does not.
 3. **Which source-walking censuses 29.3 moves** is stated in
    [[task-29.3-converge-shapes#k-r7]], from 29.5's own table
-   (`task-29.5-split-giant-modules#censuses`): the three tests that walk `src/refmatrix` with
+   ([[task-29.5-split-giant-modules#censuses]]): the three tests that walk `src/refmatrix` with
    `ast`. This task adds no census walk of its own outside the kit: AC-5,
    AC-12 and AC-16 are written as kit families if the kit exists when they are written
    ([[#seam]] says it does), and are moved onto it by 29.3's slice K otherwise.
 4. **The derive digest** ([[#derive-digest]]; ruling L107). 29.5 builds
    `scripts/derive-digest.py`, both corpora and the test in its phase 0, from that section, and
    its test engineer commits the golden on the `pre-split-29.5` tree before any move
-   (`task-29.5-split-giant-modules#r5-digest`, `#ac-16`); its gate G11 checks the four legs after
+   ([[task-29.5-split-giant-modules#r5-digest]], `#ac-16`); its gate G11 checks the four legs after
    every store-move commit (evidence that the moves left derived state alone; no re-stamp
    depends on it after ruling L108). 29.3 slice K re-records it on the post-29.5 tree. So
    [[#derive-digest]] is the specification 29.5 builds from: what the tool must do is all in that
@@ -1017,7 +1017,7 @@ branch `spec-plan29a` at `321954b` (2026-11-14); the confirming anchor is given 
 ## The seam with 29.3 {#seam}
 
 Both tasks edit the query module and `handoff`. They are not parallel there
-(`plan-review-fable-2026-11-14-queue#p29-4`). Order for the shared symbols:
+([[plan-review-fable-2026-11-14-queue#p29-4]]). Order for the shared symbols:
 
 | step | task | what | why in this place |
 |---|---|---|---|
@@ -1089,7 +1089,7 @@ Rules for this task:
     ([[task-29.3-converge-shapes#c-r7]]);
   - 16 of the 22 private-name rows 29.5 declares instead of fixing, because 29.5 ships under the
     raw-bytes hash and may not change a byte of a pass module
-    (`task-29.5-split-giant-modules#r6`, the table at `#r6-pass-rows`, held by its `#ac-7` and
+    ([[task-29.5-split-giant-modules#r6]], the table at `#r6-pass-rows`, held by its `#ac-7` and
     `#ac-6`; premise at `#fact-derive`; branch `spec-plan29a` at `75ef65d`). Their owner is
     [[task-29.3-converge-shapes#c-pass-rows]] (lead ruling, 2026-11-14).
   - The other 6 rows are `consolidate.py`'s. They are NOT edited in plan-29
@@ -1195,7 +1195,7 @@ shared by 29.2 and 29.3.
 
 **plan-29 D4 = (c): the derive hash is computed over a normalised syntax tree.** Decided by the
 user, 2026-11-14 (ruling L106, [[plan-review-2026-11-13#lead]]). The lead registers it in
-`plan-29-code-quality#decisions` at the merge that lands these specs (L105, M11). {#d4}
+[[plan-29-code-quality#decisions]] at the merge that lands these specs (L105, M11). {#d4}
 
 - **What it is:** [[#r7]], with [[#r8]] as the way existing stamps move to it.
 - **The question it answered:** annotation- and comment-only edits to derive-hash files marked
@@ -1214,7 +1214,7 @@ user, 2026-11-14 (ruling L106, [[plan-review-2026-11-13#lead]]). The lead regist
 
 **plan-29 D27 = (a): a pass whose file got a real edit is re-derived, as deploy B's closing
 step.** Decided by the lead, 2026-11-14 (ruling L109, amended by L110; [[plan-review-2026-11-13#lead]]). The lead
-registers it in `plan-29-code-quality#decisions` at merge. {#d27}
+registers it in [[plan-29-code-quality#decisions]] at merge. {#d27}
 
 - **The question.** Ruling L107 has the real edits to pass files ship in R7's release, and
   ruling L108 has that release use the rehash. The rehash converts a stamp only when the old
@@ -1279,21 +1279,21 @@ The review documents are `workflow/plan-review-fable-2026-11-14-queue.md` (maste
 `workflow/plan-review-fable-2026-11-14-store.md` (master `ec3e0e8`). They landed on master after
 this branch's base (`f3709d2`), so they are cited here as `doc-id#anchor` code spans; a wikilink
 to a document this branch does not hold fails the repo lint. The same holds for the 29.1 and
-29.5 specs (`task-29.1-registry-triage`, `task-29.5-split-giant-modules`), which are on branch
+29.5 specs ([[task-29.1-registry-triage]], [[task-29.5-split-giant-modules]]), which are on branch
 `spec-plan29a` at `dba9afd`. Turn all of them into wikilinks in the merge commit. {#fold-cites}
 
 | finding | change here |
 |---|---|
-| `plan-review-fable-2026-11-14-queue#b1`: `Store` becomes mixin classes | [[#r2]] (each `store_<concern>` module strict, by name; one declared host), [[#r5]] (structural conformance, leaf module, member-by-mixin table), AC-5, AC-16, AC-17, [[#split]] |
-| `plan-review-fable-2026-11-14-queue#p29-4`: the writer Protocol is the checkable form of Constitution VII; every later write method joins | [[#r5]] standing rule, AC-16 |
-| `plan-review-fable-2026-11-14-store#plan29-converge-candidates`: the Protocol must include what T4-T6 specs add | [[#r5]] names them; AC-16 makes joining mandatory |
-| `plan-review-fable-2026-11-14-queue#p29-4`: not parallel on the query module; 29.3's query half first | [[#seam]], [[#r4]] |
+| [[plan-review-fable-2026-11-14-queue#b1]]: `Store` becomes mixin classes | [[#r2]] (each `store_<concern>` module strict, by name; one declared host), [[#r5]] (structural conformance, leaf module, member-by-mixin table), AC-5, AC-16, AC-17, [[#split]] |
+| [[plan-review-fable-2026-11-14-queue#p29-4]]: the writer Protocol is the checkable form of Constitution VII; every later write method joins | [[#r5]] standing rule, AC-16 |
+| [[plan-review-fable-2026-11-14-store#plan29-converge-candidates]]: the Protocol must include what T4-T6 specs add | [[#r5]] names them; AC-16 makes joining mandatory |
+| [[plan-review-fable-2026-11-14-queue#p29-4]]: not parallel on the query module; 29.3's query half first | [[#seam]], [[#r4]] |
 | `plan-review-fable-store D5`: dev venv duckdb 1.5.2 below the 1.5.3 floor | not settled here; [[#measured-duckdb]], [[#r3]] (the baseline names the duckdb version), AC-2 |
-| 29.5's author: `derive_code_hash` hashes file content; layout of the split; `task-29.5-split-giant-modules#ac-11`, `#r2b`, `#r5`, `#r0-derive` | [[#derive-hash]], AC-18, `plan-29 D4`; [[#split]]; [[#needs-295]] |
+| 29.5's author: `derive_code_hash` hashes file content; layout of the split; [[task-29.5-split-giant-modules#ac-11]], `#r2b`, `#r5`, `#r0-derive` | [[#derive-hash]], AC-18, `plan-29 D4`; [[#split]]; [[#needs-295]] |
 
 ## Revision round 2 (2026-11-14) {#rev-round-2}
 
-Answers ch-bsd spec review r1 (`bsd-plan29-spec-r1`, master `549458e`, which read this spec at
+Answers ch-bsd spec review r1 ([[bsd-plan29-spec-r1]], master `549458e`, which read this spec at
 `65ab0a1`) under ruling L105 ([[plan-review-2026-11-13#lead]]). The report is cited as a code
 span for the reason in [[#fold-cites]].
 
@@ -1333,7 +1333,7 @@ change, and "re-stamp" for R7's release means [[#r8]]'s rehash ([[#rev-round-3]]
 
 ## Revision round 3 (2026-11-14) {#rev-round-3}
 
-Answers ch-bsd spec review r2 (`bsd-plan29-spec-r2`, master, which read this spec at `cbb4ff8`)
+Answers ch-bsd spec review r2 ([[bsd-plan29-spec-r2]], master, which read this spec at `cbb4ff8`)
 under ruling L108 ([[plan-review-2026-11-13#lead]]).
 
 | finding | change | anchor |
@@ -1358,7 +1358,7 @@ decided (a) in ruling L109: deploy B closes with a forced re-derive of the affec
 
 ## Revision round 4 (2026-11-14) {#rev-round-4}
 
-Answers ch-bsd spec review r3 (`bsd-plan29-spec-r3`, master) under ruling L110
+Answers ch-bsd spec review r3 ([[bsd-plan29-spec-r3]], master) under ruling L110
 ([[plan-review-2026-11-13#lead]]).
 
 | finding | change | anchor |

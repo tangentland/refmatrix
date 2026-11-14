@@ -52,9 +52,9 @@ branch it was written on, and a link to a document the branch does not hold fail
 lint gate. They are written as code, and become links when the branches meet:
 - **T0** = `task-t0-suite-trust-sweep` (branch `spec-wave-t0`, `fa1227d`); its anchors are
   written `T0#r7-4`.
-- **queue review** = `plan-review-fable-2026-11-14-queue` (dev `master`, `3551894`);
-  **store review** = `plan-review-fable-2026-11-14-store` (`ec3e0e8`); **memory review** =
-  `plan-review-fable-2026-11-14-memory` (`0254373`). Their user decisions are labelled
+- **queue review** = [[plan-review-fable-2026-11-14-queue]] (dev `master`, `3551894`);
+  **store review** = [[plan-review-fable-2026-11-14-store]] (`ec3e0e8`); **memory review** =
+  [[plan-review-fable-2026-11-14-memory]] (`0254373`). Their user decisions are labelled
   `plan-review-fable D<n>` and `plan-review-fable-store D<n>`.
 {#citing}
 
@@ -1085,7 +1085,7 @@ All decided on 2026-11-14 (ruling L106, [[plan-review-2026-11-13#lead]]).
 
 ## Revision note (2026-11-14, after ch-bsd r1 and ruling L105) {#rev-note}
 
-`bsd-plan29-spec-r1` (dev `master` `549458e`) reviewed `dba9afd`. This spec's share, as ruling
+[[bsd-plan29-spec-r1]] (dev `master` `549458e`) reviewed `dba9afd`. This spec's share, as ruling
 L105 decided it:
 
 | Finding | Change here |

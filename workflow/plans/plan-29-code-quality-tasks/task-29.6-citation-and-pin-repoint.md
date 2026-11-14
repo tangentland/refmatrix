@@ -14,11 +14,11 @@ metadata:
 # Task 29.6: re-point citations and pins {#root}
 
 > Plan: [[plan-29-code-quality]]. This task is new: ruling L105 (2026-11-14) created it from
-> ch-bsd's finding that the citation and pin pass had no task (`bsd-plan29-spec-r1#b3`). The
+> ch-bsd's finding that the citation and pin pass had no task ([[bsd-plan29-spec-r1#b3]]). The
 > plan's `#tasks` and `#order` gain its row in the merge that lands these specs (the lead's).
 > Status: Pending
 > Depends on: [[task-29.5-split-giant-modules]] (its symbol map, its `tools/repoint_citations.py`
-> and its dry run); 29.2 and 29.3 (`task-29.2-mypy-gate`, `task-29.3-converge-shapes`), because
+> and its dry run); 29.2 and 29.3 ([[task-29.2-mypy-gate]], [[task-29.3-converge-shapes]]), because
 > lines move again in both and 29.3 renames helpers.
 > Runs last in plan-29's order: 29.1 → 29.4 → 29.5 → 29.2 ∥ 29.3 → **29.6**.
 > Docs-only, plus one census test. It edits other tasks' specs: [[#r6]] says under what rule.
@@ -34,7 +34,7 @@ rel: reinforces -> [[feedback_clean_corpus_hides_a_dead_gate]]
 rel: reinforces -> [[feedback_read_identifiers_at_write_time]]
 
 Other documents are cited as in [[task-29.4-suite-health#citing]]: **T0**, the **queue**,
-**store** and **memory reviews**, the ch-bsd report `bsd-plan29-spec-r1` (dev `master`,
+**store** and **memory reviews**, the ch-bsd report [[bsd-plan29-spec-r1]] (dev `master`,
 `549458e`) and the sibling specs 29.2 and 29.3 are not on this spec's branch, so their ids and
 anchors are written as code. {#citing}
 

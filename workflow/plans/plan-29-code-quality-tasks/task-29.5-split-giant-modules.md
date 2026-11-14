@@ -49,7 +49,7 @@ rel: reinforces -> [[feedback_no_silent_failures]]
 **How other documents are cited here.** As in [[task-29.4-suite-health#citing]]: **T0**, the
 **queue review**, the **store review** and the **memory review** are not on this spec's
 branch, so their ids and anchors are written as code (`T0#r0-1`, queue review `#b2`). The same
-holds for the two sibling specs, `task-29.2-mypy-gate` and `task-29.3-converge-shapes` (branch
+holds for the two sibling specs, [[task-29.2-mypy-gate]] and [[task-29.3-converge-shapes]] (branch
 `spec-plan29b`). {#citing}
 
 ## Why {#why}
@@ -455,7 +455,7 @@ were read from the syntax tree (`plan29a-r2-xrefs.log`):
    `refmatrix.cli` calls the patched object; then the functions move to their layer and the
    entries are deleted. It cannot start before 29.2's daemon-absent accessor exists: the
    helpers' in-process fallback needs a writer the engine does not have.
-   - **Owner: `task-29.3-converge-shapes#slice-h`** (confirmed by that spec's author on
+   - **Owner: [[task-29.3-converge-shapes#slice-h]]** (confirmed by that spec's author on
      2026-11-14; branch `spec-plan29b`, `6860150`). Slice h is 29.3's last slice: it hands one
      context to the engine functions, moves the three helpers, hands `telemetry` its group names,
      and takes this census's allow list from exactly two entries to empty. Both entries here
@@ -634,7 +634,7 @@ commit's parent and at the commit, and compared:
      pass name in some fleet store ([[#r9-restamp]]). With a count of zero there is no re-stamp,
      no go to ask for, and no AC-17.
    - **plan-29 D4 was decided (c)** (L106): `derive_code_hash` will hash a normalised syntax
-     tree. That is 29.2's (`task-29.2-mypy-gate#r7`) and lands after this task. This task does
+     tree. That is 29.2's ([[task-29.2-mypy-gate#r7]]) and lands after this task. This task does
      not change `derive_code_hash`. [[#ac-5]] tests the file lists, not the hash function, so it
      holds before and after 29.2 changes the function.
    - **No pass module changes by a byte in this task** ([[#r6]], [[#ac-7]], gate G12). A module
@@ -647,7 +647,7 @@ commit's parent and at the commit, and compared:
 6. **The derived state is shown not to have moved.** This is a gate of the split: a move that
    changed what is derived is not a move. (It was first asked for as the evidence for a fleet
    re-stamp; ruling L108 removed that re-stamp, and the gate stays.) {#r5-digest}
-   - The tool, the corpus and the test are the ones `task-29.2-mypy-gate#derive-digest`
+   - The tool, the corpus and the test are the ones [[task-29.2-mypy-gate#derive-digest]]
      specifies (`scripts/derive-digest.py`, `tests/fixtures/derive_digest/`,
      `tests/test_derive_digest_unchanged.py`; four legs: graph, vectors, PageRank prior, memory
      compile; every pass shown to have run; a changed corpus that must differ leg by leg). This
@@ -660,7 +660,7 @@ commit's parent and at the commit, and compared:
    - The golden names its commit, the embed model id and the duckdb version. It is recorded
      after the dev venv is on duckdb 1.5.3 (`plan-review-fable-store D5`, decided).
    - **The tool's contract is 29.2's**, completed at `spec-plan29b` `cbb4ff8`
-     (`task-29.2-mypy-gate#derive-digest`), and this task builds to it exactly:
+     ([[task-29.2-mypy-gate#derive-digest]]), and this task builds to it exactly:
      - it works in a throwaway store under a short temp root and **never opens a live store**;
      - `--corpus` and `--golden` choose other paths (the changed corpus; a worktree);
      - `check` exits **0** when all four legs are equal; **1** when a leg differs, naming the leg
@@ -671,7 +671,7 @@ commit's parent and at the commit, and compared:
 
      G11 is green only on exit 0. Exit 2 is a red gate, not a skipped one.
    - **29.3's slice K re-records the golden on the tree this task leaves**
-     (`task-29.3-converge-shapes#k-r6`; ruling L107): `scripts/derive-digest.py record` is the
+     ([[task-29.3-converge-shapes#k-r6]]; ruling L107): `scripts/derive-digest.py record` is the
      first plan-29 work after this task's release, before any `src/` edit of 29.2 or 29.3. The
      four re-recorded legs must **equal this task's R0 golden**; a difference is a finding,
      reported before 29.3's slice a starts. Slice K does not merely check that the digest is
@@ -724,28 +724,28 @@ After the moves, every `src` → `src` use of another module's `_name` is listed
   | `consolidate.py` | user | 4 | takes `scan._PROMPT_STOPWORDS`, `scan._token_shape_score`, `store._CONCEPT_SHIFT`, `store._ENTITY_MASK` | **`#c-pass-rows-held`** |
   {#r6-pass-rows}
 
-  22 sites of the 76: 16 owned by `task-29.3-converge-shapes#c-pass-rows` and the 6 that touch
-  `consolidate.py` by `task-29.3-converge-shapes#c-pass-rows-held`. ch-bsd r2 counted the 15
+  22 sites of the 76: 16 owned by [[task-29.3-converge-shapes#c-pass-rows]] and the 6 that touch
+  `consolidate.py` by [[task-29.3-converge-shapes#c-pass-rows-held]]. ch-bsd r2 counted the 15
   where the pass module is the target; the other 7 are where it is the user, and a rename
   edits the importing file as well.
-  - **Owner of 16 rows: `task-29.3-converge-shapes#c-pass-rows`** (its requirement c-R8; branch
+  - **Owner of 16 rows: [[task-29.3-converge-shapes#c-pass-rows]]** (its requirement c-R8; branch
     `spec-plan29b`; ruled by the lead after L108). What c-R8 does with a row: the name becomes
     public (it loses the underscore and gets a docstring), every user takes the public name, no
     private alias is left for the old spelling, and the row is deleted from this census's
     allow list. It re-reads the list at slice c's start commit, so a row this task resolves or
     adds after `75ef65d` is taken as it then stands.
-  - **When those 16 ship: deploy B of 29.2 R7's release** (`task-29.2-mypy-gate#r7-release`).
+  - **When those 16 ship: deploy B of 29.2 R7's release** ([[task-29.2-mypy-gate#r7-release]]).
     That release is one announced window with two deploys. Deploy A is R7 and the rehash op
-    (`task-29.2-mypy-gate#r8`) with no pass-file edit, then `rmx derive rehash`. Deploy B is
+    ([[task-29.2-mypy-gate#r8]]) with no pass-file edit, then `rmx derive rehash`. Deploy B is
     every pass-file edit, these 16 among them. A rename is a real edit: the rehash does not
     convert its stamps, by design.
   - **What clears `behind_code` afterwards is plan-29 D27, decided (a) by the lead** (ruling
-    L109; `task-29.2-mypy-gate#d27`): deploy B's closing step re-derives exactly the affected
+    L109; [[task-29.2-mypy-gate#d27]]): deploy B's closing step re-derives exactly the affected
     passes on every store through the existing `rmx reingest` path, under deploy B's own go.
     So `ingest`, `semantic`, `gmd`, `sessions` and `pagerank` read `behind_code` only inside
     that release's announced window, never as a fleet state between releases. None of it
     happens in this task's release, which changes no pass module.
-  - **Owner of the 6 `consolidate.py` rows: `task-29.3-converge-shapes#c-pass-rows-held`**
+  - **Owner of the 6 `consolidate.py` rows: [[task-29.3-converge-shapes#c-pass-rows-held]]**
     (ch-bsd r3 `#ns3`, decided (a) by ruling L110). They are **not** edited in deploy B. They
     stay declared on a held list whose trigger is the next release that changes
     `consolidate.py`'s behaviour, which re-compiles anyway under its own go.
@@ -784,7 +784,7 @@ After the moves, every `src` → `src` use of another module's `_name` is listed
 ### This task's censuses, and how each reads the code {#censuses}
 
 29.3's slice K moves every census that walks `src/refmatrix` with `ast` onto one kit
-(`task-29.3-converge-shapes#k-r7`), keeping its allow list and its synthetic bypass. So that
+([[task-29.3-converge-shapes#k-r7]]), keeping its allow list and its synthetic bypass. So that
 the list is not guessed:
 
 | Census | Test file | Reads | Moves onto the kit |
@@ -1047,7 +1047,7 @@ graph changed. Then:
    marks a stamp fresh whether or not it was behind (ch-bsd r2 `#nb2`; ruling L108). It is not
    a re-stamp tool.
 3. **The rehash is not the tool either.** 29.2's `rmx derive rehash`
-   (`task-29.2-mypy-gate#r8`) counts a stamp whose pass name has no module set as `unknown` and
+   ([[task-29.2-mypy-gate#r8]]) counts a stamp whose pass name has no module set as `unknown` and
    leaves it untouched (`#r8-rule`). An earlier revision of this step offered to wait for it;
    that could not have worked (ch-bsd r3 `#m3`; ruling L110).
 4. So the lead chooses, with the count in hand:
@@ -1125,9 +1125,9 @@ is quoted in the summary. {#r10-body}
   module) is not a derive module and is not required in the tuple. {#ac-5}
 - **AC-6: no private name crosses a module, except where it is declared.** The census passes on
   the tree with an allow list that holds exactly [[#r6]]'s declared rows, each naming an owner
-  that resolves: the three `handoff` names (`task-29.3-converge-shapes#slice-h`), the 16
-  pass-module rows that ship in deploy B (`task-29.3-converge-shapes#c-pass-rows`), and the 6
-  `consolidate.py` rows that are held (`task-29.3-converge-shapes#c-pass-rows-held`).
+  that resolves: the three `handoff` names ([[task-29.3-converge-shapes#slice-h]]), the 16
+  pass-module rows that ship in deploy B ([[task-29.3-converge-shapes#c-pass-rows]]), and the 6
+  `consolidate.py` rows that are held ([[task-29.3-converge-shapes#c-pass-rows-held]]).
   It fails on: a synthetic module that imports `_x` from another `refmatrix` module; one that
   reads `other._x` through an alias; one that does it inside a function (a lazy import); an
   allow-list entry whose owner does not resolve; an entry that matches no use. It passes on
@@ -1198,8 +1198,8 @@ is quoted in the summary. {#r10-body}
     counts with the tool's.
   - `refmatrix.store.Store`, `refmatrix.query.QueryEngine` and `refmatrix.cli:cli_entry` stay
     importable under exactly those names, and a test imports each in a child process.
-  - This is the AC that `task-29.2-mypy-gate` (its `#needs-295`) and
-    `task-29.3-converge-shapes` cite: 29.2 derives its strict module set from the map (every
+  - This is the AC that [[task-29.2-mypy-gate]] (its `#needs-295`) and
+    [[task-29.3-converge-shapes]] cite: 29.2 derives its strict module set from the map (every
     module that now holds a symbol that lived in `verbs.py`, `query.py`, `store.py`, `handoff.py`
     or `mcp.py` at `f3709d2`), and 29.3 its memory-path module list and its `module:qualname`
     allow lists.
@@ -1287,7 +1287,7 @@ is quoted in the summary. {#r10-body}
 | `docs/adr/0006-*.md`, `docs/adr/0000-adr-overview.md`, `docs/INDEX.md` | the layout and layering decision ([[#r1]]; authored by `ch-architect`) |
 | `tools/split_module.py`, `tools/split_maps/cli.json`, `tools/split_maps/store.json`, `tools/split_maps/symbol_map.json` | new: the move tool, its maps, the published symbol map |
 | `tools/dump_click_tree.py`, `tools/verify_split.py`, `tools/repoint_citations.py`, `tools/module_size_exceptions.json` | new |
-| `scripts/derive-digest.py`, `tests/fixtures/derive_digest/` (corpus, changed corpus, `golden.json`), `tests/test_derive_digest_unchanged.py` | new, built in phase 0 to `task-29.2-mypy-gate#derive-digest`; 29.2 and 29.3 reuse them |
+| `scripts/derive-digest.py`, `tests/fixtures/derive_digest/` (corpus, changed corpus, `golden.json`), `tests/test_derive_digest_unchanged.py` | new, built in phase 0 to [[task-29.2-mypy-gate#derive-digest]]; 29.2 and 29.3 reuse them |
 | the module R0 names as `_root_from_projects_slug`'s home | phase 0b ([[#r2b]]). `handoff.py` and `telemetry.py` are **not** changed |
 | `src/refmatrix/cli.py` → `src/refmatrix/cli/__init__.py`, `cli/__main__.py`, `cli/*_cmds.py` (14) | phase 1 |
 | `src/refmatrix/store.py`, `src/refmatrix/store_*.py` (10) | phase 2 |
@@ -1456,7 +1456,7 @@ release-alone rule and the no-drift rule; the baseline is 29.4's stage 5. {#rev-
 ## Revision note 2 (2026-11-14, after ch-bsd r1 and ruling L105) {#rev-note-2}
 
 ch-bsd reviewed `dba9afd` and found 3 BULLSHIT, 8 SKETCHY and 12 MEH across the five plan-29
-specs (`bsd-plan29-spec-r1`, dev `master` `549458e`). Ruling L105 decided how each is fixed.
+specs ([[bsd-plan29-spec-r1]], dev `master` `549458e`). Ruling L105 decided how each is fixed.
 This spec's share:
 
 | Finding | Change here |
@@ -1484,7 +1484,7 @@ This spec's share:
 - **The derive digest is recorded here** ([[#r5-digest]], gate G11), at R0, to 29.2's
   specification, so that it is evidence for this task's re-stamp.
 - **B1 is said plainly** ([[#r2b-stay]]) and its owner is confirmed:
-  `task-29.3-converge-shapes#slice-h`.
+  [[task-29.3-converge-shapes#slice-h]].
 - **Seams with 29.2** ([[#r5]] item 1): `typing_store.py` is not a store module; a
   `TYPE_CHECKING`-only host does not count as a base. [[#censuses]] lists which censuses 29.3's
   kit takes.
@@ -1504,12 +1504,12 @@ plan-29 D23 asked at the store event with the count in hand. {#rev-note-4-body}
 [[#r5-digest]] now quotes the tool contract 29.2 completed at `spec-plan29b` `cbb4ff8` (exit
 codes 0 / 1 / 2, `--corpus` and `--golden`, `record` refusing with no stamp, never a live
 store) and says that 29.3's slice K **re-records** the golden on the post-29.5 tree and
-requires equality with this task's R0 golden (`task-29.3-converge-shapes#k-r6`), reported
+requires equality with this task's R0 golden ([[task-29.3-converge-shapes#k-r6]]), reported
 before slice a starts. [[#ac-16]] names the exit codes. {#rev-note-5-body}
 
 ## Revision note 6 (2026-11-14, round 3: ch-bsd r2 and ruling L108) {#rev-note-6}
 
-`bsd-plan29-spec-r2` (dev `master`) reviewed `786d5e7`: 2 BULLSHIT, 5 SKETCHY, 10 MEH across the
+[[bsd-plan29-spec-r2]] (dev `master`) reviewed `786d5e7`: 2 BULLSHIT, 5 SKETCHY, 10 MEH across the
 six specs. It also corrected its own r1: the union hash is compared with no stamp, so the store
 split flips nothing. This spec's share, as ruling L108 decided it:
 
@@ -1517,7 +1517,7 @@ split flips nothing. This spec's share, as ruling L108 decided it:
 |---|---|
 | NB1: the one-copy probe was RED at base, against the clean baseline and G5 | [[#ac-4]], [[#r4-probe]], [[#r4-baseline]], gate G5, the test strategy: a strict xfail from phase 0; the rename commit removes the marker as its one allowed test edit; G5 accepts exactly that node id going xfailed → passed |
 | NS1, first half: the planned re-stamp had no target | [[#fact-derive]], R0 item 8, [[#r5]] item 4, [[#r9]] item 7, [[#r9-restamp]], [[#ac-17]]: no re-stamp unless R0 counts a stamp under an unmapped pass name; never through `stamp_derive` (NB2) |
-| NS1, second half: phase 3's renames would flip six passes | [[#r6]] (rows that touch a pass module are declared; owner `task-29.3-converge-shapes#c-pass-rows`; their edits ship in deploy B of 29.2 R7's release; 22 sites, [[#r6-pass-rows]]), [[#ac-6]], [[#ac-7]] (raw bytes of every pass module), gate G12 |
+| NS1, second half: phase 3's renames would flip six passes | [[#r6]] (rows that touch a pass module are declared; owner [[task-29.3-converge-shapes#c-pass-rows]]; their edits ship in deploy B of 29.2 R7's release; 22 sites, [[#r6-pass-rows]]), [[#ac-6]], [[#ac-7]] (raw bytes of every pass module), gate G12 |
 | NS4: citations resolved at the wrong commit | [[#r8]] item 2, [[#ac-8]]: `git blame` on the spec's line; a named symbol is checked |
 | M1: two mutations could not fail | test strategy, mutations 1 and 14: module-level bindings |
 | M2: the `verbs.py` split had no rules | [[#r7-verbs]] |
@@ -1532,7 +1532,7 @@ withdrawn by this note. {#rev-note-6-withdrawn}
 ## Revision note 7 (2026-11-14, the pass-module rows' owner; ruling L109) {#rev-note-7}
 
 [[#r6]] and [[#ac-6]] name the owner of the 22 declared pass-module rows,
-`task-29.3-converge-shapes#c-pass-rows`, and say when its edits ship (deploy B of 29.2 R7's
+[[task-29.3-converge-shapes#c-pass-rows]], and say when its edits ship (deploy B of 29.2 R7's
 release) and what clears `behind_code` afterwards (plan-29 D27, decided (a): that deploy's
 closing re-derive). This task adds the public names in `store.py` and `scan.py` for the 7
 "user" rows where the private name is not patched. [[#user-decisions]] gains D27's row. No row
@@ -1545,7 +1545,7 @@ of this task's allow lists is now without an owner. {#rev-note-7-body}
 | M1: G5's "no test's outcome changed" had no data source | gate G5 and [[#r4-probe]] call 29.4's `--compare --outcomes`, with one `--expect` at the rename commit |
 | M2: `git blame` does not follow a reflow | [[#r8]] item 2 and [[#ac-8]]: the oldest commit that added the exact token (`git log -S`), blame as the fallback; a reflow fixture; a twice-added token is unresolved |
 | M3: the unmapped-stamp branch offered a rehash that leaves such stamps untouched | [[#r9-restamp]] steps 3 and 4: "re-derive those passes", and R0 item 8 says whether a pass of that name still runs |
-| NS3, this spec's side: `consolidate.py`'s 6 rows | [[#r6-pass-rows]] (an owner column), [[#r6]], [[#ac-6]]: held by `task-29.3-converge-shapes#c-pass-rows-held`, not edited in deploy B; the other 16 stay with `#c-pass-rows` |
+| NS3, this spec's side: `consolidate.py`'s 6 rows | [[#r6-pass-rows]] (an owner column), [[#r6]], [[#ac-6]]: held by [[task-29.3-converge-shapes#c-pass-rows-held]], not edited in deploy B; the other 16 stay with `#c-pass-rows` |
 {#rev-note-8-table}
 
 ## Revision note 9 (2026-11-14, ch-bsd r4 GO with MEHs; ruling L111) {#rev-note-9}

@@ -18,8 +18,8 @@ metadata:
 > Depends on: 29.4 (the healed suite) and 29.5 (the module split), per
 > [[plan-29-code-quality#order]]. Its git and query slices land BEFORE [[task-29.2-mypy-gate]];
 > the shared files are ordered in [[task-29.2-mypy-gate#seam]].
-> Review input folded 2026-11-14: `plan-review-fable-2026-11-14-store#plan29-converge-candidates`,
-> `plan-review-fable-2026-11-14-queue#p29-4`, `plan-review-fable-2026-11-14-queue#dup-2`
+> Review input folded 2026-11-14: [[plan-review-fable-2026-11-14-store#plan29-converge-candidates]],
+> [[plan-review-fable-2026-11-14-queue#p29-4]], [[plan-review-fable-2026-11-14-queue#dup-2]]
 > ([[#fold]]). Decided: `plan-29 D4` = (c) (user, ruling L106; [[task-29.2-mypy-gate#d4]]).
 > Revision round 2 (ruling L105, on ch-bsd spec review r1): [[#rev-round-2]].
 > Revision round 3 (ruling L108, on ch-bsd spec review r2): [[#rev-round-3]].
@@ -101,7 +101,7 @@ sightings: {#classes-method}
   expression that picks an op's default partition, and changes no behaviour.
 - bug-240 (`rmx ingest <file>` ingests nothing, exit 0) is a sighting of class Q that the term
   resolver does not fix. It rides the 0.83.1 hotfix with bug-241 (lead, 2026-11-14;
-  `plan-review-fable-2026-11-14-queue#dup-2`) and is not closed here.
+  [[plan-review-fable-2026-11-14-queue#dup-2]]) and is not closed here.
 - bug-237 (query cost) goes to 29.1's triage (lead, 2026-11-14) and is not taken here.
 - **Numeric env knobs (bug-188)** are a candidate the queue review names for this task. The
   ledger has two sightings (the bug-188 row and [[bsd-impressions#imp-pin-the-run-end]]), which
@@ -171,7 +171,7 @@ These come from the ledger's record of how convergences fail.
 ## Slice K: the census kit {#slice-k}
 
 **The kit is bug-212's scanner, extracted; it is not a new AST walker**
-(`plan-review-fable-2026-11-14-store#plan29-converge-candidates`). The catalog-opener census in
+([[plan-review-fable-2026-11-14-store#plan29-converge-candidates]]). The catalog-opener census in
 `tests/test_bug212_r4_red.py` already has the parts every census needs: alias handling
 (`_store_aliases`, `_module_aliases`), a per-module scan that yields `module:qualname`, line and
 family (`_scan_source`), the tree walk (`_census`), caller lookup (`_functions_calling`,
@@ -217,7 +217,7 @@ proof is the mutations and planted bypasses below, each seen red.
     G10 iterates), plus anything 29.4 or 29.2 added. Every entry in that scope is MOVED onto the
     kit as a family: its allow list and its synthetic bypass unchanged, and 29.5's G10 re-proof
     (plant the bypass, see the census fail) run on it after the move.
-  - 29.5's table of its censuses is `task-29.5-split-giant-modules#censuses` (branch
+  - 29.5's table of its censuses is [[task-29.5-split-giant-modules#censuses]] (branch
     `spec-plan29a` at `321954b`). Three walk with `ast` and are moved:
     `tests/test_import_layering_census.py` (its AC-13),
     `tests/test_private_cross_module_census.py` (AC-6) and `tests/test_cli_patch_surface.py`
@@ -323,7 +323,7 @@ Python git call there is caught. The generated bash is outside a Python scan and
 
 **a-R7: git runs outside the store lock.** The daemon op `_op_sync_since` calls
 `sync.sync_since`, which runs `changed_since`'s `git diff` while the op holds `_store_lock`
-(`plan-review-fable-2026-11-14-store#plan29-converge-candidates`; rule 6 of [[#r0]]). After
+([[plan-review-fable-2026-11-14-store#plan29-converge-candidates]]; rule 6 of [[#r0]]). After
 this slice the changed-path list is resolved BEFORE the lock is taken and passed in. Every other
 `run_git` caller's lock state is listed in the summary; none calls it under `_store_lock`. Task
 16.4's git use, when it is built, goes through `run_git` and the census holds it to that. {#a-r7}
@@ -342,14 +342,14 @@ The allowlist is empty when the slice lands. {#a-r6}
   with no stderr (the miss property is true); exit 1 with stderr (false); exit 128 (false); no
   binary (`why == "missing"`). Omitting `timeout` is a `TypeError`. {#ac-a1}
   - **The timeout leg is a `feature-bound` test** in 29.4's terms
-    (`task-29.4-suite-health#r3-kinds`): the bound is the feature. The shim blocks until the
+    ([[task-29.4-suite-health#r3-kinds]]): the bound is the feature. The shim blocks until the
     test releases it; the test passes a small literal `timeout=` (the bound is `run_git`'s own
     argument) and asserts the OUTCOME: `rc is None`, `why == "timeout"`,
     `err` names the bound, the shim's process is gone, and the call returned while the shim's
     release file was still absent. It asserts nothing about elapsed time. If 29.4's census wants
     an allow-list entry for it, the entry is `feature-bound`, its `ac` is
-    `task-29.3-converge-shapes#ac-a1` (the census resolves that anchor), and its knob is
-    `arg:timeout` (ruling L107; `task-29.4-suite-health#r3-kinds` admits a keyword argument of
+    [[task-29.3-converge-shapes#ac-a1]] (the census resolves that anchor), and its knob is
+    `arg:timeout` (ruling L107; [[task-29.4-suite-health#r3-kinds]] admits a keyword argument of
     the function under test and names this call: the census checks the test passes `timeout=`
     as a literal no larger than the entry's `max_s`).
 - **AC-a2 (env):** with `GIT_DIR` pointing at another repository, `strip_local_env=True` answers
@@ -471,7 +471,7 @@ converged. {#b-r5}
 **b-R6: what this changes for measurements.** After b-R2 a query with a typo no longer looks like
 a valid empty or over-full answer. Any frozen query set measured across this slice compares two
 different things: G22's BEFORE and AFTER, and 21.2 / 21.4's sets, are both taken after this slice
-is deployed (`plan-review-fable-2026-11-14-queue#p29-4`). This is a constraint on those tasks'
+is deployed ([[plan-review-fable-2026-11-14-queue#p29-4]]). This is a constraint on those tasks'
 schedule; the summary repeats it. {#b-r6}
 
 ### Acceptance {#b-ac}
@@ -550,7 +550,7 @@ is either OWNED by another approved task (c-R2a) or moved into one of the three 
 - nothing else about the handler's control flow changes without a test.
 
 **c-R2a: a site another approved spec owns is listed, not pulled in**
-(`plan-review-fable-2026-11-14-queue#p29-4`). The test holds a list `module:qualname → owning
+([[plan-review-fable-2026-11-14-queue#p29-4]]). The test holds a list `module:qualname → owning
 task id`. A silent handler on that list is allowed while its owner is open. {#c-r2a}
 
 - Known at `f3709d2`: `Store.content_rank`'s reinforcement leg (bug-223, owned by bug-218's
@@ -656,7 +656,7 @@ public in deploy B, 6 are held** (lead ruling of 2026-11-14 adding to L108; ruli
 29.5 ships under the raw-bytes derive hash and may not change a byte of a file named in
 `_DERIVE_PASS_MODULES`. So it leaves these uses of another module's private name in the
 private-name census's allow list, each with this anchor as its owner. The rows are the table at
-`task-29.5-split-giant-modules#r6-pass-rows` (branch `spec-plan29a` at `75ef65d`), 22 sites. The
+[[task-29.5-split-giant-modules#r6-pass-rows]] (branch `spec-plan29a` at `75ef65d`), 22 sites. The
 16 below are edited in deploy B; `consolidate.py`'s 6 are in [[#c-pass-rows-held]].
 
 | 29.5 row | sites | names | what this slice edits |
@@ -856,7 +856,7 @@ and these items stay declared:
 - **Mutations:** a default `remedy` restored (AC-f3); `compact` passing `_store_rw`'s text
   (AC-f1).
 
-**Overlap** (`plan-review-fable-2026-11-14-queue#dup-2`): `task-linked-readonly-store` R2 adds
+**Overlap** ([[plan-review-fable-2026-11-14-queue#dup-2]]): [[task-linked-readonly-store]] R2 adds
 another caller class to this same check, and its R1 rests on bug-125's path comparison. This
 slice is the mechanism: the refusal has no text of its own after it. The linked-store task adds
 its caller with its own `remedy` and its own row in AC-f1 and AC-f2; it does not add a second
@@ -872,7 +872,7 @@ f-R1 to f-R3 and this slice is dropped. {#f-overlap}
 - **g-R2.** No behaviour changes. In particular, WHERE each op evaluates it (before or inside
   `_store_lock`) stays as it is; the summary lists that per op, because a default read outside
   the lock is a question for plan-23's binding contract, not for this slice
-  (`plan-review-fable-2026-11-14-store#plan29-converge-candidates`).
+  ([[plan-review-fable-2026-11-14-store#plan29-converge-candidates]]).
 - **g-R3: the census.** A read of `"partition"` from an op's `args` combined with a fallback to
   the store's partition name, outside the one function, fails. Families: the `or` form, a
   conditional expression, `args.get("partition", <store name>)`.
@@ -955,7 +955,7 @@ Acceptance:
   reviewed as a test change. GREEN edits `src/` and the two recorded artifacts under `scripts/`
   (through their `--update` commands), nothing under `tests/`.
 - **No elapsed-time assertion** (29.4's wall-clock census is live when these tests are written;
-  `task-29.4-suite-health#r3-kinds`). A bound that is the feature is tested as `feature-bound`
+  [[task-29.4-suite-health#r3-kinds]]). A bound that is the feature is tested as `feature-bound`
   with the bound shrunk (AC-a1). Everything else that involves waiting is an ordering check on
   events the test owns (AC-a6, AC-a11, AC-d3), or a count (slice e's mutation).
 - Daemon tests use the sandbox and a short temp root. No test opens a live store.
@@ -1025,7 +1025,7 @@ and D6 are free; D27 is 29.2's).
    explicit writes down today's values; choosing better ones is per-op work for the registry. {#k6}
 7. **bug-232 is taken here**. It is the newest sighting of class S and a four-caller
    change. 29.1's triage row for bug-232 should name this task. The queue review would merge it
-   into `task-linked-readonly-store`; that task becomes a fifth caller instead ([[#f-overlap]]).
+   into [[task-linked-readonly-store]]; that task becomes a fifth caller instead ([[#f-overlap]]).
    {#k7}
 8. **bug-237 and bug-240 are not taken** (lead, 2026-11-14). bug-237 goes to 29.1's triage;
    bug-240 rides 0.83.1. One consequence is accepted: b-R3 removes the DSL's unreachable `diff`
@@ -1056,18 +1056,18 @@ and D6 are free; D27 is 29.2's).
   finding, reported before any edit.
 - 29.5 re-keys the allow lists of the catalog-opener census (`tests/test_bug212_r4_red.py`) to
   the new module names, changes nothing else in them, and re-proves every file-keyed census on
-  its synthetic bypass after each move (`task-29.5-split-giant-modules#ac-12` and its gate G10,
+  its synthetic bypass after each move ([[task-29.5-split-giant-modules#ac-12]] and its gate G10,
   `#r4-reproof`, on branch `spec-plan29a` at `dba9afd`). Slice K extracts the scanner from the
   re-keyed file and re-proves it again (AC-K3); slice f relies on that test.
 - 29.5 writes several source-walking censuses before the kit exists. Which of them slice K
   moves onto the kit is stated once, in [[#k-r7]].
 - `_sync_memory_dir`, `_subject_link` and `_subject_upsert` stay in `cli/__init__.py` (ruling
-  L105 on ch-bsd B1; 29.5 says so at `task-29.5-split-giant-modules#r2b-stay`). Two of slice d's
+  L105 on ch-bsd B1; 29.5 says so at [[task-29.5-split-giant-modules#r2b-stay]]). Two of slice d's
   known ROUTE gates are in those functions.
 - The memory-path module list of c-R3 is re-derived from 29.5's symbol map
-  (`tools/split_maps/symbol_map.json`, required by `task-29.5-split-giant-modules#ac-11`;
+  (`tools/split_maps/symbol_map.json`, required by [[task-29.5-split-giant-modules#ac-11]];
   [[task-29.2-mypy-gate#needs-295]]). Module names are taken from that file at build time.
-- 29.1's triage records the rows this task takes (`task-29.1-registry-triage#homes`): bug-233
+- 29.1's triage records the rows this task takes ([[task-29.1-registry-triage#homes]]): bug-233
   (slice a), bug-234, bug-236, bug-238 (slice b), bug-232 (slice f), and bug-096 (slice c,
   [[#c-r6]]). Its rule is that a row is `scheduled` only to a spec whose own text takes it, so
   bug-237, bug-188 and bug-201 are `deferred` there.
@@ -1078,25 +1078,25 @@ The review documents are `workflow/plan-review-fable-2026-11-14-queue.md` (maste
 `workflow/plan-review-fable-2026-11-14-store.md` (master `ec3e0e8`). They landed on master after
 this branch's base (`f3709d2`), so they are cited here as `doc-id#anchor` code spans; a wikilink
 to a document this branch does not hold fails the repo lint. The same holds for the 29.1 and
-29.5 specs (`task-29.1-registry-triage`, `task-29.5-split-giant-modules`), which are on branch
+29.5 specs ([[task-29.1-registry-triage]], [[task-29.5-split-giant-modules]]), which are on branch
 `spec-plan29a` at `dba9afd`. Turn all of them into wikilinks in the merge commit. {#fold-cites}
 
 | finding | change here |
 |---|---|
-| `plan-review-fable-2026-11-14-store#plan29-converge-candidates`: extract bug-212's scanner; do not write new AST walks | [[#slice-k]] rewritten as the extraction (K-R1 to K-R5, AC-K2, AC-K3, AC-K5); [[#k9]] |
+| [[plan-review-fable-2026-11-14-store#plan29-converge-candidates]]: extract bug-212's scanner; do not write new AST walks | [[#slice-k]] rewritten as the extraction (K-R1 to K-R5, AC-K2, AC-K3, AC-K5); [[#k9]] |
 | same: `run_git` for `_op_sync_since`, which runs git inside `_store_lock`; and for 16.4 | [[#a-r7]], AC-a11 |
 | same: the partition default at 20 daemon sites | [[#slice-g]] |
 | same: except-census hits those specs create or touch | [[#c-r2a]] |
-| `plan-review-fable-2026-11-14-queue#p29-4`: the except census will flag sites approved specs own (bug-223, bug-123, bug-119); fix only the unowned (bug-096; bug-240 rides 0.83.1) | [[#c-r2a]], [[#c-r6]], AC-c8, AC-c9 |
+| [[plan-review-fable-2026-11-14-queue#p29-4]]: the except census will flag sites approved specs own (bug-223, bug-123, bug-119); fix only the unowned (bug-096; bug-240 rides 0.83.1) | [[#c-r2a]], [[#c-r6]], AC-c8, AC-c9 |
 | same: bug-234's fix changes what G22 and 21.2 / 21.4 measure | [[#b-r6]] |
 | same: not parallel on the query module; 29.3's query half first | [[task-29.2-mypy-gate#seam]], b-R4, [[#k10]] |
-| `plan-review-fable-2026-11-14-queue#dup-2`: bug-232 and bug-125 overlap `task-linked-readonly-store`; bug-240 goes with bug-241 | [[#f-overlap]]; bug-240 is not taken ([[#k8]]) |
+| [[plan-review-fable-2026-11-14-queue#dup-2]]: bug-232 and bug-125 overlap [[task-linked-readonly-store]]; bug-240 goes with bug-241 | [[#f-overlap]]; bug-240 is not taken ([[#k8]]) |
 | the queue review's `#dup-3` (29.1 input): bug-237, bug-096, bug-188, bug-201 | bug-096 in [[#c-r6]]; bug-237, bug-188 and bug-201 not taken, bug-188 with its measured count ([[#classes-no-helper]], [[#k8]]) |
-| 29.5's author: `derive_code_hash` hashes file content; `task-29.5-split-giant-modules#ac-11`, `#ac-12`, `#r2b`; `task-29.1-registry-triage#homes` | [[#c-r7]]; `plan-29 D4`; [[#split]] |
+| 29.5's author: `derive_code_hash` hashes file content; [[task-29.5-split-giant-modules#ac-11]], `#ac-12`, `#r2b`; [[task-29.1-registry-triage#homes]] | [[#c-r7]]; `plan-29 D4`; [[#split]] |
 
 ## Revision round 2 (2026-11-14) {#rev-round-2}
 
-Answers ch-bsd spec review r1 (`bsd-plan29-spec-r1`, master `549458e`, which read this spec at
+Answers ch-bsd spec review r1 ([[bsd-plan29-spec-r1]], master `549458e`, which read this spec at
 `65ab0a1`) under ruling L105 ([[plan-review-2026-11-13#lead]]). The report is cited as a code
 span for the reason in [[#fold-cites]].
 
@@ -1130,7 +1130,7 @@ here ([[task-29.2-mypy-gate#d4]]).
 
 ## Revision round 3 (2026-11-14) {#rev-round-3}
 
-Answers ch-bsd spec review r2 (`bsd-plan29-spec-r2`, master, which read this spec at `cbb4ff8`)
+Answers ch-bsd spec review r2 ([[bsd-plan29-spec-r2]], master, which read this spec at `cbb4ff8`)
 under ruling L108 ([[plan-review-2026-11-13#lead]]).
 
 | finding | change | anchor |
@@ -1146,7 +1146,7 @@ The other round-3 items (NB2's rehash, NS2, NS3, M9, M10) are in 29.2
 
 ## Revision round 4 (2026-11-14) {#rev-round-4}
 
-Answers ch-bsd spec review r3 (`bsd-plan29-spec-r3`, master) under ruling L110
+Answers ch-bsd spec review r3 ([[bsd-plan29-spec-r3]], master) under ruling L110
 ([[plan-review-2026-11-13#lead]]).
 
 | finding | change | anchor |
