@@ -413,3 +413,10 @@ unchanged.
 |---|---|---|
 | m4 "set AND valid", with an AC case | R2 and R6 already say "set AND valid" (`d251fe6`); AC-8 adds the invalid-id leg (no paired row, `arm_error`) and its mutation | [[#ac-8]] |
 
+## Approval of the L83/L86/L87/L89 amendment (2026-11-14, d9co) {#approval-l83-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The paired-only design (L83, Q14 "drop the live part"), the arms contract with 10.2 and the paired minima (L86), the paired-run units and the non-inferiority rule for shrink (L87) and the first-match push verdict (L89) are approved by the lead on the user's pattern (d9co) after the L86+L87 confirm-lite MEH-only (0B/0S/3M), folded at `224aac7` per L89 with no further round | `workflow/bullshit/2026-11-14-0225-spec-t3c-r8-l87-1a219cb.md` (r6 and r7 in the same ledger, over `spec-wave-t3c` `1e89050..1a219cb`) | status unchanged |
+
+rel: derives-from -> [[bsd-spec-t3c-r8-l87-1a219cb]]

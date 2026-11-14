@@ -176,3 +176,11 @@ start, with 10.2 built before it (L20). The order is carried by
 | The 3-calendar-day session period (L79, Q11 answered a), the orchestrator-run start under L78 (L80) and the end committed with the start (L82) are approved by the lead on the user's pattern (d9co) after the L80 confirm-lite MEH-only (0B/0S/2M), folded at `49a603c` per L82 with no further round | `workflow/bullshit/2026-11-14-0200-spec-t3c-r5-l80-d42c72b.md` (with the L79 confirm-lite `2026-11-14-0150-spec-t3c-r4-l79-7758d2a.md`, over `spec-wave-t3c` `be03148..d42c72b`) | status unchanged; Q14 (where the verdicts come from) may amend this plan again |
 
 rel: derives-from -> [[bsd-spec-t3c-r5-l80-d42c72b]]
+
+## Approval of the L83/L86/L87/L89 amendment (2026-11-14, d9co) {#approval-l83-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The paired-only design (L83, Q14 "drop the live part"), the arms contract with 10.2 and the paired minima (L86), the paired-run units and the non-inferiority rule for shrink (L87) and the first-match push verdict (L89) are approved by the lead on the user's pattern (d9co) after the L86+L87 confirm-lite MEH-only (0B/0S/3M), folded at `224aac7` per L89 with no further round | `workflow/bullshit/2026-11-14-0225-spec-t3c-r8-l87-1a219cb.md` (r6 and r7 in the same ledger, over `spec-wave-t3c` `1e89050..1a219cb`) | status unchanged |
+
+rel: derives-from -> [[bsd-spec-t3c-r8-l87-1a219cb]]
