@@ -1470,10 +1470,11 @@ r6 tests (Q4/Q4b).
 ## GREEN r7 (ruling L102: migrate asks git about the file it replaces) {#green-r7}
 
 Fix commit `9ed0d6b` (`src/refmatrix/store.py`, `src/refmatrix/cli.py`,
-`docs/INTEGRATION.md`, by pathspec). No test was edited. m-2 needs no code: the r7 GUARD
+`docs/INTEGRATION.md`, by pathspec). The RED is `436fff9` + `dd36472` (`tests/test_bug212_r7_red.py`;
+this summary has no `#red-r7` section). No test was edited. m-2 needs no code: the r7 GUARD
 `test_memory_sync_disk_deferred_behind_a_running_job_warns_on_stderr` passes, as at `bcd861c`.
 
-rel: implements -> [[#red-r7]]
+rel: derives-from -> [[bsd-bug212-r6-282589b]]
 rel: amends -> [[#green-r6-changes]]
 
 ### What changed {#green-r7-changes}
