@@ -1,0 +1,248 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix as checked-hash (bug-037)
+......................F......................FFFF.............           [100%]
+=================================== FAILURES ===================================
+__________ test_every_checked_opener_calls_the_one_store_level_check ___________
+
+    def test_every_checked_opener_calls_the_one_store_level_check():
+        """L72 + L95: ONE store-level check -- a function in store.py that asks
+        `git_tracked_catalogs` and refuses -- called by every checked opener and by every caller
+        of a library opener, directly or through one wrapper (e.g. a CLI wrapper that turns the
+        refusal into a `ClickException`). At 03d7b27 `cli:compact` and `cli:migrate_to_duckdb`
+        (the caller of `migrate.migrate_catalog`) call nothing that checks."""
+        checks = _functions_calling({"git_tracked_catalogs"}, module="store") - {
+            "git_tracked_catalogs"}
+        assert checks, ("store.py has no function that calls `git_tracked_catalogs` -- the "
+                        "tracked-catalog check is not store-level")
+        wrappers = _functions_calling(checks)
+        missing = []
+        for site in sorted(CHECKED_OPENERS | _library_callers()):
+            mod, qual = site.split(":")
+            calls = _calls_in(mod, qual)
+            if not (calls & checks or calls & (wrappers - {qual.split(".")[-1]})):
+                missing.append(site)
+>       assert not missing, (f"checked openers that do not call the store-level check "
+                             f"{sorted(checks)} (directly or via one wrapper): {missing}")
+E       AssertionError: checked openers that do not call the store-level check ['refuse_tracked_catalog_open'] (directly or via one wrapper): ['cli:compact']
+E       assert not ['cli:compact']
+
+tests/test_bug212_r4_red.py:577: AssertionError
+______________ test_compact_refuses_a_git_tracked_catalog[slots] _______________
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10ca4bc50>, 'slots')
+
+    @pytest.mark.timeout(300)
+    def test_compact_refuses_a_git_tracked_catalog(tracked_repo):
+        """b-1 (i): `rmx compact --no-keep-backup`, no daemon, a repo that commits its catalog. One
+        `Error:` line `refusing to open <full writer slot> read-write in-process: ...`, exit
+        non-zero, catalog bytes unchanged, `git status` clean (at 03d7b27: exit 0, ` M
+        catalog.A.duckdb` and ` D catalog.duckdb`), and no compaction leftovers."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _cli(repo, ["compact", "--no-keep-backup"])
+        text = _text(r)
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] compact crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] `rmx compact` rewrote the git-tracked catalog {changed} (exit "
+            f"{r.returncode})\ngit status:\n{status}\n{text}")
+E       AssertionError: [slots] `rmx compact` rewrote the git-tracked catalog ['catalog.A.duckdb', 'catalog.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.A.duckdb
+E          D .refmatrix/catalog.duckdb
+E         
+E         exit 0
+E         stdout:
+E         exporting (was 2.0 MB)…
+E         importing into fresh catalog…
+E         compacted 2.0 MB → 2.0 MB (0% smaller)
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.A.duckdb', 'catalog.duckdb'])
+
+tests/test_bug212_r5_red.py:97: AssertionError
+______________ test_compact_refuses_a_git_tracked_catalog[legacy] ______________
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10cb43dd0>, 'legacy')
+
+    @pytest.mark.timeout(300)
+    def test_compact_refuses_a_git_tracked_catalog(tracked_repo):
+        """b-1 (i): `rmx compact --no-keep-backup`, no daemon, a repo that commits its catalog. One
+        `Error:` line `refusing to open <full writer slot> read-write in-process: ...`, exit
+        non-zero, catalog bytes unchanged, `git status` clean (at 03d7b27: exit 0, ` M
+        catalog.A.duckdb` and ` D catalog.duckdb`), and no compaction leftovers."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _cli(repo, ["compact", "--no-keep-backup"])
+        text = _text(r)
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] compact crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] `rmx compact` rewrote the git-tracked catalog {changed} (exit "
+            f"{r.returncode})\ngit status:\n{status}\n{text}")
+E       AssertionError: [legacy] `rmx compact` rewrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.duckdb
+E         
+E         exit 0
+E         stdout:
+E         exporting (was 2.0 MB)…
+E         importing into fresh catalog…
+E         compacted 2.0 MB → 2.0 MB (0% smaller)
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.duckdb'])
+
+tests/test_bug212_r5_red.py:97: AssertionError
+_________ test_compact_refuses_before_it_stops_a_running_daemon[slots] _________
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10cb40ed0>, 'slots')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c6f64a0>
+
+    @pytest.mark.timeout(300)
+    def test_compact_refuses_before_it_stops_a_running_daemon(tracked_repo, monkeypatch):
+        """b-1 (ii): with a daemon running, `rmx compact` on a tracked catalog refuses BEFORE it
+        pings or stops the daemon -- the daemon the refusal names as the remedy is still the same
+        process afterwards (at 03d7b27 compact stops it, compacts in-process, and spawns a new
+        one)."""
+        repo, layout = tracked_repo
+        monkeypatch.setenv("PYTHONPATH", absolute_pythonpath(os.environ.get("PYTHONPATH")))
+        assert len(str(dm.socket_path(repo.store))) < 100, dm.socket_path(repo.store)
+        pid = dm.spawn_daemon_subprocess(repo.store, watch_root=[])
+        assert pid and dm.ping(repo.store), "fixture: the daemon did not come up"
+        pid_before = dm.read_pid(repo.store)
+        assert pid_before, "fixture: no daemon pid file"
+        r = _cli(repo, ["compact", "--no-keep-backup"])
+        text = _text(r)
+        pid_after = dm.read_pid(repo.store)
+>       assert dm.ping(repo.store) and pid_after == pid_before, (
+            f"[{layout}] `rmx compact` on a tracked catalog stopped the running daemon (pid "
+            f"{pid_before} -> {pid_after}, answering={dm.ping(repo.store)})\n{text}")
+E       AssertionError: [slots] `rmx compact` on a tracked catalog stopped the running daemon (pid 52521 -> None, answering=False)
+E         exit 1
+E         stdout:
+E         exporting (was 2.8 MB)…
+E         importing into fresh catalog…
+E         compacted 2.8 MB → 2.0 MB (27% smaller)
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212t-rorvq9m_/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/cli.py", line 15142, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/cli.py", line 118, in invoke
+E             return super().invoke(ctx)
+E                    ~~~~~~~~~~~~~~^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/cli.py", line 8145, in compact
+E             daemon_mod.spawn_daemon(root, partition=_resolve_partition())
+E             ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/daemon.py", line 6839, in spawn_daemon
+E             raise RuntimeError(
+E             ...<2 lines>...
+E             )
+E         RuntimeError: daemon did not start within 15.0s (see /private/tmp/b212t-rorvq9m_/proj/.refmatrix/rmxd.log)
+E         
+E       assert (False)
+E        +  where False = <function ping at 0x10c6bd6f0>(PosixPath('/private/tmp/b212t-rorvq9m_/proj/.refmatrix'))
+E        +    where <function ping at 0x10c6bd6f0> = dm.ping
+E        +    and   PosixPath('/private/tmp/b212t-rorvq9m_/proj/.refmatrix') = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10cb40ed0>.store
+
+tests/test_bug212_r5_red.py:125: AssertionError
+________ test_compact_refuses_before_it_stops_a_running_daemon[legacy] _________
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a46df50>, 'legacy')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c6f50f0>
+
+    @pytest.mark.timeout(300)
+    def test_compact_refuses_before_it_stops_a_running_daemon(tracked_repo, monkeypatch):
+        """b-1 (ii): with a daemon running, `rmx compact` on a tracked catalog refuses BEFORE it
+        pings or stops the daemon -- the daemon the refusal names as the remedy is still the same
+        process afterwards (at 03d7b27 compact stops it, compacts in-process, and spawns a new
+        one)."""
+        repo, layout = tracked_repo
+        monkeypatch.setenv("PYTHONPATH", absolute_pythonpath(os.environ.get("PYTHONPATH")))
+        assert len(str(dm.socket_path(repo.store))) < 100, dm.socket_path(repo.store)
+        pid = dm.spawn_daemon_subprocess(repo.store, watch_root=[])
+        assert pid and dm.ping(repo.store), "fixture: the daemon did not come up"
+        pid_before = dm.read_pid(repo.store)
+        assert pid_before, "fixture: no daemon pid file"
+        r = _cli(repo, ["compact", "--no-keep-backup"])
+        text = _text(r)
+        pid_after = dm.read_pid(repo.store)
+>       assert dm.ping(repo.store) and pid_after == pid_before, (
+            f"[{layout}] `rmx compact` on a tracked catalog stopped the running daemon (pid "
+            f"{pid_before} -> {pid_after}, answering={dm.ping(repo.store)})\n{text}")
+E       AssertionError: [legacy] `rmx compact` on a tracked catalog stopped the running daemon (pid 52786 -> None, answering=False)
+E         exit 1
+E         stdout:
+E         exporting (was 3.0 MB)…
+E         importing into fresh catalog…
+E         compacted 3.0 MB → 2.0 MB (33% smaller)
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212t-ezslq4fq/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/cli.py", line 15142, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/cli.py", line 118, in invoke
+E             return super().invoke(ctx)
+E                    ~~~~~~~~~~~~~~^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/cli.py", line 8145, in compact
+E             daemon_mod.spawn_daemon(root, partition=_resolve_partition())
+E             ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix/daemon.py", line 6839, in spawn_daemon
+E             raise RuntimeError(
+E             ...<2 lines>...
+E             )
+E         RuntimeError: daemon did not start within 15.0s (see /private/tmp/b212t-ezslq4fq/proj/.refmatrix/rmxd.log)
+E         
+E       assert (False)
+E        +  where False = <function ping at 0x10c6bd6f0>(PosixPath('/private/tmp/b212t-ezslq4fq/proj/.refmatrix'))
+E        +    where <function ping at 0x10c6bd6f0> = dm.ping
+E        +    and   PosixPath('/private/tmp/b212t-ezslq4fq/proj/.refmatrix') = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a46df50>.store
+
+tests/test_bug212_r5_red.py:125: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r4_red.py::test_every_checked_opener_calls_the_one_store_level_check
+FAILED tests/test_bug212_r5_red.py::test_compact_refuses_a_git_tracked_catalog[slots]
+FAILED tests/test_bug212_r5_red.py::test_compact_refuses_a_git_tracked_catalog[legacy]
+FAILED tests/test_bug212_r5_red.py::test_compact_refuses_before_it_stops_a_running_daemon[slots]
+FAILED tests/test_bug212_r5_red.py::test_compact_refuses_before_it_stops_a_running_daemon[legacy]
+5 failed, 57 passed in 165.44s (0:02:45)

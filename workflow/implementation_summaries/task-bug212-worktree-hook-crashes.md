@@ -1173,3 +1173,125 @@ back, and `__pycache__` was cleared afterwards.
   list. Its src uses are the SQLite backend's own connect and the hub bus database.
 - The MCP-server half of the m-3 fix only works if the verb or the adapter marks the reply
   `isError`. The dispatcher sets it only for a top-level `error` key.
+
+## GREEN r5 (ruling L95: compact, migrate, save-state errors, change-subject, busy gate) {#green-r5}
+
+Fix commit `a1bde19` (`src/refmatrix/cli.py`, `src/refmatrix/verbs.py`,
+`docs/INTEGRATION.md`, by pathspec). No test was edited. One existing test now contradicts the
+L95 contract; it is flagged below and was not edited.
+
+rel: implements -> [[#red-r5]]
+rel: derives-from -> [[bsd-bug212-r4-03d7b27]]
+rel: amends -> [[#green-r4-changes]]
+
+### What changed {#green-r5-changes}
+
+- **b-1.** `cli._refuse_tracked_catalog_open(root: Path, target: Path) -> None` is the CLI's
+  one wrapper over `store.refuse_tracked_catalog_open`, turning the refusal into a
+  `ClickException`. It is called by:
+  - `_store_rw()`, which before r5 had its own try/except;
+  - `compact`, right after it resolves the writer slot and BEFORE `daemon.ping` /
+    `stop_daemon` (target: the slot, or the legacy `catalog.duckdb`);
+  - `migrate_to_duckdb`, before `migrate.migrate_catalog` unlinks and rebuilds the
+    destination (target: `dst`).
+  INTEGRATION.md's heading claim is true again. The section names the daemon (its writer, its
+  slot merge and repair) and the hub's global store as the unchecked exception, and describes
+  the resource-keyed census.
+- **s-1 + m-3: one mechanism, in the verb.**
+  - New `verbs.SaveStateIncompleteError(VerbError)`, `__init__(self, message: str, result:
+    dict)`.
+  - `verbs.save_state` raises it AFTER the handoff is written and finalize has run, when the
+    promote or the memory bridge failed. The message is `save-state wrote <target> but its
+    promote failed: ...`, or `... its memory bridge failed: ...`, or both joined by `; and `.
+  - The CLI catches it, renders `e.result` (stdout says `promote FAILED` / `memory bridge
+    FAILED -- the error follows on stderr`), runs `--commit`, then raises `str(e)` as its one
+    `Error:` line, exit 1.
+  - The CLI no longer builds the line itself (r4's `promote_error` is gone).
+  - MCP's `_verb_tool` turns the VerbError into `{"error"}`, which the dispatcher replies as
+    `isError`.
+- **m-4.** `verbs.change_subject` writes the durable subject row first (daemon
+  `subject_upsert`, or `local_write` when absent) and calls `Stm.set_subject` only after it
+  lands. Any `VerbError` from the write is re-raised with the same type, with `; the session's
+  subject is unchanged (still '<old>')` (or `(none set)`) appended. The CLI's existing
+  translation prints it as one `Error:` line.
+- **m-5.** `init` and `partition_drop` classify the daemon with `verbs.require_daemon`, not
+  `daemon.ping`:
+  - up keeps the daemon route (`partition_drop`'s RPC; `init`'s "reusing");
+  - busy is one `Error: daemon busy pid=... -- \`rmx <cmd>\` will not open the catalog
+    in-process under it`;
+  - absent keeps the in-process route.
+
+### Runs {#green-r5-runs}
+
+- `bug212/green-r5-r4r5.log`: the r4 and r5 files at the working tree that became `a1bde19`,
+  **62 passed**. At `03d7b27` it was 14 failed / 48 passed. Every GUARD (Y2, Y5b, Y5c, Y7, Y6)
+  stays green.
+- `bug212/green-r5-prior.log`: `test_bug212_hooks_in_worktrees`, `_r1_remedy`, `_r2_red`,
+  `test_mcp_session_pointer` and `test_sync_and_extras`, **179 passed**.
+- `bug212/green-r5-family.log`: r4's 107 files plus the r5 file (`green-r5-family.files`), at
+  `a1bde19`. Result: **1597 passed, 1 skipped**, no failure. Pytest exits 1 for the SkipGate
+  UNPINNED skip (m-4 of r1).
+- `bug212/green-r5-wide.log`: the full suite at `a1bde19` (`__pycache__` cleared), **5
+  failed, 4432 passed, 1 skipped**, 47m35s. By E line against `green-r4-wide.log`
+  (`green-r5-wide-elines-vs-r4.txt`):
+  - SAME E lines: `test_brief_real_daemon` (1/1), `test_task21_1_agent_usage_report` x2
+    (29/29, 16/16), and `test_gmd_lint_requires_version` (22/22). The last is bug-155, fixed on
+    master; this branch predates the fix. Reported, not counted.
+  - Gone: `test_task21_1_recall_skip::test_ac2b_live_daemon_recall_writes_one_ok_recall_row`
+    (bug-228, the flake) did not recur.
+  - **NEW, caused by this change, a test that contradicts L95:**
+    `test_plan3_remedy_r3.py::test_promote_digest_reports_busy_and_never_opens_the_store`, at
+    line 45. E: `SaveStateIncompleteError: save-state wrote .../mem/savestate_s1.md but its
+    promote failed: VerbBusyError: daemon busy pid=... (alive, not answering ...)`.
+    - The test calls `verbs.save_state` under a busy daemon and expects a RETURNED result whose
+      `promoted.error` says busy (lines 45-47).
+    - L95's contract is that the verb RAISES once the handoff is written. Its message carries
+      the busy error, and `e.result["promoted"]["error"]` holds the same dict the test reads.
+    - The test's other half passed before line 45: `_promote_digest` reports busy and opens no
+      catalog (line 44).
+    - The family list did not include `test_plan3_remedy_r3.py`; the wide run found it.
+
+### Mutations {#green-r5-mutations}
+
+The spot-checks ran in the throwaway clone `/Volumes/littlebig/refmatrix-bug212-mut4`, moved to
+`a1bde19` by fast-forward. The driver was `scratchpad/mut212g5.py` (not committed); every mutant
+was compiled before the batch. Each mutation ran against the r4 + r5 files and was logged to
+`bug212/green-r5-mut-<id>.log`. Every touched file was restored with `git checkout --` in its
+own command, then `src` was checked clean with the fix text back. `__pycache__` was cleared in
+the copy and in the clone afterwards. Batch log: `bug212/green-r5-mutations.log`.
+
+| id | mutation | result |
+|----|----------|--------|
+| P1 | `compact` without the check | killed: 5 (compact x2, compact-with-daemon x2, every-opener census) |
+| P2 | `compact` checks only AFTER pinging/stopping the daemon | killed: 2 (`test_compact_refuses_before_it_stops_a_running_daemon` x2) |
+| P3 | `migrate-to-duckdb` without the check | killed: 2 (migrate, every-opener census) |
+| P4 | a bridge failure is not raised (s-1) | killed: 2 (the bridge test x2) |
+| P5 | `init`: busy treated as absent | killed: 1 (`[init]`) |
+| P6 | `partition drop`: busy treated as absent | killed: 1 (`[partition-drop]`) |
+| P7 | a promote failure is not raised (m-3) | killed: 6 (the L82 CLI test x4 incl. `--commit`, the MCP test x2) |
+| P8 | STM subject set before the store write (m-4) | killed: 2 |
+
+8 of 8 killed.
+
+### For the lead, the test owner and the reviewers {#green-r5-flags}
+
+- **`test_plan3_remedy_r3::test_promote_digest_reports_busy_and_never_opens_the_store`
+  (test owner).** Lines 45-47 pin the pre-L95 contract, "save_state returns `promoted.error`".
+  Under L95 they become:
+  `with pytest.raises(verbs.SaveStateIncompleteError) as ei: verbs.save_state(...)`, then
+  `"busy" in ei.value.result["promoted"]["error"]` and `"busy" in str(ei.value)`, with the
+  no-catalog assertion unchanged. Not edited here.
+- **A memory-bridge failure is now an MCP `isError` too, not only a promote failure.** L95
+  named the promote for MCP and the bridge for the CLI. One verb-level mechanism makes both
+  surfaces agree on both failures. Before r5, MCP callers saw `sync.error` as data inside a
+  success reply.
+- **Every promote or bridge error raises**, not only the tracked-catalog refusal: a busy
+  daemon, a missing memory dir and a crash all do. That is the r4 CLI behaviour, now shared
+  with MCP.
+- **`migrate-to-duckdb --out <elsewhere>`** is still refused when the store's catalogs are
+  tracked, although it would write a file outside the store. The check asks about the store,
+  not the destination. This fails closed; it may be over-strict for that rare flag.
+- **`change_subject`** re-raises with the original `VerbError` subclass (busy stays
+  `VerbBusyError`), so the MCP and CLI paths keep their classification.
+- The throwaway clone `/Volumes/littlebig/refmatrix-bug212-mut4` is still in place (r4's
+  safety-check block on removing a top-level littlebig path). It is clean at `a1bde19`.

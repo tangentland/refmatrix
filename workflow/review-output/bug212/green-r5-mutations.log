@@ -1,0 +1,31 @@
+P1-compact-unchecked: 5 failed, 57 passed in 165.44s (0:02:45) | 5 failed
+    FAILED tests/test_bug212_r4_red.py::test_every_checked_opener_calls_the_one_store_level_check
+    FAILED tests/test_bug212_r5_red.py::test_compact_refuses_a_git_tracked_catalog[slots]
+    FAILED tests/test_bug212_r5_red.py::test_compact_refuses_a_git_tracked_catalog[legacy]
+    FAILED tests/test_bug212_r5_red.py::test_compact_refuses_before_it_stops_a_running_daemon[slots]
+    FAILED tests/test_bug212_r5_red.py::test_compact_refuses_before_it_stops_a_running_daemon[legacy]
+P2-compact-checks-after-stopping-the-daemon: 2 failed, 60 passed in 133.04s (0:02:13) | 2 failed
+    FAILED tests/test_bug212_r5_red.py::test_compact_refuses_before_it_stops_a_running_daemon[slots]
+    FAILED tests/test_bug212_r5_red.py::test_compact_refuses_before_it_stops_a_running_daemon[legacy]
+P3-migrate-unchecked: 2 failed, 60 passed in 133.73s (0:02:13) | 2 failed
+    FAILED tests/test_bug212_r4_red.py::test_every_checked_opener_calls_the_one_store_level_check
+    FAILED tests/test_bug212_r5_red.py::test_migrate_to_duckdb_overwrite_refuses_a_git_tracked_catalog
+P4-bridge-failure-not-raised: 2 failed, 60 passed in 132.56s (0:02:12) | 2 failed
+    FAILED tests/test_bug212_r5_red.py::test_save_state_whose_memory_bridge_is_refused_says_so_on_stderr_and_exits_non_zero[slots]
+    FAILED tests/test_bug212_r5_red.py::test_save_state_whose_memory_bridge_is_refused_says_so_on_stderr_and_exits_non_zero[legacy]
+P5-init-busy-is-absent: 1 failed, 61 passed in 134.16s (0:02:14) | 1 failed
+    FAILED tests/test_bug212_r5_red.py::test_init_and_partition_drop_refuse_the_in_process_route_under_a_busy_daemon[init]
+P6-partition-drop-busy-is-absent: 1 failed, 61 passed in 132.08s (0:02:12) | 1 failed
+    FAILED tests/test_bug212_r5_red.py::test_init_and_partition_drop_refuse_the_in_process_route_under_a_busy_daemon[partition-drop]
+P7-promote-failure-not-raised: 6 failed, 56 passed in 131.80s (0:02:11) | 6 failed
+    FAILED tests/test_bug212_r4_red.py::test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[slots-plain]
+    FAILED tests/test_bug212_r4_red.py::test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[slots-commit]
+    FAILED tests/test_bug212_r4_red.py::test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[legacy-plain]
+    FAILED tests/test_bug212_r4_red.py::test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[legacy-commit]
+    FAILED tests/test_bug212_r5_red.py::test_mcp_save_state_with_a_refused_promote_is_an_error_reply[slots]
+    FAILED tests/test_bug212_r5_red.py::test_mcp_save_state_with_a_refused_promote_is_an_error_reply[legacy]
+P8-stm-subject-set-before-store-write: 2 failed, 60 passed in 132.66s (0:02:12) | 2 failed
+    FAILED tests/test_bug212_r5_red.py::test_a_refused_change_subject_leaves_the_stm_subject_unchanged_and_says_so[slots]
+    FAILED tests/test_bug212_r5_red.py::test_a_refused_change_subject_leaves_the_stm_subject_unchanged_and_says_so[legacy]
+batch-exit=0
+pycache cleared in copy + clone; copy src == a1bde19
