@@ -619,6 +619,6 @@ merge commit. {#fold-cites}
 - Static checking between the MCP adapter and the verbs it dispatches to by name; the verb
   parity test covers that.
 - One payload function for all query results ([[#k7]]).
-- bug-236, bug-237 and the rest of bug-238: [[task-29.3-converge-shapes#slice-b]] and the
-  registry.
+- bug-236 and the rest of bug-238: [[task-29.3-converge-shapes#slice-b]]. bug-237 goes to
+  29.1's triage (lead, 2026-11-14).
 - Stubs for `scipy` (the one `import-untyped` error): it stays in its module's baseline cell.

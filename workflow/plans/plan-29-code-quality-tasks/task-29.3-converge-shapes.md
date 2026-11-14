@@ -46,7 +46,7 @@ Eight slices, each on its own branch, in this order:
 |---|---|---|
 | K | the census kit under `tests/census/`: bug-212's scanner, extracted | (used by every slice, and by later tasks) |
 | a | `run_git` in a new module `refmatrix/gitrun.py` | bug-233; the bug-225 r3 rule in one place |
-| b | one term resolver in the query engine; typed PQL arguments | bug-234, bug-236, bug-238; bug-237's `NOT` half |
+| b | one term resolver in the query engine; typed PQL arguments | bug-234, bug-236, bug-238 |
 | c | one classifier for broad `except` handlers | the plan's three counts; the unowned silent handlers; bug-096 |
 | d | the typed daemon classifier, already in `verbs`, as the only route gate | the bare `ping` gates |
 | e | one `Deadline`; explicit `timeout` and `retries` on every daemon call | the four `_left` copies |
@@ -94,9 +94,9 @@ sightings: {#classes-method}
   (the bug-105 row: "23.1 adopts the contract with AC-3d"). Slice g converges only the one
   expression that picks an op's default partition, and changes no behaviour.
 - bug-240 (`rmx ingest <file>` ingests nothing, exit 0) is a sighting of class Q that the term
-  resolver does not fix. `plan-review-fable-2026-11-14-queue#dup-2` puts it on the bug-241
-  hotfix branch (0.83.1). If that release has not closed it when slice c starts, slice c does
-  ([[#c-r6]]).
+  resolver does not fix. It rides the 0.83.1 hotfix with bug-241 (lead, 2026-11-14;
+  `plan-review-fable-2026-11-14-queue#dup-2`) and is not closed here.
+- bug-237 (query cost) goes to 29.1's triage (lead, 2026-11-14) and is not taken here.
 - **Numeric env knobs (bug-188)** are a candidate the queue review names for this task. The
   ledger has two sightings (the bug-188 row and [[bsd-impressions#imp-pin-the-run-end]]), which
   is not "more than twice", so it is not a slice here. Measured for whoever takes it:
@@ -362,9 +362,9 @@ DSL's bare term and `linkage:concept` term, `neighbors`, `co_occurrence`, and PQ
 
 **b-R3: n-ary set functions (bug-236).** `Difference` and `Xor` fold every argument left to
 right, as `Intersect` and `Union` do. A set function with no argument is a `PQL:` error, not a
-raw `StopIteration` or `IndexError`. In the DSL, the `xor` evaluator branch and its mention in
-the `Op` comment are removed: the parser cannot build it. The `diff` branch stays and gains a
-parser path through b-R6. {#b-r3}
+raw `StopIteration` or `IndexError`. The DSL's `diff` and `xor` evaluator branches and the `Op`
+comment that lists them are removed: the parser builds neither. The bug-237 row gets a note that
+its `A AND NOT B` rewrite re-adds `diff` WITH a parser path. {#b-r3}
 
 **b-R4: argument kinds (bug-238).** Each PQL function declares the kind of each argument, and a
 wrong kind is a `ValueError` reading
@@ -391,23 +391,11 @@ resolver functions and `topn` (which iterates registered linkages, known by cons
 prompt tokens, where a miss is the normal case; they are listed in the summary and not
 converged. {#b-r5}
 
-**b-R6: `A AND NOT B` is a difference (the `NOT` half of bug-237).** {#b-r6}
-
-- The parser builds the `diff` op for `X AND NOT Y`, so no partition-wide id set is built for it.
-- The universe is built only for a `NOT` that is not the right side of an `AND`, at most once
-  per run.
-- The universe comes from a public `Store` method (the row names `partition_entity_ids`), not
-  from the store's private `_connect()`.
-- Results are unchanged for every expression.
-- bug-237's other half, `topn` loading every bitmap of every linkage, is NOT changed here: the
-  row asks for a measurement on a real store first. The registry row is split so that this half
-  can be closed: the `topn` cost gets its own row.
-
-**b-R7: what this changes for measurements.** After b-R2 a query with a typo no longer looks like
+**b-R6: what this changes for measurements.** After b-R2 a query with a typo no longer looks like
 a valid empty or over-full answer. Any frozen query set measured across this slice compares two
 different things: G22's BEFORE and AFTER, and 21.2 / 21.4's sets, are both taken after this slice
 is deployed (`plan-review-fable-2026-11-14-queue#p29-4`). This is a constraint on those tasks'
-schedule; the summary repeats it. {#b-r7}
+schedule; the summary repeats it. {#b-r6}
 
 ### Acceptance {#b-ac}
 
@@ -436,12 +424,7 @@ All RED at the start commit unless marked.
 - **AC-b9 (census):** on `f3709d2` the scanner finds the 4 + 6 sites of [[#measured]]; after the
   slice only the allowlisted functions call the store's resolution methods; a planted method
   that calls `self.s.resolve_concept_ids` directly fails the test.
-- **AC-b10:** bug-234, bug-236 and bug-238 are `fixed` with shas reachable from `master`;
-  bug-237 is split, its `NOT` half `fixed`, its `topn` half a new open row.
-- **AC-b11 (b-R6):** with a store whose universe method counts its calls: `A AND NOT B` makes 0
-  calls; `NOT A` makes 1; `NOT A OR NOT B` makes 1. The row sets equal those recorded at the
-  start commit. No call to `_connect` remains in the query module. RED at the start commit for
-  the first count (it is 1).
+- **AC-b10:** bug-234, bug-236 and bug-238 are `fixed` with shas reachable from `master`.
 
 ### Mutations that must fail {#b-mut}
 
@@ -455,8 +438,6 @@ All RED at the start commit unless marked.
 | the CLI prints the warning on one route only | AC-b1, parametrized over the three routes |
 | `Difference` stops at two arguments | AC-b6 |
 | `Count` accepts a name | AC-b7 |
-| `AND NOT` evaluated through the universe again | AC-b11 |
-| the universe rebuilt per `NOT` | AC-b11 (third case) |
 
 ## Slice c: broad `except` handlers {#slice-c}
 
@@ -522,12 +503,9 @@ justified / silent, per module, at the start commit and at the end, produced by
 `tests/census/report.py broad-except`, and says how many of the 192 went to each class and how
 many were narrowed. {#c-r5}
 
-**c-R6: the two unowned registry rows of this class.** {#c-r6}
-
-- bug-096: `rmx reingest` exits 1 when any step failed and names the failed steps on stderr.
-- bug-240: only if the 0.83.1 hotfix has not closed it: a file argument to `rmx ingest` is
-  refused with the `rmx sync -f <file>` remedy, or routed to the single-file sync; never
-  `ingested 0 entities`, exit 0.
+**c-R6: the unowned registry row of this class.** bug-096: `rmx reingest` exits 1 when any step
+failed and names the failed steps on stderr. (bug-240, the other unowned row the queue review
+names, rides 0.83.1.) {#c-r6}
 
 **c-R7: edits to the derive modules are batched.** A comment or a narrowed handler in `ingest.py`,
 `ingest_gmd.py` or `session_ingest.py` changes `store.derive_code_hash` and flips every fleet
@@ -740,9 +718,9 @@ below raises it as a new `plan-29 D<n>` (D7 to D19 are taken by the 29.1 / 29.4 
    change. 29.1's triage row for bug-232 should name this task. The queue review would merge it
    into `task-linked-readonly-store`; that task becomes a fifth caller instead ([[#f-overlap]]).
    {#k7}
-8. **The query slice takes bug-237's `NOT` half and not its `topn` half**. The `NOT` rewrite
-   is the parser path that b-R3's `diff` branch needs, so doing it later would touch the same
-   lines twice. `topn` waits for its measurement. {#k8}
+8. **bug-237 and bug-240 are not taken** (lead, 2026-11-14). bug-237 goes to 29.1's triage;
+   bug-240 rides 0.83.1. One consequence is accepted: b-R3 removes the DSL's unreachable `diff`
+   branch, and bug-237's later `A AND NOT B` rewrite adds it back with a parser path. {#k8}
 9. **The kit is an extraction of bug-212's scanner**, and the bug-212 test file becomes its
    first user. Seven families from other tasks are waiting for it; none is built here. {#k9}
 10. **The git and query slices land before 29.2's query and strict work**
@@ -781,17 +759,17 @@ merge commit. {#fold-cites}
 | same: `run_git` for `_op_sync_since`, which runs git inside `_store_lock`; and for 16.4 | [[#a-r7]], AC-a11 |
 | same: the partition default at 20 daemon sites | [[#slice-g]] |
 | same: except-census hits those specs create or touch | [[#c-r2a]] |
-| `plan-review-fable-2026-11-14-queue#p29-4`: the except census will flag sites approved specs own (bug-223, bug-123, bug-119); fix only the unowned (bug-096, bug-240) | [[#c-r2a]], [[#c-r6]], AC-c8, AC-c9 |
-| same: bug-234's fix changes what G22 and 21.2 / 21.4 measure | [[#b-r7]] |
+| `plan-review-fable-2026-11-14-queue#p29-4`: the except census will flag sites approved specs own (bug-223, bug-123, bug-119); fix only the unowned (bug-096; bug-240 rides 0.83.1) | [[#c-r2a]], [[#c-r6]], AC-c8, AC-c9 |
+| same: bug-234's fix changes what G22 and 21.2 / 21.4 measure | [[#b-r6]] |
 | same: not parallel on the query module; 29.3's query half first | [[task-29.2-mypy-gate#seam]], b-R4, [[#k10]] |
-| `plan-review-fable-2026-11-14-queue#dup-2`: bug-232 and bug-125 overlap `task-linked-readonly-store`; bug-240 goes with bug-241 | [[#f-overlap]]; [[#c-r6]] makes bug-240 conditional |
-| the queue review's `#dup-3` (29.1 input): bug-237, bug-096, bug-188, bug-201 | bug-237's `NOT` half in [[#b-r6]]; bug-096 in [[#c-r6]]; bug-188 and bug-201 not taken, with the measured count ([[#classes-no-helper]]) |
+| `plan-review-fable-2026-11-14-queue#dup-2`: bug-232 and bug-125 overlap `task-linked-readonly-store`; bug-240 goes with bug-241 | [[#f-overlap]]; bug-240 is not taken ([[#k8]]) |
+| the queue review's `#dup-3` (29.1 input): bug-237, bug-096, bug-188, bug-201 | bug-096 in [[#c-r6]]; bug-237, bug-188 and bug-201 not taken, bug-188 with its measured count ([[#classes-no-helper]], [[#k8]]) |
 | 29.5's author: `derive_code_hash` hashes file content | [[#c-r7]]; `plan-29 D4` |
 
 ## Out of scope {#out-of-scope}
 
-- bug-237's `topn` half (it needs a measurement first), bug-188 (env knobs) and bug-201: they
-  stay in the registry under 29.1's triage ([[#classes-no-helper]]).
+- bug-237 (query cost), bug-188 (env knobs) and bug-201: they stay in the registry under 29.1's
+  triage. bug-240 rides 0.83.1 ([[#classes-no-helper]]).
 - The seven census families other tasks will add to the kit (K-R5).
 - Silent handlers another approved spec owns (c-R2a).
 - The 11 `resolve_concept_ids` call sites outside the query engine (b-R5).
