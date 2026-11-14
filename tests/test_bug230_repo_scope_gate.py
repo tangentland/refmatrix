@@ -123,7 +123,13 @@ def test_2a_a_read_only_open_of_the_ignore_spec_is_allowed(checkout):
     (None, os.O_RDWR),
     (None, os.O_WRONLY),
     ("r", None),                                                   # flags unknown: refused
-], ids=["w", "a", "r+", "os-rdwr", "os-wronly", "no-flags"])
+    # bsd-216 bug-230 r1 #m2: flags that modify a file opened O_RDONLY — O_CREAT creates an
+    # absent spec, O_TRUNC can empty it (BSD-derived kernels truncate) — each pinned alone.
+    (None, os.O_RDONLY | os.O_CREAT),
+    (None, os.O_RDONLY | os.O_TRUNC),
+    (None, os.O_RDONLY | os.O_EXCL),
+], ids=["w", "a", "r+", "os-rdwr", "os-wronly", "no-flags", "rdonly-creat", "rdonly-trunc",
+        "rdonly-excl"])
 def test_2a_guard_a_write_open_of_the_ignore_spec_is_still_a_violation(checkout, args):
     p = str(checkout["root"] / IGNORE_REL)
     assert rmx_sandbox.violation("open", (p, *args), checkout["deny"]) is not None, (
@@ -144,6 +150,21 @@ def test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation(
                                                                                  name):
     p = str(checkout["root"] / ".refmatrix" / name)
     assert rmx_sandbox.violation("open", (p, "r", os.O_RDONLY), checkout["deny"]) is not None
+
+
+def test_2a_guard_a_symlinked_spec_allows_no_read_of_its_target(checkout):
+    """bsd-216 bug-230 r1 #m1: `_variants` adds the realpath, so a spec that is a symlink to
+    `catalog.A.duckdb` put the CATALOG into `read_allow`. With the spec linked to the catalog,
+    neither a direct read of the catalog nor a read through the link is allowed."""
+    root = checkout["root"]
+    spec, catalog = root / IGNORE_REL, root / ".refmatrix" / "catalog.A.duckdb"
+    spec.unlink()
+    spec.symlink_to(catalog)
+    deny = dict(checkout["deny"], read_allow=rmx_sandbox.read_allow(root))
+    for p in (catalog, spec):
+        assert rmx_sandbox.violation("open", (str(p), "rb", os.O_RDONLY), deny) is not None, (
+            f"a read of {p} is allowed with the spec symlinked to the catalog "
+            f"(read_allow={deny['read_allow']})")
 
 
 def test_2a_the_session_deny_set_allows_exactly_this_checkouts_ignore_spec():
