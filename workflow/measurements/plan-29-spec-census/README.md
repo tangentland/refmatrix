@@ -19,6 +19,7 @@ Each task's R0 runs them again at its base sha. {#what}
 rel: evidence-for -> [[task-29.1-registry-triage]]
 rel: evidence-for -> [[task-29.4-suite-health]]
 rel: evidence-for -> [[task-29.5-split-giant-modules]]
+rel: evidence-for -> [[task-29.6-citation-and-pin-repoint]]
 
 ## How to run {#run}
 
@@ -44,12 +45,16 @@ From a scratch directory (several scripts write a `.json` beside them for the ne
 | `private_map.py` | none (reads `private.json`, `cli_assign.json`) | `plan29a-private-census.log` (second part) | 29.5 |
 | `citation_census.py` | `$R` | `plan29a-citation-census.log` | 29.5 |
 | `cli_refs.py` | `$R` (dev interpreter, for `sys.stdlib_module_names`) | `plan29a-cli-refs.log` | 29.5 |
+| `cli_xrefs.py` | `$R cli_assign.json <comma-separated patched names>` | `plan29a-r2-xrefs.log`: what each engine-called cli function's body reads; references between command modules; `global` statements and `-m` spawn sites by syntax tree | 29.5 (revision 2) |
+| `budget_outcome_census.py` | `$R` | `plan29a-r2-budget-outcome.log`: tests that assert a budget outcome against a real daemon | 29.4 (revision 2) |
 {#run-table}
 
 `plan29a-tests-per-file.log` is the collection listing reduced to one count per file, with the
 collector's own total as its last line. `plan29-spec-wallclock-census.log` is the first
 draft's grep count (53 asserts in 21 files), kept because 29.4 quotes it beside the syntax-tree
-count (78 in 26). {#run-notes}
+count (78 in 26). `plan29a-cli-refs.log`'s "7 spawn sites in 6 files" counts text matches,
+three of them in comments and docstrings; `plan29a-r2-xrefs.log` has the count by syntax tree
+(4 in 3 files), which is the one the 29.5 spec uses. {#run-notes}
 
 ## Limits {#limits}
 

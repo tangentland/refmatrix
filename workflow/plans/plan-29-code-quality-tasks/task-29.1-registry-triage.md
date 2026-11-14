@@ -85,10 +85,11 @@ one form. `→` and `->` are both accepted.
 
 | Form | Meaning | Required parts |
 |---|---|---|
-| `fixed …` / `remedied …` | closed by a fix in this repo (all 157 existing forms stay valid) | unchanged; existing rows are not rewritten |
+| `fixed <sha>[ (<test node id>)][; <note>]` | a fix that landed in this repo, by the row's own task **or by another task** | `<sha>` is an ancestor of `HEAD` (the checker runs `git merge-base --is-ancestor`). This is the only `fixed` form for a row that is not on the legacy list |
+| `fixed …` / `remedied …`, free-form | the 157 rows that were closed before this task | allowed **only** for the ids in `scripts/bug-registry-legacy-fixed.txt`, a list written once from the triage commit's parent. The list never gains an id. Those rows are not rewritten |
 | `scheduled → <target> (<track>)[; <note>]` | a named task or plan will fix it | `<target>` is the frontmatter `id` of a file under `workflow/plans/`. `<track>` is one of `T0`..`T6` ([[plan-review-2026-11-13#p1]]) or `P29` (plan-29). |
 | `deferred: <reason>; review <YYYY-MM-DD>[; <note>]` | nobody owns it yet, on purpose | a reason of at least 4 words; a review date no more than 183 days after the checker's `--today` (default: the current date). This bound moves forward with the calendar, so it cannot turn a green suite red; a date that has passed is `--overdue`'s business ([[#r4]]) |
-| `closed: <evidence>` | will not be fixed here, or was fixed elsewhere | one of the [[#r3]] evidence shapes |
+| `closed: <evidence>` | closed with no fix commit in this repo: it does not reproduce, its code is gone, another row replaced it, or the user decided not to fix it | one of the [[#r3]] evidence shapes |
 | `recurring; scheduled → …` / `recurring; deferred: …` | seen again after a fix | `recurring` alone is no longer a complete status |
 
 `open` and `suspected` are not in the grammar. After this task, no row holds them. A new bug is
@@ -103,8 +104,10 @@ approved on branch `spec-wave-t0` at `fa1227d`, not yet on `master`; track T0 in
 `open / diagnosed-loud` for a flake it could not fix or reproduce. Under this grammar that row
 reads `deferred: diagnosed-loud, <trial counts>; review <date>` (a flake that now explains
 itself, with no owner until it fires again), or `scheduled → <target>` when T0.3 opens a product
-row for it. T0 runs after plan-29, so the triage does not edit T0's rows; it adds one amends
-line to the T0 spec ([[#files]]) so the two specs do not disagree. A search of
+row for it. T0 is now 29.4's body ([[task-29.4-suite-health#fold]]), so it runs inside plan-29,
+after this task: T0.3 writes those statuses later, in this grammar. The triage does not edit
+T0's rows' outcomes ahead of it; it adds one amends line to the T0 spec ([[#files]]) so the two
+specs do not disagree. A search of
 `workflow/plans/` for other status writers is step 0 of [[#r2]]. {#r1-other-writers}
 
 ### R2: the procedure {#r2}
@@ -115,7 +118,10 @@ The triage runs once over the 81 rows, in the order of [[#starting-map]].
    are added daily: bug-233 to bug-240 arrived in one day). The summary records the new total and
    the ids added since `f3709d2`. Then list every spec under `workflow/plans/` that writes a
    registry status that is not in [[#r1]] (`grep -rn "diagnosed-loud\|status .open" workflow/plans`
-   is the starting query) and give each an amends line.
+   is the starting query) and give each an amends line. Last, list every spec under
+   `workflow/plans/` whose task has an implementation summary and whose `metadata.status` is not
+   `completed`. That list must be empty before the triage writes a `scheduled` row
+   ([[#r4]], rule `sched-completed`); it is the lead's to empty.
 1. **Read the row and its recorded owner.** The owner may be in the row's text, in the track table
    [[plan-review-2026-11-13#p1]], in an L-row of [[plan-review-2026-11-13#lead]], or in a task
    spec's "Inherited" section. Use `rmx-master query "mentions:bug-NNN"` and plain file reads.
@@ -131,7 +137,7 @@ The triage runs once over the 81 rows, in the order of [[#starting-map]].
    (`; L-row Lnnn` or `; triage 29.1: touches <file> which <task> rewrites`). If no queued task
    fits, the row is `deferred` with a reason and a review date.
 4. **If the row may already be fixed** (`fix on branch`, `after 3.7 merges`, `0.83.0 must land
-   this`), apply the [[#r3]] evidence bar. If the bar is met, write `closed: …`. If not, the row
+   this`), apply the [[#r3]] evidence bars. If one is met, write `fixed <sha> …` or `closed: …`. If not, the row
    stays in the queue under its owner.
 5. **User-deferred rows** (bug-088, bug-101: "stay deferred by the user") become
    `deferred: by the user (<date of the decision>); review <date>`. The review date is the next
@@ -143,21 +149,33 @@ The triage runs once over the 81 rows, in the order of [[#starting-map]].
 7. **Malformed rows are repaired** to exactly 8 cells (bug-081, bug-085, bug-088). The text is
    kept; only cell boundaries change.
 
-### R3: the evidence bar for `closed` {#r3}
+### R3: the evidence bars {#r3}
 
-A row is `closed` only with one of these four shapes. "It looks fixed" is not one of them.
+**A fix in this repo is `fixed <sha>`, whoever made it.** A row that another task fixed (bug-164
+and bug-181, by 25.1) takes the same form as a row fixed by its own task, and gets the same
+check: the sha is an ancestor of `HEAD`. The first revision let any text after `fixed` pass,
+which would have let such a row skip the check (ch-bsd r1 `#s7`). For a row the triage closes
+this way it also names the test, and the test's RED run is either already recorded in the
+fixing task's summary or is run now (revert the fix in a throwaway clone, see the test fail,
+cite the log). A row with no test, such as a docs fix, quotes the diff in the summary and says
+"no test: docs". {#r3-fixed}
+
+**A row is `closed:` only with one of these shapes.** "It looks fixed" is not one of them.
 
 | Shape | Status text | What must be true, and is checked |
 |---|---|---|
-| (a) fixed elsewhere | `closed: fixed <sha> (<test node id>)` | `git merge-base --is-ancestor <sha> master` succeeds, which is the [[feedback_verify_fix_reachable_from_master]] rule. The named test exists at `master`. Its RED run is either already recorded in that task's summary, or it is run now: revert the fix in a throwaway clone, see the test fail, and cite the log. |
-| (b) reproduced as gone | `closed: not reproduced at <sha>; <log path>` | The row's own reproduction is run at `<sha>` and the log is cited. A load- or timing-dependent row (tags `flaky`, `load`, `timing`) can NOT close this way. A non-reproduction proves nothing about a flake. It goes to its owner ([[task-29.4-suite-health]] for 228/229/231) instead. |
-| (c) code removed | `closed: code removed at <sha>` | The function or file named in the row's `File(s)` cell is absent at `master`. The checker greps for the name. |
-| (d) superseded | `closed: superseded by bug-NNN` | bug-NNN exists, is not itself `closed: superseded`, and names this row in its text. |
+| (b) reproduced as gone | `closed: not reproduced at <sha>; <log path>` | The row's own reproduction is run at `<sha>` and the log is cited. The checker requires the log file to exist. A load- or timing-dependent row (tags `flaky`, `load`, `timing`) can NOT close this way: a non-reproduction proves nothing about a flake. It goes to its owner ([[task-29.4-suite-health]] for 228/229/231) instead |
+| (c) code removed | `closed: code removed at <sha>; <name>` | `<name>` is a function or file named in the row's `File(s)` cell, and it is absent at `HEAD`. The checker searches `src/` and `tests/` for the name and fails if it finds it |
+| (d) superseded | `closed: superseded by bug-NNN` | bug-NNN exists, is not itself `closed: superseded`, and names this row's id in its text |
+| (e) not to be fixed | `closed: wontfix (user <YYYY-MM-DD>): <reason>` | a reason of at least 4 words and the date of the user's decision. Only the user closes a real bug unfixed |
 {#r3-table}
 
+There is no shape (a): it was "fixed elsewhere", which is `fixed <sha>` now. A `closed:` with
+any other text fails the checker. {#r3-no-a}
+
 A `fixed` row whose fix was never deployed stays as it is: `fixed` means "landed on master", and
-deploying is a separate fact. The two `fix on branch (undeployed)` rows are closed only by shape
-(a), and only if the branch merged. {#r3-deploy}
+deploying is a separate fact. The two `fix on branch (undeployed)` rows become `fixed <sha>`
+only if the branch merged. {#r3-deploy}
 
 ### R4: the checker {#r4}
 
@@ -170,15 +188,22 @@ There is one script, `scripts/check-bug-registry.py`, with no third-party import
   first failure.
 - `scheduled → <target>` is resolved against the frontmatter ids of `workflow/plans/**/*.md`. An
   unresolved target fails, and the line names the target. So does a target whose
-  `metadata.status` is `completed`: a finished task cannot be what will fix an open bug. (This
-  also catches stale frontmatter: 25.1, 26.1, bug-178 and bug-216 have shipped and still read
-  `pending` or `approved`. Correcting those is the lead's bookkeeping, before this task.)
-- `closed:` shape (a) runs `git merge-base --is-ancestor <sha> HEAD`, with a timeout. A git failure
+  `metadata.status` is `completed`: a finished task cannot be what will fix an open bug.
+  - **This check is only as true as the frontmatter.** A spec that has shipped and still reads
+    `pending` or `approved` (25.1, 26.1, bug-178 and bug-216 do today) **passes** it, so stale
+    frontmatter defeats the check. Correcting the frontmatter is the lead's bookkeeping and a
+    **precondition** of this task: step 0 of [[#r2]] lists every spec under `workflow/plans/`
+    whose task has an implementation summary and whose status is not `completed`, and the
+    triage does not start while that list is not empty.
+- **Every rule has an id, and prints it.** A finding reads `bug-NNN: [<rule id>] <what>`. The
+  rule table is data in the script ([[#rules]]), so the test can ask of every rule whether a
+  must-fail row exists for it.
+- Every `fixed <sha>` runs `git merge-base --is-ancestor <sha> HEAD`, with a timeout. A git failure
   is reported as `could not verify`, and the checker then exits non-zero. It never treats a git
   error as "not found" (the bug-225 r3 lesson). Exit 1 with empty stderr is the only "not an
-  ancestor" answer. Until 29.3 ([[plan-29-code-quality#t3]]) lands its `run_git` helper the
-  checker carries its own six-line runner; 29.3's census then lists this script as one of the
-  callers to move.
+  ancestor" answer. The checker carries its own small runner with that rule. It is a script
+  outside `src/refmatrix`, so 29.3's `run_git` helper and its census, which cover `src/` only, do
+  not reach it, and nothing is handed to them.
 - `--history-against <git-rev>` compares the registry with the one at `<git-rev>` and fails on any
   row whose non-status cells changed ([[#ac-6]]). It is a mode, not a suite test: a test that
   needs a particular parent commit stops meaning anything one commit later.
@@ -186,6 +211,38 @@ There is one script, `scripts/check-bug-registry.py`, with no third-party import
 - `--overdue` additionally lists `deferred` rows whose review date has passed, and exits 1 if any
   do. This is not part of the suite, because a test that fails when the calendar moves is a
   wall-clock test. The CLAUDE.md `#cleanup-phase` step runs it after each plan.
+
+### The checker's rules {#rules}
+
+One row per rule. Each has an id, a must-fail row in the fixture that fails on **that rule and
+no other**, and a mutation that removes the rule. A rule with no fixture row fails the test
+([[#ac-4]]), so a rule added later cannot arrive unproven.
+
+| Rule id | Fails when |
+|---|---|
+| `cells` | a row does not have exactly 8 cells (a 7-cell and a 10-cell fixture row) |
+| `open` | the status is `open`, with or without a note |
+| `suspected` | the status is `suspected` |
+| `recurring-alone` | `recurring` with no `scheduled` or `deferred` after it |
+| `sched-target` | the `scheduled` target is not a frontmatter id under `workflow/plans/` |
+| `sched-completed` | the target's `metadata.status` is `completed` |
+| `sched-track` | the track is missing, or is not one of `T0`..`T6`, `P29` (`T7` in the fixture) |
+| `defer-reason` | the `deferred` reason has fewer than 4 words |
+| `defer-date` | there is no review date, or it does not parse |
+| `defer-horizon` | the review date is more than 183 days after `--today` |
+| `fixed-sha` | a row not on the legacy list is `fixed` with no sha |
+| `fixed-ancestor` | the sha is not an ancestor of `HEAD` |
+| `fixed-git` | git could not answer (reported as `could not verify`; never as "not an ancestor") |
+| `legacy-list` | the legacy list names an id that is not in the registry, or an id above the triage's highest |
+| `closed-shape` | `closed:` with text that matches no shape of [[#r3]] |
+| `closed-b-log` | shape (b) names a log that does not exist |
+| `closed-b-flaky` | shape (b) on a row tagged `flaky`, `load` or `timing` |
+| `closed-c-present` | shape (c) names a function or file that is still present |
+| `closed-d-unnamed` | shape (d): the superseding row does not name this row |
+| `closed-d-chain` | shape (d): the superseding row is itself `closed: superseded` |
+| `closed-e-date` | shape (e) with no user decision date, or a reason under 4 words |
+| `history` | (`--history-against` only) a non-status cell changed |
+{#rules-table}
 
 ### R5: registry docs follow {#r5}
 
@@ -205,8 +262,8 @@ release log (4,883 tests, 58 min 37 s):
 
 The README's number is removed: it names the command that prints the count. The two
 instruction files get the measured figures with their date and their source log. 29.4 updates
-them once more when it has its own ([[task-29.4-suite-health#r8]]). bug-239 closes on this, by
-shape (a). The queue review placed this here and not in 29.4 because it is docs-only and
+them once more when it has its own ([[task-29.4-suite-health#r8]]). bug-239 closes on this as
+`fixed <sha>; no test: docs`, with the three diffs quoted in the summary ([[#r3-fixed]]). The queue review placed this here and not in 29.4 because it is docs-only and
 wrong today. {#r6-body}
 
 ### R7: how the work is committed {#r7}
@@ -284,10 +341,11 @@ that suggests a home has not made one.
 | 234, 236, 238 | `task-29.3-converge-shapes`, slice b | that spec | `scheduled`, `P29` |
 | 232 | 29.3 slice f (that spec); the linked read-only store, with bug-125 (queue review `#dup-2`); 17.4's promote guard needs it (store review) | three claimants | 29.3 slice f takes it in its text, so it is the owner. The other two are notes on the row |
 | 237 | 29.3's query half | queue review `#dup-3`; **not taken** by 29.3's spec | no owner yet: `deferred`, with the review's suggestion in the note, unless 29.3 is revised to take it |
-| 096, 201, 188 | 29.3 (096 and 201 as silent or incorrect outcomes; 188 as a fourth shape, `envknob`) | queue review `#dup-3`; not taken by 29.3's spec | as 237 |
+| 096 | `task-29.3-converge-shapes`, slice c (`#c-r6`, AC-c9: `rmx reingest` exits 1 when any step failed) | that spec | `scheduled`, `P29` |
+| 201, 188 | 29.3 (201 as an incorrect outcome; 188 as a fourth shape, `envknob`) | queue review `#dup-3`; **not taken** by 29.3's spec (its author, 2026-11-14) | as 237 |
 | 223 | the bug-218 spec (it owns that broad except); 29.3's census allow-lists it by task id | queue review `#p29-4` | `scheduled` to the bug-218 spec, `T6` |
-| 164, 181 | already shipped by 25.1 (`VerbUnknownProjectError` is in `verbs.py` and `mcp.py`) | queue review `#st-5`, memory review | `closed`, shape (a) of [[#r3]], if the sha and the test check out |
-| 085, 087 | "fix on branch (undeployed)" since October | queue review `#st-5` | shape (a), or back to an owner; 085 is split first ([[#r2]] step 6) |
+| 164, 181 | already shipped by 25.1 (`VerbUnknownProjectError` is in `verbs.py` and `mcp.py`) | queue review `#st-5`, memory review | `fixed <sha> (<test>)` by [[#r3-fixed]], if the sha and the test check out |
+| 085, 087 | "fix on branch (undeployed)" since October | queue review `#st-5` | `fixed <sha>` if the branch merged, or back to an owner; 085 is split first ([[#r2]] step 6) |
 | 100 | 19.0 R5 (L41) | memory review | `scheduled`, `T3` |
 | 165, 166 | 25.2, 25.3 (memory review); "only if L43 fires" (store review) | two readings | step 1 reads L43 and both specs; the row follows the spec's text |
 | 169 | a rider on 25.1b's install window | queue and memory reviews | `scheduled` only if 25.1b is revised to carry it; else `deferred` naming that window |
@@ -300,7 +358,7 @@ that suggests a home has not made one.
 | 151-154 | a deferral row: operator path, no consumer | queue review | `deferred`, and a row in `workflow/deferral_registry.md` |
 | 055, 075, 089, 189 | deferred with a date | queue review | `deferred` |
 | 209 | recurring; plan-27 depends on it | memory review | `recurring; scheduled → …` if plan-27's spec takes it, else `recurring; deferred: …` |
-| 215, 170, 168, 127, 130, 190, 091, 196 | T0, which is now 29.4's body ([[task-29.4-suite-health#fold]]) | queue review `#b3` | `scheduled → task-t0-suite-trust-sweep (T0)`: the requirement is in T0's text |
+| 215, 170, 168, 127, 130, 190, 091, 196 | T0, which is now 29.4's body ([[task-29.4-suite-health#fold]]) | queue review `#b3` | `scheduled → task-t0-suite-trust-sweep (T0)`. The **target** is T0, because the requirement is in T0's text. The **track** is `T0`, the track [[plan-review-2026-11-13#p1]] gives those rows; `P29` is for rows whose requirement is in a plan-29 spec. T0's frontmatter flips to `completed` in 29.4's stage-5 closing commit ([[task-29.4-suite-health#ac-14]]); from then on rule `sched-completed` refuses any row still pointing at it |
 | 239, and the stale suite figures | this task | queue review `#dup-3` | [[#r6]] |
 {#homes-table}
 
@@ -316,30 +374,35 @@ triage picks by the rule above and records the loser as a note on the row. {#hom
   `workflow/plans/` at the triage commit, and its track is the one [[plan-review-2026-11-13#p1]]
   gives that task (or `P29`). The checker verifies the resolution. A reviewer verifies the track
   against the table: the checker cannot know the table, and the summary says so. {#ac-2}
-- **AC-3: every `closed` meets the bar.** Each `closed:` row names its [[#r3]] shape. Every shape
-  (a) sha is an ancestor of `master`, and the checker runs this. Shape (b) cites a log that
-  exists. No row tagged `flaky`/`load`/`timing` is closed by shape (b); the checker enforces this
-  from the Tags cell. {#ac-3}
-- **AC-4: the checker fails on what it must fail on.** `tests/test_bug_registry_triage.py` runs the
-  script on:
+- **AC-3: every `fixed` and every `closed` meets its bar.** Every row not on the legacy list that
+  is `fixed` carries a sha that is an ancestor of `master`, and the checker runs this. Each
+  `closed:` row matches one shape of [[#r3]]: (b) cites a log that exists, and no row tagged
+  `flaky`/`load`/`timing` uses it; (c) names something that is absent; (d) points at a live row
+  that names it; (e) carries the user's date. The legacy list holds exactly the ids that were
+  `fixed` or `remedied` at the triage commit's parent (157 at `f3709d2`). {#ac-3}
+- **AC-4: the checker fails on what it must fail on, rule by rule.**
+  `tests/test_bug_registry_triage.py` runs the script on:
   - the real registry, which must exit 0;
-  - a must-fail fixture registry (`tests/fixtures/bug_registry_mustfail.md`) holding one row per
-    failure class: a bare `open`; `recurring` alone; `suspected`; `scheduled → task-does-not-exist`;
-    `scheduled →` a task whose status is `completed`; `deferred:` with no review date;
-    `closed: fixed <sha not in history>`;
-    `closed: not reproduced …` on a row tagged `flaky`; a 7-cell row; a 10-cell row.
+  - a must-fail fixture registry (`tests/fixtures/bug_registry_mustfail.md`) with at least one
+    row for **every** rule id in [[#rules-table]] except `history` and `fixed-git`, each row
+    failing on that rule alone. `fixed-git` is driven by a fixture repository whose git is made
+    to fail; `history` by [[#ac-6]]'s pair.
 
-  The test asserts exit 1 and that EACH class is named in the output. A checker that stops at the
-  first finding fails this test.
-  - **RED:** at `master` the script does not exist, so the test fails. That run is recorded.
-  - **Mutations:** each must turn the test RED, and each is recorded in the summary:
-    1. drop the `open` check;
-    2. split on every `|` (the naive splitter);
-    3. accept any target;
-    4. treat a git error as "not an ancestor";
-    5. let the first failure return early;
-    6. `--history-against` compares only the Status cell (the lost-word fixture goes green, so
-       the test is red).
+  The test asserts:
+  - exit 1, and for every fixture row, exactly the rule id that row is there for;
+  - **completeness:** it reads the rule table out of the script and fails if any rule id has no
+    fixture row. A rule nobody proved cannot be added;
+  - a checker that stops at the first finding fails, because every row must be reported.
+
+  **RED:** at `master` the script does not exist, so the test fails. That run is recorded.
+
+  **Mutations:** one per rule id (22), each removing that rule from the script. Each must turn
+  the test RED on that rule's fixture row and on no other, and each is recorded in the summary.
+  Three more:
+  1. split on every `|` (the naive splitter): the code-span fixture row is mis-read;
+  2. let the first failure return early;
+  3. drop the completeness assertion's source of truth (hard-code the rule list in the test):
+     adding a rule to the script with no fixture row then passes, so the test is red.
   {#ac-4}
 - **AC-5: counts in the summary.** `workflow/implementation_summaries/task-29.1-registry-triage.md`
   holds:
@@ -383,7 +446,8 @@ requires. {#test-strategy-body}
 | File | Change |
 |---|---|
 | `workflow/bug_registry.md` | `#status` grammar; 81 status cells; 3 malformed rows repaired; split rows appended |
-| `scripts/check-bug-registry.py` | new: the checker ([[#r4]]) |
+| `scripts/check-bug-registry.py` | new: the checker ([[#r4]]) and its rule table ([[#rules]]) |
+| `scripts/bug-registry-legacy-fixed.txt` | new: the ids closed before this task, written once from the triage commit's parent |
 | `tests/test_bug_registry_triage.py` | new: the real-registry case, the must-fail fixture, the history check |
 | `tests/fixtures/bug_registry_mustfail.md` | new: one row per failure class |
 | `.claude/rules/bug-registry.md` | new-bug status rule ([[#r5]]) |
@@ -444,3 +508,15 @@ Revised the same day for the three plan reviews and for the sibling specs. Added
 table ([[#homes]]) and its rule; bug-241 beside the count; bug-223 moved from 29.3 to the
 bug-218 spec; bug-239 and the stale suite figures taken into this task ([[#r6]]); the commit
 shape ([[#r7]]); a `scheduled` target that is `completed` fails the checker. {#rev-note-2-body}
+
+## Revision note 3 (2026-11-14, after ch-bsd r1 and ruling L105) {#rev-note-3}
+
+`bsd-plan29-spec-r1` (dev `master` `549458e`) reviewed `dba9afd`. This spec's share:
+
+| Finding | Change here |
+|---|---|
+| S7: the checker enforced rules no must-fail case proved; `fixed …` could skip the ancestor check; the stale-frontmatter sentence was backwards | [[#rules]]: every rule has an id, a fixture row and a mutation, and the test fails on a rule with no row; [[#r1]] and [[#r3-fixed]]: a fix in this repo is `fixed <sha>` and is checked, with free-form `fixed` kept only for a frozen legacy list; shape (a) is gone and shape (e) (`wontfix`, the user's) is new; [[#r4]]: stale frontmatter defeats `sched-completed`, so correcting it is a precondition (step 0 of [[#r2]]) |
+| M1: this spec disagreed with 29.3 and 29.4 | [[#homes]]: bug-096 is taken by 29.3 slice c and is `scheduled`; [[#r1-other-writers]]: T0 runs inside plan-29; the T0 rows' track is `T0` and 29.4 flips T0's frontmatter |
+| M2: the git runner was handed to 29.3, which did not take it | [[#r4]]: the sentence is gone; the checker keeps its own runner |
+| M3: bug-239 closed by a shape that needs a test | [[#r6]]: `fixed <sha>; no test: docs`, diffs quoted |
+{#rev-note-3-table}

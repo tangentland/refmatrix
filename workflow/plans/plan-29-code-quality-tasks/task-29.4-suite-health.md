@@ -119,7 +119,7 @@ assigned from one, or on a name such as `elapsed` / `took` / `wall`. A grep for 
 | upper bound, named constant or expression (`elapsed < verbs.MEMORY_READ_BUDGET_S + 3.0`) | 8 | 4 (none of them among the 22) |
 | **total upper bounds** | **78** | **26** |
 | ... of which a hang guard by its own name (`< HANG_BOUND_S`, 45 s, `test_bug212_r4_red.py:771`) | 1 | 1 |
-| lower bounds (`elapsed >= 1.4`: "it waited at least N"). Not load-sensitive. Not counted | 8 | 6 |
+| lower bounds (`elapsed >= 1.4`: "it waited at least N"). Not load-sensitive. Not counted. The script lists 8 lines in 6 files; one is the lower half of `0.9 < elapsed < 3.0` (`test_plan4_remedy.py:120`), whose upper half is among the 70, and two are name matches that are not elapsed times (`view.overrun_s > 0.2`, `cost_s_per_doc >= 0.0`) | 5 | 3 |
 {#baseline-wallclock-table}
 
 By size of the literal bound: 22 at ≤ 1 s, 27 at 1-5 s, 15 at 5-20 s, 6 above 20 s. The files
@@ -145,7 +145,8 @@ The rule is [[#r1]]'s, applied by a script to the source at `f3709d2`. R0 re-run
   2 of those (`test_bug129_hub_pidfile.py`, `test_hub_watchdog.py`) never name `stop_daemon`.
 - 95 `mkdtemp(dir="/tmp")` sites in 62 test files (and 1 in `tests/task3_7_helpers.py`) make
   roots **outside** the session's sandbox root. bug-229's daemon served one of them
-  (`/private/tmp/r1-…`). 127 `shutil.rmtree(..., ignore_errors=True)` sites remove them.
+  (`/private/tmp/r1-…`). 129 lines under `tests/*.py` call `shutil.rmtree` with `ignore_errors=True` (lines holding both
+  words; a pattern that needs both inside one pair of parentheses finds 127).
 - 19 files load a real embedding or rerank model (14 of them in tier (b)); 4 files name a fixed
   TCP port.
 - Each pytest process already makes its own sandbox root (`rmx_sandbox.make_root`,
@@ -287,6 +288,23 @@ Also:
   error, not a default.
 {#r1-also}
 
+**Fixture suites are not part of the suite.** AC-2, AC-5 and AC-9 need small test files that
+fail, error at teardown, skip unpinned or leak a daemon on purpose. There is no `testpaths`,
+`norecursedirs` or `collect_ignore` at `f3709d2`, so a file named `test_*.py` under
+`tests/fixtures/` would be collected by the plain command and would break [[#ac-10]].
+- They are named `case_*.py` under `tests/fixtures/suite_health/`, which pytest's default
+  patterns do not collect. The tests that use them copy them into a tmp tree under the name
+  `test_*.py` and run pytest there, in a child process.
+- `[tool.pytest.ini_options]` also gets `norecursedirs = ["fixtures", "sandbox_site"]`, so a
+  later `test_*.py` dropped under `tests/fixtures/` is not collected by accident. AC-1 checks
+  that no `test_*.py` exists there.
+- **The censuses scan them, with one named exemption.** The wall-clock, tmp-root and
+  budget-outcome censuses read `tests/**/*.py`, fixtures included. `tests/fixtures/suite_health/`
+  is exempt **by path**, in the census's own source, with the reason beside it (its
+  `mkdtemp(dir="/tmp")` and its leak are the fixture). A violation anywhere else under
+  `tests/fixtures/` fails the census, and a must-fail case shows it.
+{#r1-fixtures}
+
 ### R2: the runner {#r2}
 
 `scripts/ptest.sh` stays the entry point and becomes a thin wrapper over
@@ -385,9 +403,10 @@ here:
     test with no daemon: `daemon.is_alive` is replaced by a function that turns false on its
     k-th call, the polls are counted, and the call returns `True` after k of them under a grace
     it never comes near.
-  - What the 10.05 s says about the product (a daemon took the whole 10 s grace to exit at load
-    12-20) is not this task's. It is one line in bug-231's closing note, so the next reader of
-    the hub watchdog's grace has it.
+  - What the 10.05 s says about the product is not this task's to fix, and it is not lost in a
+    closing note either: it is logged as **its own registry row** ("a daemon took the whole 10 s
+    grace to exit at load 12-20; `graceful_stop(grace=10)` returned at the deadline"), in
+    29.1's grammar, `deferred: …; review <date>` unless a task takes it.
   {#r3-bug231}
 - **bug-228** (`test_ac2b_live_daemon_recall_writes_one_ok_recall_row`: `outcome == "ok"`
   against the generated hook's 5 s budget on a live sandbox daemon). There is no `<` in this
@@ -400,6 +419,11 @@ here:
     one budget value replaced by `HANG_GUARD_S` (the replacement is asserted to have changed
     exactly one token) and asserts `outcome == "ok"`. The `skipped_budget` leg keeps its
     existing test, which already uses a silent peer and does not depend on speed.
+  - Either way the test no longer shows whether a **live** recall meets its 5 s budget under
+    load, which is a product question. R0's measurement of the failing run answers it once, and
+    the answer is logged as **its own registry row** ("live recall over its 5 s budget at load
+    N: <leg> spent <t>"), `deferred: …; review <date>` unless a task takes it. The registry's
+    threshold to log is low.
   {#r3-bug228}
 - **The census** (`tests/test_wallclock_census.py`) reads every file under `tests/` as a syntax
   tree and finds each upper bound on a clock difference, on a name assigned from one, or on an
@@ -420,9 +444,20 @@ here:
   census on the day they are written. So each allow-list entry has a kind:
   - **`legacy`**: a bound that exists at this task's base. The set only shrinks.
   - **`feature-bound`**: the bound **is** the feature under test (a deadline that must fire: 23.2's
-    fail-not-hang deadlines; 23.5 R2's `RMX_CLI_WRITER_WAIT_S`). An entry names the spec AC that
-    owns it. The test shrinks the bound through the product's own environment knob so that it
-    waits fractions of a second, not the production value, and it runs in tier (d).
+    fail-not-hang deadlines; 23.5 R2's `RMX_CLI_WRITER_WAIT_S`). The test shrinks the bound
+    through the product's own knob so that it waits fractions of a second, not the production
+    value, and it runs in tier (d). An entry records three things, and the census checks each:
+    - **`ac`**, as `<spec id>#<anchor>`. The census resolves it: a spec with that frontmatter id
+      exists under `workflow/plans/`, and it has that anchor. An AC that does not exist fails.
+    - **`knob`**, the environment variable (or the named constant) that sets the bound. The
+      census reads the test function: it sets that variable (`monkeypatch.setenv`, an `env=`
+      mapping, or `monkeypatch.setattr` on the constant). A test that names a knob and never
+      sets it fails: it would be waiting the production value.
+    - **`max_s`**, the shrunk value's ceiling (≤ 2.0). The value the test sets is a literal the
+      census can read, and it is under the ceiling.
+  - **One AC, one entry.** An AC id may own at most as many entries as it has wall-clock clauses
+    in its own text; the entry quotes the clause. Naming one's own AC is not enough to get in:
+    the bound has to be a deadline the product enforces, which is why there is a knob to check.
   - Everything else in those specs is written as an ordering outcome from the start ("answers
     while the test thread still holds the lock"; "the hook exits before the competitor
     releases"), by [[#r3-classes]] class C. 23.1 AC-21 step 2 (spawn-to-exit under 5.0 s with a
@@ -430,6 +465,25 @@ here:
     idle) are bug-231's shape by construction and get no entry.
   - A census run prints the two counts apart. A new `legacy` entry fails it.
   {#r3-kinds}
+- **The second half of the rule gets a census too.** "Does not assert an outcome that a real-time
+  budget decides" is bug-228's shape, and no `<` appears in it. The census
+  (`tests/test_budget_outcome_census.py`) finds every test function that (a) uses a real daemon
+  or runs a real hook or CLI child (`SandboxDaemon`, `spawn_daemon_subprocess`, directly or
+  through a fixture) and (b) asserts a comparison of an `outcome` field with a string. Such a
+  test must control the budget: it sets the budget's knob or substitutes the budget in the
+  command it runs, in the same function. Otherwise it fails the census, or holds a
+  `budget-outcome` entry in the allow list with its reason.
+  - At `f3709d2`, 13 test functions assert an `outcome` against a string and **one** of them
+    uses a real daemon: `test_ac2b_live_daemon_recall_writes_one_ok_recall_row`, which is
+    bug-228 (`plan29a-r2-budget-outcome.log`). The others use a test-owned peer and are not
+    hits.
+  - The list of real-daemon helpers and the field names the census treats as outcomes
+    (`outcome` at base) are a table in `tests/tiering.py`, beside the signal table, so a new
+    helper or a new field is one line.
+  - What this census cannot see is an outcome asserted through some other shape (an exit code,
+    a row count). That remainder is enforced by review, and the spec says so here so that
+    nobody takes the census for the whole rule.
+  {#r3-budget-census}
 - **Sleep is budgeted like time.** A test that sleeps or holds a lock for a fixed production
   interval (23.1 AC-21 step 1 holds a lock 70 s, and steps 4 and 5a repeat it) spends the
   20-minute target on waiting. Such a test shrinks the interval through the product's knob, as
@@ -459,8 +513,9 @@ here:
 Every process the suite starts is known, and one that is still alive at the end fails the run.
 
 1. **The ledger.** Each Python process that starts under the sandbox appends one line to
-   `<sandbox root>/children.jsonl`: pid, parent pid, start time, argv, and the test id from
-   `PYTEST_CURRENT_TEST`. Two hooks write it, both in `tests/sandbox_site/rmx_sandbox.py`:
+   `<sandbox root>/children.jsonl`: pid, parent pid, start time, argv, the working directory,
+   the value of `REFMATRIX_ROOT` in the child's environment (`spawn_daemon_subprocess` passes
+   the store root there), and the test id from `PYTEST_CURRENT_TEST`. Two hooks write it, both in `tests/sandbox_site/rmx_sandbox.py`:
    `install_from_env()` (every exec'd child runs it through `sitecustomize`) and an
    `os.register_at_fork(after_in_child=…)` callback, registered by `enter()` in the pytest
    process and by `install_from_env()` in every child (a daemon double-forks with no exec, so
@@ -468,8 +523,10 @@ Every process the suite starts is known, and one that is still alive at the end 
 2. **At session finish** (the outermost session only), for every ledger pid that is still
    alive **and** whose process start time matches the ledger's:
    - print one line: `LEAKED PROCESS pid=<n> age=<s> spawned in <test id> argv=<…> root=<store
-     root, when a pid file under the sandbox names it>`;
-   - stop it: `daemon.stop_daemon(root)` when the root is known, else SIGTERM, a bounded wait,
+     root>`. The root is the ledger's `REFMATRIX_ROOT` for that pid, which is known whether the
+     root is under the sandbox or not (bug-229's was not); if the ledger has none, the line says
+     `root=unknown (cwd=<…>)` and does not guess;
+   - stop it: `daemon.stop_daemon(root)` when the ledger gives a root, else SIGTERM, a bounded wait,
      then SIGKILL, each step printed;
    - set the session's exit status to failed and add a `failures.jsonl` record.
    A pid whose start time does not match is a reused pid. It is not signalled, and the line
@@ -724,10 +781,19 @@ to rework the sandbox, so it settles them:
   this task adds, renames or splits (bug-228's and bug-231's tests, the new test files). The two
   `--collect-only -q` listings are diffed and every differing line is in the summary with its
   reason. No id disappears without one. {#ac-10}
-- **AC-11: the allow list knows its two kinds.** The census fails on a new `legacy` entry; passes
-  on a `feature-bound` entry that names a spec AC and whose test shrinks its bound through an
-  environment knob; fails on a `feature-bound` entry with no AC named; prints the two counts.
-  {#ac-11}
+- **AC-11: the allow list cannot be used as a way round the census.** The wall-clock census:
+  - fails on a new `legacy` entry;
+  - passes on a `feature-bound` entry whose `ac` resolves, whose test sets its `knob`, and whose
+    value is under `max_s`;
+  - **fails**, naming the entry, on each of: no `ac`; an `ac` whose spec id does not exist; an
+    `ac` whose anchor does not exist in that spec; a test that never sets the knob it names; a
+    value over `max_s`; a second entry for an AC that has one wall-clock clause;
+  - prints the two counts.
+
+  The budget-outcome census fails on bug-228's test as it stands at base (the RED), passes on
+  the same test with the budget substituted, passes on the silent-peer `skipped_budget` leg,
+  and fails on a synthetic test that asserts `outcome == "ok"` against a `SandboxDaemon` with no
+  knob set. {#ac-11}
 - **AC-12: live-socket reach, per `plan-review-fable D3`'s answer.** Under (a): a probe test that
   touches a deny-set target fails its shard and the run, in-process and from a child, in every
   shard position; this AC is stage 4's first. Under (b): `summary.txt` carries the per-shard
@@ -737,7 +803,10 @@ to rework the sandbox, so it settles them:
   reason and a review date; 23.0's status line names both rows. {#ac-13}
 - **AC-14: T0's sub-tasks meet T0's own acceptance**, as amended by [[#fold-deltas]]. Each
   sub-task's implementation summary is T0's (`task-t0.<n>-…`), and this task's summary links
-  them and gives one line per sub-task: sha, ch-bsd verdict, rows closed. {#ac-14}
+  them and gives one line per sub-task: sha, ch-bsd verdict, rows closed. **T0's frontmatter
+  flips to `completed` in stage 5's closing commit**, by sub-task T0.7 + 29.4d, in the same
+  commit that flips this spec's; from then on 29.1's checker refuses a `scheduled` row that
+  still points at T0, so every T0 row is closed or re-homed in that commit. {#ac-14}
 
 ## Test strategy {#test-strategy}
 
@@ -767,7 +836,13 @@ to rework the sandbox, so it settles them:
   15. the merge gate ignores teardown errors (AC-9);
   16. the `Daemon.__init__` wrapper records nothing (AC-5's in-process fixture passes unseen);
   17. the reaper skips a stopped process (AC-5's SIGSTOP fixture survives);
-  18. the census accepts a new `legacy` entry (AC-11).
+  18. the census accepts a new `legacy` entry (AC-11);
+  19. the census does not resolve the `ac` (a made-up AC id gets in; AC-11);
+  20. the census does not check that the test sets its knob (AC-11);
+  21. the budget-outcome census ignores fixtures (a test that reaches the daemon through a
+      fixture passes unseen; AC-11);
+  22. the reaper prints `root=` from a sandbox pid file only (AC-5's out-of-sandbox fixture
+      prints `unknown`, so the test is red).
 - **T0's sub-tasks carry their own mutations** (M1.x to M7.x in T0's text). They are not
   repeated here.
 - **All output to files.** Every run in this task goes through the runner or through
@@ -811,16 +886,16 @@ table is what this spec adds.
 | `tests/sandbox_site/rmx_sandbox.py` | the ledger (exec and fork), `owner.json`, `short_root`, `register_spawn`, `sweep_orphans`, the reaper |
 | `scripts/ptest.sh`, `scripts/ptest.py` | the runner: tiers, shards, `--files`, `--compare`, `--merge-gate`; `--family` in 29.4f |
 | `tests/shard_weights.json`, `tests/wallclock_allow.json`, `tests/tmp_root_allow.json` | new: measured weights and the two shrinking lists |
-| `tests/test_suite_tiers.py`, `tests/test_ptest_runner.py`, `tests/test_wallclock_census.py`, `tests/test_tmp_root_census.py`, `tests/test_daemon_reaper.py` | new |
+| `tests/test_suite_tiers.py`, `tests/test_ptest_runner.py`, `tests/test_wallclock_census.py`, `tests/test_budget_outcome_census.py`, `tests/test_tmp_root_census.py`, `tests/test_daemon_reaper.py` | new |
 | `tests/test_family_derivation.py` | new, in 29.4f |
-| `tests/fixtures/suite_health/` | new: the fixture suites for AC-2, AC-5, AC-9 |
+| `tests/fixtures/suite_health/` | new: the fixture suites for AC-2, AC-5, AC-9, as `case_*.py` files ([[#r1-fixtures]]) |
 | `tests/test_plan4_remedy.py`, `tests/test_task21_1_recall_skip.py` | bug-231, bug-228 |
 | the 28 files that call `spawn_daemon_subprocess`; the files R0's band selects for [[#r3-scope]] | roots; bound replacements |
-| `pyproject.toml` | `pytest-timeout` in `dev`; `[tool.pytest.ini_options]` |
+| `pyproject.toml` | `pytest-timeout` in `dev`; `[tool.pytest.ini_options]` (`timeout`, `timeout_method`, `norecursedirs`) |
 | `CLAUDE.md`, `.claude/PROJECT_PROFILE.md`, `workflow/TDD_GOVERNANCE.md` | [[#r8]] |
 | `workflow/plans/plan-23-bounded-write-harness-tasks/task-23.0-test-sandbox.md`, `workflow/deferral_registry.md` | [[#r9]] |
 | `workflow/plans/task-t0-suite-trust-sweep.md` | the amends lines of [[#fold-deltas]], if the lead has not already made them |
-| `workflow/bug_registry.md` | rows 228, 229, 231 (and T0's rows, by T0's sub-tasks) |
+| `workflow/bug_registry.md` | rows 228, 229, 231 (and T0's rows, by T0's sub-tasks); two new rows for the product observations of [[#r3-bug231]] and [[#r3-bug228]] |
 | `workflow/implementation_summaries/task-29.4-suite-health.md` | new: R0 tables, the class table, AC-7's runs, one line per T0 sub-task. `…/task-29.4f-derived-families.md` for the back-test |
 {#files-table}
 
@@ -899,3 +974,17 @@ the test that needs it, and it adds a parameter with the current behaviour as it
   the lead accepted them on 2026-11-14.
 {#decisions-list}
 
+## Revision note (2026-11-14, after ch-bsd r1 and ruling L105) {#rev-note}
+
+`bsd-plan29-spec-r1` (dev `master` `549458e`) reviewed `dba9afd`. This spec's share, as ruling
+L105 decided it:
+
+| Finding | Change here |
+|---|---|
+| S8: `feature-bound` was an unguarded way round the census; the budget-outcome clause had no census | [[#r3-kinds]]: an entry's `ac` is resolved, its `knob` is checked in the test, its value is bounded, one entry per clause; [[#r3-budget-census]]: a census for bug-228's shape, measured at one hit; [[#ac-11]] with a must-fail per rule |
+| M8: AC-5 asked for a root that R4 could not supply | [[#r4]] items 1 and 2: the ledger records `REFMATRIX_ROOT`, and the `LEAKED` line takes the root from it |
+| M10: two product observations went to closing notes | [[#r3-bug231]], [[#r3-bug228]]: each is its own registry row |
+| M12: fixture test files would join the real suite | [[#r1-fixtures]]: `case_*.py`, `norecursedirs`, and a named census exemption |
+| M4: numbers that depend on the method | [[#baseline-wallclock-table]] (5 pure lower bounds in 4 files, with what the other 3 lines are); the `rmtree` count is 129 by the stated method |
+| M1: who flips T0's frontmatter | [[#ac-14]] |
+{#rev-note-table}

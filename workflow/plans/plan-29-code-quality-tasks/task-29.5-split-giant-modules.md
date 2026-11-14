@@ -25,10 +25,13 @@ metadata:
 > Before the first move: an ADR for the module layout and import layering, authored by
 > `ch-architect` ([[#r1]]).
 > **Open user decisions this task waits on and does not settle** ([[#open-decisions]]):
-> `plan-review-fable D4` (who says go for its release), `plan-review-fable-store D5` (the dev
-> venv's duckdb, before any baseline).
-> User gates: the window's start (the lead announces it; the user may hold it), and one open
-> decision of this spec's own, **plan-29 D17** ([[#decisions]]), which the lead puts to the user.
+> `plan-29 D4` (what is done about the fleet's `behind_code` flip; this task's release flips
+> the union hash), `plan-review-fable D4` (who says go for a release; this one is outside any
+> standing go), `plan-review-fable-store D5` (the dev venv's duckdb, before any baseline).
+> User gates: the window's start (the lead announces it; the user may hold it); **each phase's
+> merge into the dev tree, which is a store event** ([[#r9-store-event]]); and two open decisions
+> of this spec's own, **plan-29 D17** and **plan-29 D23** ([[#decisions]]), which the lead puts
+> to the user.
 
 rel: part-of -> [[plan-29-code-quality]]
 rel: implements -> [[plan-29-code-quality#t5]]
@@ -95,15 +98,19 @@ that made them are in `workflow/measurements/plan-29-spec-census/` ([[plan-29-sp
 | tests that read the modules' **source or path** | `"cli.py"` path literals: 18 sites in 9 files; `"store.py"`: 27 in 9; `<module>.__file__`: 4 + 4; `source_of(cli, …)`: 1; one non-recursive `glob("*.py")` over `src/refmatrix` (`test_task21_1_agent_usage_report.py:267`), which would not see a subpackage |
 | census allow lists keyed on `module:qualname` | 8 entries naming `cli:` or `store:`, all in `tests/test_bug212_r4_red.py` |
 | test files that name `cli.py` or `store.py` at all (queue review) | 31 |
-| `python -m refmatrix.cli` spawn sites | 7 in `src/` (6 files, among them `daemon.py:7059`, `scheduler.py:131`, `ui/server.py:191` and `:578`); 22 in tests (8 files) |
+| `python -m refmatrix.cli` spawn sites | 4 in `src/`, in 3 files: `daemon.py:7059`, `scheduler.py:131`, `ui/server.py:191` and `:578` (string constants in code, by syntax tree; three more matches are comments or docstrings). Test files that mention the form: 8 |
 | `src` modules that import from `cli` | 2: `handoff.py` (three private names, lazily, "cli->handoff cycle") and `telemetry.py` (`main`) |
-| `global` statements in `cli.py` | 5: `_partition_override` × 4, `file` × 1 |
+| `global` statements in `cli.py` | 4, all `_partition_override` (lines 931, 8404, 8477, 11921; by syntax tree) |
+| references from one proposed command module to a def in another | 3: `queue_clear` → `sync`; `_reingest_embed` → `embed_cmd`; `reingest` → `session_ingest_cmd`. The core references no def the map moves out of it |
+| defs in command modules that use a **local** name equal to a `cli` def (a parameter called `rebuild`, `partition`, `top`, `watch`, `stats`) | 48 |
 {#baseline-reach-table}
 
 The queue review counted the same surface by grep: 185 `monkeypatch.setattr(cli, …)` sites in
 64 files (159 on `_root`) and 49 private names. The counts here are from the syntax tree, and
 include string targets and `mock.patch`: 191 and 45. The two agree on what matters. R0's
-inventory is the list that binds. {#baseline-reach-two-counts}
+inventory is the list that binds. The first revision of this table said 5 `global` statements
+and 7 spawn sites in 6 files: both counted text in comments and docstrings (ch-bsd r1 `#m4`).
+The counts above are from `plan29a-r2-xrefs.log`. {#baseline-reach-two-counts}
 
 ### Private names used across modules {#baseline-private}
 
@@ -137,7 +144,7 @@ already: the branches were cut at `1cf3b9f`, and `cli.py` has moved about 1,200 
 `store.py` 774 since. R0 counts again after the merges.
 {#baseline-citations-note}
 
-### Three facts that decide the design {#baseline-facts}
+### Four facts that decide the design {#baseline-facts}
 
 1. **Tests patch the module, and the code reads the patch through its own globals.** 160 tests
    set `cli._root` and then call a command. Today the command finds the patched `_root` because
@@ -152,6 +159,16 @@ already: the branches were cut at `1cf3b9f`, and `cli.py` has moved about 1,200 
    it), with `src/refmatrix/` as `sys.path[0]`. As a package the same re-exec runs
    `…/cli/__main__.py` as a script, with `src/refmatrix/cli/` as `sys.path[0]`: any file there
    whose name matches a module the process imports later would shadow it. {#fact-argv}
+4. **Under `-m`, the CLI is loaded twice today, and as a package it is loaded once.**
+   `python -m refmatrix.cli` runs `cli.py` as the module `__main__` (the file ends
+   `if __name__ == "__main__": cli_entry()`), and so does the re-exec. The commands run in
+   `__main__`. When `handoff.py:669/699` or `telemetry.py:1011` then lazily import
+   `refmatrix.cli`, Python loads the file **again**, as a second module with its own state
+   (`_partition_override`, the caches). The four production spawn sites all use this form. The
+   `rmx` console script does not: it imports `refmatrix.cli` and calls `cli_entry`, one copy.
+   After the split `cli/__main__.py` imports `refmatrix.cli`, so `-m` processes have one copy
+   too. That is a behaviour change on a production path, and the suite cannot see it: tests
+   drive the CLI in-process as `refmatrix.cli` (ch-bsd r1 `#s5`). {#fact-identity}
 3. **`store.py` is hashed by file name.** `store.derive_code_hash()` hashes the content of
    `("ingest.py", "ingest_gmd.py", "store.py")` (`_DERIVE_CODE_MODULES`), found beside
    `store.__file__`; a file it cannot read is skipped without a word ("a missing module is not
@@ -251,7 +268,11 @@ At the task's base sha (after 29.4, after the frozen spec branches):
    `__file__`, calls `source_of` / `inspect.getsource` on them, enumerates `src/refmatrix` without
    recursion, or keys an allow list on `cli:` / `store:`. These are the only test files a move
    commit may edit ([[#r4]]).
-5. **The argv inventory:** every reader of `sys.argv[0]` and every place a command line is
+5. **The argv and module-identity inventory:** which module state is per-copy in a `-m`
+   process today ([[#fact-identity]]), who writes it in `__main__` and who reads it in the
+   second copy, and so which outcomes differ today between `rmx <cmd>` and
+   `python -m refmatrix.cli <cmd>`. Each difference is listed with the spawn site that can reach
+   it. Then every reader of `sys.argv[0]` and every place a command line is
    matched as text (`discovery.pid_is_rmx`, `launchctl._rmx_path`, the sandbox's spawn parser,
    any test that asserts on `ps` output), each with what it sees before and after
    ([[#fact-argv]]). The naming census of [[#r2]] item 7 is run on the base tree too: a
@@ -280,7 +301,14 @@ At the task's base sha (after 29.4, after the frozen spec branches):
     `cli.compact` or `store.Store.rebuild_entities_indexes`, or keys an AST check on the file
     `store.py` or `cli.py`. The store review names the known ones: 18.2 R11/R13/AC-17, 18.3
     AC-14, 22.1a AC-8c, 22.2, 22.6 AC-6f, 16.6 AC-9c/9d/AC-12, bug-218 AC-2/AC-4b.
-12. **Baselines wait for `plan-review-fable-store D5`.** No gate golden and no suite baseline is
+12. **The rows the merge will touch** ([[#r9-store-event]]). For every live store that holds rows
+    keyed on `src/refmatrix/cli.py` or `src/refmatrix/store.py` (the dev tree's project store;
+    the global store, if it holds any): the number of **learned** rows and of **protected** rows
+    on each path, and what a row carries that grep cannot re-derive (a lifetime count, a
+    first-learned time, provenance). Counted read-only, by the lead or through
+    `scripts/rmx-master`, with the query written in the summary so it can be re-run after the
+    merge. This task's agents do not open a live store.
+13. **Baselines wait for `plan-review-fable-store D5`.** No gate golden and no suite baseline is
     generated on the dev venv's duckdb 1.5.2 if the decision is to raise it.
 
 ### R1: the decision is recorded first {#r1}
@@ -293,8 +321,10 @@ import layering", through `/ch-crucible`, before the first move commit, with a r
   namespace and one lock; its methods live in several files. Composition (a `Store` made of
   collaborating objects) is a later decision, which 29.2's writer `Protocol` informs. The split
   must not be read as that decision, and must not make it harder.
-- **The layering:** `cli` → `verbs` → the engine. The engine never imports `cli`. A function
-  the engine calls does not live in the CLI package ([[#r2b]]). An import census enforces it.
+- **The layering:** `cli` → `verbs` → the engine. The engine never imports `cli`. An import
+  census enforces it, with two declared exceptions that each name an owner ([[#r2b]]).
+- **One copy of the CLI in a `-m` process** is an accepted behaviour change
+  ([[#fact-identity]], plan-29 D24).
 - **The package rule:** a core that is read late by attribute ([[#r2]]); what `_name` means
   inside a package and across packages ([[#r6]]).
 - **The ceiling** and its exception list ([[#r7]]), as plan-29 D17 is answered.
@@ -324,7 +354,8 @@ rule, this spec is revised before any code moves. {#r1-body}
 4. **A patched name does not move.** Any helper in the patch inventory stays in the core even
    when one command module is its only user (four helpers at `f3709d2`: `_grep_stdin_addendum`,
    `_memory_intent`, `_memory_daemon_call`, `_global_recall_rows`).
-5. **A name tests read stays reachable.** For each name in the read inventory that moves, the
+5. **A name that is read stays reachable.** For each name in the read inventory that moves (read
+   by a test, by another `src` module, or by another command module, item 9), the
    core has one generated line, `from .<module> import <name>`, in a marked block. The block
    equals the inventory, exactly.
 6. **Registration is by import.** `__init__.py` imports the command modules last, in a fixed
@@ -337,31 +368,66 @@ rule, this spec is revised before any code moves. {#r1-body}
    package does (a package and a module of one name: the package wins, silently).
 8. **Entry points.** `refmatrix.cli:cli_entry` in `pyproject.toml` is unchanged.
    `python -m refmatrix.cli` works through `cli/__main__.py`, which imports by absolute name so
-   that it also runs as a script after the re-exec. The re-exec itself is not changed.
+   that it also runs as a script after the re-exec. The re-exec itself is not changed. A `-m`
+   process now has one copy of the CLI ([[#fact-identity]]); [[#r1]] records that as an accepted
+   change, and [[#ac-4]] probes it.
+9. **A command module never imports a sibling.** Three callbacks invoke a callback that the
+   map puts in another command module (`queue_clear` → `sync`; `_reingest_embed` → `embed_cmd`;
+   `reingest` → `session_ingest_cmd`). Such a reference is written `_cli.<name>`, like a core
+   name, and the name joins the re-export block (item 5). It is resolved when the command
+   runs, after every module has registered, so there is no import-order cycle, and a test that
+   patches the name on `refmatrix.cli` still reaches the caller. R0 inventories these
+   references from the syntax tree; the tool refuses a sibling reference it was not given.
+10. **A local name is not a module name.** 48 defs in the command modules use a parameter or a
+    local variable whose name equals a `cli` def (`rebuild`, `partition`, `top`, `watch`,
+    `stats`). The substitution of item 2 applies to **free** names only. A local is never
+    rewritten ([[#r3]]).
 
-### R2b: what the engine calls moves down first {#r2b}
+### R2b: the layering, its two declared exceptions, and the one move {#r2b}
 
-A function that code outside the CLI package calls is not a CLI function. It moves **down** to
-the layer that owns it, before the split, and never into `cli/<area>_cmds.py`.
+The rule the ADR records is that the engine never imports `cli`. At `f3709d2` three places
+break it. Whether a function can be moved down **now** is decided by what its **body** reads,
+not by who reads its name: a function whose body reads a name that tests patch on
+`refmatrix.cli` must stay where those patches land (ch-bsd r1 `#b1`; ruling L105). The bodies
+were read from the syntax tree (`plan29a-r2-xrefs.log`):
 
-- **Known at `f3709d2`:**
-  - `handoff.py:669` and `:699` lazy-import `_sync_memory_dir`, `_subject_link` and
-    `_subject_upsert` from `cli` ("lazy: cli->handoff cycle"). The save-state engine calls the
-    adapter.
-  - `telemetry.py:1011` imports `main` from `cli` to list the commands.
-  - `_root_from_projects_slug` is called only inside `cli.py` today, and 26.5 needs it from the
-    engine (memory review `#p29-5`).
-- **Each moves in its own commit, in phase 0b, as an ordinary change:** a RED test that the
-  engine module imports nothing from `refmatrix.cli`; then the move to the owning module
-  (`handoff`, the memory bridge, `discovery`: R0 names each home and says why); `cli` keeps a
-  name bound to the same object, so the read inventory and every test are unchanged; G5 around
-  the commit.
-- **The census:** `tests/test_import_layering_census.py` fails on any import of `refmatrix.cli`,
-  at module level or inside a function, from a `src/refmatrix` module outside the package. Its
-  allow list is empty after phase 0b. `telemetry`'s need (the command names) is met by the CLI
-  handing the list in, not by the engine reaching up.
-- This is done before the tool runs, so the tool never moves an engine function into a command
-  module and then has it moved again.
+| Engine site | Takes from `cli` | Its body reads (test-patched names in bold) | In this task |
+|---|---|---|---|
+| `handoff.py:699` | `_subject_upsert`, `_subject_link` | **`_root`**, **`_store`**, **`_memory_daemon_call`**; one call down, **`_resolve_partition`** | **stays** in `cli/__init__.py`; declared exception |
+| `handoff.py:669` | `_sync_memory_dir` | **`_resolve_partition`**, **`_memory_partition_default`**, **`_partition_override`**, `_bridge_stats`, `_bridge_wait_for_active_job`, `_ingest_gmd_sync`; one call down, **`_root`** | **stays** in `cli/__init__.py`; declared exception |
+| `telemetry.py:1011` (`_command_groups`) | `main` | it reads `main.commands`; **`main`** is patched at 3 sites (`tests/test_context_cost.py:142`, `:167`, `:192`), and a patched `main` sends it to its static fallback | **stays** as it is; declared exception |
+| (none yet; 26.5 needs it from the engine) | `_root_from_projects_slug` | no `cli` name at all | **moves down** in phase 0b |
+{#r2b-table}
+
+1. **The three handoff helpers do not move.** They stay in the core, so every patch on
+   `refmatrix.cli` reaches them as it does today, and every test is unchanged. They are core
+   names for the tool ([[#r2]] item 4 already keeps a patched name in the core; these are kept
+   because their bodies read patched names). `handoff.py`'s two lazy imports stay as they are.
+2. **`telemetry._command_groups` does not change.** It reads a patched name, lazily, and has a
+   fallback that three tests reach through the patch. Handing the group names in from the CLI
+   would change what those tests exercise.
+3. **`_root_from_projects_slug` moves down**, in one ordinary commit: its body reads no `cli`
+   name, nothing patches it, and it is called only from `cli.py` today. R0 names its home and
+   says why. `cli` keeps the name bound to the same object. RED first: a test that the engine
+   module that will need it can import it without importing `refmatrix.cli`.
+4. **The census, with a declared allow list.** `tests/test_import_layering_census.py` fails on
+   any import of `refmatrix.cli`, at module level or inside a function, from a `src/refmatrix`
+   module outside the package, **except** the entries of its allow list. The list has exactly
+   two entries, and each one records: the importing module and line, the names taken, the
+   patched names their bodies read (the table above), and an **owner task id**.
+   - An entry whose owner does not resolve to a spec under `workflow/plans/` fails the census.
+   - An entry that no longer matches an import in the tree fails it too (a stale exception).
+   - A third import fails it.
+5. **The follow-up the owner builds** (not this task): one seam that lets tests patch one place.
+   The CLI adapter resolves the root, the writer, the daemon call and the partition from its
+   own (patchable) names and hands them to the engine function; AC-3-style probes show, for
+   each patched name in the table, that a save-state run with the name patched on
+   `refmatrix.cli` calls the patched object; then the functions move to their layer and the
+   entries are deleted. It cannot start before 29.2's daemon-absent accessor exists: the
+   helpers' in-process fallback needs a writer the engine does not have.
+   - **Owner:** requested of `task-29.3-converge-shapes` on 2026-11-14, as one more slice (one
+     helper and a bypass census is that task's shape). If 29.3 does not take it, the lead names
+     the owner before this spec is approved; the census of item 4 does not pass without one.
 {#r2b-list}
 
 ### R3: every move is made by a tool {#r3}
@@ -376,6 +442,18 @@ produced it.**
 - For `Store` methods: the map is per method ([[#map-store]]). The method's lines move verbatim
   into a mixin class body (`class _StoreFragments:`), and module-level names of `store.py` that the method uses become
   `_st.<name>` (`from refmatrix import store as _st`), by the same rule.
+- **Scope analysis is the tool's riskiest part, and replaying the tool cannot check it.** Two
+  defences:
+  - the tool's own tests include, RED first: a def whose parameter shadows a core name (not
+    rewritten); a def whose local shadows a callback in another module (not rewritten); a
+    nested function that reads the enclosing function's local of that name (not rewritten); a
+    comprehension variable of that name (not rewritten); and the same four with the name used
+    free (rewritten);
+  - `tools/verify_split.py` checks every move **without the tool's scope logic**, from the
+    compiler's own symbol tables (`symtable`): for each moved def, the names the compiler
+    resolves as global after the move are the names it resolved as global before, minus the
+    ones now read through `_cli` or `_st`, plus that alias; no name changed between local and
+    global; and every global the def reads is bound in its new module. This is half of gate G8.
 - `tools/split_module.py --check <parent-rev>` proves a commit: it re-runs the tool on the
   parent's tree with the commit's map and compares the output with the commit's tree, byte for
   byte, for every file under `src/`. It also prints, per moved def, that the def's syntax tree
@@ -388,14 +466,14 @@ produced it.**
 
 ### R4: one group per commit, behind the gates {#r4}
 
-**Order.** Phase 0 builds the gates. Phase 0b moves down what the engine calls. Phase 1 is
+**Order.** Phase 0 builds the gates. Phase 0b sets the layering rule. Phase 1 is
 `cli`. Phase 2 is `store`. Phase 3 is the private names. Each commit lands on the task branch; the branch merges to `master` once, at
 the end of a phase.
 
 | Phase | Commits |
 |---|---|
 | 0 | the tool and its tests; the gates and goldens of this section, generated at the base sha and committed; the inventories of [[#r0]] |
-| 0b | [[#r2b]]: one commit per function the engine calls, moved down. Ordinary changes, not tool moves |
+| 0b | [[#r2b]]: the layering census with its two declared exceptions; `_root_from_projects_slug` moved down. Ordinary changes, not tool moves |
 | 1 | `git mv cli.py cli/__init__.py` with `cli/__main__.py` (a rename and one new file; the source-reader tests that name the path are re-pointed here); then one commit per command module, smallest first: `learn_cmds`, `admin_cmds`, `removal_cmds`, `vectors_cmds`, `graph_cmds`, `search_cmds`, `query_cmds`, `hub_cmds`, `daemon_cmds`, `ingest_cmds`, `catalog_cmds`, `grep_cmds`, `session_cmds`, `memory_cmds` |
 | 2 | one commit per concern module: `store_vectors`, `store_partition`, `store_fragments`, `store_derive`, `store_rank`, `store_removal`, `store_replay`, `store_memory`, `store_links`, `store_entities`; each extends `_DERIVE_CODE_MODULES` with its file ([[#r5]]) |
 | 3 | [[#r6]], one commit per target module |
@@ -415,11 +493,11 @@ commit's parent and at the commit, and compared:
 | G1 the click tree | a structural dump of `refmatrix.cli.main`: for every command path, sorted: type, name, help, short help, epilog, hidden, deprecated, context settings, the callback's `__name__`, and for every parameter: name, option strings, type, required, default, nargs, multiple, is-flag, help, envvar, hidden (`tools/dump_click_tree.py`; 282,261 bytes at `f3709d2`) | byte-identical |
 | G2 help text | `--help` output of all 219 paths at a fixed width, and `rmx tools-primer`'s output | byte-identical |
 | G3 the generated docs | `scripts/gen-cli-tree.py --check` (the CLI tree in `docs/ARCHITECTURE.md`, the hooks table in `README.md`), which is `tests/test_docs_generated.py::test_cli_tree_section_equals_its_render` and `::test_hooks_table_section_equals_its_render` | exit 0, both tests green, the two doc sections unchanged |
-| G4 the surfaces | for `refmatrix.cli` and `refmatrix.store`: the sorted list of public and private attribute names, each with its kind (function, class, module, other) | no name lost; additions are only `_cli`-style module aliases the tool lists |
+| G4 the surfaces | for `refmatrix.cli` and `refmatrix.store`, three checks: (1) every name in the **read inventory** and the **patch inventory** still resolves on the module; (2) every other name that left is in the tool's map with its new home, and resolves there; (3) the names that appeared are exactly the expected ones, which the tool lists: the command submodules and the `_cli` alias on `refmatrix.cli`, the mixin classes and the `_st` alias on the store modules | all three hold; anything else is a failure that names the attribute |
 | G5 the suite | `scripts/ptest.sh --tier all` at the parent and at the commit, then `--compare` ([[task-29.4-suite-health#r2]]) | equal by (node id, phase, E line), collected counts equal |
-| G6 the dev tree | `scripts/ptest.sh --merge-gate` on the merged dev tree before each phase's merge commit ([[task-29.4-suite-health#r7]]) | passes |
+| G6 the dev tree | `scripts/ptest.sh --merge-gate` on the merged dev tree before each phase's merge commit ([[task-29.4-suite-health#r7]]), **with the dev daemon's watcher out**, as step 5 of [[#r9-store-event]] | passes; a red G6 is aborted with the store untouched |
 | G7 parity and censuses | `tests/test_verb_parity.py` (167 tests), `tests/test_bug212_r4_red.py` (the catalog-opener census, 47 tests), `tests/test_docs_generated.py` (7), and this task's own census tests. They are in G5's run too; they are named here because they are the tests a split is most likely to blind (`tests/test_repo_hooks_in_sync.py` runs under G6, in the dev tree) | green, with the same test counts |
-| G8 the tool | `tools/split_module.py --check <parent>` | exit 0 |
+| G8 the tool | `tools/split_module.py --check <parent>` (replay), and `tools/verify_split.py <parent>` (the compiler's symbol tables, independent of the tool's scope analysis) | both exit 0 |
 | G9 size | [[#r7]]'s census | green |
 | G10 the censuses still see | every census in the source-reader inventory, after the commit: its synthetic bypass is planted and the census **fails** on it; its allow list names no site that no longer exists ([[#r4-reproof]]) | every census fails on its bypass |
 {#r4-gates}
@@ -440,6 +518,11 @@ commit's parent and at the commit, and compared:
   recursive. `git diff --stat <parent> <commit> -- tests/` is checked against the inventory by
   the tool's `--check`. A test that needs any other edit to pass means the move changed
   behaviour: the commit is wrong, not the test.
+- **G4 is not "no name lost".** About 300 names leave `dir(refmatrix.cli)` in phase 1 by design:
+  the moved callbacks and helpers that nothing outside reads. The first revision of this gate
+  compared the whole attribute list and could not have passed on any move commit (ch-bsd r1
+  `#b2`). What must hold is narrower and exact: what is read still resolves; what left is
+  accounted for; what arrived was expected.
 - **A red gate stops the phase.** The commit is not amended into green by hand. The cause is
   found; if it is a tool defect, the tool is fixed with a test and the commit is regenerated;
   if it is a real coupling the tool cannot express, it is fixed first, in its own commit.
@@ -463,7 +546,11 @@ commit's parent and at the commit, and compared:
 1. `class Store(_StoreEntities, _StoreLinks, _StoreMemory, _StoreReplay, _StoreRemoval,
    _StoreRank, _StoreDerive, _StoreFragments, _StorePartition, _StoreVectors):` in `store.py`. The mixins hold methods only: no `__init__`, no class
    attributes that `Store` also defines, no state of their own. A census test checks all
-   three, and checks that no method name is defined in two mixins.
+   three, and checks that no method name is defined in two mixins. It counts concrete method
+   definitions in the classes named in `Store`'s bases. A class that only declares (a
+   `Protocol`, or names under `TYPE_CHECKING`) is not a base and is not counted. `Store`'s bases
+   are exactly the ten mixins: a common base class added for typing would change the method
+   resolution order this task fixes, so 29.2 declares its host without one.
 2. `from refmatrix.store import Store` and every other name importable from `refmatrix.store`
    today still resolves there (G4). Call sites, `_DaemonWriter`, the `Store(` census and every
    test patch are unchanged: nothing outside `store*.py` can tell that the class is in several
@@ -477,7 +564,14 @@ commit's parent and at the commit, and compared:
    - A new test asserts that every file named in either table exists beside `store.py`, and
      fails by name when one does not. Today a missing file is skipped silently.
    - The union hash changes with each phase-2 commit, as it does with any edit to `store.py`.
-     What the fleet shows when it does is R0 item 8, and it goes in the deploy note.
+     `derive_pass_modules` returns the union for the no-argument callers and for every pass
+     that has no entry of its own, so this is a fleet-wide `behind_code` flip with nothing
+     about the derived graph changed: the case **plan-29 D4** asks the user about. What the
+     fleet shows is R0 item 8; what is done about it is D4 ([[#open-decisions]]).
+   - This task does not change `derive_code_hash` itself. If D4 is answered (c) (the hash
+     ignores comments and annotations), that change belongs to the task D4's answer names, not
+     to a move; a move still changes each file's content, so this task's flip remains; and
+     [[#ac-5]] tests the file lists, not the hash function, so it holds either way.
 5. `__qualname__` changes for moved methods (`Store.x` → `_StoreFragments.x`). The catalog-opener
    census keys on it; its allow list is re-keyed in the commit that moves the method (source
    inventory rule, [[#r4]]). R0 lists any other reader of `__qualname__` or `__module__`
@@ -496,15 +590,20 @@ After the moves, every `src` → `src` use of another module's `_name` is listed
   At `f3709d2` it has 55 rows (76 sites). For a `cli` helper the table has one more column:
   **logic or adapter** (does the function decide something, or only parse and print?). 24.2a's
   "hook paths become verbs" starts from the rows marked logic. The three names `handoff` takes
-  from `cli` are already gone by phase 0b ([[#r2b]]). Each remaining row ends as one of:
+  from `cli` are declared exceptions ([[#r2b]]) and are rows of this table with the outcome
+  "declared; owner <task>". Each other row ends as one of:
   - **public:** the name loses its underscore and is the module's API, with a docstring that
-    says who uses it. Tests that named it are re-pointed in the same commit;
-  - **moved:** the function belongs to the user's layer, or to a third module both can import
-    (`handoff.py` takes three names from `cli` through a lazy import that exists only to dodge
-    an import cycle; a function that the handoff engine needs is not a CLI function);
+    says who uses it. Tests that named it are re-pointed by `ch-test-engineer`, in a commit of
+    their own **before** the rename: that commit is the RED (the tests name a public symbol that
+    does not exist yet), and the implementer's rename is the GREEN. The implementer edits no
+    test ([[tdd-governance]]);
+  - **moved:** the function belongs to the user's layer, or to a third module both can import,
+    and its body reads no name that tests patch on its old module ([[#r2b]] shows the check; a
+    function that fails it is declared, with an owner, and not moved);
   - **removed:** the use is dead or duplicated.
 - **A census test** (`tests/test_private_cross_module_census.py`) scans `src/` with `rglob` and
-  fails on any such use. Its allow list is empty when this task ends.
+  fails on any such use. When this task ends its allow list holds only the three names of the
+  declared `handoff` exception, with the same owner.
 - Phase 3 commits are not tool moves. Each is an ordinary change: the census's must-fail case
   first, then the rename or move, then G5 around it. Tests → `src` private uses (742 sites)
   are not in scope; they are counted in the summary.
@@ -548,11 +647,13 @@ file gets no exception.
 - The assessments are written after phase 2, on the tree the split leaves: the tool, the gates
   and the patch-surface method are what any further split would reuse.
 
-### R8: the symbol map, and specs that cite a line {#r8}
+### R8: the symbol map, the citation tool, and the hand-off to 29.6 {#r8}
 
-**This task publishes the map and builds the tool. The rewriting pass runs once, after 29.2
-and 29.3.** Lines move again in those two tasks, and 29.3 renames helpers; a pass run now would
-be run twice (queue review `#p29-3`).
+**This task publishes the map and builds the tool. The rewriting pass is task 29.6**
+([[task-29.6-citation-and-pin-repoint]]), which runs after 29.2 and 29.3. Lines move again in
+those two tasks, and 29.3 renames helpers; a pass run now would be run twice (queue review
+`#p29-3`). The first revision of this section handed the pass to "the plan's closing step",
+which was a hand-off to nothing (ch-bsd r1 `#b3`).
 
 1. **The map.** `docs/architecture/module-split-map.md` (GMD, generated by the tool from the
    two map files and from phase 0b's and phase 3's moves) has one row per moved top-level
@@ -560,35 +661,30 @@ be run twice (queue review `#p29-3`).
    same table is in the summary, and `tools/split_maps/symbol_map.json` is its machine-readable
    form. `docs/architecture/ARCHITECTURE_INDEX.md` links it. 29.2 derives its strict mypy set
    from it, and 29.3 its module lists and census allow lists ([[#ac-11]]).
-2. **The tool.** `tools/repoint_citations.py` rewrites `cli.py:NNNN` and `store.py:NNNN` in
-   every spec under `workflow/plans/` whose `metadata.status` is not completed. For each site it
-   takes the spec's last-change sha, finds the def that held line NNNN in the module **at that
-   sha**, and writes the def's home as `` `cli/<module>.py::<def>` `` or
+2. **The tool.** `tools/repoint_citations.py` rewrites `cli.py:NNNN` and `store.py:NNNN` in a
+   spec. For each site it takes the spec's last-change sha, finds the def that held line NNNN
+   in the module **at that sha**, and writes the def's home as `` `cli/<module>.py::<def>` `` or
    `` `store_<concern>.py::Store.<method>` ``, the `module.py::symbol` form that
-   `docs/architecture/todo.md` G12 already uses. A symbol does not rot when lines move; T0's
-   R0.1 already found `store.py:717` at `:1159`.
+   `docs/architecture/todo.md` G12 already uses.
    - A site whose line was module-level code, or whose def no longer exists, is not guessed. It
      is listed with the spec and the old text.
    - It also lists, without rewriting, every **pin**: a qualified name (`cli.compact`,
      `store.Store.rebuild_entities_indexes`), an AST scope keyed on the file `store.py` or
      `cli.py`, or a non-recursive `src/refmatrix/*.py` walk ([[#r0]] item 11). A pin is a
      requirement, not a citation.
-3. **In this task:** the tool runs in dry-run mode on the merged tree. The summary gives the
-   count that resolves, the unresolved sites, and the pins, per spec.
-4. **The pass** is plan-29's closing step, after 29.3 and 29.2. Its rules, from the reviews:
-   - a cite-only rewrite needs no ch-bsd re-approval;
-   - a spec whose **requirement** depends on location gets its owner's freshness check (26.5's
-     "wrap `run` at `daemon.py:3376`"; 23.1's 33 `store.py` sites; every pin). A pin is
-     rewritten to "every module under `src/refmatrix`, recursive", located by symbol;
-   - T0's R0.1 (re-verify every cited site at the branch base) is the rule for every task that
-     builds from a spec afterwards.
-   This spec hands the pass to the plan: the lead adds it to
-   [[plan-29-code-quality#order]] as a step with an owner.
-5. **History is not rewritten.** Completed specs, handoffs, summaries and the ledger keep their
-   citations (759 + 394 sites). The map resolves them.
-6. **Frozen gold that names the files.** 21.2's nine gold files include three that are `cli.py`
-   or `store.py` (memory review `#s31`). They are keyed on the unique definition or re-frozen
-   after this task, by 21.2's owner; the summary lists them with the pins.
+3. **In this task:** the tool is built and tested ([[#ac-8]]), and run in dry-run mode on the
+   merged tree. The summary gives, per spec, the count that resolves, the unresolved sites and
+   the pins. That dry run is 29.6's first input.
+4. **What 29.6 owns**, so that nothing is left to "later": the 271 citations in 44
+   not-completed specs (re-counted at its base); the pins in 18.2, 18.3, 22.1a, 22.2, 22.6,
+   16.6 and bug-218; 26.5's `daemon.py:3376` site; 21.2's three gold files that are `cli.py` or
+   `store.py`; the 21 line citations in `docs/`.
+5. **Between this task's merge and 29.6**, every such citation and pin names a file that is not
+   there. That window is real and is stated, not hidden: the lead's window announcement
+   ([[#r9]]) says so; no task that builds from one of those specs starts before 29.6, or it
+   resolves its own citations first by T0's R0.1 rule, using the map.
+6. **History is not rewritten**, here or in 29.6. Completed specs, handoffs, summaries and the
+   ledger keep their citations (759 + 394 sites). The map resolves them.
 
 ### R9: the window {#r9}
 
@@ -610,26 +706,75 @@ cannot be merged afterwards without redoing its work by hand.
      that rebase onto this one and may not run beside it: bug-185, 23.1, 23.3, 16.6, 17.1,
      17.4, 22.1a, 22.2, 22.6, bug-218, D-Q1, 16.1, 16.5, 28.1. Independent of it, and free to
      run in the measurement lane: 23.4, the fold evaluation, 28.2-28.4, 16.2-16.4, 22.5.
-4. **The merge to the dev tree is announced as a store event.** It deletes `cli.py` from a
-   watched tree and adds eleven files; the live store's daemon purges the old path's entities and
-   re-ingests. bug-177 (hook timeouts during a large post-merge sync) and bug-107 (learned rows
-   deleted with a purged path) both apply. The lead counts the learned rows on `cli.py` and
-   `store.py` before the merge and backs up first; this task's agents do not touch the store.
+4. **Each phase's merge into the dev tree is a user-gated store event** ([[#r9-store-event]]).
 5. **Deploy** is the lead's, from a committed `master` sha, after a phase's merge. The deploy
-   note carries: R0 item 8's answer; that `~/refmatrix/src/refmatrix/cli.py` must be absent
-   after the fast-forward; the smoke checks (`rmx version -v`, `python -m refmatrix.cli version`
-   in the deploy venv, a daemon restart and status, an MCP reconnect).
+   note carries: R0 item 8's answer and plan-29 D4's; that `~/refmatrix/src/refmatrix/cli.py`
+   must be absent after the fast-forward; the smoke checks (`rmx version -v`,
+   `python -m refmatrix.cli version` in the deploy venv, a daemon restart and status, an MCP
+   reconnect).
 6. **The dev MCP server straddles the split.** `.mcp.json` runs `.venv-eval/bin/rmx mcp`: a
    long-lived process on dev code. After a phase merges it still holds the old modules, and its
    next lazy `from refmatrix.cli import …` meets the new layout. The announcement tells every
    session on the dev tree to `/mcp` reconnect after each phase's merge.
-7. **Released alone.** One release holds this task and nothing else, so that a regression after
-   it has one suspect. Who says go is `plan-review-fable D4`.
+7. **Released alone, and not under a standing go.** One release holds this task's code and
+   nothing else, so that a regression after it has one suspect.
+   - `plan-review-fable D4` asks for a standing go for releases "none changing hooks or the
+     store on disk". This release changes the store on disk twice over (the store event, and
+     the union-hash flip), so it is outside that premise whatever the user answers: it needs
+     its own go (ruling L105).
+   - **Against plan-29 D4.** 29.2's recommendation there is one release carrying every
+     hash-flipping edit of 29.2, 29.3 "and, if it lands close enough, 29.5". The two are
+     reconciled by separating the code from the stamps: this task's **code** ships alone; what
+     is done to the stores' **stamps** (D4's (a) re-derive or (b) re-stamp) is done once, after
+     the last flipping release, and covers this task's flip too. Between the two the fleet
+     reads `behind_code` (R0 item 8 says what that shows). If the user would rather the fleet
+     never reads it, the other reading is to hold this task's deploy and ship one release with
+     29.2 and 29.3, at the cost of the single suspect. Which one is part of D4's answer; this
+     spec builds to either and does not choose.
 8. **No install window.** Nothing in this task may make `rmx install-hooks --check` report drift
    on an existing install (T0's R0.7, asked of all five plan-29 tasks). The hook generators
    import nothing from `cli`; R0 confirms it, and G7's run in the dev tree shows it.
 9. **The window closes** when the phase is on `master` and every clone has been told to
    re-clone or rebase.
+
+#### The store event {#r9-store-event}
+
+A phase's merge changes what the dev tree's live store holds. Phase 1 deletes `cli.py` from a
+watched tree and adds 16 files; phase 2 rewrites `store.py` and adds 10. The daemon purges the
+old paths' entities and re-ingests. Two open rows apply: bug-177 (hook timeouts during a large
+post-merge sync) and **bug-107**: `purge_path` deletes the protected grep-learned rows of a
+file that is deleted **or changed**, and `vacuum` then drops their evidence with no log event.
+`git mv` does not carry a learned row to `cli/__init__.py`. Counting the rows and backing them
+up does not keep them ([[feedback_decay_never_loses_knowledge]]; ch-bsd r1 `#s1`).
+
+For `store.py` this is what every edit to `store.py` already does today under bug-107. For
+`cli.py` it is a deletion, once.
+
+**The steps, in this order, all the lead's** (this task's agents touch no live store):
+
+1. **Count** (R0 item 12's query), per store and per path: learned rows, protected rows.
+2. **Back up:** `scripts/backup.sh ~/refmatrix-backups/refmatrix/pre-29.5-<phase>-<sha>/`, run in
+   the dev tree. It refreshes the replica, then copies the inactive catalog slot, `facts.log`
+   and the `active` marker. The affected rows are also **exported in full** to
+   `rows-on-cli-and-store.jsonl` in that directory (every field), so that what the store loses
+   is still readable.
+3. **Decide the rows, before the merge** (plan-29 D23, the user's): re-key them to their new
+   paths through a store op, or accept the loss as recorded in step 2. The merge does not
+   start without the answer.
+4. **Take the watcher out.** The dev store's daemon is restarted without its file watcher (the
+   lead's command, from `rmx daemon --help` at the deployed version; R0 writes it down). Only
+   then `git merge --no-commit`.
+5. **G6** (`scripts/ptest.sh --merge-gate`) runs on the merged, uncommitted tree. No watcher sees
+   the tree change, and no git hook has run (there is no commit yet).
+   - **Red:** `git merge --abort`. The store saw nothing. Nothing is restored, because nothing
+     changed.
+   - **Green:** the merge commit. Its post-commit sync is the store event, announced before the
+     commit.
+6. **Restore the watcher, then count again** with the same query. Both counts, the backup path
+   and D23's answer go in the summary ([[#ac-15]]).
+7. If D23's answer is to re-key: the op runs here, from the map's line table, and the count
+   after it equals the count before.
+{#r9-store-event-steps}
 
 ### R10: docs {#r10}
 
@@ -647,7 +792,8 @@ is quoted in the summary. {#r10-body}
   - G1: one option's default changed; one command's help text changed; one hidden flag flipped;
     and, the other way round, two dumps of an unchanged tree from two processes are identical;
   - G2: a command registered under a second name;
-  - G4: one private helper not re-exported;
+  - G4: a name in the read inventory not re-exported; a moved name missing from the map; an
+    attribute that appeared and is not on the expected list;
   - G5: one test made to fail with a different E line than at the parent;
   - G8: one moved function edited by hand (a renamed local variable);
   - G9: a file of 3,001 lines;
@@ -667,35 +813,54 @@ is quoted in the summary. {#r10-body}
     re-export (so the patch would reach nothing) fails, naming it;
   - the same three for `refmatrix.store` and the mixin modules.
   {#ac-3}
-- **AC-4: the entry points work as processes.** In a child process: `python -m refmatrix.cli
-  version` exits 0 and reports this checkout; with `OBJC_DISABLE_INITIALIZE_FORK_SAFETY` unset
-  it re-execs and still exits 0; after the re-exec no module in `sys.modules` was loaded as a
-  top-level name from `src/refmatrix/cli/`; the `rmx` console script resolves
-  `refmatrix.cli:cli_entry`. The naming census fails on a synthetic `cli/json.py`.
-  `tests/test_fork_safety_reexec.py` is unchanged and green. {#ac-4}
+- **AC-4: the entry points work as processes.** In a child process:
+  - `python -m refmatrix.cli version` exits 0 and reports this checkout; with
+    `OBJC_DISABLE_INITIALIZE_FORK_SAFETY` unset it re-execs and still exits 0;
+  - after the re-exec no module in `sys.modules` was loaded as a top-level name from
+    `src/refmatrix/cli/`;
+  - **one copy:** under `python -m refmatrix.cli`, a probe command sets module state the way
+    `memory -p` does and then triggers the lazy import `handoff` makes; the lazily imported
+    `refmatrix.cli` is the module the command ran in, and it sees that state. This test is
+    **RED at base** (two copies, [[#fact-identity]]) and green from the rename commit on;
+  - the `rmx` console script resolves `refmatrix.cli:cli_entry`.
+
+  The naming census fails on a synthetic `cli/json.py`. `tests/test_fork_safety_reexec.py` is
+  unchanged and green. {#ac-4}
 - **AC-5: the derive tables name real files.** The new test fails, by name, when a table entry
-  is missing on disk (must-fail: a tmp copy with one file removed). Every `store_*.py` is in
-  `_DERIVE_CODE_MODULES`. A second test fails when a `store_*.py` file exists that the tuple
-  does not name. {#ac-5}
-- **AC-6: no private name crosses a module.** The census passes on the tree with an empty allow
-  list, and fails on a synthetic module that imports `_x` from another `refmatrix` module, on
-  one that reads `other._x` through an alias, and on one that does it inside a function (a
-  lazy import). It passes on `cli/x_cmds.py` reading `_cli._root`. The summary's table has one
-  outcome for each of the rows R0 listed. {#ac-6}
+  is missing on disk (must-fail: a tmp copy with one file removed). Every module that
+  **defines a `Store` mixin** is in `_DERIVE_CODE_MODULES`, and a second test fails when a
+  module defines one and the tuple does not name it. The rule is keyed on the mixin, not on the
+  file name: a `store_*.py` that holds only a `Protocol` or type declarations (29.2's leaf
+  module) is not a derive module and is not required in the tuple. {#ac-5}
+- **AC-6: no private name crosses a module, except where it is declared.** The census passes on
+  the tree with an allow list that holds only the three names of the declared `handoff`
+  exception ([[#r2b]]), and fails on a synthetic module that imports `_x` from another
+  `refmatrix` module, on one that reads `other._x` through an alias, and on one that does it
+  inside a function (a lazy import). It passes on `cli/x_cmds.py` reading `_cli._root`. The
+  summary's table has one outcome for each of the rows R0 listed. {#ac-6}
 - **AC-7: no module produced by the split is over 3,000 lines.** The size census is green;
   `cli/*` and `store*.py` hold no exception; it fails on a 3,001-line file under `cli/` and on
   an excepted file that grew by one line. For `daemon.py`, `verbs.py` and `ingest.py`: the
   written assessment ([[#r7-assessed]]) is in the summary, and each is under the ceiling or
   has an exception row with an owner task that exists, as plan-29 D17's answer (or, with no
   answer, its pending default) decides. {#ac-7}
-- **AC-8: the citation tool is ready and its dry run is recorded.** On fixture specs the tool
-  rewrites a line cite to the right symbol when the def moved, resolves the line at the spec's
-  own sha and not at `HEAD` (a fixture where the two differ), lists a module-level line as
-  unresolved without guessing, and lists a qualified-name pin and a non-recursive glob as pins.
-  The dry run over `workflow/plans/` is in the summary: per spec, resolved, unresolved, pins.
-  No spec is rewritten by this task ([[#r8]] item 4). {#ac-8}
+- **AC-8: the citation tool is ready, its dry run is recorded, and 29.6 exists to use it.** On
+  fixture specs the tool rewrites a line cite to the right symbol when the def moved, resolves
+  the line at the spec's own sha and not at `HEAD` (a fixture where the two differ), lists a
+  module-level line as unresolved without guessing, and lists a qualified-name pin and a
+  non-recursive glob as pins. The dry run over `workflow/plans/` is in the summary: per spec,
+  resolved, unresolved, pins. No spec is rewritten by this task: the pass is
+  [[task-29.6-citation-and-pin-repoint]], whose spec exists and names this dry run as its
+  input. {#ac-8}
 - **AC-9: the window was real.** The summary quotes the pre-phase checks of [[#r9]] item 1 with
   their output, the announcement, and the close. {#ac-9}
+- **AC-15: the store event is on the record, and nothing was lost unseen.** For each phase's
+  merge the summary holds: the count query; the learned and protected row counts per store and
+  per path **before** and **after**; the backup path and that `rows-on-cli-and-store.jsonl`
+  holds as many rows as the before-count; plan-29 D23's answer, dated, **before** the merge
+  commit's time; that the watcher was out during G6 (the daemon's own status line); and either
+  "re-keyed: after = before" or "lost as recorded: N rows, listed in the export". A phase whose
+  record lacks any of these is not merged. {#ac-15}
 - **AC-10: before and after.** The [[#baseline]] tables, re-measured at the final sha, are in
   the summary beside R0's. `./scripts/lint-gmd.sh` exits 0. {#ac-10}
 - **AC-11: the symbol map is published, and three names do not move.** {#ac-11}
@@ -718,10 +883,18 @@ is quoted in the summary. {#r10-body}
   29.3 relies on that test and does not re-key it. The non-recursive glob in
   `test_task21_1_agent_usage_report.py` is made recursive and shown to see a file under
   `cli/`. {#ac-12}
-- **AC-13: the engine does not import the adapter.** The layering census passes with an empty
-  allow list, and fails on a synthetic engine module that imports `refmatrix.cli` at module
-  level and on one that does it inside a function. `handoff.py` and `telemetry.py` import
-  nothing from `refmatrix.cli`. {#ac-13}
+- **AC-13: the engine does not import the adapter, except where it is declared.** The layering
+  census:
+  - passes on the tree with its two-entry allow list ([[#r2b]]);
+  - fails on a synthetic engine module that imports `refmatrix.cli` at module level, and on one
+    that does it inside a function;
+  - fails on an allow-list entry whose owner task id does not resolve, and on an entry that
+    matches no import in the tree;
+  - **the exceptions keep the patches:** for each patched name in [[#r2b-table]], a probe patches
+    it on `refmatrix.cli`, drives the handoff path that reaches the helper, and asserts the
+    patched object was called. These probes pass at base and after every phase; they are what
+    would have gone silent had the helpers moved.
+  {#ac-13}
 - **AC-14: no hook drift.** `rmx install-hooks --check` semantics are unchanged: the generated
   hook config at the final sha equals the one at the base sha, byte for byte (the generator is
   run at both). {#ac-14}
@@ -755,8 +928,16 @@ is quoted in the summary. {#r10-body}
   12. `--compare` is given the same run twice (G5 is green whatever the commit did: the gate
       script must refuse two runs with one sha);
   13. the G10 script plants the bypass and does not check that the census failed (AC-12);
-  14. `handoff.py` regains one lazy `from refmatrix.cli import` (AC-13);
-  15. the symbol map drops the moved `Store` methods (AC-11's count test).
+  14. `_subject_upsert` binds `_root` by `from … import` inside a moved copy (AC-13's probe for
+      `_root` goes silent, so the probe test is red); and a third engine module gains a lazy
+      `from refmatrix.cli import` (the census is red);
+  15. the symbol map drops the moved `Store` methods (AC-11's count test);
+  16. the tool rewrites a parameter that shadows a core name (the tool's shadow test is red,
+      and `tools/verify_split.py` is red without the tool's help);
+  17. `cli/__main__.py` runs the command from a second import of the package under another
+      name (AC-4's one-copy probe is red);
+  18. G4 treats a name missing from the map as fine (AC-1's planted break passes, so the gate's
+      own test is red).
 - **The suite runs before and after every phase-1 and phase-2 commit** (G5). There are 25 move
   commits (the rename, 14 command modules, 10 concern modules). Each commit's "after" is the
   next commit's "before", so that is about 26 runs: under 9 hours of machine time at 29.4's
@@ -770,8 +951,8 @@ is quoted in the summary. {#r10-body}
 |---|---|
 | `docs/adr/0006-*.md`, `docs/adr/0000-adr-overview.md`, `docs/INDEX.md` | the layout and layering decision ([[#r1]]; authored by `ch-architect`) |
 | `tools/split_module.py`, `tools/split_maps/cli.json`, `tools/split_maps/store.json`, `tools/split_maps/symbol_map.json` | new: the move tool, its maps, the published symbol map |
-| `tools/dump_click_tree.py`, `tools/repoint_citations.py`, `tools/module_size_exceptions.json` | new |
-| `handoff.py`, `telemetry.py`, and the modules R0 names as homes | phase 0b ([[#r2b]]) |
+| `tools/dump_click_tree.py`, `tools/verify_split.py`, `tools/repoint_citations.py`, `tools/module_size_exceptions.json` | new |
+| the module R0 names as `_root_from_projects_slug`'s home | phase 0b ([[#r2b]]). `handoff.py` and `telemetry.py` are **not** changed |
 | `src/refmatrix/cli.py` → `src/refmatrix/cli/__init__.py`, `cli/__main__.py`, `cli/*_cmds.py` (14) | phase 1 |
 | `src/refmatrix/store.py`, `src/refmatrix/store_*.py` (10) | phase 2 |
 | the modules on R6's list (24 files at `f3709d2`) | phase 3 |
@@ -785,8 +966,8 @@ is quoted in the summary. {#r10-body}
 | `workflow/implementation_summaries/task-29.5-split-giant-modules.md` | new: R0, the per-commit gate table, the symbol map, R6's table, the three assessments, the citation dry run, the window record |
 {#files-table}
 
-No spec under `workflow/plans/` is edited by this task: the citation pass is the plan's closing
-step ([[#r8]]). {#files-no-specs}
+No spec under `workflow/plans/` is edited by this task: the citation and pin pass is
+[[task-29.6-citation-and-pin-repoint]] ([[#r8]]). {#files-no-specs}
 
 ## Out of scope {#out-of-scope}
 
@@ -799,21 +980,27 @@ step ([[#r8]]). {#files-no-specs}
   means changing how tests reach it, which is a task about tests.
 - **Re-pointing the 742 test → `src` private uses**, and typing anything: 29.2 and 29.3 land in
   the modules this task makes ([[plan-29-code-quality#order]]).
-- **Rewriting any spec's citations** ([[#r8]] item 4), and revising any spec's pins.
+- **Rewriting any spec's citations, and revising any spec's pins:**
+  [[task-29.6-citation-and-pin-repoint]].
 - **Deleting dead code** ([[#r0]] item 9): its owners do that.
 - **A formatter pass** over moved code. A reformat would make G8 meaningless.
 - **Changing the fork-safety re-exec** ([[#fact-argv]]). Running it as `-m` would put the
   current directory first on the daemon's import path; today's form does not. That is a
   behaviour question for another task, and the naming census makes today's form safe.
-- **Deciding** `plan-review-fable D4` or `plan-review-fable-store D5`.
+- **Deciding** `plan-29 D4`, `plan-29 D17`, `plan-29 D23`, `plan-review-fable D4` or
+  `plan-review-fable-store D5`.
+- **Fixing bug-107.** It is open and is plan-22's; this task makes its cost at one merge visible
+  and puts the choice to the user.
 {#out-of-scope-list}
 
 ## Open user decisions (referenced, not settled) {#open-decisions}
 
 | Label | Question | Where this spec waits on it |
 |---|---|---|
-| `plan-review-fable D4` | A standing go for plan-29's releases when the suite equals baseline by E line, or a go per release | [[#r9]] item 7: this task's release, alone |
-| `plan-review-fable-store D5` | Raise the dev venv from duckdb 1.5.2 to the 1.5.3 floor before baselines are taken | [[#r0]] item 12: no golden and no baseline before it is resolved |
+| `plan-review-fable D4` | A standing go for plan-29's releases when the suite equals baseline by E line, or a go per release | [[#r9]] item 7: this task's release changes the store on disk, so it needs its own go under either answer |
+| `plan-review-fable-store D5` | Raise the dev venv from duckdb 1.5.2 to the 1.5.3 floor before baselines are taken | [[#r0]] item 13: no golden and no baseline before it is resolved |
+| **plan-29 D4** (29.2's, in `task-29.2-mypy-gate#d4`) | What is done about a fleet-wide `behind_code` flip when nothing about the derived graph changed: (a) re-derive, (b) re-stamp, (c) change the hash | [[#r5]] item 4 and [[#r9]] item 7: this task's release flips the union hash; whether it ships alone or bundled is part of D4's answer |
+| **plan-29 D23** (this spec's own) | The learned and protected rows keyed on `cli.py` and `store.py` at the merge: re-key them, or accept the recorded loss | [[#r9-store-event]] step 3: no phase merges without it |
 | **plan-29 D17** (this spec's own) | What "no module over the size target" means for `daemon.py`, `verbs.py` and `ingest.py` | [[#r7]]: the pending default is built unless the user answers otherwise; phases 0 to 2 do not wait on it |
 {#open-decisions-table}
 
@@ -857,6 +1044,25 @@ give them. {#open-decisions-upstream}
     differ only on `verbs.py` and `ingest.py`, and only if their assessments pass.
   - **Why not decided here:** the two sentences are both the user's approved text, and the
     choice moves days of an exclusive window. The lead puts it to the user (2026-11-14).
+- **plan-29 D23 (open, for the user): the learned and protected rows keyed on `cli.py` and
+  `store.py` when a phase merges.**
+  - **What happens with no decision:** bug-107. The rows are purged with the path, and their
+    evidence is vacuumed.
+  - **(a) Accept the loss, recorded.** Every affected row is exported in full and backed up
+    first; the count before and after is in the summary; grep re-learns what is asked for
+    again. No new code. What is lost is whatever a row carries that grep cannot re-derive (R0
+    item 12 says what that is and how many rows have it).
+  - **(b) Re-key through a store op.** The move tool knows, for every moved line, its new file
+    and line. A daemon op re-keys each learned row from that table, and the after-count equals
+    the before-count. This is new write surface: it needs its own small spec and its own
+    review before the merge, and it delays phase 1.
+  - **(c) Fix bug-107 first** (22.6 R4 keeps learned rows on any edit), then merge. That
+    reorders the queue: plan-22 is step thirteen of the queue review's recommended order.
+  - **Pending default:** none that merges. With no answer, [[#r9-store-event]] step 3 holds the
+    merge. If R0 item 12 counts **zero** rows on both paths in every store, there is nothing to
+    decide and the record says so.
+  - **Why the user's:** it is knowledge on the live store, and the user's rule is that removal
+    goes only through an audited path.
 - **plan-29 D18: the click tree is compared as a sorted structural dump plus the help output,
   not by the insertion order of `main.commands`.**
   - **Why:** the order necessarily changes when registration moves between files, and no
@@ -876,10 +1082,23 @@ give them. {#open-decisions-upstream}
   - **Why:** the banners misplace the four largest methods ([[#map-store]]), and the store
     review showed that evidence/links and replay, where six approved specs land, had no home in
     the plan's list.
-- **plan-29 D22: what the engine calls is moved down before the split (phase 0b), and the
-  citation pass is handed to the end of the plan.**
-  - **Why:** both avoid doing a thing twice: an engine function moved into a command module
-    and then out of it; a spec re-pointed now and again after 29.3 renames helpers.
+- **plan-29 D22: the citation and pin pass is its own task, 29.6, after 29.2 and 29.3.**
+  - **Why:** a spec re-pointed now is re-pointed again after 29.3 renames helpers. Ruling L105
+    made the pass a task with a spec, so that the hand-off has a receiver.
+- **plan-29 D24: a `-m refmatrix.cli` process has one copy of the CLI after the split, and
+  that is accepted.**
+  - **What changes:** today such a process has two ([[#fact-identity]]): the commands run in
+    `__main__`, and `handoff`'s lazy import gets a second copy whose `_partition_override` is
+    unset. After the split it has one, as every `rmx …` process already does.
+  - **Why accepted and not preserved:** keeping two copies would mean importing the package a
+    second time under another name on purpose. The console-script path, which is what the
+    deployed `rmx`, the hooks and the launchd daemons run, already has one copy, so the change
+    makes the four `-m` spawn sites behave like everything else.
+  - **Guard:** R0 item 5 lists every outcome that differs today between the two forms. If one
+    of them is relied on by a production spawn site, the task stops and raises it before phase
+    1. The ADR records the change. [[#ac-4]] probes it in a child process.
+  - **This is the one behaviour change in a task whose rule is none.** It is named here so it
+    is not found later.
 - **Not decided here, because the plan or the reviews decided it:** `cli` becomes a package, one
   module per command group; moves only; one group per commit; the ceiling is about 3,000 lines
   for every module the split produces; mixins; the ADR; a published symbol map; every census
@@ -898,3 +1117,22 @@ its pending default (the review's reading is recorded as alternative (b)); [[#r8
 here and hands the rewriting pass to the plan's end; [[#r9]] gains the MCP reconnect, the
 release-alone rule and the no-drift rule; the baseline is 29.4's stage 5. {#rev-note-body}
 
+## Revision note 2 (2026-11-14, after ch-bsd r1 and ruling L105) {#rev-note-2}
+
+ch-bsd reviewed `dba9afd` and found 3 BULLSHIT, 8 SKETCHY and 12 MEH across the five plan-29
+specs (`bsd-plan29-spec-r1`, dev `master` `549458e`). Ruling L105 decided how each is fixed.
+This spec's share:
+
+| Finding | Change here |
+|---|---|
+| B1: phase 0b moved helpers whose bodies read test-patched `cli` names | [[#r2b]]: the three `handoff` helpers and `telemetry`'s read of `main` stay and are declared exceptions with an owner; only `_root_from_projects_slug` moves; [[#ac-13]] with probes that the patches still land; [[#ac-6]] |
+| B2: gate G4 could not pass | [[#r4-gates]] G4 is three exact checks; AC-1's planted break removes a read name |
+| B3: the citation and pin pass had no task | [[#r8]] hands it to [[task-29.6-citation-and-pin-repoint]]; [[#ac-8]]; plan-29 D22 |
+| S1: the merge is a lossy store event | [[#r9-store-event]], R0 item 12, [[#ac-15]], gate G6 with the watcher out, plan-29 D23 (open) |
+| S2: the derive-hash flip and plan-29 D4 did not meet | [[#r5]] item 4, [[#r9]] item 7, [[#open-decisions]] |
+| S5: module identity under `-m` | [[#fact-identity]], R0 item 5, [[#ac-4]] (RED at base), plan-29 D24 |
+| S6: no rule for references between command modules | [[#r2]] items 9 and 10, [[#r3]] (shadowing tests; `tools/verify_split.py` from the compiler's symbol tables), gate G8 |
+| M4: two wrong numbers | [[#baseline-reach]]: 4 `global` statements; 4 spawn sites in 3 files |
+| M6: seams with 29.2 | [[#ac-5]] keys on the mixin, not the file name; [[#r5]] item 1 says what the mixin census counts |
+| M9: a GREEN commit that edits tests | [[#r6]]: `ch-test-engineer` re-points first, as the RED |
+{#rev-note-2-table}
