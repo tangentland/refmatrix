@@ -1,0 +1,19 @@
+good origin/HEAD=develop: ahead_base='origin/develop' n_ahead=1 trunk_error=''
+r1-probe missing-sha develop: ahead_base='origin/main' n_ahead=1 trunk_error='origin/HEAD names `origin/develop`, which does not resolve; measured against `origin/main`'
+unset, origin/main ok: ahead_base='origin/main' n_ahead=1 trunk_error=''
+  verify origin/main rc 128 error: inflate: data stream error (incorrect header check)
+error: unable to unpack b135ebc
+unset, origin/main corrupt: ahead_base='' n_ahead=0 trunk_error='could not verify trunk candidate `origin/main`; nothing measured — `git rev-parse --verify --quiet origin/main^{commit}` exited 128: error: inflate: data stream error (incorrect header check) / error: unable to unpack b135ebc9b1ac58dfa9aa5e845ccb030b8772841a header / error: inflate: data stream error (incorrect header check) / error: unable to unpack b135ebc9b1ac58dfa9aa5e845ccb030b8772841a header / fatal: loose object b135ebc9b1ac58dfa9aa5e845ccb030b8772841a (stored in .git/objects/b1/35ebc9b1ac58dfa9aa5e845ccb030b8772841a) is corrupt'
+origin/HEAD=main corrupt: ahead_base='' n_ahead=0 trunk_error='origin/HEAD names `origin/main`, which git could not verify; nothing measured — `git rev-parse --verify --quiet origin/main^{commit}` exited 128: error: inflate: data stream error (incorrect header check) / error: unable to unpack b135ebc9b1ac58dfa9aa5e845ccb030b8772841a header / error: inflate: data stream error (incorrect header check) / error: unable to unpack b135ebc9b1ac58dfa9aa5e845ccb030b8772841a header / fatal: loose object b135ebc9b1ac58dfa9aa5e845ccb030b8772841a (stored in .git/objects/b1/35ebc9b1ac58dfa9aa5e845ccb030b8772841a) is corrupt'
+local-only no remote: ahead_base='' n_ahead=0 trunk_error=''
+unset, origin/main -> tree: ahead_base='' n_ahead=0 trunk_error='could not verify trunk candidate `origin/main`; nothing measured — `git rev-parse --verify --quiet origin/main^{commit}` exited 1: error: origin/main^{commit}: expected commit type, but the object dereferences to tree type'
+unset, origin/main broken ref: ahead_base='' n_ahead=0 trunk_error='could not verify trunk candidate `origin/main`; nothing measured — `git rev-parse --verify --quiet origin/main^{commit}` exited 1: warning: ignoring broken ref refs/remotes/origin/main'
+local-only trunk_info: 'none (origin/HEAD unset; no origin/main, origin/master, main or master)' trunk_error: ''
+Traceback (most recent call last):
+  File "/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b225r3mut.tAda/probe3.py", line 55, in <module>
+    print("doc trunk lines:",[x for x in handoff._ss_render(mem_id="m",session="s",repo=l,message=None,git=f,focus=[],tasks=[],recents=[],created="2026-11-14",today="2026-11-14",updated="2026-11-14").splitlines() if "trunk" in x])
+                                         ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b225r3mut.tAda/src/refmatrix/handoff.py", line 345, in _ss_render
+    nodes = _ss_clean_focus(focus.get("nodes", []))
+                            ^^^^^^^^^
+AttributeError: 'list' object has no attribute 'get'

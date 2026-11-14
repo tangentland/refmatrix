@@ -1,0 +1,68 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b225mut2/src/refmatrix as checked-hash (bug-037)
+......................FFF.                                               [100%]
+=================================== FAILURES ===================================
+_______ test_r2_m3_non_git_dir_gives_all_empty_facts_and_no_trunk_error ________
+
+nongit = (PosixPath('/private/tmp/b225n-phzbeumj'), PosixPath('/private/tmp/b225n-phzbeumj/plain'))
+
+    def test_r2_m3_non_git_dir_gives_all_empty_facts_and_no_trunk_error(nongit):
+        """A store whose parent is not a git work tree: every fact is empty, and
+        trunk_error is empty (not "origin/HEAD unreadable … not a git repository").
+        Kills the `if facts["branch"]:` → `if True:` mutation bsd-225 r1 saw survive."""
+        _, d = nongit
+        facts = handoff._ss_git_facts(d, None)
+        assert "trunk_error" in facts, facts
+>       assert {k: v for k, v in facts.items() if v} == {}, facts
+E       AssertionError: {'ahead': '', 'ahead_base': '', 'branch': '', 'dirty': '', ...}
+E       assert {'trunk_error...ies): .git')]} == {}
+E         
+E         Left contains 2 more items:
+E         {'trunk_error': 'origin/HEAD unreadable, no fallback trunk resolves — `git '
+E                         'symbolic-ref --quiet --short refs/remotes/origin/HEAD` exited '
+E                         '128: fatal: not a git repository (or any of the parent '
+E                         'directories): .git',
+E          'trunk_errors': [('origin/HEAD unreadable, no fallback trunk resolves',...
+E         
+E         ...Full output truncated (4 lines hidden), use '-vv' to show
+
+tests/test_bug225_handoff_trunk.py:584: AssertionError
+____________ test_r2_m3_non_git_dir_never_asks_git_for_origin_head _____________
+
+nongit = (PosixPath('/private/tmp/b225n-p6up6l_u'), PosixPath('/private/tmp/b225n-p6up6l_u/plain'))
+git_shim = <function git_shim.<locals>.arm at 0x106864b40>
+
+    def test_r2_m3_non_git_dir_never_asks_git_for_origin_head(nongit, git_shim):
+        """No `symbolic-ref` subprocess at all for a non-git dir (recorded by the
+        PATH shim, which fails nothing in mode "")."""
+        base, d = nongit
+        log = base / "git-argv.jsonl"
+        git_shim("", log=log)
+        handoff._ss_git_facts(d, None)
+        calls = [json.loads(ln) for ln in log.read_text().splitlines()] if log.exists() else []
+        assert calls, "the shim recorded no git call at all; is it on PATH?"
+>       assert not [c for c in calls if "symbolic-ref" in c], calls
+E       AssertionError: [['rev-parse', '--abbrev-ref', 'HEAD'], ['log', '-1', '--format=%h %s'], ['status', '--short'], ['symbolic-ref', '--qu...', '--verify', '--quiet', 'origin/main^{commit}'], ['rev-parse', '--verify', '--quiet', 'origin/master^{commit}'], ...]
+E       assert not [['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD']]
+
+tests/test_bug225_handoff_trunk.py:596: AssertionError
+_____________ test_r2_m3_non_git_recall_state_has_no_trunk_anomaly _____________
+
+nongit = (PosixPath('/private/tmp/b225n-bke9ya4y'), PosixPath('/private/tmp/b225n-bke9ya4y/plain'))
+
+    def test_r2_m3_non_git_recall_state_has_no_trunk_anomaly(nongit):
+        """And recall-state on such a store reports no trunk anomaly."""
+        base, d = nongit
+        s, root = _stm(base, "sess-b225-m3-recall")
+        rep = handoff.compose_recall_state(s, root, repo=d, memdir=base / "memory",
+                                           pointer_anomalies=[])
+>       assert not [a for a in rep["anomalies"] if "trunk" in a or "origin/HEAD" in a], \
+            rep["anomalies"]
+E       AssertionError: ['trunk: origin/HEAD unreadable, no fallback trunk resolves (`git symbolic-ref --quiet --short refs/remotes/origin/HEAD` exited 128: fatal: not a git repository (or any of the parent directories): .git)']
+E       assert not ['trunk: origin/HEAD unreadable, no fallback trunk resolves (`git symbolic-ref --quiet --short refs/remotes/origin/HEAD` exited 128: fatal: not a git repository (or any of the parent directories): .git)']
+
+tests/test_bug225_handoff_trunk.py:605: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_m3_non_git_dir_gives_all_empty_facts_and_no_trunk_error
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_m3_non_git_dir_never_asks_git_for_origin_head
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_m3_non_git_recall_state_has_no_trunk_anomaly
+3 failed, 23 passed in 16.21s

@@ -13906,6 +13906,10 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
     console.print(f"[green]save-state[/] {res['target']}  "
                   f"[dim]({res['events']} events, session {res.get('session')}, "
                   f"{res.get('session_source')})[/]")
+    # bug-225 r2 M1: a trunk the handoff could not read or measure is said here,
+    # not only inside the written file.
+    if res.get("trunk_error"):
+        console.print(f"[yellow]trunk:[/] {rich_escape(res['trunk_error'])}")
     # Task 26.3: say every file the save MOVED or REMOVED in the memory dir.
     if res.get("moved_legacy"):
         console.print(f"[dim]  moved legacy top-level {Path(res['moved_legacy']).name} "

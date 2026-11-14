@@ -96,3 +96,6 @@
 2026-11-14T00:41:42-0800 commit=25ceacd verdict=DIRTY findings=4 (2B/0S/2M) report=2026-11-14-0041-bug216-r2-25ceacd.md
 2026-11-14T00:40:37-0800 commit=03d7b27 verdict=DIRTY findings=7 (1B/1S/5M) report=2026-11-14-0040-bug212-r4-03d7b27.md
 2026-11-14T02:14:43-0800 commit=574c64e verdict=CLEAN findings=0 report=2026-11-14-0214-task25.1-r10-confirm-574c64e.md
+2026-11-14T02:10:19-0800 commit=db411ad verdict=DIRTY findings=5 (0B/1S/4M) report=2026-11-14-0210-bug225-r1-db411ad.md
+2026-11-14T03:34:27-0800 commit=9c952eb verdict=DIRTY findings=2 (0B/1S/1M) report=2026-11-14-0334-bug225-r2-9c952eb.md
+2026-11-14T04:34:59-0800 commit=6004d36 verdict=MEH-only findings=1 (0B/0S/1M) report=2026-11-14-0434-bug225-r3-6004d36.md

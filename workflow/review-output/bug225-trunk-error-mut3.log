@@ -1,0 +1,25 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b225mut/src/refmatrix as checked-hash (bug-037)
+...........F.                                                            [100%]
+=================================== FAILURES ===================================
+___________ test_recall_state_reports_the_trunk_error_as_an_anomaly ____________
+
+repos = (PosixPath('/private/tmp/b225-j87mlmfj'), PosixPath('/private/tmp/b225-j87mlmfj/work'))
+
+    def test_recall_state_reports_the_trunk_error_as_an_anomaly(repos):
+        """AC-8: recall-state lists the unreadable origin/HEAD as an anomaly, next to
+        the ahead-of anomaly measured against the fallback trunk."""
+        base, work = repos
+        _break_origin_head(work, UNREADABLE["outside-refs"])
+        s, root = _stm(base, "sess-b225-terr-recall")
+        rep = handoff.compose_recall_state(s, root, repo=work, memdir=base / "memory",
+                                           pointer_anomalies=[])
+        trunk = [a for a in rep["anomalies"] if a.startswith("trunk:")]
+>       assert len(trunk) == 1, rep["anomalies"]
+E       AssertionError: ['5 commit(s) ahead of origin/master (unmerged/undeployed?)']
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_bug225_handoff_trunk.py:279: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug225_handoff_trunk.py::test_recall_state_reports_the_trunk_error_as_an_anomaly
+1 failed, 12 passed in 8.13s

@@ -1,0 +1,26 @@
+...F..                                                                   [100%]
+=================================== FAILURES ===================================
+_______________ test_origin_head_dangling_falls_back_to_the_list _______________
+
+repos = (PosixPath('/private/tmp/b225-iwpyyzz_'), PosixPath('/private/tmp/b225-iwpyyzz_/work'))
+
+    def test_origin_head_dangling_falls_back_to_the_list(repos):
+        """AC-3 (GUARD, green at HEAD): origin/HEAD names a ref that does not exist
+        (a trunk deleted and pruned on the remote). `git symbolic-ref --short` still
+        PRINTS `origin/gone` for it, so a fix that trusts that output without
+        verifying it would measure against nothing. Must fall back, never raise."""
+        _, work = repos
+        _git(work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/gone")
+        assert _git(work, "symbolic-ref", "--short", "refs/remotes/origin/HEAD") == "origin/gone"
+        facts = handoff._ss_git_facts(work, None)
+>       assert facts["ahead_base"] == "origin/master", facts
+E       AssertionError: {'ahead': '', 'ahead_base': 'origin/gone', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'origin/gone' == 'origin/master'
+E         
+E         - origin/master
+E         + origin/gone
+
+tests/test_bug225_handoff_trunk.py:153: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug225_handoff_trunk.py::test_origin_head_dangling_falls_back_to_the_list
+1 failed, 5 passed in 4.16s

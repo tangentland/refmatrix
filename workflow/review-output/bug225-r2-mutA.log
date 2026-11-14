@@ -1,0 +1,25 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b225mut2/src/refmatrix as checked-hash (bug-037)
+.................F........                                               [100%]
+=================================== FAILURES ===================================
+____________________ test_r2_s1c_failing_verify_is_surfaced ____________________
+
+repos = (PosixPath('/private/tmp/b225-dy0oc405'), PosixPath('/private/tmp/b225-dy0oc405/work'))
+git_shim = <function git_shim.<locals>.arm at 0x106f137f0>
+
+    def test_r2_s1c_failing_verify_is_surfaced(repos, git_shim):
+        """Every verify exits 2 (not "does not resolve", which is exit 1 / no output):
+        trunk_error carries the failure. At d735ce5 `_ss_sh` drops it and trunk_error
+        is "" while no trunk is measured at all."""
+        base, work = repos
+        _git(work, "remote", "set-head", "origin", "develop")
+        git_shim("verify")
+        facts = handoff._ss_git_facts(work, None)
+        err = facts["trunk_error"]
+>       assert SHIM_MARK in err or "exited 2" in err, facts
+E       AssertionError: {'ahead': '', 'ahead_base': '', 'branch': 'feature', 'dirty': '', ...}
+E       assert ('b225-shim: forced failure' in 'origin/HEAD names `origin/develop`, which does not resolve; no fallback trunk resolves' or 'exited 2' in 'origin/HEAD names `origin/develop`, which does not resolve; no fallback trunk resolves')
+
+tests/test_bug225_handoff_trunk.py:478: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_s1c_failing_verify_is_surfaced
+1 failed, 25 passed in 16.75s

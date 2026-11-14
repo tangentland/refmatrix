@@ -1,0 +1,120 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b225mut3r/src/refmatrix as checked-hash (bug-037)
+..........................FFFFF......                                    [100%]
+=================================== FAILURES ===================================
+______ test_r3_s1a_corrupt_list_candidate_stops_the_walk_with_gits_error _______
+
+main_and_master = (PosixPath('/private/tmp/b225-2tob6pd4'), PosixPath('/private/tmp/b225-2tob6pd4/work'))
+
+    def test_r3_s1a_corrupt_list_candidate_stops_the_walk_with_gits_error(main_and_master):
+        """origin/HEAD unset; origin/main is corrupt (verify exits 128). At e2505f3 the
+        walk reads 128 as "not found" and measures against origin/master, silently
+        (bsd-225 r2 probe: ahead_base='origin/master' trunk_error='')."""
+        base, work = main_and_master
+        _corrupt_origin_main(work)
+        facts = handoff._ss_git_facts(work, None)
+>       assert "is corrupt" in facts["trunk_error"], facts
+E       AssertionError: {'ahead': 'f4d530d feature commit 2
+E         2da97fd feature commit 1
+E         86eed05 develop commit 3
+E         562a711 develop commit 2
+E         1e74986 develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'is corrupt' in ''
+
+tests/test_bug225_handoff_trunk.py:699: AssertionError
+_________ test_r3_s1b_origin_head_naming_a_corrupt_ref_says_gits_error _________
+
+main_and_master = (PosixPath('/private/tmp/b225-z2dxa0pd'), PosixPath('/private/tmp/b225-z2dxa0pd/work'))
+
+    def test_r3_s1b_origin_head_naming_a_corrupt_ref_says_gits_error(main_and_master):
+        """origin/HEAD → origin/main, which is corrupt. The message carries git's error,
+        not "does not resolve" (the wrong cause, at e2505f3), and nothing is measured."""
+        _, work = main_and_master
+        _corrupt_origin_main(work)
+        _git(work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+        facts = handoff._ss_git_facts(work, None)
+>       assert "is corrupt" in facts["trunk_error"], facts
+E       AssertionError: {'ahead': '1c53fca feature commit 2
+E         e408186 feature commit 1
+E         970fa62 develop commit 3
+E         cfdbed3 develop commit 2
+E         12e95aa develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'is corrupt' in 'origin/HEAD names `origin/main`, which does not resolve; measured against `origin/master`'
+
+tests/test_bug225_handoff_trunk.py:721: AssertionError
+_____________ test_r3_s1_ref_to_a_tree_is_a_failure_not_not_found ______________
+
+main_and_master = (PosixPath('/private/tmp/b225-ps5h7sxc'), PosixPath('/private/tmp/b225-ps5h7sxc/work'))
+
+    def test_r3_s1_ref_to_a_tree_is_a_failure_not_not_found(main_and_master):
+        """Real git, exit 1 WITH stderr: origin/main names a TREE. git says "expected
+        commit type"; L100 lists this as a failure that stops the walk. At e2505f3 it
+        is skipped and origin/master is measured."""
+        _, work = main_and_master
+        tree = _git(work, "rev-parse", "HEAD^{tree}")
+        (work / ".git" / "refs" / "remotes" / "origin" / "main").write_text(tree + "\n")
+        r = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "origin/main^{commit}"],
+                           cwd=str(work), capture_output=True, text=True)
+        assert r.returncode == 1 and "expected commit type" in r.stderr, (r.returncode, r.stderr)
+        facts = handoff._ss_git_facts(work, None)
+>       assert "expected commit type" in facts["trunk_error"], facts
+E       AssertionError: {'ahead': '90414ec feature commit 2
+E         6a85795 feature commit 1
+E         0615e20 develop commit 3
+E         e35e71c develop commit 2
+E         3ddd9c0 develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'expected commit type' in ''
+
+tests/test_bug225_handoff_trunk.py:737: AssertionError
+______ test_r3_s1c_verify_failure_with_stderr_is_surfaced[exit128-stderr] ______
+
+main_and_master = (PosixPath('/private/tmp/b225-6xx14704'), PosixPath('/private/tmp/b225-6xx14704/work'))
+git_shim = <function git_shim.<locals>.arm at 0x1213be4b0>, rc = 128
+
+    @pytest.mark.parametrize("rc", [128, 1], ids=["exit128-stderr", "exit1-stderr"])
+    def test_r3_s1c_verify_failure_with_stderr_is_surfaced(main_and_master, git_shim, rc):
+        """The shim fails ONLY origin/main's verify, writing stderr. Exit 128 and exit 1
+        with stderr are both failures: said in trunk_error, the walk stops. At e2505f3
+        both are read as "not found" and origin/master is measured. Kills the mutants
+        `rc in (1, 128)` (both cases) and `rc == 1` without the stderr test (exit 1)."""
+        _, work = main_and_master
+        git_shim("verify", rc=rc, match="origin/main^{commit}")
+        facts = handoff._ss_git_facts(work, None)
+>       assert SHIM_MARK in facts["trunk_error"], facts
+E       AssertionError: {'ahead': '78d8be7 feature commit 2
+E         1a6cd91 feature commit 1
+E         c5b0c1e develop commit 3
+E         957fc75 develop commit 2
+E         2d8e0c1 develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'b225-shim: forced failure' in ''
+
+tests/test_bug225_handoff_trunk.py:750: AssertionError
+_______ test_r3_s1c_verify_failure_with_stderr_is_surfaced[exit1-stderr] _______
+
+main_and_master = (PosixPath('/private/tmp/b225-jm1wbe2l'), PosixPath('/private/tmp/b225-jm1wbe2l/work'))
+git_shim = <function git_shim.<locals>.arm at 0x1213bcd50>, rc = 1
+
+    @pytest.mark.parametrize("rc", [128, 1], ids=["exit128-stderr", "exit1-stderr"])
+    def test_r3_s1c_verify_failure_with_stderr_is_surfaced(main_and_master, git_shim, rc):
+        """The shim fails ONLY origin/main's verify, writing stderr. Exit 128 and exit 1
+        with stderr are both failures: said in trunk_error, the walk stops. At e2505f3
+        both are read as "not found" and origin/master is measured. Kills the mutants
+        `rc in (1, 128)` (both cases) and `rc == 1` without the stderr test (exit 1)."""
+        _, work = main_and_master
+        git_shim("verify", rc=rc, match="origin/main^{commit}")
+        facts = handoff._ss_git_facts(work, None)
+>       assert SHIM_MARK in facts["trunk_error"], facts
+E       AssertionError: {'ahead': '39b646d feature commit 2
+E         ce1dfe6 feature commit 1
+E         bbc1792 develop commit 3
+E         e85eea9 develop commit 2
+E         e9def90 develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'b225-shim: forced failure' in ''
+
+tests/test_bug225_handoff_trunk.py:750: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug225_handoff_trunk.py::test_r3_s1a_corrupt_list_candidate_stops_the_walk_with_gits_error
+FAILED tests/test_bug225_handoff_trunk.py::test_r3_s1b_origin_head_naming_a_corrupt_ref_says_gits_error
+FAILED tests/test_bug225_handoff_trunk.py::test_r3_s1_ref_to_a_tree_is_a_failure_not_not_found
+FAILED tests/test_bug225_handoff_trunk.py::test_r3_s1c_verify_failure_with_stderr_is_surfaced[exit128-stderr]
+FAILED tests/test_bug225_handoff_trunk.py::test_r3_s1c_verify_failure_with_stderr_is_surfaced[exit1-stderr]
+5 failed, 32 passed in 29.83s
