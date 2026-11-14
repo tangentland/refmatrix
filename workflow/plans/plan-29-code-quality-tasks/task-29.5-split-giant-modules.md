@@ -530,7 +530,7 @@ commit's parent and at the commit, and compared:
 | G2 help text | `--help` output of all 219 paths at a fixed width, and `rmx tools-primer`'s output | byte-identical |
 | G3 the generated docs | `scripts/gen-cli-tree.py --check` (the CLI tree in `docs/ARCHITECTURE.md`, the hooks table in `README.md`), which is `tests/test_docs_generated.py::test_cli_tree_section_equals_its_render` and `::test_hooks_table_section_equals_its_render` | exit 0, both tests green, the two doc sections unchanged |
 | G4 the surfaces | for `refmatrix.cli` and `refmatrix.store`, three checks: (1) every name in the **read inventory** and the **patch inventory** still resolves on the module; (2) every other name that left is in the tool's map with its new home, and resolves there; (3) the names that appeared are exactly the expected ones, which the tool lists: the command submodules and the `_cli` alias on `refmatrix.cli`, the mixin classes and the `_st` alias on the store modules | all three hold; anything else is a failure that names the attribute |
-| G5 the suite | `scripts/ptest.sh --tier all` at the parent and at the commit, then `--compare` ([[task-29.4-suite-health#r2]]) | equal by (node id, phase, E line), collected counts equal, and no test's outcome changed. One named exception, at the rename commit only: AC-4's one-copy probe goes from xfailed to passed ([[#r4-probe]]) |
+| G5 the suite | `scripts/ptest.sh --tier all` at the parent and at the commit; then `--compare` (failures) and `--compare --outcomes` ([[task-29.4-suite-health#r2]], [[task-29.4-suite-health#ac-3]]) | failures equal by (node id, phase, E line); collected counts equal; **every node id has the same outcome in both runs** (`outcomes.jsonl`). One named exception, at the rename commit only: `--expect '<the one-copy probe's node id>:xfailed->passed'` ([[#r4-probe]]) |
 | G6 the dev tree | `scripts/ptest.sh --merge-gate` on the merged dev tree before each phase's merge commit ([[task-29.4-suite-health#r7]]), **with the dev daemon's watcher out**, as step 5 of [[#r9-store-event]] | passes; a red G6 is aborted with the store untouched |
 | G7 parity and censuses | `tests/test_verb_parity.py` (167 tests), `tests/test_bug212_r4_red.py` (the catalog-opener census, 47 tests), `tests/test_docs_generated.py` (7), and this task's own census tests. They are in G5's run too; they are named here because they are the tests a split is most likely to blind (`tests/test_repo_hooks_in_sync.py` runs under G6, in the dev tree) | green, with the same test counts |
 | G8 the tool | `tools/split_module.py --check <parent>` (replay), and `tools/verify_split.py <parent>` (the compiler's symbol tables, independent of the tool's scope analysis) | both exit 0 |
@@ -560,8 +560,11 @@ commit's parent and at the commit, and compared:
     the file. `tools/split_module.py --check` allows exactly that hunk in that commit.
   - At that commit G5 compares against the parent and accepts exactly one outcome change: that
     node id going from xfailed to passed. The failure sets are equal (an xfail is not a
-    failure); the gate script is given the node id and fails on any other change of outcome,
-    in either direction, and on the node id still being xfailed after the commit.
+    failure), so the failure comparison cannot see it. The check is 29.4's outcomes mode:
+    `scripts/ptest.sh --compare --outcomes <parent run> <commit run> --expect '<node id>:xfailed->passed'`.
+    It fails on any other change of outcome, in either direction, on a node id present in one
+    run only, and on the probe still being xfailed after the commit. At every other commit G5
+    runs the same mode with no `--expect`, so no test may change outcome at all.
 - **Tests do not change in a move commit**, except files in the source-reader inventory
   ([[#r0]] item 4), and there only: a path literal, a `module:qualname` key, or a `glob` made
   recursive. `git diff --stat <parent> <commit> -- tests/` is checked against the inventory by
@@ -705,45 +708,60 @@ After the moves, every `src` → `src` use of another module's `_name` is listed
       owner makes the edit in a commit that ships in 29.2 R7's release.
 - **The pass-module rows at `f3709d2`** (`plan29a-r2-xrefs.log`, `plan29a-private-census.log`):
 
-  | Pass module | As | Sites | Names |
-  |---|---|---|---|
-  | `ingest.py` | target | 9 | `_bulk_add_concepts` ×3 (from `ingest_gmd`, `ingest_records`); `_ingest_adr_semantics`, `_ingest_markdown_semantics`, `_ingest_pseudo_semantics`, `_ingest_tldr`, `_is_adr_file`, `_build_python_semantic_record` (from `sync`) |
-  | `ingest_gmd.py` | target | 1 | `_existing_hash_for` (from `sync`) |
-  | `pagerank.py` | target | 3 | `_OPERATIONAL_RE` (from `enrich`, `net`, `ppr`) |
-  | `consolidate.py` | target | 2 | `_OPERATIONAL_RE`, `_memory_rows` (from `brief`) |
-  | `consolidate.py` | user | 4 | takes `scan._PROMPT_STOPWORDS`, `scan._token_shape_score`, `store._CONCEPT_SHIFT`, `store._ENTITY_MASK` |
-  | `pagerank.py` | user | 2 | takes `store._CONCEPT_SHIFT`, `store._ENTITY_MASK` |
-  | `ingest.py` | user | 1 | takes `store._concept_variants` |
+  | Pass module | As | Sites | Names | Owner |
+  |---|---|---|---|---|
+  | `ingest.py` | target | 9 | `_bulk_add_concepts` ×3 (from `ingest_gmd`, `ingest_records`); `_ingest_adr_semantics`, `_ingest_markdown_semantics`, `_ingest_pseudo_semantics`, `_ingest_tldr`, `_is_adr_file`, `_build_python_semantic_record` (from `sync`) | `#c-pass-rows` |
+  | `ingest_gmd.py` | target | 1 | `_existing_hash_for` (from `sync`) | `#c-pass-rows` |
+  | `pagerank.py` | target | 3 | `_OPERATIONAL_RE` (from `enrich`, `net`, `ppr`) | `#c-pass-rows` |
+  | `pagerank.py` | user | 2 | takes `store._CONCEPT_SHIFT`, `store._ENTITY_MASK` | `#c-pass-rows` |
+  | `ingest.py` | user | 1 | takes `store._concept_variants` | `#c-pass-rows` |
+  | `consolidate.py` | target | 2 | `_OPERATIONAL_RE`, `_memory_rows` (from `brief`) | **`#c-pass-rows-held`** |
+  | `consolidate.py` | user | 4 | takes `scan._PROMPT_STOPWORDS`, `scan._token_shape_score`, `store._CONCEPT_SHIFT`, `store._ENTITY_MASK` | **`#c-pass-rows-held`** |
   {#r6-pass-rows}
 
-  22 sites of the 76. ch-bsd r2 counted the 15 where the pass module is the target; the other 7
-  are where it is the user, and a rename edits the importing file as well.
-  - **Owner: `task-29.3-converge-shapes#c-pass-rows`** (its requirement c-R8; branch
-    `spec-plan29b`, `9610369`; ruled by the lead after L108). Every one of the 22 rows names
-    that anchor in the census's allow list. What c-R8 does with a row: the name becomes public
-    (it loses the underscore and gets a docstring), every user takes the public name, no
+  22 sites of the 76: 16 owned by `task-29.3-converge-shapes#c-pass-rows` and the 6 that touch
+  `consolidate.py` by `task-29.3-converge-shapes#c-pass-rows-held`. ch-bsd r2 counted the 15
+  where the pass module is the target; the other 7 are where it is the user, and a rename
+  edits the importing file as well.
+  - **Owner of 16 rows: `task-29.3-converge-shapes#c-pass-rows`** (its requirement c-R8; branch
+    `spec-plan29b`; ruled by the lead after L108). What c-R8 does with a row: the name becomes
+    public (it loses the underscore and gets a docstring), every user takes the public name, no
     private alias is left for the old spelling, and the row is deleted from this census's
     allow list. It re-reads the list at slice c's start commit, so a row this task resolves or
     adds after `75ef65d` is taken as it then stands.
-  - **When those edits ship: deploy B of 29.2 R7's release** (`task-29.2-mypy-gate#r7-release`).
+  - **When those 16 ship: deploy B of 29.2 R7's release** (`task-29.2-mypy-gate#r7-release`).
     That release is one announced window with two deploys. Deploy A is R7 and the rehash op
     (`task-29.2-mypy-gate#r8`) with no pass-file edit, then `rmx derive rehash`. Deploy B is
-    every pass-file edit, these 22 among them. A rename is a real edit: the rehash does not
+    every pass-file edit, these 16 among them. A rename is a real edit: the rehash does not
     convert its stamps, by design.
   - **What clears `behind_code` afterwards is plan-29 D27, decided (a) by the lead** (ruling
     L109; `task-29.2-mypy-gate#d27`): deploy B's closing step re-derives exactly the affected
     passes on every store through the existing `rmx reingest` path, under deploy B's own go.
-    So `ingest`, `semantic`, `gmd`, `sessions`, `pagerank` and the two compile scopes read
-    `behind_code` only inside that release's announced window, never as a fleet state between
-    releases. None of it happens in this task's release, which changes no pass module.
+    So `ingest`, `semantic`, `gmd`, `sessions` and `pagerank` read `behind_code` only inside
+    that release's announced window, never as a fleet state between releases. None of it
+    happens in this task's release, which changes no pass module.
+  - **Owner of the 6 `consolidate.py` rows: `task-29.3-converge-shapes#c-pass-rows-held`**
+    (ch-bsd r3 `#ns3`, decided (a) by ruling L110). They are **not** edited in deploy B. They
+    stay declared on a held list whose trigger is the next release that changes
+    `consolidate.py`'s behaviour, which re-compiles anyway under its own go.
+    - Why: `consolidate.py` is the memory-compile pass's whole module set. An edit there makes
+      both compile scopes read `behind_code`, and what clears that is `rmx memory compile
+      --apply`, which clusters the memory a store holds **now** and prunes by default. That is
+      a content-changing write to every store's memory, to pay for a rename
+      ([[feedback_decay_never_loses_knowledge]]).
+    - So plan-29 does not change `consolidate.py` at all: not here (gate G12), not in deploy B.
+      The compile scopes never flip, and no store's memory is re-clustered or pruned.
+    - The census's allow list keeps those 6 entries, with that owner, after plan-29 ends. The
+      lead adds a deferral-registry row for the held list at the merge.
   - **What this task does for the 7 "user" rows.** Their targets, `store.py` and `scan.py`, are
     not pass modules. In phase 3 this task adds the public name beside the private one there
     (`store.CONCEPT_SHIFT`, `store.ENTITY_MASK`, `store.concept_variants`,
     `scan.PROMPT_STOPWORDS`, `scan.token_shape_score`) and moves every user that is **not** a
     pass module onto it. The pass modules (`consolidate.py`, `pagerank.py`, `ingest.py`) keep
     the private spelling, so their bytes do not change (gate G12), and the rows stay declared.
-    c-R8's edit in each pass module is then the import line only, and 29.3 removes the private
-    spelling once nothing uses it.
+    c-R8's edit in `pagerank.py` and `ingest.py` is then the import line only. `consolidate.py`
+    keeps the private spelling until its held rows are released, so `scan` and `store` keep
+    the four private names it uses until then.
     - A public name is added this way only if the private name is **not** in the patch
       inventory of its module (R0 item 2): a test that rebinds `scan._PROMPT_STOPWORDS` would
       not reach users of an alias bound earlier. None of the five is patched at `f3709d2`. One
@@ -869,14 +887,21 @@ which was a hand-off to nothing (ch-bsd r1 `#b3`).
    spec, and writes the def's home as `` `cli/<module>.py::<def>` `` or
    `` `store_<concern>.py::Store.<method>` ``, the `module.py::symbol` form that
    `docs/architecture/todo.md` G12 already uses.
-   - **Each citation is resolved at the commit that wrote its line, not at the spec's last
-     change.** For each site the tool runs `git blame -L <n>,<n>` on the spec's own line, takes
-     that commit, and finds the def that held line NNNN of the module **at that commit**. Most
-     specs are edited after their citations are written (review folds, freshness passes,
-     amends lines), and `cli.py` moved about 1,200 lines in between; resolving at the spec's
-     last-change sha would name the def at that line when the spec was last touched, a
-     confident wrong answer that the "not guessed" rule never catches (ch-bsd r2 `#ns4`).
-     Whitespace-only rewraps are followed through (`git blame -w`).
+   - **Each citation is resolved at the commit that first wrote it, not at the spec's last
+     change.** For each site the tool finds the **oldest commit that added the exact token**
+     (`git log --reverse --follow -S'cli.py:9818' -- <spec>`, the first hit), and names the def
+     that held line NNNN of the module **at that commit**. Most specs are edited after their
+     citations are written (review folds, freshness passes, amends lines), and `cli.py` moved
+     about 1,200 lines in between; resolving at the spec's last-change sha would name the def
+     at that line when the spec was last touched, a confident wrong answer that the "not
+     guessed" rule never catches (ch-bsd r2 `#ns4`).
+     - **Not `git blame` first.** Blame names the commit that last changed the **line**, and a
+       paragraph reflow moves the token to another line without changing it: blame then names
+       the reflow, which is the same mistake again (ch-bsd r3 `#m2`). `-S` follows the token,
+       not the line. Blame (`-L <n>,<n>`) is only the fallback, for a token `-S` cannot place.
+     - If the token was added more than once (removed and written again, or written twice),
+       the tool resolves it at each adding commit and rewrites only if they all name the same
+       def; otherwise the site is unresolved, with the candidates listed.
    - **A named symbol is checked.** Where the sentence that carries the citation names a
      symbol (``_store_rw` (`cli.py:9818`)``), the resolved def must be that symbol. If it is
      not, the site is **unresolved**, with both names listed.
@@ -1007,14 +1032,20 @@ graph changed. Then:
    overwrites `version` and `derived_at`, writes a history row for a derive that never ran, and
    marks a stamp fresh whether or not it was behind (ch-bsd r2 `#nb2`; ruling L108). It is not
    a re-stamp tool.
-3. **The only tool is 29.2 R7's `rmx derive rehash`** (`task-29.2-mypy-gate#r7`): per stamp it
-   writes the new hash only where the stored hash equals the old scheme's hash of the current
-   files, keeps `version` and `derived_at`, and records a history row of kind `rehash`. It does
-   not exist until R7.
-4. So the lead chooses, with the count in hand: phase 2's release waits for R7's release and
-   the affected stamps are rehashed there; or phase 2 is released and those named stamps read
-   `behind_code` until R7, said in the release note. Either way the choice is announced and
-   user-gated like any store-changing release, and is recorded ([[#ac-17]]).
+3. **The rehash is not the tool either.** 29.2's `rmx derive rehash`
+   (`task-29.2-mypy-gate#r8`) counts a stamp whose pass name has no module set as `unknown` and
+   leaves it untouched (`#r8-rule`). An earlier revision of this step offered to wait for it;
+   that could not have worked (ch-bsd r3 `#m3`; ruling L110).
+4. So the lead chooses, with the count in hand:
+   - **re-derive those passes** on the stores that hold such a stamp, through the existing
+     `rmx reingest` path, announced and user-gated like any store-changing step, so that the
+     stamp is written afresh by a real derive; or
+   - release phase 2 and let those named stamps read `behind_code`, said in the release note.
+
+   R0 item 8 records, for each unmapped pass name, whether this rmx still **runs** a pass of
+   that name. If it does not, a re-derive cannot refresh that stamp, and the report to the lead
+   says so, so that the first option is not chosen for a stamp it cannot reach. The choice is
+   recorded ([[#ac-17]]).
 {#r9-restamp-steps}
 
 ### R10: docs {#r10}
@@ -1080,8 +1111,9 @@ is quoted in the summary. {#r10-body}
   module) is not a derive module and is not required in the tuple. {#ac-5}
 - **AC-6: no private name crosses a module, except where it is declared.** The census passes on
   the tree with an allow list that holds exactly [[#r6]]'s declared rows, each naming an owner
-  that resolves: the three `handoff` names (`task-29.3-converge-shapes#slice-h`) and the rows
-  that touch a derive-pass module (`task-29.3-converge-shapes#c-pass-rows`).
+  that resolves: the three `handoff` names (`task-29.3-converge-shapes#slice-h`), the 16
+  pass-module rows that ship in deploy B (`task-29.3-converge-shapes#c-pass-rows`), and the 6
+  `consolidate.py` rows that are held (`task-29.3-converge-shapes#c-pass-rows-held`).
   It fails on: a synthetic module that imports `_x` from another `refmatrix` module; one that
   reads `other._x` through an alias; one that does it inside a function (a lazy import); an
   allow-list entry whose owner does not resolve; an entry that matches no use. It passes on
@@ -1100,12 +1132,17 @@ is quoted in the summary. {#r10-body}
 - **AC-8: the citation tool is ready, its dry run is recorded, and 29.6 exists to use it.** On a
   fixture repository the tool:
   - rewrites a line cite to the right symbol when the def moved;
-  - **resolves at the commit that wrote the citation's line:** a spec written at commit A cites
+  - **resolves at the commit that first wrote the citation:** a spec written at commit A cites
     `mod.py:10`, where line 10 held `def f` at A; the spec is edited at commit B on a
     **different** line, by which time line 10 holds `def g`; at `HEAD` it holds `def h`. The
     tool writes `::f`. Resolving at the spec's last-change sha would write `::g`, and at `HEAD`
     `::h`; both are wrong, and the fixture fails on either;
+  - **follows a reflow:** at commit C the paragraph is re-wrapped so that the `mod.py:10` token
+    sits on a different line of the spec, unchanged. The tool still writes `::f`. A tool that
+    uses `git blame` on the line would resolve at C and write `::g`;
   - lists as unresolved a citation whose sentence names `f` while the resolved def is `g`;
+  - lists as unresolved a token that was added at two commits where line 10 held different
+    defs;
   - lists a module-level line as unresolved without guessing;
   - lists a qualified-name pin and a non-recursive glob as pins.
 
@@ -1277,7 +1314,7 @@ No spec under `workflow/plans/` is edited by this task: the citation and pin pas
 ## The user's decisions this spec is built to {#user-decisions}
 
 Decided on 2026-11-14: by the user (ruling L106) or, where the row says so, by the lead (rulings
-L107, L108 and L109); all in [[plan-review-2026-11-13#lead]]. The last row is open.
+L107 to L110); all in [[plan-review-2026-11-13#lead]]. The last row is open.
 
 | Label | Decided | What it means here |
 |---|---|---|
@@ -1288,7 +1325,7 @@ L107, L108 and L109); all in [[plan-review-2026-11-13#lead]]. The last row is op
 | `plan-review-fable-memory D2` | 25.1b's `legs_ms` timing pair lands before 29.5 | [[#r0]] item 10: it is on `master` before the window opens |
 | plan-29 D24 (this spec's) | accepted by the lead (ruling L107), recorded in ADR 0006; not put to the user | [[#fact-identity]], [[#ac-4]] |
 | the re-stamp (rulings L107, then L108) | L107 gave each fleet event its own re-stamp. **L108 superseded its 29.5 half:** the store split flips no pass, so this task has no re-stamp unless R0 item 8 counts a stamp under an unmapped pass name, and then never through `stamp_derive` | [[#fact-derive]], [[#r9-restamp]], [[#ac-17]] |
-| plan-29 D27 (29.2's) | (a), by the lead (ruling L109): pass-file edits ship in deploy B of 29.2 R7's release, whose closing step re-derives the affected passes on every store with `rmx reingest`, under its own go | [[#r6]]: the 22 declared pass-module rows are edited there, not here; they read `behind_code` only inside that release's window |
+| plan-29 D27 (29.2's) | (a), by the lead (ruling L109): pass-file edits ship in deploy B of 29.2 R7's release, whose closing step re-derives the affected passes on every store with `rmx reingest`, under its own go. Narrowed by L110: `consolidate.py` is not edited in deploy B | [[#r6]]: 16 declared pass-module rows are edited there, not here; they read `behind_code` only inside that release's window. The 6 `consolidate.py` rows are held; the compile scopes never flip |
 | **plan-29 D23** | **open**; asked at the store event with R0's count in hand; with a zero count it does not arise | [[#r9-store-event]] step 3 |
 {#user-decisions-table}
 
@@ -1482,3 +1519,13 @@ release) and what clears `behind_code` afterwards (plan-29 D27, decided (a): tha
 closing re-derive). This task adds the public names in `store.py` and `scan.py` for the 7
 "user" rows where the private name is not patched. [[#user-decisions]] gains D27's row. No row
 of this task's allow lists is now without an owner. {#rev-note-7-body}
+
+## Revision note 8 (2026-11-14, round 4: ch-bsd r3 and ruling L110) {#rev-note-8}
+
+| Finding | Change here |
+|---|---|
+| M1: G5's "no test's outcome changed" had no data source | gate G5 and [[#r4-probe]] call 29.4's `--compare --outcomes`, with one `--expect` at the rename commit |
+| M2: `git blame` does not follow a reflow | [[#r8]] item 2 and [[#ac-8]]: the oldest commit that added the exact token (`git log -S`), blame as the fallback; a reflow fixture; a twice-added token is unresolved |
+| M3: the unmapped-stamp branch offered a rehash that leaves such stamps untouched | [[#r9-restamp]] steps 3 and 4: "re-derive those passes", and R0 item 8 says whether a pass of that name still runs |
+| NS3, this spec's side: `consolidate.py`'s 6 rows | [[#r6-pass-rows]] (an owner column), [[#r6]], [[#ac-6]]: held by `task-29.3-converge-shapes#c-pass-rows-held`, not edited in deploy B; the other 16 stay with `#c-pass-rows` |
+{#rev-note-8-table}

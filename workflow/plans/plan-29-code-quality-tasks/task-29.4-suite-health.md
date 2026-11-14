@@ -339,7 +339,7 @@ fail, error at teardown, skip unpinned or leak a daemon on purpose. There is no 
   The **serial group** is a named set in `tiering.py` (file + reason). It runs as one extra
   shard after the others finish. It is not a tier.
 - **Every run is a directory of logs:** `workflow/review-output/<RUN>/<tier>-<k>.log` (the
-  shard's full output), `failures.jsonl`, and `summary.txt`. `summary.txt` has one line per
+  shard's full output), `failures.jsonl`, `outcomes.jsonl`, and `summary.txt`. `summary.txt` has one line per
   shard (command, exit code, collected, passed / failed / errors / skipped, wall seconds, sandbox
   root), the totals, the sha, the load average at start and end, and the checkout kind
   (`owning` or `clone`).
@@ -348,6 +348,20 @@ fail, error at teardown, skip unpinned or leak a daemon on purpose. There is no 
   errored** phase: node id, phase (`setup` / `call` / `teardown`), and the first `E` line. A
   teardown error is a failure here ([[feedback_review_clones_cannot_see_dev_tree_failures]]:
   "read every ERROR as well as every FAILED"). SkipGate and reaper findings are records too.
+- **`outcomes.jsonl` is written for every run, by the same hook.** One record per test node and
+  phase that produced a report: node id, phase, and outcome, one of `passed`, `failed`,
+  `error`, `skipped`, `xfailed`, `xpassed`. The runner always sets `RMX_OUTCOMES_OUT`; each shard
+  writes its own file and the runner concatenates them. `failures.jsonl` records what went
+  wrong; `outcomes.jsonl` records what every test did, which is the only way to tell that a
+  test that was expected to fail now passes, or that a test stopped running.
+- **`scripts/ptest.sh --compare --outcomes RUN_A RUN_B [--expect '<node id>:<from>-><to>' …]`**
+  exits 0 only if every node id has the same outcome, phase by phase, in both runs, apart from
+  the `--expect` entries. Each expected change must hold exactly: that node id had `<from>` in
+  A and has `<to>` in B. It fails, naming the node id, on: any other change of outcome, in
+  either direction; a node id present in one run only; an `--expect` whose node id did not
+  change as stated. 29.5's gate G5 runs this mode after the failure comparison, at every
+  commit, with one `--expect` at its rename commit
+  ([[task-29.5-split-giant-modules#r4-probe]]).
 - **`scripts/ptest.sh --compare RUN_A RUN_B`** exits 0 only if the two runs have the same set of
   (node id, phase, normalised E line). Normalisation replaces sandbox roots, `/tmp` random
   segments, pids, hex addresses and decimal seconds with placeholders, and nothing else. The
@@ -734,9 +748,20 @@ to rework the sandbox, so it settles them:
   shard that exits non-zero makes the run exit non-zero; a tier that did not run is named on the
   last line. Tested on a fixture suite of four tiny test files in a tmp tree, including one
   that fails, one that errors at teardown and one that skips unpinned. {#ac-2}
-- **AC-3: `--compare` is exact.** Two fixture runs that differ only in a sandbox path, a pid and
-  a duration compare equal. Two that differ in one E line, in one node id, or in one phase
-  (`call` against `teardown`) compare unequal, and the output names the difference. {#ac-3}
+- **AC-3: `--compare` is exact, in both modes.**
+  - **Failures:** two fixture runs that differ only in a sandbox path, a pid and a duration
+    compare equal. Two that differ in one E line, in one node id, or in one phase (`call`
+    against `teardown`) compare unequal, and the output names the difference.
+  - **Outcomes:** `outcomes.jsonl` of a fixture run holds one record per node and phase, with
+    each of the six outcomes present in the fixture (a pass, a failure, a teardown error, a
+    skip, a strict xfail, an xpass). `--compare --outcomes`:
+    - equal runs compare equal;
+    - a test that went `xfailed` → `passed` compares **unequal** with no `--expect`, and equal
+      with `--expect '<that node id>:xfailed->passed'`;
+    - with that `--expect` given, it still fails when a second test changed outcome, when the
+      named test is still `xfailed` in B, and when the named test was not `xfailed` in A;
+    - a node id missing from B (a test that stopped running) fails.
+  {#ac-3}
 - **AC-4: no new wall-clock bound.** The census passes on the tree and **fails** on synthetic
   sources holding: `assert time.monotonic() - t0 < 2.0`; `assert elapsed < 2.0` where `elapsed`
   came from a clock difference; `assert took < LIMIT`; `assert 0.5 < wall < 3.0`. It passes on
@@ -879,7 +904,10 @@ to rework the sandbox, so it settles them:
   22. the reaper prints `root=` from a sandbox pid file only (AC-5's out-of-sandbox fixture
       prints `unknown`, so the test is red);
   23. for `arg:`, the census accepts any call that names the parameter, literal or not (AC-11's
-      variable case passes, so the test is red).
+      variable case passes, so the test is red);
+  24. the hook does not record `xfailed` or `xpassed` (they are written as `passed`; AC-3's
+      xfail case compares equal with no `--expect`, so the test is red);
+  25. `--compare --outcomes` ignores a node id that is missing from one run (AC-3).
 - **T0's sub-tasks carry their own mutations** (M1.x to M7.x in T0's text). They are not
   repeated here.
 - **All output to files.** Every run in this task goes through the runner or through
@@ -919,9 +947,9 @@ table is what this spec adds.
 |---|---|
 | `tests/tiering.py` | new: `tier_of`, the signal table, `DEVTREE_FILES`, `ALWAYS_FILES`, the serial group |
 | `tests/timing.py` | new: `HANG_GUARD_S`, the wait-for-outcome helper, and `with_budget` |
-| `tests/conftest.py` | run-tier markers; `failures.jsonl` records; reaper hooks at session start and finish; the `Daemon` instance registry |
+| `tests/conftest.py` | run-tier markers; `failures.jsonl` and `outcomes.jsonl` records; reaper hooks at session start and finish; the `Daemon` instance registry |
 | `tests/sandbox_site/rmx_sandbox.py` | the ledger (exec and fork), `owner.json`, `short_root`, `register_spawn`, `sweep_orphans`, the reaper |
-| `scripts/ptest.sh`, `scripts/ptest.py` | the runner: tiers, shards, `--files`, `--compare`, `--merge-gate`; `--family` in 29.4f |
+| `scripts/ptest.sh`, `scripts/ptest.py` | the runner: tiers, shards, `--files`, `--compare` (failures and `--outcomes`), `--merge-gate`; `--family` in 29.4f |
 | `tests/shard_weights.json`, `tests/wallclock_allow.json`, `tests/tmp_root_allow.json` | new: measured weights and the two shrinking lists |
 | `tests/test_suite_tiers.py`, `tests/test_ptest_runner.py`, `tests/test_wallclock_census.py`, `tests/test_budget_outcome_census.py`, `tests/test_tmp_root_census.py`, `tests/test_daemon_reaper.py` | new |
 | `tests/test_family_derivation.py` | new, in 29.4f |
@@ -1064,3 +1092,9 @@ L105 decided it:
 - **M8:** the earlier revision note said "4 files" for the pure lower bounds; the table's 3 is
   right, and the note now agrees.
 {#rev-note-3-list}
+
+## Revision note 4 (2026-11-14, round 4: ch-bsd r3 and ruling L110) {#rev-note-4}
+
+M1: the runner writes `outcomes.jsonl` for every run, and `--compare --outcomes` with `--expect`
+compares per-node outcomes ([[#r2-list]], [[#ac-3]], two mutations). 29.5's gate G5 could not be
+computed from failure sets alone. {#rev-note-4-body}

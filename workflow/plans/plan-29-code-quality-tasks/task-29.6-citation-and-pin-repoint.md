@@ -125,16 +125,24 @@ For every spec under `workflow/plans/` whose `metadata.status` is not completed,
 
 - `cli.py:NNNN` and `store.py:NNNN` are rewritten by the tool to the def's home at the base sha,
   in the form `` `cli/<module>.py::<def>` `` or `` `store_<concern>.py::Store.<method>` ``.
-- **The line is resolved at the commit that wrote the citation, not at the spec's last change
-  and not at `HEAD`.** For each site the tool runs `git blame -L <n>,<n>` on the spec's own line
-  (following whitespace-only rewraps, `-w`), takes that commit, and names the def that held
-  line NNNN of the module **at that commit** ([[feedback_read_identifiers_at_write_time]]).
+- **The line is resolved at the commit that first wrote the citation, not at the spec's last
+  change and not at `HEAD`.** For each site the tool finds the **oldest commit that added the
+  exact token** (`git log --reverse --follow -S'<token>' -- <spec>`, the first hit) and names
+  the def that held line NNNN of the module **at that commit**
+  ([[feedback_read_identifiers_at_write_time]]).
   - Why not the spec's last-change sha: most specs are edited after their citations are
     written. Review folds, freshness passes, 29.1's amends lines and this task's own track
     commits all touch a spec without re-reading its citations, and `cli.py` moved about 1,200
     lines between `1cf3b9f` and `master`. A citation resolved at the last-change sha names the
     def that sat at that line when the spec was last touched: wrong, with nothing to show it
     (ch-bsd r2 `#ns4`).
+  - Why not `git blame` on the line: a paragraph reflow moves the token to another line
+    without changing it, and blame then names the reflow commit, which is the same mistake
+    (ch-bsd r3 `#m2`). `-S` follows the token. Blame (`-L <n>,<n>`) is the fallback only, for a
+    token `-S` cannot place.
+  - A token added at more than one commit (removed and written again, or written twice) is
+    resolved at each; it is rewritten only if they all name the same def, and listed as
+    unresolved otherwise.
   - **A named symbol is checked.** Where the sentence that carries the citation names a symbol,
     the resolved def must be that symbol. A mismatch is listed as **unresolved**, with both
     names; it is not rewritten.
@@ -251,16 +259,22 @@ sentence. Nothing else in the templates changes.
   check is over all of them. {#ac-2}
 - **AC-3: the line was read at the right commit.** On a fixture repository: a spec is written at
   commit A citing `mod.py:10`, where line 10 holds `def f`. At commit B the spec is edited on a
-  **different** line, and by B line 10 of `mod.py` holds `def g`. At `HEAD` it holds `def h`.
+  **different** line, and by B line 10 of `mod.py` holds `def g`. At commit C the citation's
+  paragraph is **reflowed**, so the unchanged token `mod.py:10` now sits on another line of the
+  spec. At `HEAD` line 10 holds `def h`.
   - the tool writes `::f`;
-  - a tool that resolves at the spec's last-change sha would write `::g`, and one that resolves
-    at `HEAD` would write `::h`: the fixture fails on either;
+  - a tool that resolves at the spec's last-change sha, or by `git blame` on the line, would
+    resolve at C and write `::g`; one that resolves at `HEAD` would write `::h`: the fixture
+    fails on each;
   - a second citation whose sentence names `f` while its line resolves to `g` is listed as
-    unresolved and is not rewritten.
+    unresolved and is not rewritten;
+  - a third citation whose token was added at two commits where line 10 held different defs
+    is listed as unresolved, with both.
 
   29.5 tests the tool on the same fixture ([[task-29.5-split-giant-modules#ac-8]]). This AC is
   also that the pass was **run** that way: the summary's per-site table gives, for every
-  citation, the commit it was resolved at. {#ac-3}
+  citation, the commit it was resolved at and how it was found (`-S` or the blame fallback).
+  {#ac-3}
 - **AC-4: every pin is rewritten and checked.** Each row of [[#baseline-pins]], and each pin R0
   found beyond it, has a row in the summary: the old text, the new text, the owner, the date,
   and one of the three outcomes of [[#r2]] item 4. No row is blank. {#ac-4}
@@ -299,7 +313,8 @@ sentence. Nothing else in the templates changes.
   6. `--verify-map` passes a row whose symbol is missing;
   7. the tool resolves a citation at the spec's last-change sha (AC-3's fixture writes `::g`);
   8. the tool does not compare a named symbol with the resolved def (AC-3's mismatch case is
-     rewritten).
+     rewritten);
+  9. the tool uses `git blame` on the line first (AC-3's reflow makes it write `::g`).
 - **All output to files**, under `workflow/review-output/task-29.6/`.
 {#test-strategy-list}
 
@@ -353,8 +368,11 @@ No file under `src/` changes. {#files-no-src}
 
 ## Revision note (2026-11-14, round 3: ch-bsd r2 and ruling L108) {#rev-note}
 
-- **NS4:** a citation is resolved at the commit that wrote its line (`git blame -L`), and a
-  named symbol is checked against the resolved def ([[#r1]], [[#ac-3]], two mutations).
+- **NS4:** a citation is resolved at the commit that first wrote it, and a named symbol is
+  checked against the resolved def ([[#r1]], [[#ac-3]]). Round 4 (ch-bsd r3 `#m2`, ruling L110):
+  that commit is the oldest one that added the exact token (`git log -S`), with `git blame` as
+  the fallback only, because blame does not follow a reflow; AC-3 has a reflow fixture and a
+  twice-added token; three mutations.
 - **M8:** plan-29 D25's count is 192 on `master` at `f3709d2`, with the method stated; 209 is
   the queue review's count over the spec-branch copies ([[#baseline-table]], [[#decisions]]).
 {#rev-note-list}
