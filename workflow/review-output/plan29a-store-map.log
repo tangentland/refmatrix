@@ -1,0 +1,72 @@
+methods: 191 | mapped names not in Store: [] | mapped twice: []
+module            lines  methods
+store (core)       2328       31
+store_entities     1106       31
+store_links         905       23
+store_memory        877       23
+store_replay        741        6
+store_removal       652       13
+store_rank          641       11
+store_derive        540       14
+store_fragments     526       19
+store_partition     522        5
+store_vectors       408       15
+sum 9246 of 9246 | lines before the class: 1278
+core keeps: __init__:123, _fragment_binding:6, _fragments:4, _dirty_fragments:4, _dirty_bindings:3, _clear_fragment_caches:4, has_dirty_fragments:5, dirty_fragment_count:3, partition_name:4, partition_id:7, _partition_fragments_dir:3, log_path:4, _log_event:16, _log_events:19, _names_of:20, init:37, _active_slot_path:17, _connect:139, _migrate_to_partitions_if_needed:100, _migrate_entities_kind_check_if_needed:113, with_partition:52, _ensure_partition:50, _migrate_fragments_to_partitions_if_needed:20, _migrate_legacy_bitmaps_if_needed:48, _read:18, close:27, rebuild_entities_indexes:97, repair_entity_links_index:25, _maybe_commit:12, transaction:43, _has_table:16
+
+## (class header, __init__): L1279-1505 (227 lines, 15 methods)
+   __init__:123, _fragment_binding:5, _fragments:2, _dirty_fragments:2, _dirty_bindings:2, _clear_fragment_caches:3, has_dirty_fragments:4, dirty_fragment_count:2, partition_name:2, partition_id:5, _partition_fragments_dir:2, log_path:2, _log_event:15, _log_events:18, _names_of:19
+
+## lifecycle: L1506-2559 (1054 lines, 14 methods)
+   init:34, _active_slot_path:16, _connect:138, _migrate_to_partitions_if_needed:99, _migrate_entities_kind_check_if_needed:112, rename_partition:48, _merge_pending_refs:40, merge_partition:342, with_partition:51, _ensure_partition:49, _migrate_fragments_to_partitions_if_needed:19, _migrate_legacy_bitmaps_if_needed:47, _read:17, close:26
+
+## entities / concepts: L2560-2784 (225 lines, 3 methods)
+   upsert_entity:64, bulk_upsert_entity:134, add_concept:22
+
+## intuition memory layer (ADR0001, Phase B): L2785-3098 (314 lines, 8 methods)
+   add_memory:74, refresh_memory_source_path:51, get_memory:45, item_meta:20, find_memory_any_partition:24, _tag_filter_sql:13, iter_memories:37, search_memories:39
+
+## subjects (durable face of an STM partition; ADR0002): L3099-3883 (785 lines, 21 methods)
+   upsert_subject:24, link_part_of:6, list_subjects:37, subject_leaves:27, recent_memories:42, forget_memory:17, _memory_entity_id:18, memory_facets:27, reclassify_memories:50, retag_memory:35, bulk_forget_memories:101, reinforcement_score:13, reinforcement_scores:11, reinforcement_components:10, get_entity:9, get_entity_by_id:10, resolve_entity:13, resolve_concept_ids:37, grep_evidence:177, resolve_concept_ids_many:44, same_as_audit:55
+
+## dense vector wrappers (Lancebacked): L3884-4482 (599 lines, 21 methods)
+   _vector_store:31, upsert_vector:32, ann_search:24, read_vectors:21, gc_vectors:71, drop_vectors:17, _lance_for_purge:23, _note_vector_delete_failure:15, _drop_lance_for_purge:29, _drop_lance_for_purge_batch:10, drop_vector_rows:16, _delete_vector_groups:29, _pending_embeddings_where:24, pending_embeddings:25, pending_embeddings_count:18, rebuild_entities_indexes:96, repair_entity_links_index:24, _backfill_canonical_name_if_needed:32, iter_entities:12, _name_of:8, _row_to_entity:12
+
+## linkage types: L4483-4640 (158 lines, 7 methods)
+   add_linkage_type:20, get_linkage_id:9, list_linkages:6, merge_verb_alias:61, _read_legacy_fragment_raw:18, _drop_legacy_fragment_raw:13, _merge_fragment_all_partitions:22
+
+## bitmaps (Pilosastyle fragments): L4641-6134 (1494 lines, 36 methods)
+   _fragment_path:2, _load_fragment:27, _read_raw_blob:11, flush_fragments:25, _flush_current_binding:24, _flush_fragments_duckdb:28, _read_all_fragment_rows:26, _write_all_fragment_rows:26, repair_fragments:152, _pack:2, load_bitmap:18, save_bitmap:12, _maybe_commit:11, transaction:42, deferred_links:45, link:51, unlink:27, derive_called_by:50, bulk_link:106, link_many:47, weighted_link:9, get_weight:10, top_weighted:20, _mentions_bm25_stats:19, _namespaced_leaf_index:27, _mentions_doclen:30, concept_df:26, code_fraction:26, mentions_tf_tail:33, _invalidate_content_rank_caches:9, _document_priors:58, _null_tf:3, _tf_transform:33, content_rank:366, add_evidence:30, clear_rel_evidence:24
+
+## pending `rel:` references (bug216 R10): L6135-6223 (89 lines, 6 methods)
+   add_pending_ref:23, _log_pending:14, clear_pending_refs_for_file:14, pending_refs_for:13, delete_pending_ref:14, entity_exists:3
+
+## `denotes`: pathless concept > the doc / memory it names (bug216 R7): L6224-6691 (468 lines, 9 methods)
+   _denotes_lid:5, denotes_equivalents:34, link_denotes:121, get_evidence:19, explain_entity:24, find_describe_targets:57, describe_entity:177, add_namespaced_concept:10, list_concepts_in_namespace:10
+
+## canon (crosspartition concept matching): L6692-6780 (89 lines, 2 methods)
+   link_canon:41, siblings_via_canon:44
+
+## purge / track files: L6781-7901 (1121 lines, 24 methods)
+   purge_entity:103, fold_concept_dups:96, purge_path:45, _memory_owned_anchor_ids:60, find_entity_ids:34, set_entity_flag:26, set_flag_by_selector:7, forget_by_selector:20, _clear_purged_bits:47, _bulk_purge_ids:58, mark_tracked:12, bulk_mark_tracked:29, get_tracked_mtime:10, list_tracked:8, stamp_derive:42, unstamp_derive:17, _has_table:15, derive_counts:45, derive_history:38, _write_derive_history:31, derive_status:165, _memory_compile_status:75, clear_tracked_stamps:45, _clear_gmd_content_hashes:51
+
+## coref sidecar + pair index: L7902-8139 (238 lines, 6 methods)
+   save_coref:30, load_coref:11, compile_pairs:68, link_cross_doc_coref:90, pair_docs:7, stale_files:24
+
+## vacuum: L8140-8302 (163 lines, 4 methods)
+   untrack_by_path:60, _entities_for_paths:17, _purge_paths:20, vacuum:60
+
+## noise pruning: L8303-8414 (112 lines, 3 methods)
+   prune_noise:90, is_noise:6, noise_concept_ids:11
+
+## sync log: L8415-8444 (30 lines, 2 methods)
+   append_sync_log:7, iter_concept_ids_for_linkage:19
+
+## saved queries: L8445-8473 (29 lines, 3 methods)
+   save_query:9, get_saved_query:6, list_saved_queries:9
+
+## stats: L8474-8506 (33 lines, 1 methods)
+   stats:30
+
+## log dump / rebuild: L8507-9246 (740 lines, 6 methods)
+   dump_catalog_to_log:190, apply_log_delta:68, _apply_one_event:9, _replay_concept:16, _apply_event_body:105, rebuild_index_from_log:345

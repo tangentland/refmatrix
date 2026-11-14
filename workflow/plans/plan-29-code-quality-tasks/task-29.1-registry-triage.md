@@ -20,6 +20,10 @@ metadata:
 > has to name a task spec that exists on `master`, and several owners (the T0 sweep spec, the
 > 25.1b and 16.5 revisions) arrive with those merges.
 > Runs first in plan-29's order: 29.1 → 29.4 → 29.5 → 29.2 ∥ 29.3 ([[plan-29-code-quality#order]]).
+> Closes: bug-239 ([[#r6]]).
+> Other documents are cited as in [[task-29.4-suite-health#citing]]: **T0**, the **queue**,
+> **store** and **memory reviews**, and the sibling specs `task-29.2-mypy-gate` and
+> `task-29.3-converge-shapes` are not on this spec's branch, so their ids are written as code.
 
 rel: part-of -> [[plan-29-code-quality]]
 rel: implements -> [[plan-29-code-quality#t1]]
@@ -62,6 +66,11 @@ the numbers below. The second run's output, with every not-fixed row's id, line 
 | ... `suspected` | 1 (218) |
 | malformed rows (≠ 8 cells) | 3: bug-081 has 10 cells (a stray `\|` outside a code span); bug-085 and bug-088 have 7 (no `Seen` cell) |
 {#baseline-table}
+
+One more row exists and is not counted: **bug-241** (bug-216's AC-6 fails on the live store)
+is logged only in the clone `/Volumes/littlebig/refmatrix-bug241` (`78c0c11`), not on `master`
+(queue review `#b4`). When it lands the totals are 239 and 82. Step 0 of [[#r2]] re-counts.
+{#baseline-bug241}
 
 "Not fixed" here means the status cell does not start with `fixed`, `closed`, `wontfix`,
 `not a bug`, `superseded` or `remedied`. That is the lead's definition. The checker in
@@ -160,7 +169,10 @@ There is one script, `scripts/check-bug-registry.py`, with no third-party import
   status found (for example `bug-123: status "open" is not in the grammar`). It never stops at the
   first failure.
 - `scheduled → <target>` is resolved against the frontmatter ids of `workflow/plans/**/*.md`. An
-  unresolved target fails, and the line names the target.
+  unresolved target fails, and the line names the target. So does a target whose
+  `metadata.status` is `completed`: a finished task cannot be what will fix an open bug. (This
+  also catches stale frontmatter: 25.1, 26.1, bug-178 and bug-216 have shipped and still read
+  `pending` or `approved`. Correcting those is the lead's bookkeeping, before this task.)
 - `closed:` shape (a) runs `git merge-base --is-ancestor <sha> HEAD`, with a timeout. A git failure
   is reported as `could not verify`, and the checker then exits non-zero. It never treats a git
   error as "not found" (the bug-225 r3 lesson). Exit 1 with empty stderr is the only "not an
@@ -183,6 +195,33 @@ There is one script, `scripts/check-bug-registry.py`, with no third-party import
 - `./scripts/lint-gmd.sh` gains no new step. The checker runs as a pytest test ([[#ac-4]]), so the
   suite gates it, and `CLAUDE.md#before-commit` names the script once.
 
+### R6: the suite figures that nothing updates (bug-239) {#r6}
+
+Three documents state a suite size or time by hand, and all three are wrong against the 0.83.0
+release log (4,883 tests, 58 min 37 s):
+- `README.md` (about line 434): "1361 tests" (bug-239's row);
+- `CLAUDE.md` (`#development-commands`): "Full suite (~13 min)";
+- `.claude/PROJECT_PROFILE.md` (`#layout`): "~1380 tests, ~13 min full run".
+
+The README's number is removed: it names the command that prints the count. The two
+instruction files get the measured figures with their date and their source log. 29.4 updates
+them once more when it has its own ([[task-29.4-suite-health#r8]]). bug-239 closes on this, by
+shape (a). The queue review placed this here and not in 29.4 because it is docs-only and
+wrong today. {#r6-body}
+
+### R7: how the work is committed {#r7}
+
+- **Few commits, in a clone.** `workflow/bug_registry.md` is one of the large GMD files whose
+  post-commit re-ingest holds the store lock in the dev tree (bug-177's row, "seen again
+  2026-11-10"). The triage is done in a littlebig clone and reaches the dev tree as one merge:
+  one commit for the checker and its tests, one for the registry's status cells and repaired
+  rows, one for the docs.
+- **After the spec merges.** A `scheduled` row has to name a spec that exists on `master`, and
+  T0, 25.1b, bug-218 and plan-28 exist only on the frozen branches today.
+- **No install window.** Nothing here may make `rmx install-hooks --check` report drift (T0's
+  R0.7, asked of all five plan-29 tasks). This task touches no hook generator.
+{#r7-list}
+
 ## Starting map (recorded owners at `f3709d2`) {#starting-map}
 
 This table is the triage's input, not its result. It groups the 81 rows by the owner already
@@ -198,8 +237,8 @@ recorded for them. Step 2 of [[#r2]] confirms each one. "Closed?" rows are check
 | T3: 19.0 (100, 103, 104); 25.1b (182 R15 per L44; 224 per L68); backlog 165, 166 (L43) | 100, 103, 104, 165, 166, 182, 224 | 7 |
 | T4: bug-185 (+186), 23.x (099, 106, 136, 177), 16.6 slice (120), plan-18 18.3 R8 (123, named in its own row); backlog 097, 207 | 097, 099, 106, 120, 123, 136, 177, 185, 186, 207 | 10 |
 | T5: 16.5 (081, 102, 167, 174 closed by 16.5; 222 = 16.5 R2 per L48); backlog 180 | 081, 102, 167, 174, 180, 222 | 6 |
-| T6: 218, 219, 086, 107; backlog 119, 121, 124 | 086, 107, 119, 121, 124, 218, 219 | 7 |
-| plan-29 ([[plan-29-code-quality#tasks]]): 29.4 (228, 229, 231; 239 the README suite count); 29.3 (223 broad except, 233 git runner, 234/236/238 query terms); 29.2 (235) | 223, 228, 229, 231, 233, 234, 235, 236, 238, 239 | 10 |
+| T6: 218 (+223, the broad except the bug-218 spec owns), 219, 086, 107; backlog 119, 121, 124 | 086, 107, 119, 121, 124, 218, 219, 223 | 8 |
+| plan-29: 29.4 (228, 229, 231); `task-29.3-converge-shapes` (233 slice a; 234, 236, 238 slice b); `task-29.2-mypy-gate` (235); this task (239) | 228, 229, 231, 233, 234, 235, 236, 238, 239 | 9 |
 | row says the fix landed or is due: closed? | 085 (split, R2.6), 087, 188 (3.7 merged), 189 (3.7 merged), 209 ("0.83.0 must land this") | 5 |
 | **no recorded owner: triage decides** | 055, 075, 089, 096, 125, 151, 152, 153, 154, 161, 169, 194, 201, 203, 221, 226, 232, 237, 240 | 19 |
 | **total** | | **81** |
@@ -227,6 +266,47 @@ Suggestions for the 19 unowned rows. They are not decisions; step 3 of [[#r2]] m
   date if not.
 {#starting-map-hints}
 
+These hints were written before the reviews. Where [[#homes]] differs, [[#homes]] is the later
+and better-sourced input. {#starting-map-hints-superseded}
+
+### Homes proposed since: three reviews and two sibling specs {#homes}
+
+After the first draft, three plan reviews and the 29.2 / 29.3 specs each proposed owners. They
+are inputs to step 2 and step 3 of [[#r2]], with one rule: **a row is `scheduled` to a spec
+only if that spec's own text takes the row** (a requirement or an AC names the bug). A review
+that suggests a home has not made one.
+
+| Rows | Proposed home | Proposed by | For the triage |
+|---|---|---|---|
+| 240, 241 | one hotfix branch, released as 0.83.1 before 29.5 | queue review `#b4` | `scheduled` when that task has a spec; until then `deferred: owner 0.83.1 hotfix has no spec yet; review <date>`. 240 is a silent failure on an ingest path and does not go to the backlog |
+| 235 | `task-29.2-mypy-gate` (R4, AC-6) | that spec | `scheduled`, `P29` |
+| 233 | `task-29.3-converge-shapes`, slice a (a-R5, AC-a7) | that spec | `scheduled`, `P29` |
+| 234, 236, 238 | `task-29.3-converge-shapes`, slice b | that spec | `scheduled`, `P29` |
+| 232 | 29.3 slice f (that spec); the linked read-only store, with bug-125 (queue review `#dup-2`); 17.4's promote guard needs it (store review) | three claimants | 29.3 slice f takes it in its text, so it is the owner. The other two are notes on the row |
+| 237 | 29.3's query half | queue review `#dup-3`; **not taken** by 29.3's spec | no owner yet: `deferred`, with the review's suggestion in the note, unless 29.3 is revised to take it |
+| 096, 201, 188 | 29.3 (096 and 201 as silent or incorrect outcomes; 188 as a fourth shape, `envknob`) | queue review `#dup-3`; not taken by 29.3's spec | as 237 |
+| 223 | the bug-218 spec (it owns that broad except); 29.3's census allow-lists it by task id | queue review `#p29-4` | `scheduled` to the bug-218 spec, `T6` |
+| 164, 181 | already shipped by 25.1 (`VerbUnknownProjectError` is in `verbs.py` and `mcp.py`) | queue review `#st-5`, memory review | `closed`, shape (a) of [[#r3]], if the sha and the test check out |
+| 085, 087 | "fix on branch (undeployed)" since October | queue review `#st-5` | shape (a), or back to an owner; 085 is split first ([[#r2]] step 6) |
+| 100 | 19.0 R5 (L41) | memory review | `scheduled`, `T3` |
+| 165, 166 | 25.2, 25.3 (memory review); "only if L43 fires" (store review) | two readings | step 1 reads L43 and both specs; the row follows the spec's text |
+| 169 | a rider on 25.1b's install window | queue and memory reviews | `scheduled` only if 25.1b is revised to carry it; else `deferred` naming that window |
+| 194, 226 | 23.5 (`_raise_for_answer`; a second AC beside the bug-136 rider) | store review | `T4`, if 23.5's revision takes them |
+| 203 | 22.6 R4 | store review | `T6`, on the same condition |
+| 207; 210 item 3 | 23.3 `#r3` | store review | `T4`; bug-210 is split if only item 3 moves ([[#r2]] step 6) |
+| 097; 161 | before 17.4 step 7; before 17.2 adds a hub thread | store review; the queue review puts 161 under "deferred with a date" | two readings: the row follows the spec that takes it, else `deferred` |
+| 119; 124 | 16.6 and 23.5 R5; 16.6 R1c | store review; the queue review puts 124 under "deferred with a date" | as above |
+| 123 | 18.3 R8 "on paper only" (R8 says behaviour is unchanged and has no AC), or 29.3 | store review | not `scheduled` to 18.3 until R8 has an AC for it |
+| 151-154 | a deferral row: operator path, no consumer | queue review | `deferred`, and a row in `workflow/deferral_registry.md` |
+| 055, 075, 089, 189 | deferred with a date | queue review | `deferred` |
+| 209 | recurring; plan-27 depends on it | memory review | `recurring; scheduled → …` if plan-27's spec takes it, else `recurring; deferred: …` |
+| 215, 170, 168, 127, 130, 190, 091, 196 | T0, which is now 29.4's body ([[task-29.4-suite-health#fold]]) | queue review `#b3` | `scheduled → task-t0-suite-trust-sweep (T0)`: the requirement is in T0's text |
+| 239, and the stale suite figures | this task | queue review `#dup-3` | [[#r6]] |
+{#homes-table}
+
+Where two reviews disagree (124, 161, 165, 166, 232) the table says so and does not pick. The
+triage picks by the rule above and records the loser as a note on the row. {#homes-conflicts}
+
 ## Acceptance criteria {#acceptance}
 
 - **AC-1: no bare `open`.** `scripts/check-bug-registry.py` exits 0 on the triaged registry.
@@ -245,7 +325,8 @@ Suggestions for the 19 unowned rows. They are not decisions; step 3 of [[#r2]] m
   - the real registry, which must exit 0;
   - a must-fail fixture registry (`tests/fixtures/bug_registry_mustfail.md`) holding one row per
     failure class: a bare `open`; `recurring` alone; `suspected`; `scheduled → task-does-not-exist`;
-    `deferred:` with no review date; `closed: fixed <sha not in history>`;
+    `scheduled →` a task whose status is `completed`; `deferred:` with no review date;
+    `closed: fixed <sha not in history>`;
     `closed: not reproduced …` on a row tagged `flaky`; a 7-cell row; a 10-cell row.
 
   The test asserts exit 1 and that EACH class is named in the output. A checker that stops at the
@@ -306,13 +387,15 @@ requires. {#test-strategy-body}
 | `tests/test_bug_registry_triage.py` | new: the real-registry case, the must-fail fixture, the history check |
 | `tests/fixtures/bug_registry_mustfail.md` | new: one row per failure class |
 | `.claude/rules/bug-registry.md` | new-bug status rule ([[#r5]]) |
-| `CLAUDE.md` | `#before-commit` names the checker; `#cleanup-phase` runs `--overdue` |
+| `CLAUDE.md` | `#before-commit` names the checker; `#cleanup-phase` runs `--overdue`; the suite figure ([[#r6]]) |
+| `README.md`, `.claude/PROJECT_PROFILE.md` | the suite figures ([[#r6]]) |
+| `workflow/deferral_registry.md` | a row for 151-154 if the triage defers them as the queue review proposes |
 | `workflow/implementation_summaries/task-29.1-registry-triage.md` | new: the triage table and counts |
 | `workflow/plans/task-t0-suite-trust-sweep.md` | one amends line: `open / diagnosed-loud` reads as [[#r1-other-writers]] says (after that spec's branch has merged) |
 {#files-table}
 
-`CLAUDE.md` and `.claude/rules/bug-registry.md` are instruction files. Their two edits are part
-of what the user approves with this plan; the implementer makes exactly the edits named here and
+`CLAUDE.md`, `.claude/PROJECT_PROFILE.md` and `.claude/rules/bug-registry.md` are instruction
+files. Their edits are part of what the user approves with this plan; the implementer makes exactly the edits named here and
 quotes the diff in the summary. {#files-instruction-note}
 
 ## Out of scope {#out-of-scope}
@@ -354,3 +437,10 @@ and for the 19 unowned rows against every file under `workflow/plans/`. Changed:
 longer depends on a parent commit inside the suite; [[#r1-other-writers]] and step 0 of [[#r2]]
 are new; the review-date bound is relative, not a fixed date; hints for 055, 075, 096, 201 and
 240 were added; plan-29 D9 records a choice the draft made without naming it. {#rev-note-body}
+
+## Revision note 2 (2026-11-14) {#rev-note-2}
+
+Revised the same day for the three plan reviews and for the sibling specs. Added: the homes
+table ([[#homes]]) and its rule; bug-241 beside the count; bug-223 moved from 29.3 to the
+bug-218 spec; bug-239 and the stale suite figures taken into this task ([[#r6]]); the commit
+shape ([[#r7]]); a `scheduled` target that is `completed` fails the checker. {#rev-note-2-body}

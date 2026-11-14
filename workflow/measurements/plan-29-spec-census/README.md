@@ -38,6 +38,8 @@ From a scratch directory (several scripts write a `.json` beside them for the ne
 | `click_tree.py` | `$R` (run with `PYTHONPATH=$R/src` and the dev interpreter) | `plan29a-click-tree.log`; writes `clicktree.json` | 29.5 |
 | `cli_map.py` | `$R` (needs `clicktree.json`) | `plan29a-cli-map.log`; writes `cli_assign.json` | 29.5 |
 | `store_census.py` | `$R` | `plan29a-store-census.log` | 29.5 |
+| `store_sections.py` | `$R` | `plan29a-store-map.log` (second part): methods per section banner | 29.5 |
+| `store_map.py` | `$R` | `plan29a-store-map.log` (first part): the by-method concern map | 29.5 |
 | `private_census.py` | `$R` | `plan29a-private-census.log` (first part); writes `private.json` | 29.5 |
 | `private_map.py` | none (reads `private.json`, `cli_assign.json`) | `plan29a-private-census.log` (second part) | 29.5 |
 | `citation_census.py` | `$R` | `plan29a-citation-census.log` | 29.5 |
@@ -57,6 +59,7 @@ count (78 in 26). {#run-notes}
 - `cli_map.py` assigns a helper to a command module when every def that names it is in that
   module, and to the core otherwise. It resolves names, not attribute chains, so a helper used
   only through `getattr` would be put in the core.
-- `store_census.py`'s per-concern table is a name match and is rough; the spec's store map uses
-  the section banners in `store.py`, by line number.
+- `store_census.py`'s per-concern table is a name match and is rough. The spec's store map is
+  `store_map.py`'s: an explicit method-to-module table, checked to cover all 191 methods once
+  each. `store_sections.py` shows why the file's banners could not be used.
 {#limits-list}

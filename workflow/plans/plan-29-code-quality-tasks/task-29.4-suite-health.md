@@ -15,19 +15,28 @@ metadata:
 
 > Plan: [[plan-29-code-quality]] ([[plan-29-code-quality#t4]])
 > Status: Pending
-> Depends on: [[task-29.1-registry-triage]] (its checker test is one more file to tier; its
-> grammar is how this task closes rows). The 0.83.0 deploy and the frozen spec-branch merges
-> ([[plan-29-code-quality#decisions]] D2).
-> Runs second in plan-29's order: 29.1 → **29.4** → 29.5 → 29.2 ∥ 29.3.
-> Closes: bug-228, bug-229, bug-231, bug-239.
-> Does NOT close bug-168, 170, 127, 215, 130, 190, 091: those are
-> the T0 suite-trust sweep's, which runs after plan-29 ([[#t0-boundary]]).
-> User gates: none. No step opens a live store, starts a fleet daemon or installs a hook.
+> **The T0 suite-trust sweep is this task's body.** T0 (`task-t0-suite-trust-sweep`, approved on
+> branch `spec-wave-t0` at `fa1227d`; track T0 in [[plan-review-2026-11-13#p1]]) and 29.4 were
+> one job split in two with a circular closure (queue review `#b3`, lead-accepted 2026-11-14).
+> T0's sub-tasks keep their ids (T0.1 to T0.8) and their text. This spec orders them, adds to
+> three of them, and adds what T0 does not have: run tiers, the sharded runner, the wall-clock
+> rule and the reaper ([[#fold]]).
+> Depends on: [[task-29.1-registry-triage]]; the 0.83.0 deploy; the frozen spec-branch merges
+> (T0's spec arrives with them), with T0 amended as [[#fold-deltas]] lists.
+> Runs second in plan-29's order: 29.1 → **29.4** → 29.5 → 29.2 ∥ 29.3. One part, the derived
+> families ([[#r6]]), is built after 29.5.
+> Closes, by this spec's text: bug-228, bug-229, bug-231. By T0's text: bug-215, bug-155's
+> residual, bug-170, 168, 127, 130, 190, 091, 196, and the closure gates of plans 6, 7, 8, 15.
+> **Open user decisions this task waits on and does not settle** ([[#open-decisions]]):
+> `plan-review-fable D3` (gates stage 4), `plan-review-fable-store D5` (gates every baseline
+> run), `plan-review-fable D4` (the release after this task).
+> User gates: none of its own. T0 can be held by a hook-drift stop at its `#r7-4`.
 
 rel: part-of -> [[plan-29-code-quality]]
 rel: implements -> [[plan-29-code-quality#t4]]
 rel: depends-on -> [[task-29.1-registry-triage]]
 rel: depends-on -> [[tdd-governance]]
+rel: depends-on -> [[task-23.0-test-sandbox]]
 rel: related-to -> [[plan-review-2026-11-13#p1]]
 rel: related-to -> [[task-29.5-split-giant-modules]]
 rel: reinforces -> [[feedback_measure_the_outcome_not_the_wall]]
@@ -36,6 +45,17 @@ rel: reinforces -> [[feedback_family_list_misses_generated_checks]]
 rel: reinforces -> [[feedback_clean_corpus_hides_a_dead_gate]]
 rel: reinforces -> [[feedback_compare_failures_by_error_not_name]]
 rel: reinforces -> [[feedback_mutation_must_fail_not_hang]]
+
+**How other documents are cited here.** Three documents this spec leans on are not on the
+branch it was written on, and a link to a document the branch does not hold fails the repo
+lint gate. They are written as code, and become links when the branches meet:
+- **T0** = `task-t0-suite-trust-sweep` (branch `spec-wave-t0`, `fa1227d`); its anchors are
+  written `T0#r7-4`.
+- **queue review** = `plan-review-fable-2026-11-14-queue` (dev `master`, `3551894`);
+  **store review** = `plan-review-fable-2026-11-14-store` (`ec3e0e8`); **memory review** =
+  `plan-review-fable-2026-11-14-memory` (`0254373`). Their user decisions are labelled
+  `plan-review-fable D<n>` and `plan-review-fable-store D<n>`.
+{#citing}
 
 ## Why {#why}
 
@@ -57,9 +77,11 @@ Four things follow from it:
 {#why-list}
 
 This task gives the suite four tiers that can be run apart, a runner that shards two of them,
-a rule that keeps speed out of assertions, a reaper, and a family that is computed. 29.5 then
-runs the whole suite before and after every move commit, which is only affordable once this
-task is done ([[plan-29-code-quality#order]]). {#why-next}
+a rule that keeps speed out of assertions, a reaper, and, after the split, a family that is
+computed. It does so with the T0 sweep as its body ([[#fold]]), so that it ends on one clean,
+fast, trusted run. 29.5 then runs the whole suite before and after every move commit, which
+is only affordable, and only means anything, once this task is done
+([[plan-29-code-quality#order]]). {#why-next}
 
 ## Measured at `f3709d2` (2026-11-14) {#baseline}
 
@@ -147,45 +169,77 @@ The package is one strongly connected import component (lazy imports included). 
 computed from the transitive closure is the whole suite, so the closure cannot be the rule
 ([[#r6]]). {#baseline-families-reading}
 
-## What T0 does and what this task does {#t0-boundary}
+## T0 folded in: stages and deltas {#fold}
 
-The T0 suite-trust sweep (`task-t0-suite-trust-sweep`, approved on branch `spec-wave-t0` at
-`fa1227d`, not yet on `master`; track T0 in [[plan-review-2026-11-13#p1]]) runs after plan-29.
-Its id is written as code here, not as a link, because a link to a document that `master` does
-not hold fails the repo lint gate; it becomes a link when that branch merges. The two tasks touch the same
-files (`tests/conftest.py`, the sandbox). They do not touch the same lines:
+T0 could not close without this task (its clean-suite gate stops on any failure no T0 row
+owns, and bug-228 and bug-231 are owned only here), and 29.5 could not start without T0 (its
+equality gate would run against a suite that fails 14 tests). T0.3's durations run and load
+harness are the same measurement as this task's "measure, then shard". T0.4 and T0.5 edit the
+files 29.5 needs quiet. So they are one task, in stages. {#fold-why}
 
-| Concern | Owner |
-|---|---|
-| The skip gate in clones (bug-215), checkout identity (bug-155) | T0.1 |
-| Three tests that read the real HOME or cwd ancestry (bug-170, 168, 127) | T0.2. This task only **places** those files in tier (c) |
-| Three load flakes (bug-130, 190, 091), with a reproducer harness and bands | T0.3. This task does not fix them. Its R0 durations file is the one T0.3's R0 asks for, so T0.3 reads it and does not run the suite again for that |
-| Wall-clock bounds as a class; bug-228, bug-231 | **this task** |
-| Leaked daemons (bug-229) | **this task** |
-| Tiers, shards, the runner, families, the merge gate | **this task** |
-| "The clean full suite" (T0.7) | T0.7, run with this task's runner; the plain single-process command stays valid ([[#r1]]) |
-{#t0-boundary-table}
+| Stage | T0 sub-tasks (their text, by id) | What this spec adds | Why here |
+|---|---|---|---|
+| 0 | T0.3's R0 durations run (`T0#t0-3-r0`) | [[#r0]]: the same run, with this task's bands | one serial run serves both |
+| 1 | **T0.1'** (T0.1 as amended, [[#fold-deltas]] row 1) | nothing | until it lands, every clone run exits 1 and no stage can quote a clean exit code |
+| 2, in parallel | **T0.2** ∥ **T0.3** ∥ **T0.8** | T0.2 gains the reaper and the root rule ([[#r4]], [[#r5]]). T0.3 gains bug-228 and bug-231 as two more rows on its harness and bands, and the wall-clock census ([[#r3]]) | the reaper and the dev-tree isolation are both conftest and sandbox work; the wall-clock rows are load flakes like T0.3's three |
+| lane | T0.6 (the plan-7 dense re-run) | nothing | long-running, builds no `src/`; any time after stage 1 |
+| 3 | **T0.4 → T0.5** | nothing | they delete `duckdb_view.py`, the `_read_via_duckdb` state in `store.py` and `brief.parse_gmd`, and edit `cli.py`, `verbs.py`, `mcp.py`: dead code is deleted before 29.5 moves it |
+| 4 | none | run tiers and the runner ([[#r1]], [[#r2]]) | gated by `plan-review-fable D3`; needs stage 2's reaper, because shards multiply daemons |
+| 5 | **T0.7** | its clean runs (`T0#r7-4`, `T0#r7-5`) go through the runner; [[#ac-7]] | T0.7's clean run on the sharded runner **is 29.5's baseline** |
+| after 29.5 | none | derived families ([[#r6]]) | measured useless before the split, precise after (queue review `#p29-4`) |
+{#fold-stages}
+
+### What changes in T0's text {#fold-deltas}
+
+T0 was approved on 2026-11-13, before plan-29 existed. Each row is one amends line in T0 when
+its branch merges (the queue review's step 1), or this task's first commit if that has not
+happened. T0's requirements, ACs and mutations are otherwise built as written.
+
+| # | T0 text | Becomes | Source |
+|---|---|---|---|
+| 1 | T0.1 "Closes bug-155" by R1.3 and R1.4 | **T0.1'**: R1.3 shipped verbatim (`988e96d`) and is dropped. R1.4 shipped as bash in `scripts/lint-gmd.sh` (`44d1a34`) and tests only that the directory exists, so an empty own-slug `memory/` defeats the fallback. R1.4 becomes "converge the shipped fallback onto one resolver, with the populated check and canonicalisation"; AC-1.5's RED is the empty-directory case; M1.3 and M1.4 are re-stated against it; the bug-155 row gains that residual | queue review `#st-8` |
+| 2 | "Depends on queue item 1"; "26.5 in parallel" (`T0#merge-265`) | plan-29 runs first (L104). 26.5 is not in flight during this task | L104 |
+| 3 | `T0#merge-order`: T0.2 ∥ T0.3 ∥ T0.4 ∥ T0.6 ∥ T0.8 | the stages above: T0.4 → T0.5 after stage 2 | queue review `#b3` |
+| 4 | T0.3 covers bug-130, 190, 091 | plus bug-228 and bug-231, on the same harness, with the same bands (`T0#t0-3-bands`) | queue review `#b3` |
+| 5 | T0.2 covers bug-170, 168, 127 | plus bug-229: [[#r4]] and [[#r5]] | queue review `#b3` |
+| 6 | status `open / diagnosed-loud` (`T0#t0-3-attempts`, `#t0-3-band-none`, `#r3-1`) | `deferred: diagnosed-loud, <trial counts>; review <date>` | [[task-29.1-registry-triage#r1-other-writers]] |
+| 7 | `T0#r7-4`, `#r7-5`: one `pytest -rA --junitxml` process, about 45 min, in the main tree | `scripts/ptest.sh --tier all` in the main tree (tier (c) included) and in the clone twin; `-rA` and one junit file per shard; "clean" keeps T0's definition word for word | queue review `#b3` |
+| 8 | `T0#r7-8`: four plan-7 deferral rows re-owned to "plan-20 evals" | "no host plan; backlog (L33)". Plan-20's three tasks hold none of them | queue review `#dup-2` |
+| 9 | Ruling O7's "immediate isolated re-run" | unchanged, and it is the **only** re-run this task allows ([[#decisions]] plan-29 D14) | this spec |
+| 10 | R0.1 to R0.8 apply to T0's sub-tasks | they apply to everything in this spec too ([[#r10]]) | queue review `#ord-6` |
+{#fold-deltas-table}
+
+### Words that collide {#fold-words}
+
+[[task-23.0-test-sandbox]] calls its three isolation levels "tiers" (tier 0 in-process, tier 1
+the separate macOS user, tier 2 the VM). This spec's tiers are a different thing: four groups
+of test files. To keep them apart, this spec says **run tier (a)-(d)** for its own and
+**isolation lane** for 23.0's, which is also what 23.0's scripts are called
+(`scripts/test-lane-user.sh`). {#fold-words-body}
 
 ## Requirements {#requirements}
 
 ### R0: measure first, and write the bands down before the numbers {#r0}
 
-1. **One serial full run with durations**, in a fresh littlebig clone at the task's base sha:
-   the documented command plus `--durations=0`, teed to
-   `workflow/review-output/task-29.4/r0-serial.log`, with `uptime` before and after. This is
-   the only full serial run the task needs. Its failures, by E line, are the **baseline digest**.
+1. **One serial full run with durations.** This is T0.3's R0 (`T0#t0-3-r0`): the documented
+   command plus `--durations=0`, in a fresh littlebig clone at stage 0's base sha, teed to
+   `workflow/review-output/task-29.4/r0-serial.log`, with `uptime` before and after. It is the
+   only full serial run the task needs. Its failures, by E line, are the **R0 digest**.
+   - **Not before `plan-review-fable-store D5` is resolved.** `.venv-eval` has duckdb 1.5.2,
+     below `pyproject.toml`'s 1.5.3 floor and below the deploy venv. A baseline taken on the old
+     version is taken again after the upgrade, so it is not taken first.
 2. **Per-file sums** of setup + call + teardown are written to `tests/shard_weights.json`
-   (committed) and into the summary: the 25 heaviest files, and the total per tier.
+   (committed) and into the summary: the 25 heaviest files (the list T0.3's harness loads
+   with), and the total per run tier.
 3. **The static censuses are re-run** at the base sha (the logic of the scripts in
    [[plan-29-spec-census]] becomes `tests/tiering.py` and the census tests, so this is their
-   first run). The summary gives the
-   table of [[#baseline]] again with the new numbers.
+   first run). The summary gives the table of [[#baseline]] again with the new numbers.
 4. **Bands, fixed here, before the run:**
 
    | Measured | Band | Action |
    |---|---|---|
-   | tier (a) wall, 4 shards | ≤ 5 min | every review round runs the whole of tier (a) ([[#r6]]) |
-   | | 5-10 min | a round runs tier (a)'s derived family; the whole tier runs before a merge |
+   | run tier (a) wall, 4 shards | ≤ 5 min | every review round runs the whole of tier (a) |
+   | | 5-10 min | a round runs the tier-(a) files its change touches or imports directly; the whole tier runs before a merge |
    | | > 10 min | the unit rule is wrong (a slow file has no signal). Name the 10 heaviest tier-(a) files, find the missing signal, re-tier, re-measure. Raised to the lead if a second pass is still > 10 |
    | tiers (a) + (b) + (d) wall at the chosen shard count | ≤ 20 min | done ([[#ac-7]]) |
    | | 20-30 min | sweep the tier-(b) shard count over 4, 6, 8 once and take the smallest that meets 20 with ≥ 10% headroom |
@@ -208,6 +262,10 @@ rule is ordered; the first match wins, so a file has exactly one tier by constru
      that showed it. At `f3709d2`: `test_search_hooks.py` (bug-168) and
      `test_bug230_repo_scope_gate.py` (bug-230). A file leaves the list when its dependency is
      removed (T0.2 removes `test_search_hooks.py`'s).
+   - **Arriving later:** a test that needs the real home or the real machine belongs here from
+     its first commit. 16.3 AC-5's re-scan of the installed Claude Code binary (33 s, 235 MB,
+     and it cannot resolve `~/.local/bin/claude` under the sandbox's `HOME`) is the known case
+     (store review `#p16-binary-extraction-test`).
 2. **`timing`** — the file holds at least one assertion in the wall-clock allow list ([[#r3]]).
    The tier is derived from that list. It has no list of its own. When a file's last bound is
    replaced, it moves to tier (a) or (b) with no edit to `tiering.py`.
@@ -278,7 +336,18 @@ Also:
   around every commit.
 - **No reruns.** The runner has no retry flag. A test that fails only when sharded is a finding:
   it gets a wall-clock replacement ([[#r3]]), a place in the serial group with a reason, or a
-  registry row. It is never run again until it passes.
+  registry row. It is never run again until it passes. The one re-run this task knows is T0's
+  ruling O7 (`T0#r7-6`): a `diagnosed-loud` row's node id, re-run once, alone, with both
+  outcomes recorded. That is a recorded diagnostic on a named row, not a retry.
+- **Live-socket reach is `plan-review-fable D3`.** Four shards are four processes that can each
+  reach a live socket (bug-088, bug-101, deferred by the user). Stage 4 does not start until
+  D3 is answered, and is built to the answer:
+  - (a) *shard only once any live touch fails the session* (the review's recommendation): stage
+    4's first AC is that proof, per shard: a probe test that touches a deny-set target fails
+    its shard and the whole run, in-process and from a child;
+  - (b) *shard as is and record the counts*: `summary.txt` carries the touches-log line count
+    per shard, and the run does not fail on it;
+  - (c) *un-defer bug-088 and bug-101 into this task*: this spec is revised first.
 - **A hang guard, not a speed check.** `pytest-timeout` is added to the `dev` extra and
   configured once (`[tool.pytest.ini_options]`: `timeout = 600`, `timeout_method = "signal"`).
   The `signal` method raises inside the test, so teardown and the session-finish hooks still
@@ -345,6 +414,39 @@ here:
     `tests/timing.py`. The census checks the constant is ≥ 60.
   - The list starts at the R0 count (77 at `f3709d2`, once `HANG_BOUND_S` is renamed).
   {#r3-census}
+- **Two kinds of entry, and only one of them can be added.** The store review counted about 43
+  wall-clock clauses in approved specs that have not been built (23.5: 14; 18.3: 7 ACs;
+  16.1-16.5: 7; 23.1: 4; 18.2: 4 ACs; 17.1 and 17.4: 4; 23.2: 3). Their tests would fail this
+  census on the day they are written. So each allow-list entry has a kind:
+  - **`legacy`**: a bound that exists at this task's base. The set only shrinks.
+  - **`feature-bound`**: the bound **is** the feature under test (a deadline that must fire: 23.2's
+    fail-not-hang deadlines; 23.5 R2's `RMX_CLI_WRITER_WAIT_S`). An entry names the spec AC that
+    owns it. The test shrinks the bound through the product's own environment knob so that it
+    waits fractions of a second, not the production value, and it runs in tier (d).
+  - Everything else in those specs is written as an ordering outcome from the start ("answers
+    while the test thread still holds the lock"; "the hook exits before the competitor
+    releases"), by [[#r3-classes]] class C. 23.1 AC-21 step 2 (spawn-to-exit under 5.0 s with a
+    dial of up to 4.0 s) and 18.3 AC-7 (±25 %, where 18.3's own measurement had loaded at twice
+    idle) are bug-231's shape by construction and get no entry.
+  - A census run prints the two counts apart. A new `legacy` entry fails it.
+  {#r3-kinds}
+- **Sleep is budgeted like time.** A test that sleeps or holds a lock for a fixed production
+  interval (23.1 AC-21 step 1 holds a lock 70 s, and steps 4 and 5a repeat it) spends the
+  20-minute target on waiting. Such a test shrinks the interval through the product's knob, as
+  a `feature-bound` test does. `summary.txt` lists every test over 30 s, so one that does not
+  is seen.
+  {#r3-sleep}
+- **The freshness pass for those specs is not this task's.** The specs the store review names
+  are revised by their owners after 29.5, in the one pass per track the reviews schedule. This
+  section is the rule they are revised against.
+  {#r3-freshness}
+- **bug-228 and bug-231 are rows of T0.3.** They run on T0.3's harness with its bands
+  (`T0#t0-3-bands`): a reproducer is ≥ 3 failures in 10 trials at base, at 3, then 5, then 8
+  concurrent processes; a fix is proven by 45 consecutive passes at the reproducer's level; at
+  most two fix attempts; a row that does not reproduce gains its diagnostic and its mechanism
+  test and reads `deferred: diagnosed-loud, …`. The replacements above are the fix attempts.
+  bug-231 has already failed twice under suite load, at 12-20 and at 5.6-7.6.
+  {#r3-t03}
 - **How far this task goes.** bug-228 and bug-231 are replaced. So is every site in a file whose
   serial duration puts tier (d) over its band ([[#r0-bands]]), and every class C and D site
   (they are the cheapest and the most load-sensitive: 22 bounds are ≤ 1 s). The rest stay in the
@@ -382,6 +484,30 @@ Every process the suite starts is known, and one that is still alive at the end 
 4. **Teardown says what it left.** `rmx_sandbox.remove_tree` already counts what it could not
    remove. The session-finish hook prints the count of sandbox store roots that still hold a
    live `rmxd.pid` before removal.
+5. **It is keyed on the spawn, not on a root.** bug-229's row proposed finding daemons "by socket
+   path under the sandbox root". Its own daemon lived under `mkdtemp(prefix="r1-", dir="/tmp")`,
+   outside that root, as do 95 other sites (the store review counts 96 lines). The ledger
+   records the process when it starts, whatever root it serves, so the root does not matter
+   (store review `#one-reaper-keyed-on-spawn`).
+6. **In-process daemons are spawns too.** A `Daemon` built and served inside the pytest process
+   is not in the ledger. conftest keeps a weak registry of `Daemon` instances (it wraps
+   `Daemon.__init__` to record the instance and changes nothing else). At session finish an
+   instance that is still serving (its socket is bound, or its serve thread is alive) is
+   printed as `LEAKED IN-PROCESS DAEMON root=<…> built in <test id>`, stopped, and fails the
+   session like a leaked process.
+7. **One registration call, for fixtures that own a daemon.**
+   `rmx_sandbox.register_spawn(pid_or_daemon, root, why)` adds an entry by hand. 23.2 `#r4`'s
+   `recorded_daemon` fixture registers with it and does not grow a teardown of its own; so do
+   18.3's SIGKILLed subprocess daemons, 17.2's blocked ops, 16.1's detached learners and the
+   throwaway daemons of D-Q1 and 22.5. A registered entry's teardown asserts the stop answered
+   and the pid exited.
+8. **A stopped process is still a leak.** A SIGSTOPped daemon (the `stopped` fixture in
+   `test_plan4_remedy.py`; 25.1b AC-28 leaves one, per the memory review) is sent SIGCONT before
+   it is stopped, and is reported like any other. A test that stops a daemon on purpose
+   continues and stops it in its own teardown.
+9. **The sweep is a function others call.** `rmx_sandbox.sweep_orphans(ledger_path)` is item 3's
+   logic. 28.2's paired-run clone daemons use it for their pre-run sweep, from the runner's own
+   ledger (store review `#p28-orphan-clone-daemon-sweep`).
 {#r4-list}
 
 ### R5: test roots live under the sandbox root {#r5}
@@ -400,7 +526,15 @@ With the roots under the sandbox, a leaked root is removed with the sandbox, a l
 pid file is found by one `rglob` under one directory, and two shards cannot collide on a root
 by construction. {#r5-why}
 
-### R6: families are derived {#r6}
+### R6: families are derived (built after 29.5) {#r6}
+
+**When.** Not in stages 0-5. Before the split, 136 of 357 test files import `refmatrix.cli`
+and 220 import `store`, so a family computed today is most of the suite for any change to the
+two largest modules; after the split the same rule is precise. This requirement is built as
+sub-task 29.4f on the tree 29.5 leaves, and its back-test is run there (queue review
+`#p29-4`). Until then a review round runs tier (a) whole (if [[#r0-bands]] allows), the tier-(b)
+and tier-(d) files its change touches or names, and `ALWAYS_FILES`. `ALWAYS_FILES` and the
+runner's `--files` form exist from stage 4, because [[#r7]] needs them. {#r6-when}
 
 `scripts/ptest.sh --family <base-rev>` prints, then runs, the test files for the change
 `<base-rev>..HEAD` plus the working tree. Each file is printed with the reason it is in the
@@ -413,6 +547,7 @@ family. A family is the union of:
 | **named** | every test file whose source names a touched non-module file (a script, a template, a generated doc) by repo-relative path or by base name |
 | **always** | `ALWAYS_FILES` in `tests/tiering.py`, each with its reason: the generated-artifact and census tests. At `f3709d2`: `test_docs_generated.py` (the CLI tree and hooks table), `test_verb_parity.py`, `test_bug212_r4_red.py` (the catalog-opener census), `test_repo_hooks_in_sync.py`, `test_gmd_lint_requires_version.py`, `test_version_single_source.py`, and this task's own census tests |
 | **tier (a), whole** | if R0's band says so ([[#r0-bands]]) |
+| **after 29.5** | `ALWAYS_FILES` gains 29.5's census tests ([[task-29.5-split-giant-modules#r4]]) |
 {#r6-parts}
 
 - **The closure is not used.** It is 324 of 357 files for 71 of 73 modules ([[#baseline-families]]).
@@ -438,31 +573,68 @@ before the merge commit:
 
 1. refuses (exit 2, saying why) in a checkout that is not the owning one: no `.refmatrix/`, or a
    `.venv-eval` that resolves outside the checkout;
-2. runs tier (c), the family of `HEAD..MERGE_HEAD` ([[#r6]]), and `./scripts/lint-gmd.sh`;
+2. runs tier (c), every test file the merge touches, `ALWAYS_FILES`, and
+   `./scripts/lint-gmd.sh`. From 29.4f on it runs the family of `HEAD..MERGE_HEAD` ([[#r6]]) in
+   place of "every test file the merge touches";
 3. fails on any failed test, any **errored** phase (teardown included), any SkipGate or reaper
    finding, and any non-zero exit of the lint gate;
 4. writes `workflow/review-output/merge-gate-<merge head sha>/`, as [[#r2]] does.
 
-`CLAUDE.md`'s git workflow and `#before-commit` list name this command. A dev-tree run carries
-known failures today. The 0.83.0 release run had 14: bug-168 × 9, bug-170, bug-127 and
-bug-196 × 2 (all T0's), and bug-231 (this task's). Until T0 closes its rows, the gate compares
-by E line against the previous gate's `failures.jsonl`: a known row is recorded as seen, and a
-new node id or a new E line fails the gate. {#r7-list}
+`CLAUDE.md`'s git workflow and `#before-commit` list name this command. The gate compares by
+E line against the previous gate's `failures.jsonl`: a row that is still open is recorded as
+seen, and a new node id or a new E line fails the gate. After stage 5 the previous gate's file
+is empty, and so any failure fails it. {#r7-list}
 
 ### R8: the docs say what is true {#r8}
 
-- `CLAUDE.md#development-commands` and `.claude/PROJECT_PROFILE.md#commands`: the tier commands,
-  the family command and the merge gate, beside the plain full command. Suite size and time are
-  quoted from the last `summary.txt`, with its date.
-- `README.md` (bug-239): the hand-written "1361 tests" goes. The README names the command that
-  prints the count and gives no number that nothing updates.
-- `workflow/TDD_GOVERNANCE.md`: one paragraph: what a family is for and what it is not for.
+- `CLAUDE.md#development-commands` and `.claude/PROJECT_PROFILE.md#commands`: the run-tier
+  commands and the merge gate, beside the plain full command. Suite size and time are quoted
+  from stage 5's `summary.txt`, with its date. (29.1 has already replaced the stale "~13 min"
+  and "~1380 tests" with the measured 4,883 and 58:37; this is the second, final update.)
+- `workflow/TDD_GOVERNANCE.md`: one paragraph: what a review round runs and what the merge gate
+  runs.
 - `workflow/test_mock_registry.md`: any new double.
 {#r8-list}
 
 `CLAUDE.md` and `.claude/PROJECT_PROFILE.md` are instruction files. Their edits are part of
 what the user approves with this plan; the implementer makes exactly the edits named here and
 quotes the diff in the summary. {#r8-instruction-note}
+
+### R9: 23.0's open ends {#r9}
+
+[[task-23.0-test-sandbox]] is `completed` with two ACs open and one requirement that no longer
+matches the code (store review `#task230-completed-with-open-acs`). This task is the next one
+to rework the sandbox, so it settles them:
+
+1. **23.0 `#r3` is amended.** It forbids "any `open` (write OR read)" under a live `.refmatrix/`.
+   bug-230 added one read-only allow, for the checkout's own `.refmatrix/.refmatrix_ignore`
+   (`rmx_sandbox.read_allow`). One amends line in 23.0 says so and names bug-230.
+2. **23.0 AC-7 and AC-8 (the user lane and the VM lane) are deferred, with rows.** Neither has
+   run: 23.0's summary says so, and there is no deferral row. Both need one-time operator setup
+   that only the user can do (the `rmxtest` account and its sudoers entry; the Tart VM, which
+   the user placed on the M1 Mac mini). Each gets a row in `workflow/deferral_registry.md` with
+   that reason, 23.0 as its origin and a review date, and 23.0's status line says "completed,
+   AC-7 and AC-8 deferred (rows …)". ([[#decisions]] plan-29 D20.)
+3. **The lanes run the plain command**, which stays valid ([[#r1-also]]). When a lane is set up
+   it can run `scripts/ptest.sh` too; nothing here prevents it and nothing here builds it.
+{#r9-list}
+
+### R10: rules for every stage {#r10}
+
+- **T0's R0.1 to R0.8 apply to this spec's additions as they do to T0's sub-tasks**
+  (`T0#rules`): re-verify every cited site at the branch base; compare failures by E line; every
+  run is a log that states its exit code; RED first, and a mutation fails and does not hang; no
+  skip is added and no test is weakened; sandbox discipline; one ch-bsd round per sub-task
+  range.
+- **No install window (R0.7).** Nothing in this task may make `rmx install-hooks --check` report
+  drift on an existing install. The queue review asks for this rule on all five plan-29 tasks.
+- **One release point, after stage 5.** What ships is test, script and doc changes, T0.4's and
+  T0.5's `src/` deletions and remedies, and any clock parameter [[#files-src-note]] allows.
+  T0.5 changes an MCP tool, so the release carries a `/mcp` reconnect note. Who says go is
+  `plan-review-fable D4`.
+- **Branches.** One branch per sub-task from the `master` that holds the stage before, merged
+  `--no-ff`. T0's sub-tasks keep T0's branch names. Work happens in littlebig clones.
+{#r10-list}
 
 ## Acceptance criteria {#acceptance}
 
@@ -492,45 +664,80 @@ quotes the diff in the summary. {#r8-instruction-note}
   `assert elapsed >= 1.0` and on `assert time.monotonic() - t0 < HANG_GUARD_S`. A stale allow
   entry fails it. bug-228's and bug-231's tests hold no entry in the list. {#ac-4}
 - **AC-5: a leaked daemon fails the session, by name.** An inner pytest run (a child process)
-  over a fixture test that starts a real daemon with `spawn_daemon_subprocess` and never stops
-  it:
+  over a fixture test that starts a real daemon with `spawn_daemon_subprocess` **on a root made
+  by `mkdtemp(dir="/tmp")`, outside the sandbox root** (bug-229's shape) and never stops it:
   - exits with pytest's "tests failed" status although its one test passed;
   - prints `LEAKED PROCESS` with the daemon's pid, the fixture test's id and the store root;
   - leaves no process: the outer test asserts the pid is gone and the pid file's socket does
     not answer.
 
-  A second fixture's test stops its daemon properly: the inner run exits 0 and prints no
-  `LEAKED` line. A third has a ledger line naming a live, unrelated process with a different
-  start time: it is not signalled. A fourth is killed with SIGKILL mid-test; the next inner
-  session's start prints `ORPHAN from a killed run` with the pid, stops it, and exits 0.
-  {#ac-5}
-- **AC-6: bug-228, bug-229, bug-231 and bug-239 are closed with evidence.** For 228 and 231:
-  the replaced tests pass 20 of 20 while 4 shards of tier (b) run beside them (a load the old
-  bound failed under; the old test's result under the same load is recorded first, as the
-  reproducer, and if it does not fail in 20 the summary says so and the row closes on the
-  mechanism test alone, with that stated). For 229: AC-5. Each row's status is written in 29.1's
-  grammar with the fixing sha, after `git merge-base --is-ancestor <sha> master` succeeds. {#ac-6}
-- **AC-7: at most 20 minutes.** Three consecutive `--tier all` runs at the final sha on the
-  16-core dev machine, each started at a 1-minute load average ≤ 8.0:
-  - each run's wall time for tiers (a) + (b) + (d), as the runner measures it, is ≤ 20:00;
-  - each run's `failures.jsonl` compares equal ([[#ac-3]]) to the R0 serial baseline's, minus
-    the records of the rows this task closes.
+  Five more fixtures:
+  - a test that stops its daemon properly: the inner run exits 0 and prints no `LEAKED` line;
+  - a ledger line naming a live, unrelated process with a different start time: it is not
+    signalled;
+  - a run killed with SIGKILL mid-test: the next inner session's start prints `ORPHAN from a
+    killed run` with the pid, stops it, and exits 0;
+  - an in-process `Daemon` left serving: `LEAKED IN-PROCESS DAEMON`, stopped, session failed;
+  - a daemon left SIGSTOPped: continued, stopped, reported, session failed.
 
-  A run that started above load 8.0 is labelled and does not count; it is not discarded from
-  the summary. Tier (c)'s wall time is reported beside it. The before number is R0's serial run.
+  A fixture registered through `register_spawn` whose teardown does not stop it fails its own
+  test, by name, before the session ends.
+  {#ac-5}
+- **AC-6: bug-228, bug-229 and bug-231 are closed with evidence, on T0.3's bands.**
+  - **228 and 231:** the summary records, per row, what `T0#ac-3-1` asks of T0.3's own rows: the
+    reproducer level and the base failure count out of 10 with E lines; each fix attempt's run of
+    45; and the outcome (fixed, or `deferred: diagnosed-loud` with the counts). The mechanism
+    tests of [[#r3-bug231]] and [[#r3-bug228]] are green either way, and neither test holds an
+    entry in the wall-clock allow list.
+  - **229:** AC-5.
+  - Each row's status is written in 29.1's grammar with the fixing sha, after
+    `git merge-base --is-ancestor <sha> master` succeeds.
+  {#ac-6}
+- **AC-7: T0.7's clean run, through the runner, in at most 20 minutes.**
+  - **Clean, by T0's definition** (`T0#r7-4`): in the main tree, `scripts/ptest.sh --tier all`
+    (tier (c) included) at a committed `master` sha that holds every stage: every shard exits 0;
+    0 failed and 0 errors; no SkipGate line; no reaper line; collected = passed + pinned skips.
+    T0's preconditions hold as written (GMD gate green, hooks in sync, a clean and unmoved tree,
+    the lead told first). Ruling O7 is the only exception to "exit 0".
+  - **The clone twin** (`T0#r7-5`): the same sha, the same command, in a littlebig clone; tier (c)
+    is reported as not run there; its only skips are the pinned clone-only set.
+  - **The time:** three consecutive clone runs of tiers (a) + (b) + (d), each started at a
+    1-minute load average ≤ 8.0 on the 16-core dev machine, each ≤ 20:00 by the runner's own
+    measurement, each clean. A run that started above 8.0 is labelled and does not count; it is
+    not discarded from the summary. Tier (c)'s wall time is reported beside them.
+  - **Every failure of the R0 digest is accounted for:** each maps to a row this task or T0
+    closed, with the closing sha, or to a `diagnosed-loud` row.
+  - **The main-tree run's directory is 29.5's baseline.** Its sha, its `summary.txt` and its
+    `failures.jsonl` are committed, and [[task-29.5-split-giant-modules#r4]] names them.
   {#ac-7}
-- **AC-8: the family is computed and back-tested.** `--family` prints a reason for every file.
-  For a synthetic change to one module, a test that imports it only through a `tests/` helper
-  is in the family, and a child-process test is in the family of `cli`. The back-test table
-  ([[#r6-bands]]) is in the summary with its percentage and the action its band names. {#ac-8}
+- **AC-8 (sub-task 29.4f, after 29.5): the family is computed and back-tested.** `--family`
+  prints a reason for every file. For a synthetic change to one module, a test that imports it
+  only through a `tests/` helper is in the family, and a child-process test is in the family of
+  `cli`. The back-test table ([[#r6-bands]]) is in 29.4f's summary with its percentage and the
+  action its band names, and [[#baseline-families]] is re-measured on the split tree beside
+  the numbers of `f3709d2`. This AC does not hold up stage 5 or 29.5. {#ac-8}
 - **AC-9: the merge gate refuses a clone and fails on a teardown error.** In a clone it exits 2
-  and says why. On a fixture checkout whose family holds a test that passes and errors at
+  and says why. On a fixture checkout whose merge touches a test that passes and errors at
   teardown, it exits non-zero and names the test (bug-230's shape). {#ac-9}
 - **AC-10: the plain command is unchanged.** `pytest -q -p no:cacheprovider` with no `-m`
   collects, before and after the task, the same node ids in the same order, apart from the ids
   this task adds, renames or splits (bug-228's and bug-231's tests, the new test files). The two
   `--collect-only -q` listings are diffed and every differing line is in the summary with its
   reason. No id disappears without one. {#ac-10}
+- **AC-11: the allow list knows its two kinds.** The census fails on a new `legacy` entry; passes
+  on a `feature-bound` entry that names a spec AC and whose test shrinks its bound through an
+  environment knob; fails on a `feature-bound` entry with no AC named; prints the two counts.
+  {#ac-11}
+- **AC-12: live-socket reach, per `plan-review-fable D3`'s answer.** Under (a): a probe test that
+  touches a deny-set target fails its shard and the run, in-process and from a child, in every
+  shard position; this AC is stage 4's first. Under (b): `summary.txt` carries the per-shard
+  touches-log line count. Under (c): this spec is revised before stage 4. {#ac-12}
+- **AC-13: 23.0's open ends are closed on paper.** 23.0 carries the amends line for the bug-230
+  read allow; `workflow/deferral_registry.md` holds one row each for 23.0 AC-7 and AC-8 with a
+  reason and a review date; 23.0's status line names both rows. {#ac-13}
+- **AC-14: T0's sub-tasks meet T0's own acceptance**, as amended by [[#fold-deltas]]. Each
+  sub-task's implementation summary is T0's (`task-t0.<n>-…`), and this task's summary links
+  them and gives one line per sub-task: sha, ch-bsd verdict, rows closed. {#ac-14}
 
 ## Test strategy {#test-strategy}
 
@@ -556,8 +763,13 @@ quotes the diff in the summary. {#r8-instruction-note}
   11. the reaper stops the process but does not fail the session (AC-5: exit 0);
   12. the reaper drops the start-time check (AC-5's reused-pid fixture is signalled);
   13. the session-start orphan sweep is removed (AC-5's fourth fixture);
-  14. `--family` drops the `always` part (AC-8);
-  15. the merge gate ignores teardown errors (AC-9).
+  14. `--family` drops the `always` part (AC-8, in 29.4f);
+  15. the merge gate ignores teardown errors (AC-9);
+  16. the `Daemon.__init__` wrapper records nothing (AC-5's in-process fixture passes unseen);
+  17. the reaper skips a stopped process (AC-5's SIGSTOP fixture survives);
+  18. the census accepts a new `legacy` entry (AC-11).
+- **T0's sub-tasks carry their own mutations** (M1.x to M7.x in T0's text). They are not
+  repeated here.
 - **All output to files.** Every run in this task goes through the runner or through
   `2>&1 | tee workflow/review-output/task-29.4/<name>.log`. The summary quotes, for each run,
   the exit code, the collected count, passed / failed / errors / skipped, the sha and the load.
@@ -565,35 +777,51 @@ quotes the diff in the summary. {#r8-instruction-note}
 
 ## Order of work {#order}
 
-Four sub-tasks, each on its own branch from the `master` that holds the one before, each with
-RED → GREEN → ch-bsd:
+The stages of [[#fold-stages]], as sub-tasks. Each is its own branch from the `master` that
+holds the stage before, with RED → GREEN → ch-bsd.
 
-| Sub-task | Holds | Why this order |
-|---|---|---|
-| 29.4a | R0, R1, R2 (tiers, runner, `--compare`, the hang guard) | nothing else can be measured without it. No test's meaning changes |
-| 29.4b | R4, R5 (reaper, roots) | shards multiply daemons; the reaper has to exist before shards become the normal way to run |
-| 29.4c | R3 (bug-228, bug-231, the census, the replacements R0's band asks for) | uses 29.4a's shards as its load |
-| 29.4d | R6, R7, R8 (families, merge gate, docs), then AC-7's three runs | the final numbers are taken last |
+| Stage | Sub-task | Holds | Parallel with |
+|---|---|---|---|
+| 0 | 29.4-r0 | [[#r0]] (= T0.3's R0), after `plan-review-fable-store D5` | — |
+| 1 | T0.1' | T0's `#t0-1` as amended | — |
+| 2 | T0.2 + 29.4b | T0's `#t0-2`; [[#r4]], [[#r5]] | T0.3, T0.8 |
+| 2 | T0.3 + 29.4c | T0's `#t0-3`; [[#r3]] with bug-228 and bug-231 | T0.2, T0.8 |
+| 2 | T0.8 | T0's `#t0-8` (bug-196) | T0.2, T0.3 |
+| lane | T0.6 | T0's `#t0-6` | anything after stage 1 |
+| 3 | T0.4, then T0.5 | T0's `#t0-4`, `#t0-5` | — |
+| 4 | 29.4a | [[#r1]], [[#r2]], [[#r7]], after `plan-review-fable D3` | — |
+| 5 | T0.7 + 29.4d | T0's `#t0-7` through the runner; [[#r8]], [[#r9]]; [[#ac-7]] | — |
+| after 29.5 | 29.4f | [[#r6]] | 29.2, 29.3 |
 {#order-table}
 
+T0.2 and 29.4b both edit `tests/conftest.py` and `tests/sandbox_site/rmx_sandbox.py`, and T0.3
+and 29.4c both edit the flaky tests' files. Each pair is one branch and one ch-bsd range, so
+that two branches do not meet in one file. {#order-pairs}
+
 ## Files {#files}
+
+T0's sub-tasks touch the files T0 lists for them (`T0#t0-1-files` to `T0#t0-8-files`). This
+table is what this spec adds.
 
 | File | Change |
 |---|---|
 | `tests/tiering.py` | new: `tier_of`, the signal table, `DEVTREE_FILES`, `ALWAYS_FILES`, the serial group |
 | `tests/timing.py` | new: `HANG_GUARD_S` and the wait-for-outcome helper |
-| `tests/conftest.py` | tier markers; `failures.jsonl` records; reaper hooks at session start and finish |
-| `tests/sandbox_site/rmx_sandbox.py` | the ledger (exec and fork), `owner.json`, `short_root`, the reaper |
-| `scripts/ptest.sh`, `scripts/ptest.py` | the runner: tiers, shards, `--compare`, `--family`, `--merge-gate` |
+| `tests/conftest.py` | run-tier markers; `failures.jsonl` records; reaper hooks at session start and finish; the `Daemon` instance registry |
+| `tests/sandbox_site/rmx_sandbox.py` | the ledger (exec and fork), `owner.json`, `short_root`, `register_spawn`, `sweep_orphans`, the reaper |
+| `scripts/ptest.sh`, `scripts/ptest.py` | the runner: tiers, shards, `--files`, `--compare`, `--merge-gate`; `--family` in 29.4f |
 | `tests/shard_weights.json`, `tests/wallclock_allow.json`, `tests/tmp_root_allow.json` | new: measured weights and the two shrinking lists |
-| `tests/test_suite_tiers.py`, `tests/test_ptest_runner.py`, `tests/test_wallclock_census.py`, `tests/test_tmp_root_census.py`, `tests/test_daemon_reaper.py`, `tests/test_family_derivation.py` | new |
+| `tests/test_suite_tiers.py`, `tests/test_ptest_runner.py`, `tests/test_wallclock_census.py`, `tests/test_tmp_root_census.py`, `tests/test_daemon_reaper.py` | new |
+| `tests/test_family_derivation.py` | new, in 29.4f |
 | `tests/fixtures/suite_health/` | new: the fixture suites for AC-2, AC-5, AC-9 |
 | `tests/test_plan4_remedy.py`, `tests/test_task21_1_recall_skip.py` | bug-231, bug-228 |
 | the 28 files that call `spawn_daemon_subprocess`; the files R0's band selects for [[#r3-scope]] | roots; bound replacements |
 | `pyproject.toml` | `pytest-timeout` in `dev`; `[tool.pytest.ini_options]` |
-| `CLAUDE.md`, `.claude/PROJECT_PROFILE.md`, `README.md`, `workflow/TDD_GOVERNANCE.md` | [[#r8]] |
-| `workflow/bug_registry.md` | rows 228, 229, 231, 239 |
-| `workflow/implementation_summaries/task-29.4-suite-health.md` | new: R0 tables, the class table, the back-test, AC-7's runs |
+| `CLAUDE.md`, `.claude/PROJECT_PROFILE.md`, `workflow/TDD_GOVERNANCE.md` | [[#r8]] |
+| `workflow/plans/plan-23-bounded-write-harness-tasks/task-23.0-test-sandbox.md`, `workflow/deferral_registry.md` | [[#r9]] |
+| `workflow/plans/task-t0-suite-trust-sweep.md` | the amends lines of [[#fold-deltas]], if the lead has not already made them |
+| `workflow/bug_registry.md` | rows 228, 229, 231 (and T0's rows, by T0's sub-tasks) |
+| `workflow/implementation_summaries/task-29.4-suite-health.md` | new: R0 tables, the class table, AC-7's runs, one line per T0 sub-task. `…/task-29.4f-derived-families.md` for the back-test |
 {#files-table}
 
 `src/refmatrix/` changes only if [[#r3-classes]] class B needs a clock to be injectable where
@@ -603,17 +831,24 @@ the test that needs it, and it adds a parameter with the current behaviour as it
 
 ## Out of scope {#out-of-scope}
 
-- **T0's rows** ([[#t0-boundary]]).
-- **Moving test files into directories.** A tier is a marker and a function. 357 renames would
-  conflict with every branch and buy nothing the marker does not.
+- **Re-specifying T0.** Its requirements, ACs and mutations are built from its own text.
+- **Moving test files into directories.** A run tier is a marker and a function. 357 renames
+  would conflict with every branch and buy nothing the marker does not.
 - **Replacing all 78 bounds.** [[#r3-scope]] says which. The rest are listed, tiered and owned.
-- **The macOS user lane and the VM lane** (`scripts/test-lane-user.sh`, `test-lane-vm.sh`). They
-  run the plain command, which stays valid.
-- **bug-088 / bug-101** (live-socket reach), deferred by the user. Sharding multiplies that
-  reach; the runner's summary records the touches-log line count per run so the multiplication
-  is seen, and adds no mitigation.
+- **Revising the specs that carry new wall-clock ACs** ([[#r3-freshness]]).
+- **Setting up the isolation lanes** ([[#r9]]).
+- **Deciding** `plan-review-fable D3`, `D4` or `plan-review-fable-store D5`.
 - **A coverage gate, a formatter gate.**
 {#out-of-scope-list}
+
+## Open user decisions (referenced, not settled) {#open-decisions}
+
+| Label | Question | Where this spec waits on it |
+|---|---|---|
+| `plan-review-fable D3` | Sharding multiplies the suite's reach to live sockets (bug-088, bug-101). (a) shard only once any live touch fails the session, recommended by the review; (b) shard as is and record counts; (c) un-defer both bugs into 29.4 | stage 4 does not start before the answer; [[#ac-12]] is written for each |
+| `plan-review-fable-store D5` | Raise the dev venv from duckdb 1.5.2 to the 1.5.3 floor before baselines are taken | [[#r0]]: no baseline run before it is resolved |
+| `plan-review-fable D4` | A standing go for plan-29's releases when the suite equals baseline by E line, or a go per release | [[#r10]]: the release after stage 5 |
+{#open-decisions-table}
 
 ## Decisions taken in this spec {#decisions}
 
@@ -625,7 +860,7 @@ the test that needs it, and it adds a parameter with the current behaviour as it
     sandbox attributes a touch to a test by pid and by `PYTEST_CURRENT_TEST`, and module-level
     setup such as `h.mark_token(...)` runs per importing process. Whether that survives xdist is
     unknown, and finding out is a task of its own.
-- **plan-29 D11: a tier is decided per file, by a function, with two short lists.**
+- **plan-29 D11: a run tier is decided per file, by a function, with two short lists.**
   - **Why:** the lead asked for a mechanical rule with a test that each file lands in exactly
     one tier. An ordered rule gives "exactly one" by construction. The two lists (`devtree`,
     serial) hold what cannot be read from the source, each entry with its reason and its bug.
@@ -633,19 +868,34 @@ the test that needs it, and it adds a parameter with the current behaviour as it
     tier (d) whole until that bound is replaced. [[#r3-scope]] replaces by duration, so such
     files go first.
 - **plan-29 D12: a family is the direct importers, the named files and a fixed always-set.
-  The import closure is not used.**
+  The import closure is not used. It is built after 29.5.**
   - **Why:** measured, the closure is the suite. The direct rule is checked against history
-    with bands fixed before the check ([[#r6-bands]]).
+    with bands fixed before the check ([[#r6-bands]]). The queue review moved the build after
+    the split, where the direct rule becomes precise; the lead accepted that.
 - **plan-29 D13: this session's leak fails this session; a killed run's orphan is stopped and
   reported, and does not fail the next run.**
   - **Why:** failing an unrelated run for an older run's leak teaches people to ignore the
     failure. It is still loud: a header line, a log file, a count.
-- **plan-29 D14: no reruns, and one hang guard.**
-  - **Why:** a rerun turns a load-dependent test into a slower load-dependent test and hides
-    which one it was. The hang guard is not a speed check: it is one number, far above any
-    real duration, whose only job is to turn a hang into a stack trace.
+- **plan-29 D14: no retries, and one hang guard.**
+  - **Why:** a retry turns a load-dependent test into a slower load-dependent test and hides
+    which one it was. T0's ruling O7 is not a retry: it re-runs a row that is already named
+    `diagnosed-loud`, once, alone, and records both outcomes. The hang guard is not a speed
+    check: it is one number, far above any real duration, whose only job is to turn a hang into
+    a stack trace.
 - **plan-29 D15: "normal load" is a 1-minute load average ≤ 8.0 at the start of a run on the
   16-core machine.**
   - **Why:** the 0.83.0 release run saw 5.6-7.6 with agents working; bug-231 failed at 12-20
     and also at 5.6-7.6. A target with no stated load cannot be failed.
+- **plan-29 D20: 23.0's two lane ACs are deferred with rows; they are not adopted into this
+  task.**
+  - **Why:** the store review left the choice to this spec ("adopts or defers"). Both lanes
+    need operator setup that only the user can do, and neither is needed for 29.5's baseline,
+    which is T0.7's clean run in the main tree and its clone twin. Adopting them would put a
+    user-gated setup on the path of the split.
+  - **Cost:** 23.0's rule "tier 1 gates every merge to `master`" stays unmet, now with a row
+    and a date in place of silence.
+- **Not this spec's decisions:** that T0 is this task's body, the stage order, T0.3's bands for
+  bug-228 and bug-231, and the families' move after 29.5 are the queue review's findings as
+  the lead accepted them on 2026-11-14.
 {#decisions-list}
+

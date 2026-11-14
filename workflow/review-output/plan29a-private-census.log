@@ -37,7 +37,6 @@
    -> patch verbs        sites=  61 distinct names=18 (private: 2)  top: [('memory', 13), ('_LONG_LIVED', 11), ('require_daemon', 8), ('_call', 7), ('memory_partition', 5), ('queues', 3)]
    -> patch modelsrv     sites=  58 distinct names=7 (private: 1)  top: [('shared_available', 17), ('shared_enabled', 12), ('SharedWorkerClient', 12), ('PROBE_TIMEOUT_S', 8), ('WorkerClient', 7), ('_ENV_WARNED', 1)]
    -> patch reranker     sites=  30 distinct names=8 (private: 1)  top: [('rerank_enabled', 9), ('rerank_available', 8), ('shared_reranker', 7), ('collect_rerank_docs', 2), ('rerank_entity_hits', 1), ('Reranker', 1)]
-
 == tests patching refmatrix.cli attributes: 191 sites, 13 names
    _root                         160  -> _core
    _partition_override             7  -> (module-level name, not a def)
@@ -46,14 +45,13 @@
    _reexec_for_fork_safety         3  -> _core
    _store                          3  -> _core
    _memory_partition_default       2  -> _core
-   _grep_stdin_addendum            2  -> query_cmds
-   _should_via_replica             1  -> query_cmds
+   _grep_stdin_addendum            2  -> grep_cmds
+   _should_via_replica             1  -> _core
    _memory_intent                  1  -> memory_cmds
    _memory_daemon_call             1  -> session_cmds
    _reader_store                   1  -> _core
    _global_recall_rows             1  -> memory_cmds
-tests reading cli privates: 150 sites, 45 names; of those, names the proposed map moves OUT of the package core: 27 names, 101 sites
-   by target module: [('query_cmds', 13), ('session_cmds', 7), ('memory_cmds', 5), ('ingest_cmds', 2)]
-   names with no def in cli.py (module-level state or imported): ['_PHASE_MARKS', '_PROC_T0', '_focus_digest', '_partition_override']
+tests reading cli privates: 150 sites, 45 names; names the proposed map moves OUT of the core: 26 names, 93 sites
+   by target module: [('grep_cmds', 11), ('session_cmds', 7), ('memory_cmds', 5), ('vectors_cmds', 2), ('search_cmds', 1)]
 tests patching refmatrix.store module attributes: 15 sites; [('_DERIVE_SRC_DIR', 4), ('derive_code_hash', 4), ('time', 2), ('_DERIVE_CODE_MODULES', 2), ('__file__', 2), ('is_memory_only_root', 1)]
 tests reading store module privates: 32 sites; [('_DERIVE_CODE_HASH_CACHE', 13), ('_DERIVE_EXPECTED_PASSES', 4), ('_DERIVE_PASS_MODULES', 4), ('_CONCEPT_SHIFT', 2), ('_DERIVE_VERDICT_EXCLUDED', 2), ('_canonical_for_kind', 1), ('_ENTITY_MASK', 1), ('_DERIVE_CODE_MODULES', 1), ('_concept_variants', 1), ('_doc_prior_weights', 1), ('_term_boost_linkages', 1), ('_canonical_verb', 1)]

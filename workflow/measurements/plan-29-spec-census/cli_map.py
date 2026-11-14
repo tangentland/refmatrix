@@ -7,12 +7,17 @@ ct = json.load(open("clicktree.json")); rows = ct["rows"]
 MAP = {
  "memory_cmds":  ["memory", "taxonomy"],
  "session_cmds": ["focus", "session", "task", "save-state", "recall-state", "scan-prompt", "cctree"],
- "daemon_cmds":  ["daemon", "queue", "learn", "watch", "log", "cli-log", "telemetry", "fingerprint"],
+ "grep_cmds":    ["grep"],
+ "search_cmds":  ["context", "recall", "locate"],
+ "vectors_cmds": ["embed", "search-dense"],
+ "catalog_cmds": ["partition", "replica", "derive", "repair-index", "compact", "compact-log", "rebuild", "checkpoint", "dump-log", "migrate-to-duckdb", "merge-verb-aliases"],
+ "removal_cmds": ["forget", "untrack", "vacuum", "prune-noise", "noise", "unnoise", "protect", "unprotect", "audit-same-as"],
+ "graph_cmds":   ["link", "unlink", "add", "add-concept", "add-entity", "add-linkage-type", "canon", "concept", "coref", "pairs"],
+ "ingest_cmds":  ["ingest", "ingest-gmd", "ingest-status", "sync", "reingest", "tldr-warm", "graphify-warm", "init", "import", "export"],
+ "daemon_cmds":  ["daemon", "queue", "watch", "log", "cli-log", "telemetry", "fingerprint"],
+ "learn_cmds":   ["learn"],
  "hub_cmds":     ["hub", "bus", "schedule", "ui", "projects", "mcp", "curator", "refine"],
- "ingest_cmds":  ["ingest", "ingest-gmd", "ingest-status", "sync", "reingest", "embed", "tldr-warm", "graphify-warm", "init", "untrack", "import", "export", "coref", "pairs"],
- "search_cmds":  ["context", "grep", "recall", "search-dense", "locate"],
- "query_cmds":   ["query", "describe", "neighbors", "top", "co-occur", "concept", "stats", "info", "list", "run", "save-query", "primer", "tools-primer", "pagerank", "list-entities", "list-linkages", "list-queries"],
- "store_cmds":   ["partition", "replica", "derive", "canon", "repair-index", "compact", "compact-log", "rebuild", "vacuum", "checkpoint", "dump-log", "migrate-to-duckdb", "merge-verb-aliases", "audit-same-as", "prune-noise", "forget", "protect", "unprotect", "noise", "unnoise", "link", "unlink", "add", "add-concept", "add-entity", "add-linkage-type"],
+ "query_cmds":   ["query", "describe", "neighbors", "top", "co-occur", "stats", "info", "list", "list-entities", "list-linkages", "list-queries", "run", "save-query", "primer", "tools-primer", "pagerank"],
  "admin_cmds":   ["install-hooks", "upgrade", "version"],
 }
 where = {t: m for m, ts in MAP.items() for t in ts}
