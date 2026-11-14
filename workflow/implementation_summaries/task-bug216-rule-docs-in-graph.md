@@ -828,6 +828,36 @@ own command, `__pycache__` cleared; suite = `test_bug216_remedy_r5.py`:
 
 {#green-remedy-r5-mutations}
 
+### GREEN remedy r6: bsd-216 r6 #m1 (ruling L103) {#green-remedy-r6}
+
+Commit: `2379e45` (src). RED: `e5162ae` (red-216). Audit: `9bf04fc`
+(`workflow/bullshit/2026-11-14-0714-bug216-r6-f8db8f6.md` #m1). No test edited.
+{#green-remedy-r6-commits}
+
+- **M1.** `Store._lance_for_purge`'s `find_spec("lance") is None` branch now calls
+  `_note_vector_delete_failure(kind, n, ModuleNotFoundError("lance is not installed (no [dense]
+  extra) but the vector table exists"))` before returning None. Every caller (`_drop_lance_for_purge`,
+  `_delete_vector_groups` behind the purge batch and the replica merge) asks only after finding the
+  table on disk, so None now always means rows were left behind and is counted
+  (`vector_delete_failures`) and printed. The message names the table as
+  `<partition>/<kind>.lance` (a `partition=` argument threaded from `_delete_vector_groups`, so a
+  merge row in another partition is named right) and says the vector rows were left behind. The
+  `_drop_lance_for_purge` docstring no longer lists "lance not installed" as nothing to delete.
+  This SUPERSEDES `#green-remedy-r5-m1`'s note that a purge with lance not installed "stays as
+  quiet as before r4": with the table present it is now loud on both purge paths.
+  {#green-remedy-r6-m1}
+
+Runs (per L103: machine load ~20, bug-212's full suite running, so NO full suite; absolute
+`PYTHONPATH=/Volumes/littlebig/refmatrix-bug216/src`; logs in `workflow/review-output/bug216/`):
+(1) the r6 file + `test_lance_drop_failures_loud`, `test_purge_path_batched_lance`,
+`test_dual_write_purge`, `test_memory_bulk_forget`, `test_store_vectors`, `test_vectors`:
+**50 passed** (`remedy-r6-step1.log`); (2) the bug-216 family (+ `test_memory_bulk_forget`):
+**772 passed** (`remedy-r6-step2-family.log`). {#green-remedy-r6-results}
+
+Mutation, in a throwaway clone of `2379e45`, restored with `git checkout -- src` in its own command,
+`__pycache__` cleared: drop the new `_note_vector_delete_failure` line → **2 failed** (`[batch]`,
+`[single]`; `mut-r6-drop-line.log`). {#green-remedy-r6-mutations}
+
 ## AC-6 (live) {#ac6}
 
 (lead, after deploy and R4)
