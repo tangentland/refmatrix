@@ -43,8 +43,13 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
    `B`, `C`; L83) and both triggers. 28.2's AC-6 runs count toward them.
    - From the variance of the `B`/`C` per-task log cost ratio, compute the number of tasks that
      distinguishes a 30% cut from a 10% cut, at two-sided α 0.05 and power 0.8, on P-3's scalar.
-   - The same computation is reported for `A+dedupe` vs `C` (secondary), `A+dedupe` vs `B` (the
-     push reading's pairs) and `A+dedupe` vs `A+full` (10.2's nested reading).
+   - The same computation is reported for `A+dedupe` vs `C` (secondary).
+   - **Each secondary reading is powered on ITS OWN outcomes (L87).** The push reading uses the
+     per-task variance of the `A+dedupe` − `B` differences in outcomes (2)-(4), each per 100
+     main-loop tool calls. 10.2's nested reading uses the per-task variance of the
+     `A+dedupe`/`A+full` log ratio of outcome (7)'s bytes per run, and of the difference in its
+     used rate per run. Neither is ever powered on outcome (1). Each variance and its n go into
+     the file.
    - n is capped at 20 tasks per cell per trigger. If the cap binds for `B` vs `C`, the paired
      series can read only whether "≥ 30%" holds, and that is written into the file before the
      start.
@@ -57,11 +62,18 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
    - the primary comparison (P-2), the effect estimator (1 − the geometric mean of per-task cost
      ratios, a bootstrap 95% CI over tasks, pooled over both triggers, with per-trigger results
      reported), and the band table with P-8's CI rule;
-   - the push reading: `A+dedupe` vs `B` on outcomes (2)-(4) only (P-11; r1 #b1), paired by
-     task. "Better" means that the paired bootstrap test over tasks of the A − B difference,
-     Holm-adjusted across the three outcomes, rejects at family-wise α 0.05 in A's favour.
-     Holm-adjusted CIs are printed (r2-m5). `shrink` fires when A is better on none of them
-     while costing more on (5). Outcome (6) is read within the A cells only;
+   - the push reading: `A+dedupe` vs `B` on outcomes (2)-(4) per 100 main-loop tool calls only
+     (P-11; r1 #b1; L87), paired by task. A push acts once per run, on the resume prompt, and
+     the file says so. Each outcome's A-benefit gets a paired bootstrap CI over tasks,
+     Holm-adjusted across the three at family-wise α 0.05 (r2-m5). The three readings:
+     - `keep push` when some lower bound is above 0;
+     - `shrink` when every upper bound is below **the non-inferiority margin δ**, AND A costs
+       more on (5);
+     - "no verdict" otherwise.
+
+     **δ is frozen here (L87):** for each outcome, 0.8 times the calibration SD of its paired
+     A − B difference, the same size as the push reading's stated detectable effect. Noise
+     therefore reads "no verdict", never `shrink`. Outcome (6) is read within the A cells only;
    - 10.2 R7's nested bands, copied verbatim with their source, read on `A+dedupe` vs `A+full`
      from the paired series (L83);
    - the `cited_in_answer` gate: 50 blind labels, weight only at precision ≥ 0.80 with a Wilson
@@ -78,8 +90,9 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
      nested reading and states no number of its own.
      - **The rule.** For each reading, `n_power` is the smallest n that detects the reading's
        STATED detectable effect (below) at power 0.8 and two-sided α 0.05. For the push reading,
-       α is 0.05/3, Holm's worst case over its three outcomes. `n_power` is computed from R1's
-       calibration variance for that reading's pair of cells. The minimum is then clamped to
+       it is the n that bounds every outcome's Holm-adjusted CI below δ at power 0.8, one-sided α
+       0.05/3 (Holm's worst case over its three outcomes). `n_power` is computed from R1's
+       calibration variance of THAT reading's own outcomes (L87). The minimum is then clamped to
        the exploration's ceiling of 10-20 pairs per arm: `n_min = min(max(n_power, 10), 20)`.
        Below 10 paired tasks no reading is attempted. When `n_power` exceeds 20, the minimum is
        20, and the file states the smaller effect that 20 pairs CAN detect as that reading's
@@ -234,3 +247,15 @@ The status stays `pending` pending a confirm-lite.
 |---|---|
 | 28.4 SETS every reading's minimum n of paired tasks per cell: the rule `n_min = min(max(n_power, 10), 20)` (the exploration's 10-20 ceiling); the stated detectable effects (primary 30% vs 10%; push d = 0.8 at α 0.05/3; nested 30% bytes cut and a used rate 15% below `full`, with the −5% keep margin a stated limit); a power note per reading; 10.2 cites it | [[#r2]] |
 
+
+## Revision L87 (2026-11-14, `bsd-spec-t3c` L83 confirm-lite; lead ruling L87) {#rev-l87}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite.
+
+| finding | disposition | where |
+|---|---|---|
+| S3 the push minimum has no rule; the nested minimum is powered on (1) | each secondary reading is powered on its own outcomes' calibration variance; push's `n_power` bounds its CIs below δ | [[#r1]], [[#r2]] |
+| S3 `shrink` fires on noise | `shrink` needs every Holm-adjusted upper bound below δ (frozen as 0.8 × the calibration SD of each outcome's paired difference), and A costing more; otherwise `keep push` or "no verdict" | [[#r2]] |
+| S2 units | the push outcomes are per 100 main-loop tool calls; a push acts once per run, stated | [[#r2]] |

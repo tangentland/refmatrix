@@ -57,7 +57,7 @@ the global one included.
 | the paired-run override (`arms.parse_paired`, `arms.paired_override`): run id and as-of, with the cell taken from `arms.cell()`; the as-of memory filter | this task (R3, R4) |
 | `arms.push_on` and arm B's push-off in the two per-prompt hooks | this task (R5) |
 | the per-call row field `handhold_cell`, written whenever `RMX_HANDHOLD_CELL` is set | 10.2 R7 (spec-t3b `5559d20`) |
-| the paired SessionStart row (`handhold_cell`, `arm_source`, `arm_run`) and the per-call `arm_run`, written ONLY when `RMX_HANDHOLD_RUN` is set | this task (R2, R6, L86) |
+| the paired SessionStart row (`handhold_cell`, `arm_source`, `arm_run`) and the per-call `arm_run`, written ONLY while a paired run is active: `RMX_HANDHOLD_RUN` set AND valid | this task (R2, R6, L86, L87) |
 | deleting the measurement branches of `arms.py`, the override and the filter after the series | plan-28's close-out, 28.5 R8, under 10.2's deferral row widened by R7 |
 | the `cited_in_answer` scorer that the readings use | [[task-28.3-outcome-scorer#r7]] |
 {#ownership-table}
@@ -83,10 +83,13 @@ the global one included.
 2. **R2 The cell is 10.2's `arms.cell()`; this task adds the paired rows and `push_on`.** 10.2
    R7 builds `arms.cell()`, and the verb and scan-prompt read the dedupe factor from it, never
    from anything else. This task changes nothing in `arms.cell()`. It adds:
-   - **The SessionStart row, for paired runs only (L86).** When `RMX_HANDHOLD_RUN` is set, the
-     SessionStart focus hook writes one row on `cli.log` with `handhold_cell` (10.2's field
-     name, from `arms.cell()`), `arm_source: paired` and `arm_run`. Otherwise it writes nothing,
-     so 10.2's own test, which sets only `RMX_HANDHOLD_CELL`, still sees no SessionStart write.
+   - **The SessionStart row, only while a paired run is active (L86, L87).** When
+     `RMX_HANDHOLD_RUN` is set AND valid (`parse_paired` accepts it), the SessionStart focus hook
+     writes one row on `cli.log` with `handhold_cell` (10.2's field name, from `arms.cell()`),
+     `arm_source: paired` and `arm_run`. Otherwise it writes no row: a cell set without a run
+     id writes nothing, so 10.2's AC-11 (which sets only `RMX_HANDHOLD_CELL` and asserts no
+     SessionStart arm row) stays as approved. An invalid run id writes no paired row, and the
+     call's row gets `arm_error`.
    - **`push_on` reads `arms.cell()`.**
 
    A `/clear` that mints a new session id runs SessionStart again, and the override gives the
@@ -154,7 +157,7 @@ the global one included.
      empty" holds on every call that packs. The per-prompt hooks do not pack in B.
 6. **R6 Rows carry the cell and the run, in paired runs only (L86).** 10.2 already records
    `handhold_cell` on the call's row whenever `RMX_HANDHOLD_CELL` is set. This task adds `arm_run`
-   whenever `RMX_HANDHOLD_RUN` is set, and adds no second cell field. `rmx telemetry --context`
+   only while a paired run is active (`RMX_HANDHOLD_RUN` set and valid, L87), and adds no second cell field. `rmx telemetry --context`
    and the hook-cost report split per channel by `handhold_cell`. Without the env, rows are
    unchanged. {#r6}
 7. **R7 Deletion.** 10.2's deferral row (`arms.py`'s measurement branches are deleted after the
@@ -382,3 +385,13 @@ The status stays `pending` pending a confirm-lite.
 | `arms.cell()` (10.2's, spec-t3b `5559d20`) is the one reader of `RMX_HANDHOLD_CELL`; no `session_cell` exists (a constant-return placeholder under #no-mocks); `paired_override` reads `RUN` and `AS_OF` only | [[#ownership]], [[#r2]], [[#r3]] |
 | the cell field on rows is 10.2's `handhold_cell`; this task adds `arm_run` and, when `RMX_HANDHOLD_RUN` is set, the paired SessionStart row, so 10.2's own CELL-only test still sees no SessionStart write | [[#ownership]], [[#r2]], [[#r5]], [[#r6]], [[#ac-1]], [[#ac-2]], [[#ac-8]], [[#files]] |
 
+
+## Revision L87 (2026-11-14, `bsd-spec-t3c` L83 confirm-lite; lead ruling L87) {#rev-l87}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite.
+
+| finding | disposition | where |
+|---|---|---|
+| S1 two cell field names; the paired SessionStart row vs 10.2 AC-11 | ONE field, 10.2's `handhold_cell` (`30633d5`); the paired SessionStart row and `arm_run` are written only while a paired run is active (`RMX_HANDHOLD_RUN` set AND valid); a cell without a run id writes no row, so 10.2 AC-11 at spec-t3b `5559d20` stays as approved | [[#ownership]], [[#r2]], [[#r6]] |

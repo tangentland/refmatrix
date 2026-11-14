@@ -48,6 +48,9 @@ decision (G18), not a goal step. {#why-body}
    - the four cells and the task set (refmatrix and cliquedb handoffs);
    - the frozen minimum n per cell, and the power note's estimate of runs and agent time;
    - that the user's own sessions are not touched;
+   - that deploys of the treatment modules from queue items 8-11 (`scan.py`, `recall_pack.py`,
+     `hook_budget.py`, context rendering, the hooks generator, `arms.py`) need a user pause while
+     the series runs (R3; L87 m3);
    - the paired archive;
    - the stop condition (the user may pause or stop at any time).
 
@@ -213,3 +216,13 @@ The status stays `pending` pending a confirm-lite.
 |---|---|
 | AC-4 checks the live logs for 10.2's `handhold_cell` field (not `session_arm`) | [[#ac-4]] |
 
+
+## Revision L87 (2026-11-14, `bsd-spec-t3c` L83 confirm-lite; lead ruling L87) {#rev-l87}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite.
+
+| finding | disposition | where |
+|---|---|---|
+| m3 the start message to the user | R1 names that treatment-module deploys from items 8-11 need a user pause while the series runs | [[#r1]] |

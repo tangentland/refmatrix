@@ -65,12 +65,15 @@ clause, inside 19.6's scope. The r1 review found three problems, and this revisi
    output, from the transcript's usage fields) and the wall time. A run that reaches 28.2's cap
    is `censored`, with its cost taken at the cap. 28.2 R5's `leak_suspect` scan runs here, as
    `leak_scan(run)`. {#r2}
-3. **R3 Exploratory churn, outcome (2).** It counts Read, Grep, Glob and `rmx grep` calls (a
-   Bash `rmx grep` counts) that touch a project file, where no edit of that file and no citation
-   of it follows within W = 3 prompts (P-4), per 100 prompts. A citation is its path or basename
-   as a whole token in an assistant message. **The clock is the transcript's user-turn
-   sequence**, the only clock during the period, because 21.5's phase B is frozen (r1 #m4).
-   {#r3}
+3. **R3 Exploratory churn, outcome (2) (units restated by L87).** It counts Read, Grep, Glob and
+   `rmx grep` calls (a Bash `rmx grep` counts) that touch a project file, where no edit of that
+   file and no citation of it follows within the next W = 10 main-loop tool calls (P-4, in tool
+   calls since L87). It is reported per run and per 100 main-loop tool calls. A citation is the
+   file's path or basename as a whole token in an assistant message. **The clock is the run's
+   main-loop tool-call sequence**, because a paired run has one prompt (r1 #m4: 21.5's phase B
+   is frozen). A churn call within the last W tool calls before the run's endpoint or cap is
+   counted only if no edit or citation follows before the run ends, and the count of such
+   right-censored calls is printed. {#r3}
 4. **R4 Labelled outcomes (3) and (4): the samplers.** {#r4}
    - (3) Re-derivation: paired runs are sampled per cell (sizes frozen by 28.4). For each
      sampled run, a labeller gets the blinded transcript (R6) and the memories and handoff that
@@ -79,9 +82,10 @@ clause, inside 19.6's scope. The r1 review found three problems, and this revisi
      already held.
    - (4) Repeated mistakes: the same sample. A labeller gets the feedback memories that existed
      at the task's start, and marks each event where the agent broke a rule that applied.
-   - Both are reported per 100 prompts. Labels and their pair ids are committed; excerpts and
+   - Both are reported per run and per 100 main-loop tool calls (L87). Labels and their pair ids
+     are committed; excerpts and
      memory bodies are not.
-5. **R5 Cost of the handholds, outcome (5).** Read from the telemetry copies, per prompt and per
+5. **R5 Cost of the handholds, outcome (5).** Read from the telemetry copies, per run (per prompt printed beside it, L87) and per
    cell: injected bytes (25.1's byte unit), hook latency (`latency_ms`), and the share of the
    hook output budget. Cell `B`'s suppressed rows count as 0 bytes. {#r5}
 6. **R6 Blinding and labellers (r1 #m5).** {#r6}
@@ -133,23 +137,30 @@ clause, inside 19.6's scope. The r1 review found three problems, and this revisi
      `A+full` (10.2's nested reading). It is NOT compared across cells with and without push,
      where it is larger in A by construction. In `B` it is reported descriptively only.
 8. **R8 10.2's nested outcomes, outcome (7), from the paired series (L83).** Injected bytes per
-   prompt: all per-prompt bytes of the run over its prompts. Used per 100 prompts, under R7's
+   run, with per prompt printed (L87). Used per run, under R7's
    rule. Both are compared `A+dedupe` vs `A+full`, paired by task, split by 10.4's
-   `prompt_family`, with names-line items apart. {#r8}
+   `prompt_family`, with names-line items apart. **Limit (L87 m1):** a run has one resume prompt,
+   so this sees only first-prompt dedupe against the run's SessionStart (and, under `clear`, warm-up)
+   deliveries; the report says so. {#r8}
 9. **R9 The readings, one module (r1 #b1).** `eval/production/handhold/readings.py` takes the
    scored results and 28.4's frozen file and returns every band reading. It is the only code
    that reads a band. **Every reading first checks the frozen minimum n of paired tasks per cell
    for the cells it uses (L79, L83).** Below it, the reading is `underpowered` ("underpowered, no verdict"), and the
    n reached per cell is returned with it. {#r9}
    - **Primary:** `B` vs `C` on outcome (1) (P-2), with P-8's CI rule.
-   - **Push:** `A+dedupe` vs `B` on outcomes (2)-(4) only (P-11). **A Holm correction across
-     the three outcomes is pre-registered (lead ruling on r2-m5).** Each outcome's paired
-     bootstrap over tasks gives a p-value for the A − B difference, and the three p-values
-     are Holm-adjusted. "A is better on an
-     outcome" means its Holm-adjusted test rejects at family-wise α 0.05 in A's favour, and the
-     report prints the matching Holm-adjusted (simultaneous) CIs. If A is better on none of
-     (2)-(4) while A's outcome (5) cost is higher, the reading is `shrink` (shrink ambient
-     injection to a gated or pointer-only form). Outcome (6) is not an input.
+   - **Push:** `A+dedupe` vs `B` on outcomes (2)-(4) per 100 main-loop tool calls (P-11, L87).
+     Each outcome's A-benefit is B − A, since all three are costs. It gets a paired bootstrap
+     over tasks, and the three are Holm-adjusted (r2-m5), with the Holm-adjusted (simultaneous)
+     CIs printed. The reading is:
+     - `keep push` when, on some outcome, the CI's lower bound is above 0;
+     - `shrink` (shrink ambient injection to a gated or pointer-only form) when, on EVERY
+       outcome, the CI's upper bound is below the pre-registered non-inferiority margin δ (28.4
+       R2), AND A's outcome (5) cost is higher. This is non-inferiority (L87): A is shown not
+       to be better by δ or more;
+     - "no verdict" otherwise.
+
+     Noise gives wide CIs that reach δ, so it reads "no verdict", never `shrink`. Outcome (6)
+     is not an input.
    - **Nested:** 10.2 R7's bands on outcome (7), `A+dedupe` vs `A+full`.
 
 ## Acceptance criteria {#acceptance}
@@ -166,12 +177,18 @@ by the real hooks in 23.0's sandbox. Every AC names its mutation. {#acceptance-l
 
    **Mutations:** subagent calls counted (`12`); the endpoint taken at the first Edit of ANY
    file. {#ac-1}
-2. **AC-2 Churn.**
-   - A Read of `F` with no edit or citation of `F` in the next 3 prompts counts 1.
-   - The same, followed by an assistant message naming `F`'s basename in prompt 2, counts 0.
-   - A citation only in prompt 4 still counts 1.
+2. **AC-2 Churn, inside ONE prompt (L87).** One synthetic paired run, one resume prompt, 30
+   main-loop tool calls:
+   - A Read of `F` at call 3, with no edit or citation of `F` in calls 4-13, counts 1.
+   - A Read of `G` at call 5, followed by an assistant message naming `G`'s basename after call
+     9, counts 0.
+   - A Read of `H` at call 6, cited only after call 17 (the 11th call after it), counts 1.
+   - A Read of `K` at call 25, with the run ending at call 30, is right-censored: counted per
+     R3, and printed in the censored count.
+   - The run's churn per 100 main-loop tool calls is the count over 30 × 100.
 
-   **Mutation:** W off by one. {#ac-2}
+   **Mutations:** W off by one, so `H` counts 0; W counted in prompts, so every case reads 0 in
+   a one-prompt run. {#ac-2}
 3. **AC-3 Blinding removes every injected block.** A property test over the fixture
    transcripts: no line of any hook output and no cell value survives in an excerpt, and the
    agent's own messages survive byte-for-byte. **Mutation:** `additionalContext` kept; AC-3
@@ -212,13 +229,22 @@ by the real hooks in 23.0's sandbox. Every AC names its mutation. {#acceptance-l
 
    **Mutation:** the gate reads the upper bound < 0.50 (the overridden rule); the 38-of-50 set
    then carries weight and AC-7 fails. {#ac-7}
-8. **AC-8 The push reading can fire (r1 #b1).** A synthetic scored set where `A+dedupe` is not
-   better than `B` on (2), (3) or (4) (each CI includes 0), costs more on (5), and has 3× B's
-   outcome (6): `readings.py` returns `shrink`. A second set where A is better on (3), with the
-   CI excluding 0: not `shrink`. A third set where A's unadjusted p-value on (3) is 0.03 and on
-   (2) and (4) is 0.5 (Holm-adjusted 0.09 on (3)): `shrink`. **Mutations:** outcome (6) added
-   to the push inputs, so the first set reads not-`shrink`; the Holm step removed, so the third
-   set reads not-`shrink` on its raw 0.03. Either fails AC-8. {#ac-8}
+8. **AC-8 The push reading's three outcomes (r1 #b1, L87).** With δ = 1.0 (in each outcome's
+   units, synthetic):
+   - **`shrink`.** On every outcome, A − B is near 0 with a tight Holm-adjusted CI whose upper
+     bound is below δ; A costs more on (5); and A has 3× B's outcome (6).
+   - **`keep push`.** A is better on (3), with the CI's lower bound above 0.
+   - **Holm decides `keep push`.** A's unadjusted CI on (3) excludes 0, but the Holm-adjusted
+     one does not, and every upper bound is below δ, so the reading is `shrink`.
+   - **Noise reads "no verdict".** The same means as the first set, with variance ×9: the CIs
+     reach past δ, so neither `keep push` nor `shrink` holds.
+
+   **Mutations:**
+   - outcome (6) added to the push inputs, so the first set reads `keep push`;
+   - the Holm step removed, so the third set reads `keep push`;
+   - `shrink` on "not better" alone, without the δ bound, so the noisy set reads `shrink`.
+
+   Each fails AC-8. {#ac-8}
 9. **AC-9 Explicit attribution has one definition across `eval/` and `src/` (r2-s3).** An AST
    scan of `eval/` and `src/` together finds exactly one definition of the `ref_query_id` →
    delivering-channel attribution, `attribute_explicit_use`, wherever it lives: in `score.py`
@@ -348,3 +374,15 @@ The status stays `pending` pending a confirm-lite.
 |---|---|
 | the cell field it splits by and blinds is 10.2's `handhold_cell` | header, [[#r6]] |
 
+
+## Revision L87 (2026-11-14, `bsd-spec-t3c` L83 confirm-lite; lead ruling L87) {#rev-l87}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite.
+
+| finding | disposition | where |
+|---|---|---|
+| S2 per-prompt units in a one-prompt run | outcomes per run and per 100 main-loop tool calls; churn's W = 10 tool calls, with right-censoring counted; AC-2's cases fit inside one prompt | [[#r3]], [[#r4]], [[#r5]], [[#r8]], [[#ac-2]] |
+| S3 `shrink` fires on noise | push reads `keep push`, `shrink` (non-inferiority: every Holm-adjusted upper bound below δ, and A costs more) or "no verdict"; AC-8 adds the noisy set and the "shrink without δ" mutation | [[#r9]], [[#ac-8]] |
+| m1 the nested reading's reach | first-prompt dedupe only, stated as a limit | [[#r8]] |
