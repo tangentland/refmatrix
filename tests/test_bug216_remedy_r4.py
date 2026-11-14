@@ -348,3 +348,76 @@ def test_m1_vectors_deleted_counts_the_rows_actually_removed(op_env):
     assert r["vectors_deleted"]["deleted"] == removed, (
         f"`deleted` = {r['vectors_deleted']['deleted']} for {removed} rows removed "
         f"({len(both)} ids issued): it must count rows, not ids")
+
+
+# ================================================================ vector owners (lead's L99 extension)
+
+
+def test_b1a_op_deletes_the_vector_at_an_id_an_a_loser_vacated_and_requeues_its_new_owner(base):
+    """PIN for the lead's extension of L99 (green-216, at 9def24a: dropping the two `remap_a`
+    UNION branches from replica_merge's `vector_rows` query survived r3 + r4, 9 passed).
+
+    The B1a shape through the REAL `_op_replica_merge`: A's `shared` loses to B's newer twin and
+    B's `b1` holds A-shared's old id. The Lance row at that id is A-shared's vector, so after the
+    merge it names `b1` wrongly: it must be deleted and `b1` re-queued. B-shared's row (the
+    canonical, owner unchanged) and an unrelated memory's row stay; the unrelated memory is
+    not re-queued."""
+    from refmatrix import daemon as dm
+    a_root = base / "A" / "proj" / ".refmatrix"
+    b_root = base / "B" / "proj" / ".refmatrix"
+    _new_store(a_root)
+    s = _open(a_root)
+    try:
+        keep = s.add_memory("keep", "an unrelated, embedded memory")
+    finally:
+        s.close()
+    b_root.mkdir(parents=True)
+    shutil.copy2(a_root / "catalog.duckdb", b_root / "catalog.duckdb")
+    s = _open(a_root)
+    try:
+        a_shared = s.add_memory("shared", "SHARED A")
+    finally:
+        s.close()
+    s = _open(b_root)
+    try:
+        b1 = s.add_memory("b1", "B ONE")
+        s.add_memory("b-two", "B TWO")
+        b_shared = s.add_memory("shared", "SHARED B (newer)")
+    finally:
+        s.close()
+    assert b1 == a_shared and b_shared not in (a_shared, keep), (
+        f"precondition: b1 at A-shared's id {a_shared}; b_shared {b_shared}; keep {keep}")
+    for root in (a_root, b_root):                 # every entity embedded, as after `rmx embed`
+        con = duckdb.connect(str(root / "catalog.duckdb"))
+        try:
+            con.execute("UPDATE entities SET vectors_updated_at = updated_at + 1, "
+                        "vectors_partition = 'proj'")
+        finally:
+            con.close()
+    droot = base / "D" / "proj" / ".refmatrix"
+    droot.mkdir(parents=True)
+    shutil.copy2(a_root / "catalog.duckdb", droot / "catalog.A.duckdb")
+    shutil.copy2(b_root / "catalog.duckdb", droot / "catalog.B.duckdb")
+    (droot / "active").write_text("A")
+    _seed_vectors(droot, [a_shared, b_shared, keep])
+    d = dm.Daemon(droot, partition="proj")
+    d._log = lambda msg: None
+    d.store = Store(droot, partition="proj")
+    d.store.init()
+    d.store._connect()
+    try:
+        r = dm._op_replica_merge(d, {"dry_run": False})
+        assert r.get("ok") is True and not r.get("vector_delete_error"), r
+        assert r["remap"]["a_loser_count"] == 1, f"precondition: A's shared loses: {r['remap']}"
+        with d.store.with_partition("proj"):
+            pending = {int(row[0]) for row in d.store.pending_embeddings()}
+    finally:
+        if d.store is not None:
+            d.store.close()
+    left = _vector_ids(droot)
+    assert a_shared not in left, (
+        f"the Lance row at {a_shared} (A-shared's vector, now under b1) survived the merge")
+    assert {b_shared, keep} <= left, (
+        f"the merge deleted a vector whose owner did not change: kept {sorted(left)}")
+    assert b1 in pending, f"b1 ({b1}) holds a vacated id but was not re-queued: {sorted(pending)}"
+    assert keep not in pending, "an unrelated, embedded memory was re-queued"
