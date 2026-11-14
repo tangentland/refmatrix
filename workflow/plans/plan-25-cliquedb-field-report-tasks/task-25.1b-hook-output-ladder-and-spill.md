@@ -694,3 +694,11 @@ rel: implements -> [[plan-review-2026-11-13#lead]]
 | finding | change | anchor |
 |---|---|---|
 | r3 m1 (c2) could leave before the re-wrap | (c2) calls the verb with `partition=` (as `cli.py:12759` / `:12865` do) and asserts that the deadline went through the re-wrap (`__cause__` is the inner `VerbDeadlineError`) | AC-28 |
+
+## Approval of the R18 amendment (2026-11-14, d9co) {#approval-r18-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| Revision rounds 3-6 (R18 / AC-28 / `#amend-d8`, bug-224's skip line in the payload; L68, L70, L75, L76) are approved by the lead on the user's pattern (d9co) after ch-bsd confirm-lite r3 MEH-only (0B/0S/1M), whose one MEH was folded at `4d4634a` per L76 with no further round | `workflow/bullshit/2026-11-14-0145-spec-t3a-25.1b-r18-r3-808ef00.md` (r1 and r2 in the same ledger, over `spec-wave-t3a` `769439e..808ef00`) | `metadata.status` stays `approved`; R18 builds with the rest of this task |
+
+rel: derives-from -> [[bsd-spec-251b-r18-r3-808ef00]]
