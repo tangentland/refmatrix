@@ -330,3 +330,11 @@ rel: derives-from -> [[agent-brief-spec-wave]]
 | Q7 and Q11 marked superseded by Q13 / Q10 | L23 | [[#decisions-log]] |
 | 10.3's reader list includes 25.1b R14 and 25.3 R7 (helix reset, L16) | L16, CB-6 | [[task-10.3-plan-10-injection-dedup#r2]] |
 | 10.4's curator entry goes through 25.1b R12's shared emitter | L15 | [[task-10.4-non-human-prompt-gate#rev-round-6]] |
+
+## Approval of the L79 amendment (2026-11-14, d9co) {#approval-l79-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The L79 revision (plan-28's 3-calendar-day period; 40 sessions per cell per store is 10.2's minimum n, below it "underpowered, no verdict" = INCONCLUSIVE) is approved by the lead on the user's pattern (d9co) after a CLEAN ch-bsd confirm-lite | `workflow/bullshit/2026-11-14-0155-spec-t3b-l79-ca4b9a7.md` (CLEAN, over `spec-wave-t3b` `5233db4..ca4b9a7`) | status unchanged |
+
+rel: derives-from -> [[bsd-spec-t3b-l79-ca4b9a7]]
