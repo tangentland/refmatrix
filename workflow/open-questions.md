@@ -26,12 +26,13 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session 37b7498f (2026-11-13) {#session-37b7498f}
 
-Next id: **Q14**.
+Next id: **Q15**.
 
 ### Open {#open-37b7498f}
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q14 | 2026-11-14 | Measured session rates (2026-11-14, transcripts + session index + SessionStart telemetry): refmatrix 88 sessions in 184 days (0.48/day; last 7d 1.0/day, last 30d 0.37/day); cliquedb 0.10/day over 30d (3 transcripts retained). In a 3-day period with 3 cells that is about 1-3 sessions per store in total, so every session-leg reading would be "underpowered"; 40 per cell per store needs ~120 sessions per store (~4 months refmatrix at 1/day, over a year cliquedb). Where should plan-28's verdicts (and 10.2's nested dedupe reading) come from? | a: the paired re-entry leg (agent sessions resuming real handoffs on isolated clones, sized to its own pre-registered n, not time-boxed) carries every verdict; the 3-day session leg becomes a live smoke check (cells draw, telemetry records, nothing breaks) reported descriptively; b: keep the session leg as the verdict source and lengthen it; c: drop the session leg | open |
 | Q12 | 2026-11-14 | atlftpd and bdep/thiquet carry only old refmatrix git hooks and no Claude hook layer: does 0.83.0's `install-hooks --apply --force` give them the full Claude hook layer too? | atlftpd b (git + Claude hooks; it now has a daemon), bdep/thiquet a (git hooks only); or both a; or both b | open |
 
 ### Answered {#answered-37b7498f}
