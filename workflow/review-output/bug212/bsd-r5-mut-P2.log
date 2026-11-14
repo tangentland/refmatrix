@@ -1,0 +1,81 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /private/tmp/claude-501/b2r5.qNIL/mu/src/refmatrix as checked-hash (bug-037)
+..FF..........................................................           [100%]
+=================================== FAILURES ===================================
+_________ test_compact_refuses_before_it_stops_a_running_daemon[slots] _________
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x105afae90>, 'slots')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x109759370>
+
+    @pytest.mark.timeout(300)
+    def test_compact_refuses_before_it_stops_a_running_daemon(tracked_repo, monkeypatch):
+        """b-1 (ii): with a daemon running, `rmx compact` on a tracked catalog refuses BEFORE it
+        pings or stops the daemon -- the daemon the refusal names as the remedy is still the same
+        process afterwards (at 03d7b27 compact stops it, compacts in-process, and spawns a new
+        one)."""
+        repo, layout = tracked_repo
+        monkeypatch.setenv("PYTHONPATH", absolute_pythonpath(os.environ.get("PYTHONPATH")))
+        assert len(str(dm.socket_path(repo.store))) < 100, dm.socket_path(repo.store)
+        pid = dm.spawn_daemon_subprocess(repo.store, watch_root=[])
+        assert pid and dm.ping(repo.store), "fixture: the daemon did not come up"
+        pid_before = dm.read_pid(repo.store)
+        assert pid_before, "fixture: no daemon pid file"
+        r = _cli(repo, ["compact", "--no-keep-backup"])
+        text = _text(r)
+        pid_after = dm.read_pid(repo.store)
+>       assert dm.ping(repo.store) and pid_after == pid_before, (
+            f"[{layout}] `rmx compact` on a tracked catalog stopped the running daemon (pid "
+            f"{pid_before} -> {pid_after}, answering={dm.ping(repo.store)})\n{text}")
+E       AssertionError: [slots] `rmx compact` on a tracked catalog stopped the running daemon (pid 38264 -> None, answering=False)
+E         exit 1
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing to open /private/tmp/b212t-ytomc7oi/proj/.refmatrix/catalog.A.duckdb read-write in-process: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead
+E         
+E       assert (False)
+E        +  where False = <function ping at 0x105b900f0>(PosixPath('/private/tmp/b212t-ytomc7oi/proj/.refmatrix'))
+E        +    where <function ping at 0x105b900f0> = dm.ping
+E        +    and   PosixPath('/private/tmp/b212t-ytomc7oi/proj/.refmatrix') = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x105afae90>.store
+
+tests/test_bug212_r5_red.py:125: AssertionError
+________ test_compact_refuses_before_it_stops_a_running_daemon[legacy] _________
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1097503e0>, 'legacy')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x109756140>
+
+    @pytest.mark.timeout(300)
+    def test_compact_refuses_before_it_stops_a_running_daemon(tracked_repo, monkeypatch):
+        """b-1 (ii): with a daemon running, `rmx compact` on a tracked catalog refuses BEFORE it
+        pings or stops the daemon -- the daemon the refusal names as the remedy is still the same
+        process afterwards (at 03d7b27 compact stops it, compacts in-process, and spawns a new
+        one)."""
+        repo, layout = tracked_repo
+        monkeypatch.setenv("PYTHONPATH", absolute_pythonpath(os.environ.get("PYTHONPATH")))
+        assert len(str(dm.socket_path(repo.store))) < 100, dm.socket_path(repo.store)
+        pid = dm.spawn_daemon_subprocess(repo.store, watch_root=[])
+        assert pid and dm.ping(repo.store), "fixture: the daemon did not come up"
+        pid_before = dm.read_pid(repo.store)
+        assert pid_before, "fixture: no daemon pid file"
+        r = _cli(repo, ["compact", "--no-keep-backup"])
+        text = _text(r)
+        pid_after = dm.read_pid(repo.store)
+>       assert dm.ping(repo.store) and pid_after == pid_before, (
+            f"[{layout}] `rmx compact` on a tracked catalog stopped the running daemon (pid "
+            f"{pid_before} -> {pid_after}, answering={dm.ping(repo.store)})\n{text}")
+E       AssertionError: [legacy] `rmx compact` on a tracked catalog stopped the running daemon (pid 38310 -> None, answering=False)
+E         exit 1
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing to open /private/tmp/b212t-2760h4k9/proj/.refmatrix/catalog.A.duckdb read-write in-process: git tracks this store's catalog (catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead
+E         
+E       assert (False)
+E        +  where False = <function ping at 0x105b900f0>(PosixPath('/private/tmp/b212t-2760h4k9/proj/.refmatrix'))
+E        +    where <function ping at 0x105b900f0> = dm.ping
+E        +    and   PosixPath('/private/tmp/b212t-2760h4k9/proj/.refmatrix') = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x1097503e0>.store
+
+tests/test_bug212_r5_red.py:125: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r5_red.py::test_compact_refuses_before_it_stops_a_running_daemon[slots]
+FAILED tests/test_bug212_r5_red.py::test_compact_refuses_before_it_stops_a_running_daemon[legacy]
+2 failed, 60 passed in 134.51s (0:02:14)
