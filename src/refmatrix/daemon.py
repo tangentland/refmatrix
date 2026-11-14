@@ -6041,6 +6041,28 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
             rerr = _reopen_writer_after_merge(d, "A", "post-merge")
             if rerr:
                 return {"enabled": True, "ok": False, "error": f"post-merge reopen: {rerr}"}
+            # 6. Vectors of both ids of every fresh-id move (bug-216 remedy r3
+            # M1, ruling L97). AFTER the swap -- the merged catalog is installed
+            # on both slots and the writer reopened on it -- and still under
+            # `_store_lock`, so no embed interleaves. A failure here does NOT
+            # undo the merge (the catalog merge is committed and installed): it
+            # is named in the reply (`vector_delete_error`, which the CLI turns
+            # into a non-zero exit) and logged; the ids stay marked unembedded,
+            # so `rmx embed` rewrites them.
+            _moved = report.get("fresh_moved") or []
+            if _moved:
+                vres = d.store.drop_vectors_for_ids(
+                    [i for pair in _moved for i in pair])
+                report["vectors_deleted"] = vres
+                d._log(f"replica merge: deleted {vres['deleted']} vector row(s) of "
+                       f"{len(_moved)} moved id pair(s) in {vres['tables']} table(s)")
+                if vres["errors"]:
+                    report["vector_delete_error"] = (
+                        "the catalog merge IS committed and installed, but deleting the "
+                        "moved ids' vectors failed: " + "; ".join(vres["errors"])
+                        + " — a dense read may return the wrong entity for those ids "
+                        "until `rmx embed` re-embeds them")
+                    d._log(f"replica merge: {report['vector_delete_error']}")
 
     if swap_failed is not None:
         # ch-bsd r3 m-r3-1: once A holds the merge and the writer is open on it,

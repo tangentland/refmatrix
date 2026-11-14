@@ -9126,6 +9126,8 @@ def replica_merge(dry_run, as_json, yes):
 
     if as_json:
         click.echo(_json.dumps(report, indent=2))
+        if report.get("vector_delete_error"):
+            raise click.ClickException(f"replica merge: {report['vector_delete_error']}")
         return
 
     elapsed = report.get("elapsed_ms_total", report.get("elapsed_ms", 0))
@@ -9149,6 +9151,9 @@ def replica_merge(dry_run, as_json, yes):
     )
     if report.get("re_embed"):
         console.print(f"[yellow]{rich_escape(report['re_embed'])}[/]")
+    if report.get("vector_delete_error"):
+        # Loud (exit non-zero), after the summary: the merge itself DID land.
+        raise click.ClickException(f"replica merge: {report['vector_delete_error']}")
     if not report.get("dry_run"):
         console.print(
             f"\n[bold]writer:[/] slot {report['writer_slot']}, "

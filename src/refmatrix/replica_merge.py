@@ -16,8 +16,12 @@ Recovery semantics:
     rows to the winner's id.
   - For tables without `updated_at` (concepts, entity_links, etc.) use
     natural-PK union; on conflict, keep the A-side row.
-  - Skip `bitmap_fragments` deep-merge — copy the union; daemon recomputes
-    fragments on the next flush anyway.
+  - `bitmap_fragments`: A's rows as they are; every B row has its bits moved
+    through `remap_b` (`store.remap_fragment`) and is OR-ed into A's row of
+    the same (partition, linkage), or inserted when A has none. Nothing
+    rebuilds fragments after the merge -- a flush writes only the rows the
+    running daemon dirties -- so a B bit left out here is lost (bug-216 remedy
+    r3 S1, bug-227).
 
 Output: a fresh catalog file at `target_path` initialized via
 `duckdb_catalog.init_catalog` with sequences positioned safely beyond
@@ -592,30 +596,36 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
     con.execute("INSERT INTO saved_queries BY NAME SELECT * FROM a.saved_queries ON CONFLICT DO NOTHING")
     con.execute("INSERT INTO saved_queries BY NAME SELECT * FROM b.saved_queries ON CONFLICT DO NOTHING")
 
-    # ---- 12. bitmap_fragments: copy union; daemon recomputes ---------
+    # ---- 12. bitmap_fragments: A's rows + every B bit, remapped ---------
+    # Nothing recomputes fragments after the merge (a flush rewrites only the
+    # rows the running daemon dirties), so every B bit must land here. B's bits
+    # carry B's ids: each goes through `store.remap_fragment(row, remap_b)` --
+    # the kernel `repair_fragments(id_map=...)` applies, scoped to B's rows
+    # because A's rows hold A's ids -- so a remapped B entity's bit (name-loser
+    # or moved) sits on the id it now has. A row only B holds is inserted; a
+    # row BOTH hold gets B's remapped bits OR-ed in and A's bits unchanged
+    # (bug-216 remedy B2b + r3 S1, bug-227: at bff34c1 a shared row kept A's
+    # bits only, so B's moved entity was in `entity_links` and in no bitmap).
     con.execute("INSERT INTO bitmap_fragments BY NAME SELECT * FROM a.bitmap_fragments")
-    # B-only rows carry B's ids: a bit for a remapped B entity (name-loser or
-    # moved) must sit on the id it now has, or it names A's entity at the old
-    # id (bug-216 remedy B2b, bug-227). Remapped through `store.remap_fragment`
-    # -- the kernel `repair_fragments(id_map=...)` applies -- on these rows
-    # ONLY: `repair_fragments` maps every row, and A's rows hold A's ids.
     from pyroaring import BitMap64
 
     from refmatrix.store import remap_fragment
-    b_only = con.execute("""
-        SELECT partition_id, linkage, blob FROM b.bitmap_fragments b
-        WHERE NOT EXISTS (
-            SELECT 1 FROM bitmap_fragments m
-            WHERE m.partition_id = b.partition_id
-                  AND m.linkage = b.linkage
-        )
-    """).fetchall()
+    a_rows = {(int(pid), str(lk)): bytes(blob) for pid, lk, blob in con.execute(
+        "SELECT partition_id, linkage, blob FROM bitmap_fragments").fetchall()}
     fragment_bits_remapped = 0
-    for pid, linkage, blob in b_only:
+    for pid, linkage, blob in con.execute(
+            "SELECT partition_id, linkage, blob FROM b.bitmap_fragments").fetchall():
         bm, n = remap_fragment(BitMap64.deserialize(bytes(blob)), remap_b)
         fragment_bits_remapped += n
-        con.execute("INSERT INTO bitmap_fragments (partition_id, linkage, blob) VALUES (?, ?, ?)",
-                    [pid, linkage, bm.serialize()])
+        key = (int(pid), str(linkage))
+        if key in a_rows:
+            merged = BitMap64.deserialize(a_rows[key]) | bm
+            con.execute("UPDATE bitmap_fragments SET blob = ? "
+                        "WHERE partition_id = ? AND linkage = ?",
+                        [merged.serialize(), pid, linkage])
+        else:
+            con.execute("INSERT INTO bitmap_fragments (partition_id, linkage, blob) "
+                        "VALUES (?, ?, ?)", [pid, linkage, bm.serialize()])
 
     # ---- 13. Final counts + checkpoint --------------------------------
     merged_counts = {t: _table_count(con, t) for t in tables}

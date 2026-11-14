@@ -4021,6 +4021,47 @@ class Store:
                 self._note_vector_delete_failure(kind, len(ids), e)
         return total
 
+    def drop_vectors_for_ids(self, ids: "Iterable[int]") -> dict:
+        """Delete the Lance vector rows of `ids`, whatever partition and kind each
+        entity has: ONE batched delete per (partition, kind) table, never one per
+        entity (bug-085). Returns `{"deleted": n, "tables": k, "errors": [str]}`;
+        a failed table is named in `errors` and counted, never swallowed.
+
+        `replica_merge` (bug-216 remedy r3 M1, ruling L97) calls it for both ids
+        of every fresh-id move: the vector at the old id is whichever slot
+        embedded last, so a dense read returned A's entity for B's text until the
+        re-embed; deleted, the read misses instead (the merge also marks both ids
+        unembedded, so `rmx embed` restores them)."""
+        ids = sorted({int(i) for i in ids})
+        out: dict = {"deleted": 0, "tables": 0, "errors": []}
+        if not ids:
+            return out
+        groups: "dict[tuple[str, str], list[int]]" = {}
+        ph = ",".join("?" * len(ids))
+        for eid, kind, pname in self._connect().execute(
+                f"SELECT e.id, e.kind, p.name FROM entities e "
+                f"JOIN partitions p ON p.id = e.partition_id WHERE e.id IN ({ph})",
+                ids).fetchall():
+            groups.setdefault((str(pname), str(kind)), []).append(int(eid))
+        for (pname, kind), gids in sorted(groups.items()):
+            path = self.root / "vectors" / pname / f"{kind}.lance"
+            if not path.exists():
+                continue
+            lance = self._lance_for_purge(kind, len(gids))
+            if lance is None:
+                out["errors"].append(f"{pname}/{kind}.lance: lance unavailable; "
+                                     f"{len(gids)} vector(s) not deleted")
+                continue
+            try:
+                lance.dataset(str(path)).delete(
+                    "id IN (" + ",".join(str(i) for i in gids) + ")")
+                out["deleted"] += len(gids)
+                out["tables"] += 1
+            except Exception as e:  # noqa: BLE001 — returned, named and counted
+                self._note_vector_delete_failure(kind, len(gids), e)
+                out["errors"].append(f"{pname}/{kind}.lance: {type(e).__name__}: {e}")
+        return out
+
     def _pending_embeddings_where(
         self, kinds: "list[str] | None",
     ) -> "tuple[str, list]":
