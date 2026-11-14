@@ -68,8 +68,8 @@ Next id: **Q15**.
 
 | id | asked | question | answer | acted |
 |---|---|---|---|---|
-| Q21 | 2026-11-14 | (asked as plan-29 D3 without an id; given one retroactively) Module size target for 29.5's split? | "d3 - agree" (user, 2026-11-14): about 3,000 lines | plan-29 #decisions D3 decided; L104 |
-| Q20 | 2026-11-14 | (asked as plan-29 D1 without an id; given one retroactively) Type checker for 29.2: mypy or pyright? | "d1-mypy" (user, 2026-11-14) | plan-29 #decisions D1 decided; L104 |
+| Q21 | 2026-11-14 | (plan-29 D3; the Q id is a harmless duplicate — the user is fine with plan D labels, 2026-11-14) Module size target for 29.5's split? | "d3 - agree" (user, 2026-11-14): about 3,000 lines | plan-29 #decisions D3 decided; L104 |
+| Q20 | 2026-11-14 | (plan-29 D1; the Q id is a harmless duplicate — the user is fine with plan D labels, 2026-11-14) Type checker for 29.2: mypy or pyright? | "d1-mypy" (user, 2026-11-14) | plan-29 #decisions D1 decided; L104 |
 | Q19 | 2026-11-14 | Where does plan-29 (code quality, [[plan-29-code-quality]]) land in the post-0.83.0 queue? | first assumed from "my gut says do all of it first, but recommend splitting it. My concern is that waiting will make the follow on work slower."; CONFIRMED "q19 - first" (user, 2026-11-14): all of it first | L104: plan-29 runs right after the 0.83.0 deploy and the spec-branch merges, before queue item 2, order 29.1 → 29.4 → 29.5 → 29.2 ∥ 29.3 |
 | Q18 | 2026-11-14 | bug-155 cause 2: `lint-gmd.sh` finds no memory dir in a clone, so memory-id links dangle and the repo-scope lint test fails in every clone. Fix it? | "q18 a" (user, 2026-11-14) | `44d1a34`: fallback to the clone's local-path origin's memory dir, test decoy home matches; bug-155 fixed |
 | Q14 | 2026-11-13 | How should hook output live within the 9.5k hard limit? | a: degrade ladder + spill to pull; clamp as counted safety net | 25.1 rev 8: R12-R14, AC-16..AC-18; RED/GREEN after the rev-7 GREEN |
