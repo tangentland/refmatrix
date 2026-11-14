@@ -1442,6 +1442,19 @@ the copy afterwards and in the clone before the full suite. Batch log:
 
 4 of 4 killed.
 
+Follow-up batch, run after `eb97445`. The copy was at `282589b`, with the r6 file and
+`tests/test_memory_bridge.py`; the log is `bug212/green-r6-mutations-followup.log`. The batch
+checks the lead's expectation that "deferral raises again" also fails the updated
+memory_bridge test:
+
+| id | mutation | result |
+|----|----------|--------|
+| Q4b | Q4 again (`sync.deferred` joins `verbs.save_state`'s failure rule) | killed: 3 (the r6 verb, CLI and MCP deferral tests). `test_bridge_reports_a_wait_that_ran_out` PASSES under it: that test calls `cli._sync_memory_dir` directly, below the verb's rule |
+| Q5 | the deferral written as `out["error"]` too (`_bridge_wait_for_active_job`) | killed: 4 (`test_memory_bridge::test_bridge_reports_a_wait_that_ran_out`, plus the 3 r6 deferral tests) |
+
+So the updated memory_bridge test pins the bridge layer (Q5). The verb layer is pinned by the
+r6 tests (Q4/Q4b).
+
 ### For the lead and the reviewers {#green-r6-flags}
 
 - **The migrate check is still name-based.** `git_tracked_catalogs(dst.parent)` asks whether

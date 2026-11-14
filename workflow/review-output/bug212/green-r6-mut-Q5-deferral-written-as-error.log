@@ -1,0 +1,219 @@
+pyc-guard: recompiled 28 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix as checked-hash (bug-037)
+....F....................FFF..                                           [100%]
+=================================== FAILURES ===================================
+___________________ test_bridge_reports_a_wait_that_ran_out ____________________
+
+live = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-wegp_4yq'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-wegp_4yq/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c14c050>
+
+    def test_bridge_reports_a_wait_that_ran_out(live, monkeypatch):
+        """plan-5 5.2 first pinned a wait that ran out (the other ingest job still running past
+        RMX_BRIDGE_WAIT_S) as a bridge FAILURE in `out["error"]`. bug-212 r6, ruling L98 m-2
+        (2026-11-14), reversed that: the wait running out is a DEFERRAL -- the other job holds the
+        single-active-ingest slot and is still working, nothing was refused, and the next
+        save-state / SessionStart bridges the dir, so it self-heals; it is printed on every run
+        (a stderr warning naming the job), so it stays visible without failing the save. Pinned
+        as a typed `out["deferred"] = {job, reason}` with `out["error"]` empty -- the save-state
+        failure rule reads `sync.error`, so a deferral that also set `error` would fail the save."""
+        base, root = live
+        memdir = _big_dir(base, "memory", 350)
+        part = verbs.memory_partition(root)
+        resp = dm.call(root, "ingest_gmd_start", {"targets": [str(memdir)], "as_memory": True,
+                                                  "memory_mtype": "curated", "partition": part}, timeout=30)
+        assert resp.get("ok"), resp
+        monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "0.2")
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["waited"] is True
+        deferred = out.get("deferred") or {}
+>       assert not out["error"], f"a wait that ran out is still reported as an error: {out}"
+E       AssertionError: a wait that ran out is still reported as an error: {'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-wegp_4yq/memory', 'report': None, 'error': {'job': '65e639465178', 'reason': 'ingest job 65e639465178 still running after 0.2s (17/350 files); the memory dir will be bridged by the next save-state / SessionStart, or run `rmx ingest-gmd --as-memory /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-wegp_4yq/memory`'}, 'skipped_non_gmd': 0, 'skipped_unparseable': [], 'skipped_index': [], 'skipped': 0, 'skipped_paths': [], 'waited': True, 'waited_job': '65e639465178', 'partition': 'proj', 'embed': None, 'moved': 0, 'stale_before': 0, 'forced': 0, 'moved_legacy': 0, 'skipped_unchanged': 0, 'duplicate_ids': [], 'deferred': {'job': '65e639465178', 'reason': 'ingest job 65e639465178 still running after 0.2s (17/350 files); the memory dir will be bridged by the next save-state / SessionStart, or run `rmx ingest-gmd --as-memory /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-wegp_4yq/memory`'}}
+E       assert not {'job': '65e639465178', 'reason': 'ingest job 65e639465178 still running after 0.2s (17/350 files); the memory dir wil...ssionStart, or run `rmx ingest-gmd --as-memory /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-wegp_4yq/memory`'}
+
+tests/test_memory_bridge.py:152: AssertionError
+____________ test_a_deferred_bridge_is_not_a_failed_save_state_verb ____________
+
+live = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-aw3m0lhe'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-aw3m0lhe/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b7b06e0>
+
+    @pytest.mark.timeout(300)
+    def test_a_deferred_bridge_is_not_a_failed_save_state_verb(live, monkeypatch):
+        """m-2 (L98), the verb: `verbs.save_state` (promote off, the bridge ON) while a real ingest
+        job runs, with the bridge wait shortened through `RMX_BRIDGE_WAIT_S`. It RETURNS; the
+        result's `sync.deferred` is `{job: <id>, reason: ...}` naming the still-running job, and
+        `sync.error` is empty. At c854bad it raises `SaveStateIncompleteError`."""
+        base, root = live
+        jid = _start_running_job(base, root)
+        monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "0.2")
+        memdir = _session_and_memdir(base, root, "bug212-r6-defer-verb")
+        try:
+>           res = verbs.save_state(root, session="bug212-r6-defer-verb", memory_dir=str(memdir),
+                                   promote=False, lint=False, sync=True)
+
+tests/test_bug212_r6_red.py:224: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-aw3m0lhe/proj/.refmatrix')
+
+    @verb("rmx_save_state",
+          "Compile + persist the session handoff (GMD memory: git state + STM "
+          "focus + tasks), promote the STM digest, lint, file it under the "
+          "active subject, and run the memory bridge (ingest-gmd --as-memory "
+          "over the memory dir so the next SessionStart recall sees every "
+          "memory file) — identical post-steps to the CLI.")
+    def save_state(root: Path, *, message: str | None = None,
+                   promote: bool = True, dry_run: bool = False,
+                   session: str | None = None, memory_dir: str | None = None,
+                   lint: bool = True, sync: bool = True) -> dict:
+        """The CLI `rmx save-state` calls this and renders; `--commit` (git) is a
+        CLI-only post-step. `dry_run` returns the rendered `doc` and writes
+        nothing. Result carries `events`, `target`, `promoted`, `subject`,
+        `lint`, `filed_subject`, `sync`. A failed promote or memory bridge raises
+        `SaveStateIncompleteError` (with that result) AFTER the handoff is written."""
+        import time as _time
+        from refmatrix import handoff, stm as stm_mod
+        repo = Path(root).parent
+        sess, session_source = resolve_session_source(root, session, purpose="write")
+        s = stm_mod.Stm(root, sess)
+        memdir = (Path(memory_dir).resolve() if memory_dir
+                  else handoff.default_memory_dir(repo))
+        try:
+            res = handoff.compose_save_state(
+                s, root, repo=repo, memdir=memdir,
+                today=_time.strftime("%Y-%m-%d"), message=message,
+                promote=promote, dry_run=dry_run)
+        except handoff.SaveStateWriteError as exc:
+            # A save that could not write is an error to EVERY caller, never a
+            # result with a `target` (task 26.3 remedy-r1).
+            raise VerbError(str(exc)) from exc
+        res["session"] = sess
+        res["session_source"] = session_source
+        res["memory_dir"] = str(memdir)
+        res["subject"] = s.get_subject()
+        if dry_run:
+            res["dry_run"] = True
+            return res
+        fin = handoff.finalize_save_state(s, root, res, repo=repo, lint=lint, sync=sync)
+        res["lint"] = fin.get("lint")
+        res["filed_subject"] = fin.get("filed_subject")
+        # A subject-filing failure is a memory-path failure: carried, not dropped
+        # (bsd-plan2-r4 #s-2: the key was written by finalize and read by nobody).
+        res["filed_subject_error"] = fin.get("filed_subject_error")
+        # Memory bridge outcome — surfaced, not swallowed: an MCP caller sees
+        # `sync.error` when the store did not take the handoff.
+        res["sync"] = fin.get("sync")
+        # And whether those rows got VECTORS (bug-065). A memory the bridge wrote
+        # but nothing embedded is durable and unreachable by recall, which is the
+        # half that matters — so the count rides back to every caller, CLI and MCP.
+        res["embed"] = fin.get("embed")
+        res.pop("doc", None)
+        # The handoff is written; a promote or bridge that failed after it is the CALL's error
+        # (bug-212 r5, L95): one message, raised here for every adapter, with the result attached.
+        failed = []
+        if (res.get("promoted") or {}).get("error"):
+            failed.append(f"its promote failed: {res['promoted']['error']}")
+        if (res.get("sync") or {}).get("error"):
+            failed.append(f"its memory bridge failed: {res['sync']['error']}")
+        if failed:
+>           raise SaveStateIncompleteError(
+                f"save-state wrote {res['target']} but " + "; and ".join(failed), res)
+E           refmatrix.verbs.SaveStateIncompleteError: save-state wrote /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-aw3m0lhe/memory/savestate_bug212r6defe.md but its memory bridge failed: {'job': 'a1e61e0b1338', 'reason': 'ingest job a1e61e0b1338 still running after 0.2s (0/1500 files); the memory dir will be bridged by the next save-state / SessionStart, or run `rmx ingest-gmd --as-memory /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-aw3m0lhe/memory`'}
+
+src/refmatrix/verbs.py:1374: SaveStateIncompleteError
+
+During handling of the above exception, another exception occurred:
+
+live = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-aw3m0lhe'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-aw3m0lhe/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b7b06e0>
+
+    @pytest.mark.timeout(300)
+    def test_a_deferred_bridge_is_not_a_failed_save_state_verb(live, monkeypatch):
+        """m-2 (L98), the verb: `verbs.save_state` (promote off, the bridge ON) while a real ingest
+        job runs, with the bridge wait shortened through `RMX_BRIDGE_WAIT_S`. It RETURNS; the
+        result's `sync.deferred` is `{job: <id>, reason: ...}` naming the still-running job, and
+        `sync.error` is empty. At c854bad it raises `SaveStateIncompleteError`."""
+        base, root = live
+        jid = _start_running_job(base, root)
+        monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "0.2")
+        memdir = _session_and_memdir(base, root, "bug212-r6-defer-verb")
+        try:
+            res = verbs.save_state(root, session="bug212-r6-defer-verb", memory_dir=str(memdir),
+                                   promote=False, lint=False, sync=True)
+        except verbs.SaveStateIncompleteError as e:
+>           pytest.fail(f"a bridge only deferred behind running job {jid} failed the save: {e}")
+E           Failed: a bridge only deferred behind running job a1e61e0b1338 failed the save: save-state wrote /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-aw3m0lhe/memory/savestate_bug212r6defe.md but its memory bridge failed: {'job': 'a1e61e0b1338', 'reason': 'ingest job a1e61e0b1338 still running after 0.2s (0/1500 files); the memory dir will be bridged by the next save-state / SessionStart, or run `rmx ingest-gmd --as-memory /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-aw3m0lhe/memory`'}
+
+tests/test_bug212_r6_red.py:227: Failed
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 2 lines, 165 chars (caps 200 lines / 24000 chars; 2 memories on disk)
+____________ test_a_deferred_bridge_is_a_stderr_warning_and_exit_0 _____________
+
+live = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-8uh_1omk'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-8uh_1omk/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x129633620>
+
+    @pytest.mark.timeout(300)
+    def test_a_deferred_bridge_is_a_stderr_warning_and_exit_0(live, monkeypatch):
+        """m-2 (L98), the CLI: `rmx save-state --no-promote --no-lint` while a real ingest job runs.
+        Exit 0, a stderr line naming the job id, no `Error:` line. At c854bad: exit 1."""
+        base, root = live
+        jid = _start_running_job(base, root)
+        monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "0.2")
+        memdir = _session_and_memdir(base, root, "bug212-r6-defer-cli")
+        r = CliRunner().invoke(cli_mod.main, ["save-state", "-s", "bug212-r6-defer-cli",
+                                              "--memory-dir", str(memdir), "--no-promote",
+                                              "--no-lint"])
+        text = f"exit {r.exit_code}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert r.exit_code == 0, f"a bridge deferred behind running job {jid} failed the save\n{text}"
+E       AssertionError: a bridge deferred behind running job 4f562cc3b653 failed the save
+E         exit 1
+E         stdout:
+E         save-state 
+E         /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-8uh_1omk/memory/sa
+E         vestate_bug212r6defe.md  (1 events, session bug212-r6-defer-cli, explicit)
+E         memory bridge FAILED -- the error follows on stderr; run `rmx ingest-gmd 
+E         --as-memory 
+E         /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-8uh_1omk/memory` 
+E         by hand once it is fixed
+E         
+E         stderr:
+E         MEMORY.md: 1 -> 2 lines, 165 chars (caps 200 lines / 24000 chars; 2 memories on disk)
+E         Error: save-state wrote /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-8uh_1omk/memory/savestate_bug212r6defe.md but its memory bridge failed: {'job': '4f562cc3b653', 'reason': 'ingest job 4f562cc3b653 still running after 0.2s (0/1500 files); the memory dir will be bridged by the next save-state / SessionStart, or run `rmx ingest-gmd --as-memory /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-8uh_1omk/memory`'}
+E         
+E       assert 1 == 0
+E        +  where 1 = <Result SystemExit(1)>.exit_code
+
+tests/test_bug212_r6_red.py:248: AssertionError
+__________________ test_a_deferred_bridge_is_not_an_mcp_error __________________
+
+live = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-hv3j78ut'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-hv3j78ut/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x129633cb0>
+
+    @pytest.mark.timeout(300)
+    def test_a_deferred_bridge_is_not_an_mcp_error(live, monkeypatch):
+        """m-2 (L98), MCP: `rmx_save_state` (promote off, bridge on) while a real ingest job runs
+        replies NOT isError, and the reply carries `sync.deferred` naming the job."""
+        base, root = live
+        jid = _start_running_job(base, root)
+        monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "0.2")
+        memdir = _session_and_memdir(base, root, "bug212-r6-defer-mcp")
+        rep = mcp_mod.handle_message({"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {
+            "name": "rmx_save_state", "arguments": {
+                "root": str(root), "session": "bug212-r6-defer-mcp", "memory_dir": str(memdir),
+                "promote": False, "lint": False}}})
+        res = rep.get("result") or {}
+        raw = " ".join(c.get("text", "") for c in res.get("content", []))
+>       assert res.get("isError") is not True, \
+            f"a bridge deferred behind running job {jid} replied isError: {raw[:600]!r}"
+E       AssertionError: a bridge deferred behind running job 2c11661bebea replied isError: '{"mem_id": "savestate_bug212r6defe", "target": "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-hv3j78ut/memory/savestate_bug212r6defe.md", "session": "bug212-r6-defer-mcp", "events": 1, "dry_run": false, "branch": "", "head": "", "dirty": false, "promoted": null, "memdir": "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-hv3j78ut/memory", "moved_legacy": null, "removed_duplicate": null, "kept_copy": null, "remove_failed": null, "session_source": "explicit", "memory_dir": "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-hv3j78ut/memory", "subject": nul'
+E       assert True is not True
+E        +  where True = <built-in method get of dict object at 0x10abe7000>('isError')
+E        +    where <built-in method get of dict object at 0x10abe7000> = {'content': [{'text': '{"mem_id": "savestate_bug212r6defe", "target": "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84...private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-hv3j78ut/memory`\'}"}', 'type': 'text'}], 'isError': True}.get
+
+tests/test_bug212_r6_red.py:267: AssertionError
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 2 lines, 165 chars (caps 200 lines / 24000 chars; 2 memories on disk)
+=========================== short test summary info ============================
+FAILED tests/test_memory_bridge.py::test_bridge_reports_a_wait_that_ran_out
+FAILED tests/test_bug212_r6_red.py::test_a_deferred_bridge_is_not_a_failed_save_state_verb
+FAILED tests/test_bug212_r6_red.py::test_a_deferred_bridge_is_a_stderr_warning_and_exit_0
+FAILED tests/test_bug212_r6_red.py::test_a_deferred_bridge_is_not_an_mcp_error
+4 failed, 26 passed in 305.93s (0:05:05)
