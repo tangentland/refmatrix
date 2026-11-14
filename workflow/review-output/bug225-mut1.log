@@ -1,0 +1,146 @@
+FF..FF                                                                   [100%]
+=================================== FAILURES ===================================
+____________________ test_origin_head_develop_is_the_trunk _____________________
+
+repos = (PosixPath('/private/tmp/b225-k90c7h0m'), PosixPath('/private/tmp/b225-k90c7h0m/work'))
+
+    def test_origin_head_develop_is_the_trunk(repos):
+        """AC-1 (RED): origin/HEAD → origin/develop. The handoff measures against
+        origin/develop and lists exactly the 2 feature commits. At HEAD the list
+        finds origin/master first and reports 5 (3 develop + 2 feature)."""
+        _, work = repos
+        _git(work, "remote", "set-head", "origin", "develop")
+        facts = handoff._ss_git_facts(work, None)
+>       assert facts["ahead_base"] == "origin/develop", facts
+E       AssertionError: {'ahead': 'db5fa17 feature commit 2
+E         9278b4d feature commit 1
+E         c482082 develop commit 3
+E         c15e954 develop commit 2
+E         ed5dee2 develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'origin/master' == 'origin/develop'
+E         
+E         - origin/develop
+E         + origin/master
+
+tests/test_bug225_handoff_trunk.py:111: AssertionError
+______________________ test_origin_head_beats_list_order _______________________
+
+repos = (PosixPath('/private/tmp/b225-2df4rzq3'), PosixPath('/private/tmp/b225-2df4rzq3/work'))
+
+    def test_origin_head_beats_list_order(repos):
+        """AC-1b (RED): origin/HEAD is read, not appended to the list. The remote
+        also carries `main` (an old branch); origin/HEAD names master. At HEAD the
+        list picks origin/main because it comes first. A fix that only adds
+        `origin/develop` to the list also fails here."""
+        base, work = repos
+        seed = base / "seed"
+        _git(seed, "push", "-q", "origin", "master:main")
+        _git(work, "fetch", "-q", "origin")
+        assert _git(work, "symbolic-ref", "--short", "refs/remotes/origin/HEAD") \
+            == "origin/master"
+        facts = handoff._ss_git_facts(work, None)
+>       assert facts["ahead_base"] == "origin/master", facts
+E       AssertionError: {'ahead': '063eba9 feature commit 2
+E         e595962 feature commit 1
+E         9eaa101 develop commit 3
+E         a52cfd2 develop commit 2
+E         35df3a4 develop commit 1', 'ahead_base': 'origin/main', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'origin/main' == 'origin/master'
+E         
+E         - origin/master
+E         ?          ^^^^
+E         + origin/main
+E         ?          ^^
+
+tests/test_bug225_handoff_trunk.py:127: AssertionError
+_________________ test_save_state_handoff_names_origin_develop _________________
+
+repos = (PosixPath('/private/tmp/b225-1nnfjn_z'), PosixPath('/private/tmp/b225-1nnfjn_z/work'))
+
+    def test_save_state_handoff_names_origin_develop(repos):
+        """AC-4 (RED): the save-state handoff doc (what the next session reads)
+        says 2 commits ahead of origin/develop, not 5 ahead of origin/master."""
+        base, work = repos
+        _git(work, "remote", "set-head", "origin", "develop")
+        s, root = _stm(base, "sess-b225-save")
+        res = handoff.compose_save_state(s, root, repo=work, memdir=base / "memory",
+                                         today="2026-11-14", promote=False, dry_run=True)
+        doc = res["doc"]
+>       assert "- **2** commit(s) ahead of `origin/develop`" in doc, doc
+E       AssertionError: ---
+E         gmd: "0.1"
+E         id: savestate_sessb225save
+E         title: "Save-state 2026-11-14: work @ 52f386d"
+E         tags: ["session:sess-b225-save"]
+E         metadata:
+E           node_type: memory
+E           type: session/recall-state
+E           originSessionId: sess-b225-save
+E           created: 2026-11-14
+E           updated: 2026-11-14T16:30:06-08:00
+E         ---
+E         
+E         # Save-state 2026-11-14: work @ 52f386d {#root}
+E         
+E         ## Session {#session}
+E         
+E         - branch **feature** · HEAD `52f386d feature commit 2`
+E         - **5** commit(s) ahead of `origin/master`
+E         - working tree: clean
+E         
+E         ## Git activity {#git}
+E         
+E         Commits (this session):
+E         
+E         ```
+E         52f386d feature commit 2
+E         fb73a4c feature commit 1
+E         895f9f1 develop commit 3
+E         c2af3af develop commit 2
+E         08e2aae develop commit 1
+E         ```
+E         
+E         ## Focus {#focus}
+E         
+E         Top of the working-memory graph (1 events):
+E         
+E         - `bug` [concept] ×1 (w=2.3)
+E         - `handoff` [concept] ×1 (w=2.3)
+E         - `trunk` [concept] ×1 (w=2.3)
+E         
+E         rel: realizes -> [[feedback_save_state_means_handoff]]
+E         rel: related-to -> [[feedback_recall_state_means_resume]]
+E         
+E       assert '- **2** commit(s) ahead of `origin/develop`' in '---\ngmd: "0.1"\nid: savestate_sessb225save\ntitle: "Save-state 2026-11-14: work @ 52f386d"\ntags: ["session:sess-b22...n\nrel: realizes -> [[feedback_save_state_means_handoff]]\nrel: related-to -> [[feedback_recall_state_means_resume]]\n'
+
+tests/test_bug225_handoff_trunk.py:177: AssertionError
+________________ test_recall_state_anomaly_names_origin_develop ________________
+
+repos = (PosixPath('/private/tmp/b225-e6qck3mc'), PosixPath('/private/tmp/b225-e6qck3mc/work'))
+
+    def test_recall_state_anomaly_names_origin_develop(repos):
+        """AC-5 (RED): recall-state's anomaly line (the CLI and the MCP tool both
+        render it from compose_recall_state) reports 2 ahead of origin/develop."""
+        base, work = repos
+        _git(work, "remote", "set-head", "origin", "develop")
+        s, root = _stm(base, "sess-b225-recall")
+        rep = handoff.compose_recall_state(s, root, repo=work, memdir=base / "memory",
+                                           pointer_anomalies=[])
+>       assert rep["git"]["ahead_base"] == "origin/develop", rep["git"]
+E       AssertionError: {'ahead': 'd1550a4 feature commit 2
+E         95b1f0a feature commit 1
+E         e989778 develop commit 3
+E         5c5a5c9 develop commit 2
+E         66436ba develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'origin/master' == 'origin/develop'
+E         
+E         - origin/develop
+E         + origin/master
+
+tests/test_bug225_handoff_trunk.py:190: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug225_handoff_trunk.py::test_origin_head_develop_is_the_trunk
+FAILED tests/test_bug225_handoff_trunk.py::test_origin_head_beats_list_order
+FAILED tests/test_bug225_handoff_trunk.py::test_save_state_handoff_names_origin_develop
+FAILED tests/test_bug225_handoff_trunk.py::test_recall_state_anomaly_names_origin_develop
+4 failed, 2 passed in 4.03s
