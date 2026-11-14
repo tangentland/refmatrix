@@ -71,3 +71,11 @@ this registry; `@ch-bsd` flags stale deferrals.
 | 2026-09-16 | Rerank windows the doc instead of taking its head | Shipped in `d232baa` (task 12.3) | `reranker.window_doc` keeps half the budget on the head and windows the rest around the query, at BOTH cut points. The planned KWIC-only window measured WORSE than the head it replaced (502 vs 541 of 896); the split scores 672. Below `WINDOW_MIN_CHARS`=1024 truncation is byte-identical, so `memory recall`'s 700-char hook leg is unchanged — `scan-prompt`'s bundle leg is at 2048 and IS windowed. Coverage claim only: `workflow/measurements/rerank-window-ab-0916.md`. |
 | 2026-09-16 | Attribute the ~8.5 s CLI-vs-`build_context` gap | Shipped in `f97bcf4` (task 12.6) | Two causes. A real defect: the grep floor greped `$HOME` for memory-only stores — 15.09 s, hard timeout, zero hits, swallowed (bug-040, fixed, 15.13 s → 0.09 s). The residual is cold first-touch I/O on an SD-card volume (94.7 MB/s, 432 MB adjacency cache = 4.6 s). `RMX_TIME_PHASES=1` ships the instrument. `workflow/measurements/cli-startup-gap-0916.md`. |
 | 2026-09-16 | `RMX_INVOCATION_SOURCE` on `query.log` rows | Shipped in `4ae41ce`, two commits after the row was written | Row was stale inside its own range (ch-bsd r1 #s-14). Verified on the wire: `{"kind":"context","source":"context-replica","invocation":"hook"}`. A live field left in the registry sends a future agent to re-implement it. |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t56 r7 confirm-lite MEH-only (0B/0S/1M, re-run to `eafd733`), folded at `645aa6c` per L74 with no further round; bug-218, 22.2 and 22.6 met the bar at r5 (L69) | `workflow/bullshit/2026-11-14-0135-spec-t56-r7-eafd733.md` (over `spec-wave-t56` up to `eafd733`; r1-r6 in the same ledger) | the document's own status is unchanged; the revised records above are approved |
+
+rel: derives-from -> [[bsd-spec-t56-r7-a4e449b]]

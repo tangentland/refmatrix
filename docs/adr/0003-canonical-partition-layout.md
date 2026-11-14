@@ -10,7 +10,7 @@ tags: [adr, partitions, fleet, sessions, benchmarks]
 **Status:** Proposed · **Date:** 2026-09-20 · **Implementation:** `rmx partition audit` (read-only) first
 
 rel: derives-from -> [[partition-layout-survey]]
-rel: depends-on -> [[feedback_operational_content_not_in_graph]]
+rel: depends-on -> [[feedback_operational_content_same_partition_not_skewing]]
 rel: related-to -> [[project_partitions_canon]]
 rel: related-to -> [[project_shared_memory_daemon_plan]]
 rel: related-to -> [[plan-13-cross-partition-sweep]]
@@ -185,3 +185,11 @@ that plan's gate returns STOP, the shared-memory fork inherits the same negative
   reports 120 docs and 14 code rows while a `kind:doc` query there returns zero. Either stats
   aggregates across partitions or the memory-only guard (0.65.0) has been violated. The audit
   answers it; guessing does not. {#open-global}
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t56 r7 confirm-lite MEH-only (0B/0S/1M, re-run to `eafd733`), folded at `645aa6c` per L74 with no further round; bug-218, 22.2 and 22.6 met the bar at r5 (L69) | `workflow/bullshit/2026-11-14-0135-spec-t56-r7-eafd733.md` (over `spec-wave-t56` up to `eafd733`; r1-r6 in the same ledger) | the document's own status is unchanged; the revised records above are approved |
+
+rel: derives-from -> [[bsd-spec-t56-r7-a4e449b]]

@@ -740,3 +740,10 @@ at `1cf3b9f`. Later rows win over round 8.
 | owner of `stale-evidence` | lead ruling 2026-11-13 (option a): [[task-22.6-removal-entry-points#r10]] removes the non-learned rows as derived cleanup (`vacuum` step 3b, manifest first, `evidence_stale_drop` events keyed on the row's own appends, 22.6 round 18); learned-grep rows are excluded. This task only counts them |
 | L6 reading (the widening is report-only) | confirmed by the lead, 2026-11-13: `vacuum` step 3 / 22.6 R5 stay the remover of `orphan-evidence` |
 
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t56 r7 confirm-lite MEH-only (0B/0S/1M, re-run to `eafd733`), folded at `645aa6c` per L74 with no further round; bug-218, 22.2 and 22.6 met the bar at r5 (L69) | `workflow/bullshit/2026-11-14-0135-spec-t56-r7-eafd733.md` (over `spec-wave-t56` up to `eafd733`; r1-r6 in the same ledger) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t56-r7-a4e449b]]

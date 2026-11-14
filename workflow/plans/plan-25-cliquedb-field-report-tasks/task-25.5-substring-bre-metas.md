@@ -276,3 +276,11 @@ rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
 |---|---|---|
 | N3 join "by pid and ts", but `query.log` grep rows have no `pid` | key = `ts` second + pattern in argv + `root` from `cwd` + path-less argv; ambiguous matches excluded and counted as a third class; measured 20 unique / 15 ambiguous / 0 unmatched on the current 35 path-less rows | [[#r3]], [[#files]] |
 | N4 re-measure trigger not an event, count has no reader | M ≥ 30 or 2026-12-31, queued in [[plan-of-plans#queue-bug174-remeasure]] and the plan-25 row; `rmx telemetry --agent-usage` prints the `bre_meta_literal` count (`telemetry.py:1799`); AC-4 asserts the line; f4 updated | [[#r4]], AC-4, [[#files]], f4 |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t56 r7 confirm-lite MEH-only (0B/0S/1M, re-run to `eafd733`), folded at `645aa6c` per L74 with no further round; bug-218, 22.2 and 22.6 met the bar at r5 (L69) | `workflow/bullshit/2026-11-14-0135-spec-t56-r7-eafd733.md` (over `spec-wave-t56` up to `eafd733`; r1-r6 in the same ledger) | `metadata.status` stays `superseded`; the closing records above are approved |
+
+rel: derives-from -> [[bsd-spec-t56-r7-a4e449b]]

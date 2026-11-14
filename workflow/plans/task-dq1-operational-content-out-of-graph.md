@@ -5,7 +5,7 @@ title: "Task D-Q1: operational content stays in the partition, out of the skew â
 tags: [task, d-q1, q8, q9, operational-content, derive, pagerank, ranking, context, scan-prompt, measurement, t6, fleet]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   created: 2026-11-13
   updated: 2026-11-14
   revision: 8
@@ -602,3 +602,11 @@ derive, ranking, operational-content]`, `type: feedback`. Body:
 > sets.
 >
 > `rel: supersedes -> [[feedback_operational_content_not_in_graph]]`
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t56 r7 confirm-lite MEH-only (0B/0S/1M, re-run to `eafd733`), folded at `645aa6c` per L74 with no further round; bug-218, 22.2 and 22.6 met the bar at r5 (L69) | `workflow/bullshit/2026-11-14-0135-spec-t56-r7-eafd733.md` (over `spec-wave-t56` up to `eafd733`; r1-r6 in the same ledger) | `metadata.status` drafting -> `approved` |
+
+rel: derives-from -> [[bsd-spec-t56-r7-a4e449b]]
