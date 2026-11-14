@@ -401,7 +401,9 @@ def test_s2_both_slot_audits_count_pending_refs(slots):
     assert "pending_refs" in a["a_counts"] and "pending_refs" in a["b_counts"], a["a_counts"]
     con = duckdb.connect(str(slots["a"]))
     try:
-        w = audit_via_writer(con, "A", slots["b"], "B")
+        # keywords, as the daemon (daemon.py) and bug-113's test call it: the signature is
+        # keyword-only after the connection (bsd-216 r2 #m2r2, ruling L94)
+        w = audit_via_writer(con, writer_slot="A", reader_path=slots["b"], reader_slot="B")
     finally:
         con.close()
     assert "pending_refs" in w["a_counts"], w["a_counts"]
