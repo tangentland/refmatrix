@@ -181,10 +181,11 @@ check, `store.refuse_tracked_catalog_open` (bug-212 r2-r5, rulings L72, L82 and 
 - The same wrapper, called directly by the two commands that open the file without a `Store`:
   - `rmx compact`, which checks before it pings or stops the daemon, so a tracked catalog
     never costs the daemon it names as the remedy;
-  - `rmx migrate-to-duckdb`, which checks the DESTINATION'S directory before
-    `migrate.migrate_catalog` replaces the destination file. The default destination is the
-    store's own `catalog.duckdb`. `--out` into another repo's committed catalog is refused;
-    `--out` to an untracked path runs even from a tracked store.
+  - `rmx migrate-to-duckdb`, which asks git about the DESTINATION FILE ITSELF before
+    `migrate.migrate_catalog` replaces it (`names=(dst.name,)`, in the destination's
+    directory). The default destination is the store's own `catalog.duckdb`. `--out` onto any
+    committed file is refused, whatever its name. `--out` to an untracked file runs, even
+    from a tracked store or beside a tracked catalog.
 - `verbs.local_write` serves every no-daemon verb write (`rmx add concept|entity`,
   `rmx protect`, `rmx noise`, ...). It also serves `rmx init`, `rmx partition drop`,
   `rmx focus change-subject`, the MCP `rmx_memory_add` fallback and the save-state promote,

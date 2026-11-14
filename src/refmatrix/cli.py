@@ -227,14 +227,17 @@ def _active_slot_path() -> Path | None:
     return p if p.exists() else None
 
 
-def _refuse_tracked_catalog_open(root: Path, target: Path) -> None:
+def _refuse_tracked_catalog_open(root: Path, target: Path,
+                                 names: "tuple[str, ...]" = _store_mod.WRITER_CATALOG_FILES
+                                 ) -> None:
     """The store-level tracked-catalog check (`store.refuse_tracked_catalog_open`) as one
     `Error:` line, exit 1 -- the CLI's ONE wrapper, called by every CLI site that opens or
     replaces a writer catalog in-process: `_store_rw()`, `compact`, `migrate-to-duckdb`
     (bug-212 r4/r5, rulings L72 and L95). `verbs.local_write` makes the same refusal a
-    `VerbError` for the verb layer."""
+    `VerbError` for the verb layer. `names` is threaded through to the store check (r7,
+    L102: `migrate-to-duckdb` asks only about the file it replaces)."""
     try:
-        _store_mod.refuse_tracked_catalog_open(root, target)
+        _store_mod.refuse_tracked_catalog_open(root, target, names)
     except _store_mod.TrackedCatalogRefused as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -4094,7 +4097,10 @@ def migrate_to_duckdb(out_path: Path | None, overwrite: bool):
     # being REPLACED (r6, ch-bsd r5 s-1, L98): r5 asked about the source store, so `--out`
     # into another repo's committed catalog went through, and `--out` to an untracked path
     # from a tracked store was refused. The default `dst` (<root>/catalog.duckdb) is unchanged.
-    _refuse_tracked_catalog_open(dst.parent.resolve(), dst.resolve())
+    # And it asks about `dst` ITSELF (r7, ch-bsd r6 m-1, L102), not every writer-catalog name in
+    # that folder: a committed `x.duckdb` is refused, an untracked `foo.duckdb` beside a tracked
+    # `catalog.duckdb` is allowed.
+    _refuse_tracked_catalog_open(dst.parent.resolve(), dst.resolve(), names=(dst.name,))
     fragments_dir = root / "fragments"
     counts = migrate_catalog(
         src, dst,

@@ -105,10 +105,17 @@ def _run_git_check(args: list[str], *, root: Path, env: dict) -> "subprocess.Com
             f"out after {GIT_CHECK_TIMEOUT_S}s") from exc
 
 
-def git_tracked_catalogs(root: Path) -> list[str]:
-    """The `WRITER_CATALOG_FILES` names under the store dir `root` that git TRACKS, in that
-    tuple's order; `[]` when none is, when no `.git` exists at or above `root`, or when git is
-    not installed.
+def git_tracked_catalogs(root: Path,
+                         names: "tuple[str, ...]" = WRITER_CATALOG_FILES) -> list[str]:
+    """The `names` (default: the `WRITER_CATALOG_FILES`) directly under the dir `root` that git
+    TRACKS, in `names`' order; `[]` when none is, when no `.git` exists at or above `root`, or
+    when git is not installed.
+
+    `names` (bug-212 r7, ch-bsd r6 m-1, ruling L102, 2026-11-14): `migrate-to-duckdb --out`
+    asks about the ONE file it replaces (`names=(dst.name,)`), not about every writer-catalog
+    name in that folder -- r6's folder-wide question let `--out` rewrite a committed `x.duckdb`
+    and refused an untracked `foo.duckdb` beside a tracked `catalog.duckdb`. Every other caller
+    keeps the default.
 
     Why (bug-212 r1, lead decision a2, 2026-11-13): fleet repos (cliquet, atldb,
     prep_prolific) commit their catalog files. The generated git hooks' gate lets a stale
@@ -141,21 +148,24 @@ def git_tracked_catalogs(root: Path) -> list[str]:
             f"{inside.returncode} although {dotgit} exists: {said or '(git printed nothing)'}")
     if inside.stdout.strip() != "true":
         return []
-    ls = _run_git_check(["ls-files", "-z", "--", *WRITER_CATALOG_FILES], root=root, env=env)
+    ls = _run_git_check(["ls-files", "-z", "--", *names], root=root, env=env)
     if ls.returncode != 0:
         said = " ".join(ln.strip() for ln in ls.stderr.splitlines() if ln.strip())
         raise TrackedCatalogCheckError(
             f"cannot tell whether git tracks the catalog under {root}: git ls-files exited "
             f"{ls.returncode}: {said or '(git printed nothing)'}")
     listed = {Path(p).name for p in ls.stdout.split("\0") if p}
-    return [name for name in WRITER_CATALOG_FILES if name in listed]
+    return [name for name in names if name in listed]
 
 
-def refuse_tracked_catalog_open(root: Path, target: Path) -> None:
+def refuse_tracked_catalog_open(root: Path, target: Path,
+                                names: "tuple[str, ...]" = WRITER_CATALOG_FILES) -> None:
     """THE tracked-catalog check: raise `TrackedCatalogRefused` -- one line, `refusing to open
     <target> read-write in-process: ...`, naming both remedies -- when git tracks a writer
     catalog of the store `root`, or when whether it does is unknown. `target` is the file the
-    caller is about to open read-write (its resolved `db_path`).
+    caller is about to open read-write (its resolved `db_path`). `names` is passed to
+    `git_tracked_catalogs`: the default asks about every writer-catalog name in `root`;
+    `migrate-to-duckdb` passes only the name of the file it replaces (r7, L102).
 
     Why one store-level function (bug-212 r4, ch-bsd r2 b-1, ruling L72, 2026-11-13): r2 put
     the refusal in `cli._store_rw()` as "the one in-process write control point". It was not:
@@ -169,7 +179,7 @@ def refuse_tracked_catalog_open(root: Path, target: Path) -> None:
     that finds no reader file falls to `cli._store_rw()` and gets this same line."""
     remedy = "start the daemon (rmx daemon start) so the daemon opens it instead"
     try:
-        tracked = git_tracked_catalogs(root)
+        tracked = git_tracked_catalogs(root, names)
     except TrackedCatalogCheckError as exc:
         raise TrackedCatalogRefused(
             f"refusing to open {target} read-write in-process: {exc}; untrack the catalog "
