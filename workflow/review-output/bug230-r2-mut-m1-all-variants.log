@@ -1,0 +1,29 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug230/src/refmatrix as checked-hash (bug-037)
+......................F.....................................             [100%]
+=================================== FAILURES ===================================
+_________ test_2a_guard_a_symlinked_spec_allows_no_read_of_its_target __________
+
+checkout = {'deny': {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/g...low': ['/private/tmp/b230khwnufhy/.refmatrix/.refmatrix_ignore'], ...}, 'root': PosixPath('/private/tmp/b230khwnufhy')}
+
+    def test_2a_guard_a_symlinked_spec_allows_no_read_of_its_target(checkout):
+        """bsd-216 bug-230 r1 #m1: `_variants` adds the realpath, so a spec that is a symlink to
+        `catalog.A.duckdb` put the CATALOG into `read_allow`. With the spec linked to the catalog,
+        neither a direct read of the catalog nor a read through the link is allowed."""
+        root = checkout["root"]
+        spec, catalog = root / IGNORE_REL, root / ".refmatrix" / "catalog.A.duckdb"
+        spec.unlink()
+        spec.symlink_to(catalog)
+        deny = dict(checkout["deny"], read_allow=rmx_sandbox.read_allow(root))
+        for p in (catalog, spec):
+>           assert rmx_sandbox.violation("open", (str(p), "rb", os.O_RDONLY), deny) is not None, (
+                f"a read of {p} is allowed with the spec symlinked to the catalog "
+                f"(read_allow={deny['read_allow']})")
+E           AssertionError: a read of /private/tmp/b230khwnufhy/.refmatrix/catalog.A.duckdb is allowed with the spec symlinked to the catalog (read_allow=['/private/tmp/b230khwnufhy/.refmatrix/.refmatrix_ignore', '/private/tmp/b230khwnufhy/.refmatrix/catalog.A.duckdb'])
+E           assert None is not None
+E            +  where None = <function violation at 0x106491d20>('open', ('/private/tmp/b230khwnufhy/.refmatrix/catalog.A.duckdb', 'rb', 0), {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/github/ato.../private/tmp/b230khwnufhy/.refmatrix/.refmatrix_ignore', '/private/tmp/b230khwnufhy/.refmatrix/catalog.A.duckdb'], ...})
+E            +    where <function violation at 0x106491d20> = rmx_sandbox.violation
+
+tests/test_bug230_repo_scope_gate.py:165: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_symlinked_spec_allows_no_read_of_its_target
+1 failed, 59 passed in 4.42s

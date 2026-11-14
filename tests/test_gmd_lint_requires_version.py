@@ -142,16 +142,30 @@ def test_the_repo_scope_is_clean_under_the_stricter_gate(tmp_path):
     assert Path(env["HOME"]).resolve() != Path(os.environ["RMX_SANDBOX_REAL_HOME"]).resolve()
     r = subprocess.run(["./scripts/lint-gmd.sh"], cwd=str(root),
                        capture_output=True, text=True, env=env)
+    assert_gate_ran_clean(r)
+
+
+def assert_gate_ran_clean(r: "subprocess.CompletedProcess") -> None:
+    """The verdict of one `scripts/lint-gmd.sh` run on a tree that must be clean. Shared with
+    tests/test_bug230_repo_scope_gate.py, which feeds it a gate whose parity step crashed.
+
+    bug-179 audit s1 (2026-11-09): the gate exits 2 on a missing precondition (no linter, no
+    parity script, no `.venv-eval` dev interpreter) BEFORE lint runs, printing no ": error"
+    line -- so a test that only counted error lines passed in 0.13 s while nothing was linted.
+    Exit 2 is the script's and lint's usage/precondition code, never a lint verdict (0/1), so it
+    means the gate did not run. Assert that FIRST: a gate that did not run is a failure with its
+    own message, never a clean tree.
+
+    bug-230 (2026-11-14): exit 0 is the ONLY clean verdict. Rejecting exit 2 alone let a gate
+    whose parity step was killed (the sandbox's exit 86, no `: error` line) pass as clean."""
     out = r.stdout + r.stderr
-    # bug-179 audit s1 (2026-11-09): the gate exits 2 on a missing precondition (no linter, no
-    # parity script, no `.venv-eval` dev interpreter) BEFORE lint runs, printing no ": error"
-    # line -- so a test that only counted error lines passed in 0.13 s while nothing was linted.
-    # Exit 2 is the script's and lint's usage/precondition code, never a lint verdict (0/1), so
-    # it means the gate did not run. Assert that FIRST: a gate that did not run is a failure with
-    # its own message, never a clean tree.
     missing = [l for l in out.splitlines() if "not found at" in l]
     assert r.returncode != 2 and not missing, (
         f"scripts/lint-gmd.sh did not run its checks (exit {r.returncode}); a missing "
         "precondition is a failure, not a clean tree:\n" + out[-2000:])
     errors = [l for l in out.splitlines() if ": error" in l]
     assert not errors, "in-scope GMD errors:\n" + "\n".join(errors[:20])
+    assert r.returncode == 0, (
+        f"scripts/lint-gmd.sh exited {r.returncode} with no `: error` line: a step did not "
+        "complete (crashed, killed, or a usage error), which is a failure, not a clean "
+        "tree:\n" + out[-2000:])
