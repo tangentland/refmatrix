@@ -1,8 +1,8 @@
 ---
 gmd: "0.1"
 id: impl-bug-241-reingest-gmd-pass
-title: "bug-241: markdown reaches the GMD pass on every code+docs ingest, tldr cache or not (implementation summary)"
-tags: [implementation-summary, bug-241, bug-216, gmd, ingest, reingest]
+title: "0.83.1: bug-241 (markdown reaches the GMD pass on every code+docs ingest, tldr cache or not) + bug-240 (a file given to ingest is refused, naming rmx sync -f) (implementation summary)"
+tags: [implementation-summary, bug-241, bug-240, bug-216, gmd, ingest, reingest, mcp]
 metadata:
   node_type: implementation-summary
   status: green
@@ -102,6 +102,55 @@ command, `__pycache__` cleared; suite = the bug-241 file:
 | route markdown around `should_ignore` | 12 failed | `bug241-mut-no-ignore.log` |
 
 {#mutation-table}
+
+## bug-240: a file given to ingest is refused, naming `rmx sync -f` {#bug-240}
+
+Second item of the same 0.83.1 branch. RED by red-216 at `36341f5` (CLI, 6 RED) and r2
+`7145c19` (refuse shape per the lead's ruling + `tests/test_bug240_ingest_file_arg_mcp.py`: 14 RED,
+4 directory guards). GREEN `a7b3d35` (src: `ingest.py`, `daemon.py`, `verbs.py`, `cli.py`). No
+test edited. {#bug-240-commits}
+
+### Cause {#bug-240-cause}
+
+`rmx ingest CLAUDE.md` exited 0 with `ingested 0 entities` and wrote nothing (0.83.0 deploy,
+four fleet stores): `click.Path(exists=True)` accepts a file, and `ingest_path` on a file walks no
+tree. The MCP tool reached the same walk by another road: `rmx_ingest` answered `{job_id, status:
+running}` and the job ended `done` with nothing ingested; with the daemon down it answered "not
+running", which tells an agent to start one and retry the same wrong call. {#bug-240-cause-text}
+
+### Fix {#bug-240-fix}
+
+- **One check.** `ingest.refuse_file_target(path)` raises `IngestFileTargetError` (a
+  `ValueError`: a caller mistake) with `rmx ingest takes a directory; for one file use rmx sync
+  -f <path>` when the path exists and is not a directory. A path that does not exist is left to
+  the caller's own existence check (the CLI's `click.Path(exists=True)`). {#bug-240-helper}
+- **Three call sites, the entry points a file arrives through**, each answering before it does
+  anything else (lead ruling: one check, called where needed, never a second copy of it):
+  {#bug-240-sites}
+  - the `rmx_ingest` verb, BEFORE `_call` reaches `require_daemon`, converted to `VerbArgsError`
+    (MCP `isError`; a `VerbError`, so the verb route's test holds daemon up and down);
+  - the daemon op `_op_ingest_path_start`, before `_register_ingest_job` (no job, no
+    `status: running`);
+  - `ingest_path` itself, first line: covers the blocking op `_op_ingest_path` (the CLI's daemon
+    route, rendered by `_DaemonWriter._call` as one `Error:` line) and the CLI's in-process
+    route.
+- **CLI rendering.** The `ingest` command turns `IngestFileTargetError` from the in-process route
+  into a `click.ClickException`: one `Error:` line, exit 1 — rendering, not a second check.
+  `rmx ingest <dir>` and `rmx_ingest(path=<dir>)` are unchanged. {#bug-240-cli}
+- **Not done (flag).** A path that does not exist still reaches the daemon from the verb/op routes
+  unchanged (the CLI refuses it via click). Outside bug-240's ruling; noted for the lead.
+  {#bug-240-not-done}
+
+### Runs and mutations {#bug-240-runs}
+
+- bug-240 files (`tests/test_bug240_ingest_file_arg.py` + `_mcp.py`): **18 passed**
+  (`bug240-green-iter1.log`).
+- The bug-216 family + bug-240/241 + ingest / gmd / reingest / sync / watch / derive /
+  workflow_ignore / memory_bridge / bug179 / session_ingest / verb_parity / docs_generated / mcp /
+  verbs files: **956 passed, 1 skipped** (`bug240-family.log`; the skip is
+  `test_repo_hooks_in_sync::test_installed_hooks_match_generated`, "hooks belong to another
+  checkout of this commit" -- a clone artifact).
+- Full suite and mutations: below, at the tip. {#bug-240-runs-list}
 
 ## Next {#next}
 
