@@ -23,6 +23,7 @@ metadata:
 > ([[#fold]]). Decided: `plan-29 D4` = (c) (user, ruling L106; [[task-29.2-mypy-gate#d4]]).
 > Revision round 2 (ruling L105, on ch-bsd spec review r1): [[#rev-round-2]].
 > Revision round 3 (ruling L108, on ch-bsd spec review r2): [[#rev-round-3]].
+> Revision round 4 (ruling L110, on ch-bsd spec review r3): [[#rev-round-4]].
 > Decided: `plan-29 D27` = (a) (lead, ruling L109; [[task-29.2-mypy-gate#d27]]).
 
 rel: part-of -> [[plan-29-code-quality]]
@@ -50,7 +51,7 @@ Nine slices, each on its own branch, in this order:
 | K | the census kit under `tests/census/`: bug-212's scanner, extracted | (used by every slice, and by later tasks) |
 | a | `run_git` in a new module `refmatrix/gitrun.py` | bug-233; the bug-225 r3 rule in one place |
 | b | one term resolver in the query engine; typed PQL arguments | bug-234, bug-236, bug-238 |
-| c | one classifier for broad `except` handlers | the plan's three counts; the unowned silent handlers; bug-096; 29.5's 22 declared pass-module rows |
+| c | one classifier for broad `except` handlers | the plan's three counts; the unowned silent handlers; bug-096; 16 of 29.5's 22 declared pass-module rows (the 6 in `consolidate.py` are held) |
 | d | the typed daemon classifier, already in `verbs`, as the only route gate | the bare `ping` gates |
 | e | one `Deadline`; explicit `timeout` and `retries` on every daemon call | the four `_left` copies |
 | f | the tracked-catalog refusal takes the caller's remedy | bug-232 |
@@ -559,6 +560,9 @@ task id`. A silent handler on that list is allowed while its owner is open. {#c-
   `Store.close` and `Store.transaction` (23.1 R1.6, R7).
 - An entry must name a task whose spec file exists and which says it changes that handler. A
   site with no such owner is not listable: it is fixed here.
+- One entry is owned inside this spec: `consolidate.py`'s handler, held with that file's
+  private-name rows under [[#c-pass-rows-held]] (ruling L110). Its owner resolves to that
+  anchor and to the deferral-registry row the lead adds for it.
 - An entry whose handler is no longer silent fails the test until it is removed, so the list
   cannot outlive its sites.
 - bug-119's handler (`except json.JSONDecodeError: continue` in the log replay) is typed, so this
@@ -604,11 +608,12 @@ names, rides 0.83.1.) {#c-r6}
 **c-R7: edits to the derive-hash files are batched, for every pass.** {#c-r7}
 
 - The files are read from `_DERIVE_PASS_MODULES` and `_DERIVE_CODE_MODULES` at the start commit
-  (`census_derive_modules.py`), not listed from memory. At `f3709d2` this slice edits 26 silent
-  handlers in files that feed a pass hash: `pagerank.py` 12 (the `pagerank` pass), `ingest.py` 8
+  (`census_derive_modules.py`), not listed from memory. At `f3709d2` the files that feed a
+  pass hash hold 26 silent handlers: `pagerank.py` 12 (the `pagerank` pass), `ingest.py` 8
   (`ingest`, `semantic`), `ingest_gmd.py` 5 (`gmd`, `sessions`), `consolidate.py` 1 (the memory
-  compile, both scopes); and 25 in `store.py`, which is in the union only. `embedder.py`,
-  `vectors.py` and `session_ingest.py` have none.
+  compile, both scopes). This slice edits the first 25. `consolidate.py`'s one is held
+  ([[#c-pass-rows-held]]): plan-29 does not edit that file. `store.py` has 25, in the union
+  only. `embedder.py`, `vectors.py` and `session_ingest.py` have none.
 - `plan-29 D4` is decided (c): [[task-29.2-mypy-gate#r7]] makes the derive hash ignore comments,
   docstrings and annotations, and it lands before this slice edits any of these files
   ([[task-29.2-mypy-gate#seam]] step 0). So:
@@ -626,8 +631,11 @@ names, rides 0.83.1.) {#c-r6}
   deploy B of R7's release (rulings L107 and L108).
   - Its neutral edits (justifications) show nothing on the fleet.
   - Its real edits (surfaced or narrowed handlers) make each pass they touch read `behind_code`
-    on every store. Deploy B's closing step, run by the lead, re-derives exactly those passes
-    on every store (`plan-29 D27` = a, ruling L109; [[task-29.2-mypy-gate#d27]]).
+    on every store. Deploy B's closing step, run by the lead, re-derives those passes on every
+    store, together with any pass that store's rehash reported `left` (`plan-29 D27` = a,
+    rulings L109 and L110; [[task-29.2-mypy-gate#d27]]).
+  - No memory compile runs in that window, because nothing in this slice touches
+    `consolidate.py`.
 - An edit that is not ready for deploy B WAITS: it is not merged into an ordinary later release,
   and ships only in a release with its own announced, user-gated go that closes with the same
   re-derive. A pass reads `behind_code` only inside such a window (ruling L109, amending L107
@@ -636,50 +644,81 @@ names, rides 0.83.1.) {#c-r6}
 - The summary lists, per derive file, each handler edited and whether the edit is neutral or
   real.
 - They are covered by [[task-29.2-mypy-gate#derive-digest]] (AC-18): the graph, vector,
-  PageRank-prior and compile legs equal the golden. A narrowed handler changes behaviour for
+  PageRank-prior and compile legs equal the golden (the compile leg trivially: its file is not
+  edited). A narrowed handler changes behaviour for
   other exceptions; that is tested by AC-c4, and the digest shows the normal path derives the
   same state.
 
-**c-R8: this slice owns the 22 private-name rows 29.5 declares for the pass modules** (lead
-ruling, 2026-11-14, adding to L108). {#c-pass-rows}
+**c-R8: this slice owns the private-name rows 29.5 declares for the pass modules: 16 are made
+public in deploy B, 6 are held** (lead ruling of 2026-11-14 adding to L108; ruling L110).
+{#c-pass-rows}
 
 29.5 ships under the raw-bytes derive hash and may not change a byte of a file named in
 `_DERIVE_PASS_MODULES`. So it leaves these uses of another module's private name in the
 private-name census's allow list, each with this anchor as its owner. The rows are the table at
-`task-29.5-split-giant-modules#r6-pass-rows` (branch `spec-plan29a` at `75ef65d`), 22 sites:
+`task-29.5-split-giant-modules#r6-pass-rows` (branch `spec-plan29a` at `75ef65d`), 22 sites. The
+16 below are edited in deploy B; `consolidate.py`'s 6 are in [[#c-pass-rows-held]].
 
 | 29.5 row | sites | names | what this slice edits |
 |---|---|---|---|
 | `ingest.py` as target | 9 | `_bulk_add_concepts` (used 3 times: `ingest_gmd` twice, `ingest_records`); `_ingest_adr_semantics`, `_ingest_markdown_semantics`, `_ingest_pseudo_semantics`, `_ingest_tldr`, `_is_adr_file`, `_build_python_semantic_record` (used by `sync`) | `ingest.py` (the definitions); `ingest_gmd.py`, `ingest_records.py`, `sync.py` (the users) |
 | `ingest_gmd.py` as target | 1 | `_existing_hash_for` (used by `sync`) | `ingest_gmd.py`; `sync.py` |
 | `pagerank.py` as target | 3 | `_OPERATIONAL_RE` (used by `enrich`, `net`, `ppr`) | `pagerank.py`; the three users |
-| `consolidate.py` as target | 2 | `_OPERATIONAL_RE`, `_memory_rows` (used by `brief`) | `consolidate.py`; `brief.py` |
-| `consolidate.py` as user | 4 | takes `scan._PROMPT_STOPWORDS`, `scan._token_shape_score`, `store._CONCEPT_SHIFT`, `store._ENTITY_MASK` | `consolidate.py` (its import lines) |
 | `pagerank.py` as user | 2 | takes `store._CONCEPT_SHIFT`, `store._ENTITY_MASK` | `pagerank.py` (its import lines) |
 | `ingest.py` as user | 1 | takes `store._concept_variants` | `ingest.py` (its import line) |
 
 - **What is done for each row.** The name becomes public: it loses its underscore, gets a
   docstring that says what it is for, and every user takes the public name. No private alias is
   left behind for the old spelling.
-  - For the 7 "user" rows the target is not a pass module. 29.5 may add the public name in
-    `store` and `scan` beside the private one in its own task; then this slice changes only the
-    import line in the pass module and removes the private spelling once nothing uses it.
+  - For the 3 "user" rows here the target is `store`, which is not a pass module. 29.5 may add
+    the public name in `store` beside the private one in its own task; then this slice changes
+    only the import line in the pass module. The private spelling of `_CONCEPT_SHIFT` and
+    `_ENTITY_MASK` stays while `consolidate.py` still imports it (the held rows).
   - A test that names the old private spelling is re-pointed by `@ch-test-engineer` as a rename
     only.
 - **The list is re-read at the start commit** from 29.5's census allow list (on the kit since
   slice K). A row 29.5 added or resolved since `75ef65d` is taken as it then stands; the count
-  in the summary is the count found, with the difference from 22 explained.
+  in the summary is the count found, with the difference from 16 (and from the 6 held) explained.
 - **Every one of these is a real edit** ([[task-29.2-mypy-gate#derive-hash]]): a renamed
   identifier, or a changed import from a non-typing module, changes the normal form. They touch
-  `ingest.py`, `ingest_gmd.py`, `pagerank.py` and `consolidate.py`, so they are part of c-R7's
-  commit group and ship in deploy B of R7's release. After it the passes `ingest`, `semantic`,
-  `gmd`, `sessions`, `pagerank` and both memory-compile scopes read `behind_code` on every
-  store, whatever this slice does with its handlers. The rehash of
-  [[task-29.2-mypy-gate#r8]] does not convert those stamps, by design: it proves a stamp only
-  against unchanged files. What clears them is deploy B's closing re-derive (`plan-29 D27`
-  = a; [[task-29.2-mypy-gate#d27]]).
-- **Then the rows are deleted** from the private-name census's allow list. The census keeps its
-  "an entry's owner must resolve" and "an entry that matches no use fails" checks.
+  `ingest.py`, `ingest_gmd.py` and `pagerank.py`, so they are part of c-R7's commit group and
+  ship in deploy B of R7's release. After it the passes `ingest`, `semantic`, `gmd`, `sessions`
+  and `pagerank` read `behind_code` on every store, whatever this slice does with its handlers.
+  The rehash of [[task-29.2-mypy-gate#r8]] does not convert those stamps, by design: it proves a
+  stamp only against unchanged files. What clears them is deploy B's closing re-derive
+  (`plan-29 D27` = a; [[task-29.2-mypy-gate#d27]]).
+- **Then the 16 rows are deleted** from the private-name census's allow list. The census keeps
+  its "an entry's owner must resolve" and "an entry that matches no use fails" checks.
+
+**c-R9: what is held for `consolidate.py`** (ruling L110, deciding ch-bsd spec review r3 NS3 as
+(a)). {#c-pass-rows-held}
+
+`consolidate.py` feeds both memory-compile scopes. A real edit to it would make every store's
+compile scopes read `behind_code`, and the only thing that clears that is a re-compile. On a
+live store a re-compile is not "the same output again": it clusters the memory the store holds
+now and, with pruning on by default, can remove subjects
+([[feedback_decay_never_loses_knowledge]]). So plan-29 does not edit `consolidate.py` at all,
+and these items stay declared:
+
+| held item | sites | what it is |
+|---|---|---|
+| `consolidate.py` as target (29.5's row) | 2 | `_OPERATIONAL_RE`, `_memory_rows`, used by `brief` |
+| `consolidate.py` as user (29.5's row) | 4 | it takes `scan._PROMPT_STOPWORDS`, `scan._token_shape_score`, `store._CONCEPT_SHIFT`, `store._ENTITY_MASK` |
+| `consolidate.py`'s one silent broad handler (slice c's census) | 1 | not justified, surfaced or narrowed by this slice |
+
+- **Owner and trigger.** This anchor is the owner the two censuses resolve: the 6 private-name
+  rows keep their allow-list entries with this anchor as owner, and the handler is an entry of
+  c-R2a's owned list with this anchor as owner. The trigger is the next release that changes
+  `consolidate.py`'s behaviour: that release re-compiles anyway, under its own go, and its task
+  makes the 6 names public and classes the handler in the same change. The lead adds one
+  deferral-registry row for this list at the merge that lands these specs.
+- **What "not edited" means.** `consolidate.py` is byte-identical at this task's start commit
+  and at its end (`git hash-object`). `brief.py` is not edited for these rows either; the
+  private spellings they use stay defined.
+- **Consequences inside this slice.** c-R2's "unowned silent handlers end at zero" holds with
+  this one handler owned. c-R3's memory-path rule is not weakened for any other module:
+  `consolidate.py`'s handler is the one memory-path handler left silent, and it is named.
+- The compile scopes therefore never change in plan-29, and deploy B runs no `memory compile`.
 
 ### Acceptance {#c-ac}
 
@@ -691,7 +730,8 @@ private-name census's allow list, each with this anchor as its owner. The rows a
   any module fails the test and names `module:qualname` and the line. RED before the test
   exists; then green on the tree only through the ratchet.
 - **AC-c3 (memory paths):** a `justified` handler planted in a memory-path module, absent from
-  the named list, fails. The 18 silent handlers of those modules are gone.
+  the named list, fails. Of the 18 silent handlers of those modules, 17 are gone and the one in
+  `consolidate.py` is on the owned list under [[#c-pass-rows-held]].
 - **AC-c4 (each narrowed site):** for every handler narrowed under c-R2, a test shows the typed
   error still yields the default and another exception now propagates.
 - **AC-c5 (each surfaced site on a sync / ingest / memory / hook path):** a test drives the
@@ -712,17 +752,21 @@ private-name census's allow list, each with this anchor as its owner. The rows a
   justifications, and DIFFERENT when at least one is a surfaced or narrowed handler; the summary's
   neutral / real column says which, and the test reads the expectation from that table's
   committed form.
-- **AC-c12 (the declared rows, c-R8):**
+- **AC-c12 (the declared rows, c-R8 and c-R9):**
   - before the commit group, the private-name census's allow list holds the rows whose owner is
-    this anchor (22 at `75ef65d`), and the census passes;
-  - after it, no entry names this anchor, the census passes with those entries gone, and a
-    planted `from refmatrix.ingest import _bulk_add_concepts` in another module fails it;
-  - each formerly private name is importable under its public spelling, and the old spelling is
-    defined nowhere in `src/refmatrix` (AST);
+    [[#c-pass-rows]] (16 at `75ef65d`) and those whose owner is [[#c-pass-rows-held]] (6), and
+    the census passes;
+  - after it, no entry names [[#c-pass-rows]]; the 6 held entries are still there, each still
+    matching a use; the census passes; and a planted
+    `from refmatrix.ingest import _bulk_add_concepts` in another module fails it;
+  - each of the 16 formerly private names is importable under its public spelling, and its old
+    spelling is defined nowhere in `src/refmatrix` unless a held row still uses it (AST);
   - the four legs of [[task-29.2-mypy-gate#derive-digest]] equal the golden;
-  - for `ingest.py`, `ingest_gmd.py`, `pagerank.py` and `consolidate.py`, the `normal` digest
-    after the group DIFFERS from the one before (they are real edits; a test that expected
-    "equal" here would be wrong).
+  - for `ingest.py`, `ingest_gmd.py` and `pagerank.py`, the `normal` digest after the group
+    DIFFERS from the one before (they are real edits; a test that expected "equal" here would
+    be wrong);
+  - **`consolidate.py` is byte-identical** to its start-commit content (`git hash-object`), and
+    both compile scopes' expected hash is unchanged. A one-comment edit to it fails this.
 - **AC-c11 (the ratchet tool):** `report.py broad-except --update` lowers a fallen count, removes
   a module at zero, and with one count risen exits non-zero and leaves the file byte-identical.
 
@@ -744,6 +788,8 @@ private-name census's allow list, each with this anchor as its owner. The rows a
 | a declared row left in the allow list | AC-c12 |
 | a private alias kept for an old spelling | AC-c12 ("defined nowhere") |
 | a user still importing the private spelling | AC-c12 (the census) |
+| a held row's entry deleted without its use being fixed | AC-c12 (the census: the use is then unlisted) |
+| a comment added to `consolidate.py` | AC-c12 (byte-identical) |
 | the census test treats a missing baseline file as "no limit" | AC-c6, AC-c2 |
 
 ## Slice d: busy is not absent {#slice-d}
@@ -940,7 +986,8 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 | the module that holds `QueryEngine` and `_PQLEvaluator` | the resolver; the record; n-ary folds; argument kinds; dead branches removed |
 | the modules that hold `_op_query`, the CLI `query` command, the `rmx_query` and `rmx_matrix` verbs, the MCP adapter | carry `unresolved`; `--strict-terms` |
 | every module with a silent handler (31 modules at `f3709d2`) | slice c, by group |
-| `ingest.py`, `ingest_gmd.py`, `pagerank.py`, `consolidate.py` and the users `ingest_records.py`, `sync.py`, `enrich.py`, `net.py`, `ppr.py`, `brief.py`; `store` and `scan` if 29.5 did not add the public names | c-R8: the 22 declared rows made public |
+| `ingest.py`, `ingest_gmd.py`, `pagerank.py` and the users `ingest_records.py`, `sync.py`, `enrich.py`, `net.py`, `ppr.py`; `store` if 29.5 did not add the public names | c-R8: 16 declared rows made public |
+| `consolidate.py`, `brief.py` | NOT edited (c-R9) |
 | `scripts/broad-except-baseline.json` | create in slice c's first commit; lowered by `report.py --update`; deleted in its last |
 | the CLI modules of the ROUTE gates | slice d |
 | `src/refmatrix/deadline.py`; the modules of the 4 `_left` closures and the 35 calls | slice e |
@@ -1097,12 +1144,27 @@ under ruling L108 ([[plan-review-2026-11-13#lead]]).
 The other round-3 items (NB2's rehash, NS2, NS3, M9, M10) are in 29.2
 ([[task-29.2-mypy-gate#rev-round-3]]).
 
+## Revision round 4 (2026-11-14) {#rev-round-4}
+
+Answers ch-bsd spec review r3 (`bsd-plan29-spec-r3`, master) under ruling L110
+([[plan-review-2026-11-13#lead]]).
+
+| finding | change | anchor |
+|---|---|---|
+| NS3, decided (a): deploy B would re-compile memory on every store | `consolidate.py` is not edited by plan-29. Its 6 declared rows move out of c-R8 into a held list with a trigger and an owner the censuses resolve; its one silent handler is held with them; AC-c12 holds the file byte-identical; 16 rows remain for deploy B | [[#c-pass-rows-held]], [[#c-pass-rows]], AC-c12, AC-c3 |
+| NS1, as it reaches this spec | c-R7 says deploy B's closing re-derive also covers the passes a store's rehash reported `left` | [[#c-r7]] |
+| M4 | c-R6 already ships bug-096's fix no later than deploy B; bug-241 and the stamp-time check are in 29.2 | [[#c-r6]]; [[task-29.2-mypy-gate#r7-release]] |
+
+The other round-4 items (NS1's comparison rule, NS2's refresh, M5's dry-run default) are in 29.2
+([[task-29.2-mypy-gate#rev-round-4]]).
+
 ## Out of scope {#out-of-scope}
 
 - bug-237 (query cost), bug-188 (env knobs) and bug-201: they stay in the registry under 29.1's
   triage. bug-240 rides 0.83.1 ([[#classes-no-helper]]).
 - The seven census families other tasks will add to the kit (K-R5).
 - Silent handlers another approved spec owns (c-R2a).
+- Everything in `consolidate.py`: its 6 declared rows and its silent handler are held (c-R9).
 - The 11 `resolve_concept_ids` call sites outside the query engine (b-R5).
 - git run by the generated shell hooks.
 - Better retry values for daemon calls (e-R2), and any change to `daemon.call`'s default.

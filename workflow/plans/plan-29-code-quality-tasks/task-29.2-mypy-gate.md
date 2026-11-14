@@ -24,6 +24,7 @@ metadata:
 > Decided: `plan-29 D4` = (c), a normalised-AST derive hash (user, ruling L106; [[#d4]], [[#r7]]).
 > Revision round 2 (ruling L105, on ch-bsd spec review r1): [[#rev-round-2]].
 > Revision round 3 (ruling L108, on ch-bsd spec review r2): [[#rev-round-3]].
+> Revision round 4 (ruling L110, on ch-bsd spec review r3): [[#rev-round-4]].
 > Decided: `plan-29 D27` = (a), re-derive the affected passes as deploy B's closing step (lead, ruling L109; [[#d27]]).
 
 rel: part-of -> [[plan-29-code-quality]]
@@ -400,15 +401,23 @@ in two places: `derive_status` (the per-pass rows, which already has a tag rule)
 would read every compile scope as behind once the tag changes). Both call one function, and its
 rule is: {#r7-compare}
 
-| stored stamp | verdict |
-|---|---|
-| current tag, `normal` equal | current |
-| current tag, `normal` different | `behind_code` |
-| any other tag (`p1`, another Python), or untagged | `code_unknown`, labelled with its own tag (an untagged stamp keeps the label `legacy-union`) |
-| no hash at all | `behind_code`, as today |
+| stored stamp | compared through | verdict |
+|---|---|---|
+| current tag | `normal` | equal: current. Different: `behind_code` |
+| tag `p1`, or this scheme's tag with another Python | `raw` (for `p1`, the stored hash IS the raw digest) | different: `behind_code`, labelled with the stamp's tag. Equal: `code_unknown`, labelled with its tag, until it is rehashed |
+| untagged | nothing (it covers another file set) | `code_unknown`, label `legacy-union`, as today |
+| no hash at all | nothing | `behind_code`, as today |
 
-For a compile scope, `code_unknown` does NOT set `needs_compile`: the line must not send a
-reader to a re-compile (a write that changes subjects) for a stamp nobody has judged.
+- **An older stamp that is provably behind still reads behind** (ch-bsd spec review r3 NS1). A
+  `p1` stamp whose stored hash differs from the current files' `raw` is exactly what
+  `derive_status` calls `behind_code` today. Reading it as unknown would hide it, and nothing
+  would re-derive it.
+- An older stamp whose `raw` is equal is not behind, but its `normal` has never been recorded,
+  so the next neutral edit would make it unprovable. It reads `code_unknown` until [[#r8]]
+  converts it.
+- For a compile scope, `behind_code` sets `needs_compile` as today. `code_unknown` does NOT: the
+  line must not send a reader to a re-compile (a write that changes subjects) for a stamp nobody
+  has judged.
 
 **A file that does not parse is never "unchanged".** Its raw bytes are hashed under a marker that
 cannot equal any normal-form digest, so it reads as changed. `derive_code_hash` raises nothing
@@ -420,11 +429,24 @@ dump, one run): `store.py` 73 ms, `ingest.py` 29 ms, `ingest_gmd.py` 20 ms, each
 under 10 ms. The task lists every caller at its start commit (four call sites in the store
 module at `f3709d2`) and shows that no hook-run command computes a hash it does not use.
 
-**Standing cost of the Python version in the tag** (ch-bsd spec review r2 M9). Every upgrade of
-the deploy venv's Python `major.minor` turns every stamp on the fleet `code_unknown`. With
-[[#r8]] that costs one `rmx derive rehash` per store, verified by `raw`, and no re-derive,
-provided the upgrade is deployed with no change to any pass file in the same deploy. That
-proviso and the command go into the deploy checklist ([[#files]]).
+**Standing cost: keeping `raw` fresh** (ch-bsd spec review r2 M9, restated after r3 NS2).
+{#r7-cost}
+
+- A stamp's `raw` is what it recorded when it was written or last rehashed. Every neutral edit
+  to a pass file (an annotation, a comment, a `# noqa` justification) leaves `normal` equal and
+  makes that `raw` stale. Neutral edits are the point of this requirement, so over time that is
+  nearly every pass.
+- A stale `raw` is harmless while the Python version stays the same: a current-tag stamp is
+  judged by `normal`. It matters at the next Python upgrade, when the stamp is judged by `raw`:
+  a stale one reads `behind_code` and has to be re-derived.
+- So [[#r8]] also REFRESHES `raw` on a current-tag stamp whose `normal` is equal and whose `raw`
+  differs, and the deploy checklist runs `rmx derive rehash --apply` after every deploy that
+  touches a pass file ([[#files]]).
+- **The cost, stated.** One rehash per store after every deploy that touches a pass file, and
+  one more after a Python upgrade of the deploy venv. With that kept up, a Python upgrade costs
+  no re-derive, provided the upgrade is deployed with no pass-file change in the same deploy. A
+  store whose refresh was missed before an upgrade pays a re-derive of the passes that read
+  `behind_code`.
 
 **Existing tests that prove a flip with a comment.** At `f3709d2` the helper `_edit` in
 `tests/test_derive_pass_identity.py` appends a comment (5 uses), and
@@ -435,28 +457,46 @@ equal" case of AC-20. No assertion in them is weakened.
 
 **What the fleet shows, and in what order things are deployed.** {#r7-release}
 
-- After the deploy that carries this requirement, every existing stamp reads `code_unknown`
-  (its tag is `p1`) until it is rehashed or its pass is next derived.
-- [[#r8]] clears that, stamp by stamp, but only for a stamp whose pass files are byte-identical
-  to what the stamp recorded. A pass file edited in the same deploy, even by one comment, makes
-  that pass's stamps unprovable, and they are left `code_unknown`.
+- After the deploy that carries this requirement, every existing stamp has the tag `p1` and is
+  judged by `raw` ([[#r7-compare]]): one whose pass files are unchanged since it was written
+  reads `code_unknown` until it is rehashed; one whose files changed reads `behind_code`, as it
+  does today.
+- [[#r8]] converts the first kind, stamp by stamp. It leaves the second kind and reports each
+  as `left`. A pass file edited in the same deploy, even by one comment, would put every stamp
+  of that pass in the second kind.
 - So R7's release is ONE announced, user-gated window (ruling L107; a derive-hash change is a
-  store-changing release, outside the standing go of L106) with TWO deploys in this order:
+  store-changing release, outside the standing go of L106) with these steps in order:
   1. **Deploy A:** this requirement and [[#r8]], and no edit to any file `_DERIVE_PASS_MODULES`
-     names. Then the lead runs `rmx derive rehash` on every store and reads its counts.
+     names. Then the lead runs `rmx derive rehash --apply` on every store and keeps its output.
   2. **Deploy B:** every edit either task makes to a pass file ([[#derive-hash]]), under its
      own go (it is store-changing too).
-  3. **Deploy B's closing step:** the lead re-derives exactly the affected passes on every
-     store, through the existing `rmx reingest` path, forced, so every file is derived again
-     (`plan-29 D27` = a, [[#d27]]).
+  3. **Deploy B's closing step** (`plan-29 D27` = a, [[#d27]]). On every store the lead
+     re-derives, through the existing `rmx reingest` path, forced:
+     - the passes deploy B's real edits touch (`ingest`, `semantic`, `gmd`, `sessions`,
+       `pagerank`);
+     - AND every pass that store's rehash reported `left` in step 1, taken from the rehash's own
+       output (ruling L110). Those were behind before this release began.
+     Then `rmx derive rehash --apply` once more, to refresh `raw` after deploy B's neutral edits
+     ([[#r7-cost]]).
+  4. **The step is checked, not assumed.** For every pass re-derived on every store, the stamp's
+     `derived_at` is later than deploy B; `rmx derive status` reads no `behind_code`; and
+     `rmx reingest` exited 0. A pass whose stamp time did not move was not derived, whatever the
+     command printed.
+- **Two fixes this step depends on.** `rmx reingest` must exit non-zero when a step failed
+  (bug-096, fixed by [[task-29.3-converge-shapes#c-r6]], in deploy B or earlier), and a forced
+  reingest must not skip the GMD pass when a `.tldr` cache answers (bug-241, fixed in 0.83.1).
+  The release does not start until both are fixed on the build being deployed.
+- **No memory compile runs in this window.** `consolidate.py` is not edited by plan-29
+  ([[task-29.3-converge-shapes#c-pass-rows-held]]; ruling L110), so the two compile scopes do
+  not change, and no store's subjects are re-clustered or pruned.
 - After deploy B a neutral edit shows nothing. A REAL edit to a pass file makes that pass read
   `behind_code` on every store, correctly: the code that derives did change. Step 3 clears it.
-- **`behind_code` is allowed only inside this announced window** (ruling L109, amending L107
-  item 4): between deploy B and the end of its closing step, never as a state the fleet is left
-  in between releases.
+- **`behind_code` caused by this release is allowed only inside this announced window** (ruling
+  L109, amending L107 item 4): between deploy B and the end of its closing step, never as a
+  state the fleet is left in between releases.
 - 29.5's release is not part of this: its module-list change alters no stamped pass's hash
   ([[#derive-hash]]).
-- No agent rehashes, re-stamps or re-derives a live store. The lead runs all three steps.
+- No agent rehashes, re-stamps or re-derives a live store. The lead runs every step.
 
 ### R8: `rmx derive rehash` (ch-bsd spec review r2 NB2; ruling L108) {#r8}
 
@@ -467,7 +507,7 @@ record a derive that never ran, and mark every pass fresh whether or not its sta
 Nothing in this plan re-stamps through `stamp_derive`.
 
 **The capability is a verb first.** `rmx_derive_rehash` in the verbs module; the daemon op
-`derive_rehash`; the CLI `rmx derive rehash [-p PARTITION | --all-partitions] [--dry-run]`; and
+`derive_rehash`; the CLI `rmx derive rehash [-p PARTITION | --all-partitions] [--apply]`; and
 the MCP tool the verb-parity test requires. It routes like every write verb: through the daemon
 when one answers, refused when it is busy, in-process through the one checked no-daemon writer
 only when no daemon exists.
@@ -477,18 +517,23 @@ scopes' rows included:** {#r8-rule}
 
 | the stored stamp | action | counted as |
 |---|---|---|
-| current tag, `normal` equal to the current files' | none | `current` |
-| an older scheme that can be verified: tag `p1`, or this scheme's tag with another Python | compute that scheme's interpreter-independent hash of the CURRENT files (the `raw` digest). **Only if it equals the stored one**, write the current-scheme value. | `rehashed` |
-| the same, and the digests differ | none: the pass's files changed after the stamp, so the stamp is behind or cannot be proven | `left` |
+| current tag, `normal` equal, `raw` equal | none | `current` |
+| current tag, `normal` equal, `raw` different (a neutral edit since the stamp) | write the current `raw` into the stamp's value | `refreshed` |
 | current tag, `normal` different | none: it is behind | `left` |
+| tag `p1`, or this scheme's tag with another Python, and the current files' `raw` EQUALS the stored one | write the current-scheme value (tag, `raw`, `normal`) | `rehashed` |
+| the same, and `raw` differs | none: the pass's files changed after the stamp, so it is behind | `left` |
 | untagged (`legacy-union`), no hash, or a pass name this rmx has no module set for | none | `unknown` |
 
-**A rehash changes one thing.** It rewrites the stamp's hash value. `version` and `derived_at`
-are not touched. The write and its history row are one transaction per partition, under the
+`rehashed` and `refreshed` are the only writes. Both are proven: the first by `raw`, the second
+by `normal`. A stamp under a pass name with no module set is left for a re-derive; 29.5 offers
+that, not a rehash, if its R0 finds one.
+
+**A rehash or a refresh changes one thing.** It rewrites the stamp's hash value. `version` and
+`derived_at` are not touched. The write and its history row are one transaction per partition, under the
 store lock.
 
-**History says "rehash", never "derive".** One `derive_history` row per rehashed stamp, marked
-as a rehash and carrying the old and the new value.
+**History says "rehash", never "derive".** One `derive_history` row per rehashed or refreshed
+stamp, marked `kind: rehash` and carrying the old and the new value.
 
 - The mark is a `kind` field inside the row's existing `counts` JSON. There is no new column: a
   column would be a schema change on every store and one more table-shape for every table-copy
@@ -497,16 +542,26 @@ as a rehash and carrying the old and the new value.
 - Every reader of the history knows the mark: `rmx derive log` prints the row as a rehash;
   `rmx derive diff`, and anything else that takes "the last derive", skips it.
 
-**Output.** Per partition and in total: `rehashed`, `left`, `unknown`, `current`, and for every
-stamp that is `left` or `unknown`, its pass name and why. The verb's result carries the same.
-The command exits 0 when it ran, whatever the counts; non-zero only when it could not run or a
-write failed, and then it says which partition.
+**Output.** Per partition and in total: `rehashed`, `refreshed`, `left`, `unknown`, `current`,
+and for every stamp that is `left` or `unknown`, its pass name and why. The verb's result
+carries the same, as data: the `left` list is what deploy B's closing step reads
+([[#r7-release]]). The command exits 0 when it ran, whatever the counts; non-zero only when it
+could not run or a write failed, and then it says which partition.
 
-**`--dry-run` does the same work and writes nothing** ([[feedback_dry_run_match_real_cost]]): the
-same reads, the same digests, the same counts, with `would_rehash` in place of `rehashed`.
+**It writes only when told to** (ch-bsd spec review r3 M5). {#r8-apply}
 
-**Who runs it.** The lead, in R7's announced window and after a Python upgrade
-([[#r7-release]]). It is safe to run twice: a second run finds every rehashed stamp `current`.
+- The CLI and the MCP tool both default to a dry run. Writing needs an explicit apply: `--apply`
+  on the command line, `apply: true` in the verb's arguments. There is no `--dry-run` flag; the
+  two surfaces stay in parity because the default lives in the verb.
+- A dry run does the same work and writes nothing ([[feedback_dry_run_match_real_cost]]): the
+  same reads, the same digests, the same counts, with `would_rehash` and `would_refresh` in
+  place of `rehashed` and `refreshed`, and its first output line says it wrote nothing and how
+  to apply.
+- The rule that no agent rehashes a live store is procedural and stays; the default makes a
+  stray call harmless.
+
+**Who runs it.** The lead: in R7's announced window, after every deploy that touches a pass
+file, and after a Python upgrade ([[#r7-release]], [[#r7-cost]]). It is safe to run twice: a second run finds every rehashed stamp `current`.
 
 ## Acceptance criteria {#acceptance}
 
@@ -609,15 +664,29 @@ Each AC is a test that is RED at the task's start commit, unless marked (charact
   | a field added to a `NamedTuple` class and to a `TypedDict` class | different |
 
   RED at the start commit for every "equal" row (the raw-bytes hash differs).
-- **AC-21: a stamp under another tag is unknown, not behind, at BOTH comparison sites.** Through
-  `derive_status`: a stamp carrying a `p1:` hash, and one with the new scheme and another Python
-  version, each read `code_unknown` with their own tag as the label, and `behind_code` is false;
-  a stamp with no hash reads behind; a stamp under the current tag with a different `normal`
-  reads behind.
+- **AC-21: an older stamp is judged by `raw`, at BOTH comparison sites** ([[#r7-compare]]).
+  Through `derive_status`, with real copies of the pass files:
+
+  | stored stamp | files since the stamp | verdict |
+  |---|---|---|
+  | `p1:` hash | unchanged | `code_unknown`, label `p1`; `behind_code` false |
+  | `p1:` hash | one comment added | `behind_code`, label `p1` |
+  | `p1:` hash | one real edit | `behind_code`, label `p1` |
+  | this scheme, another Python | unchanged | `code_unknown`, labelled with that tag |
+  | this scheme, another Python | one comment added | `behind_code`, labelled with that tag |
+  | current tag | one comment added | current |
+  | current tag | one real edit | `behind_code` |
+  | untagged | any | `code_unknown`, label `legacy-union` |
+  | no hash | any | `behind_code` |
+
+  RED at the start commit for the labels and for every row a tag change would otherwise turn
+  into `legacy-union`.
   - **The compile scopes:** with a `p1:` stamp on `memory-compile` and on
-    `memory-compile:pattern`, `_memory_compile_status` reports each scope `code_unknown`,
-    `behind_code` false and `needs_compile` false, and the top-level memory fields agree. RED at
-    the start commit once the tag changes (each scope reads behind and `needs_compile` true).
+    `memory-compile:pattern` and `consolidate.py` unchanged, `_memory_compile_status` reports
+    each scope `code_unknown`, `behind_code` false and `needs_compile` false, and the top-level
+    memory fields agree; with `consolidate.py` changed, each reads `behind_code` and
+    `needs_compile` true, as today. RED at the start commit once the tag changes (the unchanged
+    case reads behind and `needs_compile` true).
   - **One function:** both sites call the same comparison function (AST: the two methods each
     contain a call to it and no hash comparison of their own).
 - **AC-22: an unparsable file reads as changed and raises nothing.** A copy with a syntax error
@@ -627,29 +696,36 @@ Each AC is a test that is RED at the task's start commit, unless marked (charact
   process parse each file once; touching a file's content makes it parse again.
 - **AC-24: a rehash converts only what it can prove** ([[#r8-rule]]). On a throwaway store whose
   stamps carry `p1` values (computed by the old function, kept in the test for this purpose),
-  and copies of the pass files:
+  and copies of the pass files. Every row is run with `--apply`:
 
-  | set-up | after `derive rehash` |
+  | set-up | after `derive rehash --apply` |
   |---|---|
   | files byte-identical to the stamped ones | every stamp `rehashed`; `derive_status` reads current; `version` and `derived_at` of every stamp equal their values before |
-  | one pass file given a comment after the stamp | that pass's stamps `left`, value untouched, still `code_unknown`; the other passes `rehashed` |
-  | one pass file given a real edit after the stamp | the same: `left`, untouched |
+  | one pass file given a comment after the `p1` stamp | that pass's stamps `left`, value untouched, and they read `behind_code`; the other passes `rehashed` |
+  | one pass file given a real edit after the `p1` stamp | the same: `left`, untouched, `behind_code` |
   | a stamp with no hash; an untagged stamp | `unknown`, untouched |
   | a stamp under the current scheme with another Python version, files identical | `rehashed` (verified by `raw`) |
   | the two compile-scope stamps, `consolidate.py` identical | both `rehashed`; `_memory_compile_status` reads current |
   | a second run | everything `current`; no row written |
+  | **the refresh, end to end:** a current-tag stamp; then a comment is added to its pass file | status still reads current (`normal` equal). Rehash: the stamp is `refreshed`, its `raw` now equals the current files', `version` and `derived_at` unchanged, one history row of `kind` rehash. Then the stamp's tag is rewritten to another Python version (the upgrade, simulated): status reads `code_unknown`, and a rehash counts it `rehashed` |
+  | the same without the refresh: comment added, tag rewritten to another Python, no rehash in between | status reads `behind_code`; a rehash counts it `left` (this is the cost [[#r7-cost]] states) |
 
+  The `left` list in the verb's result names exactly the passes of the `left` rows.
 - **AC-25: history says rehash.** After AC-24's first row there is one history row per rehashed
-  stamp, each with `kind` rehash and the old and new values; the count of derive rows per pass
-  is what it was; with the history at its cap, a rehash prunes nothing; `rmx derive log` labels
-  the rows; `rmx derive diff` compares the same two derive rows as before the rehash.
-- **AC-26: `--dry-run` writes nothing and counts the same.** The store's stamp and history
-  tables are equal row for row before and after a dry run, and its counts equal the real run's.
-- **AC-27: verb, CLI, MCP, daemon.** The verb-parity test is green with the new verb; the CLI
-  prints the per-partition counts and the reason for every `left` and `unknown`; under a test
-  daemon the op runs through the daemon; with a daemon that holds its lock the command is
-  refused as busy and writes nothing; `--all-partitions` covers a memory and a sessions
-  partition.
+  stamp, each with `kind` rehash and the old and new values; a refreshed stamp gets the same
+  kind of row; the count of derive rows per pass is what it was; with the history at its cap, a
+  rehash prunes nothing; `rmx derive log` labels the rows; `rmx derive diff` compares the same
+  two derive rows as before the rehash.
+- **AC-26: the default writes nothing and counts the same.** With no `--apply`, the store's stamp
+  and history tables are equal row for row before and after, the counts equal the applied run's
+  (as `would_rehash`, `would_refresh`), and the first output line says nothing was written.
+- **AC-27: verb, CLI, MCP, daemon; dry by default on both surfaces** ([[#r8-apply]]). The
+  verb-parity test is green with the new verb. `rmx derive rehash` with no flag writes nothing;
+  with `--apply` it writes. The MCP tool called with no `apply` argument writes nothing; with
+  `apply: true` it writes. The CLI has no `--dry-run` option. The CLI prints the per-partition
+  counts and the reason for every `left` and `unknown`; under a test daemon the op runs through
+  the daemon; with a daemon that holds its lock an applied run is refused as busy and writes
+  nothing; `--all-partitions` covers a memory and a sessions partition.
 - **AC-28: nothing re-stamps through `stamp_derive`.** The set of functions that call
   `stamp_derive` is the set recorded at the start commit (the derive passes and the
   `derive_stamp` op); the rehash path is not in it and writes neither `version` nor
@@ -725,7 +801,13 @@ RED first, by `@ch-test-engineer`, recorded to `workflow/review-output/`; GREEN 
   | the history row written without the rehash mark | AC-25 |
   | a rehash row counted toward the cap | AC-25 (prunes a derive row) |
   | `derive diff` takes a rehash row as the last derive | AC-25 |
-  | `--dry-run` writes | AC-26 |
+  | the default run writes | AC-26, AC-27 |
+  | the MCP tool defaults to apply while the CLI defaults to dry | AC-27 |
+  | an older stamp with `raw` different read as `code_unknown` | AC-21 (the comment and real-edit rows), AC-24 |
+  | an older stamp with `raw` equal read as current without a rehash | AC-21 (the unchanged rows) |
+  | the rehash skips the refresh of a current-tag stamp | AC-24 (the refresh row: the simulated upgrade is then `left`) |
+  | the refresh rewrites `normal` from the files when `normal` differs | AC-24 (a behind stamp would be converted; the real-edit current-tag case in AC-21 reads current after a rehash) |
+  | the `left` list omitted from the verb's result | AC-24 |
   | the rehash implemented by calling `stamp_derive` | AC-28, AC-24 |
 
 - **The helper's own promises are mutated before the sites**
@@ -753,7 +835,7 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 | `tests/test_derive_hash_normalised.py`; `tests/test_derive_pass_identity.py`, `tests/test_plan12_remedy.py`, `tests/test_derive_stamp.py` | create: AC-20 to AC-23; the three existing files get their comment-only edits re-pointed (test engineer) |
 | the verbs module, the daemon op registry, the CLI `derive` group, the store derive module (`derive_history` and its readers) | R8: `rmx_derive_rehash`, `derive_rehash`, `rmx derive rehash`; the rehash mark and the readers that skip it |
 | `tests/test_derive_rehash.py` | create: AC-24 to AC-28 |
-| `.claude/PROJECT_PROFILE.md` (`#commands`, the Deploy line), `docs/SYSTEM.md` (the derive section), the generated CLI tree | the deploy checklist: R7's window (deploy A, `rmx derive rehash`, deploy B, the forced re-derive of the affected passes with the exact command per pass); `rmx derive rehash` after a Python upgrade, with no pass-file change in that deploy; a later release that makes a real edit to a pass file closes with the same re-derive |
+| `.claude/PROJECT_PROFILE.md` (`#commands`, the Deploy line), `docs/SYSTEM.md` (the derive section), the generated CLI tree | the deploy checklist: R7's window as [[#r7-release]] lists it (deploy A; `rmx derive rehash --apply` with its output kept; deploy B; the forced re-derive of the affected passes and of every `left` pass, with the exact command per pass; no memory compile; the stamp-time check; bug-096 and bug-241 fixed first). Standing lines: `rmx derive rehash --apply` after EVERY deploy that touches a pass file and after a Python upgrade (which ships with no pass-file change); a later release that makes a real edit to a pass file closes with the same re-derive |
 | `tests/test_type_gate.py`, `tests/fixtures/type_gate/` | create: AC-1 to AC-5, AC-13 |
 | `tests/test_bug235_pql_count.py` | create: AC-6 to AC-8 |
 | `tests/test_store_writer_protocol.py` | create: AC-9 to AC-12, AC-16, AC-17 |
@@ -928,7 +1010,7 @@ from the tables, not from prose: `census/census_derive_modules.py`, log
 | `embedder.py` | `embed` | no | 0 |
 | `vectors.py` | `embed` | no | 0 |
 | `pagerank.py` | `pagerank` | no | 12 |
-| `consolidate.py` | the memory compile, both scopes | no | 1 |
+| `consolidate.py` | the memory compile, both scopes | no | 1 (held: plan-29 does not edit this file) |
 | `store.py` | none | yes | 25 |
 
 **Which hash a stamp is compared with.** Every stamp the code writes carries a pass name that
@@ -956,16 +1038,19 @@ Rules for this task:
   fleet is rehashed** ([[#r7-release]], deploy A). Before that, even a comment makes the pass's
   stamps unprovable.
 - **Neutral edits** are this task's annotations and 29.3(c)'s `justified` comments. They ship in
-  deploy B and show nothing; AC-20 is what makes that true.
+  deploy B and show nothing; AC-20 is what makes that true. They do make each stamp's `raw`
+  stale, which the rehash after deploy B refreshes ([[#r7-cost]]).
 - **Real edits to a pass file** ship in deploy B too (ruling L107: with R7's release, never in
   an ordinary later one). They are:
   - every handler slice c surfaces or narrows rather than justifies
     ([[task-29.3-converge-shapes#c-r7]]);
-  - the 22 private-name rows 29.5 declares instead of fixing, because 29.5 ships under the
+  - 16 of the 22 private-name rows 29.5 declares instead of fixing, because 29.5 ships under the
     raw-bytes hash and may not change a byte of a pass module
     (`task-29.5-split-giant-modules#r6`, the table at `#r6-pass-rows`, held by its `#ac-7` and
     `#ac-6`; premise at `#fact-derive`; branch `spec-plan29a` at `75ef65d`). Their owner is
     [[task-29.3-converge-shapes#c-pass-rows]] (lead ruling, 2026-11-14).
+  - The other 6 rows are `consolidate.py`'s. They are NOT edited in plan-29
+    ([[task-29.3-converge-shapes#c-pass-rows-held]]; ruling L110).
 
   After deploy B the passes they touch read `behind_code` on every store, until deploy B's
   closing re-derive ([[#r7-release]] step 3; `plan-29 D27`, [[#d27]]).
@@ -973,6 +1058,11 @@ Rules for this task:
   No release lets a pass read `behind_code` fleet-wide without one.
 - This task's own real edits (the `isinstance` narrowing, `ingest_path`, the declared host) are
   in the store modules and change no stamped pass's hash.
+- **`consolidate.py` is not edited by this task either** ([[task-29.3-converge-shapes#c-pass-rows-held]];
+  ruling L110), not even by an annotation. At `f3709d2` none of the 91 `no-untyped-call` errors
+  in the strict modules names a function in a pass file (`mypy-gate-wired.log`), so nothing here
+  needs one. If one does at the start commit, it is reported before any edit and settled with
+  the lead; it is not fixed by an ignore.
 - No agent rehashes, re-stamps or re-derives a live store.
 
 ### AC-18: the derived state did not move, and the check can fail {#derive-digest}
@@ -1080,7 +1170,7 @@ user, 2026-11-14 (ruling L106, [[plan-review-2026-11-13#lead]]). The lead regist
   in the dev venv before baselines).
 
 **plan-29 D27 = (a): a pass whose file got a real edit is re-derived, as deploy B's closing
-step.** Decided by the lead, 2026-11-14 (ruling L109, [[plan-review-2026-11-13#lead]]). The lead
+step.** Decided by the lead, 2026-11-14 (ruling L109, amended by L110; [[plan-review-2026-11-13#lead]]). The lead
 registers it in `plan-29-code-quality#decisions` at merge. {#d27}
 
 - **The question.** Ruling L107 has the real edits to pass files ship in R7's release, and
@@ -1089,30 +1179,43 @@ registers it in `plan-29-code-quality#decisions` at merge. {#d27}
   pass whose file got a real edit. After deploy B such a pass reads `behind_code` on every
   store, correctly. What clears it?
 - **The answer.** The release is one announced window: deploy A (R7 and R8, no pass-file edit),
-  the rehash, deploy B (every pass-file edit), and then a re-derive of exactly the affected
-  passes on every store through the existing `rmx reingest` path, under deploy B's own go
-  ([[#r7-release]]).
-- **Which passes.** The 22 declared rows of [[task-29.3-converge-shapes#c-pass-rows]] are
-  renames, which are real edits, in `ingest.py`, `ingest_gmd.py`, `pagerank.py` and
-  `consolidate.py`. So `ingest`, `semantic`, `gmd`, `sessions`, `pagerank` and both
-  memory-compile scopes are affected on every store. Slice c's handlers in the same files (26
-  candidates) add no pass to that list. `embed` is not affected unless `embedder.py` or
-  `vectors.py` is touched. The exact list is the NEUTRAL / REAL table of [[#derive-hash]] at
-  the release commit.
+  the rehash, deploy B (every pass-file edit), and then a forced re-derive on every store,
+  through the existing `rmx reingest` path, under deploy B's own go ([[#r7-release]]).
+- **Which passes are re-derived.**
+  - The passes deploy B's real edits touch: `ingest`, `semantic`, `gmd`, `sessions`, `pagerank`.
+    They come from the 16 declared rows of [[task-29.3-converge-shapes#c-pass-rows]] (renames in
+    `ingest.py`, `ingest_gmd.py` and `pagerank.py`) and from whichever of slice c's handlers in
+    those files are surfaced or narrowed (25 candidates). The exact list is the NEUTRAL / REAL
+    table of [[#derive-hash]] at the release commit.
+  - AND, per store, every pass the rehash of deploy A reported `left`, read from the rehash's
+    own output (ruling L110; ch-bsd spec review r3 NS1). Those stamps were behind before this
+    release began, for example on a store not re-derived since a release that changed the
+    ingest path, or the `embed` pass anywhere its files changed since its stamp.
+  - NOT the memory compile. `consolidate.py` is not edited by plan-29: its 6 declared rows and
+    its one silent handler are held ([[task-29.3-converge-shapes#c-pass-rows-held]]; ruling
+    L110, deciding ch-bsd r3 NS3 as (a)). So the two compile scopes do not change, and deploy B
+    runs no `memory compile`. A re-compile on a live store is not "the same output again": it
+    clusters what the store holds now and, with pruning on by default, can remove subjects
+    ([[feedback_decay_never_loses_knowledge]]). If a store's rehash reports a compile scope
+    `left`, that scope is named in the release record and left for that store's next compile
+    under its own go; it is not re-compiled in this window.
 - **Cost, as the ruling cites it.** This is how every release that edits `ingest.py` already
   ships: 0.83.0's forced reingest of the refmatrix store took about 22 minutes, embed included,
   11:29 to 11:51 (the lead, L109, from `workflow/review-output/r4-reingest-0.83.0.log` on
   master; the log shows its five steps and 50,608 rows embedded, and its file time is 11:51; the
-  start time is the lead's). It is one store and the whole reingest; with `embed` unaffected,
-  deploy B's re-derive of that store should cost less. The other stores are not measured.
+  start time is the lead's). It is one store and the whole reingest. The other stores are not
+  measured.
 - **What the re-derive has to be.** A forced one: an unforced reingest skips files whose mtime
-  has not changed and would re-stamp passes without deriving them. The memory compile is not a
-  step of `rmx reingest`; its two scopes are re-compiled by their own existing command. The
-  deploy checklist names the exact command line per pass, read from the CLI at the release
-  commit ([[#files]]).
-- **It depends on bug-096 being fixed.** The closing step reads `rmx reingest`'s exit code, and
-  at `f3709d2` that command exits 0 with failed steps. 29.3 slice c fixes it
-  ([[task-29.3-converge-shapes#c-r6]]); that fix is in deploy B or earlier.
+  has not changed and would re-stamp passes without deriving them. The deploy checklist names
+  the exact command line per pass, read from the CLI at the release commit ([[#files]]).
+- **It depends on two fixes** (ch-bsd spec review r3 M4).
+  - bug-096: the closing step reads `rmx reingest`'s exit code, and at `f3709d2` that command
+    exits 0 with failed steps. 29.3 slice c fixes it ([[task-29.3-converge-shapes#c-r6]]), in
+    deploy B or earlier.
+  - bug-241: a forced reingest skipped the GMD pass whenever a `.tldr` cache answered, with
+    every step reporting ok. It is fixed in 0.83.1.
+  - And the step does not trust either: it checks that every re-derived pass's stamp time moved
+    ([[#r7-release]] step 4).
 - **Rejected, with the ruling's reasons.**
   - (b) an "accept" form of the rehash keyed on the pre-edit hash: it would invent an unproven
     write to every store's stamps.
@@ -1120,6 +1223,9 @@ registers it in `plan-29-code-quality#decisions` at merge. {#d27}
     handlers, 29.5's 22 rows) out of the plan.
 - **L107 item 4 as amended by L109:** a release may leave passes reading `behind_code` only
   inside its own announced window, with the re-derive as its closing step.
+
+**Amended by ruling L110** (on ch-bsd spec review r3): the `left` passes join the re-derive; the
+memory compile leaves it; the two preconditions and the stamp-time check are added.
 
 **Also settled by L109:** the three design choices of [[#k9]], [[#k10]] and R7's dropping of
 `TYPE_CHECKING` blocks and `typing` imports are accepted.
@@ -1206,6 +1312,20 @@ the rehash between them ([[#r7-release]], [[#k11]]), so every neutral edit is co
 it could not resolve was a real edit to a pass file; that became `plan-29 D27`, which the lead
 decided (a) in ruling L109: deploy B closes with a forced re-derive of the affected passes
 ([[#d27]]).
+
+## Revision round 4 (2026-11-14) {#rev-round-4}
+
+Answers ch-bsd spec review r3 (`bsd-plan29-spec-r3`, master) under ruling L110
+([[plan-review-2026-11-13#lead]]).
+
+| finding | change | anchor |
+|---|---|---|
+| NS1: a provably-behind old stamp read `code_unknown` and stayed there | an older stamp is compared through `raw`: different is `behind_code` labelled with its tag, equal is `code_unknown` until rehashed; AC-21 is a nine-row table; AC-24's comment and real-edit rows read `behind_code`; deploy B's closing step also re-derives every pass the rehash reported `left`, from the rehash's own output | [[#r7-compare]], AC-21, AC-24, [[#r7-release]] step 3, [[#d27]] |
+| NS2: `raw` went stale after the first neutral edit | R8 refreshes `raw` on a current-tag stamp with `normal` equal and `raw` different (hash only, history `kind` rehash, counted `refreshed`); the checklist runs the rehash after every deploy that touches a pass file; AC-24 has the refresh row end to end and the row without it; M9's cost is restated | [[#r8-rule]], [[#r7-cost]], AC-24, [[#files]] |
+| NS3, decided (a): deploy B would re-compile memory on every store | `consolidate.py` is not edited by plan-29; no memory compile in the window; a compile scope a rehash reports `left` is named, not re-compiled | [[#r7-release]], [[#d27]], [[#derive-hash]]; [[task-29.3-converge-shapes#c-pass-rows-held]] |
+| M4: the closing step named one of the two bugs it depends on | bug-241 beside bug-096; the step checks every re-derived pass's stamp time moved | [[#r7-release]] step 4, [[#d27]] |
+| M5: the rehash was an MCP write tool with writes on | CLI and MCP tool default to a dry run; writing needs `--apply` / `apply: true`; no `--dry-run` flag; AC-26, AC-27 | [[#r8-apply]] |
+| M3 (29.5's): what happens to a stamp under an unmapped pass name | unchanged here and now said: R8 counts it `unknown` and leaves it for a re-derive | [[#r8-rule]] |
 
 ## Out of scope {#out-of-scope}
 
