@@ -1,0 +1,57 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /private/tmp/claude-501/b2r7.ZU1B/mu/src/refmatrix as checked-hash (bug-037)
+F..                                                                      [100%]
+=================================== FAILURES ===================================
+_____ test_migrate_out_onto_a_committed_non_catalog_named_file_is_refused ______
+
+two_migrate_repos = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1078e3230>, PosixPath('/private/tmp/b212n-jgpaxpjp/repob'))
+
+    @pytest.mark.timeout(300)
+    def test_migrate_out_onto_a_committed_non_catalog_named_file_is_refused(two_migrate_repos):
+        """m-1 (a): `rmx migrate-to-duckdb --out <repo B>/x.duckdb --overwrite`, where repo B
+        COMMITS `x.duckdb`: one `Error:` line `refusing to open <that file> read-write in-process:
+        ...`, exit non-zero, `x.duckdb` byte-identical, repo B's status clean. At bcd861c the check
+        asks only about writer-catalog NAMES in repo B's top level, finds none, and the migration
+        rewrites the committed `x.duckdb`."""
+        a, b = two_migrate_repos
+        dst = (b / "x.duckdb").resolve()
+        before = _sha(dst)
+        r = _cli(a, ["migrate-to-duckdb", "--out", str(dst), "--overwrite"])
+        text = _text(r)
+        status = _status(b)
+        assert TRACEBACK not in r.stderr, f"migrate-to-duckdb crashed\n{text}"
+>       assert _sha(dst) == before and status == "", (
+            f"`--out` onto repo B's committed x.duckdb rewrote it (exit {r.returncode})\n"
+            f"repo B git status:\n{status}\n{text}")
+E       AssertionError: `--out` onto repo B's committed x.duckdb rewrote it (exit 0)
+E         repo B git status:
+E          M x.duckdb
+E         
+E         exit 0
+E         stdout:
+E         ┏━━━━━━━━━━━━━━━━━━┳━━━━━━┓
+E         ┃ table            ┃ rows ┃
+E         ┡━━━━━━━━━━━━━━━━━━╇━━━━━━┩
+E         │ partitions       │    1 │
+E         │ linkage_types    │   14 │
+E         │ entities         │    3 │
+E         │ concepts         │    3 │
+E         │ memory_content   │    0 │
+E         │ entity_links     │    2 │
+E         │ tracked_files    │    0 │
+E         │ linkage_evidence │    0 │
+E         │ saved_queries    │    0 │
+E         │ bitmap_fragments │    1 │
+E         └──────────────────┴──────┘
+E         wrote /private/tmp/b212n-jgpaxpjp/repob/x.duckdb
+E         
+E         stderr:
+E         
+E       assert ('6f380ee62c68...f90a78fe57fd7' == '07ea81e4cc87...20e56e8076671'
+E         
+E         - 07ea81e4cc87fa5e6560ec0d3b3bc619fea98a7587fac3833ba20e56e8076671
+E         + 6f380ee62c68ef8385aae50e58e536b6e951867f296f958a6b8f90a78fe57fd7)
+
+tests/test_bug212_r7_red.py:106: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r7_red.py::test_migrate_out_onto_a_committed_non_catalog_named_file_is_refused
+1 failed, 2 passed in 19.35s
