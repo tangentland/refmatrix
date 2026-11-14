@@ -110,3 +110,4 @@
 2026-11-14T10:02:54-0800 commit=323304d verdict=DIRTY findings=1 (0B/0S/1M) report=2026-11-14-1002-bug212-r7-323304d.md
 2026-11-14T20:48:54Z commit=bdd9cd8+11e9f9f verdict=DIRTY findings=23 (3B/8S/12M) report=2026-11-14-1248-plan29-spec-r1-bdd9cd8.md
 2026-11-14T21:21:09Z commit=786d5e7+cbb4ff8 verdict=DIRTY findings=17 (2B/5S/10M) report=2026-11-14-2120-plan29-spec-r2.md
+2026-11-14T21:50:00Z commit=70f4cd3+37c0719 verdict=DIRTY findings=8 (0B/3S/5M) report=2026-11-14-2150-plan29-spec-r3.md
