@@ -78,17 +78,61 @@ def _ss_sh(args: list[str], cwd: Path) -> str:
         return ""
 
 
+_SS_TRUNK_FALLBACK = ("origin/main", "origin/master", "main", "master")
+
+
+def _ss_origin_head(repo: Path) -> tuple[str, str]:
+    """(short ref origin/HEAD names, error) — `("", "")` when origin/HEAD is unset.
+
+    Why (bug-225, 2026-11-14): the trunk was guessed from a fixed name list, so in
+    atlftpd, whose trunk is `develop`, the handoff reported 24 commits ahead of
+    `origin/master` instead of 12 ahead of `origin/develop`. `refs/remotes/origin/HEAD`
+    (set by `git clone`, changed per repo with `git remote set-head`) is the repo's own
+    answer. `--quiet` makes "not a symbolic ref" exit 1 with no output: that is the
+    unset case and falls back to the list silently. Any other exit (or git failing to
+    run) is NOT unset: it is returned as an error the composers surface, never dropped.
+    The name is not verified here; `_ss_git_facts` verifies it like every candidate.
+    """
+    args = ["git", "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]
+    try:
+        r = subprocess.run(args, cwd=str(repo), capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError) as e:
+        return "", f"`{' '.join(args)}` could not run: {e}"
+    if r.returncode == 0:
+        return r.stdout.strip(), ""
+    if r.returncode == 1:
+        return "", ""
+    err = (r.stderr or r.stdout).strip() or "(no output)"
+    return "", f"`{' '.join(args)}` exited {r.returncode}: {err}"
+
+
 def _ss_git_facts(repo: Path, since: str | None) -> dict:
     """Branch, HEAD, dirty tree, commits-ahead-of-trunk, and this-session
-    commits (since the first STM event, if known)."""
+    commits (since the first STM event, if known).
+
+    The trunk is the ref `refs/remotes/origin/HEAD` names, then the first of
+    `_SS_TRUNK_FALLBACK` that resolves (bug-225, 2026-11-14: atlftpd's trunk is
+    `develop`, which the list alone never finds). Every candidate, origin/HEAD's
+    included, is verified with `rev-parse --verify`: a dangling origin/HEAD (its
+    branch deleted and pruned on the remote) still prints a name, and measuring
+    against that would report nothing. A git failure reading origin/HEAD lands in
+    `trunk_error`, the list still decides, and both composers print the error."""
     g = lambda *a: _ss_sh(["git", *a], repo)
     facts = {
         "branch": g("rev-parse", "--abbrev-ref", "HEAD"),
         "head": g("log", "-1", "--format=%h %s"),
         "dirty": g("status", "--short"),
-        "ahead_base": "", "ahead": "", "session_commits": "",
+        "ahead_base": "", "ahead": "", "session_commits": "", "trunk_error": "",
     }
-    for base in ("origin/main", "origin/master", "main", "master"):
+    candidates: list[str] = []
+    # No branch = not a work tree (or no commit yet): there is no trunk to measure
+    # against, and every git read above already came back empty for it.
+    if facts["branch"]:
+        origin_head, facts["trunk_error"] = _ss_origin_head(repo)
+        if origin_head:
+            candidates.append(origin_head)
+    candidates.extend(b for b in _SS_TRUNK_FALLBACK if b not in candidates)
+    for base in candidates:
         if g("rev-parse", "--verify", "--quiet", base):
             facts["ahead_base"] = base
             facts["ahead"] = g("log", "--oneline", f"{base}..HEAD")
@@ -188,6 +232,9 @@ def _ss_render(*, mem_id: str, session: str, repo: Path, message: str | None,
         n = len([x for x in git["ahead"].splitlines() if x.strip()])
         L.append(f"- **{n}** commit(s) ahead of `{git['ahead_base']}`"
                  + ("" if n else " — in sync"))
+    if git.get("trunk_error"):
+        L.append(f"- trunk: origin/HEAD unreadable, measured by the fallback list — "
+                 f"{git['trunk_error']}")
     L.append(f"- working tree: {'**dirty**' if git['dirty'] else 'clean'}")
     L.append("")
 
@@ -699,6 +746,9 @@ def compose_recall_state(s, root: Path, *, repo: Path, memdir: Path,
         if n:
             anomalies.append(f"{n} commit(s) ahead of {git['ahead_base']} "
                              f"(unmerged/undeployed?)")
+    if git.get("trunk_error"):
+        anomalies.append(f"trunk: origin/HEAD unreadable, measured by the fallback list "
+                         f"({git['trunk_error']})")
     # A caller that resolved its own session AFTER reading the pointer-error log passes the
     # clauses it read first (task 21.1 D6): the report is about the rows that were there,
     # not about the miss this very call recorded while choosing which ring to show.
