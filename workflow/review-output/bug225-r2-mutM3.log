@@ -1,0 +1,341 @@
+pyc-guard: recompiled 10 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b225mut3/src/refmatrix as checked-hash (bug-037)
+.............FFFFFFFFFFFFF                                               [100%]
+=================================== FAILURES ===================================
+______ test_r2_s1a_dangling_origin_head_is_said_and_the_list_still_picks _______
+
+repos = (PosixPath('/private/tmp/b225-qq8ls3mb'), PosixPath('/private/tmp/b225-qq8ls3mb/work'))
+
+    def test_r2_s1a_dangling_origin_head_is_said_and_the_list_still_picks(repos):
+        """origin/HEAD names origin/gone (deleted and pruned on the remote). The list
+        decides (origin/master, 5 ahead) AND trunk_error says the declared trunk was
+        skipped. At d735ce5 trunk_error is "" (the case was pinned silent)."""
+        _, work = repos
+        _git(work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/gone")
+        facts = handoff._ss_git_facts(work, None)
+        assert facts["ahead_base"] == "origin/master", facts
+        assert _subjects(facts["ahead"]) == list(reversed(FEATURE)) + list(reversed(DEVELOP))
+>       assert re.search(DANGLING_NOTE.format(x="origin/gone", y="origin/master"),
+                         facts["trunk_error"]), facts
+E       AssertionError: {'ahead': 'f85dfed feature commit 2
+E         d9abcfd feature commit 1
+E         13efafd develop commit 3
+E         fb41b85 develop commit 2
+E         649f3aa develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert None
+E        +  where None = <function search at 0x100927e20>('origin/HEAD names `?origin/gone`?, which does not resolve; measured against `?origin/master`?', '')
+E        +    where <function search at 0x100927e20> = re.search
+E        +    and   'origin/HEAD names `?origin/gone`?, which does not resolve; measured against `?origin/master`?' = <built-in method format of str object at 0x1127df6b0>(x='origin/gone', y='origin/master')
+E        +      where <built-in method format of str object at 0x1127df6b0> = 'origin/HEAD names `?{x}`?, which does not resolve; measured against `?{y}`?'.format
+
+tests/test_bug225_handoff_trunk.py:400: AssertionError
+______ test_r2_s1a_dangling_note_reaches_the_doc_and_the_recall_anomalies ______
+
+repos = (PosixPath('/private/tmp/b225-lrsns5_y'), PosixPath('/private/tmp/b225-lrsns5_y/work'))
+
+    def test_r2_s1a_dangling_note_reaches_the_doc_and_the_recall_anomalies(repos):
+        """The note is printed by both composers, not only stored."""
+        base, work = repos
+        _git(work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/gone")
+        note = DANGLING_NOTE.format(x="origin/gone", y="origin/master")
+        s, root = _stm(base, "sess-b225-r2-dangle")
+        doc = handoff.compose_save_state(s, root, repo=work, memdir=base / "memory",
+                                         today="2026-11-14", promote=False, dry_run=True)["doc"]
+>       assert re.search(note, _flat(doc)), doc
+E       AssertionError: ---
+E         gmd: "0.1"
+E         id: savestate_sessb225r2da
+E         title: "Save-state 2026-11-14: work @ 6f5a2fe"
+E         tags: ["session:sess-b225-r2-dangle"]
+E         metadata:
+E           node_type: memory
+E           type: session/recall-state
+E           originSessionId: sess-b225-r2-dangle
+E           created: 2026-11-14
+E           updated: 2026-11-14T02:16:41-08:00
+E         ---
+E         
+E         # Save-state 2026-11-14: work @ 6f5a2fe {#root}
+E         
+E         ## Session {#session}
+E         
+E         - branch **feature** · HEAD `6f5a2fe feature commit 2`
+E         - **5** commit(s) ahead of `origin/master`
+E         - working tree: clean
+E         
+E         ## Git activity {#git}
+E         
+E         Commits (this session):
+E         
+E         ```
+E         6f5a2fe feature commit 2
+E         bbe75ac feature commit 1
+E         8be5a17 develop commit 3
+E         3e917d4 develop commit 2
+E         3622cf5 develop commit 1
+E         6f4ff9c root commit
+E         ```
+E         
+E         ## Focus {#focus}
+E         
+E         Top of the working-memory graph (1 events):
+E         
+E         - `bug` [concept] ×1 (w=2.3)
+E         - `handoff` [concept] ×1 (w=2.3)
+E         - `trunk` [concept] ×1 (w=2.3)
+E         
+E         rel: realizes -> [[feedback_save_state_means_handoff]]
+E         rel: related-to -> [[feedback_recall_state_means_resume]]
+E         
+E       assert None
+E        +  where None = <function search at 0x100927e20>('origin/HEAD names `?origin/gone`?, which does not resolve; measured against `?origin/master`?', '--- gmd: "0.1" id: savestate_sessb225r2da title: "Save-state 2026-11-14: work @ 6f5a2fe" tags: ["session:sess-b225-r2...=2.3) rel: realizes -> [[feedback_save_state_means_handoff]] rel: related-to -> [[feedback_recall_state_means_resume]]')
+E        +    where <function search at 0x100927e20> = re.search
+E        +    and   '--- gmd: "0.1" id: savestate_sessb225r2da title: "Save-state 2026-11-14: work @ 6f5a2fe" tags: ["session:sess-b225-r2...=2.3) rel: realizes -> [[feedback_save_state_means_handoff]] rel: related-to -> [[feedback_recall_state_means_resume]]' = _flat('---\ngmd: "0.1"\nid: savestate_sessb225r2da\ntitle: "Save-state 2026-11-14: work @ 6f5a2fe"\ntags: ["session:sess-b22...n\nrel: realizes -> [[feedback_save_state_means_handoff]]\nrel: related-to -> [[feedback_recall_state_means_resume]]\n')
+
+tests/test_bug225_handoff_trunk.py:412: AssertionError
+______ test_r2_s1b_origin_head_to_a_missing_object_falls_back_and_is_said ______
+
+repos = (PosixPath('/private/tmp/b225-30fkzht1'), PosixPath('/private/tmp/b225-30fkzht1/work'))
+
+    def test_r2_s1b_origin_head_to_a_missing_object_falls_back_and_is_said(repos):
+        """origin/HEAD → origin/develop, and origin/develop holds a missing object id.
+        At d735ce5 it verifies, the ahead `git log` fails and is swallowed, and the
+        handoff says "0 commit(s) ahead of origin/develop — in sync"."""
+        base, work = repos
+        _git(work, "remote", "set-head", "origin", "develop")
+        _point_at_missing_object(work, "refs/remotes/origin/develop")
+        facts = handoff._ss_git_facts(work, None)
+>       assert facts["ahead_base"] == "origin/master", facts
+E       AssertionError: {'ahead': '', 'ahead_base': 'origin/develop', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'origin/develop' == 'origin/master'
+E         
+E         - origin/master
+E         + origin/develop
+
+tests/test_bug225_handoff_trunk.py:440: AssertionError
+__________ test_r2_s1b_list_candidate_to_a_missing_object_is_skipped ___________
+
+repos = (PosixPath('/private/tmp/b225-j6mihmkw'), PosixPath('/private/tmp/b225-j6mihmkw/work'))
+
+    def test_r2_s1b_list_candidate_to_a_missing_object_is_skipped(repos):
+        """origin/HEAD unset; origin/main (first in the list) holds a missing object
+        id. It must not verify: the list goes on to origin/master. At d735ce5 it picks
+        origin/main and reports 0 ahead, in sync."""
+        base, work = repos
+        _git(work, "remote", "set-head", "origin", "-d")
+        _point_at_missing_object(work, "refs/remotes/origin/main")
+        facts = handoff._ss_git_facts(work, None)
+>       assert facts["ahead_base"] == "origin/master", facts
+E       AssertionError: {'ahead': '', 'ahead_base': 'origin/main', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'origin/main' == 'origin/master'
+E         
+E         - origin/master
+E         ?          ^^^^
+E         + origin/main
+E         ?          ^^
+
+tests/test_bug225_handoff_trunk.py:458: AssertionError
+____________________ test_r2_s1c_failing_verify_is_surfaced ____________________
+
+repos = (PosixPath('/private/tmp/b225-0km114c5'), PosixPath('/private/tmp/b225-0km114c5/work'))
+git_shim = <function git_shim.<locals>.arm at 0x106dbe350>
+
+    def test_r2_s1c_failing_verify_is_surfaced(repos, git_shim):
+        """Every verify exits 2 (not "does not resolve", which is exit 1 / no output):
+        trunk_error carries the failure. At d735ce5 `_ss_sh` drops it and trunk_error
+        is "" while no trunk is measured at all."""
+        base, work = repos
+        _git(work, "remote", "set-head", "origin", "develop")
+        git_shim("verify")
+        facts = handoff._ss_git_facts(work, None)
+        err = facts["trunk_error"]
+>       assert SHIM_MARK in err or "exited 2" in err, facts
+E       AssertionError: {'ahead': '', 'ahead_base': '', 'branch': 'feature', 'dirty': '', ...}
+E       assert ('b225-shim: forced failure' in '' or 'exited 2' in '')
+
+tests/test_bug225_handoff_trunk.py:478: AssertionError
+__________ test_r2_s1c_failing_ahead_log_is_surfaced_not_read_as_zero __________
+
+repos = (PosixPath('/private/tmp/b225-4icovjb5'), PosixPath('/private/tmp/b225-4icovjb5/work'))
+git_shim = <function git_shim.<locals>.arm at 0x107f76cf0>
+
+    def test_r2_s1c_failing_ahead_log_is_surfaced_not_read_as_zero(repos, git_shim):
+        """origin/HEAD → origin/develop verifies; the `git log origin/develop..HEAD`
+        exits 2. At d735ce5 that reads as "**0** commit(s) ahead of `origin/develop` —
+        in sync" with trunk_error "". Both surfaces must say the measurement failed."""
+        base, work = repos
+        _git(work, "remote", "set-head", "origin", "develop")
+        git_shim("ahead")
+        facts = handoff._ss_git_facts(work, None)
+        err = facts["trunk_error"]
+>       assert SHIM_MARK in err or "exited 2" in err, facts
+E       AssertionError: {'ahead': '', 'ahead_base': 'origin/develop', 'branch': 'feature', 'dirty': '', ...}
+E       assert ('b225-shim: forced failure' in '' or 'exited 2' in '')
+
+tests/test_bug225_handoff_trunk.py:494: AssertionError
+____________ test_r2_m1_save_state_verb_result_carries_trunk_error _____________
+
+repos = (PosixPath('/private/tmp/b225-botwxz57'), PosixPath('/private/tmp/b225-botwxz57/work'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x106cafad0>
+
+    def test_r2_m1_save_state_verb_result_carries_trunk_error(repos, monkeypatch):
+        """The verb both the CLI and MCP call returns trunk_error (exit-128 fixture).
+        At d735ce5 the key is absent from compose_save_state's result."""
+        base, work = repos
+        _break_origin_head(work, UNREADABLE["outside-refs"])
+        from refmatrix import verbs
+        root = work / ".refmatrix"
+        monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+        res = verbs.VERBS["rmx_save_state"].run(root, _save_args(base, "sess-b225-m1-verb"))
+>       assert "exited 128" in (res.get("trunk_error") or ""), sorted(res)
+E       AssertionError: ['branch', 'dirty', 'dry_run', 'embed', 'events', 'filed_subject', ...]
+E       assert 'exited 128' in ((None or ''))
+E        +  where None = <built-in method get of dict object at 0x10260a740>('trunk_error')
+E        +    where <built-in method get of dict object at 0x10260a740> = {'branch': 'feature', 'dirty': False, 'dry_run': False, 'embed': None, ...}.get
+
+tests/test_bug225_handoff_trunk.py:522: AssertionError
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 1 lines, 134 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+_____________ test_r2_m1_mcp_save_state_result_carries_trunk_error _____________
+
+repos = (PosixPath('/private/tmp/b225-013gy5v5'), PosixPath('/private/tmp/b225-013gy5v5/work'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107f4e6d0>
+
+    def test_r2_m1_mcp_save_state_result_carries_trunk_error(repos, monkeypatch):
+        """The MCP tool, through the JSON-RPC dispatcher, returns trunk_error."""
+        base, work = repos
+        _break_origin_head(work, UNREADABLE["outside-refs"])
+        from refmatrix import mcp
+        root = work / ".refmatrix"
+        monkeypatch.setenv("REFMATRIX_ROOT", str(root))
+        resp = mcp.handle_message({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "rmx_save_state",
+                       "arguments": {"root": str(root), **_save_args(base, "sess-b225-m1-mcp")}}})
+        result = resp["result"]
+        assert not result["isError"], result
+        out = json.loads(result["content"][0]["text"])
+>       assert "exited 128" in (out.get("trunk_error") or ""), sorted(out)
+E       AssertionError: ['branch', 'dirty', 'dry_run', 'embed', 'events', 'filed_subject', ...]
+E       assert 'exited 128' in ((None or ''))
+E        +  where None = <built-in method get of dict object at 0x112a00800>('trunk_error')
+E        +    where <built-in method get of dict object at 0x112a00800> = {'branch': 'feature', 'dirty': False, 'dry_run': False, 'embed': None, ...}.get
+
+tests/test_bug225_handoff_trunk.py:540: AssertionError
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 1 lines, 134 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+_____________ test_r2_m1_cli_save_state_console_prints_trunk_error _____________
+
+repos = (PosixPath('/private/tmp/b225-8oua5gge'), PosixPath('/private/tmp/b225-8oua5gge/work'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x106ded710>
+
+    def test_r2_m1_cli_save_state_console_prints_trunk_error(repos, monkeypatch):
+        """`rmx save-state` (not --dry-run, which echoes the doc) prints the error on
+        the console. At d735ce5 it is only inside the written file."""
+        base, work = repos
+        _break_origin_head(work, UNREADABLE["outside-refs"])
+        from refmatrix import cli as cli_mod
+        monkeypatch.setenv("REFMATRIX_ROOT", str(work / ".refmatrix"))
+        r = CliRunner().invoke(cli_mod.main, ["save-state", "-s", "sess-b225-m1-cli",
+                                              "--memory-dir", str(base / "memory"),
+                                              "--no-lint", "--no-promote", "--no-sync"])
+        assert r.exit_code == 0, f"{r.output}\n{r.exception!r}"
+        out = _flat(r.output)
+>       assert "exited 128" in out and "No such ref: refs/remotes/origin/HEAD" in out, r.output
+E       AssertionError: save-state /private/tmp/b225-8oua5gge/memory/savestate_sessb225m1cl.md  (0 
+E         events, session sess-b225-m1-cli, explicit)
+E         MEMORY.md: 1 -> 1 lines, 134 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+E         
+E       assert ('exited 128' in 'save-state /private/tmp/b225-8oua5gge/memory/savestate_sessb225m1cl.md (0 events, session sess-b225-m1-cli, explicit) MEMORY.md: 1 -> 1 lines, 134 chars (caps 200 lines / 24000 chars; 1 memories on disk)')
+
+tests/test_bug225_handoff_trunk.py:555: AssertionError
+_______ test_r2_m3_non_git_dir_gives_all_empty_facts_and_no_trunk_error ________
+
+nongit = (PosixPath('/private/tmp/b225n-7_8xpe45'), PosixPath('/private/tmp/b225n-7_8xpe45/plain'))
+
+    def test_r2_m3_non_git_dir_gives_all_empty_facts_and_no_trunk_error(nongit):
+        """A store whose parent is not a git work tree: every fact is empty, and
+        trunk_error is empty (not "origin/HEAD unreadable … not a git repository").
+        Kills the `if facts["branch"]:` → `if True:` mutation bsd-225 r1 saw survive."""
+        _, d = nongit
+        facts = handoff._ss_git_facts(d, None)
+        assert "trunk_error" in facts, facts
+>       assert {k: v for k, v in facts.items() if v} == {}, facts
+E       AssertionError: {'ahead': '', 'ahead_base': '', 'branch': '', 'dirty': '', ...}
+E       assert {'trunk_error...ories): .git'} == {}
+E         
+E         Left contains 1 more item:
+E         {'trunk_error': '`git symbolic-ref --quiet --short refs/remotes/origin/HEAD` '
+E                         'exited 128: fatal: not a git repository (or any of the parent '
+E                         'directories): .git'}
+E         Use -v to get more diff
+
+tests/test_bug225_handoff_trunk.py:584: AssertionError
+____________ test_r2_m3_non_git_dir_never_asks_git_for_origin_head _____________
+
+nongit = (PosixPath('/private/tmp/b225n-65ua4nio'), PosixPath('/private/tmp/b225n-65ua4nio/plain'))
+git_shim = <function git_shim.<locals>.arm at 0x1129f8eb0>
+
+    def test_r2_m3_non_git_dir_never_asks_git_for_origin_head(nongit, git_shim):
+        """No `symbolic-ref` subprocess at all for a non-git dir (recorded by the
+        PATH shim, which fails nothing in mode "")."""
+        base, d = nongit
+        log = base / "git-argv.jsonl"
+        git_shim("", log=log)
+        handoff._ss_git_facts(d, None)
+        calls = [json.loads(ln) for ln in log.read_text().splitlines()] if log.exists() else []
+        assert calls, "the shim recorded no git call at all; is it on PATH?"
+>       assert not [c for c in calls if "symbolic-ref" in c], calls
+E       AssertionError: [['rev-parse', '--abbrev-ref', 'HEAD'], ['log', '-1', '--format=%h %s'], ['status', '--short'], ['symbolic-ref', '--qu...EAD'], ['rev-parse', '--verify', '--quiet', 'origin/main'], ['rev-parse', '--verify', '--quiet', 'origin/master'], ...]
+E       assert not [['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD']]
+
+tests/test_bug225_handoff_trunk.py:596: AssertionError
+_____________ test_r2_m3_non_git_recall_state_has_no_trunk_anomaly _____________
+
+nongit = (PosixPath('/private/tmp/b225n-y5uoz_8n'), PosixPath('/private/tmp/b225n-y5uoz_8n/plain'))
+
+    def test_r2_m3_non_git_recall_state_has_no_trunk_anomaly(nongit):
+        """And recall-state on such a store reports no trunk anomaly."""
+        base, d = nongit
+        s, root = _stm(base, "sess-b225-m3-recall")
+        rep = handoff.compose_recall_state(s, root, repo=d, memdir=base / "memory",
+                                           pointer_anomalies=[])
+>       assert not [a for a in rep["anomalies"] if "trunk" in a or "origin/HEAD" in a], \
+            rep["anomalies"]
+E       AssertionError: ['trunk: origin/HEAD unreadable, measured by the fallback list (`git symbolic-ref --quiet --short refs/remotes/origin/HEAD` exited 128: fatal: not a git repository (or any of the parent directories): .git)']
+E       assert not ['trunk: origin/HEAD unreadable, measured by the fallback list (`git symbolic-ref --quiet --short refs/remotes/origin/HEAD` exited 128: fatal: not a git repository (or any of the parent directories): .git)']
+
+tests/test_bug225_handoff_trunk.py:605: AssertionError
+__ test_r2_m2_shipped_recall_template_checks_origin_head_resolves_to_a_commit __
+
+    def test_r2_m2_shipped_recall_template_checks_origin_head_resolves_to_a_commit():
+        """Content check on the package template (never ~/.claude). bsd-225 r1 #m-2:
+        for a dangling origin/HEAD `git symbolic-ref --short` exits 0 and prints a
+        name, so "if it resolves" sends an agent to `rev-list origin/gone..HEAD`. Step 2
+        must tell the agent to check the name resolves to a COMMIT."""
+        import refmatrix
+        tpl = Path(refmatrix.__file__).parent / "templates" / "commands" / "recall-state.md"
+        text = tpl.read_text()
+        m = re.search(r"^2\. \*\*Git state\*\*(.*?)^3\. ", text, re.S | re.M)
+        assert m, "step 2 (Git state) not found in the shipped recall-state template"
+        step2 = _flat(m.group(1))
+        assert "refs/remotes/origin/HEAD" in step2, step2
+>       assert "^{commit}" in step2 or "resolves to a commit" in step2, step2
+E       AssertionError: — branch, `git log --oneline -5`, `git status --short` (raw git), and how far ahead of the trunk (`git rev-list --count <trunk>..HEAD`; `<trunk>` is `git symbolic-ref --short refs/remotes/origin/HEAD` if it resolves, else `origin/main` / `origin/master`).
+E       assert ('^{commit}' in '— branch, `git log --oneline -5`, `git status --short` (raw git), and how far ahead of the trunk (`git rev-list --cou...<trunk>` is `git symbolic-ref --short refs/remotes/origin/HEAD` if it resolves, else `origin/main` / `origin/master`).' or 'resolves to a commit' in '— branch, `git log --oneline -5`, `git status --short` (raw git), and how far ahead of the trunk (`git rev-list --cou...<trunk>` is `git symbolic-ref --short refs/remotes/origin/HEAD` if it resolves, else `origin/main` / `origin/master`).')
+
+tests/test_bug225_handoff_trunk.py:624: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_s1a_dangling_origin_head_is_said_and_the_list_still_picks
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_s1a_dangling_note_reaches_the_doc_and_the_recall_anomalies
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_s1b_origin_head_to_a_missing_object_falls_back_and_is_said
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_s1b_list_candidate_to_a_missing_object_is_skipped
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_s1c_failing_verify_is_surfaced
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_s1c_failing_ahead_log_is_surfaced_not_read_as_zero
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_m1_save_state_verb_result_carries_trunk_error
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_m1_mcp_save_state_result_carries_trunk_error
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_m1_cli_save_state_console_prints_trunk_error
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_m3_non_git_dir_gives_all_empty_facts_and_no_trunk_error
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_m3_non_git_dir_never_asks_git_for_origin_head
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_m3_non_git_recall_state_has_no_trunk_anomaly
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_m2_shipped_recall_template_checks_origin_head_resolves_to_a_commit
+13 failed, 13 passed in 16.05s
