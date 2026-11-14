@@ -1,0 +1,195 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/r4/src/refmatrix as checked-hash (bug-037)
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+____ test_m2_a_failed_vector_delete_is_named_and_the_merge_stays_committed _____
+
+op_env = {'d': <refmatrix.daemon.Daemon object at 0x111763cb0>, 'droot': PosixPath('/private/tmp/b216tstzwrxxd/D/proj/.refmatri...tzwrxxd/A/proj/.refmatrix'), 'b': PosixPath('/private/tmp/b216tstzwrxxd/B/proj/.refmatrix'), 'ids': [2, 3], 'keep': 1}}
+
+    def test_m2_a_failed_vector_delete_is_named_and_the_merge_stays_committed(op_env):
+        from refmatrix import daemon as dm
+        m, d, droot = op_env["m"], op_env["d"], op_env["droot"]
+        _seed_vectors(droot, m["ids"] + [m["keep"]])
+        table = droot / "vectors" / "proj" / "memory.lance"
+        _read_only_tree(table)
+        probe = table / "_rmx_write_probe"
+        try:
+            probe.write_text("x")
+            probe.unlink()
+            pytest.fail("precondition: the read-only Lance table dir is still writable "
+                        "(running as root?)")
+        except PermissionError:
+            pass
+        r = dm._op_replica_merge(d, {"dry_run": False})
+        assert r.get("ok") is True, f"a vector-delete failure must not fail the merge: {r}"
+        err = str(r.get("vector_delete_error") or "")
+>       assert err and "committed" in err and "memory.lance" in err, (
+            f"the reply must say the merge is committed and name the table: {r}")
+E       AssertionError: the reply must say the merge is committed and name the table: {'a_counts': {'partitions': 1, 'linkage_types': 14, 'entities': 3, 'concepts': 0, 'memory_content': 3, 'entity_links': 0, 'tracked_files': 0, 'linkage_evidence': 0, 'saved_queries': 0, 'bitmap_fragments': 0, 'pending_refs': 0}, 'b_counts': {'partitions': 1, 'linkage_types': 14, 'entities': 3, 'concepts': 0, 'memory_content': 3, 'entity_links': 0, 'tracked_files': 0, 'linkage_evidence': 0, 'saved_queries': 0, 'bitmap_fragments': 0, 'pending_refs': 0}, 'merged_counts': {'partitions': 1, 'linkage_types': 14, 'entities': 5, 'concepts': 0, 'memory_content': 5, 'entity_links': 0, 'tracked_files': 0, 'linkage_evidence': 0, 'saved_queries': 0, 'bitmap_fragments': 0, 'pending_refs': 0}, 'fresh_moved': [[2, 4], [3, 5]], 'fragment_bits_remapped': 0, 'remap': {'a_loser_count': 0, 'b_loser_count': 0, 'fresh_alloc_edge_cases': 0}, 'elapsed_ms': 62, 'target_size_bytes': 4468736, 'dry_run': False, 're_embed': '2 entity id(s) moved to a fresh id; their vectors were not moved — run `rmx embed` to re-embed: 2->4, 3->5', 'vectors_deleted': {'deleted': 0, 'tables': 0, 'errors': ['proj/memory.lance: OSError: LanceError(IO): Permission denied (os error 13), /Users/runner/work/lance/lance/rust/lance-io/src/object_store.rs:736:21']}, 'enabled': True, 'ok': True, 'writer_slot': 'A', 'reader_slot': 'B', 'log_end_offset': 0, 'elapsed_ms_total': 101}
+E       assert ('')
+
+tests/test_bug216_remedy_r4.py:295: AssertionError
+----------------------------- Captured stderr call -----------------------------
+rmx: vector delete FAILED for 4 memory id(s) in partition 'proj' (OSError: LanceError(IO): Permission denied (os error 13), /Users/runner/work/lance/lance/rust/lance-io/src/object_store.rs:736:21); their vectors are orphaned until `rmx embed --gc` reaps them (which needs a working `import lance`)
+_ test_m2_rmx_replica_merge_exits_1_after_printing_on_a_vector_delete_failure[text] _
+
+op_env = {'d': <refmatrix.daemon.Daemon object at 0x1105c3b60>, 'droot': PosixPath('/private/tmp/b216tms41q9jj/D/proj/.refmatri...s41q9jj/A/proj/.refmatrix'), 'b': PosixPath('/private/tmp/b216tms41q9jj/B/proj/.refmatrix'), 'ids': [2, 3], 'keep': 1}}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x113cb4770>
+as_json = False
+
+    @pytest.mark.parametrize("as_json", [False, True], ids=["text", "json"])
+    def test_m2_rmx_replica_merge_exits_1_after_printing_on_a_vector_delete_failure(op_env,
+                                                                                   monkeypatch,
+                                                                                   as_json):
+        """`rmx replica merge --yes [--json]` through the REAL op (the transport answered in
+        process): exit 1, the error on stderr, and the summary / JSON printed first."""
+        from refmatrix import cli as cli_mod
+        from refmatrix import daemon as dm
+        m, d, droot = op_env["m"], op_env["d"], op_env["droot"]
+        _seed_vectors(droot, m["ids"] + [m["keep"]])
+        _read_only_tree(droot / "vectors" / "proj" / "memory.lance")
+        monkeypatch.setattr(cli_mod, "_root", lambda: droot)
+        monkeypatch.setattr(dm, "ping", lambda *a, **k: True)
+        monkeypatch.setattr(dm, "call", lambda root, op, args, **kw:
+                            {"ok": True, "result": dm.OPS[op](d, dict(args))})
+        argv = ["replica", "merge", "--yes"] + (["--json"] if as_json else [])
+        r = CliRunner().invoke(cli_mod.main, argv)
+>       assert r.exit_code == 1, f"exit {r.exit_code}:\n{r.output}"
+E       AssertionError: exit 0:
+E         
+E         MERGED in 103 ms
+E         
+E         Per-table counts (A / B → merged):
+E           partitions                 1 /        1 →        1  (Δa +0, Δb +0)
+E           linkage_types             14 /       14 →       14  (Δa +0, Δb +0)
+E           entities                   3 /        3 →        5  (Δa +2, Δb +2)
+E           concepts                   0 /        0 →        0  (Δa +0, Δb +0)
+E           memory_content             3 /        3 →        5  (Δa +2, Δb +2)
+E           entity_links               0 /        0 →        0  (Δa +0, Δb +0)
+E           tracked_files              0 /        0 →        0  (Δa +0, Δb +0)
+E           linkage_evidence           0 /        0 →        0  (Δa +0, Δb +0)
+E           saved_queries              0 /        0 →        0  (Δa +0, Δb +0)
+E           bitmap_fragments           0 /        0 →        0  (Δa +0, Δb +0)
+E           pending_refs               0 /        0 →        0  (Δa +0, Δb +0)
+E         
+E         Remap: A-loser=0 B-loser=0 edge_cases=0
+E         2 entity id(s) moved to a fresh id; their vectors were not moved — run `rmx 
+E         embed` to re-embed: 2->4, 3->5
+E         
+E         writer: slot A, log_end_offset=0
+E         merged size: 4,468,736 bytes
+E         rmx: vector delete FAILED for 4 memory id(s) in partition 'proj' (OSError: LanceError(IO): Permission denied (os error 13), /Users/runner/work/lance/lance/rust/lance-io/src/object_store.rs:736:21); their vectors are orphaned until `rmx embed --gc` reaps them (which needs a working `import lance`)
+E         
+E       assert 0 == 1
+E        +  where 0 = <Result okay>.exit_code
+
+tests/test_bug216_remedy_r4.py:323: AssertionError
+_ test_m2_rmx_replica_merge_exits_1_after_printing_on_a_vector_delete_failure[json] _
+
+op_env = {'d': <refmatrix.daemon.Daemon object at 0x1369d3e00>, 'droot': PosixPath('/private/tmp/b216tgy39assg/D/proj/.refmatri...y39assg/A/proj/.refmatrix'), 'b': PosixPath('/private/tmp/b216tgy39assg/B/proj/.refmatrix'), 'ids': [2, 3], 'keep': 1}}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x133c260f0>
+as_json = True
+
+    @pytest.mark.parametrize("as_json", [False, True], ids=["text", "json"])
+    def test_m2_rmx_replica_merge_exits_1_after_printing_on_a_vector_delete_failure(op_env,
+                                                                                   monkeypatch,
+                                                                                   as_json):
+        """`rmx replica merge --yes [--json]` through the REAL op (the transport answered in
+        process): exit 1, the error on stderr, and the summary / JSON printed first."""
+        from refmatrix import cli as cli_mod
+        from refmatrix import daemon as dm
+        m, d, droot = op_env["m"], op_env["d"], op_env["droot"]
+        _seed_vectors(droot, m["ids"] + [m["keep"]])
+        _read_only_tree(droot / "vectors" / "proj" / "memory.lance")
+        monkeypatch.setattr(cli_mod, "_root", lambda: droot)
+        monkeypatch.setattr(dm, "ping", lambda *a, **k: True)
+        monkeypatch.setattr(dm, "call", lambda root, op, args, **kw:
+                            {"ok": True, "result": dm.OPS[op](d, dict(args))})
+        argv = ["replica", "merge", "--yes"] + (["--json"] if as_json else [])
+        r = CliRunner().invoke(cli_mod.main, argv)
+>       assert r.exit_code == 1, f"exit {r.exit_code}:\n{r.output}"
+E       AssertionError: exit 0:
+E         {
+E           "a_counts": {
+E             "partitions": 1,
+E             "linkage_types": 14,
+E             "entities": 3,
+E             "concepts": 0,
+E             "memory_content": 3,
+E             "entity_links": 0,
+E             "tracked_files": 0,
+E             "linkage_evidence": 0,
+E             "saved_queries": 0,
+E             "bitmap_fragments": 0,
+E             "pending_refs": 0
+E           },
+E           "b_counts": {
+E             "partitions": 1,
+E             "linkage_types": 14,
+E             "entities": 3,
+E             "concepts": 0,
+E             "memory_content": 3,
+E             "entity_links": 0,
+E             "tracked_files": 0,
+E             "linkage_evidence": 0,
+E             "saved_queries": 0,
+E             "bitmap_fragments": 0,
+E             "pending_refs": 0
+E           },
+E           "merged_counts": {
+E             "partitions": 1,
+E             "linkage_types": 14,
+E             "entities": 5,
+E             "concepts": 0,
+E             "memory_content": 5,
+E             "entity_links": 0,
+E             "tracked_files": 0,
+E             "linkage_evidence": 0,
+E             "saved_queries": 0,
+E             "bitmap_fragments": 0,
+E             "pending_refs": 0
+E           },
+E           "fresh_moved": [
+E             [
+E               2,
+E               4
+E             ],
+E             [
+E               3,
+E               5
+E             ]
+E           ],
+E           "fragment_bits_remapped": 0,
+E           "remap": {
+E             "a_loser_count": 0,
+E             "b_loser_count": 0,
+E             "fresh_alloc_edge_cases": 0
+E           },
+E           "elapsed_ms": 67,
+E           "target_size_bytes": 4468736,
+E           "dry_run": false,
+E           "re_embed": "2 entity id(s) moved to a fresh id; their vectors were not moved \u2014 run `rmx embed` to re-embed: 2->4, 3->5",
+E           "vectors_deleted": {
+E             "deleted": 0,
+E             "tables": 0,
+E             "errors": [
+E               "proj/memory.lance: OSError: LanceError(IO): Permission denied (os error 13), /Users/runner/work/lance/lance/rust/lance-io/src/object_store.rs:736:21"
+E             ]
+E           },
+E           "enabled": true,
+E           "ok": true,
+E           "writer_slot": "A",
+E           "reader_slot": "B",
+E           "log_end_offset": 0,
+E           "elapsed_ms_total": 107
+E         }
+E         rmx: vector delete FAILED for 4 memory id(s) in partition 'proj' (OSError: LanceError(IO): Permission denied (os error 13), /Users/runner/work/lance/lance/rust/lance-io/src/object_store.rs:736:21); their vectors are orphaned until `rmx embed --gc` reaps them (which needs a working `import lance`)
+E         
+E       assert 0 == 1
+E        +  where 0 = <Result okay>.exit_code
+
+tests/test_bug216_remedy_r4.py:323: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r4.py::test_m2_a_failed_vector_delete_is_named_and_the_merge_stays_committed
+FAILED tests/test_bug216_remedy_r4.py::test_m2_rmx_replica_merge_exits_1_after_printing_on_a_vector_delete_failure[text]
+FAILED tests/test_bug216_remedy_r4.py::test_m2_rmx_replica_merge_exits_1_after_printing_on_a_vector_delete_failure[json]
+3 failed, 3 deselected in 1.96s

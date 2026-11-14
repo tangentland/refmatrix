@@ -1,0 +1,59 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/r4/src/refmatrix as checked-hash (bug-037)
+.F.                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_m2_rmx_replica_merge_exits_1_after_printing_on_a_vector_delete_failure[text] _
+
+op_env = {'d': <refmatrix.daemon.Daemon object at 0x1074d3b60>, 'droot': PosixPath('/private/tmp/b216tx5j8qzdb/D/proj/.refmatri...5j8qzdb/A/proj/.refmatrix'), 'b': PosixPath('/private/tmp/b216tx5j8qzdb/B/proj/.refmatrix'), 'ids': [2, 3], 'keep': 1}}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11bc9f820>
+as_json = False
+
+    @pytest.mark.parametrize("as_json", [False, True], ids=["text", "json"])
+    def test_m2_rmx_replica_merge_exits_1_after_printing_on_a_vector_delete_failure(op_env,
+                                                                                   monkeypatch,
+                                                                                   as_json):
+        """`rmx replica merge --yes [--json]` through the REAL op (the transport answered in
+        process): exit 1, the error on stderr, and the summary / JSON printed first."""
+        from refmatrix import cli as cli_mod
+        from refmatrix import daemon as dm
+        m, d, droot = op_env["m"], op_env["d"], op_env["droot"]
+        _seed_vectors(droot, m["ids"] + [m["keep"]])
+        _read_only_tree(droot / "vectors" / "proj" / "memory.lance")
+        monkeypatch.setattr(cli_mod, "_root", lambda: droot)
+        monkeypatch.setattr(dm, "ping", lambda *a, **k: True)
+        monkeypatch.setattr(dm, "call", lambda root, op, args, **kw:
+                            {"ok": True, "result": dm.OPS[op](d, dict(args))})
+        argv = ["replica", "merge", "--yes"] + (["--json"] if as_json else [])
+        r = CliRunner().invoke(cli_mod.main, argv)
+>       assert r.exit_code == 1, f"exit {r.exit_code}:\n{r.output}"
+E       AssertionError: exit 0:
+E         
+E         MERGED in 103 ms
+E         
+E         Per-table counts (A / B → merged):
+E           partitions                 1 /        1 →        1  (Δa +0, Δb +0)
+E           linkage_types             14 /       14 →       14  (Δa +0, Δb +0)
+E           entities                   3 /        3 →        5  (Δa +2, Δb +2)
+E           concepts                   0 /        0 →        0  (Δa +0, Δb +0)
+E           memory_content             3 /        3 →        5  (Δa +2, Δb +2)
+E           entity_links               0 /        0 →        0  (Δa +0, Δb +0)
+E           tracked_files              0 /        0 →        0  (Δa +0, Δb +0)
+E           linkage_evidence           0 /        0 →        0  (Δa +0, Δb +0)
+E           saved_queries              0 /        0 →        0  (Δa +0, Δb +0)
+E           bitmap_fragments           0 /        0 →        0  (Δa +0, Δb +0)
+E           pending_refs               0 /        0 →        0  (Δa +0, Δb +0)
+E         
+E         Remap: A-loser=0 B-loser=0 edge_cases=0
+E         2 entity id(s) moved to a fresh id; their vectors were not moved — run `rmx 
+E         embed` to re-embed: 2->4, 3->5
+E         
+E         writer: slot A, log_end_offset=0
+E         merged size: 4,468,736 bytes
+E         rmx: vector delete FAILED for 4 memory id(s) in partition 'proj' (OSError: LanceError(IO): Permission denied (os error 13), /Users/runner/work/lance/lance/rust/lance-io/src/object_store.rs:736:21); their vectors are orphaned until `rmx embed --gc` reaps them (which needs a working `import lance`)
+E         
+E       assert 0 == 1
+E        +  where 0 = <Result okay>.exit_code
+
+tests/test_bug216_remedy_r4.py:323: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r4.py::test_m2_rmx_replica_merge_exits_1_after_printing_on_a_vector_delete_failure[text]
+1 failed, 2 passed, 3 deselected in 1.86s
