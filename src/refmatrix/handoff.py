@@ -81,62 +81,127 @@ def _ss_sh(args: list[str], cwd: Path) -> str:
 _SS_TRUNK_FALLBACK = ("origin/main", "origin/master", "main", "master")
 
 
+def _ss_git_run(repo: Path, *args: str) -> tuple[int | None, str, str]:
+    """(exit code, stdout, stderr) of one git call; exit None when git could not run
+    (OSError, or the 20 s timeout). Unlike `_ss_sh` it lets the caller tell "not
+    found" from "failed" -- the trunk reads need that (bug-225 r2, ruling L96)."""
+    try:
+        r = subprocess.run(["git", *args], cwd=str(repo), capture_output=True,
+                           text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError) as e:
+        return None, "", f"{type(e).__name__}: {e}"
+    return r.returncode, r.stdout.strip(), r.stderr.strip()
+
+
+def _ss_git_failure(args: tuple[str, ...], rc: int | None, out: str, err: str) -> str:
+    """One way to say a git call failed: the command, then how."""
+    cmd = f"`git {' '.join(args)}`"
+    if rc is None:
+        return f"{cmd} could not run: {err}"
+    return f"{cmd} exited {rc}: {err or out or '(no output)'}"
+
+
 def _ss_origin_head(repo: Path) -> tuple[str, str]:
-    """(short ref origin/HEAD names, error) — `("", "")` when origin/HEAD is unset.
+    """(short ref origin/HEAD names, error) -- `("", "")` when origin/HEAD is unset.
 
     Why (bug-225, 2026-11-14): the trunk was guessed from a fixed name list, so in
     atlftpd, whose trunk is `develop`, the handoff reported 24 commits ahead of
     `origin/master` instead of 12 ahead of `origin/develop`. `refs/remotes/origin/HEAD`
     (set by `git clone`, changed per repo with `git remote set-head`) is the repo's own
     answer. `--quiet` makes "not a symbolic ref" exit 1 with no output: that is the
-    unset case and falls back to the list silently. Any other exit (or git failing to
-    run) is NOT unset: it is returned as an error the composers surface, never dropped.
-    The name is not verified here; `_ss_git_facts` verifies it like every candidate.
+    unset case, and the list decides without a word. Any other exit (or git failing
+    to run) is NOT unset: it is returned as an error the composers print.
+    The name is not verified here; `_ss_trunk` verifies it like every candidate.
     """
-    args = ["git", "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]
-    try:
-        r = subprocess.run(args, cwd=str(repo), capture_output=True, text=True, timeout=20)
-    except (OSError, subprocess.SubprocessError) as e:
-        return "", f"`{' '.join(args)}` could not run: {e}"
-    if r.returncode == 0:
-        return r.stdout.strip(), ""
-    if r.returncode == 1:
+    args = ("symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
+    rc, out, err = _ss_git_run(repo, *args)
+    if rc == 0:
+        return out, ""
+    if rc == 1:
         return "", ""
-    err = (r.stderr or r.stdout).strip() or "(no output)"
-    return "", f"`{' '.join(args)}` exited {r.returncode}: {err}"
+    return "", _ss_git_failure(args, rc, out, err)
+
+
+def _ss_trunk(repo: Path, facts: dict) -> None:
+    """Pick the trunk and measure commits ahead of it, into `facts`.
+
+    Candidates: the ref origin/HEAD names, then `_SS_TRUNK_FALLBACK`. Each is
+    verified as `<name>^{commit}`, so a ref whose object is missing does not pass
+    (bsd-225 r1 S1: plain `--verify` passed it, the ahead `git log` then failed
+    inside `_ss_sh`, and the handoff said "0 commit(s) ahead -- in sync"). Exit 1
+    or 128 is "does not resolve": try the next. Any other exit, an unrunnable git
+    or a timeout stops the walk and is said. The ahead `git log` is read the same
+    way: a failure is said and leaves `ahead_base` empty, so no surface can print
+    a measured zero. When origin/HEAD names a ref that does not resolve, that is
+    said too, with the trunk actually used (ruling L96, 2026-11-14).
+
+    Problems land in `facts["trunk_errors"]` as (headline, detail) pairs; the
+    composers render them (save-state doc line, recall-state anomaly)."""
+    problems: list[tuple[str, str]] = facts["trunk_errors"]
+    origin_head, oh_err = _ss_origin_head(repo)
+    candidates = ([origin_head] if origin_head else []) + \
+        [b for b in _SS_TRUNK_FALLBACK if b != origin_head]
+    base, stopped_at = "", ""
+    for cand in candidates:
+        args = ("rev-parse", "--verify", "--quiet", f"{cand}^{{commit}}")
+        rc, out, err = _ss_git_run(repo, *args)
+        if rc == 0:
+            base = cand
+            break
+        if rc in (1, 128):
+            continue
+        stopped_at = cand
+        problems.append((f"could not verify trunk candidate `{cand}`",
+                         _ss_git_failure(args, rc, out, err)))
+        break
+    fallback = (f"measured against `{base}`" if base
+                else "the fallback list was not verified" if stopped_at
+                else "no fallback trunk resolves")
+    if oh_err:
+        problems.insert(0, ("origin/HEAD unreadable, " + (
+            "measured by the fallback list" if base else fallback), oh_err))
+    elif origin_head and base != origin_head and stopped_at != origin_head:
+        problems.insert(0, (f"origin/HEAD names `{origin_head}`, which does not "
+                            f"resolve; {fallback}", ""))
+    if not base:
+        return
+    args = ("log", "--oneline", f"{base}..HEAD")
+    rc, out, err = _ss_git_run(repo, *args)
+    if rc == 0:
+        facts["ahead_base"], facts["ahead"] = base, out
+    else:
+        problems.append((f"commits ahead of `{base}` not measured",
+                         _ss_git_failure(args, rc, out, err)))
+
+
+def _ss_trunk_lines(git: dict, *, sep: str, close: str) -> list[str]:
+    """The trunk problems as `trunk: <headline><sep><detail><close>` lines."""
+    return [f"trunk: {h}" + (f"{sep}{d}{close}" if d else "")
+            for h, d in (git.get("trunk_errors") or [])]
 
 
 def _ss_git_facts(repo: Path, since: str | None) -> dict:
     """Branch, HEAD, dirty tree, commits-ahead-of-trunk, and this-session
     commits (since the first STM event, if known).
 
-    The trunk is the ref `refs/remotes/origin/HEAD` names, then the first of
-    `_SS_TRUNK_FALLBACK` that resolves (bug-225, 2026-11-14: atlftpd's trunk is
-    `develop`, which the list alone never finds). Every candidate, origin/HEAD's
-    included, is verified with `rev-parse --verify`: a dangling origin/HEAD (its
-    branch deleted and pruned on the remote) still prints a name, and measuring
-    against that would report nothing. A git failure reading origin/HEAD lands in
-    `trunk_error`, the list still decides, and both composers print the error."""
+    The trunk comes from `_ss_trunk` (origin/HEAD, then the fallback list, each
+    verified as a commit; bug-225). `trunk_error` is every trunk problem in one
+    string, the form the save-state verb result carries to CLI and MCP callers."""
     g = lambda *a: _ss_sh(["git", *a], repo)
     facts = {
         "branch": g("rev-parse", "--abbrev-ref", "HEAD"),
         "head": g("log", "-1", "--format=%h %s"),
         "dirty": g("status", "--short"),
         "ahead_base": "", "ahead": "", "session_commits": "", "trunk_error": "",
+        "trunk_errors": [],
     }
-    candidates: list[str] = []
     # No branch = not a work tree (or no commit yet): there is no trunk to measure
-    # against, and every git read above already came back empty for it.
+    # against, every git read above already came back empty, and no trunk git call
+    # runs at all -- in a non-git dir each would fail "not a git repository".
     if facts["branch"]:
-        origin_head, facts["trunk_error"] = _ss_origin_head(repo)
-        if origin_head:
-            candidates.append(origin_head)
-    candidates.extend(b for b in _SS_TRUNK_FALLBACK if b not in candidates)
-    for base in candidates:
-        if g("rev-parse", "--verify", "--quiet", base):
-            facts["ahead_base"] = base
-            facts["ahead"] = g("log", "--oneline", f"{base}..HEAD")
-            break
+        _ss_trunk(repo, facts)
+        facts["trunk_error"] = "; ".join(h + (f" — {d}" if d else "")
+                                         for h, d in facts["trunk_errors"])
     if since:
         facts["session_commits"] = g("log", "--oneline", f"--since={since}")
     return facts
@@ -232,9 +297,7 @@ def _ss_render(*, mem_id: str, session: str, repo: Path, message: str | None,
         n = len([x for x in git["ahead"].splitlines() if x.strip()])
         L.append(f"- **{n}** commit(s) ahead of `{git['ahead_base']}`"
                  + ("" if n else " — in sync"))
-    if git.get("trunk_error"):
-        L.append(f"- trunk: origin/HEAD unreadable, measured by the fallback list — "
-                 f"{git['trunk_error']}")
+    L.extend(f"- {ln}" for ln in _ss_trunk_lines(git, sep=" — ", close=""))
     L.append(f"- working tree: {'**dirty**' if git['dirty'] else 'clean'}")
     L.append("")
 
@@ -495,6 +558,8 @@ def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
         "events": len(events), "doc": doc, "dry_run": dry_run,
         "branch": git["branch"], "head": git["head"],
         "dirty": bool(git["dirty"]), "promoted": None,
+        # bug-225 r2 M1: the trunk problem rides back to every caller (CLI, MCP).
+        "trunk_error": git.get("trunk_error") or "",
         "memdir": str(memdir),
         "moved_legacy": None,
         # #rm-newer-copy: the top-level copy of a pair this save removed, the
@@ -746,9 +811,7 @@ def compose_recall_state(s, root: Path, *, repo: Path, memdir: Path,
         if n:
             anomalies.append(f"{n} commit(s) ahead of {git['ahead_base']} "
                              f"(unmerged/undeployed?)")
-    if git.get("trunk_error"):
-        anomalies.append(f"trunk: origin/HEAD unreadable, measured by the fallback list "
-                         f"({git['trunk_error']})")
+    anomalies.extend(_ss_trunk_lines(git, sep=" (", close=")"))
     # A caller that resolved its own session AFTER reading the pointer-error log passes the
     # clauses it read first (task 21.1 D6): the report is about the rows that were there,
     # not about the miss this very call recorded while choosing which ring to show.
