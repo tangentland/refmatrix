@@ -1,0 +1,239 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/r5/src/refmatrix as checked-hash (bug-037)
+FFF..........                                                            [100%]
+=================================== FAILURES ===================================
+_ test_s1_an_id_a_b_loser_vacated_loses_its_stale_vector_and_its_holder_is_requeued _
+
+base = PosixPath('/private/tmp/b216uhnxsq8yn')
+
+    def test_s1_an_id_a_b_loser_vacated_loses_its_stale_vector_and_its_holder_is_requeued(base):
+        from refmatrix import daemon as dm
+        a_root = base / "A" / "proj" / ".refmatrix"
+        b_root = base / "B" / "proj" / ".refmatrix"
+        _new_store(a_root)
+        s = _open(a_root)
+        try:
+            keep = s.add_memory("keep", "an unrelated, embedded memory")
+        finally:
+            s.close()
+        b_root.mkdir(parents=True)
+        shutil.copy2(a_root / "catalog.duckdb", b_root / "catalog.duckdb")
+        s = _open(b_root)
+        try:
+            b_shared = s.add_memory("shared", "SHARED B (older)")      # written first: loses
+        finally:
+            s.close()
+        s = _open(a_root)
+        try:
+            x_only_a = s.add_memory("x-only-a", "ONLY IN A")
+            a_shared = s.add_memory("shared", "SHARED A (newer)")
+        finally:
+            s.close()
+        assert x_only_a == b_shared and a_shared not in (b_shared, keep), (
+            f"precondition: A's x-only-a at B-shared's id {b_shared}; a_shared {a_shared}; "
+            f"keep {keep}")
+        _mark_embedded(a_root, b_root)
+        droot = _daemon_root(base, a_root, b_root)
+        _seed_vectors(droot, [b_shared, a_shared, keep])
+        d = dm.Daemon(droot, partition="proj")
+        d._log = lambda msg: None
+        d.store = Store(droot, partition="proj")
+        d.store.init()
+        d.store._connect()
+        try:
+            r = dm._op_replica_merge(d, {"dry_run": False})
+            assert r.get("ok") is True and not r.get("vector_delete_error"), r
+            assert r["remap"]["b_loser_count"] == 1 and not r.get("fresh_moved"), (
+                f"precondition: B's shared is a name-loser, nothing moves: {r['remap']} "
+                f"{r.get('fresh_moved')}")
+            with d.store.with_partition("proj"):
+                pending = {int(row[0]) for row in d.store.pending_embeddings()}
+        finally:
+            if d.store is not None:
+                d.store.close()
+        left = _vector_ids(droot)
+        vrows = [list(v) for v in (r.get("vector_rows") or [])]
+        problems = []
+        if b_shared in left:
+            problems.append(f"the Lance row at {b_shared} (B-shared's vector, now under x-only-a) "
+                            f"survived")
+        if not {a_shared, keep} <= left:
+            problems.append(f"a vector whose owner did not change was deleted: kept {sorted(left)}")
+        if x_only_a not in pending:
+            problems.append(f"x-only-a ({x_only_a}) holds a vacated id but was not re-queued: "
+                            f"{sorted(pending)}")
+        if keep in pending or a_shared in pending:
+            problems.append(f"an entity whose owner did not change was re-queued: {sorted(pending)}")
+        if ["proj", "memory", b_shared] not in vrows:
+            problems.append(f"vector_rows does not name proj/memory/{b_shared}: {vrows}")
+        if not re.search(rf"\b{b_shared}\b", str(r.get("re_embed") or "")):
+            problems.append(f"re_embed does not name id {b_shared}: {r.get('re_embed')!r}")
+>       assert not problems, "\n".join(problems)
+E       AssertionError: re_embed does not name id 2: None
+E       assert not ['re_embed does not name id 2: None']
+
+tests/test_bug216_remedy_r5.py:130: AssertionError
+_ test_m1_a_merge_with_lance_unavailable_exits_non_zero_naming_the_rows_left[text] _
+
+base = PosixPath('/private/tmp/b216uxwrlxdjv'), as_json = False
+
+    @pytest.mark.parametrize("as_json", [False, True], ids=["text", "json"])
+    def test_m1_a_merge_with_lance_unavailable_exits_non_zero_naming_the_rows_left(base, as_json):
+        m = _memory_slots(base, n_moves=2)
+        droot = _daemon_root(base, m["a"], m["b"])
+        _seed_vectors(droot, m["ids"] + [m["keep"]])      # rows the merge must delete
+        before = _vector_ids(droot)
+        env = dict(os.environ)
+        p = subprocess.run([sys.executable, "-c", _CHILD, str(droot)]
+                           + (["--json"] if as_json else []),
+                           capture_output=True, text=True, env=env, timeout=600)
+        out = p.stdout.split("@@RESULT@@")
+        assert len(out) == 2, f"child failed (rc {p.returncode}):\n{p.stdout}\n{p.stderr}"
+        res = json.loads(out[1])
+        assert _vector_ids(droot) == before, "precondition: lance was blocked, nothing deleted"
+>       assert res["exit"] != 0, (
+            f"`rmx replica merge` exited 0 with lance unavailable and vector rows left:\n"
+            f"{res['stdout'][-1500:]}\n{res['stderr']}")
+E       AssertionError: `rmx replica merge` exited 0 with lance unavailable and vector rows left:
+E         
+E         MERGED in 197 ms
+E         
+E         Per-table counts (A / B → merged):
+E           partitions                 1 /        1 →        1  (Δa +0, Δb +0)
+E           linkage_types             14 /       14 →       14  (Δa +0, Δb +0)
+E           entities                   3 /        3 →        5  (Δa +2, Δb +2)
+E           concepts                   0 /        0 →        0  (Δa +0, Δb +0)
+E           memory_content             3 /        3 →        5  (Δa +2, Δb +2)
+E           entity_links               0 /        0 →        0  (Δa +0, Δb +0)
+E           tracked_files              0 /        0 →        0  (Δa +0, Δb +0)
+E           linkage_evidence           0 /        0 →        0  (Δa +0, Δb +0)
+E           saved_queries              0 /        0 →        0  (Δa +0, Δb +0)
+E           bitmap_fragments           0 /        0 →        0  (Δa +0, Δb +0)
+E           pending_refs               0 /        0 →        0  (Δa +0, Δb +0)
+E         
+E         Remap: A-loser=0 B-loser=0 edge_cases=0
+E         2 entity id(s) moved to a fresh id: 2->4, 3->5 — their vectors were not moved 
+E         (stale rows are deleted on a real merge); run `rmx embed` to re-embed them
+E         
+E         writer: slot A, log_end_offset=0
+E         merged size: 4,468,736 bytes
+E         
+E         
+E       assert 0 != 0
+
+tests/test_bug216_remedy_r5.py:173: AssertionError
+_ test_m1_a_merge_with_lance_unavailable_exits_non_zero_naming_the_rows_left[json] _
+
+base = PosixPath('/private/tmp/b216ubqshb_0y'), as_json = True
+
+    @pytest.mark.parametrize("as_json", [False, True], ids=["text", "json"])
+    def test_m1_a_merge_with_lance_unavailable_exits_non_zero_naming_the_rows_left(base, as_json):
+        m = _memory_slots(base, n_moves=2)
+        droot = _daemon_root(base, m["a"], m["b"])
+        _seed_vectors(droot, m["ids"] + [m["keep"]])      # rows the merge must delete
+        before = _vector_ids(droot)
+        env = dict(os.environ)
+        p = subprocess.run([sys.executable, "-c", _CHILD, str(droot)]
+                           + (["--json"] if as_json else []),
+                           capture_output=True, text=True, env=env, timeout=600)
+        out = p.stdout.split("@@RESULT@@")
+        assert len(out) == 2, f"child failed (rc {p.returncode}):\n{p.stdout}\n{p.stderr}"
+        res = json.loads(out[1])
+        assert _vector_ids(droot) == before, "precondition: lance was blocked, nothing deleted"
+>       assert res["exit"] != 0, (
+            f"`rmx replica merge` exited 0 with lance unavailable and vector rows left:\n"
+            f"{res['stdout'][-1500:]}\n{res['stderr']}")
+E       AssertionError: `rmx replica merge` exited 0 with lance unavailable and vector rows left:
+E         
+E             "pending_refs": 0
+E           },
+E           "b_counts": {
+E             "partitions": 1,
+E             "linkage_types": 14,
+E             "entities": 3,
+E             "concepts": 0,
+E             "memory_content": 3,
+E             "entity_links": 0,
+E             "tracked_files": 0,
+E             "linkage_evidence": 0,
+E             "saved_queries": 0,
+E             "bitmap_fragments": 0,
+E             "pending_refs": 0
+E           },
+E           "merged_counts": {
+E             "partitions": 1,
+E             "linkage_types": 14,
+E             "entities": 5,
+E             "concepts": 0,
+E             "memory_content": 5,
+E             "entity_links": 0,
+E             "tracked_files": 0,
+E             "linkage_evidence": 0,
+E             "saved_queries": 0,
+E             "bitmap_fragments": 0,
+E             "pending_refs": 0
+E           },
+E           "fresh_moved": [
+E             [
+E               2,
+E               4
+E             ],
+E             [
+E               3,
+E               5
+E             ]
+E           ],
+E           "fragment_bits_remapped": 0,
+E           "a_losers": [],
+E           "vector_rows": [
+E             [
+E               "proj",
+E               "memory",
+E               2
+E             ],
+E             [
+E               "proj",
+E               "memory",
+E               3
+E             ],
+E             [
+E               "proj",
+E               "memory",
+E               4
+E             ],
+E             [
+E               "proj",
+E               "memory",
+E               5
+E             ]
+E           ],
+E           "remap": {
+E             "a_loser_count": 0,
+E             "b_loser_count": 0,
+E             "fresh_alloc_edge_cases": 0
+E           },
+E           "elapsed_ms": 166,
+E           "target_size_bytes": 4468736,
+E           "dry_run": false,
+E           "re_embed": "2 entity id(s) moved to a fresh id: 2->4, 3->5 \u2014 their vectors were not moved (stale rows are deleted on a real merge); run `rmx embed` to re-embed them",
+E           "vectors_deleted": {
+E             "deleted": 0,
+E             "tables": 0,
+E             "errors": []
+E           },
+E           "enabled": true,
+E           "ok": true,
+E           "writer_slot": "A",
+E           "reader_slot": "B",
+E           "log_end_offset": 0,
+E           "elapsed_ms_total": 202
+E         }
+E         
+E         
+E       assert 0 != 0
+
+tests/test_bug216_remedy_r5.py:173: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r5.py::test_s1_an_id_a_b_loser_vacated_loses_its_stale_vector_and_its_holder_is_requeued
+FAILED tests/test_bug216_remedy_r5.py::test_m1_a_merge_with_lance_unavailable_exits_non_zero_naming_the_rows_left[text]
+FAILED tests/test_bug216_remedy_r5.py::test_m1_a_merge_with_lance_unavailable_exits_non_zero_naming_the_rows_left[json]
+3 failed, 10 passed in 6.53s
