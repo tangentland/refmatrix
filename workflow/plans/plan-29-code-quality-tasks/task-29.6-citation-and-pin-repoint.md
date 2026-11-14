@@ -127,9 +127,14 @@ For every spec under `workflow/plans/` whose `metadata.status` is not completed,
   in the form `` `cli/<module>.py::<def>` `` or `` `store_<concern>.py::Store.<method>` ``.
 - **The line is resolved at the commit that first wrote the citation, not at the spec's last
   change and not at `HEAD`.** For each site the tool finds the **oldest commit that added the
-  exact token** (`git log --reverse --follow -S'<token>' -- <spec>`, the first hit) and names
-  the def that held line NNNN of the module **at that commit**
+  exact token** and names the def that held line NNNN of the module **at that commit**
   ([[feedback_read_identifiers_at_write_time]]).
+  - **The search is by the whole token, with a digit boundary:**
+    `git log --reverse --follow -G'cli\.py:981([^0-9]|$)' -- <spec>`, the first hit. Not
+    `-S'cli.py:981'`: pickaxe `-S` counts a substring, so a commit that added `cli.py:9818` is a
+    hit for `cli.py:981` as well. With 271 sites over two modules such pairs are likely, and a
+    spec that cites both would be resolved at the wrong commit with nothing to show it (ch-bsd
+    r4 `#m2`; ruling L111).
   - Why not the spec's last-change sha: most specs are edited after their citations are
     written. Review folds, freshness passes, 29.1's amends lines and this task's own track
     commits all touch a spec without re-reading its citations, and `cli.py` moved about 1,200
@@ -138,11 +143,14 @@ For every spec under `workflow/plans/` whose `metadata.status` is not completed,
     (ch-bsd r2 `#ns4`).
   - Why not `git blame` on the line: a paragraph reflow moves the token to another line
     without changing it, and blame then names the reflow commit, which is the same mistake
-    (ch-bsd r3 `#m2`). `-S` follows the token. Blame (`-L <n>,<n>`) is the fallback only, for a
-    token `-S` cannot place.
-  - A token added at more than one commit (removed and written again, or written twice) is
-    resolved at each; it is rewritten only if they all name the same def, and listed as
-    unresolved otherwise.
+    (ch-bsd r3 `#m2`). The token search follows the token, and its oldest hit is the commit
+    that first wrote it, whatever reflowed it later. Blame (`-L <n>,<n>`) is the fallback only,
+    for a token the search cannot place.
+  - `-G` also hits a commit that only moved the token, so hits are not counted. The tool counts
+    whole-token occurrences in the spec before and after each hit; a commit where the count
+    goes up added it. A token added at more than one commit (removed and written again, or
+    written twice) is resolved at each; it is rewritten only if they all name the same def,
+    and listed as unresolved otherwise.
   - **A named symbol is checked.** Where the sentence that carries the citation names a symbol,
     the resolved def must be that symbol. A mismatch is listed as **unresolved**, with both
     names; it is not rewritten.
@@ -269,7 +277,11 @@ sentence. Nothing else in the templates changes.
   - a second citation whose sentence names `f` while its line resolves to `g` is listed as
     unresolved and is not rewritten;
   - a third citation whose token was added at two commits where line 10 held different defs
-    is listed as unresolved, with both.
+    is listed as unresolved, with both;
+  - **a token beside a longer one:** the spec also cites `mod.py:100`, added at a later commit D,
+    where line 100 holds `def k`. `mod.py:10` is resolved at A (`::f`) and `mod.py:100` at D
+    (`::k`). A tool that searches for the substring (`-S'mod.py:10'`) also hits D and fails
+    this row.
 
   29.5 tests the tool on the same fixture ([[task-29.5-split-giant-modules#ac-8]]). This AC is
   also that the pass was **run** that way: the summary's per-site table gives, for every
@@ -314,7 +326,9 @@ sentence. Nothing else in the templates changes.
   7. the tool resolves a citation at the spec's last-change sha (AC-3's fixture writes `::g`);
   8. the tool does not compare a named symbol with the resolved def (AC-3's mismatch case is
      rewritten);
-  9. the tool uses `git blame` on the line first (AC-3's reflow makes it write `::g`).
+  9. the tool uses `git blame` on the line first (AC-3's reflow makes it write `::g`);
+  10. the tool searches with `-S` (a substring): AC-3's `mod.py:10` beside `mod.py:100` row is
+      resolved at two commits, so the test is red.
 - **All output to files**, under `workflow/review-output/task-29.6/`.
 {#test-strategy-list}
 
@@ -372,7 +386,9 @@ No file under `src/` changes. {#files-no-src}
   checked against the resolved def ([[#r1]], [[#ac-3]]). Round 4 (ch-bsd r3 `#m2`, ruling L110):
   that commit is the oldest one that added the exact token (`git log -S`), with `git blame` as
   the fallback only, because blame does not follow a reflow; AC-3 has a reflow fixture and a
-  twice-added token; three mutations.
+  twice-added token; three mutations. After ch-bsd r4 (`#m2`, ruling L111): the search is
+  `git log -G` with a digit boundary, not `-S`, which matches substrings; AC-3 has a row with
+  `mod.py:10` beside `mod.py:100`, and a fourth mutation.
 - **M8:** plan-29 D25's count is 192 on `master` at `f3709d2`, with the method stated; 209 is
   the queue review's count over the spec-branch copies ([[#baseline-table]], [[#decisions]]).
 {#rev-note-list}

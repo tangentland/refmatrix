@@ -349,18 +349,37 @@ fail, error at teardown, skip unpinned or leak a daemon on purpose. There is no 
   teardown error is a failure here ([[feedback_review_clones_cannot_see_dev_tree_failures]]:
   "read every ERROR as well as every FAILED"). SkipGate and reaper findings are records too.
 - **`outcomes.jsonl` is written for every run, by the same hook.** One record per test node and
-  phase that produced a report: node id, phase, and outcome, one of `passed`, `failed`,
-  `error`, `skipped`, `xfailed`, `xpassed`. The runner always sets `RMX_OUTCOMES_OUT`; each shard
-  writes its own file and the runner concatenates them. `failures.jsonl` records what went
-  wrong; `outcomes.jsonl` records what every test did, which is the only way to tell that a
-  test that was expected to fail now passes, or that a test stopped running.
-- **`scripts/ptest.sh --compare --outcomes RUN_A RUN_B [--expect '<node id>:<from>-><to>' …]`**
+  phase that produced a report: node id, phase (`setup`, `call`, `teardown`), and outcome. The
+  runner always sets `RMX_OUTCOMES_OUT`; each shard writes its own file and the runner
+  concatenates them. `failures.jsonl` records what went wrong; `outcomes.jsonl` records what
+  every test did, which is the only way to tell that a test that was expected to fail now
+  passes, or that a test stopped running.
+  - **The outcome is normalised from pytest's report, by this table.** Pytest's reports have
+    no `xfailed` or `xpassed` outcome (`_pytest/skipping.py::pytest_runtest_makereport`); the
+    hook derives them, and nothing else:
+
+    | Pytest's report | Recorded outcome |
+    |---|---|
+    | `passed`, no `wasxfail` | `passed` |
+    | `skipped`, no `wasxfail` | `skipped` |
+    | `skipped` with `wasxfail` (an expected failure that failed) | `xfailed` |
+    | `passed` with `wasxfail` (a **non-strict** xfail that passed) | `xpassed` |
+    | `failed` in the `call` phase, including a **strict** xfail that passed (pytest reports it `failed`, longrepr `[XPASS(strict)] …`, no `wasxfail`) | `failed` |
+    | `failed` in `setup` or `teardown` | `error` |
+    {#r2-outcomes}
+
+    A strict XPASS is a failure and is recorded as one, in `outcomes.jsonl` and in
+    `failures.jsonl`. It is never recorded `xpassed`: that failure is what keeps a strict xfail
+    honest, and after the marker is removed it is what the test's own pass replaces.
+- **`scripts/ptest.sh --compare --outcomes RUN_A RUN_B [--expect '<node id>:<phase>:<from>-><to>' …]`**
   exits 0 only if every node id has the same outcome, phase by phase, in both runs, apart from
-  the `--expect` entries. Each expected change must hold exactly: that node id had `<from>` in
-  A and has `<to>` in B. It fails, naming the node id, on: any other change of outcome, in
-  either direction; a node id present in one run only; an `--expect` whose node id did not
-  change as stated. 29.5's gate G5 runs this mode after the failure comparison, at every
-  commit, with one `--expect` at its rename commit
+  the `--expect` entries. An entry names one phase of one node; it is parsed from the right,
+  because a node id may itself hold a colon. Each expected change must hold exactly: that
+  node's `<phase>` had `<from>` in A and has `<to>` in B, and the node's other phases are
+  unchanged. It fails, naming the node id and phase, on: any other change of outcome, in
+  either direction; a node id or a phase present in one run only; an `--expect` whose node and
+  phase did not change as stated. 29.5's gate G5 runs this mode after the failure comparison,
+  at every commit, with one `--expect` at its rename commit
   ([[task-29.5-split-giant-modules#r4-probe]]).
 - **`scripts/ptest.sh --compare RUN_A RUN_B`** exits 0 only if the two runs have the same set of
   (node id, phase, normalised E line). Normalisation replaces sandbox roots, `/tmp` random
@@ -752,14 +771,19 @@ to rework the sandbox, so it settles them:
   - **Failures:** two fixture runs that differ only in a sandbox path, a pid and a duration
     compare equal. Two that differ in one E line, in one node id, or in one phase (`call`
     against `teardown`) compare unequal, and the output names the difference.
-  - **Outcomes:** `outcomes.jsonl` of a fixture run holds one record per node and phase, with
-    each of the six outcomes present in the fixture (a pass, a failure, a teardown error, a
-    skip, a strict xfail, an xpass). `--compare --outcomes`:
+  - **Outcomes:** `outcomes.jsonl` of a fixture run holds one record per node and phase, and
+    the fixture has a test for every row of [[#r2-outcomes]]: a pass; a skip; a strict xfail
+    that fails (`xfailed`); a non-strict xfail that passes (`xpassed`); a plain failure; a
+    teardown error (`error`); and **a strict xfail that passes, which must read `failed` in its
+    `call` phase** and must also be in `failures.jsonl`. A hook that records that last one as
+    `xpassed` fails this AC. `--compare --outcomes`:
     - equal runs compare equal;
-    - a test that went `xfailed` → `passed` compares **unequal** with no `--expect`, and equal
-      with `--expect '<that node id>:xfailed->passed'`;
+    - a test whose `call` phase went `xfailed` → `passed` compares **unequal** with no
+      `--expect`, and equal with `--expect '<that node id>:call:xfailed->passed'`;
     - with that `--expect` given, it still fails when a second test changed outcome, when the
-      named test is still `xfailed` in B, and when the named test was not `xfailed` in A;
+      named test's `call` phase is still `xfailed` in B, when it was not `xfailed` in A, and
+      when the same node's `setup` or `teardown` outcome changed;
+    - an `--expect` that names the wrong phase (`setup`) fails;
     - a node id missing from B (a test that stopped running) fails.
   {#ac-3}
 - **AC-4: no new wall-clock bound.** The census passes on the tree and **fails** on synthetic
@@ -907,7 +931,10 @@ to rework the sandbox, so it settles them:
       variable case passes, so the test is red);
   24. the hook does not record `xfailed` or `xpassed` (they are written as `passed`; AC-3's
       xfail case compares equal with no `--expect`, so the test is red);
-  25. `--compare --outcomes` ignores a node id that is missing from one run (AC-3).
+  25. `--compare --outcomes` ignores a node id that is missing from one run (AC-3);
+  26. the hook records a strict XPASS as `xpassed` (AC-3's strict-xpass row is not `failed`, so
+      the test is red);
+  27. `--expect` ignores its phase (AC-3's wrong-phase case passes, so the test is red).
 - **T0's sub-tasks carry their own mutations** (M1.x to M7.x in T0's text). They are not
   repeated here.
 - **All output to files.** Every run in this task goes through the runner or through
@@ -1098,3 +1125,9 @@ L105 decided it:
 M1: the runner writes `outcomes.jsonl` for every run, and `--compare --outcomes` with `--expect`
 compares per-node outcomes ([[#r2-list]], [[#ac-3]], two mutations). 29.5's gate G5 could not be
 computed from failure sets alone. {#rev-note-4-body}
+
+## Revision note 5 (2026-11-14, ch-bsd r4 GO with MEHs; ruling L111) {#rev-note-5}
+
+M1: `--expect` names the phase (`<node id>:<phase>:<from>-><to>`); [[#r2-outcomes]] states how
+the recorded outcome is derived from pytest's report, and a strict XPASS is `failed`;
+[[#ac-3]] has a fixture row that pins it, and two mutations. {#rev-note-5-body}

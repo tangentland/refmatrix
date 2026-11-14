@@ -530,7 +530,7 @@ commit's parent and at the commit, and compared:
 | G2 help text | `--help` output of all 219 paths at a fixed width, and `rmx tools-primer`'s output | byte-identical |
 | G3 the generated docs | `scripts/gen-cli-tree.py --check` (the CLI tree in `docs/ARCHITECTURE.md`, the hooks table in `README.md`), which is `tests/test_docs_generated.py::test_cli_tree_section_equals_its_render` and `::test_hooks_table_section_equals_its_render` | exit 0, both tests green, the two doc sections unchanged |
 | G4 the surfaces | for `refmatrix.cli` and `refmatrix.store`, three checks: (1) every name in the **read inventory** and the **patch inventory** still resolves on the module; (2) every other name that left is in the tool's map with its new home, and resolves there; (3) the names that appeared are exactly the expected ones, which the tool lists: the command submodules and the `_cli` alias on `refmatrix.cli`, the mixin classes and the `_st` alias on the store modules | all three hold; anything else is a failure that names the attribute |
-| G5 the suite | `scripts/ptest.sh --tier all` at the parent and at the commit; then `--compare` (failures) and `--compare --outcomes` ([[task-29.4-suite-health#r2]], [[task-29.4-suite-health#ac-3]]) | failures equal by (node id, phase, E line); collected counts equal; **every node id has the same outcome in both runs** (`outcomes.jsonl`). One named exception, at the rename commit only: `--expect '<the one-copy probe's node id>:xfailed->passed'` ([[#r4-probe]]) |
+| G5 the suite | `scripts/ptest.sh --tier all` at the parent and at the commit; then `--compare` (failures) and `--compare --outcomes` ([[task-29.4-suite-health#r2]], [[task-29.4-suite-health#ac-3]]) | failures equal by (node id, phase, E line); collected counts equal; **every node id has the same outcome in both runs** (`outcomes.jsonl`). One named exception, at the rename commit only: `--expect '<the one-copy probe's node id>:call:xfailed->passed'` ([[#r4-probe]]) |
 | G6 the dev tree | `scripts/ptest.sh --merge-gate` on the merged dev tree before each phase's merge commit ([[task-29.4-suite-health#r7]]), **with the dev daemon's watcher out**, as step 5 of [[#r9-store-event]] | passes; a red G6 is aborted with the store untouched |
 | G7 parity and censuses | `tests/test_verb_parity.py` (167 tests), `tests/test_bug212_r4_red.py` (the catalog-opener census, 47 tests), `tests/test_docs_generated.py` (7), and this task's own census tests. They are in G5's run too; they are named here because they are the tests a split is most likely to blind (`tests/test_repo_hooks_in_sync.py` runs under G6, in the dev tree) | green, with the same test counts |
 | G8 the tool | `tools/split_module.py --check <parent>` (replay), and `tools/verify_split.py <parent>` (the compiler's symbol tables, independent of the tool's scope analysis) | both exit 0 |
@@ -561,9 +561,14 @@ commit's parent and at the commit, and compared:
   - At that commit G5 compares against the parent and accepts exactly one outcome change: that
     node id going from xfailed to passed. The failure sets are equal (an xfail is not a
     failure), so the failure comparison cannot see it. The check is 29.4's outcomes mode:
-    `scripts/ptest.sh --compare --outcomes <parent run> <commit run> --expect '<node id>:xfailed->passed'`.
-    It fails on any other change of outcome, in either direction, on a node id present in one
-    run only, and on the probe still being xfailed after the commit. At every other commit G5
+    `scripts/ptest.sh --compare --outcomes <parent run> <commit run> --expect '<node id>:call:xfailed->passed'`.
+    The expectation is on the `call` phase; the probe's `setup` and `teardown` are `passed` in
+    both runs and must stay so. `xfailed` is 29.4's normalised outcome for pytest's "skipped
+    with `wasxfail`" ([[task-29.4-suite-health#r2-outcomes]]). Because the xfail is strict, a
+    probe that passed too early, before the rename, would be reported `failed` by pytest and
+    recorded so: it could not slip through as a quiet pass. The mode fails on any other change
+    of outcome, in either direction, on a node id present in one run only, and on the probe's
+    `call` phase still being `xfailed` after the commit. At every other commit G5
     runs the same mode with no `--expect`, so no test may change outcome at all.
 - **Tests do not change in a move commit**, except files in the source-reader inventory
   ([[#r0]] item 4), and there only: a path literal, a `module:qualname` key, or a `glob` made
@@ -889,19 +894,28 @@ which was a hand-off to nothing (ch-bsd r1 `#b3`).
    `docs/architecture/todo.md` G12 already uses.
    - **Each citation is resolved at the commit that first wrote it, not at the spec's last
      change.** For each site the tool finds the **oldest commit that added the exact token**
-     (`git log --reverse --follow -S'cli.py:9818' -- <spec>`, the first hit), and names the def
-     that held line NNNN of the module **at that commit**. Most specs are edited after their
-     citations are written (review folds, freshness passes, amends lines), and `cli.py` moved
-     about 1,200 lines in between; resolving at the spec's last-change sha would name the def
-     at that line when the spec was last touched, a confident wrong answer that the "not
-     guessed" rule never catches (ch-bsd r2 `#ns4`).
+     and names the def that held line NNNN of the module **at that commit**. Most specs are
+     edited after their citations are written (review folds, freshness passes, amends lines),
+     and `cli.py` moved about 1,200 lines in between; resolving at the spec's last-change sha
+     would name the def at that line when the spec was last touched, a confident wrong answer
+     that the "not guessed" rule never catches (ch-bsd r2 `#ns4`).
+     - **The search is by the whole token, with a digit boundary:**
+       `git log --reverse --follow -G'cli\.py:981([^0-9]|$)' -- <spec>`, the first hit. Not
+       `-S'cli.py:981'`: pickaxe `-S` counts a substring, so a commit that added `cli.py:9818`
+       is a hit for `cli.py:981` too, and a spec that cites both would be resolved at the wrong
+       commit with nothing to show it (ch-bsd r4 `#m2`; ruling L111).
      - **Not `git blame` first.** Blame names the commit that last changed the **line**, and a
        paragraph reflow moves the token to another line without changing it: blame then names
-       the reflow, which is the same mistake again (ch-bsd r3 `#m2`). `-S` follows the token,
-       not the line. Blame (`-L <n>,<n>`) is only the fallback, for a token `-S` cannot place.
-     - If the token was added more than once (removed and written again, or written twice),
-       the tool resolves it at each adding commit and rewrites only if they all name the same
-       def; otherwise the site is unresolved, with the candidates listed.
+       the reflow, which is the same mistake again (ch-bsd r3 `#m2`). The token search follows
+       the token, not the line; the oldest hit is the commit that first wrote it, whatever
+       reflowed it later. Blame (`-L <n>,<n>`) is only the fallback, for a token the search
+       cannot place.
+     - **A token written more than once.** `-G` also hits a commit that only moved the token,
+       so hits are not counted. The tool counts whole-token occurrences in the spec before and
+       after each hit; a commit where the count goes **up** added the token. If more than one
+       commit added it (removed and written again, or written twice), the tool resolves it at
+       each and rewrites only if they all name the same def; otherwise the site is unresolved,
+       with the candidates listed.
    - **A named symbol is checked.** Where the sentence that carries the citation names a
      symbol (``_store_rw` (`cli.py:9818`)``), the resolved def must be that symbol. If it is
      not, the site is **unresolved**, with both names listed.
@@ -1140,6 +1154,10 @@ is quoted in the summary. {#r10-body}
   - **follows a reflow:** at commit C the paragraph is re-wrapped so that the `mod.py:10` token
     sits on a different line of the spec, unchanged. The tool still writes `::f`. A tool that
     uses `git blame` on the line would resolve at C and write `::g`;
+  - **does not confuse a token with a longer one:** the spec also cites `mod.py:100`, added at a
+    later commit D, where line 100 holds `def k` and line 10 holds `def g`. `mod.py:10` is still
+    resolved at A (`::f`), and `mod.py:100` at D (`::k`). A substring search (`-S'mod.py:10'`)
+    would also hit D;
   - lists as unresolved a citation whose sentence names `f` while the resolved def is `g`;
   - lists as unresolved a token that was added at two commits where line 10 held different
     defs;
@@ -1529,3 +1547,11 @@ of this task's allow lists is now without an owner. {#rev-note-7-body}
 | M3: the unmapped-stamp branch offered a rehash that leaves such stamps untouched | [[#r9-restamp]] steps 3 and 4: "re-derive those passes", and R0 item 8 says whether a pass of that name still runs |
 | NS3, this spec's side: `consolidate.py`'s 6 rows | [[#r6-pass-rows]] (an owner column), [[#r6]], [[#ac-6]]: held by `task-29.3-converge-shapes#c-pass-rows-held`, not edited in deploy B; the other 16 stay with `#c-pass-rows` |
 {#rev-note-8-table}
+
+## Revision note 9 (2026-11-14, ch-bsd r4 GO with MEHs; ruling L111) {#rev-note-9}
+
+- M1: gate G5 and [[#r4-probe]] name the phase in `--expect` (`…:call:xfailed->passed`) and
+  cite 29.4's outcome table.
+- M2: the token search is `git log -G` with a digit boundary, not `-S` ([[#r8]] item 2), and
+  [[#ac-8]] has a fixture with `mod.py:10` beside `mod.py:100`.
+{#rev-note-9-list}
