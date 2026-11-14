@@ -73,19 +73,33 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
      the gate's 50 pairs; the 20% second-rater share;
    - the leak rule (28.2 R5): `leak_suspect` runs are excluded, and a per-cell exclusion count
      that differs by more than one run between `B` and `C` voids the primary reading;
-   - **the minimum n of paired tasks per cell, for EVERY reading (L79, L83),** each frozen here
-     and counted after the `leak_suspect` and `arm_error` exclusions:
-     - the primary (`B`, `C`): R1's n per cell per trigger;
-     - the push reading (`A+dedupe`, `B`);
-     - 10.2's nested reading (`A+dedupe`, `A+full`): its minimum n of paired tasks per cell is
-       FROZEN HERE, and 10.2 R7 cites it (spec-t3b, 2026-11-14: 10.2 no longer states "40
-       sessions per cell per store" and defers the number to 28.4). It is computed like the
-       others, from R1's `A+dedupe` vs `A+full` calibration;
+   - **the minimum n of paired tasks per cell, SET here for every reading (L86),** and counted
+     after the `leak_suspect` and `arm_error` exclusions. 10.2 R7 cites this file for its
+     nested reading and states no number of its own.
+     - **The rule.** For each reading, `n_power` is the smallest n that detects the reading's
+       STATED detectable effect (below) at power 0.8 and two-sided α 0.05. For the push reading,
+       α is 0.05/3, Holm's worst case over its three outcomes. `n_power` is computed from R1's
+       calibration variance for that reading's pair of cells. The minimum is then clamped to
+       the exploration's ceiling of 10-20 pairs per arm: `n_min = min(max(n_power, 10), 20)`.
+       Below 10 paired tasks no reading is attempted. When `n_power` exceeds 20, the minimum is
+       20, and the file states the smaller effect that 20 pairs CAN detect as that reading's
+       limit.
+     - **The stated detectable effects:**
+       - **primary** (`B` vs `C`, outcome 1): the band edge, a 30% cut against a 10% cut, as
+         R1 computes it;
+       - **push** (`A+dedupe` vs `B`, outcomes 2-4): a paired standardised difference of 0.8
+         on each outcome;
+       - **10.2's nested reading** (`A+dedupe` vs `A+full`, outcome 7): a 30% cut in injected
+         bytes per prompt (10.2's band edge), and a used rate 15% below `full` (10.2's "the
+         user decides" edge). 10.2's −5% keep margin cannot be powered within 20 pairs; the
+         file states it as a limit, and that row of 10.2's band is read only on its point
+         estimate, with the CI printed.
 
      Any reading below its minimum is "underpowered, no verdict": neither pass nor fail, and no
-     default changes. The report states the n reached per cell. **A power note** records, from
-     R1's calibration and 28.2 R0 (f)'s cost per run, how many runs and how much agent time each
-     minimum costs (tasks × 4 cells × 2 triggers), so that "underpowered" is foreseen;
+     default changes. The report states the n reached per cell.
+     - **The power note.** For each reading it records `n_power`, `n_min`, the effect detectable
+       at `n_min`, and the cost from 28.2 R0 (f) in runs (`n_min` × 4 cells × 2 triggers) and in
+       agent time, so that "underpowered" is foreseen;
    - **the series' end (L83):** the series is not time-boxed. It ends when every reading's
      minimum n is reached, at R1's cap, or when the user stops it;
    - **the pause (P-12, restated by L83).** It is user-gated: on the user's word, the runner
@@ -206,6 +220,17 @@ The status stays `pending` pending a confirm-lite.
 | change | where |
 |---|---|
 | calibration runs all four cells, and reports n for the push and nested pairs beside the primary | [[#r1]] |
-| a minimum n of paired tasks per cell for every reading (10.2's nested minimum frozen here and cited by 10.2), with a power note in runs and agent time | [[#r2]] |
+| a minimum n of paired tasks per cell for every reading, SET here (L86): the stated detectable effects, `n_min = min(max(n_power, 10), 20)` from the exploration's 10-20 ceiling, and a power note in runs and agent time; 10.2 cites it | [[#r2]] |
 | the period, its 72-hour end and the record-based pause are removed; the series ends at its minimum n, at the cap, or by the user; the pause is restated for the series | [[#r2]] |
 | the push test is a paired bootstrap over tasks; the limits are restated for an agent-only experiment | [[#r2]] |
+
+## Revision L86 (2026-11-14, lead ruling L86 on the crossed 10.2 / 28.1 arms shapes) {#rev-l86}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite.
+
+| change | where |
+|---|---|
+| 28.4 SETS every reading's minimum n of paired tasks per cell: the rule `n_min = min(max(n_power, 10), 20)` (the exploration's 10-20 ceiling); the stated detectable effects (primary 30% vs 10%; push d = 0.8 at α 0.05/3; nested 30% bytes cut and a used rate 15% below `full`, with the −5% keep margin a stated limit); a power note per reading; 10.2 cites it | [[#r2]] |
+

@@ -15,7 +15,7 @@ metadata:
 
 > Plan: [[plan-28-handhold-outcome-experiment]]
 > Status: Pending: approved to build (2026-11-14, [[#approval]]; spec wave 2026-11-13, G17; r1 fold of `bsd-spec-t3c`, [[#rev-r1]]).
-> Depends on: [[task-28.1-session-arms-and-push-switch]] (the `session_arm` fields it splits by);
+> Depends on: [[task-28.1-session-arms-and-push-switch]] (the `handhold_cell` and `arm_run` fields it splits by);
 > 21.1's events (R12's explicit `used` evidences); 10.4's `prompt_family`.
 > Builds `eval/production/handhold/`. It reads local transcripts (from the archive) and telemetry
 > copies, and writes counts. It never appends to any store log.
@@ -87,7 +87,7 @@ clause, inside 19.6's scope. The r1 review found three problems, and this revisi
 6. **R6 Blinding and labellers (r1 #m5).** {#r6}
    - `eval/production/handhold/blind.py` builds the excerpts. It removes every hook output block
      (SessionStart, UserPromptSubmit and PreCompact output, `additionalContext`, and system
-     reminders that carry hook text), every `session_arm` / `arm_*` / `suppressed` value, and
+     reminders that carry hook text), every `handhold_cell` / `arm_*` / `suppressed` value, and
      every refmatrix command output that names a cell.
    - **The labellers are blind labeller agents**, forked agents that never read the scorer, the
      arm code or any cell assignment and see only R6's excerpts. That is the `lbl-215` practice.
@@ -337,3 +337,14 @@ The status stays `pending` pending a confirm-lite.
 | 10.2's nested outcome comes from the paired series, paired by task | [[#r8]] |
 | the readings check the minimum n of paired tasks per cell; the push test bootstraps over tasks | [[#r9]] |
 | AC-5 and AC-10 speak of runs and paired tasks, not sessions | [[#ac-5]], [[#ac-10]] |
+
+## Revision L86 (2026-11-14, lead ruling L86 on the crossed 10.2 / 28.1 arms shapes) {#rev-l86}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite.
+
+| change | where |
+|---|---|
+| the cell field it splits by and blinds is 10.2's `handhold_cell` | header, [[#r6]] |
+

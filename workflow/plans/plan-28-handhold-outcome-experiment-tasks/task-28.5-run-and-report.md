@@ -105,7 +105,7 @@ decision (G18), not a goal step. {#why-body}
 3. **AC-3** Every band in the frozen file has a reading in the report, and no reading uses a
    rule absent from the frozen file. {#ac-3}
 4. **AC-4** No live session was assigned to an arm (L83). Across the period of the series, the
-   live stores' `query.log` and `cli.log` hold no `session_arm`, `arm_run` or `suppressed: "arm"`
+   live stores' `query.log` and `cli.log` hold no `handhold_cell`, `arm_run` or `suppressed: "arm"`
    field, which is checked and recorded. {#ac-4}
 5. **AC-5** The report passes its ch-bsd round, and the charter decision is put to the user.
    {#ac-5}
@@ -202,3 +202,14 @@ are removed; they are kept above as history.
 | the series ends at its frozen minimum n, at the cap, or by the user; it is not time-boxed; scoring waits for that end | [[#r4]], [[#r5]], [[#ac-2]] |
 | the pause is restated for the series (user-gated; treatment-module deploys only while paused) | [[#r3]] |
 | AC-4 (the end commit, `after_end`) is replaced by "no live session was assigned to an arm"; the Files row and the done list drop the period commits | [[#ac-4]], [[#files]], [[#done]] |
+
+## Revision L86 (2026-11-14, lead ruling L86 on the crossed 10.2 / 28.1 arms shapes) {#rev-l86}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite.
+
+| change | where |
+|---|---|
+| AC-4 checks the live logs for 10.2's `handhold_cell` field (not `session_arm`) | [[#ac-4]] |
+

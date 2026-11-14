@@ -234,12 +234,13 @@ beside this plan's result. They are recorded; nothing here reads them as a band.
   runs in the client process only and is the ONE reader of `RMX_HANDHOLD_CELL`: unset gives
   `A+dedupe`; a value outside `CELLS` gives an `Error:` line, `arm_error` and `A+dedupe`. Its
   verb and scan-prompt read the dedupe factor from `arms.cell()`. There is no draw, period
-  record, salt, scope, arm file, `session_cell` or `session_arm` row in 10.2 (L83). 28.1 adds
+  record, salt, scope, arm file, `session_cell` or SessionStart write in 10.2 (L83). 10.2's rows
+  carry `handhold_cell` when the env is set (L86; spec-t3b `5559d20`). 28.1 adds
   `paired_override` (run, as-of), `push_on` (reads `arms.cell()`), the as-of filter and the
   paired rows. Plan-28 owns the start (the orchestrator's under L78), arm B's push-off, the
   scorer and the deletion ([[task-28.1-session-arms-and-push-switch#ownership]]). 10.2's
-  outcome follows L27. Its nested reading is read from the paired series against 28.4's
-  frozen minimum n of paired tasks per cell, which 10.2 cites.
+  outcome follows L27. Its nested reading is read from the paired series against the minimum
+  n of paired tasks per cell that 28.4 SETS (L86), which 10.2 cites.
 - **25.1 R8 (unchanged; r1 #m1).** "Never empty" holds on every call that packs. In cell `B`,
   SessionStart and PreCompact still pack; the per-prompt hooks do not pack.
 - **19.6 `cited_in_answer`.** 28.3 implements 19.6's clause once, and 19.6's `score_readback.py`
@@ -422,3 +423,18 @@ status stays `approved` pending a confirm-lite ch-bsd round.
 | deploys of the treatment modules land only while the series is paused; every run records its deployed `rmx` sha | [[#ordering]] |
 | `arms` shape for 10.2, as set by spec-t3b (2026-11-14): `CELLS` plus `arms.cell()`, the one reader of `RMX_HANDHOLD_CELL`; no draw, period, salt, scope, arm file, `session_cell` or `session_arm` row. 28.1 adds `paired_override` (run, as-of), `push_on`, the as-of filter and the paired rows. 10.2's nested minimum n is frozen in 28.4, and 10.2 cites it | [[#cross-plan]], [[task-28.1-session-arms-and-push-switch#ownership]], [[task-28.4-preregistration-freeze#r2]] |
 | 28.1-28.5 and the exploration doc follow | each task's `#rev-l83` |
+
+## Revision L86 (2026-11-14, lead ruling L86 on the crossed 10.2 / 28.1 arms shapes) {#rev-l86}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+L86: (1) 10.2's approved `arms.cell()` is the ONE reader of `RMX_HANDHOLD_CELL`, and the
+constant-return `session_cell` is dropped as a placeholder under #no-mocks; (2) 28.4 SETS the
+paired-task minimum for every reading. This fold sits on top of `15bc71a`, which had already
+mirrored spec-t3b's shape after `e0a351a`; L86 confirms that shape.
+
+| change | where |
+|---|---|
+| 10.2's rows carry `handhold_cell`; 28.1 adds no second cell field | [[#cross-plan]], [[task-28.1-session-arms-and-push-switch#r6]] |
+| 28.4 SETS each reading's minimum n from a stated detectable effect, clamped to the exploration's 10-20 pairs per arm, with a power note; 10.2 cites it | [[#cross-plan]], [[task-28.4-preregistration-freeze#r2]] |
+

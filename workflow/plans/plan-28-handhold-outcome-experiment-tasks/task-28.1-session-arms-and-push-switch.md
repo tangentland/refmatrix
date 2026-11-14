@@ -25,8 +25,9 @@ metadata:
 >
 > 10.2 also builds the `dedupe` / `full` branch that the A cells use. Under L83 there is no
 > SessionStart draw, so 10.2 builds no draw, period record, salt, scope, arm file,
-> `session_cell` or `session_arm` row. This shape was set by spec-t3b on 2026-11-14
-> ([[#ownership]]).
+> `session_cell` or SessionStart write. Its rows carry `handhold_cell` when the env is set.
+> This shape was set by spec-t3b and ruled by the lead as L86 (spec-t3b `5559d20`;
+> [[#ownership]]).
 
 rel: part-of -> [[plan-28-handhold-outcome-experiment]]
 rel: depends-on -> [[task-10.2-plan-10-injection-dedup]]
@@ -55,7 +56,8 @@ the global one included.
 | `src/refmatrix/arms.py` created, with: `CELLS` (no weights); `arms.cell()`, the ONE reader of `RMX_HANDHOLD_CELL` (unset → `A+dedupe`; invalid → `Error:` line, `arm_error`, `A+dedupe`); the verb and scan-prompt reading the dedupe factor from `arms.cell()` (`A+full` → held is empty; `A+dedupe` → dedupe) | 10.2 R7 (built before the experiment, L20). No draw, period record, salt, scope, arm file, `session_cell` or `session_arm` row (L83; spec-t3b, 2026-11-14) |
 | the paired-run override (`arms.parse_paired`, `arms.paired_override`): run id and as-of, with the cell taken from `arms.cell()`; the as-of memory filter | this task (R3, R4) |
 | `arms.push_on` and arm B's push-off in the two per-prompt hooks | this task (R5) |
-| the SessionStart `session_arm` row and the per-prompt `session_arm` field, written ONLY for a paired run | this task (R2, R6; 10.2 writes no row under L83) |
+| the per-call row field `handhold_cell`, written whenever `RMX_HANDHOLD_CELL` is set | 10.2 R7 (spec-t3b `5559d20`) |
+| the paired SessionStart row (`handhold_cell`, `arm_source`, `arm_run`) and the per-call `arm_run`, written ONLY when `RMX_HANDHOLD_RUN` is set | this task (R2, R6, L86) |
 | deleting the measurement branches of `arms.py`, the override and the filter after the series | plan-28's close-out, 28.5 R8, under 10.2's deferral row widened by R7 |
 | the `cited_in_answer` scorer that the readings use | [[task-28.3-outcome-scorer#r7]] |
 {#ownership-table}
@@ -81,10 +83,10 @@ the global one included.
 2. **R2 The cell is 10.2's `arms.cell()`; this task adds the paired rows and `push_on`.** 10.2
    R7 builds `arms.cell()`, and the verb and scan-prompt read the dedupe factor from it, never
    from anything else. This task changes nothing in `arms.cell()`. It adds:
-   - **The rows, for paired runs only.** When `paired_override()` is set (a run id is
-     present), the SessionStart focus hook writes one `session_arm` row on `cli.log` with
-     `cell` (from `arms.cell()`), `arm_source: paired` and `arm_run`. Otherwise it writes
-     nothing.
+   - **The SessionStart row, for paired runs only (L86).** When `RMX_HANDHOLD_RUN` is set, the
+     SessionStart focus hook writes one row on `cli.log` with `handhold_cell` (10.2's field
+     name, from `arms.cell()`), `arm_source: paired` and `arm_run`. Otherwise it writes nothing,
+     so 10.2's own test, which sets only `RMX_HANDHOLD_CELL`, still sees no SessionStart write.
    - **`push_on` reads `arms.cell()`.**
 
    A `/clear` that mints a new session id runs SessionStart again, and the override gives the
@@ -145,15 +147,16 @@ the global one included.
      per-prompt recall hook) call `arms.push_on(session_id, root=…)` before any retrieval.
    - When it is false, the hook prints nothing and exits 0. It runs no retrieval and no
      per-prompt pack, and it emits no `retrieved` or `delivered` event.
-   - It writes its `query.log` row as on any call, with `session_arm: "B"`, `suppressed: "arm"`
-     and 0 payload bytes, so the hook-cost report still sees the prompt.
+   - It writes its `query.log` row as on any call, with 10.2's `handhold_cell: "B"`,
+     `suppressed: "arm"` and 0 payload bytes, so the hook-cost report still sees the prompt.
    - The curator status line retrieves nothing and stays on (P-7).
    - SessionStart and PreCompact recall run their `--pack` in B as in A, so 25.1 R8's "never
      empty" holds on every call that packs. The per-prompt hooks do not pack in B.
-6. **R6 Rows carry the cell, in paired runs only.** When `paired_override()` is set, every
-   per-prompt `query.log` row carries `session_arm` and `arm_run`, read through `arms.cell()`
-   and the override. `rmx telemetry --context` and the hook-cost report split per channel by
-   cell. Without an override, rows are unchanged. {#r6}
+6. **R6 Rows carry the cell and the run, in paired runs only (L86).** 10.2 already records
+   `handhold_cell` on the call's row whenever `RMX_HANDHOLD_CELL` is set. This task adds `arm_run`
+   whenever `RMX_HANDHOLD_RUN` is set, and adds no second cell field. `rmx telemetry --context`
+   and the hook-cost report split per channel by `handhold_cell`. Without the env, rows are
+   unchanged. {#r6}
 7. **R7 Deletion.** 10.2's deferral row (`arms.py`'s measurement branches are deleted after the
    experiment) is widened by this task to cover `push_on`, `paired_override`, `parse_paired`,
    the three env names, `as_of_admit` and the paired rows. The row closes when the paired
@@ -169,7 +172,7 @@ mutation that must fail it. {#acceptance-lead}
 1. **AC-1 No draw, no assignment outside a paired run (L83).**
    - With no `RMX_HANDHOLD_*` in the environment, 200 synthetic sessions in two fixture stores
      all get `A+dedupe` from `arms.cell()`. Their per-prompt hooks print their payloads, and no
-     `session_arm` row or field is written.
+     `handhold_cell`, `arm_run` or SessionStart arm row is written.
    - An AST scan of `arms.py` finds no draw: no read of a salt, scope, `start` or `end`, and no
      hash of a session id.
 
@@ -180,7 +183,7 @@ mutation that must fail it. {#acceptance-lead}
      zero bytes and exit 0.
    - No `retrieved` or `delivered` event is appended.
    - 23.0's connect log shows no socket write by either command after `push_on`.
-   - Each command writes one `query.log` row with `session_arm: "B"`, `suppressed: "arm"` and
+   - Each command writes one `query.log` row with `handhold_cell: "B"`, `suppressed: "arm"` and
      `bytes: 0`.
 
    **Mutation:** retrieval run before `push_on`; the search op shows in the connect log.
@@ -246,13 +249,17 @@ mutation that must fail it. {#acceptance-lead}
      leaks.
    {#ac-7}
 8. **AC-8 Rows and reports, in paired runs only.**
-   - Under a paired env, the SessionStart row carries `session_arm`, `arm_source` and
-     `arm_run`, and every per-prompt row carries `session_arm` and `arm_run`.
+   - Under a paired env (`CELL` + `RUN` + `AS_OF`), the SessionStart row carries
+     `handhold_cell`, `arm_source` and `arm_run`, and every per-prompt row carries 10.2's
+     `handhold_cell` plus this task's `arm_run`. With only `RMX_HANDHOLD_CELL` set (10.2's own
+     test), no SessionStart row is written.
    - `rmx telemetry --context` prints a per-cell split.
    - Without the env, no row gains any of these fields.
 
    **Mutations:**
-   - `session_arm` omitted on suppressed rows, so the per-cell count of `B` prompts reads 0;
+   - `arm_run` omitted on suppressed rows, so the per-run count of `B` prompts reads 0;
+   - a second cell field (`session_arm`) written beside `handhold_cell`, so the "no second cell
+     field" check fails;
    - rows written without an override, so the no-env leg fails.
    {#ac-8}
 9. **AC-9 Hook config unchanged.** `rmx install-hooks --check` is clean, and the generated hook
@@ -280,7 +287,7 @@ mutation that must fail it. {#acceptance-lead}
 | `src/refmatrix/cli.py` (`scan-prompt`, `_memory_recall_impl` stdin-json path, `focus hook --event session-start`) | `push_on` before retrieval; the suppressed row; the paired SessionStart row |
 | `src/refmatrix/verbs.py` (the verbs that return memory rows) and the CLI / MCP adapters | the client side: read `paired_override().as_of` and pass `as_of=` on every such call (R4) |
 | the project daemon's memory op and the hub's global read (sites named before GREEN, R4) | the store side: accept `as_of` as an op argument and apply `as_of_admit`; return `as_of_excluded`; never read env |
-| `src/refmatrix/telemetry.py` | `session_arm`, `arm_run`, `suppressed`, `arm_error`, `as_of_excluded` row fields (paired runs only); the per-cell split |
+| `src/refmatrix/telemetry.py` | `arm_run`, `suppressed`, `as_of_excluded` row fields (paired runs only; `handhold_cell` and `arm_error` are 10.2's); the per-cell split by `handhold_cell` |
 | `workflow/deferral_registry.md` | 10.2's `arms.py` row widened (R7) |
 | `tests/test_task28_1_session_arms.py` (new) | AC-1 to AC-10 |
 | `tests/test_verb_parity.py` | `as_of` recorded as an injected internal parameter, with its reason (R4) |
@@ -363,3 +370,15 @@ The status stays `pending` pending a confirm-lite.
 | rows are written only in paired runs | a8, [[#r6]], [[#ac-8]] |
 | AC-1 (the draw) is replaced by "no draw, no assignment"; AC-4's and AC-5's straddling cases are replaced by override cases | [[#acceptance]] |
 | the r1 m2 / m9 machinery (a session cell fixed at SessionStart against a period; the slug check) has no object under L83 and is kept only as history above | [[#rev-r1]] |
+
+## Revision L86 (2026-11-14, lead ruling L86 on the crossed 10.2 / 28.1 arms shapes) {#rev-l86}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite.
+
+| change | where |
+|---|---|
+| `arms.cell()` (10.2's, spec-t3b `5559d20`) is the one reader of `RMX_HANDHOLD_CELL`; no `session_cell` exists (a constant-return placeholder under #no-mocks); `paired_override` reads `RUN` and `AS_OF` only | [[#ownership]], [[#r2]], [[#r3]] |
+| the cell field on rows is 10.2's `handhold_cell`; this task adds `arm_run` and, when `RMX_HANDHOLD_RUN` is set, the paired SessionStart row, so 10.2's own CELL-only test still sees no SessionStart write | [[#ownership]], [[#r2]], [[#r5]], [[#r6]], [[#ac-1]], [[#ac-2]], [[#ac-8]], [[#files]] |
+
