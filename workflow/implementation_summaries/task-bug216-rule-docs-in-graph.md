@@ -723,7 +723,7 @@ Mutations, each alone in a throwaway clone of `4cf2cfe` (not this tree), restore
 
 ### GREEN remedy r4: bsd-216 r4 (ruling L99) {#green-remedy-r4}
 
-Commit: `9def24a` (src). RED: `11ba53d` (red-216). Audit: `f1b1bc3`
+Commit: `9def24a` (src). RED: `11ba53d`, plus the vector-owner pin `d3b9f6c` (red-216; r4 file with it: 7 passed, `remedy-r4-with-pin.log`). Audit: `f1b1bc3`
 (`workflow/bullshit/2026-11-14-0333-bug216-r4-dfbaa2d.md`). No test edited. {#green-remedy-r4-commits}
 
 - **B1a.** `merge_slots` step 12 passes A's fragment rows through `remap_fragment(row, remap_a)`,
@@ -779,7 +779,7 @@ own command, `__pycache__` cleared; suite = `test_bug216_remedy_r4.py` (+ r3 for
 | drop the A-row remap | 2 failed | `mut-r4-A-row.log` |
 | drop the remap_a chaining | 1 failed | `mut-r4-chain.log` |
 | count ids instead of rows | 1 failed | `mut-r4-count-ids.log` |
-| drop the A-loser ids from the vector delete | **survived** (9 passed): no RED pins the lead's vector extension; a pin was requested from red-216 | `mut-r4-a-loser-vec.log` |
+| drop the A-loser ids from the vector delete | survived at `11ba53d` (9 passed: no RED pinned the lead's vector extension); red-216's pin `d3b9f6c` added on request; re-run: **1 failed** (killed) | `mut-r4-a-loser-vec.log`, `mut-r4-a-loser-vec-with-pin.log` |
 
 {#green-remedy-r4-mutations}
 
