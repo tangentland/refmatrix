@@ -41,6 +41,27 @@ fi
 cd "$ROOT"
 SLUG="$(printf '%s' "$ROOT" | tr '/_' '--')"
 MEMDIR="$HOME/.claude/projects/$SLUG/memory"
+# bug-155 cause 2 (Q18, 2026-11-14): a littlebig clone (/Volumes/littlebig/refmatrix-<worker>) has
+# a slug of its own and no memory dir, so every [[feedback_…]] / [[impression_…]] link dangled and
+# the gate failed in every clone while the dev tree passed. A clone's `origin` is the canonical
+# checkout's local path; when this checkout's slug has no memory dir, use that checkout's. Said on
+# stderr either way, never silent.
+if [[ ! -d "$MEMDIR" ]]; then
+  ORIGIN_URL="$(git -C "$ROOT" config --get remote.origin.url 2>&1)" || ORIGIN_URL=""
+  if [[ "$ORIGIN_URL" == /* && -d "$ORIGIN_URL/.git" ]]; then
+    ORIGIN_ROOT="$(cd "$ORIGIN_URL" && pwd)"
+    ORIGIN_SLUG="$(printf '%s' "$ORIGIN_ROOT" | tr '/_' '--')"
+    ORIGIN_MEMDIR="$HOME/.claude/projects/$ORIGIN_SLUG/memory"
+    if [[ -d "$ORIGIN_MEMDIR" ]]; then
+      echo "lint-gmd: no memory dir for $ROOT; using its origin's ($ORIGIN_ROOT): $ORIGIN_MEMDIR" >&2
+      MEMDIR="$ORIGIN_MEMDIR"
+    else
+      echo "lint-gmd: no memory dir for $ROOT or its origin $ORIGIN_ROOT; memory-id refs will dangle" >&2
+    fi
+  else
+    echo "lint-gmd: no memory dir for $ROOT and no local-path origin; memory-id refs will dangle" >&2
+  fi
+fi
 # `eval/` is a CORPUS ROOT (.claude/PROJECT_PROFILE.md#corpus) and carries GMD docs with `rel:`
 # edges, but was outside this list — so `eval/production/longmemeval/REPORT.md` was ingested into
 # the graph and linted by nothing. A stray code fence there deleted its `#next` node and no gate

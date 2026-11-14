@@ -125,6 +125,15 @@ def test_the_repo_scope_is_clean_under_the_stricter_gate(tmp_path):
     slug = str(root).replace("/", "-").replace("_", "-")
     real_mem = (Path(os.environ["RMX_SANDBOX_REAL_HOME"]) / ".claude" / "projects" / slug
                 / "memory")
+    # bug-155 cause 2 (Q18): in a clone with no memory dir of its own the script falls back to its
+    # local-path `origin`'s; the decoy home gets a copy of THAT one dir, at the origin's slug.
+    if not real_mem.is_dir():
+        url = subprocess.run(["git", "-C", str(root), "config", "--get", "remote.origin.url"],
+                             capture_output=True, text=True).stdout.strip()
+        if url.startswith("/") and (Path(url) / ".git").is_dir():
+            slug = str(Path(url).resolve()).replace("/", "-").replace("_", "-")
+            real_mem = (Path(os.environ["RMX_SANDBOX_REAL_HOME"]) / ".claude" / "projects" / slug
+                        / "memory")
     home = tmp_path / "home"
     home.mkdir()
     if real_mem.is_dir():
