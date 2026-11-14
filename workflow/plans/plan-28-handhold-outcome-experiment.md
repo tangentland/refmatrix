@@ -219,7 +219,7 @@ beside this plan's result. They are recorded; nothing here reads them as a band.
 | [[task-28.2-paired-reentry-runner]] | R0 probe; the paired task set; the runner (clones cut at the start sha, stores, memory snapshots, env pinning, triggers, archive, teardown, leak control); arm C's generated bare profile | `eval/production/handhold/` | 28.1 |
 | [[task-28.3-outcome-scorer]] | the ONE scorer for outcomes 1-7, blinding, blind labeller agents, `cited_in_answer`, and the ONE reading module | `eval/production/handhold/` | 28.1 |
 | [[task-28.4-preregistration-freeze]] | the calibration, the MDE, every P-item value, and the frozen pre-registration with its sha | measurement file | 28.1-28.3, G32, 21.5 phase M, bug-216 live |
-| [[task-28.5-run-and-report]] | the orchestrator's start (L78; the user is told first), the period, the paired runs, the readings, the report, the cleanup | measurement file | 28.4, the user's go |
+| [[task-28.5-run-and-report]] | the orchestrator's start (L78; the user is told first), the period, the paired runs, the readings, the report, the cleanup | measurement file | 28.4; Depends-on (L78) |
 
 ## Acceptance for the plan {#acceptance}
 
@@ -389,4 +389,14 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 |---|---|---|
 | S1 L78 delegated the start, but the specs still required the user's go | the status line, the L45 row, #ordering item 3, the task table, #cross-plan and #approval-row now read "the orchestrator starts the experiment when plan-28's Depends-on holds and tells the user first (L78)"; pause, end and G18 stay user-gated | header, [[#decided]], [[#ordering]], [[#approval]] |
 | m3 the L79 row says "Q11 assumed" | "Q11 answered (a)" | [[#decided]], [[#rev-l79]] |
+
+
+## Revision L82 (2026-11-14, `bsd-spec-t3c` L80 confirm-lite MEH-only 0B/0S/2M; lead ruling L82) {#rev-l82}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | disposition | where |
+|---|---|---|
+| m1 the task table's 28.5 row still said "the user's go" | "28.4; Depends-on (L78)" | [[#tasks]] |
+| m2 the end waited on a late commit | 28.5's start commit writes `end = start + 72 h`; the scorer drops sessions at or after `end` | [[task-28.5-run-and-report#rev-l82]] |
 

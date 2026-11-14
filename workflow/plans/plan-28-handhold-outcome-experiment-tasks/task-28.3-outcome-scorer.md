@@ -52,7 +52,7 @@ clause, inside 19.6's scope. The r1 review found three problems, and this revisi
    counts. Nothing in it appends to `recall-events.jsonl`, `query.log` or any store file. It reads
    main-loop calls from `<session>.jsonl` and subagent calls from
    `<session>/subagents/agent-<id>.jsonl`. Outcomes (1)-(4) count the main loop only, and subagent
-   activity is reported apart. {#r1}
+   activity is reported apart. **Sessions after the end are dropped (L82).** A session-leg session whose SessionStart `t` is at or after its period record's `end` is dropped from every outcome and counted per cell as `after_end`. {#r1}
 2. **R2 Orientation cost, outcome (1).** It runs from the trigger (the first prompt after
    `startup` or after `/clear`) to the **endpoint**, which is the earlier of:
    - the first `Edit` / `Write` / `MultiEdit` / `NotebookEdit` to a file in the run's reference
@@ -304,4 +304,13 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 |---|---|---|
 | m2 AC-10 had no primary-reading case | the primary's minimum n is 28.4 R1's n per cell per trigger after exclusions, with a case and a mutation | [[#ac-10]] |
 | m3 the #rev-l79 table did not render; "Q11 assumed" | blank line added; "Q11 answered (a)" | [[#rev-l79]] |
+
+
+## Revision L82 (2026-11-14, `bsd-spec-t3c` L80 confirm-lite MEH-only 0B/0S/2M; lead ruling L82) {#rev-l82}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | disposition | where |
+|---|---|---|
+| m2 sessions randomised past 72 hours could be scored | R1 drops and counts (`after_end`) any session whose SessionStart is at or after its record's `end` | [[#r1]] |
 
