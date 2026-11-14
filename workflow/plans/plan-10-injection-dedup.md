@@ -136,7 +136,7 @@ curator status on them (Q9), and labels every hook row with the prompt family
 
 A per-session live A/B, `dedupe` vs `full`, NESTED in the handhold outcome experiment as a
 declared factor: arm A splits into `A+dedupe` / `A+full` (L20). 10.2 is built before the
-experiment starts, and the experiment's ≥ 14-day run IS this A/B
+experiment starts, and the experiment's 3-calendar-day run (L79) IS this A/B
 ([[task-10.2-plan-10-injection-dedup#r7]]). Its "used" outcome counts only R12 explicit uses plus
 `cited_in_answer` (L27). A later arm, 4+3b (baseline-delivered
 non-held first, then new candidates, then held into leftover budget, the rest named), is recorded
@@ -197,6 +197,7 @@ but never dedupes; PreCompact and explicit pulls neither.
 | h15 | Which 25.1b tier makes an item held (lead ruling on 10.2 `#open-held-tier`) | (a) tier-aware: held only at the tier shown and poorer ones; the richest tier since the marker counts | 2026-11-13 |
 | h16 | Held names on the line (lead ruling on 10.2 `#open-held-mark`) | (a) marked `·held`, inside the line's bytes; one rank order with over-budget members | 2026-11-13 |
 | A1 | Plan approval | approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14); 10.2-10.6 approved to build; 10.1 stays complete ([[#approval]]) | 2026-11-14 |
+| L79 | Experiment period (user, 2026-11-14) | plan-28's session leg runs 3 calendar days (72 h), arms concurrent, never extended; 10.2's 40 per cell per store is a minimum n, and below it the reading is "underpowered, no verdict" ([[task-10.2-plan-10-injection-dedup#rev-round-7]]) | 2026-11-14 |
 | L30 | Build order (plan review, lead) | only 10.3 builds early; 10.5 probe → 10.6 → 10.4 → 10.2 after T4, ahead of the experiment | 2026-11-13 |
 
 ## Task Breakdown {#task-breakdown}

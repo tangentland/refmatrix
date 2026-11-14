@@ -178,9 +178,11 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
      `A+dedupe` / `A+full`, arm B (no push) has no dedupe factor, and arm C (bare) is never drawn on
      the session leg. Per Q4 (randomised) and L53 P-10, C runs only on plan-28's paired leg, where
      the runner sets the cell explicitly per run. `SESSION_ARMS` holds C at weight 0 for that
-     reason. The experiment's spec owns the period values (≥ 14 days, and ≥ 40 sessions per cell
-     per store, whichever is later, frozen before the start by
-     [[task-28.4-preregistration-freeze]]), its salt, and its user-gated start
+     reason. The experiment's spec owns the period: 3 calendar days (72 hours) from its start,
+     with the arms concurrent and never extended, not even by a pause (L79). It is frozen before
+     the start by [[task-28.4-preregistration-freeze]], along with its salt and its user-gated
+     start. 40 sessions per cell per store is 10.2's MINIMUM n (frozen in 28.4 R2), not an end
+     rule
      ([[task-28.5-run-and-report]]). That spec is [[plan-28-handhold-outcome-experiment]], from
      [[exploration-handhold-outcome-experiment#assignment]]. Ownership is split per
      [[task-28.1-session-arms-and-push-switch#ownership]].
@@ -224,10 +226,10 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
    - **Bands, written here before the run** (S9 rows added by lead ruling, 2026-11-13). Rows
      are checked in this order:
      1. **The period's end and its minimums are plan-28's** (bsd-spec-t3ab r2 S2, lead ruling).
-        10.2 defers to [[task-28.4-preregistration-freeze]]'s end rule: the later of 14 days and
-        40 sessions per cell per store. If the minimums are still unmet at 42 days, the session
-        leg reads REPORT-ONLY, which 10.2 reads as INCONCLUSIVE with no default change. 10.2 has
-        no floor or extension of its own.
+        10.2 defers to [[task-28.4-preregistration-freeze]]'s end rule: the period ends 3
+        calendar days after its start (L79). If fewer than 40 sessions per cell per store (10.2's
+        minimum n) are reached, the reading is "underpowered, no verdict", which 10.2 reads as
+        INCONCLUSIVE with no default change. 10.2 has no floor or extension of its own.
      2. **Bytes.** If `dedupe` cuts bytes per human prompt by less than 30%, there is no default
         change: the run does not confirm `A+dedupe` as the default, and the result is reported.
         Dedupe stays ON. It ships on by default (`A+dedupe` outside any period) because the user
@@ -394,7 +396,7 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
 - Implementation summary at `workflow/implementation_summaries/task-10.2-plan-10-injection-dedup.md`.
 - The `arms.py` deferral row is in `workflow/deferral_registry.md` at merge (S8).
 - R8's parity against v3 at GREEN; R7's live verdict after the experiment's period, each band
-  named.
+  named, or "underpowered, no verdict" (L79).
 - Committed on branch `task-10.2-plan-10-injection-dedup`; merged `--no-ff` to `master`.
 
 ## Revision round 6 (2026-11-13, spec wave, spec-t3b) {#rev-round-6}
@@ -415,6 +417,7 @@ rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 | Every held row's body goes to 25.1b's spill page (k3 step 4); held overflow is counted `(+N)` | L15 | R3, AC-6 |
 | One rank order across both member kinds (10.6 p2); held members marked `·held` | 25.1b k2; lead ruling on [[#open-held-mark]] (a) | h16, R3, R4, AC-1, AC-14 |
 | `arms.draw(session_id, *, root, now=None)` store-scoped: period records carry `scope`; ships with no active period; out of scope or out of period → `A+dedupe` | spec-t3c, plan-28 handshake (`5ac42e5`): arms.py ships to every store | R7, AC-11 |
+| Period = plan-28's 3 calendar days (72 h, never extended); 40 per cell per store is 10.2's minimum n; below it "underpowered, no verdict" = INCONCLUSIVE; the 14-day / whichever-later / 42-day text removed | L79 (user, 2026-11-14; Q11 a; dev master `8d88d29`); plan-28 at spec-wave-t3c `7758d2a` | R7, `#done` |
 | v3 re-run trigger re-keyed to G22 rev 2's operational gate (Q9 / L60 supersede the ingest exclusion) | bsd-spec-t3ab r3 S3, lead ruling | R8 |
 | Arm file and `session_arm` row written only when the store's slug is in some period record's `scope` | bsd-spec-t3c r2 m6, lead ruling | R7, AC-11, AC-13 |
 | bsd-spec-t3ab r3 folded, lead rulings: S5 (`telemetry.item_key` built by 25.1b, h8 cites it, removed from Files); m1 (tier-3 string verbatim from 25.1b); m2 (`covers(key, full_run_tier)`); arm file never redrawn or overwritten on compact/resume/clear | bsd-spec-t3ab-r3 | h8, h15, R1, R7, AC-11, AC-13, Files |
@@ -428,3 +431,23 @@ rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 | The A/B is the handhold experiment's run (arm A × {dedupe, full}); the outcome is R12 explicit + `cited_in_answer` only | L20, L27 | R7, h14 |
 | 25.2's gate runs first only if 25.2 is built | L34, L43 | R5 |
 | Depends on 25.1b and 10.6; built last of plan-10, after T4, before the experiment | L30, L20 | header |
+
+## Revision round 7 (2026-11-14, L79) {#rev-round-7}
+
+The user, 2026-11-14: plan-28's arms run "only 3 days", confirmed as 3 real (calendar) days with
+the arms concurrent (Q11 a; L79 on dev master `8d88d29`). A pause does not extend the period, and
+the n-floor no longer extends it either. Below a pre-registered minimum n, a reading is
+"underpowered, no verdict". This round changes:
+
+- R7: the period is plan-28's 3 calendar days. 40 sessions per cell per store is 10.2's minimum n,
+  not an end rule.
+- R7 band row 1: end = 3 calendar days; below the minimum n the reading is "underpowered, no
+  verdict", read as INCONCLUSIVE with no default change. The 42-day REPORT-ONLY clause is gone.
+- `#done`: "or underpowered, no verdict".
+
+plan-28's side is 28.4 R2 at spec-wave-t3c `7758d2a`. The status stays `approved`, pending a
+confirm-lite. {#rev-round-7-body}
+
+rel: amends -> [[#r7]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: depends-on -> [[task-28.4-preregistration-freeze]]
