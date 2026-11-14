@@ -32,6 +32,7 @@ store. Stand-in: the sleeping `git` shim (m-3 only).
 from __future__ import annotations
 
 import ast
+import re
 import hashlib
 import json
 import os
@@ -227,14 +228,32 @@ def test_the_save_state_promote_fallback_refuses_a_git_tracked_catalog(tracked_r
 
 
 # =============================================================================================
-# b-1 bypass guard: the census of read-write `Store(` constructions in src/
+# b-1 bypass guard: the census of every in-process way a writer catalog is opened or replaced
 # =============================================================================================
+#
+# r4 (L72) keyed the census on ONE constructor, `Store(`. ch-bsd r4 (03d7b27, 2026-11-14) found
+# `rmx compact` and `rmx migrate-to-duckdb --overwrite` opening the same catalog FILE with the
+# raw `open_duckdb` and renaming / unlinking over it -- invisible to a `Store(` scan, and both
+# wrote a committed catalog. L95: the census keys on the guarded RESOURCE. Three families:
+#   store -- a read-write `Store(` call, under any name `Store` is bound to;
+#   raw   -- `open_duckdb(` / `duckdb.connect(` whose path is not the literal ":memory:" and
+#            which pass no `read_only=True`;
+#   move  -- `.rename(` / `.replace(` / `.unlink(` / `os.replace|rename|remove|unlink(` /
+#            `shutil.move(` whose source or target is a catalog path: an expression whose text
+#            names a writer catalog (`catalog.duckdb`, `catalog.{slot}.duckdb`, `catalog.db`,
+#            `db_path`), or a local bound to one.
 
-# Read-write `Store(` constructions that may exist, by `module:qualname`. Everything else in
-# src/ must go through one of the two CHECKED openers. Why each is allowed:
+# Sites (`module:qualname`) that must call the one store-level check (directly or via one
+# wrapper) before they open or replace a catalog:
 CHECKED_OPENERS = {
-    "cli:_store_rw",          # the CLI's in-process writer (L72: calls the store-level check)
-    "verbs:local_write",      # the verbs' in-process writer (L72: calls the store-level check)
+    "cli:_store_rw",          # the CLI's in-process writer (L72)
+    "verbs:local_write",      # the verbs' in-process writer (L72)
+    "cli:compact",            # raw open + rename over the writer slot (L95)
+}
+# Library sites that open or replace a catalog for a caller, by the function name callers
+# call; every caller in src/ must be a checked site.
+LIBRARY_OPENERS = {
+    "migrate:migrate_catalog": "migrate_catalog",   # `rmx migrate-to-duckdb` (L95)
 }
 UNCHECKED_ALLOWED = {
     # The daemon IS the single writer; a tracked catalog written through it is the accepted
@@ -242,16 +261,36 @@ UNCHECKED_ALLOWED = {
     "daemon:Daemon._reopen_writer",
     "daemon:Daemon.serve_forever",
     "daemon:Daemon._bootstrap_rotation_if_needed",
+    # Daemon-only: merges the A/B slots inside the daemon (held by
+    # `test_daemon_only_sites_are_called_only_from_the_daemon`).
+    "replica_merge:merge_slots",
+    # The daemon's replica-merge op installs the merged file over its own slots, and its slot
+    # repair re-clones a missing slot (the daemon owns both files).
+    "daemon:_op_replica_merge",
+    "daemon:Daemon._repair_missing_slot_locked",
     # The hub's global store (`~/.refmatrix/global`), created and owned by the hub.
     "hub:_bootstrap_global_store",
     # The canon partition opened from inside an already-open writer of the same store.
     "store:Store.link_canon",
+    # A Store method on an already-open writer (opened through a checked opener or the daemon):
+    # rebuilding the index replaces that writer's own file.
+    "store:Store.rebuild_index_from_log",
+    # The backend opener internals behind every `Store` open (the guard sits at the Store).
+    "backend:_open_write",
+    "backend:DuckDBBackend.connect",
 }
+
+# A WRITER catalog name (`store.WRITER_CATALOG_FILES`, or a slot f-string), a `db_path`, or the
+# helpers that return a writer slot path (`cli._active_slot_path()`, the daemon's
+# `_replica_file()`); not the read replica `catalog.read.duckdb`, which no writer opens and no
+# fleet repo commits. A path reached any other way (a helper not named here) is outside what a
+# static scan can see -- the behaviour tests are the backstop.
+_CATALOG_TEXT = re.compile(r"catalog(\.([AB]|\{[^}]*\}))?\.(duckdb|db)\b|db_path|_active_slot_path\(|_replica_file\(")
 
 
 def _store_aliases(tree: ast.AST) -> set[str]:
     """Every name `Store` is bound to in a module: `Store` itself, `import Store as X`, and
-    `X = Store` / `X = <mod>.Store`. cli.py's `partition_drop` opens `Store` imported as
+    `X = Store` / `X = <mod>.Store`. cli.py's `partition_drop` opened `Store` imported as
     `_Store` -- a scanner keyed on the literal name missed it."""
     names = {"Store"}
     for n in ast.walk(tree):
@@ -264,37 +303,81 @@ def _store_aliases(tree: ast.AST) -> set[str]:
     return names
 
 
-def _read_write_store_constructions() -> list[tuple[str, int]]:
-    """Every call of `Store` -- under any name it is bound to in the module, or as
-    `<mod>.Store` -- in src/refmatrix without a literal `read_only=True`, as
-    (`module:qualname`, line)."""
-    found: list[tuple[str, int]] = []
+def _is_memory_literal(node: "ast.AST | None") -> bool:
+    return isinstance(node, ast.Constant) and node.value == ":memory:"
+
+
+def _scan_source(mod: str, text: str) -> list[tuple[str, int, str]]:
+    """The census of ONE module's source: (`module:qualname`, line, family) per site."""
+    tree = ast.parse(text, mod)
+    aliases = _store_aliases(tree)
+    found: list[tuple[str, int, str]] = []
+    stack: list[str] = []
+    catalog_names: list[set[str]] = [set()]
+
+    def is_catalog(node: "ast.AST | None") -> bool:
+        if node is None:
+            return False
+        if isinstance(node, ast.Name) and node.id in catalog_names[-1]:
+            return True
+        return bool(_CATALOG_TEXT.search(ast.unparse(node)))
+
+    class V(ast.NodeVisitor):
+        def visit_FunctionDef(self, n):
+            stack.append(n.name)
+            names = set()
+            for a in ast.walk(n):
+                if isinstance(a, ast.Assign) and _CATALOG_TEXT.search(ast.unparse(a.value)):
+                    names |= {t.id for t in a.targets if isinstance(t, ast.Name)}
+            catalog_names.append(names)
+            self.generic_visit(n)
+            catalog_names.pop()
+            stack.pop()
+        visit_AsyncFunctionDef = visit_FunctionDef
+
+        def visit_ClassDef(self, n):
+            stack.append(n.name)
+            self.generic_visit(n)
+            stack.pop()
+
+        def visit_Call(self, n):
+            site = f"{mod}:{'.'.join(stack) or '<module>'}"
+            f = n.func
+            kw = {k.arg: k.value for k in n.keywords}
+            ro = kw.get("read_only")
+            read_only = isinstance(ro, ast.Constant) and ro.value is True
+            if ((isinstance(f, ast.Name) and f.id in aliases)
+                    or (isinstance(f, ast.Attribute) and f.attr == "Store")):
+                if not read_only:
+                    found.append((site, n.lineno, "store"))
+            elif ((isinstance(f, ast.Name) and f.id == "open_duckdb")
+                  or (isinstance(f, ast.Attribute) and f.attr == "open_duckdb")
+                  or (isinstance(f, ast.Attribute) and f.attr == "connect"
+                      and isinstance(f.value, ast.Name) and f.value.id == "duckdb")):
+                path = n.args[0] if n.args else kw.get("database")
+                if not read_only and not _is_memory_literal(path):
+                    found.append((site, n.lineno, "raw"))
+            elif (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)
+                  and f.value.id in ("os", "shutil")
+                  and f.attr in ("replace", "rename", "remove", "unlink", "move")):
+                if any(is_catalog(a) for a in n.args):
+                    found.append((site, n.lineno, "move"))
+            elif isinstance(f, ast.Attribute) and f.attr in ("rename", "replace", "unlink"):
+                if is_catalog(f.value) or (f.attr != "unlink" and n.args
+                                           and is_catalog(n.args[0])):
+                    found.append((site, n.lineno, "move"))
+            self.generic_visit(n)
+
+    V().visit(tree)
+    return found
+
+
+def _census() -> list[tuple[str, int, str]]:
+    out: list[tuple[str, int, str]] = []
     for p in sorted(SRC.rglob("*.py")):
         mod = ".".join(p.relative_to(SRC).with_suffix("").parts)
-        tree = ast.parse(p.read_text(encoding="utf-8"), str(p))
-        aliases = _store_aliases(tree)
-        stack: list[str] = []
-
-        class V(ast.NodeVisitor):
-            def visit_FunctionDef(self, n):
-                stack.append(n.name)
-                self.generic_visit(n)
-                stack.pop()
-            visit_AsyncFunctionDef = visit_FunctionDef
-            visit_ClassDef = visit_FunctionDef
-
-            def visit_Call(self, n):
-                f = n.func
-                hit = ((isinstance(f, ast.Name) and f.id in aliases)
-                       or (isinstance(f, ast.Attribute) and f.attr == "Store"))
-                if hit:
-                    ro = {k.arg: k.value for k in n.keywords}.get("read_only")
-                    if not (isinstance(ro, ast.Constant) and ro.value is True):
-                        found.append((f"{mod}:{'.'.join(stack) or '<module>'}", n.lineno))
-                self.generic_visit(n)
-
-        V().visit(tree)
-    return found
+        out += _scan_source(mod, p.read_text(encoding="utf-8"))
+    return out
 
 
 def _functions_calling(names: set[str], *, module: "str | None" = None) -> set[str]:
@@ -319,6 +402,31 @@ def _functions_calling(names: set[str], *, module: "str | None" = None) -> set[s
     return out
 
 
+def _sites_calling(name: str) -> set[str]:
+    """`module:qualname` of every function in src/ whose body calls `name`."""
+    out: set[str] = set()
+    for p in sorted(SRC.rglob("*.py")):
+        mod = ".".join(p.relative_to(SRC).with_suffix("").parts)
+        tree = ast.parse(p.read_text(encoding="utf-8"), str(p))
+
+        def walk(body, prefix):
+            for n in body:
+                if isinstance(n, ast.ClassDef):
+                    walk(n.body, prefix + [n.name])
+                elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    q = prefix + [n.name]
+                    for c in ast.walk(n):
+                        if isinstance(c, ast.Call):
+                            f = c.func
+                            nm = f.id if isinstance(f, ast.Name) else (
+                                f.attr if isinstance(f, ast.Attribute) else None)
+                            if nm == name:
+                                out.add(f"{mod}:{'.'.join(q)}")
+                                break
+        walk(tree.body, [])
+    return out
+
+
 def _calls_in(module: str, qualname: str) -> set[str]:
     p = SRC / f"{module.replace('.', '/')}.py"
     tree = ast.parse(p.read_text(encoding="utf-8"), str(p))
@@ -340,55 +448,151 @@ def _calls_in(module: str, qualname: str) -> set[str]:
 
 def test_the_census_scanner_sees_the_known_openers():
     """The scanner is proven to FIND opens before its silence means anything (a gate over a
-    clean corpus cannot tell you it stopped checking): the two checked openers and the daemon's
-    writer reopen are always in the census."""
-    seen = {site for site, _ in _read_write_store_constructions()}
-    for must in ("cli:_store_rw", "verbs:local_write", "daemon:Daemon._reopen_writer"):
-        assert must in seen, f"the census scanner did not find {must}; it is broken: {seen}"
+    clean corpus cannot tell you it stopped checking): one known site from EACH family --
+    `cli:_store_rw` (store), `cli:compact` (raw, and move: its rename over the slot),
+    `migrate:migrate_catalog` (raw) -- plus the daemon's writer reopen (L95: a "sees" guard on
+    `cli:compact`)."""
+    seen = {(site, fam) for site, _, fam in _census()}
+    for must in (("cli:_store_rw", "store"), ("verbs:local_write", "store"),
+                 ("daemon:Daemon._reopen_writer", "store"), ("cli:compact", "raw"),
+                 ("cli:compact", "move"), ("migrate:migrate_catalog", "raw")):
+        assert must in seen, f"the census scanner did not find {must}; it is broken"
+
+
+_SYNTHETIC = """
+from refmatrix.store import Store as _S
+from refmatrix import store as store_mod
+from refmatrix.backend import open_duckdb
+import duckdb, os
+
+def aliased_import(root):
+    _S(root)
+
+def aliased_assign(root):
+    X = store_mod.Store
+    X(root)
+
+def attribute_ctor(root):
+    store_mod.Store(root)
+
+def read_only_ok(root):
+    store_mod.Store(root, read_only=True)
+    _S(root, read_only=True)
+
+def raw_open(root):
+    con = open_duckdb(root / "catalog.duckdb")
+
+def raw_connect(p):
+    duckdb.connect(p)
+
+def memory_ok():
+    open_duckdb(":memory:")
+    duckdb.connect(database=":memory:")
+    duckdb.connect(":memory:")
+
+def raw_read_only_ok(p):
+    open_duckdb(p, read_only=True)
+
+def move_onto(root, new):
+    src = root / f"catalog.{'A'}.duckdb"
+    new.rename(src)
+
+def move_away(root, backup):
+    (root / "catalog.duckdb").rename(backup)
+
+def unlink_one(root):
+    legacy = root / "catalog.duckdb"
+    legacy.unlink()
+
+def os_replace(root, tmp):
+    os.replace(tmp, root / "catalog.db")
+
+def not_a_catalog(root):
+    (root / "notes.txt").unlink()
+    (root / "x.json").rename(root / "y.json")
+"""
+
+
+def test_the_census_scanner_finds_every_family_in_a_synthetic_module():
+    """Y6 (ch-bsd r4 m-1, L95): the alias logic was unpinned -- `_store_aliases` returning
+    `{"Store"}` left every census test green, because the one aliased site in src/ had been
+    routed. A synthetic module carries a positive (and a negative) for every family, so the
+    scanner's own logic is tested whether or not src/ still has an example."""
+    got = {(site.split(":")[1], fam) for site, _, fam in _scan_source("synthetic", _SYNTHETIC)}
+    want = {("aliased_import", "store"), ("aliased_assign", "store"),
+            ("attribute_ctor", "store"), ("raw_open", "raw"), ("raw_connect", "raw"),
+            ("move_onto", "move"), ("move_away", "move"), ("unlink_one", "move"),
+            ("os_replace", "move")}
+    assert want <= got, f"the scanner missed {sorted(want - got)}"
+    never = {"read_only_ok", "memory_ok", "raw_read_only_ok", "not_a_catalog"}
+    false = sorted(x for x in got if x[0] in never)
+    assert not false, f"the scanner flagged sites that open nothing read-write: {false}"
 
 
 def test_no_read_write_store_open_outside_the_allowlist():
-    """b-1 bypass guard (L72): a read-write `Store(` in src/ is allowed only in the two checked
-    openers and the named unchecked sites. At 67f55cb it fails on `cli.init`,
-    `handoff._promote_digest`, `mcp._t_memory_add`, `verbs.change_subject` (ch-bsd r2's four)
-    and `cli.partition_drop` (a fifth, through the `_Store` alias)."""
-    allowed = CHECKED_OPENERS | UNCHECKED_ALLOWED
-    stray = sorted({f"{site} (line {line})" for site, line in _read_write_store_constructions()
+    """b-1 bypass guard (L72, L95): every in-process way a writer catalog is opened read-write
+    or replaced -- any family -- is allowed only in a checked opener, a library opener whose
+    callers check, or a named unchecked site."""
+    allowed = CHECKED_OPENERS | set(LIBRARY_OPENERS) | UNCHECKED_ALLOWED
+    stray = sorted({f"{site} [{fam}] (line {line})" for site, line, fam in _census()
                     if site not in allowed})
     assert not stray, (
-        "read-write `Store(` constructions outside the allowlist -- each is an in-process "
-        "writer that skips the tracked-catalog check; route it through `verbs.local_write` "
-        "(or `cli._store_rw()`), or add it to the allowlist WITH a reason:\n  "
-        + "\n  ".join(stray))
+        "in-process catalog opens / replaces outside the allowlist -- each skips the "
+        "tracked-catalog check; route it through a checked opener, or add it to the "
+        "allowlist WITH a reason:\n  " + "\n  ".join(stray))
 
 
 def test_the_allowlist_names_no_site_that_no_longer_opens():
-    """The allowlist cannot outlive its sites: an entry with no read-write `Store(` left is a
+    """The allowlist cannot outlive its sites: an entry the census no longer sees is a
     standing hole for the next one, so it fails until removed."""
-    seen = {site for site, _ in _read_write_store_constructions()}
-    stale = sorted((CHECKED_OPENERS | UNCHECKED_ALLOWED) - seen)
-    assert not stale, f"allowlist entries with no read-write `Store(`: {stale}"
+    seen = {site for site, _, _ in _census()}
+    stale = sorted((CHECKED_OPENERS | set(LIBRARY_OPENERS) | UNCHECKED_ALLOWED) - seen)
+    assert not stale, f"allowlist entries the census no longer sees: {stale}"
 
 
-def test_both_checked_openers_call_the_one_store_level_check():
-    """L72: ONE store-level check -- a function in store.py that asks
-    `git_tracked_catalogs` and refuses -- called by BOTH `cli._store_rw()` and
-    `verbs.local_write`, directly or through one wrapper (e.g. a CLI wrapper that turns the
-    refusal into a `ClickException`). At 67f55cb store.py has no such function (the refusal is
-    cli-level) and `local_write` calls nothing that checks."""
+def _library_callers() -> set[str]:
+    out: set[str] = set()
+    for site, fn in LIBRARY_OPENERS.items():
+        out |= _sites_calling(fn) - {site}
+    return out
+
+
+def test_every_checked_opener_calls_the_one_store_level_check():
+    """L72 + L95: ONE store-level check -- a function in store.py that asks
+    `git_tracked_catalogs` and refuses -- called by every checked opener and by every caller
+    of a library opener, directly or through one wrapper (e.g. a CLI wrapper that turns the
+    refusal into a `ClickException`). At 03d7b27 `cli:compact` and `cli:migrate_to_duckdb`
+    (the caller of `migrate.migrate_catalog`) call nothing that checks."""
     checks = _functions_calling({"git_tracked_catalogs"}, module="store") - {
         "git_tracked_catalogs"}
     assert checks, ("store.py has no function that calls `git_tracked_catalogs` -- the "
                     "tracked-catalog check is not store-level")
     wrappers = _functions_calling(checks)
     missing = []
-    for site in sorted(CHECKED_OPENERS):
+    for site in sorted(CHECKED_OPENERS | _library_callers()):
         mod, qual = site.split(":")
         calls = _calls_in(mod, qual)
         if not (calls & checks or calls & (wrappers - {qual.split(".")[-1]})):
             missing.append(site)
     assert not missing, (f"checked openers that do not call the store-level check "
                          f"{sorted(checks)} (directly or via one wrapper): {missing}")
+
+
+def test_every_caller_of_a_library_opener_is_found():
+    """A library opener is allowed only because its callers check (L95: `migrate_catalog`
+    "once its caller checks"). Callers are found by a census of call sites, so a new caller
+    joins the checked set automatically; this pins that the census finds the known one."""
+    callers = _library_callers()
+    assert "cli:migrate_to_duckdb" in callers, \
+        f"the call-site census did not find cli:migrate_to_duckdb: {sorted(callers)}"
+
+
+def test_daemon_only_sites_are_called_only_from_the_daemon():
+    """`replica_merge:merge_slots` is allowed unchecked as daemon-only; that reason is held
+    here, not asserted in a comment: every caller lives in daemon.py."""
+    callers = _sites_calling("merge_slots") - {"replica_merge:merge_slots"}
+    assert callers and all(c.startswith("daemon:") for c in callers), \
+        f"merge_slots has a caller outside the daemon: {sorted(callers)}"
 
 
 # =============================================================================================
@@ -567,7 +771,9 @@ def test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses(tracke
 # =============================================================================================
 
 @pytest.mark.timeout(300)
-def test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero(tracked_repo):
+@pytest.mark.parametrize("commit", [False, True], ids=["plain", "commit"])
+def test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero(tracked_repo,
+                                                                                  commit):
     """L82: `rmx save-state` with no daemon on a store whose catalog git tracks. The handoff is
     written (it lands in the memory dir, outside the store, BEFORE the promote), the STM promote
     is refused -- and that refusal is printed on STDERR with a non-zero exit. At 67f55cb the
@@ -575,7 +781,11 @@ def test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zer
     `{"error": ...}`, which the command prints as `promote skipped:` on stdout and exits 0 --
     a silent refusal (ch-bsd r2 flag, red-212r2 r4 flag). `--no-sync` keeps the memory bridge
     (another in-process writer, already covered) out of this test, so the promote is the only
-    store write."""
+    store write.
+
+    `commit` (ch-bsd r4 m-2, mutation Y7, L95): the user-level `/save-state` runs
+    `rmx save-state --commit`, so the exit code is pinned on THAT path too -- the commit lands,
+    and the command still exits non-zero."""
     from refmatrix import stm
     repo, layout = tracked_repo
     assert not dm.ping(repo.store), "fixture: a daemon answers"
@@ -585,8 +795,11 @@ def test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zer
     memdir = repo.base / "memdir"
     memdir.mkdir()
     before = _digests(repo.store)
-    r = _cli(repo, ["save-state", "-s", session, "--memory-dir", str(memdir), "--no-sync",
-                    "--no-lint", "-m", "bug-212 r4 probe"])
+    head_before = subprocess.run(["git", "-C", str(repo.proj), "rev-parse", "HEAD"],
+                                 env=_base_env(), capture_output=True, text=True).stdout.strip()
+    argv = ["save-state", "-s", session, "--memory-dir", str(memdir), "--no-sync",
+            "--no-lint", "-m", "bug-212 r4 probe"] + (["--commit"] if commit else [])
+    r = _cli(repo, argv)
     text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
     changed = _changed(before, _digests(repo.store))
     assert TRACEBACK not in r.stderr, f"[{layout}] save-state crashed\n{text}"
@@ -599,6 +812,10 @@ def test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zer
         f"[{layout}] the promote refusal (`{head} ...`) is not on stderr\n{text}"
     assert r.returncode != 0, f"[{layout}] save-state exited 0 although its promote was " \
                               f"refused\n{text}"
+    if commit:
+        head_after = subprocess.run(["git", "-C", str(repo.proj), "rev-parse", "HEAD"],
+                                    env=_base_env(), capture_output=True, text=True).stdout.strip()
+        assert head_after != head_before, f"[{layout}] --commit made no commit\n{text}"
 
 
 _CHANGED_SINCE_PROBE = r"""
