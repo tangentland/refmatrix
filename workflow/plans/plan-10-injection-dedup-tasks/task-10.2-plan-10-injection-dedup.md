@@ -196,8 +196,8 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
          row, and `A+dedupe`. A hook never crashes on it.
 
      The verb and scan-prompt call `arms.cell()` once per call. **Only `A+full` turns dedupe
-     off** (`held` is the empty set). `A+dedupe`, `B` and `C` all dedupe, the same as
-     `A+dedupe` (r-L83 m2). Push-off (`B`) and the bare profile (`C`) are plan-28's (28.1
+     off** (`held` is the empty set). `A+dedupe`, `B` and `C` dedupe exactly as `A+dedupe`
+     would wherever any push exists (L84; r-L83 m2). Push-off (`B`) and the bare profile (`C`) are plan-28's (28.1
      `push_on`, the bare profile), and 10.2 does not branch on them. When `RMX_HANDHOLD_CELL` is
      set, the call's row records the cell as `handhold_cell`, which is distinct from 21.1's
      per-prompt `arm`. 28.1 adds `paired_override()` (run id, as-of) on top of
@@ -314,9 +314,12 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
       GENERATED UserPromptSubmit commands.
     - With `A+full` exported into the hook's environment, the payloads equal the no-dedupe render
       on the same fixture, and the rows carry `handhold_cell: "A+full"`.
-    - With `A+dedupe`, they equal the dedupe render. With `B` and with `C`, the verb's and
-      scan-prompt's held handling equals `A+dedupe`'s on the same fixture (10.2 does not branch on
-      push-off or bare), and the rows carry `handhold_cell: "B"` / `"C"`.
+    - With `A+dedupe`, they equal the dedupe render.
+    - With `B`, wherever a push still runs (`session_start` recording, and any per-prompt payload
+      28.1's `push_on` still lets through), 10.2's held handling equals `A+dedupe`'s on the same
+      fixture, and the row carries `handhold_cell: "B"` (L84).
+    - With `C`, likewise wherever a push still runs, held handling equals `A+dedupe`'s, and the
+      row carries `handhold_cell: "C"` (L84). 10.2 branches on neither cell.
     - With a value outside `CELLS`, there is one `Error:` stderr line, `arm_error` on the row,
       exit 0 and the `A+dedupe` render.
     - The generated SessionStart entries write no arm file and no arm row, and nothing under
@@ -484,9 +487,10 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 rel: depends-on -> [[task-28.2-paired-reentry-runner]]
 rel: depends-on -> [[task-28.4-preregistration-freeze]]
 
-**L83 confirm-lite MEHs folded (2026-11-14).** m1: the leftover live and period wording is removed
+**L83 confirm-lite MEHs folded (2026-11-14; L84).** m1: the leftover live and period wording is removed
 from `#done`, plan-10's task table and execution contract, and 10.4 n10. m2: only `A+full` turns
-dedupe off; `B` and `C` dedupe as `A+dedupe`, with an AC-11 leg and an AC-13 mutation.
+dedupe off; `B` and `C` dedupe as `A+dedupe` would wherever any push exists, with one AC-11
+row per cell and an AC-13 mutation.
 {#rev-round-8-mehs}
 
 ## Approval of the L83 amendment (2026-11-14, d9co) {#approval-l83-2026-11-14}
