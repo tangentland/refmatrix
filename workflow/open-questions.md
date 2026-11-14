@@ -26,12 +26,13 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session 37b7498f (2026-11-13) {#session-37b7498f}
 
-Next id: **Q11**.
+Next id: **Q12**.
 
 ### Open {#open-37b7498f}
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q11 | 2026-11-14 | "the plan 28 arms should only be 3 days": the arms run at the same time (each session drawn into one), so is the whole session leg 3 days, with any under-filled cell reported as underpowered? | a: yes, 3 days total, concurrent arms, underpowered cells get no verdict (lead's reading); b: 3 days per arm in sequence (9 days; breaks same-week comparison) | assumed a, open until confirmed (L79 written to a) |
 | Q10 | 2026-11-14 | Fleet-repo discovery for the 0.83.0 hook re-install after "don't scan ~/github its too big and includes the other directories listed" + "and drop enduris as well": is the candidate list = hub/launchd roots + the repos named in the fleet memory (incl. bdep/atlftpd, bdep/thiquet) + `~/claude_tools` children + this repo, with no walk of `~/github` or `~/enduris`? | a: yes, that list (lead's reading); b: name the repos yourself | assumed a, open until confirmed (L77 written to a) |
 
 ### Answered {#answered-37b7498f}
