@@ -54,7 +54,7 @@ committed on its branch and merged. `workflow/agents/inflight-2026-11-14.md` is 
 ## Deploy (next action) {#deploy}
 
 When the suite finishes, compare its failures with the known set BY E LINE: brief_real_daemon
-lock, task21_1 ac6 ×2, `test_repo_hooks_in_sync` baseline drift (clears at the hook re-install),
+lock, task21_1 ac6 ×2, `test_repo_hooks_in_sync` (bug-170, sandbox HOME; NOT cleared by a re-install) and the 9 `test_search_hooks` rewriter cases (bug-168),
 possibly bug-228 / bug-231 timing. Anything else stops the deploy. Then, in order (full detail in
 memory `project_0830_release_ready`):
 
