@@ -319,3 +319,12 @@ Each id resolves here so historical citations stay valid; the content lives at t
   tables, but step 7b's newer-wins UPDATE on `memory_content` still keyed on the raw id, so A's
   memory kept its name and took B's body. Fragments and vectors hold the id too. List every
   statement that reads the other slot's id before calling a merge fix done. {#imp-collision-column-census}
+- 2026-11-14 (bug-212 r4, 03d7b27) — CENSUS THE RESOURCE, NOT ONE CONSTRUCTOR OF IT. r2 prescribed an
+  AST scan for read-write `Store(`, and r4 built exactly that. `rmx compact` opens the same catalog
+  file with `open_duckdb` and renames over it, so the scan stayed green while compact rewrote a
+  committed catalog. A bypass census enumerates every way the guarded FILE is opened or replaced,
+  and its "sees" guard includes one site from each family. {#imp-census-the-resource}
+- 2026-11-14 (bug-212 r4) — AN ALLOWLIST SCANNER WHOSE LAST ALIASED SITE WAS FIXED HAS STOPPED TESTING
+  ITS ALIAS LOGIC. Deleting `_store_aliases`' body left the census green, because `partition_drop` now
+  routes through `local_write`. When a fix removes a scanner's only positive example, add a synthetic
+  one. {#imp-scanner-needs-synthetic-positives}
