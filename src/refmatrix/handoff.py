@@ -94,11 +94,14 @@ def _ss_git_run(repo: Path, *args: str) -> tuple[int | None, str, str]:
 
 
 def _ss_git_failure(args: tuple[str, ...], rc: int | None, out: str, err: str) -> str:
-    """One way to say a git call failed: the command, then how."""
+    """One way to say a git call failed: the command, then how, in git's own words
+    (bug-225 r3: "is corrupt" / "expected commit type" name the cause; a paraphrase
+    would not). Multi-line stderr is joined with " / " so it stays one doc line."""
     cmd = f"`git {' '.join(args)}`"
+    text = " / ".join(ln.strip() for ln in (err or out).splitlines() if ln.strip())
     if rc is None:
-        return f"{cmd} could not run: {err}"
-    return f"{cmd} exited {rc}: {err or out or '(no output)'}"
+        return f"{cmd} could not run: {text}"
+    return f"{cmd} exited {rc}: {text or '(no output)'}"
 
 
 def _ss_origin_head(repo: Path) -> tuple[str, str]:
@@ -109,15 +112,16 @@ def _ss_origin_head(repo: Path) -> tuple[str, str]:
     `origin/master` instead of 12 ahead of `origin/develop`. `refs/remotes/origin/HEAD`
     (set by `git clone`, changed per repo with `git remote set-head`) is the repo's own
     answer. `--quiet` makes "not a symbolic ref" exit 1 with no output: that is the
-    unset case, and the list decides without a word. Any other exit (or git failing
-    to run) is NOT unset: it is returned as an error the composers print.
+    unset case, and the list decides without a word. Any other result -- another
+    exit, exit 1 WITH stderr, git failing to run -- is NOT unset: it is returned as
+    an error the composers print (same rule as the candidate verify, bug-225 r3).
     The name is not verified here; `_ss_trunk` verifies it like every candidate.
     """
     args = ("symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
     rc, out, err = _ss_git_run(repo, *args)
     if rc == 0:
         return out, ""
-    if rc == 1:
+    if rc == 1 and not err:
         return "", ""
     return "", _ss_git_failure(args, rc, out, err)
 
@@ -128,15 +132,26 @@ def _ss_trunk(repo: Path, facts: dict) -> None:
     Candidates: the ref origin/HEAD names, then `_SS_TRUNK_FALLBACK`. Each is
     verified as `<name>^{commit}`, so a ref whose object is missing does not pass
     (bsd-225 r1 S1: plain `--verify` passed it, the ahead `git log` then failed
-    inside `_ss_sh`, and the handoff said "0 commit(s) ahead -- in sync"). Exit 1
-    or 128 is "does not resolve": try the next. Any other exit, an unrunnable git
-    or a timeout stops the walk and is said. The ahead `git log` is read the same
-    way: a failure is said and leaves `ahead_base` empty, so no surface can print
-    a measured zero. When origin/HEAD names a ref that does not resolve, that is
-    said too, with the trunk actually used (ruling L96, 2026-11-14).
+    inside `_ss_sh`, and the handoff said "0 commit(s) ahead -- in sync").
+
+    "Does not resolve" is ONLY exit 1 with an empty stderr: under `--quiet`, git
+    2.50.1 exits that way for a missing name or a ref to a missing sha, and the
+    walk tries the next name. Everything else stops the walk and is said in git's
+    own words: a corrupt object exits 128, an unreadable object, a broken ref or a
+    ref to a tree exit 1 WITH stderr, and any other exit, an unrunnable git or a
+    timeout is a failure too (bsd-225 r2 S1, ruling L100, 2026-11-14: reading 128
+    as "not found" measured origin/master past a corrupt origin/main, silently).
+    The ahead `git log` is read the same way: a failure is said and leaves
+    `ahead_base` empty, so no surface can print a measured zero. When origin/HEAD
+    names a ref that does not resolve, that is said too, with the trunk actually
+    used (ruling L96).
 
     Problems land in `facts["trunk_errors"]` as (headline, detail) pairs; the
-    composers render them (save-state doc line, recall-state anomaly)."""
+    composers render them (save-state doc line, recall-state anomaly). When
+    nothing resolves and nothing failed (origin/HEAD unset, none of the list
+    exists), `facts["trunk_info"]` says so: an info line in the save-state doc so
+    "no trunk" reads differently from "measurement missing", but not a fault, so
+    not a recall-state anomaly and not `trunk_error` (L100 M1)."""
     problems: list[tuple[str, str]] = facts["trunk_errors"]
     origin_head, oh_err = _ss_origin_head(repo)
     candidates = ([origin_head] if origin_head else []) + \
@@ -148,11 +163,12 @@ def _ss_trunk(repo: Path, facts: dict) -> None:
         if rc == 0:
             base = cand
             break
-        if rc in (1, 128):
+        if rc == 1 and not err:
             continue
         stopped_at = cand
-        problems.append((f"could not verify trunk candidate `{cand}`",
-                         _ss_git_failure(args, rc, out, err)))
+        what = ("origin/HEAD names `{0}`, which git could not verify" if cand == origin_head
+                else "could not verify trunk candidate `{0}`").format(cand)
+        problems.append((f"{what}; nothing measured", _ss_git_failure(args, rc, out, err)))
         break
     fallback = (f"measured against `{base}`" if base
                 else "the fallback list was not verified" if stopped_at
@@ -164,6 +180,10 @@ def _ss_trunk(repo: Path, facts: dict) -> None:
         problems.insert(0, (f"origin/HEAD names `{origin_head}`, which does not "
                             f"resolve; {fallback}", ""))
     if not base:
+        if not (origin_head or oh_err or stopped_at):
+            facts["trunk_info"] = ("none (origin/HEAD unset; no "
+                                   + ", ".join(_SS_TRUNK_FALLBACK[:-1]) + " or "
+                                   + _SS_TRUNK_FALLBACK[-1] + ")")
         return
     args = ("log", "--oneline", f"{base}..HEAD")
     rc, out, err = _ss_git_run(repo, *args)
@@ -193,7 +213,7 @@ def _ss_git_facts(repo: Path, since: str | None) -> dict:
         "head": g("log", "-1", "--format=%h %s"),
         "dirty": g("status", "--short"),
         "ahead_base": "", "ahead": "", "session_commits": "", "trunk_error": "",
-        "trunk_errors": [],
+        "trunk_errors": [], "trunk_info": "",
     }
     # No branch = not a work tree (or no commit yet): there is no trunk to measure
     # against, every git read above already came back empty, and no trunk git call
@@ -298,6 +318,8 @@ def _ss_render(*, mem_id: str, session: str, repo: Path, message: str | None,
         L.append(f"- **{n}** commit(s) ahead of `{git['ahead_base']}`"
                  + ("" if n else " — in sync"))
     L.extend(f"- {ln}" for ln in _ss_trunk_lines(git, sep=" — ", close=""))
+    if git.get("trunk_info"):
+        L.append(f"- trunk: {git['trunk_info']}")
     L.append(f"- working tree: {'**dirty**' if git['dirty'] else 'clean'}")
     L.append("")
 

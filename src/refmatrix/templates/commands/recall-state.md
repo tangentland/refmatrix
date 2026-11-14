@@ -10,7 +10,7 @@ step, then WAIT for direction — the orient pass is the whole job.
 - **Status file** — the one the project's CLAUDE.md names; else `handoff.md` if it exists; else
   `workflow/STATUS.md`. **Agent brief dir** — `workflow/agents/`.
 - **Trunk** — `refs/remotes/origin/HEAD` (the repo's default branch) when it resolves to a
-  commit, else `origin/main` / `origin/master`.
+  commit, else the first of `origin/main`, `origin/master`, `main`, `master` that does.
 - **Memory dir** — `~/.claude/projects/<slug>/memory/` (layout: refmatrix ADR-0005).
 
 1. **Latest handoff** — read the status file's current-state header, then pull the prior
@@ -31,8 +31,9 @@ step, then WAIT for direction — the orient pass is the whole job.
    how far ahead of the trunk (`git rev-list --count <trunk>..HEAD`). `<trunk>` is the name
    `git symbolic-ref --short refs/remotes/origin/HEAD` prints, used only when it resolves to a
    commit (`git rev-parse --verify --quiet <name>^{commit}` succeeds; a pruned branch still
-   prints a name); else the first of `origin/main` / `origin/master` that resolves. Report a
-   skipped origin/HEAD.
+   prints a name); else the first of `origin/main`, `origin/master`, `main`, `master` that
+   resolves. Report a skipped origin/HEAD, and a check that fails with an error (a corrupt
+   object, a ref to a tree) as an error rather than as "not found".
 3. **Daemon/hub state** — `rmx daemon status` (+ `rmx hub status` if used);
    compare the running version against the latest shipped.
 3a. **Active goal** — read the `{#active-goal}` block at the top of the status file's body (after any
