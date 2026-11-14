@@ -88,7 +88,12 @@ Mirrored into `.claude/hooks/hooks.env` (`CORPUS_PATHS`, `SRC_DIR`, `ADR_DIR`).
   process. Use it FIRST for code structure, docs, decisions, ADRs, bug history and memories. It
   answers about `master` as last synced; code your branch changed is read from the clone's files.
   Never symlink or copy `.refmatrix/` into a clone, and never export `REFMATRIX_ROOT` in a shell
-  that runs tests or dev code: both point dev code at the live store. The `ch-*` agents and
+  that runs tests or dev code: both point dev code at the live store. **Subagents are read-only
+  against every live store** (user, 2026-11-14): no `rmx sync`, `ingest`, `ingest-gmd`,
+  `reingest`, `memory add|forget|organise|compile --apply`, `protect`, `noise`, `forget`,
+  `partition …`, `daemon …` or `hub …` from any shell, including the dev tree (an agent's default
+  cwd). Writes to a live store are the lead's, announced and backed up. Test suites run against
+  throwaway stores under a short `mkdtemp()` root only. The `ch-*` agents and
   `gmd-curator` also list the read-only refmatrix MCP tools (`rmx_context`, `rmx_query`,
   `rmx_search`, `rmx_memory_recall`, `rmx_graph`, `rmx_locate`, `rmx_where`); whether a spawned
   agent is actually offered them is unverified until a Claude Code restart (a probe before the
