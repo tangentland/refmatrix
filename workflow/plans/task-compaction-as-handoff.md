@@ -39,8 +39,18 @@ removed; it can be steered to a single line, with the handoff carrying the state
    compaction is authoritative; do not restate files, decisions or plans. No other generated
    PreCompact entry prints to stdout (an existing recall or digest print would become summary
    instructions too).
-3. **R3 Handoff after compaction.** {#r3} The SessionStart `compact` entry injects the recall-state
-   handoff (25.1's channel and byte budget), labelled as the authoritative state.
+3. **R3 Handoff after compaction, pulled whole (L91).** {#r3} The user, 2026-11-14: "I would use
+   the bash output path only for the recall-state after compaction". A full `rmx recall-state`
+   handoff measured 45,870 B on 2026-11-14: over the hook cap (~9-10 KB) and over the Bash tool's
+   default 30,000-character output limit. So the SessionStart `compact` entry writes the full
+   `rmx recall-state` output to a per-session file (under the store's `.refmatrix/handoffs/`, one
+   file per session, the newest kept per session) and injects only a short block: the file's path,
+   its byte count, and the instruction "read this file before any other action; it is the
+   authoritative state". The model then pulls it with a file read, which carries no hook cap and no
+   Bash output cap at this size. The PreCompact summary instruction (R2) names the same first
+   action. If the write fails, the injected block says so and falls back to 25.1's budgeted inline
+   recall-state. The `clear` trigger keeps 25.1's inline handoff unchanged (only compaction uses the
+   pulled form, per the user's "only for").
 4. **R4 Manual /compact.** {#r4} A manual `/compact <instructions>` keeps the user's instructions:
    the R2 instruction applies to the `auto` trigger only, unless the user passes none.
 5. **R5 Generated and installed.** {#r5} Emitted by `hooks.py`, covered by `install-hooks --check`,
@@ -50,7 +60,7 @@ removed; it can be steered to a single line, with the handoff carrying the state
 
 - **AC-1:** the generated PreCompact entries print exactly the R2 text to stdout and nothing else
   (mutation: a second stdout writer → fails); save-state runs before the print.
-- **AC-2:** the SessionStart `compact` entry exists and injects the handoff within budget.
+- **AC-2:** the SessionStart `compact` entry writes the full handoff file (byte-identical to `rmx recall-state` stdout) and injects only the pointer block naming its path and size; a failed write injects the fallback (mutation: the inline handoff on `compact` → fails); `clear` is unchanged.
 - **AC-3:** a sandbox session forced to auto-compact shows a summary of at most a few lines and the
   injected handoff after it (an R0-style probe recorded under `workflow/measurements/`, hashes not
   raw prompts).
