@@ -212,6 +212,7 @@ it gets used. Three more are fallout from shipping plan-26 to the fleet. {#detou
 | L75 | bsd-spec-t3ab 25.1b R18 r2 (0B/1S/1M) | (S1) `verbs.memory_recall`'s own `_left` (verbs.py:1386-1394) raises `VerbDeadlineError`; the verb's re-wrap under its deadline (verbs.py:1522-1526) keeps the subclass (raises `VerbDeadlineError` when the caught error is one); the Files row names verbs.py, not recall.py; AC-28 gains a leg where the deadline expires inside the verb, mutation "verb `_left` raises plain `VerbBusyError`". (m1) leg (d) asserts the partition-probe ping plus `require_daemon`'s ping together fit inside the budget. A confirm-lite r3 follows |
 | L76 | bsd-spec-t3ab 25.1b R18 r3 (0B/0S/1M, MEH-only) | 25.1b's R18 amendment meets the approval bar. spec-t3a folds m1 (AC-28 (c2) passes `partition=` so the deadline goes through the verb's re-wrap, as the live CLI does) and the lead records the amendment's approval on that fold with no further round |
 | L77 | the user, 2026-11-14: "when 0.83 is ready, go ahead and deploy to all projects" | USER AUTHORIZATION for 0.83.0's fleet step (queue item 1's user gate): once 0.83.0 is released and deployed here (hub + daemons on the new version), run `install-hooks --apply --force` in every fleet repo found by the installed hook marker (`grep -l "refmatrix: refresh" <repo>/.git/hooks/post-commit` over `~/github`, `~/claude_tools` and `~/enduris`, skipping `_frameworks_and_libraries`, plus this repo; the user confirmed `--force` explicitly the same day), with hooks backed up first to `~/.refmatrix/backups/hooks-0.83.0/`, a per-repo diff of foreign hooks kept (0 lost), `.git/hooks` verified by reading them (bug-209), and `install-hooks --check` clean in each. Scope: hook re-install + daemon restarts only; it does not authorize plan-27's memdir migration, plan-28's start or any other user-gated step |
+| L78 | the user, 2026-11-14: "The plan-27 memory-folder migration and the start of the plan-28 experiment can proceed when you feel its time" | DELEGATED to the orchestrator. plan-27 runs when its own preconditions hold (plan-26 merged, released and deployed with 26.8 green; 27.1's survey refreshed), with every migration step backed up as plan-27 specifies. plan-28 starts when its own preconditions hold (its pre-registration committed before any session is drawn; 21.5's phase M decision and the measurement lane's G32 confirm done; the arms switch deployed). The orchestrator tells the user at each start, names the backups and the stop condition, and does not change a spec's preconditions to start sooner. G18 and other user gates are unchanged |
 
 ## Revised proposal {#proposal}
 
@@ -391,6 +392,11 @@ measurement lane alongside. The goal stops for the user at item 7's charter deci
    whole plan, G20, G30, G32) and every `rev` row. The precedent of record is d9co: a CLEAN or
    MEH-only ch-bsd round over the spec, then `approved` set by the orchestrator on the user's
    pattern, with the decision row written. Only G18 and the user-gated steps stay with the user.
+
+**Delegated user gates (2026-11-14, L77/L78):** the 0.83.0 fleet deploy with `install-hooks --apply
+--force` (L77), plan-27's memory-folder migration and plan-28's experiment start (L78) no longer stop
+the goal; the orchestrator runs each when its spec's preconditions hold and tells the user at the
+start. G18's charter decision and every other user-gated step still stop the goal.
 {#goal-horizon}
 
 ## Questions {#questions}
