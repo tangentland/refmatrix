@@ -1,0 +1,100 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b225bsdmut.jcQd/src/refmatrix as checked-hash (bug-037)
+......FFFF...                                                            [100%]
+=================================== FAILURES ===================================
+_ test_unreadable_origin_head_sets_trunk_error_and_list_still_picks[outside-refs] _
+
+repos = (PosixPath('/private/tmp/b225-5bzn0_zs'), PosixPath('/private/tmp/b225-5bzn0_zs/work'))
+content = 'ref: ../outside\n'
+
+    @pytest.mark.parametrize("content", list(UNREADABLE.values()), ids=list(UNREADABLE))
+    def test_unreadable_origin_head_sets_trunk_error_and_list_still_picks(repos, content):
+        """AC-6: the facts carry the error, and the list still decides the trunk:
+        origin/master (no origin/main on this remote), 5 commits ahead."""
+        _, work = repos
+        _break_origin_head(work, content)
+        facts = handoff._ss_git_facts(work, None)
+        err = facts["trunk_error"]
+        assert "exited 128" in err, facts
+        assert "No such ref: refs/remotes/origin/HEAD" in err, facts
+>       assert "git symbolic-ref --quiet --short refs/remotes/origin/HEAD" in err, facts
+E       AssertionError: {'ahead': '3852171 feature commit 2
+E         312da4a feature commit 1
+E         17a8ee1 develop commit 3
+E         c968d26 develop commit 2
+E         bbcaa80 develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'git symbolic-ref --quiet --short refs/remotes/origin/HEAD' in '`git symbolic-ref --short refs/remotes/origin/HEAD` exited 128: fatal: No such ref: refs/remotes/origin/HEAD'
+
+tests/test_bug225_handoff_trunk.py:238: AssertionError
+_ test_unreadable_origin_head_sets_trunk_error_and_list_still_picks[self-loop] _
+
+repos = (PosixPath('/private/tmp/b225-rhrdf0gz'), PosixPath('/private/tmp/b225-rhrdf0gz/work'))
+content = 'ref: refs/remotes/origin/HEAD\n'
+
+    @pytest.mark.parametrize("content", list(UNREADABLE.values()), ids=list(UNREADABLE))
+    def test_unreadable_origin_head_sets_trunk_error_and_list_still_picks(repos, content):
+        """AC-6: the facts carry the error, and the list still decides the trunk:
+        origin/master (no origin/main on this remote), 5 commits ahead."""
+        _, work = repos
+        _break_origin_head(work, content)
+        facts = handoff._ss_git_facts(work, None)
+        err = facts["trunk_error"]
+        assert "exited 128" in err, facts
+        assert "No such ref: refs/remotes/origin/HEAD" in err, facts
+>       assert "git symbolic-ref --quiet --short refs/remotes/origin/HEAD" in err, facts
+E       AssertionError: {'ahead': 'ac585ad feature commit 2
+E         78bfcb7 feature commit 1
+E         91cd916 develop commit 3
+E         1639ccd develop commit 2
+E         267a6a7 develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'git symbolic-ref --quiet --short refs/remotes/origin/HEAD' in '`git symbolic-ref --short refs/remotes/origin/HEAD` exited 128: fatal: No such ref: refs/remotes/origin/HEAD'
+
+tests/test_bug225_handoff_trunk.py:238: AssertionError
+__ test_unreadable_origin_head_sets_trunk_error_and_list_still_picks[garbage] __
+
+repos = (PosixPath('/private/tmp/b225-3a6mrsc4'), PosixPath('/private/tmp/b225-3a6mrsc4/work'))
+content = 'garbage\n'
+
+    @pytest.mark.parametrize("content", list(UNREADABLE.values()), ids=list(UNREADABLE))
+    def test_unreadable_origin_head_sets_trunk_error_and_list_still_picks(repos, content):
+        """AC-6: the facts carry the error, and the list still decides the trunk:
+        origin/master (no origin/main on this remote), 5 commits ahead."""
+        _, work = repos
+        _break_origin_head(work, content)
+        facts = handoff._ss_git_facts(work, None)
+        err = facts["trunk_error"]
+        assert "exited 128" in err, facts
+        assert "No such ref: refs/remotes/origin/HEAD" in err, facts
+>       assert "git symbolic-ref --quiet --short refs/remotes/origin/HEAD" in err, facts
+E       AssertionError: {'ahead': 'd764203 feature commit 2
+E         275d93f feature commit 1
+E         861f2af develop commit 3
+E         2be0378 develop commit 2
+E         345d273 develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'git symbolic-ref --quiet --short refs/remotes/origin/HEAD' in '`git symbolic-ref --short refs/remotes/origin/HEAD` exited 128: fatal: No such ref: refs/remotes/origin/HEAD'
+
+tests/test_bug225_handoff_trunk.py:238: AssertionError
+____________ test_origin_head_unset_or_readable_has_no_trunk_error _____________
+
+repos = (PosixPath('/private/tmp/b225-4506ze0h'), PosixPath('/private/tmp/b225-4506ze0h/work'))
+
+    def test_origin_head_unset_or_readable_has_no_trunk_error(repos):
+        """AC-6b: exit 1 (unset) and exit 0 (a readable symref, dangling or not) are
+        not errors: `trunk_error` stays empty in all three."""
+        _, work = repos
+        assert handoff._ss_git_facts(work, None)["trunk_error"] == ""      # origin/master
+        _git(work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/gone")
+        assert handoff._ss_git_facts(work, None)["trunk_error"] == ""      # dangling
+        _git(work, "remote", "set-head", "origin", "-d")
+>       assert handoff._ss_git_facts(work, None)["trunk_error"] == ""      # unset
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert '`git symboli... symbolic ref' == ''
+E         
+E         + `git symbolic-ref --short refs/remotes/origin/HEAD` exited 128: fatal: ref refs/remotes/origin/HEAD is not a symbolic ref
+
+tests/test_bug225_handoff_trunk.py:251: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug225_handoff_trunk.py::test_unreadable_origin_head_sets_trunk_error_and_list_still_picks[outside-refs]
+FAILED tests/test_bug225_handoff_trunk.py::test_unreadable_origin_head_sets_trunk_error_and_list_still_picks[self-loop]
+FAILED tests/test_bug225_handoff_trunk.py::test_unreadable_origin_head_sets_trunk_error_and_list_still_picks[garbage]
+FAILED tests/test_bug225_handoff_trunk.py::test_origin_head_unset_or_readable_has_no_trunk_error
+4 failed, 9 passed in 10.57s
