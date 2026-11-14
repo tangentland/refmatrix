@@ -24,7 +24,7 @@ metadata:
 > Decided: `plan-29 D4` = (c), a normalised-AST derive hash (user, ruling L106; [[#d4]], [[#r7]]).
 > Revision round 2 (ruling L105, on ch-bsd spec review r1): [[#rev-round-2]].
 > Revision round 3 (ruling L108, on ch-bsd spec review r2): [[#rev-round-3]].
-> Open for the user: `plan-29 D24` ([[#d24]]).
+> Open for the user: `plan-29 D27` ([[#d27]]).
 
 rel: part-of -> [[plan-29-code-quality]]
 rel: implements -> [[tdd-governance]]
@@ -447,7 +447,7 @@ equal" case of AC-20. No assertion in them is weakened.
   2. **Deploy B:** every edit either task makes to a pass file ([[#derive-hash]]).
 - After deploy B a neutral edit shows nothing. A REAL edit to a pass file makes that pass read
   `behind_code` on every store, because the code that derives did change. What clears that is
-  `plan-29 D24` ([[#d24]]).
+  `plan-29 D27` ([[#d27]]).
 - 29.5's release is not part of this: its module-list change alters no stamped pass's hash
   ([[#derive-hash]]).
 - No agent rehashes, re-stamps or re-derives a live store.
@@ -759,8 +759,8 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 
 None of these needs the user; each records the choice and why. The one that did, `plan-29 D4`,
 is decided ([[#d4]]). A reviewer who disagrees with one below raises it as a new
-`plan-29 D<n>` (D7 to D22 are taken by the 29.1 / 29.4 / 29.5 specs; D5, D6 and D23 upward are
-free). The lead registers D4 and D7 to D22 in `plan-29-code-quality#decisions` at merge (L105,
+`plan-29 D<n>` (D7 to D26 are taken by the 29.1 / 29.4 / 29.5 / 29.6 specs; D5 and D6 are free; D27 is this
+spec's). The lead registers D4, D27 and D7 to D26 in `plan-29-code-quality#decisions` at merge (L105,
 M11).
 
 1. **Strict is per module, whole module**. The plan says "strict on the public API"; the
@@ -952,11 +952,17 @@ Rules for this task:
 - **Neutral edits** are this task's annotations and 29.3(c)'s `justified` comments. They ship in
   deploy B and show nothing; AC-20 is what makes that true.
 - **Real edits to a pass file** ship in deploy B too (ruling L107: with R7's release, never in
-  an ordinary later one). They are: every handler slice c surfaces or narrows rather than
-  justifies ([[task-29.3-converge-shapes#c-r7]]), and the edits 29.5's phase 3 declares instead
-  of making (a private name of a pass module that another module uses; 29.5's spec holds those
-  rows with an owner, and their edits ship here). After deploy B those passes read `behind_code`
-  on every store: `plan-29 D24` ([[#d24]]).
+  an ordinary later one). They are:
+  - every handler slice c surfaces or narrows rather than justifies
+    ([[task-29.3-converge-shapes#c-r7]]);
+  - the 22 private-name rows 29.5 declares instead of fixing, because 29.5 ships under the
+    raw-bytes hash and may not change a byte of a pass module
+    (`task-29.5-split-giant-modules#r6`, the table at `#r6-pass-rows`, held by its `#ac-7` and
+    `#ac-6`; premise at `#fact-derive`; branch `spec-plan29a` at `75ef65d`). Their owner is
+    [[task-29.3-converge-shapes#c-pass-rows]] (lead ruling, 2026-11-14).
+
+  After deploy B the passes they touch read `behind_code` on every store: `plan-29 D27`
+  ([[#d27]]).
 - One that is not ready for deploy B waits for a release with its own announced, user-gated go.
   No release lets a pass read `behind_code` fleet-wide without one.
 - This task's own real edits (the `isinstance` narrowing, `ingest_path`, the declared host) are
@@ -1044,9 +1050,9 @@ shared by 29.2 and 29.3.
 - **AC-18 itself:** at this task's end commit, and at 29.3's, the four legs equal the golden.
   That is the evidence that the edits of [[#derive-hash]], the real ones included, left the
   derived state alone on the fixture. It is NOT what moves a stamp: [[#r8]] moves a stamp only
-  on its own proof, and `plan-29 D24` decides what is done for a pass with a real edit.
+  on its own proof, and `plan-29 D27` decides what is done for a pass with a real edit.
 
-## Decisions: `plan-29 D4` decided, `plan-29 D24` open {#open-decisions}
+## Decisions: `plan-29 D4` decided, `plan-29 D27` open {#open-decisions}
 
 **plan-29 D4 = (c): the derive hash is computed over a normalised syntax tree.** Decided by the
 user, 2026-11-14 (ruling L106, [[plan-review-2026-11-13#lead]]). The lead registers it in
@@ -1060,15 +1066,15 @@ user, 2026-11-14 (ruling L106, [[plan-review-2026-11-13#lead]]). The lead regist
 - **What it does not remove.**
   1. The deploy that carries [[#r7]] changes the hash tag, so every existing stamp reads
      `code_unknown` until [[#r8]] rehashes it ([[#r7-release]]).
-  2. A real edit to a pass file changes that pass's hash: `plan-29 D24`.
+  2. A real edit to a pass file changes that pass's hash: `plan-29 D27`.
 - 29.5's module-list change is not on this list: it changes no stamped pass's hash
   ([[#derive-hash]]; ruling L108, which supersedes the 29.5 half of L107's re-stamp rule).
 - **Cited for reference, decided in L106:** `plan-review-fable D4` (a standing go, except for
   store-changing releases; R7's release is one) and `plan-review-fable-store D5` (duckdb 1.5.3
   in the dev venv before baselines).
 
-**plan-29 D24 (open, for the user): what clears `behind_code` for a pass whose file got a real
-edit.** {#d24}
+**plan-29 D27 (open, for the user): what clears `behind_code` for a pass whose file got a real
+edit.** {#d27}
 
 - **Why it exists.** Ruling L107 has the real edits to pass files ship in R7's release, and
   ruling L108 has that release use the rehash. The rehash, as ruled, converts a stamp only when
@@ -1076,11 +1082,13 @@ edit.** {#d24}
   never satisfies that, in whichever deploy the edit ships. So after deploy B of
   [[#r7-release]], each pass with a real edit reads `behind_code` on every store, correctly: the
   code that derives it changed.
-- **Which passes.** Known at the start commit from the NEUTRAL / REAL table of
-  [[#derive-hash]]. Candidates at `f3709d2`: `pagerank` (12 silent handlers), `ingest` and
-  `semantic` (8), `gmd` and `sessions` (5), the memory compile (1), plus the pass files 29.5's
-  phase 3 declares rows for (`ingest.py`, `ingest_gmd.py`, `pagerank.py`, `consolidate.py`). A
-  pass all of whose handlers end up justified, and that has no declared row, is not affected.
+- **Which passes.** It is not hypothetical. The 22 declared rows of
+  [[task-29.3-converge-shapes#c-pass-rows]] are renames, which are real edits, in `ingest.py`,
+  `ingest_gmd.py`, `pagerank.py` and `consolidate.py`. So after deploy B the passes `ingest`,
+  `semantic`, `gmd`, `sessions`, `pagerank` and both memory-compile scopes read `behind_code` on
+  every store. Slice c's handlers in the same files (26 candidates) add no pass to that list.
+  `embed` is not affected unless `embedder.py` or `vectors.py` is touched. The exact list is the
+  NEUTRAL / REAL table of [[#derive-hash]] at the start commit.
 - **Options.**
   - (a) Re-derive the affected passes on every store, announced. It is what a stamp means, and
     it needs no new mechanism. Cost per store is not measured here.
@@ -1090,11 +1098,11 @@ edit.** {#d24}
     (AC-18's equal digest). It does not exist and is not specified here; it would be a new
     requirement with its own tests.
   - (c) Make no real edit to a pass file in plan-29: slice c would have to justify every handler
-    there, which conflicts with `CLAUDE.md#no-silent-failures` on the ingest paths, and 29.5's
-    declared rows would stay declared.
+    there, which conflicts with `CLAUDE.md#no-silent-failures` on the ingest paths, and the 22
+    declared rows would stay in 29.5's allow list with no date.
 - **Recommended:** (a).
 - **What the specs do meanwhile.** They are complete without the answer: deploy B is gated on
-  the user's go, and that go is where D24 is answered. Nothing in 29.2 or 29.3 changes under
+  the user's go, and that go is where D27 is answered. Nothing in 29.2 or 29.3 changes under
   (a) or (c); (b) would add a requirement to [[#r8]].
 
 ## Review findings folded on 2026-11-14 {#fold}
@@ -1165,7 +1173,7 @@ under ruling L108 ([[plan-review-2026-11-13#lead]]).
 | NB2: the re-stamps had no safe mechanism | new requirement R8: a `derive_rehash` op, `rmx derive rehash` and a verb with MCP parity; a stamp is converted only on proof, `version` and `derived_at` are kept, history is marked rehash, compile scopes included, counts printed; AC-24 to AC-28; ten mutations | [[#r8]], [[#r8-rule]] |
 | NB2: nothing may re-stamp through `stamp_derive` | stated; held by AC-28 | [[#r8]] |
 | NS1, this spec's half: the claim that 29.5's union change shows in `derive status` | removed from `#derive-hash` and from the D4 section; the section now says which hash a stamp is compared with | [[#derive-hash]], [[#d4]] |
-| NS1: 29.5's phase-3 edits to pass modules | named as real edits that ship in deploy B; 29.5's anchor for the declared rows is asked of its author and not yet cited | [[#derive-hash]] |
+| NS1: 29.5's phase-3 edits to pass modules | named as real edits that ship in deploy B; 29.5's anchors cited (`#r6`, `#r6-pass-rows`, `#ac-7`, `#ac-6`, `#fact-derive`); owner is 29.3 slice c | [[#derive-hash]]; [[task-29.3-converge-shapes#c-pass-rows]] |
 | NS2: the normal form erased dataclass fields | annotated assignments are kept in `@dataclass`, `NamedTuple` and `TypedDict` bodies; five AC-20 rows; two mutations | [[#r7]], AC-20 |
 | NS3: the compile-scope comparison had no tag rule | one comparison function for both sites; `code_unknown` does not set `needs_compile`; AC-21's compile case | [[#r7-compare]], AC-21 |
 | M9: the Python version in the tag has a standing cost | stated in R7 and put in the deploy checklist; the stamp keeps a raw-bytes digest so the rehash can prove a stamp across interpreters | [[#r7]], [[#r7-value]], [[#k10]], [[#files]] |
@@ -1176,8 +1184,8 @@ The rehash proves a stamp against the current files. Rulings L107 (real edits sh
 release) and L108 (R7's release uses the rehash) therefore cannot both clear a pass whose file
 changes in that release. This spec resolves the part it can: R7's release is two deploys, with
 the rehash between them ([[#r7-release]], [[#k11]]), so every neutral edit is covered. The part
-it cannot resolve is a real edit to a pass file, which is put to the user as `plan-29 D24`
-([[#d24]]).
+it cannot resolve is a real edit to a pass file, which is put to the user as `plan-29 D27`
+([[#d27]]).
 
 ## Out of scope {#out-of-scope}
 
