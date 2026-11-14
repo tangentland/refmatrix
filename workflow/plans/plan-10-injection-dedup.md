@@ -134,9 +134,12 @@ curator status on them (Q9), and labels every hook row with the prompt family
 
 ### Measured after ship {#ab}
 
-A per-session live A/B, `dedupe` vs `full`, NESTED in the handhold outcome experiment as a
-declared factor: arm A splits into `A+dedupe` / `A+full` (L20). 10.2 is built before the
-experiment starts, and the experiment's 3-calendar-day run (L79) IS this A/B
+An A/B, `dedupe` vs `full`, NESTED in the handhold outcome experiment as a declared factor:
+arm A splits into `A+dedupe` / `A+full` (L20). Under L83 (the user's Q14: "drop the live part"),
+it is read ONLY from plan-28's paired re-entry series, whose runner sets each run's cell. The
+user's live sessions are never assigned to an arm and always run `A+dedupe`, the shipped default
+(Q13). A reading below plan-28's pre-registered minimum n of paired tasks per cell is
+"underpowered, no verdict". 10.2 is built before the series starts
 ([[task-10.2-plan-10-injection-dedup#r7]]). Its "used" outcome counts only R12 explicit uses plus
 `cited_in_answer` (L27). A later arm, 4+3b (baseline-delivered
 non-held first, then new candidates, then held into leftover budget, the rest named), is recorded
@@ -198,6 +201,7 @@ but never dedupes; PreCompact and explicit pulls neither.
 | h16 | Held names on the line (lead ruling on 10.2 `#open-held-mark`) | (a) marked `·held`, inside the line's bytes; one rank order with over-budget members | 2026-11-13 |
 | A1 | Plan approval | approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14); 10.2-10.6 approved to build; 10.1 stays complete ([[#approval]]) | 2026-11-14 |
 | L79 | Experiment period (user, 2026-11-14) | plan-28's session leg runs 3 calendar days (72 h), arms concurrent, never extended; 10.2's 40 per cell per store is a minimum n, and below it the reading is "underpowered, no verdict" ([[task-10.2-plan-10-injection-dedup#rev-round-7]]) | 2026-11-14 |
+| L83 | Live A/B (user, Q14, 2026-11-14: "drop the live part") | no live draw: 10.2's nested reading comes from plan-28's paired series against 28.4's minimum n of paired tasks per cell; `arms.cell()` reads the runner's `RMX_HANDHOLD_CELL`; live sessions run `A+dedupe`; supersedes L79's period text ([[task-10.2-plan-10-injection-dedup#rev-round-8]]) | 2026-11-14 |
 | L30 | Build order (plan review, lead) | only 10.3 builds early; 10.5 probe → 10.6 → 10.4 → 10.2 after T4, ahead of the experiment | 2026-11-13 |
 
 ## Task Breakdown {#task-breakdown}

@@ -49,7 +49,8 @@ same names-only dedupe as human prompts (Q10, built in 10.2), and no injection g
 
 What stays is the predicate and its three non-injection consumers: the focus graph (the lead's
 decision: those turns are not user intent), curator status (Q9), and a family label on every
-hook row so 10.2's live A/B and the reports can split by it. Today `stm.is_ambient_text`
+hook row so 10.2's A/B reading (from plan-28's paired series, L83) and the reports can split by
+it. Today `stm.is_ambient_text`
 (`stm.py:108`) knows three shapes and `cli._is_ambient_prompt` (`cli.py:1981`) is a verbatim copy.
 
 ## Census (read-only, 2026-11-13, counts and prefixes only) {#census}
@@ -154,7 +155,8 @@ entries that are not tool results):
      family; the share of ring `input` events that are non-human (expected 0 for the new families).
    - Written to `workflow/measurements/non-human-predicate-2026-11.md` (GMD), counts only.
 6. **R6 History.** Rev 2's injection gate, policy table and its with/without A/B are withdrawn
-   (Q10); the live A/B is 10.2's (`dedupe` vs `full`, [[task-10.2-plan-10-injection-dedup#r7]]).
+   (Q10); the A/B is 10.2's (`dedupe` vs `full`, read from plan-28's paired series under L83,
+   [[task-10.2-plan-10-injection-dedup#r7]]).
    {#r6}
 
 ## Acceptance criteria {#acceptance}
@@ -253,3 +255,6 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]]
 (L45: gates come from the specs). {#rev-round-6-bsd}
 
 rel: derives-from -> [[bsd-spec-t3ab-ff1d453-369e0b5]]
+
+**L83 wording (2026-11-14).** "10.2's live A/B" now reads "10.2's A/B, from plan-28's paired
+series". The user dropped the live leg (Q14), and nothing in 10.4 changes. {#rev-round-8-l83}

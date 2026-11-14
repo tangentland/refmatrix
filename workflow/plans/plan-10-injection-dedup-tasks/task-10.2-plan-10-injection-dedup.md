@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: task-10.2-plan-10-injection-dedup
-title: "Task 10.2: names-only dedupe of the per-prompt payloads — an item the session already holds is removed from scan-prompt and the per-prompt recall and named on one 'still in play' line; nothing new is pulled in; live A/B dedupe vs full"
+title: "Task 10.2: names-only dedupe of the per-prompt payloads — an item the session already holds is removed from scan-prompt and the per-prompt recall and named on one 'still in play' line; nothing new is pulled in; the dedupe-vs-full reading comes from plan-28's paired series (L83)"
 tags: [task, plan-10, scan-prompt, memory-recall, pack, injection, dedupe, telemetry]
 metadata:
   node_type: task
@@ -170,54 +170,40 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
    The row carries `held_n`, `held_named`, `held_overflow` and `held_saved_bytes`: the bytes the
    held rows would have rendered as at their `full`-run tiers, minus their bytes on the line.
    `rmx telemetry --context` shows the held share and the bytes saved per channel. {#r6}
-7. **R7 Live A/B, per session (moved from 10.4 R7, h11).** {#r7}
-   - **Arms:** `dedupe` vs `full` (`held` is the empty set), at equal weights, in refmatrix and
-     cliquedb.
-   - **The run is the handhold experiment's run (L20).** The A/B is not a serial step and has no
-     period of its own. It is a declared factor of the experiment: arm A (push on) splits into
-     `A+dedupe` / `A+full`, arm B (no push) has no dedupe factor, and arm C (bare) is never drawn on
-     the session leg. Per Q4 (randomised) and L53 P-10, C runs only on plan-28's paired leg, where
-     the runner sets the cell explicitly per run. `SESSION_ARMS` holds C at weight 0 for that
-     reason. The experiment's spec owns the period: 3 calendar days (72 hours) from its start,
-     with the arms concurrent and never extended, not even by a pause (L79). It is frozen before
-     the start by [[task-28.4-preregistration-freeze]], along with its salt and its user-gated
-     start. 40 sessions per cell per store is 10.2's MINIMUM n (frozen in 28.4 R2), not an end
-     rule
-     ([[task-28.5-run-and-report]]). That spec is [[plan-28-handhold-outcome-experiment]], from
-     [[exploration-handhold-outcome-experiment#assignment]]. Ownership is split per
+7. **R7 The nested A/B, read from plan-28's paired series (L83; moved from 10.4 R7, h11).** {#r7}
+   - **No live A/B (L83, the user's Q14: "drop the live part").** The user's own sessions are
+     never assigned to an arm, and nothing is drawn at SessionStart. Every live session runs
+     `A+dedupe`, the shipped default (Q13). The L79 period text (3 calendar days) is superseded
+     by L83: the series is not time-boxed.
+   - **Arms:** `A+dedupe` vs `A+full` (`held` is the empty set). This is a declared factor of
+     plan-28's ONE leg, the paired re-entry leg (fresh agents resuming real handoffs on isolated
+     littlebig clones; [[plan-28-handhold-outcome-experiment]]). Its runner
+     ([[task-28.2-paired-reentry-runner]]) sets each run's cell explicitly: `A+dedupe`,
+     `A+full`, `B` (push off) or `C` (bare). The series, its start and pause rules, and the
+     pre-registered minimum n of paired tasks per cell are plan-28's, frozen by
+     [[task-28.4-preregistration-freeze]]. Ownership is split per
      [[task-28.1-session-arms-and-push-switch#ownership]].
-   - **One arm table, built here, store-scoped:** 10.2 is built before the experiment starts, so
-     it creates `src/refmatrix/arms.py`. It holds `arms.SESSION_ARMS`, the experiment's full cell
-     table (`A+dedupe`, `A+full`, `B`, and `C` at weight 0). It also holds the period records:
-     each record carries `id`, `salt`, `start`, `end`, `scope` (project slugs) and `cells` with
-     weights. 10.2 ships with NO active period. `arms.draw(session_id, *, root, now=None) -> str`
-     is a pure function with no state file. Its inputs are `sha256(session_id + salt)`, the slug
-     of `root` and `now` in `[start, end)`. It returns `A+dedupe` when `root`'s slug is outside
-     the active period's `scope`, or when no period is active at `now`. The scope matters because
-     the user's Q5 limits the experiment to refmatrix and cliquedb, while `arms.py` ships in the
-     deployed code to every store: a store-blind draw would randomise the whole fleet (lead
-     ruling, 2026-11-13, on spec-t3c's request). **The cell is fixed for the session at SessionStart** (bsd-spec-t3c r1 m2, at spec-t3c's
-     request; accepted by the lead as L59). The SessionStart focus hook calls `arms.draw` ONCE, with `now` = the hook's time,
-     and ONLY when `stm/<session>.arm.json` does not exist AND this store's slug is in the
-     `scope` of SOME period record, active or future (bsd-spec-t3c r2 m6, lead ruling). Otherwise
-     it writes nothing (no file, no `session_arm` row), and `session_cell`'s missing-file default
-     `A+dedupe` applies. When it does write, the file is `{cell, period, t}` (temp-file +
-     replace, one writer), and the arm is recorded once (`session_arm` on a `cli.log` row). **SessionStart on `compact`, `resume` or `clear` never redraws and never overwrites
-     the file** (lead ruling, 2026-11-13, r3). An existing file, readable or not, is left as it
-     is.
-     `arms.session_cell(session_id, *, root) -> str` reads that file. It returns `A+dedupe` when
-     the file is missing. When the file is unreadable, it also prints one stderr line and returns
-     `A+dedupe`. **The verb and scan-prompt ask `arms.session_cell` for the dedupe factor, never
-     `arms.draw`.** That way a session that straddles a period's `start` or `end` cannot flip
-     its factor midway. 10.2 builds `session_cell` and the arm file because it is built before
-     28.1. The experiment's [[task-28.1-session-arms-and-push-switch]] then extends the arm file
-     (`source`, `run`) and adds `arms.push_on` (arm B's push-off), `arms.paired_override` (the
-     paired leg's `RMX_HANDHOLD_CELL`, which uses no period record), its own inert period records,
-     and `arm_period` on the SessionStart row. `session_arm` is not
-     21.1's per-prompt `arm`.
-   - **Outcomes, counts only (L27, h14):** injected bytes per human prompt (all per-prompt
-     bytes of the session, non-human turns included, divided by its human prompts); used items per
-     100 human prompts, where "used" is ONLY a 21.1 R12 explicit `used` event or a
+   - **The switch, built here:** 10.2 is built before plan-28, so it creates
+     `src/refmatrix/arms.py` holding:
+     - `arms.CELLS = ("A+dedupe", "A+full", "B", "C")`, the one cell enum (no weights, no period
+       records, no draw);
+     - `arms.cell() -> str`, read in the CLIENT process only (the hook, CLI or MCP process the
+       `claude` session spawned). It reads `RMX_HANDHOLD_CELL`, which the paired runner exports
+       into the `claude` process and which every hook inherits:
+       - unset → `A+dedupe`;
+       - a value in `CELLS` → that value;
+       - any other value → one `Error: RMX_HANDHOLD_CELL …` stderr line, `arm_error` on the call's
+         row, and `A+dedupe`. A hook never crashes on it.
+
+     The verb and scan-prompt call `arms.cell()` once per call: `A+full` → `held` is the empty
+     set; `A+dedupe` → dedupe. 10.2 passes `B` and `C` through unchanged; their push-off and
+     bare behaviour is plan-28's (28.1 `push_on`, the bare profile). The call's row records `arm`
+     only when `RMX_HANDHOLD_CELL` is set. That is distinct from 21.1's per-prompt `arm`, so it is
+     written as `handhold_cell`. 28.1 adds `paired_override()` (run id, as-of) on top of
+     `arms.cell()`, so `arms.cell()` stays the ONE reader of `RMX_HANDHOLD_CELL`.
+   - **Outcomes, counts only (L27, h14), per paired run of the series:** injected bytes per
+     human prompt (all per-prompt bytes of the run, non-human turns included, divided by its
+     human prompts); used items per 100 human prompts, where "used" is ONLY a 21.1 R12 explicit `used` event or a
      `cited_in_answer` hit (L18's rule), with names-line items counted apart and held members
      apart from over-budget ones; and the handhold experiment's orientation proxies where its
      scorer exists (recorded, not a band). 21.5's legs (`tool`, `bash_name` and the rest) are NOT
@@ -225,14 +211,14 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
      experiment's ONE transcript scorer ([[task-28.3-outcome-scorer#r7]]), and 10.2 has no copy.
    - **Bands, written here before the run** (S9 rows added by lead ruling, 2026-11-13). Rows
      are checked in this order:
-     1. **The period's end and its minimums are plan-28's** (bsd-spec-t3ab r2 S2, lead ruling).
-        10.2 defers to [[task-28.4-preregistration-freeze]]'s end rule: the period ends 3
-        calendar days after its start (L79). If fewer than 40 sessions per cell per store (10.2's
-        minimum n) are reached, the reading is "underpowered, no verdict", which 10.2 reads as
-        INCONCLUSIVE with no default change. 10.2 has no floor or extension of its own.
+     1. **The minimum n is plan-28's** (L83). The reading is taken from the paired series,
+        against [[task-28.4-preregistration-freeze]]'s pre-registered minimum n of paired tasks
+        per cell for this nested outcome. Below it, the reading is "underpowered, no verdict",
+        which 10.2 reads as INCONCLUSIVE with no default change. 10.2 states no n, period or
+        extension of its own.
      2. **Bytes.** If `dedupe` cuts bytes per human prompt by less than 30%, there is no default
         change: the run does not confirm `A+dedupe` as the default, and the result is reported.
-        Dedupe stays ON. It ships on by default (`A+dedupe` outside any period) because the user
+        Dedupe stays ON. It ships on by default (`A+dedupe` for every live session) because the user
         chose names-only dedupe "now" in Q13, and this row never flips it to `A+full` (lead
         ruling, 2026-11-13).
      3. **Used rate (only when bytes cut ≥ 30%):**
@@ -241,17 +227,17 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
         - more than 15% below → the user decides whether the names line needs more than
           names.
    - **The switch is for measurement only:** `arms.py` and its branches are deleted after the
-     experiment's period, by the experiment's close-out, as [[task-28.5-run-and-report#r8]]
+     paired series, by the experiment's close-out, as [[task-28.5-run-and-report#r8]]
      specifies. **10.2 creates the deferral row as part of its build** (S8): a row in
      `workflow/deferral_registry.md` with these fields:
      - module `src/refmatrix/arms.py` (measurement only);
      - owner plan-28;
      - deletion at 28.5 R8;
-     - end date "written by 28.5 at the period's commit".
+     - end date "written by 28.5 when the series closes".
 
-     28.1 R5 widens the row and 28.5 R8 closes it. Outside every active
-     period, and for every out-of-scope store, `draw` returns `A+dedupe` (push on, dedupe on).
-     Correctness never depends on it.
+     28.1 R5 widens the row and 28.5 R8 closes it. With `RMX_HANDHOLD_CELL` unset, which is
+     every live session, `arms.cell()` returns `A+dedupe` (push on, dedupe on). Correctness never
+     depends on the switch.
    - **Future arm (Q13), not built:** `4+3b` — baseline-delivered non-held rows first, then new
      candidates, then held rows into leftover budget, the rest on the names line. A later A/B adds
      it as a third cell under its own spec.
@@ -322,22 +308,22 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
    `prompt_family: "agent-message"`.
 10. **AC-10 State failures.** An unreadable channel file → everything full, one stderr line,
     `held_error` on the row, exit 0; an unreadable marker → full (10.3's reset).
-11. **AC-11 The arm draw.** `arms.draw` is deterministic per session id, salt, root and `now`; 400 synthetic
-    ids split between `A+dedupe` and `A+full` within ± 30 of their table share; a `full` session's payloads equal the no-dedupe render; with an in-scope test period, the
-    SessionStart entry records one `session_arm` row. As shipped (no active period), every session on every
-    root is `A+dedupe`. With a test period scoped to one slug, an in-scope root at `now` inside
-    `[start, end)` draws the four cells at their table weights, and C is never drawn. An
-    out-of-scope root draws `A+dedupe`, and so does an in-scope root at `now` = `end`.
-    A session whose SessionStart falls inside `[start, end)` keeps its drawn cell on every later
-    prompt, including prompts after `end`. A `resume` (and a `compact` or `clear`) SessionStart
-    after `end` keeps the original cell: the file is unchanged byte-for-byte, and no second
-    `session_arm` row is written. A session in a store whose slug is in no period record's
-    `scope` (as shipped: every store, since no record exists) leaves no arm file and no
-    `session_arm` row, and reads `A+dedupe`. A session that started before `start` stays
-    `A+dedupe` throughout. A missing arm file reads `A+dedupe`. An unreadable one reads
-    `A+dedupe` with one stderr line. Both the verb and scan-prompt call `arms.session_cell`.
-    `workflow/deferral_registry.md` holds the `arms.py` row (owner plan-28, deletion 28.5 R8),
-    added in 10.2's branch (S8).
+11. **AC-11 The switch.**
+    - With `RMX_HANDHOLD_CELL` unset, both the verb and scan-prompt run `A+dedupe` through the
+      GENERATED UserPromptSubmit commands.
+    - With `A+full` exported into the hook's environment, the payloads equal the no-dedupe render
+      on the same fixture, and the rows carry `handhold_cell: "A+full"`.
+    - With `A+dedupe`, they equal the dedupe render.
+    - With a value outside `CELLS`, there is one `Error:` stderr line, `arm_error` on the row,
+      exit 0 and the `A+dedupe` render.
+    - The generated SessionStart entries write no arm file and no arm row, and nothing under
+      `stm/` names an arm.
+    - A structural test parses `src/refmatrix/`:
+      - `RMX_HANDHOLD_CELL` is read only in `arms.cell`;
+      - `arms` has no `draw`, `session_cell` or period record;
+      - the verb and scan-prompt call `arms.cell()`.
+    - `workflow/deferral_registry.md` holds the `arms.py` row (owner plan-28, deletion 28.5
+      R8), added in 10.2's branch (S8).
 12. **AC-12 Offline parity** (R8): the replay with `src/` imports reproduces 10.5's v3 figures on
     the same clones.
 13. **AC-13 Mutations that must FAIL a test:** a held item dropped without a name (AC-2); a
@@ -347,12 +333,10 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
     fitter (AC-6); `(+N)` items given `delivered` events (AC-6); `session_start` naming (AC-8); `rmx
     context` deduped (AC-8); an unreadable state file read as "all held" (AC-10); the scan filter
     keyed by name instead of `telemetry.item_key` (a same-name pair in two files, AC-2);
-    `arms.draw` using a random source (AC-11); the per-prompt read calling `arms.draw` with the wall
-    clock instead of `arms.session_cell` (AC-11: the straddling session flips at `end`); a redraw
-    on `resume` (or an overwrite of an existing arm file) (AC-11: the resume-after-`end` leg reads
-    `A+dedupe` instead of the original cell); the arm file written for every store regardless of
-    scope (AC-11: the out-of-scope store leaves a file); `draw` ignoring `scope` (AC-11: the out-of-scope
-    root is randomised); `end` treated as inclusive (AC-11); a non-held row promoted into freed bytes (AC-2,
+    a live session assigned a cell (any SessionStart write of an arm, or `arms.cell()` returning
+    anything but `A+dedupe` with the variable unset) (AC-11); `RMX_HANDHOLD_CELL` read outside
+    `arms.cell` (AC-11, the structural test); an invalid cell crashing the hook or silently
+    taken as `A+full` (AC-11); a non-held row promoted into freed bytes (AC-2,
     tier pinning); held removal applied BEFORE the ladder (AC-2: the 40-row fixture shows a
     promotion); held members printed on a second, 10.2-owned line (AC-14); a held member recorded
     with 25.1b's over-budget `form` (AC-7); the tier ignored in `HeldSet.covers` (AC-2, the
@@ -375,11 +359,11 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
 | `src/refmatrix/recall_pack.py` (25.1, 25.1b) | none: `pack`, its `held` parameter (the `Held` protocol), tier pinning and the line renderer are 25.1b's (r2 S1) |
 | `src/refmatrix/hook_budget.py` (25.1, 25.1b) | none |
 | `src/refmatrix/verbs.py` (`memory_recall`, `_memory_recall_rows`) | `internal["dedupe"]` → `stm.held_items` → passes the `HeldSet` to 25.1b's `pack(held=…)` |
-| `src/refmatrix/cli.py` (`_memory_recall_impl`, `_RecallCall`, `scan-prompt`, `focus hook --event session-start`) | the dedupe context (`arms.session_cell`); `record_full` after the print; event fields; at SessionStart the one `arms.draw`, the arm file and the `session_arm` row |
+| `src/refmatrix/cli.py` (`_memory_recall_impl`, `_RecallCall`, `scan-prompt`) | the dedupe context (`arms.cell()`); `record_full` after the print; event fields; `handhold_cell` / `arm_error` on the row |
 | `src/refmatrix/scan.py` | the held filter through `shown`, the names block |
 | `src/refmatrix/context.py` (`render_text_spans`) | `omit_anchor=` |
-| `workflow/deferral_registry.md` | the `arms.py` row (S8): measurement only (with `stm/<session>.arm.json`), owner plan-28, deletion 28.5 R8, end date written by 28.5 |
-| `src/refmatrix/arms.py` (new, measurement only; deleted by 28.5 R8 after the period) | `SESSION_ARMS`, period records (`id`, `salt`, `start`, `end`, `scope`, `cells`), none active; `draw(session_id, *, root, now=None)`; `session_cell(session_id, *, root)` over `stm/<session>.arm.json` |
+| `workflow/deferral_registry.md` | the `arms.py` row (S8): measurement only, owner plan-28, deletion 28.5 R8, end date written by 28.5 when the series closes |
+| `src/refmatrix/arms.py` (new, measurement only; deleted by 28.5 R8 after the paired series) | `CELLS`; `cell()` reading `RMX_HANDHOLD_CELL` in the client process (L83: no draw, no period record, no arm file) |
 | `tests/test_task10_2_names_only.py` (new) | AC-1..AC-14 |
 | `workflow/measurements/names-only-2026-11.md` (new) | R7's live run and R8's parity |
 
@@ -396,7 +380,7 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
 - Implementation summary at `workflow/implementation_summaries/task-10.2-plan-10-injection-dedup.md`.
 - The `arms.py` deferral row is in `workflow/deferral_registry.md` at merge (S8).
 - R8's parity against v3 at GREEN; R7's live verdict after the experiment's period, each band
-  named, or "underpowered, no verdict" (L79).
+  named, or "underpowered, no verdict" (L79, L83), read from plan-28's paired series.
 - Committed on branch `task-10.2-plan-10-injection-dedup`; merged `--no-ff` to `master`.
 
 ## Revision round 6 (2026-11-13, spec wave, spec-t3b) {#rev-round-6}
@@ -417,6 +401,7 @@ rel: depends-on -> [[task-25.1b-hook-output-ladder-and-spill]]
 | Every held row's body goes to 25.1b's spill page (k3 step 4); held overflow is counted `(+N)` | L15 | R3, AC-6 |
 | One rank order across both member kinds (10.6 p2); held members marked `·held` | 25.1b k2; lead ruling on [[#open-held-mark]] (a) | h16, R3, R4, AC-1, AC-14 |
 | `arms.draw(session_id, *, root, now=None)` store-scoped: period records carry `scope`; ships with no active period; out of scope or out of period → `A+dedupe` | spec-t3c, plan-28 handshake (`5ac42e5`): arms.py ships to every store | R7, AC-11 |
+| No live A/B: no SessionStart draw, arm file, `session_cell`, period record or scope machinery; `arms.cell()` reads the paired runner's `RMX_HANDHOLD_CELL`; the nested reading comes from plan-28's paired series against 28.4's minimum n of paired tasks per cell; L79's period superseded; dedupe ON stays the live default | L83 (the user's Q14, 2026-11-14; dev master `715e356`) | R7, AC-11, AC-13, Files, `#done` |
 | Period = plan-28's 3 calendar days (72 h, never extended); 40 per cell per store is 10.2's minimum n; below it "underpowered, no verdict" = INCONCLUSIVE; the 14-day / whichever-later / 42-day text removed | L79 (user, 2026-11-14; Q11 a; dev master `8d88d29`); plan-28 at spec-wave-t3c `7758d2a` | R7, `#done` |
 | v3 re-run trigger re-keyed to G22 rev 2's operational gate (Q9 / L60 supersede the ingest exclusion) | bsd-spec-t3ab r3 S3, lead ruling | R8 |
 | Arm file and `session_arm` row written only when the store's slug is in some period record's `scope` | bsd-spec-t3c r2 m6, lead ruling | R7, AC-11, AC-13 |
@@ -459,3 +444,37 @@ rel: depends-on -> [[task-28.4-preregistration-freeze]]
 | The L79 revision (plan-28's 3-calendar-day period; 40 sessions per cell per store is 10.2's minimum n, below it "underpowered, no verdict" = INCONCLUSIVE) is approved by the lead on the user's pattern (d9co) after a CLEAN ch-bsd confirm-lite | `workflow/bullshit/2026-11-14-0155-spec-t3b-l79-ca4b9a7.md` (CLEAN, over `spec-wave-t3b` `5233db4..ca4b9a7`) | status unchanged |
 
 rel: derives-from -> [[bsd-spec-t3b-l79-ca4b9a7]]
+
+## Revision round 8 (2026-11-14, L83) {#rev-round-8}
+
+The user, 2026-11-14, answering Q14: "drop the live part" (measured live rates: refmatrix about
+0.5 sessions a day, cliquedb about 0.1). L83 on dev master `715e356` gives plan-28 ONE leg, the
+paired re-entry leg. Every reading comes from that leg, including 10.2's nested `A+dedupe` vs
+`A+full`, and each reading is taken against its own pre-registered minimum n of paired tasks per
+cell. The series is not time-boxed, and the user's sessions are never assigned to an arm.
+{#rev-round-8-why}
+
+- **R7, removed:** the live draw (`arms.draw`), the period records and their store `scope`, the
+  SessionStart arm file (`stm/<session>.arm.json`), `arms.session_cell`, the `session_arm` row,
+  the in-scope-only write rule (r2 m6), the no-redraw rule (r3) and L79's 3-day period text.
+  Those rules existed only for the live draw, and nothing else needs them.
+- **R7, kept or new:** the switch. `arms.CELLS` plus `arms.cell()` read `RMX_HANDHOLD_CELL`,
+  which the paired runner (28.2) sets per run. Unset → `A+dedupe` (Q13's live default). An invalid
+  value gets a loud stderr line, `arm_error` and `A+dedupe`.
+- **Band row 1:** the minimum n is 28.4's paired-task minimum per cell. Below it the reading is
+  "underpowered, no verdict" = INCONCLUSIVE, no default change.
+- **AC-11:** rewritten for the switch. **AC-13:** the draw, scope, `end` and redraw mutations are
+  replaced by "a live session assigned a cell", "`RMX_HANDHOLD_CELL` read outside `arms.cell`"
+  and "an invalid cell crashing or read as `A+full`".
+- **Not regressed:** 25.1b's `Held` contract (R3, `HeldSet.covers(key, full_run_tier)`, h15),
+  `telemetry.item_key` (h8), AC-2's tier legs, AC-14 and the deferral row (S8) are unchanged.
+
+The status stays `approved`, pending a confirm-lite. plan-28's side (28.1 `#ownership`, a6,
+`paired_override` over `arms.cell()`, 28.4's paired minimum for 10.2's nested outcome) is
+spec-t3c's amendment under the same ruling.
+
+rel: amends -> [[#r7]]
+rel: supersedes -> [[#rev-round-7]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: depends-on -> [[task-28.2-paired-reentry-runner]]
+rel: depends-on -> [[task-28.4-preregistration-freeze]]
