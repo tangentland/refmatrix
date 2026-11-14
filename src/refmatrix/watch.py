@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from refmatrix.ingest import CODE_EXTS, DOC_EXTS, should_ignore
+from refmatrix.ingest import CODE_EXTS, DOC_EXTS, is_builtin_include_path, should_ignore
 from refmatrix.store import Store
 from refmatrix.sync import sync_files
 
@@ -39,6 +39,12 @@ def is_relevant(p: Path, root: Path | None = None) -> bool:
     `dist/` / `build/` files the ingest walk skipped."""
     if p.suffix.lower() not in SUPPORTED_EXTS:
         return False
+    # A built-in-include path always reaches `_sync_one` (bug-216 remedy
+    # M1-r2, ruling L94): its frontmatter removed (file kept) or the file
+    # deleted, the hidden-dir rule excludes it here, the event was dropped, and
+    # the stale doc stayed. `_sync_one` judges it and purges what is now out.
+    if is_builtin_include_path(p, root):
+        return True
     return not should_ignore(p, root)
 
 

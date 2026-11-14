@@ -5920,6 +5920,17 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
             # whole merge on disk. merge_slots closes every connection it
             # opened and removes a half-built target on any error.
             report = rm.merge_slots(a_path, b_path, tmp_target, dry_run=dry_run)
+            # Entities moved to a fresh id are named in the reply and the log,
+            # never silent (bug-216 remedy B2c, bug-227): their vectors stay on
+            # the old id until `rmx embed` re-embeds them (the merge marks both
+            # ids unembedded).
+            _moved = report.get("fresh_moved") or []
+            if _moved:
+                report["re_embed"] = (
+                    f"{len(_moved)} entity id(s) moved to a fresh id; their vectors were "
+                    f"not moved — run `rmx embed` to re-embed: "
+                    + ", ".join(f"{o}->{n}" for o, n in _moved))
+                d._log(f"replica merge{' (dry run)' if dry_run else ''}: {report['re_embed']}")
         except Exception as exc:
             err = f"merge build: {exc!r}"
             rerr = _reopen_writer_after_merge(d, prev_writer, "merge build failed")

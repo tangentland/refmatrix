@@ -9147,6 +9147,8 @@ def replica_merge(dry_run, as_json, yes):
         f"B-loser={rm['b_loser_count']} "
         f"edge_cases={rm['fresh_alloc_edge_cases']}"
     )
+    if report.get("re_embed"):
+        console.print(f"[yellow]{rich_escape(report['re_embed'])}[/]")
     if not report.get("dry_run"):
         console.print(
             f"\n[bold]writer:[/] slot {report['writer_slot']}, "

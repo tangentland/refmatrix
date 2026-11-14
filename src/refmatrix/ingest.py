@@ -254,28 +254,38 @@ def find_project_root(start: Path) -> "Path | None":
 
 
 def ingest_ignore_root(s: "Store", target: Path) -> Path:
-    """The PROJECT ROOT an ingest of `target` is judged against -- the spec is
-    read there and the segment rules apply below it -- never the target
-    itself (bug-216 remedy B1, ch-bsd bsd-216 r1, ruling L81, 2026-11-13).
+    """The PROJECT ROOT an ingest of `target` is judged against: the store's own
+    project (the parent of its `.refmatrix/`), ALWAYS -- never the target, never
+    another store (bug-216 remedy B1 + B1-r2, rulings L81 + L94, 2026-11-14).
 
-    With the target as the root, R2-base's `base = root` default meant a
-    target's OWN hidden ancestors were never checked: `rmx ingest
-    <proj>/.claude/projects/x/memory` and MCP `rmx_ingest` on a memdir stored
-    the memories as kind=doc, and `rmx ingest <proj>/.claude` stored the agent
-    templates -- where 758bca1, reading the absolute path, stored nothing.
+    - A target INSIDE the project: the spec is read there and the segment rules
+      apply below it, so `rmx ingest <proj>/.claude[/projects/x/memory]` stores
+      nothing but a built-in-included GMD profile.
+    - A target OUTSIDE it has no path relative to the root, so `ignore_reason`
+      judges its ABSOLUTE path, as 758bca1 did: a memdir under any `.claude/`
+      is excluded whole. Two earlier fallbacks were wrong: the target itself
+      (r1: its own hidden ancestors went unchecked and memories landed as
+      kind=doc) and the nearest `.refmatrix/` above it (r2: a FOREIGN store's
+      spec -- the global store's `claude_tools` line -- silently dropped a tree
+      this store was asked to ingest).
 
-    The store's own project (the parent of its `.refmatrix/`) when the target
-    lies inside it; otherwise the nearest `.refmatrix/` above the target;
-    otherwise the target. `ingest-gmd <dir>` keeps its explicit `base=<dir>`
-    carve-out (`collect_gmd_files`), which `rmx session ingest` needs."""
-    t = target.resolve()
+    The target is the root only for a store with no root at all.
+    `ingest-gmd <dir>` keeps its explicit `base=<dir>` carve-out
+    (`collect_gmd_files`), which `rmx session ingest` needs."""
     try:
-        store_proj = Path(s.root).resolve().parent
-    except (AttributeError, OSError):
-        store_proj = None
-    if store_proj is not None and (t == store_proj or store_proj in t.parents):
-        return store_proj
-    return find_project_root(t) or t
+        return Path(s.root).resolve().parent
+    except (AttributeError, OSError, TypeError):
+        return target.resolve()
+
+
+def is_builtin_include_path(p: Path, root: Path | None) -> bool:
+    """True when `p` sits at one of `BUILTIN_INCLUDES` under `root`, whatever
+    the file holds or whether it exists. The watcher passes every such path to
+    `_sync_one`, which decides include or purge (bug-216 remedy M1-r2)."""
+    if root is None:
+        return False
+    rel = _rel_to_root(p, root)
+    return rel is not None and rel.as_posix() in BUILTIN_INCLUDES
 
 
 def ignore_reason(p: Path, root: Path | None = None, *,

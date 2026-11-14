@@ -275,6 +275,23 @@ def _concept_variants(name: str) -> tuple[str, list[str]]:
 _CONCEPT_SHIFT = 32
 _ENTITY_MASK = (1 << 32) - 1
 
+def remap_fragment(bm: "BitMap64", id_map: "dict[int, int]") -> "tuple[BitMap64, int]":
+    """`bm` with `id_map` (old entity id -> new) applied to BOTH halves of every
+    packed (concept, entity) bit; returns `(remapped, bits_changed)`. THE kernel
+    for moving fragment bits with their entities: `Store.repair_fragments(id_map=)`
+    (merge_partition's collisions) and `replica_merge` step 12 (B-only rows after
+    B's ids were remapped, bug-216 remedy B2b) both call it."""
+    from pyroaring import BitMap64 as _BM
+    out = _BM()
+    changed = 0
+    for bit in bm:
+        c, e = bit >> _CONCEPT_SHIFT, bit & _ENTITY_MASK
+        nb = (id_map.get(c, c) << _CONCEPT_SHIFT) | id_map.get(e, e)
+        changed += nb != bit
+        out.add(nb)
+    return out, changed
+
+
 # Append-only fact log. Source-of-truth-in-progress: every mutation also
 # writes a JSON line to .refmatrix/facts.log unless RMX_LOG=0. The log is
 # keyed by names (not auto-IDs), so two branches that ingest disjoint
@@ -4688,13 +4705,9 @@ class Store:
         if id_map:
             remapped: dict = {}
             for key, bm in old.items():
-                out = BitMap64()
-                for bit in bm:
-                    c, e = bit >> _CONCEPT_SHIFT, bit & mask
-                    nb = self._pack(id_map.get(c, c), id_map.get(e, e))
-                    remapped_bits += nb != bit     # r5 #s5-2: visible; overlaps kept/moved, pre-dedup
-                    out.add(nb)
-                remapped[key] = out
+                # r5 #s5-2: visible; overlaps kept/moved, pre-dedup
+                remapped[key], n = remap_fragment(bm, id_map)
+                remapped_bits += n
             old_for_change = old
             old = remapped
         else:

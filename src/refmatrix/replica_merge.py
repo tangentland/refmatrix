@@ -134,7 +134,7 @@ def merge_slots(
         _unlink_target(target_path)
         con = open_duckdb(target_path)
     try:
-        merged_counts, remap_a, remap_b, fresh_alloc_count = _merge_into(
+        merged_counts, remap_a, remap_b, fresh_alloc_count, fresh_b, frag_remapped = _merge_into(
             con, a_path, b_path, tables, dry_run=dry_run,
             max_entity=max_entity, max_partition=max_partition, max_lt=max_lt)
     except BaseException:
@@ -153,9 +153,17 @@ def merge_slots(
         "a_counts": a_counts,
         "b_counts": b_counts,
         "merged_counts": merged_counts,
+        # B entities moved to a fresh id (two different entities shared an id;
+        # bug-216 remedy B2c, bug-227), `[[old, new], ...]`. Reported apart:
+        # their VECTORS are not moved -- the Lance row at the old id is
+        # whichever slot wrote last, the fresh id has none -- and the merge
+        # marks both ids unembedded so the next `rmx embed` re-embeds them.
+        "fresh_moved": [[int(o), int(n)] for o, n in sorted(fresh_b.items())],
+        "fragment_bits_remapped": frag_remapped,
         "remap": {
             "a_loser_count": len(remap_a),
-            "b_loser_count": len(remap_b),
+            # name-losers only (remap_b also carries the fresh moves)
+            "b_loser_count": len(remap_b) - len(fresh_b),
             "fresh_alloc_edge_cases": fresh_alloc_count,
         },
         "elapsed_ms": elapsed_ms,
@@ -361,9 +369,10 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
     # different (partition, kind, name). The entity steps below read a shared
     # id as ONE entity -- B's newer row overwrote A's, and A's entity, with
     # every row naming it, was lost. B's row moves to a fresh id inside the
-    # sequence headroom, and `remap_b` carries every B-side reference to it.
-    # A loser on either side frees or keeps its id under the remaps above, so
-    # it is never a candidate.
+    # sequence headroom, and `remap_b` carries every B-side reference to it. A
+    # B id that is already a name-loser needs no move (it maps to A's twin);
+    # every step that reads B by raw id excludes ALL remap_b losers, moved or
+    # name-lost (bug-216 remedy B2, bug-227): an A row at that id is A's.
     fresh_b: dict[int, int] = {}
     next_fresh = max_entity + 1
     for (bid,) in con.execute("""
@@ -415,7 +424,18 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
         SET {_set_all(con, "entities", "b", "be", "id")}
         FROM b.entities be
         WHERE m.id = be.id AND be.updated_at > m.updated_at
-              AND be.id NOT IN (SELECT old_id FROM remap_fresh_b)
+              AND be.id NOT IN (SELECT loser_id FROM remap_b)
+    """)
+
+    # A moved entity has no vector at its fresh id, and the Lance row at the old
+    # id is whichever slot embedded last (both slots share `vectors/`): mark both
+    # entities unembedded so `pending_embeddings` hands them to the next
+    # `rmx embed` (bug-216 remedy B2c). Until it runs a dense read can return the
+    # old id's vector for either entity -- the merge reply names the ids.
+    con.execute("""
+        UPDATE entities SET vectors_updated_at = NULL
+        WHERE id IN (SELECT new_id FROM remap_fresh_b)
+           OR id IN (SELECT old_id FROM remap_fresh_b)
     """)
 
     # ---- 6. concepts: drop loser ids, union --------------------------
@@ -454,11 +474,15 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
         WHERE r.loser_id IS NULL AND m.entity_id IS NULL
     """)
     # 7b. For shared entity_id rows, pull in B's content when newer.
+    # Every remap_b loser is excluded (bug-216 remedy B2a, bug-227): at a
+    # name-loser's or a MOVED entity's id the target row is A's, so a raw-id
+    # match gave A's memory B's body (step 7c carries B's body to its id).
     con.execute(f"""
         UPDATE memory_content AS m
         SET {_set_all(con, "memory_content", "b", "bc", "entity_id")}
         FROM b.memory_content bc
         WHERE m.entity_id = bc.entity_id AND bc.updated_at > m.updated_at
+              AND bc.entity_id NOT IN (SELECT loser_id FROM remap_b)
     """)
     # 7c. Loser-side mc rows: redirect entity_id via remap; insert when
     # canonical has no mc yet, then overwrite when loser's mc is newer.
@@ -570,15 +594,28 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
 
     # ---- 12. bitmap_fragments: copy union; daemon recomputes ---------
     con.execute("INSERT INTO bitmap_fragments BY NAME SELECT * FROM a.bitmap_fragments")
-    con.execute("""
-        INSERT INTO bitmap_fragments BY NAME
-        SELECT * FROM b.bitmap_fragments b
+    # B-only rows carry B's ids: a bit for a remapped B entity (name-loser or
+    # moved) must sit on the id it now has, or it names A's entity at the old
+    # id (bug-216 remedy B2b, bug-227). Remapped through `store.remap_fragment`
+    # -- the kernel `repair_fragments(id_map=...)` applies -- on these rows
+    # ONLY: `repair_fragments` maps every row, and A's rows hold A's ids.
+    from pyroaring import BitMap64
+
+    from refmatrix.store import remap_fragment
+    b_only = con.execute("""
+        SELECT partition_id, linkage, blob FROM b.bitmap_fragments b
         WHERE NOT EXISTS (
             SELECT 1 FROM bitmap_fragments m
             WHERE m.partition_id = b.partition_id
                   AND m.linkage = b.linkage
         )
-    """)
+    """).fetchall()
+    fragment_bits_remapped = 0
+    for pid, linkage, blob in b_only:
+        bm, n = remap_fragment(BitMap64.deserialize(bytes(blob)), remap_b)
+        fragment_bits_remapped += n
+        con.execute("INSERT INTO bitmap_fragments (partition_id, linkage, blob) VALUES (?, ?, ?)",
+                    [pid, linkage, bm.serialize()])
 
     # ---- 13. Final counts + checkpoint --------------------------------
     merged_counts = {t: _table_count(con, t) for t in tables}
@@ -587,11 +624,12 @@ def _merge_into(con, a_path: Path, b_path: Path, tables, *, dry_run: bool,
     con.execute("DETACH b")
     if not dry_run:
         con.execute("CHECKPOINT")
-    return merged_counts, remap_a, remap_b, fresh_alloc_count
+    return merged_counts, remap_a, remap_b, fresh_alloc_count, fresh_b, fragment_bits_remapped
 
 
 def audit_via_writer(
     writer_conn: "duckdb.DuckDBPyConnection",
+    *,
     writer_slot: str,
     reader_path: Path,
     reader_slot: str,
