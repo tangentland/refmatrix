@@ -143,8 +143,12 @@ rides on these tasks. {#non-goals-list}
 
 1. **D1, the type checker:** mypy (recommended: mature, per-module strictness and baselines) or
    pyright (faster, stricter inference).
-2. **D2, placement:** before plan-27/28 and the queue, interleaved one task at a time, or after
-   them (recommended: 29.1 and 29.4 now, since they are cheap and cut review cost at once; 29.2,
-   29.3 and 29.5 after plan-27).
+2. **D2, placement (open as Q19 in [[open-questions]]):** all of it first, right after the 0.83.0
+   deploy and the spec-branch merges and before queue item 2 (recommended, revised 2026-11-14 on
+   the user's concern that waiting makes the follow-on work slower: the split is cheapest while
+   nothing is in flight, and every later item gains from the faster suite and the gates); split
+   across the queue; or after it. If all first, the order becomes 29.1 → 29.4 → 29.5 → 29.2 ∥
+   29.3, so the split's equal-by-E-line runs use the healed suite and the new helpers and
+   annotations land in their final modules.
 3. **D3, module size target for 29.5:** about 3,000 lines (recommended) or another number.
 {#decisions-list}

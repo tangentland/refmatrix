@@ -63,6 +63,7 @@ Next id: **Q15**.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q19 | 2026-11-14 | Where does plan-29 (code quality, [[plan-29-code-quality]]) land in the post-0.83.0 queue? | a: all of it first, right after the 0.83.0 deploy and the spec-branch merges, before queue item 2, in the order 29.1 → 29.4 → 29.5 → 29.2 ∥ 29.3 (lead, revised after the user's concern); b: split — 29.1 + 29.4 in the T0 sweep, 29.2/29.3 beside items 2-3, 29.5 after item 3; c: after the queue | **assumed a**: the user, 2026-11-14: "my gut says do all of it first, but recommend splitting it. My concern is that waiting will make the follow on work slower." Read as leaning to a; open until confirmed |
 
 ### Answered {#answered}
 
