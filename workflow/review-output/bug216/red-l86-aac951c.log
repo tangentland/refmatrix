@@ -1,0 +1,61 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /Volumes/littlebig/refmatrix-bug216
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collecting ... collected 2 items
+
+tests/test_bug216_remedy_l86.py::test_l86_ingest_of_dot_claude_lands_exactly_the_builtin_included_profile FAILED [ 50%]
+tests/test_bug216_remedy_l86.py::test_l86_r4_edit_then_reingest_force_binds_both_citers PASSED [100%]
+
+=================================== FAILURES ===================================
+___ test_l86_ingest_of_dot_claude_lands_exactly_the_builtin_included_profile ___
+
+base = PosixPath('/private/tmp/b216rko0ac7e2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x115814640>
+
+    def test_l86_ingest_of_dot_claude_lands_exactly_the_builtin_included_profile(base, monkeypatch):
+        proj = base / "proj"
+        _write(proj, "docs/d.md", _gmd("d"))
+        _write(proj, ".claude/PROJECT_PROFILE.md", PROFILE_MD)
+        _write(proj, ".claude/agents/x.md", _gmd("agent-x"))
+        _write(proj, f"{MEM}/feedback_a.md", _gmd("feedback_a", extra_fm="metadata:\n  type: feedback\n"))
+        root = proj / ".refmatrix"
+        _new_store(root)
+        _point_cli_at(monkeypatch, root)
+        r = CliRunner().invoke(cli_mod.main, ["ingest", str(proj / ".claude")], catch_exceptions=False)
+        assert r.exit_code == 0, r.output
+        # "Exactly the profile" is judged by FILE: `ingest_path` also writes a relpath twin doc row
+        # for every markdown file it walks (`rmx ingest <proj>` gives both `docs/d.md` and `d`,
+        # measured 2026-11-14) — pre-existing, not bug-216's, so the twin is allowed; any doc row
+        # from another file under `.claude/` is not.
+        prof = (proj / ".claude" / "PROJECT_PROFILE.md").resolve()
+        s = _open(root)
+        try:
+            rows = [(str(k), str(n), str(Path(pth).resolve())) for k, n, pth in s._connect().execute(
+                "SELECT kind, name, path FROM entities WHERE kind = 'doc' AND path IS NOT NULL")
+                .fetchall() if str(Path(pth).resolve()).startswith(str(proj / ".claude") + "/")]
+        finally:
+            s.close()
+        others = sorted({(n, pth) for _k, n, pth in rows if pth != str(prof)})
+>       assert others == [], f"`rmx ingest <proj>/.claude` landed doc rows from other files: {others}"
+E       AssertionError: `rmx ingest <proj>/.claude` landed doc rows from other files: [('agent-x', '/private/tmp/b216rko0ac7e2/proj/.claude/agents/x.md'), ('agents/x.md', '/private/tmp/b216rko0ac7e2/proj/.claude/agents/x.md'), ('feedback_a', '/private/tmp/b216rko0ac7e2/proj/.claude/projects/x/memory/feedback_a.md'), ('projects/x/memory/feedback_a.md', '/private/tmp/b216rko0ac7e2/proj/.claude/projects/x/memory/feedback_a.md')]
+E       assert [('agent-x', ...edback_a.md')] == []
+E         
+E         Left contains 4 more items, first extra item: ('agent-x', '/private/tmp/b216rko0ac7e2/proj/.claude/agents/x.md')
+E         
+E         Full diff:
+E         - []
+E         + [
+E         +     (...
+E         
+E         ...Full output truncated (16 lines hidden), use '-vv' to show
+
+tests/test_bug216_remedy_l86.py:78: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_l86.py::test_l86_ingest_of_dot_claude_lands_exactly_the_builtin_included_profile
+========================= 1 failed, 1 passed in 4.37s ==========================
