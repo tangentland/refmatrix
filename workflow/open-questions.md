@@ -26,12 +26,13 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session 37b7498f (2026-11-13) {#session-37b7498f}
 
-Next id: **Q17**.
+Next id: **Q18**.
 
 ### Open {#open-37b7498f}
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q17 | 2026-11-14 | The user: compaction as save-state → /clear → recall-state, without the compacted session. Documented facts (Claude Code hooks/context docs): no hook or setting replaces or suppresses the summary or triggers /clear; PreCompact can BLOCK (exit 2) and its stdout becomes the summary's instructions; SessionStart `compact` output is added after compaction. Which shape? | a: automatic — PreCompact runs save-state and prints "summarise in one line; the handoff below is authoritative", SessionStart `compact` injects recall-state (summary shrinks to a line, not removed); b: exact — PreCompact on AUTO runs save-state then blocks with "state saved — type /clear", /clear's SessionStart injects recall-state (one manual /clear each time; manual /compact unchanged); c: both, with b behind a per-project switch | open |
 
 ### Answered {#answered-37b7498f}
 
