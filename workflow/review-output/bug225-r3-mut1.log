@@ -1,0 +1,54 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b225mut3r/src/refmatrix as checked-hash (bug-037)
+............................F.F......                                    [100%]
+=================================== FAILURES ===================================
+_____________ test_r3_s1_ref_to_a_tree_is_a_failure_not_not_found ______________
+
+main_and_master = (PosixPath('/private/tmp/b225-n4v1d3er'), PosixPath('/private/tmp/b225-n4v1d3er/work'))
+
+    def test_r3_s1_ref_to_a_tree_is_a_failure_not_not_found(main_and_master):
+        """Real git, exit 1 WITH stderr: origin/main names a TREE. git says "expected
+        commit type"; L100 lists this as a failure that stops the walk. At e2505f3 it
+        is skipped and origin/master is measured."""
+        _, work = main_and_master
+        tree = _git(work, "rev-parse", "HEAD^{tree}")
+        (work / ".git" / "refs" / "remotes" / "origin" / "main").write_text(tree + "\n")
+        r = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "origin/main^{commit}"],
+                           cwd=str(work), capture_output=True, text=True)
+        assert r.returncode == 1 and "expected commit type" in r.stderr, (r.returncode, r.stderr)
+        facts = handoff._ss_git_facts(work, None)
+>       assert "expected commit type" in facts["trunk_error"], facts
+E       AssertionError: {'ahead': '8c1b406 feature commit 2
+E         d206563 feature commit 1
+E         b5c4707 develop commit 3
+E         e2f418a develop commit 2
+E         4a8d2a6 develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'expected commit type' in ''
+
+tests/test_bug225_handoff_trunk.py:737: AssertionError
+_______ test_r3_s1c_verify_failure_with_stderr_is_surfaced[exit1-stderr] _______
+
+main_and_master = (PosixPath('/private/tmp/b225-gjc8m9hp'), PosixPath('/private/tmp/b225-gjc8m9hp/work'))
+git_shim = <function git_shim.<locals>.arm at 0x10906aa30>, rc = 1
+
+    @pytest.mark.parametrize("rc", [128, 1], ids=["exit128-stderr", "exit1-stderr"])
+    def test_r3_s1c_verify_failure_with_stderr_is_surfaced(main_and_master, git_shim, rc):
+        """The shim fails ONLY origin/main's verify, writing stderr. Exit 128 and exit 1
+        with stderr are both failures: said in trunk_error, the walk stops. At e2505f3
+        both are read as "not found" and origin/master is measured. Kills the mutants
+        `rc in (1, 128)` (both cases) and `rc == 1` without the stderr test (exit 1)."""
+        _, work = main_and_master
+        git_shim("verify", rc=rc, match="origin/main^{commit}")
+        facts = handoff._ss_git_facts(work, None)
+>       assert SHIM_MARK in facts["trunk_error"], facts
+E       AssertionError: {'ahead': '9b72550 feature commit 2
+E         0963a17 feature commit 1
+E         adeb19e develop commit 3
+E         c3b720c develop commit 2
+E         5e0791b develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert 'b225-shim: forced failure' in ''
+
+tests/test_bug225_handoff_trunk.py:750: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug225_handoff_trunk.py::test_r3_s1_ref_to_a_tree_is_a_failure_not_not_found
+FAILED tests/test_bug225_handoff_trunk.py::test_r3_s1c_verify_failure_with_stderr_is_surfaced[exit1-stderr]
+2 failed, 35 passed in 26.03s

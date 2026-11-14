@@ -170,6 +170,80 @@ errors is in this file (`bug225-lint-gmd.log`, `bug225-r2-lint-gmd.log`).
   package. That step is on the lead's release checklist, not this branch (L96 M2).
   {#open-install}
 - The version is not bumped; that belongs to the 0.83.0 release step. {#open-version}
-- A repo where origin/HEAD is unset and no list name resolves still prints no ahead line and
-  reports no trunk problem. Nothing failed in that case; there is simply no trunk. No ruling
-  covers it. {#open-no-trunk}
+- **Closed by r3 M1 (L100): #open-no-trunk.** A repo where origin/HEAD is unset and no list
+  name resolves now gets one info line in the save-state doc, `- trunk: none (origin/HEAD
+  unset; no origin/main, origin/master, main or master)`. It is not a recall-state anomaly and
+  not `trunk_error`, because nothing failed. See [[#green-r3]]. {#open-no-trunk}
+
+## GREEN r3 (ruling L100) {#green-r3}
+
+RED `5ef3b0c` added 7 RED tests and 4 guards; the git shim gained `B225_GIT_RC`,
+`B225_GIT_STDERR` and `B225_GIT_MATCH`. The fix is `4e7a155`, and no tests were edited. Ruling
+L100 answered ch-bsd r2 on `9c952eb` (DIRTY 0B/1S/1M, NO-GO; persisted at `e2505f3`). In r2,
+`_ss_trunk` read a verify exit of 128 as "not found", so it measured `origin/master` past a
+corrupt `origin/main` without saying anything.
+
+### Change {#r3-change}
+
+- **"Not found" is narrower.** In `_ss_trunk`, a candidate counts as not found only when
+  `rev-parse --verify --quiet X^{commit}` exits 1 with an empty stderr. Under `--quiet`, git
+  2.50.1 exits that way for a missing name or a ref to a missing sha. {#r3-verify}
+- **Everything else stops the walk.** That covers exit 128 (corrupt object), exit 1 with
+  stderr (unreadable object, broken ref, ref to a tree), any other exit, a git that cannot run,
+  and a timeout. Each is reported through `_ss_git_failure` in git's own words, and nothing is
+  measured, so there is no ahead line.
+- **The headline names the source.** It is "origin/HEAD names `X`, which git could not verify;
+  nothing measured" when origin/HEAD named the failing ref, never "does not resolve".
+  Otherwise it is "could not verify trunk candidate `X`; nothing measured".
+- **Same rule for origin/HEAD itself.** `_ss_origin_head` treats exit 1 with stderr as a
+  failure.
+- **One doc line per failure.** `_ss_git_failure` joins multi-line stderr with " / ". {#r3-failure-text}
+- **No trunk, no failure.** When nothing resolves, nothing failed and origin/HEAD is unset,
+  `facts["trunk_info"]` holds `none (origin/HEAD unset; no origin/main, origin/master, main or
+  master)`. `_ss_render` prints it as one `- trunk:` line. It is kept out of `trunk_error` and
+  out of recall-state's anomalies (M1). {#r3-none}
+- **Template.** The conventions line and step 2 of `recall-state.md` name the full fallback
+  list (`origin/main`, `origin/master`, `main`, `master`). Step 2 now says to report a check
+  that fails with an error as an error, not as "not found". {#r3-template}
+
+### Results {#r3-results}
+
+All runs used `PYTHONPATH=/Volumes/littlebig/refmatrix-bug225/src`.
+
+| check | result | log |
+|---|---|---|
+| bug-225 file | 37 passed | `bug225-r3-green-file.log` |
+| bug-225 file + save-state, install-commands, savestate-subfolder, hooks, verb parity | 316 passed | `bug225-r3-green.log` |
+| rest of the save/recall-state family (as r2) | 314 passed | `bug225-r3-family.log` |
+| full suite | 4 failed, 4339 passed, 1 skipped (47:10); none from this change, see [[#r3-full-suite]] | `bug225-r3-full.log` |
+| mutation r3-1: `rc == 1` without the stderr test | 2 failed: the tree-ref test, the shim exit-1-with-stderr case | `bug225-r3-mut1.log` |
+| mutation r3-2: `rc in (1, 128)` (the r2 rule) | 5 failed: corrupt list candidate, corrupt origin/HEAD target, tree ref, shim exit 128 and exit 1 with stderr | `bug225-r3-mut2.log` |
+| mutation r3-3: the `trunk: none` line dropped | 1 failed: `test_r3_m1_no_trunk_is_one_info_line_in_the_doc` | `bug225-r3-mut3.log` |
+
+Each mutation ran in a throwaway copy under the session scratchpad. Each restore ran as its own
+command, followed by a `__pycache__` clear and a `cmp` match. {#r3-mutations}
+
+Real-data runs, in-process with the clone's `src`:
+
+- In a temp clone whose `origin/master` holds a tree id, `ahead_base` is empty and the error is
+  "origin/HEAD names `origin/master`, which git could not verify; nothing measured — `git
+  rev-parse --verify --quiet origin/master^{commit}` exited 1: error: … expected commit type,
+  but the object dereferences to tree type".
+- atlftpd still gives `origin/develop`, 12 ahead, and dev master gives `origin/main`. Both have
+  an empty `trunk_error` and an empty `trunk_info`. {#r3-real-data}
+
+### r3 full suite, compared by E line {#r3-full-suite}
+
+`bug225-r3-full.log` fails the same 4 tests as r2 with the same E lines. Compared with
+`release-0.82.0-full.log` on dev master:
+
+| test | compared with the baseline |
+|---|---|
+| `brief_real_daemon` | same `_duckdb.IOException … Could not set lock on file "/private/tmp/bd.<x>/.refmatrix/catalog.A.duckdb"` E line |
+| `task21_1` AC-6 ×2 | identical E lines (`agent usage · window 2026-09-23 .. 2026-10-07T11:06:35`; `assert []`) |
+| `gmd_lint_requires_version` | same test, different E: `docs/INDEX.md:31` and the rest of the bug-155 docs set |
+
+The baseline's gmd_lint failure lists dangling `refmatrix-claude-md` links in a
+`workflow/bullshit/` report. The E line here is bug-155's: this branch is cut before bug-155's
+fix, and r1 and r2 produced the same line. None of the four failures comes from `handoff.py`,
+`cli.py` or the template.
