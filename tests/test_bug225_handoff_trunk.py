@@ -337,6 +337,8 @@ def git_shim(tmp_path, monkeypatch):
     - mode "verify": `rev-parse` carrying `--verify` or a `^{...}` peel, and any
       `cat-file` (every way to verify a candidate ref) fail.
     - mode "ahead": `log` / `rev-list` with a `A..B` range fail.
+    - mode "origin-head": `symbolic-ref` reading `refs/remotes/origin/HEAD` fails
+      (bsd-225 r3 #m-1: the origin/HEAD read was never failed by the shim).
     - mode "": nothing fails; with `log`, every argv is recorded as a JSON line.
     A failing call exits `rc` (r3, ruling L100: 128, and 1, besides the default 2)
     and writes a `b225-shim: forced failure` stderr line unless `stderr=False`.
@@ -367,6 +369,8 @@ if mode == "verify":
         or sub == "cat-file"
 elif mode == "ahead":
     fail = sub in ("log", "rev-list") and any(".." in a for a in rest)
+elif mode == "origin-head":
+    fail = sub == "symbolic-ref" and "refs/remotes/origin/HEAD" in rest
 match = os.environ.get("B225_GIT_MATCH", "")
 if fail and match:
     fail = any(match in a for a in rest)
@@ -843,3 +847,27 @@ def test_r3_template_step2_names_the_local_main_master_fallback():
     step2 = _flat(m.group(1))
     for name in ("main", "master"):
         assert re.search(rf"(?<![\w/]){name}\b", step2), (name, step2)
+
+
+# ---- r3 pin (bsd-225 r3 #m-1): the origin/HEAD read uses the same stderr rule ---
+
+
+def test_r3_pin_origin_head_read_exit1_with_stderr_is_a_failure(repos, git_shim):
+    """`git symbolic-ref --quiet --short refs/remotes/origin/HEAD` exits 1 WITH
+    stderr. Under `--quiet` an unset origin/HEAD is exit 1 with an EMPTY stderr
+    (the guard: `test_origin_head_unset_falls_back_to_the_list`), so this is a
+    failure: trunk_error says it with git's text, and the list still decides --
+    out loud, not as a silent "unset". The mutant `if rc == 1:` in
+    `_ss_origin_head` reads it as unset and leaves trunk_error empty."""
+    base, work = repos
+    git_shim("origin-head", rc=1)
+    facts = handoff._ss_git_facts(work, None)
+    err = facts["trunk_error"]
+    assert "`git symbolic-ref --quiet --short refs/remotes/origin/HEAD` exited 1" in err, facts
+    assert SHIM_MARK in err, facts
+    assert facts["ahead_base"] == "origin/master", facts
+    assert _subjects(facts["ahead"]) == list(reversed(FEATURE)) + list(reversed(DEVELOP))
+    s, root = _stm(base, "sess-b225-r3-pin-oh")
+    rep = handoff.compose_recall_state(s, root, repo=work, memdir=base / "memory",
+                                       pointer_anomalies=[])
+    assert [a for a in rep["anomalies"] if SHIM_MARK in a], rep["anomalies"]
