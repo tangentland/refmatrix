@@ -1,0 +1,79 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/mut5/refmatrix/src/refmatrix as checked-hash (bug-037)
+F..                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_s1_an_id_a_b_loser_vacated_loses_its_stale_vector_and_its_holder_is_requeued _
+
+base = PosixPath('/private/tmp/b216u7rfbcnzn')
+
+    def test_s1_an_id_a_b_loser_vacated_loses_its_stale_vector_and_its_holder_is_requeued(base):
+        from refmatrix import daemon as dm
+        a_root = base / "A" / "proj" / ".refmatrix"
+        b_root = base / "B" / "proj" / ".refmatrix"
+        _new_store(a_root)
+        s = _open(a_root)
+        try:
+            keep = s.add_memory("keep", "an unrelated, embedded memory")
+        finally:
+            s.close()
+        b_root.mkdir(parents=True)
+        shutil.copy2(a_root / "catalog.duckdb", b_root / "catalog.duckdb")
+        s = _open(b_root)
+        try:
+            b_shared = s.add_memory("shared", "SHARED B (older)")      # written first: loses
+        finally:
+            s.close()
+        s = _open(a_root)
+        try:
+            x_only_a = s.add_memory("x-only-a", "ONLY IN A")
+            a_shared = s.add_memory("shared", "SHARED A (newer)")
+        finally:
+            s.close()
+        assert x_only_a == b_shared and a_shared not in (b_shared, keep), (
+            f"precondition: A's x-only-a at B-shared's id {b_shared}; a_shared {a_shared}; "
+            f"keep {keep}")
+        _mark_embedded(a_root, b_root)
+        droot = _daemon_root(base, a_root, b_root)
+        _seed_vectors(droot, [b_shared, a_shared, keep])
+        d = dm.Daemon(droot, partition="proj")
+        d._log = lambda msg: None
+        d.store = Store(droot, partition="proj")
+        d.store.init()
+        d.store._connect()
+        try:
+            r = dm._op_replica_merge(d, {"dry_run": False})
+            assert r.get("ok") is True and not r.get("vector_delete_error"), r
+            assert r["remap"]["b_loser_count"] == 1 and not r.get("fresh_moved"), (
+                f"precondition: B's shared is a name-loser, nothing moves: {r['remap']} "
+                f"{r.get('fresh_moved')}")
+            with d.store.with_partition("proj"):
+                pending = {int(row[0]) for row in d.store.pending_embeddings()}
+        finally:
+            if d.store is not None:
+                d.store.close()
+        left = _vector_ids(droot)
+        vrows = [list(v) for v in (r.get("vector_rows") or [])]
+        problems = []
+        if b_shared in left:
+            problems.append(f"the Lance row at {b_shared} (B-shared's vector, now under x-only-a) "
+                            f"survived")
+        if not {a_shared, keep} <= left:
+            problems.append(f"a vector whose owner did not change was deleted: kept {sorted(left)}")
+        if x_only_a not in pending:
+            problems.append(f"x-only-a ({x_only_a}) holds a vacated id but was not re-queued: "
+                            f"{sorted(pending)}")
+        if keep in pending or a_shared in pending:
+            problems.append(f"an entity whose owner did not change was re-queued: {sorted(pending)}")
+        if ["proj", "memory", b_shared] not in vrows:
+            problems.append(f"vector_rows does not name proj/memory/{b_shared}: {vrows}")
+        if not re.search(rf"\b{b_shared}\b", str(r.get("re_embed") or "")):
+            problems.append(f"re_embed does not name id {b_shared}: {r.get('re_embed')!r}")
+>       assert not problems, "\n".join(problems)
+E       AssertionError: the Lance row at 2 (B-shared's vector, now under x-only-a) survived
+E         vector_rows does not name proj/memory/2: []
+E         re_embed does not name id 2: None
+E       assert not ["the Lance row at 2 (B-shared's vector, now under x-only-a) survived", 'vector_rows does not name proj/memory/2: []', 're_embed does not name id 2: None']
+
+tests/test_bug216_remedy_r5.py:130: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r5.py::test_s1_an_id_a_b_loser_vacated_loses_its_stale_vector_and_its_holder_is_requeued
+1 failed, 2 passed in 2.48s

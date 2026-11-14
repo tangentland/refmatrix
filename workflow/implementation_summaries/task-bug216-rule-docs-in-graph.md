@@ -783,6 +783,51 @@ own command, `__pycache__` cleared; suite = `test_bug216_remedy_r4.py` (+ r3 for
 
 {#green-remedy-r4-mutations}
 
+### GREEN remedy r5: bsd-216 r5 (ruling L101) {#green-remedy-r5}
+
+Commit: `4bc5109` (src). RED: `ab2f276` (red-216). Audit: `0bd5c9c`
+(`workflow/bullshit/2026-11-14-0456-bug216-r5-aaa1ba5.md`). No test edited. {#green-remedy-r5-commits}
+
+- **S1.** The B mirror of r4's A-loser vector handling, as bsd's verified diff: the
+  `vectors_updated_at = NULL` re-queue adds `OR id IN (SELECT loser_id FROM remap_b)`, and
+  `vector_rows` adds two UNION branches over `remap_b` (the loser's own table in B, and the table
+  of the A entity now holding the id). `remap_b`'s keys include the fresh moves' old ids, which
+  those rows already listed; the canonical id a loser maps to is still never listed.
+  bsd's diff alone left `re_embed` silent about B losers: `_op_replica_merge` built the vacated
+  set as `vector_rows ∩ a_losers`. **Definition now:** the vacated ids are the ids `vector_rows`
+  names minus the fresh moves' ids (old and new). That is exact, not a heuristic: `vector_rows`
+  holds precisely the moves' two ids and the ids a name-loser (A's or B's) vacated, so the
+  difference is the vacated set, both sides; `re_embed` labels them "id(s) a name-loser
+  vacated". {#green-remedy-r5-s1}
+- **M1.** `Store._delete_vector_groups` again names a table whose rows it cannot delete because
+  `lance` is unavailable: `"<partition>/<kind>.lance: lance unavailable; N vector(s) not
+  deleted"`. The table is known to exist at that point, so rows are left; the merge turns it into
+  `vector_delete_error` and `rmx replica merge` exits non-zero (text and `--json`). The purge
+  batch (`_drop_lance_for_purge_batch`) reads only `deleted` from the executor, so a purge stays
+  as quiet as it was before r4 when lance is not installed. {#green-remedy-r5-m1}
+
+Runs (absolute `PYTHONPATH=/Volumes/littlebig/refmatrix-bug216/src`; logs in
+`workflow/review-output/bug216/`): (1) r5 file: 3 passed (`remedy-r5-step1.log`); (2) r5 + r4 + r3
++ r2 + r1 + L86: 45 passed (`remedy-r5-step2.log`); (3) bug113 + bug178 + the merge files +
+store_vectors + purge_path_batched_lance + lance_drop_failures_loud + vectors + dual_write_purge +
+memory_compile: 150 passed (`remedy-r5-step3.log`); (4) the bug-216 family: **762 passed**
+(`remedy-r5-step4-family.log`); (5) full suite at `4bc5109`: **4 failed, 4480 passed, 1 skipped**
+(`remedy-r5-step5-full.log`), every failure with release-0.82.0's E line: `test_brief_real_daemon`
+(DuckDB lock conflict), `test_task21_1_agent_usage_report` ×2, `test_gmd_lint_requires_version`
+(bug-155's memdir half in a clone). bug-228 did not fail. `lint-gmd.sh` on a copy named
+`refmatrix`: `lint-gmd-remedy-r5.log`. {#green-remedy-r5-results}
+
+Mutations, each alone in a throwaway clone of `4bc5109`, restored with `git checkout -- src` in its
+own command, `__pycache__` cleared; suite = `test_bug216_remedy_r5.py`:
+
+| mutation | result | log |
+|---|---|---|
+| drop the two `remap_b` branches from `vector_rows` | 1 failed | `mut-r5-b-rows.log` |
+| drop the `remap_b` clause from the re-queue | 1 failed | `mut-r5-b-requeue.log` |
+| lance unavailable is silent again | 2 failed (text + json) | `mut-r5-silent-lance.log` |
+
+{#green-remedy-r5-mutations}
+
 ## AC-6 (live) {#ac6}
 
 (lead, after deploy and R4)
