@@ -453,12 +453,19 @@ here:
     value, and it runs in tier (d). An entry records three things, and the census checks each:
     - **`ac`**, as `<spec id>#<anchor>`. The census resolves it: a spec with that frontmatter id
       exists under `workflow/plans/`, and it has that anchor. An AC that does not exist fails.
-    - **`knob`**, what sets the bound: an environment variable, a named constant, or **a keyword
-      argument of the function under test** (29.3's `run_git(…, timeout=…)` has no environment
-      knob; its AC-a1 shrinks the bound by passing a small `timeout=`). The census reads the
-      test function: it sets that variable (`monkeypatch.setenv`, an `env=` mapping), patches
-      that constant (`monkeypatch.setattr`), or passes that keyword with a literal. A test that
-      names a knob and never sets it fails: it would be waiting the production value.
+    - **`knob`**, what sets the bound, in one of three forms:
+      - `env:<NAME>`: an environment variable. The test sets it (`monkeypatch.setenv`, or an
+        `env=` mapping passed to the child);
+      - `const:<module.NAME>`: a named constant. The test patches it (`monkeypatch.setattr`);
+      - `arg:<parameter>`: an argument of the function under test (ruling L107). The bound is a
+        **literal** the test passes at the call, and the census reads it there. 29.3's
+        `run_git(…, timeout=…)` has no environment knob; its AC-a1 timeout leg is
+        `knob: arg:timeout`.
+
+      The census reads the test function and finds the knob set in the form the entry names. A
+      test that names a knob and never sets it fails: it would be waiting the production value.
+      For `arg:`, a call that does not pass the parameter, or passes a name or an expression in
+      place of a literal, fails too: the census cannot see what it would wait.
     - **`max_s`**, the shrunk value's ceiling (≤ 2.0). The value the test sets is a literal the
       census can read, and it is under the ceiling.
   - **One AC, one entry.** An AC id may own at most as many entries as it has wall-clock clauses
@@ -792,9 +799,13 @@ to rework the sandbox, so it settles them:
   - fails on a new `legacy` entry;
   - passes on a `feature-bound` entry whose `ac` resolves, whose test sets its `knob`, and whose
     value is under `max_s`;
+  - passes on a fixture entry of each knob form (`env:`, `const:`, `arg:`), the `arg:` one being
+    a call that passes `timeout=0.2`;
   - **fails**, naming the entry, on each of: no `ac`; an `ac` whose spec id does not exist; an
     `ac` whose anchor does not exist in that spec; a test that never sets the knob it names; a
-    value over `max_s`; a second entry for an AC that has one wall-clock clause;
+    value over `max_s`; a second entry for an AC that has one wall-clock clause; **an `arg:`
+    entry whose call omits the parameter; one whose call passes a variable; one whose literal is
+    over `max_s`**;
   - prints the two counts.
 
   The budget-outcome census fails on bug-228's test as it stands at base (the RED), passes on
@@ -852,7 +863,9 @@ to rework the sandbox, so it settles them:
   21. the budget-outcome census ignores fixtures (a test that reaches the daemon through a
       fixture passes unseen; AC-11);
   22. the reaper prints `root=` from a sandbox pid file only (AC-5's out-of-sandbox fixture
-      prints `unknown`, so the test is red).
+      prints `unknown`, so the test is red);
+  23. for `arg:`, the census accepts any call that names the parameter, literal or not (AC-11's
+      variable case passes, so the test is red).
 - **T0's sub-tasks carry their own mutations** (M1.x to M7.x in T0's text). They are not
   repeated here.
 - **All output to files.** Every run in this task goes through the runner or through
@@ -1007,6 +1020,7 @@ L105 decided it:
   ([[#r2-list]], [[#ac-12]]); the text for answers (b) and (c) is gone.
 - `plan-review-fable-store D5` and `plan-review-fable D4` are decided ([[#user-decisions]],
   [[#r0]], [[#r10]]).
-- A `feature-bound` entry's knob may be a keyword argument of the function under test
-  ([[#r3-kinds]]), for 29.3's AC-a1.
+- A `feature-bound` entry's knob has three forms, `env:`, `const:` and `arg:<parameter>`
+  ([[#r3-kinds]]; ruling L107), the last for 29.3's AC-a1, with a fixture row and three
+  must-fail cases in [[#ac-11]].
 {#rev-note-2-list}

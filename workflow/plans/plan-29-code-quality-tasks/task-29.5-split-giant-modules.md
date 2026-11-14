@@ -311,6 +311,12 @@ At the task's base sha (after 29.4, after the frozen spec branches):
 13. **Baselines wait for duckdb 1.5.3.** `plan-review-fable-store D5` was decided: the dev venv
     is raised to the 1.5.3 floor. No gate golden, no derive-digest golden and no suite baseline
     is generated before that.
+14. **The derive digest's golden is recorded** ([[#r5-digest]]): `scripts/derive-digest.py record`,
+    on the `pre-split-29.5` tree, after item 13's upgrade, writes
+    `tests/fixtures/derive_digest/golden.json`. `ch-test-engineer` commits the script, the two
+    corpora, the golden and `tests/test_derive_digest_unchanged.py` before the first move
+    commit. The summary gives each leg's digest and the commit, embed model id and duckdb
+    version the golden names.
 
 ### R1: the decision is recorded first {#r1}
 
@@ -586,10 +592,11 @@ commit's parent and at the commit, and compared:
      (`task-29.2-mypy-gate#r7`) and lands **after** this task. It does not remove this task's
      flip: the list of modules changes here, and a move changes each file's content under any
      normalisation that is per file.
-   - **So this task's release needs one announced re-stamp.** After its deploy the lead
-     re-stamps each fleet store through the existing derive-stamp path, announced and backed up
-     first. No store is re-derived. The evidence that nothing derived moved is item 6's digest.
-     No agent re-stamps or re-derives a live store.
+   - **So this task's release carries its own re-stamp, announced and user-gated** (rulings L106
+     and L107). It is not deferred to a later, single re-stamp with 29.2's: in the window
+     between, every store's `derive status` would read `behind_code`. The steps are
+     [[#r9-restamp]]. No store is re-derived. The evidence that nothing derived moved is item
+     6's digest. No agent re-stamps or re-derives a live store.
    - This task does not change `derive_code_hash` itself. [[#ac-5]] tests the file lists, not
      the hash function, so it holds before and after 29.2 changes the function.
    - **A module named in `_DERIVE_PASS_MODULES` is not split in this task** ([[#r7]], criterion
@@ -607,12 +614,13 @@ commit's parent and at the commit, and compared:
      task builds them **first**, in phase 0, to that specification, because the golden has to
      exist before the first store move. `ch-test-engineer` commits the tool, the corpus and
      `golden.json`, recorded on the `pre-split-29.5` tree.
-   - **Gate G11:** the four legs equal the golden after phase 1's last commit and after **every**
-     phase-2 commit. A leg that differs stops the phase like any red gate.
+   - **Gate G11:** `scripts/derive-digest.py check` shows the four legs equal to the golden after
+     phase 1's last commit and after **every** phase-2 commit, the last store move included. A
+     leg that differs stops the phase like any red gate.
    - The golden names its commit, the embed model id and the duckdb version. It is recorded
      after the dev venv is on duckdb 1.5.3 (`plan-review-fable-store D5`, decided).
-   - 29.2 and 29.3 then only check that the same golden is still green
-     (`task-29.3-converge-shapes#k-r6`).
+   - 29.3's slice K then re-records on the tree this task leaves and requires the re-recorded
+     legs to equal this golden (`task-29.3-converge-shapes#k-r6`; ruling L107).
 
 ### R6: private names used across modules {#r6}
 
@@ -787,9 +795,8 @@ cannot be merged afterwards without redoing its work by hand.
      decided, L106) excludes a release that changes the store on disk. This one does, twice:
      the store event at the merge, and the derive-hash flip from the changed module list. It
      stays a per-release go.
-   - **One re-stamp** after the deploy, by the lead, as [[#r5]] item 4 says, with G11's equal
-     digest as its evidence. 29.2 and 29.3's later release is separate and has its own
-     (`task-29.2-mypy-gate#d4`).
+   - **Its own re-stamp**, inside this release ([[#r9-restamp]]). 29.2's release has a second
+     one, under its new hash (`task-29.2-mypy-gate#d4`); each fleet event carries its own.
 8. **No install window.** Nothing in this task may make `rmx install-hooks --check` report drift
    on an existing install (T0's R0.7, asked of all five plan-29 tasks). The hook generators
    import nothing from `cli`; R0 confirms it, and G7's run in the dev tree shows it.
@@ -834,6 +841,26 @@ For `store.py` this is what every edit to `store.py` already does today under bu
 7. If D23's answer is to re-key: the op runs here, from the map's line table, and the count
    after it equals the count before.
 {#r9-store-event-steps}
+
+#### The re-stamp {#r9-restamp}
+
+The release changes `_DERIVE_CODE_MODULES`, so after the deploy every fleet store's
+`derive status` reads `behind_code` for the union and for every pass that has no module set of
+its own, with nothing about its graph changed ([[#r5]] item 4). The release is not finished
+until that is put right. **All of it is the lead's, and user-gated:**
+
+1. **Before the deploy,** the announcement names: the release; that it flips the derive hash by
+   a change of file list only; G11's result at the release sha ([[#ac-16]]); the stores that
+   will be re-stamped (the fleet roster); and the backup each gets.
+2. **The user's go** for this release covers the re-stamp. It is asked for with item 1 in hand.
+3. **Deploy.** Then, per store: back up; read `derive status` and record what it shows (R0 item
+   8 predicted it; a difference from the prediction stops the re-stamp and is raised);
+   re-stamp through the existing derive-stamp path (R0 item 8 names the command at the
+   deployed version); read `derive status` again.
+4. **Done** when every store's `derive status` is clean for the passes the flip touched, and
+   the record of [[#ac-17]] is complete. A store that cannot be re-stamped is named, with the
+   reason, and is not left unsaid.
+{#r9-restamp-steps}
 
 ### R10: docs {#r10}
 
@@ -927,7 +954,12 @@ is quoted in the summary. {#r10-body}
   four legs equal the golden after phase 1's last commit and after every phase-2 commit (gate
   G11), and the summary gives each leg's digest at R0 and at the final sha. The check is shown
   able to fail as 29.2's section specifies: the changed corpus differs from the golden leg by
-  leg. This is the evidence the lead cites for the one announced re-stamp. {#ac-16}
+  leg. This is the evidence the lead cites for the announced re-stamp. {#ac-16}
+- **AC-17: the re-stamp is on the record.** The release record holds: the announcement and the
+  user's go, both dated before the deploy; per fleet store, the backup path and `derive status`
+  before and after the re-stamp; that no store was re-derived; and the list of stores not
+  re-stamped, with reasons (empty, or explained). The task is not `completed` while a store
+  reads `behind_code` from this release without a line in that list. {#ac-17}
 - **AC-10: before and after.** The [[#baseline]] tables, re-measured at the final sha, are in
   the summary beside R0's. `./scripts/lint-gmd.sh` exits 0. {#ac-10}
 - **AC-11: the symbol map is published, and three names do not move.** {#ac-11}
@@ -1063,7 +1095,8 @@ No spec under `workflow/plans/` is edited by this task: the citation and pin pas
 
 ## The user's decisions this spec is built to {#user-decisions}
 
-All decided on 2026-11-14 (ruling L106, [[plan-review-2026-11-13#lead]]), except the last row.
+Decided on 2026-11-14: by the user (ruling L106) or, where the row says so, by the lead (ruling
+L107); both in [[plan-review-2026-11-13#lead]]. The last row is open.
 
 | Label | Decided | What it means here |
 |---|---|---|
@@ -1072,7 +1105,9 @@ All decided on 2026-11-14 (ruling L106, [[plan-review-2026-11-13#lead]]), except
 | `plan-review-fable D4` | a standing go for plan-29 releases whose suite equals the baseline by E line, the user told first, **excluding** releases that change the store on disk | [[#r9]] item 7: this task's release is excluded; it has its own go |
 | `plan-review-fable-store D5` | duckdb 1.5.3 in `.venv-eval` before baselines (the lead upgrades after the 0.83.1 runs) | [[#r0]] item 13: no golden and no baseline before the upgrade |
 | `plan-review-fable-memory D2` | 25.1b's `legs_ms` timing pair lands before 29.5 | [[#r0]] item 10: it is on `master` before the window opens |
-| **plan-29 D23** | **open** | [[#r9-store-event]] step 3: no phase merges without it |
+| plan-29 D24 (this spec's) | accepted by the lead (ruling L107), recorded in ADR 0006; not put to the user | [[#fact-identity]], [[#ac-4]] |
+| re-stamp sequencing (ruling L107) | each fleet event carries its own announced, user-gated re-stamp inside its own release | [[#r9-restamp]], [[#ac-17]] |
+| **plan-29 D23** | **open**; asked at the store event with R0's count in hand; with a zero count it does not arise | [[#r9-store-event]] step 3 |
 {#user-decisions-table}
 
 ## Decisions taken in this spec {#decisions}
@@ -1118,9 +1153,11 @@ All decided on 2026-11-14 (ruling L106, [[plan-review-2026-11-13#lead]]), except
     review before the merge, and it delays phase 1.
   - **(c) Fix bug-107 first** (22.6 R4 keeps learned rows on any edit), then merge. That
     reorders the queue: plan-22 is step thirteen of the queue review's recommended order.
-  - **Pending default:** none that merges. With no answer, [[#r9-store-event]] step 3 holds the
-    merge. If R0 item 12 counts **zero** rows on both paths in every store, there is nothing to
-    decide and the record says so.
+  - **When it is asked** (ruling L107): at this task's store event, with R0 item 12's count in
+    hand, so that the user decides about a number and not a possibility. It is not asked
+    earlier. With no answer, [[#r9-store-event]] step 3 holds that phase's merge.
+  - **With a zero count it does not arise:** if R0 item 12 counts no learned and no protected
+    row on either path in any store, there is nothing to decide, and the record says so.
   - **Why the user's:** it is knowledge on the live store, and the user's rule is that removal
     goes only through an audited path.
 - **plan-29 D18: the click tree is compared as a sorted structural dump plus the help output,
@@ -1145,8 +1182,9 @@ All decided on 2026-11-14 (ruling L106, [[plan-review-2026-11-13#lead]]), except
 - **plan-29 D22: the citation and pin pass is its own task, 29.6, after 29.2 and 29.3.**
   - **Why:** a spec re-pointed now is re-pointed again after 29.3 renames helpers. Ruling L105
     made the pass a task with a spec, so that the hand-off has a receiver.
-- **plan-29 D24: a `-m refmatrix.cli` process has one copy of the CLI after the split, and
-  that is accepted.**
+- **plan-29 D24 (decided by the lead, ruling L107; not put to the user): a `-m refmatrix.cli`
+  process has one copy of the CLI after the split, and that is accepted.** ADR 0006 carries it
+  ([[#r1]]).
   - **What changes:** today such a process has two ([[#fact-identity]]): the commands run in
     `__main__`, and `handoff`'s lazy import gets a second copy whose `_partition_override` is
     unset. After the split it has one, as every `rmx …` process already does.
@@ -1215,3 +1253,11 @@ This spec's share:
   kit takes.
 - **plan-29 D23 is still open.**
 {#rev-note-3-list}
+
+## Revision note 4 (2026-11-14, round 2b, ruling L107) {#rev-note-4}
+
+L107 was written against `048e23b`; its items on plan-29 D17 and on the exceptions' owner were
+already in `321954b` ([[#rev-note-3]]). New here: R0 item 14 and the `record` / `check` commands
+for the derive digest ([[#r5-digest]]); the re-stamp as this release's own, user-gated step
+([[#r9-restamp]], [[#ac-17]]), with no deferral; plan-29 D24 recorded as decided by the lead;
+plan-29 D23 asked at the store event with the count in hand. {#rev-note-4-body}
