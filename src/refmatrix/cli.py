@@ -227,6 +227,18 @@ def _active_slot_path() -> Path | None:
     return p if p.exists() else None
 
 
+def _refuse_tracked_catalog_open(root: Path, target: Path) -> None:
+    """The store-level tracked-catalog check (`store.refuse_tracked_catalog_open`) as one
+    `Error:` line, exit 1 -- the CLI's ONE wrapper, called by every CLI site that opens or
+    replaces a writer catalog in-process: `_store_rw()`, `compact`, `migrate-to-duckdb`
+    (bug-212 r4/r5, rulings L72 and L95). `verbs.local_write` makes the same refusal a
+    `VerbError` for the verb layer."""
+    try:
+        _store_mod.refuse_tracked_catalog_open(root, target)
+    except _store_mod.TrackedCatalogRefused as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
 def _store_rw() -> Store:
     """Open the active rotation-slot catalog read-write (direct). The legacy
     `catalog.duckdb` is no longer touched by the daemon post-0.3.8: that file
@@ -258,10 +270,7 @@ def _store_rw() -> Store:
         raise click.ClickException(
             f"no refmatrix at {s.root}. Run `rmx init` first or set REFMATRIX_ROOT."
         )
-    try:
-        _store_mod.refuse_tracked_catalog_open(s.root, s.db_path)
-    except _store_mod.TrackedCatalogRefused as exc:
-        raise click.ClickException(str(exc)) from exc
+    _refuse_tracked_catalog_open(s.root, s.db_path)
     # Register a flush-and-close on normal interpreter exit. CLI commands
     # mutate the in-memory fragment cache and rely on close() to persist;
     # without this, every command would lose its writes.
@@ -957,8 +966,19 @@ def init(path: Path | None, hooks: bool, memory_hooks: bool, agents: bool,
     # If a daemon already owns this catalog, skip Store.init() — it would
     # try to acquire the DuckDB write lock and crash. The store is already
     # initialized (the daemon proves it).
-    from refmatrix import daemon as daemon_mod, verbs as _verbs
-    if daemon_mod.ping(store_root):
+    from refmatrix import verbs as _verbs
+    # Busy is not absent (bug-212 r5, ch-bsd r4 m-5, L95, 2026-11-14): `daemon.ping` false
+    # sent a daemon that is alive but not answering to the in-process route below, which
+    # opens the writer slot under it. Only an ABSENT daemon may take that route.
+    try:
+        _verbs.require_daemon(store_root)
+        daemon_up = True
+    except _verbs.VerbBusyError as exc:
+        raise click.ClickException(
+            f"{exc} -- `rmx init` will not open the catalog in-process under it") from exc
+    except _verbs.VerbAbsentError:
+        daemon_up = False
+    if daemon_up:
         console.print(
             f"[yellow]reusing[/] existing {store_root} (daemon pid present; "
             f"skipped catalog reinit)"
@@ -4069,6 +4089,9 @@ def migrate_to_duckdb(out_path: Path | None, overwrite: bool):
             f"no SQLite catalog at {src}. Run `rmx init` first."
         )
     dst = out_path or (root / "catalog.duckdb")
+    # Before `migrate_catalog` unlinks and rebuilds `dst` with the raw `open_duckdb` (bug-212
+    # r5, ch-bsd r4 b-1, L95, 2026-11-14): a store whose catalog git tracks is refused.
+    _refuse_tracked_catalog_open(root.resolve(), dst.resolve())
     fragments_dir = root / "fragments"
     counts = migrate_catalog(
         src, dst,
@@ -4269,7 +4292,19 @@ def partition_drop(name: str, yes: bool):
     if not yes:
         click.confirm(f"drop partition registration {name!r} in {root}?", abort=True)
 
-    if daemon_mod.ping(root):
+    # Busy is not absent (bug-212 r5, ch-bsd r4 m-5, L95): only an ABSENT daemon may send
+    # this to the in-process route; a daemon alive but not answering is refused.
+    from refmatrix import verbs as _verbs
+    try:
+        _verbs.require_daemon(root)
+        daemon_up = True
+    except _verbs.VerbBusyError as exc:
+        raise click.ClickException(
+            f"{exc} -- `rmx partition drop` will not open the catalog in-process under it"
+        ) from exc
+    except _verbs.VerbAbsentError:
+        daemon_up = False
+    if daemon_up:
         resp = daemon_mod.call(root, "partition_drop", {"name": name},
                                timeout=30.0, retries=0)
         if not resp.get("ok"):
@@ -8033,6 +8068,11 @@ def compact(keep_backup: bool):
         src = root / "catalog.duckdb"
     if not src.exists():
         raise click.ClickException(f"no catalog at {src}")
+    # Before it pings or stops the daemon (bug-212 r5, ch-bsd r4 b-1, L95, 2026-11-14):
+    # compact opens the writer slot with the raw `open_duckdb` and renames over it, and it
+    # STOPPED a running daemon first -- the remedy the refusal names. It wrote a catalog git
+    # tracks (` M catalog.A.duckdb`, ` D catalog.duckdb`) without ever constructing a Store.
+    _refuse_tracked_catalog_open(root.resolve(), root.resolve() / src.name)
 
     # Stop daemon so we can hold the write lock ourselves.
     daemon_was_up = daemon_mod.ping(root)
@@ -14010,11 +14050,17 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
     # ONE implementation (verbs.save_state): compose + promote + lint + file
     # under the subject + memory bridge. This command renders; --commit is
     # the CLI-only git post-step.
+    # A failed promote or memory bridge after the handoff was written is the verb's
+    # `SaveStateIncompleteError` (bug-212 r5, L95): render what WAS written, run `--commit`,
+    # then print the verb's own message as this command's `Error:` line, exit 1.
+    incomplete: "_verbs.SaveStateIncompleteError | None" = None
     try:
         res = _verbs.save_state(root, message=message, promote=promote,
                                 dry_run=dry_run, session=session,
                                 memory_dir=str(memory_dir) if memory_dir else None,
                                 lint=not no_lint, sync=not no_sync)
+    except _verbs.SaveStateIncompleteError as e:
+        incomplete, res = e, e.result
     except _verbs.VerbError as e:
         raise click.ClickException(str(e))
     memdir = Path(res.get("memory_dir") or _default_memory_dir(repo))
@@ -14054,14 +14100,12 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
         console.print(f"{tag} {lint_out.splitlines()[-1]}")
 
     promoted = res.get("promoted")
-    promote_error = None
     if promoted:
         if promoted.get("error"):
             # Not "promote skipped" on stdout with exit 0 (bug-212 r4, ruling L82,
             # 2026-11-13): a refused or failed promote leaves the STM digest out of durable
-            # memory. The rest of save-state still runs (the handoff is already written);
-            # the failure is the command's `Error:` line on stderr and exit 1, at the end.
-            promote_error = promoted["error"]
+            # memory. The error itself is the verb's `SaveStateIncompleteError`, printed
+            # on stderr at the end (r5, L95).
             console.print(f"[red]promote FAILED[/] -- the session digest did not reach "
                           f"durable memory; the error follows on stderr")
         else:
@@ -14083,8 +14127,10 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
     sync = fin.get("sync")
     if sync:
         if sync.get("error"):
-            console.print(f"[red]memory bridge FAILED:[/] {sync['error']} — "
-                          f"run `rmx ingest-gmd --as-memory {memdir}` by hand")
+            # The error is the verb's `SaveStateIncompleteError`, on stderr at the end
+            # (bug-212 r5, ch-bsd r4 s-1: this line was the whole report, on stdout, exit 0).
+            console.print(f"[red]memory bridge FAILED[/] -- the error follows on stderr; "
+                          f"run `rmx ingest-gmd --as-memory {memdir}` by hand once it is fixed")
         else:
             # Report may quote unresolved `[[wikilinks]]`; keep them out of
             # Rich markup (which renders `[[foo]]` as `[]`).
@@ -14106,9 +14152,8 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
         out = _ss_sh(["git", "commit", "-m", msg], repo)
         console.print(f"[green]committed[/] {out.splitlines()[0] if out else '(nothing to commit)'}")
 
-    if promote_error:
-        raise click.ClickException(
-            f"save-state wrote {res['target']} but its promote failed: {promote_error}")
+    if incomplete is not None:
+        raise click.ClickException(str(incomplete))
 
 
 @main.command("recall-state")

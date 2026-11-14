@@ -169,30 +169,58 @@ never fails because of it.
 
 ### No command opens a tracked catalog read-write in-process {#sync-tracked-catalog}
 
-When no daemon answers, a writer opens the catalog read-write in its own process. Every such
-open goes through one of two checked openers, and both call ONE store-level check,
-`store.refuse_tracked_catalog_open` (bug-212 r2-r4, rulings L72 and L82):
+When no daemon answers, a writer opens the catalog read-write in its own process. Every CLI,
+verb and MCP site that opens or replaces a writer catalog (`catalog.A.duckdb`,
+`catalog.B.duckdb`, `catalog.duckdb`, `catalog.db`) in-process first calls ONE store-level
+check, `store.refuse_tracked_catalog_open` (bug-212 r2-r5, rulings L72, L82 and L95):
 
-- `cli._store_rw()`: `rmx sync` (`--files`, `--since`, `--flush-queue`, `-i`), `rmx ingest`,
+- `cli._store_rw()`, through the CLI's one wrapper `cli._refuse_tracked_catalog_open`. It
+  serves `rmx sync` (`--files`, `--since`, `--flush-queue`, `-i`), `rmx ingest`,
   `rmx memory add`, `rmx ingest-gmd --as-memory` (the memory bridge), `rmx tldr-warm`, and the
-  daemon-down repair commands;
-- `verbs.local_write`: every no-daemon verb write (`rmx add concept|entity`, `rmx protect`,
-  `rmx noise`, ...), plus `rmx init`, `rmx partition drop`, `rmx focus change-subject`, the
-  MCP `rmx_memory_add` fallback and the save-state promote, which used to open the store
-  themselves.
+  daemon-down repair commands.
+- The same wrapper, called directly by the two commands that open the file without a `Store`:
+  - `rmx compact`, which checks before it pings or stops the daemon, so a tracked catalog
+    never costs the daemon it names as the remedy;
+  - `rmx migrate-to-duckdb`, which checks before `migrate.migrate_catalog` replaces
+    `catalog.duckdb`.
+- `verbs.local_write` serves every no-daemon verb write (`rmx add concept|entity`,
+  `rmx protect`, `rmx noise`, ...). It also serves `rmx init`, `rmx partition drop`,
+  `rmx focus change-subject`, the MCP `rmx_memory_add` fallback and the save-state promote,
+  which used to open the store themselves.
 
-An AST census test fails when `src/` adds a read-write `Store(` outside these two openers and
-a short allowlist (the daemon, the hub's global store, `Store.link_canon`).
+The daemon is the exception. Its own writer, its A/B slot merge and repair, and the hub's
+global store are not checked: a write through the daemon is the remedy the refusal names.
+An AST census test keys on the guarded resource, not on one constructor. It fails when
+`src/` adds any of these outside the checked sites and a short allowlist with reasons:
+
+- a read-write `Store(`, under any alias;
+- a non-`:memory:` `open_duckdb` / `duckdb.connect`;
+- a rename or unlink onto a writer-catalog path.
+
+`rmx init` and `rmx partition drop` take the in-process route only when the daemon is ABSENT.
+A daemon that is alive but not answering is busy, not absent, and they refuse with one
+`Error: daemon busy ...` line.
 
 Before the catalog opens, the check asks git (`store.git_tracked_catalogs`) and refuses if a
 writer catalog is tracked:
 
 - one `Error: refusing to open <full path of the catalog> read-write in-process: git tracks
   this store's catalog (...)` line that names both remedies (untrack it with
-  `git rm --cached`, or start the daemon). MCP replies `isError` with the same text. A refused
-  save-state promote is that line on stderr, and `rmx save-state` exits 1 after it has still
-  written the handoff;
+  `git rm --cached`, or start the daemon). MCP replies `isError` with the same text;
 - a non-zero exit, with the catalog bytes unchanged.
+
+In `rmx save-state` and MCP `rmx_save_state` the handoff file is written first, and the
+refusal arrives through a later step:
+
+- If the STM promote or the memory bridge is refused, or fails for any reason, the verb raises
+  one error: `save-state wrote <target> but its promote failed: ...` (or `its memory bridge
+  failed: ...`, or both).
+- The CLI prints what was written, runs `--commit`, then prints that line on stderr and exits
+  1. MCP replies `isError`.
+
+A refused `rmx focus change-subject` leaves the session's STM subject as it was. The store
+row is written before the STM subject is switched, and the line ends `the session's subject
+is unchanged (still '<old>')`.
 
 The check runs two bounded git subprocesses (`rev-parse`, `ls-files`) before every
 in-process open, about 25 ms on a small idle repository (measured 2026-11-13) and roughly
