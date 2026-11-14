@@ -583,7 +583,11 @@ def test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open(
     assert len(errs) == 1 and _refusal_lines(r.stderr, target) == errs, \
         f"`rmx {' '.join(argv)}`: expected ONE `Error:` line `{_refusal_head(target)} ...` " \
         f"with both remedies; got {errs}\n{text}"
-    assert "in-process write" not in errs[0], f"a READ's refusal claims a write: {errs[0]!r}"
+    # m-1 (ch-bsd r2, L72, 2026-11-13): the TAIL must not claim a write either -- 67f55cb's
+    # line said "the write would modify a committed file ... so the write goes through it".
+    low = errs[0].lower()
+    assert "in-process write" not in low and "the write" not in low, \
+        f"a READ's refusal claims a write: {errs[0]!r}"
 
 
 @pytest.mark.timeout(300)
