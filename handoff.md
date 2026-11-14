@@ -26,17 +26,18 @@ Delegated user gates (L77, L78): the 0.83.0 fleet deploy with `install-hooks --a
 the 8-repo roster, plan-27's memdir migration and plan-28's start run without asking, each when its
 spec's preconditions hold, with the user told at the start. G18 still stops the goal.
 
-**Agents at save time (2026-11-14)** — all six were stopped by the weekly usage limit and told to
-resume after it reset; briefs in `workflow/agents/inflight-2026-11-14.md`:
+**Agents at save time (2026-11-14, refreshed at ~84% context)** — briefs in
+`workflow/agents/inflight-2026-11-14.md` (+ the L-rows below for amendments):
 
-| agent · type | clone (`/Volumes/littlebig/…`) · branch | base | expected artifact |
+| agent · type | clone (`/Volumes/littlebig/…`) · branch | state | expected artifact |
 |---|---|---|---|
-| `green-225` · ch-implementer | `refmatrix-bug225` · `task-bug225-handoff-trunk-from-origin-head` | RED `be9acae` (+ uncommitted src) | GREEN commits + summary |
-| `red-216` · ch-test-engineer | `refmatrix-bug216` · `task-bug216-rule-docs-in-graph` | `df092ac` (+ uncommitted test file) | L81 RED commits |
-| `green-251c` · ch-implementer | `refmatrix-plan25-1` · `task-25.1-recall-hook-byte-budget` | GREEN `dc66a04` | full-suite log + `#green-r8` |
-| `red-212r2` · ch-test-engineer | `refmatrix-bug212` · `task-bug212-worktree-hook-crashes` | `3224a14` (+ uncommitted test edits) | L82 RED commits |
-| `spec-t3c` · ch-architect | `refmatrix-spec-t3c` · `spec-wave-t3c` | `1e89050` | L83 revision (paired leg only) |
-| `spec-t3b` · ch-architect | `refmatrix-spec-t3b` · `spec-wave-t3b` | `5023620` | L83 revision (10.2 without live draw) |
+| `green-251c` · ch-implementer | `refmatrix-plan25-1` · `task-25.1-recall-hook-byte-budget` | GREEN `dc66a04`; full suite running | full-suite log + `#green-r8` |
+| `green-225` · ch-implementer | `refmatrix-bug225` · `task-bug225-handoff-trunk-from-origin-head` | src edits in tree; full suite running | GREEN commits + summary |
+| `green-216` · ch-implementer | `refmatrix-bug216` · `task-bug216-rule-docs-in-graph` | RED `aac951c` + `1d2e200` + `eeaaefa` (L81/L86) | GREEN remedy + `#green-remedy-r1` |
+| `green-212r2` · ch-implementer | `refmatrix-bug212` · `task-bug212-worktree-hook-crashes` | RED `1c7cf4c`..`f7578dd` (L72/L82) | GREEN r4 + `#green-r4` |
+
+All seven spec branches are approved and frozen (merge points): T0 `fa1227d`, T2 `0fd8a2f`,
+T3a `8e8e307`, T3b `5559d20`, T3c `01c1f63`, T4 `b409d98`, T56 `fa1af7d`.
 
 ## What this session did {#did}
 
@@ -59,9 +60,18 @@ resume after it reset; briefs in `workflow/agents/inflight-2026-11-14.md`:
 - **Harness:** `CLAUDE_CODE_SHELL=/opt/local/bin/bash` (bash 5.3) in `~/.claude/settings.json`;
   takes effect after a Claude Code restart.
 
+- **Later on 2026-11-14:** plan-28 reshaped to the paired re-entry leg only (Q14, L83, L86, L87,
+  L89; approved `01c1f63`); plan-10/10.2 follow (`5559d20`). Agents get refmatrix through
+  `scripts/rmx-master` + read-only MCP tools in every `ch-*` agent (Q15, L85; MCP offer verified
+  only after a restart) and are read-only on live stores (`529e337`). New drafting specs, all
+  queued after 0.83.0: `task-agent-start-context`, `task-linked-readonly-store` (Q16),
+  `task-compaction-as-handoff` (Q17 + L91-L93: compaction and /clear write the full recall-state
+  to a file, inject a pointer, and a read gate makes the agent read it). bug-226 logged.
+
 ## Open {#open}
 
-- **Questions:** none open (next id Q15 in `workflow/open-questions.md`).
+- **Questions:** none open (next id Q18 in `workflow/open-questions.md`).
+- **Recall after /clear is MANUAL until 0.83.0 deploys:** today's hooks never run `rmx recall-state` on clear or compact; run `/recall-state` yourself.
 - **Next, in order:** collect the six agents → GREEN for bug-216 (L81) and bug-212 (L72+L82) →
   ch-bsd: 25.1 confirm, bug-212 r4 (range `f7c0d39..HEAD`), bug-216 r2, bug-225 → merge 25.1 →
   bug-216 (apply R4 to `.refmatrix/.refmatrix_ignore` then `rmx ingest .`; add the bug-216 →
