@@ -32,7 +32,6 @@ Next id: **Q19**.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
-| Q18 | 2026-11-14 (session a9b75923) | bug-155 cause 2: `scripts/lint-gmd.sh:43` builds the memory dir from the checkout's folder path, so a littlebig clone finds none and every `[[feedback_…]]` / `[[impression_…]]` / `[[project_…]]` link dangles; `test_the_repo_scope_is_clean_under_the_stricter_gate` still fails in every clone after cause 1's `988e96d`. Fix it? | (a) yes: when the checkout's own slug has no memory dir, the gate uses the canonical checkout's (the clone's local-path `origin`); a few lines in `lint-gmd.sh` + the clone test run green (recommended). (b) a `memory_dir` key in `.gmd/config.yml` instead. (c) leave it; the test keeps failing in clones and is not counted against branches | open — the user's repeated "apply the config fix" was read as cause 1 only; not interpreted as covering this |
 
 ### Answered {#answered-37b7498f}
 
@@ -69,6 +68,7 @@ Next id: **Q15**.
 
 | id | asked | question | answer | acted |
 |---|---|---|---|---|
+| Q18 | 2026-11-14 | bug-155 cause 2: `lint-gmd.sh` finds no memory dir in a clone, so memory-id links dangle and the repo-scope lint test fails in every clone. Fix it? | "q18 a" (user, 2026-11-14) | `44d1a34`: fallback to the clone's local-path origin's memory dir, test decoy home matches; bug-155 fixed |
 | Q14 | 2026-11-13 | How should hook output live within the 9.5k hard limit? | a: degrade ladder + spill to pull; clamp as counted safety net | 25.1 rev 8: R12-R14, AC-16..AC-18; RED/GREEN after the rev-7 GREEN |
 | Q13 | 2026-11-13 | Dedupe design after the replay rejected 4+3 | a: names-only (design 3) now; 4+3b later as a live A/B arm | `arch-10r` re-specs 10.2 as names-only; 4+3b recorded as a future A/B arm |
 | Q10 | 2026-11-13 | Non-human turns | a: no separate gate — same dedupe as human prompts | 10.4 keeps the focus-graph change and curator silence (Q9); its injection gate is dropped |
