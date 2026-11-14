@@ -1077,3 +1077,99 @@ clone, and the real clone's was cleared before the wide run.
   now checked for tracking, but it still opens the writer slot under a busy daemon. This is
   pre-existing and out of the rulings' scope.
 - The recall-skip flake: one rerun passed; it was not re-run in a full suite.
+
+## RED r5 (ch-bsd r4 at 03d7b27: b-1, s-1, m-1..m-5; ruling L95) {#red-r5}
+
+The test commit is `076d861`. It adds the new file `tests/test_bug212_r5_red.py`. In
+`tests/test_bug212_r4_red.py` it rewrites the census and adds a `--commit` parameter to the
+L82 save-state test. At `03d7b27`, the r4 and r5 files together give **14 failed, 48 passed**
+(`bug212/red-r5-head.log`). Each RED fails for the reason it names. Every test that passes at
+`03d7b27` is either a GUARD that its ch-bsd r4 mutation kills, or a census self-check.
+
+rel: derives-from -> [[bsd-bug212-r4-03d7b27]]
+rel: amends -> [[#red-r4]]
+
+### RED at 03d7b27 {#red-r5-red}
+
+| item | test(s) | E line at 03d7b27 |
+|------|---------|-------------------|
+| b-1 (i) | `test_compact_refuses_a_git_tracked_catalog[slots, legacy]` | `` `rmx compact` rewrote the git-tracked catalog ['catalog.A.duckdb', 'catalog.duckdb'] (exit 0) ``; legacy: `['catalog.duckdb']` |
+| b-1 (ii) | `test_compact_refuses_before_it_stops_a_running_daemon[slots, legacy]` | `` `rmx compact` on a tracked catalog stopped the running daemon (pid N -> None, answering=False) `` |
+| b-1 (iii) | `test_migrate_to_duckdb_overwrite_refuses_a_git_tracked_catalog` | `` `rmx migrate-to-duckdb --overwrite` rewrote the git-tracked catalog ['catalog.duckdb'] (exit 0) `` |
+| b-1 (iv) | `test_bug212_r4_red.py::test_every_checked_opener_calls_the_one_store_level_check` | `checked openers that do not call the store-level check ['refuse_tracked_catalog_open'] ...: ['cli:compact', 'cli:migrate_to_duckdb']` |
+| s-1 | `test_save_state_whose_memory_bridge_is_refused_says_so_on_stderr_and_exits_non_zero[slots, legacy]` | `the bridge refusal (`refusing to open …catalog.A.duckdb read-write in-process: ...`) is not on stderr` |
+| m-3 | `test_mcp_save_state_with_a_refused_promote_is_an_error_reply[slots, legacy]` | `MCP rmx_save_state with a refused promote did not reply as an error carrying the refusal: isError=False body='{"mem_id": …` |
+| m-4 | `test_a_refused_change_subject_leaves_the_stm_subject_unchanged_and_says_so[slots, legacy]` | `a refused change-subject switched the STM subject to 'bug212 r5 new subject'` |
+| m-5 | `test_init_and_partition_drop_refuse_the_in_process_route_under_a_busy_daemon[init, partition-drop]` | `` `rmx init --no-hooks --no-agents` took the in-process route under a busy daemon (exit 0) ``; `partition drop` the same |
+
+### The census, keyed on the resource {#red-r5-census}
+
+The census is `_scan_source` / `_census` in the r4 file. It records three families:
+
+- `store`: a read-write `Store(`, under any alias.
+- `raw`: an `open_duckdb(` or `duckdb.connect(` call whose path is not the literal `":memory:"`
+  and which does not pass `read_only=True`.
+- `move`: `.rename` / `.replace` / `.unlink` / `os.*` / `shutil.move` on a writer-catalog path.
+  A writer-catalog path is a catalog name, a slot f-string, a `db_path`,
+  `_active_slot_path()` / `_replica_file()`, or a local variable bound to one of these. The read
+  replica `catalog.read.duckdb` is not counted.
+
+Checked openers (they must call the store-level check):
+
+- `cli:_store_rw`
+- `verbs:local_write`
+- `cli:compact`
+- every caller of the library opener `migrate:migrate_catalog`, found by a census of its call
+  sites; today that is `cli:migrate_to_duckdb`.
+
+Allowed without a check:
+
+- the three daemon writer sites
+- `daemon:_op_replica_merge`
+- `daemon:Daemon._repair_missing_slot_locked`
+- `replica_merge:merge_slots`, which a test shows is called only from daemon.py
+- `hub:_bootstrap_global_store`
+- `store:Store.link_canon`
+- `store:Store.rebuild_index_from_log`
+- `backend:_open_write`
+- `backend:DuckDBBackend.connect`
+
+Self-checks, all passing:
+
+- the "sees" guard, one site per family: `cli:_store_rw`, plus `cli:compact` for both `raw` and
+  `move`, plus `migrate:migrate_catalog`;
+- the synthetic module, which carries a positive and a negative per family (Y6);
+- stale allowlist entries fail;
+- a library opener's caller is found;
+- daemon-only sites have only daemon callers.
+
+### GUARDS, each proven by its mutation (`bug212/red-r5-mutations.log`) {#red-r5-guards}
+
+Each mutation was applied as one exact, single-occurrence replace. src was restored with
+`git checkout --` in its own command, src and tests were checked clean with the original text
+back, and `__pycache__` was cleared afterwards.
+
+| mutation | guard | under the mutation |
+|----------|-------|--------------------|
+| Y2: `local_write` checks only if the file exists | `test_a_deleted_tracked_catalog_is_refused_and_not_recreated[slots, legacy]` (`rmx init`, every tracked catalog ` D`) | 2 failed: `` `rmx init` re-created the tracked ['catalog.duckdb'] `` |
+| Y5b: MCP fallback `create=False` | `test_the_mcp_memory_add_fallback_creates_a_missing_catalog` | 1 failed: `{"error": "no refmatrix catalog … run rmx init first"}` |
+| Y5c: promote `create=False` | `test_the_save_state_promote_creates_a_missing_catalog` | 1 failed: `VerbError: no refmatrix catalog …` |
+| Y7: promote raise only without `--commit` | `test_save_state_whose_promote_is_refused_…[commit]` (both layouts) | 2 failed: `the promote refusal … is not on stderr` |
+| Y6: `_store_aliases` returns `{"Store"}` (test code) | `test_the_census_scanner_finds_every_family_in_a_synthetic_module` | 1 failed: `the scanner missed [('aliased_assign', 'store'), ('aliased_import', 'store')]` |
+
+### For the implementer and the lead {#red-r5-flags}
+
+- The guards and census self-checks pass at `03d7b27` by design: L95 asks for pins of
+  behaviour that r4 shipped and ch-bsd verified. They are kept and labelled GUARD, with
+  mutation evidence. The lead may drop any of them.
+- m-4 wording contract: the one `Error:` line must carry the refusal head AND say the subject
+  was left alone: `subject` plus one of `unchanged`, `not changed`, `not set` or `kept`.
+- m-5 contract: one `Error:` line containing `busy`, a non-zero exit, catalog bytes unchanged,
+  and the partition still registered.
+- m-3 contract: the reply has `isError` set, carries the refusal head, and the handoff is still
+  written. That matches the CLI, which writes the handoff and then exits 1.
+- What a static census cannot see: a catalog path produced by a helper the regex does not
+  name. The behaviour tests are the backstop. `sqlite3.connect` is not scanned, per L95's
+  list. Its src uses are the SQLite backend's own connect and the hub bus database.
+- The MCP-server half of the m-3 fix only works if the verb or the adapter marks the reply
+  `isError`. The dispatcher sets it only for a top-level `error` key.

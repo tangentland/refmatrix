@@ -1,0 +1,27 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________ test_the_save_state_promote_creates_a_missing_catalog _____________
+
+no_catalog_store = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x1068db620>
+
+    @pytest.mark.timeout(300)
+    def test_the_save_state_promote_creates_a_missing_catalog(no_catalog_store):
+        """GUARD for Y5c (the save-state promote with `create=False`): on a store with no catalog
+        yet and no daemon, `handoff._promote_digest` returns an `id`, and the digest row exists."""
+        repo = no_catalog_store
+        probe = repo.base / "promote_probe.py"
+        probe.write_text(_PROMOTE_PROBE, encoding="utf-8")
+        r = subprocess.run([sys.executable, str(probe), str(repo.store)], cwd=str(repo.proj),
+                           env=_base_env(), capture_output=True, text=True, timeout=240)
+        text = _text(r)
+        assert r.returncode == 0, f"the promote probe itself failed\n{text}"
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+>       assert "error" not in out and out.get("id"), \
+            f"the promote on a store with no catalog failed: {out}"
+E       AssertionError: the promote on a store with no catalog failed: {'error': 'VerbError: no refmatrix catalog at /private/tmp/b212b-ovlr3zbz/proj/.refmatrix (catalog.duckdb missing) — run `rmx init` first', 'name': 'focus_summary_bug212r4prom'}
+E       assert ('error' not in {'error': 'VerbError: no refmatrix catalog at /private/tmp/b212b-ovlr3zbz/proj/.refmatrix (catalog.duckdb missing) — run `rmx init` first', 'name': 'focus_summary_bug212r4prom'})
+
+tests/test_bug212_r5_red.py:470: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r5_red.py::test_the_save_state_promote_creates_a_missing_catalog
+1 failed in 0.26s

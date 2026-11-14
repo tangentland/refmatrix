@@ -1,0 +1,28 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________ test_the_mcp_memory_add_fallback_creates_a_missing_catalog __________
+
+no_catalog_store = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x1051db8c0>
+
+    @pytest.mark.timeout(300)
+    def test_the_mcp_memory_add_fallback_creates_a_missing_catalog(no_catalog_store):
+        """GUARD for Y5b (the MCP `rmx_memory_add` fallback with `create=False`): on a store with
+        no catalog yet and no daemon, the first memory still lands -- the catalog is created and
+        holds it (the documented bootstrap exception)."""
+        repo = no_catalog_store
+        replies, text = _mcp(repo, repo.proj, [("rmx_memory_add", {
+            "name": "bug212_r5_boot", "content": "first memory on a fresh store (bug-212 r5)"})])
+        assert 2 in replies, f"the MCP server stopped answering\n{text}"
+        res = replies[2].get("result") or {}
+        body = " ".join(c.get("text", "") for c in res.get("content", []))
+>       assert res.get("isError") is not True and '"id"' in body, \
+            f"MCP rmx_memory_add on a store with no catalog failed: {body!r}"
+E       AssertionError: MCP rmx_memory_add on a store with no catalog failed: '{"error": "no refmatrix catalog at /private/tmp/b212b-mbbwuuxb/proj/.refmatrix (catalog.duckdb missing) \\u2014 run `rmx init` first"}'
+E       assert (True is not True)
+E        +  where True = <built-in method get of dict object at 0x105346c40>('isError')
+E        +    where <built-in method get of dict object at 0x105346c40> = {'content': [{'text': '{"error": "no refmatrix catalog at /private/tmp/b212b-mbbwuuxb/proj/.refmatrix (catalog.duckdb missing) \\u2014 run `rmx init` first"}', 'type': 'text'}], 'isError': True}.get
+
+tests/test_bug212_r5_red.py:451: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r5_red.py::test_the_mcp_memory_add_fallback_creates_a_missing_catalog
+1 failed in 0.40s
