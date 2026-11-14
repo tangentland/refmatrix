@@ -3935,33 +3935,45 @@ class Store:
             con.commit()
         return n
 
-    def _lance_for_purge(self, kind: str, n: int):
-        """`lance`, or None when the [dense] extra is not installed. A lance
-        that IS installed but fails to import (a missing transitive dependency
-        under `python -I`: `typing_inspection`) is a FAILURE, counted and
-        printed — it used to read as "not installed" and skip every vector
-        delete without a word (ch-bsd r7 #s-2)."""
+    def _lance_for_purge(self, kind: str, n: int, *, partition: "str | None" = None):
+        """`lance`, or None -- and None is ALWAYS a counted, printed failure.
+
+        Every caller asks only after finding the (partition, kind) table on
+        disk, so None means `n` rows are left behind. A lance that IS installed
+        but fails to import (a missing transitive dependency under `python -I`:
+        `typing_inspection`) is a failure (ch-bsd r7 #s-2); so is a lance that
+        is not installed at all (no [dense] extra) while the table exists --
+        written by an interpreter that had it, purged by one that does not.
+        That branch returned None in silence and both purge paths read it as
+        "nothing to delete" (bug-216 remedy r6 M1, ruling L103)."""
         import importlib.util
         if importlib.util.find_spec("lance") is None:
+            self._note_vector_delete_failure(kind, n, ModuleNotFoundError(
+                "lance is not installed (no [dense] extra) but the vector table exists"),
+                partition=partition)
             return None
         try:
             import lance
         except Exception as e:  # noqa: BLE001 — named and counted below
-            self._note_vector_delete_failure(kind, n, e)
+            self._note_vector_delete_failure(kind, n, e, partition=partition)
             return None
         return lance
 
-    def _note_vector_delete_failure(self, kind: str, n: int, exc: BaseException) -> None:
+    def _note_vector_delete_failure(self, kind: str, n: int, exc: BaseException, *,
+                                    partition: "str | None" = None) -> None:
         """A failed vector delete leaves `n` orphan vectors for purged ids. The
         catalog purge still proceeds (the row must go), so the failure is
         PRINTED with its remedy and COUNTED on `vector_delete_failures`, which
-        sync / prune / fold report (ch-bsd r7 #s-2: it was `except: pass`)."""
+        sync / prune / fold report (ch-bsd r7 #s-2: it was `except: pass`). The
+        message names the table, `<partition>/<kind>.lance` (default: the bound
+        partition), and says the rows were left behind."""
         import sys as _sys
+        part = partition or self._partition_name
         self.vector_delete_failures = getattr(self, "vector_delete_failures", 0) + n
         print(f"rmx: vector delete FAILED for {n} {kind} id(s) in partition "
-              f"{self._partition_name!r} ({type(exc).__name__}: {exc}); their vectors "
-              f"are orphaned until `rmx embed --gc` reaps them (which needs a "
-              f"working `import lance`)", file=_sys.stderr)
+              f"{part!r} (table {part}/{kind}.lance; {type(exc).__name__}: {exc}); "
+              f"their vector rows were left behind, orphaned until `rmx embed --gc` "
+              f"reaps them (which needs a working `import lance`)", file=_sys.stderr)
 
     def _drop_lance_for_purge(self, entity_id: int, kind: str) -> bool:
         """Drop entity_id's vector from its (partition, kind) Lance dataset.
@@ -3969,10 +3981,13 @@ class Store:
         corresponding dense vector instead of leaving an orphan for the next
         `embed --gc`.
 
-        Quiet only when there is nothing to delete: `lance` not installed (no
-        [dense] extra) or the dataset directory absent (kind never embedded in
-        this partition). Any other failure is printed and counted
-        (`_note_vector_delete_failure`) and the catalog purge proceeds.
+        Quiet only when there is nothing to delete: the dataset directory is
+        absent (kind never embedded in this partition). When the table exists,
+        every failure -- `lance` not installed (no [dense] extra), a lance that
+        will not import, a delete that raises -- is printed and counted
+        (`_note_vector_delete_failure`, via `_lance_for_purge` for the first
+        two) and the catalog purge proceeds (bug-216 remedy r6 M1: "`lance`
+        not installed" was wrongly listed as nothing to delete).
 
         Returns True when a delete was issued, False otherwise.
         """
@@ -4030,10 +4045,11 @@ class Store:
             path = self.root / "vectors" / pname / f"{kind}.lance"
             if not path.exists():
                 continue
-            lance = self._lance_for_purge(kind, len(gids))
+            lance = self._lance_for_purge(kind, len(gids), partition=pname)
             if lance is None:
                 # The table EXISTS (checked above), so rows are left behind:
-                # named in `errors`, which the replica merge turns into
+                # printed and counted by `_lance_for_purge`, and named in
+                # `errors`, which the replica merge turns into
                 # `vector_delete_error` and a non-zero exit (bug-216 remedy r5 M1,
                 # ruling L101: r4 dropped this line and the skip went silent).
                 out["errors"].append(f"{pname}/{kind}.lance: lance unavailable; "
@@ -4043,7 +4059,7 @@ class Store:
                 out["deleted"] += delete_vector_rows(lance, path, gids)
                 out["tables"] += 1
             except Exception as e:  # noqa: BLE001 — named, counted and returned
-                self._note_vector_delete_failure(kind, len(gids), e)
+                self._note_vector_delete_failure(kind, len(gids), e, partition=pname)
                 out["errors"].append(f"{pname}/{kind}.lance: {type(e).__name__}: {e}")
         return out
 
