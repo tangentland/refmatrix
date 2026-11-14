@@ -21,7 +21,7 @@ metadata:
 > Review input folded 2026-11-14: `plan-review-fable-2026-11-14-queue#b1`,
 > `plan-review-fable-2026-11-14-queue#p29-4`,
 > `plan-review-fable-2026-11-14-store#plan29-converge-candidates` ([[#fold]]).
-> Open for the user: `plan-29 D4` ([[#d4]]).
+> Decided: `plan-29 D4` = (c), a normalised-AST derive hash (user, ruling L106; [[#d4]], [[#r7]]).
 > Revision round 2 (ruling L105, on ch-bsd spec review r1): [[#rev-round-2]].
 
 rel: part-of -> [[plan-29-code-quality]]
@@ -43,6 +43,9 @@ rel: realizes -> [[constitution#project-1]]
 3. `QueryEngine.run_pql` returns a typed result, which closes bug-235.
 4. `_DaemonWriter` and `Store` meet one `typing.Protocol`; `_DaemonWriter.__getattr__` is removed.
 5. No `typing.cast` is left in `src/refmatrix`.
+6. `store.derive_code_hash` hashes a normalised form of each module, so an annotation-only or
+   comment-only edit no longer marks any store `behind_code` ([[#r7]]; `plan-29 D4`). This lands
+   first.
 
 ## Measured at `f3709d2` (before the 29.5 split) {#measured}
 
@@ -52,12 +55,13 @@ Scripts: `workflow/plans/plan-29-code-quality-tasks/census/`. Logs: `workflow/re
 mypy 2.4.1, Python 3.14, 78 source files. The task re-runs all of them at its own start commit
 ([[plan-29-code-quality#baseline-rule]]) and records the new numbers in its summary. {#measured-rule}
 
-**Environment caveat.** `.venv-eval` has duckdb 1.5.2; `pyproject.toml` requires `>=1.5.3`
-(`plan-review-fable-store D5`, an open user decision that this spec does not settle). duckdb
+**Environment caveat.** `.venv-eval` has duckdb 1.5.2; `pyproject.toml` requires `>=1.5.3`.
+`plan-review-fable-store D5` is decided (L106, cited for reference): the dev venv moves to
+1.5.3 before baselines are taken. The numbers in this section were taken under 1.5.2. duckdb
 ships its own type stubs, and mypy reads them from the installed version, so the counts in
 modules that use duckdb types can differ under 1.5.3. That was not measured: nothing was
-installed for this spec. Whatever D5 decides, [[#r3]] makes the baseline name the duckdb version
-it was recorded with. {#measured-duckdb}
+installed for this spec. The task re-measures at its start commit, under 1.5.3, and [[#r3]]
+makes the baseline name the duckdb version it was recorded with. {#measured-duckdb}
 
 ### mypy with no configuration {#measured-default}
 
@@ -345,6 +349,52 @@ version differs from the one the baseline records. {#r1-cannot-run}
 - The count of `# type: ignore` comments in `src/refmatrix` is a field of the baseline file and
   follows the same rule as a cell: it may only fall (5 at `f3709d2`).
 
+### R7: the derive hash ignores comments, docstrings and annotations (`plan-29 D4` = c) {#r7}
+
+Decided by the user (ruling L106, [[plan-review-2026-11-13#lead]]). This requirement lands
+BEFORE any annotation this task adds and before any comment 29.3 adds to a derive-hash file
+([[#seam]] step 0).
+
+- **What is hashed.** For each file `derive_pass_modules` names, `derive_code_hash` hashes a
+  normalised form of its parsed source instead of its bytes. The normal form drops:
+  - comments and formatting (they are not in the syntax tree; positions are left out of the
+    dump);
+  - docstrings (a string statement that opens a module, class or function);
+  - annotations: on parameters, on returns, and on variables (an annotated assignment with a
+    value becomes a plain assignment; one with no value is removed);
+  - `if TYPE_CHECKING:` blocks, and import statements from `typing` and `typing_extensions`
+    (an annotation edit usually adds one of these).
+  Everything else stays: a changed statement, constant, default value, decorator, name or
+  import from any other module changes the hash.
+- **A new scheme tag.** `_DERIVE_HASH_SCHEME` changes from `p1`, and the tag carries the Python
+  `major.minor` that produced the tree, because a syntax tree's dump is not stable across
+  interpreter versions. A stamp written under another tag (every `p1` stamp on the fleet; a
+  stamp from another Python) is NOT comparable.
+- **A non-comparable stamp reads `code_unknown`, never `behind_code`.** That is the rule the
+  comparison in `derive_status` already has for an untagged stamp; it is extended to "any tag
+  other than the current one", and such a stamp is labelled by its own tag, not `legacy-union`.
+  A stamp with no hash at all still counts as behind, as today.
+- **A file that does not parse is never "unchanged".** Its raw bytes are hashed under a marker
+  that cannot equal any normal-form hash, so it reads as changed. `derive_code_hash` raises
+  nothing from a status read.
+- **Cost.** Parsing is paid once per process per file state: the existing cache, keyed on each
+  file's stat, is kept. Measured once on the dev machine at `f3709d2` (parse plus dump, one
+  run): `store.py` 73 ms, `ingest.py` 29 ms, `ingest_gmd.py` 20 ms, each other file under
+  10 ms; about 122 ms cold for the union, against about 1 ms for reading bytes. The task lists
+  every caller at its start commit (four call sites in the store module at `f3709d2`) and shows
+  that no hook-run command computes a hash it does not use.
+- **Existing tests that prove a flip with a comment.** At `f3709d2` the helper `_edit` in
+  `tests/test_derive_pass_identity.py` appends a comment (5 uses), and
+  `tests/test_plan12_remedy.py` (5 places) and `tests/test_derive_stamp.py` (1) use comment-only
+  stand-in modules. Under this requirement a comment is no change, so `@ch-test-engineer`
+  re-points each to a statement edit in the RED commit and lists them; the comment form becomes
+  the "stays equal" case of AC-20. No assertion in them is weakened.
+- **What the fleet shows.** After the release that carries this requirement every existing stamp
+  reads `code_unknown` until its pass is next derived or re-stamped. That is a quieter state than
+  `behind_code` and it is one-time. Whether the lead re-stamps then, and how that is combined
+  with the announced re-stamp 29.5's module-list change needs (L106), is the lead's release
+  plan, not this spec's ([[#d4]]).
+
 ## Acceptance criteria {#acceptance}
 
 Each AC is a test that is RED at the task's start commit, unless marked (characterization).
@@ -423,6 +473,32 @@ Each AC is a test that is RED at the task's start commit, unless marked (charact
   its mixins. A public method added to the proxy alone fails it, which is how a later write
   method is made to join the Protocol.
 - **AC-18:** see [[#derive-digest]].
+- **AC-20: neutral edits leave the hash equal; real edits change it.** On real COPIES of the
+  derive files (the existing `_DERIVE_SRC_DIR` fixture; no monkeypatched hash), per pass:
+
+  | edit to a copy | hash |
+  |---|---|
+  | a comment added; a `# noqa: BLE001 — reason` added to an `except` line | equal |
+  | a docstring changed | equal |
+  | a parameter and a return annotation added; a variable annotated | equal |
+  | `from typing import Any` added; an `if TYPE_CHECKING:` import added | equal |
+  | the file reformatted (blank lines, line breaks) | equal |
+  | a statement added; a constant changed; a default value changed | different |
+  | `except Exception:` narrowed to `except KeyError:` | different |
+  | an import from a non-typing module added | different |
+
+  RED at the start commit for every "equal" row (the raw-bytes hash differs).
+- **AC-21: a stamp under another tag is unknown, not behind.** A stamp carrying a `p1:` hash, and
+  one carrying the new scheme with another Python version, each read `code_unknown` with their
+  own tag as the label, and `behind_code` is false for them; a stamp with no hash reads behind;
+  a stamp under the current tag with a different hash reads behind. RED at the start commit for
+  the label (a `p1:` stamp is `p1` today, and after the tag changes it would be mislabelled
+  `legacy-union`).
+- **AC-22: an unparsable file reads as changed and raises nothing.** A copy with a syntax error
+  gives a hash different from the file's last good hash and from the empty hash;
+  `derive_status` returns.
+- **AC-23: parsed once.** With a counter on the parse step, two `derive_status` calls in one
+  process parse each file once; touching a file's content makes it parse again.
 - **AC-19: the pin and the gate agree.** A test reads the `dev` extra's mypy specifier and the
   baseline's recorded version: the specifier admits that `major.minor` and no other. Widening
   the specifier to `>=2.4` fails it.
@@ -439,6 +515,8 @@ Each AC is a test that is RED at the task's start commit, unless marked (charact
 RED first, by `@ch-test-engineer`, recorded to `workflow/review-output/`; GREEN by
 `@ch-implementer`, who writes no tests ([[tdd-governance#pipeline]]).
 
+- **R7 goes first**, as its own RED → GREEN → ch-bsd round, before any annotation edit. Its
+  tests use real copies of the derive files, as the existing derive tests do.
 - **Order of RED.** AC-1, AC-2 and AC-12 are RED because the script and the scanner do not exist;
   record the collection or import error as the red run. AC-6 is RED on behaviour. AC-7 is characterization. AC-9
   and AC-10 are RED on structure. AC-8 is characterization: its goldens are recorded first.
@@ -477,6 +555,12 @@ RED first, by `@ch-test-engineer`, recorded to `workflow/review-output/`; GREEN 
   | `pagerank.py`'s damping constant changed | AC-18, prior leg |
   | `consolidate.py` labels a subject differently | AC-18, compile leg |
   | the digest test skips a leg whose pass has no stamp | AC-18 ("every pass ran") |
+  | `derive_code_hash` hashes the raw text again | AC-20 (every "equal" row) |
+  | the normal form drops default values too | AC-20 ("a default value changed") |
+  | the scheme tag left at `p1` | AC-21 |
+  | a non-current tag compared as if current | AC-21 (reads behind) |
+  | an unparsable file hashed as empty | AC-22 |
+  | the cache keyed on nothing | AC-23 |
 
 - **The helper's own promises are mutated before the sites**
   ([[bsd-impressions#imp-convergence-tests-sites-not-helper]]): the gate's exit-code table and
@@ -499,6 +583,8 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 | `src/refmatrix/typing_store.py` | create: `StoreWriter`, `StoreHost`; declarations only |
 | the CLI module that holds `_DaemonWriter`, `_store`, `_store_rw`, `_ingest` (expected: `refmatrix/cli/__init__.py`) | Protocol return; no `__getattr__`; the daemon-absent accessor |
 | the `cli/<group>_cmds.py` modules of the 35 fall-through sites | reader member or the accessor |
+| the module that holds `derive_code_hash`, `_DERIVE_HASH_SCHEME` and `derive_status` (the store derive mixin after 29.5) | R7: the normal form, the new tag, the non-comparable rule |
+| `tests/test_derive_hash_normalised.py`; `tests/test_derive_pass_identity.py`, `tests/test_plan12_remedy.py`, `tests/test_derive_stamp.py` | create: AC-20 to AC-23; the three existing files get their comment-only edits re-pointed (test engineer) |
 | `tests/test_type_gate.py`, `tests/fixtures/type_gate/` | create: AC-1 to AC-5, AC-13 |
 | `tests/test_bug235_pql_count.py` | create: AC-6 to AC-8 |
 | `tests/test_store_writer_protocol.py` | create: AC-9 to AC-12, AC-16, AC-17 |
@@ -508,8 +594,8 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 
 ## Key decisions {#decisions}
 
-None of these needs the user; each records the choice and why. The one that does is
-`plan-29 D4` ([[#d4]]). A reviewer who disagrees with one below raises it as a new
+None of these needs the user; each records the choice and why. The one that did, `plan-29 D4`,
+is decided ([[#d4]]). A reviewer who disagrees with one below raises it as a new
 `plan-29 D<n>` (D7 to D22 are taken by the 29.1 / 29.4 / 29.5 specs; D5, D6 and D23 upward are
 free). The lead registers D4 and D7 to D22 in `plan-29-code-quality#decisions` at merge (L105,
 M11).
@@ -535,6 +621,11 @@ M11).
 7. **The four result dispatches are not merged into one payload function**. Their
    payloads differ by design (the verb's weighted rows carry no `kind` / `path`); merging them
    changes wire shapes. The exhaustiveness check is the guard instead. {#k7}
+8. **The derive hash's tag carries the Python version, and an older tag reads unknown**. A
+   syntax-tree dump can change with the interpreter; without the version in the tag a Python
+   upgrade would mark the whole fleet `behind_code`, the false positive the user's decision
+   removes. Reading a non-current tag as unknown is the rule the comparison already applies to
+   untagged stamps. {#k8}
 
 ## How this adapts to the 29.5 split {#split}
 
@@ -580,8 +671,9 @@ in [[#fold-cites]]):
 
 ### Three seams with 29.5 and 29.3, each stated once {#seams-295}
 
-These answer ch-bsd spec review r1 M6. 29.5's author was sent the same three statements on
-2026-11-14; what 29.5's spec must say for them to hold is marked "29.5 side".
+These answer ch-bsd spec review r1 M6. 29.5's author was sent the same statements on 2026-11-14
+and answered the same day with how 29.5's round-2 text reads (not yet committed when this was
+written); that answer is marked "29.5 side".
 
 1. **The leaf module is `src/refmatrix/typing_store.py`.** It holds `StoreWriter` and
    `StoreHost`.
@@ -590,17 +682,27 @@ These answer ch-bsd spec review r1 M6. 29.5's author was sent the same three sta
      nothing. 29.5's mixin census and its "store family" rule key on the same pattern.
    - Because its name is outside that pattern, this task's strict enumeration names it
      explicitly (AC-5), and a test asserts it is in neither derive table.
-   - 29.5 side: its `store_*` rules match `store.py` and `store_*.py` only.
+   - 29.5 side: its AC-5 applies to modules that DEFINE a `Store` mixin, so a declarations-only
+     module is exempt whatever it is called. The name stays outside the `store_*` pattern anyway,
+     so nothing depends on that exemption.
 2. **The host is a `TYPE_CHECKING`-only base class** ([[#r2]]). Run-time bases, the MRO and
    "methods only, no method in two mixins" are as 29.5 leaves them; AC-17 holds the MRO.
-   - 29.5 side: its mixin census takes the mixin set from `Store`'s bases (so `StoreHost` is not
-     a second definer of anything) and accepts a mixin whose only source-level base is that
-     conditional alias. This task adds the base line to the mixin modules; 29.5 does not.
+   - 29.5 side: its mixin census counts concrete method definitions in `Store`'s bases. A class
+     that only declares (under `TYPE_CHECKING`, or a Protocol) is not a mixin and does not trip
+     "no method in two mixins". A real common base class would change the MRO 29.5 fixes, which
+     is why the host is not one. This task adds the base line to the mixin modules; 29.5 does not.
 3. **Which source-walking censuses 29.3 moves** is stated in
    [[task-29.3-converge-shapes#k-r7]]: every entry of 29.5's source-reader inventory that walks
    `src/refmatrix` with `ast`. This task adds no census walk of its own outside the kit: AC-5,
    AC-12 and AC-16 are written as kit families if the kit exists when they are written
    ([[#seam]] says it does), and are moved onto it by 29.3's slice K otherwise.
+4. **The derive digest's golden** ([[#derive-digest]]). Asked of 29.5 on 2026-11-14: record it at
+   R0 with this spec's tool and check it after the last store move, so that it is evidence for
+   29.5's module-list change as L106 intends. Not yet answered.
+5. **The three handoff helpers and `telemetry`'s read of `cli.main`** are 29.5's two declared
+   layering exceptions (L105, B1). Their owner follow-up is
+   [[task-29.3-converge-shapes#slice-h]], which starts after this task's [[#r5]] because it
+   needs the daemon-absent accessor and the writer Protocol.
 
 ## The seam with 29.3 {#seam}
 
@@ -609,6 +711,7 @@ Both tasks edit the query module and `handoff`. They are not parallel there
 
 | step | task | what | why in this place |
 |---|---|---|---|
+| 0 | 29.3 (K), then 29.2 [[#r7]] | the census kit and the derive digest golden; then the normalised derive hash | the golden precedes every `src/` edit; the hash change precedes every annotation and comment edit (L106) |
 | 1 | 29.3 (a) | `run_git` adopted in `handoff`, `sync`, `store`, `upgrade`, the CLI | removes git wrappers before they would be annotated |
 | 2 | 29.3 (b) | term resolution, PQL argument kinds, the evaluator's value type | the query half first: its behaviour changes are settled before the module is frozen under strict flags |
 | 3 | 29.2 [[#r4]] | the `run_pql` result union, on the value type step 2 defined | closes bug-235 on the final evaluator |
@@ -645,23 +748,33 @@ from the tables, not from prose: `census/census_derive_modules.py`, log
 
 - The union (`_DERIVE_CODE_MODULES`) answers the no-argument caller and EVERY pass that has no
   entry in `_DERIVE_PASS_MODULES`.
-- An annotation added to one of these files to satisfy a strict module's `no-untyped-call`, or a
-  comment added by 29.3(c), changes a hash with nothing about what is derived changed. After the
-  next deploy every fleet store reads `behind_code` for the passes that file feeds.
-- 29.5 changes the union too (`task-29.5-split-giant-modules#r5` item 4: each store move adds its
-  `store_<concern>.py`; the pass table is not changed). This task's annotations in `store.py` and
-  the mixin modules flip the union again. What the fleet shows on a union flip is written down
-  by 29.5's `#r0-derive`; this task cites that answer and does not re-measure it.
+- Under the raw-bytes hash of `f3709d2`, an annotation added to one of these files, or a comment
+  added by 29.3(c), changes a hash with nothing about what is derived changed, and every fleet
+  store then reads `behind_code` for the passes that file feeds. [[#r7]] removes that for
+  comments, docstrings and annotations.
+- 29.5 changes the union (`task-29.5-split-giant-modules#r5` item 4: each store move adds its
+  mixin module; the pass table is not changed). [[#r7]] does not help there: moving methods
+  between files changes each file's tree. What the fleet shows on a union flip is written down
+  by 29.5's `#r0-derive`.
 
-Rules for this task:
+Rules for this task, with [[#r7]] in place:
 
 - **The list is re-read at the start commit** with the script above, and the summary carries the
-  table: file, passes, and every edit this task and 29.3 made to it.
-- Edits to these files are kept to what a strict module's error requires, and land in ONE
-  release together with 29.3's edits to the same files
-  ([[task-29.3-converge-shapes#c-r7]]).
-- What is done about the flip on live stores is `plan-29 D4` ([[#d4]]). No agent re-stamps or
-  re-derives a live store.
+  table: file, passes, and every edit this task and 29.3 made to it, each marked NEUTRAL (the
+  normal form is unchanged) or REAL (it is not).
+- **Neutral edits** are this task's annotations and 29.3(c)'s `justified` comments. They change
+  no hash. AC-20 is what makes that true, so no neutral edit to a derive file lands before
+  [[#r7]] does.
+- **Real edits still change a hash, as they should.** In this task: the `isinstance` narrowing
+  and `ingest_path` in the store modules (union only). In 29.3: `run_git` in the store module
+  (union only), and every handler in a pass file that slice c surfaces or narrows rather than
+  justifies ([[task-29.3-converge-shapes#c-r7]]).
+- **One release carries [[#r7]] and every real edit both tasks make to a derive file.** In that
+  release the tag changes, so every existing stamp reads `code_unknown`; the real edits ride
+  inside that one-time state instead of producing a separate `behind_code` event later. A real
+  edit to a pass file that ships in a LATER release marks that pass `behind_code` on every
+  store; that needs the lead's go before it is merged.
+- No agent re-stamps or re-derives a live store.
 
 ### AC-18: the derived state did not move, and the check can fail {#derive-digest}
 
@@ -682,15 +795,20 @@ shared by 29.2 and 29.3.
 - **Every pass is shown to have run.** The test asserts a derive stamp exists for each pass of
   the table before it digests. A pass that did not run fails the test by name; it never
   contributes an empty leg.
-- **How the start-commit digest exists at the end commit: a committed golden.** The tool, the
-  corpus and `tests/fixtures/derive_digest/golden.json` are committed by `@ch-test-engineer`
-  BEFORE the first plan-29 edit to any file of the table after 29.5's release. By
-  [[#seam]] that is 29.3's first slice, so 29.3 slice K records it
-  ([[task-29.3-converge-shapes#k-r6]]); if this task starts first, it does. The golden names the
-  commit it was recorded at, the embed model id and the duckdb version. At a different model or
-  duckdb version the test FAILS with the re-record procedure (a `git worktree` of the recorded
-  commit under a short temp root, the tool run with that tree on `PYTHONPATH`); it is never
-  skipped and never re-recorded from the current tree.
+- **How the earlier digest exists at a later commit: a committed golden.** The tool, the corpus
+  and `tests/fixtures/derive_digest/golden.json` are committed by `@ch-test-engineer` before the
+  code they are evidence about changes.
+  - L106 names this digest as the evidence for 29.5's module-list change. For that, the golden
+    has to be recorded BEFORE 29.5's first store move (at its R0, on the `pre-split-29.5` tree)
+    and checked after its last. That is asked of 29.5's spec ([[#seams-295]] item 4); this spec
+    cannot make 29.5 do it.
+  - If 29.5 does not record it, 29.3 slice K does, before the first plan-29 edit to any file of
+    the table after 29.5's release ([[task-29.3-converge-shapes#k-r6]]). The digest is then
+    evidence for 29.2 and 29.3 only, and the summary says so.
+  - The golden names the commit it was recorded at, the embed model id and the duckdb version.
+    At a different model or duckdb version the test FAILS with the re-record procedure (a
+    `git worktree` of the recorded commit under a short temp root, the tool run with that tree
+    on `PYTHONPATH`); it is never skipped and never re-recorded from the current tree.
 - **It is proven to fail on input that must fail.** A second corpus,
   `tests/fixtures/derive_digest/corpus_changed/`, differs from the first by four small edits, one
   aimed at each leg (a new `def`; one changed sentence in a doc; one new call edge; one new
@@ -699,47 +817,32 @@ shared by 29.2 and 29.3.
 - **And on code that must fail.** Four mutations, each planted and seen red, one per leg (table
   in [[#test-strategy]]).
 - **AC-18 itself:** at this task's end commit, and at 29.3's, the four legs equal the golden.
-  That is the evidence D4's option (b) rests on, for exactly the passes in the table.
+  That is the evidence that the real edits of [[#derive-hash]] left the derived state alone, and
+  (when 29.5 records the golden) the evidence for the announced re-stamp after 29.5.
 
-## Open decision for the user {#open-decisions}
+## `plan-29 D4`: decided {#open-decisions}
 
-**plan-29 D4: the fleet-wide `behind_code` flip from edits that change no derivation.** {#d4}
+**plan-29 D4 = (c): the derive hash is computed over a normalised syntax tree.** Decided by the
+user, 2026-11-14 (ruling L106, [[plan-review-2026-11-13#lead]]). The lead registers it in
+`plan-29-code-quality#decisions` at the merge that lands these specs (L105, M11). {#d4}
 
-Not settled here. Registered in `plan-29-code-quality#decisions` by the lead at the merge that
-lands these specs (ruling L105, M11).
-
-**Scope.** Every plan-29 release that changes a derive hash without changing what is derived:
-
-1. 29.5's release. It is released alone (29.5 `#r9` item 7) and flips the UNION: the no-argument
-   caller and every unmapped pass.
-2. The release that carries 29.2 and 29.3. It flips the union again (annotations in the store
-   modules; 29.3's handlers in `store.py`) and the per-pass hashes of `ingest`, `semantic`,
-   `gmd`, `sessions`, `pagerank` and the memory compile; `embed` too if `embedder.py` or
-   `vectors.py` is touched. The exact list is the start-commit table of [[#derive-hash]].
-
-These are two releases, not one bundle: an earlier draft of this section offered to bundle 29.5,
-which contradicted "released alone".
-
-**Options.**
-
-- (a) Accept each flip and re-derive every store (`rmx reingest`) after the release. Cost: a
-  full re-derive per store, twice, for no change in the derived state.
-- (b) Accept each flip and have the lead re-stamp each store through the existing derive-stamp
-  path, announced and backed up first. Evidence for release 2: AC-18's four equal legs. Evidence
-  for release 1: 29.5's own gates (its moves are tool-made and its `#r0-derive` finding says
-  what the union feeds). No re-derive.
-- (c) Change `derive_code_hash` so that comments and annotations do not change it. That is a
-  change to the staleness detector: a new small task with its own spec, which has to land before
-  29.5's first store move to spare the fleet release 1's flip, and which flips every store once
-  itself when the hash scheme changes. Neither 29.2, 29.3 nor 29.5 makes that change. Whether
-  29.5's AC-5 tests (the tables name real files) still hold under it is 29.5's to state.
-
-**Recommended:** (b). It is the user's call because it writes to every live store's stamps.
-
-**What this decision touches and does not settle.** Both releases are derive-flip releases;
-ruling L105 says the standing go asked for in `plan-review-fable D4`, if granted, excludes them.
-`plan-review-fable-store D5` (the dev venv's duckdb) decides which duckdb version the golden of
-AC-18 is recorded under; this spec only makes the golden name it.
+- **What it is:** [[#r7]], in this task, before the annotations.
+- **The question it answered:** annotation- and comment-only edits to derive-hash files marked
+  every fleet store `behind_code` with nothing derived differently. The other options were to
+  re-derive every store (a), or to re-stamp every store by hand with an equal-digest test as
+  evidence (b). This spec had recommended (b).
+- **What it does not remove.**
+  1. 29.5's release still changes the union (its module list and each file's tree). L106: that
+     needs one announced re-stamp, with the equal digest of [[#derive-digest]] as evidence.
+  2. The release that carries [[#r7]] changes the hash tag, so every existing stamp reads
+     `code_unknown` once ([[#r7]], "What the fleet shows").
+  3. Real edits to a pass file change that pass's hash ([[#derive-hash]]); they ship inside the
+     release of item 2.
+- **Left to the lead's release plan, not decided here:** whether one announced re-stamp after
+  the second release can serve for both 1 and 2, or each release gets its own.
+- **Cited for reference, decided in the same ruling:** `plan-review-fable D4` (a standing go,
+  except for store-changing releases; both releases above are of that kind) and
+  `plan-review-fable-store D5` (duckdb 1.5.3 in the dev venv before baselines).
 
 ## Review findings folded on 2026-11-14 {#fold}
 
@@ -778,12 +881,15 @@ span for the reason in [[#fold-cites]].
 | M11: D labels are not in the plan | the lead registers D4 and D7 to D22 at merge; said in `#d4` and `#decisions` | [[#d4]] |
 | B1 (via L105): the three handoff helpers are not moved by 29.5 | the sentence saying they move is removed | [[#needs-295]] |
 
-Not changed by this round: `plan-29 D4` is still the user's; `plan-review-fable D4` and
-`plan-review-fable-store D5` are referenced and not settled.
+| `plan-29 D4` decided (c) (user, L106) | new requirement R7 with AC-20 to AC-23 and six mutations; it lands first; `#derive-hash` now separates neutral from real edits; the D4 section records the decision and what it does not remove | [[#r7]], [[#derive-hash]], [[#d4]], [[#seam]] step 0 |
+| B1, as extended to this spec at `11e9f9f` | `#needs-295` says the three helpers stay in `cli/__init__.py`; no text assumes the move; their owner follow-up is named | [[#needs-295]], [[#seams-295]] item 5 |
 
-**Waiting on 29.5's author.** The "29.5 side" lines of [[#seams-295]] and the `feature-bound`
-wording 29.3's AC-a1 relies on were sent on 2026-11-14; 29.5 and 29.4 are being revised in the
-same round. If their merged text differs, this section is amended, not theirs silently assumed.
+`plan-review-fable D4` and `plan-review-fable-store D5` are cited as decided in L106; nothing
+here decides them.
+
+**Still waiting on 29.5's author.** Item 4 of [[#seams-295]] (who records the digest golden) and
+the `feature-bound` wording 29.3's AC-a1 relies on. 29.5 and 29.4 are being revised in the same
+round; if their merged text differs from the "29.5 side" lines, this section is amended.
 
 ## Out of scope {#out-of-scope}
 

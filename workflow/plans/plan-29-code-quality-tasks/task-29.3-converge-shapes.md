@@ -20,7 +20,7 @@ metadata:
 > the shared files are ordered in [[task-29.2-mypy-gate#seam]].
 > Review input folded 2026-11-14: `plan-review-fable-2026-11-14-store#plan29-converge-candidates`,
 > `plan-review-fable-2026-11-14-queue#p29-4`, `plan-review-fable-2026-11-14-queue#dup-2`
-> ([[#fold]]). Open for the user: `plan-29 D4` ([[task-29.2-mypy-gate#d4]]).
+> ([[#fold]]). Decided: `plan-29 D4` = (c) (user, ruling L106; [[task-29.2-mypy-gate#d4]]).
 > Revision round 2 (ruling L105, on ch-bsd spec review r1): [[#rev-round-2]].
 
 rel: part-of -> [[plan-29-code-quality]]
@@ -41,7 +41,7 @@ rel: derives-from -> [[bsd-pattern-prereg-check-unrun-census]]
 
 For each finding class the review ledger has recorded more than twice: ONE helper that owns the
 shape, every call site moved onto it, and a census test that fails when a new site bypasses it.
-Eight slices, each on its own branch, in this order:
+Nine slices, each on its own branch, in this order:
 
 | slice | helper | closes |
 |---|---|---|
@@ -53,9 +53,11 @@ Eight slices, each on its own branch, in this order:
 | e | one `Deadline`; explicit `timeout` and `retries` on every daemon call | the four `_left` copies |
 | f | the tracked-catalog refusal takes the caller's remedy | bug-232 |
 | g | one function for a daemon op's partition default | the 20 copies of one expression |
+| h | one write context handed from the adapter to the engine | 29.5's two declared layering exceptions (L105, B1) |
 
 Slices a, b and c are the plan's "first three". Slices d to g are the other classes that qualify
-under the plan's rule ([[#classes]]).
+under the plan's rule ([[#classes]]). Slice h is not a ledger class: it is the owner follow-up
+ruling L105 requires, taken here at the request of 29.5's author ([[#slice-h]]).
 
 ## The finding classes, counted {#classes}
 
@@ -196,11 +198,13 @@ proof is the mutations and planted bypasses below, each seen red.
   shows the three things a new family supplies (predicate, allowlist with reasons, synthetic
   module). Those tasks add their family; this task does not.
 
-- **K-R6: the derive digest is recorded here, before any `src/` edit of 29.2 or 29.3.** The
-  tool, the two corpora, the golden and the test of [[task-29.2-mypy-gate#derive-digest]] are
-  committed in this slice, because this is the first plan-29 work after 29.5's release
-  ([[task-29.2-mypy-gate#seam]]). Slice a edits `store.py` and slice c edits five derive files;
-  both come after the golden. {#k-r6}
+- **K-R6: the derive digest exists before any `src/` edit of 29.2 or 29.3.** The tool, the two
+  corpora, the golden and the test of [[task-29.2-mypy-gate#derive-digest]] are in the tree when
+  this slice ends. If 29.5 recorded the golden at its R0 (asked of it, so the digest is also
+  evidence for 29.5's module-list change, as ruling L106 intends), this slice only checks that
+  it is green. If not, this slice records it, as the first plan-29 work after 29.5's release.
+  Either way it precedes slice a's edit to the store module and slice c's edits to the derive
+  files. {#k-r6}
 - **K-R7: which source-walking tests move onto the kit** (ch-bsd spec review r1 M6, stated once
   for 29.2, 29.3 and 29.5). {#k-r7}
   - The scope of AC-K5 is a test under `tests/` that walks `src/refmatrix` with `ast`.
@@ -208,15 +212,19 @@ proof is the mutations and planted bypasses below, each seen red.
     G10 iterates), plus anything 29.4 or 29.2 added. Every entry in that scope is MOVED onto the
     kit as a family: its allow list and its synthetic bypass unchanged, and 29.5's G10 re-proof
     (plant the bypass, see the census fail) run on it after the move.
-  - Read from 29.5's spec at `bdd9cd8`, those are: the import-layering census (its AC-13), the
-    private cross-module census (AC-6), the mixin census (R5), the CLI naming census (AC-4), the
-    patch-surface census (AC-3), and the re-keyed catalog-opener census (K-R2). 29.2's AC-5,
-    AC-12 and AC-16 scans join them if they were written off the kit.
+  - As 29.5's author lists them (2026-11-14, its round-2 text): three walk with `ast` and are
+    moved: the import-layering census (its AC-13), the private-name census (AC-6) and the
+    patch-surface census (AC-3). With them go the re-keyed catalog-opener census (K-R2) and
+    29.2's AC-5, AC-12 and AC-16 scans if they were written off the kit.
+  - The import-layering census arrives with TWO declared entries in its allow list, each
+    carrying an owner task id that must resolve (29.5's must-fail: an owner that does not). The
+    move keeps both entries and that check; [[#slice-h]] is the owner and deletes them.
   - Nothing is allow-listed to stay off the kit by default. An entry is allow-listed in AC-K5
     only with a reason the summary records (for example a test that parses one named file, not
     the tree).
-  - A test that reads source without `ast` (29.5's size census, a text grep,
-    `test_deferrals_clean` if it greps) is outside AC-K5.
+  - A test that reads source without `ast` is outside AC-K5: 29.5's module-size census (AC-7,
+    line counts) and derive-table test (AC-5, two tuples), a text grep, `test_deferrals_clean`
+    if it greps.
   - The list is confirmed against 29.5's merged spec at the start commit; a census this list
     does not name is moved by the same rule, not left out because it was not named here.
 
@@ -581,17 +589,26 @@ names, rides 0.83.1.) {#c-r6}
   (`ingest`, `semantic`), `ingest_gmd.py` 5 (`gmd`, `sessions`), `consolidate.py` 1 (the memory
   compile, both scopes); and 25 in `store.py`, which is in the union only. `embedder.py`,
   `vectors.py` and `session_ingest.py` have none.
-- A comment or a narrowed handler in any of them changes `store.derive_code_hash` and flips
-  every fleet store to `behind_code` for the passes that file feeds
-  ([[task-29.2-mypy-gate#derive-hash]]).
-- All of this slice's edits to those files land in ONE commit group, in the same release as
-  29.2's edits to them.
+- `plan-29 D4` is decided (c): [[task-29.2-mypy-gate#r7]] makes the derive hash ignore comments,
+  docstrings and annotations, and it lands before this slice edits any of these files
+  ([[task-29.2-mypy-gate#seam]] step 0). So:
+  - a handler this slice JUSTIFIES (a `# noqa: BLE001 — reason` comment) changes no hash;
+  - a handler this slice SURFACES (a count, a log call) or NARROWS (a typed `except`) is a real
+    code change and changes the hash of every pass that file feeds. That is the detector working:
+    the code that derives did change.
+- The choice between justify, surface and narrow is made by c-R2 and c-R3 on what the handler
+  swallows. It is never made to keep a hash still; a handler on an ingest path is surfaced.
+- All of this slice's edits to these files land in ONE commit group, and that group ships in
+  the SAME release as [[task-29.2-mypy-gate#r7]]. In that release every stamp reads
+  `code_unknown` once because the hash tag changes, and the real edits ride inside that state.
+  If the group cannot make that release, the passes it touches read `behind_code` fleet-wide
+  afterwards; that needs the lead's go before the group is merged.
+- The summary lists, per derive file, each handler edited and whether the edit is neutral or
+  real.
 - They are covered by [[task-29.2-mypy-gate#derive-digest]] (AC-18): the graph, vector,
-  PageRank-prior and compile legs equal the golden that slice K recorded (K-R6). A handler this
-  slice NARROWS in one of these files changes behaviour for other exceptions; that is tested by
-  AC-c4, and the digest shows the normal path derives the same state.
-- What is done on live stores is `plan-29 D4` ([[task-29.2-mypy-gate#d4]]), whose scope names
-  these passes.
+  PageRank-prior and compile legs equal the golden. A narrowed handler changes behaviour for
+  other exceptions; that is tested by AC-c4, and the digest shows the normal path derives the
+  same state.
 
 ### Acceptance {#c-ac}
 
@@ -619,8 +636,11 @@ names, rides 0.83.1.) {#c-r6}
   and names the step on stderr. RED at the start commit (exit 0).
 - **AC-c7 (no regression):** the full suite is equal by E line before and after each group.
 - **AC-c10 (derive files):** after the commit group of c-R7, the four legs of
-  [[task-29.2-mypy-gate#derive-digest]] equal the golden, and the summary lists, per derive file,
-  the passes it feeds and each handler edited.
+  [[task-29.2-mypy-gate#derive-digest]] equal the golden. For each derive file, the hash of every
+  pass it feeds is EQUAL to the one before the group when the group's edits to it are all
+  justifications, and DIFFERENT when at least one is a surfaced or narrowed handler; the summary's
+  neutral / real column says which, and the test reads the expectation from that table's
+  committed form.
 - **AC-c11 (the ratchet tool):** `report.py broad-except --update` lowers a fallen count, removes
   a module at zero, and with one count risen exits non-zero and leaves the file byte-identical.
 
@@ -733,6 +753,63 @@ f-R1 to f-R3 and this slice is dropped. {#f-overlap}
 - **Mutations:** the function ignoring `args` (AC-g2); the scanner matching only the `or` form
   (AC-g1).
 
+## Slice h: the engine stops importing the CLI {#slice-h}
+
+**Why it is here.** At `f3709d2` three engine call sites import the CLI lazily: `handoff`
+imports `_sync_memory_dir`, and `_subject_link` with `_subject_upsert`; `telemetry` imports
+`main`. Ruling L105 (B1) keeps those functions in `cli/__init__.py` through 29.5, because their
+bodies read names that tests patch on `refmatrix.cli`, and makes each import a DECLARED
+exception in 29.5's layering census "with an owner follow-up (a seam that lets tests patch one
+place)". This slice is that owner. It is the last slice, and it starts only after
+[[task-29.2-mypy-gate#r5]] (it needs the writer Protocol and the daemon-absent accessor) and
+after slice d (which converts the gates inside `_subject_upsert` and `_subject_link`).
+
+- **h-R1: one context.** The engine functions that need them receive one object carrying the
+  store root, a writer typed by 29.2's `StoreWriter`, the memory daemon call and the partition
+  resolver. They do not find any of the four themselves, and no parameter of theirs defaults to
+  something that imports the CLI.
+- **h-R2: each entry builds its own.** The CLI builds the context from its own module-level
+  names, looked up at call time, so a test that patches `_root`, `_store`,
+  `_memory_daemon_call`, `_resolve_partition`, `_memory_partition_default` or
+  `_partition_override` on `refmatrix.cli` and runs a CLI command still reaches the engine
+  through the patched object. The verb and MCP entries build it from the verb's own arguments,
+  without importing the CLI.
+- **h-R3: the functions move to their layer.** `_sync_memory_dir`, `_subject_link` and
+  `_subject_upsert` leave `cli/__init__.py` for the engine module that owns the bridge and the
+  promote path; the CLI keeps thin callers under the old names for its own commands.
+  `telemetry` is handed the command-group names by the CLI at start-up instead of reading
+  `cli.main`.
+- **h-R4: tests patch one place.** The inventory, taken at this slice's start commit, lists
+  every test that patches one of the names of h-R2 (or `main`) and then enters through the
+  ENGINE (a direct `handoff` or verb call), where a CLI-side patch will no longer reach. Each is
+  re-pointed to patch the context, by `@ch-test-engineer`, as a patch-target rename and nothing
+  else (the L64 "wrap only" precedent). A test that enters through a CLI command is not edited.
+  At `f3709d2`, 10 test files name one of the three functions and none patches them directly;
+  the count of tests that patch a name they READ is taken at the start commit.
+- **h-R5: both declared exceptions are deleted.** The import-layering census (on the kit since
+  slice K) then has an empty allow list.
+- **h-R6: no behaviour change.** Save-state, the Stop-hook promote, subject filing and the
+  telemetry group column produce the same results; goldens are recorded at the start commit
+  through the CLI entry and through the verb entry.
+
+Acceptance:
+
+- **AC-h1 (the patch still reaches, CLI entry; characterization):** for each name of h-R2, a
+  save-state run through the CLI with that name patched on `refmatrix.cli` calls the patched
+  object. Green before and after; a context built once at import time fails it.
+- **AC-h2 (the engine entry needs no CLI):** in a child process where importing `refmatrix.cli`
+  raises, the save-state verb and the MCP tool complete on a throwaway store. RED at the start
+  commit (the lazy import raises).
+- **AC-h3 (the census is empty):** the layering census's allow list has no entry and the census
+  passes; a planted function-level `from refmatrix.cli import _root` in an engine module fails
+  it. Before this slice the list has exactly the two declared entries.
+- **AC-h4 (the inventory is closed):** every test in h-R4's inventory passes, and its diff is
+  the patch target only (checked by reading the diff: no assertion line changed).
+- **AC-h5 (goldens):** h-R6's goldens are equal through both entries.
+- **Mutations:** the CLI context captured at import time (AC-h1); the engine falling back to a
+  CLI import when no context is passed (AC-h2, AC-h3); `telemetry` reading `cli.main` again
+  (AC-h3).
+
 ## Test strategy {#test-strategy}
 
 - RED first by `@ch-test-engineer`, recorded per slice to `workflow/review-output/`; GREEN by
@@ -770,6 +847,8 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 | `tests/test_bug212_r4_red.py` | import the kit; scanner functions removed from the file; tests and allowlists stay |
 | the module that holds `_op_sync_since` and `sync.sync_since` | the changed-path list resolved before the lock (a-R7) |
 | the module that holds the daemon op handlers | slice g |
+| `refmatrix/cli/__init__.py`, the engine module that owns the bridge and promote path, `telemetry`, the verb and MCP entries of save-state | slice h |
+| the tests in slice h's inventory | patch target only (test engineer) |
 | the module that holds the CLI `reingest` command | bug-096 (c-R6) |
 | `src/refmatrix/gitrun.py` | create: `run_git`, the result type, the two rules |
 | the modules that hold the 12 git sites (`handoff`, `store`, `sync`, `upgrade`, `verbs`, the CLI `save-state`, `context` and focus-hook modules) | adopt `run_git`; delete `_ss_git_run`, the git uses of `_ss_sh`, the four `shutil.which("git")` pre-checks |
@@ -787,8 +866,8 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 
 ## Key decisions {#decisions}
 
-None of these needs the user; each records the choice and why. The one open decision that
-touches this task is `plan-29 D4` ([[task-29.2-mypy-gate#d4]]). A reviewer who disagrees with one
+None of these needs the user; each records the choice and why. `plan-29 D4`, which touches this
+task, is decided (c) ([[task-29.2-mypy-gate#d4]]). A reviewer who disagrees with one
 below raises it as a new `plan-29 D<n>` (D7 to D22 are taken by the 29.1 / 29.4 / 29.5 specs; D5,
 D6 and D23 upward are free).
 
@@ -822,6 +901,13 @@ D6 and D23 upward are free).
    first user. Seven families from other tasks are waiting for it; none is built here. {#k9}
 10. **The git and query slices land before 29.2's query and strict work**
     ([[task-29.2-mypy-gate#seam]]). {#k10}
+11. **Slice h is taken although it is not a ledger class**. L105 requires an owner for 29.5's
+    two declared layering exceptions, the work has this task's shape (one helper, one bypass
+    census), and it touches the same functions as slice d. It depends on 29.2's R5, so it is
+    last. The lead may move it to its own task; 29.5 cites [[#slice-h]] as the owner either
+    way. {#k11}
+12. **A handler's class is never chosen to keep a derive hash still**
+    ([[#c-r7]]). {#k12}
 
 ## How this adapts to the 29.5 split {#split}
 
@@ -891,8 +977,12 @@ span for the reason in [[#fold-cites]].
 | B1 (via L105): the three handoff helpers are not moved by 29.5 | the sentence saying they move is removed | [[#split]] |
 | M1: 29.1 said bug-096 was not taken | no change here: this spec takes it ([[#c-r6]]); 29.1's author was told on 2026-11-14 | [[#c-r6]] |
 
-Not changed by this round: `plan-29 D4` stays open and is only referenced here;
-`plan-review-fable D4` and `plan-review-fable-store D5` are referenced, not settled.
+| `plan-29 D4` decided (c) (user, L106) | c-R7 separates neutral edits (justifications) from real ones (surfaced, narrowed), requires the group to ship with 29.2's R7, and forbids choosing a class to keep a hash still; AC-c10 checks each pass's hash against that | [[#c-r7]], AC-c10, [[#k12]] |
+| L105 B1: 29.5's two declared layering exceptions need an owner | new slice h, last, after 29.2's R5 and slice d | [[#slice-h]], [[#k11]], [[#k-r7]] |
+| M6-3, as 29.5's author now lists its censuses | three `ast` walkers are moved (layering, private-name, patch-surface); the size census and the derive-table test are outside AC-K5; the layering census arrives with two owned entries | [[#k-r7]] |
+
+`plan-review-fable D4` and `plan-review-fable-store D5` are decided in L106 and are only cited
+here ([[task-29.2-mypy-gate#d4]]).
 
 ## Out of scope {#out-of-scope}
 
