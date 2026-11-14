@@ -718,13 +718,38 @@ After the moves, every `src` → `src` use of another module's `_name` is listed
 
   22 sites of the 76. ch-bsd r2 counted the 15 where the pass module is the target; the other 7
   are where it is the user, and a rename edits the importing file as well.
-  - **Owner:** a slice of `task-29.3-converge-shapes` whose edits ship in 29.2 R7's release
-    (ruling L108, with L107's rule that pass-file edits ship with R7). The anchor was asked of
-    that spec's author on 2026-11-14; until it is named and resolves, the census does not pass,
-    so this spec cannot be approved with the rows unowned.
-  - A target that is **not** a pass module may still get its public name in this task (for
-    example `store.concept_variants` beside `_concept_variants`), so that the owner's later
-    edit is one line in the pass module.
+  - **Owner: `task-29.3-converge-shapes#c-pass-rows`** (its requirement c-R8; branch
+    `spec-plan29b`, `9610369`; ruled by the lead after L108). Every one of the 22 rows names
+    that anchor in the census's allow list. What c-R8 does with a row: the name becomes public
+    (it loses the underscore and gets a docstring), every user takes the public name, no
+    private alias is left for the old spelling, and the row is deleted from this census's
+    allow list. It re-reads the list at slice c's start commit, so a row this task resolves or
+    adds after `75ef65d` is taken as it then stands.
+  - **When those edits ship: deploy B of 29.2 R7's release** (`task-29.2-mypy-gate#r7-release`).
+    That release is one announced window with two deploys. Deploy A is R7 and the rehash op
+    (`task-29.2-mypy-gate#r8`) with no pass-file edit, then `rmx derive rehash`. Deploy B is
+    every pass-file edit, these 22 among them. A rename is a real edit: the rehash does not
+    convert its stamps, by design.
+  - **What clears `behind_code` afterwards is plan-29 D27, decided (a) by the lead** (ruling
+    L109; `task-29.2-mypy-gate#d27`): deploy B's closing step re-derives exactly the affected
+    passes on every store through the existing `rmx reingest` path, under deploy B's own go.
+    So `ingest`, `semantic`, `gmd`, `sessions`, `pagerank` and the two compile scopes read
+    `behind_code` only inside that release's announced window, never as a fleet state between
+    releases. None of it happens in this task's release, which changes no pass module.
+  - **What this task does for the 7 "user" rows.** Their targets, `store.py` and `scan.py`, are
+    not pass modules. In phase 3 this task adds the public name beside the private one there
+    (`store.CONCEPT_SHIFT`, `store.ENTITY_MASK`, `store.concept_variants`,
+    `scan.PROMPT_STOPWORDS`, `scan.token_shape_score`) and moves every user that is **not** a
+    pass module onto it. The pass modules (`consolidate.py`, `pagerank.py`, `ingest.py`) keep
+    the private spelling, so their bytes do not change (gate G12), and the rows stay declared.
+    c-R8's edit in each pass module is then the import line only, and 29.3 removes the private
+    spelling once nothing uses it.
+    - A public name is added this way only if the private name is **not** in the patch
+      inventory of its module (R0 item 2): a test that rebinds `scan._PROMPT_STOPWORDS` would
+      not reach users of an alias bound earlier. None of the five is patched at `f3709d2`. One
+      that is patched by then gets no alias here and is left whole to c-R8.
+  - For the 15 "target" rows the public name has to be added inside the pass module itself, so
+    nothing is done here: that is c-R8's, in deploy B.
 - **A census test** (`tests/test_private_cross_module_census.py`) scans `src/` with `rglob` and
   fails on any such use outside its allow list. When this task ends the list holds exactly the
   declared rows: the three `handoff` names and the pass-module rows, each with its owner. An
@@ -1054,8 +1079,9 @@ is quoted in the summary. {#r10-body}
   file name: a `store_*.py` that holds only a `Protocol` or type declarations (29.2's leaf
   module) is not a derive module and is not required in the tuple. {#ac-5}
 - **AC-6: no private name crosses a module, except where it is declared.** The census passes on
-  the tree with an allow list that holds exactly [[#r6]]'s declared rows (the three `handoff`
-  names; the rows that touch a derive-pass module), each naming an owner task that resolves.
+  the tree with an allow list that holds exactly [[#r6]]'s declared rows, each naming an owner
+  that resolves: the three `handoff` names (`task-29.3-converge-shapes#slice-h`) and the rows
+  that touch a derive-pass module (`task-29.3-converge-shapes#c-pass-rows`).
   It fails on: a synthetic module that imports `_x` from another `refmatrix` module; one that
   reads `other._x` through an alias; one that does it inside a function (a lazy import); an
   allow-list entry whose owner does not resolve; an entry that matches no use. It passes on
@@ -1251,7 +1277,7 @@ No spec under `workflow/plans/` is edited by this task: the citation and pin pas
 ## The user's decisions this spec is built to {#user-decisions}
 
 Decided on 2026-11-14: by the user (ruling L106) or, where the row says so, by the lead (rulings
-L107 and L108); all in [[plan-review-2026-11-13#lead]]. The last row is open.
+L107, L108 and L109); all in [[plan-review-2026-11-13#lead]]. The last row is open.
 
 | Label | Decided | What it means here |
 |---|---|---|
@@ -1262,6 +1288,7 @@ L107 and L108); all in [[plan-review-2026-11-13#lead]]. The last row is open.
 | `plan-review-fable-memory D2` | 25.1b's `legs_ms` timing pair lands before 29.5 | [[#r0]] item 10: it is on `master` before the window opens |
 | plan-29 D24 (this spec's) | accepted by the lead (ruling L107), recorded in ADR 0006; not put to the user | [[#fact-identity]], [[#ac-4]] |
 | the re-stamp (rulings L107, then L108) | L107 gave each fleet event its own re-stamp. **L108 superseded its 29.5 half:** the store split flips no pass, so this task has no re-stamp unless R0 item 8 counts a stamp under an unmapped pass name, and then never through `stamp_derive` | [[#fact-derive]], [[#r9-restamp]], [[#ac-17]] |
+| plan-29 D27 (29.2's) | (a), by the lead (ruling L109): pass-file edits ship in deploy B of 29.2 R7's release, whose closing step re-derives the affected passes on every store with `rmx reingest`, under its own go | [[#r6]]: the 22 declared pass-module rows are edited there, not here; they read `behind_code` only inside that release's window |
 | **plan-29 D23** | **open**; asked at the store event with R0's count in hand; with a zero count it does not arise | [[#r9-store-event]] step 3 |
 {#user-decisions-table}
 
@@ -1435,7 +1462,7 @@ split flips nothing. This spec's share, as ruling L108 decided it:
 |---|---|
 | NB1: the one-copy probe was RED at base, against the clean baseline and G5 | [[#ac-4]], [[#r4-probe]], [[#r4-baseline]], gate G5, the test strategy: a strict xfail from phase 0; the rename commit removes the marker as its one allowed test edit; G5 accepts exactly that node id going xfailed → passed |
 | NS1, first half: the planned re-stamp had no target | [[#fact-derive]], R0 item 8, [[#r5]] item 4, [[#r9]] item 7, [[#r9-restamp]], [[#ac-17]]: no re-stamp unless R0 counts a stamp under an unmapped pass name; never through `stamp_derive` (NB2) |
-| NS1, second half: phase 3's renames would flip six passes | [[#r6]] (rows that touch a pass module are declared, with an owner whose edit ships in 29.2 R7's release; 22 sites, [[#r6-pass-rows]]), [[#ac-6]], [[#ac-7]] (raw bytes of every pass module), gate G12 |
+| NS1, second half: phase 3's renames would flip six passes | [[#r6]] (rows that touch a pass module are declared; owner `task-29.3-converge-shapes#c-pass-rows`; their edits ship in deploy B of 29.2 R7's release; 22 sites, [[#r6-pass-rows]]), [[#ac-6]], [[#ac-7]] (raw bytes of every pass module), gate G12 |
 | NS4: citations resolved at the wrong commit | [[#r8]] item 2, [[#ac-8]]: `git blame` on the spec's line; a named symbol is checked |
 | M1: two mutations could not fail | test strategy, mutations 1 and 14: module-level bindings |
 | M2: the `verbs.py` split had no rules | [[#r7-verbs]] |
@@ -1446,3 +1473,12 @@ split flips nothing. This spec's share, as ruling L108 decided it:
 
 Revision notes 3 and 4 above describe a fleet re-stamp after this task's release. That plan is
 withdrawn by this note. {#rev-note-6-withdrawn}
+
+## Revision note 7 (2026-11-14, the pass-module rows' owner; ruling L109) {#rev-note-7}
+
+[[#r6]] and [[#ac-6]] name the owner of the 22 declared pass-module rows,
+`task-29.3-converge-shapes#c-pass-rows`, and say when its edits ship (deploy B of 29.2 R7's
+release) and what clears `behind_code` afterwards (plan-29 D27, decided (a): that deploy's
+closing re-derive). This task adds the public names in `store.py` and `scan.py` for the 7
+"user" rows where the private name is not patched. [[#user-decisions]] gains D27's row. No row
+of this task's allow lists is now without an owner. {#rev-note-7-body}
