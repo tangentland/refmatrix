@@ -27,9 +27,10 @@ metadata:
 > families ([[#r6]]), is built after 29.5.
 > Closes, by this spec's text: bug-228, bug-229, bug-231. By T0's text: bug-215, bug-155's
 > residual, bug-170, 168, 127, 130, 190, 091, 196, and the closure gates of plans 6, 7, 8, 15.
-> **Open user decisions this task waits on and does not settle** ([[#open-decisions]]):
-> `plan-review-fable D3` (gates stage 4), `plan-review-fable-store D5` (gates every baseline
-> run), `plan-review-fable D4` (the release after this task).
+> **Decided by the user on 2026-11-14 (ruling L106), and built to here** ([[#user-decisions]]):
+> `plan-review-fable D3` = (a), sharding only after any live touch fails the session, which is
+> stage 4's gate; `plan-review-fable-store D5`, duckdb 1.5.3 before baselines;
+> `plan-review-fable D4`, a standing go that covers this task's release.
 > User gates: none of its own. T0 can be held by a hook-drift stop at its `#r7-4`.
 
 rel: part-of -> [[plan-29-code-quality]]
@@ -185,7 +186,7 @@ files 29.5 needs quiet. So they are one task, in stages. {#fold-why}
 | 2, in parallel | **T0.2** ∥ **T0.3** ∥ **T0.8** | T0.2 gains the reaper and the root rule ([[#r4]], [[#r5]]). T0.3 gains bug-228 and bug-231 as two more rows on its harness and bands, and the wall-clock census ([[#r3]]) | the reaper and the dev-tree isolation are both conftest and sandbox work; the wall-clock rows are load flakes like T0.3's three |
 | lane | T0.6 (the plan-7 dense re-run) | nothing | long-running, builds no `src/`; any time after stage 1 |
 | 3 | **T0.4 → T0.5** | nothing | they delete `duckdb_view.py`, the `_read_via_duckdb` state in `store.py` and `brief.parse_gmd`, and edit `cli.py`, `verbs.py`, `mcp.py`: dead code is deleted before 29.5 moves it |
-| 4 | none | run tiers and the runner ([[#r1]], [[#r2]]) | gated by `plan-review-fable D3`; needs stage 2's reaper, because shards multiply daemons |
+| 4 | none | run tiers and the runner ([[#r1]], [[#r2]]) | its first AC is the live-touch proof ([[#ac-12]]; `plan-review-fable D3` = (a)); needs stage 2's reaper, because shards multiply daemons |
 | 5 | **T0.7** | its clean runs (`T0#r7-4`, `T0#r7-5`) go through the runner; [[#ac-7]] | T0.7's clean run on the sharded runner **is 29.5's baseline** |
 | after 29.5 | none | derived families ([[#r6]]) | measured useless before the split, precise after (queue review `#p29-4`) |
 {#fold-stages}
@@ -226,9 +227,9 @@ of test files. To keep them apart, this spec says **run tier (a)-(d)** for its o
    command plus `--durations=0`, in a fresh littlebig clone at stage 0's base sha, teed to
    `workflow/review-output/task-29.4/r0-serial.log`, with `uptime` before and after. It is the
    only full serial run the task needs. Its failures, by E line, are the **R0 digest**.
-   - **Not before `plan-review-fable-store D5` is resolved.** `.venv-eval` has duckdb 1.5.2,
-     below `pyproject.toml`'s 1.5.3 floor and below the deploy venv. A baseline taken on the old
-     version is taken again after the upgrade, so it is not taken first.
+   - **Not before the dev venv is on duckdb 1.5.3** (`plan-review-fable-store D5`, decided,
+     L106; the lead upgrades after the 0.83.1 runs). `.venv-eval` has 1.5.2 at `f3709d2`, below
+     `pyproject.toml`'s floor and below the deploy venv.
 2. **Per-file sums** of setup + call + teardown are written to `tests/shard_weights.json`
    (committed) and into the summary: the 25 heaviest files (the list T0.3's harness loads
    with), and the total per run tier.
@@ -357,15 +358,18 @@ fail, error at teardown, skip unpinned or leak a daemon on purpose. There is no 
   registry row. It is never run again until it passes. The one re-run this task knows is T0's
   ruling O7 (`T0#r7-6`): a `diagnosed-loud` row's node id, re-run once, alone, with both
   outcomes recorded. That is a recorded diagnostic on a named row, not a retry.
-- **Live-socket reach is `plan-review-fable D3`.** Four shards are four processes that can each
-  reach a live socket (bug-088, bug-101, deferred by the user). Stage 4 does not start until
-  D3 is answered, and is built to the answer:
-  - (a) *shard only once any live touch fails the session* (the review's recommendation): stage
-    4's first AC is that proof, per shard: a probe test that touches a deny-set target fails
-    its shard and the whole run, in-process and from a child;
-  - (b) *shard as is and record the counts*: `summary.txt` carries the touches-log line count
-    per shard, and the run does not fail on it;
-  - (c) *un-defer bug-088 and bug-101 into this task*: this spec is revised first.
+- **Stage 4's gate: no sharding until a live touch fails the session** (`plan-review-fable D3`,
+  decided (a), L106). Four shards are four processes that can each reach a live socket
+  (bug-088, bug-101). Before the runner starts a second process, this is shown, and it is
+  stage 4's first AC ([[#ac-12]]):
+  - a probe test that touches a deny-set target (a live socket path, the hub port, a path under
+    a live `.refmatrix/`) fails **its own test, its shard, and the whole run**;
+  - the same when the touch is made by a child the test spawned;
+  - in every shard position, and in the serial group;
+  - and the run's `summary.txt` names the test and the target.
+  The 23.0 sandbox already refuses such a touch and fails the test that made it. What stage 4
+  adds is the proof that the refusal still fails the **run** when the run is several
+  processes, and the runner's rule that one shard's violation is the run's exit code.
 - **A hang guard, not a speed check.** `pytest-timeout` is added to the `dev` extra and
   configured once (`[tool.pytest.ini_options]`: `timeout = 600`, `timeout_method = "signal"`).
   The `signal` method raises inside the test, so teardown and the session-finish hooks still
@@ -449,10 +453,12 @@ here:
     value, and it runs in tier (d). An entry records three things, and the census checks each:
     - **`ac`**, as `<spec id>#<anchor>`. The census resolves it: a spec with that frontmatter id
       exists under `workflow/plans/`, and it has that anchor. An AC that does not exist fails.
-    - **`knob`**, the environment variable (or the named constant) that sets the bound. The
-      census reads the test function: it sets that variable (`monkeypatch.setenv`, an `env=`
-      mapping, or `monkeypatch.setattr` on the constant). A test that names a knob and never
-      sets it fails: it would be waiting the production value.
+    - **`knob`**, what sets the bound: an environment variable, a named constant, or **a keyword
+      argument of the function under test** (29.3's `run_git(…, timeout=…)` has no environment
+      knob; its AC-a1 shrinks the bound by passing a small `timeout=`). The census reads the
+      test function: it sets that variable (`monkeypatch.setenv`, an `env=` mapping), patches
+      that constant (`monkeypatch.setattr`), or passes that keyword with a literal. A test that
+      names a knob and never sets it fails: it would be waiting the production value.
     - **`max_s`**, the shrunk value's ceiling (≤ 2.0). The value the test sets is a literal the
       census can read, and it is under the ceiling.
   - **One AC, one entry.** An AC id may own at most as many entries as it has wall-clock clauses
@@ -687,8 +693,9 @@ to rework the sandbox, so it settles them:
   drift on an existing install. The queue review asks for this rule on all five plan-29 tasks.
 - **One release point, after stage 5.** What ships is test, script and doc changes, T0.4's and
   T0.5's `src/` deletions and remedies, and any clock parameter [[#files-src-note]] allows.
-  T0.5 changes an MCP tool, so the release carries a `/mcp` reconnect note. Who says go is
-  `plan-review-fable D4`.
+  T0.5 changes an MCP tool, so the release carries a `/mcp` reconnect note. It changes neither
+  hooks nor the store on disk, so it ships under the user's standing go (`plan-review-fable
+  D4`, decided, L106): the suite equals the baseline by E line, and the user is told first.
 - **Branches.** One branch per sub-task from the `master` that holds the stage before, merged
   `--no-ff`. T0's sub-tasks keep T0's branch names. Work happens in littlebig clones.
 {#r10-list}
@@ -794,10 +801,13 @@ to rework the sandbox, so it settles them:
   the same test with the budget substituted, passes on the silent-peer `skipped_budget` leg,
   and fails on a synthetic test that asserts `outcome == "ok"` against a `SandboxDaemon` with no
   knob set. {#ac-11}
-- **AC-12: live-socket reach, per `plan-review-fable D3`'s answer.** Under (a): a probe test that
-  touches a deny-set target fails its shard and the run, in-process and from a child, in every
-  shard position; this AC is stage 4's first. Under (b): `summary.txt` carries the per-shard
-  touches-log line count. Under (c): this spec is revised before stage 4. {#ac-12}
+- **AC-12: a live touch fails the run, in every shard** (`plan-review-fable D3` = (a); stage 4's
+  first AC, met before any other stage-4 work is accepted). With the fixture suite of AC-2 and
+  a `sandbox_probe`-style test that touches a deny-set target without the probe marker: the
+  test fails, its shard exits non-zero, the run exits non-zero and `summary.txt` names the test
+  and the target. The same for a touch made by a spawned child, for each shard position 0 to
+  N-1, and for the serial group. **Mutation:** the runner takes the run's exit code from the
+  last shard only (a violation in shard 0 passes, so the test is red). {#ac-12}
 - **AC-13: 23.0's open ends are closed on paper.** 23.0 carries the amends line for the bug-230
   read allow; `workflow/deferral_registry.md` holds one row each for 23.0 AC-7 and AC-8 with a
   reason and a review date; 23.0's status line names both rows. {#ac-13}
@@ -857,14 +867,14 @@ holds the stage before, with RED → GREEN → ch-bsd.
 
 | Stage | Sub-task | Holds | Parallel with |
 |---|---|---|---|
-| 0 | 29.4-r0 | [[#r0]] (= T0.3's R0), after `plan-review-fable-store D5` | — |
+| 0 | 29.4-r0 | [[#r0]] (= T0.3's R0), after the dev venv is on duckdb 1.5.3 | — |
 | 1 | T0.1' | T0's `#t0-1` as amended | — |
 | 2 | T0.2 + 29.4b | T0's `#t0-2`; [[#r4]], [[#r5]] | T0.3, T0.8 |
 | 2 | T0.3 + 29.4c | T0's `#t0-3`; [[#r3]] with bug-228 and bug-231 | T0.2, T0.8 |
 | 2 | T0.8 | T0's `#t0-8` (bug-196) | T0.2, T0.3 |
 | lane | T0.6 | T0's `#t0-6` | anything after stage 1 |
 | 3 | T0.4, then T0.5 | T0's `#t0-4`, `#t0-5` | — |
-| 4 | 29.4a | [[#r1]], [[#r2]], [[#r7]], after `plan-review-fable D3` | — |
+| 4 | 29.4a | [[#ac-12]] first, then [[#r1]], [[#r2]], [[#r7]] | — |
 | 5 | T0.7 + 29.4d | T0's `#t0-7` through the runner; [[#r8]], [[#r9]]; [[#ac-7]] | — |
 | after 29.5 | 29.4f | [[#r6]] | 29.2, 29.3 |
 {#order-table}
@@ -912,18 +922,20 @@ the test that needs it, and it adds a parameter with the current behaviour as it
 - **Replacing all 78 bounds.** [[#r3-scope]] says which. The rest are listed, tiered and owned.
 - **Revising the specs that carry new wall-clock ACs** ([[#r3-freshness]]).
 - **Setting up the isolation lanes** ([[#r9]]).
-- **Deciding** `plan-review-fable D3`, `D4` or `plan-review-fable-store D5`.
 - **A coverage gate, a formatter gate.**
 {#out-of-scope-list}
 
-## Open user decisions (referenced, not settled) {#open-decisions}
+## The user's decisions this spec is built to {#user-decisions}
 
-| Label | Question | Where this spec waits on it |
+All decided on 2026-11-14 (ruling L106, [[plan-review-2026-11-13#lead]]).
+
+| Label | Decided | What it means here |
 |---|---|---|
-| `plan-review-fable D3` | Sharding multiplies the suite's reach to live sockets (bug-088, bug-101). (a) shard only once any live touch fails the session, recommended by the review; (b) shard as is and record counts; (c) un-defer both bugs into 29.4 | stage 4 does not start before the answer; [[#ac-12]] is written for each |
-| `plan-review-fable-store D5` | Raise the dev venv from duckdb 1.5.2 to the 1.5.3 floor before baselines are taken | [[#r0]]: no baseline run before it is resolved |
-| `plan-review-fable D4` | A standing go for plan-29's releases when the suite equals baseline by E line, or a go per release | [[#r10]]: the release after stage 5 |
-{#open-decisions-table}
+| `plan-review-fable D3` | (a): shard only once any live touch fails the session | stage 4's gate ([[#r2-list]]) and its first AC ([[#ac-12]]) |
+| `plan-review-fable-store D5` | duckdb 1.5.3 in `.venv-eval` before baselines; the lead upgrades after the 0.83.1 runs | [[#r0]]: the durations run and every baseline are taken after the upgrade |
+| `plan-review-fable D4` | a standing go for plan-29 releases whose suite equals the baseline by E line, the user told first, excluding releases that change the store on disk | [[#r10]]: this task's release changes neither hooks nor the store, so it is under the standing go |
+| `plan-review-fable-memory D2` | 25.1b's `legs_ms` timing pair lands before 29.5 | it touches `cli.py` and `scan.py`, not this task's files; it has no owner task yet ([[task-29.1-registry-triage#homes-new-work]]) |
+{#user-decisions-table}
 
 ## Decisions taken in this spec {#decisions}
 
@@ -988,3 +1000,13 @@ L105 decided it:
 | M4: numbers that depend on the method | [[#baseline-wallclock-table]] (5 pure lower bounds in 4 files, with what the other 3 lines are); the `rmtree` count is 129 by the stated method |
 | M1: who flips T0's frontmatter | [[#ac-14]] |
 {#rev-note-table}
+
+## Revision note 2 (2026-11-14, after ruling L106) {#rev-note-2}
+
+- `plan-review-fable D3` = (a): the live-touch proof is stage 4's gate and its first AC
+  ([[#r2-list]], [[#ac-12]]); the text for answers (b) and (c) is gone.
+- `plan-review-fable-store D5` and `plan-review-fable D4` are decided ([[#user-decisions]],
+  [[#r0]], [[#r10]]).
+- A `feature-bound` entry's knob may be a keyword argument of the function under test
+  ([[#r3-kinds]]), for 29.3's AC-a1.
+{#rev-note-2-list}

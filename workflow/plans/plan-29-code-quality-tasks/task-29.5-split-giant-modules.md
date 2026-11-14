@@ -24,14 +24,14 @@ metadata:
 > flight ([[#r9]]).
 > Before the first move: an ADR for the module layout and import layering, authored by
 > `ch-architect` ([[#r1]]).
-> **Open user decisions this task waits on and does not settle** ([[#open-decisions]]):
-> `plan-29 D4` (what is done about the fleet's `behind_code` flip; this task's release flips
-> the union hash), `plan-review-fable D4` (who says go for a release; this one is outside any
-> standing go), `plan-review-fable-store D5` (the dev venv's duckdb, before any baseline).
+> **Decided by the user on 2026-11-14 (ruling L106), and built to here** ([[#user-decisions]]):
+> plan-29 D17 (the size default, with a sixth criterion); plan-29 D4 = (c) (a normalised derive
+> hash, in 29.2); `plan-review-fable D4` (a standing go that excludes this task's release);
+> `plan-review-fable-store D5` (duckdb 1.5.3 before baselines).
+> **Still open, the user's:** **plan-29 D23** (the learned rows at the merge, [[#decisions]]).
 > User gates: the window's start (the lead announces it; the user may hold it); **each phase's
-> merge into the dev tree, which is a store event** ([[#r9-store-event]]); and two open decisions
-> of this spec's own, **plan-29 D17** and **plan-29 D23** ([[#decisions]]), which the lead puts
-> to the user.
+> merge into the dev tree, which is a store event** ([[#r9-store-event]]); this task's release,
+> which needs its own go; and plan-29 D23.
 
 rel: part-of -> [[plan-29-code-quality]]
 rel: implements -> [[plan-29-code-quality#t5]]
@@ -294,7 +294,7 @@ At the task's base sha (after 29.4, after the frozen spec branches):
    deletion goes first.
 10. **What must already be on `master`.** Anything small that touches `cli.py` or `store.py` and
     was meant to ride ahead: the 0.83.1 hotfix (bug-241, bug-240) and 25.1b's `legs_ms` timing
-    pair, if the user's answers to the reviews' decisions put them before the split. R0 lists
+    pair, which the user placed before the split (L106). R0 lists
     each as merged or as explicitly held until after.
 11. **The pins other specs hold on these files** ([[#r8]]): every unbuilt spec that walks
     `src/refmatrix/*.py` without recursion, or exempts a site by a qualified name such as
@@ -308,8 +308,9 @@ At the task's base sha (after 29.4, after the frozen spec branches):
     first-learned time, provenance). Counted read-only, by the lead or through
     `scripts/rmx-master`, with the query written in the summary so it can be re-run after the
     merge. This task's agents do not open a live store.
-13. **Baselines wait for `plan-review-fable-store D5`.** No gate golden and no suite baseline is
-    generated on the dev venv's duckdb 1.5.2 if the decision is to raise it.
+13. **Baselines wait for duckdb 1.5.3.** `plan-review-fable-store D5` was decided: the dev venv
+    is raised to the 1.5.3 floor. No gate golden, no derive-digest golden and no suite baseline
+    is generated before that.
 
 ### R1: the decision is recorded first {#r1}
 
@@ -327,7 +328,7 @@ import layering", through `/ch-crucible`, before the first move commit, with a r
   ([[#fact-identity]], plan-29 D24).
 - **The package rule:** a core that is read late by attribute ([[#r2]]); what `_name` means
   inside a package and across packages ([[#r6]]).
-- **The ceiling** and its exception list ([[#r7]]), as plan-29 D17 is answered.
+- **The ceiling** and its exception list ([[#r7]]), as plan-29 D17 was decided.
 
 [[#r2]], [[#r2b]], [[#r5]], [[#r6]] and [[#r7]] are its inputs. If review of the ADR changes a
 rule, this spec is revised before any code moves. {#r1-body}
@@ -399,7 +400,9 @@ were read from the syntax tree (`plan29a-r2-xrefs.log`):
 | (none yet; 26.5 needs it from the engine) | `_root_from_projects_slug` | no `cli` name at all | **moves down** in phase 0b |
 {#r2b-table}
 
-1. **The three handoff helpers do not move.** They stay in the core, so every patch on
+1. **`_subject_upsert`, `_subject_link` and `_sync_memory_dir` are not moved by this task. They
+   stay in `cli/__init__.py`.** (Ruling L105, B1.) {#r2b-stay}
+   They stay in the core, so every patch on
    `refmatrix.cli` reaches them as it does today, and every test is unchanged. They are core
    names for the tool ([[#r2]] item 4 already keeps a patched name in the core; these are kept
    because their bodies read patched names). `handoff.py`'s two lazy imports stay as they are.
@@ -425,9 +428,12 @@ were read from the syntax tree (`plan29a-r2-xrefs.log`):
    `refmatrix.cli` calls the patched object; then the functions move to their layer and the
    entries are deleted. It cannot start before 29.2's daemon-absent accessor exists: the
    helpers' in-process fallback needs a writer the engine does not have.
-   - **Owner:** requested of `task-29.3-converge-shapes` on 2026-11-14, as one more slice (one
-     helper and a bypass census is that task's shape). If 29.3 does not take it, the lead names
-     the owner before this spec is approved; the census of item 4 does not pass without one.
+   - **Owner: `task-29.3-converge-shapes#slice-h`** (confirmed by that spec's author on
+     2026-11-14; branch `spec-plan29b`, `6860150`). Slice h is 29.3's last slice: it hands one
+     context to the engine functions, moves the three helpers, hands `telemetry` its group names,
+     and takes this census's allow list from exactly two entries to empty. Both entries here
+     name it. When 29.3's slice K moves this census onto its kit, it keeps both entries and the
+     "owner must resolve" must-fail.
 {#r2b-list}
 
 ### R3: every move is made by a tool {#r3}
@@ -472,7 +478,7 @@ the end of a phase.
 
 | Phase | Commits |
 |---|---|
-| 0 | the tool and its tests; the gates and goldens of this section, generated at the base sha and committed; the inventories of [[#r0]] |
+| 0 | the tool and its tests; the gates and goldens of this section, generated at the base sha and committed (the derive digest's golden among them, [[#r5-digest]]); the inventories of [[#r0]] |
 | 0b | [[#r2b]]: the layering census with its two declared exceptions; `_root_from_projects_slug` moved down. Ordinary changes, not tool moves |
 | 1 | `git mv cli.py cli/__init__.py` with `cli/__main__.py` (a rename and one new file; the source-reader tests that name the path are re-pointed here); then one commit per command module, smallest first: `learn_cmds`, `admin_cmds`, `removal_cmds`, `vectors_cmds`, `graph_cmds`, `search_cmds`, `query_cmds`, `hub_cmds`, `daemon_cmds`, `ingest_cmds`, `catalog_cmds`, `grep_cmds`, `session_cmds`, `memory_cmds` |
 | 2 | one commit per concern module: `store_vectors`, `store_partition`, `store_fragments`, `store_derive`, `store_rank`, `store_removal`, `store_replay`, `store_memory`, `store_links`, `store_entities`; each extends `_DERIVE_CODE_MODULES` with its file ([[#r5]]) |
@@ -499,6 +505,7 @@ commit's parent and at the commit, and compared:
 | G7 parity and censuses | `tests/test_verb_parity.py` (167 tests), `tests/test_bug212_r4_red.py` (the catalog-opener census, 47 tests), `tests/test_docs_generated.py` (7), and this task's own census tests. They are in G5's run too; they are named here because they are the tests a split is most likely to blind (`tests/test_repo_hooks_in_sync.py` runs under G6, in the dev tree) | green, with the same test counts |
 | G8 the tool | `tools/split_module.py --check <parent>` (replay), and `tools/verify_split.py <parent>` (the compiler's symbol tables, independent of the tool's scope analysis) | both exit 0 |
 | G9 size | [[#r7]]'s census | green |
+| G11 the derived state | `scripts/derive-digest.py` over the fixture corpus, against the golden recorded at R0 ([[#r5-digest]]) | the four legs equal the golden, after phase 1 and after every phase-2 commit |
 | G10 the censuses still see | every census in the source-reader inventory, after the commit: its synthetic bypass is planted and the census **fails** on it; its allow list names no site that no longer exists ([[#r4-reproof]]) | every census fails on its bypass |
 {#r4-gates}
 
@@ -546,11 +553,18 @@ commit's parent and at the commit, and compared:
 1. `class Store(_StoreEntities, _StoreLinks, _StoreMemory, _StoreReplay, _StoreRemoval,
    _StoreRank, _StoreDerive, _StoreFragments, _StorePartition, _StoreVectors):` in `store.py`. The mixins hold methods only: no `__init__`, no class
    attributes that `Store` also defines, no state of their own. A census test checks all
-   three, and checks that no method name is defined in two mixins. It counts concrete method
-   definitions in the classes named in `Store`'s bases. A class that only declares (a
-   `Protocol`, or names under `TYPE_CHECKING`) is not a base and is not counted. `Store`'s bases
-   are exactly the ten mixins: a common base class added for typing would change the method
-   resolution order this task fixes, so 29.2 declares its host without one.
+   three, and checks that no method name is defined in two mixins. It takes the mixin set
+   from `Store`'s bases at run time and counts the methods each defines. `Store`'s bases are
+   exactly the ten mixins, and `Store.__mro__` is fixed by this task.
+   - 29.2 later gives each mixin a typing host: `class _StoreVectors(_Host):`, where `_Host` is
+     `refmatrix.typing_store.StoreHost` under `TYPE_CHECKING` and `object` at run time. The
+     census accepts a mixin whose only base is that alias: at run time the base is `object`,
+     the host is not one of `Store`'s bases, it defines no method the census can count, and the
+     method resolution order is unchanged (29.2 adds an AC that it is equal before and after).
+   - `src/refmatrix/typing_store.py` (29.2's leaf module: the `StoreWriter` Protocol and the
+     host, declarations only) is **not** a store module for this task. It defines no mixin, so
+     [[#ac-5]] does not put it in `_DERIVE_CODE_MODULES`; it is not in [[#r6]]'s store family
+     (`store` and `store_*`); the size census treats it like any file.
 2. `from refmatrix.store import Store` and every other name importable from `refmatrix.store`
    today still resolves there (G4). Call sites, `_DaemonWriter`, the `Store(` census and every
    test patch are unchanged: nothing outside `store*.py` can tell that the class is in several
@@ -566,16 +580,39 @@ commit's parent and at the commit, and compared:
    - The union hash changes with each phase-2 commit, as it does with any edit to `store.py`.
      `derive_pass_modules` returns the union for the no-argument callers and for every pass
      that has no entry of its own, so this is a fleet-wide `behind_code` flip with nothing
-     about the derived graph changed: the case **plan-29 D4** asks the user about. What the
-     fleet shows is R0 item 8; what is done about it is D4 ([[#open-decisions]]).
-   - This task does not change `derive_code_hash` itself. If D4 is answered (c) (the hash
-     ignores comments and annotations), that change belongs to the task D4's answer names, not
-     to a move; a move still changes each file's content, so this task's flip remains; and
-     [[#ac-5]] tests the file lists, not the hash function, so it holds either way.
+     about the derived graph changed.
+   - **plan-29 D4 was decided (c)** (L106): `derive_code_hash` will hash a normalised syntax
+     tree, so that annotation- and comment-only edits stop flipping it. That change is 29.2's
+     (`task-29.2-mypy-gate#r7`) and lands **after** this task. It does not remove this task's
+     flip: the list of modules changes here, and a move changes each file's content under any
+     normalisation that is per file.
+   - **So this task's release needs one announced re-stamp.** After its deploy the lead
+     re-stamps each fleet store through the existing derive-stamp path, announced and backed up
+     first. No store is re-derived. The evidence that nothing derived moved is item 6's digest.
+     No agent re-stamps or re-derives a live store.
+   - This task does not change `derive_code_hash` itself. [[#ac-5]] tests the file lists, not
+     the hash function, so it holds before and after 29.2 changes the function.
+   - **A module named in `_DERIVE_PASS_MODULES` is not split in this task** ([[#r7]], criterion
+     6), so that table is not changed here, as this item has said from the start.
 5. `__qualname__` changes for moved methods (`Store.x` → `_StoreFragments.x`). The catalog-opener
    census keys on it; its allow list is re-keyed in the commit that moves the method (source
    inventory rule, [[#r4]]). R0 lists any other reader of `__qualname__` or `__module__`
    (none in `cli.py` or `store.py` at `f3709d2`).
+6. **The derived state is shown not to have moved** (asked by 29.2's author after L106; the
+   lead names this digest as the evidence for the re-stamp). {#r5-digest}
+   - The tool, the corpus and the test are the ones `task-29.2-mypy-gate#derive-digest`
+     specifies (`scripts/derive-digest.py`, `tests/fixtures/derive_digest/`,
+     `tests/test_derive_digest_unchanged.py`; four legs: graph, vectors, PageRank prior, memory
+     compile; every pass shown to have run; a changed corpus that must differ leg by leg). This
+     task builds them **first**, in phase 0, to that specification, because the golden has to
+     exist before the first store move. `ch-test-engineer` commits the tool, the corpus and
+     `golden.json`, recorded on the `pre-split-29.5` tree.
+   - **Gate G11:** the four legs equal the golden after phase 1's last commit and after **every**
+     phase-2 commit. A leg that differs stops the phase like any red gate.
+   - The golden names its commit, the embed model id and the duckdb version. It is recorded
+     after the dev venv is on duckdb 1.5.3 (`plan-review-fable-store D5`, decided).
+   - 29.2 and 29.3 then only check that the same golden is still green
+     (`task-29.3-converge-shapes#k-r6`).
 
 ### R6: private names used across modules {#r6}
 
@@ -608,6 +645,23 @@ After the moves, every `src` → `src` use of another module's `_name` is listed
   first, then the rename or move, then G5 around it. Tests → `src` private uses (742 sites)
   are not in scope; they are counted in the summary.
 
+### This task's censuses, and how each reads the code {#censuses}
+
+29.3's slice K moves every census that walks `src/refmatrix` with `ast` onto one kit
+(`task-29.3-converge-shapes#k-r7`), keeping its allow list and its synthetic bypass. So that
+the list is not guessed:
+
+| Census | Test file | Reads | Moves onto the kit |
+|---|---|---|---|
+| import layering ([[#ac-13]]) | `tests/test_import_layering_census.py` | `ast` over `src/refmatrix` | yes; both allow-list entries and the "owner must resolve" must-fail are kept |
+| private names across modules ([[#ac-6]]) | `tests/test_private_cross_module_census.py` | `ast` over `src/refmatrix` | yes |
+| patch surface ([[#ac-3]]) | `tests/test_cli_patch_surface.py` | `ast` over `tests/` (patch targets) and over `src/refmatrix/cli/` and `store_*.py` (bindings, `global`) | yes |
+| mixins ([[#r5]] item 1) | `tests/test_derive_tables_name_real_files.py` (with AC-5) | run-time introspection of `Store`'s bases; no `ast` walk | no |
+| module names ([[#ac-4]]) | `tests/test_cli_entry_points.py` | file stems against `sys.stdlib_module_names`; no `ast` | no |
+| derive tables ([[#ac-5]]) | `tests/test_derive_tables_name_real_files.py` | two tuples and the file system | no |
+| module size ([[#ac-7]]) | `tests/test_module_size_census.py` | line counts | no |
+{#censuses-table}
+
 ### R7: the size ceiling {#r7}
 
 `tests/test_module_size_census.py`: no `src/refmatrix/**/*.py` is over **3,000 lines**, except
@@ -616,12 +670,13 @@ assessment's anchor, owner task). An excepted file may not grow past its listed 
 file gets no exception.
 
 - **No module produced by the split is over the ceiling.** After phase 2, `cli/*` and
-  `store*.py` hold no exception. This much is the same under every answer to plan-29 D17.
+  `store*.py` hold no exception, whatever the assessments below conclude.
 - **`daemon.py` (7,355), `verbs.py` (3,653), `ingest.py` (3,144)** are over the ceiling and are
   not `cli` or `store`. The plan says `daemon.py` "is assessed after, not split by default",
-  and its acceptance says "no module over the size target". **How to read the two together is
-  plan-29 D17, open, and the user's** ([[#decisions]]).
-- **The pending default, built unless the user answers otherwise:** each of the three gets a
+  and its acceptance says "no module over the size target". How to read the two together was
+  plan-29 D17. **The user decided it on 2026-11-14 (ruling L106): the default below, with a
+  sixth criterion.**
+- **The rule:** each of the three gets a
   written assessment in the summary, by the fixed criteria below, and then either a split in
   this task by the same tool and gates (a phase 2b, after `store`), or an exception row with a
   named owner task.
@@ -634,14 +689,24 @@ file gets no exception.
   4. the result is under the ceiling. For `daemon.py` that takes both the ops (2,339) and the
      `Daemon` class (2,668 lines, 70 methods), since removing the ops alone leaves 5,016;
   5. no approved, unbuilt spec is about to rewrite the seam (23.x and 18.x add to `daemon.py`;
-     16.5 guts the grep block, which is why that block moves as one module and is not cut).
+     16.5 guts the grep block, which is why that block moves as one module and is not cut);
+  6. **the module is not named in `_DERIVE_PASS_MODULES`.** A derive-pass module is not split
+     in this task. Splitting one changes that table, and flips its passes to `behind_code` on
+     every fleet store, in a release that plan-29 D4 does not cover (ch-bsd r1 `#s2`, as
+     extended; the lead's ruling).
+- **What the criteria already settle at `f3709d2`:**
+  - `ingest.py` fails criterion 6: it is the whole module set of the `ingest` and `semantic`
+    passes. It is **not split** here. It gets its assessment and an exception row.
+  - `daemon.py` fails criterion 5 while 23.x and 18.x are unbuilt. It is **not split** here.
+  - `verbs.py` is the only one of the three that can be split in this task, in a phase 2b,
+    and only if its assessment passes criteria 1 to 5.
 - **What each assessment records,** whatever it concludes:
 
   | Module | Recorded |
   |---|---|
   | `daemon.py` | the two seams and their sizes; the patch surface; every census that keys on `_op_*`; which approved specs add to it |
   | `verbs.py` | the registry seam; the patch surface; that every 0.83.0 merge conflicted in it |
-  | `ingest.py` | that it is 5% over; that it is in the derive pass sets, so any edit to it flips fleet stores to `behind_code` |
+  | `ingest.py` | that it is 5% over; that criterion 6 keeps it whole in this task; what a later split would have to do about `_DERIVE_PASS_MODULES` |
   {#r7-assessed}
 
 - The assessments are written after phase 2, on the tree the split leaves: the tool, the gates
@@ -716,21 +781,15 @@ cannot be merged afterwards without redoing its work by hand.
    long-lived process on dev code. After a phase merges it still holds the old modules, and its
    next lazy `from refmatrix.cli import …` meets the new layout. The announcement tells every
    session on the dev tree to `/mcp` reconnect after each phase's merge.
-7. **Released alone, and not under a standing go.** One release holds this task's code and
-   nothing else, so that a regression after it has one suspect.
-   - `plan-review-fable D4` asks for a standing go for releases "none changing hooks or the
-     store on disk". This release changes the store on disk twice over (the store event, and
-     the union-hash flip), so it is outside that premise whatever the user answers: it needs
-     its own go (ruling L105).
-   - **Against plan-29 D4.** 29.2's recommendation there is one release carrying every
-     hash-flipping edit of 29.2, 29.3 "and, if it lands close enough, 29.5". The two are
-     reconciled by separating the code from the stamps: this task's **code** ships alone; what
-     is done to the stores' **stamps** (D4's (a) re-derive or (b) re-stamp) is done once, after
-     the last flipping release, and covers this task's flip too. Between the two the fleet
-     reads `behind_code` (R0 item 8 says what that shows). If the user would rather the fleet
-     never reads it, the other reading is to hold this task's deploy and ship one release with
-     29.2 and 29.3, at the cost of the single suspect. Which one is part of D4's answer; this
-     spec builds to either and does not choose.
+7. **Released alone, with its own go, and one announced re-stamp.** One release holds this
+   task's code and nothing else, so that a regression after it has one suspect.
+   - **Its own go.** The user's standing go for plan-29 releases (`plan-review-fable D4`,
+     decided, L106) excludes a release that changes the store on disk. This one does, twice:
+     the store event at the merge, and the derive-hash flip from the changed module list. It
+     stays a per-release go.
+   - **One re-stamp** after the deploy, by the lead, as [[#r5]] item 4 says, with G11's equal
+     digest as its evidence. 29.2 and 29.3's later release is separate and has its own
+     (`task-29.2-mypy-gate#d4`).
 8. **No install window.** Nothing in this task may make `rmx install-hooks --check` report drift
    on an existing install (T0's R0.7, asked of all five plan-29 tasks). The hook generators
    import nothing from `cli`; R0 confirms it, and G7's run in the dev tree shows it.
@@ -800,7 +859,7 @@ is quoted in the summary. {#r10-body}
   - G10: a census whose bypass is planted in the old file name only (it must not count as seen).
   The scratch runs are logged. A gate that has only ever been run on an identical tree has not
   been shown to check anything ([[feedback_clean_corpus_hides_a_dead_gate]]). {#ac-1}
-- **AC-2: every move commit passes G1-G5 and G7-G10**, and the summary has one row per commit:
+- **AC-2: every move commit passes G1-G5 and G7-G11** (G11 from phase 1's last commit on), and the summary has one row per commit:
   sha, the module moved, lines moved, each gate's result, and the two suite run names. G5's
   two runs for a commit are the commit and its parent, at the same shard count. {#ac-2}
 - **AC-3: the patch still lands.** `tests/test_cli_patch_surface.py`:
@@ -841,9 +900,11 @@ is quoted in the summary. {#r10-body}
 - **AC-7: no module produced by the split is over 3,000 lines.** The size census is green;
   `cli/*` and `store*.py` hold no exception; it fails on a 3,001-line file under `cli/` and on
   an excepted file that grew by one line. For `daemon.py`, `verbs.py` and `ingest.py`: the
-  written assessment ([[#r7-assessed]]) is in the summary, and each is under the ceiling or
-  has an exception row with an owner task that exists, as plan-29 D17's answer (or, with no
-  answer, its pending default) decides. {#ac-7}
+  written assessment ([[#r7-assessed]]) is in the summary with each of the six criteria
+  answered. `ingest.py` and every other module named in `_DERIVE_PASS_MODULES` is unchanged in
+  line count by this task's move commits (a test compares the table's files at the base sha and
+  at the final sha: no file was added to or removed from it). Each of the three is under the
+  ceiling or has an exception row with an owner task that exists. {#ac-7}
 - **AC-8: the citation tool is ready, its dry run is recorded, and 29.6 exists to use it.** On
   fixture specs the tool rewrites a line cite to the right symbol when the def moved, resolves
   the line at the spec's own sha and not at `HEAD` (a fixture where the two differ), lists a
@@ -861,6 +922,12 @@ is quoted in the summary. {#r10-body}
   commit's time; that the watcher was out during G6 (the daemon's own status line); and either
   "re-keyed: after = before" or "lost as recorded: N rows, listed in the export". A phase whose
   record lacks any of these is not merged. {#ac-15}
+- **AC-16: the derived state did not move.** The derive digest's golden was committed by
+  `ch-test-engineer` on the `pre-split-29.5` tree, before any move commit ([[#r5-digest]]). Its
+  four legs equal the golden after phase 1's last commit and after every phase-2 commit (gate
+  G11), and the summary gives each leg's digest at R0 and at the final sha. The check is shown
+  able to fail as 29.2's section specifies: the changed corpus differs from the golden leg by
+  leg. This is the evidence the lead cites for the one announced re-stamp. {#ac-16}
 - **AC-10: before and after.** The [[#baseline]] tables, re-measured at the final sha, are in
   the summary beside R0's. `./scripts/lint-gmd.sh` exits 0. {#ac-10}
 - **AC-11: the symbol map is published, and three names do not move.** {#ac-11}
@@ -952,11 +1019,13 @@ is quoted in the summary. {#r10-body}
 | `docs/adr/0006-*.md`, `docs/adr/0000-adr-overview.md`, `docs/INDEX.md` | the layout and layering decision ([[#r1]]; authored by `ch-architect`) |
 | `tools/split_module.py`, `tools/split_maps/cli.json`, `tools/split_maps/store.json`, `tools/split_maps/symbol_map.json` | new: the move tool, its maps, the published symbol map |
 | `tools/dump_click_tree.py`, `tools/verify_split.py`, `tools/repoint_citations.py`, `tools/module_size_exceptions.json` | new |
+| `scripts/derive-digest.py`, `tests/fixtures/derive_digest/` (corpus, changed corpus, `golden.json`), `tests/test_derive_digest_unchanged.py` | new, built in phase 0 to `task-29.2-mypy-gate#derive-digest`; 29.2 and 29.3 reuse them |
 | the module R0 names as `_root_from_projects_slug`'s home | phase 0b ([[#r2b]]). `handoff.py` and `telemetry.py` are **not** changed |
 | `src/refmatrix/cli.py` → `src/refmatrix/cli/__init__.py`, `cli/__main__.py`, `cli/*_cmds.py` (14) | phase 1 |
 | `src/refmatrix/store.py`, `src/refmatrix/store_*.py` (10) | phase 2 |
 | the modules on R6's list (24 files at `f3709d2`) | phase 3 |
-| `daemon.py`, `verbs.py`, `ingest.py` | assessed; changed only as plan-29 D17 and [[#r7]]'s criteria decide |
+| `daemon.py`, `ingest.py` | assessed, not changed ([[#r7]], criteria 5 and 6) |
+| `verbs.py` | assessed; split in a phase 2b only if it passes [[#r7]]'s criteria |
 | `tests/test_split_module_tool.py`, `tests/test_click_tree_dump.py`, `tests/test_cli_patch_surface.py`, `tests/test_cli_entry_points.py`, `tests/test_derive_tables_name_real_files.py`, `tests/test_private_cross_module_census.py`, `tests/test_import_layering_census.py`, `tests/test_module_size_census.py`, `tests/test_symbol_map.py`, `tests/test_repoint_citations.py` | new |
 | the test files in the source-reader inventory (about 20 at `f3709d2`; the queue review counts 31 that name the two files at all) | path literals, census keys, one recursive glob; nothing else |
 | `tests/tiering.py` | `ALWAYS_FILES` gains this task's census tests ([[task-29.4-suite-health#r6]]) |
@@ -973,8 +1042,8 @@ No spec under `workflow/plans/` is edited by this task: the citation and pin pas
 
 - **Any behaviour change.** No bug is fixed in a move commit, including ones the move makes
   obvious. They are logged and scheduled in 29.1's grammar.
-- **Splitting `daemon.py`, `verbs.py` or `ingest.py` outside what plan-29 D17 and [[#r7]]'s
-  criteria allow.**
+- **Splitting `daemon.py` or `ingest.py`**, and splitting `verbs.py` unless its assessment passes
+  ([[#r7]]; plan-29 D17, decided).
 - **Decomposing `Store`** into collaborating objects ([[#r1]]).
 - **Moving the core out of `cli/__init__.py`.** It stays where the patches expect it. Moving it
   means changing how tests reach it, which is a task about tests.
@@ -987,27 +1056,24 @@ No spec under `workflow/plans/` is edited by this task: the citation and pin pas
 - **Changing the fork-safety re-exec** ([[#fact-argv]]). Running it as `-m` would put the
   current directory first on the daemon's import path; today's form does not. That is a
   behaviour question for another task, and the naming census makes today's form safe.
-- **Deciding** `plan-29 D4`, `plan-29 D17`, `plan-29 D23`, `plan-review-fable D4` or
-  `plan-review-fable-store D5`.
+- **Deciding plan-29 D23.** It is the user's.
 - **Fixing bug-107.** It is open and is plan-22's; this task makes its cost at one merge visible
   and puts the choice to the user.
 {#out-of-scope-list}
 
-## Open user decisions (referenced, not settled) {#open-decisions}
+## The user's decisions this spec is built to {#user-decisions}
 
-| Label | Question | Where this spec waits on it |
+All decided on 2026-11-14 (ruling L106, [[plan-review-2026-11-13#lead]]), except the last row.
+
+| Label | Decided | What it means here |
 |---|---|---|
-| `plan-review-fable D4` | A standing go for plan-29's releases when the suite equals baseline by E line, or a go per release | [[#r9]] item 7: this task's release changes the store on disk, so it needs its own go under either answer |
-| `plan-review-fable-store D5` | Raise the dev venv from duckdb 1.5.2 to the 1.5.3 floor before baselines are taken | [[#r0]] item 13: no golden and no baseline before it is resolved |
-| **plan-29 D4** (29.2's, in `task-29.2-mypy-gate#d4`) | What is done about a fleet-wide `behind_code` flip when nothing about the derived graph changed: (a) re-derive, (b) re-stamp, (c) change the hash | [[#r5]] item 4 and [[#r9]] item 7: this task's release flips the union hash; whether it ships alone or bundled is part of D4's answer |
-| **plan-29 D23** (this spec's own) | The learned and protected rows keyed on `cli.py` and `store.py` at the merge: re-key them, or accept the recorded loss | [[#r9-store-event]] step 3: no phase merges without it |
-| **plan-29 D17** (this spec's own) | What "no module over the size target" means for `daemon.py`, `verbs.py` and `ingest.py` | [[#r7]]: the pending default is built unless the user answers otherwise; phases 0 to 2 do not wait on it |
-{#open-decisions-table}
-
-`plan-review-fable D1` (do the three "right after 0.83.0" tasks come before plan-29) and
-`plan-review-fable-memory D1` and `D2` (bug-241 and `legs_ms` ahead of the split) decide what is
-already on `master` when the window opens. [[#r0]] item 10 records the answers; it does not
-give them. {#open-decisions-upstream}
+| plan-29 D17 | this spec's default, with a sixth criterion | [[#r7]]: no derive-pass module is split; `ingest.py` and `daemon.py` are exceptions; `verbs.py` only if its assessment passes |
+| plan-29 D4 (29.2's) | (c): a normalised-AST derive hash, in 29.2, before its annotations | [[#r5]] item 4: that lands after this task, so this task's module-list change still flips the union once, and needs one announced re-stamp |
+| `plan-review-fable D4` | a standing go for plan-29 releases whose suite equals the baseline by E line, the user told first, **excluding** releases that change the store on disk | [[#r9]] item 7: this task's release is excluded; it has its own go |
+| `plan-review-fable-store D5` | duckdb 1.5.3 in `.venv-eval` before baselines (the lead upgrades after the 0.83.1 runs) | [[#r0]] item 13: no golden and no baseline before the upgrade |
+| `plan-review-fable-memory D2` | 25.1b's `legs_ms` timing pair lands before 29.5 | [[#r0]] item 10: it is on `master` before the window opens |
+| **plan-29 D23** | **open** | [[#r9-store-event]] step 3: no phase merges without it |
+{#user-decisions-table}
 
 ## Decisions taken in this spec {#decisions}
 
@@ -1023,27 +1089,21 @@ give them. {#open-decisions-upstream}
     resolved by attribute at call time" is this, with `refmatrix.cli` itself as the one module.
     The review allows a test edit that is a patch-target rename only; this shape needs none.
   - **Cost:** `_cli.` in front of core names in moved code, and a 1,689-line `__init__.py`.
-- **plan-29 D17 (open, for the user): what "no module over the size target" means for
-  `daemon.py`, `verbs.py` and `ingest.py`.**
-  - **The conflict:** the plan's 29.5 text splits `cli.py` and `store.py` and says `daemon.py`
+- **plan-29 D17 (decided by the user, 2026-11-14, ruling L106): what "no module over the size
+  target" means for `daemon.py`, `verbs.py` and `ingest.py`.**
+  - **The conflict was:** the plan's 29.5 text splits `cli.py` and `store.py` and says `daemon.py`
     "is assessed after, not split by default"; its acceptance says "no `src/refmatrix` module
     over the size target". `daemon.py` is 7,355 lines, `verbs.py` 3,653, `ingest.py` 3,144.
-  - **Pending default, in the spec until answered:** assess all three by [[#r7]]'s criteria;
-    split in this task the ones that pass; the others get a dated exception with an owner task,
-    and the size census holds them at their current size.
-  - **The alternatives:**
-    - (a) all three are split in 29.5, whatever the criteria say. For `daemon.py` that means
-      also splitting the `Daemon` class and re-keying every census that names `_op_*`;
-    - (b) 29.5 closes at `cli` + `store`; all three are assessed exceptions and none is split
-      here. A later task takes whichever the assessments recommend. **This is the queue
-      review's reading** (`#b1`: "no module produced by the split over target, with `daemon.py`,
-      `verbs.py` and `ingest.py` listed as assessed exceptions"; it also defers "any `daemon.py`
-      split").
-  - **How far apart the default and (b) are:** `daemon.py` does not pass criterion 5 while 23.x
-    and 18.x are approved and unbuilt, so under the default it is an exception too. The two
-    differ only on `verbs.py` and `ingest.py`, and only if their assessments pass.
-  - **Why not decided here:** the two sentences are both the user's approved text, and the
-    choice moves days of an exclusive window. The lead puts it to the user (2026-11-14).
+  - **Decided:** this spec's default, with a sixth criterion. Assess all three by [[#r7]]'s six
+    criteria; split in this task the ones that pass; the others get a dated exception with an
+    owner task, and the size census holds them at their current size. **No module named in
+    `_DERIVE_PASS_MODULES` is split in 29.5.**
+  - **What that comes to:** `ingest.py` cannot pass (criterion 6) and `daemon.py` does not pass
+    while 23.x and 18.x are unbuilt (criterion 5). So the decision and the queue review's
+    reading (`#b1`: all three are assessed exceptions) coincide, unless `verbs.py`'s assessment
+    passes; then `verbs.py` alone is split here, in a phase 2b.
+  - The alternatives that were not taken: (a) split all three in 29.5 whatever the criteria
+    say; (b) split none and decide later.
 - **plan-29 D23 (open, for the user): the learned and protected rows keyed on `cli.py` and
   `store.py` when a phase merges.**
   - **What happens with no decision:** bug-107. The rows are purged with the path, and their
@@ -1113,7 +1173,8 @@ named; the cli map reserves `grep`, `vectors`, `catalog`, `learn` and `removal` 
 0b ([[#r2b]]) and the layering census are new; G10 and [[#ac-12]] (every census re-proven) are
 new; [[#ac-11]] (the symbol map and three stable names) is new, for 29.2 and 29.3; [[#r7]]
 states the split's own ceiling as the review does, and keeps plan-29 D17 open for the user with
-its pending default (the review's reading is recorded as alternative (b)); [[#r8]] publishes the map and the tool
+its pending default (the review's reading is recorded as alternative (b); the user has since
+decided it, see [[#rev-note-3]]); [[#r8]] publishes the map and the tool
 here and hands the rewriting pass to the plan's end; [[#r9]] gains the MCP reconnect, the
 release-alone rule and the no-drift rule; the baseline is 29.4's stage 5. {#rev-note-body}
 
@@ -1129,10 +1190,28 @@ This spec's share:
 | B2: gate G4 could not pass | [[#r4-gates]] G4 is three exact checks; AC-1's planted break removes a read name |
 | B3: the citation and pin pass had no task | [[#r8]] hands it to [[task-29.6-citation-and-pin-repoint]]; [[#ac-8]]; plan-29 D22 |
 | S1: the merge is a lossy store event | [[#r9-store-event]], R0 item 12, [[#ac-15]], gate G6 with the watcher out, plan-29 D23 (open) |
-| S2: the derive-hash flip and plan-29 D4 did not meet | [[#r5]] item 4, [[#r9]] item 7, [[#open-decisions]] |
+| S2: the derive-hash flip and plan-29 D4 did not meet | [[#r5]] item 4, [[#r9]] item 7, [[#user-decisions]] |
 | S5: module identity under `-m` | [[#fact-identity]], R0 item 5, [[#ac-4]] (RED at base), plan-29 D24 |
 | S6: no rule for references between command modules | [[#r2]] items 9 and 10, [[#r3]] (shadowing tests; `tools/verify_split.py` from the compiler's symbol tables), gate G8 |
 | M4: two wrong numbers | [[#baseline-reach]]: 4 `global` statements; 4 spawn sites in 3 files |
 | M6: seams with 29.2 | [[#ac-5]] keys on the mixin, not the file name; [[#r5]] item 1 says what the mixin census counts |
 | M9: a GREEN commit that edits tests | [[#r6]]: `ch-test-engineer` re-points first, as the RED |
 {#rev-note-2-table}
+
+## Revision note 3 (2026-11-14, after ruling L106 and the 29.2 / 29.3 seams) {#rev-note-3}
+
+- **plan-29 D17 is decided** (L106): this spec's default with a sixth criterion, no
+  derive-pass module split ([[#r7]], [[#ac-7]], [[#decisions]]). ch-bsd's extension of S2 is
+  met by that criterion.
+- **plan-29 D4 = (c), `plan-review-fable D4` and `plan-review-fable-store D5` are decided**
+  ([[#user-decisions]]): one announced re-stamp after this task's release ([[#r5]] item 4); a
+  per-release go ([[#r9]] item 7).
+- **The derive digest is recorded here** ([[#r5-digest]], gate G11), at R0, to 29.2's
+  specification, so that it is evidence for this task's re-stamp.
+- **B1 is said plainly** ([[#r2b-stay]]) and its owner is confirmed:
+  `task-29.3-converge-shapes#slice-h`.
+- **Seams with 29.2** ([[#r5]] item 1): `typing_store.py` is not a store module; a
+  `TYPE_CHECKING`-only host does not count as a base. [[#censuses]] lists which censuses 29.3's
+  kit takes.
+- **plan-29 D23 is still open.**
+{#rev-note-3-list}

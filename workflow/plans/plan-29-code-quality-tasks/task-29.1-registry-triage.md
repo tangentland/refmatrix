@@ -201,9 +201,9 @@ There is one script, `scripts/check-bug-registry.py`, with no third-party import
 - Every `fixed <sha>` runs `git merge-base --is-ancestor <sha> HEAD`, with a timeout. A git failure
   is reported as `could not verify`, and the checker then exits non-zero. It never treats a git
   error as "not found" (the bug-225 r3 lesson). Exit 1 with empty stderr is the only "not an
-  ancestor" answer. The checker carries its own small runner with that rule. It is a script
-  outside `src/refmatrix`, so 29.3's `run_git` helper and its census, which cover `src/` only, do
-  not reach it, and nothing is handed to them.
+  ancestor" answer. The checker carries its own small runner with that rule until 29.3 lands
+  its `run_git` helper. 29.3 takes the hand-off (its author, 2026-11-14): this script is in
+  29.3's a-R4 adoption table, and 29.3's git census also walks `scripts/*.py`.
 - `--history-against <git-rev>` compares the registry with the one at `<git-rev>` and fails on any
   row whose non-status cells changed ([[#ac-6]]). It is a mode, not a suite test: a test that
   needs a particular parent commit stops meaning anything one commit later.
@@ -365,6 +365,16 @@ that suggests a home has not made one.
 Where two reviews disagree (124, 161, 165, 166, 232) the table says so and does not pick. The
 triage picks by the rule above and records the loser as a note on the row. {#homes-conflicts}
 
+**New work that has no owner task yet** (created by the user's decisions of 2026-11-14, ruling
+L106). Neither is a registry row, and no row can be `scheduled` to either until it has a spec:
+- **a `legs_ms` task**: 25.1b's timing pair (telemetry only; it touches `cli.py` and `scan.py`),
+  which must land before 29.5 so that its 100-run window accrues during plan-29
+  (`plan-review-fable-memory D2`);
+- **a cross-partition `rel:` probe** (`plan-review-fable-memory D3`: probe first).
+
+Step 0 of [[#r2]] checks whether each has a spec by then, and the summary says so. The lead
+names their owners; this task does not. {#homes-new-work}
+
 ## Acceptance criteria {#acceptance}
 
 - **AC-1: no bare `open`.** `scripts/check-bug-registry.py` exits 0 on the triaged registry.
@@ -520,3 +530,8 @@ shape ([[#r7]]); a `scheduled` target that is `completed` fails the checker. {#r
 | M2: the git runner was handed to 29.3, which did not take it | [[#r4]]: the sentence is gone; the checker keeps its own runner |
 | M3: bug-239 closed by a shape that needs a test | [[#r6]]: `fixed <sha>; no test: docs`, diffs quoted |
 {#rev-note-3-table}
+
+## Revision note 4 (2026-11-14, after ruling L106) {#rev-note-4}
+
+[[#homes-new-work]] names the two pieces of new work L106 created that have no owner yet. The
+git-runner hand-off to 29.3 is restored in [[#r4]], because 29.3 now takes it. {#rev-note-4-body}

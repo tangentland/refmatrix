@@ -22,8 +22,8 @@ metadata:
 > lines move again in both and 29.3 renames helpers.
 > Runs last in plan-29's order: 29.1 → 29.4 → 29.5 → 29.2 ∥ 29.3 → **29.6**.
 > Docs-only, plus one census test. It edits other tasks' specs: [[#r6]] says under what rule.
-> User gates: none. Open decisions it waits on: none of its own; plan-29 D17's answer decides
-> whether `daemon.py`, `verbs.py` or `ingest.py` have moved too ([[#r0]]).
+> User gates: none. Open decisions it waits on: none. plan-29 D17 is decided (L106): `daemon.py`
+> and `ingest.py` are not split by 29.5, and `verbs.py` only if its assessment passes ([[#r0]]).
 
 rel: part-of -> [[plan-29-code-quality]]
 rel: depends-on -> [[task-29.5-split-giant-modules]]
@@ -102,8 +102,10 @@ At the task's base sha, which holds 29.5, 29.2 and 29.3:
    (by syntax tree). A row that does not is corrected first, with its evidence: the commit that
    renamed or moved it (`git log -S`), or the rename tables in 29.2's and 29.3's summaries. No
    spec is rewritten from a map that has an unresolved row.
-3. **Read plan-29 D17's answer.** If `daemon.py`, `verbs.py` or `ingest.py` were split, their
-   moves are in the map and their citations are in scope with `cli.py`'s and `store.py`'s.
+3. **Read what 29.5 did with `verbs.py`.** plan-29 D17 is decided: `daemon.py` and `ingest.py`
+   are not split by 29.5; `verbs.py` is split only if its assessment passed. If it was, its
+   moves are in the map, `verbs.py:N` joins `cli.py:N` and `store.py:N` as a citation of a file
+   that no longer exists as cited, and the census of [[#r7]] forbids it too.
 4. **Start from 29.5's dry run** ([[task-29.5-split-giant-modules#ac-8]]), re-run at this base:
    per spec, what resolves, what does not, and the pins.
 5. **Classify every spec that has a hit** as one of:
