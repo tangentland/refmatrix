@@ -53,9 +53,25 @@ removed; it can be steered to a single line, with the handoff carrying the state
    that idea"):** the SessionStart `clear` entry writes the same per-session file and injects the
    same pointer, so 25.1's inline recall-state on `compact|clear` is replaced by the pulled form on
    both triggers; the inline budgeted handoff remains only as the fallback when the write fails.
-4. **R4 Manual /compact.** {#r4} A manual `/compact <instructions>` keeps the user's instructions:
+4. **R3b The handoff is actually read (L93; the user, 2026-11-14: "now the question is will you
+   actually read the file?").** {#r3b} A pointer alone is not trusted: in session 37b7498f the agent
+   read none of the dozens of oversized hook outputs Claude Code had saved to files. After a
+   `compact` or `clear` that wrote the handoff file:
+   - a generated PreToolUse hook DENIES every tool call except a read of that exact file, with the
+     reason "read <path> first: it is the authoritative state";
+   - a PostToolUse hook on a successful read of that path writes a per-session marker that lifts
+     the gate;
+   - until the marker exists, the UserPromptSubmit hook re-injects the one-line pointer on every
+     prompt, so a tool-less reply cannot skip it for more than one turn;
+   - one CLAUDE.md line states the rule (CLAUDE.md is re-read from disk after compaction and
+     `/clear`);
+   - if the file is missing or unreadable the gate stands down and says so in one line: it can
+     never trap the session;
+   - telemetry records each pull (path, bytes, seconds from session start to the read) so
+     compliance is measured, not assumed.
+5. **R4 Manual /compact.** {#r4} A manual `/compact <instructions>` keeps the user's instructions:
    the R2 instruction applies to the `auto` trigger only, unless the user passes none.
-5. **R5 Generated and installed.** {#r5} Emitted by `hooks.py`, covered by `install-hooks --check`,
+6. **R5 Generated and installed.** {#r5} Emitted by `hooks.py`, covered by `install-hooks --check`,
    rolled out by the next fleet `install-hooks --apply`.
 
 ## Acceptance {#acceptance}
@@ -67,6 +83,11 @@ removed; it can be steered to a single line, with the handoff carrying the state
   injected handoff after it (an R0-style probe recorded under `workflow/measurements/`, hashes not
   raw prompts).
 - **AC-4:** save-state failing leaves a stderr line and an instruction naming the last handoff.
+- **AC-5:** after a `clear` with the handoff file written, a non-Read tool call is denied with the
+  reason and a Read of the file is allowed; after that read the same tool call is allowed
+  (mutation: the gate removed → the first non-Read call is allowed → fails); a missing file lets
+  every call through with one stand-down line (mutation: the gate holds on a missing file → fails);
+  the pointer is re-injected on each prompt until the marker exists.
 
 ## Files {#files}
 
