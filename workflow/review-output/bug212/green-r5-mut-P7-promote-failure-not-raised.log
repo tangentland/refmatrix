@@ -1,0 +1,328 @@
+.......................................FFFF.........FF........           [100%]
+=================================== FAILURES ===================================
+_ test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[slots-plain] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x106972b50>, 'slots')
+commit = False
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("commit", [False, True], ids=["plain", "commit"])
+    def test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero(tracked_repo,
+                                                                                      commit):
+        """L82: `rmx save-state` with no daemon on a store whose catalog git tracks. The handoff is
+        written (it lands in the memory dir, outside the store, BEFORE the promote), the STM promote
+        is refused -- and that refusal is printed on STDERR with a non-zero exit. At 67f55cb the
+        promote wrote the tracked catalog; with only the r4 refusal in place it would come back as
+        `{"error": ...}`, which the command prints as `promote skipped:` on stdout and exits 0 --
+        a silent refusal (ch-bsd r2 flag, red-212r2 r4 flag). `--no-sync` keeps the memory bridge
+        (another in-process writer, already covered) out of this test, so the promote is the only
+        store write.
+    
+        `commit` (ch-bsd r4 m-2, mutation Y7, L95): the user-level `/save-state` runs
+        `rmx save-state --commit`, so the exit code is pinned on THAT path too -- the commit lands,
+        and the command still exits non-zero."""
+        from refmatrix import stm
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        session = "bug212-r4-savestate"
+        st = stm.Stm(repo.store, session)
+        st.record("note", "a focus event for the bug-212 r4 save-state probe")
+        memdir = repo.base / "memdir"
+        memdir.mkdir()
+        before = _digests(repo.store)
+        head_before = subprocess.run(["git", "-C", str(repo.proj), "rev-parse", "HEAD"],
+                                     env=_base_env(), capture_output=True, text=True).stdout.strip()
+        argv = ["save-state", "-s", session, "--memory-dir", str(memdir), "--no-sync",
+                "--no-lint", "-m", "bug-212 r4 probe"] + (["--commit"] if commit else [])
+        r = _cli(repo, argv)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] save-state crashed\n{text}"
+        assert not changed and _status_refmatrix_catalogs(repo.proj) == "", \
+            f"[{layout}] save-state's promote wrote the git-tracked catalog {changed}\n{text}"
+        saved = sorted(p.name for p in memdir.rglob("savestate_*.md"))
+        assert saved, f"[{layout}] save-state wrote no handoff file under {memdir}\n{text}"
+        head = _refusal_head(repo.store / _target_catalog(layout))
+>       assert any(head in ln for ln in r.stderr.splitlines()), \
+            f"[{layout}] the promote refusal (`{head} ...`) is not on stderr\n{text}"
+E       AssertionError: [slots] the promote refusal (`refusing to open /private/tmp/b212t-ep3lyhh0/proj/.refmatrix/catalog.A.duckdb read-write in-process: ...`) is not on stderr
+E         exit 0
+E         stdout:
+E         save-state /private/tmp/b212t-ep3lyhh0/memdir/savestate_bug212r4save.md  (1 
+E         events, session bug212-r4-savestate, explicit)
+E         promote FAILED -- the session digest did not reach durable memory; the error 
+E         follows on stderr
+E         
+E         stderr:
+E         MEMORY.md: 1 -> 1 lines, 134 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+E         
+E       assert False
+E        +  where False = any(<generator object test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero.<locals>.<genexpr> at 0x10698c120>)
+
+tests/test_bug212_r4_red.py:811: AssertionError
+_ test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[slots-commit] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x106972a50>, 'slots')
+commit = True
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("commit", [False, True], ids=["plain", "commit"])
+    def test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero(tracked_repo,
+                                                                                      commit):
+        """L82: `rmx save-state` with no daemon on a store whose catalog git tracks. The handoff is
+        written (it lands in the memory dir, outside the store, BEFORE the promote), the STM promote
+        is refused -- and that refusal is printed on STDERR with a non-zero exit. At 67f55cb the
+        promote wrote the tracked catalog; with only the r4 refusal in place it would come back as
+        `{"error": ...}`, which the command prints as `promote skipped:` on stdout and exits 0 --
+        a silent refusal (ch-bsd r2 flag, red-212r2 r4 flag). `--no-sync` keeps the memory bridge
+        (another in-process writer, already covered) out of this test, so the promote is the only
+        store write.
+    
+        `commit` (ch-bsd r4 m-2, mutation Y7, L95): the user-level `/save-state` runs
+        `rmx save-state --commit`, so the exit code is pinned on THAT path too -- the commit lands,
+        and the command still exits non-zero."""
+        from refmatrix import stm
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        session = "bug212-r4-savestate"
+        st = stm.Stm(repo.store, session)
+        st.record("note", "a focus event for the bug-212 r4 save-state probe")
+        memdir = repo.base / "memdir"
+        memdir.mkdir()
+        before = _digests(repo.store)
+        head_before = subprocess.run(["git", "-C", str(repo.proj), "rev-parse", "HEAD"],
+                                     env=_base_env(), capture_output=True, text=True).stdout.strip()
+        argv = ["save-state", "-s", session, "--memory-dir", str(memdir), "--no-sync",
+                "--no-lint", "-m", "bug-212 r4 probe"] + (["--commit"] if commit else [])
+        r = _cli(repo, argv)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] save-state crashed\n{text}"
+        assert not changed and _status_refmatrix_catalogs(repo.proj) == "", \
+            f"[{layout}] save-state's promote wrote the git-tracked catalog {changed}\n{text}"
+        saved = sorted(p.name for p in memdir.rglob("savestate_*.md"))
+        assert saved, f"[{layout}] save-state wrote no handoff file under {memdir}\n{text}"
+        head = _refusal_head(repo.store / _target_catalog(layout))
+>       assert any(head in ln for ln in r.stderr.splitlines()), \
+            f"[{layout}] the promote refusal (`{head} ...`) is not on stderr\n{text}"
+E       AssertionError: [slots] the promote refusal (`refusing to open /private/tmp/b212t-l5euwlr7/proj/.refmatrix/catalog.A.duckdb read-write in-process: ...`) is not on stderr
+E         exit 0
+E         stdout:
+E         save-state /private/tmp/b212t-l5euwlr7/memdir/savestate_bug212r4save.md  (1 
+E         events, session bug212-r4-savestate, explicit)
+E         promote FAILED -- the session digest did not reach durable memory; the error 
+E         follows on stderr
+E         committed  chore(save-state): 2026-11-14 bug-212 r4 probe
+E         
+E         stderr:
+E         MEMORY.md: 1 -> 1 lines, 134 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+E         
+E       assert False
+E        +  where False = any(<generator object test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero.<locals>.<genexpr> at 0x10698d2a0>)
+
+tests/test_bug212_r4_red.py:811: AssertionError
+_ test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[legacy-plain] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x106970fd0>, 'legacy')
+commit = False
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("commit", [False, True], ids=["plain", "commit"])
+    def test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero(tracked_repo,
+                                                                                      commit):
+        """L82: `rmx save-state` with no daemon on a store whose catalog git tracks. The handoff is
+        written (it lands in the memory dir, outside the store, BEFORE the promote), the STM promote
+        is refused -- and that refusal is printed on STDERR with a non-zero exit. At 67f55cb the
+        promote wrote the tracked catalog; with only the r4 refusal in place it would come back as
+        `{"error": ...}`, which the command prints as `promote skipped:` on stdout and exits 0 --
+        a silent refusal (ch-bsd r2 flag, red-212r2 r4 flag). `--no-sync` keeps the memory bridge
+        (another in-process writer, already covered) out of this test, so the promote is the only
+        store write.
+    
+        `commit` (ch-bsd r4 m-2, mutation Y7, L95): the user-level `/save-state` runs
+        `rmx save-state --commit`, so the exit code is pinned on THAT path too -- the commit lands,
+        and the command still exits non-zero."""
+        from refmatrix import stm
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        session = "bug212-r4-savestate"
+        st = stm.Stm(repo.store, session)
+        st.record("note", "a focus event for the bug-212 r4 save-state probe")
+        memdir = repo.base / "memdir"
+        memdir.mkdir()
+        before = _digests(repo.store)
+        head_before = subprocess.run(["git", "-C", str(repo.proj), "rev-parse", "HEAD"],
+                                     env=_base_env(), capture_output=True, text=True).stdout.strip()
+        argv = ["save-state", "-s", session, "--memory-dir", str(memdir), "--no-sync",
+                "--no-lint", "-m", "bug-212 r4 probe"] + (["--commit"] if commit else [])
+        r = _cli(repo, argv)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] save-state crashed\n{text}"
+        assert not changed and _status_refmatrix_catalogs(repo.proj) == "", \
+            f"[{layout}] save-state's promote wrote the git-tracked catalog {changed}\n{text}"
+        saved = sorted(p.name for p in memdir.rglob("savestate_*.md"))
+        assert saved, f"[{layout}] save-state wrote no handoff file under {memdir}\n{text}"
+        head = _refusal_head(repo.store / _target_catalog(layout))
+>       assert any(head in ln for ln in r.stderr.splitlines()), \
+            f"[{layout}] the promote refusal (`{head} ...`) is not on stderr\n{text}"
+E       AssertionError: [legacy] the promote refusal (`refusing to open /private/tmp/b212t-v0vr6j8h/proj/.refmatrix/catalog.duckdb read-write in-process: ...`) is not on stderr
+E         exit 0
+E         stdout:
+E         save-state /private/tmp/b212t-v0vr6j8h/memdir/savestate_bug212r4save.md  (1 
+E         events, session bug212-r4-savestate, explicit)
+E         promote FAILED -- the session digest did not reach durable memory; the error 
+E         follows on stderr
+E         
+E         stderr:
+E         MEMORY.md: 1 -> 1 lines, 134 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+E         
+E       assert False
+E        +  where False = any(<generator object test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero.<locals>.<genexpr> at 0x10698c200>)
+
+tests/test_bug212_r4_red.py:811: AssertionError
+_ test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[legacy-commit] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x106970a50>, 'legacy')
+commit = True
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("commit", [False, True], ids=["plain", "commit"])
+    def test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero(tracked_repo,
+                                                                                      commit):
+        """L82: `rmx save-state` with no daemon on a store whose catalog git tracks. The handoff is
+        written (it lands in the memory dir, outside the store, BEFORE the promote), the STM promote
+        is refused -- and that refusal is printed on STDERR with a non-zero exit. At 67f55cb the
+        promote wrote the tracked catalog; with only the r4 refusal in place it would come back as
+        `{"error": ...}`, which the command prints as `promote skipped:` on stdout and exits 0 --
+        a silent refusal (ch-bsd r2 flag, red-212r2 r4 flag). `--no-sync` keeps the memory bridge
+        (another in-process writer, already covered) out of this test, so the promote is the only
+        store write.
+    
+        `commit` (ch-bsd r4 m-2, mutation Y7, L95): the user-level `/save-state` runs
+        `rmx save-state --commit`, so the exit code is pinned on THAT path too -- the commit lands,
+        and the command still exits non-zero."""
+        from refmatrix import stm
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        session = "bug212-r4-savestate"
+        st = stm.Stm(repo.store, session)
+        st.record("note", "a focus event for the bug-212 r4 save-state probe")
+        memdir = repo.base / "memdir"
+        memdir.mkdir()
+        before = _digests(repo.store)
+        head_before = subprocess.run(["git", "-C", str(repo.proj), "rev-parse", "HEAD"],
+                                     env=_base_env(), capture_output=True, text=True).stdout.strip()
+        argv = ["save-state", "-s", session, "--memory-dir", str(memdir), "--no-sync",
+                "--no-lint", "-m", "bug-212 r4 probe"] + (["--commit"] if commit else [])
+        r = _cli(repo, argv)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] save-state crashed\n{text}"
+        assert not changed and _status_refmatrix_catalogs(repo.proj) == "", \
+            f"[{layout}] save-state's promote wrote the git-tracked catalog {changed}\n{text}"
+        saved = sorted(p.name for p in memdir.rglob("savestate_*.md"))
+        assert saved, f"[{layout}] save-state wrote no handoff file under {memdir}\n{text}"
+        head = _refusal_head(repo.store / _target_catalog(layout))
+>       assert any(head in ln for ln in r.stderr.splitlines()), \
+            f"[{layout}] the promote refusal (`{head} ...`) is not on stderr\n{text}"
+E       AssertionError: [legacy] the promote refusal (`refusing to open /private/tmp/b212t-yjiy453v/proj/.refmatrix/catalog.duckdb read-write in-process: ...`) is not on stderr
+E         exit 0
+E         stdout:
+E         save-state /private/tmp/b212t-yjiy453v/memdir/savestate_bug212r4save.md  (1 
+E         events, session bug212-r4-savestate, explicit)
+E         promote FAILED -- the session digest did not reach durable memory; the error 
+E         follows on stderr
+E         committed  chore(save-state): 2026-11-14 bug-212 r4 probe
+E         
+E         stderr:
+E         MEMORY.md: 1 -> 1 lines, 134 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+E         
+E       assert False
+E        +  where False = any(<generator object test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero.<locals>.<genexpr> at 0x10698c660>)
+
+tests/test_bug212_r4_red.py:811: AssertionError
+_____ test_mcp_save_state_with_a_refused_promote_is_an_error_reply[slots] ______
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10b96cdd0>, 'slots')
+
+    @pytest.mark.timeout(300)
+    def test_mcp_save_state_with_a_refused_promote_is_an_error_reply(tracked_repo):
+        """m-3 (L95): MCP `rmx_save_state` (no daemon, tracked catalog, sync and lint off) whose
+        promote is refused replies `isError` carrying the refusal -- the CLI's exit 1 for the same
+        result -- and the handoff is still written. At 03d7b27 the reply is a SUCCESS whose
+        `promoted` field holds the error as data."""
+        from refmatrix import stm
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        session = "bug212-r5-mcp-save"
+        stm.Stm(repo.store, session).record("note", "a focus event for the bug-212 r5 MCP probe")
+        memdir = repo.base / "memdir"
+        memdir.mkdir()
+        before = _digests(repo.store)
+        replies, text = _mcp(repo, repo.proj, [("rmx_save_state", {
+            "session": session, "memory_dir": str(memdir), "sync": False, "lint": False,
+            "message": "bug-212 r5 MCP probe"})])
+        assert 2 in replies and 99 in replies, f"the MCP server stopped answering\n{text}"
+        res = replies[2].get("result") or {}
+        body = " ".join(c.get("text", "") for c in res.get("content", []))
+        assert _changed(before, _digests(repo.store)) == [], \
+            f"[{layout}] MCP save-state's promote wrote the tracked catalog: {body!r}"
+        assert sorted(memdir.rglob("savestate_*.md")), \
+            f"[{layout}] MCP save-state wrote no handoff under {memdir}: {body!r}"
+        head = _refusal_head(repo.store / _target_catalog(layout))
+>       assert res.get("isError") is True and head in body, (
+            f"[{layout}] MCP rmx_save_state with a refused promote did not reply as an error "
+            f"carrying the refusal: isError={res.get('isError')} body={body[:600]!r}")
+E       AssertionError: [slots] MCP rmx_save_state with a refused promote did not reply as an error carrying the refusal: isError=False body='{"mem_id": "savestate_bug212r5mcps", "target": "/private/tmp/b212t-b1jacg_g/memdir/savestate_bug212r5mcps.md", "session": "bug212-r5-mcp-save", "events": 1, "dry_run": false, "branch": "main", "head": "2122aca c0 (the store committed)", "dirty": true, "promoted": {"error": "VerbError: refusing to open /private/tmp/b212t-b1jacg_g/proj/.refmatrix/catalog.A.duckdb read-write in-process: git tracks this store\'s catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatri'
+E       assert (False is True)
+E        +  where False = <built-in method get of dict object at 0x107e0a740>('isError')
+E        +    where <built-in method get of dict object at 0x107e0a740> = {'content': [{'text': '{"mem_id": "savestate_bug212r5mcps", "target": "/private/tmp/b212t-b1jacg_g/memdir/savestate_bu... "filed_subject": null, "filed_subject_error": null, "sync": null, "embed": null}', 'type': 'text'}], 'isError': False}.get
+
+tests/test_bug212_r5_red.py:276: AssertionError
+_____ test_mcp_save_state_with_a_refused_promote_is_an_error_reply[legacy] _____
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10b96c850>, 'legacy')
+
+    @pytest.mark.timeout(300)
+    def test_mcp_save_state_with_a_refused_promote_is_an_error_reply(tracked_repo):
+        """m-3 (L95): MCP `rmx_save_state` (no daemon, tracked catalog, sync and lint off) whose
+        promote is refused replies `isError` carrying the refusal -- the CLI's exit 1 for the same
+        result -- and the handoff is still written. At 03d7b27 the reply is a SUCCESS whose
+        `promoted` field holds the error as data."""
+        from refmatrix import stm
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        session = "bug212-r5-mcp-save"
+        stm.Stm(repo.store, session).record("note", "a focus event for the bug-212 r5 MCP probe")
+        memdir = repo.base / "memdir"
+        memdir.mkdir()
+        before = _digests(repo.store)
+        replies, text = _mcp(repo, repo.proj, [("rmx_save_state", {
+            "session": session, "memory_dir": str(memdir), "sync": False, "lint": False,
+            "message": "bug-212 r5 MCP probe"})])
+        assert 2 in replies and 99 in replies, f"the MCP server stopped answering\n{text}"
+        res = replies[2].get("result") or {}
+        body = " ".join(c.get("text", "") for c in res.get("content", []))
+        assert _changed(before, _digests(repo.store)) == [], \
+            f"[{layout}] MCP save-state's promote wrote the tracked catalog: {body!r}"
+        assert sorted(memdir.rglob("savestate_*.md")), \
+            f"[{layout}] MCP save-state wrote no handoff under {memdir}: {body!r}"
+        head = _refusal_head(repo.store / _target_catalog(layout))
+>       assert res.get("isError") is True and head in body, (
+            f"[{layout}] MCP rmx_save_state with a refused promote did not reply as an error "
+            f"carrying the refusal: isError={res.get('isError')} body={body[:600]!r}")
+E       AssertionError: [legacy] MCP rmx_save_state with a refused promote did not reply as an error carrying the refusal: isError=False body='{"mem_id": "savestate_bug212r5mcps", "target": "/private/tmp/b212t-0_6og8wa/memdir/savestate_bug212r5mcps.md", "session": "bug212-r5-mcp-save", "events": 1, "dry_run": false, "branch": "main", "head": "d145d4c c0 (the store committed)", "dirty": true, "promoted": {"error": "VerbError: refusing to open /private/tmp/b212t-0_6og8wa/proj/.refmatrix/catalog.duckdb read-write in-process: git tracks this store\'s catalog (catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon'
+E       assert (False is True)
+E        +  where False = <built-in method get of dict object at 0x107e0a3c0>('isError')
+E        +    where <built-in method get of dict object at 0x107e0a3c0> = {'content': [{'text': '{"mem_id": "savestate_bug212r5mcps", "target": "/private/tmp/b212t-0_6og8wa/memdir/savestate_bu... "filed_subject": null, "filed_subject_error": null, "sync": null, "embed": null}', 'type': 'text'}], 'isError': False}.get
+
+tests/test_bug212_r5_red.py:276: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r4_red.py::test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[slots-plain]
+FAILED tests/test_bug212_r4_red.py::test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[slots-commit]
+FAILED tests/test_bug212_r4_red.py::test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[legacy-plain]
+FAILED tests/test_bug212_r4_red.py::test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[legacy-commit]
+FAILED tests/test_bug212_r5_red.py::test_mcp_save_state_with_a_refused_promote_is_an_error_reply[slots]
+FAILED tests/test_bug212_r5_red.py::test_mcp_save_state_with_a_refused_promote_is_an_error_reply[legacy]
+6 failed, 56 passed in 131.80s (0:02:11)

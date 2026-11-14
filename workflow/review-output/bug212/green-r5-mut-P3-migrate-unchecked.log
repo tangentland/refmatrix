@@ -1,0 +1,77 @@
+......................F..........................F............           [100%]
+=================================== FAILURES ===================================
+__________ test_every_checked_opener_calls_the_one_store_level_check ___________
+
+    def test_every_checked_opener_calls_the_one_store_level_check():
+        """L72 + L95: ONE store-level check -- a function in store.py that asks
+        `git_tracked_catalogs` and refuses -- called by every checked opener and by every caller
+        of a library opener, directly or through one wrapper (e.g. a CLI wrapper that turns the
+        refusal into a `ClickException`). At 03d7b27 `cli:compact` and `cli:migrate_to_duckdb`
+        (the caller of `migrate.migrate_catalog`) call nothing that checks."""
+        checks = _functions_calling({"git_tracked_catalogs"}, module="store") - {
+            "git_tracked_catalogs"}
+        assert checks, ("store.py has no function that calls `git_tracked_catalogs` -- the "
+                        "tracked-catalog check is not store-level")
+        wrappers = _functions_calling(checks)
+        missing = []
+        for site in sorted(CHECKED_OPENERS | _library_callers()):
+            mod, qual = site.split(":")
+            calls = _calls_in(mod, qual)
+            if not (calls & checks or calls & (wrappers - {qual.split(".")[-1]})):
+                missing.append(site)
+>       assert not missing, (f"checked openers that do not call the store-level check "
+                             f"{sorted(checks)} (directly or via one wrapper): {missing}")
+E       AssertionError: checked openers that do not call the store-level check ['refuse_tracked_catalog_open'] (directly or via one wrapper): ['cli:migrate_to_duckdb']
+E       assert not ['cli:migrate_to_duckdb']
+
+tests/test_bug212_r4_red.py:577: AssertionError
+________ test_migrate_to_duckdb_overwrite_refuses_a_git_tracked_catalog ________
+
+sqlite_tracked_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x11285f750>
+
+    @pytest.mark.timeout(300)
+    def test_migrate_to_duckdb_overwrite_refuses_a_git_tracked_catalog(sqlite_tracked_repo):
+        """b-1 (iii): `rmx migrate-to-duckdb --overwrite` on a repo that commits its catalogs
+        refuses BEFORE it unlinks and rebuilds `catalog.duckdb`: one `Error:` line naming that
+        destination, exit non-zero, bytes unchanged, `git status` clean."""
+        repo = sqlite_tracked_repo
+        before = _digests(repo.store)
+        r = _cli(repo, ["migrate-to-duckdb", "--overwrite"])
+        text = _text(r)
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"migrate-to-duckdb crashed\n{text}"
+>       assert not changed and status == "", (
+            f"`rmx migrate-to-duckdb --overwrite` rewrote the git-tracked catalog {changed} (exit "
+            f"{r.returncode})\ngit status:\n{status}\n{text}")
+E       AssertionError: `rmx migrate-to-duckdb --overwrite` rewrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.duckdb
+E         
+E         exit 0
+E         stdout:
+E         ┏━━━━━━━━━━━━━━━━━━┳━━━━━━┓
+E         ┃ table            ┃ rows ┃
+E         ┡━━━━━━━━━━━━━━━━━━╇━━━━━━┩
+E         │ partitions       │    1 │
+E         │ linkage_types    │   14 │
+E         │ entities         │    3 │
+E         │ concepts         │    3 │
+E         │ memory_content   │    0 │
+E         │ entity_links     │    2 │
+E         │ tracked_files    │    0 │
+E         │ linkage_evidence │    0 │
+E         │ saved_queries    │    0 │
+E         │ bitmap_fragments │    1 │
+E         └──────────────────┴──────┘
+E         wrote /private/tmp/b212q-xk7gpnzn/proj/.refmatrix/catalog.duckdb
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.duckdb'])
+
+tests/test_bug212_r5_red.py:180: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r4_red.py::test_every_checked_opener_calls_the_one_store_level_check
+FAILED tests/test_bug212_r5_red.py::test_migrate_to_duckdb_overwrite_refuses_a_git_tracked_catalog
+2 failed, 60 passed in 133.73s (0:02:13)

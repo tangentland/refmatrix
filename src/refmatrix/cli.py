@@ -83,8 +83,41 @@ from refmatrix import store as _store_mod
 from refmatrix.store import Store, default_partition_name
 from refmatrix.telemetry import log_query
 from refmatrix import graphread as _graphread
+from refmatrix import workdir as _workdir
 
 console = Console()
+
+
+def _cwd() -> Path:
+    """`workdir.current_dir()`: the cwd, or `WorkingDirectoryGone` when it was deleted.
+
+    Why (bug-212, 2026-11-11): the backgrounded post-commit `rmx sync` outlived
+    `git worktree remove`, and `Path.cwd()` raised a raw `FileNotFoundError` traceback on the
+    committing terminal. Every cwd read in this module goes through here, and every cwd read
+    in the modules it calls (discovery, sync, mcp, cctree) goes through the same
+    `workdir.current_dir()` (bug-212 r1, ch-bsd s-1: the first fix guarded cli.py only, and
+    `REFMATRIX_ROOT` -- the remedy its own message gave -- led to a raw traceback in
+    `discovery.partition_marker`). `_RmxGroup` turns the error into one `Error:` line, exit 1,
+    wherever in a command it is raised, so a command that needs a project fails on its first
+    cwd read, before it can resolve the wrong store."""
+    return _workdir.current_dir()
+
+
+class _RmxGroup(click.Group):
+    """The `rmx` group: a vanished working directory is a clean `Error:` line (exit 1) from
+    ANY command, whichever module read the cwd (bug-212 r1, ch-bsd s-1, 2026-11-11).
+
+    `workdir.WorkingDirectoryGone` is deliberately not a `click.ClickException`: `discovery`,
+    `sync` and `cctree` raise it and must not depend on click. Click's standalone `main()`
+    prints only ClickExceptions cleanly, so the conversion lives here, at the one place every
+    subcommand's invocation passes through -- not in each command, where a missed one would be
+    a traceback again (the pattern the audit named: loudness is a census of entry points)."""
+
+    def invoke(self, ctx: click.Context):
+        try:
+            return super().invoke(ctx)
+        except _workdir.WorkingDirectoryGone as exc:
+            raise click.ClickException(str(exc)) from exc
 
 
 def _root() -> Path:
@@ -97,7 +130,7 @@ def _root() -> Path:
     env = os.environ.get("REFMATRIX_ROOT")
     if env:
         return Path(env)
-    cur = Path.cwd().resolve()
+    cur = _cwd().resolve()
     # A `~/.claude/projects/<slug>/` cwd (e.g. a curated-memory dir) encodes the
     # project in its slug. Resolve THAT project's store FIRST — before the
     # generic ancestor walk, which would otherwise climb past it and hit the
@@ -111,6 +144,18 @@ def _root() -> Path:
             return p / ".refmatrix"
     from refmatrix.taxonomy import user_home
     return user_home()  # global/home store; never auto-create cwd/.refmatrix
+
+
+def _root_without_cwd() -> Path:
+    """`_root()` for a process whose working directory is gone: `REFMATRIX_ROOT`, else the
+    global store -- `_root()`'s own answer when the walk finds no project. Used ONLY to file
+    the telemetry row of such a run (bug-212, 2026-11-11); a command never resolves its store
+    this way, because syncing a project's paths into the global store is worse than failing."""
+    env = os.environ.get("REFMATRIX_ROOT")
+    if env:
+        return Path(env)
+    from refmatrix.taxonomy import user_home
+    return user_home()
 
 
 def _root_from_projects_slug(cwd: Path) -> "Path | None":
@@ -182,6 +227,21 @@ def _active_slot_path() -> Path | None:
     return p if p.exists() else None
 
 
+def _refuse_tracked_catalog_open(root: Path, target: Path,
+                                 names: "tuple[str, ...]" = _store_mod.WRITER_CATALOG_FILES
+                                 ) -> None:
+    """The store-level tracked-catalog check (`store.refuse_tracked_catalog_open`) as one
+    `Error:` line, exit 1 -- the CLI's ONE wrapper, called by every CLI site that opens or
+    replaces a writer catalog in-process: `_store_rw()`, `compact`, `migrate-to-duckdb`
+    (bug-212 r4/r5, rulings L72 and L95). `verbs.local_write` makes the same refusal a
+    `VerbError` for the verb layer. `names` is threaded through to the store check (r7,
+    L102: `migrate-to-duckdb` asks only about the file it replaces)."""
+    try:
+        _store_mod.refuse_tracked_catalog_open(root, target, names)
+    except _store_mod.TrackedCatalogRefused as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
 def _store_rw() -> Store:
     """Open the active rotation-slot catalog read-write (direct). The legacy
     `catalog.duckdb` is no longer touched by the daemon post-0.3.8: that file
@@ -195,7 +255,16 @@ def _store_rw() -> Store:
     With the daemon up, opening the active slot r/w from another process
     will fail (DuckDB exclusive lock). This is the DAEMON-DOWN writer path;
     when the daemon is up, `_store(write=True)` returns a `_DaemonWriter`
-    that routes mutations through RPC instead."""
+    that routes mutations through RPC instead.
+
+    Before the catalog opens it calls the store-level check
+    `store.refuse_tracked_catalog_open` and turns its refusal into one `Error:`
+    line (bug-212 r2-r4, ruling L72, 2026-11-13). It is one of the TWO checked
+    in-process openers; `verbs.local_write` is the other, and every other
+    in-process writer routes through one of them (an AST census test holds the
+    line). `Store(...)` above it only resolves paths; nothing has touched the
+    catalog when the refusal raises. A read with no reader file falls here too,
+    which is why the line says "open", not "write"."""
     s = Store(_root(), partition=_resolve_partition())
     slot_path = _active_slot_path()
     if slot_path is not None:
@@ -204,6 +273,7 @@ def _store_rw() -> Store:
         raise click.ClickException(
             f"no refmatrix at {s.root}. Run `rmx init` first or set REFMATRIX_ROOT."
         )
+    _refuse_tracked_catalog_open(s.root, s.db_path)
     # Register a flush-and-close on normal interpreter exit. CLI commands
     # mutate the in-memory fragment cache and rely on close() to persist;
     # without this, every command would lose its writes.
@@ -850,7 +920,7 @@ def _replica_read(fn):
     ) from last
 
 
-@click.group(context_settings={"help_option_names": ["-h", "--help"]})
+@click.group(cls=_RmxGroup, context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(__version__, "-V", "--version", prog_name="refmatrix")
 @click.option(
     "--partition", "-p", default=None,
@@ -893,33 +963,49 @@ def init(path: Path | None, hooks: bool, memory_hooks: bool, agents: bool,
     the project is fully wired on first run. Pass --no-hooks / --no-agents
     to opt out.
     """
-    project_root = (path or Path.cwd()).resolve()
+    project_root = (path or _cwd()).resolve()
     target = project_root / ".refmatrix"
-    s = Store(target, partition=_resolve_partition())
+    store_root = target.resolve()
     # If a daemon already owns this catalog, skip Store.init() — it would
     # try to acquire the DuckDB write lock and crash. The store is already
-    # initialized (the daemon proves it). We only need the Store object to
-    # report root/partition; no _connect() call is required for that.
-    from refmatrix import daemon as daemon_mod
-    if daemon_mod.ping(s.root):
+    # initialized (the daemon proves it).
+    from refmatrix import verbs as _verbs
+    # Busy is not absent (bug-212 r5, ch-bsd r4 m-5, L95, 2026-11-14): `daemon.ping` false
+    # sent a daemon that is alive but not answering to the in-process route below, which
+    # opens the writer slot under it. Only an ABSENT daemon may take that route.
+    try:
+        _verbs.require_daemon(store_root)
+        daemon_up = True
+    except _verbs.VerbBusyError as exc:
+        raise click.ClickException(
+            f"{exc} -- `rmx init` will not open the catalog in-process under it") from exc
+    except _verbs.VerbAbsentError:
+        daemon_up = False
+    if daemon_up:
         console.print(
-            f"[yellow]reusing[/] existing {s.root} (daemon pid present; "
+            f"[yellow]reusing[/] existing {store_root} (daemon pid present; "
             f"skipped catalog reinit)"
         )
     else:
-        s.init()
-        msg = f"[green]initialized[/] {s.root} (partition={s.partition_name})"
-        # Closed now, not at interpreter exit (task 3.7): a writer held for the life of
-        # the process makes a later read-only open of the catalog in it (`verbs.
-        # snapshot_read`, the no-daemon read route) fail with bug-135's "Unique file
-        # handle conflict".
-        s.close()
-        console.print(msg)
+        # Through `verbs.local_write`, the checked opener (bug-212 r4, ruling L72,
+        # 2026-11-13): a re-init of a store whose catalog git tracks wrote the committed
+        # file. `create=True`: a first init has no catalog yet. `local_write` closes the
+        # handle before returning (task 3.7: a writer held for the life of the process
+        # makes a later read-only open fail with bug-135's "Unique file handle conflict").
+        def _init(st) -> dict:
+            st.init()
+            return {"partition": st.partition_name}
+        try:
+            out = _verbs.local_write(target, _init, partition=_resolve_partition(),
+                                     create=True)
+        except _verbs.VerbError as exc:
+            raise click.ClickException(str(exc)) from exc
+        console.print(f"[green]initialized[/] {store_root} (partition={out['partition']})")
 
     if hooks:
         from refmatrix.hooks import install
         for line in install(
-            project_root=project_root, refmatrix_root=s.root,
+            project_root=project_root, refmatrix_root=store_root,
             git=True, claude=True, briefing=True, scope="project",
             apply=True, force=force, memory_hooks=memory_hooks,
         ):
@@ -1804,8 +1890,12 @@ def focus_change_subject(label, session):
     digests / save-state handoffs file under it (`part-of`) so the thread is
     recallable across sessions. Idempotent for the same label."""
     from refmatrix import verbs as _verbs
-    rec = _verbs.change_subject(
-        _root(), label, session=session)
+    try:
+        rec = _verbs.change_subject(_root(), label, session=session)
+    except _verbs.VerbError as exc:
+        # One `Error:` line (bug-212 r4, ruling L82, 2026-11-13): a refused in-process
+        # subject write (a catalog git tracks) or a busy daemon, never a traceback.
+        raise click.ClickException(str(exc)) from exc
     console.print(
         f"[green]subject[/] {rec['label']} "
         f"[dim](slug={rec['subject']}, id={rec.get('id')})[/] — focus scoped; "
@@ -4035,6 +4125,15 @@ def migrate_to_duckdb(out_path: Path | None, overwrite: bool):
             f"no SQLite catalog at {src}. Run `rmx init` first."
         )
     dst = out_path or (root / "catalog.duckdb")
+    # Before `migrate_catalog` unlinks and rebuilds `dst` with the raw `open_duckdb` (bug-212
+    # r5, ch-bsd r4 b-1, L95, 2026-11-14), the check asks about the directory of the file
+    # being REPLACED (r6, ch-bsd r5 s-1, L98): r5 asked about the source store, so `--out`
+    # into another repo's committed catalog went through, and `--out` to an untracked path
+    # from a tracked store was refused. The default `dst` (<root>/catalog.duckdb) is unchanged.
+    # And it asks about `dst` ITSELF (r7, ch-bsd r6 m-1, L102), not every writer-catalog name in
+    # that folder: a committed `x.duckdb` is refused, an untracked `foo.duckdb` beside a tracked
+    # `catalog.duckdb` is allowed.
+    _refuse_tracked_catalog_open(dst.parent.resolve(), dst.resolve(), names=(dst.name,))
     fragments_dir = root / "fragments"
     counts = migrate_catalog(
         src, dst,
@@ -4235,39 +4334,54 @@ def partition_drop(name: str, yes: bool):
     if not yes:
         click.confirm(f"drop partition registration {name!r} in {root}?", abort=True)
 
-    if daemon_mod.ping(root):
+    # Busy is not absent (bug-212 r5, ch-bsd r4 m-5, L95): only an ABSENT daemon may send
+    # this to the in-process route; a daemon alive but not answering is refused.
+    from refmatrix import verbs as _verbs
+    try:
+        _verbs.require_daemon(root)
+        daemon_up = True
+    except _verbs.VerbBusyError as exc:
+        raise click.ClickException(
+            f"{exc} -- `rmx partition drop` will not open the catalog in-process under it"
+        ) from exc
+    except _verbs.VerbAbsentError:
+        daemon_up = False
+    if daemon_up:
         resp = daemon_mod.call(root, "partition_drop", {"name": name},
                                timeout=30.0, retries=0)
         if not resp.get("ok"):
             raise click.ClickException(resp.get("error", "daemon error"))
         out = resp["result"]
     else:
-        from refmatrix.store import Store as _Store
-        s = _Store(root)
-        try:
+        # Through `verbs.local_write`, the checked opener (bug-212 r4, ruling L82,
+        # 2026-11-13): a hand-rolled `Store(root)` here (imported as `_Store`, the fifth
+        # bypass red-212r2's census found) DELETEd from a catalog git tracks.
+        # `partition=None` keeps the store's own default as the ACTIVE partition this
+        # refuses to drop, exactly as the hand-rolled open had it.
+        from refmatrix import verbs as _verbs
+
+        def _drop(s) -> dict:
             con = s._connect()
             if name == s.partition_name:
-                out = {"dropped": False, "reason": "refused: that is the ACTIVE partition"}
-            else:
-                row = con.execute("SELECT id FROM partitions WHERE name = ?",
-                                  [name]).fetchone()
-                if row is None:
-                    out = {"dropped": False, "reason": f"no partition named {name!r}"}
-                else:
-                    n = con.execute("SELECT COUNT(*) AS n FROM entities "
-                                    "WHERE partition_id = ?", [row["id"]]).fetchone()["n"]
-                    if n:
-                        out = {"dropped": False,
-                               "reason": f"refused: holds {n} rows — merge it, do not drop it"}
-                    elif (root / "vectors" / name).is_dir():
-                        out = {"dropped": False,
-                               "reason": f"refused: vectors/{name} exists on disk; remove "
-                                         "the Lance dataset first or the drop creates an orphan"}
-                    else:
-                        con.execute("DELETE FROM partitions WHERE id = ?", [row["id"]])
-                        out = {"dropped": True, "name": name}
-        finally:
-            s.close()
+                return {"dropped": False, "reason": "refused: that is the ACTIVE partition"}
+            row = con.execute("SELECT id FROM partitions WHERE name = ?", [name]).fetchone()
+            if row is None:
+                return {"dropped": False, "reason": f"no partition named {name!r}"}
+            n = con.execute("SELECT COUNT(*) AS n FROM entities "
+                            "WHERE partition_id = ?", [row["id"]]).fetchone()["n"]
+            if n:
+                return {"dropped": False,
+                        "reason": f"refused: holds {n} rows — merge it, do not drop it"}
+            if (root / "vectors" / name).is_dir():
+                return {"dropped": False,
+                        "reason": f"refused: vectors/{name} exists on disk; remove "
+                                  "the Lance dataset first or the drop creates an orphan"}
+            con.execute("DELETE FROM partitions WHERE id = ?", [row["id"]])
+            return {"dropped": True, "name": name}
+        try:
+            out = _verbs.local_write(root, _drop, partition=None)
+        except _verbs.VerbError as exc:
+            raise click.ClickException(str(exc)) from exc
 
     if out.get("dropped"):
         console.print(f"[green]dropped partition registration {name!r}[/]")
@@ -7100,9 +7214,11 @@ def _grep_rg_fallback(*, pattern, regex, gf, limit, paths, _tlog, project_root,
     # cwd the tool ran in. `normpath`, not `resolve` — the spelling is the
     # identity, and a symlink is not its target. The DISPLAY keeps grep's
     # spelling; only what the graph stores changes.
+    # The cwd through the shared reader (bug-212 r1 a6, 2026-11-13): census item -- unreachable
+    # from the CLI in a vanished cwd (`_root()` reads it first), but no cwd read stays raw.
     import os as _os
-    _cwd = _os.getcwd()
-    fb_hits = [{"file": _os.path.normpath(_os.path.join(_cwd, f)), "line": n}
+    _here = str(_cwd())
+    fb_hits = [{"file": _os.path.normpath(_os.path.join(_here, f)), "line": n}
                for f, n, _ in triples]
 
     def _shaped(f: str, n: int, text: str) -> str:
@@ -7221,7 +7337,7 @@ def _grep_run_direct(s, pattern, effective_pattern, regex,
 
     _grep_rg_fallback(
         pattern=pattern, regex=regex, gf=gf, limit=limit,
-        paths=paths, _tlog=_tlog, project_root=Path.cwd(),
+        paths=paths, _tlog=_tlog, project_root=_cwd(),
         learn_broker=broker,
     )
 
@@ -8030,6 +8146,11 @@ def compact(keep_backup: bool):
         src = root / "catalog.duckdb"
     if not src.exists():
         raise click.ClickException(f"no catalog at {src}")
+    # Before it pings or stops the daemon (bug-212 r5, ch-bsd r4 b-1, L95, 2026-11-14):
+    # compact opens the writer slot with the raw `open_duckdb` and renames over it, and it
+    # STOPPED a running daemon first -- the remedy the refusal names. It wrote a catalog git
+    # tracks (` M catalog.A.duckdb`, ` D catalog.duckdb`) without ever constructing a Store.
+    _refuse_tracked_catalog_open(root.resolve(), root.resolve() / src.name)
 
     # Stop daemon so we can hold the write lock ourselves.
     daemon_was_up = daemon_mod.ping(root)
@@ -8632,7 +8753,7 @@ def _sync_stale(project_root, semantic, *, batch: int) -> None:
     if not paths:
         console.print("[green]no stale files to sync[/]")
         return
-    proot = str((project_root or Path.cwd()).resolve())
+    proot = str((project_root or _cwd()).resolve())
     total = len(paths)
     added = updated = purged = done = 0
     def _bail(i, why):
@@ -8734,7 +8855,7 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
         from refmatrix import daemon as daemon_mod
         root = _root()
         if daemon_mod.ping(root):
-            proot = (project_root or Path.cwd()).resolve()
+            proot = (project_root or _cwd()).resolve()
             args: dict = {"project_root": str(proot), "semantic": semantic}
             if async_flag and flush_queue:
                 op = "flush_queue_async"
@@ -8793,11 +8914,13 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
                     "the daemon restarts"
                 )
                 return
-            proot = (project_root or Path.cwd()).resolve()
+            proot = (project_root or _cwd()).resolve()
             try:
                 paths = ([str(p) for p in files] if files
                          else [str(p) for p in syncmod.changed_since(proot, since)])
             except RuntimeError as e:
+                # `git` missing, or `syncmod.GitRefError` (a RuntimeError: the ref and
+                # git's stderr, bug-212 2026-11-11) -- one clean `Error:` line, exit 1.
                 raise click.ClickException(str(e))
             if paths:
                 syncmod.enqueue(root, paths)
@@ -8812,8 +8935,12 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
             # in-process synchronous flush — at least the work gets done.
             pass
 
+    # With no daemon answering, `_store()` below opens the catalog in THIS process through
+    # `_store_rw()`, which refuses a catalog git tracks before it opens (bug-212 r1/r2, lead
+    # decisions a2 and 2026-11-13). `-i` reaches here with a daemon up too; `_store()` then
+    # routes every write through it and nothing opens in-process.
     s = _store()
-    proot = (project_root or Path.cwd()).resolve()
+    proot = (project_root or _cwd()).resolve()
 
     from refmatrix.store import MemoryOwnershipError
     try:
@@ -8824,9 +8951,15 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
         # sync_since failed: ...`): exit 1, one `Error:` line on stderr naming the
         # memory and the cause (task 26.2 r1, user requirement 2026-11-10: "if the
         # sync stops in an error, it needs to fail loudly on the commandline or
-        # console, not just logs"). ONLY this refusal class: any other exception
-        # keeps its traceback, so a real crash still reads as one.
+        # console, not just logs"). ONLY the named refusal classes: any other
+        # exception keeps its traceback, so a real crash still reads as one.
         raise click.ClickException(f"sync failed: {exc}") from exc
+    except (syncmod.GitRefError, syncmod.GitTimeoutError) as exc:
+        # A `--since` ref git rejects (bug-212, 2026-11-11), or a `git diff` past its
+        # bound (bug-212 r4, L82): `Error: sync --since <ref> failed: git diff exited N:
+        # <git's stderr>` / `... timed out after 10s ...`, exit 1 -- the line the daemon
+        # route and the daemon-down enqueue branch print for the same failure.
+        raise click.ClickException(str(exc)) from exc
 
 
 def _sync_in_process(s, proot: Path, *, files, since, flush_queue, invalidate,
@@ -10953,7 +11086,11 @@ def _sync_memory_dir(memdir: Path) -> dict:
                  "skipped_unchanged": 0, "duplicate_ids": [],
                  # task 26.4 AC-1: save-states stored as session/recall-state
                  # against their frontmatter, `[id, from, to]` (_bridge_stats)
-                 "mtype_normalised": []}
+                 "mtype_normalised": [],
+                 # bug-212 r6 (L98): set ONLY by `_bridge_wait_for_active_job` when the bridge
+                 # is deferred behind another ingest job still running at the end of the wait:
+                 # {"job", "reason"}. Not a failure, so `error` stays None.
+                 "deferred": None}
     if not memdir.is_dir():
         out["error"] = f"memory dir not found: {memdir}"
         return out
@@ -11047,10 +11184,17 @@ def _bridge_wait_for_active_job(memdir: Path, partition: str, err: str, out: dic
         if job.get("status") != "running":
             break
         if _time.monotonic() - t0 > budget:
-            out["error"] = (f"ingest job {jid} still running after {budget:g}s "
-                            f"({job.get('files_done')}/{job.get('files_total')} files); "
-                            f"the memory dir will be bridged by the next save-state / "
-                            f"SessionStart, or run `rmx ingest-gmd --as-memory {memdir}`")
+            # DEFERRED, not failed (bug-212 r6, ch-bsd r5 m-2, L98, 2026-11-14): another ingest
+            # job holds the single-active-ingest slot and is still working, so nothing was
+            # refused and nothing broke -- the next save-state / SessionStart bridges the dir.
+            # A typed field the callers read, never a message they pattern-match: save-state's
+            # failure rule stays `sync.error`, and every other bridge failure still sets it.
+            out["deferred"] = {
+                "job": jid,
+                "reason": (f"ingest job {jid} still running after {budget:g}s "
+                           f"({job.get('files_done')}/{job.get('files_total')} files); the "
+                           f"memory dir will be bridged by the next save-state / "
+                           f"SessionStart, or run `rmx ingest-gmd --as-memory {memdir}`")}
             return
         _time.sleep(0.5)
     jargs = job.get("args") or {}
@@ -13399,6 +13543,11 @@ def memory_sync_disk(paths: tuple[Path, ...]):
         if out.get("error"):
             failed += 1
             console.print(f"[red]memory bridge FAILED:[/] {out['error']}")
+        elif out.get("deferred"):
+            # Deferred behind another running ingest job (bug-212 r6, L98): said on stderr,
+            # never an empty report; not a failure.
+            click.echo(f"warning: memory bridge deferred: {out['deferred']['reason']}",
+                       err=True)
         else:
             click.echo(out.get("report") or "")
     if failed:
@@ -13936,11 +14085,17 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
     # ONE implementation (verbs.save_state): compose + promote + lint + file
     # under the subject + memory bridge. This command renders; --commit is
     # the CLI-only git post-step.
+    # A failed promote or memory bridge after the handoff was written is the verb's
+    # `SaveStateIncompleteError` (bug-212 r5, L95): render what WAS written, run `--commit`,
+    # then print the verb's own message as this command's `Error:` line, exit 1.
+    incomplete: "_verbs.SaveStateIncompleteError | None" = None
     try:
         res = _verbs.save_state(root, message=message, promote=promote,
                                 dry_run=dry_run, session=session,
                                 memory_dir=str(memory_dir) if memory_dir else None,
                                 lint=not no_lint, sync=not no_sync)
+    except _verbs.SaveStateIncompleteError as e:
+        incomplete, res = e, e.result
     except _verbs.VerbError as e:
         raise click.ClickException(str(e))
     memdir = Path(res.get("memory_dir") or _default_memory_dir(repo))
@@ -13986,7 +14141,12 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
     promoted = res.get("promoted")
     if promoted:
         if promoted.get("error"):
-            console.print(f"[yellow]promote skipped:[/] {promoted['error']}")
+            # Not "promote skipped" on stdout with exit 0 (bug-212 r4, ruling L82,
+            # 2026-11-13): a refused or failed promote leaves the STM digest out of durable
+            # memory. The error itself is the verb's `SaveStateIncompleteError`, printed
+            # on stderr at the end (r5, L95).
+            console.print(f"[red]promote FAILED[/] -- the session digest did not reach "
+                          f"durable memory; the error follows on stderr")
         else:
             console.print(f"[green]promoted[/] {promoted['name']} "
                           f"(id={promoted.get('id')}) → durable memory")
@@ -14006,8 +14166,15 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
     sync = fin.get("sync")
     if sync:
         if sync.get("error"):
-            console.print(f"[red]memory bridge FAILED:[/] {sync['error']} — "
-                          f"run `rmx ingest-gmd --as-memory {memdir}` by hand")
+            # The error is the verb's `SaveStateIncompleteError`, on stderr at the end
+            # (bug-212 r5, ch-bsd r4 s-1: this line was the whole report, on stdout, exit 0).
+            console.print(f"[red]memory bridge FAILED[/] -- the error follows on stderr; "
+                          f"run `rmx ingest-gmd --as-memory {memdir}` by hand once it is fixed")
+        elif sync.get("deferred"):
+            # Deferred behind another running ingest job (bug-212 r6, L98): a warning on
+            # stderr naming the job, exit 0 -- not an `Error:` line, not a failure.
+            click.echo(f"warning: memory bridge deferred: {sync['deferred']['reason']}",
+                       err=True)
         else:
             # Report may quote unresolved `[[wikilinks]]`; keep them out of
             # Rich markup (which renders `[[foo]]` as `[]`).
@@ -14028,6 +14195,9 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
         msg = f"chore(save-state): {today} {message or 'session handoff'}"
         out = _ss_sh(["git", "commit", "-m", msg], repo)
         console.print(f"[green]committed[/] {out.splitlines()[0] if out else '(nothing to commit)'}")
+
+    if incomplete is not None:
+        raise click.ClickException(str(incomplete))
 
 
 @main.command("recall-state")
@@ -14968,7 +15138,16 @@ def cli_entry() -> None:
 
     t0 = _time.monotonic()
     argv = list(sys.argv[1:])
-    cwd = str(Path.cwd())
+    # A deleted working directory is not a crash here (bug-212, 2026-11-11: a backgrounded
+    # post-commit outlived `git worktree remove`). It is recorded -- the telemetry row carries
+    # `cwd: null` and the reason -- and the command runs: one that needs a project fails at
+    # its first `_cwd()` with a clean `Error:` line; one that does not (`rmx version`) works.
+    cwd: "str | None"
+    cwd_error: "str | None" = None
+    try:
+        cwd = str(_cwd())
+    except _workdir.WorkingDirectoryGone as exc:
+        cwd, cwd_error = None, str(exc)
     pid = os.getpid()
     exit_code = 0
     error: str | None = None
@@ -15012,9 +15191,12 @@ def cli_entry() -> None:
             out_bytes = None          # accounting never fails the command
         try:
             _tel.log_cli_invocation(
-                _root(),
+                # No cwd, no walk: the row goes where `_root()` sends a cwd with no project
+                # (`REFMATRIX_ROOT`, else the global store), marked with why.
+                _root() if cwd is not None else _root_without_cwd(),
                 argv=argv,
                 cwd=cwd,
+                cwd_error=cwd_error,
                 exit_code=exit_code,
                 latency_ms=latency_ms,
                 error=error,

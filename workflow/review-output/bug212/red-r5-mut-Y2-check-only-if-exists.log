@@ -1,0 +1,69 @@
+pyc-guard: recompiled 25 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug212/src/refmatrix as checked-hash (bug-037)
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+______ test_a_deleted_tracked_catalog_is_refused_and_not_recreated[slots] ______
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1070e2ba0>, 'slots')
+
+    @pytest.mark.timeout(300)
+    def test_a_deleted_tracked_catalog_is_refused_and_not_recreated(tracked_repo):
+        """GUARD for Y2 (`local_write` checks only when the catalog file exists): every writer
+        catalog git tracks is deleted from the worktree (` D`). `rmx init` -- a `create=True`
+        caller -- is still refused (git lists a tracked file even when it is deleted), and no
+        catalog file is re-created; `git status` is exactly what it was."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        for name in WRITER_CATALOG_FILES:
+            (repo.store / name).unlink(missing_ok=True)
+        status_before = _status_refmatrix_catalogs(repo.proj)
+        assert status_before and all(ln.startswith(" D") for ln in status_before.splitlines()), \
+            f"fixture: not every catalog shows as deleted:\n{status_before}"
+        r = _cli(repo, ["init", "--no-hooks", "--no-agents"])
+        text = _text(r)
+        recreated = sorted(n for n in WRITER_CATALOG_FILES if (repo.store / n).exists())
+>       assert not recreated, f"[{layout}] `rmx init` re-created the tracked {recreated}\n{text}"
+E       AssertionError: [slots] `rmx init` re-created the tracked ['catalog.duckdb']
+E         exit 0
+E         stdout:
+E         initialized /private/tmp/b212t-ctbaam4w/proj/.refmatrix (partition=proj)
+E         
+E         stderr:
+E         
+E       assert not ['catalog.duckdb']
+
+tests/test_bug212_r5_red.py:402: AssertionError
+_____ test_a_deleted_tracked_catalog_is_refused_and_not_recreated[legacy] ______
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1075fc410>, 'legacy')
+
+    @pytest.mark.timeout(300)
+    def test_a_deleted_tracked_catalog_is_refused_and_not_recreated(tracked_repo):
+        """GUARD for Y2 (`local_write` checks only when the catalog file exists): every writer
+        catalog git tracks is deleted from the worktree (` D`). `rmx init` -- a `create=True`
+        caller -- is still refused (git lists a tracked file even when it is deleted), and no
+        catalog file is re-created; `git status` is exactly what it was."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        for name in WRITER_CATALOG_FILES:
+            (repo.store / name).unlink(missing_ok=True)
+        status_before = _status_refmatrix_catalogs(repo.proj)
+        assert status_before and all(ln.startswith(" D") for ln in status_before.splitlines()), \
+            f"fixture: not every catalog shows as deleted:\n{status_before}"
+        r = _cli(repo, ["init", "--no-hooks", "--no-agents"])
+        text = _text(r)
+        recreated = sorted(n for n in WRITER_CATALOG_FILES if (repo.store / n).exists())
+>       assert not recreated, f"[{layout}] `rmx init` re-created the tracked {recreated}\n{text}"
+E       AssertionError: [legacy] `rmx init` re-created the tracked ['catalog.duckdb']
+E         exit 0
+E         stdout:
+E         initialized /private/tmp/b212t-yvj1daug/proj/.refmatrix (partition=proj)
+E         
+E         stderr:
+E         
+E       assert not ['catalog.duckdb']
+
+tests/test_bug212_r5_red.py:402: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r5_red.py::test_a_deleted_tracked_catalog_is_refused_and_not_recreated[slots]
+FAILED tests/test_bug212_r5_red.py::test_a_deleted_tracked_catalog_is_refused_and_not_recreated[legacy]
+2 failed in 1.22s

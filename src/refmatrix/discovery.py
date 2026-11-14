@@ -17,6 +17,7 @@ from typing import Any
 
 from refmatrix import launchctl
 from refmatrix.taxonomy import user_home
+from refmatrix.workdir import current_dir
 
 
 REGISTRY_FILE = "registry.json"
@@ -94,10 +95,17 @@ def is_global_root(root: Path) -> bool:
 
 
 def _cwd_root() -> Path | None:
+    """`REFMATRIX_ROOT`, else the nearest `.refmatrix/` walking up from the cwd.
+
+    A vanished cwd raises `workdir.WorkingDirectoryGone` (bug-212 r1, ch-bsd s-1, lead
+    decision a5, 2026-11-13) -- it is NOT dropped from `discover_roots`' candidates. Dropping
+    it would answer "which stores exist" without the one the caller is standing in, silently;
+    raising is what `Path.cwd()` did here before, now with a message that names the directory
+    (the CLI prints it as one `Error:` line)."""
     env = os.environ.get("REFMATRIX_ROOT")
     if env:
         return Path(env)
-    cur = Path.cwd()
+    cur = current_dir()
     for d in (cur, *cur.parents):
         cand = d / ".refmatrix"
         if cand.is_dir():
@@ -265,8 +273,14 @@ def footprint(root: Path) -> dict:
 def partition_marker(start: "Path | None" = None) -> "str | None":
     """The `.refmatrix/partition` marker found walking up from `start` (default: cwd) — a
     one-line partition name that binds a tree to a named partition in a shared store.
-    None when no marker is found; an unreadable or empty marker is skipped."""
-    cur = Path(start or Path.cwd()).resolve()
+    None when no marker is found; an unreadable or empty marker is skipped.
+
+    A vanished cwd raises `workdir.WorkingDirectoryGone` (bug-212 r1, ch-bsd s-1, 2026-11-11):
+    with `REFMATRIX_ROOT` set -- the remedy the first fix's error text gave -- this was the raw
+    `FileNotFoundError` traceback. It never falls back to the store's own name instead (lead
+    decision a4, 2026-11-13): a marker it cannot look for may exist, and picking a partition
+    silently would write into the wrong one."""
+    cur = Path(start or current_dir()).resolve()
     for p in [cur, *cur.parents]:
         marker = p / ".refmatrix" / "partition"
         if not marker.is_file():

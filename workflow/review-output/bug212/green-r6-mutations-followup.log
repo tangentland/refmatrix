@@ -1,0 +1,10 @@
+Q4b-a-deferral-raises-again-vs-memory-bridge: 3 failed, 27 passed in 289.25s (0:04:49) | 3 failed
+    FAILED tests/test_bug212_r6_red.py::test_a_deferred_bridge_is_not_a_failed_save_state_verb
+    FAILED tests/test_bug212_r6_red.py::test_a_deferred_bridge_is_a_stderr_warning_and_exit_0
+    FAILED tests/test_bug212_r6_red.py::test_a_deferred_bridge_is_not_an_mcp_error
+Q5-deferral-written-as-error: 4 failed, 26 passed in 305.93s (0:05:05) | 4 failed
+    FAILED tests/test_memory_bridge.py::test_bridge_reports_a_wait_that_ran_out
+    FAILED tests/test_bug212_r6_red.py::test_a_deferred_bridge_is_not_a_failed_save_state_verb
+    FAILED tests/test_bug212_r6_red.py::test_a_deferred_bridge_is_a_stderr_warning_and_exit_0
+    FAILED tests/test_bug212_r6_red.py::test_a_deferred_bridge_is_not_an_mcp_error
+pycache cleared in copy; copy src == 282589b

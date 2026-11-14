@@ -28,6 +28,7 @@ from refmatrix.ingest import (
     should_ignore,
 )
 from refmatrix.store import MemoryOwnershipError, Store
+from refmatrix.workdir import current_dir
 
 
 def _gmd_route_pending(s, path: Path, ext: str) -> bool:
@@ -103,24 +104,85 @@ def sync_files(s: Store, paths: list[str], project_root: Path | None = None,
                        cancel_check=cancel_check)
 
 
+class GitRefError(RuntimeError):
+    """`git diff --name-only <ref>` refused: a ref git does not know, a null sha, a range
+    with a bad end. Carries the ref, git's exit status and git's own stderr.
+
+    Why (bug-212, 2026-11-11): `changed_since` ran git with `check=True` and let
+    `subprocess.CalledProcessError` escape, whose text is the argv and the exit status --
+    never git's message. A post-checkout on `git worktree add` (null previous HEAD) printed a
+    raw traceback on the committing terminal. The user asked for loud sync failures
+    (2026-11-10: "if the sync stops in an error, it needs to fail loudly on the commandline or
+    console, not just logs"); loud means one clean line naming the ref and what git said.
+
+    A RuntimeError, so the CLI's daemon-down `--since` branch (which turns RuntimeError into
+    a ClickException) needs no second handler; the in-process route names it explicitly; the
+    daemon's op dispatcher turns it into `ok:false` with this text, which the CLI prints as
+    `Error: daemon sync_since failed: ...`."""
+
+    def __init__(self, git_ref: str, returncode: int, stderr: str):
+        self.git_ref = git_ref
+        self.returncode = returncode
+        self.stderr = stderr
+        # One line: an `Error:` line that names the ref and git's message on the SAME line.
+        said = " ".join(ln.strip() for ln in stderr.splitlines() if ln.strip())
+        super().__init__(f"sync --since {git_ref} failed: git diff exited {returncode}: "
+                         f"{said or '(git printed nothing)'}")
+
+
+# `git diff` in `changed_since` is bounded (bug-212 r4, ruling L82, 2026-11-13): the
+# post-commit hook's backgrounded `rmx sync --since` calls it before any store opens, and a
+# hanging git (a stuck mount, an fsmonitor) hung that sync silently, forever.
+GIT_DIFF_TIMEOUT_S = 10
+
+
+class GitTimeoutError(RuntimeError):
+    """`git diff --name-only <ref>` ran past `GIT_DIFF_TIMEOUT_S` (bug-212 r4, ruling L82,
+    2026-11-13). A RuntimeError for the same reason as `GitRefError`: the daemon-down
+    `--since` branch turns any RuntimeError into one `Error:` line, the in-process route names
+    it explicitly, and the daemon's op dispatcher reports it as `ok:false`."""
+
+    def __init__(self, git_ref: str, project_root: Path, timeout: float):
+        self.git_ref = git_ref
+        super().__init__(f"sync --since {git_ref} failed: git diff timed out after "
+                         f"{timeout:g}s in {project_root}")
+
+
 def changed_since(project_root: Path, git_ref: str) -> list[Path]:
     """Absolute paths of files changed since `git_ref`
     (`git diff --name-only`). No Store needed, so the CLI can resolve a
-    `--since` set to enqueue for the daemon without opening the catalog."""
+    `--since` set to enqueue for the daemon without opening the catalog.
+
+    A ref git rejects raises `GitRefError` (ref + git's stderr), never a bare
+    `CalledProcessError` (bug-212, 2026-11-11); a `git diff` past `GIT_DIFF_TIMEOUT_S`
+    raises `GitTimeoutError` (bug-212 r4, L82)."""
     project_root = Path(project_root).resolve()
     if shutil.which("git") is None:
         raise RuntimeError("git not on PATH")
-    out = subprocess.run(
-        ["git", "-C", str(project_root), "diff", "--name-only", git_ref],
-        capture_output=True, text=True, check=True,
-    )
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(project_root), "diff", "--name-only", git_ref],
+            capture_output=True, text=True, timeout=GIT_DIFF_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise GitTimeoutError(git_ref, project_root, GIT_DIFF_TIMEOUT_S) from exc
+    if out.returncode != 0:
+        raise GitRefError(git_ref, out.returncode, out.stderr)
     return [project_root / f for f in out.stdout.splitlines() if f.strip()]
+
+
+# The remedy a vanished cwd names in this module: the library reads the cwd only when its
+# caller passed no `project_root` (the CLI and the daemon ops always pass one).
+_NO_PROJECT_ROOT = "pass project_root, or run from an existing project directory"
 
 
 def sync_since(s: Store, git_ref: str, project_root: Path | None = None,
                semantic: bool = False,
                cancel_check: Callable[[], bool] | None = None) -> dict:
-    project_root = (project_root or Path.cwd()).resolve()
+    """Sync every path `git diff --name-only <git_ref>` names. With no `project_root` the
+    cwd is the project; a vanished cwd raises `workdir.WorkingDirectoryGone`, not a bare
+    `FileNotFoundError` naming nothing (bug-212 r1, ch-bsd s-1, 2026-11-11)."""
+    project_root = (project_root or current_dir(remedy=_NO_PROJECT_ROOT)).resolve()
     files = changed_since(project_root, git_ref)
     return _sync_paths(s, files, project_root, semantic,
                        cancel_check=cancel_check)
@@ -240,7 +302,9 @@ def _sync_paths(
                 "and does not track filesystem paths. Sync from a project "
                 "store instead."
             )
-    project_root = (project_root or Path.cwd()).resolve()
+    # The cwd through the shared reader (bug-212 r1, ch-bsd s-1): `sync_files` and
+    # `flush_queue` with no `project_root` reach here.
+    project_root = (project_root or current_dir(remedy=_NO_PROJECT_ROOT)).resolve()
     added = updated = purged = skipped_unchanged = 0
     failed0 = getattr(s, "vector_delete_failures", 0)
     # Memory-bridge anchors a purge below DECLINED (task 26.2 r1 #b-1,

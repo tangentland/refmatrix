@@ -1,0 +1,1699 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug212/src/refmatrix as checked-hash (bug-037)
+FFFFFFFFFFFFFFFFFFFF..FFFFFFFFFFF..FFFFFF....................            [100%]
+=================================== FAILURES ===================================
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-checkout-worktree] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x112885e80>, 'slots')
+hook = 'post-checkout', where = 'worktree'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [slots] post-checkout in a worktree of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-t1a6oqiv/wt', 'sync --since 665fc8d16dab0828423b88002883040da60af44f..869b936973f7e05d6378763cd80a67e7ef47c2b3')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.A.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/facts.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert not [('/private/tmp/b212t-t1a6oqiv/wt', 'sync --since 665fc8d16dab0828423b88002883040da60af44f..869b936973f7e05d6378763cd80a67e7ef47c2b3')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-checkout-clone] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1128e5950>, 'slots')
+hook = 'post-checkout', where = 'clone'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [slots] post-checkout in a clone of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-hus59rvg/clone', 'sync --since 4feee6f75a5fce387f21e27134f5620bd92d7523..2eb0543d622148753430da1119bfceceb74316ed')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.A.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/facts.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert not [('/private/tmp/b212t-hus59rvg/clone', 'sync --since 4feee6f75a5fce387f21e27134f5620bd92d7523..2eb0543d622148753430da1119bfceceb74316ed')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-commit-worktree] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1128e5bd0>, 'slots')
+hook = 'post-commit', where = 'worktree'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [slots] post-commit in a worktree of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-a2y2h4kb/wt', 'sync --since HEAD~1')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.A.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/facts.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert not [('/private/tmp/b212t-a2y2h4kb/wt', 'sync --since HEAD~1')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-commit-clone] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x11287a8b0>, 'slots')
+hook = 'post-commit', where = 'clone'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [slots] post-commit in a clone of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-44e18qpz/clone', 'sync --since HEAD~1')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.A.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/facts.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert not [('/private/tmp/b212t-44e18qpz/clone', 'sync --since HEAD~1')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-merge-worktree] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x11287ac40>, 'slots')
+hook = 'post-merge', where = 'worktree'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [slots] post-merge in a worktree of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-88q_itkw/wt', 'sync --since ORIG_HEAD')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.A.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/facts.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert not [('/private/tmp/b212t-88q_itkw/wt', 'sync --since ORIG_HEAD')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-merge-clone] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x117ba8830>, 'slots')
+hook = 'post-merge', where = 'clone'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [slots] post-merge in a clone of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-chfkobqy/clone', 'sync --since ORIG_HEAD')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.A.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/facts.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert not [('/private/tmp/b212t-chfkobqy/clone', 'sync --since ORIG_HEAD')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-rewrite-worktree] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x114565150>, 'slots')
+hook = 'post-rewrite', where = 'worktree'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [slots] post-rewrite in a worktree of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-faqhichh/wt', 'sync --since HEAD~1'), ('/private/tmp/b212t-faqhichh/wt', 'sync --since df97811ef8b3503eb998966882894f5dce2d8513')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.A.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: sync --since HEAD~1 failed: git diff exited 128: fatal: ambiguous argument 'HEAD~1': unknown revision or path not in the working tree. Use '--' to separate paths from revisions, like this: 'git <command> [<revision>...] -- [<file>...]'
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-faqhichh/wt', 'sync --since HEAD~1'), ('/private/tmp/b212t-faqhichh/wt', 'sync --since df97811ef8b3503eb998966882894f5dce2d8513')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-rewrite-clone] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1145658c0>, 'slots')
+hook = 'post-rewrite', where = 'clone'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [slots] post-rewrite in a clone of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-24reb0g2/clone', 'sync --since HEAD~1'), ('/private/tmp/b212t-24reb0g2/clone', 'sync --since 853a7890e28b458942dd8f60370b714939dda974')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.A.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: sync --since HEAD~1 failed: git diff exited 128: fatal: ambiguous argument 'HEAD~1': unknown revision or path not in the working tree. Use '--' to separate paths from revisions, like this: 'git <command> [<revision>...] -- [<file>...]'
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-24reb0g2/clone', 'sync --since HEAD~1'), ('/private/tmp/b212t-24reb0g2/clone', 'sync --since 853a7890e28b458942dd8f60370b714939dda974')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-checkout-worktree] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x117be4950>, 'legacy')
+hook = 'post-checkout', where = 'worktree'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [legacy] post-checkout in a worktree of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-lhk1fio0/wt', 'sync --since 7eeda90b3b9d2ad9b4dfd0c8d9920556e754bdc6..f6e6205d4e4da60313b3b51b3e07a4a65a20bb23')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/facts.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert not [('/private/tmp/b212t-lhk1fio0/wt', 'sync --since 7eeda90b3b9d2ad9b4dfd0c8d9920556e754bdc6..f6e6205d4e4da60313b3b51b3e07a4a65a20bb23')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-checkout-clone] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x117be5450>, 'legacy')
+hook = 'post-checkout', where = 'clone'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [legacy] post-checkout in a clone of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-hu6fdx20/clone', 'sync --since 8de647b1a65b6bc357263f37b943fdb9a0130c40..9986728fed1bcf7bc7df1032d452b524757b9f80')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/facts.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert not [('/private/tmp/b212t-hu6fdx20/clone', 'sync --since 8de647b1a65b6bc357263f37b943fdb9a0130c40..9986728fed1bcf7bc7df1032d452b524757b9f80')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-commit-worktree] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x117b687d0>, 'legacy')
+hook = 'post-commit', where = 'worktree'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [legacy] post-commit in a worktree of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-9ofiqqkq/wt', 'sync --since HEAD~1')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/facts.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert not [('/private/tmp/b212t-9ofiqqkq/wt', 'sync --since HEAD~1')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-commit-clone] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1144975c0>, 'legacy')
+hook = 'post-commit', where = 'clone'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [legacy] post-commit in a clone of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-t2vbjtji/clone', 'sync --since HEAD~1')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/facts.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert not [('/private/tmp/b212t-t2vbjtji/clone', 'sync --since HEAD~1')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-merge-worktree] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1145d4210>, 'legacy')
+hook = 'post-merge', where = 'worktree'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [legacy] post-merge in a worktree of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-clsg722i/wt', 'sync --since ORIG_HEAD')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/facts.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert not [('/private/tmp/b212t-clsg722i/wt', 'sync --since ORIG_HEAD')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-merge-clone] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1145d4ad0>, 'legacy')
+hook = 'post-merge', where = 'clone'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [legacy] post-merge in a clone of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-d543j4hp/clone', 'sync --since ORIG_HEAD')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/facts.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert not [('/private/tmp/b212t-d543j4hp/clone', 'sync --since ORIG_HEAD')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-rewrite-worktree] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x114476000>, 'legacy')
+hook = 'post-rewrite', where = 'worktree'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [legacy] post-rewrite in a worktree of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-ti99mo5i/wt', 'sync --since HEAD~1'), ('/private/tmp/b212t-ti99mo5i/wt', 'sync --since e558a699e4c7e5c8745ada9d6c0f8db1ceca786f')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: sync --since HEAD~1 failed: git diff exited 128: fatal: ambiguous argument 'HEAD~1': unknown revision or path not in the working tree. Use '--' to separate paths from revisions, like this: 'git <command> [<revision>...] -- [<file>...]'
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-ti99mo5i/wt', 'sync --since HEAD~1'), ('/private/tmp/b212t-ti99mo5i/wt', 'sync --since e558a699e4c7e5c8745ada9d6c0f8db1ceca786f')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-rewrite-clone] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1146396d0>, 'legacy')
+hook = 'post-rewrite', where = 'clone'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("where", ["worktree", "clone"])
+    @pytest.mark.parametrize("hook", sorted(hooks_mod.GIT_HOOK_SCRIPTS))
+    def test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync(tracked_repo, hook, where):
+        """b-1: a worktree or clone carries the committed catalog and no daemon. The hook must not
+        run `rmx` there, must leave `git status` clean of `.refmatrix/`, and (worktree) a plain
+        `git worktree remove` must succeed."""
+        repo, layout = tracked_repo
+        co = _tracked_checkout(repo, where)
+        r = _op(hook, repo, co, where)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), \
+            f"fixture: git never ran {hook} (GIT_TRACE), so 'no rmx call' would prove nothing"
+        status = _status_refmatrix(co)
+        calls = _calls(repo)
+>       assert not calls, (f"[{layout}] {hook} in a {where} of a repo that TRACKS its catalog ran "
+                           f"rmx: {calls}\ngit status .refmatrix/:\n{status}\n{text}")
+E       AssertionError: [legacy] post-rewrite in a clone of a repo that TRACKS its catalog ran rmx: [('/private/tmp/b212t-i5y1v000/clone', 'sync --since HEAD~1'), ('/private/tmp/b212t-i5y1v000/clone', 'sync --since 15a19aa89ca571e2f2ed67a0a5d8c93c83bf7942')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         Error: sync --since HEAD~1 failed: git diff exited 128: fatal: ambiguous argument 'HEAD~1': unknown revision or path not in the working tree. Use '--' to separate paths from revisions, like this: 'git <command> [<revision>...] -- [<file>...]'
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         
+E       assert not [('/private/tmp/b212t-i5y1v000/clone', 'sync --since HEAD~1'), ('/private/tmp/b212t-i5y1v000/clone', 'sync --since 15a19aa89ca571e2f2ed67a0a5d8c93c83bf7942')]
+
+tests/test_bug212_r1_remedy.py:194: AssertionError
+_ test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[slots-post-commit] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x112880290>, 'slots')
+hook = 'post-commit'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("hook", ["post-commit", "post-checkout"])
+    def test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync(
+            tracked_repo, hook):
+        """b-1, the main checkout: the catalog is tracked and NO daemon answers. An in-process sync
+        would write the tracked binary (the remedy's gate: a live socket OR an untracked catalog;
+        here there is neither), so the hook runs no `rmx` and `.refmatrix/` stays clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        if hook == "post-commit":
+            (repo.proj / "main_new.py").write_text("def main_new():\n    return 3\n",
+                                                    encoding="utf-8")
+            _quiet(repo.proj, repo, "add", "main_new.py")
+            r = _hooked(repo.proj, repo, "commit", "-q", "-m", "commit in the main checkout")
+        else:
+            r = _hooked(repo.proj, repo, "checkout", "-q", "other")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), f"fixture: git never ran {hook} (GIT_TRACE)"
+        status = _status_refmatrix(repo.proj)
+>       assert not _calls(repo), (f"[{layout}] {hook} in the main checkout (catalog tracked, no "
+                                  f"daemon) ran rmx: {_calls(repo)}\ngit status .refmatrix/:\n"
+                                  f"{status}\n{text}")
+E       AssertionError: [slots] post-commit in the main checkout (catalog tracked, no daemon) ran rmx: [('/private/tmp/b212t-apv3e17q/proj', 'sync --since HEAD~1')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.A.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/facts.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert not [('/private/tmp/b212t-apv3e17q/proj', 'sync --since HEAD~1')]
+E        +  where [('/private/tmp/b212t-apv3e17q/proj', 'sync --since HEAD~1')] = _calls(<tests.test_bug212_hooks_in_worktrees.Repo object at 0x112880290>)
+
+tests/test_bug212_r1_remedy.py:227: AssertionError
+_ test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[slots-post-checkout] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x117baec50>, 'slots')
+hook = 'post-checkout'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("hook", ["post-commit", "post-checkout"])
+    def test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync(
+            tracked_repo, hook):
+        """b-1, the main checkout: the catalog is tracked and NO daemon answers. An in-process sync
+        would write the tracked binary (the remedy's gate: a live socket OR an untracked catalog;
+        here there is neither), so the hook runs no `rmx` and `.refmatrix/` stays clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        if hook == "post-commit":
+            (repo.proj / "main_new.py").write_text("def main_new():\n    return 3\n",
+                                                    encoding="utf-8")
+            _quiet(repo.proj, repo, "add", "main_new.py")
+            r = _hooked(repo.proj, repo, "commit", "-q", "-m", "commit in the main checkout")
+        else:
+            r = _hooked(repo.proj, repo, "checkout", "-q", "other")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), f"fixture: git never ran {hook} (GIT_TRACE)"
+        status = _status_refmatrix(repo.proj)
+>       assert not _calls(repo), (f"[{layout}] {hook} in the main checkout (catalog tracked, no "
+                                  f"daemon) ran rmx: {_calls(repo)}\ngit status .refmatrix/:\n"
+                                  f"{status}\n{text}")
+E       AssertionError: [slots] post-checkout in the main checkout (catalog tracked, no daemon) ran rmx: [('/private/tmp/b212t-jh3clupw/proj', 'sync --since 5edfec9d42401899d85dfb07219e156db123c38c..4f4d020535c957156d65bfc9439036fe994bbf50')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.A.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/facts.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert not [('/private/tmp/b212t-jh3clupw/proj', 'sync --since 5edfec9d42401899d85dfb07219e156db123c38c..4f4d020535c957156d65bfc9439036fe994bbf50')]
+E        +  where [('/private/tmp/b212t-jh3clupw/proj', 'sync --since 5edfec9d42401899d85dfb07219e156db123c38c..4f4d020535c957156d65bfc9439036fe994bbf50')] = _calls(<tests.test_bug212_hooks_in_worktrees.Repo object at 0x117baec50>)
+
+tests/test_bug212_r1_remedy.py:227: AssertionError
+_ test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[legacy-post-commit] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x117baf3e0>, 'legacy')
+hook = 'post-commit'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("hook", ["post-commit", "post-checkout"])
+    def test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync(
+            tracked_repo, hook):
+        """b-1, the main checkout: the catalog is tracked and NO daemon answers. An in-process sync
+        would write the tracked binary (the remedy's gate: a live socket OR an untracked catalog;
+        here there is neither), so the hook runs no `rmx` and `.refmatrix/` stays clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        if hook == "post-commit":
+            (repo.proj / "main_new.py").write_text("def main_new():\n    return 3\n",
+                                                    encoding="utf-8")
+            _quiet(repo.proj, repo, "add", "main_new.py")
+            r = _hooked(repo.proj, repo, "commit", "-q", "-m", "commit in the main checkout")
+        else:
+            r = _hooked(repo.proj, repo, "checkout", "-q", "other")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), f"fixture: git never ran {hook} (GIT_TRACE)"
+        status = _status_refmatrix(repo.proj)
+>       assert not _calls(repo), (f"[{layout}] {hook} in the main checkout (catalog tracked, no "
+                                  f"daemon) ran rmx: {_calls(repo)}\ngit status .refmatrix/:\n"
+                                  f"{status}\n{text}")
+E       AssertionError: [legacy] post-commit in the main checkout (catalog tracked, no daemon) ran rmx: [('/private/tmp/b212t-0xq6v8j9/proj', 'sync --since HEAD~1')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/facts.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert not [('/private/tmp/b212t-0xq6v8j9/proj', 'sync --since HEAD~1')]
+E        +  where [('/private/tmp/b212t-0xq6v8j9/proj', 'sync --since HEAD~1')] = _calls(<tests.test_bug212_hooks_in_worktrees.Repo object at 0x117baf3e0>)
+
+tests/test_bug212_r1_remedy.py:227: AssertionError
+_ test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[legacy-post-checkout] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x114586df0>, 'legacy')
+hook = 'post-checkout'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("hook", ["post-commit", "post-checkout"])
+    def test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync(
+            tracked_repo, hook):
+        """b-1, the main checkout: the catalog is tracked and NO daemon answers. An in-process sync
+        would write the tracked binary (the remedy's gate: a live socket OR an untracked catalog;
+        here there is neither), so the hook runs no `rmx` and `.refmatrix/` stays clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        if hook == "post-commit":
+            (repo.proj / "main_new.py").write_text("def main_new():\n    return 3\n",
+                                                    encoding="utf-8")
+            _quiet(repo.proj, repo, "add", "main_new.py")
+            r = _hooked(repo.proj, repo, "commit", "-q", "-m", "commit in the main checkout")
+        else:
+            r = _hooked(repo.proj, repo, "checkout", "-q", "other")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert f"hooks/{hook}" in _hooks_ran(repo), f"fixture: git never ran {hook} (GIT_TRACE)"
+        status = _status_refmatrix(repo.proj)
+>       assert not _calls(repo), (f"[{layout}] {hook} in the main checkout (catalog tracked, no "
+                                  f"daemon) ran rmx: {_calls(repo)}\ngit status .refmatrix/:\n"
+                                  f"{status}\n{text}")
+E       AssertionError: [legacy] post-checkout in the main checkout (catalog tracked, no daemon) ran rmx: [('/private/tmp/b212t-lbvoaue4/proj', 'sync --since 26caf286d1f78498e674b2575a03be3aef5ad6b5..8ec461f945cb37f6264e67b25abf26727480d5d1')]
+E         git status .refmatrix/:
+E          M .refmatrix/catalog.duckdb
+E         ?? .refmatrix/cli.log
+E         ?? .refmatrix/facts.log
+E         ?? .refmatrix/sync.log
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E       assert not [('/private/tmp/b212t-lbvoaue4/proj', 'sync --since 26caf286d1f78498e674b2575a03be3aef5ad6b5..8ec461f945cb37f6264e67b25abf26727480d5d1')]
+E        +  where [('/private/tmp/b212t-lbvoaue4/proj', 'sync --since 26caf286d1f78498e674b2575a03be3aef5ad6b5..8ec461f945cb37f6264e67b25abf26727480d5d1')] = _calls(<tests.test_bug212_hooks_in_worktrees.Repo object at 0x114586df0>)
+
+tests/test_bug212_r1_remedy.py:227: AssertionError
+____________ test_a_root_commit_is_synced_not_reported_as_a_failure ____________
+
+fresh_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x1133c14d0>
+
+    @pytest.mark.timeout(300)
+    def test_a_root_commit_is_synced_not_reported_as_a_failure(fresh_repo):
+        repo = fresh_repo
+        path = repo.proj / "root_file.py"
+        path.write_text("def root_file():\n    return 0\n", encoding="utf-8")
+        _quiet(repo.proj, repo, "add", "-A")
+        r = _hooked(repo.proj, repo, "commit", "-q", "-m", "the root commit")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the root commit itself failed\n{text}"
+        assert "hooks/post-commit" in _hooks_ran(repo), "fixture: git never ran post-commit"
+        assert TRACEBACK not in r.stderr, f"post-commit on a root commit crashed\n{text}"
+>       assert FAILED_LINE not in r.stderr and "Error:" not in r.stderr, \
+            f"post-commit on a root commit (no HEAD~1) reported a failure\n{text}\n" \
+            f"rmx calls: {_calls(repo)}"
+E       AssertionError: post-commit on a root commit (no HEAD~1) reported a failure
+E         stdout:
+E         
+E         stderr:
+E         Error: sync --since HEAD~1 failed: git diff exited 128: fatal: ambiguous argument 'HEAD~1': unknown revision or path not in the working tree. Use '--' to separate paths from revisions, like this: 'git <command> [<revision>...] -- [<file>...]'
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         
+E         rmx calls: [('/private/tmp/b212f-5vkqjkh0/proj', 'sync --since HEAD~1')]
+E       assert ('rmx sync FAILED' not in 'Error: sync...r is above\n'
+E         
+E         'rmx sync FAILED' is contained here:
+E           st-commit rmx sync FAILED (exit 1); its error is above
+E         ?           +++++++++++++++)
+
+tests/test_bug212_r1_remedy.py:295: AssertionError
+__ test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[sync---since] __
+
+named_store = (PosixPath('/private/tmp/b212s-_z2a7lih'), PosixPath('/private/tmp/b212s-_z2a7lih/st/.refmatrix'))
+argv = ['sync', '--since', 'HEAD~1']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", CWD_ARGVS, ids=lambda a: "-".join(a[:2]).replace("~", ""))
+    def test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error(named_store, argv):
+        """s-1: the cwd error says "cd to a project, or set REFMATRIX_ROOT". Set it, and the
+        command must still not traceback: the partition is resolved from the cwd
+        (`discovery.partition_marker`), and that cwd is gone -- a clean `Error:` naming it."""
+        base, root = named_store
+        entry = _entry(base)
+        env = {**_base_env(), "REFMATRIX_ROOT": str(root)}
+        r = _vanished([sys.executable, str(entry), *argv], env)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw " \
+            f"traceback\n{text}"
+E       AssertionError: `rmx sync --since HEAD~1` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 503, in _store
+E             _verbs.require_daemon(root)
+E             ~~~~~~~~~~~~~~~~~~~~~^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/verbs.py", line 205, in require_daemon
+E             raise VerbAbsentError(f"daemon not running for {root}")
+E         refmatrix.verbs.VerbAbsentError: daemon not running for /private/tmp/b212s-_z2a7lih/st/.refmatrix
+E         
+E         During handling of the above exception, another exception occurred:
+E         
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-_z2a7lih/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 8786, in sync
+E             s = _store()
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 507, in _store
+E             return _store_rw()
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 237, in _store_rw
+E             s = Store(_root(), partition=_resolve_partition())
+E                                          ~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 202, in _resolve_partition
+E             return _discovery.resolve_partition(_root(), override=_partition_override)
+E                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 296, in resolve_partition
+E             return partition_marker(cwd) or store_name(root)
+E                    ~~~~~~~~~~~~~~~~^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 269, in partition_marker
+E             cur = Path(start or Path.cwd()).resolve()
+E                                 ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 503, in _store
+E               _verbs.require_daemon(root)
+E               ~~~~~~~~~~~~~~~~~~~~~^^^^^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/verbs.py", line 205, in require_daemon...
+E         
+E         ...Full output truncated (44 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:357: AssertionError
+_____ test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[stats] ______
+
+named_store = (PosixPath('/private/tmp/b212s-9y1fzu9v'), PosixPath('/private/tmp/b212s-9y1fzu9v/st/.refmatrix'))
+argv = ['stats']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", CWD_ARGVS, ids=lambda a: "-".join(a[:2]).replace("~", ""))
+    def test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error(named_store, argv):
+        """s-1: the cwd error says "cd to a project, or set REFMATRIX_ROOT". Set it, and the
+        command must still not traceback: the partition is resolved from the cwd
+        (`discovery.partition_marker`), and that cwd is gone -- a clean `Error:` naming it."""
+        base, root = named_store
+        entry = _entry(base)
+        env = {**_base_env(), "REFMATRIX_ROOT": str(root)}
+        r = _vanished([sys.executable, str(entry), *argv], env)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw " \
+            f"traceback\n{text}"
+E       AssertionError: `rmx stats` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-9y1fzu9v/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 7770, in stats
+E             out = _graph_verb(action="stats", stale=stale)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 5264, in _graph_verb
+E             return _verbs.graph(_root(), partition=_resolve_partition(), **kw)
+E                                                    ~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 202, in _resolve_partition
+E             return _discovery.resolve_partition(_root(), override=_partition_override)
+E                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 296, in resolve_partition
+E             return partition_marker(cwd) or store_name(root)
+E                    ~~~~~~~~~~~~~~~~^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 269, in partition_marker
+E             cur = Path(start or Path.cwd()).resolve()
+E                                 ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-9y1fzu9v/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry...
+E         
+E         ...Full output truncated (32 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:357: AssertionError
+____ test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[grep-foo] ____
+
+named_store = (PosixPath('/private/tmp/b212s-ll722thl'), PosixPath('/private/tmp/b212s-ll722thl/st/.refmatrix'))
+argv = ['grep', 'foo']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", CWD_ARGVS, ids=lambda a: "-".join(a[:2]).replace("~", ""))
+    def test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error(named_store, argv):
+        """s-1: the cwd error says "cd to a project, or set REFMATRIX_ROOT". Set it, and the
+        command must still not traceback: the partition is resolved from the cwd
+        (`discovery.partition_marker`), and that cwd is gone -- a clean `Error:` naming it."""
+        base, root = named_store
+        entry = _entry(base)
+        env = {**_base_env(), "REFMATRIX_ROOT": str(root)}
+        r = _vanished([sys.executable, str(entry), *argv], env)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw " \
+            f"traceback\n{text}"
+E       AssertionError: `rmx grep foo` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-ll722thl/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/decorators.py", line 34, in new_func
+E             return f(get_current_context(), *args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 6587, in grep
+E             _replica_read(_run)
+E             ~~~~~~~~~~~~~^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 861, in _replica_read
+E             s = _replica_store()
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 745, in _replica_store
+E             s = Store(_root(), partition=_resolve_partition(), read_only=True)
+E                                          ~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 202, in _resolve_partition
+E             return _discovery.resolve_partition(_root(), override=_partition_override)
+E                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 296, in resolve_partition
+E             return partition_marker(cwd) or store_name(root)
+E                    ~~~~~~~~~~~~~~~~^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 269, in partition_marker
+E             cur = Path(start or Path.cwd()).resolve()
+E                                 ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-ll722thl/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry...
+E         
+E         ...Full output truncated (37 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:357: AssertionError
+__ test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[context-foo] ___
+
+named_store = (PosixPath('/private/tmp/b212s-gqe5lh0e'), PosixPath('/private/tmp/b212s-gqe5lh0e/st/.refmatrix'))
+argv = ['context', 'foo']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", CWD_ARGVS, ids=lambda a: "-".join(a[:2]).replace("~", ""))
+    def test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error(named_store, argv):
+        """s-1: the cwd error says "cd to a project, or set REFMATRIX_ROOT". Set it, and the
+        command must still not traceback: the partition is resolved from the cwd
+        (`discovery.partition_marker`), and that cwd is gone -- a clean `Error:` naming it."""
+        base, root = named_store
+        entry = _entry(base)
+        env = {**_base_env(), "REFMATRIX_ROOT": str(root)}
+        r = _vanished([sys.executable, str(entry), *argv], env)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw " \
+            f"traceback\n{text}"
+E       AssertionError: `rmx context foo` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-gqe5lh0e/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 5437, in context
+E             bundle, _out, _items, _qid = _replica_read(_run)
+E                                          ~~~~~~~~~~~~~^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 861, in _replica_read
+E             s = _replica_store()
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 745, in _replica_store
+E             s = Store(_root(), partition=_resolve_partition(), read_only=True)
+E                                          ~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 202, in _resolve_partition
+E             return _discovery.resolve_partition(_root(), override=_partition_override)
+E                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 296, in resolve_partition
+E             return partition_marker(cwd) or store_name(root)
+E                    ~~~~~~~~~~~~~~~~^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 269, in partition_marker
+E             cur = Path(start or Path.cwd()).resolve()
+E                                 ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-gqe5lh0e/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry...
+E         
+E         ...Full output truncated (35 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:357: AssertionError
+_ test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[query-kind:function] _
+
+named_store = (PosixPath('/private/tmp/b212s-3_0h615j'), PosixPath('/private/tmp/b212s-3_0h615j/st/.refmatrix'))
+argv = ['query', 'kind:function']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", CWD_ARGVS, ids=lambda a: "-".join(a[:2]).replace("~", ""))
+    def test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error(named_store, argv):
+        """s-1: the cwd error says "cd to a project, or set REFMATRIX_ROOT". Set it, and the
+        command must still not traceback: the partition is resolved from the cwd
+        (`discovery.partition_marker`), and that cwd is gone -- a clean `Error:` naming it."""
+        base, root = named_store
+        entry = _entry(base)
+        env = {**_base_env(), "REFMATRIX_ROOT": str(root)}
+        r = _vanished([sys.executable, str(entry), *argv], env)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw " \
+            f"traceback\n{text}"
+E       AssertionError: `rmx query kind:function` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-3_0h615j/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 5145, in query
+E             _replica_read(_run)
+E             ~~~~~~~~~~~~~^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 861, in _replica_read
+E             s = _replica_store()
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 745, in _replica_store
+E             s = Store(_root(), partition=_resolve_partition(), read_only=True)
+E                                          ~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 202, in _resolve_partition
+E             return _discovery.resolve_partition(_root(), override=_partition_override)
+E                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 296, in resolve_partition
+E             return partition_marker(cwd) or store_name(root)
+E                    ~~~~~~~~~~~~~~~~^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 269, in partition_marker
+E             cur = Path(start or Path.cwd()).resolve()
+E                                 ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-3_0h615j/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry...
+E         
+E         ...Full output truncated (35 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:357: AssertionError
+_____ test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[cctree] _____
+
+named_store = (PosixPath('/private/tmp/b212s-u5dqwonp'), PosixPath('/private/tmp/b212s-u5dqwonp/st/.refmatrix'))
+argv = ['cctree']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", [["cctree"], ["hub", "pause", "nosuch-bug212"]],
+                             ids=["cctree", "hub-pause"])
+    def test_a_vanished_cwd_is_a_clean_error_outside_root_resolution(named_store, argv):
+        """s-1: commands that read the cwd WITHOUT `cli._root()` -- `cctree.resolve_path` (no
+        `--project`) and `discovery._cwd_root` (via `discover_roots`, reached by
+        `hub pause <name>`). No `REFMATRIX_ROOT`. Never a traceback; one `Error:` line."""
+        base, _root = named_store
+        r = _vanished([sys.executable, str(_entry(base)), *argv], _base_env())
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` in a vanished cwd crashed with a raw traceback\n{text}"
+E       AssertionError: `rmx cctree` in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-u5dqwonp/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/decorators.py", line 34, in new_func
+E             return f(get_current_context(), *args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 14731, in cctree_cmd
+E             cctree.main()
+E             ~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cctree.py", line 1513, in main
+E             path = resolve_path(args)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cctree.py", line 1297, in resolve_path
+E             base = Path(args.project).expanduser() if args.project else Path.cwd()
+E                                                                         ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-u5dqwonp/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry...
+E         
+E         ...Full output truncated (28 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:376: AssertionError
+___ test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[hub-pause] ____
+
+named_store = (PosixPath('/private/tmp/b212s-6hvqhh91'), PosixPath('/private/tmp/b212s-6hvqhh91/st/.refmatrix'))
+argv = ['hub', 'pause', 'nosuch-bug212']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", [["cctree"], ["hub", "pause", "nosuch-bug212"]],
+                             ids=["cctree", "hub-pause"])
+    def test_a_vanished_cwd_is_a_clean_error_outside_root_resolution(named_store, argv):
+        """s-1: commands that read the cwd WITHOUT `cli._root()` -- `cctree.resolve_path` (no
+        `--project`) and `discovery._cwd_root` (via `discover_roots`, reached by
+        `hub pause <name>`). No `REFMATRIX_ROOT`. Never a traceback; one `Error:` line."""
+        base, _root = named_store
+        r = _vanished([sys.executable, str(_entry(base)), *argv], _base_env())
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` in a vanished cwd crashed with a raw traceback\n{text}"
+E       AssertionError: `rmx hub pause nosuch-bug212` in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-6hvqhh91/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 2788, in hub_pause
+E             root = _hub_resolve_root(target)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 2767, in _hub_resolve_root
+E             for root in discovery.discover_roots():
+E                         ~~~~~~~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 121, in discover_roots
+E             cwd = _cwd_root()
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 100, in _cwd_root
+E             cur = Path.cwd()
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-6hvqhh91/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry...
+E         
+E         ...Full output truncated (30 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:376: AssertionError
+_____ test_an_mcp_tool_call_in_a_vanished_cwd_names_the_working_directory ______
+
+named_store = (PosixPath('/private/tmp/b212s-6m73epyx'), PosixPath('/private/tmp/b212s-6m73epyx/st/.refmatrix'))
+
+    @pytest.mark.timeout(120)
+    def test_an_mcp_tool_call_in_a_vanished_cwd_names_the_working_directory(named_store):
+        """s-1: `mcp._resolve_root` reads the cwd when the call names no root/project and no
+        `REFMATRIX_ROOT` is set. The dispatcher turns any exception into `isError`, so this is not
+        a traceback -- but the text was `FileNotFoundError: [Errno 2] No such file or directory`,
+        which names nothing. It must say the working directory is gone, and the server keeps
+        serving."""
+        base, _root = named_store
+        msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                 "params": {"name": "rmx_query", "arguments": {"dsl": "kind:function"}}},
+                {"jsonrpc": "2.0", "id": 3, "method": "ping"}]
+        stdin = "".join(json.dumps(m) + "\n" for m in msgs)
+        r = _vanished([sys.executable, str(_entry(base)), "mcp"], _base_env(), stdin=stdin)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert TRACEBACK not in r.stderr, f"`rmx mcp` in a vanished cwd crashed\n{text}"
+        replies = {}
+        for ln in r.stdout.splitlines():
+            try:
+                msg = json.loads(ln)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(msg, dict) and "id" in msg:
+                replies[msg["id"]] = msg
+        assert 2 in replies and 3 in replies, f"the MCP server stopped answering\n{text}"
+        res = replies[2].get("result") or {}
+        body = " ".join(c.get("text", "") for c in res.get("content", []))
+        assert res.get("isError") is True, f"rmx_query in a vanished cwd did not fail\n{text}"
+>       assert _says_cwd_gone(body) and not body.startswith("FileNotFoundError"), \
+            f"rmx_query in a vanished cwd failed without saying the working directory is gone: " \
+            f"{body!r}"
+E       AssertionError: rmx_query in a vanished cwd failed without saying the working directory is gone: 'FileNotFoundError: [Errno 2] No such file or directory'
+E       assert (True and not True)
+E        +  where True = _says_cwd_gone('FileNotFoundError: [Errno 2] No such file or directory')
+E        +  and   True = <built-in method startswith of str object at 0x114543990>('FileNotFoundError')
+E        +    where <built-in method startswith of str object at 0x114543990> = 'FileNotFoundError: [Errno 2] No such file or directory'.startswith
+
+tests/test_bug212_r1_remedy.py:411: AssertionError
+_ test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_since] _
+
+named_store = (PosixPath('/private/tmp/b212s-lxt2phi6'), PosixPath('/private/tmp/b212s-lxt2phi6/st/.refmatrix'))
+fn = 'sync_since'
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("fn", ["sync_since", "sync_files"])
+    def test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error(named_store, fn):
+        """s-1: `sync.sync_since` (sync.py `project_root or Path.cwd()`) and `sync.sync_files` ->
+        `_sync_paths` (the same default) are library entries the daemon ops also reach. With no
+        `project_root` and the cwd gone they must raise the shared helper's error -- one that says
+        the working directory is gone -- not a bare `FileNotFoundError` (an OSError naming no
+        path)."""
+        base, root = named_store
+        probe = base / "probe.py"
+        probe.write_text(_LIB_PROBE, encoding="utf-8")
+        afile = base / "a.py"
+        afile.write_text("def a():\n    return 1\n", encoding="utf-8")
+        r = _vanished([sys.executable, str(probe), str(root), fn, str(afile)], _base_env())
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the probe itself failed\n{text}"
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+        assert out["raised"] is not None, f"sync.{fn} in a vanished cwd raised nothing\n{text}"
+>       assert not out["oserror"] and _says_cwd_gone(out["msg"]), \
+            f"sync.{fn} in a vanished cwd raised {out['raised']}: {out['msg']!r} -- not the named " \
+            f"cwd error"
+E       AssertionError: sync.sync_since in a vanished cwd raised FileNotFoundError: '[Errno 2] No such file or directory' -- not the named cwd error
+E       assert (not True)
+
+tests/test_bug212_r1_remedy.py:455: AssertionError
+_ test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_files] _
+
+named_store = (PosixPath('/private/tmp/b212s-8q_a8cz0'), PosixPath('/private/tmp/b212s-8q_a8cz0/st/.refmatrix'))
+fn = 'sync_files'
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("fn", ["sync_since", "sync_files"])
+    def test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error(named_store, fn):
+        """s-1: `sync.sync_since` (sync.py `project_root or Path.cwd()`) and `sync.sync_files` ->
+        `_sync_paths` (the same default) are library entries the daemon ops also reach. With no
+        `project_root` and the cwd gone they must raise the shared helper's error -- one that says
+        the working directory is gone -- not a bare `FileNotFoundError` (an OSError naming no
+        path)."""
+        base, root = named_store
+        probe = base / "probe.py"
+        probe.write_text(_LIB_PROBE, encoding="utf-8")
+        afile = base / "a.py"
+        afile.write_text("def a():\n    return 1\n", encoding="utf-8")
+        r = _vanished([sys.executable, str(probe), str(root), fn, str(afile)], _base_env())
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the probe itself failed\n{text}"
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+        assert out["raised"] is not None, f"sync.{fn} in a vanished cwd raised nothing\n{text}"
+>       assert not out["oserror"] and _says_cwd_gone(out["msg"]), \
+            f"sync.{fn} in a vanished cwd raised {out['raised']}: {out['msg']!r} -- not the named " \
+            f"cwd error"
+E       AssertionError: sync.sync_files in a vanished cwd raised FileNotFoundError: '[Errno 2] No such file or directory' -- not the named cwd error
+E       assert (not True)
+
+tests/test_bug212_r1_remedy.py:455: AssertionError
+_ test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-files] __
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x117bb5450>, 'slots')
+mode = 'files'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("mode", ["files", "since"])
+    def test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog(tracked_repo, mode):
+        """a2: `rmx sync --files <f>` and `rmx sync --since HEAD~1`, no daemon, cwd = the main
+        checkout (no `REFMATRIX_ROOT`, as a hook runs it): one loud refusal, non-zero exit, the
+        tracked catalog untouched."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        path = repo.proj / "main_new.py"
+        path.write_text("def main_new():\n    return 3\n", encoding="utf-8")
+        _quiet(repo.proj, repo, "add", "main_new.py")
+        _quiet(repo.proj, repo, "commit", "-q", "-m", "a commit to sync")
+        before = _catalog_digests(repo.store)
+        argv = (["sync", "--files", str(path)] if mode == "files"
+                else ["sync", "--since", "HEAD~1"])
+        r = subprocess.run([sys.executable, str(_entry(repo.base)), *argv], cwd=str(repo.proj),
+                           env=_base_env(), capture_output=True, text=True, timeout=240)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        after = _catalog_digests(repo.store)
+        changed = sorted(n for n in before if after.get(n) != before[n])
+        assert TRACEBACK not in r.stderr, f"[{layout}] `rmx {' '.join(argv)}` crashed\n{text}"
+>       assert not changed, (f"[{layout}] in-process `rmx {' '.join(argv)}` wrote the git-tracked "
+                             f"catalog {changed} (exit {r.returncode})\n{text}")
+E       AssertionError: [slots] in-process `rmx sync --files /private/tmp/b212t-0fp_xce8/proj/main_new.py` wrote the git-tracked catalog ['catalog.A.duckdb'] (exit 0)
+E         stdout:
+E         synced +1 ~0 -0 (touched=1)
+E         
+E         stderr:
+E         
+E       assert not ['catalog.A.duckdb']
+
+tests/test_bug212_r1_remedy.py:615: AssertionError
+_ test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-since] __
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x117a45850>, 'slots')
+mode = 'since'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("mode", ["files", "since"])
+    def test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog(tracked_repo, mode):
+        """a2: `rmx sync --files <f>` and `rmx sync --since HEAD~1`, no daemon, cwd = the main
+        checkout (no `REFMATRIX_ROOT`, as a hook runs it): one loud refusal, non-zero exit, the
+        tracked catalog untouched."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        path = repo.proj / "main_new.py"
+        path.write_text("def main_new():\n    return 3\n", encoding="utf-8")
+        _quiet(repo.proj, repo, "add", "main_new.py")
+        _quiet(repo.proj, repo, "commit", "-q", "-m", "a commit to sync")
+        before = _catalog_digests(repo.store)
+        argv = (["sync", "--files", str(path)] if mode == "files"
+                else ["sync", "--since", "HEAD~1"])
+        r = subprocess.run([sys.executable, str(_entry(repo.base)), *argv], cwd=str(repo.proj),
+                           env=_base_env(), capture_output=True, text=True, timeout=240)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        after = _catalog_digests(repo.store)
+        changed = sorted(n for n in before if after.get(n) != before[n])
+        assert TRACEBACK not in r.stderr, f"[{layout}] `rmx {' '.join(argv)}` crashed\n{text}"
+>       assert not changed, (f"[{layout}] in-process `rmx {' '.join(argv)}` wrote the git-tracked "
+                             f"catalog {changed} (exit {r.returncode})\n{text}")
+E       AssertionError: [slots] in-process `rmx sync --since HEAD~1` wrote the git-tracked catalog ['catalog.A.duckdb'] (exit 0)
+E         stdout:
+E         synced +1 ~0 -0 (touched=1)
+E         
+E         stderr:
+E         
+E       assert not ['catalog.A.duckdb']
+
+tests/test_bug212_r1_remedy.py:615: AssertionError
+_ test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-files] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x117a47a50>, 'legacy')
+mode = 'files'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("mode", ["files", "since"])
+    def test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog(tracked_repo, mode):
+        """a2: `rmx sync --files <f>` and `rmx sync --since HEAD~1`, no daemon, cwd = the main
+        checkout (no `REFMATRIX_ROOT`, as a hook runs it): one loud refusal, non-zero exit, the
+        tracked catalog untouched."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        path = repo.proj / "main_new.py"
+        path.write_text("def main_new():\n    return 3\n", encoding="utf-8")
+        _quiet(repo.proj, repo, "add", "main_new.py")
+        _quiet(repo.proj, repo, "commit", "-q", "-m", "a commit to sync")
+        before = _catalog_digests(repo.store)
+        argv = (["sync", "--files", str(path)] if mode == "files"
+                else ["sync", "--since", "HEAD~1"])
+        r = subprocess.run([sys.executable, str(_entry(repo.base)), *argv], cwd=str(repo.proj),
+                           env=_base_env(), capture_output=True, text=True, timeout=240)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        after = _catalog_digests(repo.store)
+        changed = sorted(n for n in before if after.get(n) != before[n])
+        assert TRACEBACK not in r.stderr, f"[{layout}] `rmx {' '.join(argv)}` crashed\n{text}"
+>       assert not changed, (f"[{layout}] in-process `rmx {' '.join(argv)}` wrote the git-tracked "
+                             f"catalog {changed} (exit {r.returncode})\n{text}")
+E       AssertionError: [legacy] in-process `rmx sync --files /private/tmp/b212t-r2kiywaj/proj/main_new.py` wrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         stdout:
+E         synced +1 ~0 -0 (touched=1)
+E         
+E         stderr:
+E         
+E       assert not ['catalog.duckdb']
+
+tests/test_bug212_r1_remedy.py:615: AssertionError
+_ test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-since] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1144fa1d0>, 'legacy')
+mode = 'since'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("mode", ["files", "since"])
+    def test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog(tracked_repo, mode):
+        """a2: `rmx sync --files <f>` and `rmx sync --since HEAD~1`, no daemon, cwd = the main
+        checkout (no `REFMATRIX_ROOT`, as a hook runs it): one loud refusal, non-zero exit, the
+        tracked catalog untouched."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        path = repo.proj / "main_new.py"
+        path.write_text("def main_new():\n    return 3\n", encoding="utf-8")
+        _quiet(repo.proj, repo, "add", "main_new.py")
+        _quiet(repo.proj, repo, "commit", "-q", "-m", "a commit to sync")
+        before = _catalog_digests(repo.store)
+        argv = (["sync", "--files", str(path)] if mode == "files"
+                else ["sync", "--since", "HEAD~1"])
+        r = subprocess.run([sys.executable, str(_entry(repo.base)), *argv], cwd=str(repo.proj),
+                           env=_base_env(), capture_output=True, text=True, timeout=240)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        after = _catalog_digests(repo.store)
+        changed = sorted(n for n in before if after.get(n) != before[n])
+        assert TRACEBACK not in r.stderr, f"[{layout}] `rmx {' '.join(argv)}` crashed\n{text}"
+>       assert not changed, (f"[{layout}] in-process `rmx {' '.join(argv)}` wrote the git-tracked "
+                             f"catalog {changed} (exit {r.returncode})\n{text}")
+E       AssertionError: [legacy] in-process `rmx sync --since HEAD~1` wrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         stdout:
+E         synced +1 ~0 -0 (touched=1)
+E         
+E         stderr:
+E         
+E       assert not ['catalog.duckdb']
+
+tests/test_bug212_r1_remedy.py:615: AssertionError
+_ test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[slots] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x117a65bd0>, 'slots')
+
+    @pytest.mark.timeout(300)
+    def test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly(tracked_repo):
+        """a2 through the GENERATED post-commit: the main checkout tracks its catalog and holds a
+        socket file with no listener (a crashed daemon's leftover), so a socket-presence gate
+        passes. The tracked catalog must be left byte-identical; if the hook ran `rmx`, the
+        refusal must be loud on the committing terminal (its `Error:` line naming the tracked file
+        and the remedy, then the hook's `rmx sync FAILED` line). The git op itself still exits 0."""
+        repo, layout = tracked_repo
+        sock = repo.store / dm.SOCKET_NAME
+        _stale_socket(sock)
+        assert not dm.ping(repo.store), "fixture: something answers on the stale socket"
+        assert _status_refmatrix_catalogs(repo.proj) == "", "fixture: the catalog is already dirty"
+        before = _catalog_digests(repo.store)
+        (repo.proj / "main_new.py").write_text("def main_new():\n    return 3\n", encoding="utf-8")
+        _quiet(repo.proj, repo, "add", "main_new.py")
+        r = _hooked(repo.proj, repo, "commit", "-q", "-m", "commit beside a stale socket")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}\nrmx calls: {_calls(repo)}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert "hooks/post-commit" in _hooks_ran(repo), "fixture: git never ran post-commit"
+        after = _catalog_digests(repo.store)
+        changed = sorted(n for n in before if after.get(n) != before[n])
+        assert TRACEBACK not in r.stderr, f"[{layout}] post-commit crashed\n{text}"
+>       assert not changed, (f"[{layout}] post-commit beside a stale socket wrote the git-tracked "
+                             f"catalog {changed}\ngit status:\n"
+                             f"{_status_refmatrix_catalogs(repo.proj)}\n{text}")
+E       AssertionError: [slots] post-commit beside a stale socket wrote the git-tracked catalog ['catalog.A.duckdb']
+E         git status:
+E          M .refmatrix/catalog.A.duckdb
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E         rmx calls: [('/private/tmp/b212t-zk7ou0gq/proj', 'sync --since HEAD~1')]
+E       assert not ['catalog.A.duckdb']
+
+tests/test_bug212_r1_remedy.py:657: AssertionError
+_ test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[legacy] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1143142d0>, 'legacy')
+
+    @pytest.mark.timeout(300)
+    def test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly(tracked_repo):
+        """a2 through the GENERATED post-commit: the main checkout tracks its catalog and holds a
+        socket file with no listener (a crashed daemon's leftover), so a socket-presence gate
+        passes. The tracked catalog must be left byte-identical; if the hook ran `rmx`, the
+        refusal must be loud on the committing terminal (its `Error:` line naming the tracked file
+        and the remedy, then the hook's `rmx sync FAILED` line). The git op itself still exits 0."""
+        repo, layout = tracked_repo
+        sock = repo.store / dm.SOCKET_NAME
+        _stale_socket(sock)
+        assert not dm.ping(repo.store), "fixture: something answers on the stale socket"
+        assert _status_refmatrix_catalogs(repo.proj) == "", "fixture: the catalog is already dirty"
+        before = _catalog_digests(repo.store)
+        (repo.proj / "main_new.py").write_text("def main_new():\n    return 3\n", encoding="utf-8")
+        _quiet(repo.proj, repo, "add", "main_new.py")
+        r = _hooked(repo.proj, repo, "commit", "-q", "-m", "commit beside a stale socket")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}\nrmx calls: {_calls(repo)}"
+        assert r.returncode == 0, f"the git op itself failed\n{text}"
+        assert "hooks/post-commit" in _hooks_ran(repo), "fixture: git never ran post-commit"
+        after = _catalog_digests(repo.store)
+        changed = sorted(n for n in before if after.get(n) != before[n])
+        assert TRACEBACK not in r.stderr, f"[{layout}] post-commit crashed\n{text}"
+>       assert not changed, (f"[{layout}] post-commit beside a stale socket wrote the git-tracked "
+                             f"catalog {changed}\ngit status:\n"
+                             f"{_status_refmatrix_catalogs(repo.proj)}\n{text}")
+E       AssertionError: [legacy] post-commit beside a stale socket wrote the git-tracked catalog ['catalog.duckdb']
+E         git status:
+E          M .refmatrix/catalog.duckdb
+E         
+E         stdout:
+E         
+E         stderr:
+E         
+E         rmx calls: [('/private/tmp/b212t-zke3xt98/proj', 'sync --since HEAD~1')]
+E       assert not ['catalog.duckdb']
+
+tests/test_bug212_r1_remedy.py:657: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-checkout-worktree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-checkout-clone]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-commit-worktree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-commit-clone]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-merge-worktree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-merge-clone]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-rewrite-worktree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-rewrite-clone]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-checkout-worktree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-checkout-clone]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-commit-worktree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-commit-clone]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-merge-worktree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-merge-clone]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-rewrite-worktree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-rewrite-clone]
+FAILED tests/test_bug212_r1_remedy.py::test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[slots-post-commit]
+FAILED tests/test_bug212_r1_remedy.py::test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[slots-post-checkout]
+FAILED tests/test_bug212_r1_remedy.py::test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[legacy-post-commit]
+FAILED tests/test_bug212_r1_remedy.py::test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[legacy-post-checkout]
+FAILED tests/test_bug212_r1_remedy.py::test_a_root_commit_is_synced_not_reported_as_a_failure
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[sync---since]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[stats]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[grep-foo]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[context-foo]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[query-kind:function]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[cctree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[hub-pause]
+FAILED tests/test_bug212_r1_remedy.py::test_an_mcp_tool_call_in_a_vanished_cwd_names_the_working_directory
+FAILED tests/test_bug212_r1_remedy.py::test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_since]
+FAILED tests/test_bug212_r1_remedy.py::test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_files]
+FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-files]
+FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-since]
+FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-files]
+FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-since]
+FAILED tests/test_bug212_r1_remedy.py::test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[slots]
+FAILED tests/test_bug212_r1_remedy.py::test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[legacy]
+37 failed, 24 passed in 59.12s

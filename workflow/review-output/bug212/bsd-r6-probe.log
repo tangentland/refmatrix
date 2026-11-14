@@ -1,0 +1,11 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /private/tmp/claude-501/b2r6.yifr/mu/src/refmatrix as checked-hash (bug-037)
+
+PROBE migrate --out elsewhere (tracked src): exit=0 wrote=True :: 
+.
+PROBE migrate --out into OTHER repo's tracked catalog: exit=1 changed=[] status='' :: read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead
+.
+PROBE mcp save_state [slots] isError=True handoff=['savestate_s5.md'] body={"mem_id": "savestate_s5", "target": "/private/tmp/b212t-ou4d6s1l/memdir/savestate_s5.md", "session": "s5", "events": 1, "dry_run": false, "branch": "main", "head": "033913d c0 (the store committed)", "dirty": true, "promoted": {"error": "VerbError: refusing to open /private/tmp/b212t-ou4d6s1l/proj/.refmatrix/catalog.A.duckdb read-write in-process: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daem
+.
+PROBE mcp save_state [legacy] isError=True handoff=['savestate_s5.md'] body={"mem_id": "savestate_s5", "target": "/private/tmp/b212t-8qdi9i5v/memdir/savestate_s5.md", "session": "s5", "events": 1, "dry_run": false, "branch": "main", "head": "b333116 c0 (the store committed)", "dirty": true, "promoted": {"error": "VerbError: refusing to open /private/tmp/b212t-8qdi9i5v/proj/.refmatrix/catalog.duckdb read-write in-process: git tracks this store's catalog (catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon op
+.
+4 passed in 4.95s

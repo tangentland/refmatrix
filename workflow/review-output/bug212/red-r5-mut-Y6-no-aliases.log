@@ -1,0 +1,26 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_the_census_scanner_finds_every_family_in_a_synthetic_module _______
+
+    def test_the_census_scanner_finds_every_family_in_a_synthetic_module():
+        """Y6 (ch-bsd r4 m-1, L95): the alias logic was unpinned -- `_store_aliases` returning
+        `{"Store"}` left every census test green, because the one aliased site in src/ had been
+        routed. A synthetic module carries a positive (and a negative) for every family, so the
+        scanner's own logic is tested whether or not src/ still has an example."""
+        got = {(site.split(":")[1], fam) for site, _, fam in _scan_source("synthetic", _SYNTHETIC)}
+        want = {("aliased_import", "store"), ("aliased_assign", "store"),
+                ("attribute_ctor", "store"), ("raw_open", "raw"), ("raw_connect", "raw"),
+                ("move_onto", "move"), ("move_away", "move"), ("unlink_one", "move"),
+                ("os_replace", "move")}
+>       assert want <= got, f"the scanner missed {sorted(want - got)}"
+E       AssertionError: the scanner missed [('aliased_assign', 'store'), ('aliased_import', 'store')]
+E       assert {('aliased_as... 'move'), ...} <= {('attribute_..., 'raw'), ...}
+E         
+E         Extra items in the left set:
+E         ('aliased_assign', 'store')
+E         ('aliased_import', 'store')
+
+tests/test_bug212_r4_red.py:527: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r4_red.py::test_the_census_scanner_finds_every_family_in_a_synthetic_module
+1 failed in 0.12s

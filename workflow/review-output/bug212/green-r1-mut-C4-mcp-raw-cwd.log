@@ -1,0 +1,47 @@
+..............................F..............................            [100%]
+=================================== FAILURES ===================================
+_____ test_an_mcp_tool_call_in_a_vanished_cwd_names_the_working_directory ______
+
+named_store = (PosixPath('/private/tmp/b212s-z2utsh8c'), PosixPath('/private/tmp/b212s-z2utsh8c/st/.refmatrix'))
+
+    @pytest.mark.timeout(120)
+    def test_an_mcp_tool_call_in_a_vanished_cwd_names_the_working_directory(named_store):
+        """s-1: `mcp._resolve_root` reads the cwd when the call names no root/project and no
+        `REFMATRIX_ROOT` is set. The dispatcher turns any exception into `isError`, so this is not
+        a traceback -- but the text was `FileNotFoundError: [Errno 2] No such file or directory`,
+        which names nothing. It must say the working directory is gone, and the server keeps
+        serving."""
+        base, _root = named_store
+        msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                 "params": {"name": "rmx_query", "arguments": {"dsl": "kind:function"}}},
+                {"jsonrpc": "2.0", "id": 3, "method": "ping"}]
+        stdin = "".join(json.dumps(m) + "\n" for m in msgs)
+        r = _vanished([sys.executable, str(_entry(base)), "mcp"], _base_env(), stdin=stdin)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert TRACEBACK not in r.stderr, f"`rmx mcp` in a vanished cwd crashed\n{text}"
+        replies = {}
+        for ln in r.stdout.splitlines():
+            try:
+                msg = json.loads(ln)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(msg, dict) and "id" in msg:
+                replies[msg["id"]] = msg
+        assert 2 in replies and 3 in replies, f"the MCP server stopped answering\n{text}"
+        res = replies[2].get("result") or {}
+        body = " ".join(c.get("text", "") for c in res.get("content", []))
+        assert res.get("isError") is True, f"rmx_query in a vanished cwd did not fail\n{text}"
+>       assert _says_cwd_gone(body) and not body.startswith("FileNotFoundError"), \
+            f"rmx_query in a vanished cwd failed without saying the working directory is gone: " \
+            f"{body!r}"
+E       AssertionError: rmx_query in a vanished cwd failed without saying the working directory is gone: 'FileNotFoundError: [Errno 2] No such file or directory'
+E       assert (True and not True)
+E        +  where True = _says_cwd_gone('FileNotFoundError: [Errno 2] No such file or directory')
+E        +  and   True = <built-in method startswith of str object at 0x120a78c30>('FileNotFoundError')
+E        +    where <built-in method startswith of str object at 0x120a78c30> = 'FileNotFoundError: [Errno 2] No such file or directory'.startswith
+
+tests/test_bug212_r1_remedy.py:411: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r1_remedy.py::test_an_mcp_tool_call_in_a_vanished_cwd_names_the_working_directory
+1 failed, 60 passed in 50.80s

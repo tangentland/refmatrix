@@ -1,0 +1,10 @@
+R1-migrate-back-to-the-default-name-list: 2 failed, 26 passed in 90.08s (0:01:30) | 2 failed
+    FAILED tests/test_bug212_r7_red.py::test_migrate_out_onto_a_committed_non_catalog_named_file_is_refused
+    FAILED tests/test_bug212_r7_red.py::test_migrate_out_to_an_untracked_file_beside_a_tracked_catalog_is_allowed
+R2a-refuse-ignores-names: 2 failed, 26 passed in 89.20s (0:01:29) | 2 failed
+    FAILED tests/test_bug212_r7_red.py::test_migrate_out_onto_a_committed_non_catalog_named_file_is_refused
+    FAILED tests/test_bug212_r7_red.py::test_migrate_out_to_an_untracked_file_beside_a_tracked_catalog_is_allowed
+R2b-git-tracked-catalogs-ignores-names: 2 failed, 26 passed in 90.24s (0:01:30) | 2 failed
+    FAILED tests/test_bug212_r7_red.py::test_migrate_out_onto_a_committed_non_catalog_named_file_is_refused
+    FAILED tests/test_bug212_r7_red.py::test_migrate_out_to_an_untracked_file_beside_a_tracked_catalog_is_allowed
+pycache cleared in copy; copy src == 9ed0d6b

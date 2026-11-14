@@ -1,0 +1,39 @@
+.........................................................F....           [100%]
+=================================== FAILURES ===================================
+_ test_init_and_partition_drop_refuse_the_in_process_route_under_a_busy_daemon[partition-drop] _
+
+busy_store = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10627e650>
+cmd = 'partition-drop'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("cmd", ["init", "partition-drop"])
+    def test_init_and_partition_drop_refuse_the_in_process_route_under_a_busy_daemon(busy_store,
+                                                                                     cmd):
+        """m-5 (L95): the daemon is alive but not answering. `rmx init` and `rmx partition drop`
+        must not take the in-process route (ping false is not "absent"; `local_write`'s own
+        precondition is `VerbAbsentError` only): one `Error:` line naming the busy daemon, exit
+        non-zero, catalog bytes unchanged, the partition still registered. At 03d7b27 both open
+        the writer catalog in-process and exit 0."""
+        repo = busy_store
+        before = _digests(repo.store)
+        argv = (["init", "--no-hooks", "--no-agents"] if cmd == "init"
+                else ["partition", "drop", EMPTY_PARTITION, "-y"])
+        r = _cli(repo, argv)
+        text = _text(r)
+        assert TRACEBACK not in r.stderr, f"`rmx {' '.join(argv)}` crashed\n{text}"
+>       assert r.returncode != 0, \
+            f"`rmx {' '.join(argv)}` took the in-process route under a busy daemon (exit 0)\n{text}"
+E       AssertionError: `rmx partition drop bug212r4empty -y` took the in-process route under a busy daemon (exit 0)
+E         exit 0
+E         stdout:
+E         dropped partition registration 'bug212r4empty'
+E         
+E         stderr:
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212d-b37xu6o8/rmx...n', 'drop', 'bug212r4empty', '-y'], returncode=0, stdout="dropped partition registration 'bug212r4empty'\n", stderr='').returncode
+
+tests/test_bug212_r5_red.py:370: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r5_red.py::test_init_and_partition_drop_refuse_the_in_process_route_under_a_busy_daemon[partition-drop]
+1 failed, 61 passed in 132.08s (0:02:12)

@@ -1,0 +1,7 @@
+pyc-guard: recompiled 17 timestamp pyc(s) under /private/tmp/claude-501/b2r6.yifr/mu/src/refmatrix as checked-hash (bug-037)
+
+PROBE name-edge x.duckdb: exit=0 status_B=' M x.duckdb\n' :: 
+.
+PROBE name-edge foo.duckdb-beside-tracked-catalog: exit=1 status_B='' :: . Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead
+.
+2 passed, 4 deselected in 3.06s

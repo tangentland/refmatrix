@@ -1,0 +1,12 @@
+Y2-check-only-if-exists: 2 failed in 1.22s
+    E       AssertionError: [slots] `rmx init` re-created the tracked ['catalog.duckdb']
+    E       AssertionError: [legacy] `rmx init` re-created the tracked ['catalog.duckdb']
+Y5b-mcp-create-false: 1 failed in 0.40s
+    E       AssertionError: MCP rmx_memory_add on a store with no catalog failed: '{"error": "no refmatrix catalog at /private/tmp/b212b-mbbwuuxb/proj/.refmatrix (catalog.duckdb missing) \\u2014 run `rmx init` first"}'
+Y5c-promote-create-false: 1 failed in 0.26s
+    E       AssertionError: the promote on a store with no catalog failed: {'error': 'VerbError: no refmatrix catalog at /private/tmp/b212b-ovlr3zbz/proj/.refmatrix (catalog.duckdb missing) — run `rmx init` first', 'name': '
+Y7-raise-only-without-commit: 2 failed, 2 passed in 3.06s
+    E       AssertionError: [slots] the promote refusal (`refusing to open /private/tmp/b212t-7v4vtsbx/proj/.refmatrix/catalog.A.duckdb read-write in-process: ...`) is not on stderr
+    E       AssertionError: [legacy] the promote refusal (`refusing to open /private/tmp/b212t-iiokpwvk/proj/.refmatrix/catalog.duckdb read-write in-process: ...`) is not on stderr
+Y6-no-aliases: 1 failed in 0.12s
+    E       AssertionError: the scanner missed [('aliased_assign', 'store'), ('aliased_import', 'store')]

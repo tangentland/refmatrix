@@ -1,0 +1,1349 @@
+pyc-guard: recompiled 14 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug212/src/refmatrix as checked-hash (bug-037)
+FFFFFFFFFFFFFFFFFF.F.FFFFFFFFFFFFFFF                                     [100%]
+=================================== FAILURES ===================================
+_ test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-add-concept] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e0706e0>, 'slots')
+writer = 'add-concept'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", list(CLI_WRITERS))
+    def test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """b-1: the CLI writers that reach `verbs.local_write` (`add concept|entity`, `protect`,
+        `noise`) or hand-roll `Store(...)` (`focus change-subject` -> `verbs.change_subject`;
+        `init`; `partition drop`), run in-process (no daemon) in the main checkout of a repo that commits its
+        catalog. At 67f55cb every one of them writes the committed file."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        _seed_and_commit(repo)
+        before = _digests(repo.store)
+        argv = list(CLI_WRITERS[writer])
+        r = _cli(repo, argv)
+>       _assert_refused_cli(repo, layout, f"`rmx {' '.join(argv)}`", r, before)
+
+tests/test_bug212_r4_red.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e0706e0>
+layout = 'slots', what = '`rmx add concept bug212_r4_new`'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-u6jltewi/rmx...', 'add', 'concept', 'bug212_r4_new'], returncode=0, stdout='added concept bug212_r4_new (id=4) (pinned)\n', stderr='')
+before = {'catalog.A.duckdb': '513729196e44455b6e7b922b7f09e3dd876a0f288eb539dbf5173c2fa25a5d91', 'catalog.B.duckdb': 'a00452cc...5c1a56a302172c98f6d52626f939ceb', 'catalog.duckdb': 'a00452cc6c2c78047f5b3c6b41ce7d6f45c1a56a302172c98f6d52626f939ceb'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] {what} wrote the git-tracked catalog {changed} (exit {r.returncode})\n"
+            f"git status:\n{status}\n{text}")
+E       AssertionError: [slots] `rmx add concept bug212_r4_new` wrote the git-tracked catalog ['catalog.A.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.A.duckdb
+E         
+E         exit 0
+E         stdout:
+E         added concept bug212_r4_new (id=4) (pinned)
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.A.duckdb'])
+
+tests/test_bug212_r4_red.py:88: AssertionError
+_ test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-add-entity] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e07dbd0>, 'slots')
+writer = 'add-entity'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", list(CLI_WRITERS))
+    def test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """b-1: the CLI writers that reach `verbs.local_write` (`add concept|entity`, `protect`,
+        `noise`) or hand-roll `Store(...)` (`focus change-subject` -> `verbs.change_subject`;
+        `init`; `partition drop`), run in-process (no daemon) in the main checkout of a repo that commits its
+        catalog. At 67f55cb every one of them writes the committed file."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        _seed_and_commit(repo)
+        before = _digests(repo.store)
+        argv = list(CLI_WRITERS[writer])
+        r = _cli(repo, argv)
+>       _assert_refused_cli(repo, layout, f"`rmx {' '.join(argv)}`", r, before)
+
+tests/test_bug212_r4_red.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e07dbd0>
+layout = 'slots', what = '`rmx add entity bug212_r4_doc --kind doc`'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-7czsfeco/rmx...ty', 'bug212_r4_doc', '--kind', 'doc'], returncode=0, stdout='upserted doc:bug212_r4_doc (id=4) (pinned)\n', stderr='')
+before = {'catalog.A.duckdb': '75fe6f877aa7362a4d1c0bfc79774a7273568078646d6ba7b35c96c47dd2ff43', 'catalog.B.duckdb': 'f8efd6bd...9d97d0ccb9ece19e1f16fefe6ede9b2', 'catalog.duckdb': 'f8efd6bd110186e0d7fc140e6874a689d9d97d0ccb9ece19e1f16fefe6ede9b2'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] {what} wrote the git-tracked catalog {changed} (exit {r.returncode})\n"
+            f"git status:\n{status}\n{text}")
+E       AssertionError: [slots] `rmx add entity bug212_r4_doc --kind doc` wrote the git-tracked catalog ['catalog.A.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.A.duckdb
+E         
+E         exit 0
+E         stdout:
+E         upserted doc:bug212_r4_doc (id=4) (pinned)
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.A.duckdb'])
+
+tests/test_bug212_r4_red.py:88: AssertionError
+_ test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-protect] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e07e490>, 'slots')
+writer = 'protect'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", list(CLI_WRITERS))
+    def test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """b-1: the CLI writers that reach `verbs.local_write` (`add concept|entity`, `protect`,
+        `noise`) or hand-roll `Store(...)` (`focus change-subject` -> `verbs.change_subject`;
+        `init`; `partition drop`), run in-process (no daemon) in the main checkout of a repo that commits its
+        catalog. At 67f55cb every one of them writes the committed file."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        _seed_and_commit(repo)
+        before = _digests(repo.store)
+        argv = list(CLI_WRITERS[writer])
+        r = _cli(repo, argv)
+>       _assert_refused_cli(repo, layout, f"`rmx {' '.join(argv)}`", r, before)
+
+tests/test_bug212_r4_red.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e07e490>
+layout = 'slots', what = '`rmx protect bug212_r4_seed`'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-yra3t4l2/rmx_entry.py', 'protect', 'bug212_r4_seed'], returncode=0, stdout='protected 1 entity\n  bug212_r4_seed\n', stderr='')
+before = {'catalog.A.duckdb': '9509f2e39d15f64c8a98250197a2907ab0a955851f44892e62955bd9588d0e83', 'catalog.B.duckdb': 'a4af4daa...be44d74db7066c114c2307d510e62b9', 'catalog.duckdb': 'a4af4daa4dd1d33b0790d094d75a139fbbe44d74db7066c114c2307d510e62b9'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] {what} wrote the git-tracked catalog {changed} (exit {r.returncode})\n"
+            f"git status:\n{status}\n{text}")
+E       AssertionError: [slots] `rmx protect bug212_r4_seed` wrote the git-tracked catalog ['catalog.A.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.A.duckdb
+E         
+E         exit 0
+E         stdout:
+E         protected 1 entity
+E           bug212_r4_seed
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.A.duckdb'])
+
+tests/test_bug212_r4_red.py:88: AssertionError
+_ test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-noise] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e02b230>, 'slots')
+writer = 'noise'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", list(CLI_WRITERS))
+    def test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """b-1: the CLI writers that reach `verbs.local_write` (`add concept|entity`, `protect`,
+        `noise`) or hand-roll `Store(...)` (`focus change-subject` -> `verbs.change_subject`;
+        `init`; `partition drop`), run in-process (no daemon) in the main checkout of a repo that commits its
+        catalog. At 67f55cb every one of them writes the committed file."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        _seed_and_commit(repo)
+        before = _digests(repo.store)
+        argv = list(CLI_WRITERS[writer])
+        r = _cli(repo, argv)
+>       _assert_refused_cli(repo, layout, f"`rmx {' '.join(argv)}`", r, before)
+
+tests/test_bug212_r4_red.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e02b230>
+layout = 'slots', what = '`rmx noise bug212_r4_seed`'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-naj4679y/rmx_entry.py', 'noise', 'bug212_r4_seed'], returncode=0, stdout='flagged noise 1 entity\n  bug212_r4_seed\n', stderr='')
+before = {'catalog.A.duckdb': '6452bf30d5f9f9a2289a08b61551f687896a586217b08ce1d9b8cdc0a9e65d55', 'catalog.B.duckdb': '5bfe662e...7bad129611db15b0d52dc21b7d32180', 'catalog.duckdb': '5bfe662eb33c6e873f8ade7996eb5118d7bad129611db15b0d52dc21b7d32180'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] {what} wrote the git-tracked catalog {changed} (exit {r.returncode})\n"
+            f"git status:\n{status}\n{text}")
+E       AssertionError: [slots] `rmx noise bug212_r4_seed` wrote the git-tracked catalog ['catalog.A.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.A.duckdb
+E         
+E         exit 0
+E         stdout:
+E         flagged noise 1 entity
+E           bug212_r4_seed
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.A.duckdb'])
+
+tests/test_bug212_r4_red.py:88: AssertionError
+_ test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-focus-change-subject] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e02bce0>, 'slots')
+writer = 'focus-change-subject'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", list(CLI_WRITERS))
+    def test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """b-1: the CLI writers that reach `verbs.local_write` (`add concept|entity`, `protect`,
+        `noise`) or hand-roll `Store(...)` (`focus change-subject` -> `verbs.change_subject`;
+        `init`; `partition drop`), run in-process (no daemon) in the main checkout of a repo that commits its
+        catalog. At 67f55cb every one of them writes the committed file."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        _seed_and_commit(repo)
+        before = _digests(repo.store)
+        argv = list(CLI_WRITERS[writer])
+        r = _cli(repo, argv)
+>       _assert_refused_cli(repo, layout, f"`rmx {' '.join(argv)}`", r, before)
+
+tests/test_bug212_r4_red.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e02bce0>
+layout = 'slots'
+what = '`rmx focus change-subject bug212 r4 subject -s bug212-r4-session`'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-mz11nwz1/rmx...tdout='subject bug212 r4 subject (slug=bug212_r4_subject, id=4) — focus scoped; \npromotes file under it\n', stderr='')
+before = {'catalog.A.duckdb': '3a9fa062e78de4cba7835b98cb581e7cbf555c8dce4fd52c68386072e223860f', 'catalog.B.duckdb': '1d972a16...68ebdd65befb04d30705827b204aecc', 'catalog.duckdb': '1d972a16a30a553325492b2fa42b8912168ebdd65befb04d30705827b204aecc'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] {what} wrote the git-tracked catalog {changed} (exit {r.returncode})\n"
+            f"git status:\n{status}\n{text}")
+E       AssertionError: [slots] `rmx focus change-subject bug212 r4 subject -s bug212-r4-session` wrote the git-tracked catalog ['catalog.A.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.A.duckdb
+E         
+E         exit 0
+E         stdout:
+E         subject bug212 r4 subject (slug=bug212_r4_subject, id=4) — focus scoped; 
+E         promotes file under it
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.A.duckdb'])
+
+tests/test_bug212_r4_red.py:88: AssertionError
+_ test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-init] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e06d130>, 'slots')
+writer = 'init'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", list(CLI_WRITERS))
+    def test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """b-1: the CLI writers that reach `verbs.local_write` (`add concept|entity`, `protect`,
+        `noise`) or hand-roll `Store(...)` (`focus change-subject` -> `verbs.change_subject`;
+        `init`; `partition drop`), run in-process (no daemon) in the main checkout of a repo that commits its
+        catalog. At 67f55cb every one of them writes the committed file."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        _seed_and_commit(repo)
+        before = _digests(repo.store)
+        argv = list(CLI_WRITERS[writer])
+        r = _cli(repo, argv)
+>       _assert_refused_cli(repo, layout, f"`rmx {' '.join(argv)}`", r, before)
+
+tests/test_bug212_r4_red.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e06d130>
+layout = 'slots', what = '`rmx init --no-hooks --no-agents`'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-z03kw7ap/rmx...agents'], returncode=0, stdout='initialized /private/tmp/b212t-z03kw7ap/proj/.refmatrix (partition=proj)\n', stderr='')
+before = {'catalog.A.duckdb': '84ce20d2e3d26e269cb04e1583cd4ad3ff4fb0e8259008e35e8a7e02855cb3cf', 'catalog.B.duckdb': '301b4047...5cbe374ca6c801b4a8c3a0b160cce08', 'catalog.duckdb': '301b404736a78f1535b349321661a5bb65cbe374ca6c801b4a8c3a0b160cce08'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] {what} wrote the git-tracked catalog {changed} (exit {r.returncode})\n"
+            f"git status:\n{status}\n{text}")
+E       AssertionError: [slots] `rmx init --no-hooks --no-agents` wrote the git-tracked catalog ['catalog.A.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.A.duckdb
+E         
+E         exit 0
+E         stdout:
+E         initialized /private/tmp/b212t-z03kw7ap/proj/.refmatrix (partition=proj)
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.A.duckdb'])
+
+tests/test_bug212_r4_red.py:88: AssertionError
+_ test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-partition-drop] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a644490>, 'slots')
+writer = 'partition-drop'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", list(CLI_WRITERS))
+    def test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """b-1: the CLI writers that reach `verbs.local_write` (`add concept|entity`, `protect`,
+        `noise`) or hand-roll `Store(...)` (`focus change-subject` -> `verbs.change_subject`;
+        `init`; `partition drop`), run in-process (no daemon) in the main checkout of a repo that commits its
+        catalog. At 67f55cb every one of them writes the committed file."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        _seed_and_commit(repo)
+        before = _digests(repo.store)
+        argv = list(CLI_WRITERS[writer])
+        r = _cli(repo, argv)
+>       _assert_refused_cli(repo, layout, f"`rmx {' '.join(argv)}`", r, before)
+
+tests/test_bug212_r4_red.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a644490>
+layout = 'slots', what = '`rmx partition drop bug212r4empty -y`'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-bfl2cdim/rmx...n', 'drop', 'bug212r4empty', '-y'], returncode=0, stdout="dropped partition registration 'bug212r4empty'\n", stderr='')
+before = {'catalog.A.duckdb': '06acbf5f3b1d1ed0c35db3662cca846d223decdfaaa7f435d082142b82084c9b', 'catalog.B.duckdb': '3d499f9c...f7cc24b7db37910e7ae7b41ca5d4d1a', 'catalog.duckdb': '3d499f9cff9bd3cf3bc5de33ede9316cef7cc24b7db37910e7ae7b41ca5d4d1a'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] {what} wrote the git-tracked catalog {changed} (exit {r.returncode})\n"
+            f"git status:\n{status}\n{text}")
+E       AssertionError: [slots] `rmx partition drop bug212r4empty -y` wrote the git-tracked catalog ['catalog.A.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.A.duckdb
+E         
+E         exit 0
+E         stdout:
+E         dropped partition registration 'bug212r4empty'
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.A.duckdb'])
+
+tests/test_bug212_r4_red.py:88: AssertionError
+_ test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-add-concept] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a6449e0>, 'legacy')
+writer = 'add-concept'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", list(CLI_WRITERS))
+    def test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """b-1: the CLI writers that reach `verbs.local_write` (`add concept|entity`, `protect`,
+        `noise`) or hand-roll `Store(...)` (`focus change-subject` -> `verbs.change_subject`;
+        `init`; `partition drop`), run in-process (no daemon) in the main checkout of a repo that commits its
+        catalog. At 67f55cb every one of them writes the committed file."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        _seed_and_commit(repo)
+        before = _digests(repo.store)
+        argv = list(CLI_WRITERS[writer])
+        r = _cli(repo, argv)
+>       _assert_refused_cli(repo, layout, f"`rmx {' '.join(argv)}`", r, before)
+
+tests/test_bug212_r4_red.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a6449e0>
+layout = 'legacy', what = '`rmx add concept bug212_r4_new`'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-8zxbgh3t/rmx...', 'add', 'concept', 'bug212_r4_new'], returncode=0, stdout='added concept bug212_r4_new (id=4) (pinned)\n', stderr='')
+before = {'catalog.duckdb': '6a7110dcb1eeed1a4858aac99a1277a2bff072a57dc6ae55d9cd541d9556b571'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] {what} wrote the git-tracked catalog {changed} (exit {r.returncode})\n"
+            f"git status:\n{status}\n{text}")
+E       AssertionError: [legacy] `rmx add concept bug212_r4_new` wrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.duckdb
+E         
+E         exit 0
+E         stdout:
+E         added concept bug212_r4_new (id=4) (pinned)
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.duckdb'])
+
+tests/test_bug212_r4_red.py:88: AssertionError
+_ test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-add-entity] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e135a50>, 'legacy')
+writer = 'add-entity'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", list(CLI_WRITERS))
+    def test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """b-1: the CLI writers that reach `verbs.local_write` (`add concept|entity`, `protect`,
+        `noise`) or hand-roll `Store(...)` (`focus change-subject` -> `verbs.change_subject`;
+        `init`; `partition drop`), run in-process (no daemon) in the main checkout of a repo that commits its
+        catalog. At 67f55cb every one of them writes the committed file."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        _seed_and_commit(repo)
+        before = _digests(repo.store)
+        argv = list(CLI_WRITERS[writer])
+        r = _cli(repo, argv)
+>       _assert_refused_cli(repo, layout, f"`rmx {' '.join(argv)}`", r, before)
+
+tests/test_bug212_r4_red.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e135a50>
+layout = 'legacy', what = '`rmx add entity bug212_r4_doc --kind doc`'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-_lwsx375/rmx...ty', 'bug212_r4_doc', '--kind', 'doc'], returncode=0, stdout='upserted doc:bug212_r4_doc (id=4) (pinned)\n', stderr='')
+before = {'catalog.duckdb': '983c77062dabb6cf75b70713446841ab42e7fa6b8bfab01b17671f783a70faa1'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] {what} wrote the git-tracked catalog {changed} (exit {r.returncode})\n"
+            f"git status:\n{status}\n{text}")
+E       AssertionError: [legacy] `rmx add entity bug212_r4_doc --kind doc` wrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.duckdb
+E         
+E         exit 0
+E         stdout:
+E         upserted doc:bug212_r4_doc (id=4) (pinned)
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.duckdb'])
+
+tests/test_bug212_r4_red.py:88: AssertionError
+_ test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-protect] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e136450>, 'legacy')
+writer = 'protect'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", list(CLI_WRITERS))
+    def test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """b-1: the CLI writers that reach `verbs.local_write` (`add concept|entity`, `protect`,
+        `noise`) or hand-roll `Store(...)` (`focus change-subject` -> `verbs.change_subject`;
+        `init`; `partition drop`), run in-process (no daemon) in the main checkout of a repo that commits its
+        catalog. At 67f55cb every one of them writes the committed file."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        _seed_and_commit(repo)
+        before = _digests(repo.store)
+        argv = list(CLI_WRITERS[writer])
+        r = _cli(repo, argv)
+>       _assert_refused_cli(repo, layout, f"`rmx {' '.join(argv)}`", r, before)
+
+tests/test_bug212_r4_red.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e136450>
+layout = 'legacy', what = '`rmx protect bug212_r4_seed`'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-1yibdd2w/rmx_entry.py', 'protect', 'bug212_r4_seed'], returncode=0, stdout='protected 1 entity\n  bug212_r4_seed\n', stderr='')
+before = {'catalog.duckdb': '8c971dc92a9b20826b1d58f1571f8ad0feb83dc26efd5d28a054801666bc25d8'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] {what} wrote the git-tracked catalog {changed} (exit {r.returncode})\n"
+            f"git status:\n{status}\n{text}")
+E       AssertionError: [legacy] `rmx protect bug212_r4_seed` wrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.duckdb
+E         
+E         exit 0
+E         stdout:
+E         protected 1 entity
+E           bug212_r4_seed
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.duckdb'])
+
+tests/test_bug212_r4_red.py:88: AssertionError
+_ test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-noise] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e13ba70>, 'legacy')
+writer = 'noise'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", list(CLI_WRITERS))
+    def test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """b-1: the CLI writers that reach `verbs.local_write` (`add concept|entity`, `protect`,
+        `noise`) or hand-roll `Store(...)` (`focus change-subject` -> `verbs.change_subject`;
+        `init`; `partition drop`), run in-process (no daemon) in the main checkout of a repo that commits its
+        catalog. At 67f55cb every one of them writes the committed file."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        _seed_and_commit(repo)
+        before = _digests(repo.store)
+        argv = list(CLI_WRITERS[writer])
+        r = _cli(repo, argv)
+>       _assert_refused_cli(repo, layout, f"`rmx {' '.join(argv)}`", r, before)
+
+tests/test_bug212_r4_red.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e13ba70>
+layout = 'legacy', what = '`rmx noise bug212_r4_seed`'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-krmoxay7/rmx_entry.py', 'noise', 'bug212_r4_seed'], returncode=0, stdout='flagged noise 1 entity\n  bug212_r4_seed\n', stderr='')
+before = {'catalog.duckdb': '79effd38ba084e6af379e738522ef249c2cc8419673f09ef6690ef1e2afc3083'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] {what} wrote the git-tracked catalog {changed} (exit {r.returncode})\n"
+            f"git status:\n{status}\n{text}")
+E       AssertionError: [legacy] `rmx noise bug212_r4_seed` wrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.duckdb
+E         
+E         exit 0
+E         stdout:
+E         flagged noise 1 entity
+E           bug212_r4_seed
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.duckdb'])
+
+tests/test_bug212_r4_red.py:88: AssertionError
+_ test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-focus-change-subject] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a678b90>, 'legacy')
+writer = 'focus-change-subject'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", list(CLI_WRITERS))
+    def test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """b-1: the CLI writers that reach `verbs.local_write` (`add concept|entity`, `protect`,
+        `noise`) or hand-roll `Store(...)` (`focus change-subject` -> `verbs.change_subject`;
+        `init`; `partition drop`), run in-process (no daemon) in the main checkout of a repo that commits its
+        catalog. At 67f55cb every one of them writes the committed file."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        _seed_and_commit(repo)
+        before = _digests(repo.store)
+        argv = list(CLI_WRITERS[writer])
+        r = _cli(repo, argv)
+>       _assert_refused_cli(repo, layout, f"`rmx {' '.join(argv)}`", r, before)
+
+tests/test_bug212_r4_red.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a678b90>
+layout = 'legacy'
+what = '`rmx focus change-subject bug212 r4 subject -s bug212-r4-session`'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-nigh0j2n/rmx...tdout='subject bug212 r4 subject (slug=bug212_r4_subject, id=4) — focus scoped; \npromotes file under it\n', stderr='')
+before = {'catalog.duckdb': '64ba2924374ac065db087787c29414eba135da8698055537ea98b612e7ee7ec4'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] {what} wrote the git-tracked catalog {changed} (exit {r.returncode})\n"
+            f"git status:\n{status}\n{text}")
+E       AssertionError: [legacy] `rmx focus change-subject bug212 r4 subject -s bug212-r4-session` wrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.duckdb
+E         
+E         exit 0
+E         stdout:
+E         subject bug212 r4 subject (slug=bug212_r4_subject, id=4) — focus scoped; 
+E         promotes file under it
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.duckdb'])
+
+tests/test_bug212_r4_red.py:88: AssertionError
+_ test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-init] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a6d17f0>, 'legacy')
+writer = 'init'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", list(CLI_WRITERS))
+    def test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """b-1: the CLI writers that reach `verbs.local_write` (`add concept|entity`, `protect`,
+        `noise`) or hand-roll `Store(...)` (`focus change-subject` -> `verbs.change_subject`;
+        `init`; `partition drop`), run in-process (no daemon) in the main checkout of a repo that commits its
+        catalog. At 67f55cb every one of them writes the committed file."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        _seed_and_commit(repo)
+        before = _digests(repo.store)
+        argv = list(CLI_WRITERS[writer])
+        r = _cli(repo, argv)
+>       _assert_refused_cli(repo, layout, f"`rmx {' '.join(argv)}`", r, before)
+
+tests/test_bug212_r4_red.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a6d17f0>
+layout = 'legacy', what = '`rmx init --no-hooks --no-agents`'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-7j5icpeo/rmx...agents'], returncode=0, stdout='initialized /private/tmp/b212t-7j5icpeo/proj/.refmatrix (partition=proj)\n', stderr='')
+before = {'catalog.duckdb': '516ac35d9312c96e9a0e5d68a370dce9c03dee44bb7637e9e7be943910c0a786'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] {what} wrote the git-tracked catalog {changed} (exit {r.returncode})\n"
+            f"git status:\n{status}\n{text}")
+E       AssertionError: [legacy] `rmx init --no-hooks --no-agents` wrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.duckdb
+E         
+E         exit 0
+E         stdout:
+E         initialized /private/tmp/b212t-7j5icpeo/proj/.refmatrix (partition=proj)
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.duckdb'])
+
+tests/test_bug212_r4_red.py:88: AssertionError
+_ test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-partition-drop] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a6d1470>, 'legacy')
+writer = 'partition-drop'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", list(CLI_WRITERS))
+    def test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """b-1: the CLI writers that reach `verbs.local_write` (`add concept|entity`, `protect`,
+        `noise`) or hand-roll `Store(...)` (`focus change-subject` -> `verbs.change_subject`;
+        `init`; `partition drop`), run in-process (no daemon) in the main checkout of a repo that commits its
+        catalog. At 67f55cb every one of them writes the committed file."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        _seed_and_commit(repo)
+        before = _digests(repo.store)
+        argv = list(CLI_WRITERS[writer])
+        r = _cli(repo, argv)
+>       _assert_refused_cli(repo, layout, f"`rmx {' '.join(argv)}`", r, before)
+
+tests/test_bug212_r4_red.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a6d1470>
+layout = 'legacy', what = '`rmx partition drop bug212r4empty -y`'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-_qp79d0z/rmx...n', 'drop', 'bug212r4empty', '-y'], returncode=0, stdout="dropped partition registration 'bug212r4empty'\n", stderr='')
+before = {'catalog.duckdb': 'a6fe43dfa6babd45ab57e9c6bb05902db43558fe3a5b27f42ed1ebe80dd97854'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] {what} wrote the git-tracked catalog {changed} (exit {r.returncode})\n"
+            f"git status:\n{status}\n{text}")
+E       AssertionError: [legacy] `rmx partition drop bug212r4empty -y` wrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.duckdb
+E         
+E         exit 0
+E         stdout:
+E         dropped partition registration 'bug212r4empty'
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.duckdb'])
+
+tests/test_bug212_r4_red.py:88: AssertionError
+____ test_the_mcp_memory_add_fallback_refuses_a_git_tracked_catalog[slots] _____
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e097110>, 'slots')
+
+    @pytest.mark.timeout(300)
+    def test_the_mcp_memory_add_fallback_refuses_a_git_tracked_catalog(tracked_repo):
+        """b-1: MCP `rmx_memory_add` with no daemon falls back to `mcp._t_memory_add`'s own
+        `Store(root)`. On a tracked catalog the tool call must come back `isError` carrying the
+        refusal (`refusing to open <full target> read-write in-process: ...`, both remedies), the
+        server keeps serving, and the catalog bytes are unchanged."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                 "params": {"name": "rmx_memory_add",
+                            "arguments": {"name": "bug212_r4_mcp",
+                                          "content": "probe (bug-212 r4)"}}},
+                {"jsonrpc": "2.0", "id": 3, "method": "ping"}]
+        stdin = "".join(json.dumps(m) + "\n" for m in msgs)
+        r = subprocess.run([sys.executable, str(_entry(repo.base)), "mcp"], cwd=str(repo.proj),
+                           env=_base_env(), input=stdin, capture_output=True, text=True,
+                           timeout=240)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        replies = {}
+        for ln in r.stdout.splitlines():
+            try:
+                m = json.loads(ln)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(m, dict) and "id" in m:
+                replies[m["id"]] = m
+        assert 2 in replies and 3 in replies, f"the MCP server stopped answering\n{text}"
+        res = replies[2].get("result") or {}
+        body = " ".join(c.get("text", "") for c in res.get("content", []))
+        changed = _changed(before, _digests(repo.store))
+>       assert not changed and _status_refmatrix_catalogs(repo.proj) == "", \
+            f"[{layout}] MCP rmx_memory_add wrote the git-tracked catalog {changed}: {body!r}"
+E       AssertionError: [slots] MCP rmx_memory_add wrote the git-tracked catalog ['catalog.A.duckdb']: '{"id": 1}'
+E       assert (not ['catalog.A.duckdb'])
+
+tests/test_bug212_r4_red.py:185: AssertionError
+____ test_the_mcp_memory_add_fallback_refuses_a_git_tracked_catalog[legacy] ____
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e1f4890>, 'legacy')
+
+    @pytest.mark.timeout(300)
+    def test_the_mcp_memory_add_fallback_refuses_a_git_tracked_catalog(tracked_repo):
+        """b-1: MCP `rmx_memory_add` with no daemon falls back to `mcp._t_memory_add`'s own
+        `Store(root)`. On a tracked catalog the tool call must come back `isError` carrying the
+        refusal (`refusing to open <full target> read-write in-process: ...`, both remedies), the
+        server keeps serving, and the catalog bytes are unchanged."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                 "params": {"name": "rmx_memory_add",
+                            "arguments": {"name": "bug212_r4_mcp",
+                                          "content": "probe (bug-212 r4)"}}},
+                {"jsonrpc": "2.0", "id": 3, "method": "ping"}]
+        stdin = "".join(json.dumps(m) + "\n" for m in msgs)
+        r = subprocess.run([sys.executable, str(_entry(repo.base)), "mcp"], cwd=str(repo.proj),
+                           env=_base_env(), input=stdin, capture_output=True, text=True,
+                           timeout=240)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        replies = {}
+        for ln in r.stdout.splitlines():
+            try:
+                m = json.loads(ln)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(m, dict) and "id" in m:
+                replies[m["id"]] = m
+        assert 2 in replies and 3 in replies, f"the MCP server stopped answering\n{text}"
+        res = replies[2].get("result") or {}
+        body = " ".join(c.get("text", "") for c in res.get("content", []))
+        changed = _changed(before, _digests(repo.store))
+>       assert not changed and _status_refmatrix_catalogs(repo.proj) == "", \
+            f"[{layout}] MCP rmx_memory_add wrote the git-tracked catalog {changed}: {body!r}"
+E       AssertionError: [legacy] MCP rmx_memory_add wrote the git-tracked catalog ['catalog.duckdb']: '{"id": 1}'
+E       assert (not ['catalog.duckdb'])
+
+tests/test_bug212_r4_red.py:185: AssertionError
+__ test_the_save_state_promote_fallback_refuses_a_git_tracked_catalog[slots] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e1f4b90>, 'slots')
+
+    @pytest.mark.timeout(300)
+    def test_the_save_state_promote_fallback_refuses_a_git_tracked_catalog(tracked_repo):
+        """b-1: `handoff._promote_digest` (save-state's STM promote) with no daemon opens
+        `Store(root)` itself. Its contract is "never raises; returns {"error"}" -- so on a tracked
+        catalog it must return `{"error": <the refusal>}` and no `id`, catalog bytes unchanged."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        probe = repo.base / "promote_probe.py"
+        probe.write_text(_PROMOTE_PROBE, encoding="utf-8")
+        before = _digests(repo.store)
+        r = subprocess.run([sys.executable, str(probe), str(repo.store)], cwd=str(repo.proj),
+                           env=_base_env(), capture_output=True, text=True, timeout=240)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the promote probe itself failed\n{text}"
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+        changed = _changed(before, _digests(repo.store))
+>       assert not changed and _status_refmatrix_catalogs(repo.proj) == "", \
+            f"[{layout}] the promote wrote the git-tracked catalog {changed}: {out}"
+E       AssertionError: [slots] the promote wrote the git-tracked catalog ['catalog.A.duckdb']: {'name': 'focus_summary_bug212r4prom', 'id': 1}
+E       assert (not ['catalog.A.duckdb'])
+
+tests/test_bug212_r4_red.py:222: AssertionError
+__ test_the_save_state_promote_fallback_refuses_a_git_tracked_catalog[legacy] __
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e0dd180>, 'legacy')
+
+    @pytest.mark.timeout(300)
+    def test_the_save_state_promote_fallback_refuses_a_git_tracked_catalog(tracked_repo):
+        """b-1: `handoff._promote_digest` (save-state's STM promote) with no daemon opens
+        `Store(root)` itself. Its contract is "never raises; returns {"error"}" -- so on a tracked
+        catalog it must return `{"error": <the refusal>}` and no `id`, catalog bytes unchanged."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        probe = repo.base / "promote_probe.py"
+        probe.write_text(_PROMOTE_PROBE, encoding="utf-8")
+        before = _digests(repo.store)
+        r = subprocess.run([sys.executable, str(probe), str(repo.store)], cwd=str(repo.proj),
+                           env=_base_env(), capture_output=True, text=True, timeout=240)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the promote probe itself failed\n{text}"
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+        changed = _changed(before, _digests(repo.store))
+>       assert not changed and _status_refmatrix_catalogs(repo.proj) == "", \
+            f"[{layout}] the promote wrote the git-tracked catalog {changed}: {out}"
+E       AssertionError: [legacy] the promote wrote the git-tracked catalog ['catalog.duckdb']: {'name': 'focus_summary_bug212r4prom', 'id': 1}
+E       assert (not ['catalog.duckdb'])
+
+tests/test_bug212_r4_red.py:222: AssertionError
+_____________ test_no_read_write_store_open_outside_the_allowlist ______________
+
+    def test_no_read_write_store_open_outside_the_allowlist():
+        """b-1 bypass guard (L72): a read-write `Store(` in src/ is allowed only in the two checked
+        openers and the named unchecked sites. At 67f55cb it fails on `cli.init`,
+        `handoff._promote_digest`, `mcp._t_memory_add`, `verbs.change_subject` (ch-bsd r2's four)
+        and `cli.partition_drop` (a fifth, through the `_Store` alias)."""
+        allowed = CHECKED_OPENERS | UNCHECKED_ALLOWED
+        stray = sorted({f"{site} (line {line})" for site, line in _read_write_store_constructions()
+                        if site not in allowed})
+>       assert not stray, (
+            "read-write `Store(` constructions outside the allowlist -- each is an in-process "
+            "writer that skips the tracked-catalog check; route it through `verbs.local_write` "
+            "(or `cli._store_rw()`), or add it to the allowlist WITH a reason:\n  "
+            + "\n  ".join(stray))
+E       AssertionError: read-write `Store(` constructions outside the allowlist -- each is an in-process writer that skips the tracked-catalog check; route it through `verbs.local_write` (or `cli._store_rw()`), or add it to the allowlist WITH a reason:
+E           cli:init (line 951)
+E           cli:partition_drop (line 4266)
+E           handoff:_promote_digest (line 381)
+E           mcp:_t_memory_add (line 121)
+E           verbs:change_subject (line 1574)
+E       assert not ['cli:init (line 951)', 'cli:partition_drop (line 4266)', 'handoff:_promote_digest (line 381)', 'mcp:_t_memory_add (line 121)', 'verbs:change_subject (line 1574)']
+
+tests/test_bug212_r4_red.py:358: AssertionError
+___________ test_both_checked_openers_call_the_one_store_level_check ___________
+
+    def test_both_checked_openers_call_the_one_store_level_check():
+        """L72: ONE store-level check -- a function in store.py that asks
+        `git_tracked_catalogs` and refuses -- called by BOTH `cli._store_rw()` and
+        `verbs.local_write`, directly or through one wrapper (e.g. a CLI wrapper that turns the
+        refusal into a `ClickException`). At 67f55cb store.py has no such function (the refusal is
+        cli-level) and `local_write` calls nothing that checks."""
+        checks = _functions_calling({"git_tracked_catalogs"}, module="store") - {
+            "git_tracked_catalogs"}
+>       assert checks, ("store.py has no function that calls `git_tracked_catalogs` -- the "
+                        "tracked-catalog check is not store-level")
+E       AssertionError: store.py has no function that calls `git_tracked_catalogs` -- the tracked-catalog check is not store-level
+E       assert set()
+
+tests/test_bug212_r4_red.py:381: AssertionError
+_ test_a_hanging_git_raises_the_check_error_within_the_timeout[slots-rev-parse-hangs] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e0df6a0>, 'slots')
+mode = 'all'
+
+    @pytest.mark.timeout(180)
+    @pytest.mark.parametrize("mode", ["all", "ls-files"], ids=["rev-parse-hangs", "ls-files-hangs"])
+    def test_a_hanging_git_raises_the_check_error_within_the_timeout(tracked_repo, mode):
+        """m-3 (L72): with `git` hanging -- on the first call (`rev-parse`) or only on `ls-files` --
+        `git_tracked_catalogs` raises `TrackedCatalogCheckError` saying it timed out, within the
+        bound. At 67f55cb neither call has a timeout: it hangs past the bound."""
+        repo, layout = tracked_repo
+        _hanging_git(repo.base / "hangbin", mode)
+        probe = repo.base / "tracked_probe.py"
+        probe.write_text(_TRACKED_PROBE, encoding="utf-8")
+        env = _base_env()
+        env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
+        t0 = time.monotonic()
+        r = _run_bounded([sys.executable, str(probe), str(repo.store)], cwd=repo.proj, env=env,
+                         bound=HANG_BOUND_S)
+>       assert r is not None, (f"[{layout}/{mode}] git_tracked_catalogs did not return within "
+                               f"{HANG_BOUND_S}s with git hanging: no timeout on the git call")
+E       AssertionError: [slots/all] git_tracked_catalogs did not return within 45s with git hanging: no timeout on the git call
+E       assert None is not None
+
+tests/test_bug212_r4_red.py:461: AssertionError
+_ test_a_hanging_git_raises_the_check_error_within_the_timeout[slots-ls-files-hangs] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a60dd10>, 'slots')
+mode = 'ls-files'
+
+    @pytest.mark.timeout(180)
+    @pytest.mark.parametrize("mode", ["all", "ls-files"], ids=["rev-parse-hangs", "ls-files-hangs"])
+    def test_a_hanging_git_raises_the_check_error_within_the_timeout(tracked_repo, mode):
+        """m-3 (L72): with `git` hanging -- on the first call (`rev-parse`) or only on `ls-files` --
+        `git_tracked_catalogs` raises `TrackedCatalogCheckError` saying it timed out, within the
+        bound. At 67f55cb neither call has a timeout: it hangs past the bound."""
+        repo, layout = tracked_repo
+        _hanging_git(repo.base / "hangbin", mode)
+        probe = repo.base / "tracked_probe.py"
+        probe.write_text(_TRACKED_PROBE, encoding="utf-8")
+        env = _base_env()
+        env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
+        t0 = time.monotonic()
+        r = _run_bounded([sys.executable, str(probe), str(repo.store)], cwd=repo.proj, env=env,
+                         bound=HANG_BOUND_S)
+>       assert r is not None, (f"[{layout}/{mode}] git_tracked_catalogs did not return within "
+                               f"{HANG_BOUND_S}s with git hanging: no timeout on the git call")
+E       AssertionError: [slots/ls-files] git_tracked_catalogs did not return within 45s with git hanging: no timeout on the git call
+E       assert None is not None
+
+tests/test_bug212_r4_red.py:461: AssertionError
+_ test_a_hanging_git_raises_the_check_error_within_the_timeout[legacy-rev-parse-hangs] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e0faa30>, 'legacy')
+mode = 'all'
+
+    @pytest.mark.timeout(180)
+    @pytest.mark.parametrize("mode", ["all", "ls-files"], ids=["rev-parse-hangs", "ls-files-hangs"])
+    def test_a_hanging_git_raises_the_check_error_within_the_timeout(tracked_repo, mode):
+        """m-3 (L72): with `git` hanging -- on the first call (`rev-parse`) or only on `ls-files` --
+        `git_tracked_catalogs` raises `TrackedCatalogCheckError` saying it timed out, within the
+        bound. At 67f55cb neither call has a timeout: it hangs past the bound."""
+        repo, layout = tracked_repo
+        _hanging_git(repo.base / "hangbin", mode)
+        probe = repo.base / "tracked_probe.py"
+        probe.write_text(_TRACKED_PROBE, encoding="utf-8")
+        env = _base_env()
+        env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
+        t0 = time.monotonic()
+        r = _run_bounded([sys.executable, str(probe), str(repo.store)], cwd=repo.proj, env=env,
+                         bound=HANG_BOUND_S)
+>       assert r is not None, (f"[{layout}/{mode}] git_tracked_catalogs did not return within "
+                               f"{HANG_BOUND_S}s with git hanging: no timeout on the git call")
+E       AssertionError: [legacy/all] git_tracked_catalogs did not return within 45s with git hanging: no timeout on the git call
+E       assert None is not None
+
+tests/test_bug212_r4_red.py:461: AssertionError
+_ test_a_hanging_git_raises_the_check_error_within_the_timeout[legacy-ls-files-hangs] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e10d370>, 'legacy')
+mode = 'ls-files'
+
+    @pytest.mark.timeout(180)
+    @pytest.mark.parametrize("mode", ["all", "ls-files"], ids=["rev-parse-hangs", "ls-files-hangs"])
+    def test_a_hanging_git_raises_the_check_error_within_the_timeout(tracked_repo, mode):
+        """m-3 (L72): with `git` hanging -- on the first call (`rev-parse`) or only on `ls-files` --
+        `git_tracked_catalogs` raises `TrackedCatalogCheckError` saying it timed out, within the
+        bound. At 67f55cb neither call has a timeout: it hangs past the bound."""
+        repo, layout = tracked_repo
+        _hanging_git(repo.base / "hangbin", mode)
+        probe = repo.base / "tracked_probe.py"
+        probe.write_text(_TRACKED_PROBE, encoding="utf-8")
+        env = _base_env()
+        env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
+        t0 = time.monotonic()
+        r = _run_bounded([sys.executable, str(probe), str(repo.store)], cwd=repo.proj, env=env,
+                         bound=HANG_BOUND_S)
+>       assert r is not None, (f"[{layout}/{mode}] git_tracked_catalogs did not return within "
+                               f"{HANG_BOUND_S}s with git hanging: no timeout on the git call")
+E       AssertionError: [legacy/ls-files] git_tracked_catalogs did not return within 45s with git hanging: no timeout on the git call
+E       assert None is not None
+
+tests/test_bug212_r4_red.py:461: AssertionError
+_______ test_an_in_process_writer_with_a_hanging_git_fails_loudly[slots] _______
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e0ce0d0>, 'slots')
+
+    @pytest.mark.timeout(180)
+    def test_an_in_process_writer_with_a_hanging_git_fails_loudly(tracked_repo):
+        """m-3, end to end: `rmx sync --files <f>`, no daemon, `git` hanging. One `Error:` line
+        `refusing to open <full target> read-write in-process: ...` naming the timeout, exit
+        non-zero, catalog bytes unchanged -- within the bound, never a silent hang."""
+        repo, layout = tracked_repo
+        _hanging_git(repo.base / "hangbin", "all")
+        env = _base_env()
+        env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
+        f = repo.proj / "README.md"
+        before = _digests(repo.store)
+        r = _run_bounded([sys.executable, str(_entry(repo.base)), "sync", "--files", str(f)],
+                         cwd=repo.proj, env=env, bound=HANG_BOUND_S)
+>       assert r is not None, (f"[{layout}] `rmx sync --files` with git hanging did not finish "
+                               f"within {HANG_BOUND_S}s: a silent hang")
+E       AssertionError: [slots] `rmx sync --files` with git hanging did not finish within 45s: a silent hang
+E       assert None is not None
+
+tests/test_bug212_r4_red.py:486: AssertionError
+______ test_an_in_process_writer_with_a_hanging_git_fails_loudly[legacy] _______
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e0ced50>, 'legacy')
+
+    @pytest.mark.timeout(180)
+    def test_an_in_process_writer_with_a_hanging_git_fails_loudly(tracked_repo):
+        """m-3, end to end: `rmx sync --files <f>`, no daemon, `git` hanging. One `Error:` line
+        `refusing to open <full target> read-write in-process: ...` naming the timeout, exit
+        non-zero, catalog bytes unchanged -- within the bound, never a silent hang."""
+        repo, layout = tracked_repo
+        _hanging_git(repo.base / "hangbin", "all")
+        env = _base_env()
+        env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
+        f = repo.proj / "README.md"
+        before = _digests(repo.store)
+        r = _run_bounded([sys.executable, str(_entry(repo.base)), "sync", "--files", str(f)],
+                         cwd=repo.proj, env=env, bound=HANG_BOUND_S)
+>       assert r is not None, (f"[{layout}] `rmx sync --files` with git hanging did not finish "
+                               f"within {HANG_BOUND_S}s: a silent hang")
+E       AssertionError: [legacy] `rmx sync --files` with git hanging did not finish within 45s: a silent hang
+E       assert None is not None
+
+tests/test_bug212_r4_red.py:486: AssertionError
+___ test_a_foreign_git_dir_in_the_env_does_not_hide_a_tracked_catalog[slots] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a655650>, 'slots')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a68ab30>
+
+    def test_a_foreign_git_dir_in_the_env_does_not_hide_a_tracked_catalog(tracked_repo,
+                                                                          monkeypatch):
+        """m-4 / X3 (GUARD at 67f55cb -- both calls are stripped there; the mutation X3, which kept
+        the hook's `GIT_*` on `rev-parse` only, survived 117/117): with `GIT_DIR=/nonexistent` in
+        the environment, `rev-parse` must still ask the store's own repository."""
+        repo, layout = tracked_repo
+        monkeypatch.setenv("GIT_DIR", "/nonexistent")
+        want = sorted(Path(p).name for p in subprocess.run(
+            ["git", "-C", str(repo.proj), "ls-files", "--", ".refmatrix"], env=_base_env(),
+            capture_output=True, text=True).stdout.split() if Path(p).name in WRITER_CATALOG_FILES)
+        got = store_mod.git_tracked_catalogs(repo.store)
+>       assert sorted(got) == want, \
+            f"[{layout}] with GIT_DIR=/nonexistent in the env the check answered {got}, not {want}"
+E       AssertionError: [slots] with GIT_DIR=/nonexistent in the env the check answered [], not ['catalog.A.duckdb', 'catalog.B.duckdb', 'catalog.duckdb']
+E       assert [] == ['catalog.A.d...talog.duckdb']
+E         
+E         Right contains 3 more items, first extra item: 'catalog.A.duckdb'
+E         Use -v to get more diff
+
+tests/test_bug212_r4_red.py:512: AssertionError
+__ test_a_foreign_git_dir_in_the_env_does_not_hide_a_tracked_catalog[legacy] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a655750>, 'legacy')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a68a200>
+
+    def test_a_foreign_git_dir_in_the_env_does_not_hide_a_tracked_catalog(tracked_repo,
+                                                                          monkeypatch):
+        """m-4 / X3 (GUARD at 67f55cb -- both calls are stripped there; the mutation X3, which kept
+        the hook's `GIT_*` on `rev-parse` only, survived 117/117): with `GIT_DIR=/nonexistent` in
+        the environment, `rev-parse` must still ask the store's own repository."""
+        repo, layout = tracked_repo
+        monkeypatch.setenv("GIT_DIR", "/nonexistent")
+        want = sorted(Path(p).name for p in subprocess.run(
+            ["git", "-C", str(repo.proj), "ls-files", "--", ".refmatrix"], env=_base_env(),
+            capture_output=True, text=True).stdout.split() if Path(p).name in WRITER_CATALOG_FILES)
+        got = store_mod.git_tracked_catalogs(repo.store)
+>       assert sorted(got) == want, \
+            f"[{layout}] with GIT_DIR=/nonexistent in the env the check answered {got}, not {want}"
+E       AssertionError: [legacy] with GIT_DIR=/nonexistent in the env the check answered [], not ['catalog.duckdb']
+E       assert [] == ['catalog.duckdb']
+E         
+E         Right contains one more item: 'catalog.duckdb'
+E         Use -v to get more diff
+
+tests/test_bug212_r4_red.py:512: AssertionError
+_____ test_a_writer_with_a_foreign_git_dir_in_the_env_still_refuses[slots] _____
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e0cd8d0>, 'slots')
+
+    @pytest.mark.timeout(300)
+    def test_a_writer_with_a_foreign_git_dir_in_the_env_still_refuses(tracked_repo):
+        """m-4 / X3 end to end (GUARD at 67f55cb): `rmx sync --files <f>` with `GIT_DIR=/nonexistent`
+        exported -- one refusal line, catalog bytes unchanged."""
+        repo, layout = tracked_repo
+        env = {**_base_env(), "GIT_DIR": "/nonexistent"}
+        before = _digests(repo.store)
+        r = _cli(repo, ["sync", "--files", str(repo.proj / "README.md")], env=env)
+>       _assert_refused_cli(repo, layout, "`rmx sync --files` (GIT_DIR=/nonexistent)", r, before)
+
+tests/test_bug212_r4_red.py:524: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e0cd8d0>
+layout = 'slots', what = '`rmx sync --files` (GIT_DIR=/nonexistent)'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-apu33571/rmx...files', '/private/tmp/b212t-apu33571/proj/README.md'], returncode=0, stdout='synced +1 ~0 -0 (touched=1)\n', stderr='')
+before = {'catalog.A.duckdb': '91ea139ec9b689859593feb8ab139d39863a3a632c5961cd99f64ab324f810c7', 'catalog.B.duckdb': '91ea139e...63a3a632c5961cd99f64ab324f810c7', 'catalog.duckdb': '91ea139ec9b689859593feb8ab139d39863a3a632c5961cd99f64ab324f810c7'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] {what} wrote the git-tracked catalog {changed} (exit {r.returncode})\n"
+            f"git status:\n{status}\n{text}")
+E       AssertionError: [slots] `rmx sync --files` (GIT_DIR=/nonexistent) wrote the git-tracked catalog ['catalog.A.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.A.duckdb
+E         
+E         exit 0
+E         stdout:
+E         synced +1 ~0 -0 (touched=1)
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.A.duckdb'])
+
+tests/test_bug212_r4_red.py:88: AssertionError
+____ test_a_writer_with_a_foreign_git_dir_in_the_env_still_refuses[legacy] _____
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e0ce250>, 'legacy')
+
+    @pytest.mark.timeout(300)
+    def test_a_writer_with_a_foreign_git_dir_in_the_env_still_refuses(tracked_repo):
+        """m-4 / X3 end to end (GUARD at 67f55cb): `rmx sync --files <f>` with `GIT_DIR=/nonexistent`
+        exported -- one refusal line, catalog bytes unchanged."""
+        repo, layout = tracked_repo
+        env = {**_base_env(), "GIT_DIR": "/nonexistent"}
+        before = _digests(repo.store)
+        r = _cli(repo, ["sync", "--files", str(repo.proj / "README.md")], env=env)
+>       _assert_refused_cli(repo, layout, "`rmx sync --files` (GIT_DIR=/nonexistent)", r, before)
+
+tests/test_bug212_r4_red.py:524: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e0ce250>
+layout = 'legacy', what = '`rmx sync --files` (GIT_DIR=/nonexistent)'
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212t-lo03k3gz/rmx...files', '/private/tmp/b212t-lo03k3gz/proj/README.md'], returncode=0, stdout='synced +1 ~0 -0 (touched=1)\n', stderr='')
+before = {'catalog.duckdb': 'b0a1dda8b9912a3f5ab38bc5aa7885d68be065b6c410f82a3aa27a78a1069601'}
+
+    def _assert_refused_cli(repo: Repo, layout: str, what: str, r: subprocess.CompletedProcess,
+                            before: dict[str, str]) -> None:
+        """The r2/r3 contract, for any in-process opener: no traceback; catalog bytes unchanged;
+        exit non-zero; exactly ONE `Error:` line `refusing to open <full target> read-write
+        in-process: ...` with both remedies; `git status` shows no catalog modified."""
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        status = _status_refmatrix_catalogs(repo.proj)
+        assert TRACEBACK not in r.stderr, f"[{layout}] {what} crashed\n{text}"
+>       assert not changed and status == "", (
+            f"[{layout}] {what} wrote the git-tracked catalog {changed} (exit {r.returncode})\n"
+            f"git status:\n{status}\n{text}")
+E       AssertionError: [legacy] `rmx sync --files` (GIT_DIR=/nonexistent) wrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         git status:
+E          M .refmatrix/catalog.duckdb
+E         
+E         exit 0
+E         stdout:
+E         synced +1 ~0 -0 (touched=1)
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.duckdb'])
+
+tests/test_bug212_r4_red.py:88: AssertionError
+__________ test_a_failing_rev_parse_inside_a_repository_raises[slots] __________
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10e0cddd0>, 'slots')
+
+    def test_a_failing_rev_parse_inside_a_repository_raises(tracked_repo):
+        """m-4 (L72): a corrupted `.git/HEAD` in a repo that tracks the catalog makes `rev-parse`
+        fail. A `.git` exists above the store, so the answer is UNKNOWN: `TrackedCatalogCheckError`,
+        never `[]` (only "no `.git` anywhere at or above the store dir" is `[]`)."""
+        repo, layout = tracked_repo
+        _corrupt_head(repo)
+        with pytest.raises(store_mod.TrackedCatalogCheckError):
+            got = store_mod.git_tracked_catalogs(repo.store)
+>           pytest.fail(f"[{layout}] git_tracked_catalogs returned {got!r} with a corrupt .git/HEAD")
+E           Failed: [slots] git_tracked_catalogs returned [] with a corrupt .git/HEAD
+
+tests/test_bug212_r4_red.py:542: Failed
+_________ test_a_failing_rev_parse_inside_a_repository_raises[legacy] __________
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a654250>, 'legacy')
+
+    def test_a_failing_rev_parse_inside_a_repository_raises(tracked_repo):
+        """m-4 (L72): a corrupted `.git/HEAD` in a repo that tracks the catalog makes `rev-parse`
+        fail. A `.git` exists above the store, so the answer is UNKNOWN: `TrackedCatalogCheckError`,
+        never `[]` (only "no `.git` anywhere at or above the store dir" is `[]`)."""
+        repo, layout = tracked_repo
+        _corrupt_head(repo)
+        with pytest.raises(store_mod.TrackedCatalogCheckError):
+            got = store_mod.git_tracked_catalogs(repo.store)
+>           pytest.fail(f"[{layout}] git_tracked_catalogs returned {got!r} with a corrupt .git/HEAD")
+E           Failed: [legacy] git_tracked_catalogs returned [] with a corrupt .git/HEAD
+
+tests/test_bug212_r4_red.py:542: Failed
+_ test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses[slots] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a657e50>, 'slots')
+
+    @pytest.mark.timeout(300)
+    def test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses(tracked_repo):
+        """m-4 end to end: `rmx sync --files <f>`, no daemon, corrupt `.git/HEAD`, catalog tracked.
+        Refused (one `Error:` line with the full target), catalog bytes unchanged -- not a write."""
+        repo, layout = tracked_repo
+        _corrupt_head(repo)
+        before = _digests(repo.store)
+        r = _cli(repo, ["sync", "--files", str(repo.proj / "README.md")])
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert _changed(before, _digests(repo.store)) == [], \
+            f"[{layout}] the in-process sync wrote the tracked catalog (corrupt HEAD read as 'not " \
+            f"a repository')\n{text}"
+E       AssertionError: [slots] the in-process sync wrote the tracked catalog (corrupt HEAD read as 'not a repository')
+E         exit 0
+E         stdout:
+E         synced +1 ~0 -0 (touched=1)
+E         
+E         stderr:
+E         
+E       assert ['catalog.A.duckdb'] == []
+E         
+E         Left contains one more item: 'catalog.A.duckdb'
+E         Use -v to get more diff
+
+tests/test_bug212_r4_red.py:554: AssertionError
+_ test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses[legacy] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a657bd0>, 'legacy')
+
+    @pytest.mark.timeout(300)
+    def test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses(tracked_repo):
+        """m-4 end to end: `rmx sync --files <f>`, no daemon, corrupt `.git/HEAD`, catalog tracked.
+        Refused (one `Error:` line with the full target), catalog bytes unchanged -- not a write."""
+        repo, layout = tracked_repo
+        _corrupt_head(repo)
+        before = _digests(repo.store)
+        r = _cli(repo, ["sync", "--files", str(repo.proj / "README.md")])
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert _changed(before, _digests(repo.store)) == [], \
+            f"[{layout}] the in-process sync wrote the tracked catalog (corrupt HEAD read as 'not " \
+            f"a repository')\n{text}"
+E       AssertionError: [legacy] the in-process sync wrote the tracked catalog (corrupt HEAD read as 'not a repository')
+E         exit 0
+E         stdout:
+E         synced +1 ~0 -0 (touched=1)
+E         
+E         stderr:
+E         
+E       assert ['catalog.duckdb'] == []
+E         
+E         Left contains one more item: 'catalog.duckdb'
+E         Use -v to get more diff
+
+tests/test_bug212_r4_red.py:554: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-add-concept]
+FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-add-entity]
+FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-protect]
+FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-noise]
+FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-focus-change-subject]
+FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-init]
+FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-partition-drop]
+FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-add-concept]
+FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-add-entity]
+FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-protect]
+FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-noise]
+FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-focus-change-subject]
+FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-init]
+FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-partition-drop]
+FAILED tests/test_bug212_r4_red.py::test_the_mcp_memory_add_fallback_refuses_a_git_tracked_catalog[slots]
+FAILED tests/test_bug212_r4_red.py::test_the_mcp_memory_add_fallback_refuses_a_git_tracked_catalog[legacy]
+FAILED tests/test_bug212_r4_red.py::test_the_save_state_promote_fallback_refuses_a_git_tracked_catalog[slots]
+FAILED tests/test_bug212_r4_red.py::test_the_save_state_promote_fallback_refuses_a_git_tracked_catalog[legacy]
+FAILED tests/test_bug212_r4_red.py::test_no_read_write_store_open_outside_the_allowlist
+FAILED tests/test_bug212_r4_red.py::test_both_checked_openers_call_the_one_store_level_check
+FAILED tests/test_bug212_r4_red.py::test_a_hanging_git_raises_the_check_error_within_the_timeout[slots-rev-parse-hangs]
+FAILED tests/test_bug212_r4_red.py::test_a_hanging_git_raises_the_check_error_within_the_timeout[slots-ls-files-hangs]
+FAILED tests/test_bug212_r4_red.py::test_a_hanging_git_raises_the_check_error_within_the_timeout[legacy-rev-parse-hangs]
+FAILED tests/test_bug212_r4_red.py::test_a_hanging_git_raises_the_check_error_within_the_timeout[legacy-ls-files-hangs]
+FAILED tests/test_bug212_r4_red.py::test_an_in_process_writer_with_a_hanging_git_fails_loudly[slots]
+FAILED tests/test_bug212_r4_red.py::test_an_in_process_writer_with_a_hanging_git_fails_loudly[legacy]
+FAILED tests/test_bug212_r4_red.py::test_a_foreign_git_dir_in_the_env_does_not_hide_a_tracked_catalog[slots]
+FAILED tests/test_bug212_r4_red.py::test_a_foreign_git_dir_in_the_env_does_not_hide_a_tracked_catalog[legacy]
+FAILED tests/test_bug212_r4_red.py::test_a_writer_with_a_foreign_git_dir_in_the_env_still_refuses[slots]
+FAILED tests/test_bug212_r4_red.py::test_a_writer_with_a_foreign_git_dir_in_the_env_still_refuses[legacy]
+FAILED tests/test_bug212_r4_red.py::test_a_failing_rev_parse_inside_a_repository_raises[slots]
+FAILED tests/test_bug212_r4_red.py::test_a_failing_rev_parse_inside_a_repository_raises[legacy]
+FAILED tests/test_bug212_r4_red.py::test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses[slots]
+FAILED tests/test_bug212_r4_red.py::test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses[legacy]
+34 failed, 2 passed in 295.12s (0:04:55)

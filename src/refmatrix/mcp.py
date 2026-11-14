@@ -18,6 +18,8 @@ import sys
 import threading
 from pathlib import Path
 
+from refmatrix.workdir import current_dir
+
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_INFO = {"name": "refmatrix", "version": "1"}
 
@@ -82,7 +84,12 @@ def _resolve_root(args: dict) -> Path:
     env = os.environ.get("REFMATRIX_ROOT")
     if env:
         return Path(env)
-    cur = Path.cwd()
+    # The shared cwd reader (bug-212 r1, ch-bsd s-1, 2026-11-11): a vanished cwd was
+    # `FileNotFoundError: [Errno 2] No such file or directory`, naming nothing; the
+    # dispatcher now replies `isError` with `WorkingDirectoryGone: the working directory
+    # no longer exists (...)`, and the server keeps serving.
+    cur = current_dir(remedy="name `root` or `project` in the call, set REFMATRIX_ROOT, or "
+                            "start `rmx mcp` from an existing project directory")
     for d in (cur, *cur.parents):
         if (d / ".refmatrix").is_dir():
             return d / ".refmatrix"
@@ -101,7 +108,7 @@ def _resolve_root(args: dict) -> Path:
 
 def _verb_tool(name: str):
     def fn(args: dict) -> dict:
-        from refmatrix.verbs import VERBS, VerbArgsError, VerbError
+        from refmatrix.verbs import VERBS, SaveStateIncompleteError, VerbArgsError, VerbError
         # Resolved BEFORE the verb runs, outside the VerbError net: an unknown `project`
         # (VerbUnknownProjectError, a VerbArgsError) is the dispatcher's isError, never a
         # verb answer against some other store (task 25.1 R10).
@@ -110,6 +117,11 @@ def _verb_tool(name: str):
             return VERBS[name].run(root, args)
         except VerbArgsError:
             raise          # caller bug: the dispatcher reports it as isError
+        except SaveStateIncompleteError as e:
+            # The handoff WAS written (bug-212 r6, ch-bsd r5 m-1, L98, 2026-11-14): the
+            # isError reply carries the result -- `target`, `promoted`, `sync`, ... -- with
+            # the error added, the same facts the CLI prints before its `Error:` line.
+            return {**e.result, "error": str(e)}
         except VerbError as e:
             return {"error": str(e)}
     fn.__name__ = f"_t_{name[4:]}"
@@ -135,15 +147,22 @@ def _t_memory_add(args: dict) -> dict:
         pass          # no daemon at all: the bootstrap fallback below
     except VerbError as e:
         return {"error": str(e)}   # busy or refused: never open the slot
-    from refmatrix.store import Store
+    # The fallback opens through `verbs.local_write`, the checked opener (bug-212 r4, ruling
+    # L72, 2026-11-13): its own `Store(root)` here wrote a catalog git tracks. A refusal comes
+    # back as `{"error"}`, which the dispatcher replies as `isError`.
+    from refmatrix.verbs import local_write
     part = memory_partition(root)
-    s = Store(root)
-    with s.with_partition(part):
-        eid = s.add_memory(name=args["name"], content=args["content"],
-                           mtype=args.get("mtype", "observation"),
-                           tags=args.get("tags"),
-                           protected=bool(args.get("protect", False)))
-    return {"id": eid}
+
+    def _add(s) -> dict:
+        return {"id": s.add_memory(name=args["name"], content=args["content"],
+                                   mtype=args.get("mtype", "observation"),
+                                   tags=args.get("tags"),
+                                   protected=bool(args.get("protect", False)))}
+    try:
+        out = local_write(root, _add, partition=part, create=True)
+    except VerbError as e:
+        return {"error": str(e)}
+    return {"id": out["id"]}
 
 
 _t_memory_add.verb_name = "rmx_memory_add"  # type: ignore[attr-defined]

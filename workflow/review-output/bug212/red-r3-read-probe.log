@@ -1,0 +1,91 @@
+pyc-guard: recompiled 30 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug212/src/refmatrix as checked-hash (bug-037)
+FF..                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open[pairs-show] _
+
+slot_only_tracked_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10d020980>
+argv = ['pairs', 'show', 'foo_bar']
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("argv", READ_ARGVS, ids=["pairs-show", "memory-get"])
+    def test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open(
+            slot_only_tracked_repo, argv):
+        """GREEN r2 flag 5, lead ruling: no reader file of any kind, no daemon, a tracked catalog.
+        The read falls to the writer catalog through `_store_rw()`; it is refused with ONE
+        `Error:` line `refusing to open <full target path> read-write in-process: ...` (both
+        remedies), exit non-zero, catalog bytes unchanged -- and the line does not say "write"."""
+        repo = slot_only_tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_read(repo, argv)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"`rmx {' '.join(argv)}` crashed\n{text}"
+        assert not changed, f"`rmx {' '.join(argv)}` (a read) changed the tracked catalog " \
+                            f"{changed}\n{text}"
+        assert r.returncode != 0, f"`rmx {' '.join(argv)}` exited 0\n{text}"
+        errs = _errors(r.stderr)
+        target = repo.store / "catalog.A.duckdb"
+>       assert len(errs) == 1 and _refusal_lines(r.stderr, target) == errs, \
+            f"`rmx {' '.join(argv)}`: expected ONE `Error:` line `{_refusal_head(target)} ...` " \
+            f"with both remedies; got {errs}\n{text}"
+E       AssertionError: `rmx pairs show foo_bar`: expected ONE `Error:` line `refusing to open /private/tmp/b212r-ueb6ph6v/proj/.refmatrix/catalog.A.duckdb read-write in-process: ...` with both remedies; got ["Error: refusing an in-process write to /private/tmp/b212r-ueb6ph6v/proj/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it"]
+E         exit 1
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process write to /private/tmp/b212r-ueb6ph6v/proj/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it
+E         
+E       assert (1 == 1 and [] == ['Error: refu...s through it']
+E        +  where 1 = len(['Error: refusing an in-process write to /private/tmp/b212r-ueb6ph6v/proj/.refmatrix/catalog.A.duckdb: git tracks this...catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it'])
+E         
+E         Right contains one more item: 'Error: refusing an in-process write to /private/tmp/b212r-ueb6ph6v/proj/.refmatrix/catalog.A.duckdb: git tracks this .../catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it'
+E         Use -v to get more diff)
+
+tests/test_bug212_r2_red.py:583: AssertionError
+_ test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open[memory-get] _
+
+slot_only_tracked_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10d122990>
+argv = ['memory', 'get', 'bug212_r2_absent']
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("argv", READ_ARGVS, ids=["pairs-show", "memory-get"])
+    def test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open(
+            slot_only_tracked_repo, argv):
+        """GREEN r2 flag 5, lead ruling: no reader file of any kind, no daemon, a tracked catalog.
+        The read falls to the writer catalog through `_store_rw()`; it is refused with ONE
+        `Error:` line `refusing to open <full target path> read-write in-process: ...` (both
+        remedies), exit non-zero, catalog bytes unchanged -- and the line does not say "write"."""
+        repo = slot_only_tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_read(repo, argv)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"`rmx {' '.join(argv)}` crashed\n{text}"
+        assert not changed, f"`rmx {' '.join(argv)}` (a read) changed the tracked catalog " \
+                            f"{changed}\n{text}"
+        assert r.returncode != 0, f"`rmx {' '.join(argv)}` exited 0\n{text}"
+        errs = _errors(r.stderr)
+        target = repo.store / "catalog.A.duckdb"
+>       assert len(errs) == 1 and _refusal_lines(r.stderr, target) == errs, \
+            f"`rmx {' '.join(argv)}`: expected ONE `Error:` line `{_refusal_head(target)} ...` " \
+            f"with both remedies; got {errs}\n{text}"
+E       AssertionError: `rmx memory get bug212_r2_absent`: expected ONE `Error:` line `refusing to open /private/tmp/b212r-e8jvajiw/proj/.refmatrix/catalog.A.duckdb read-write in-process: ...` with both remedies; got ["Error: refusing an in-process write to /private/tmp/b212r-e8jvajiw/proj/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it"]
+E         exit 1
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing an in-process write to /private/tmp/b212r-e8jvajiw/proj/.refmatrix/catalog.A.duckdb: git tracks this store's catalog (catalog.A.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it
+E         
+E       assert (1 == 1 and [] == ['Error: refu...s through it']
+E        +  where 1 = len(['Error: refusing an in-process write to /private/tmp/b212r-e8jvajiw/proj/.refmatrix/catalog.A.duckdb: git tracks this...catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it'])
+E         
+E         Right contains one more item: 'Error: refusing an in-process write to /private/tmp/b212r-e8jvajiw/proj/.refmatrix/catalog.A.duckdb: git tracks this .../catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the write goes through it'
+E         Use -v to get more diff)
+
+tests/test_bug212_r2_red.py:583: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r2_red.py::test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open[pairs-show]
+FAILED tests/test_bug212_r2_red.py::test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open[memory-get]
+2 failed, 2 passed, 27 deselected in 2.39s

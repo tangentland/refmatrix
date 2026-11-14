@@ -58,9 +58,26 @@ class VerbUnknownProjectError(VerbArgsError):
 
     It is a caller mistake, so it is a `VerbArgsError` (the dispatcher answers `isError`). It
     is NOT `VerbAbsentError`: absent is the one condition that licenses a bootstrap fallback
-    (`mcp._t_memory_add`'s in-process `Store` open), and an unknown name says nothing about any
-    daemon. Before it, `mcp._resolve_root` fell through to `$REFMATRIX_ROOT` and then the cwd
+    (`mcp._t_memory_add`'s in-process fallback, through the checked opener
+    `verbs.local_write`), and an unknown name says nothing about any daemon. Before it, `mcp._resolve_root` fell through to `$REFMATRIX_ROOT` and then the cwd
     store, so a typo in `project=` quietly read -- and wrote -- another store."""
+
+
+class SaveStateIncompleteError(VerbError):
+    """`save_state` WROTE the handoff, but a memory-path step after it failed: the STM
+    promote, or the memory bridge. Carries the full `result` so a renderer can still show
+    what was written; the message is the one error line every caller prints.
+
+    Why one mechanism in the verb (bug-212 r5, ruling L95, 2026-11-14): r4 (L82) made a failed
+    promote loud in the CLI only -- the CLI built `save-state wrote <target> but its promote
+    failed: ...` itself and exited 1, while MCP `rmx_save_state` replied SUCCESS with the
+    error as data. A refused memory bridge was `memory bridge FAILED` on stdout, exit 0
+    (ch-bsd r4 s-1). Now the verb decides: the CLI prints this as its `Error:` line (exit 1)
+    and the MCP dispatcher's normal `VerbError` path replies `isError`."""
+
+    def __init__(self, message: str, result: dict):
+        super().__init__(message)
+        self.result = result
 
 
 # ---- registry + schema generation -----------------------------------------
@@ -475,9 +492,11 @@ def project_partition(root: Path) -> str:
 
 def _writer_catalog_files(root: Path) -> "list[Path]":
     """Every file a WRITER may hold for this store: the rotation slots and the pre-rotation
-    `catalog.duckdb` / `catalog.db`. `snapshot_read` refuses a replica that is any of them."""
-    return [p for p in (root / "catalog.A.duckdb", root / "catalog.B.duckdb",
-                        root / "catalog.duckdb", root / "catalog.db") if p.exists()]
+    `catalog.duckdb` / `catalog.db`. `snapshot_read` refuses a replica that is any of them.
+    The names are `store.WRITER_CATALOG_FILES`, the one list the git hooks' store gate is
+    rendered from too (bug-212, 2026-11-11)."""
+    from refmatrix.store import WRITER_CATALOG_FILES
+    return [p for p in (root / name for name in WRITER_CATALOG_FILES) if p.exists()]
 
 
 def snapshot_read(root: Path, fn: "Callable[[Any], dict]", *, partition: str) -> dict:
@@ -540,7 +559,8 @@ def snapshot_read(root: Path, fn: "Callable[[Any], dict]", *, partition: str) ->
     return {**out, "source": source}
 
 
-def local_write(root: Path, fn: "Callable[[Any], dict]", *, partition: str) -> dict:
+def local_write(root: Path, fn: "Callable[[Any], dict]", *, partition: "str | None",
+                create: bool = False) -> dict:
     """THE no-daemon writer: open the store read-write in-process, run `fn(store)`, CLOSE,
     and return `fn`'s dict with `source: "in-process"`.
 
@@ -550,12 +570,25 @@ def local_write(root: Path, fn: "Callable[[Any], dict]", *, partition: str) -> d
     — never busy, never an undiallable socket path: opening the writer slot under a live
     daemon is the 2026-09-14 lock crash. A call that reads AND writes does its reads inside
     `fn` on this handle; holding a `snapshot_read` in-process handle while this opens is
-    bug-135's `StaleDuckDBInstance … already attached` (spec review r3 M3)."""
-    from refmatrix.store import Store
+    bug-135's `StaleDuckDBInstance … already attached` (spec review r3 M3).
+
+    It is one of the TWO checked in-process openers (`cli._store_rw()` is the other; bug-212
+    r4, ruling L72, 2026-11-13): before `fn` runs it calls `store.refuse_tracked_catalog_open`
+    and raises its refusal as a `VerbError`, so no verb, MCP fallback, save-state promote or
+    CLI bypass writes a catalog git tracks. `partition=None` is the store's own default
+    partition. `create=True` lets the catalog not exist yet (opening creates it): `rmx init`,
+    and the three bootstrap fallbacks whose hand-rolled `Store(root)` always created it
+    (`change_subject`, MCP `rmx_memory_add`, the save-state promote) -- routing them here
+    changes only the tracked-catalog check, not what they do on a store with no catalog."""
+    from refmatrix.store import Store, TrackedCatalogRefused, refuse_tracked_catalog_open
     s = Store(Path(root), partition=partition)
-    if not s.db_path.exists():
+    if not create and not s.db_path.exists():
         raise VerbError(f"no refmatrix catalog at {root} ({s.db_path.name} missing) — "
                         f"run `rmx init` first")
+    try:
+        refuse_tracked_catalog_open(s.root, s.db_path)
+    except TrackedCatalogRefused as exc:
+        raise VerbError(str(exc)) from exc
     try:
         out = fn(s)
     finally:
@@ -1582,7 +1615,8 @@ def save_state(root: Path, *, message: str | None = None,
     """The CLI `rmx save-state` calls this and renders; `--commit` (git) is a
     CLI-only post-step. `dry_run` returns the rendered `doc` and writes
     nothing. Result carries `events`, `target`, `promoted`, `subject`,
-    `lint`, `filed_subject`, `sync`."""
+    `lint`, `filed_subject`, `sync`. A failed promote or memory bridge raises
+    `SaveStateIncompleteError` (with that result) AFTER the handoff is written."""
     import time as _time
     from refmatrix import handoff, stm as stm_mod
     repo = Path(root).parent
@@ -1620,6 +1654,16 @@ def save_state(root: Path, *, message: str | None = None,
     # half that matters — so the count rides back to every caller, CLI and MCP.
     res["embed"] = fin.get("embed")
     res.pop("doc", None)
+    # The handoff is written; a promote or bridge that failed after it is the CALL's error
+    # (bug-212 r5, L95): one message, raised here for every adapter, with the result attached.
+    failed = []
+    if (res.get("promoted") or {}).get("error"):
+        failed.append(f"its promote failed: {res['promoted']['error']}")
+    if (res.get("sync") or {}).get("error"):
+        failed.append(f"its memory bridge failed: {res['sync']['error']}")
+    if failed:
+        raise SaveStateIncompleteError(
+            f"save-state wrote {res['target']} but " + "; and ".join(failed), res)
     return res
 
 
@@ -1846,23 +1890,31 @@ def focus_note(root: Path, text: str, *, session: str | None = None) -> dict:
       "for `label`.", aliases={"subject": "label"})
 def change_subject(root: Path, label: str, *,
                    session: str | None = None) -> dict:
-    from refmatrix import daemon as daemon_mod, stm as stm_mod
+    from refmatrix import stm as stm_mod
     sess, source = resolve_session_source(root, session, purpose="write")
     s = stm_mod.Stm(root, sess)
-    rec = s.set_subject(label)
     part = memory_partition(root)
-    eid = None
+    # The durable subject row FIRST, the session's STM subject only after it landed (bug-212
+    # r5, ch-bsd r4 m-4, L95, 2026-11-14): r4 set the STM subject and then had the store write
+    # refused, so the next promote filed under a subject the store did not hold. A failed
+    # store write leaves the STM subject as it was and says so.
+    prior = (s.get_subject() or {}).get("label")
     try:
-        r = _call(root, "subject_upsert", {"label": label, "partition": part},
-                  timeout=30.0)
-        eid = r.get("id")
-    except VerbAbsentError:
-        # No daemon at all (bootstrap): in-process. A BUSY daemon raises —
-        # opening the slot under the writer is the lock crash.
-        from refmatrix.store import Store
-        s2 = Store(root)
-        with s2.with_partition(part):
-            eid = s2.upsert_subject(label)["id"]
+        try:
+            r = _call(root, "subject_upsert", {"label": label, "partition": part},
+                      timeout=30.0)
+            eid = r.get("id")
+        except VerbAbsentError:
+            # No daemon at all (bootstrap): in-process. A BUSY daemon raises —
+            # opening the slot under the writer is the lock crash. Through `local_write`,
+            # the checked opener (bug-212 r4, ruling L72, 2026-11-13): a hand-rolled
+            # `Store(root)` here wrote a catalog git tracks.
+            eid = local_write(root, lambda s2: {"id": s2.upsert_subject(label)["id"]},
+                              partition=part, create=True)["id"]
+    except VerbError as e:
+        kept = f"still {prior!r}" if prior else "none set"
+        raise type(e)(f"{e}; the session's subject is unchanged ({kept})") from e
+    rec = s.set_subject(label)
     return {"session_source": source, "subject": rec["subject"], "label": rec["label"], "id": eid,
             "session": s.session}
 

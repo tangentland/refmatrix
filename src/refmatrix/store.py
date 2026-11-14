@@ -36,6 +36,162 @@ from refmatrix.edge_records import edge_event, edge_fields, resolve_legacy_kind
 
 _CONCEPT_WORD_SPLIT_RE = re.compile(r"[\s_\-]+")
 
+# THE definition of "this `.refmatrix/` dir is a store": it holds a file a WRITER may hold --
+# a rotation slot (`catalog.A.duckdb` / `catalog.B.duckdb`, named by the `active` marker), the
+# pre-rotation `catalog.duckdb` (`DuckDBBackend.db_filename`), or the legacy SQLite
+# `catalog.db` (`SQLiteBackend.db_filename`). Reader files (`catalog.read.duckdb`,
+# `read_only.duckdb`) are copies of a writer's file and never make a store alone.
+#
+# Named once here (bug-212, 2026-11-11) because two places need the same facts: the verb-layer
+# reader refuses a replica that IS one of these files (`verbs._writer_catalog_files`), and the
+# generated git hooks (`hooks._store_gate`) render this tuple into their shell gate. The hooks
+# used to gate on `[ -d "$ROOT/.refmatrix" ]`, which passes in a fresh worktree or clone of a
+# fleet repo that TRACKS `.refmatrix/CLAUDE.md` although no store exists there -- and the hook
+# then ran `rmx sync` in that non-store dir, creating a store in it.
+WRITER_CATALOG_FILES: tuple[str, ...] = (
+    "catalog.A.duckdb", "catalog.B.duckdb", "catalog.duckdb", "catalog.db")
+
+
+# The repository-local variables `git rev-parse --local-env-vars` lists (git 2.x). A process a
+# git hook started inherits the HOOK's repository through them (`GIT_DIR`, `GIT_INDEX_FILE`,
+# ...); `git_tracked_catalogs` asks about the repository that CONTAINS the store, so it drops
+# them and lets git discover that repository from the store's own path.
+_GIT_LOCAL_ENV_VARS: tuple[str, ...] = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT", "GIT_OBJECT_DIRECTORY", "GIT_DIR", "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE", "GIT_GRAFT_FILE", "GIT_INDEX_FILE", "GIT_NO_REPLACE_OBJECTS",
+    "GIT_REPLACE_REF_BASE", "GIT_PREFIX", "GIT_INTERNAL_SUPER_PREFIX", "GIT_SHALLOW_FILE",
+    "GIT_COMMON_DIR")
+
+
+class TrackedCatalogCheckError(RuntimeError):
+    """Whether git tracks a store's catalog is UNKNOWN: `git ls-files` failed or timed out
+    inside the repository that contains the store, or `git rev-parse` failed or timed out
+    with a `.git` at or above the store dir. Callers treat unknown as tracked (fail closed)."""
+
+
+class TrackedCatalogRefused(RuntimeError):
+    """`refuse_tracked_catalog_open` refused to let this process open a store's catalog
+    read-write: git tracks it, or whether git tracks it is unknown. The message is the one
+    refusal line every in-process opener prints (the CLI as its `Error:` line, the verbs as
+    a `VerbError`, MCP as an `isError` reply)."""
+
+
+# Each git call of the tracked-catalog check is bounded (bug-212 r4, ch-bsd r2 m-3, ruling
+# L72, 2026-11-13): a hanging git (a stuck mount, an fsmonitor) hung every in-process writer
+# silently. A timeout is an unknown answer -> `TrackedCatalogCheckError` -> refused, loudly.
+GIT_CHECK_TIMEOUT_S = 10
+
+
+def _git_dir_at_or_above(root: Path) -> Path | None:
+    """The first `.git` (a dir, or a worktree's `.git` file) at `root` or any parent, else
+    None. Only "no `.git` anywhere up" makes a failed `rev-parse` mean "not a repository"."""
+    for d in (root, *root.parents):
+        if (d / ".git").exists():
+            return d / ".git"
+    return None
+
+
+def _run_git_check(args: list[str], *, root: Path, env: dict) -> "subprocess.CompletedProcess":
+    """One bounded git call of the tracked-catalog check; a timeout raises
+    `TrackedCatalogCheckError` naming the call and the bound."""
+    import subprocess
+    try:
+        return subprocess.run(["git", "-C", str(root), *args], env=env, capture_output=True,
+                              text=True, timeout=GIT_CHECK_TIMEOUT_S)
+    except subprocess.TimeoutExpired as exc:
+        raise TrackedCatalogCheckError(
+            f"cannot tell whether git tracks the catalog under {root}: git {args[0]} timed "
+            f"out after {GIT_CHECK_TIMEOUT_S}s") from exc
+
+
+def git_tracked_catalogs(root: Path,
+                         names: "tuple[str, ...]" = WRITER_CATALOG_FILES) -> list[str]:
+    """The `names` (default: the `WRITER_CATALOG_FILES`) directly under the dir `root` that git
+    TRACKS, in `names`' order; `[]` when none is, when no `.git` exists at or above `root`, or
+    when git is not installed.
+
+    `names` (bug-212 r7, ch-bsd r6 m-1, ruling L102, 2026-11-14): `migrate-to-duckdb --out`
+    asks about the ONE file it replaces (`names=(dst.name,)`), not about every writer-catalog
+    name in that folder -- r6's folder-wide question let `--out` rewrite a committed `x.duckdb`
+    and refused an untracked `foo.duckdb` beside a tracked `catalog.duckdb`. Every other caller
+    keeps the default.
+
+    Why (bug-212 r1, lead decision a2, 2026-11-13): fleet repos (cliquet, atldb,
+    prep_prolific) commit their catalog files. The generated git hooks' gate lets a stale
+    daemon socket through (it cannot tell live from stale), and the CLI then fell to an
+    in-process sync that wrote the committed binary -- the b-1 incident behind the new gate.
+    So every in-process opener asks git first (`refuse_tracked_catalog_open`).
+
+    "Not in a repository" and "git not installed" answer `[]`: nothing commits the file then,
+    and a store outside any repo must keep its in-process writes. Everything else that leaves
+    the answer unknown raises `TrackedCatalogCheckError` (fail closed, never "untracked"):
+    a failed `ls-files`; a failed `rev-parse` while a `.git` exists at or above `root` (r4,
+    ch-bsd r2 m-4: a corrupt `.git/HEAD` read as "not a repository" let the write through);
+    and either call running past `GIT_CHECK_TIMEOUT_S` (r4, m-3). Both calls run without the
+    caller's repository-local `GIT_*` variables (`_GIT_LOCAL_ENV_VARS`), so a hook's
+    repository cannot answer for the store's."""
+    import shutil
+
+    root = Path(root)
+    if shutil.which("git") is None or not root.is_dir():
+        return []
+    env = {k: v for k, v in os.environ.items() if k not in _GIT_LOCAL_ENV_VARS}
+    inside = _run_git_check(["rev-parse", "--is-inside-work-tree"], root=root, env=env)
+    if inside.returncode != 0:
+        dotgit = _git_dir_at_or_above(root.resolve())
+        if dotgit is None:
+            return []
+        said = " ".join(ln.strip() for ln in inside.stderr.splitlines() if ln.strip())
+        raise TrackedCatalogCheckError(
+            f"cannot tell whether git tracks the catalog under {root}: git rev-parse exited "
+            f"{inside.returncode} although {dotgit} exists: {said or '(git printed nothing)'}")
+    if inside.stdout.strip() != "true":
+        return []
+    ls = _run_git_check(["ls-files", "-z", "--", *names], root=root, env=env)
+    if ls.returncode != 0:
+        said = " ".join(ln.strip() for ln in ls.stderr.splitlines() if ln.strip())
+        raise TrackedCatalogCheckError(
+            f"cannot tell whether git tracks the catalog under {root}: git ls-files exited "
+            f"{ls.returncode}: {said or '(git printed nothing)'}")
+    listed = {Path(p).name for p in ls.stdout.split("\0") if p}
+    return [name for name in names if name in listed]
+
+
+def refuse_tracked_catalog_open(root: Path, target: Path,
+                                names: "tuple[str, ...]" = WRITER_CATALOG_FILES) -> None:
+    """THE tracked-catalog check: raise `TrackedCatalogRefused` -- one line, `refusing to open
+    <target> read-write in-process: ...`, naming both remedies -- when git tracks a writer
+    catalog of the store `root`, or when whether it does is unknown. `target` is the file the
+    caller is about to open read-write (its resolved `db_path`). `names` is passed to
+    `git_tracked_catalogs`: the default asks about every writer-catalog name in `root`;
+    `migrate-to-duckdb` passes only the name of the file it replaces (r7, L102).
+
+    Why one store-level function (bug-212 r4, ch-bsd r2 b-1, ruling L72, 2026-11-13): r2 put
+    the refusal in `cli._store_rw()` as "the one in-process write control point". It was not:
+    `verbs.local_write` (every no-daemon verb write) was a second, and five sites hand-rolled
+    `Store(root)` read-write (`cli.init`, `cli.partition_drop`, `mcp._t_memory_add`,
+    `handoff._promote_digest`, `verbs.change_subject`). Each wrote a committed catalog. Now
+    both openers call this, the five route through `local_write`, and an AST census test
+    fails on a read-write `Store(` outside its allowlist.
+
+    The wording says "open", never "write", and the tail stays neutral (r3 + r4 m-1): a READ
+    that finds no reader file falls to `cli._store_rw()` and gets this same line."""
+    remedy = "start the daemon (rmx daemon start) so the daemon opens it instead"
+    try:
+        tracked = git_tracked_catalogs(root, names)
+    except TrackedCatalogCheckError as exc:
+        raise TrackedCatalogRefused(
+            f"refusing to open {target} read-write in-process: {exc}; untrack the catalog "
+            f"(git rm --cached) if git tracks it, or {remedy}") from exc
+    if not tracked:
+        return
+    raise TrackedCatalogRefused(
+        f"refusing to open {target} read-write in-process: git tracks this store's catalog "
+        f"({', '.join(tracked)}), and opening it read-write would modify a committed file. "
+        f"Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog "
+        f"files), or {remedy}")
+
 
 def _canonical_for_kind(kind: str, name: str) -> str | None:
     """Compute the canonical_name column value for an entities row.

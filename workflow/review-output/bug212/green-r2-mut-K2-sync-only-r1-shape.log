@@ -1,0 +1,255 @@
+........................................................................ [ 81%]
+..FFFFFFFF......                                                         [100%]
+=================================== FAILURES ===================================
+___ test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-ingest] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1133d39d0>, 'slots')
+writer = 'ingest'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+>       assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+E       AssertionError: [slots] in-process `ingest` wrote the git-tracked catalog ['catalog.A.duckdb'] (exit 0)
+E         exit 0
+E         stdout:
+E         ingested 1 entities from /private/tmp/b212t-14xyydz8/proj/pkg
+E         
+E         stderr:
+E         
+E       assert not ['catalog.A.duckdb']
+
+tests/test_bug212_r2_red.py:447: AssertionError
+_ test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-memory-add] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1133fc050>, 'slots')
+writer = 'memory-add'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+>       assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+E       AssertionError: [slots] in-process `memory-add` wrote the git-tracked catalog ['catalog.A.duckdb'] (exit 0)
+E         exit 0
+E         stdout:
+E         memory bug212_r2_probe (id=1) observation
+E         
+E         stderr:
+E         
+E       assert not ['catalog.A.duckdb']
+
+tests/test_bug212_r2_red.py:447: AssertionError
+___ test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-bridge] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1133fc950>, 'slots')
+writer = 'bridge'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+>       assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+E       AssertionError: [slots] in-process `bridge` wrote the git-tracked catalog ['catalog.A.duckdb'] (exit 0)
+E         exit 0
+E         stdout:
+E         ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 15 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         new linkage types: lead, part-of
+E         memory embed: 1 row(s) now reachable by recall in proj
+E         
+E         stderr:
+E         
+E       assert not ['catalog.A.duckdb']
+
+tests/test_bug212_r2_red.py:447: AssertionError
+__ test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-ingest] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1133fce50>, 'legacy')
+writer = 'ingest'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+>       assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+E       AssertionError: [legacy] in-process `ingest` wrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         exit 0
+E         stdout:
+E         ingested 1 entities from /private/tmp/b212t-30dhg0b3/proj/pkg
+E         
+E         stderr:
+E         
+E       assert not ['catalog.duckdb']
+
+tests/test_bug212_r2_red.py:447: AssertionError
+_ test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-memory-add] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x11511f9d0>, 'legacy')
+writer = 'memory-add'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+>       assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+E       AssertionError: [legacy] in-process `memory-add` wrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         exit 0
+E         stdout:
+E         memory bug212_r2_probe (id=1) observation
+E         
+E         stderr:
+E         
+E       assert not ['catalog.duckdb']
+
+tests/test_bug212_r2_red.py:447: AssertionError
+__ test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-bridge] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x11511e150>, 'legacy')
+writer = 'bridge'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("writer", WRITERS)
+    def test_every_in_process_writer_refuses_a_git_tracked_catalog(tracked_repo, writer):
+        """a2 at `_store_rw()`: no daemon, cwd = the main checkout of a repo that commits its
+        catalog. The writer refuses with ONE `Error:` line naming the file the write would land in
+        and both remedies (untrack it, or start the daemon), exit non-zero, catalog bytes
+        unchanged, `git status` clean."""
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_writer(writer, repo.proj, repo.base)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"[{layout}] `{writer}` crashed\n{text}"
+>       assert not changed, (f"[{layout}] in-process `{writer}` wrote the git-tracked catalog "
+                             f"{changed} (exit {r.returncode})\n{text}")
+E       AssertionError: [legacy] in-process `bridge` wrote the git-tracked catalog ['catalog.duckdb'] (exit 0)
+E         exit 0
+E         stdout:
+E         ingested 1 doc(s), 1 node(s), 0 rel: edge(s), 15 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         new linkage types: lead, part-of
+E         memory embed: 1 row(s) now reachable by recall in proj
+E         
+E         stderr:
+E         
+E       assert not ['catalog.duckdb']
+
+tests/test_bug212_r2_red.py:447: AssertionError
+___ test_the_write_control_point_itself_refuses_a_git_tracked_catalog[slots] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x11511edd0>, 'slots')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110cf9b70>
+
+    def test_the_write_control_point_itself_refuses_a_git_tracked_catalog(tracked_repo,
+                                                                         monkeypatch):
+        """a2: the refusal lives IN `cli._store_rw()` -- the one in-process writer every command
+        reaches -- not per command. Called directly on a tracked store, it raises a
+        `ClickException` before the catalog opens; the bytes are unchanged."""
+        import click
+    
+        from refmatrix import cli
+        repo, layout = tracked_repo
+        monkeypatch.setenv("REFMATRIX_ROOT", str(repo.store))
+        monkeypatch.chdir(repo.proj)
+        before = _digests(repo.store)
+        opened = None
+        try:
+>           with pytest.raises(click.ClickException) as ei:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'click.exceptions.ClickException'>
+
+/Volumes/littlebig/refmatrix-bug212/tests/test_bug212_r2_red.py:473: Failed
+__ test_the_write_control_point_itself_refuses_a_git_tracked_catalog[legacy] ___
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x11511e950>, 'legacy')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110cfad60>
+
+    def test_the_write_control_point_itself_refuses_a_git_tracked_catalog(tracked_repo,
+                                                                         monkeypatch):
+        """a2: the refusal lives IN `cli._store_rw()` -- the one in-process writer every command
+        reaches -- not per command. Called directly on a tracked store, it raises a
+        `ClickException` before the catalog opens; the bytes are unchanged."""
+        import click
+    
+        from refmatrix import cli
+        repo, layout = tracked_repo
+        monkeypatch.setenv("REFMATRIX_ROOT", str(repo.store))
+        monkeypatch.chdir(repo.proj)
+        before = _digests(repo.store)
+        opened = None
+        try:
+>           with pytest.raises(click.ClickException) as ei:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'click.exceptions.ClickException'>
+
+/Volumes/littlebig/refmatrix-bug212/tests/test_bug212_r2_red.py:473: Failed
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-ingest]
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-memory-add]
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[slots-bridge]
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-ingest]
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-memory-add]
+FAILED tests/test_bug212_r2_red.py::test_every_in_process_writer_refuses_a_git_tracked_catalog[legacy-bridge]
+FAILED tests/test_bug212_r2_red.py::test_the_write_control_point_itself_refuses_a_git_tracked_catalog[slots]
+FAILED tests/test_bug212_r2_red.py::test_the_write_control_point_itself_refuses_a_git_tracked_catalog[legacy]
+8 failed, 80 passed in 75.96s (0:01:15)

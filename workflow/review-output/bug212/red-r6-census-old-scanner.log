@@ -1,0 +1,49 @@
+pyc-guard: recompiled 24 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug212/src/refmatrix as checked-hash (bug-037)
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_the_census_scanner_finds_the_copy_family_on_the_destination _______
+
+    def test_the_census_scanner_finds_the_copy_family_on_the_destination():
+        """m-3 (ch-bsd r5, L98, 2026-11-14): `shutil.copy` / `copy2` / `copyfile` / `copyfileobj`
+        and `Path.write_bytes` ONTO a writer-catalog path replace its bytes as surely as a rename,
+        and the census did not scan them (today only the daemon does it, so nothing escaped; a
+        future CLI copy onto `catalog.A.duckdb` would have passed). Keyed on the DESTINATION: a copy
+        FROM a catalog (a backup, a snapshot) writes nothing guarded. `shutil` / `os` under an alias
+        (`import shutil as _shutil`, as daemon.py does) count too."""
+        got = {(site.split(":")[1], fam)
+               for site, _, fam in _scan_source("synthetic", _SYNTHETIC_COPY)}
+        want = {("copy2_onto", "copy"), ("copy_onto_slot", "copy"), ("copyfile_aliased", "copy"),
+                ("copyfileobj_onto", "copy"), ("write_bytes_onto", "copy"),
+                ("move_aliased", "move")}
+>       assert want <= got, f"the scanner missed {sorted(want - got)}"
+E       AssertionError: the scanner missed [('copy2_onto', 'copy'), ('copy_onto_slot', 'copy'), ('copyfile_aliased', 'copy'), ('copyfileobj_onto', 'copy'), ('move_aliased', 'move'), ('write_bytes_onto', 'copy')]
+E       assert {('copy2_onto...nto', 'copy')} <= set()
+E         
+E         Extra items in the left set:
+E         ('copyfile_aliased', 'copy')
+E         ('write_bytes_onto', 'copy')
+E         ('move_aliased', 'move')
+E         ('copy_onto_slot', 'copy')
+E         ('copyfileobj_onto', 'copy')
+E         ('copy2_onto', 'copy')
+
+tests/test_bug212_r4_red.py:582: AssertionError
+_________________ test_the_census_sees_the_daemons_slot_copies _________________
+
+    def test_the_census_sees_the_daemons_slot_copies():
+        """m-3: the real copies onto writer slots -- the daemon's replica merge
+        (`_shutil.copy2(d._replica_file("A"), slot_path)`) and its rotation bootstrap
+        (`shutil.copy2(legacy, a)` / `(legacy, b)`) -- are in the census, so the allowlist's
+        reasons for those two sites cover what they actually do."""
+        seen = {(site, fam) for site, _, fam in _census()}
+        for must in (("daemon:_op_replica_merge", "copy"),
+                     ("daemon:Daemon._bootstrap_rotation_if_needed", "copy")):
+>           assert must in seen, f"the census does not see {must}"
+E           AssertionError: the census does not see ('daemon:_op_replica_merge', 'copy')
+E           assert ('daemon:_op_replica_merge', 'copy') in {('backend:DuckDBBackend.connect', 'raw'), ('backend:_open_write', 'raw'), ('cli:_store_rw', 'store'), ('cli:compact', 'move'), ('cli:compact', 'raw'), ('daemon:Daemon._bootstrap_rotation_if_needed', 'store'), ...}
+
+tests/test_bug212_r4_red.py:596: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r4_red.py::test_the_census_scanner_finds_the_copy_family_on_the_destination
+FAILED tests/test_bug212_r4_red.py::test_the_census_sees_the_daemons_slot_copies
+2 failed, 45 deselected in 1.12s

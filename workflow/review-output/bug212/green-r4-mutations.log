@@ -1,0 +1,76 @@
+N1-local-write-unchecked: 21 failed, 19 passed in 106.76s (0:01:46) | 21 failed
+    FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-add-concept]
+    FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-add-entity]
+    FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-protect]
+    FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-noise]
+    FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-focus-change-subject]
+    FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-init]
+    FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-partition-drop]
+    FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-add-concept]
+    FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-add-entity]
+    FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-protect]
+    FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-noise]
+    FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-focus-change-subject]
+    FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-init]
+    FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-partition-drop]
+    FAILED tests/test_bug212_r4_red.py::test_the_mcp_memory_add_fallback_refuses_a_git_tracked_catalog[slots]
+    FAILED tests/test_bug212_r4_red.py::test_the_mcp_memory_add_fallback_refuses_a_git_tracked_catalog[legacy]
+    FAILED tests/test_bug212_r4_red.py::test_the_save_state_promote_fallback_refuses_a_git_tracked_catalog[slots]
+    FAILED tests/test_bug212_r4_red.py::test_the_save_state_promote_fallback_refuses_a_git_tracked_catalog[legacy]
+    FAILED tests/test_bug212_r4_red.py::test_both_checked_openers_call_the_one_store_level_check
+    FAILED tests/test_bug212_r4_red.py::test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[slots]
+    FAILED tests/test_bug212_r4_red.py::test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[legacy]
+N2-store-rw-unchecked: 13 failed, 69 passed in 123.11s (0:02:03) | 13 failed
+    FAILED tests/test_bug212_r4_red.py::test_both_checked_openers_call_the_one_store_level_check
+    FAILED tests/test_bug212_r4_red.py::test_an_in_process_writer_with_a_hanging_git_fails_loudly[slots]
+    FAILED tests/test_bug212_r4_red.py::test_an_in_process_writer_with_a_hanging_git_fails_loudly[legacy]
+    FAILED tests/test_bug212_r4_red.py::test_a_writer_with_a_foreign_git_dir_in_the_env_still_refuses[slots]
+    FAILED tests/test_bug212_r4_red.py::test_a_writer_with_a_foreign_git_dir_in_the_env_still_refuses[legacy]
+    FAILED tests/test_bug212_r4_red.py::test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses[slots]
+    FAILED tests/test_bug212_r4_red.py::test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses[legacy]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-files]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-since]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-files]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-since]
+    FAILED tests/test_bug212_r1_remedy.py::test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[slots]
+    FAILED tests/test_bug212_r1_remedy.py::test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[legacy]
+N3-no-git-timeout: 6 failed, 34 passed in 317.80s (0:05:17) | 6 failed
+    FAILED tests/test_bug212_r4_red.py::test_a_hanging_git_raises_the_check_error_within_the_timeout[slots-rev-parse-hangs]
+    FAILED tests/test_bug212_r4_red.py::test_a_hanging_git_raises_the_check_error_within_the_timeout[slots-ls-files-hangs]
+    FAILED tests/test_bug212_r4_red.py::test_a_hanging_git_raises_the_check_error_within_the_timeout[legacy-rev-parse-hangs]
+    FAILED tests/test_bug212_r4_red.py::test_a_hanging_git_raises_the_check_error_within_the_timeout[legacy-ls-files-hangs]
+    FAILED tests/test_bug212_r4_red.py::test_an_in_process_writer_with_a_hanging_git_fails_loudly[slots]
+    FAILED tests/test_bug212_r4_red.py::test_an_in_process_writer_with_a_hanging_git_fails_loudly[legacy]
+N4-rev-parse-failure-is-no-repo: 4 failed, 36 passed in 106.83s (0:01:46) | 4 failed
+    FAILED tests/test_bug212_r4_red.py::test_a_failing_rev_parse_inside_a_repository_raises[slots]
+    FAILED tests/test_bug212_r4_red.py::test_a_failing_rev_parse_inside_a_repository_raises[legacy]
+    FAILED tests/test_bug212_r4_red.py::test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses[slots]
+    FAILED tests/test_bug212_r4_red.py::test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses[legacy]
+N5-no-env-strip: 2 failed, 38 passed in 106.88s (0:01:46) | 2 failed
+    FAILED tests/test_bug212_r4_red.py::test_a_foreign_git_dir_in_the_env_does_not_hide_a_tracked_catalog[slots]
+    FAILED tests/test_bug212_r4_red.py::test_a_foreign_git_dir_in_the_env_does_not_hide_a_tracked_catalog[legacy]
+N6-tail-claims-the-write: 2 failed, 29 passed in 20.40s | 2 failed
+    FAILED tests/test_bug212_r2_red.py::test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open[pairs-show]
+    FAILED tests/test_bug212_r2_red.py::test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open[memory-get]
+N7-save-state-promote-silent: 2 failed, 38 passed in 106.95s (0:01:46) | 2 failed
+    FAILED tests/test_bug212_r4_red.py::test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[slots]
+    FAILED tests/test_bug212_r4_red.py::test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[legacy]
+N8-changed-since-unbounded: 2 failed, 38 passed in 175.90s (0:02:55) | 2 failed
+    FAILED tests/test_bug212_r4_red.py::test_changed_since_with_a_hanging_git_diff_raises_within_the_bound
+    FAILED tests/test_bug212_r4_red.py::test_sync_since_with_a_hanging_git_diff_fails_loudly
+N9-change-subject-no-translation: 2 failed, 38 passed in 108.94s (0:01:48) | 2 failed
+    FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[slots-focus-change-subject]
+    FAILED tests/test_bug212_r4_red.py::test_every_cli_writer_outside_store_rw_refuses_a_git_tracked_catalog[legacy-focus-change-subject]
+N10-init-create-false: 9 failed, 51 passed in 6.29s | 9 failed
+    FAILED tests/test_session_cli.py::test_session_list_shows_ingested_session
+    FAILED tests/test_session_cli.py::test_session_list_json
+    FAILED tests/test_session_cli.py::test_session_recall_finds_by_query
+    FAILED tests/test_session_cli.py::test_session_recall_branch_filter_excludes
+    FAILED tests/test_session_cli.py::test_session_show_card
+    FAILED tests/test_session_cli.py::test_session_show_raw_returns_jsonl_path
+    FAILED tests/test_session_cli.py::test_session_show_turns_reparses_jsonl
+    FAILED tests/test_session_cli.py::test_session_show_unknown_id_errors
+    FAILED tests/test_session_cli.py::test_session_stats
+N11-sync-since-timeout-uncaught: 1 failed, 39 passed in 107.60s (0:01:47) | 1 failed
+    FAILED tests/test_bug212_r4_red.py::test_sync_since_with_a_hanging_git_diff_fails_loudly
+batch-exit=0

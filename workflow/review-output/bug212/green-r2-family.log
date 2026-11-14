@@ -1,0 +1,125 @@
+pyc-guard: recompiled 29 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug212/src/refmatrix as checked-hash (bug-037)
+........................................................................ [  5%]
+........................................................................ [ 11%]
+........................................................................ [ 17%]
+........................................................................ [ 23%]
+........................................................................ [ 28%]
+........................................................................ [ 34%]
+........................................................................ [ 40%]
+........................................................................ [ 46%]
+........................................................................ [ 51%]
+........................................................................ [ 57%]
+........................................................................ [ 63%]
+........................................................................ [ 69%]
+.......................s................................................ [ 74%]
+.................................................................F...... [ 80%]
+........................................................................ [ 86%]
+........................................................................ [ 92%]
+........................................................................ [ 97%]
+...........................                                              [100%]SkipGate: 1 skip(s) not in the pinned list (tests/conftest.py ALLOWED_SKIPS); a skip is a test that stopped running:
+  SKIPPED-UNPINNED tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated: Skipped: hooks belong to another checkout of this commit
+
+=================================== FAILURES ===================================
+__________________ test_tldr_warm_invokes_binary_and_ingests ___________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1012/test_tldr_warm_invokes_binary_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1375d4d70>
+
+    def test_tldr_warm_invokes_binary_and_ingests(tmp_path, monkeypatch):
+        """tldr-warm shells out to `tldr warm`, then ingests the resulting cache."""
+        import json
+        import subprocess
+        from click.testing import CliRunner
+    
+        from refmatrix.cli import main as cli_main
+    
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        rmx_root = proj / ".refmatrix"
+        rmx_root.mkdir()
+        Store(rmx_root).init()
+    
+        fake_bin = tmp_path / "fake-tldr"
+        fake_bin.write_text("# placeholder")
+        fake_bin.chmod(0o755)
+    
+        invoked: list[list[str]] = []
+    
+        def fake_run(cmd, *args, **kwargs):
+            invoked.append(cmd)
+            # simulate tldr warm: drop a call_graph.json into the project
+            cache = proj / ".tldr" / "cache"
+            cache.mkdir(parents=True, exist_ok=True)
+            (cache / "call_graph.json").write_text(json.dumps({
+                "edges": [{"from_file": "a.py", "from_func": "f",
+                           "to_file": "b.py", "to_func": "g"}],
+                "languages": ["python"],
+            }))
+            class R:
+                returncode = 0
+            return R()
+    
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setenv("REFMATRIX_ROOT", str(rmx_root))
+    
+        runner = CliRunner()
+        result = runner.invoke(
+            cli_main,
+            ["tldr-warm", str(proj), "--tldr-bin", str(fake_bin), "--lang", "python"],
+        )
+>       assert result.exit_code == 0, result.output
+E       AssertionError: $ 
+E         /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytes
+E         t-1012/test_tldr_warm_invokes_binary_0/fake-tldr warm 
+E         /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytes
+E         t-1012/test_tldr_warm_invokes_binary_0/proj --lang python
+E         
+E       assert 1 == 0
+E        +  where 1 = <Result AttributeError("'R' object has no attribute 'stdout'")>.exit_code
+
+tests/test_sync_and_extras.py:348: AssertionError
+=============================== warnings summary ===============================
+tests/test_cctree_web.py:17
+  /Volumes/littlebig/refmatrix-bug212/tests/test_cctree_web.py:17: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient  # noqa: E402
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/lance/__init__.py:298: UserWarning: lance is not fork-safe. If you are using multiprocessing, use spawn or forkserver instead.
+    warnings.warn(
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Volumes/littlebig/refmatrix-bug212/tests/test_bug129_hub_pidfile.py:227: DeprecationWarning: This process (pid=14783) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    pid = os.fork()
+
+tests/test_rerank_budget_real_clients.py::test_a_header_that_eats_the_budget_sends_no_rerank
+  /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-65 (one)
+  
+  Traceback (most recent call last):
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Volumes/littlebig/refmatrix-bug212/tests/test_rerank_budget_real_clients.py", line 361, in one
+      send_frame(rw, {"ok": True, "model": "stub/ce",
+      ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      "cost_s_per_doc": None, "queue_depth": 0})
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/subproc.py", line 126, in send_frame
+      fh.flush()
+      ~~~~~~~~^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 747, in write
+      return self._sock.send(b)
+             ~~~~~~~~~~~~~~~^^^
+  BrokenPipeError: [Errno 32] Broken pipe
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_sync_and_extras.py::test_tldr_warm_invokes_binary_and_ingests
+1 failed, 1249 passed, 1 skipped, 4 warnings in 1010.94s (0:16:50)
+exit=1

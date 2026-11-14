@@ -1,0 +1,169 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug212/src/refmatrix as checked-hash (bug-037)
+...........FF......                                                      [100%]
+=================================== FAILURES ===================================
+_ test_sync_since_a_ref_git_rejects_is_a_clean_error_in_process[no-such-ref-bug212] _
+
+gitproj_inproc = (PosixPath('/private/tmp/r1-o2fkmuh4'), PosixPath('/private/tmp/r1-o2fkmuh4/proj'), PosixPath('/private/tmp/r1-o2fkmuh4/proj/.refmatrix'))
+ref = 'no-such-ref-bug212'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("ref", BAD_REFS)
+    def test_sync_since_a_ref_git_rejects_is_a_clean_error_in_process(gitproj_inproc, ref):
+        base, proj, root = gitproj_inproc
+        _init_repo(proj)
+        _commit(proj, "c0")
+        assert not dm.ping(root), "fixture: a daemon is up; this is the in-process leg"
+        says = _git_says(proj, ref)
+        r = subprocess.run([sys.executable, str(_entry(base)), "sync", "--project-root", str(proj),
+                            "--since", ref], cwd=str(proj), capture_output=True, text=True,
+                           env={**_base_env(), "REFMATRIX_ROOT": str(root)}, timeout=240)
+>       _assert_clean_since_error(r, ref, says, "in-process")
+
+tests/test_bug212_hooks_in_worktrees.py:371: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/r1-o2fkmuh4/rmx_en...king tree. Use \'--\' to separate paths from revisions, like this: \'git <command> [<revision>...] -- [<file>...]\'\n')
+ref = 'no-such-ref-bug212'
+says = "ambiguous argument 'no-such-ref-bug212': unknown revision or path not in the working tree."
+route = 'in-process'
+
+    def _assert_clean_since_error(r: subprocess.CompletedProcess, ref: str, says: str,
+                                  route: str) -> None:
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode != 0, f"[{route}] `rmx sync --since {ref}` exited 0\n{text}"
+>       assert TRACEBACK not in r.stderr, \
+            f"[{route}] `rmx sync --since {ref}` failed as a raw traceback\n{text}"
+E       AssertionError: [in-process] `rmx sync --since no-such-ref-bug212` failed as a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/r1-o2fkmuh4/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 8791, in sync
+E             _sync_in_process(s, proot, files=files, since=since, flush_queue=flush_queue,
+E             ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                              invalidate=invalidate, semantic=semantic)
+E                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 8833, in _sync_in_process
+E             report = syncmod.sync_since(s, since, project_root=proot, semantic=semantic)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/sync.py", line 164, in sync_since
+E             files = changed_since(project_root, git_ref)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/sync.py", line 156, in changed_since
+E             raise GitRefError(git_ref, out.returncode, out.stderr)
+E         refmatrix.sync.GitRefError: sync --since no-such-ref-bug212 failed: git diff exited 128: fatal: ambiguous argument 'no-such-ref-bug212': unknown revision or path not in the working tree. Use '--' to separate paths from revisions, like this: 'git <command> [<revision>...] -- [<file>...]'
+E         
+E       assert 'Traceback (...t call last)' not in "Traceback (...file>...]'\n"
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/r1-o2fkmuh4/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry...
+E         
+E         ...Full output truncated (27 lines hidden), use '-vv' to show
+
+tests/test_bug212_hooks_in_worktrees.py:353: AssertionError
+_ test_sync_since_a_ref_git_rejects_is_a_clean_error_in_process[0000000000000000000000000000000000000000..HEAD] _
+
+gitproj_inproc = (PosixPath('/private/tmp/r1-922b635e'), PosixPath('/private/tmp/r1-922b635e/proj'), PosixPath('/private/tmp/r1-922b635e/proj/.refmatrix'))
+ref = '0000000000000000000000000000000000000000..HEAD'
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("ref", BAD_REFS)
+    def test_sync_since_a_ref_git_rejects_is_a_clean_error_in_process(gitproj_inproc, ref):
+        base, proj, root = gitproj_inproc
+        _init_repo(proj)
+        _commit(proj, "c0")
+        assert not dm.ping(root), "fixture: a daemon is up; this is the in-process leg"
+        says = _git_says(proj, ref)
+        r = subprocess.run([sys.executable, str(_entry(base)), "sync", "--project-root", str(proj),
+                            "--since", ref], cwd=str(proj), capture_output=True, text=True,
+                           env={**_base_env(), "REFMATRIX_ROOT": str(root)}, timeout=240)
+>       _assert_clean_since_error(r, ref, says, "in-process")
+
+tests/test_bug212_hooks_in_worktrees.py:371: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/r1-922b635e/rmx_en...000..HEAD failed: git diff exited 128: fatal: Invalid revision range 0000000000000000000000000000000000000000..HEAD\n')
+ref = '0000000000000000000000000000000000000000..HEAD'
+says = 'Invalid revision range 0000000000000000000000000000000000000000..HEAD'
+route = 'in-process'
+
+    def _assert_clean_since_error(r: subprocess.CompletedProcess, ref: str, says: str,
+                                  route: str) -> None:
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode != 0, f"[{route}] `rmx sync --since {ref}` exited 0\n{text}"
+>       assert TRACEBACK not in r.stderr, \
+            f"[{route}] `rmx sync --since {ref}` failed as a raw traceback\n{text}"
+E       AssertionError: [in-process] `rmx sync --since 0000000000000000000000000000000000000000..HEAD` failed as a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/r1-922b635e/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 8791, in sync
+E             _sync_in_process(s, proot, files=files, since=since, flush_queue=flush_queue,
+E             ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                              invalidate=invalidate, semantic=semantic)
+E                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 8833, in _sync_in_process
+E             report = syncmod.sync_since(s, since, project_root=proot, semantic=semantic)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/sync.py", line 164, in sync_since
+E             files = changed_since(project_root, git_ref)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/sync.py", line 156, in changed_since
+E             raise GitRefError(git_ref, out.returncode, out.stderr)
+E         refmatrix.sync.GitRefError: sync --since 0000000000000000000000000000000000000000..HEAD failed: git diff exited 128: fatal: Invalid revision range 0000000000000000000000000000000000000000..HEAD
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (...0000..HEAD\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/r1-922b635e/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry...
+E         
+E         ...Full output truncated (27 lines hidden), use '-vv' to show
+
+tests/test_bug212_hooks_in_worktrees.py:353: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_sync_since_a_ref_git_rejects_is_a_clean_error_in_process[no-such-ref-bug212]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_sync_since_a_ref_git_rejects_is_a_clean_error_in_process[0000000000000000000000000000000000000000..HEAD]
+2 failed, 17 passed in 17.64s

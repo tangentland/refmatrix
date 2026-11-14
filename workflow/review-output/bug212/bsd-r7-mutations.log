@@ -1,0 +1,7 @@
+M3-sync-disk-deferral-silent: ['1 failed, 2 passed in 19.02s'] restore rc=0 src-status=''
+   FAILED tests/test_bug212_r7_red.py::test_memory_sync_disk_deferred_behind_a_running_job_warns_on_stderr
+R7a-migrate-back-to-r6-shape: ['2 failed, 1 passed in 19.12s'] restore rc=0 src-status=''
+   FAILED tests/test_bug212_r7_red.py::test_migrate_out_onto_a_committed_non_catalog_named_file_is_refused
+   FAILED tests/test_bug212_r7_red.py::test_migrate_out_to_an_untracked_file_beside_a_tracked_catalog_is_allowed
+R7c-ls-files-ignores-names: ['1 failed, 2 passed in 19.35s'] restore rc=0 src-status=''
+   FAILED tests/test_bug212_r7_red.py::test_migrate_out_onto_a_committed_non_catalog_named_file_is_refused

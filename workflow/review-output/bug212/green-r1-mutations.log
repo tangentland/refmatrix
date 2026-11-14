@@ -1,0 +1,101 @@
+G1-no-socket-half: 2 failed, 59 passed in 47.70s | 2 failed
+    FAILED tests/test_bug212_r1_remedy.py::test_a_repo_that_tracks_its_catalog_still_syncs_through_a_live_daemon[slots]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_repo_that_tracks_its_catalog_still_syncs_through_a_live_daemon[legacy]
+G2-no-tracked-check: 20 failed, 41 passed in 55.20s | 20 failed
+    FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-checkout-worktree]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-checkout-clone]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-commit-worktree]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-commit-clone]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-merge-worktree]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-merge-clone]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-rewrite-worktree]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[slots-post-rewrite-clone]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-checkout-worktree]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-checkout-clone]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-commit-worktree]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-commit-clone]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-merge-worktree]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-merge-clone]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-rewrite-worktree]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_checkout_of_a_repo_that_tracks_its_catalog_runs_no_sync[legacy-post-rewrite-clone]
+    FAILED tests/test_bug212_r1_remedy.py::test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[slots-post-commit]
+    FAILED tests/test_bug212_r1_remedy.py::test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[slots-post-checkout]
+    FAILED tests/test_bug212_r1_remedy.py::test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[legacy-post-commit]
+    FAILED tests/test_bug212_r1_remedy.py::test_the_main_checkout_of_a_repo_that_tracks_its_catalog_runs_no_in_process_sync[legacy-post-checkout]
+G3-lsfiles-failure-silent: 61 passed in 50.84s | 0 failed
+Z-no-root-commit-fallback: 1 failed, 60 passed in 49.70s | 1 failed
+    FAILED tests/test_bug212_r1_remedy.py::test_a_root_commit_is_synced_not_reported_as_a_failure
+R1-refusal-disabled: 6 failed, 55 passed in 51.52s | 6 failed
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-files]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-since]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-files]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-since]
+    FAILED tests/test_bug212_r1_remedy.py::test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[slots]
+    FAILED tests/test_bug212_r1_remedy.py::test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[legacy]
+P1-ping-gate-inverted: 6 failed, 55 passed in 51.82s | 6 failed
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-files]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[slots-since]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-files]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_refuses_to_write_a_git_tracked_catalog[legacy-since]
+    FAILED tests/test_bug212_r1_remedy.py::test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[slots]
+    FAILED tests/test_bug212_r1_remedy.py::test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly[legacy]
+E1-no-env-strip: 61 passed in 49.68s | 0 failed
+E2-lsfiles-failure-is-untracked: 61 passed in 49.72s | 0 failed
+E3-outside-repo-is-tracked: 2 failed, 59 passed in 50.45s | 2 failed
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[sync---since]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_in_process_sync_of_a_store_outside_any_git_repo_still_writes
+C1-group-no-conversion: 9 failed, 52 passed in 50.22s | 9 failed
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[sync---since]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[stats]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[grep-foo]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[context-foo]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[query-kind:function]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[cctree]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[hub-pause]
+    FAILED tests/test_bug212_hooks_in_worktrees.py::test_rmx_started_in_a_vanished_cwd_is_a_clean_error[sync-since]
+    FAILED tests/test_bug212_hooks_in_worktrees.py::test_rmx_started_in_a_vanished_cwd_is_a_clean_error[stats]
+C2-partition-marker-raw-cwd: 5 failed, 56 passed in 50.53s | 5 failed
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[sync---since]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[stats]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[grep-foo]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[context-foo]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[query-kind:function]
+C3-cwd-root-raw-cwd: 1 failed, 60 passed in 51.32s | 1 failed
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[hub-pause]
+C4-mcp-raw-cwd: 1 failed, 60 passed in 50.80s | 1 failed
+    FAILED tests/test_bug212_r1_remedy.py::test_an_mcp_tool_call_in_a_vanished_cwd_names_the_working_directory
+C5-cctree-raw-cwd: 1 failed, 60 passed in 52.48s | 1 failed
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[cctree]
+C6-sync-since-raw-cwd: 1 failed, 60 passed in 51.33s | 1 failed
+    FAILED tests/test_bug212_r1_remedy.py::test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_since]
+C7-sync-paths-raw-cwd: 1 failed, 60 passed in 52.82s | 1 failed
+    FAILED tests/test_bug212_r1_remedy.py::test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_files]
+C8-workdir-translates-nothing: 14 failed, 47 passed in 50.25s | 14 failed
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[sync---since]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[stats]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[grep-foo]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[context-foo]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[query-kind:function]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[cctree]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[hub-pause]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_mcp_tool_call_in_a_vanished_cwd_names_the_working_directory
+    FAILED tests/test_bug212_r1_remedy.py::test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_since]
+    FAILED tests/test_bug212_r1_remedy.py::test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_files]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_cwd_less_run_writes_one_telemetry_row_naming_the_lost_cwd
+    FAILED tests/test_bug212_hooks_in_worktrees.py::test_rmx_started_in_a_vanished_cwd_is_a_clean_error[sync-since]
+    FAILED tests/test_bug212_hooks_in_worktrees.py::test_rmx_started_in_a_vanished_cwd_is_a_clean_error[stats]
+    FAILED tests/test_bug212_hooks_in_worktrees.py::test_rmx_started_in_a_vanished_cwd_is_a_clean_error[version]
+C9-cli-entry-no-catch: 12 failed, 49 passed in 52.14s | 12 failed
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[sync---since]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[stats]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[grep-foo]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[context-foo]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[query-kind:function]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[cctree]
+    FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[hub-pause]
+    FAILED tests/test_bug212_r1_remedy.py::test_an_mcp_tool_call_in_a_vanished_cwd_names_the_working_directory
+    FAILED tests/test_bug212_r1_remedy.py::test_a_cwd_less_run_writes_one_telemetry_row_naming_the_lost_cwd
+    FAILED tests/test_bug212_hooks_in_worktrees.py::test_rmx_started_in_a_vanished_cwd_is_a_clean_error[sync-since]
+    FAILED tests/test_bug212_hooks_in_worktrees.py::test_rmx_started_in_a_vanished_cwd_is_a_clean_error[stats]
+    FAILED tests/test_bug212_hooks_in_worktrees.py::test_rmx_started_in_a_vanished_cwd_is_a_clean_error[version]
+W1-remedy-ignores-env: 61 passed in 52.65s | 0 failed

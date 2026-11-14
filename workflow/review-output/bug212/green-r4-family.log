@@ -1,0 +1,172 @@
+pyc-guard: recompiled 12 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug212/src/refmatrix as checked-hash (bug-037)
+........................................................................ [  4%]
+........................................................................ [  9%]
+........................................................................ [ 13%]
+........................................................................ [ 18%]
+........................................................................ [ 22%]
+........................................................................ [ 27%]
+................................................................F....... [ 31%]
+........................................................................ [ 36%]
+........................................................................ [ 41%]
+........................................................................ [ 45%]
+........................................................................ [ 50%]
+........................................................................ [ 54%]
+........................................................................ [ 59%]
+........................................................................ [ 63%]
+...s.................................................................... [ 68%]
+........................................................................ [ 73%]
+........................................................................ [ 77%]
+........................................................................ [ 82%]
+........................................................................ [ 86%]
+........................................................................ [ 91%]
+........................................................................ [ 95%]
+................................................................         [100%]SkipGate: 1 skip(s) not in the pinned list (tests/conftest.py ALLOWED_SKIPS); a skip is a test that stopped running:
+  SKIPPED-UNPINNED tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated: Skipped: hooks belong to another checkout of this commit
+
+=================================== FAILURES ===================================
+___________ test_every_stm_write_verb_reports_its_source[<lambda>1] ____________
+
+root = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1259/test_every_stm_write_verb_repo1/.refmatrix')
+label = 'a subject'
+
+    @verb("rmx_change_subject",
+          "Set the active subject (named STM partition + durable LTM container) "
+          "for this session's thread of work. `subject` is an accepted alias "
+          "for `label`.", aliases={"subject": "label"})
+    def change_subject(root: Path, label: str, *,
+                       session: str | None = None) -> dict:
+        from refmatrix import daemon as daemon_mod, stm as stm_mod
+        sess, source = resolve_session_source(root, session, purpose="write")
+        s = stm_mod.Stm(root, sess)
+        rec = s.set_subject(label)
+        part = memory_partition(root)
+        eid = None
+        try:
+>           r = _call(root, "subject_upsert", {"label": label, "partition": part},
+                      timeout=30.0)
+
+src/refmatrix/verbs.py:1578: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/verbs.py:269: in _call
+    require_daemon(root, retries=0 if retries == 0 else 2)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1259/test_every_stm_write_verb_repo1/.refmatrix')
+
+    def require_daemon(root: Path, *, retries: int = 2) -> dict:
+        """Classify the store's daemon: up → the status dict; busy → VerbBusyError
+        (typed, so no caller string-matches a message); absent → VerbAbsentError."""
+        from refmatrix import discovery
+        st = discovery.daemon_status(root, retries=retries)
+        if st.get("up"):
+            return st
+        if st.get("busy"):
+            raise VerbBusyError(
+                f"daemon busy pid={st.get('pid')} for {root} (alive, not answering — "
+                f"starting, rebuilding an index, or holding the store lock); retry shortly")
+>       raise VerbAbsentError(f"daemon not running for {root}")
+E       refmatrix.verbs.VerbAbsentError: daemon not running for /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1259/test_every_stm_write_verb_repo1/.refmatrix
+
+src/refmatrix/verbs.py:205: VerbAbsentError
+
+During handling of the above exception, another exception occurred:
+
+root = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1259/test_every_stm_write_verb_repo1/.refmatrix')
+long_lived = None
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11a2855c0>
+verb_call = <function <lambda> at 0x11b5cf3d0>
+
+    @pytest.mark.parametrize("verb_call", [
+        lambda root: verbs.task(root, action="push", desc="t1"),
+        lambda root: verbs.change_subject(root, "a subject"),
+    ])
+    def test_every_stm_write_verb_reports_its_source(root, long_lived, monkeypatch, verb_call):
+        """r2 #s-3 (N5-N7): `session_source` rides on every write verb, not only focus_note."""
+        monkeypatch.delenv("RMX_SESSION", raising=False)
+        stm.write_pid_pointer(os.getppid(), "sess-B", root=root)
+>       r = verb_call(root)
+            ^^^^^^^^^^^^^^^
+
+tests/test_mcp_session_pointer.py:322: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_mcp_session_pointer.py:316: in <lambda>
+    lambda root: verbs.change_subject(root, "a subject"),
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/verbs.py:1586: in change_subject
+    eid = local_write(root, lambda s2: {"id": s2.upsert_subject(label)["id"]},
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1259/test_every_stm_write_verb_repo1/.refmatrix')
+fn = <function change_subject.<locals>.<lambda> at 0x168769e80>
+
+    def local_write(root: Path, fn: "Callable[[Any], dict]", *, partition: "str | None",
+                    create: bool = False) -> dict:
+        """THE no-daemon writer: open the store read-write in-process, run `fn(store)`, CLOSE,
+        and return `fn`'s dict with `source: "in-process"`.
+    
+        Why one helper (task 3.7 C4a, spec review r2 S2): today's CLI serves writes in-process
+        when NO daemon runs and the suite depends on it; the verbs keep that, through one place
+        shaped like `_memory_write`'s local fallback. Callers reach it on `VerbAbsentError` ONLY
+        — never busy, never an undiallable socket path: opening the writer slot under a live
+        daemon is the 2026-09-14 lock crash. A call that reads AND writes does its reads inside
+        `fn` on this handle; holding a `snapshot_read` in-process handle while this opens is
+        bug-135's `StaleDuckDBInstance … already attached` (spec review r3 M3).
+    
+        It is one of the TWO checked in-process openers (`cli._store_rw()` is the other; bug-212
+        r4, ruling L72, 2026-11-13): before `fn` runs it calls `store.refuse_tracked_catalog_open`
+        and raises its refusal as a `VerbError`, so no verb, MCP fallback, save-state promote or
+        CLI bypass writes a catalog git tracks. `partition=None` is the store's own default
+        partition. `create=True` (only `rmx init`) lets the catalog not exist yet."""
+        from refmatrix.store import Store, TrackedCatalogRefused, refuse_tracked_catalog_open
+        s = Store(Path(root), partition=partition)
+        if not create and not s.db_path.exists():
+>           raise VerbError(f"no refmatrix catalog at {root} ({s.db_path.name} missing) — "
+                            f"run `rmx init` first")
+E           refmatrix.verbs.VerbError: no refmatrix catalog at /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1259/test_every_stm_write_verb_repo1/.refmatrix (catalog.duckdb missing) — run `rmx init` first
+
+src/refmatrix/verbs.py:552: VerbError
+=============================== warnings summary ===============================
+tests/test_cctree_web.py:17
+  /Volumes/littlebig/refmatrix-bug212/tests/test_cctree_web.py:17: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient  # noqa: E402
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/lance/__init__.py:298: UserWarning: lance is not fork-safe. If you are using multiprocessing, use spawn or forkserver instead.
+    warnings.warn(
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Volumes/littlebig/refmatrix-bug212/tests/test_bug129_hub_pidfile.py:227: DeprecationWarning: This process (pid=90963) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    pid = os.fork()
+
+tests/test_rerank_budget_real_clients.py::test_a_header_that_eats_the_budget_sends_no_rerank
+  /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-68 (one)
+  
+  Traceback (most recent call last):
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Volumes/littlebig/refmatrix-bug212/tests/test_rerank_budget_real_clients.py", line 361, in one
+      send_frame(rw, {"ok": True, "model": "stub/ce",
+      ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      "cost_s_per_doc": None, "queue_depth": 0})
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/subproc.py", line 126, in send_frame
+      fh.flush()
+      ~~~~~~~~^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 747, in write
+      return self._sock.send(b)
+             ~~~~~~~~~~~~~~~^^^
+  BrokenPipeError: [Errno 32] Broken pipe
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_mcp_session_pointer.py::test_every_stm_write_verb_reports_its_source[<lambda>1]
+1 failed, 1574 passed, 1 skipped, 4 warnings in 1288.38s (0:21:28)
+exit=1

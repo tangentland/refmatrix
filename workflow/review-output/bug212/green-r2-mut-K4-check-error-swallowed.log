@@ -1,0 +1,36 @@
+..................................................................F..... [ 81%]
+................                                                         [100%]
+=================================== FAILURES ===================================
+___________ test_an_in_process_sync_refuses_when_git_ls_files_fails ____________
+
+corrupt_index_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x10a3d3d50>
+
+    @pytest.mark.timeout(300)
+    def test_an_in_process_sync_refuses_when_git_ls_files_fails(corrupt_index_repo):
+        """E2, end to end: `rmx sync --files <f>`, no daemon. Whether git tracks the catalog is
+        unknown, so the in-process write is refused: one `Error:` line naming the failing
+        `ls-files` and the remedies, exit non-zero, catalog bytes unchanged."""
+        repo = corrupt_index_repo
+        f = repo.proj / "two.py"
+        before = _digests(repo.store)
+        r = subprocess.run([sys.executable, str(_entry(repo.base)), "sync", "--files", str(f)],
+                           cwd=str(repo.proj), env=_base_env(), capture_output=True, text=True,
+                           timeout=240)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"`rmx sync` crashed on a failing ls-files\n{text}"
+>       assert not changed, f"`rmx sync` wrote {changed} although git could not say whether it " \
+                            f"tracks them\n{text}"
+E       AssertionError: `rmx sync` wrote ['catalog.duckdb'] although git could not say whether it tracks them
+E         exit 0
+E         stdout:
+E         synced +1 ~0 -0 (touched=1)
+E         
+E         stderr:
+E         
+E       assert not ['catalog.duckdb']
+
+tests/test_bug212_r2_red.py:176: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r2_red.py::test_an_in_process_sync_refuses_when_git_ls_files_fails
+1 failed, 87 passed in 71.36s (0:01:11)

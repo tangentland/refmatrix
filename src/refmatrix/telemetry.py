@@ -352,13 +352,14 @@ def log_cli_invocation(
     root: Path,
     *,
     argv: list[str],
-    cwd: str,
+    cwd: "str | None",
     exit_code: int,
     latency_ms: int,
     error: str | None,
     pid: int,
     out_bytes: "int | None" = None,
     outcome: "str | None" = None,
+    cwd_error: "str | None" = None,
 ) -> None:
     """Append one JSONL record for an `rmx` CLI invocation to .refmatrix/cli.log.
 
@@ -395,6 +396,10 @@ def log_cli_invocation(
         # as exact by accident.
         "out_tokens_est": (out_bytes // 4) if out_bytes is not None else None,
     }
+    if cwd_error is not None:
+        # The process's working directory was gone (bug-212, 2026-11-11): `cwd` is null and
+        # this says why, so a reader sees an unknown cwd rather than a row that vanished.
+        record["cwd_error"] = cwd_error
     try:
         with (root / CLI_LOG_NAME).open("a") as f:
             f.write(json.dumps(record) + "\n")

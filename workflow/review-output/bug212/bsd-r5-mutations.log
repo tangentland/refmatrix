@@ -1,0 +1,6 @@
+P2-compact-check-after-stop: ['2 failed, 60 passed in 134.51s (0:02:14)'] restore rc=0 src-status=''
+   FAILED tests/test_bug212_r5_red.py::test_compact_refuses_before_it_stops_a_running_daemon[slots]
+   FAILED tests/test_bug212_r5_red.py::test_compact_refuses_before_it_stops_a_running_daemon[legacy]
+Q3-cli-raises-before-render-and-commit: ['2 failed, 60 passed in 132.17s (0:02:12)'] restore rc=0 src-status=''
+   FAILED tests/test_bug212_r4_red.py::test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[slots-commit]
+   FAILED tests/test_bug212_r4_red.py::test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero[legacy-commit]

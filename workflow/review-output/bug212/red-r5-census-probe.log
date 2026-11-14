@@ -1,0 +1,30 @@
+....F..                                                                  [100%]
+=================================== FAILURES ===================================
+__________ test_every_checked_opener_calls_the_one_store_level_check ___________
+
+    def test_every_checked_opener_calls_the_one_store_level_check():
+        """L72 + L95: ONE store-level check -- a function in store.py that asks
+        `git_tracked_catalogs` and refuses -- called by every checked opener and by every caller
+        of a library opener, directly or through one wrapper (e.g. a CLI wrapper that turns the
+        refusal into a `ClickException`). At 03d7b27 `cli:compact` and `cli:migrate_to_duckdb`
+        (the caller of `migrate.migrate_catalog`) call nothing that checks."""
+        checks = _functions_calling({"git_tracked_catalogs"}, module="store") - {
+            "git_tracked_catalogs"}
+        assert checks, ("store.py has no function that calls `git_tracked_catalogs` -- the "
+                        "tracked-catalog check is not store-level")
+        wrappers = _functions_calling(checks)
+        missing = []
+        for site in sorted(CHECKED_OPENERS | _library_callers()):
+            mod, qual = site.split(":")
+            calls = _calls_in(mod, qual)
+            if not (calls & checks or calls & (wrappers - {qual.split(".")[-1]})):
+                missing.append(site)
+>       assert not missing, (f"checked openers that do not call the store-level check "
+                             f"{sorted(checks)} (directly or via one wrapper): {missing}")
+E       AssertionError: checked openers that do not call the store-level check ['refuse_tracked_catalog_open'] (directly or via one wrapper): ['cli:compact', 'cli:migrate_to_duckdb']
+E       assert not ['cli:compact', 'cli:migrate_to_duckdb']
+
+tests/test_bug212_r4_red.py:577: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r4_red.py::test_every_checked_opener_calls_the_one_store_level_check
+1 failed, 6 passed, 36 deselected in 6.28s

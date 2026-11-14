@@ -1,0 +1,92 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix as checked-hash (bug-037)
+.................FF......                                                [100%]
+=================================== FAILURES ===================================
+________ test_migrate_out_into_another_repos_tracked_catalog_is_refused ________
+
+ignored_sqlite_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x103f29a70>, PosixPath('/private/tmp/b212m-8lqgg2qm/repob'))
+
+    @pytest.mark.timeout(300)
+    def test_migrate_out_into_another_repos_tracked_catalog_is_refused(ignored_sqlite_repo):
+        """s-1 (a): from an IGNORED store, `rmx migrate-to-duckdb --out <repo B>/.refmatrix/
+        catalog.duckdb --overwrite`, where repo B tracks that file: one `Error:` line `refusing to
+        open <that file> read-write in-process: ...`, exit non-zero, repo B's file byte-identical
+        and its `git status` clean. At c854bad the check asks about repo A, passes, and the
+        migration rewrites repo B's committed catalog."""
+        a, b = ignored_sqlite_repo
+        dst = (b / ".refmatrix" / "catalog.duckdb").resolve()
+        before = _digests(b / ".refmatrix")
+        r = _cli(a, ["migrate-to-duckdb", "--out", str(dst), "--overwrite"])
+        text = _text(r)
+        changed = _changed(before, _digests(b / ".refmatrix"))
+        status = _status_refmatrix_catalogs(b)
+        assert TRACEBACK not in r.stderr, f"migrate-to-duckdb crashed\n{text}"
+>       assert not changed and status == "", (
+            f"`--out` into repo B's tracked catalog rewrote it {changed} (exit {r.returncode})\n"
+            f"repo B git status:\n{status}\n{text}")
+E       AssertionError: `--out` into repo B's tracked catalog rewrote it ['catalog.duckdb'] (exit 0)
+E         repo B git status:
+E          M .refmatrix/catalog.duckdb
+E         
+E         exit 0
+E         stdout:
+E         ┏━━━━━━━━━━━━━━━━━━┳━━━━━━┓
+E         ┃ table            ┃ rows ┃
+E         ┡━━━━━━━━━━━━━━━━━━╇━━━━━━┩
+E         │ partitions       │    1 │
+E         │ linkage_types    │   14 │
+E         │ entities         │    3 │
+E         │ concepts         │    3 │
+E         │ memory_content   │    0 │
+E         │ entity_links     │    2 │
+E         │ tracked_files    │    0 │
+E         │ linkage_evidence │    0 │
+E         │ saved_queries    │    0 │
+E         │ bitmap_fragments │    1 │
+E         └──────────────────┴──────┘
+E         wrote /private/tmp/b212m-8lqgg2qm/repob/.refmatrix/catalog.duckdb
+E         
+E         stderr:
+E         
+E       assert (not ['catalog.duckdb'])
+
+tests/test_bug212_r6_red.py:111: AssertionError
+____ test_migrate_out_to_an_untracked_path_from_a_tracked_store_is_allowed _____
+
+sqlite_tracked_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x103f2a360>
+
+    @pytest.mark.timeout(300)
+    def test_migrate_out_to_an_untracked_path_from_a_tracked_store_is_allowed(sqlite_tracked_repo):
+        """s-1 (b): from a store whose catalogs git TRACKS, `rmx migrate-to-duckdb --out <an
+        untracked path outside any repo>` touches nothing committed, so it runs: exit 0, the
+        destination is written, and the tracked store's catalogs are byte-identical. At c854bad it
+        is refused, because the check asks about the source store."""
+        repo = sqlite_tracked_repo
+        out_dir = Path(tempfile.mkdtemp(prefix="b212o-", dir="/tmp")).resolve()
+        try:
+            probe = subprocess.run(["git", "-C", str(out_dir), "rev-parse", "--git-dir"],
+                                   env=_base_env(), capture_output=True, text=True)
+            assert probe.returncode != 0, f"fixture: {out_dir} is inside a git repo"
+            dst = out_dir / "x.duckdb"
+            before = _digests(repo.store)
+            r = _cli(repo, ["migrate-to-duckdb", "--out", str(dst)])
+            text = _text(r)
+            assert _changed(before, _digests(repo.store)) == [], \
+                f"the tracked source store's catalogs changed\n{text}"
+>           assert r.returncode == 0 and TRACEBACK not in r.stderr and not _errors(r.stderr), \
+                f"`migrate-to-duckdb --out <untracked path>` from a tracked store was refused or " \
+                f"failed\n{text}"
+E               AssertionError: `migrate-to-duckdb --out <untracked path>` from a tracked store was refused or failed
+E                 exit 1
+E                 stdout:
+E                 
+E                 stderr:
+E                 Error: refusing to open /private/tmp/b212o-portrejv/x.duckdb read-write in-process: git tracks this store's catalog (catalog.duckdb, catalog.db), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead
+E                 
+E               assert (1 == 0)
+E                +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '/private/tmp/b212q-8ffrywb7/rmx...log*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead\n").returncode
+
+tests/test_bug212_r6_red.py:138: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r6_red.py::test_migrate_out_into_another_repos_tracked_catalog_is_refused
+FAILED tests/test_bug212_r6_red.py::test_migrate_out_to_an_untracked_path_from_a_tracked_store_is_allowed
+2 failed, 23 passed in 76.87s (0:01:16)

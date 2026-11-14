@@ -123,22 +123,167 @@ is injected as additional context for the model on that turn.
 
 ## Git integration {#git-integration}
 
-### Hooks installed (`hooks.py:23-59`) {#hooks-installed-hooks-py-23-59}
+### Hooks installed (`hooks.GIT_HOOK_SCRIPTS`) {#hooks-installed}
 
-| Hook              | Command                                            | Trigger                                    |
-|-------------------|----------------------------------------------------|--------------------------------------------|
-| `post-commit`     | `rmx sync --since HEAD~1`                          | Every commit                               |
-| `post-merge`      | `rmx sync --since ORIG_HEAD`                       | After merge                                |
-| `post-checkout`   | `rmx sync --since $1..$2` (only when `$3 == 1`)    | Branch switch (not file checkout)          |
-| `post-rewrite`    | `rmx sync --since <oldest pre-rewrite OID>`        | After rebase / amend                       |
+`rmx install-hooks --apply` writes these into `.git/hooks/` from `hooks.GIT_HOOK_SCRIPTS`
+(`--force` replaces an existing hook).
 
-All hooks run `rmx` in the background so they don't block the git operation.
+| Hook              | Command                                                         | Trigger                                 |
+|-------------------|-----------------------------------------------------------------|-----------------------------------------|
+| `post-commit`     | `rmx sync --since HEAD~1` (a root commit: the empty tree)       | Every commit                            |
+| `post-merge`      | `rmx sync --since ORIG_HEAD`                                    | After merge                             |
+| `post-checkout`   | `rmx sync --since $1..$2` (only when `$3 == 1`, `$1` not null)  | Branch switch (not file checkout)       |
+| `post-rewrite`    | `rmx sync --since <oldest pre-rewrite OID>`                     | After rebase / amend                    |
+
+### The store gate {#store-gate}
+
+Each hook syncs only in a checkout that has its own store that a sync may write. The gate is
+`hooks._store_gate`. It is built from `store.WRITER_CATALOG_FILES` and `daemon.SOCKET_NAME`,
+never retyped:
+
+- **A daemon socket** `.refmatrix/rmxd.sock` passes. Git cannot track a socket, and a live
+  daemon takes the write.
+- **Otherwise a writer catalog must be present and NOT tracked by git**:
+  `catalog.A.duckdb`, `catalog.B.duckdb`, `catalog.duckdb` or `catalog.db`, for which
+  `git ls-files` prints nothing.
+  - A checkout with no catalog exits 0 silently. That covers a worktree or clone that has only
+    a tracked `.refmatrix/CLAUDE.md`.
+  - A checkout whose catalog git tracks also exits 0 silently, whether it is the main
+    checkout, a worktree or a clone. It has no daemon, and a sync would write the committed
+    binary (bug-212 r1). To keep such a repo fresh, untrack the catalog
+    (`git rm --cached .refmatrix/catalog*` and ignore it) or run its daemon.
+  - If `git ls-files` itself fails, the hook prints
+    `refmatrix: <hook>: git ls-files failed; not syncing` and does not sync.
+
+`post-checkout` also exits 0 on an initial checkout (`git clone`, `git worktree add`). There
+the previous HEAD `$1` is the null sha, and the checkout is not a branch switch.
+
+### Failures are loud, and never fail git {#hook-failures}
+
+Every hook backgrounds and disowns `rmx sync`, so the git operation never waits on it and
+never fails because of it.
+
+- The sync's stdout is discarded. Its stderr stays on the terminal that ran git.
+- A non-zero exit adds `refmatrix: <hook> rmx sync FAILED (exit N); its error is above`.
+- Both lines can print after the shell prompt returns.
+
+### No command opens a tracked catalog read-write in-process {#sync-tracked-catalog}
+
+When no daemon answers, a writer opens the catalog read-write in its own process. Every CLI,
+verb and MCP site that opens or replaces a writer catalog (`catalog.A.duckdb`,
+`catalog.B.duckdb`, `catalog.duckdb`, `catalog.db`) in-process first calls ONE store-level
+check, `store.refuse_tracked_catalog_open` (bug-212 r2-r5, rulings L72, L82 and L95):
+
+- `cli._store_rw()`, through the CLI's one wrapper `cli._refuse_tracked_catalog_open`. It
+  serves `rmx sync` (`--files`, `--since`, `--flush-queue`, `-i`), `rmx ingest`,
+  `rmx memory add`, `rmx ingest-gmd --as-memory` (the memory bridge), `rmx tldr-warm`, and the
+  daemon-down repair commands.
+- The same wrapper, called directly by the two commands that open the file without a `Store`:
+  - `rmx compact`, which checks before it pings or stops the daemon, so a tracked catalog
+    never costs the daemon it names as the remedy;
+  - `rmx migrate-to-duckdb`, which asks git about the DESTINATION FILE ITSELF before
+    `migrate.migrate_catalog` replaces it (`names=(dst.name,)`, in the destination's
+    directory). The default destination is the store's own `catalog.duckdb`. `--out` onto any
+    committed file is refused, whatever its name. `--out` to an untracked file runs, even
+    from a tracked store or beside a tracked catalog.
+- `verbs.local_write` serves every no-daemon verb write (`rmx add concept|entity`,
+  `rmx protect`, `rmx noise`, ...). It also serves `rmx init`, `rmx partition drop`,
+  `rmx focus change-subject`, the MCP `rmx_memory_add` fallback and the save-state promote,
+  which used to open the store themselves.
+
+The daemon is the exception. Its own writer, its A/B slot merge and repair, and the hub's
+global store are not checked: a write through the daemon is the remedy the refusal names.
+An AST census test keys on the guarded resource, not on one constructor. It fails when
+`src/` adds any of these outside the checked sites and a short allowlist with reasons:
+
+- a read-write `Store(`, under any alias;
+- a non-`:memory:` `open_duckdb` / `duckdb.connect`;
+- a rename or unlink onto a writer-catalog path;
+- a copy (`shutil.copy*`, `write_bytes`) whose destination is a writer-catalog path.
+
+`rmx init` and `rmx partition drop` take the in-process route only when the daemon is ABSENT.
+A daemon that is alive but not answering is busy, not absent, and they refuse with one
+`Error: daemon busy ...` line.
+
+Before the catalog opens, the check asks git (`store.git_tracked_catalogs`) and refuses if a
+writer catalog is tracked:
+
+- one `Error: refusing to open <full path of the catalog> read-write in-process: git tracks
+  this store's catalog (...)` line that names both remedies (untrack it with
+  `git rm --cached`, or start the daemon). MCP replies `isError` with the same text;
+- a non-zero exit, with the catalog bytes unchanged.
+
+In `rmx save-state` and MCP `rmx_save_state` the handoff file is written first, and the
+refusal arrives through a later step:
+
+- If the STM promote or the memory bridge is refused, or fails for any reason, the verb raises
+  one error: `save-state wrote <target> but its promote failed: ...` (or `its memory bridge
+  failed: ...`, or both).
+- The CLI prints what was written, runs `--commit`, then prints that line on stderr and exits
+  1. MCP replies `isError`, and the reply body is the full result (`target`, `promoted`,
+  `sync`, ...) with that `error` added.
+- A bridge that is only DEFERRED is not a failure. This happens when another ingest job still
+  holds the single-active-ingest slot at the end of the wait (`RMX_BRIDGE_WAIT_S`, 120 s).
+  - The result carries `sync.deferred = {job, reason}` and no `sync.error`.
+  - The CLI prints `warning: memory bridge deferred: ingest job <id> still running ...` on
+    stderr and exits 0.
+  - MCP replies normally.
+  - The next save-state or SessionStart bridges the dir.
+
+A refused `rmx focus change-subject` leaves the session's STM subject as it was. The store
+row is written before the STM subject is switched, and the line ends `the session's subject
+is unchanged (still '<old>')`.
+
+The check runs two bounded git subprocesses (`rev-parse`, `ls-files`) before every
+in-process open, about 25 ms on a small idle repository (measured 2026-11-13) and roughly
+30-100 ms on a large or busy one; a write through the daemon pays nothing.
+
+A read can reach the same opener. `_read_store()` serves reads from a reader file, in this
+order: `catalog.read.duckdb`, then `read_only.duckdb`, then, when an `active` marker names a
+slot, the INACTIVE slot only; without a marker, the legacy `catalog.duckdb`. Only when that
+file is missing and no daemon runs does a read fall to `_store_rw()`. On a tracked store it
+gets the same refusal. The line is worded as an open, and its tail claims no write. A tracked
+store that has a reader file is served read-only and not refused.
+
+A socket file that a crashed daemon left behind passes the hook gate, and this refusal is what
+then stops the write. With a live daemon nothing opens in-process, so nothing is refused, and
+the daemon writes the catalog itself. A store with no `.git` at or above it, or one whose
+catalog git ignores, is still written in-process. When the answer is unknown, the open is
+refused too, because unknown counts as tracked. The line then reads `refusing to open <path>
+read-write in-process: cannot tell whether git tracks the catalog under <store>: ...`. That
+happens when:
+
+- `git ls-files` fails;
+- `git rev-parse` fails while a `.git` exists at or above the store (a corrupt `HEAD`);
+- either call runs past 10 s (`git <call> timed out after 10s`).
+
+`rmx sync --since <ref>` bounds its `git diff` the same way: past 10 s it fails with
+`Error: sync --since <ref> failed: git diff timed out after 10s in <project>`, never a silent
+hang in the backgrounded hook.
+
+### A vanished working directory {#vanished-cwd}
+
+A backgrounded hook can outlive `git worktree remove`. Every cwd read (`cli`, `discovery`,
+`sync`, `mcp`, `cctree`) goes through `workdir.current_dir()`. When the directory is gone it
+raises `workdir.WorkingDirectoryGone`, never a raw `FileNotFoundError`:
+
+- The CLI prints one `Error: the working directory no longer exists (<$PWD>); ...` line and
+  exits 1. The conversion happens in `cli._RmxGroup`, for every command.
+- The remedy in that line depends on context. With `REFMATRIX_ROOT` set, the command still
+  needed the cwd (for example to resolve the partition), so the line says to cd to an existing
+  directory.
+- `rmx mcp` answers the tool call with `isError` and the same text, and keeps serving.
+- `rmx version` still works, and its telemetry row carries `cwd: null` and `cwd_error`.
 
 ### `rmx sync --since <ref>` {#rmx-sync-since-ref}
 
-Calls `git diff --name-only <ref>` to get the changed-file list, then
-re-ingests just those paths. Incremental: files whose mtime equals
-`tracked_files.mtime` are skipped (`sync.py:129-140`).
+`rmx sync --since` calls `git diff --name-only <ref>` to get the list of changed files, then
+re-ingests only those paths. A file whose mtime equals `tracked_files.mtime` is skipped
+(`sync._sync_one`).
+
+If git rejects the ref, `sync.GitRefError` is raised and the CLI prints one line:
+`Error: sync --since <ref> failed: git diff exited N: <git's message>`. The daemon route and
+the daemon-down enqueue route print the same text.
 
 ## GMD (Graph Markdown) integration {#gmd-graph-markdown-integration}
 

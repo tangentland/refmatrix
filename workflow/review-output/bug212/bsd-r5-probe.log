@@ -1,0 +1,16 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /private/tmp/claude-501/b2r5.qNIL/mu/src/refmatrix as checked-hash (bug-037)
+
+PROBE migrate --out elsewhere (tracked src): exit=1 wrote=False :: tore's catalog (catalog.duckdb, catalog.db), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead
+.
+PROBE migrate --out into OTHER repo's tracked catalog: exit=0 changed=['catalog.duckdb'] status=' M .refmatrix/catalog.duckdb\n' :: ked_files    │    0 │
+│ linkage_evidence │    0 │
+│ saved_queries    │    0 │
+│ bitmap_fragments │    0 │
+└──────────────────┴──────┘
+wrote /private/tmp/b212p-jjtbplr1/b/proj/.refmatrix/catalog.duckdb
+.
+PROBE mcp save_state [slots] isError=True handoff=['savestate_s5.md'] body={"error": "save-state wrote /private/tmp/b212t-khowdq52/memdir/savestate_s5.md but its promote failed: VerbError: refusing to open /private/tmp/b212t-khowdq52/proj/.refmatrix/catalog.A.duckdb read-write in-process: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead; and its memory bridge failed: ClickException: refusing to open /private/tmp/b212t-
+.
+PROBE mcp save_state [legacy] isError=True handoff=['savestate_s5.md'] body={"error": "save-state wrote /private/tmp/b212t-f5d4jrhb/memdir/savestate_s5.md but its promote failed: VerbError: refusing to open /private/tmp/b212t-f5d4jrhb/proj/.refmatrix/catalog.duckdb read-write in-process: git tracks this store's catalog (catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead; and its memory bridge failed: ClickException: refusing to open /private/tmp/b212t-f5d4jrhb/proj/.refmatrix/catalog.duckd
+.
+4 passed in 5.41s
