@@ -80,6 +80,20 @@ Mirrored into `.claude/hooks/hooks.env` (`CORPUS_PATHS`, `SRC_DIR`, `ADR_DIR`).
   exits early while `~/.refmatrix/learn.off` exists, which it has since 2026-10-15, so today only an
   explicit `rmx grep` reaches it. Plan-16 replaces the rewrite with a passive shim. A grep reading a
   pipe is a filter and stays byte-exact).
+- **Subagents (Q15, 2026-11-14):** a littlebig clone has no store, so a plain `rmx` there
+  degrades to grep. From any clone, look things up with
+  `/Users/tholley/claude_tools/refmatrix/scripts/rmx-master <verb> …` (read verbs only:
+  `context`, `query`, `neighbors`, `where`, `locate`, `search`, `memory recall|search|get|list`).
+  It runs the DEPLOYED `rmx` against the dev tree's store with `REFMATRIX_ROOT` set for that one
+  process. Use it FIRST for code structure, docs, decisions, ADRs, bug history and memories. It
+  answers about `master` as last synced; code your branch changed is read from the clone's files.
+  Never symlink or copy `.refmatrix/` into a clone, and never export `REFMATRIX_ROOT` in a shell
+  that runs tests or dev code: both point dev code at the live store. The `ch-*` agents and
+  `gmd-curator` also list the read-only refmatrix MCP tools (`rmx_context`, `rmx_query`,
+  `rmx_search`, `rmx_memory_recall`, `rmx_graph`, `rmx_locate`, `rmx_where`); whether a spawned
+  agent is actually offered them is unverified until a Claude Code restart (a probe before the
+  restart got none). Agents get no prompt-scan or SessionStart injection; a generated agent-start
+  hook is planned (`task-agent-start-context`).
 
 ## Architectural primitives {#primitives}
 

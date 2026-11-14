@@ -5,7 +5,7 @@ title: "ch-performance-tuner — Performance Tuner"
 tags: [agent, cat-herder]
 name: "ch-performance-tuner"
 description: "Profiles hot paths, benchmarks throughput/latency/resource usage, detects regressions, and recommends targeted optimizations. Measures before optimizing."
-tools: [Read, Grep, Glob, Bash, Task]
+tools: [Read, Grep, Glob, Bash, Task, mcp__refmatrix__rmx_context, mcp__refmatrix__rmx_query, mcp__refmatrix__rmx_search, mcp__refmatrix__rmx_memory_recall, mcp__refmatrix__rmx_graph, mcp__refmatrix__rmx_locate, mcp__refmatrix__rmx_where]
 model: inherit
 enabled: true
 ---

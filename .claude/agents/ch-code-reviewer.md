@@ -5,7 +5,7 @@ title: "ch-code-reviewer — Code Reviewer"
 tags: [agent, cat-herder]
 name: "ch-code-reviewer"
 description: "Systematic code-quality and PR reviewer. Checks correctness, error handling, types, test adequacy, security basics, and readability; reports findings by severity."
-tools: [Read, Grep, Glob, Bash, Task]
+tools: [Read, Grep, Glob, Bash, Task, mcp__refmatrix__rmx_context, mcp__refmatrix__rmx_query, mcp__refmatrix__rmx_search, mcp__refmatrix__rmx_memory_recall, mcp__refmatrix__rmx_graph, mcp__refmatrix__rmx_locate, mcp__refmatrix__rmx_where]
 model: inherit
 enabled: true
 ---

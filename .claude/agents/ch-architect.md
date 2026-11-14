@@ -5,7 +5,7 @@ title: "ch-architect — ADR Author + Architecture & Design Reviewer"
 tags: [agent, cat-herder]
 name: "ch-architect"
 description: "Owns the ADR layer. AUTHORS and maintains ADRs (architectural decisions; whole-layer coherence — supersedes/derives-from/depends-on edges, no contradiction), AND reviews task specs + implementation against the architecture docs, ADRs, and design principles. Sits at TWO pipeline points: head (author the ADR, dispatched by /ch-crucible) and the review lens (architectural purity). Pre-implementation spec review + post-implementation purity review."
-tools: [Read, Write, Edit, Grep, Glob, Bash, Task]
+tools: [Read, Write, Edit, Grep, Glob, Bash, Task, mcp__refmatrix__rmx_context, mcp__refmatrix__rmx_query, mcp__refmatrix__rmx_search, mcp__refmatrix__rmx_memory_recall, mcp__refmatrix__rmx_graph, mcp__refmatrix__rmx_locate, mcp__refmatrix__rmx_where]
 model: inherit
 effort: high
 enabled: true

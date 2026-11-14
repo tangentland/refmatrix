@@ -5,7 +5,7 @@ title: "ch-work-summary — Work Alignment & Summary"
 tags: [agent, cat-herder]
 name: "ch-work-summary"
 description: "Pre-implementation alignment. Produces holistic work summaries covering intent, assumptions, constraints, UI flow, backend linkages, and system effects. Modes: describe-work-report (non-interactive) and discuss-work-description (interactive)."
-tools: [Read, Grep, Glob, Bash, Task]
+tools: [Read, Grep, Glob, Bash, Task, mcp__refmatrix__rmx_context, mcp__refmatrix__rmx_query, mcp__refmatrix__rmx_search, mcp__refmatrix__rmx_memory_recall, mcp__refmatrix__rmx_graph, mcp__refmatrix__rmx_locate, mcp__refmatrix__rmx_where]
 model: inherit
 enabled: true
 ---
