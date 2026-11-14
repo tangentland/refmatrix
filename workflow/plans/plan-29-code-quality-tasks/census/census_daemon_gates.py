@@ -68,13 +68,13 @@ def main(argv: list[str]) -> int:
     print(f"ping gates (ping in a condition): {sum(ping_gate.values())} in {len(ping_gate)} modules; "
           f"other ping calls (assigned / returned): {sum(ping_other.values())}; "
           f"typed classifier calls (require_daemon / daemon_status): {sum(typed.values())}")
-    for m in sorted(set(ping_gate) | set(ping_other) | set(typed), key=lambda m: -(ping_gate[m] + ping_other[m])):
+    for m in sorted(set(ping_gate) | set(ping_other) | set(typed), key=lambda m: (-(ping_gate[m] + ping_other[m]), m)):
         print(f"  {m:22} gate={ping_gate[m]:3} other={ping_other[m]:3} typed={typed[m]:3}")
     tot = collections.Counter()
     for c in rpc.values():
         tot.update(c)
     print(f"daemon RPC calls with a constant op: {sum(tot.values())}  " + "  ".join(f"{k}={v}" for k, v in sorted(tot.items())))
-    for m, c in sorted(rpc.items(), key=lambda kv: -sum(kv[1].values())):
+    for m, c in sorted(rpc.items(), key=lambda kv: (-sum(kv[1].values()), kv[0])):
         print(f"  {m:22}" + "  ".join(f"{k}={v}" for k, v in sorted(c.items())))
     return 0
 
