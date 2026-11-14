@@ -27,7 +27,8 @@ metadata:
 > **Open user decisions this task waits on and does not settle** ([[#open-decisions]]):
 > `plan-review-fable D4` (who says go for its release), `plan-review-fable-store D5` (the dev
 > venv's duckdb, before any baseline).
-> User gates: the window's start (the lead announces it; the user may hold it).
+> User gates: the window's start (the lead announces it; the user may hold it), and one open
+> decision of this spec's own, **plan-29 D17** ([[#decisions]]), which the lead puts to the user.
 
 rel: part-of -> [[plan-29-code-quality]]
 rel: implements -> [[plan-29-code-quality#t5]]
@@ -296,7 +297,7 @@ import layering", through `/ch-crucible`, before the first move commit, with a r
   the engine calls does not live in the CLI package ([[#r2b]]). An import census enforces it.
 - **The package rule:** a core that is read late by attribute ([[#r2]]); what `_name` means
   inside a package and across packages ([[#r6]]).
-- **The ceiling** and its exception list ([[#r7]]).
+- **The ceiling** and its exception list ([[#r7]]), as plan-29 D17 is answered.
 
 [[#r2]], [[#r2b]], [[#r5]], [[#r6]] and [[#r7]] are its inputs. If review of the ADR changes a
 rule, this spec is revised before any code moves. {#r1-body}
@@ -510,30 +511,42 @@ After the moves, every `src` → `src` use of another module's `_name` is listed
 
 ### R7: the size ceiling {#r7}
 
-**No module produced by the split is over 3,000 lines.** That is how the queue review's `#b1`
-reads the plan's acceptance, and the lead accepted it: the plan's own text splits `cli.py` and
-`store.py` and says `daemon.py` "is assessed after, not split by default", so "no module over
-the size target" cannot mean every module.
+`tests/test_module_size_census.py`: no `src/refmatrix/**/*.py` is over **3,000 lines**, except
+entries in `tools/module_size_exceptions.json` (file, lines when listed, reason, the
+assessment's anchor, owner task). An excepted file may not grow past its listed size. A new
+file gets no exception.
 
-- `tests/test_module_size_census.py`: no `src/refmatrix/**/*.py` is over 3,000 lines, except
-  entries in `tools/module_size_exceptions.json` (file, lines when listed, reason, the
-  assessment's anchor). An excepted file may not grow past its listed size. A new file gets no
-  exception. `cli/*` and `store*.py` hold no exception after phase 2.
-- **`daemon.py` (7,355), `verbs.py` (3,653) and `ingest.py` (3,144) are assessed exceptions.**
-  They are not split in this task. Each gets a written assessment in the summary and an
-  exception row:
+- **No module produced by the split is over the ceiling.** After phase 2, `cli/*` and
+  `store*.py` hold no exception. This much is the same under every answer to plan-29 D17.
+- **`daemon.py` (7,355), `verbs.py` (3,653), `ingest.py` (3,144)** are over the ceiling and are
+  not `cli` or `store`. The plan says `daemon.py` "is assessed after, not split by default",
+  and its acceptance says "no module over the size target". **How to read the two together is
+  plan-29 D17, open, and the user's** ([[#decisions]]).
+- **The pending default, built unless the user answers otherwise:** each of the three gets a
+  written assessment in the summary, by the fixed criteria below, and then either a split in
+  this task by the same tool and gates (a phase 2b, after `store`), or an exception row with a
+  named owner task.
+- **The criteria** (all must hold to split here):
+  1. a seam exists that the tool can cut: registered functions (`daemon.py`'s 89 `_op_*`
+     functions, 2,339 lines; `verbs.py`'s verb registry) or a per-method map of one class;
+  2. the patch inventory for the module leaves every patched name in the origin module
+     (tests patch `daemon` attributes at 248 sites, 23 names; `verbs` at 61, 18);
+  3. no move commit needs a test edit outside the source-reader rule;
+  4. the result is under the ceiling. For `daemon.py` that takes both the ops (2,339) and the
+     `Daemon` class (2,668 lines, 70 methods), since removing the ops alone leaves 5,016;
+  5. no approved, unbuilt spec is about to rewrite the seam (23.x and 18.x add to `daemon.py`;
+     16.5 guts the grep block, which is why that block moves as one module and is not cut).
+- **What each assessment records,** whatever it concludes:
 
-  | Module | What the assessment records |
+  | Module | Recorded |
   |---|---|
-  | `daemon.py` | the seams (89 `_op_*` functions, 2,339 lines; the `Daemon` class, 2,668 lines and 70 methods; removing the ops alone leaves 5,016); the patch surface (tests patch `daemon` attributes at 248 sites, 23 names); every census that keys on `_op_*`; which approved specs add to it (23.x, 18.x) |
-  | `verbs.py` | the registry seam; the patch surface (61 sites, 18 names); that every 0.83.0 merge conflicted in it |
+  | `daemon.py` | the two seams and their sizes; the patch surface; every census that keys on `_op_*`; which approved specs add to it |
+  | `verbs.py` | the registry seam; the patch surface; that every 0.83.0 merge conflicted in it |
   | `ingest.py` | that it is 5% over; that it is in the derive pass sets, so any edit to it flips fleet stores to `behind_code` |
   {#r7-assessed}
 
-  An assessment ends with a recommendation and its cost. It does not schedule a split: that is
-  a queue decision, and the queue review defers "any `daemon.py` split".
-- The assessments are written after phase 2, on the tree the split leaves, because the tool,
-  the gates and the patch-surface method are what a later split would reuse.
+- The assessments are written after phase 2, on the tree the split leaves: the tool, the gates
+  and the patch-surface method are what any further split would reuse.
 
 ### R8: the symbol map, and specs that cite a line {#r8}
 
@@ -671,8 +684,10 @@ is quoted in the summary. {#r10-body}
   outcome for each of the rows R0 listed. {#ac-6}
 - **AC-7: no module produced by the split is over 3,000 lines.** The size census is green;
   `cli/*` and `store*.py` hold no exception; it fails on a 3,001-line file under `cli/` and on
-  an excepted file that grew by one line. `daemon.py`, `verbs.py` and `ingest.py` each have an
-  exception row and a written assessment ([[#r7-assessed]]) in the summary. {#ac-7}
+  an excepted file that grew by one line. For `daemon.py`, `verbs.py` and `ingest.py`: the
+  written assessment ([[#r7-assessed]]) is in the summary, and each is under the ceiling or
+  has an exception row with an owner task that exists, as plan-29 D17's answer (or, with no
+  answer, its pending default) decides. {#ac-7}
 - **AC-8: the citation tool is ready and its dry run is recorded.** On fixture specs the tool
   rewrites a line cite to the right symbol when the def moved, resolves the line at the spec's
   own sha and not at `HEAD` (a fixture where the two differ), lists a module-level line as
@@ -760,7 +775,7 @@ is quoted in the summary. {#r10-body}
 | `src/refmatrix/cli.py` → `src/refmatrix/cli/__init__.py`, `cli/__main__.py`, `cli/*_cmds.py` (14) | phase 1 |
 | `src/refmatrix/store.py`, `src/refmatrix/store_*.py` (10) | phase 2 |
 | the modules on R6's list (24 files at `f3709d2`) | phase 3 |
-| `daemon.py`, `verbs.py`, `ingest.py` | not changed; assessed ([[#r7]]) |
+| `daemon.py`, `verbs.py`, `ingest.py` | assessed; changed only as plan-29 D17 and [[#r7]]'s criteria decide |
 | `tests/test_split_module_tool.py`, `tests/test_click_tree_dump.py`, `tests/test_cli_patch_surface.py`, `tests/test_cli_entry_points.py`, `tests/test_derive_tables_name_real_files.py`, `tests/test_private_cross_module_census.py`, `tests/test_import_layering_census.py`, `tests/test_module_size_census.py`, `tests/test_symbol_map.py`, `tests/test_repoint_citations.py` | new |
 | the test files in the source-reader inventory (about 20 at `f3709d2`; the queue review counts 31 that name the two files at all) | path literals, census keys, one recursive glob; nothing else |
 | `tests/tiering.py` | `ALWAYS_FILES` gains this task's census tests ([[task-29.4-suite-health#r6]]) |
@@ -777,7 +792,8 @@ step ([[#r8]]). {#files-no-specs}
 
 - **Any behaviour change.** No bug is fixed in a move commit, including ones the move makes
   obvious. They are logged and scheduled in 29.1's grammar.
-- **Splitting `daemon.py`, `verbs.py` or `ingest.py`** ([[#r7]]).
+- **Splitting `daemon.py`, `verbs.py` or `ingest.py` outside what plan-29 D17 and [[#r7]]'s
+  criteria allow.**
 - **Decomposing `Store`** into collaborating objects ([[#r1]]).
 - **Moving the core out of `cli/__init__.py`.** It stays where the patches expect it. Moving it
   means changing how tests reach it, which is a task about tests.
@@ -798,6 +814,7 @@ step ([[#r8]]). {#files-no-specs}
 |---|---|---|
 | `plan-review-fable D4` | A standing go for plan-29's releases when the suite equals baseline by E line, or a go per release | [[#r9]] item 7: this task's release, alone |
 | `plan-review-fable-store D5` | Raise the dev venv from duckdb 1.5.2 to the 1.5.3 floor before baselines are taken | [[#r0]] item 12: no golden and no baseline before it is resolved |
+| **plan-29 D17** (this spec's own) | What "no module over the size target" means for `daemon.py`, `verbs.py` and `ingest.py` | [[#r7]]: the pending default is built unless the user answers otherwise; phases 0 to 2 do not wait on it |
 {#open-decisions-table}
 
 `plan-review-fable D1` (do the three "right after 0.83.0" tasks come before plan-29) and
@@ -819,12 +836,27 @@ give them. {#open-decisions-upstream}
     resolved by attribute at call time" is this, with `refmatrix.cli` itself as the one module.
     The review allows a test edit that is a patch-target rename only; this shape needs none.
   - **Cost:** `_cli.` in front of core names in moved code, and a 1,689-line `__init__.py`.
-- **plan-29 D17: settled, not open.** The first draft of this spec raised the conflict between
-  "`daemon.py` is assessed after, not split by default" and "no module over the size target" as
-  a question for the user. The queue review's `#b1` ruled on it as an architect's ruling with
-  no user decision needed, and the lead accepted it on 2026-11-14: the acceptance reads "no
-  module **produced by the split** over the target", with `daemon.py`, `verbs.py` and
-  `ingest.py` as assessed exceptions ([[#r7]]).
+- **plan-29 D17 (open, for the user): what "no module over the size target" means for
+  `daemon.py`, `verbs.py` and `ingest.py`.**
+  - **The conflict:** the plan's 29.5 text splits `cli.py` and `store.py` and says `daemon.py`
+    "is assessed after, not split by default"; its acceptance says "no `src/refmatrix` module
+    over the size target". `daemon.py` is 7,355 lines, `verbs.py` 3,653, `ingest.py` 3,144.
+  - **Pending default, in the spec until answered:** assess all three by [[#r7]]'s criteria;
+    split in this task the ones that pass; the others get a dated exception with an owner task,
+    and the size census holds them at their current size.
+  - **The alternatives:**
+    - (a) all three are split in 29.5, whatever the criteria say. For `daemon.py` that means
+      also splitting the `Daemon` class and re-keying every census that names `_op_*`;
+    - (b) 29.5 closes at `cli` + `store`; all three are assessed exceptions and none is split
+      here. A later task takes whichever the assessments recommend. **This is the queue
+      review's reading** (`#b1`: "no module produced by the split over target, with `daemon.py`,
+      `verbs.py` and `ingest.py` listed as assessed exceptions"; it also defers "any `daemon.py`
+      split").
+  - **How far apart the default and (b) are:** `daemon.py` does not pass criterion 5 while 23.x
+    and 18.x are approved and unbuilt, so under the default it is an exception too. The two
+    differ only on `verbs.py` and `ingest.py`, and only if their assessments pass.
+  - **Why not decided here:** the two sentences are both the user's approved text, and the
+    choice moves days of an exclusive window. The lead puts it to the user (2026-11-14).
 - **plan-29 D18: the click tree is compared as a sorted structural dump plus the help output,
   not by the insertion order of `main.commands`.**
   - **Why:** the order necessarily changes when registration moves between files, and no
@@ -849,8 +881,9 @@ give them. {#open-decisions-upstream}
   - **Why:** both avoid doing a thing twice: an engine function moved into a command module
     and then out of it; a spec re-pointed now and again after 29.3 renames helpers.
 - **Not decided here, because the plan or the reviews decided it:** `cli` becomes a package, one
-  module per command group; moves only; one group per commit; the ceiling is about 3,000 lines;
-  mixins; the ADR; a published symbol map; every census re-proven on its bypass.
+  module per command group; moves only; one group per commit; the ceiling is about 3,000 lines
+  for every module the split produces; mixins; the ADR; a published symbol map; every census
+  re-proven on its bypass.
 {#decisions-list}
 
 ## Revision note (2026-11-14) {#rev-note}
@@ -860,7 +893,8 @@ Revised the same day for three plan reviews (queue, store, memory) and for the s
 named; the cli map reserves `grep`, `vectors`, `catalog`, `learn` and `removal` modules; phase
 0b ([[#r2b]]) and the layering census are new; G10 and [[#ac-12]] (every census re-proven) are
 new; [[#ac-11]] (the symbol map and three stable names) is new, for 29.2 and 29.3; [[#r7]]
-follows the review's ruling, so plan-29 D17 is closed; [[#r8]] publishes the map and the tool
+states the split's own ceiling as the review does, and keeps plan-29 D17 open for the user with
+its pending default (the review's reading is recorded as alternative (b)); [[#r8]] publishes the map and the tool
 here and hands the rewriting pass to the plan's end; [[#r9]] gains the MCP reconnect, the
 release-alone rule and the no-drift rule; the baseline is 29.4's stage 5. {#rev-note-body}
 
