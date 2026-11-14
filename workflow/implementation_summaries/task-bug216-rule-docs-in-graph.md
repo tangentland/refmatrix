@@ -668,6 +668,59 @@ Mutations, each alone in a throwaway clone of `ec38f84` (not this tree), restore
 
 {#green-remedy-r2-mutations}
 
+### GREEN remedy r3: bsd-216 r3 (ruling L97) {#green-remedy-r3}
+
+Commits: `ad398a1` (src), `4cf2cfe` (INTEGRATION M3). RED: `ec7f14c` (red-216). Audit: `f75b1c5`
+(`workflow/bullshit/2026-11-14-0210-bug216-r3-bff34c1.md`). No test edited. {#green-remedy-r3-commits}
+
+- **S1.** `merge_slots` step 12 passes EVERY B fragment row through `store.remap_fragment(row,
+  remap_b)`. A row A also holds gets B's remapped bits OR-ed in, with A's bits unchanged; a B-only
+  row is inserted. The two "recomputes on the next flush" comments (module docstring, step 12) are
+  corrected: nothing rebuilds fragments after a merge — a flush writes only the rows the running
+  daemon dirties. A's own rows are still copied as they are: `remap_a` losers' bits in A's rows are
+  not remapped (out of L97's scope; A's bits unchanged is the pinned contract). {#green-remedy-r3-s1}
+- **M1.** `Store.drop_vectors_for_ids(ids)` groups the ids by (partition, kind) from `entities` and
+  issues ONE `lance.dataset(...).delete("id IN (...)")` per table (bug-085); a table that fails is
+  named in `errors`, counted on `vector_delete_failures`, never swallowed. `_op_replica_merge`
+  calls it for both ids of every fresh-id move:
+  - **when:** step 6, AFTER the slot swap (the merged catalog installed on both slots) and the
+    writer reopen on A, still inside `_store_lock`, so no embed interleaves; before the facts.log
+    compaction, which runs after the lock is released. Not on a dry run.
+  - **if the delete fails:** the catalog merge is already committed and installed and is NOT
+    undone. The reply carries `vector_delete_error` (saying the merge is committed, naming the
+    tables and the error), the daemon logs it, and `rmx replica merge` exits non-zero after
+    printing the summary (also with `--json`). Both ids stay marked unembedded
+    (`vectors_updated_at = NULL`), so `rmx embed` rewrites them; until then a dense read may
+    return the wrong entity for those ids.
+  The `fresh_moved` / `re_embed` naming in the reply, the log and the CLI is unchanged.
+  {#green-remedy-r3-m1}
+- **M2.** No code: red-216's pins (both ids of each move pending, an unmoved embedded entity not)
+  pass on the r2 re-queue. {#green-remedy-r3-m2}
+- **M3.** INTEGRATION `#ignore-rules`: the store's own ignore spec still applies to an outside file
+  by FILE NAME (bare-name and glob lines match; anchored lines and `!path` re-includes never do).
+  {#green-remedy-r3-m3}
+
+Runs (absolute `PYTHONPATH=/Volumes/littlebig/refmatrix-bug216/src`; logs in
+`workflow/review-output/bug216/`): (1) r3 file: 3 passed (`remedy-r3-step1.log`); (2) r3 + r2 + r1
++ L86: 35 passed (`remedy-r3-step2.log`); (3) bug178 + the three merge files: 75 passed
+(`remedy-r3-step3.log`); (4) the bug-216 family (+ store_vectors, purge_path_batched_lance):
+**720 passed** (`remedy-r3-step4-family.log`); (5) full suite at `4cf2cfe`: **4 failed, 4470
+passed, 1 skipped** (`remedy-r3-step5-full.log`), every failure with release-0.82.0's E line:
+`test_brief_real_daemon` (DuckDB lock conflict), `test_task21_1_agent_usage_report` ×2,
+`test_gmd_lint_requires_version` (bug-155's memdir half in a clone). bug-228 did not fail.
+`lint-gmd.sh` exit 0 on a copy named `refmatrix` (`lint-gmd-remedy-r3.log`).
+{#green-remedy-r3-results}
+
+Mutations, each alone in a throwaway clone of `4cf2cfe` (not this tree), restored with
+`git checkout -- src` in its own command, `__pycache__` cleared; suite = `test_bug216_remedy_r3.py`:
+
+| mutation | result | log |
+|---|---|---|
+| S1: drop the OR (a shared row keeps A's bits only) | 1 failed | `mut-r3-S1-or.log` |
+| M1: the batched delete replaced with nothing | 1 failed | `mut-r3-M1-delete.log` |
+
+{#green-remedy-r3-mutations}
+
 ## AC-6 (live) {#ac6}
 
 (lead, after deploy and R4)
