@@ -21,6 +21,7 @@ metadata:
 > Review input folded 2026-11-14: `plan-review-fable-2026-11-14-store#plan29-converge-candidates`,
 > `plan-review-fable-2026-11-14-queue#p29-4`, `plan-review-fable-2026-11-14-queue#dup-2`
 > ([[#fold]]). Open for the user: `plan-29 D4` ([[task-29.2-mypy-gate#d4]]).
+> Revision round 2 (ruling L105, on ch-bsd spec review r1): [[#rev-round-2]].
 
 rel: part-of -> [[plan-29-code-quality]]
 rel: implements -> [[tdd-governance]]
@@ -122,6 +123,7 @@ start commit and records the new numbers ([[plan-29-code-quality#baseline-rule]]
 | term resolution | read from `query.py` | 4 `resolve_concept_ids` sites (`_term_bitmap`, `_row`, `neighbors`, `co_occurrence`), each returning empty for an unresolved name; 6 `load_bitmap` sites that take a linkage name unchecked; 6 `QueryEngine(...)` constructions (cli 2, graphread 2, daemon 1, verbs 1) |
 | deadline closures | `grep "def _left"` | 4 copies (cli 2, verbs 2) |
 | partition default | `grep -c 'args.get("partition") or d._st()._partition_name'` | 20 copies in `daemon.py` |
+| derive-hash files | `census_derive_modules.py` → `census-derive-modules-f3709d2.log` | 8 files in the two tables; 26 silent handlers in the files that feed a pass hash (pagerank 12, ingest 8, ingest_gmd 5, consolidate 1), 25 more in `store.py` (union only) |
 | tracked-catalog refusal | `grep refuse_tracked_catalog_open(` | 4 callers: `_store_rw`, `compact`, `migrate-to-duckdb`, `verbs.local_write` |
 
 **How good the handler rule is.** The classifier ran on all 401 handlers; it is a census, not a
@@ -170,6 +172,9 @@ These come from the ledger's record of how convergences fail.
 family (`_scan_source`), the tree walk (`_census`), caller lookup (`_functions_calling`,
 `_sites_calling`, `_calls_in`), the synthetic self-test, and "the allowlist names no dead site".
 
+Slice K is test code only. `@ch-test-engineer` writes all of it; there is no GREEN step, and its
+proof is the mutations and planted bypasses below, each seen red.
+
 - **K-R1.** Those functions move to `tests/census/kit.py`, generalised only as far as a second
   family needs: a FAMILY is a name, a predicate over AST nodes, and (where the guarded thing is a
   resource) a text pattern for it. The walk uses `rglob`, so packages are covered.
@@ -186,10 +191,34 @@ family (`_scan_source`), the tree walk (`_census`), caller lookup (`_functions_c
 - **K-R5: the kit is built for the families that are waiting.** Named by the store review, and
   NOT built here: removal sites (22.6), CHECKPOINT and catalog holds (18.2, 18.3), out-of-daemon
   Lance reads (17.1), merge-table coverage (bug-124; 16.6, 23.1), the corpus predicate (16.1
-  AC-5d), `_cli_read` (23.5 R7), the one writer installer (23.1). (29.5's import-layering census
-  is the exception: it exists by then and is moved onto the kit, see [[#split]].) The kit's README lists them and
+  AC-5d), `_cli_read` (23.5 R7), the one writer installer (23.1). (The censuses 29.5 writes are
+  the exception: they exist by then and are moved, K-R7.) The kit's README lists them and
   shows the three things a new family supplies (predicate, allowlist with reasons, synthetic
   module). Those tasks add their family; this task does not.
+
+- **K-R6: the derive digest is recorded here, before any `src/` edit of 29.2 or 29.3.** The
+  tool, the two corpora, the golden and the test of [[task-29.2-mypy-gate#derive-digest]] are
+  committed in this slice, because this is the first plan-29 work after 29.5's release
+  ([[task-29.2-mypy-gate#seam]]). Slice a edits `store.py` and slice c edits five derive files;
+  both come after the golden. {#k-r6}
+- **K-R7: which source-walking tests move onto the kit** (ch-bsd spec review r1 M6, stated once
+  for 29.2, 29.3 and 29.5). {#k-r7}
+  - The scope of AC-K5 is a test under `tests/` that walks `src/refmatrix` with `ast`.
+  - At this slice's start commit, the list is 29.5's source-reader inventory (the list its gate
+    G10 iterates), plus anything 29.4 or 29.2 added. Every entry in that scope is MOVED onto the
+    kit as a family: its allow list and its synthetic bypass unchanged, and 29.5's G10 re-proof
+    (plant the bypass, see the census fail) run on it after the move.
+  - Read from 29.5's spec at `bdd9cd8`, those are: the import-layering census (its AC-13), the
+    private cross-module census (AC-6), the mixin census (R5), the CLI naming census (AC-4), the
+    patch-surface census (AC-3), and the re-keyed catalog-opener census (K-R2). 29.2's AC-5,
+    AC-12 and AC-16 scans join them if they were written off the kit.
+  - Nothing is allow-listed to stay off the kit by default. An entry is allow-listed in AC-K5
+    only with a reason the summary records (for example a test that parses one named file, not
+    the tree).
+  - A test that reads source without `ast` (29.5's size census, a text grep,
+    `test_deferrals_clean` if it greps) is outside AC-K5.
+  - The list is confirmed against 29.5's merged spec at the start commit; a census this list
+    does not name is moved by the same rule, not left out because it was not named here.
 
 Acceptance:
 
@@ -201,9 +230,13 @@ Acceptance:
   `_store_aliases` returning only `{"Store"}`) fails the synthetic-module test.
 - **AC-K4:** the alias resolver has a synthetic module of its own; returning only the literal
   name fails it.
-- **AC-K5:** no test file other than the kit defines an AST walk over `src/refmatrix` for a
-  census (a census of the censuses: `ast.walk` with `rglob` in `tests/` outside `tests/census/`
-  is allowlisted by file, with a reason).
+- **AC-K5:** no test file outside `tests/census/` walks `src/refmatrix` with `ast` (a census of
+  the censuses). Every entry of K-R7's list is on the kit, and each still fails on its own
+  planted bypass after the move. The allow list of AC-K5 itself is empty unless the summary
+  gives a reason per entry.
+- **AC-K6:** [[task-29.2-mypy-gate#derive-digest]]'s test is green on the golden, its
+  changed-corpus test shows all four legs differ, and its four mutations are red, all before
+  slice a starts.
 
 ## Slice a: one git runner {#slice-a}
 
@@ -246,6 +279,7 @@ repository only when no `.git` exists at or above the directory" (bug-212 r4) mo
 | `upgrade._git` (8 callers) | no timeout | an adapter with a stated bound per call (table in the summary); `UpgradeError` texts unchanged |
 | `verbs._timeline_git_leg` | its own spawn | `run_git`; the `warnings` texts unchanged |
 | the STM capture: `_git_diff_summary`, `_git_commit_rationale`, `_git_added_comments` | `except Exception` returns empty; the repo is the hook's cwd | `run_git` in the resolved repository (a-R5) |
+| `scripts/check-bug-registry.py` (created by 29.1, its R4; not in the tree at `f3709d2`) | its own git spawn | `run_git`; it already runs under the dev interpreter, which imports `refmatrix` |
 
 `hooks.py` has no Python git call: the generated shell hooks reach git through
 `rmx sync --since`, which is `sync.changed_since`. The census covers `hooks.py` so a future
@@ -275,17 +309,23 @@ this slice the changed-path list is resolved BEFORE the lock is taken and passed
 `run_git` caller's lock state is listed in the summary; none calls it under `_store_lock`. Task
 16.4's git use, when it is built, goes through `run_git` and the census holds it to that. {#a-r7}
 
-**a-R6: the census.** No git command list reaches `subprocess` or any other callable outside
-`gitrun`. Families the scanner must find: a direct spawn; an aliased `subprocess` import; a list
+**a-R6: the census.** It walks `src/refmatrix` and `scripts/*.py`. No git command list reaches
+`subprocess` or any other callable outside `gitrun`. Families the scanner must find: a direct spawn; an aliased `subprocess` import; a list
 bound to a name first; a list handed to a helper; a `shell=True` string that starts with `git `.
 The allowlist is empty when the slice lands. {#a-r6}
 
 ### Acceptance {#a-ac}
 
 - **AC-a1 (helper):** against a git shim on `PATH`, `run_git` returns each of: exit 0; exit 1
-  with no stderr (the miss property is true); exit 1 with stderr (false); exit 128 (false); a
-  hang past the bound (`rc is None`, `why == "timeout"`, within the bound plus a margin stated
-  in the test); no binary (`why == "missing"`). Omitting `timeout` is a `TypeError`.
+  with no stderr (the miss property is true); exit 1 with stderr (false); exit 128 (false); no
+  binary (`why == "missing"`). Omitting `timeout` is a `TypeError`.
+  - **The timeout leg is a `feature-bound` test** in 29.4's terms
+    (`task-29.4-suite-health#r3-kinds`): the bound is the feature. The shim blocks until the
+    test releases it; the test passes a small `timeout=` (the bound is `run_git`'s own argument;
+    there is no environment knob) and asserts the OUTCOME: `rc is None`, `why == "timeout"`,
+    `err` names the bound, the shim's process is gone, and the call returned while the shim's
+    release file was still absent. It asserts nothing about elapsed time. If 29.4's census wants
+    an allow-list entry for it, the entry is `feature-bound` and names this AC.
 - **AC-a2 (env):** with `GIT_DIR` pointing at another repository, `strip_local_env=True` answers
   for the `-C` repository and the default does not.
 - **AC-a3 (handoff facts):** with a shim whose `status` exits 128, the save-state document and
@@ -296,9 +336,17 @@ The allowlist is empty when the slice lands. {#a-r6}
   RED at the start commit for the first half.
 - **AC-a5 (`context --since`):** a ref git rejects gives one `Error:` line and exit 1, no
   traceback. RED at the start commit.
-- **AC-a6 (bounds):** every `upgrade` git call passes a bound; a hanging shim ends in
-  `UpgradeError` naming the call and the bound. RED at the start commit (it hangs; the test
-  itself is bounded, so the red run is a failure, not a hang).
+- **AC-a6 (bounds), an ordering check.** Every `upgrade` git call passes a bound, and the bounds
+  are read through one product knob (an `envknob` float) so a test can shrink them.
+  - The shim blocks on a release file the test owns. With the knob shrunk, the upgrade step
+    runs in a child process. The test asserts the ORDER: `UpgradeError`, naming the call and the
+    bound, arrived while the release file was still absent and the shim was still alive; then it
+    releases the shim.
+  - RED at the start commit: there is no bound, so the error never arrives. The test's liveness
+    guard (it stops waiting, kills the child and FAILS when neither the error nor the child's
+    exit has been seen after a wait derived from the shrunk knob) turns that into a failure in
+    seconds. The guard is how the test fails, never how it passes, and no assertion compares
+    elapsed time.
 - **AC-a7 (bug-233), one test per shape from the registry row**, each in a real temp repository
   beside a different-content repository that is the hook's cwd:
   - `git -C <clone> commit …` → the stat equals `git -C <clone> show --stat <sha>`;
@@ -380,7 +428,8 @@ wrong kind is a `ValueError` reading
 | `Count` | a bitmap or a weighted list |
 
 A bare identifier and a quoted string are both names. A top-level bare identifier is
-a `PQL:` error naming it. This slice lands before 29.2's query work
+a `PQL:` error naming it, and so is a top-level string or integer (AC-b11). This slice lands
+before 29.2's query work
 ([[task-29.2-mypy-gate#seam]]), so it defines the evaluator's value type (bitmap, weighted list,
 count, name, integer) and 29.2 builds `run_pql`'s result union on it
 ([[task-29.2-mypy-gate#r4]], whose AC-7 holds the top-level case).
@@ -426,6 +475,10 @@ All RED at the start commit unless marked.
   slice only the allowlisted functions call the store's resolution methods; a planted method
   that calls `self.s.resolve_concept_ids` directly fails the test.
 - **AC-b10:** bug-234, bug-236 and bug-238 are `fixed` with shas reachable from `master`.
+- **AC-b11 (b-R4, the top-level case):** `run_pql("foo")` raises `ValueError` starting `PQL:` and
+  naming `foo`; so do a top-level quoted string and a top-level integer. RED at this slice's
+  start commit (it returns the string `'foo'`). 29.2 re-asserts the first case as a
+  characterization test (its AC-7).
 
 ### Mutations that must fail {#b-mut}
 
@@ -439,6 +492,7 @@ All RED at the start commit unless marked.
 | the CLI prints the warning on one route only | AC-b1, parametrized over the three routes |
 | `Difference` stops at two arguments | AC-b6 |
 | `Count` accepts a name | AC-b7 |
+| a top-level bare identifier returned as a string again | AC-b11 |
 
 ## Slice c: broad `except` handlers {#slice-c}
 
@@ -493,11 +547,22 @@ cannot lose or hide a memory write or read. This is `CLAUDE.md#no-silent-failure
 checkable. {#c-r3}
 
 **c-R4: the ratchet, then the absolute rule.** The slice lands module group by module group,
-memory-path modules first. From its first commit a per-module count of silent handlers is
-recorded in `tests/census/broad_except_baseline.json`; the test fails when a module's count
-rises (a NEW silent handler) and when it falls without the file being lowered. When the last
-group lands the file is deleted and the test fails on ANY silent handler that is not on the
-owned list of c-R2a. {#c-r4}
+memory-path modules first. {#c-r4}
+
+- From its first commit a per-module count of silent handlers is recorded in
+  `scripts/broad-except-baseline.json`. It is a recorded artifact beside
+  `scripts/type-baseline.json`, not test code, so a GREEN commit may lower it
+  ([[tdd-governance#pipeline]]: the implementer writes no tests).
+- It is lowered only by `tests/census/report.py broad-except --update`, which rewrites falling
+  counts, removes a module that reached zero, and refuses (file byte-identical, non-zero exit)
+  when any count rose.
+- The census test is written by `@ch-test-engineer`. It reads the file when it exists and treats
+  a module with no entry, or a missing file, as zero. It fails when a module's count is above
+  its entry (a NEW silent handler) and when it is below (lower the file).
+- When the last group lands, GREEN deletes the file; every module's allowance is then zero. In
+  a paired commit `@ch-test-engineer` removes the file-reading branch from the test, so a file
+  that reappears later allows nothing. From then on the test fails on ANY silent handler that
+  is not on the owned list of c-R2a. AC-c6 is checked after that commit.
 
 **c-R5: the three counts are recorded.** The summary has the table re-raised / surfaced /
 justified / silent, per module, at the start commit and at the end, produced by
@@ -508,12 +573,25 @@ many were narrowed. {#c-r5}
 failed and names the failed steps on stderr. (bug-240, the other unowned row the queue review
 names, rides 0.83.1.) {#c-r6}
 
-**c-R7: edits to the derive modules are batched.** A comment or a narrowed handler in `ingest.py`,
-`ingest_gmd.py` or `session_ingest.py` changes `store.derive_code_hash` and flips every fleet
-store to `behind_code` ([[task-29.2-mypy-gate#derive-hash]]). This slice's edits to those three
-files (13 silent handlers at `f3709d2`: ingest 8, ingest_gmd 5) land in ONE commit group, in the
-same release as 29.2's edits to them, and are covered by 29.2's AC-18 (equal graph digest). What
-is done on live stores is `plan-29 D4` ([[task-29.2-mypy-gate#d4]]). {#c-r7}
+**c-R7: edits to the derive-hash files are batched, for every pass.** {#c-r7}
+
+- The files are read from `_DERIVE_PASS_MODULES` and `_DERIVE_CODE_MODULES` at the start commit
+  (`census_derive_modules.py`), not listed from memory. At `f3709d2` this slice edits 26 silent
+  handlers in files that feed a pass hash: `pagerank.py` 12 (the `pagerank` pass), `ingest.py` 8
+  (`ingest`, `semantic`), `ingest_gmd.py` 5 (`gmd`, `sessions`), `consolidate.py` 1 (the memory
+  compile, both scopes); and 25 in `store.py`, which is in the union only. `embedder.py`,
+  `vectors.py` and `session_ingest.py` have none.
+- A comment or a narrowed handler in any of them changes `store.derive_code_hash` and flips
+  every fleet store to `behind_code` for the passes that file feeds
+  ([[task-29.2-mypy-gate#derive-hash]]).
+- All of this slice's edits to those files land in ONE commit group, in the same release as
+  29.2's edits to them.
+- They are covered by [[task-29.2-mypy-gate#derive-digest]] (AC-18): the graph, vector,
+  PageRank-prior and compile legs equal the golden that slice K recorded (K-R6). A handler this
+  slice NARROWS in one of these files changes behaviour for other exceptions; that is tested by
+  AC-c4, and the digest shows the normal path derives the same state.
+- What is done on live stores is `plan-29 D4` ([[task-29.2-mypy-gate#d4]]), whose scope names
+  these passes.
 
 ### Acceptance {#c-ac}
 
@@ -531,7 +609,7 @@ is done on live stores is `plan-29 D4` ([[task-29.2-mypy-gate#d4]]). {#c-r7}
 - **AC-c5 (each surfaced site on a sync / ingest / memory / hook path):** a test drives the
   failure and asserts the count or the message; deleting the report line fails it
   ([[bsd-impressions#imp-nonfatal-needs-its-report-pinned]]).
-- **AC-c6 (end state):** unowned silent is 0; `broad_except_baseline.json` does not exist; every
+- **AC-c6 (end state):** unowned silent is 0; `scripts/broad-except-baseline.json` does not exist; every
   entry of the owned list names an existing spec that names the handler; the summary carries the
   c-R5 table with the owned sites as their own column.
 - **AC-c8 (owned list):** an entry with a task id whose spec file does not exist fails; an entry
@@ -540,6 +618,11 @@ is done on live stores is `plan-29 D4` ([[task-29.2-mypy-gate#d4]]). {#c-r7}
 - **AC-c9 (bug-096):** a `reingest` whose embed step fails (a stand-in step that raises) exits 1
   and names the step on stderr. RED at the start commit (exit 0).
 - **AC-c7 (no regression):** the full suite is equal by E line before and after each group.
+- **AC-c10 (derive files):** after the commit group of c-R7, the four legs of
+  [[task-29.2-mypy-gate#derive-digest]] equal the golden, and the summary lists, per derive file,
+  the passes it feeds and each handler edited.
+- **AC-c11 (the ratchet tool):** `report.py broad-except --update` lowers a fallen count, removes
+  a module at zero, and with one count risen exits non-zero and leaves the file byte-identical.
 
 ### Mutations that must fail {#c-mut}
 
@@ -555,6 +638,8 @@ is done on live stores is `plan-29 D4` ([[task-29.2-mypy-gate#d4]]). {#c-r7}
 | the owned list accepts any task id string | AC-c8 |
 | the owned list matches by module only | AC-c8 (third case) |
 | `reingest` returns 0 after a failed step | AC-c9 |
+| `--update` writes a risen count | AC-c11 |
+| the census test treats a missing baseline file as "no limit" | AC-c6, AC-c2 |
 
 ## Slice d: busy is not absent {#slice-d}
 
@@ -655,6 +740,16 @@ f-R1 to f-R3 and this slice is dropped. {#f-overlap}
   labelled and their goldens are recorded before the first edit.
 - A RED test that passes at the start commit is not RED ([[feedback_red_test_must_fail_at_head]]):
   each AC above says whether it is.
+- **Who edits what** (ch-bsd spec review r1 M9). Every allow list, owned list, named list and
+  classification table that a census test reads lives in test code and is edited only by
+  `@ch-test-engineer`. When a GREEN change needs an entry (a justified handler on a memory path,
+  a DISPLAY gate, a caller added to slice f), the entry is a paired commit by the test engineer,
+  reviewed as a test change. GREEN edits `src/` and the two recorded artifacts under `scripts/`
+  (through their `--update` commands), nothing under `tests/`.
+- **No elapsed-time assertion** (29.4's wall-clock census is live when these tests are written;
+  `task-29.4-suite-health#r3-kinds`). A bound that is the feature is tested as `feature-bound`
+  with the bound shrunk (AC-a1). Everything else that involves waiting is an ordering check on
+  events the test owns (AC-a6, AC-a11, AC-d3), or a count (slice e's mutation).
 - Daemon tests use the sandbox and a short temp root. No test opens a live store.
 - The git tests reuse the shim pattern of `tests/test_bug225_handoff_trunk.py` (a fake `git` on
   `PATH` with modes), promoted to a shared fixture; it is an external-tool stand-in and is
@@ -681,7 +776,7 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 | the module that holds `QueryEngine` and `_PQLEvaluator` | the resolver; the record; n-ary folds; argument kinds; dead branches removed |
 | the modules that hold `_op_query`, the CLI `query` command, the `rmx_query` and `rmx_matrix` verbs, the MCP adapter | carry `unresolved`; `--strict-terms` |
 | every module with a silent handler (31 modules at `f3709d2`) | slice c, by group |
-| `tests/census/broad_except_baseline.json` | create in slice c's first commit; delete in its last |
+| `scripts/broad-except-baseline.json` | create in slice c's first commit; lowered by `report.py --update`; deleted in its last |
 | the CLI modules of the ROUTE gates | slice d |
 | `src/refmatrix/deadline.py`; the modules of the 4 `_left` closures and the 35 calls | slice e |
 | the module that holds `refuse_tracked_catalog_open` and its 4 callers | slice f |
@@ -745,12 +840,10 @@ D6 and D23 upward are free).
   its synthetic bypass after each move (`task-29.5-split-giant-modules#ac-12` and its gate G10,
   `#r4-reproof`, on branch `spec-plan29a` at `dba9afd`). Slice K extracts the scanner from the
   re-keyed file and re-proves it again (AC-K3); slice f relies on that test.
-- 29.5 also adds a census of its own: no engine module imports `refmatrix.cli`
-  (`task-29.5-split-giant-modules#r2b`, its AC-13). It is written before the kit exists. Slice K
-  moves it onto the kit as a family, with its allow list unchanged, so AC-K5 holds.
-- 29.5's phase 0b moves `_sync_memory_dir`, `_subject_link` and `_subject_upsert` out of the CLI.
-  Two of slice d's known ROUTE gates are in those functions; the slice finds them by name
-  wherever they live.
+- 29.5 writes several source-walking censuses before the kit exists. Which of them slice K
+  moves onto the kit is stated once, in [[#k-r7]].
+- `_sync_memory_dir`, `_subject_link` and `_subject_upsert` stay in `cli/__init__.py` (ruling
+  L105 on ch-bsd B1). Two of slice d's known ROUTE gates are in those functions.
 - The memory-path module list of c-R3 is re-derived from 29.5's symbol map
   (`tools/split_maps/symbol_map.json`, required by `task-29.5-split-giant-modules#ac-11`;
   [[task-29.2-mypy-gate#needs-295]]). Module names are taken from that file at build time.
@@ -780,6 +873,26 @@ to a document this branch does not hold fails the repo lint. The same holds for 
 | `plan-review-fable-2026-11-14-queue#dup-2`: bug-232 and bug-125 overlap `task-linked-readonly-store`; bug-240 goes with bug-241 | [[#f-overlap]]; bug-240 is not taken ([[#k8]]) |
 | the queue review's `#dup-3` (29.1 input): bug-237, bug-096, bug-188, bug-201 | bug-096 in [[#c-r6]]; bug-237, bug-188 and bug-201 not taken, bug-188 with its measured count ([[#classes-no-helper]], [[#k8]]) |
 | 29.5's author: `derive_code_hash` hashes file content; `task-29.5-split-giant-modules#ac-11`, `#ac-12`, `#r2b`; `task-29.1-registry-triage#homes` | [[#c-r7]]; `plan-29 D4`; [[#split]] |
+
+## Revision round 2 (2026-11-14) {#rev-round-2}
+
+Answers ch-bsd spec review r1 (`bsd-plan29-spec-r1`, master `549458e`, which read this spec at
+`65ab0a1`) under ruling L105 ([[plan-review-2026-11-13#lead]]). The report is cited as a code
+span for the reason in [[#fold-cites]].
+
+| finding | change | anchor |
+|---|---|---|
+| S3: the derive-module lists are incomplete; AC-18 cannot fail | c-R7 reads the files from the two tables and covers every pass (pagerank 12, consolidate 1 added; 26 handlers in pass files, 25 in `store.py`); the digest is recorded in slice K before any `src/` edit, has four legs and a must-fail corpus | [[#c-r7]], [[#k-r6]], AC-K6, AC-c10; [[task-29.2-mypy-gate#derive-digest]] |
+| S4: b-R4's top-level error had no RED test here | AC-b11, RED at this slice's start; a mutation row; 29.2's AC-7 is now characterization | [[#b-ac]], [[#b-mut]] |
+| M2: 29.1 hands its script's git call to this task | `scripts/check-bug-registry.py` is a row of the adoption table; the git census walks `scripts/*.py` | [[#a-r4]], [[#a-r6]] |
+| M6-3: which source-walking censuses move onto the kit | stated once: every `ast` walker in 29.5's source-reader inventory, listed, moved not allow-listed | [[#k-r7]], AC-K5 |
+| M7: AC-a1 and AC-a6 had elapsed-time bounds | AC-a1's timeout leg is `feature-bound` with outcome assertions; AC-a6 is an ordering check with a product knob and a liveness guard; the rule is stated for the whole task | [[#a-ac]], [[#test-strategy]] |
+| M9: the ratchet file was test code edited by GREEN | it is `scripts/broad-except-baseline.json`, lowered only by `report.py --update`; the test engineer owns every list in test code and the closing test edit | [[#c-r4]], AC-c11, [[#test-strategy]] |
+| B1 (via L105): the three handoff helpers are not moved by 29.5 | the sentence saying they move is removed | [[#split]] |
+| M1: 29.1 said bug-096 was not taken | no change here: this spec takes it ([[#c-r6]]); 29.1's author was told on 2026-11-14 | [[#c-r6]] |
+
+Not changed by this round: `plan-29 D4` stays open and is only referenced here;
+`plan-review-fable D4` and `plan-review-fable-store D5` are referenced, not settled.
 
 ## Out of scope {#out-of-scope}
 

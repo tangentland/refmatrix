@@ -22,6 +22,7 @@ metadata:
 > `plan-review-fable-2026-11-14-queue#p29-4`,
 > `plan-review-fable-2026-11-14-store#plan29-converge-candidates` ([[#fold]]).
 > Open for the user: `plan-29 D4` ([[#d4]]).
+> Revision round 2 (ruling L105, on ch-bsd spec review r1): [[#rev-round-2]].
 
 rel: part-of -> [[plan-29-code-quality]]
 rel: implements -> [[tdd-governance]]
@@ -85,6 +86,11 @@ The same run with `--python-version 3.10` (the floor `pyproject.toml` declares) 
 203 errors on the same lines (`mypy-py310-probe.log`). {#measured-py310}
 
 ### mypy under the configuration this task wires {#measured-gate}
+
+Two runs, with the same result. `census/mypy-gate-wired.ini` is the configuration [[#r2]] wires,
+complete: it adds `python_version = 3.10` and `enable_error_code = ignore-without-code` to the
+first probe's flags (log `mypy-gate-wired.log`: 716 errors, 527 + 189, the same error set line
+for line). The first probe, kept because the review re-ran it, is this one:
 
 Config `census/mypy-gate-probe.ini`: `check_untyped_defs`, `warn_unused_ignores` and
 `warn_redundant_casts` everywhere; the strict flags of [[#r2]] on the five modules. Log
@@ -171,7 +177,10 @@ floor; mypy over the Protocol is the complete count. {#measured-writer-note}
   `#before-commit` ("type gate exit 0: `./scripts/check-types.sh`").
 - A suite test runs the gate on the checkout and requires exit 0, so the full suite fails on a
   type regression. There is no CI and no git pre-commit hook for either gate today.
-- `pyproject.toml`: `mypy>=2.4` joins the `dev` extra; the configuration lives in `[tool.mypy]`.
+- `pyproject.toml`: `mypy>=2.4,<2.5` joins the `dev` extra; the configuration lives in
+  `[tool.mypy]`. The range admits exactly the `major.minor` the baseline records, so a fresh
+  `pip install -e '.[dev]'` cannot pull a mypy the gate refuses. The range is raised only in a
+  `--rebaseline` commit ([[#r3]]), together with the baseline's recorded version.
   Nothing is added to the runtime dependencies or to the deploy venv.
 - Parameters, all with repo defaults: `--src`, `--config`, `--baseline`, `--cache-dir`,
   `--update`, `--rebaseline`. Tests pass a temp `--cache-dir`; the default `.mypy_cache/` is
@@ -198,17 +207,25 @@ version differs from the one the baseline records. {#r1-cannot-run}
 
 - **Strict set.** At `f3709d2`: `refmatrix.verbs`, `refmatrix.query`, `refmatrix.store`,
   `refmatrix.handoff`, `refmatrix.mcp`. After 29.5: those, plus every module that 29.5 split out
-  of any of them (see [[#split]]). 29.5 turns `Store` into mixin classes in sibling modules
+  of any of them (see [[#split]]), plus the one module this task creates,
+  `refmatrix.typing_store`. 29.5 turns `Store` into mixin classes in sibling modules
   `refmatrix.store_<concern>`; each one is listed BY NAME, because a `refmatrix.store_*` pattern
   is not valid ([[#measured-wildcard]]). AC-5 proves the list is complete.
 - **Each mixin module type-checks on its own.** A mixin method that uses state or a method
   another mixin defines (`self._connect()`, `self._partition_id`) gets that from ONE declared
-  host that every mixin shares (a common base class, or a Protocol used as the type of `self`).
-  It is not typed by `Any`, by a `# type: ignore`, or by an attribute declared again in each
-  mixin. Declaring the host changes no behaviour and adds no method.
-- **Strict means the whole module**, private helpers included. mypy has no public / private
-  switch, and an unannotated private helper returns `Any` into the public function that wraps it
-  ([[#k1]]).
+  host, `StoreHost`, which lives in `refmatrix/typing_store.py` ([[#seams-295]]):
+  - `StoreHost` declares the shared state and the signatures of methods called across mixins. It
+    has no behaviour.
+  - Each mixin module has `if TYPE_CHECKING: from refmatrix.typing_store import StoreHost as
+    _Host` / `else: _Host = object`, and its class is `class _Store<Concern>(_Host):`.
+  - At run time every mixin's base is `object`: `Store.__mro__` is unchanged, the mixins still
+    hold methods only, and no method is defined in two mixins. `StoreHost` is not one of
+    `Store`'s bases.
+  - For mypy, each mixin's own definition of a method `StoreHost` declares is checked against
+    that declaration (an incompatible override is an error), so the declarations cannot drift
+    from the code.
+  - A cross-mixin call is never typed by `Any`, by a `# type: ignore`, or by an attribute
+    declared again in each mixin.
 - **Flags**, listed one by one because of [[#measured-strict-key]]: `disallow_untyped_defs`,
   `disallow_incomplete_defs`, `disallow_untyped_calls`, `disallow_untyped_decorators`,
   `disallow_any_generics`, `disallow_subclassing_any`, `warn_return_any`, `no_implicit_reexport`,
@@ -250,9 +267,11 @@ version differs from the one the baseline records. {#r1-cannot-run}
 - `_PQLEvaluator.eval`, `_parse` and `_call` are annotated. The evaluator's internal value type
   also admits the bare names, strings and integers that are arguments; that value type is the
   one [[task-29.3-converge-shapes#b-r4]] defines, since 29.3's query half lands first
-  ([[#seam]]). A value of one of those kinds at the TOP level is not a result: `run_pql` raises
-  `ValueError("PQL: …")` naming it. 29.3(b) makes it so; AC-7 here holds it, and if this task
-  runs first after all, it makes it so itself, because the union cannot be built without it.
+  ([[#seam]]).
+- A name, string or integer at the TOP level is not a result, and `run_pql` raises
+  `ValueError("PQL: …")` naming it. That requirement, its RED test and its mutation belong to
+  29.3 slice b ([[task-29.3-converge-shapes#b-r4]], its AC-b11). This task depends on it (the
+  union has no variant for a name) and re-asserts it as a characterization test, AC-7.
 - Every caller handles all three variants, and mypy proves it: each dispatch ends in an
   exhaustiveness check (an `assert_never`-style helper; `typing.assert_never` needs Python 3.11
   and the package floor is 3.10, so the helper is local, not a new dependency). Callers at
@@ -265,10 +284,11 @@ version differs from the one the baseline records. {#r1-cannot-run}
 
 ### R5: one Protocol for the catalog writer {#r5}
 
-- The store module family (strict) defines `StoreWriter`, a `typing.Protocol` naming every
-  method a command body may call on what `_store(write=True)` returns. It lives in a leaf module
-  that imports no mixin and nothing from the CLI package, so the mixin modules, `store.py` and
-  `refmatrix/cli/` can all import it without a cycle.
+- `refmatrix/typing_store.py` (strict, named in the strict set) defines `StoreWriter`, a
+  `typing.Protocol` naming every method a command body may call on what `_store(write=True)`
+  returns. The module is a leaf: declarations only, no import of a mixin, of `store.py` or of the
+  CLI package outside `TYPE_CHECKING`, so the mixin modules, `store.py` and `refmatrix/cli/` can
+  all import it without a cycle. Why it has that name is in [[#seams-295]].
 - **It works with a mixin-composed `Store`.** Conformance is structural: a member may be defined
   in any mixin and `Store` satisfies the Protocol through inheritance. Nothing in this
   requirement names the module a method lives in. The summary lists each Protocol member with
@@ -360,7 +380,7 @@ Each AC is a test that is RED at the task's start commit, unless marked (charact
   otherwise.
 - **AC-5: strict set and baseline agree.** A test enumerates the strict set from the tree
   (`rglob` under `src/refmatrix`: `verbs`, `query`, `handoff`, `mcp`, `store`, every
-  `store_<concern>` module, and any other module 29.5's symbol map adds) and reads the
+  `store_<concern>` module, `typing_store`, and any other module 29.5's symbol map adds) and reads the
   `[tool.mypy]` overrides and the baseline: every enumerated module is in the overrides by its
   full name with all ten flags, and none has a baseline cell. Removing one flag from one module
   fails it; so does a new `store_<concern>.py` file that the overrides do not name.
@@ -368,8 +388,12 @@ Each AC is a test that is RED at the task's start commit, unless marked (charact
   `rmx_matrix` verb (`action="run"`, `is_pql=True`) and through the MCP tool. Result:
   `{"shape": "int", "value": n}` with the right `n`; no `isError`. At the start commit this is
   `TypeError: 'int' object is not iterable`. `rmx matrix run --pql` prints `n`.
-- **AC-7: a top-level non-result is an error.** `run_pql("foo")` raises `ValueError` starting
-  `PQL:` and naming `foo`. At the start commit it returns the string `'foo'`.
+- **AC-7 (characterization): a top-level non-result is still an error.** `run_pql("foo")`
+  raises `ValueError` starting `PQL:` and naming `foo`, before and after this task. It is green
+  at this task's start commit, because 29.3 slice b made it so and proved it RED there (its
+  AC-b11). Only if this task runs before 29.3(b), against the agreed order, is AC-7 a RED test
+  (the start commit then returns the string `'foo'`), and 29.3's AC-b11 becomes the
+  characterization.
 - **AC-8 (characterization): the other shapes did not move.** Golden payloads recorded at the
   start commit for a `Row`, a `TopN` and an `ids_only` run through the daemon op, the verb and
   the CLI are equal after the change.
@@ -398,8 +422,15 @@ Each AC is a test that is RED at the task's start commit, unless marked (charact
   `_DaemonWriter` equal the members of `StoreWriter`; every member resolves on `Store` or one of
   its mixins. A public method added to the proxy alone fails it, which is how a later write
   method is made to join the Protocol.
+- **AC-18:** see [[#derive-digest]].
+- **AC-19: the pin and the gate agree.** A test reads the `dev` extra's mypy specifier and the
+  baseline's recorded version: the specifier admits that `major.minor` and no other. Widening
+  the specifier to `>=2.4` fails it.
 - **AC-17: no mixin hides its host.** No strict module contains a `self` parameter annotated
-  `Any`, and the count of `# type: ignore` in the store module family is 0. The gate's zero
+  `Any`, and the count of `# type: ignore` in the store module family is 0. `Store.__mro__`
+  (class names, in order) equals the list recorded at the start commit, and
+  `refmatrix.typing_store` is not imported at run time by any mixin module (checked in a child
+  process: importing `refmatrix.store` with the `StoreHost` import made to raise still works). The gate's zero
   errors in every `store_<concern>` module is then a real check of cross-mixin calls. One planted
   call from a mixin to a method no host declares makes the gate exit 1 with `[attr-defined]`.
 
@@ -409,7 +440,7 @@ RED first, by `@ch-test-engineer`, recorded to `workflow/review-output/`; GREEN 
 `@ch-implementer`, who writes no tests ([[tdd-governance#pipeline]]).
 
 - **Order of RED.** AC-1, AC-2 and AC-12 are RED because the script and the scanner do not exist;
-  record the collection or import error as the red run. AC-6 and AC-7 are RED on behaviour. AC-9
+  record the collection or import error as the red run. AC-6 is RED on behaviour. AC-7 is characterization. AC-9
   and AC-10 are RED on structure. AC-8 is characterization: its goldens are recorded first.
 - **mypy inside the suite.** Each gate test passes a temp `--cache-dir`; tests that check the
   whole tree share one session-scoped cache so the second run is incremental. The gate is a
@@ -439,6 +470,13 @@ RED first, by `@ch-test-engineer`, recorded to `workflow/review-output/`; GREEN 
   | one `store_<concern>` module dropped from the overrides | AC-5 |
   | a public method added to `_DaemonWriter` only | AC-16 |
   | a mixin's `self` annotated `Any` | AC-17 |
+  | a mixin given `StoreHost` as a run-time base | AC-17 (the MRO list) |
+  | the `dev` pin widened to `>=2.4` | AC-19 |
+  | `ingest.py` drops one linkage it derives | AC-18, graph leg |
+  | `embedder.py` truncates the text it embeds | AC-18, vectors leg |
+  | `pagerank.py`'s damping constant changed | AC-18, prior leg |
+  | `consolidate.py` labels a subject differently | AC-18, compile leg |
+  | the digest test skips a leg whose pass has no stamp | AC-18 ("every pass ran") |
 
 - **The helper's own promises are mutated before the sites**
   ([[bsd-impressions#imp-convergence-tests-sites-not-helper]]): the gate's exit-code table and
@@ -452,19 +490,19 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 |---|---|
 | `scripts/check-types.sh`, `scripts/check_types.py` | create: the gate |
 | `scripts/type-baseline.json` | create: the recorded cells, mypy version, ignore count |
-| `pyproject.toml` | `mypy>=2.4` in `dev`; `[tool.mypy]` and the strict overrides |
+| `pyproject.toml` | `mypy>=2.4,<2.5` in `dev`; `[tool.mypy]` and the strict overrides |
 | `CLAUDE.md` | `#development-commands` and `#before-commit` |
 | the modules that hold the symbols of `verbs`, `query`, `store`, `handoff`, `mcp` | annotations to zero errors |
 | the module that holds `QueryEngine` and `_PQLEvaluator` | the result union; typed evaluator |
 | the modules that hold `_op_query`, the CLI `query` and `matrix run` commands, the `rmx_matrix` verb | exhaustive dispatch; the count payload |
-| `store.py` and the `store_<concern>` mixin modules | the declared host; `ingest_path`; the `isinstance` narrowing |
-| a new leaf module in the store family | `StoreWriter` |
+| `store.py` and the `store_<concern>` mixin modules | the `TYPE_CHECKING` host base on each mixin; `ingest_path`; the `isinstance` narrowing |
+| `src/refmatrix/typing_store.py` | create: `StoreWriter`, `StoreHost`; declarations only |
 | the CLI module that holds `_DaemonWriter`, `_store`, `_store_rw`, `_ingest` (expected: `refmatrix/cli/__init__.py`) | Protocol return; no `__getattr__`; the daemon-absent accessor |
 | the `cli/<group>_cmds.py` modules of the 35 fall-through sites | reader member or the accessor |
 | `tests/test_type_gate.py`, `tests/fixtures/type_gate/` | create: AC-1 to AC-5, AC-13 |
 | `tests/test_bug235_pql_count.py` | create: AC-6 to AC-8 |
 | `tests/test_store_writer_protocol.py` | create: AC-9 to AC-12, AC-16, AC-17 |
-| `tests/test_derive_graph_unchanged.py` | create: AC-18 |
+| `tests/test_derive_digest_unchanged.py`, `scripts/derive-digest.py`, `tests/fixtures/derive_digest/` | create (by whichever of 29.3 slice K or this task comes first): AC-18 |
 | `workflow/bug_registry.md`, `workflow/test_mock_registry.md` | bug-235; the mypy stand-in |
 | `workflow/implementation_summaries/task-29.2-mypy-gate.md` | the summary, with the before / after tables |
 
@@ -473,7 +511,8 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 None of these needs the user; each records the choice and why. The one that does is
 `plan-29 D4` ([[#d4]]). A reviewer who disagrees with one below raises it as a new
 `plan-29 D<n>` (D7 to D22 are taken by the 29.1 / 29.4 / 29.5 specs; D5, D6 and D23 upward are
-free).
+free). The lead registers D4 and D7 to D22 in `plan-29-code-quality#decisions` at merge (L105,
+M11).
 
 1. **Strict is per module, whole module**. The plan says "strict on the public API"; the
    user's D1 says "per-module strictness" ([[plan-29-code-quality#decisions]]). mypy cannot make
@@ -489,9 +528,10 @@ free).
    passes leaves slack for a regression. {#k4}
 5. **The target is Python 3.10**, the declared floor: same 203 errors today, and it flags
    syntax or stdlib use the floor does not have. {#k5}
-6. **`mypy>=2.4`, and the gate refuses another `major.minor`**. A new mypy can change the
-   counts with no code change; that must arrive as its own commit, not as a red gate in someone
-   else's. {#k6}
+6. **mypy is pinned to one `major.minor` (`>=2.4,<2.5`), and the gate refuses any other**. A
+   new mypy can change the counts with no code change; that must arrive as its own commit (the
+   pin, the baseline and its recorded version move together), not as a red gate in someone
+   else's. The pin and the gate's rule now say the same thing (AC-19). {#k6}
 7. **The four result dispatches are not merged into one payload function**. Their
    payloads differ by design (the verb's weighted rows carry no `kind` / `path`); merging them
    changes wire shapes. The exhaustiveness check is the guard instead. {#k7}
@@ -534,12 +574,33 @@ in [[#fold-cites]]):
 - This task reads the strict set and the Protocol's member-by-mixin table from
   `tools/split_maps/symbol_map.json`. Module names are taken from that file at build time, never
   from this spec: 29.5's own R0 re-cuts the map.
-- `task-29.5-split-giant-modules#r2b` (phase 0b) moves `_sync_memory_dir`, `_subject_link` and
-  `_subject_upsert` out of the CLI before the split and adds a census that no engine module
-  imports `refmatrix.cli`. Two of the fall-through sites of [[#measured-writer]] are in those
-  functions. After the move they cannot reach the CLI's `_store`; whatever they use instead is
-  typed by the same Protocol or by the daemon-absent accessor, and the census re-run at the
-  start commit shows which.
+- `_sync_memory_dir`, `_subject_link` and `_subject_upsert` STAY in `cli/__init__.py` (ruling
+  L105 on ch-bsd B1; an earlier draft of 29.5 moved them). Two of the fall-through sites of
+  [[#measured-writer]] are in those functions; they are handled where they are.
+
+### Three seams with 29.5 and 29.3, each stated once {#seams-295}
+
+These answer ch-bsd spec review r1 M6. 29.5's author was sent the same three statements on
+2026-11-14; what 29.5's spec must say for them to hold is marked "29.5 side".
+
+1. **The leaf module is `src/refmatrix/typing_store.py`.** It holds `StoreWriter` and
+   `StoreHost`.
+   - It is NOT named `store_*.py`, on purpose. 29.5's AC-5 puts every `store_*.py` into
+     `_DERIVE_CODE_MODULES`; a declarations-only file there would flip the union hash for
+     nothing. 29.5's mixin census and its "store family" rule key on the same pattern.
+   - Because its name is outside that pattern, this task's strict enumeration names it
+     explicitly (AC-5), and a test asserts it is in neither derive table.
+   - 29.5 side: its `store_*` rules match `store.py` and `store_*.py` only.
+2. **The host is a `TYPE_CHECKING`-only base class** ([[#r2]]). Run-time bases, the MRO and
+   "methods only, no method in two mixins" are as 29.5 leaves them; AC-17 holds the MRO.
+   - 29.5 side: its mixin census takes the mixin set from `Store`'s bases (so `StoreHost` is not
+     a second definer of anything) and accepts a mixin whose only source-level base is that
+     conditional alias. This task adds the base line to the mixin modules; 29.5 does not.
+3. **Which source-walking censuses 29.3 moves** is stated in
+   [[task-29.3-converge-shapes#k-r7]]: every entry of 29.5's source-reader inventory that walks
+   `src/refmatrix` with `ast`. This task adds no census walk of its own outside the kit: AC-5,
+   AC-12 and AC-16 are written as kit families if the kit exists when they are written
+   ([[#seam]] says it does), and are moved onto it by 29.3's slice K otherwise.
 
 ## The seam with 29.3 {#seam}
 
@@ -567,49 +628,118 @@ Rules for both tasks:
 
 ## Edits that change the derive hash {#derive-hash}
 
-`store.derive_code_hash` hashes the CONTENT of the modules in `_DERIVE_PASS_MODULES`
-(`ingest.py` for the `ingest` and `semantic` passes, `ingest_gmd.py` for `gmd`,
-`session_ingest.py` and `ingest_gmd.py` for `sessions`), and `store.py` is in the no-argument
-union. An annotation added to `ingest.py` to satisfy a strict module's `no-untyped-call`, or a
-comment added by 29.3(c), changes that hash. After the next deploy every fleet store then reads
-`behind_code` for those passes although nothing about what is derived has changed.
+`store.derive_code_hash` hashes the CONTENT of the files its two tables name. The list is read
+from the tables, not from prose: `census/census_derive_modules.py`, log
+`census-derive-modules-f3709d2.log`. At `f3709d2`:
 
-What 29.5 does to the same hash is narrower (`task-29.5-split-giant-modules#r5` item 4): each
-store move adds its `store_<concern>.py` to the no-argument union `_DERIVE_CODE_MODULES`, and
-`_DERIVE_PASS_MODULES` is not changed. So this task's annotations in the store modules flip the
-UNION hash only, and its edits to `ingest.py` / `ingest_gmd.py` flip the per-pass hashes. 29.5's
-`#r0-derive` reads every caller of the no-argument hash and writes down what the fleet shows on
-a flip; this task cites that answer for the union and does not re-measure it.
+| file | passes whose hash it feeds | in the union | silent handlers 29.3(c) edits |
+|---|---|---|---|
+| `ingest.py` | `ingest`, `semantic` | yes | 8 |
+| `ingest_gmd.py` | `gmd`, `sessions` | yes | 5 |
+| `session_ingest.py` | `sessions` | no | 0 |
+| `embedder.py` | `embed` | no | 0 |
+| `vectors.py` | `embed` | no | 0 |
+| `pagerank.py` | `pagerank` | no | 12 |
+| `consolidate.py` | the memory compile, both scopes | no | 1 |
+| `store.py` | none | yes | 25 |
 
-- This task keeps its edits to those modules to what a strict module's error requires, lists
-  each in the summary, and lands them in ONE release together with 29.3's edits to the same
-  files.
-- **AC-18: the derived graph did not move.** On a throwaway store built from a fixed fixture
-  tree, the graph digest (entities, concepts, linkage bitmaps, evidence) derived at the start
-  commit equals the one derived at the end commit. This is the evidence that the flip is a
-  false positive.
+- The union (`_DERIVE_CODE_MODULES`) answers the no-argument caller and EVERY pass that has no
+  entry in `_DERIVE_PASS_MODULES`.
+- An annotation added to one of these files to satisfy a strict module's `no-untyped-call`, or a
+  comment added by 29.3(c), changes a hash with nothing about what is derived changed. After the
+  next deploy every fleet store reads `behind_code` for the passes that file feeds.
+- 29.5 changes the union too (`task-29.5-split-giant-modules#r5` item 4: each store move adds its
+  `store_<concern>.py`; the pass table is not changed). This task's annotations in `store.py` and
+  the mixin modules flip the union again. What the fleet shows on a union flip is written down
+  by 29.5's `#r0-derive`; this task cites that answer and does not re-measure it.
+
+Rules for this task:
+
+- **The list is re-read at the start commit** with the script above, and the summary carries the
+  table: file, passes, and every edit this task and 29.3 made to it.
+- Edits to these files are kept to what a strict module's error requires, and land in ONE
+  release together with 29.3's edits to the same files
+  ([[task-29.3-converge-shapes#c-r7]]).
 - What is done about the flip on live stores is `plan-29 D4` ([[#d4]]). No agent re-stamps or
   re-derives a live store.
 
+### AC-18: the derived state did not move, and the check can fail {#derive-digest}
+
+One test, `tests/test_derive_digest_unchanged.py`, and one tool, `scripts/derive-digest.py`,
+shared by 29.2 and 29.3.
+
+- **What is digested.** A throwaway store is derived from a committed fixture corpus
+  (`tests/fixtures/derive_digest/corpus/`: Python, GMD docs, a memory dir, one session file),
+  through the production ingest path, with every pass of the table above run. Four legs:
+
+  | leg | passes | content, keyed by names and relative paths, never by ids |
+  |---|---|---|
+  | graph | `ingest`, `semantic`, `gmd`, `sessions` | entities, concepts, each linkage's (concept → entities), evidence rows; compared exactly |
+  | vectors | `embed` | per entity: the text handed to the embedder (exact) and the stored vector (rounded to 1e-5) |
+  | prior | `pagerank` | the PageRank prior per entity (rounded to 1e-9) |
+  | compile | the memory compile, both scopes | subjects and their part-of edges; compared exactly |
+
+- **Every pass is shown to have run.** The test asserts a derive stamp exists for each pass of
+  the table before it digests. A pass that did not run fails the test by name; it never
+  contributes an empty leg.
+- **How the start-commit digest exists at the end commit: a committed golden.** The tool, the
+  corpus and `tests/fixtures/derive_digest/golden.json` are committed by `@ch-test-engineer`
+  BEFORE the first plan-29 edit to any file of the table after 29.5's release. By
+  [[#seam]] that is 29.3's first slice, so 29.3 slice K records it
+  ([[task-29.3-converge-shapes#k-r6]]); if this task starts first, it does. The golden names the
+  commit it was recorded at, the embed model id and the duckdb version. At a different model or
+  duckdb version the test FAILS with the re-record procedure (a `git worktree` of the recorded
+  commit under a short temp root, the tool run with that tree on `PYTHONPATH`); it is never
+  skipped and never re-recorded from the current tree.
+- **It is proven to fail on input that must fail.** A second corpus,
+  `tests/fixtures/derive_digest/corpus_changed/`, differs from the first by four small edits, one
+  aimed at each leg (a new `def`; one changed sentence in a doc; one new call edge; one new
+  memory under a subject). A test asserts that each leg's digest of the changed corpus DIFFERS
+  from the golden's, leg by leg. A leg that comes out equal fails that test.
+- **And on code that must fail.** Four mutations, each planted and seen red, one per leg (table
+  in [[#test-strategy]]).
+- **AC-18 itself:** at this task's end commit, and at 29.3's, the four legs equal the golden.
+  That is the evidence D4's option (b) rests on, for exactly the passes in the table.
+
 ## Open decision for the user {#open-decisions}
 
-**plan-29 D4: the fleet-wide `behind_code` flip from annotation- and comment-only edits.** {#d4}
+**plan-29 D4: the fleet-wide `behind_code` flip from edits that change no derivation.** {#d4}
 
-29.2 and 29.3 edit `ingest.py`, `ingest_gmd.py` and possibly `session_ingest.py` without
-changing what they derive ([[#derive-hash]]). Options:
+Not settled here. Registered in `plan-29-code-quality#decisions` by the lead at the merge that
+lands these specs (ruling L105, M11).
 
-- (a) Accept the flip and re-derive every store (`rmx reingest`) after the release. Cost: a full
-  re-derive per store for no change in the graph.
-- (b) Accept the flip and have the lead re-stamp each store through the existing derive-stamp
-  path, announced and backed up first, with AC-18's equal digest as the evidence. No re-derive.
-- (c) Change `derive_code_hash` to ignore comments and annotations. That is a change to the
-  staleness detector, flips every store once by itself, and belongs with whatever 29.5 decides
-  for the same hash.
+**Scope.** Every plan-29 release that changes a derive hash without changing what is derived:
 
-Recommended: (b), in one release that carries all such edits from 29.2, 29.3 and, if it lands
-close enough, 29.5. It is the user's call because it is a write to every live store's stamps.
-No decision in 29.5's spec settles it (its author, 2026-11-14); 29.5's `#r0-derive` finding is
-evidence for it.
+1. 29.5's release. It is released alone (29.5 `#r9` item 7) and flips the UNION: the no-argument
+   caller and every unmapped pass.
+2. The release that carries 29.2 and 29.3. It flips the union again (annotations in the store
+   modules; 29.3's handlers in `store.py`) and the per-pass hashes of `ingest`, `semantic`,
+   `gmd`, `sessions`, `pagerank` and the memory compile; `embed` too if `embedder.py` or
+   `vectors.py` is touched. The exact list is the start-commit table of [[#derive-hash]].
+
+These are two releases, not one bundle: an earlier draft of this section offered to bundle 29.5,
+which contradicted "released alone".
+
+**Options.**
+
+- (a) Accept each flip and re-derive every store (`rmx reingest`) after the release. Cost: a
+  full re-derive per store, twice, for no change in the derived state.
+- (b) Accept each flip and have the lead re-stamp each store through the existing derive-stamp
+  path, announced and backed up first. Evidence for release 2: AC-18's four equal legs. Evidence
+  for release 1: 29.5's own gates (its moves are tool-made and its `#r0-derive` finding says
+  what the union feeds). No re-derive.
+- (c) Change `derive_code_hash` so that comments and annotations do not change it. That is a
+  change to the staleness detector: a new small task with its own spec, which has to land before
+  29.5's first store move to spare the fleet release 1's flip, and which flips every store once
+  itself when the hash scheme changes. Neither 29.2, 29.3 nor 29.5 makes that change. Whether
+  29.5's AC-5 tests (the tables name real files) still hold under it is 29.5's to state.
+
+**Recommended:** (b). It is the user's call because it writes to every live store's stamps.
+
+**What this decision touches and does not settle.** Both releases are derive-flip releases;
+ruling L105 says the standing go asked for in `plan-review-fable D4`, if granted, excludes them.
+`plan-review-fable-store D5` (the dev venv's duckdb) decides which duckdb version the golden of
+AC-18 is recorded under; this spec only makes the golden name it.
 
 ## Review findings folded on 2026-11-14 {#fold}
 
@@ -628,6 +758,32 @@ to a document this branch does not hold fails the repo lint. The same holds for 
 | `plan-review-fable-2026-11-14-queue#p29-4`: not parallel on the query module; 29.3's query half first | [[#seam]], [[#r4]] |
 | `plan-review-fable-store D5`: dev venv duckdb 1.5.2 below the 1.5.3 floor | not settled here; [[#measured-duckdb]], [[#r3]] (the baseline names the duckdb version), AC-2 |
 | 29.5's author: `derive_code_hash` hashes file content; layout of the split; `task-29.5-split-giant-modules#ac-11`, `#r2b`, `#r5`, `#r0-derive` | [[#derive-hash]], AC-18, `plan-29 D4`; [[#split]]; [[#needs-295]] |
+
+## Revision round 2 (2026-11-14) {#rev-round-2}
+
+Answers ch-bsd spec review r1 (`bsd-plan29-spec-r1`, master `549458e`, which read this spec at
+`65ab0a1`) under ruling L105 ([[plan-review-2026-11-13#lead]]). The report is cited as a code
+span for the reason in [[#fold-cites]].
+
+| finding | change | anchor |
+|---|---|---|
+| S3: the derive-module lists are incomplete; AC-18 cannot fail | the list is read from the two tables by a committed script (8 files; `embedder`, `vectors`, `pagerank`, `consolidate` added); AC-18 is a four-leg digest (graph, vectors, PageRank prior, compile) with a committed golden, a "every pass ran" check, a changed corpus on which each leg must differ, and four mutations | [[#derive-hash]], [[#derive-digest]] |
+| S2 (29.5's finding, as far as it touches D4) | D4's scope names both flip releases; the "bundle 29.5" wording is gone (29.5 is released alone); option (c) is a separate task that neither 29.2, 29.3 nor 29.5 does | [[#d4]] |
+| S4: AC-7 is not RED under the agreed order | AC-7 is marked characterization; the requirement, its RED test and its mutation are 29.3's (AC-b11) | [[#r4]], AC-7 |
+| M4, last bullet: the 716 came from a probe without two of R2's global flags | the wired configuration was run: 716, the same error set | [[#measured-gate]] |
+| M5: `mypy>=2.4` against "refuse another `major.minor`" | the pin is `>=2.4,<2.5`, raised only with a rebaseline; a test holds the two together | [[#r1]], [[#k6]], AC-19 |
+| M6-1: the leaf module's name | `src/refmatrix/typing_store.py`, named in the strict set, in neither derive table | [[#seams-295]], [[#r5]], AC-5 |
+| M6-2: the host against 29.5's mixin census and MRO | a `TYPE_CHECKING`-only base; run-time bases and MRO unchanged, held by AC-17 | [[#seams-295]], [[#r2]], AC-17 |
+| M6-3: which censuses 29.3 moves | stated once in 29.3 | [[task-29.3-converge-shapes#k-r7]] |
+| M11: D labels are not in the plan | the lead registers D4 and D7 to D22 at merge; said in `#d4` and `#decisions` | [[#d4]] |
+| B1 (via L105): the three handoff helpers are not moved by 29.5 | the sentence saying they move is removed | [[#needs-295]] |
+
+Not changed by this round: `plan-29 D4` is still the user's; `plan-review-fable D4` and
+`plan-review-fable-store D5` are referenced and not settled.
+
+**Waiting on 29.5's author.** The "29.5 side" lines of [[#seams-295]] and the `feature-bound`
+wording 29.3's AC-a1 relies on were sent on 2026-11-14; 29.5 and 29.4 are being revised in the
+same round. If their merged text differs, this section is amended, not theirs silently assumed.
 
 ## Out of scope {#out-of-scope}
 
