@@ -9,59 +9,72 @@ metadata:
 
 # Session Handoff for refmatrix {#root}
 
-Date: 2026-11-13 (session f0521bff, resumed from 7efc36ce's 2026-11-11 handoff). No release. Deployed
-is still **0.82.0**; every change this session is spec, measurement, registry or test/src in
-littlebig clones. Prior handoff archived at `workflow/past_handoffs/019-0830-pipeline-paused_2026-11-11.md`.
+Date: 2026-11-14 (session 37b7498f, resumed from f0521bff's 2026-11-13 handoff). No release. Deployed
+is still **0.82.0**. Dev master holds spec, review-ledger, registry and decision commits only; all
+code is in littlebig clones. Prior handoff archived at
+`workflow/past_handoffs/020-plan10-216-251-specced_2026-11-13.md`.
 
-rel: supersedes -> [[handoff-019-0830-pipeline-paused]]
+rel: supersedes -> [[handoff-020-plan10-216-251-specced]]
 rel: depends-on -> [[open-questions]]
+rel: depends-on -> [[plan-review-2026-11-13]]
 
 ## Active goal {#active-goal}
 
-No active goal (no `/goal` was set this session).
+No active goal. The user will turn the consolidated plan (`workflow/plan-review-2026-11-13.md`
+`#queue` + `#goal-horizon`) into a `/goal` once the POP rewrite lands; that text is not written yet.
+Delegated user gates (L77, L78): the 0.83.0 fleet deploy with `install-hooks --apply --force` over
+the 8-repo roster, plan-27's memdir migration and plan-28's start run without asking, each when its
+spec's preconditions hold, with the user told at the start. G18 still stops the goal.
 
-**Agents at the update (2026-11-13, after save-state)** — still running: `green-216`, `green-251c`, `green-212r2` (briefs in `workflow/agents/<name>.md`; re-dispatch from the brief if
-gone; their next artifact is a commit on the clone's branch, reports come back as text):
+**Agents at save time (2026-11-14)** — all six were stopped by the weekly usage limit and told to
+resume after it reset; briefs in `workflow/agents/inflight-2026-11-14.md`:
 
-| agent · type | clone (`/Volumes/littlebig/…`) · branch | base at dispatch | expected artifact | brief |
-|---|---|---|---|---|
-| `green-216` · ch-implementer | `refmatrix-bug216` · `task-bug216-rule-docs-in-graph` | `f1aa796` | src + docs + `#green`; R1-R12 GREEN | `green-216.md` |
-| `green-251c` · ch-implementer | `refmatrix-plan25-1` · `task-25.1-recall-hook-byte-budget` | spec `4f95c23` | rev-7 GREEN + regenerated hooks + `#green-rev7` | `green-251c.md` |
-| `green-212r2` · ch-implementer | `refmatrix-bug212` · `task-bug212-worktree-hook-crashes` | `deafd6d` | `_store_rw` refusal + survivors + `#green-r2` | `green-212r2.md` |
-| `arch-10r` · ch-architect | `refmatrix-plan10` · `task-plan10-revival` | rev 5 `c04c9b9` | DONE: plan-10 rev 4 (`a401924`) + rev 5 (10.6 kind labels, composite `rev N unchanged`, curator prints only on change; order 25.1 → 10.6 → 10.4 → 10.2); (names-only Q13, no gate Q10, 10.4b curator Q9, 10.5 replay passed + 50-probe read-back to run, 10.6 presentation); lead accepted its L4 (earlier prompt = prompt identity) | `arch-10r.md` (+ amendments) |
-| `bsd-264r1` · ch-bsd | `refmatrix-plan26-4` | `1caf3df` | DONE: r1 DIRTY 6, code sound; b-1 anchored in 26.5 (`b587f77`); **26.4 MERGED `0c74872`** | `bsd-264r1.md` |
-| `adj-215` · general-purpose | none | — | DONE: graph-neighbour leg does not separate from control → keep out of 21.5 (`workflow/measurements/task-21.5-adjacency-2026-11-13.md`) | `adj-215.md` |
+| agent · type | clone (`/Volumes/littlebig/…`) · branch | base | expected artifact |
+|---|---|---|---|
+| `green-225` · ch-implementer | `refmatrix-bug225` · `task-bug225-handoff-trunk-from-origin-head` | RED `be9acae` (+ uncommitted src) | GREEN commits + summary |
+| `red-216` · ch-test-engineer | `refmatrix-bug216` · `task-bug216-rule-docs-in-graph` | `df092ac` (+ uncommitted test file) | L81 RED commits |
+| `green-251c` · ch-implementer | `refmatrix-plan25-1` · `task-25.1-recall-hook-byte-budget` | GREEN `dc66a04` | full-suite log + `#green-r8` |
+| `red-212r2` · ch-test-engineer | `refmatrix-bug212` · `task-bug212-worktree-hook-crashes` | `3224a14` (+ uncommitted test edits) | L82 RED commits |
+| `spec-t3c` · ch-architect | `refmatrix-spec-t3c` · `spec-wave-t3c` | `1e89050` | L83 revision (paired leg only) |
+| `spec-t3b` · ch-architect | `refmatrix-spec-t3b` · `spec-wave-t3b` | `5023620` | L83 revision (10.2 without live draw) |
 
 ## What this session did {#did}
 
-- **bug-214:** fleet store files untracked + ignored on the checked-out branches (cliquet `74bea2d`,
-  atldb `e9a3289`, prep_prolific `88c683e`); trunks still track until merged; not pushed.
-- **21.5:** spec revs 2→3.1 (decay kernel k = 3, h = 2; OD-4 approved) merged to master
-  (`0818327`, fixing bug-217's red lint gate). Four measurements + ch-bsd m1 review (DIRTY 13,
-  corrections folded): push injection mostly unused; terms/cliques/usage-weight add nothing.
-  21.5's approval is open — narrow build vs labelled sampling.
-- **bug-216** (GMD `rel:` bare-doc-id misbinding + rule docs not ingested): spec revs 1-4 + contracts;
-  RED done (71 fail / 28 guards); GREEN in flight. bug-218 (reinforcement reversed), bug-219 (stale
-  evidence) logged.
-- **plan-10 reopened:** already-held measurement (48.0%), gate with/without, design replay v1/v2 —
-  user chose names-only dedupe (Q13), no separate non-human gate (Q10), curator silent on
-  non-human (Q9).
-- **25.1:** GREEN `16ace00`; rev 7 (lead judgements) RED done, GREEN in flight; rev 8 (hard 9,500 B
-  cap + degrade ladder + spill page, Q14) specced, not started.
-- **bug-212:** r1 GREEN `faabdfe`; r2 RED done; r2 GREEN in flight.
-- **Exploration** `handhold-outcome-experiment` (does refmatrix cut the re-derivation tax): arms,
-  outcomes, bands; queued after 21.5's decision and bug-216.
-- **Question ledger** `workflow/open-questions.md`: Q1-Q14 this session, all answered.
+- **Spec wave approved** (d9co route, ch-bsd rounds persisted in `workflow/bullshit/`): T0
+  `fa1227d`, T2 `0fd8a2f`, T3a `8e8e307` (incl. 25.1b R18, bug-224's skip line), T3b `5023620`,
+  T3c `1e89050`, T4 `b409d98`, T56 `fa1af7d` (G22 approved; its superseding memory
+  `feedback_operational_content_same_partition_not_skewing` written and ADR-0003 repointed).
+  Rulings L61-L83 in `workflow/plan-review-2026-11-13.md#lead`.
+- **plan-28 reshaped by the user:** 3-day window (L79), orchestrator-run start (L78/L80); then Q14
+  "drop the live part" (L83) after measuring real session rates (refmatrix ~0.5/day, cliquedb
+  ~0.1/day) — the paired re-entry leg carries every verdict. L83 revisions in flight.
+- **0.83.0 code:** 25.1 remedy GREEN (`dc66a04`); bug-212 r4 RED (32 RED, a fifth bypass
+  `rmx partition drop` found); bug-216 r1 audit DIRTY 1B/2S/4M (L81 remedy RED in flight); bug-225
+  (handoff trunk ignores origin/HEAD; atlftpd's trunk is develop) RED done, GREEN in flight.
+- **Fleet:** roster resolved to 8 repos (no tree walk); `~/enduris/thiquet`'s LaunchAgent removed
+  (plist backed up in `~/.refmatrix/backups/enduris-thiquet-daemon-2026-11-14/`); atlftpd got a
+  launchd daemon; atlftpd `git remote set-head origin develop`.
+- **Bugs logged:** bug-220..bug-225. New PATTERN `control-point-claim-without-census`; the
+  hand-off PATTERN at 5 sightings.
+- **Harness:** `CLAUDE_CODE_SHELL=/opt/local/bin/bash` (bash 5.3) in `~/.claude/settings.json`;
+  takes effect after a Claude Code restart.
 
 ## Open {#open}
 
-- **Questions:** none open (next id Q15).
-- **PAUSED by the user (2026-11-13: update the handoff then pause).** No new agents. The three running implementers may finish; collect their reports, then stop.
-- **Next, in order, when resumed:** merge master (`0c74872`, 26.4) into the 25.1 branch so AC-5 can go green → collect `green-216`, `green-251c`, `green-212r2` → ch-bsd each (bug-216, 25.1 rev 7, bug-212 r2) → merge 25.1 → bug-212 → bug-216 → release 0.83.0 → fleet `install-hooks --apply --force` (find repos by hook marker; bug-209) → bug-216 live steps (`denotes_link` derive, recount AC-6, fleet CLAUDE.md un-ignore per Q2) → 25.1 rev 8 RED/GREEN (Q14 ladder + spill) → plan-10 rev 5 (`c04c9b9`) to ch-bsd (spec review) → 10.5 read-back probe → 26.5 (now carries bug-213, `#inherit-264-r1`) → 21.5 approval decision → handhold outcome experiment.
-- **Not pushed:** dev master is ~75 commits ahead of `origin/main`; fleet commits from bug-214 too.
+- **Questions:** none open (next id Q15 in `workflow/open-questions.md`).
+- **Next, in order:** collect the six agents → GREEN for bug-216 (L81) and bug-212 (L72+L82) →
+  ch-bsd: 25.1 confirm, bug-212 r4 (range `f7c0d39..HEAD`), bug-216 r2, bug-225 → merge 25.1 →
+  bug-216 (apply R4 to `.refmatrix/.refmatrix_ignore` then `rmx ingest .`; add the bug-216 →
+  bug-185 order edge) → bug-212 → bug-225 → release 0.83.0, deploy → fleet `install-hooks --apply
+  --force` on the 8-repo roster (full layer incl. atlftpd and bdep/thiquet, Q12) with backups and
+  `.git/hooks` read back → merge the 7 spec branches (T56 before T3a; expect an ADR-0004 conflict;
+  run `./scripts/lint-gmd.sh`) → G27 bookkeeping and the POP rewrite → the goal text for the user.
+- **Not pushed:** dev master is ~91 commits ahead of `origin/main`; fleet commits from bug-214 too.
+- **Uninvestigated:** `~/.claude` holds 231 unstaged deletions (93 under the old cliquedb memdir).
 
 ## Resume {#resume}
 
-1. `/recall-state`; read this file and `workflow/open-questions.md`.
-2. `ListAgents` — any agent above still addressable is live; otherwise inspect its clone
-   (`git -C <clone> log --oneline -3`, `git status`) and re-dispatch from its brief.
+1. `/recall-state`; read this file, `workflow/open-questions.md` and
+   `workflow/plan-review-2026-11-13.md` (`#lead` L61-L83, `#queue`).
+2. `ListAgents` — any agent above still addressable is live; otherwise inspect its clone and
+   re-dispatch from `workflow/agents/inflight-2026-11-14.md`.
