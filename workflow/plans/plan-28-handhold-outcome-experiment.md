@@ -173,7 +173,10 @@ How the CI enters a reading is P-8.
 **Push (`A+dedupe` vs `B`; P-11, r1 #b1, L87).** This compares the deployable default with no
 push, on outcomes (2)-(4) per 100 main-loop tool calls, paired by task. A push acts once per run
 (on the resume prompt), and 28.4 records this. Each outcome's A-benefit (B − A on a cost-like
-outcome) gets a Holm-adjusted bootstrap CI over tasks (r2-m5). There are three readings:
+outcome) gets a Holm-adjusted bootstrap CI over tasks (r2-m5). There are three readings. **The
+rows are read in order, and the first that holds is the verdict (L89):** `keep push`, then `shrink`,
+then "no verdict". A small real benefit, with the lower bound above 0 and the upper bound below δ,
+meets both of the first two rows and reads `keep push`.
 
 | condition | reading |
 |---|---|
@@ -184,7 +187,7 @@ outcome) gets a Holm-adjusted bootstrap CI over tasks (r2-m5). There are three r
 δ is frozen in 28.4 (L87). Because `shrink` requires CIs narrow enough to sit under δ, noise
 reads "no verdict" and never `shrink`. Outcome (6) is not an input, because it counts uses of
 delivered items and B delivers nothing per prompt. 28.3 AC-8 holds synthetic result sets for
-`shrink`, `keep push` and the noisy "no verdict".
+`shrink`, `keep push`, the noisy "no verdict", and the overlap case that reads `keep push`.
 
 **Nested (10.2 R7, `A+dedupe` vs `A+full`):** 10.2's own bands (dedupe cuts bytes per prompt
 ≥ 30% with used within −5% of `full` → keep; …), read on outcome 7 from the paired series.
@@ -297,7 +300,7 @@ frozen file, with this section cited. The options are kept below as the record. 
 | P-1 | equal thirds `A+dedupe` / `A+full` / `B` (`C` at 0). **Superseded by L83:** no session is drawn, so there are no draw weights; every paired task runs under all four cells |
 | P-2 | the primary comparison is `B` vs `C` |
 | P-3 | the banded scalar for orientation cost is tool calls; tokens and wall time are printed |
-| P-4 | W = 3 prompts. **Restated by L87:** a paired run has one prompt, so W is counted in main-loop tool calls: W = 10 (spec-t3c's value, flagged to the lead; 28.4 freezes it) |
+| P-4 | W = 3 prompts. **Restated by L87:** a paired run has one prompt, so W is counted in main-loop tool calls: W = 10, accepted as decided by L89; 28.4 freezes it |
 | P-5 | **overridden by the lead's r1 #s5 ruling:** 50 blind `cited_in_answer` labels first; it carries weight only at precision ≥ 0.80 with a Wilson lower bound ≥ 0.65 (21.5's bar); otherwise outcome 6 counts R12 explicit uses only |
 | P-6 | the paired leg's A cell is `A+dedupe` only. **Superseded by L83:** the paired series runs `A+dedupe` AND `A+full`, because 10.2's nested reading now comes from it |
 | P-7 | the curator status line stays on in `B` |
@@ -472,3 +475,13 @@ status stays `approved` pending a confirm-lite.
 | m1 the nested reading's reach | stated as a limit: first-prompt dedupe against SessionStart (and warm-up) deliveries only | [[#outcomes]] |
 | m2 P-1 / P-10 headings | marked "(Superseded by L83)" | [[#open]] |
 | m3 R1's tell | names that treatment-module deploys from items 8-11 need a user pause while the series runs | [[task-28.5-run-and-report#r1]] |
+
+## Revision L89 (2026-11-14, `bsd-spec-t3c` confirm-lite MEH-only through `1a219cb`; lead ruling L89) {#rev-l89}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | disposition | where |
+|---|---|---|
+| m1 a small real benefit satisfies both `keep push` and `shrink` | first match wins, in the order `keep push`, `shrink`, "no verdict"; 28.3 AC-8 has an overlap case | [[#bands]] |
+| m2 W = 10 had no L-row | L89 accepts W = 10 tool calls and δ = 0.8 SD as decided; P-4 cites it | [[#open]] |
+

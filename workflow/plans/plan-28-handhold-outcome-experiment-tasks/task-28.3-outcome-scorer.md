@@ -151,7 +151,7 @@ clause, inside 19.6's scope. The r1 review found three problems, and this revisi
    - **Push:** `A+dedupe` vs `B` on outcomes (2)-(4) per 100 main-loop tool calls (P-11, L87).
      Each outcome's A-benefit is B − A, since all three are costs. It gets a paired bootstrap
      over tasks, and the three are Holm-adjusted (r2-m5), with the Holm-adjusted (simultaneous)
-     CIs printed. The reading is:
+     CIs printed. The reading is the FIRST of these that holds, in this order (L89):
      - `keep push` when, on some outcome, the CI's lower bound is above 0;
      - `shrink` (shrink ambient injection to a gated or pointer-only form) when, on EVERY
        outcome, the CI's upper bound is below the pre-registered non-inferiority margin δ (28.4
@@ -238,14 +238,18 @@ by the real hooks in 23.0's sandbox. Every AC names its mutation. {#acceptance-l
    - **`shrink`.** On every outcome, A − B is near 0 with a tight Holm-adjusted CI whose upper
      bound is below δ; A costs more on (5); and A has 3× B's outcome (6).
    - **`keep push`.** A is better on (3), with the CI's lower bound above 0.
-   - **Holm decides `keep push`.** A's unadjusted CI on (3) excludes 0, but the Holm-adjusted
+   - **Holm blocks `keep push`.** A's unadjusted CI on (3) excludes 0, but the Holm-adjusted
      one does not, and every upper bound is below δ, so the reading is `shrink`.
+   - **Overlap reads `keep push` (L89).** On (3) the Holm-adjusted CI lies inside (0, δ): A is
+     better, but by less than δ. Every other upper bound is below δ, and A costs more. Both
+     `keep push` and `shrink` hold, and the first match, `keep push`, is the verdict.
    - **Noise reads "no verdict".** The same means as the first set, with variance ×9: the CIs
      reach past δ, so neither `keep push` nor `shrink` holds.
 
    **Mutations:**
    - outcome (6) added to the push inputs, so the first set reads `keep push`;
    - the Holm step removed, so the third set reads `keep push`;
+   - **order swapped** (`shrink` checked before `keep push`), so the overlap set reads `shrink`;
    - **non-inferiority removed** (`shrink` on "not better" alone, without the δ bound), so
      the noisy set reads `shrink`. This also covers a reading clamped to 20 tasks when
      `n_power` > 20: its wide CIs read "no verdict".
@@ -405,4 +409,14 @@ unchanged.
 |---|---|---|
 | S3 the clamp case and the AC-8 mutation's name | the clamp case reads "no verdict"; AC-8's mutation is named "non-inferiority removed" | [[#r9]], [[#ac-8]] |
 | lead (on accepting L87's values) | δ is printed in each outcome's natural unit beside the verdict, with the plain statement that a 0.8 SD margin is wide | [[#r9]] |
+
+
+## Revision L89 (2026-11-14, `bsd-spec-t3c` confirm-lite MEH-only through `1a219cb`; lead ruling L89) {#rev-l89}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | disposition | where |
+|---|---|---|
+| m1 overlapping readings | R9 states first-match order; AC-8 adds the overlap case and the "order swapped" mutation | [[#r9]], [[#ac-8]] |
+| m3 a case title | "Holm decides `keep push`" renamed "Holm blocks `keep push`" | [[#ac-8]] |
 

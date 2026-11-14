@@ -65,13 +65,14 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
    - the push reading: `A+dedupe` vs `B` on outcomes (2)-(4) per 100 main-loop tool calls only
      (P-11; r1 #b1; L87), paired by task. A push acts once per run, on the resume prompt, and
      the file says so. Each outcome's A-benefit gets a paired bootstrap CI over tasks,
-     Holm-adjusted across the three at family-wise α 0.05 (r2-m5). The three readings:
+     Holm-adjusted across the three at family-wise α 0.05 (r2-m5). The three readings, read in
+     this order with the first match as the verdict (L89):
      - `keep push` when some lower bound is above 0;
      - `shrink` when every upper bound is below **the non-inferiority margin δ**, AND A costs
        more on (5);
      - "no verdict" otherwise.
 
-     **δ is frozen here (L87):** for each outcome, 0.8 times the calibration SD of its paired
+     **δ is frozen here (L87; accepted as decided by L89, with W = 10 tool calls):** for each outcome, 0.8 times the calibration SD of its paired
      A − B difference, the same size as the push reading's stated detectable effect. Noise
      therefore reads "no verdict", never `shrink`. Outcome (6) is read within the A cells only;
    - 10.2 R7's nested bands, copied verbatim with their source, read on `A+dedupe` vs `A+full`
@@ -276,4 +277,14 @@ unchanged.
 | finding | disposition | where |
 |---|---|---|
 | m1 the nested limit in 28.4's limits | added, beside the width of δ | [[#r2]] |
+
+
+## Revision L89 (2026-11-14, `bsd-spec-t3c` confirm-lite MEH-only through `1a219cb`; lead ruling L89) {#rev-l89}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | disposition | where |
+|---|---|---|
+| m1 the order of the push readings | first match wins: `keep push`, then `shrink`, then "no verdict" | [[#r2]] |
+| m2 W and δ | accepted as decided by L89 | [[#r2]] |
 
