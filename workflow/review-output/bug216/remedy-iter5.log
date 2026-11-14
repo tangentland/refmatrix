@@ -1,0 +1,21 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+.............F.......................................................... [ 55%]
+..........................................................               [100%]
+=================================== FAILURES ===================================
+__________ test_m2_build_context_mention_chain_does_not_cross_denotes __________
+
+walk = {'b': 4, 'c': 23, 'cite': 3, 'root': PosixPath('/private/tmp/b216r2onupmow/proj/.refmatrix'), ...}
+
+    def test_m2_build_context_mention_chain_does_not_cross_denotes(walk):
+        """L81 M2: a doc that merely MENTIONS the term concept is not B's neighbour (PageRank folds
+        typed edges only; until G30 decides the fold, build_context does the same)."""
+        got = _context_ids(walk)
+>       assert walk["x"] not in got, (
+            f"a plain `mentions` of the denoting concept reached B's context via {got.get(walk['x'])}")
+E       AssertionError: a plain `mentions` of the denoting concept reached B's context via {'content'}
+E       assert 6 not in {1: {'mentions'}, 2: {'mentions'}, 3: {'derives-from'}, 5: {'mentions', 'part-of'}, ...}
+
+tests/test_bug216_remedy_r1.py:512: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r1.py::test_m2_build_context_mention_chain_does_not_cross_denotes
+1 failed, 129 passed in 98.29s (0:01:38)

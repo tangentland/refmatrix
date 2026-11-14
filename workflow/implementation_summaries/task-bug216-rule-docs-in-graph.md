@@ -392,9 +392,10 @@ it the first time a writer opens it: the DuckDB backend runs `init_catalog` on e
 the SQLite backend runs `executescript(CATALOG_DDL)` on every connect. Read-only snapshot
 connections never touch it. The `denotes` linkage type is registered on first use by
 `link_denotes` (`add_linkage_type`, which logs a `linkage_type` event), so no store carries it
-until something is linked. Not migrated anywhere else, deliberately: `pending_refs` is not in
-`replica_merge`'s table lists nor replayed from facts.log (writer rotation is pinned to one slot
-for the daemon's life); its rows are re-derived by re-ingesting the citing file. {#green-migration-story}
+until something is linked. SUPERSEDED for `pending_refs` (this paragraph first said it was
+neither merged nor replayed): R13 makes its writes facts.log events that `rebuild_index_from_log`
+applies and the compaction dump re-emits ([[#green-rev6]]), and remedy S2 puts it in
+`replica_merge` and `merge_partition` ([[#green-remedy-r1]]). {#green-migration-story}
 
 ### Results {#green-results}
 
@@ -527,6 +528,84 @@ copy (`lint-gmd-rev6.log`). The earlier `#green-results` runs predate these comm
 
 Flags 5 and 6 of [[#green-flags]] are closed by R14 and R6b; flag 9 by R13. The R13 mutation run
 that hit red-216's in-flight test edits was discarded and re-run at `4b4b96e`. {#green-rev6-flags}
+
+### GREEN remedy r1: bsd-216 r1 (rulings L81 + L86) {#green-remedy-r1}
+
+Commits: `b8c680a` (src), `dea70a0` (SQLite fix), `af89663` (docs: INTEGRATION.md `#ignore-rules`, spec R4 / AC-6 /
+`revision: 6`). RED built against: `aac951c`, `1d2e200` (L86 pins), `eeaaefa` (red-216's fixture
+fixes after this implementer's report: the M2 context fixture shared B's title / tag, and the S1
+`rmx ingest .` pin drops the ingest-gmd build per L86). Audit: dev master's
+`workflow/bullshit/2026-11-13-1619-bug216-r1-df092ac.md` (not on this branch, so cited by path).
+{#green-remedy-commits}
+
+- **B1.** `ingest.ingest_ignore_root(s, target)` is the root every `ingest_path` walk is judged
+  against: the store's own project when the target lies inside it, else the nearest `.refmatrix/`
+  above, else the target. The tree walk, the python-semantic `rglob`, the tldr metadata and
+  call-graph passes take it (`ignore_root=`). `rmx ingest <memdir>`, MCP `rmx_ingest` on a memdir
+  and `rmx ingest <proj>/.claude` store nothing but a built-in-included GMD profile (L86).
+  `ingest-gmd <dir>` keeps `base=<dir>` (session ingest). {#green-remedy-b1}
+- **S1.** No code: `reingest --force` already runs `clear_tracked_stamps`, which clears the GMD
+  content hashes (`_clear_gmd_content_hashes`); the L86 pin passes on that. The procedure is written
+  into spec `#r4` / `#ac-6`, INTEGRATION `#ignore-rules`, and the `resolve_pending_refs`
+  docstring. {#green-remedy-s1}
+- **S2.** `pending_refs` is in `replica_merge`'s three table lists (`OPTIONAL_TABLES`: a slot that
+  predates it counts 0); `_merge_into` copies it with the `linkage_evidence`-style source remap,
+  collapsing a row both slots hold. The fixture surfaced a pre-existing merge loss: two DIFFERENT
+  entities sharing an id across diverged slots were read as one, B's newer row overwrote A's, and
+  A's entity was gone; B's row now moves to a fresh id in the sequence headroom (`remap_fresh_b`,
+  carried through `remap_b`; `MergeRefused` past `REMAP_HEADROOM`). `audit_via_writer` takes its
+  arguments positionally as well. `Store._merge_pending_refs` (called by `merge_partition`)
+  repoints, dedupes, deletes dead-source rows; the result carries `pending_refs_merged` and
+  `pending_refs_dropped`. {#green-remedy-s2}
+- **M2.** `store.DENOTES_TERM_LINKAGES` = {mentions, titles, aliases, lead, coref}: the zero-cost
+  `denotes` hop never carries these, in PageRank's fold, `build_context`'s companion rows and
+  `QueryEngine.neighbors` alike (adjacency cache shape `denotes-fold-2`). `neighbors` lists the raw
+  `denotes` link and a seed's equivalents. {#green-remedy-m2}
+- **M3.** A missing file at a `BUILTIN_INCLUDES` path stays in scope, so the watcher's delete
+  event reaches `_sync_one`, which purges it. (Frontmatter REMOVED from an existing profile still
+  drops the event: the file is then out by the hidden-dir rule, and nothing purges the stale doc
+  until a sync names it.) {#green-remedy-m3}
+- **M4.** The migration note above, the spec's `revision`, INTEGRATION `#ignore-rules` (which
+  root a path is judged against; the live-store procedure; the delete case), the
+  `_op_denotes_link` docstring. {#green-remedy-m4}
+
+Results (logs in `workflow/review-output/bug216/`): the bug-216 family + workflow_ignore + watch
++ bug179 + session_ingest + derive_coverage + verb_parity + docs_generated + memory_bridge + the
+three bridge files + replica_merge + bug113 + graph / context / PPR / adjacency + factslog /
+bug117 / log: **659 passed** (`remedy-family.log`). Full suite at `af89663`: **11 failed, 4449 passed, 1 skipped** in 54 min
+(`remedy-full.log`), compared by E line against `release-0.82.0-full.log`:
+- MINE, fixed in `dea70a0`: `test_partition_merge` ×4, `sqlite3.OperationalError: no such
+  function: any_value` (the merge_partition pending dedupe ran on the SQLite backend); the file
+  plus the remedy and bug-178 files re-run: 63 passed, 3 failed (below) (`remedy-fix1.log`).
+- EXPECTED by S2, golden owed by the test owner: `test_bug178_bulk_write::
+  test_ac2_replica_merge_matches_head_and_reference` ×2 — the golden digests `merged_counts`
+  item by item and S2 adds `pending_refs`; with that one entry removed both digests equal the
+  golden (sent to red-216).
+- ENVIRONMENTAL: `test_task21_1_recall_skip::test_ac2b_live_daemon_recall_writes_one_ok_recall_row`
+  (`'skipped_budget' == 'ok'`, a 5 s live recall budget at load average 13) fails identically at
+  `df092ac` and at the branch base `758bca1` (`recall-skip-at-*.log`);
+  `test_gmd_lint_requires_version` (clone directory name, as before).
+- PRE-EXISTING, same E lines as 0.82.0: `test_brief_real_daemon` (DuckDB lock conflict),
+  `test_task21_1_agent_usage_report` ×2.
+`lint-gmd.sh` exit 0, 0 errors, scope check 0 on a copy named `refmatrix` (`lint-gmd-remedy.log`).
+{#green-remedy-results}
+
+Mutation spot-checks, each alone in a throwaway clone of `af89663` (not this tree), restored with
+`git checkout -- src` after each, `__pycache__` cleared; suite = `test_bug216_remedy_r1.py` +
+`test_bug216_remedy_l86.py`:
+
+| mutation | result | log |
+|---|---|---|
+| B1: the ignore root is the target | 4 failed | `mut-remedy-B1.log` |
+| S2: the slot merge copies no pending rows | 1 failed | `mut-remedy-S2-slot.log` |
+| S2: no fresh id for a shared id | 1 failed | `mut-remedy-S2-fresh.log` |
+| S2: merge_partition keeps dead-source rows | 1 failed | `mut-remedy-S2-part.log` |
+| M2: companion rows walk term linkages | 1 failed | `mut-remedy-M2-ctx.log` |
+| M2: `neighbors` drops `denotes` from its linkages | **survived** (21 passed): equivalent — the seed's equivalents list the same target | `mut-remedy-M2-nbr.log` |
+| M2: `neighbors` hides a seed's equivalents (df092ac shape) | 1 failed (+ binding) | `mut-remedy-M2-nbr-hide.log` |
+| M3: the include needs the file to exist | 1 failed | `mut-remedy-M3.log` |
+
+{#green-remedy-mutations}
 
 ## AC-6 (live) {#ac6}
 

@@ -1,0 +1,43 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/f0521bff-0006-479a-9e0f-6df02d50937e/scratchpad/mut216/refmatrix/src/refmatrix as checked-hash (bug-037)
+...........F.........                                                    [100%]
+=================================== FAILURES ===================================
+__ test_s2_merge_partition_repoints_pending_rows_and_drops_dead_ones_counted ___
+
+base = PosixPath('/private/tmp/b216rtc653t4x')
+
+    def test_s2_merge_partition_repoints_pending_rows_and_drops_dead_ones_counted(base):
+        proj = base / "proj"
+        root = proj / ".refmatrix"
+        _new_store(root)
+        shared = _write(proj, "docs/shared.md", _citer("shared", "missing-s"))
+        s = _open(root)
+        try:
+            with s.with_partition("src"):
+                ingest_gmd_paths(s, [shared, _write(proj, "docs/src-only.md",
+                                                    _citer("src-only", "missing-x"))])
+                src_pid = s._partition_id
+            with s.with_partition("dst"):
+                ingest_gmd_paths(s, [shared])            # collides with src's `shared` entities
+            con = s._connect()
+            con.execute(
+                "INSERT INTO pending_refs(partition_id, source_id, linkage, target_name, ref, file, "
+                "line, weight, detail, created_at) VALUES (?, 987654321, 'depends-on', 'missing-z', "
+                "'missing-z', ?, 9, NULL, 'rel: depends-on -> missing-z', 0)",
+                (src_pid, str(proj / "docs" / "gone.md")))
+            s._maybe_commit(con)
+            res = s.merge_partition("src", "dst")
+            got = _pending_in(s, "dst")
+            orphans = _orphans(s._connect())
+        finally:
+            s.close()
+        assert got == Counter({("shared#cite", "depends-on", "missing-s"): 1,
+                               ("src-only#cite", "depends-on", "missing-x"): 1}), (
+            f"dst pending rows after the merge (repointed, deduped on the collided source): {got}")
+>       assert orphans == 0, "a pending row kept a dead partition or a dead source after the merge"
+E       AssertionError: a pending row kept a dead partition or a dead source after the merge
+E       assert 1 == 0
+
+tests/test_bug216_remedy_r1.py:445: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r1.py::test_s2_merge_partition_repoints_pending_rows_and_drops_dead_ones_counted
+1 failed, 20 passed in 13.50s

@@ -1,0 +1,31 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/f0521bff-0006-479a-9e0f-6df02d50937e/scratchpad/mut216/refmatrix/src/refmatrix as checked-hash (bug-037)
+.F......                                                                 [100%]
+=================================== FAILURES ===================================
+____________ test_ac2b_live_daemon_recall_writes_one_ok_recall_row _____________
+
+root = PosixPath('/private/tmp/rmx-al_ugrpg/r/2/.refmatrix')
+
+    def test_ac2b_live_daemon_recall_writes_one_ok_recall_row(root):
+        """AC-2b, "the same run against a live sandbox daemon logs outcome=ok": the same generated
+        command, served by a real `rmx daemon` on the sandbox root, writes exactly one kind=recall
+        row with outcome=ok (`ok`: an answer was rendered, however many items), budget_s=5 and the
+        envelope's session."""
+        _seed_memories(root)
+        before = len(_recall_rows(root))
+        with h.SandboxDaemon(root):
+            r = h.run_hook(_recall_cmd(root), root=root, envelope=_envelope(), timeout=240)
+        rows = _recall_rows(root)[before:]
+        assert len(rows) == 1, (
+            f"R3: one kind=recall row per recall call; got {len(rows)}: {rows}\n"
+            f"stderr={r.stderr[-800:]}")
+>       assert rows[0]["outcome"] == "ok", rows[0]
+E       AssertionError: {'body': 'which parser handles the widget tokens', 'budget_s': 5.0, 'cardinality': None, 'cwd': '/private/tmp/rmx-al_ugrpg/r/2', ...}
+E       assert 'skipped_budget' == 'ok'
+E         
+E         - ok
+E         + skipped_budget
+
+tests/test_task21_1_recall_skip.py:204: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row
+1 failed, 7 passed in 18.17s
