@@ -26,12 +26,13 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session 37b7498f (2026-11-13) {#session-37b7498f}
 
-Next id: **Q16**.
+Next id: **Q17**.
 
 ### Open {#open-37b7498f}
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q16 | 2026-11-14 | The user's design "we can just check if the refmatrix dir is a symlink": a clone's `.refmatrix` symlinks to the dev store and a linked store runs read-only (every write refused at bug-212's store-level check; reads from the lock-free snapshot only, never a daemon or hub, so dev code cannot trip the version handshake; the sync hook notes and skips). When to build it? | a: a small task right after 0.83.0, on bug-212's check (`scripts/rmx-master` covers until then); b: fold into bug-212 now (0.83.0 waits) | open |
 
 ### Answered {#answered-37b7498f}
 
