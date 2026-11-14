@@ -214,19 +214,23 @@ proof is the mutations and planted bypasses below, each seen red.
     G10 iterates), plus anything 29.4 or 29.2 added. Every entry in that scope is MOVED onto the
     kit as a family: its allow list and its synthetic bypass unchanged, and 29.5's G10 re-proof
     (plant the bypass, see the census fail) run on it after the move.
-  - As 29.5's author lists them (2026-11-14, its round-2 text): three walk with `ast` and are
-    moved: the import-layering census (its AC-13), the private-name census (AC-6) and the
-    patch-surface census (AC-3). With them go the re-keyed catalog-opener census (K-R2) and
-    29.2's AC-5, AC-12 and AC-16 scans if they were written off the kit.
-  - The import-layering census arrives with TWO declared entries in its allow list, each
-    carrying an owner task id that must resolve (29.5's must-fail: an owner that does not). The
+  - 29.5's table of its censuses is `task-29.5-split-giant-modules#censuses` (branch
+    `spec-plan29a` at `321954b`). Three walk with `ast` and are moved:
+    `tests/test_import_layering_census.py` (its AC-13),
+    `tests/test_private_cross_module_census.py` (AC-6) and `tests/test_cli_patch_surface.py`
+    (AC-3). With them go the re-keyed catalog-opener census (K-R2) and 29.2's AC-5, AC-12 and
+    AC-16 scans if they were written off the kit.
+  - The import-layering census arrives with TWO declared entries in its allow list (29.5
+    `#r2b` item 5, `#ac-13`), each carrying an owner task id that must resolve (29.5's must-fail: an owner that does not). The
     move keeps both entries and that check; [[#slice-h]] is the owner and deletes them.
   - Nothing is allow-listed to stay off the kit by default. An entry is allow-listed in AC-K5
     only with a reason the summary records (for example a test that parses one named file, not
     the tree).
-  - A test that reads source without `ast` is outside AC-K5: 29.5's module-size census (AC-7,
-    line counts) and derive-table test (AC-5, two tuples), a text grep, `test_deferrals_clean`
-    if it greps.
+  - A test that reads source without `ast` is outside AC-K5. In 29.5's table those are: the
+    mixin census and the derive-table test (`tests/test_derive_tables_name_real_files.py`:
+    run-time introspection, and two tuples), the naming census (`tests/test_cli_entry_points.py`:
+    file stems) and the size census (`tests/test_module_size_census.py`: line counts). A text
+    grep, and `test_deferrals_clean` if it greps, are outside it too.
   - The list is confirmed against 29.5's merged spec at the start commit; a census this list
     does not name is moved by the same rule, not left out because it was not named here.
 
@@ -328,16 +332,18 @@ The allowlist is empty when the slice lands. {#a-r6}
 
 - **AC-a1 (helper):** against a git shim on `PATH`, `run_git` returns each of: exit 0; exit 1
   with no stderr (the miss property is true); exit 1 with stderr (false); exit 128 (false); no
-  binary (`why == "missing"`). Omitting `timeout` is a `TypeError`.
+  binary (`why == "missing"`). Omitting `timeout` is a `TypeError`. {#ac-a1}
   - **The timeout leg is a `feature-bound` test** in 29.4's terms
     (`task-29.4-suite-health#r3-kinds`): the bound is the feature. The shim blocks until the
     test releases it; the test passes a small literal `timeout=` (the bound is `run_git`'s own
     argument) and asserts the OUTCOME: `rc is None`, `why == "timeout"`,
     `err` names the bound, the shim's process is gone, and the call returned while the shim's
     release file was still absent. It asserts nothing about elapsed time. If 29.4's census wants
-    an allow-list entry for it, the entry is `feature-bound`, names this AC, and has
-    `knob: arg:timeout` (ruling L107: 29.4's `knob` field admits `arg:<parameter>`, a literal
-    argument no larger than the entry's `max_s`, and the census checks the call's literal).
+    an allow-list entry for it, the entry is `feature-bound`, its `ac` is
+    `task-29.3-converge-shapes#ac-a1` (the census resolves that anchor), and its knob is
+    `arg:timeout` (ruling L107; `task-29.4-suite-health#r3-kinds` admits a keyword argument of
+    the function under test and names this call: the census checks the test passes `timeout=`
+    as a literal no larger than the entry's `max_s`).
 - **AC-a2 (env):** with `GIT_DIR` pointing at another repository, `strip_local_env=True` answers
   for the `-C` repository and the default does not.
 - **AC-a3 (handoff facts):** with a shim whose `status` exits 128, the save-state document and
@@ -937,7 +943,8 @@ D6 and D23 upward are free).
 - 29.5 writes several source-walking censuses before the kit exists. Which of them slice K
   moves onto the kit is stated once, in [[#k-r7]].
 - `_sync_memory_dir`, `_subject_link` and `_subject_upsert` stay in `cli/__init__.py` (ruling
-  L105 on ch-bsd B1). Two of slice d's known ROUTE gates are in those functions.
+  L105 on ch-bsd B1; 29.5 says so at `task-29.5-split-giant-modules#r2b-stay`). Two of slice d's
+  known ROUTE gates are in those functions.
 - The memory-path module list of c-R3 is re-derived from 29.5's symbol map
   (`tools/split_maps/symbol_map.json`, required by `task-29.5-split-giant-modules#ac-11`;
   [[task-29.2-mypy-gate#needs-295]]). Module names are taken from that file at build time.

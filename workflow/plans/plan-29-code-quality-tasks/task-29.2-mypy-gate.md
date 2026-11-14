@@ -675,9 +675,8 @@ in [[#fold-cites]]):
 
 ### Three seams with 29.5 and 29.3, each stated once {#seams-295}
 
-These answer ch-bsd spec review r1 M6. 29.5's author was sent the same statements on 2026-11-14
-and answered the same day with how 29.5's round-2 text reads (not yet committed when this was
-written); that answer is marked "29.5 side".
+These answer ch-bsd spec review r1 M6. 29.5's author confirmed each against 29.5's spec on
+branch `spec-plan29a` at `321954b` (2026-11-14); the confirming anchor is given as "29.5 side".
 
 1. **The leaf module is `src/refmatrix/typing_store.py`.** It holds `StoreWriter` and
    `StoreHost`.
@@ -686,23 +685,29 @@ written); that answer is marked "29.5 side".
      nothing. 29.5's mixin census and its "store family" rule key on the same pattern.
    - Because its name is outside that pattern, this task's strict enumeration names it
      explicitly (AC-5), and a test asserts it is in neither derive table.
-   - 29.5 side: its AC-5 applies to modules that DEFINE a `Store` mixin, so a declarations-only
-     module is exempt whatever it is called. The name stays outside the `store_*` pattern anyway,
-     so nothing depends on that exemption.
+   - 29.5 side (`task-29.5-split-giant-modules#r5` item 1, `#ac-5`): its AC-5 is keyed on
+     "defines a `Store` mixin", not on the file name, so this module is not put in
+     `_DERIVE_CODE_MODULES`; it is not in 29.5's store family (`store`, `store_*`). 29.5's AC-5
+     tests the file lists, not the hash function, so it holds before and after [[#r7]].
 2. **The host is a `TYPE_CHECKING`-only base class** ([[#r2]]). Run-time bases, the MRO and
    "methods only, no method in two mixins" are as 29.5 leaves them; AC-17 holds the MRO.
-   - 29.5 side: its mixin census counts concrete method definitions in `Store`'s bases. A class
-     that only declares (under `TYPE_CHECKING`, or a Protocol) is not a mixin and does not trip
-     "no method in two mixins". A real common base class would change the MRO 29.5 fixes, which
-     is why the host is not one. This task adds the base line to the mixin modules; 29.5 does not.
+   - 29.5 side (the same item): its mixin census takes the mixin set from `Store`'s bases at run
+     time and accepts a mixin whose only base is the `TYPE_CHECKING` alias (`object` at run
+     time). A real common base class would change the MRO 29.5 fixes, which is why the host is
+     not one. This task adds the base line to the mixin modules; 29.5 does not.
 3. **Which source-walking censuses 29.3 moves** is stated in
-   [[task-29.3-converge-shapes#k-r7]]: every entry of 29.5's source-reader inventory that walks
-   `src/refmatrix` with `ast`. This task adds no census walk of its own outside the kit: AC-5,
+   [[task-29.3-converge-shapes#k-r7]], from 29.5's own table
+   (`task-29.5-split-giant-modules#censuses`): the three tests that walk `src/refmatrix` with
+   `ast`. This task adds no census walk of its own outside the kit: AC-5,
    AC-12 and AC-16 are written as kit families if the kit exists when they are written
    ([[#seam]] says it does), and are moved onto it by 29.3's slice K otherwise.
-4. **The derive digest's golden** ([[#derive-digest]]). Ruled in L107: 29.5 records it at its R0
-   with `scripts/derive-digest.py record` and checks it after its last store move; 29.3 slice K
-   re-records it on the post-29.5 tree. 29.5's author was given the script path on 2026-11-14.
+4. **The derive digest** ([[#derive-digest]]; ruling L107). 29.5 builds
+   `scripts/derive-digest.py`, both corpora and the test in its phase 0, from that section, and
+   its test engineer commits the golden on the `pre-split-29.5` tree before any move
+   (`task-29.5-split-giant-modules#r5-digest`, `#ac-16`); its gate G11 checks the four legs after
+   every store-move commit. 29.3 slice K re-records it on the post-29.5 tree. So
+   [[#derive-digest]] is the specification 29.5 builds from: what the tool must do is all in that
+   section.
 5. **The three handoff helpers and `telemetry`'s read of `cli.main`** are 29.5's two declared
    layering exceptions (L105, B1). Their owner is [[task-29.3-converge-shapes#slice-h]] (ruling
    L107), which starts after this task's [[#r5]] because it needs the daemon-absent accessor
@@ -805,6 +810,13 @@ shared by 29.2 and 29.3.
   - The recording script is `scripts/derive-digest.py`. `scripts/derive-digest.py record` derives
     the corpus and writes `tests/fixtures/derive_digest/golden.json`; `scripts/derive-digest.py
     check` derives it again and compares the four legs. The test calls the same code.
+  - The tool always works in a throwaway store under a short temp root and never opens a live
+    store. `--corpus` and `--golden` choose other paths (the changed corpus; a worktree).
+  - `check` exits 0 when all four legs are equal; 1 when a leg differs, naming the leg and the
+    first differing key; 2 when it could not compare (a pass left no stamp, the embed model id
+    or the duckdb version differs from the golden's, the corpus is missing). It never reports
+    equal for a leg it did not compute.
+  - `record` refuses (exit 2, golden untouched) when a pass left no stamp.
   - **First recorded at 29.5's R0**, on the pre-split tree, by `@ch-test-engineer`, and **checked
     after 29.5's last store move**. That check is what backs 29.5's announced re-stamp. 29.5's
     spec carries the requirement and cites this script path.
@@ -812,7 +824,8 @@ shared by 29.2 and 29.3.
     ([[task-29.3-converge-shapes#k-r6]]), before any `src/` edit of 29.2 or 29.3. The
     re-recorded legs must EQUAL the R0 golden's; a difference is a finding, reported before
     anything else is done. The re-record only moves the golden's recorded commit forward.
-  - The golden names the commit it was recorded at, the embed model id and the duckdb version.
+  - The golden names the commit it was recorded at, the embed model id and the duckdb version
+    (1.5.3: it is recorded after the dev venv moves, `plan-review-fable-store D5`).
     At a different model or duckdb version the test FAILS with the re-record procedure (a
     `git worktree` of the recorded commit under a short temp root, `scripts/derive-digest.py
     record` run with that tree on `PYTHONPATH`); it is never skipped and never re-recorded from
@@ -906,7 +919,8 @@ here decides them.
 | the digest golden is first recorded at 29.5's R0, checked after its last store move, and re-recorded by slice K | the script path is named (`scripts/derive-digest.py`, `record` and `check`); the re-record must equal the R0 golden | [[#derive-digest]], [[#seams-295]] item 4 |
 | slice h owns 29.5's two layering exceptions | cited as ruled | [[#seams-295]] item 5 |
 
-Nothing in this spec is waiting on another author after round 2b.
+Nothing in this spec is waiting on another author after round 2b: 29.5's author confirmed all
+of [[#seams-295]] at `spec-plan29a` `321954b`, and that section now cites the confirming anchors.
 
 ## Out of scope {#out-of-scope}
 
