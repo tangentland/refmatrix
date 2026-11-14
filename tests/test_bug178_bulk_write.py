@@ -453,8 +453,18 @@ def _merge_entity_slots(base: Path):
     return a, b
 
 
+# Tables `merged_counts` reports that HEAD_SHA's code did not have: excluded from the dump the
+# golden digests (the golden is HEAD's output and cannot be regenerated on newer src), and
+# pinned separately — this fixture writes no rows to them, so each must merge to 0.
+# `pending_refs`: bug-216 S2 (ruling L81, 2026-11-14) added it to replica_merge's table lists.
+POST_HEAD_TABLES = ("pending_refs",)
+
+
 def _merged_dump(target: Path, res: dict):
     import duckdb
+    post = {t: res["merged_counts"].get(t) for t in POST_HEAD_TABLES}
+    assert all(v in (None, 0) for v in post.values()), (
+        f"tables newer than HEAD {HEAD_SHA[:7]} hold rows this fixture never wrote: {post}")
     con = duckdb.connect(str(target), read_only=True)
     try:
         q = lambda sql: [tuple(r) for r in con.execute(sql).fetchall()]  # noqa: E731
@@ -467,7 +477,8 @@ def _merged_dump(target: Path, res: dict):
                 "SELECT e.name, lt.name, c.name FROM entity_links l "
                 "JOIN entities e ON e.id = l.entity_id JOIN entities c ON c.id = l.concept_id "
                 "JOIN linkage_types lt ON lt.id = l.linkage_id")),
-            "merged_counts": sorted(res["merged_counts"].items()),
+            "merged_counts": sorted((k, v) for k, v in res["merged_counts"].items()
+                                    if k not in POST_HEAD_TABLES),
             "remap": sorted(res["remap"].items()),
         }
     finally:
