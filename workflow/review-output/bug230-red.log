@@ -1,0 +1,148 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug230/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /Volumes/littlebig/refmatrix-bug230
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collecting ... collected 30 items
+
+tests/test_bug230_repo_scope_gate.py::test_1_a_gate_whose_parity_step_crashed_fails_the_repo_scope_verdict FAILED [  3%]
+tests/test_bug230_repo_scope_gate.py::test_2a_a_read_only_open_of_the_ignore_spec_is_allowed FAILED [  6%]
+tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_write_open_of_the_ignore_spec_is_still_a_violation[w] PASSED [ 10%]
+tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_write_open_of_the_ignore_spec_is_still_a_violation[a] PASSED [ 13%]
+tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_write_open_of_the_ignore_spec_is_still_a_violation[r+] PASSED [ 16%]
+tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_write_open_of_the_ignore_spec_is_still_a_violation[os-rdwr] PASSED [ 20%]
+tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_write_open_of_the_ignore_spec_is_still_a_violation[os-wronly] PASSED [ 23%]
+tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_write_open_of_the_ignore_spec_is_still_a_violation[no-flags] PASSED [ 26%]
+tests/test_bug230_repo_scope_gate.py::test_2a_guard_any_other_touch_of_the_ignore_spec_is_still_a_violation[os.remove] PASSED [ 30%]
+tests/test_bug230_repo_scope_gate.py::test_2a_guard_any_other_touch_of_the_ignore_spec_is_still_a_violation[os.rename] PASSED [ 33%]
+tests/test_bug230_repo_scope_gate.py::test_2a_guard_any_other_touch_of_the_ignore_spec_is_still_a_violation[os.chmod] PASSED [ 36%]
+tests/test_bug230_repo_scope_gate.py::test_2a_guard_any_other_touch_of_the_ignore_spec_is_still_a_violation[os.truncate] PASSED [ 40%]
+tests/test_bug230_repo_scope_gate.py::test_2a_guard_any_other_touch_of_the_ignore_spec_is_still_a_violation[os.utime] PASSED [ 43%]
+tests/test_bug230_repo_scope_gate.py::test_2a_guard_any_other_touch_of_the_ignore_spec_is_still_a_violation[shutil.copyfile] PASSED [ 46%]
+tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation[catalog.A.duckdb] PASSED [ 50%]
+tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation[catalog.read.duckdb] PASSED [ 53%]
+tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation[rmxd.sock] PASSED [ 56%]
+tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation[.refmatrix_ignore.bak] PASSED [ 60%]
+tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation[facts.log] PASSED [ 63%]
+tests/test_bug230_repo_scope_gate.py::test_2a_the_session_deny_set_allows_exactly_this_checkouts_ignore_spec FAILED [ 66%]
+tests/test_bug230_repo_scope_gate.py::test_2a_the_dev_tree_shape_runs_the_scope_parity_step_under_the_sandbox FAILED [ 70%]
+tests/test_gmd_lint_requires_version.py::test_a_gmd_doc_passes PASSED    [ 73%]
+tests/test_gmd_lint_requires_version.py::test_no_frontmatter_at_all_is_an_error PASSED [ 76%]
+tests/test_gmd_lint_requires_version.py::test_frontmatter_without_the_gmd_key_is_an_error PASSED [ 80%]
+tests/test_gmd_lint_requires_version.py::test_the_error_says_what_is_lost_and_how_to_opt_out PASSED [ 83%]
+tests/test_gmd_lint_requires_version.py::test_a_reasoned_opt_out_passes PASSED [ 86%]
+tests/test_gmd_lint_requires_version.py::test_an_opt_out_with_no_reason_is_an_error PASSED [ 90%]
+tests/test_gmd_lint_requires_version.py::test_the_opt_out_must_be_on_line_one PASSED [ 93%]
+tests/test_gmd_lint_requires_version.py::test_memory_index_keeps_its_by_name_exemption PASSED [ 96%]
+tests/test_gmd_lint_requires_version.py::test_the_repo_scope_is_clean_under_the_stricter_gate PASSED [100%]
+
+=================================== FAILURES ===================================
+_____ test_1_a_gate_whose_parity_step_crashed_fails_the_repo_scope_verdict _____
+
+gate_roots = [PosixPath('/tmp/b1798fshtkwt')]
+
+    def test_1_a_gate_whose_parity_step_crashed_fails_the_repo_scope_verdict(gate_roots):
+        root = _gate_root(lint_src=None, doc=PLANTED_FIXED)
+        gate_roots.append(root)
+        (root / "scripts" / "check-gmd-parity.py").write_text(
+            "import os, sys\nsys.stderr.write('killed like the sandbox kills a child\\n')\n"
+            "os._exit(86)\n")
+        r = _run_gate(root)
+        out = r.stdout + r.stderr
+        assert r.returncode == 86, f"precondition: the gate exits 86 when its parity step does:\n{out}"
+        # The hole bug-230 is about: the pre-fix verdict (reject exit 2 and `: error` lines only)
+        # accepts this run.
+        old_verdict = r.returncode != 2 and not [l for l in out.splitlines() if ": error" in l]
+        assert old_verdict, "precondition: the old verdict passes a crashed gate"
+>       with pytest.raises(AssertionError) as ei:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'AssertionError'>
+
+tests/test_bug230_repo_scope_gate.py:87: Failed
+____________ test_2a_a_read_only_open_of_the_ignore_spec_is_allowed ____________
+
+checkout = {'deny': {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/g...low': ['/private/tmp/b2307lvjl0b0/.refmatrix/.refmatrix_ignore'], ...}, 'root': PosixPath('/private/tmp/b2307lvjl0b0')}
+
+    def test_2a_a_read_only_open_of_the_ignore_spec_is_allowed(checkout):
+        p = str(checkout["root"] / IGNORE_REL)
+        for args in ((p, "r", os.O_RDONLY | os.O_CLOEXEC),           # io.open / Path.read_text
+                     (p, None, os.O_RDONLY)):                          # os.open
+>           assert rmx_sandbox.violation("open", args, checkout["deny"]) is None, (
+                f"a read-only open of {p} is refused: {args}")
+E           AssertionError: a read-only open of /private/tmp/b2307lvjl0b0/.refmatrix/.refmatrix_ignore is refused: ('/private/tmp/b2307lvjl0b0/.refmatrix/.refmatrix_ignore', 'r', 16777216)
+E           assert '/private/tmp/b2307lvjl0b0/.refmatrix/.refmatrix_ignore' is None
+E            +  where '/private/tmp/b2307lvjl0b0/.refmatrix/.refmatrix_ignore' = <function violation at 0x1054599b0>('open', ('/private/tmp/b2307lvjl0b0/.refmatrix/.refmatrix_ignore', 'r', 16777216), {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/github/atollogy/bdep/atldb/.refmatrix', '/Users/tholley/github/atollogy/bdep/atlftpd/.refmatrix', '/Users/tholley/github/atollogy/bdep/cliquedb/.refmatrix', '/Users/tholley/github/atollogy/bdep/cliquet/.refmatrix', ...], 'pids': [39891, 53959, 54024, 54292, 54302, 54340, ...], 'ports': [7777], 'read_allow': ['/private/tmp/b2307lvjl0b0/.refmatrix/.refmatrix_ignore'], ...})
+E            +    where <function violation at 0x1054599b0> = rmx_sandbox.violation
+
+tests/test_bug230_repo_scope_gate.py:115: AssertionError
+____ test_2a_the_session_deny_set_allows_exactly_this_checkouts_ignore_spec ____
+
+    def test_2a_the_session_deny_set_allows_exactly_this_checkouts_ignore_spec():
+        """`build_deny` writes the allow for the repo the sandbox was entered for — this checkout —
+        and for nothing else, so every child reads the same rule from `deny.json`."""
+        deny = rmx_sandbox._STATE["deny"]
+        want = sorted(rmx_sandbox._variants(REPO / IGNORE_REL))
+>       assert sorted(deny.get("read_allow") or []) == want, (
+            f"session read_allow {deny.get('read_allow')} != {want}")
+E       AssertionError: session read_allow None != ['/Volumes/littlebig/refmatrix-bug230/.refmatrix/.refmatrix_ignore']
+E       assert [] == ['/Volumes/li...atrix_ignore']
+E         
+E         Right contains one more item: '/Volumes/littlebig/refmatrix-bug230/.refmatrix/.refmatrix_ignore'
+E         
+E         Full diff:
+E         + []
+E         - [
+E         -     '/Volumes/littlebig/refmatrix-bug230/.refmatrix/.refmatrix_ignore',
+E         - ]
+
+tests/test_bug230_repo_scope_gate.py:154: AssertionError
+___ test_2a_the_dev_tree_shape_runs_the_scope_parity_step_under_the_sandbox ____
+
+gate_roots = [PosixPath('/tmp/b1797gmlyx1r'), PosixPath('/private/tmp/b230s5hgr712y')]
+
+    def test_2a_the_dev_tree_shape_runs_the_scope_parity_step_under_the_sandbox(gate_roots):
+        """The bug-230 repro: lint-gmd.sh on a checkout that HAS `.refmatrix/.refmatrix_ignore`,
+        under a deny set naming that checkout's store (its own sandbox root). The parity step reads
+        the spec; the gate must run to exit 0. Pre-fix the child is killed with exit 86."""
+        root = _gate_root(lint_src=None, doc=PLANTED_FIXED)
+        gate_roots.append(root)
+        (root / ".refmatrix").mkdir()
+        (root / IGNORE_REL).write_text(R4_SPEC)
+        sb = Path(tempfile.mkdtemp(prefix="b230s", dir="/tmp")).resolve()
+        gate_roots.append(sb)
+        session = rmx_sandbox._STATE["deny"]
+        deny = dict(session,
+                    paths=sorted(set(session["paths"]) | rmx_sandbox._variants(root / ".refmatrix")),
+                    read_allow=sorted(rmx_sandbox._variants(root / IGNORE_REL)),
+                    touches=str(sb / "touches.log"))
+        (sb / rmx_sandbox.DENY_FILE).write_text(json.dumps(deny, indent=1))
+        env = dict(os.environ, RMX_SANDBOX_ROOT=str(sb))
+        r = _run_gate(root, env)
+        out = r.stdout + r.stderr
+        touches = (sb / "touches.log").read_text() if (sb / "touches.log").exists() else ""
+>       assert r.returncode == 0, (
+            f"lint-gmd.sh exited {r.returncode} on a checkout with .refmatrix/.refmatrix_ignore "
+            f"under the sandbox:\n{out[-2000:]}\ntouches: {touches[-800:]}")
+E       AssertionError: lint-gmd.sh exited 86 on a checkout with .refmatrix/.refmatrix_ignore under the sandbox:
+E         lint-gmd: no memory dir for /tmp/b1797gmlyx1r and no local-path origin; memory-id refs will dangle
+E         
+E         gmd lint: 6 files, 6 GMD docs, 0 errors, 0 warnings [phase 2 cross-doc]
+E         SandboxViolation: open on live target /private/tmp/b1797gmlyx1r/.refmatrix/.refmatrix_ignore (test tests/test_bug230_repo_scope_gate.py::test_2a_the_dev_tree_shape_runs_the_scope_parity_step_under_the_sandbox; sandbox /private/tmp/b230s5hgr712y)
+E         lint-gmd: lint exit 0, anchor parity exit 86
+E         
+E         touches: 53082	tests/test_bug230_repo_scope_gate.py::test_2a_the_dev_tree_shape_runs_the_scope_parity_step_under_the_sandbox	tests/test_bug230_repo_scope_gate.py::test_2a_the_dev_tree_shape_runs_the_scope_parity_step_under_the_sandbox	open	/private/tmp/b1797gmlyx1r/.refmatrix/.refmatrix_ignore	-
+E         
+E       assert 86 == 0
+E        +  where 86 = CompletedProcess(args=['bash', '/tmp/b1797gmlyx1r/scripts/lint-gmd.sh'], returncode=86, stdout='', stderr='lint-gmd: no memory dir for /tmp/b1797gmlyx1r and no local-path origin; memory-id refs will dangle\n\ngmd lint: 6 files, 6 GMD docs, 0 errors, 0 warnings [phase 2 cross-doc]\nSandboxViolation: open on live target /private/tmp/b1797gmlyx1r/.refmatrix/.refmatrix_ignore (test tests/test_bug230_repo_scope_gate.py::test_2a_the_dev_tree_shape_runs_the_scope_parity_step_under_the_sandbox; sandbox /private/tmp/b230s5hgr712y)\nlint-gmd: lint exit 0, anchor parity exit 86\n').returncode
+
+tests/test_bug230_repo_scope_gate.py:181: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug230_repo_scope_gate.py::test_1_a_gate_whose_parity_step_crashed_fails_the_repo_scope_verdict
+FAILED tests/test_bug230_repo_scope_gate.py::test_2a_a_read_only_open_of_the_ignore_spec_is_allowed
+FAILED tests/test_bug230_repo_scope_gate.py::test_2a_the_session_deny_set_allows_exactly_this_checkouts_ignore_spec
+FAILED tests/test_bug230_repo_scope_gate.py::test_2a_the_dev_tree_shape_runs_the_scope_parity_step_under_the_sandbox
+========================= 4 failed, 26 passed in 4.61s =========================
