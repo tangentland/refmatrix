@@ -415,14 +415,15 @@ HANG_BOUND_S = 45
 
 
 def _hanging_git(bindir: Path, mode: str) -> None:
-    """A PATH shim named `git` (registered `external`): `all` sleeps on every call; `ls-files`
-    passes everything but `ls-files` to the real git and sleeps on `ls-files`. `exec sleep`, so
-    a kill on timeout leaves no grandchild holding the pipes."""
+    """A PATH shim named `git` (registered `external`): `all` sleeps on every call; any other
+    `mode` names ONE git subcommand (`ls-files`, `diff`) that sleeps, while every other call
+    goes to the real git. `exec sleep`, so a kill on timeout leaves no grandchild holding the
+    pipes."""
     real = shutil.which("git")
     assert real, "fixture: no git on PATH"
     bindir.mkdir(exist_ok=True)
     body = ("#!/bin/sh\nexec sleep 120\n" if mode == "all" else
-            f'#!/bin/sh\ncase " $* " in *" ls-files "*) exec sleep 120 ;; esac\n'
+            f'#!/bin/sh\ncase " $* " in *" {mode} "*) exec sleep 120 ;; esac\n'
             f'exec "{real}" "$@"\n')
     g = bindir / "git"
     g.write_text(body, encoding="utf-8")
@@ -559,3 +560,128 @@ def test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses(tracke
     head = _refusal_head(repo.store / _target_catalog(layout))
     assert len(errs) == 1 and head in errs[0], \
         f"[{layout}] expected ONE `Error:` line `{head} ...`; got {errs}\n{text}"
+
+
+# =============================================================================================
+# L82 (2026-11-13): the save-state promote refusal is loud; `sync.changed_since` cannot hang
+# =============================================================================================
+
+@pytest.mark.timeout(300)
+def test_save_state_whose_promote_is_refused_says_so_on_stderr_and_exits_non_zero(tracked_repo):
+    """L82: `rmx save-state` with no daemon on a store whose catalog git tracks. The handoff is
+    written (it lands in the memory dir, outside the store, BEFORE the promote), the STM promote
+    is refused -- and that refusal is printed on STDERR with a non-zero exit. At 67f55cb the
+    promote wrote the tracked catalog; with only the r4 refusal in place it would come back as
+    `{"error": ...}`, which the command prints as `promote skipped:` on stdout and exits 0 --
+    a silent refusal (ch-bsd r2 flag, red-212r2 r4 flag). `--no-sync` keeps the memory bridge
+    (another in-process writer, already covered) out of this test, so the promote is the only
+    store write."""
+    from refmatrix import stm
+    repo, layout = tracked_repo
+    assert not dm.ping(repo.store), "fixture: a daemon answers"
+    session = "bug212-r4-savestate"
+    st = stm.Stm(repo.store, session)
+    st.record("note", "a focus event for the bug-212 r4 save-state probe")
+    memdir = repo.base / "memdir"
+    memdir.mkdir()
+    before = _digests(repo.store)
+    r = _cli(repo, ["save-state", "-s", session, "--memory-dir", str(memdir), "--no-sync",
+                    "--no-lint", "-m", "bug-212 r4 probe"])
+    text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    changed = _changed(before, _digests(repo.store))
+    assert TRACEBACK not in r.stderr, f"[{layout}] save-state crashed\n{text}"
+    assert not changed and _status_refmatrix_catalogs(repo.proj) == "", \
+        f"[{layout}] save-state's promote wrote the git-tracked catalog {changed}\n{text}"
+    saved = sorted(p.name for p in memdir.rglob("savestate_*.md"))
+    assert saved, f"[{layout}] save-state wrote no handoff file under {memdir}\n{text}"
+    head = _refusal_head(repo.store / _target_catalog(layout))
+    assert any(head in ln for ln in r.stderr.splitlines()), \
+        f"[{layout}] the promote refusal (`{head} ...`) is not on stderr\n{text}"
+    assert r.returncode != 0, f"[{layout}] save-state exited 0 although its promote was " \
+                              f"refused\n{text}"
+
+
+_CHANGED_SINCE_PROBE = r"""
+import json, sys, time
+from pathlib import Path
+from refmatrix import sync
+t0 = time.monotonic()
+try:
+    got = sync.changed_since(Path(sys.argv[1]), sys.argv[2])
+except BaseException as e:
+    print(json.dumps({"raised": type(e).__name__, "runtime_error": isinstance(e, RuntimeError),
+                      "msg": str(e), "elapsed": time.monotonic() - t0}))
+else:
+    print(json.dumps({"raised": None, "got": [str(p) for p in got],
+                      "elapsed": time.monotonic() - t0}))
+"""
+
+
+@pytest.fixture
+def ignored_store_repo():
+    """A repo with two commits and a real store whose catalog git IGNORES (the store gate and
+    the tracked-catalog check both let a sync through), no daemon. Short resolved `/tmp` root."""
+    base = Path(tempfile.mkdtemp(prefix="b212d-", dir="/tmp")).resolve()
+    r = Repo(base)
+    try:
+        r.proj.mkdir()
+        _quiet(r.proj, r, "init", "-q", "--template=", "-b", "main")
+        (r.proj / ".gitignore").write_text(".refmatrix/\n", encoding="utf-8")
+        (r.proj / "a.py").write_text("def a():\n    return 1\n", encoding="utf-8")
+        _quiet(r.proj, r, "add", "-A")
+        _quiet(r.proj, r, "commit", "-q", "-m", "c0")
+        (r.proj / "b.py").write_text("def b():\n    return 2\n", encoding="utf-8")
+        _quiet(r.proj, r, "add", "-A")
+        _quiet(r.proj, r, "commit", "-q", "-m", "c1")
+        s = Store(r.store)
+        s.init()
+        s.close()
+        assert store_mod.git_tracked_catalogs(r.store) == [], "fixture: catalog tracked"
+        yield r
+    finally:
+        dm.stop_daemon(r.store)
+        shutil.rmtree(base, ignore_errors=True)
+
+
+@pytest.mark.timeout(180)
+def test_changed_since_with_a_hanging_git_diff_raises_within_the_bound(ignored_store_repo):
+    """L82: `sync.changed_since` (what the post-commit hook's `rmx sync --since` runs) with
+    `git diff` hanging raises within the bound -- a `RuntimeError` (every `--since` caller
+    turns a RuntimeError into one `Error:` line; a bare `subprocess.TimeoutExpired` would be a
+    traceback) saying it timed out. At 67f55cb `git diff` has no timeout: it hangs."""
+    repo = ignored_store_repo
+    _hanging_git(repo.base / "hangbin", "diff")
+    probe = repo.base / "changed_since_probe.py"
+    probe.write_text(_CHANGED_SINCE_PROBE, encoding="utf-8")
+    env = _base_env()
+    env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
+    r = _run_bounded([sys.executable, str(probe), str(repo.proj), "HEAD~1"], cwd=repo.proj,
+                     env=env, bound=HANG_BOUND_S)
+    assert r is not None, (f"sync.changed_since did not return within {HANG_BOUND_S}s with "
+                           f"`git diff` hanging: no timeout on the git call")
+    text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    assert r.returncode == 0, f"the probe itself failed\n{text}"
+    out = json.loads(r.stdout.strip().splitlines()[-1])
+    assert out["raised"] is not None and out["runtime_error"], \
+        f"a hanging `git diff` did not raise a RuntimeError: {out}"
+    assert "time" in out["msg"].lower(), f"the error does not say git timed out: {out['msg']!r}"
+
+
+@pytest.mark.timeout(180)
+def test_sync_since_with_a_hanging_git_diff_fails_loudly(ignored_store_repo):
+    """L82, end to end -- the post-commit path: `rmx sync --since HEAD~1`, no daemon, an
+    ignored catalog (so the store opens), `git diff` hanging. One `Error:` line naming the
+    timeout, exit non-zero, within the bound; never a silent hang in the backgrounded hook."""
+    repo = ignored_store_repo
+    _hanging_git(repo.base / "hangbin", "diff")
+    env = _base_env()
+    env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
+    r = _run_bounded([sys.executable, str(_entry(repo.base)), "sync", "--since", "HEAD~1"],
+                     cwd=repo.proj, env=env, bound=HANG_BOUND_S)
+    assert r is not None, (f"`rmx sync --since HEAD~1` with `git diff` hanging did not finish "
+                           f"within {HANG_BOUND_S}s: a silent hang")
+    text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    assert TRACEBACK not in r.stderr and r.returncode != 0, text
+    errs = _errors(r.stderr)
+    assert len(errs) == 1 and "time" in errs[0].lower(), \
+        f"expected ONE `Error:` line naming the git timeout; got {errs}\n{text}"
