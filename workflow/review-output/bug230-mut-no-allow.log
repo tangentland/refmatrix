@@ -1,0 +1,22 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug230/src/refmatrix as checked-hash (bug-037)
+...................F.                                                    [100%]
+=================================== FAILURES ===================================
+____ test_2a_the_session_deny_set_allows_exactly_this_checkouts_ignore_spec ____
+
+    def test_2a_the_session_deny_set_allows_exactly_this_checkouts_ignore_spec():
+        """`build_deny` writes the allow for the repo the sandbox was entered for — this checkout —
+        and for nothing else, so every child reads the same rule from `deny.json`."""
+        deny = rmx_sandbox._STATE["deny"]
+        want = sorted(rmx_sandbox._variants(REPO / IGNORE_REL))
+>       assert sorted(deny.get("read_allow") or []) == want, (
+            f"session read_allow {deny.get('read_allow')} != {want}")
+E       AssertionError: session read_allow None != ['/Volumes/littlebig/refmatrix-bug230/.refmatrix/.refmatrix_ignore']
+E       assert [] == ['/Volumes/li...atrix_ignore']
+E         
+E         Right contains one more item: '/Volumes/littlebig/refmatrix-bug230/.refmatrix/.refmatrix_ignore'
+E         Use -v to get more diff
+
+tests/test_bug230_repo_scope_gate.py:154: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug230_repo_scope_gate.py::test_2a_the_session_deny_set_allows_exactly_this_checkouts_ignore_spec
+1 failed, 20 passed in 1.28s

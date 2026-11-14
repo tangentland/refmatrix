@@ -250,7 +250,18 @@ def build_deny(repo: Path, env=None) -> dict:
         ports.add(int(env["RMX_SANDBOX_HUB_PORT"]))
     return {"paths": sorted(paths), "ports": sorted(ports),
             "pids": sorted(set(live_pids(sorted(roots), homes)) | set(listener_pids(ports))),
-            "touches": str(repo / TOUCHES_REL)}
+            "touches": str(repo / TOUCHES_REL),
+            "read_allow": read_allow(repo)}
+
+
+# The ONE file under a live `.refmatrix/` a test may READ (bug-230, 2026-11-14): this
+# checkout's own ignore spec, which bug-216 R3's scope-parity step (`scripts/check-gmd-parity.py`
+# -> `ingest.ignore_reason`) must read for `scripts/lint-gmd.sh` to judge the repo. It is
+# configuration, not store data: a read-only open of it cannot lock a catalog, write a row or
+# reach a socket. Read-only opens of exactly these paths are allowed (`violation`); a write-mode
+# open, any `os.*` mutation of it, and every other file under the store stay denied.
+def read_allow(repo: Path) -> list:
+    return sorted(_variants(Path(repo) / ".refmatrix" / ".refmatrix_ignore"))
 
 
 # ---- R1: the redirect --------------------------------------------------------------------
@@ -461,6 +472,20 @@ def _as_path(v) -> "str | None":
     return os.path.abspath(v)
 
 
+_WRITE_FLAGS = (os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_TRUNC
+                | getattr(os, "O_EXCL", 0))
+
+
+def _read_only_open(args) -> bool:
+    """An `open` audit event (`path, mode, flags`) that opens for reading only. Unknown flags
+    are NOT read-only: the allow applies only when the event proves the open cannot write."""
+    flags = args[2] if len(args) > 2 else None
+    if not isinstance(flags, int) or flags & _WRITE_FLAGS:
+        return False
+    mode = args[1] if len(args) > 1 else None
+    return mode is None or (isinstance(mode, str) and not any(c in mode for c in "wax+"))
+
+
 def _path_denied(path: str, deny_paths) -> bool:
     for d in deny_paths:
         if path == d or path.startswith(d + "/"):
@@ -595,6 +620,11 @@ def violation(event: str, args, deny: dict, fd_walk: bool = False) -> "str | Non
     walk's root, checked here -- nor to a name with a separator."""
     idx = _PATH_EVENTS.get(event)
     if idx is not None:
+        allow = deny.get("read_allow")
+        if allow and event == "open" and args and _read_only_open(args):
+            p = _as_path(args[0])
+            if p is not None and p in allow:
+                return None                     # bug-230: the repo's ignore spec, read only
         exempt = fd_walk and (event == "open" or event.startswith("os."))
         for i in idx:
             if i < len(args):
