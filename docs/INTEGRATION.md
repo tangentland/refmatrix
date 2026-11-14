@@ -231,11 +231,13 @@ the file and the rule (R3).
 **Which root a path is judged against.** The spec is read from, and the segment rules (1 and 5)
 apply BELOW, the PROJECT root — never the ingest target (bug-216 R2-base + remedy B1):
 
-- `rmx ingest <dir>` and MCP `rmx_ingest`: the project the store belongs to (the parent of its
-  `.refmatrix/`) when `<dir>` lies inside it, else the nearest `.refmatrix/` above `<dir>`, else
-  `<dir>`. So `rmx ingest <proj>/.claude/projects/x/memory` or `rmx ingest <proj>/.claude`
-  stores nothing but a built-in-included GMD `.claude/PROJECT_PROFILE.md` — memories go through
-  `ingest-gmd --as-memory`, never as `kind=doc`.
+- `rmx ingest <dir>` and MCP `rmx_ingest`: ALWAYS the project the store belongs to (the parent
+  of its `.refmatrix/`). A `<dir>` inside it is judged by that project's spec, segment rules below
+  the root: `rmx ingest <proj>/.claude[/projects/x/memory]` stores nothing but a built-in-included
+  GMD `.claude/PROJECT_PROFILE.md`. A `<dir>` OUTSIDE it is judged on its absolute path, as
+  before bug-216: a memdir under any `.claude/` stores nothing, and no other store's ignore file
+  is ever read for it (remedy B1-r2). Memories go through `ingest-gmd --as-memory`, never as
+  `kind=doc`.
 - the watcher and `sync`: the watch root / project root, so a project under `<x>/.hidden/` or
   `<x>/build/` syncs, while a `build/` INSIDE the project stays out.
 - `rmx ingest-gmd <dir>`: the spec from the project root (the nearest `.refmatrix/` above
