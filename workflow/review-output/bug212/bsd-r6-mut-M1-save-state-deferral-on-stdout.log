@@ -1,0 +1,40 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /private/tmp/claude-501/b2r6.yifr/mu/src/refmatrix as checked-hash (bug-037)
+....F.........................                                           [100%]
+=================================== FAILURES ===================================
+____________ test_a_deferred_bridge_is_a_stderr_warning_and_exit_0 _____________
+
+live = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-gdl5xgcj'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-gdl5xgcj/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11284b790>
+
+    @pytest.mark.timeout(300)
+    def test_a_deferred_bridge_is_a_stderr_warning_and_exit_0(live, monkeypatch):
+        """m-2 (L98), the CLI: `rmx save-state --no-promote --no-lint` while a real ingest job runs.
+        Exit 0, a stderr line naming the job id, no `Error:` line. At c854bad: exit 1."""
+        base, root = live
+        jid = _start_running_job(base, root)
+        monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "0.2")
+        memdir = _session_and_memdir(base, root, "bug212-r6-defer-cli")
+        r = CliRunner().invoke(cli_mod.main, ["save-state", "-s", "bug212-r6-defer-cli",
+                                              "--memory-dir", str(memdir), "--no-promote",
+                                              "--no-lint"])
+        text = f"exit {r.exit_code}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.exit_code == 0, f"a bridge deferred behind running job {jid} failed the save\n{text}"
+>       assert jid in r.stderr, f"no stderr warning naming the running job {jid}\n{text}"
+E       AssertionError: no stderr warning naming the running job 9e7f161bc48d
+E         exit 0
+E         stdout:
+E         save-state 
+E         /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-gdl5xgcj/memory/sa
+E         vestate_bug212r6defe.md  (1 events, session bug212-r6-defer-cli, explicit)
+E         warning: memory bridge deferred: ingest job 9e7f161bc48d still running after 0.2s (0/1500 files); the memory dir will be bridged by the next save-state / SessionStart, or run `rmx ingest-gmd --as-memory /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-gdl5xgcj/memory`
+E         
+E         stderr:
+E         MEMORY.md: 1 -> 2 lines, 165 chars (caps 200 lines / 24000 chars; 2 memories on disk)
+E         
+E       assert '9e7f161bc48d' in 'MEMORY.md: 1 -> 2 lines, 165 chars (caps 200 lines / 24000 chars; 2 memories on disk)\n'
+E        +  where 'MEMORY.md: 1 -> 2 lines, 165 chars (caps 200 lines / 24000 chars; 2 memories on disk)\n' = <Result okay>.stderr
+
+tests/test_bug212_r6_red.py:249: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r6_red.py::test_a_deferred_bridge_is_a_stderr_warning_and_exit_0
+1 failed, 29 passed in 300.10s (0:05:00)
