@@ -1,0 +1,475 @@
+##### justified (8)
+--- discovery.py:189
+                           capture_output=True, text=True, timeout=2.0)
+    except Exception:  # noqa: BLE001 — ps missing/hung: assume it is ours
+        return True
+--- daemon.py:7133
+        answers = bool(ping(root, timeout=0.5, retries=0))
+    except Exception:  # noqa: BLE001 — a transport error is "not answering"
+        answers = False
+--- daemon.py:7151
+                    pid = cand
+            except Exception:  # noqa: BLE001 — no pid to wait on, then
+                pass
+--- cli.py:3299
+            installed = lc.is_installed(root)
+        except Exception:  # noqa: BLE001 — supervision probe is best-effort
+            loaded = installed = False
+--- daemon.py:1347
+                        pool.submit(lambda: True).add_done_callback(_touch)
+                    except Exception:  # noqa: BLE001 — pool gone: no tick
+                        pass
+--- daemon.py:1571
+            self._mark_repair_needed("entities", op=where)
+        except Exception:  # noqa: BLE001 — never block the exit
+            pass
+--- reranker.py:364
+                return self._client.info(timeout=probe_s) or {}
+        except Exception:       # noqa: BLE001 — no info is "cost unknown"
+            return {}
+--- launchctl.py:518
+            _hub.rpc("ping", {}, timeout=1.0)
+        except Exception:  # noqa: BLE001 — the socket is gone: the hub exited
+            return True
+##### reraise (29)
+--- replica_merge.py:145
+            max_entity=max_entity, max_partition=max_partition, max_lt=max_lt)
+    except BaseException:
+        con.close()
+        if not dry_run:
+            _unlink_target(target_path)          # never leave a half-built merge
+        raise
+--- backend.py:148
+            cur.execute(f"USE {_RO_ALIAS}")       # a cursor does not inherit USE (measured)
+        except BaseException:
+            cur.close()
+            raise
+--- models_local.py:73
+        return Path(snapshot_download(model_name, local_files_only=True))
+    except Exception as e:
+        raise ModelNotCached(fetch_hint(model_name)) from e
+--- cli.py:896
+            return fn(s)
+        except Exception as e:
+            if not _is_lock_conflict(e):
+                raise
+            last = e
+            try:
+                s.close()
+--- verbs.py:1171
+            hooks = memory_index.load_hooks(memdir)
+        except Exception as e:  # noqa: BLE001 -- said (warnings) or raised, never dropped
+            msg = f"curated hooks unreadable ({type(e).__name__}: {e})"
+            if warnings is None:
+                raise VerbError(f"{msg}; pass a warnings list to pack with first "
+                                f"sentences instead") from e
+            warnings.append(f"{msg}; hook lines use each memory's first sentence")
+--- backend.py:301
+            con.close()
+        except Exception as exc:
+            raise StaleDuckDBInstanceError(
+                f"{p}: a connection to the replaced file (inode {fid[1]}; the path now "
+                f"holds inode {now[1]}) could not be closed ({exc!r}) (bug-112)") from exc
+--- daemon.py:1493
+            self._reopen_writer(marker.read_text().strip())
+        except Exception as exc:
+            raise SlotRepairError("reopen", f"writer reopen after cloning {survivor} -> "
+                                  f"{missing} failed", exc) from exc
+--- verbs.py:303
+        r = daemon_mod.call(root, op, payload, timeout=timeout, retries=retries)
+    except Exception as e:  # noqa: BLE001 — transport-level only (call does socket+json)
+        raise classify_transport_error(e, op=op, root=root, timeout=timeout,
+                                       write=write) from e
+--- verbs.py:369
+             else hub_mod.global_call(op, args, timeout=rem, retries=0))
+    except Exception as e:  # noqa: BLE001 — transport-level; typed by THE classifier
+        # A daemon that went away between the probe and the write is absent,
+        # a stall is busy, an undiallable path is neither (#req-amend).
+        c = classify_transport_error(e, op=op, root=groot,
+                                     timeout=rem if rem is not None else 60.0)
+        raise type(c)(f"global store: {c}") from e
+--- cli.py:3539
+            loaded = lc.is_loaded(root)
+        except Exception as e:  # noqa: BLE001 — reported; never guessed unsupervised
+            # Guessing "unsupervised" here stopped a supervised daemon (exit
+            # 0, no KeepAlive respawn) and spawned one beside the label —
+            # bug-013, the shape r5 #b-1 found in `upgrade` (task 4.6).
+            raise click.ClickException(
+                f"could not probe launchd for {root} ({type(e).__name__}: {e}); not "
+--- store.py:5041
+                yield
+            except Exception:
+                con.execute("ROLLBACK")
+                self._in_transaction = False
+                raise
+--- pagerank.py:531
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+--- sync.py:205
+                             cancel_check=cancel_check)
+    except BaseException:
+        if raws:
+            enqueue(s.root, raws)
+        raise
+--- verbs.py:460
+        r = daemon_mod.call(root, "partition_list", {}, timeout=op_timeout, retries=0)
+    except Exception as e:  # noqa: BLE001 — transport-level; typed by THE classifier
+        # Op-level busy is BUSY (bsd-plan3-r4 #s-4): guessing here let the
+        # write that follows land on the guessed partition once the lock
+        # freed — the split-brain family this function exists to prevent.
+        # A refused / missing socket is ABSENT, not busy (task 3.6 #2, ch-bsd
+        # plan-3 r9 #s-1): raised as the classifier types it, and never
+--- verbs.py:2297
+        resp = hub_mod.global_call("memory_get", key, timeout=t, retries=0)
+    except Exception as e:  # noqa: BLE001 -- transport-level; typed by THE classifier
+        c = classify_transport_error(e, op="memory_get", root=groot, timeout=t)
+        raise type(c)(f"global store: {c}") from e
+--- cli.py:3455
+                        r = daemon_mod.call(root, "ping", {}, timeout=2.0, retries=1)
+                    except Exception as e:  # noqa: BLE001 — reported, not skipped
+                        raise click.ClickException(
+                            f"relaunched daemon pid={pid} answered version={ver} "
+                            f"but its code path cannot be read ({e}); not verified")
+--- memory_index.py:414
+        os.replace(tmp, target)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        raise
+--- cli.py:2934
+                                  rmx=rmx, allow_dev=allow_dev)
+    except Exception as e:
+        raise click.ClickException(str(e))
+--- daemon.py:3773
+            d._store_lock.release()
+    except Exception as exc:
+        with d._ingest_jobs_lock:
+            job["status"] = "error"
+            job["error"] = repr(exc)
+            job["ended_at"] = time.time()
+        d._request_snapshot()
+--- daemon.py:1527
+            st._connect()
+        except BaseException:
+            Daemon._force_close_store(st)
+            raise
+--- backend.py:133
+            self.base.execute(f"USE {_RO_ALIAS}")
+        except BaseException:
+            self.base.close()
+            raise
+--- verbs.py:699
+        resp = hub_mod.global_call(op, args, timeout=timeout, retries=retries)
+    except Exception as e:  # noqa: BLE001 — transport-level; typed by THE classifier
+        # Task 3.7 R53 (ch-bsd plan-3 r12 #m-2): this said "global store <op>
+        # failed: <raw errno>" as one plain VerbError for a held, a stopped and a
+        # refused global daemon alike. Typed like `global_write`: absent, busy,
+        # or undiallable — the caller's scope=both warning can now tell them apart.
+        c = classify_transport_error(e, op=op, root=groot, timeout=timeout)
+##### silent(bare) (174)
+--- cli.py:9601
+        return sys.stdin.read()
+    except Exception:
+        return ""
+--- daemon.py:6912
+                    return pid
+            except Exception:
+                pass
+--- cli.py:6436
+            rows = (resp.get("result") or {}).get("rows") or []
+    except Exception:
+        return
+--- store.py:5215
+            defines_lid = self.get_linkage_id("defines")
+        except Exception:
+            return 0
+--- context.py:583
+            text = embmod.extract_text_for_entity(s, eid, ent.kind)
+        except Exception:
+            continue
+--- hub.py:1472
+                info.update(r["result"])
+        except Exception:
+            pass
+--- pagerank.py:324
+            skip_lid = store.get_linkage_id("mentions")
+        except Exception:
+            skip_lid = None
+--- context.py:1567
+            helix.flush(Path(b.store_root), b.helix_pending)
+        except Exception:
+            pass
+--- search.py:87
+            s.close()
+        except Exception:
+            pass
+--- context.py:1051
+                break
+    except Exception:
+        pass
+--- store.py:8898
+                return True
+        except Exception:
+            return False
+--- hub.py:298
+                hb_age = float(daemon_mod.heartbeat_age(root))
+            except Exception:
+                hb_age = float("inf")
+--- store.py:5738
+            mlid = self.get_linkage_id("mentions")
+        except Exception:
+            return []
+--- daemon.py:1586
+                self.log_fh.flush()
+        except Exception:
+            pass
+--- composite.py:157
+            pr_scores = load_scores(s)
+        except Exception:
+            pr_scores = {}
+--- store.py:2549
+                self._duck_view.close()
+            except Exception:
+                pass
+--- subproc.py:328
+                        p.stdin.close()
+                    except Exception:
+                        pass
+--- daemon.py:2625
+            name = Path(store.db_path).name
+        except Exception:
+            return None
+--- modelsrv.py:633
+                        })
+                    except Exception:
+                        return
+--- cli.py:902
+                s.close()
+            except Exception:
+                pass
+--- store.py:487
+            return "global"
+    except Exception:
+        pass
+--- cli.py:8767
+            syncmod.enqueue(root, remaining)
+        except Exception:
+            pass
+##### silent(commented) (18)
+--- fingerprint.py:234
+        topology = "shared" if modelsrv.shared_available() else "private"
+    except Exception:                                      # noqa: BLE001
+        topology = "unknown"
+--- ingest.py:1409
+            n += st.docs
+        except Exception:
+            # Never let a bad markdown file abort the whole tree pass; the
+            # plain registration above is gone for these, so a failure here
+            # costs their body terms, not the ingest.
+            for gp in gmd_paths:
+                try:
+--- telemetry.py:577
+            form = invocation_source()
+        except Exception:
+            # Telemetry never fails the command it describes.
+            form = "unknown"
+--- store.py:1824
+            ).fetchall()
+        except Exception:
+            # Older DuckDB releases may not expose duckdb_constraints.
+            # Without visibility we can't safely rebuild — leave the
+            # old CHECK in place and let upsert raise a Python-side
+            # ConstraintException for 'memory' rows.
+            return
+--- mcp.py:342
+                    pass
+        except Exception:
+            # hub restarted / socket dropped — back off, then reconnect.
+            _CHANNEL_STOP.wait(3.0)
+--- telemetry.py:545
+                r = self.root()
+            except Exception:
+                return None      # telemetry never fails the command it describes
+--- hub.py:927
+                    msg = sub.q.get(timeout=1.0)
+                except Exception:
+                    # idle: probe the socket so a dead client is noticed
+                    try:
+                        conn.sendall(b"")
+                    except OSError:
+                        break
+--- ingest.py:468
+                progress_cb(name, done, total)
+            except Exception:
+                pass  # progress is best-effort; never fail an ingest on it
+--- modelsrv.py:373
+            info = w.info()
+        except Exception:
+            # Worker didn't come up — the existing respawn/timeout
+            # machinery owns that failure mode.
+            return
+--- telemetry.py:300
+            self._out_bytes += len(s.encode("utf-8", "replace"))
+        except Exception:
+            pass                      # never let accounting break the write
+--- store.py:1855
+            )
+        except Exception:
+            # setval is supported on DuckDB sequences; if it fails we
+            # accept the risk — the rebuild itself still preserves ids.
+            pass
+--- fingerprint.py:202
+            daemon_code = result.get("code_path")
+        except Exception:                                  # noqa: BLE001
+            pass
+--- ui/server.py:703
+                    st = cctree.stat_session_cached(s)
+                except Exception:
+                    continue  # skip unparseable rather than 500 the index
+--- store.py:5883
+                    cover.setdefault(int(_eid), set()).add(_ti)
+            except Exception:
+                pass  # linkage absent on stores that predate coref
+--- fingerprint.py:227
+                }
+        except Exception:                                  # noqa: BLE001
+            pass
+--- cli.py:15190
+            out_bytes = _counter.out_bytes
+        except Exception:
+            out_bytes = None          # accounting never fails the command
+--- fingerprint.py:216
+                ]
+        except Exception:                                  # noqa: BLE001
+            pass
+--- store.py:6631
+                      "computed_at": float(prrow[1])}
+        except Exception:
+            pr = None  # table absent on a legacy catalog
+##### surfaced (172)
+--- embed_worker.py:207
+            send_frame(CHAN_OUT, {"ok": True, **hdr}, out_blob)
+        except Exception as exc:
+            # Report and keep serving. A bad request (unknown op, model
+            # mismatch) should not cost the parent a respawn; a real crash
+            # exits on its own and the parent respawns from that.
+            print(f"worker: op={op} failed: {exc!r}", file=sys.stderr)
+            try:
+--- launchctl.py:510
+        _hub.rpc("stop", {}, timeout=5.0)
+    except Exception as e:  # noqa: BLE001 — said; launchd's bootout signals it
+        _sys.stderr.write(f"hub stop op not delivered ({type(e).__name__}: {e}); "
+                          f"launchctl bootout will signal it\n")
+        return False
+--- daemon.py:944
+                    w.close(timeout=2.0)
+                except Exception as exc:  # noqa: BLE001 — named; the fallback proceeds
+                    self._log(f"embed worker close failed after a spawn failure: {exc!r}")
+--- store.py:5055
+                    self.flush_fragments()
+                except Exception as exc:
+                    # Don't roll the transaction back -- the relational
+                    # write already landed. Surface the error so the next
+                    # explicit flush retries.
+                    import sys
+                    print(f"[rmx] fragment flush failed: {exc!r}",
+--- cli.py:3079
+                console.print(f"[yellow]reinstalled[/] {root} plist ({why})")
+            except Exception as e:  # noqa: BLE001 — named per store, then counted
+                failed += 1
+                console.print(f"[red]FAILED[/] {root}  plist reinstall: {e}")
+                continue
+--- daemon.py:4182
+        }
+    except Exception as exc:
+        h["derive_error"] = f"{type(exc).__name__}: {exc}"[:200]
+--- recall.py:696
+            client.close()
+        except Exception as exc:  # noqa: BLE001 — named; the stand-in still loads
+            say(f"embed: closing the private worker that could not serve failed: {exc!r}")
+--- ingest_gmd.py:2183
+        out["capped"] = True
+    except Exception as e:      # noqa: BLE001 — reported, never hidden
+        out["error"] = f"{type(e).__name__}: {e}"
+--- daemon.py:3398
+                    self._fast_exit_if_invalidated(exc, f"op {op}")
+        except Exception as exc:
+            resp = {"ok": False, "error": f"protocol error: {exc!r}"}
+--- watch.py:136
+            self.callback(paths)
+        except Exception as e:
+            print(f"[rmx watch] sync error: {e}")
+--- daemon.py:1810
+            faulthandler.register(signal.SIGUSR1, file=sys.stderr, all_threads=True)
+        except Exception as exc:  # noqa: BLE001 — diagnostics must not stop a boot
+            self._log(f"faulthandler not registered: {exc!r}")
+--- modelsrv.py:626
+                        return
+                except Exception as exc:
+                    self._log(f"role={role} op={op} failed: {exc!r}")
+                    try:
+                        send_frame(rw, {
+                            "ok": False,
+                            "error": f"{type(exc).__name__}: {exc}",
+--- ui/server.py:665
+                    st = cctree.stat_session_cached(s)
+                except Exception as e:  # a half-written live session
+                    rows.append({"session": s.stem, "path": str(s),
+                                 "error": f"{type(e).__name__}: {e}"})
+                    continue
+--- cli.py:3895
+                    console.print(f"[yellow]{rich_escape(mwarn)}[/]", soft_wrap=True)
+        except Exception as e:  # noqa: BLE001 — diagnostic line, must not raise
+            # Unknown is NOT clean on this screen (bsd-plan1 #s-3): the
+            # condition that makes a store stale — an ingest under new code —
+            # is the condition that makes this probe time out (plan-12 #s-2).
+            console.print(
+                f"derive: [dim]unknown ({e})[/]  [yellow][UNVERIFIED][/]")
+--- cli.py:3313
+                label = lc.kickstart(root)
+            except Exception as e:  # noqa: BLE001 — fall back to a fork
+                console.print(
+                    f"[yellow]kickstart failed ({e}); starting standalone[/]"
+                )
+--- search.py:188
+            reasons.append(f"memory_search answered an error: {mem.get('error')}")
+    except Exception as e:  # noqa: BLE001 — transport-level; worded by THE classifier
+        # A refused or missing socket is "not running", only a stall is "did
+        # not answer" (task 3.6 #2, ch-bsd plan-3 r9 #s-1: this leg sat 20
+        # lines above the global leg r8 fixed and still called both a timeout).
+        from refmatrix import verbs
+        reasons.append(str(verbs.classify_transport_error(
+--- search.py:406
+                _bump(path, 0.0, f"filename={filename}", name_hit=True)
+        except Exception as e:  # noqa: BLE001 — said, never a bare pass
+            reasons.append(
+                f"filename query failed ({type(e).__name__}: {e})")
+--- daemon.py:2837
+                    self.store._connect().execute("CHECKPOINT")
+                except Exception as exc:
+                    self._log(f"snapshot CHECKPOINT failed: {exc!r}")
+                    return {"error": "checkpoint", "detail": str(exc)}
+--- ui/server.py:269
+            return {"ok": True, "result": {"up": daemon_mod.ping(root)}}
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+--- embedder.py:273
+                content = _coref_apply(content or "", res)
+        except Exception as e:  # noqa: BLE001 — coref is an optimization, never a gate
+            # Embed the RAW content: a failed substitution must not cost the
+            # row its body, and must not pass unnamed either.
+            _note_degraded("coref_apply_failed", entity_id, repr(e))
+--- recall.py:1098
+        raise                       # a named refusal (no [dense] extra): never a None
+    except Exception as e:  # noqa: BLE001 -- a missing leg: the next step serves
+        ws.append(f"replica recall unavailable ({type(e).__name__}: {e})")
+        return None
+--- search.py:459
+                    part, reasons = fut.result(timeout=0.1)
+                except Exception as e:  # noqa: BLE001 — said per store
+                    part, reasons = {}, [
+                        f"locate failed ({type(e).__name__}: {e})"]

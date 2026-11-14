@@ -1,0 +1,8 @@
+consolidate.py       refusal triggers: 0
+embedder.py          refusal triggers: 0
+ingest.py            refusal triggers: 0
+ingest_gmd.py        refusal triggers: 0
+pagerank.py          refusal triggers: 0
+session_ingest.py    refusal triggers: 0
+vectors.py           refusal triggers: 0
+pass files with a refusal trigger: see above; total triggers: 0; field-defining classes the normal form recognises: 6

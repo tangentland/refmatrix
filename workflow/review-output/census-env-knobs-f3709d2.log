@@ -1,0 +1,21 @@
+bare numeric env reads outside envknob: 82 in 20 modules (float 43, int 39)
+  daemon.py               16
+  cli.py                   9
+  hub.py                   8
+  composite.py             6
+  ingest.py                6
+  context.py               5
+  stm.py                   5
+  reranker.py              4
+  scan.py                  4
+  ingest_gmd.py            3
+  recall.py                3
+  search.py                3
+  assoc.py                 2
+  launchctl.py             2
+  helix.py                 1
+  learn_queue.py           1
+  memory_index.py          1
+  promote.py               1
+  scheduler.py             1
+  store.py                 1

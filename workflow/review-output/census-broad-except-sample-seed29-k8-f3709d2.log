@@ -1,0 +1,205 @@
+##### justified (8)
+--- daemon.py:7133
+        answers = bool(ping(root, timeout=0.5, retries=0))
+    except Exception:  # noqa: BLE001 — a transport error is "not answering"
+        answers = False
+--- daemon.py:1571
+            self._mark_repair_needed("entities", op=where)
+        except Exception:  # noqa: BLE001 — never block the exit
+            pass
+--- daemon.py:1347
+                        pool.submit(lambda: True).add_done_callback(_touch)
+                    except Exception:  # noqa: BLE001 — pool gone: no tick
+                        pass
+--- discovery.py:189
+                           capture_output=True, text=True, timeout=2.0)
+    except Exception:  # noqa: BLE001 — ps missing/hung: assume it is ours
+        return True
+--- launchctl.py:518
+            _hub.rpc("ping", {}, timeout=1.0)
+        except Exception:  # noqa: BLE001 — the socket is gone: the hub exited
+            return True
+--- cli.py:3299
+            installed = lc.is_installed(root)
+        except Exception:  # noqa: BLE001 — supervision probe is best-effort
+            loaded = installed = False
+--- reranker.py:364
+                return self._client.info(timeout=probe_s) or {}
+        except Exception:       # noqa: BLE001 — no info is "cost unknown"
+            return {}
+--- daemon.py:7151
+                    pid = cand
+            except Exception:  # noqa: BLE001 — no pid to wait on, then
+                pass
+##### reraise (29)
+--- daemon.py:1493
+            self._reopen_writer(marker.read_text().strip())
+        except Exception as exc:
+            raise SlotRepairError("reopen", f"writer reopen after cloning {survivor} -> "
+                                  f"{missing} failed", exc) from exc
+--- backend.py:133
+            self.base.execute(f"USE {_RO_ALIAS}")
+        except BaseException:
+            self.base.close()
+            raise
+--- backend.py:148
+            cur.execute(f"USE {_RO_ALIAS}")       # a cursor does not inherit USE (measured)
+        except BaseException:
+            cur.close()
+            raise
+--- cli.py:2934
+                                  rmx=rmx, allow_dev=allow_dev)
+    except Exception as e:
+        raise click.ClickException(str(e))
+--- daemon.py:1527
+            st._connect()
+        except BaseException:
+            Daemon._force_close_store(st)
+            raise
+--- store.py:5041
+                yield
+            except Exception:
+                con.execute("ROLLBACK")
+                self._in_transaction = False
+                raise
+--- cli.py:3539
+            loaded = lc.is_loaded(root)
+        except Exception as e:  # noqa: BLE001 — reported; never guessed unsupervised
+            # Guessing "unsupervised" here stopped a supervised daemon (exit
+            # 0, no KeepAlive respawn) and spawned one beside the label —
+            # bug-013, the shape r5 #b-1 found in `upgrade` (task 4.6).
+            raise click.ClickException(
+                f"could not probe launchd for {root} ({type(e).__name__}: {e}); not "
+--- daemon.py:4604
+            result = _learn_grep_hits(d.store, pattern, hits, project_root)
+    except Exception as exc:  # noqa: BLE001 — classified below
+        if not Daemon._is_fatal_invalidation(exc):
+            raise
+        # A READ surface (every `rmx grep` miss, incl. the PreToolUse rewrite)
+        # must never take the daemon down: degrade, name it, queue the repair
+        # for boot (plan-4 task 4.1). Write ops keep the fast-exit.
+##### silent(bare) (174)
+--- cli.py:12497
+                )
+            except Exception:
+                pass
+--- scan.py:808
+        )
+    except Exception:
+        return matches
+--- ingest.py:1420
+                    n += 1
+                except Exception:
+                    pass
+--- store.py:1908
+                con.execute("ROLLBACK")
+            except Exception:
+                pass
+--- search.py:87
+            s.close()
+        except Exception:
+            pass
+--- pagerank.py:324
+            skip_lid = store.get_linkage_id("mentions")
+        except Exception:
+            skip_lid = None
+--- daemon.py:6986
+            lockf.close()
+        except Exception:
+            pass
+--- recall.py:243
+        ).fetchone()[0] or 0
+    except Exception:
+        total = 0
+##### silent(commented) (18)
+--- hub.py:927
+                    msg = sub.q.get(timeout=1.0)
+                except Exception:
+                    # idle: probe the socket so a dead client is noticed
+                    try:
+                        conn.sendall(b"")
+                    except OSError:
+                        break
+--- ingest.py:468
+                progress_cb(name, done, total)
+            except Exception:
+                pass  # progress is best-effort; never fail an ingest on it
+--- store.py:5883
+                    cover.setdefault(int(_eid), set()).add(_ti)
+            except Exception:
+                pass  # linkage absent on stores that predate coref
+--- store.py:6631
+                      "computed_at": float(prrow[1])}
+        except Exception:
+            pr = None  # table absent on a legacy catalog
+--- ingest.py:1409
+            n += st.docs
+        except Exception:
+            # Never let a bad markdown file abort the whole tree pass; the
+            # plain registration above is gone for these, so a failure here
+            # costs their body terms, not the ingest.
+            for gp in gmd_paths:
+                try:
+--- store.py:1824
+            ).fetchall()
+        except Exception:
+            # Older DuckDB releases may not expose duckdb_constraints.
+            # Without visibility we can't safely rebuild — leave the
+            # old CHECK in place and let upsert raise a Python-side
+            # ConstraintException for 'memory' rows.
+            return
+--- telemetry.py:300
+            self._out_bytes += len(s.encode("utf-8", "replace"))
+        except Exception:
+            pass                      # never let accounting break the write
+--- modelsrv.py:373
+            info = w.info()
+        except Exception:
+            # Worker didn't come up — the existing respawn/timeout
+            # machinery owns that failure mode.
+            return
+##### surfaced (172)
+--- recall.py:911
+                docs = collect_rerank_docs(st, hits, k=k)
+            except Exception as exc:  # noqa: BLE001 — logged; retrieval order stands
+                if log is not None:
+                    log(f"rerank doc collect failed: {exc!r}")
+                docs = None
+--- daemon.py:5997
+            d._active_slot = "A"
+        except Exception as exc:
+            # ch-bsd r1 b-2: this exit returned with the writer force-closed.
+            d._log(f"merge: swap failed: {exc!r}")
+            if installed_a:
+                # A holds the merge; B is a partial copy. Remove B so the
+                # rotation slot repair re-clones it from A, and make A the
+--- search.py:110
+        s, lock = cached_replica(root)
+    except Exception as e:  # noqa: BLE001 — reported when the caller asks
+        if on_error is not None:
+            on_error.append(f"no replica to read ({type(e).__name__}: {e})")
+        return {}
+--- ingest_gmd.py:2298
+        return regenerate_memory_index(store_root, files, memory_only=memory_only)
+    except Exception as exc:      # noqa: BLE001 — reported in the result, never hidden
+        return {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
+--- daemon.py:2266
+                    self._drain_learn_queue()
+                except Exception as exc:
+                    self._log(f"learn-queue drain tick failed: {exc!r}")
+                    self._fast_exit_if_invalidated(exc, "learn-queue drain")
+--- daemon.py:6090
+                d._compact_factslog_if_needed(force=True)
+            except Exception as cexc:
+                d._log(f"merge: swap failed: facts.log snapshot of the merged A failed: {cexc!r}")
+                swap_failed["error"] += (f"; facts.log snapshot of the merged catalog failed "
+                                         f"({cexc!r}): a rebuild from the log would drop the "
+                                         "merged rows until it is compacted")
+--- recall.py:696
+            client.close()
+        except Exception as exc:  # noqa: BLE001 — named; the stand-in still loads
+            say(f"embed: closing the private worker that could not serve failed: {exc!r}")
+--- daemon.py:1184
+                    setattr(self, cache, None)
+            except Exception as exc:
+                self._log(f"worker idle-evict failed ({attr}): {exc!r}")
