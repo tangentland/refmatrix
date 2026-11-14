@@ -128,7 +128,7 @@ def _t_memory_add(args: dict) -> dict:
                                    tags=args.get("tags"),
                                    protected=bool(args.get("protect", False)))}
     try:
-        out = local_write(root, _add, partition=part)
+        out = local_write(root, _add, partition=part, create=True)
     except VerbError as e:
         return {"error": str(e)}
     return {"id": out["id"]}

@@ -545,7 +545,10 @@ def local_write(root: Path, fn: "Callable[[Any], dict]", *, partition: "str | No
     r4, ruling L72, 2026-11-13): before `fn` runs it calls `store.refuse_tracked_catalog_open`
     and raises its refusal as a `VerbError`, so no verb, MCP fallback, save-state promote or
     CLI bypass writes a catalog git tracks. `partition=None` is the store's own default
-    partition. `create=True` (only `rmx init`) lets the catalog not exist yet."""
+    partition. `create=True` lets the catalog not exist yet (opening creates it): `rmx init`,
+    and the three bootstrap fallbacks whose hand-rolled `Store(root)` always created it
+    (`change_subject`, MCP `rmx_memory_add`, the save-state promote) -- routing them here
+    changes only the tracked-catalog check, not what they do on a store with no catalog."""
     from refmatrix.store import Store, TrackedCatalogRefused, refuse_tracked_catalog_open
     s = Store(Path(root), partition=partition)
     if not create and not s.db_path.exists():
@@ -1584,7 +1587,7 @@ def change_subject(root: Path, label: str, *,
         # the checked opener (bug-212 r4, ruling L72, 2026-11-13): a hand-rolled
         # `Store(root)` here wrote a catalog git tracks.
         eid = local_write(root, lambda s2: {"id": s2.upsert_subject(label)["id"]},
-                          partition=part)["id"]
+                          partition=part, create=True)["id"]
     return {"session_source": source, "subject": rec["subject"], "label": rec["label"], "id": eid,
             "session": s.session}
 

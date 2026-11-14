@@ -386,7 +386,7 @@ def _promote_digest(root: Path, s) -> dict:
             root, lambda st: {"id": st.add_memory(
                 name=name, content=digest, mtype="session/digest",
                 tags=[f"session:{s.session}", "summary"], protected=False)},
-            partition=part)
+            partition=part, create=True)
         return {"name": name, "id": out["id"]}
     except Exception as e:  # noqa: BLE001 — promote is best-effort
         return {"error": f"{type(e).__name__}: {e}", "name": name}
