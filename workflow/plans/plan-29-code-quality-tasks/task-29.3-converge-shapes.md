@@ -186,7 +186,8 @@ family (`_scan_source`), the tree walk (`_census`), caller lookup (`_functions_c
 - **K-R5: the kit is built for the families that are waiting.** Named by the store review, and
   NOT built here: removal sites (22.6), CHECKPOINT and catalog holds (18.2, 18.3), out-of-daemon
   Lance reads (17.1), merge-table coverage (bug-124; 16.6, 23.1), the corpus predicate (16.1
-  AC-5d), `_cli_read` (23.5 R7), the one writer installer (23.1). The kit's README lists them and
+  AC-5d), `_cli_read` (23.5 R7), the one writer installer (23.1). (29.5's import-layering census
+  is the exception: it exists by then and is moved onto the kit, see [[#split]].) The kit's README lists them and
   shows the three things a new family supplies (predicate, allowlist with reasons, synthetic
   module). Those tasks add their family; this task does not.
 
@@ -693,7 +694,8 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 
 None of these needs the user; each records the choice and why. The one open decision that
 touches this task is `plan-29 D4` ([[task-29.2-mypy-gate#d4]]). A reviewer who disagrees with one
-below raises it as a new `plan-29 D<n>` (D7 to D19 are taken by the 29.1 / 29.4 / 29.5 specs).
+below raises it as a new `plan-29 D<n>` (D7 to D22 are taken by the 29.1 / 29.4 / 29.5 specs; D5,
+D6 and D23 upward are free).
 
 1. **`run_git` returns a result for "git did not run" instead of raising**. This is the
    contract ruling L96 and L100 tested (`_ss_git_run`), and its callers already print such a
@@ -738,20 +740,33 @@ below raises it as a new `plan-29 D<n>` (D7 to D19 are taken by the 29.1 / 29.4 
 - **First step of each slice:** run its report at the start commit and put the table in the
   summary. Counts should equal this spec's; a difference that moved code does not explain is a
   finding, reported before any edit.
-- 29.5 re-keys the existing catalog-opener census (`tests/test_bug212_r4_red.py`) to the new
-  module names and re-proves it on its synthetic bypass
-  (`plan-review-fable-2026-11-14-queue#b1`, and its `#b2`). Slice K extracts the scanner from
-  the re-keyed file and re-proves it again (AC-K3); slice f relies on that test.
-- The memory-path module list of c-R3 is re-derived from 29.5's moved-symbol table
-  ([[task-29.2-mypy-gate#needs-295]] asks 29.5 for it).
+- 29.5 re-keys the allow lists of the catalog-opener census (`tests/test_bug212_r4_red.py`) to
+  the new module names, changes nothing else in them, and re-proves every file-keyed census on
+  its synthetic bypass after each move (`task-29.5-split-giant-modules#ac-12` and its gate G10,
+  `#r4-reproof`, on branch `spec-plan29a` at `dba9afd`). Slice K extracts the scanner from the
+  re-keyed file and re-proves it again (AC-K3); slice f relies on that test.
+- 29.5 also adds a census of its own: no engine module imports `refmatrix.cli`
+  (`task-29.5-split-giant-modules#r2b`, its AC-13). It is written before the kit exists. Slice K
+  moves it onto the kit as a family, with its allow list unchanged, so AC-K5 holds.
+- 29.5's phase 0b moves `_sync_memory_dir`, `_subject_link` and `_subject_upsert` out of the CLI.
+  Two of slice d's known ROUTE gates are in those functions; the slice finds them by name
+  wherever they live.
+- The memory-path module list of c-R3 is re-derived from 29.5's symbol map
+  (`tools/split_maps/symbol_map.json`, required by `task-29.5-split-giant-modules#ac-11`;
+  [[task-29.2-mypy-gate#needs-295]]). Module names are taken from that file at build time.
+- 29.1's triage records the rows this task takes (`task-29.1-registry-triage#homes`): bug-233
+  (slice a), bug-234, bug-236, bug-238 (slice b), bug-232 (slice f), and bug-096 (slice c,
+  [[#c-r6]]). Its rule is that a row is `scheduled` only to a spec whose own text takes it, so
+  bug-237, bug-188 and bug-201 are `deferred` there.
 
 ## Review findings folded on 2026-11-14 {#fold}
 
 The review documents are `workflow/plan-review-fable-2026-11-14-queue.md` (master `3551894`) and
 `workflow/plan-review-fable-2026-11-14-store.md` (master `ec3e0e8`). They landed on master after
 this branch's base (`f3709d2`), so they are cited here as `doc-id#anchor` code spans; a wikilink
-to a document this branch does not hold fails the repo lint. Turn them into wikilinks in the
-merge commit. {#fold-cites}
+to a document this branch does not hold fails the repo lint. The same holds for the 29.1 and
+29.5 specs (`task-29.1-registry-triage`, `task-29.5-split-giant-modules`), which are on branch
+`spec-plan29a` at `dba9afd`. Turn all of them into wikilinks in the merge commit. {#fold-cites}
 
 | finding | change here |
 |---|---|
@@ -764,7 +779,7 @@ merge commit. {#fold-cites}
 | same: not parallel on the query module; 29.3's query half first | [[task-29.2-mypy-gate#seam]], b-R4, [[#k10]] |
 | `plan-review-fable-2026-11-14-queue#dup-2`: bug-232 and bug-125 overlap `task-linked-readonly-store`; bug-240 goes with bug-241 | [[#f-overlap]]; bug-240 is not taken ([[#k8]]) |
 | the queue review's `#dup-3` (29.1 input): bug-237, bug-096, bug-188, bug-201 | bug-096 in [[#c-r6]]; bug-237, bug-188 and bug-201 not taken, bug-188 with its measured count ([[#classes-no-helper]], [[#k8]]) |
-| 29.5's author: `derive_code_hash` hashes file content | [[#c-r7]]; `plan-29 D4` |
+| 29.5's author: `derive_code_hash` hashes file content; `task-29.5-split-giant-modules#ac-11`, `#ac-12`, `#r2b`; `task-29.1-registry-triage#homes` | [[#c-r7]]; `plan-29 D4`; [[#split]] |
 
 ## Out of scope {#out-of-scope}
 

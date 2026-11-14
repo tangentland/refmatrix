@@ -472,7 +472,8 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 
 None of these needs the user; each records the choice and why. The one that does is
 `plan-29 D4` ([[#d4]]). A reviewer who disagrees with one below raises it as a new
-`plan-29 D<n>` (D7 to D19 are taken by the 29.1 / 29.4 / 29.5 specs).
+`plan-29 D<n>` (D7 to D22 are taken by the 29.1 / 29.4 / 29.5 specs; D5, D6 and D23 upward are
+free).
 
 1. **Strict is per module, whole module**. The plan says "strict on the public API"; the
    user's D1 says "per-module strictness" ([[plan-29-code-quality#decisions]]). mypy cannot make
@@ -507,7 +508,8 @@ None of these needs the user; each records the choice and why. The one that does
     `_store_rw`, `_DaemonWriter` and `_ingest` are shared helpers today, so that is where this
     spec expects them); commands move to `cli/<group>_cmds.py`.
   - `store.py` stays and `Store` keeps its name and import path. Its methods move into mixin
-    classes in `store_<concern>.py` modules that `Store` inherits. This is a file-size split, not
+    classes in `store_<concern>.py` modules that `Store` inherits (ten of them in 29.5's spec at
+    `dba9afd`, cut by method; the names come from the symbol map). This is a file-size split, not
     a decomposition; an ADR written at 29.5's crucible records that.
 - **First step of the task:** re-run `census/*.py` and the mypy runs at the start commit, and
   write the new tables into the summary. A count that changed for a reason other than moved code
@@ -521,14 +523,23 @@ None of these needs the user; each records the choice and why. The one that does
 
 ### What this task needs from 29.5 {#needs-295}
 
-One acceptance criterion in 29.5's spec: its summary carries a table `symbol → old module → new
-module` for every moved top-level class and function, and `refmatrix.store.Store`,
-`refmatrix.query.QueryEngine` and `refmatrix.cli:cli_entry` stay importable under those names.
-`plan-review-fable-2026-11-14-queue#b1` and its `#b2` already require 29.5 to publish that map
-and to keep `Store`'s import path. The AC text was sent to 29.5's author on 2026-11-14
-([[bsd-pattern-handoff-without-sibling-ac#rule]]); until 29.5's spec is merged it is requested,
-not confirmed. Without the table this task derives the strict set from `git log --follow`, which
-is slower but not blocked.
+Confirmed by 29.5's spec (branch `spec-plan29a` at `dba9afd`; cited as code spans for the reason
+in [[#fold-cites]]):
+
+- `task-29.5-split-giant-modules#ac-11`: the summary carries `symbol → old module → new module`
+  for every moved top-level class and function and every moved `Store` method; the same rows are
+  in `docs/architecture/module-split-map.md` and `tools/split_maps/symbol_map.json`; and
+  `refmatrix.store.Store`, `refmatrix.query.QueryEngine` and `refmatrix.cli:cli_entry` stay
+  importable under those names, held by a test. That AC names this section.
+- This task reads the strict set and the Protocol's member-by-mixin table from
+  `tools/split_maps/symbol_map.json`. Module names are taken from that file at build time, never
+  from this spec: 29.5's own R0 re-cuts the map.
+- `task-29.5-split-giant-modules#r2b` (phase 0b) moves `_sync_memory_dir`, `_subject_link` and
+  `_subject_upsert` out of the CLI before the split and adds a census that no engine module
+  imports `refmatrix.cli`. Two of the fall-through sites of [[#measured-writer]] are in those
+  functions. After the move they cannot reach the CLI's `_store`; whatever they use instead is
+  typed by the same Protocol or by the daemon-absent accessor, and the census re-run at the
+  start commit shows which.
 
 ## The seam with 29.3 {#seam}
 
@@ -561,8 +572,14 @@ Rules for both tasks:
 `session_ingest.py` and `ingest_gmd.py` for `sessions`), and `store.py` is in the no-argument
 union. An annotation added to `ingest.py` to satisfy a strict module's `no-untyped-call`, or a
 comment added by 29.3(c), changes that hash. After the next deploy every fleet store then reads
-`behind_code` for those passes although nothing about what is derived has changed. 29.5 changes
-the same lists when it moves files.
+`behind_code` for those passes although nothing about what is derived has changed.
+
+What 29.5 does to the same hash is narrower (`task-29.5-split-giant-modules#r5` item 4): each
+store move adds its `store_<concern>.py` to the no-argument union `_DERIVE_CODE_MODULES`, and
+`_DERIVE_PASS_MODULES` is not changed. So this task's annotations in the store modules flip the
+UNION hash only, and its edits to `ingest.py` / `ingest_gmd.py` flip the per-pass hashes. 29.5's
+`#r0-derive` reads every caller of the no-argument hash and writes down what the fleet shows on
+a flip; this task cites that answer for the union and does not re-measure it.
 
 - This task keeps its edits to those modules to what a strict module's error requires, lists
   each in the summary, and lands them in ONE release together with 29.3's edits to the same
@@ -591,15 +608,17 @@ changing what they derive ([[#derive-hash]]). Options:
 
 Recommended: (b), in one release that carries all such edits from 29.2, 29.3 and, if it lands
 close enough, 29.5. It is the user's call because it is a write to every live store's stamps.
-If 29.5's own decision on this hash covers annotation-only edits, D4 is settled by it.
+No decision in 29.5's spec settles it (its author, 2026-11-14); 29.5's `#r0-derive` finding is
+evidence for it.
 
 ## Review findings folded on 2026-11-14 {#fold}
 
 The review documents are `workflow/plan-review-fable-2026-11-14-queue.md` (master `3551894`) and
 `workflow/plan-review-fable-2026-11-14-store.md` (master `ec3e0e8`). They landed on master after
 this branch's base (`f3709d2`), so they are cited here as `doc-id#anchor` code spans; a wikilink
-to a document this branch does not hold fails the repo lint. Turn them into wikilinks in the
-merge commit. {#fold-cites}
+to a document this branch does not hold fails the repo lint. The same holds for the 29.1 and
+29.5 specs (`task-29.1-registry-triage`, `task-29.5-split-giant-modules`), which are on branch
+`spec-plan29a` at `dba9afd`. Turn all of them into wikilinks in the merge commit. {#fold-cites}
 
 | finding | change here |
 |---|---|
@@ -608,7 +627,7 @@ merge commit. {#fold-cites}
 | `plan-review-fable-2026-11-14-store#plan29-converge-candidates`: the Protocol must include what T4-T6 specs add | [[#r5]] names them; AC-16 makes joining mandatory |
 | `plan-review-fable-2026-11-14-queue#p29-4`: not parallel on the query module; 29.3's query half first | [[#seam]], [[#r4]] |
 | `plan-review-fable-store D5`: dev venv duckdb 1.5.2 below the 1.5.3 floor | not settled here; [[#measured-duckdb]], [[#r3]] (the baseline names the duckdb version), AC-2 |
-| 29.5's author: `derive_code_hash` hashes file content; layout of the split | [[#derive-hash]], AC-18, `plan-29 D4`; [[#split]] |
+| 29.5's author: `derive_code_hash` hashes file content; layout of the split; `task-29.5-split-giant-modules#ac-11`, `#r2b`, `#r5`, `#r0-derive` | [[#derive-hash]], AC-18, `plan-29 D4`; [[#split]]; [[#needs-295]] |
 
 ## Out of scope {#out-of-scope}
 
