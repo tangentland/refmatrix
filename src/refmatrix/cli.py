@@ -242,12 +242,14 @@ def _store_rw() -> Store:
     when the daemon is up, `_store(write=True)` returns a `_DaemonWriter`
     that routes mutations through RPC instead.
 
-    Before the catalog opens it refuses a store whose writer catalog git
-    tracks (bug-212 r2, lead decision 2026-11-13). This is the ONE in-process
-    write control point -- `rmx sync`, `rmx ingest`, `rmx memory add`, the
-    memory bridge and every other daemon-down writer reach it -- so the check
-    lives here, not per command. `Store(...)` above it only resolves paths;
-    nothing has touched the catalog when the refusal raises."""
+    Before the catalog opens it calls the store-level check
+    `store.refuse_tracked_catalog_open` and turns its refusal into one `Error:`
+    line (bug-212 r2-r4, ruling L72, 2026-11-13). It is one of the TWO checked
+    in-process openers; `verbs.local_write` is the other, and every other
+    in-process writer routes through one of them (an AST census test holds the
+    line). `Store(...)` above it only resolves paths; nothing has touched the
+    catalog when the refusal raises. A read with no reader file falls here too,
+    which is why the line says "open", not "write"."""
     s = Store(_root(), partition=_resolve_partition())
     slot_path = _active_slot_path()
     if slot_path is not None:
@@ -256,7 +258,10 @@ def _store_rw() -> Store:
         raise click.ClickException(
             f"no refmatrix at {s.root}. Run `rmx init` first or set REFMATRIX_ROOT."
         )
-    _refuse_in_process_write_to_tracked_catalog(s.root, s.db_path)
+    try:
+        _store_mod.refuse_tracked_catalog_open(s.root, s.db_path)
+    except _store_mod.TrackedCatalogRefused as exc:
+        raise click.ClickException(str(exc)) from exc
     # Register a flush-and-close on normal interpreter exit. CLI commands
     # mutate the in-memory fragment cache and rely on close() to persist;
     # without this, every command would lose its writes.
@@ -948,31 +953,36 @@ def init(path: Path | None, hooks: bool, memory_hooks: bool, agents: bool,
     """
     project_root = (path or _cwd()).resolve()
     target = project_root / ".refmatrix"
-    s = Store(target, partition=_resolve_partition())
+    store_root = target.resolve()
     # If a daemon already owns this catalog, skip Store.init() — it would
     # try to acquire the DuckDB write lock and crash. The store is already
-    # initialized (the daemon proves it). We only need the Store object to
-    # report root/partition; no _connect() call is required for that.
-    from refmatrix import daemon as daemon_mod
-    if daemon_mod.ping(s.root):
+    # initialized (the daemon proves it).
+    from refmatrix import daemon as daemon_mod, verbs as _verbs
+    if daemon_mod.ping(store_root):
         console.print(
-            f"[yellow]reusing[/] existing {s.root} (daemon pid present; "
+            f"[yellow]reusing[/] existing {store_root} (daemon pid present; "
             f"skipped catalog reinit)"
         )
     else:
-        s.init()
-        msg = f"[green]initialized[/] {s.root} (partition={s.partition_name})"
-        # Closed now, not at interpreter exit (task 3.7): a writer held for the life of
-        # the process makes a later read-only open of the catalog in it (`verbs.
-        # snapshot_read`, the no-daemon read route) fail with bug-135's "Unique file
-        # handle conflict".
-        s.close()
-        console.print(msg)
+        # Through `verbs.local_write`, the checked opener (bug-212 r4, ruling L72,
+        # 2026-11-13): a re-init of a store whose catalog git tracks wrote the committed
+        # file. `create=True`: a first init has no catalog yet. `local_write` closes the
+        # handle before returning (task 3.7: a writer held for the life of the process
+        # makes a later read-only open fail with bug-135's "Unique file handle conflict").
+        def _init(st) -> dict:
+            st.init()
+            return {"partition": st.partition_name}
+        try:
+            out = _verbs.local_write(target, _init, partition=_resolve_partition(),
+                                     create=True)
+        except _verbs.VerbError as exc:
+            raise click.ClickException(str(exc)) from exc
+        console.print(f"[green]initialized[/] {store_root} (partition={out['partition']})")
 
     if hooks:
         from refmatrix.hooks import install
         for line in install(
-            project_root=project_root, refmatrix_root=s.root,
+            project_root=project_root, refmatrix_root=store_root,
             git=True, claude=True, briefing=True, scope="project",
             apply=True, force=force, memory_hooks=memory_hooks,
         ):
@@ -1827,8 +1837,12 @@ def focus_change_subject(label, session):
     digests / save-state handoffs file under it (`part-of`) so the thread is
     recallable across sessions. Idempotent for the same label."""
     from refmatrix import verbs as _verbs
-    rec = _verbs.change_subject(
-        _root(), label, session=session)
+    try:
+        rec = _verbs.change_subject(_root(), label, session=session)
+    except _verbs.VerbError as exc:
+        # One `Error:` line (bug-212 r4, ruling L82, 2026-11-13): a refused in-process
+        # subject write (a catalog git tracks) or a busy daemon, never a traceback.
+        raise click.ClickException(str(exc)) from exc
     console.print(
         f"[green]subject[/] {rec['label']} "
         f"[dim](slug={rec['subject']}, id={rec.get('id')})[/] — focus scoped; "
@@ -4262,32 +4276,35 @@ def partition_drop(name: str, yes: bool):
             raise click.ClickException(resp.get("error", "daemon error"))
         out = resp["result"]
     else:
-        from refmatrix.store import Store as _Store
-        s = _Store(root)
-        try:
+        # Through `verbs.local_write`, the checked opener (bug-212 r4, ruling L82,
+        # 2026-11-13): a hand-rolled `Store(root)` here (imported as `_Store`, the fifth
+        # bypass red-212r2's census found) DELETEd from a catalog git tracks.
+        # `partition=None` keeps the store's own default as the ACTIVE partition this
+        # refuses to drop, exactly as the hand-rolled open had it.
+        from refmatrix import verbs as _verbs
+
+        def _drop(s) -> dict:
             con = s._connect()
             if name == s.partition_name:
-                out = {"dropped": False, "reason": "refused: that is the ACTIVE partition"}
-            else:
-                row = con.execute("SELECT id FROM partitions WHERE name = ?",
-                                  [name]).fetchone()
-                if row is None:
-                    out = {"dropped": False, "reason": f"no partition named {name!r}"}
-                else:
-                    n = con.execute("SELECT COUNT(*) AS n FROM entities "
-                                    "WHERE partition_id = ?", [row["id"]]).fetchone()["n"]
-                    if n:
-                        out = {"dropped": False,
-                               "reason": f"refused: holds {n} rows — merge it, do not drop it"}
-                    elif (root / "vectors" / name).is_dir():
-                        out = {"dropped": False,
-                               "reason": f"refused: vectors/{name} exists on disk; remove "
-                                         "the Lance dataset first or the drop creates an orphan"}
-                    else:
-                        con.execute("DELETE FROM partitions WHERE id = ?", [row["id"]])
-                        out = {"dropped": True, "name": name}
-        finally:
-            s.close()
+                return {"dropped": False, "reason": "refused: that is the ACTIVE partition"}
+            row = con.execute("SELECT id FROM partitions WHERE name = ?", [name]).fetchone()
+            if row is None:
+                return {"dropped": False, "reason": f"no partition named {name!r}"}
+            n = con.execute("SELECT COUNT(*) AS n FROM entities "
+                            "WHERE partition_id = ?", [row["id"]]).fetchone()["n"]
+            if n:
+                return {"dropped": False,
+                        "reason": f"refused: holds {n} rows — merge it, do not drop it"}
+            if (root / "vectors" / name).is_dir():
+                return {"dropped": False,
+                        "reason": f"refused: vectors/{name} exists on disk; remove "
+                                  "the Lance dataset first or the drop creates an orphan"}
+            con.execute("DELETE FROM partitions WHERE id = ?", [row["id"]])
+            return {"dropped": True, "name": name}
+        try:
+            out = _verbs.local_write(root, _drop, partition=None)
+        except _verbs.VerbError as exc:
+            raise click.ClickException(str(exc)) from exc
 
     if out.get("dropped"):
         console.print(f"[green]dropped partition registration {name!r}[/]")
@@ -8819,43 +8836,12 @@ def sync(files, since, flush_queue, invalidate, project_root, semantic,
         # console, not just logs"). ONLY the named refusal classes: any other
         # exception keeps its traceback, so a real crash still reads as one.
         raise click.ClickException(f"sync failed: {exc}") from exc
-    except syncmod.GitRefError as exc:
-        # A `--since` ref git rejects (bug-212, 2026-11-11): `Error: sync --since <ref>
-        # failed: git diff exited N: <git's stderr>`, exit 1 -- the line the daemon
+    except (syncmod.GitRefError, syncmod.GitTimeoutError) as exc:
+        # A `--since` ref git rejects (bug-212, 2026-11-11), or a `git diff` past its
+        # bound (bug-212 r4, L82): `Error: sync --since <ref> failed: git diff exited N:
+        # <git's stderr>` / `... timed out after 10s ...`, exit 1 -- the line the daemon
         # route and the daemon-down enqueue branch print for the same failure.
         raise click.ClickException(str(exc)) from exc
-
-
-def _refuse_in_process_write_to_tracked_catalog(root: Path, target: Path) -> None:
-    """One clean `Error:` line (exit 1), BEFORE the catalog opens, when git tracks a writer
-    catalog of the store `root` this process is about to write in-process; `target` is the
-    file the write would land in (`_store_rw()`'s resolved `db_path`), named in the line.
-
-    Why (bug-212 r1, ch-bsd b-1 + lead decision a2, 2026-11-13): cliquet, atldb and
-    prep_prolific commit their catalog files. The generated hooks' gate now lets a tracked
-    catalog through only beside a daemon socket -- but a socket file a crashed daemon left
-    passes too, nothing answers it, and `rmx sync` fell to the in-process route and wrote the
-    committed binary (` M .refmatrix/catalog.A.duckdb`), the b-1 incident behind the new gate.
-    r1 put the check in `rmx sync` alone; `rmx ingest`, `rmx memory add` and the memory bridge
-    still wrote a tracked catalog. r2 (lead decision 2026-11-13) calls it from `_store_rw()`
-    only -- the one in-process write control point -- so it is worded for any write, not a
-    sync. A store outside any git repo, or whose catalog git ignores, is not refused
-    (`store.git_tracked_catalogs`). A `git ls-files` that fails is refused too: unknown is
-    treated as tracked."""
-    remedy = "start the daemon (rmx daemon start) so the write goes through it"
-    try:
-        tracked = _store_mod.git_tracked_catalogs(root)
-    except _store_mod.TrackedCatalogCheckError as exc:
-        raise click.ClickException(
-            f"refusing to open {target} read-write in-process: {exc}; untrack the catalog "
-            f"(git rm --cached) if git tracks it, or {remedy}") from exc
-    if not tracked:
-        return
-    raise click.ClickException(
-        f"refusing to open {target} read-write in-process: git tracks this store's catalog "
-        f"({', '.join(tracked)}), and the write would modify a committed file. Untrack it "
-        f"(git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or "
-        f"{remedy}")
 
 
 def _sync_in_process(s, proot: Path, *, files, since, flush_queue, invalidate,
@@ -14068,9 +14054,16 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
         console.print(f"{tag} {lint_out.splitlines()[-1]}")
 
     promoted = res.get("promoted")
+    promote_error = None
     if promoted:
         if promoted.get("error"):
-            console.print(f"[yellow]promote skipped:[/] {promoted['error']}")
+            # Not "promote skipped" on stdout with exit 0 (bug-212 r4, ruling L82,
+            # 2026-11-13): a refused or failed promote leaves the STM digest out of durable
+            # memory. The rest of save-state still runs (the handoff is already written);
+            # the failure is the command's `Error:` line on stderr and exit 1, at the end.
+            promote_error = promoted["error"]
+            console.print(f"[red]promote FAILED[/] -- the session digest did not reach "
+                          f"durable memory; the error follows on stderr")
         else:
             console.print(f"[green]promoted[/] {promoted['name']} "
                           f"(id={promoted.get('id')}) → durable memory")
@@ -14112,6 +14105,10 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
         msg = f"chore(save-state): {today} {message or 'session handoff'}"
         out = _ss_sh(["git", "commit", "-m", msg], repo)
         console.print(f"[green]committed[/] {out.splitlines()[0] if out else '(nothing to commit)'}")
+
+    if promote_error:
+        raise click.ClickException(
+            f"save-state wrote {res['target']} but its promote failed: {promote_error}")
 
 
 @main.command("recall-state")

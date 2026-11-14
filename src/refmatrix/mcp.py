@@ -116,15 +116,22 @@ def _t_memory_add(args: dict) -> dict:
         pass          # no daemon at all: the bootstrap fallback below
     except VerbError as e:
         return {"error": str(e)}   # busy or refused: never open the slot
-    from refmatrix.store import Store
+    # The fallback opens through `verbs.local_write`, the checked opener (bug-212 r4, ruling
+    # L72, 2026-11-13): its own `Store(root)` here wrote a catalog git tracks. A refusal comes
+    # back as `{"error"}`, which the dispatcher replies as `isError`.
+    from refmatrix.verbs import local_write
     part = memory_partition(root)
-    s = Store(root)
-    with s.with_partition(part):
-        eid = s.add_memory(name=args["name"], content=args["content"],
-                           mtype=args.get("mtype", "observation"),
-                           tags=args.get("tags"),
-                           protected=bool(args.get("protect", False)))
-    return {"id": eid}
+
+    def _add(s) -> dict:
+        return {"id": s.add_memory(name=args["name"], content=args["content"],
+                                   mtype=args.get("mtype", "observation"),
+                                   tags=args.get("tags"),
+                                   protected=bool(args.get("protect", False)))}
+    try:
+        out = local_write(root, _add, partition=part)
+    except VerbError as e:
+        return {"error": str(e)}
+    return {"id": out["id"]}
 
 
 _t_memory_add.verb_name = "rmx_memory_add"  # type: ignore[attr-defined]

@@ -377,14 +377,17 @@ def _promote_digest(root: Path, s) -> dict:
             # for a held writer; a busy daemon is now named as busy.
             r = _call(root, "memory_add", args, timeout=30.0, retries=0)
             return {"name": name, "id": r.get("id")}
-        from refmatrix.store import Store
-        st = Store(root)
-        with st.with_partition(part):
-            eid = st.add_memory(name=name, content=digest,
-                                mtype="session/digest",
-                                tags=[f"session:{s.session}", "summary"],
-                                protected=False)
-        return {"name": name, "id": eid}
+        # No daemon: through `verbs.local_write`, the checked opener (bug-212 r4, ruling
+        # L72, 2026-11-13) -- a hand-rolled `Store(root)` here wrote a catalog git tracks.
+        # Its refusal is a VerbError, returned below as {"error"}; `rmx save-state` prints
+        # that on stderr and exits non-zero (L82).
+        from refmatrix.verbs import local_write
+        out = local_write(
+            root, lambda st: {"id": st.add_memory(
+                name=name, content=digest, mtype="session/digest",
+                tags=[f"session:{s.session}", "summary"], protected=False)},
+            partition=part)
+        return {"name": name, "id": out["id"]}
     except Exception as e:  # noqa: BLE001 — promote is best-effort
         return {"error": f"{type(e).__name__}: {e}", "name": name}
 

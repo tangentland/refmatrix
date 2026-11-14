@@ -528,7 +528,8 @@ def snapshot_read(root: Path, fn: "Callable[[Any], dict]", *, partition: str) ->
     return {**out, "source": source}
 
 
-def local_write(root: Path, fn: "Callable[[Any], dict]", *, partition: str) -> dict:
+def local_write(root: Path, fn: "Callable[[Any], dict]", *, partition: "str | None",
+                create: bool = False) -> dict:
     """THE no-daemon writer: open the store read-write in-process, run `fn(store)`, CLOSE,
     and return `fn`'s dict with `source: "in-process"`.
 
@@ -538,12 +539,22 @@ def local_write(root: Path, fn: "Callable[[Any], dict]", *, partition: str) -> d
     — never busy, never an undiallable socket path: opening the writer slot under a live
     daemon is the 2026-09-14 lock crash. A call that reads AND writes does its reads inside
     `fn` on this handle; holding a `snapshot_read` in-process handle while this opens is
-    bug-135's `StaleDuckDBInstance … already attached` (spec review r3 M3)."""
-    from refmatrix.store import Store
+    bug-135's `StaleDuckDBInstance … already attached` (spec review r3 M3).
+
+    It is one of the TWO checked in-process openers (`cli._store_rw()` is the other; bug-212
+    r4, ruling L72, 2026-11-13): before `fn` runs it calls `store.refuse_tracked_catalog_open`
+    and raises its refusal as a `VerbError`, so no verb, MCP fallback, save-state promote or
+    CLI bypass writes a catalog git tracks. `partition=None` is the store's own default
+    partition. `create=True` (only `rmx init`) lets the catalog not exist yet."""
+    from refmatrix.store import Store, TrackedCatalogRefused, refuse_tracked_catalog_open
     s = Store(Path(root), partition=partition)
-    if not s.db_path.exists():
+    if not create and not s.db_path.exists():
         raise VerbError(f"no refmatrix catalog at {root} ({s.db_path.name} missing) — "
                         f"run `rmx init` first")
+    try:
+        refuse_tracked_catalog_open(s.root, s.db_path)
+    except TrackedCatalogRefused as exc:
+        raise VerbError(str(exc)) from exc
     try:
         out = fn(s)
     finally:
@@ -1569,11 +1580,11 @@ def change_subject(root: Path, label: str, *,
         eid = r.get("id")
     except VerbAbsentError:
         # No daemon at all (bootstrap): in-process. A BUSY daemon raises —
-        # opening the slot under the writer is the lock crash.
-        from refmatrix.store import Store
-        s2 = Store(root)
-        with s2.with_partition(part):
-            eid = s2.upsert_subject(label)["id"]
+        # opening the slot under the writer is the lock crash. Through `local_write`,
+        # the checked opener (bug-212 r4, ruling L72, 2026-11-13): a hand-rolled
+        # `Store(root)` here wrote a catalog git tracks.
+        eid = local_write(root, lambda s2: {"id": s2.upsert_subject(label)["id"]},
+                          partition=part)["id"]
     return {"session_source": source, "subject": rec["subject"], "label": rec["label"], "id": eid,
             "session": s.session}
 

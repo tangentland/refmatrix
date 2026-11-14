@@ -170,30 +170,56 @@ never fails because of it.
 ### No command opens a tracked catalog read-write in-process {#sync-tracked-catalog}
 
 When no daemon answers, a writer opens the catalog read-write in its own process. Every such
-open goes through one control point, `cli._store_rw()`, so the rule covers every writer:
-`rmx sync` (`--files`, `--since`, `--flush-queue`, `-i`), `rmx ingest`, `rmx memory add`,
-`rmx ingest-gmd --as-memory` (the memory bridge), `rmx tldr-warm`, and the daemon-down repair
-commands. Before the catalog opens, `_store_rw()` asks git (`store.git_tracked_catalogs`) and
-refuses if a writer catalog is tracked (bug-212 r2/r3):
+open goes through one of two checked openers, and both call ONE store-level check,
+`store.refuse_tracked_catalog_open` (bug-212 r2-r4, rulings L72 and L82):
+
+- `cli._store_rw()`: `rmx sync` (`--files`, `--since`, `--flush-queue`, `-i`), `rmx ingest`,
+  `rmx memory add`, `rmx ingest-gmd --as-memory` (the memory bridge), `rmx tldr-warm`, and the
+  daemon-down repair commands;
+- `verbs.local_write`: every no-daemon verb write (`rmx add concept|entity`, `rmx protect`,
+  `rmx noise`, ...), plus `rmx init`, `rmx partition drop`, `rmx focus change-subject`, the
+  MCP `rmx_memory_add` fallback and the save-state promote, which used to open the store
+  themselves.
+
+An AST census test fails when `src/` adds a read-write `Store(` outside these two openers and
+a short allowlist (the daemon, the hub's global store, `Store.link_canon`).
+
+Before the catalog opens, the check asks git (`store.git_tracked_catalogs`) and refuses if a
+writer catalog is tracked:
 
 - one `Error: refusing to open <full path of the catalog> read-write in-process: git tracks
   this store's catalog (...)` line that names both remedies (untrack it with
-  `git rm --cached`, or start the daemon);
-- exit 1, with the catalog bytes unchanged.
+  `git rm --cached`, or start the daemon). MCP replies `isError` with the same text. A refused
+  save-state promote is that line on stderr, and `rmx save-state` exits 1 after it has still
+  written the handoff;
+- a non-zero exit, with the catalog bytes unchanged.
 
-A read can reach the same control point. `_read_store()` serves reads from a reader file:
-`catalog.read.duckdb`, then `read_only.duckdb`, then the inactive slot, then the legacy
-`catalog.duckdb`. Only when none of those exists and no daemon runs does a read fall to
-`_store_rw()`. On a tracked store it gets the same refusal, which is worded as an open, not a
-write. A tracked store that has a reader file is served read-only and not refused.
+The check runs two bounded git subprocesses (`rev-parse`, `ls-files`) before every
+in-process open, about 25 ms on a small idle repository (measured 2026-11-13) and roughly
+30-100 ms on a large or busy one; a write through the daemon pays nothing.
+
+A read can reach the same opener. `_read_store()` serves reads from a reader file, in this
+order: `catalog.read.duckdb`, then `read_only.duckdb`, then, when an `active` marker names a
+slot, the INACTIVE slot only; without a marker, the legacy `catalog.duckdb`. Only when that
+file is missing and no daemon runs does a read fall to `_store_rw()`. On a tracked store it
+gets the same refusal. The line is worded as an open, and its tail claims no write. A tracked
+store that has a reader file is served read-only and not refused.
 
 A socket file that a crashed daemon left behind passes the hook gate, and this refusal is what
 then stops the write. With a live daemon nothing opens in-process, so nothing is refused, and
-the daemon writes the catalog itself. A store outside any git repository, or one whose catalog
-git ignores, is still written in-process. If `git ls-files` fails inside a repository, the open
-is refused too: an unknown answer counts as tracked, and the line reads `refusing to open
-<path> read-write in-process: cannot tell whether git tracks the catalog under <store>: git
-ls-files exited N: ...`.
+the daemon writes the catalog itself. A store with no `.git` at or above it, or one whose
+catalog git ignores, is still written in-process. When the answer is unknown, the open is
+refused too, because unknown counts as tracked. The line then reads `refusing to open <path>
+read-write in-process: cannot tell whether git tracks the catalog under <store>: ...`. That
+happens when:
+
+- `git ls-files` fails;
+- `git rev-parse` fails while a `.git` exists at or above the store (a corrupt `HEAD`);
+- either call runs past 10 s (`git <call> timed out after 10s`).
+
+`rmx sync --since <ref>` bounds its `git diff` the same way: past 10 s it fails with
+`Error: sync --since <ref> failed: git diff timed out after 10s in <project>`, never a silent
+hang in the backgrounded hook.
 
 ### A vanished working directory {#vanished-cwd}
 

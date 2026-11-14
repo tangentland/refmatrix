@@ -139,20 +139,42 @@ class GitRefError(RuntimeError):
                          f"{said or '(git printed nothing)'}")
 
 
+# `git diff` in `changed_since` is bounded (bug-212 r4, ruling L82, 2026-11-13): the
+# post-commit hook's backgrounded `rmx sync --since` calls it before any store opens, and a
+# hanging git (a stuck mount, an fsmonitor) hung that sync silently, forever.
+GIT_DIFF_TIMEOUT_S = 10
+
+
+class GitTimeoutError(RuntimeError):
+    """`git diff --name-only <ref>` ran past `GIT_DIFF_TIMEOUT_S` (bug-212 r4, ruling L82,
+    2026-11-13). A RuntimeError for the same reason as `GitRefError`: the daemon-down
+    `--since` branch turns any RuntimeError into one `Error:` line, the in-process route names
+    it explicitly, and the daemon's op dispatcher reports it as `ok:false`."""
+
+    def __init__(self, git_ref: str, project_root: Path, timeout: float):
+        self.git_ref = git_ref
+        super().__init__(f"sync --since {git_ref} failed: git diff timed out after "
+                         f"{timeout:g}s in {project_root}")
+
+
 def changed_since(project_root: Path, git_ref: str) -> list[Path]:
     """Absolute paths of files changed since `git_ref`
     (`git diff --name-only`). No Store needed, so the CLI can resolve a
     `--since` set to enqueue for the daemon without opening the catalog.
 
     A ref git rejects raises `GitRefError` (ref + git's stderr), never a bare
-    `CalledProcessError` (bug-212, 2026-11-11)."""
+    `CalledProcessError` (bug-212, 2026-11-11); a `git diff` past `GIT_DIFF_TIMEOUT_S`
+    raises `GitTimeoutError` (bug-212 r4, L82)."""
     project_root = Path(project_root).resolve()
     if shutil.which("git") is None:
         raise RuntimeError("git not on PATH")
-    out = subprocess.run(
-        ["git", "-C", str(project_root), "diff", "--name-only", git_ref],
-        capture_output=True, text=True,
-    )
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(project_root), "diff", "--name-only", git_ref],
+            capture_output=True, text=True, timeout=GIT_DIFF_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise GitTimeoutError(git_ref, project_root, GIT_DIFF_TIMEOUT_S) from exc
     if out.returncode != 0:
         raise GitRefError(git_ref, out.returncode, out.stderr)
     return [project_root / f for f in out.stdout.splitlines() if f.strip()]
