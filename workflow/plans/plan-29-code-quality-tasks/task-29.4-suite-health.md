@@ -420,8 +420,8 @@ here:
     waits on the harness's readiness signal before it runs the hook, as bug-184's fix does;
   - **otherwise** the test is split. One test asserts, with no daemon, that the generated
     command carries the 5 s budget. The live test runs the same generated command with that
-    one budget value replaced by `HANG_GUARD_S` (the replacement is asserted to have changed
-    exactly one token) and asserts `outcome == "ok"`. The `skipped_budget` leg keeps its
+    one budget value replaced by `HANG_GUARD_S`, through `tests.timing.with_budget` (which
+    asserts it changed exactly one token), and asserts `outcome == "ok"`. The `skipped_budget` leg keeps its
     existing test, which already uses a silent peer and does not depend on speed.
   - Either way the test no longer shows whether a **live** recall meets its 5 s budget under
     load, which is a product question. R0's measurement of the failing run answers it once, and
@@ -483,8 +483,16 @@ here:
   (`tests/test_budget_outcome_census.py`) finds every test function that (a) uses a real daemon
   or runs a real hook or CLI child (`SandboxDaemon`, `spawn_daemon_subprocess`, directly or
   through a fixture) and (b) asserts a comparison of an `outcome` field with a string. Such a
-  test must control the budget: it sets the budget's knob or substitutes the budget in the
-  command it runs, in the same function. Otherwise it fails the census, or holds a
+  test must control the budget, in the same function, in one of two forms the census can
+  see:
+  - it sets the budget's knob, in one of the three forms of [[#r3-kinds]] (`env:`, `const:`,
+    `arg:`); or
+  - it builds the command it runs with **`tests.timing.with_budget(command, seconds)`**, the one
+    helper that returns a generated command with its budget replaced (and raises unless it
+    replaced exactly one token). The census matches the call by that name, and reads `seconds`
+    as a literal or as `HANG_GUARD_S`. A budget edited into the command any other way (a
+    `str.replace`, an f-string) is not seen by the census, and the test fails it.
+ Otherwise it fails the census, or holds a
   `budget-outcome` entry in the allow list with its reason.
   - At `f3709d2`, 13 test functions assert an `outcome` against a string and **one** of them
     uses a real daemon: `test_ac2b_live_daemon_recall_writes_one_ok_recall_row`, which is
@@ -809,7 +817,9 @@ to rework the sandbox, so it settles them:
   - prints the two counts.
 
   The budget-outcome census fails on bug-228's test as it stands at base (the RED), passes on
-  the same test with the budget substituted, passes on the silent-peer `skipped_budget` leg,
+  the same test with the budget substituted through `tests.timing.with_budget`, **fails** on
+  the same test with the budget substituted by a bare `str.replace`, passes on the silent-peer
+  `skipped_budget` leg,
   and fails on a synthetic test that asserts `outcome == "ok"` against a `SandboxDaemon` with no
   knob set. {#ac-11}
 - **AC-12: a live touch fails the run, in every shard** (`plan-review-fable D3` = (a); stage 4's
@@ -828,6 +838,10 @@ to rework the sandbox, so it settles them:
   flips to `completed` in stage 5's closing commit**, by sub-task T0.7 + 29.4d, in the same
   commit that flips this spec's; from then on 29.1's checker refuses a `scheduled` row that
   still points at T0, so every T0 row is closed or re-homed in that commit. {#ac-14}
+- **AC-15: this task flipped no derive pass.** Every file named in `_DERIVE_PASS_MODULES` is
+  byte-identical at the task's base sha and at stage 5's sha; the check fails on a planted
+  one-character edit to `pagerank.py`. The summary lists every `src/` file the task changed,
+  and none is one of the seven. {#ac-15}
 
 ## Test strategy {#test-strategy}
 
@@ -904,7 +918,7 @@ table is what this spec adds.
 | File | Change |
 |---|---|
 | `tests/tiering.py` | new: `tier_of`, the signal table, `DEVTREE_FILES`, `ALWAYS_FILES`, the serial group |
-| `tests/timing.py` | new: `HANG_GUARD_S` and the wait-for-outcome helper |
+| `tests/timing.py` | new: `HANG_GUARD_S`, the wait-for-outcome helper, and `with_budget` |
 | `tests/conftest.py` | run-tier markers; `failures.jsonl` records; reaper hooks at session start and finish; the `Daemon` instance registry |
 | `tests/sandbox_site/rmx_sandbox.py` | the ledger (exec and fork), `owner.json`, `short_root`, `register_spawn`, `sweep_orphans`, the reaper |
 | `scripts/ptest.sh`, `scripts/ptest.py` | the runner: tiers, shards, `--files`, `--compare`, `--merge-gate`; `--family` in 29.4f |
@@ -925,6 +939,21 @@ table is what this spec adds.
 `src/refmatrix/` changes only if [[#r3-classes]] class B needs a clock to be injectable where
 the code now calls `time.monotonic()` directly. Each such change is listed in the summary with
 the test that needs it, and it adds a parameter with the current behaviour as its default.
+- **Never in a derive file.** No commit of this task edits a file that
+  `_DERIVE_CODE_MODULES` or `_DERIVE_PASS_MODULES` names (the eight files 29.2's
+  `census_derive_modules.py` lists at `f3709d2`: `ingest.py`, `ingest_gmd.py`,
+  `session_ingest.py`, `embedder.py`, `vectors.py`, `pagerank.py`, `consolidate.py`, `store.py`),
+  with one stated exception below. An edit to a pass module flips its passes on every fleet
+  store under the raw-bytes hash, which would put this task's release outside the standing go
+  that [[#r10]] claims for it (ch-bsd r2 `#m11`).
+- A class-B test that needs a clock in one of those files does not get it here: the test
+  stays in the allow list, and the edit is routed to 29.2 R7's release, as a line in the
+  summary and a note on the allow-list entry.
+- **The exception is T0.4's deletion of the `_read_via_duckdb` state in `store.py`**, which is
+  T0's text. `store.py` is in the union only, and the union is compared with no stamp
+  ([[task-29.5-split-giant-modules#fact-derive]]), so it flips no pass. A check in stage 5
+  shows the seven pass modules byte-identical (`git hash-object`) at this task's base and
+  final sha.
 {#files-src-note}
 
 ## Out of scope {#out-of-scope}
@@ -1010,7 +1039,7 @@ L105 decided it:
 | M8: AC-5 asked for a root that R4 could not supply | [[#r4]] items 1 and 2: the ledger records `REFMATRIX_ROOT`, and the `LEAKED` line takes the root from it |
 | M10: two product observations went to closing notes | [[#r3-bug231]], [[#r3-bug228]]: each is its own registry row |
 | M12: fixture test files would join the real suite | [[#r1-fixtures]]: `case_*.py`, `norecursedirs`, and a named census exemption |
-| M4: numbers that depend on the method | [[#baseline-wallclock-table]] (5 pure lower bounds in 4 files, with what the other 3 lines are); the `rmtree` count is 129 by the stated method |
+| M4: numbers that depend on the method | [[#baseline-wallclock-table]] (5 pure lower bounds in 3 files, with what the other 3 lines are); the `rmtree` count is 129 by the stated method |
 | M1: who flips T0's frontmatter | [[#ac-14]] |
 {#rev-note-table}
 
@@ -1024,3 +1053,14 @@ L105 decided it:
   ([[#r3-kinds]]; ruling L107), the last for 29.3's AC-a1, with a fixture row and three
   must-fail cases in [[#ac-11]].
 {#rev-note-2-list}
+
+## Revision note 3 (2026-11-14, round 3: ch-bsd r2 and ruling L108) {#rev-note-3}
+
+- **M7:** the budget-outcome census sees a substituted budget in one form only, a call to
+  `tests.timing.with_budget` ([[#r3-budget-census]], [[#ac-11]]).
+- **M11:** no `src/` edit of this task touches a derive file, with T0.4's `store.py` deletion as
+  the one stated exception, and [[#ac-15]] checks the seven pass modules byte for byte
+  ([[#files-src-note]]).
+- **M8:** the earlier revision note said "4 files" for the pure lower bounds; the table's 3 is
+  right, and the note now agrees.
+{#rev-note-3-list}

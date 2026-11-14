@@ -65,7 +65,8 @@ from the three reviews. Everything is re-counted at this task's base ([[#r0]]).
 | `store.py:NNNN` in `workflow/plans/` | 134 sites, 27 files | census log |
 | ... in specs whose `metadata.status` is not completed, both modules | **271 sites, 44 files** | census log (`master` only) |
 | ... counting the spec-branch copy where one exists | 280 sites in 53 documents; 249 in 50 once three shipped specs with stale frontmatter are set aside | queue review `#p29-3` |
-| `daemon.py:NNNN` / `verbs.py:NNNN` / `mcp.py:NNNN` in unbuilt specs | 142 / 58 / 9 | queue review `#p29-3` |
+| `daemon.py:NNNN` / `verbs.py:NNNN` / `mcp.py:NNNN` in not-completed specs on `master` | 128 / 55 / 9 = **192** sites (in 25 / 17 / 3 files) | the same method as the 271: `git show f3709d2:<spec>` for every spec under `workflow/plans/` whose `metadata.status` is not completed |
+| ... the same three, counting the spec-branch copy where one exists | 142 / 58 / 9 = 209 | queue review `#p29-3` |
 | line citations in `docs/` | `cli.py` 8, `store.py` 13 | census log |
 | line citations in history (all of `workflow/`, `review-output/` excluded) | `cli.py` 759 in 224 files; `store.py` 394 in 114 | census log |
 | heaviest unbuilt specs | 23.1 (35), 19.0 (32), 22.6 (27), 25.1 (19; shipped, frontmatter stale), 17.1 (12) | census log |
@@ -124,10 +125,20 @@ For every spec under `workflow/plans/` whose `metadata.status` is not completed,
 
 - `cli.py:NNNN` and `store.py:NNNN` are rewritten by the tool to the def's home at the base sha,
   in the form `` `cli/<module>.py::<def>` `` or `` `store_<concern>.py::Store.<method>` ``.
-- **The line is resolved at the spec's own last-change sha, not at `HEAD`.** A spec written at
-  `1cf3b9f` that says `store.py:717` means the def that was at line 717 **then**
-  ([[feedback_read_identifiers_at_write_time]]). T0's R0.1 found that line at `:1159` two weeks
-  later.
+- **The line is resolved at the commit that wrote the citation, not at the spec's last change
+  and not at `HEAD`.** For each site the tool runs `git blame -L <n>,<n>` on the spec's own line
+  (following whitespace-only rewraps, `-w`), takes that commit, and names the def that held
+  line NNNN of the module **at that commit** ([[feedback_read_identifiers_at_write_time]]).
+  - Why not the spec's last-change sha: most specs are edited after their citations are
+    written. Review folds, freshness passes, 29.1's amends lines and this task's own track
+    commits all touch a spec without re-reading its citations, and `cli.py` moved about 1,200
+    lines between `1cf3b9f` and `master`. A citation resolved at the last-change sha names the
+    def that sat at that line when the spec was last touched: wrong, with nothing to show it
+    (ch-bsd r2 `#ns4`).
+  - **A named symbol is checked.** Where the sentence that carries the citation names a symbol,
+    the resolved def must be that symbol. A mismatch is listed as **unresolved**, with both
+    names; it is not rewritten.
+  - T0's R0.1 found `store.py:717` at `:1159` two weeks after it was written.
 - **A site the tool cannot resolve is not guessed.** A line that was module-level code, a def
   that no longer exists, a spec whose last-change sha does not hold the file: each is listed.
   A person then resolves it by reading, or the spec's owner strikes the citation, and the
@@ -238,10 +249,18 @@ sentence. Nothing else in the templates changes.
 - **AC-2: every rewritten citation resolves.** For each rewritten site the symbol exists in the
   named module at the task's final sha (the census's third check). A sample is not enough: the
   check is over all of them. {#ac-2}
-- **AC-3: the line was read at the right sha.** On a fixture repository with a spec written at
-  commit A citing `mod.py:10`, where line 10 held `def f` at A and holds `def g` at `HEAD`, the
-  tool writes `::f`. (29.5 tests the tool; this AC is that the pass was **run** that way: the
-  summary's per-spec table has the sha each spec was resolved at.) {#ac-3}
+- **AC-3: the line was read at the right commit.** On a fixture repository: a spec is written at
+  commit A citing `mod.py:10`, where line 10 holds `def f`. At commit B the spec is edited on a
+  **different** line, and by B line 10 of `mod.py` holds `def g`. At `HEAD` it holds `def h`.
+  - the tool writes `::f`;
+  - a tool that resolves at the spec's last-change sha would write `::g`, and one that resolves
+    at `HEAD` would write `::h`: the fixture fails on either;
+  - a second citation whose sentence names `f` while its line resolves to `g` is listed as
+    unresolved and is not rewritten.
+
+  29.5 tests the tool on the same fixture ([[task-29.5-split-giant-modules#ac-8]]). This AC is
+  also that the pass was **run** that way: the summary's per-site table gives, for every
+  citation, the commit it was resolved at. {#ac-3}
 - **AC-4: every pin is rewritten and checked.** Each row of [[#baseline-pins]], and each pin R0
   found beyond it, has a row in the summary: the old text, the new text, the owner, the date,
   and one of the three outcomes of [[#r2]] item 4. No row is blank. {#ac-4}
@@ -264,7 +283,8 @@ sentence. Nothing else in the templates changes.
 
 ## Test strategy {#test-strategy}
 
-- **The tool is 29.5's, tested there.** This task adds the tool's `--check`, `--check-diff` and
+- **The tool is 29.5's, tested there**, including the rule that a citation is resolved at the
+  commit that wrote its line. This task adds the tool's `--check`, `--check-diff` and
   `--verify-map` modes and the census test.
 - **RED first.** `tests/test_spec_citation_census.py` is written with its fixture specs before
   the modes exist and is recorded failing. Then the modes. Then the pass over the real specs
@@ -276,7 +296,10 @@ sentence. Nothing else in the templates changes.
   3. `--check` ignores `docs/`;
   4. the allow list tolerates an entry that matches nothing;
   5. `--check-diff` accepts any change on a line that contains a citation;
-  6. `--verify-map` passes a row whose symbol is missing.
+  6. `--verify-map` passes a row whose symbol is missing;
+  7. the tool resolves a citation at the spec's last-change sha (AC-3's fixture writes `::g`);
+  8. the tool does not compare a named symbol with the resolved def (AC-3's mismatch case is
+     rewritten).
 - **All output to files**, under `workflow/review-output/task-29.6/`.
 {#test-strategy-list}
 
@@ -315,7 +338,9 @@ No file under `src/` changes. {#files-no-src}
 - **plan-29 D25: the pass also turns `daemon.py:N`, `verbs.py:N` and `mcp.py:N` into symbols.**
   - **Why:** they are stale already (the spec branches were cut 302 commits before `master`),
     the tool does it with no map, and T0's R0.1 would otherwise have every later task re-find
-    the same 209 sites by hand.
+    the same sites by hand: **192** on `master` at `f3709d2` (128 + 55 + 9, in the not-completed
+    specs, by the method [[#baseline-table]] states; 209 when the spec-branch copies are
+    counted, which is the queue review's figure).
   - **Cost:** more specs in the diff. They are cite-only rewrites, one commit per track.
 - **plan-29 D26: the census forbids dead file citations for good, and only counts the others.**
   - **Why:** a citation of `cli.py:N` can never be right again, so forbidding it costs nothing.
@@ -325,3 +350,11 @@ No file under `src/` changes. {#files-no-src}
   (ruling L105); that a cite-only rewrite needs no re-approval and a location-bound one gets its
   owner's check (queue review `#p29-3`).
 {#decisions-list}
+
+## Revision note (2026-11-14, round 3: ch-bsd r2 and ruling L108) {#rev-note}
+
+- **NS4:** a citation is resolved at the commit that wrote its line (`git blame -L`), and a
+  named symbol is checked against the resolved def ([[#r1]], [[#ac-3]], two mutations).
+- **M8:** plan-29 D25's count is 192 on `master` at `f3709d2`, with the method stated; 209 is
+  the queue review's count over the spec-branch copies ([[#baseline-table]], [[#decisions]]).
+{#rev-note-list}

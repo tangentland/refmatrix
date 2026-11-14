@@ -173,7 +173,20 @@ already: the branches were cut at `1cf3b9f`, and `cli.py` has moved about 1,200 
    `("ingest.py", "ingest_gmd.py", "store.py")` (`_DERIVE_CODE_MODULES`), found beside
    `store.__file__`; a file it cannot read is skipped without a word ("a missing module is not
    a freshness signal"). Splitting `store.py` changes that hash, as any edit to it does, and
-   moves code out from under it unless the list is extended. {#fact-derive}
+   moves code out from under it unless the list is extended.
+   - **That union hash is compared with no stamp the code writes.** Every stamp site writes a
+     pass name that has its own module set in `_DERIVE_PASS_MODULES`, and `derive_status`
+     compares each stamp with `derive_code_hash(<its pass name>)`
+     (`store.py::Store.derive_status`). The no-argument hash is only printed. A test already
+     pins it: `tests/test_derive_pass_identity.py::test_editing_store_py_does_not_make_any_pass_stale`.
+     So the store split flips **no** pass, unless a store holds an old stamp under a pass name
+     that has no module set, which falls back to the union (ch-bsd r2 `#r1-correction`; ruling
+     L108). Earlier revisions of this spec planned a fleet re-stamp on the opposite reading.
+   - **What does flip a pass is a changed byte in a pass module.** `ingest.py`, `ingest_gmd.py`,
+     `session_ingest.py`, `embedder.py`, `vectors.py`, `pagerank.py` and `consolidate.py` are
+     the seven files `_DERIVE_PASS_MODULES` names. This task ships before 29.2's normalised
+     hash, so one changed byte in any of them flips its passes on every fleet store.
+   {#fact-derive}
 
 ## The proposed map {#map}
 
@@ -282,10 +295,14 @@ At the task's base sha (after 29.4, after the frozen spec branches):
    `_DERIVE_PASS_MODULES`, `pyproject.toml`'s package data, the hook generators, `eval/` and
    `scripts/` imports, `docs/`.
 7. **The citation count** ([[#baseline-citations]]), again.
-8. **What a derive-hash change does at deploy** ([[#fact-derive]]): which readers call
-   `derive_code_hash()` with no pass name, what each prints or does when the value differs from
-   a stored stamp, and so what the fleet shows after the store commits deploy. Written in the
-   summary and in the deploy note. No guess: read the callers. {#r0-derive}
+8. **Stamps that the union does feed** ([[#fact-derive]]). Read-only, by the lead or through
+   `scripts/rmx-master`, for every fleet store: the pass names that have a stamp, and the count
+   of stamps whose pass name is **not** a key of `_DERIVE_PASS_MODULES` (those fall back to the
+   union, so this task's module-list change would make them read `behind_code`). The query is
+   written in the summary. Expected: zero, since every stamp site in the code writes a mapped
+   name. The count decides whether [[#r9-restamp]] exists at all. Also recorded: which readers
+   print the no-argument hash (`rmx derive status`'s `code_hash` field), so the deploy note can
+   say that the printed value changes and that nothing compares against it. {#r0-derive}
 9. **Dead code that an approved spec deletes.** Code scheduled for deletion is deleted before
    it is moved, where its owner can do that separately: T0.4's `duckdb_view.py` and the
    `_read_via_duckdb` state, and T0.5's `brief.parse_gmd`, are gone by 29.4's stage 3. 16.6's
@@ -402,7 +419,7 @@ were read from the syntax tree (`plan29a-r2-xrefs.log`):
 |---|---|---|---|
 | `handoff.py:699` | `_subject_upsert`, `_subject_link` | **`_root`**, **`_store`**, **`_memory_daemon_call`**; one call down, **`_resolve_partition`** | **stays** in `cli/__init__.py`; declared exception |
 | `handoff.py:669` | `_sync_memory_dir` | **`_resolve_partition`**, **`_memory_partition_default`**, **`_partition_override`**, `_bridge_stats`, `_bridge_wait_for_active_job`, `_ingest_gmd_sync`; one call down, **`_root`** | **stays** in `cli/__init__.py`; declared exception |
-| `telemetry.py:1011` (`_command_groups`) | `main` | it reads `main.commands`; **`main`** is patched at 3 sites (`tests/test_context_cost.py:142`, `:167`, `:192`), and a patched `main` sends it to its static fallback | **stays** as it is; declared exception |
+| `telemetry.py:1011` (`_command_groups`) | `main` | it reads `main.commands`. **`main`** is a patched name (3 sites, `tests/test_context_cost.py:142`, `:167`, `:192`), but those three tests exercise `cli_entry`'s stdout wrapper and stub `telemetry.log_cli_invocation`; none of them reaches `_command_groups`, whose only caller is the cli-log report (`telemetry.py:1094`). So no test today depends on this read seeing a patch | **stays** as it is; declared exception |
 | (none yet; 26.5 needs it from the engine) | `_root_from_projects_slug` | no `cli` name at all | **moves down** in phase 0b |
 {#r2b-table}
 
@@ -412,12 +429,16 @@ were read from the syntax tree (`plan29a-r2-xrefs.log`):
    `refmatrix.cli` reaches them as it does today, and every test is unchanged. They are core
    names for the tool ([[#r2]] item 4 already keeps a patched name in the core; these are kept
    because their bodies read patched names). `handoff.py`'s two lazy imports stay as they are.
-2. **`telemetry._command_groups` does not change.** It reads a patched name, lazily, and has a
-   fallback that three tests reach through the patch. Handing the group names in from the CLI
-   would change what those tests exercise.
+2. **`telemetry._command_groups` does not change.** Not because a test needs it: none reaches it
+   through a patch (the table says why; an earlier revision claimed otherwise and was wrong,
+   ch-bsd r2 `#m3`). It stays because fixing it means handing the group names in from the CLI,
+   which is a small change to how the report is built, not a move; ruling L107 gave it to the
+   same owner as the handoff exception, so that the engine's two reaches into the CLI are
+   removed together. Slice h takes its own inventory at its start and does not count those
+   three tests.
 3. **`_root_from_projects_slug` moves down**, in one ordinary commit: its body reads no `cli`
    name, nothing patches it, and it is called only from `cli.py` today. R0 names its home and
-   says why. `cli` keeps the name bound to the same object. RED first: a test that the engine
+   says why; the home is not a file named in `_DERIVE_PASS_MODULES` (gate G12). `cli` keeps the name bound to the same object. RED first: a test that the engine
    module that will need it can import it without importing `refmatrix.cli`.
 4. **The census, with a declared allow list.** `tests/test_import_layering_census.py` fails on
    any import of `refmatrix.cli`, at module level or inside a function, from a `src/refmatrix`
@@ -495,7 +516,10 @@ the end of a phase.
 run through the sharded runner, in the main tree, and commits that run's directory
 ([[task-29.4-suite-health#ac-7]]). Phase 0's first "before" is that run, at that sha, or a
 re-run of it at this task's base sha if `master` has moved. A phase does not start on a suite
-that is not clean. {#r4-baseline}
+that is not clean. From phase 0 to the rename commit, "clean" allows exactly one test that is
+not a pass: AC-4's one-copy probe, `xfail(strict=True)`, named by node id in the gate script. A
+strict xfail that unexpectedly passes fails the run, so it cannot hide anything.
+{#r4-baseline}
 
 **The gates.** Every commit in phases 1 and 2 passes all of them. Each is generated at the
 commit's parent and at the commit, and compared:
@@ -506,12 +530,13 @@ commit's parent and at the commit, and compared:
 | G2 help text | `--help` output of all 219 paths at a fixed width, and `rmx tools-primer`'s output | byte-identical |
 | G3 the generated docs | `scripts/gen-cli-tree.py --check` (the CLI tree in `docs/ARCHITECTURE.md`, the hooks table in `README.md`), which is `tests/test_docs_generated.py::test_cli_tree_section_equals_its_render` and `::test_hooks_table_section_equals_its_render` | exit 0, both tests green, the two doc sections unchanged |
 | G4 the surfaces | for `refmatrix.cli` and `refmatrix.store`, three checks: (1) every name in the **read inventory** and the **patch inventory** still resolves on the module; (2) every other name that left is in the tool's map with its new home, and resolves there; (3) the names that appeared are exactly the expected ones, which the tool lists: the command submodules and the `_cli` alias on `refmatrix.cli`, the mixin classes and the `_st` alias on the store modules | all three hold; anything else is a failure that names the attribute |
-| G5 the suite | `scripts/ptest.sh --tier all` at the parent and at the commit, then `--compare` ([[task-29.4-suite-health#r2]]) | equal by (node id, phase, E line), collected counts equal |
+| G5 the suite | `scripts/ptest.sh --tier all` at the parent and at the commit, then `--compare` ([[task-29.4-suite-health#r2]]) | equal by (node id, phase, E line), collected counts equal, and no test's outcome changed. One named exception, at the rename commit only: AC-4's one-copy probe goes from xfailed to passed ([[#r4-probe]]) |
 | G6 the dev tree | `scripts/ptest.sh --merge-gate` on the merged dev tree before each phase's merge commit ([[task-29.4-suite-health#r7]]), **with the dev daemon's watcher out**, as step 5 of [[#r9-store-event]] | passes; a red G6 is aborted with the store untouched |
 | G7 parity and censuses | `tests/test_verb_parity.py` (167 tests), `tests/test_bug212_r4_red.py` (the catalog-opener census, 47 tests), `tests/test_docs_generated.py` (7), and this task's own census tests. They are in G5's run too; they are named here because they are the tests a split is most likely to blind (`tests/test_repo_hooks_in_sync.py` runs under G6, in the dev tree) | green, with the same test counts |
 | G8 the tool | `tools/split_module.py --check <parent>` (replay), and `tools/verify_split.py <parent>` (the compiler's symbol tables, independent of the tool's scope analysis) | both exit 0 |
 | G9 size | [[#r7]]'s census | green |
 | G11 the derived state | `scripts/derive-digest.py` over the fixture corpus, against the golden recorded at R0 ([[#r5-digest]]) | the four legs equal the golden, after phase 1 and after every phase-2 commit |
+| G12 the pass modules | `git hash-object` of every file named in `_DERIVE_PASS_MODULES`, at the parent and at the commit ([[#ac-7]]) | byte-identical, every commit of every phase |
 | G10 the censuses still see | every census in the source-reader inventory, after the commit: its synthetic bypass is planted and the census **fails** on it; its allow list names no site that no longer exists ([[#r4-reproof]]) | every census fails on its bypass |
 {#r4-gates}
 
@@ -526,6 +551,17 @@ commit's parent and at the commit, and compared:
   (`cli.py:14931`), look a key up (`:14954`, `:14956`) or build a name collection
   (`telemetry.py:1013`). R0 confirms each; G2 compares what they print in any case.
   ([[#decisions]] plan-29 D18.)
+- **The one-copy probe is the one named exception to two rules** (ch-bsd r2 `#nb1`; ruling
+  L108). {#r4-probe}
+  - It is in the suite as a strict xfail from phase 0, so the baseline is clean in the sense of
+    [[#r4-baseline]].
+  - The rename commit (`cli.py` → `cli/__init__.py`) makes one edit to a test file that is not
+    in the source-reader inventory: it deletes that test's `xfail` marker, and nothing else in
+    the file. `tools/split_module.py --check` allows exactly that hunk in that commit.
+  - At that commit G5 compares against the parent and accepts exactly one outcome change: that
+    node id going from xfailed to passed. The failure sets are equal (an xfail is not a
+    failure); the gate script is given the node id and fails on any other change of outcome,
+    in either direction, and on the node id still being xfailed after the commit.
 - **Tests do not change in a move commit**, except files in the source-reader inventory
   ([[#r0]] item 4), and there only: a path literal, a `module:qualname` key, or a `glob` made
   recursive. `git diff --stat <parent> <commit> -- tests/` is checked against the inventory by
@@ -584,29 +620,25 @@ commit's parent and at the commit, and compared:
    - A new test asserts that every file named in either table exists beside `store.py`, and
      fails by name when one does not. Today a missing file is skipped silently.
    - The union hash changes with each phase-2 commit, as it does with any edit to `store.py`.
-     `derive_pass_modules` returns the union for the no-argument callers and for every pass
-     that has no entry of its own, so this is a fleet-wide `behind_code` flip with nothing
-     about the derived graph changed.
+     **That flips nothing** ([[#fact-derive]]): no stamped pass is compared against the union.
+     The printed `code_hash` field changes, and the deploy note says so.
+   - **No re-stamp is planned.** One happens only if R0 item 8 counts a stamp under an unmapped
+     pass name in some fleet store ([[#r9-restamp]]). With a count of zero there is no re-stamp,
+     no go to ask for, and no AC-17.
    - **plan-29 D4 was decided (c)** (L106): `derive_code_hash` will hash a normalised syntax
-     tree, so that annotation- and comment-only edits stop flipping it. That change is 29.2's
-     (`task-29.2-mypy-gate#r7`) and lands **after** this task. It does not remove this task's
-     flip: the list of modules changes here, and a move changes each file's content under any
-     normalisation that is per file.
-   - **So this task's release carries its own re-stamp, announced and user-gated** (rulings L106
-     and L107). It is not deferred to a later, single re-stamp with 29.2's: in the window
-     between, every store's `derive status` would read `behind_code`. The steps are
-     [[#r9-restamp]]. No store is re-derived. The evidence that nothing derived moved is item
-     6's digest. No agent re-stamps or re-derives a live store.
-   - This task does not change `derive_code_hash` itself. [[#ac-5]] tests the file lists, not
-     the hash function, so it holds before and after 29.2 changes the function.
-   - **A module named in `_DERIVE_PASS_MODULES` is not split in this task** ([[#r7]], criterion
-     6), so that table is not changed here, as this item has said from the start.
+     tree. That is 29.2's (`task-29.2-mypy-gate#r7`) and lands after this task. This task does
+     not change `derive_code_hash`. [[#ac-5]] tests the file lists, not the hash function, so it
+     holds before and after 29.2 changes the function.
+   - **No pass module changes by a byte in this task** ([[#r6]], [[#ac-7]], gate G12). A module
+     named in `_DERIVE_PASS_MODULES` is not split ([[#r7]], criterion 6), not renamed into, and
+     not edited to make one of its names public; `_DERIVE_PASS_MODULES` itself is not changed.
 5. `__qualname__` changes for moved methods (`Store.x` → `_StoreFragments.x`). The catalog-opener
    census keys on it; its allow list is re-keyed in the commit that moves the method (source
    inventory rule, [[#r4]]). R0 lists any other reader of `__qualname__` or `__module__`
    (none in `cli.py` or `store.py` at `f3709d2`).
-6. **The derived state is shown not to have moved** (asked by 29.2's author after L106; the
-   lead names this digest as the evidence for the re-stamp). {#r5-digest}
+6. **The derived state is shown not to have moved.** This is a gate of the split: a move that
+   changed what is derived is not a move. (It was first asked for as the evidence for a fleet
+   re-stamp; ruling L108 removed that re-stamp, and the gate stays.) {#r5-digest}
    - The tool, the corpus and the test are the ones `task-29.2-mypy-gate#derive-digest`
      specifies (`scripts/derive-digest.py`, `tests/fixtures/derive_digest/`,
      `tests/test_derive_digest_unchanged.py`; four legs: graph, vectors, PageRank prior, memory
@@ -651,8 +683,7 @@ After the moves, every `src` → `src` use of another module's `_name` is listed
   At `f3709d2` it has 55 rows (76 sites). For a `cli` helper the table has one more column:
   **logic or adapter** (does the function decide something, or only parse and print?). 24.2a's
   "hook paths become verbs" starts from the rows marked logic. The three names `handoff` takes
-  from `cli` are declared exceptions ([[#r2b]]) and are rows of this table with the outcome
-  "declared; owner <task>". Each other row ends as one of:
+  from `cli` are declared exceptions ([[#r2b]]). Each row ends as one of:
   - **public:** the name loses its underscore and is the module's API, with a docstring that
     says who uses it. Tests that named it are re-pointed by `ch-test-engineer`, in a commit of
     their own **before** the rename: that commit is the RED (the tests name a public symbol that
@@ -662,9 +693,42 @@ After the moves, every `src` → `src` use of another module's `_name` is listed
     and its body reads no name that tests patch on its old module ([[#r2b]] shows the check; a
     function that fails it is declared, with an owner, and not moved);
   - **removed:** the use is dead or duplicated.
+  - **declared:** the row cannot be resolved in this task without breaking a rule of this task.
+    It stays in the census's allow list with an owner task id that must resolve, like the
+    layering exceptions ([[#r2b]]). There are two kinds:
+    - the three names `handoff` takes from `cli` (owner: 29.3 slice h);
+    - **every row that touches a derive-pass module.** Making a private name public edits the
+      module that defines it and every module that imports it. If either is a file named in
+      `_DERIVE_PASS_MODULES`, that edit changes its bytes and flips its passes on every fleet
+      store, in a release that has no rehash ([[#fact-derive]]; ch-bsd r2 `#ns1`; ruling L108).
+      So such a row is resolved **without editing the pass module**, or it is declared, and its
+      owner makes the edit in a commit that ships in 29.2 R7's release.
+- **The pass-module rows at `f3709d2`** (`plan29a-r2-xrefs.log`, `plan29a-private-census.log`):
+
+  | Pass module | As | Sites | Names |
+  |---|---|---|---|
+  | `ingest.py` | target | 9 | `_bulk_add_concepts` ×3 (from `ingest_gmd`, `ingest_records`); `_ingest_adr_semantics`, `_ingest_markdown_semantics`, `_ingest_pseudo_semantics`, `_ingest_tldr`, `_is_adr_file`, `_build_python_semantic_record` (from `sync`) |
+  | `ingest_gmd.py` | target | 1 | `_existing_hash_for` (from `sync`) |
+  | `pagerank.py` | target | 3 | `_OPERATIONAL_RE` (from `enrich`, `net`, `ppr`) |
+  | `consolidate.py` | target | 2 | `_OPERATIONAL_RE`, `_memory_rows` (from `brief`) |
+  | `consolidate.py` | user | 4 | takes `scan._PROMPT_STOPWORDS`, `scan._token_shape_score`, `store._CONCEPT_SHIFT`, `store._ENTITY_MASK` |
+  | `pagerank.py` | user | 2 | takes `store._CONCEPT_SHIFT`, `store._ENTITY_MASK` |
+  | `ingest.py` | user | 1 | takes `store._concept_variants` |
+  {#r6-pass-rows}
+
+  22 sites of the 76. ch-bsd r2 counted the 15 where the pass module is the target; the other 7
+  are where it is the user, and a rename edits the importing file as well.
+  - **Owner:** a slice of `task-29.3-converge-shapes` whose edits ship in 29.2 R7's release
+    (ruling L108, with L107's rule that pass-file edits ship with R7). The anchor was asked of
+    that spec's author on 2026-11-14; until it is named and resolves, the census does not pass,
+    so this spec cannot be approved with the rows unowned.
+  - A target that is **not** a pass module may still get its public name in this task (for
+    example `store.concept_variants` beside `_concept_variants`), so that the owner's later
+    edit is one line in the pass module.
 - **A census test** (`tests/test_private_cross_module_census.py`) scans `src/` with `rglob` and
-  fails on any such use. When this task ends its allow list holds only the three names of the
-  declared `handoff` exception, with the same owner.
+  fails on any such use outside its allow list. When this task ends the list holds exactly the
+  declared rows: the three `handoff` names and the pass-module rows, each with its owner. An
+  entry whose owner does not resolve fails the census; so does an entry that matches no use.
 - Phase 3 commits are not tool moves. Each is an ordinary change: the census's must-fail case
   first, then the rename or move, then G5 around it. Tests → `src` private uses (742 sites)
   are not in scope; they are counted in the summary.
@@ -735,6 +799,32 @@ file gets no exception.
 
 - The assessments are written after phase 2, on the tree the split leaves: the tool, the gates
   and the patch-surface method are what any further split would reuse.
+- **If `verbs.py` passes, phase 2b splits it by these rules, which are the `cli` rules with the
+  names changed** (ch-bsd r2 `#m2`; ruling L108: one mapping paragraph, no extra spec round).
+  {#r7-verbs}
+  - **Shape:** `verbs.py` stays a module, like `store.py`, and keeps the registry, the shared
+    helpers and every name tests patch. Verb functions move to sibling modules
+    `verbs_<area>.py`, by a map file `tools/split_maps/verbs.json` written from R0's inventory;
+    a verb and the helpers only it uses stay together. `verbs.py` imports the sibling modules
+    last, so registration is by import, as [[#r2]] item 6 has it for `cli`.
+  - **[[#r2]] items 2 to 5, read for `verbs`:** moved code reads a name left in `verbs.py` as
+    `_vb.<name>` (`from refmatrix import verbs as _vb`), never by `from refmatrix.verbs import`;
+    module state is assigned through `_vb`; a name in the patch inventory does not move (tests
+    patch `verbs` at 61 sites, 18 names: `memory`, `_LONG_LIVED`, `require_daemon`, `_call`,
+    `memory_partition` and 13 more); a moved name that tests or `src` read is re-exported from
+    `verbs.py` in the generated block. Items 9 and 10 (sibling references through the alias;
+    locals never rewritten) apply as written.
+  - **G4** runs on `refmatrix.verbs` with the same three checks; the expected additions are the
+    `verbs_*` submodule attributes and the `_vb` alias.
+  - **AC-3's probes** are generated for every name in `verbs`'s patch inventory: patch it on
+    `refmatrix.verbs`, call a moved verb that uses it, assert the patched object was called.
+    The bypass census covers `verbs_*.py`.
+  - **G1, G2 and the verb parity test** are the surface gates: every MCP tool still dispatches to
+    its verb, and the CLI twins still call theirs (`tests/test_verb_parity.py`, unchanged).
+  - `verbs_*.py` join [[#r6]]'s family rule (`verbs` and `verbs_*`), the size census and the
+    symbol map. `mcp.py` reads verbs by name through the registry and is not edited.
+  - If R0's inventory shows something these rules do not cover, `verbs.py` is not split here: it
+    gets its exception row, and the summary says what was missing.
 
 ### R8: the symbol map, the citation tool, and the hand-off to 29.6 {#r8}
 
@@ -751,10 +841,20 @@ which was a hand-off to nothing (ch-bsd r1 `#b3`).
    form. `docs/architecture/ARCHITECTURE_INDEX.md` links it. 29.2 derives its strict mypy set
    from it, and 29.3 its module lists and census allow lists ([[#ac-11]]).
 2. **The tool.** `tools/repoint_citations.py` rewrites `cli.py:NNNN` and `store.py:NNNN` in a
-   spec. For each site it takes the spec's last-change sha, finds the def that held line NNNN
-   in the module **at that sha**, and writes the def's home as `` `cli/<module>.py::<def>` `` or
+   spec, and writes the def's home as `` `cli/<module>.py::<def>` `` or
    `` `store_<concern>.py::Store.<method>` ``, the `module.py::symbol` form that
    `docs/architecture/todo.md` G12 already uses.
+   - **Each citation is resolved at the commit that wrote its line, not at the spec's last
+     change.** For each site the tool runs `git blame -L <n>,<n>` on the spec's own line, takes
+     that commit, and finds the def that held line NNNN of the module **at that commit**. Most
+     specs are edited after their citations are written (review folds, freshness passes,
+     amends lines), and `cli.py` moved about 1,200 lines in between; resolving at the spec's
+     last-change sha would name the def at that line when the spec was last touched, a
+     confident wrong answer that the "not guessed" rule never catches (ch-bsd r2 `#ns4`).
+     Whitespace-only rewraps are followed through (`git blame -w`).
+   - **A named symbol is checked.** Where the sentence that carries the citation names a
+     symbol (``_store_rw` (`cli.py:9818`)``), the resolved def must be that symbol. If it is
+     not, the site is **unresolved**, with both names listed.
    - A site whose line was module-level code, or whose def no longer exists, is not guessed. It
      is listed with the spec and the old text.
    - It also lists, without rewriting, every **pin**: a qualified name (`cli.compact`,
@@ -805,14 +905,15 @@ cannot be merged afterwards without redoing its work by hand.
    long-lived process on dev code. After a phase merges it still holds the old modules, and its
    next lazy `from refmatrix.cli import …` meets the new layout. The announcement tells every
    session on the dev tree to `/mcp` reconnect after each phase's merge.
-7. **Released alone, with its own go, and one announced re-stamp.** One release holds this
-   task's code and nothing else, so that a regression after it has one suspect.
+7. **Released alone, with its own go.** One release holds this task's code and nothing else, so
+   that a regression after it has one suspect.
    - **Its own go.** The user's standing go for plan-29 releases (`plan-review-fable D4`,
-     decided, L106) excludes a release that changes the store on disk. This one does, twice:
-     the store event at the merge, and the derive-hash flip from the changed module list. It
-     stays a per-release go.
-   - **Its own re-stamp**, inside this release ([[#r9-restamp]]). 29.2's release has a second
-     one, under its new hash (`task-29.2-mypy-gate#d4`); each fleet event carries its own.
+     decided, L106) excludes a release that changes the store on disk. This one does: each
+     phase's merge is a store event because of the rows keyed on the two paths
+     ([[#r9-store-event]], plan-29 D23). It stays a per-release go.
+   - **No pass flips.** Gate G12 holds every pass module byte-identical, and the union feeds no
+     stamp, so after this release every store's `derive status` reads as it did before, unless
+     R0 item 8 found a stamp under an unmapped pass name ([[#r9-restamp]]).
 8. **No install window.** Nothing in this task may make `rmx install-hooks --check` report drift
    on an existing install (T0's R0.7, asked of all five plan-29 tasks). The hook generators
    import nothing from `cli`; R0 confirms it, and G7's run in the dev tree shows it.
@@ -837,9 +938,13 @@ For `store.py` this is what every edit to `store.py` already does today under bu
 1. **Count** (R0 item 12's query), per store and per path: learned rows, protected rows.
 2. **Back up:** `scripts/backup.sh ~/refmatrix-backups/refmatrix/pre-29.5-<phase>-<sha>/`, run in
    the dev tree. It refreshes the replica, then copies the inactive catalog slot, `facts.log`
-   and the `active` marker. The affected rows are also **exported in full** to
-   `rows-on-cli-and-store.jsonl` in that directory (every field), so that what the store loses
-   is still readable.
+   and the `active` marker.
+   - **Export the rows, from the backup, read-only.** The affected rows are written in full
+     (every column) to `rows-on-cli-and-store.jsonl` in that directory by one DuckDB query over
+     the **backup's copy** of the catalog, opened `read_only=True`. It is never run against a
+     live slot. The query is R0 item 12's count query with the same `WHERE` clause and
+     `SELECT *` in place of the count, so the export's row count must equal the count; R0
+     writes both out in full. What the store loses is then still readable.
 3. **Decide the rows, before the merge** (plan-29 D23, the user's): re-key them to their new
    paths through a store op, or accept the loss as recorded in step 2. The merge does not
    start without the answer.
@@ -852,30 +957,39 @@ For `store.py` this is what every edit to `store.py` already does today under bu
      changed.
    - **Green:** the merge commit. Its post-commit sync is the store event, announced before the
      commit.
-6. **Restore the watcher, then count again** with the same query. Both counts, the backup path
-   and D23's answer go in the summary ([[#ac-15]]).
+6. **Restore the watcher, wait for the sync to finish, then count again** with the same query.
+   The post-commit hook starts `rmx sync --since …` in the background, so a count taken at once
+   can be taken too early. The lead waits until the daemon reports no sync or ingest job
+   running and an empty change queue, read twice a minute apart (the status commands at the
+   deployed version are written down by R0), and only then counts. Both counts, the time of
+   each, the backup path and D23's answer go in the summary ([[#ac-15]]).
 7. If D23's answer is to re-key: the op runs here, from the map's line table, and the count
    after it equals the count before.
 {#r9-store-event-steps}
 
-#### The re-stamp {#r9-restamp}
+#### Stamps under an unmapped pass name (only if R0 item 8 counts any) {#r9-restamp}
 
-The release changes `_DERIVE_CODE_MODULES`, so after the deploy every fleet store's
-`derive status` reads `behind_code` for the union and for every pass that has no module set of
-its own, with nothing about its graph changed ([[#r5]] item 4). The release is not finished
-until that is put right. **All of it is the lead's, and user-gated:**
+**With a count of zero, this section does not apply:** there is no re-stamp, no announcement
+of one, no go to ask for, and [[#ac-17]] is not an AC of the task. Zero is the expected count.
 
-1. **Before the deploy,** the announcement names: the release; that it flips the derive hash by
-   a change of file list only; G11's result at the release sha ([[#ac-16]]); the stores that
-   will be re-stamped (the fleet roster); and the backup each gets.
-2. **The user's go** for this release covers the re-stamp. It is asked for with item 1 in hand.
-3. **Deploy.** Then, per store: back up; read `derive status` and record what it shows (R0 item
-   8 predicted it; a difference from the prediction stops the re-stamp and is raised);
-   re-stamp through the existing derive-stamp path (R0 item 8 names the command at the
-   deployed version); read `derive status` again.
-4. **Done** when every store's `derive status` is clean for the passes the flip touched, and
-   the record of [[#ac-17]] is complete. A store that cannot be re-stamped is named, with the
-   reason, and is not left unsaid.
+With a non-zero count, some store holds a stamp whose pass name falls back to the union, and
+this task's module-list change would make that stamp read `behind_code` with nothing about its
+graph changed. Then:
+
+1. **The task stops before phase 2 merges** and reports to the lead: the stores, the pass names
+   and the counts.
+2. **No stamp is written through `stamp_derive` or the `derive_stamp` daemon op.** That path
+   overwrites `version` and `derived_at`, writes a history row for a derive that never ran, and
+   marks a stamp fresh whether or not it was behind (ch-bsd r2 `#nb2`; ruling L108). It is not
+   a re-stamp tool.
+3. **The only tool is 29.2 R7's `rmx derive rehash`** (`task-29.2-mypy-gate#r7`): per stamp it
+   writes the new hash only where the stored hash equals the old scheme's hash of the current
+   files, keeps `version` and `derived_at`, and records a history row of kind `rehash`. It does
+   not exist until R7.
+4. So the lead chooses, with the count in hand: phase 2's release waits for R7's release and
+   the affected stamps are rehashed there; or phase 2 is released and those named stamps read
+   `behind_code` until R7, said in the release note. Either way the choice is announced and
+   user-gated like any store-changing release, and is recorded ([[#ac-17]]).
 {#r9-restamp-steps}
 
 ### R10: docs {#r10}
@@ -902,7 +1016,8 @@ is quoted in the summary. {#r10-body}
   - G10: a census whose bypass is planted in the old file name only (it must not count as seen).
   The scratch runs are logged. A gate that has only ever been run on an identical tree has not
   been shown to check anything ([[feedback_clean_corpus_hides_a_dead_gate]]). {#ac-1}
-- **AC-2: every move commit passes G1-G5 and G7-G11** (G11 from phase 1's last commit on), and the summary has one row per commit:
+- **AC-2: every move commit passes G1-G5 and G7-G12** (G11 from phase 1's last commit on; G12
+  on every commit of every phase, 0b and 3 included), and the summary has one row per commit:
   sha, the module moved, lines moved, each gate's result, and the two suite run names. G5's
   two runs for a commit are the commit and its parent, at the same shard count. {#ac-2}
 - **AC-3: the patch still lands.** `tests/test_cli_patch_surface.py`:
@@ -922,8 +1037,12 @@ is quoted in the summary. {#r10-body}
     `src/refmatrix/cli/`;
   - **one copy:** under `python -m refmatrix.cli`, a probe command sets module state the way
     `memory -p` does and then triggers the lazy import `handoff` makes; the lazily imported
-    `refmatrix.cli` is the module the command ran in, and it sees that state. This test is
-    **RED at base** (two copies, [[#fact-identity]]) and green from the rename commit on;
+    `refmatrix.cli` is the module the command ran in, and it sees that state. At base there are
+    two copies ([[#fact-identity]]), so this test cannot pass there. It is committed in **phase
+    0, marked `xfail(strict=True)`** with the reason "two copies of the CLI under -m until the
+    package rename (task 29.5)". Its failing run at base is recorded first, without the marker,
+    on a scratch branch. **The rename commit removes the marker**, and from that commit on the
+    test passes as an ordinary test ([[#r4-probe]]);
   - the `rmx` console script resolves `refmatrix.cli:cli_entry`.
 
   The naming census fails on a synthetic `cli/json.py`. `tests/test_fork_safety_reexec.py` is
@@ -935,32 +1054,44 @@ is quoted in the summary. {#r10-body}
   file name: a `store_*.py` that holds only a `Protocol` or type declarations (29.2's leaf
   module) is not a derive module and is not required in the tuple. {#ac-5}
 - **AC-6: no private name crosses a module, except where it is declared.** The census passes on
-  the tree with an allow list that holds only the three names of the declared `handoff`
-  exception ([[#r2b]]), and fails on a synthetic module that imports `_x` from another
-  `refmatrix` module, on one that reads `other._x` through an alias, and on one that does it
-  inside a function (a lazy import). It passes on `cli/x_cmds.py` reading `_cli._root`. The
-  summary's table has one outcome for each of the rows R0 listed. {#ac-6}
+  the tree with an allow list that holds exactly [[#r6]]'s declared rows (the three `handoff`
+  names; the rows that touch a derive-pass module), each naming an owner task that resolves.
+  It fails on: a synthetic module that imports `_x` from another `refmatrix` module; one that
+  reads `other._x` through an alias; one that does it inside a function (a lazy import); an
+  allow-list entry whose owner does not resolve; an entry that matches no use. It passes on
+  `cli/x_cmds.py` reading `_cli._root`. The summary's table has one outcome for each of the
+  rows R0 listed, and the count of each outcome. {#ac-6}
 - **AC-7: no module produced by the split is over 3,000 lines.** The size census is green;
   `cli/*` and `store*.py` hold no exception; it fails on a 3,001-line file under `cli/` and on
   an excepted file that grew by one line. For `daemon.py`, `verbs.py` and `ingest.py`: the
   written assessment ([[#r7-assessed]]) is in the summary with each of the six criteria
-  answered. `ingest.py` and every other module named in `_DERIVE_PASS_MODULES` is unchanged in
-  line count by this task's move commits (a test compares the table's files at the base sha and
-  at the final sha: no file was added to or removed from it). Each of the three is under the
+  answered. **Every module named in `_DERIVE_PASS_MODULES` is byte-identical at the task's base
+  sha and at its final sha** (the raw bytes: that is the hash scheme in force until 29.2 R7),
+  and at every commit between (gate G12); and the table itself names the same files. The
+  check is `git hash-object` per file, and it fails on a planted one-character edit to
+  `pagerank.py`. Each of the three is under the
   ceiling or has an exception row with an owner task that exists. {#ac-7}
-- **AC-8: the citation tool is ready, its dry run is recorded, and 29.6 exists to use it.** On
-  fixture specs the tool rewrites a line cite to the right symbol when the def moved, resolves
-  the line at the spec's own sha and not at `HEAD` (a fixture where the two differ), lists a
-  module-level line as unresolved without guessing, and lists a qualified-name pin and a
-  non-recursive glob as pins. The dry run over `workflow/plans/` is in the summary: per spec,
-  resolved, unresolved, pins. No spec is rewritten by this task: the pass is
-  [[task-29.6-citation-and-pin-repoint]], whose spec exists and names this dry run as its
-  input. {#ac-8}
+- **AC-8: the citation tool is ready, its dry run is recorded, and 29.6 exists to use it.** On a
+  fixture repository the tool:
+  - rewrites a line cite to the right symbol when the def moved;
+  - **resolves at the commit that wrote the citation's line:** a spec written at commit A cites
+    `mod.py:10`, where line 10 held `def f` at A; the spec is edited at commit B on a
+    **different** line, by which time line 10 holds `def g`; at `HEAD` it holds `def h`. The
+    tool writes `::f`. Resolving at the spec's last-change sha would write `::g`, and at `HEAD`
+    `::h`; both are wrong, and the fixture fails on either;
+  - lists as unresolved a citation whose sentence names `f` while the resolved def is `g`;
+  - lists a module-level line as unresolved without guessing;
+  - lists a qualified-name pin and a non-recursive glob as pins.
+
+  The dry run over `workflow/plans/` is in the summary: per spec, resolved, unresolved, pins.
+  No spec is rewritten by this task: the pass is [[task-29.6-citation-and-pin-repoint]], whose
+  spec exists and names this dry run as its input. {#ac-8}
 - **AC-9: the window was real.** The summary quotes the pre-phase checks of [[#r9]] item 1 with
   their output, the announcement, and the close. {#ac-9}
 - **AC-15: the store event is on the record, and nothing was lost unseen.** For each phase's
   merge the summary holds: the count query; the learned and protected row counts per store and
-  per path **before** and **after**; the backup path and that `rows-on-cli-and-store.jsonl`
+  per path **before** and **after** (the after-count taken once the post-commit sync has
+  finished, with the daemon's status line that shows it); the backup path and that `rows-on-cli-and-store.jsonl`
   holds as many rows as the before-count; plan-29 D23's answer, dated, **before** the merge
   commit's time; that the watcher was out during G6 (the daemon's own status line); and either
   "re-keyed: after = before" or "lost as recorded: N rows, listed in the export". A phase whose
@@ -971,12 +1102,12 @@ is quoted in the summary. {#r10-body}
   G11), and the summary gives each leg's digest at R0 and at the final sha. The check is shown
   able to fail as 29.2's section specifies: the changed corpus (`--corpus`) differs from the
   golden leg by leg, with exit 1 and the leg named; a corpus derived with one pass left out
-  gives exit 2, and `record` on it leaves the golden untouched. This is the evidence the lead cites for the announced re-stamp. {#ac-16}
-- **AC-17: the re-stamp is on the record.** The release record holds: the announcement and the
-  user's go, both dated before the deploy; per fleet store, the backup path and `derive status`
-  before and after the re-stamp; that no store was re-derived; and the list of stores not
-  re-stamped, with reasons (empty, or explained). The task is not `completed` while a store
-  reads `behind_code` from this release without a line in that list. {#ac-17}
+  gives exit 2, and `record` on it leaves the golden untouched. {#ac-16}
+- **AC-17 (only if R0 item 8's count is not zero): unmapped-pass stamps are on the record.** The
+  summary holds R0 item 8's query and count per store. With a count of zero it says so and this
+  AC is closed by that line. With a non-zero count it holds: the stores, pass names and counts
+  as reported to the lead; the lead's choice of [[#r9-restamp]] step 4, announced and dated
+  before the release; and that no stamp was written through `stamp_derive`. {#ac-17}
 - **AC-10: before and after.** The [[#baseline]] tables, re-measured at the final sha, are in
   the summary beside R0's. `./scripts/lint-gmd.sh` exits 0. {#ac-10}
 - **AC-11: the symbol map is published, and three names do not move.** {#ac-11}
@@ -1021,15 +1152,21 @@ is quoted in the summary. {#r10-body}
   tool's tests, the dump tool's tests, the census tests and AC-3's probes are written first and
   recorded failing (the tool does not exist; the censuses' must-fail cases are RED), then made
   green. Phase 0 changes no production behaviour.
-- **Characterisation tests are proven by mutation, not by a RED run.** AC-3's probes and AC-4's
-  process tests pass before the split and must pass after it; a RED run at base is impossible
-  by design. Each is shown able to fail by its mutation below.
+- **Characterisation tests are proven by mutation, not by a RED run.** AC-3's and AC-13's patch
+  probes, and AC-4's process tests **other than the one-copy probe**, pass before the split and
+  must pass after it; a RED run at base is impossible by design. Each is shown able to fail by
+  its mutation below.
+- **The one-copy probe is the exception: it has a real RED.** It fails at base, that run is
+  recorded, and it sits in the suite as a strict xfail until the rename commit makes it pass
+  ([[#r4-probe]]). It is not a characterisation test.
 - **Phases 0b and 3 are ordinary TDD** (the census's must-fail case is RED; each move or rename
   follows).
 - **Mutations** (each turns a named test or gate RED within its deadline; each is reverted in
   its own command; the fix is committed before the loop; `__pycache__` is cleared after):
-  1. the tool binds a core name by `from … import` in one moved function (AC-3's probe and the
-     census);
+  1. the tool binds a core name at **module level** in one command module (`from refmatrix.cli
+     import _root` at the top of `cli/query_cmds.py`, with the moved functions calling the bare
+     name). An import inside the function body would not do: it reads the patched attribute at
+     call time and the probes stay green (AC-3's probe for `_root` and the census are red);
   2. the tool leaves a `global _partition_override` in a moved command (AC-3);
   3. the tool drops one re-export line (G4);
   4. `cli/__main__.py` uses a relative import (AC-4's re-exec case);
@@ -1044,9 +1181,10 @@ is quoted in the summary. {#r10-body}
   12. `--compare` is given the same run twice (G5 is green whatever the commit did: the gate
       script must refuse two runs with one sha);
   13. the G10 script plants the bypass and does not check that the census failed (AC-12);
-  14. `_subject_upsert` binds `_root` by `from … import` inside a moved copy (AC-13's probe for
-      `_root` goes silent, so the probe test is red); and a third engine module gains a lazy
-      `from refmatrix.cli import` (the census is red);
+  14. a second module holds a copy of `_subject_upsert` that binds `_root` at **module level**
+      (`from refmatrix.cli import _root` at the top of the file), and `handoff` is pointed at
+      that copy: AC-13's probe for `_root` goes silent, so the probe test is red. And a third
+      engine module gains a lazy `from refmatrix.cli import` (the census is red);
   15. the symbol map drops the moved `Store` methods (AC-11's count test);
   16. the tool rewrites a parameter that shadows a core name (the tool's shadow test is red,
       and `tools/verify_split.py` is red without the tool's help);
@@ -1112,18 +1250,18 @@ No spec under `workflow/plans/` is edited by this task: the citation and pin pas
 
 ## The user's decisions this spec is built to {#user-decisions}
 
-Decided on 2026-11-14: by the user (ruling L106) or, where the row says so, by the lead (ruling
-L107); both in [[plan-review-2026-11-13#lead]]. The last row is open.
+Decided on 2026-11-14: by the user (ruling L106) or, where the row says so, by the lead (rulings
+L107 and L108); all in [[plan-review-2026-11-13#lead]]. The last row is open.
 
 | Label | Decided | What it means here |
 |---|---|---|
 | plan-29 D17 | this spec's default, with a sixth criterion | [[#r7]]: no derive-pass module is split; `ingest.py` and `daemon.py` are exceptions; `verbs.py` only if its assessment passes |
-| plan-29 D4 (29.2's) | (c): a normalised-AST derive hash, in 29.2, before its annotations | [[#r5]] item 4: that lands after this task, so this task's module-list change still flips the union once, and needs one announced re-stamp |
+| plan-29 D4 (29.2's) | (c): a normalised-AST derive hash, in 29.2, before its annotations | [[#r5]] item 4: it lands after this task. Until then the hash is over raw bytes, so no pass module may change by a byte here (gate G12) |
 | `plan-review-fable D4` | a standing go for plan-29 releases whose suite equals the baseline by E line, the user told first, **excluding** releases that change the store on disk | [[#r9]] item 7: this task's release is excluded; it has its own go |
 | `plan-review-fable-store D5` | duckdb 1.5.3 in `.venv-eval` before baselines (the lead upgrades after the 0.83.1 runs) | [[#r0]] item 13: no golden and no baseline before the upgrade |
 | `plan-review-fable-memory D2` | 25.1b's `legs_ms` timing pair lands before 29.5 | [[#r0]] item 10: it is on `master` before the window opens |
 | plan-29 D24 (this spec's) | accepted by the lead (ruling L107), recorded in ADR 0006; not put to the user | [[#fact-identity]], [[#ac-4]] |
-| re-stamp sequencing (ruling L107) | each fleet event carries its own announced, user-gated re-stamp inside its own release | [[#r9-restamp]], [[#ac-17]] |
+| the re-stamp (rulings L107, then L108) | L107 gave each fleet event its own re-stamp. **L108 superseded its 29.5 half:** the store split flips no pass, so this task has no re-stamp unless R0 item 8 counts a stamp under an unmapped pass name, and then never through `stamp_derive` | [[#fact-derive]], [[#r9-restamp]], [[#ac-17]] |
 | **plan-29 D23** | **open**; asked at the store event with R0's count in hand; with a zero count it does not arise | [[#r9-store-event]] step 3 |
 {#user-decisions-table}
 
@@ -1286,3 +1424,25 @@ codes 0 / 1 / 2, `--corpus` and `--golden`, `record` refusing with no stamp, nev
 store) and says that 29.3's slice K **re-records** the golden on the post-29.5 tree and
 requires equality with this task's R0 golden (`task-29.3-converge-shapes#k-r6`), reported
 before slice a starts. [[#ac-16]] names the exit codes. {#rev-note-5-body}
+
+## Revision note 6 (2026-11-14, round 3: ch-bsd r2 and ruling L108) {#rev-note-6}
+
+`bsd-plan29-spec-r2` (dev `master`) reviewed `786d5e7`: 2 BULLSHIT, 5 SKETCHY, 10 MEH across the
+six specs. It also corrected its own r1: the union hash is compared with no stamp, so the store
+split flips nothing. This spec's share, as ruling L108 decided it:
+
+| Finding | Change here |
+|---|---|
+| NB1: the one-copy probe was RED at base, against the clean baseline and G5 | [[#ac-4]], [[#r4-probe]], [[#r4-baseline]], gate G5, the test strategy: a strict xfail from phase 0; the rename commit removes the marker as its one allowed test edit; G5 accepts exactly that node id going xfailed → passed |
+| NS1, first half: the planned re-stamp had no target | [[#fact-derive]], R0 item 8, [[#r5]] item 4, [[#r9]] item 7, [[#r9-restamp]], [[#ac-17]]: no re-stamp unless R0 counts a stamp under an unmapped pass name; never through `stamp_derive` (NB2) |
+| NS1, second half: phase 3's renames would flip six passes | [[#r6]] (rows that touch a pass module are declared, with an owner whose edit ships in 29.2 R7's release; 22 sites, [[#r6-pass-rows]]), [[#ac-6]], [[#ac-7]] (raw bytes of every pass module), gate G12 |
+| NS4: citations resolved at the wrong commit | [[#r8]] item 2, [[#ac-8]]: `git blame` on the spec's line; a named symbol is checked |
+| M1: two mutations could not fail | test strategy, mutations 1 and 14: module-level bindings |
+| M2: the `verbs.py` split had no rules | [[#r7-verbs]] |
+| M3: the telemetry exception's reason was wrong | [[#r2b-table]], [[#r2b]] item 2 |
+| M4: the export and the recount | [[#r9-store-event]] steps 2 and 6, [[#ac-15]] |
+| M5: AC-6 could not admit a declared row | [[#ac-6]] |
+{#rev-note-6-table}
+
+Revision notes 3 and 4 above describe a fleet re-stamp after this task's release. That plan is
+withdrawn by this note. {#rev-note-6-withdrawn}

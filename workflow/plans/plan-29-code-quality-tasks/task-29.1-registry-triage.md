@@ -92,7 +92,9 @@ one form. `→` and `->` are both accepted.
 | `closed: <evidence>` | closed with no fix commit in this repo: it does not reproduce, its code is gone, another row replaced it, or the user decided not to fix it | one of the [[#r3]] evidence shapes |
 | `recurring; scheduled → …` / `recurring; deferred: …` | seen again after a fix | `recurring` alone is no longer a complete status |
 
-`open` and `suspected` are not in the grammar. After this task, no row holds them. A new bug is
+`open` and `suspected` are not in the grammar. After this task, no row holds them. A status
+that matches none of the forms above fails the checker by its own rule, `grammar`
+([[#rules-table]]); the forms are matched case-sensitively. A new bug is
 logged as `scheduled` or `deferred` on the day it is logged. If its owner is unknown, it is
 `deferred: owner not yet chosen; review <date + 14 d>`. The rule in
 `.claude/rules/bug-registry.md` changes to say this. {#r1-body}
@@ -215,11 +217,15 @@ There is one script, `scripts/check-bug-registry.py`, with no third-party import
 ### The checker's rules {#rules}
 
 One row per rule. Each has an id, a must-fail row in the fixture that fails on **that rule and
-no other**, and a mutation that removes the rule. A rule with no fixture row fails the test
+no other**, and a mutation that removes the rule. **Matching is case-sensitive**: the grammar's
+words are lower-case, so `OPEN` is not `open`. It fails rule `grammar`, not rule `open`, and
+the message says "status words are lower-case". (One of the 73 `open` rows at `f3709d2` is
+written `OPEN — fix: …`: bug-096. The baseline count folded case; the checker does not.) A rule with no fixture row fails the test
 ([[#ac-4]]), so a rule added later cannot arrive unproven.
 
 | Rule id | Fails when |
 |---|---|
+| `grammar` | the status matches **no** form of [[#r1]]: the catch-all. Fixture rows: an unknown word (`investigating`); a `remedied …` on a row that is not on the legacy list; an upper-case `OPEN — fix: …` |
 | `cells` | a row does not have exactly 8 cells (a 7-cell and a 10-cell fixture row) |
 | `open` | the status is `open`, with or without a note |
 | `suspected` | the status is `suspected` |
@@ -395,7 +401,7 @@ names their owners; this task does not. {#homes-new-work}
   - the real registry, which must exit 0;
   - a must-fail fixture registry (`tests/fixtures/bug_registry_mustfail.md`) with at least one
     row for **every** rule id in [[#rules-table]] except `history` and `fixed-git`, each row
-    failing on that rule alone. `fixed-git` is driven by a fixture repository whose git is made
+    failing on that rule alone (three rows for `grammar`). `fixed-git` is driven by a fixture repository whose git is made
     to fail; `history` by [[#ac-6]]'s pair.
 
   The test asserts:
@@ -406,7 +412,9 @@ names their owners; this task does not. {#homes-new-work}
 
   **RED:** at `master` the script does not exist, so the test fails. That run is recorded.
 
-  **Mutations:** one per rule id (22), each removing that rule from the script. Each must turn
+  **Mutations:** one per rule id (23), each removing that rule from the script. For `grammar`
+  that is deleting the catch-all: its three fixture rows then pass every other rule, so the
+  test is red on all three. Each must turn
   the test RED on that rule's fixture row and on no other, and each is recorded in the summary.
   Three more:
   1. split on every `|` (the naive splitter): the code-span fixture row is mis-read;
@@ -535,3 +543,8 @@ shape ([[#r7]]); a `scheduled` target that is `completed` fails the checker. {#r
 
 [[#homes-new-work]] names the two pieces of new work L106 created that have no owner yet. The
 git-runner hand-off to 29.3 is restored in [[#r4]], because 29.3 now takes it. {#rev-note-4-body}
+
+## Revision note 5 (2026-11-14, round 3: ch-bsd r2 and ruling L108) {#rev-note-5}
+
+NS5: the catch-all is now rule `grammar` in [[#rules-table]], with three fixture rows and its
+mutation, and status matching is stated as case-sensitive ([[#r1]], [[#ac-4]]). {#rev-note-5-body}
