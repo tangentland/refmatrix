@@ -607,6 +607,67 @@ Mutation spot-checks, each alone in a throwaway clone of `af89663` (not this tre
 
 {#green-remedy-mutations}
 
+### GREEN remedy r2: bsd-216 r2 (ruling L94) {#green-remedy-r2}
+
+Commits: `b910d92` (src), `ec38f84` (INTEGRATION `#ignore-rules`: the B1 bullet described the
+retired fallback). RED: `8e06ac1` (red-216). Audit: `a32874a`
+(`workflow/bullshit/2026-11-14-0041-bug216-r2-25ceacd.md`). No test edited. {#green-remedy-r2-commits}
+
+- **B1-r2.** `ingest_ignore_root` returns the store's own project root, always (the target only for
+  a store with no root). An outside target has no path relative to it, so `ignore_reason` judges
+  the absolute path, as 758bca1 did; no other store's spec is ever read. Both shapes pass: an
+  outside memdir with no store above lands 0 kind=doc rows (ingest_path and CLI), and the
+  `claude_tools/gmd` shape ingests 758bca1's file set. {#green-remedy-r2-b1}
+- **B2 (bug-227).** `merge_slots`:
+  (a) step 7b's newer-wins `memory_content` UPDATE excludes every `remap_b` loser, so a moved
+  entity's id keeps A's body; (b) B-only fragment rows go through `store.remap_fragment(bm,
+  remap_b)` — the kernel `repair_fragments(id_map=…)` now calls too. `repair_fragments` itself is
+  not called on the target: it maps EVERY row and A's rows hold A's ids, so A's bit at a moved id
+  would move with B's; the kernel on the B-only rows is the same transform, scoped. (c) the result
+  carries `fresh_moved` = `[[old, new], …]` at the TOP level and `fragment_bits_remapped`;
+  `remap.b_loser_count` counts name-losers only; `_op_replica_merge` adds `re_embed` (the moved
+  ids, old->new) to its reply and its log line, and `rmx replica merge` prints it. (e) step 5's
+  newer-wins entity UPDATE excludes every `remap_b` loser, not only the moves, so a name-loser id
+  held by a different A entity merges: `[(100,'a-x'), (101,'shared')]`. (d) `MergeRefused` past
+  `REMAP_HEADROOM`: red-216's pins, green. {#green-remedy-r2-b2}
+- **Vectors (B2c question).** YES, a reader can return a stale vector for a moved id today, until
+  a re-embed runs. Vectors live in `vectors/<partition>/<kind>.lance`, keyed by entity id and
+  shared by both slots; the merge does not touch them. The Lance row at the OLD id is whichever
+  slot embedded last, so a dense read (recall / `search-dense` / hybrid) can return the A entity
+  for text that was B's; the moved entity has no vector at its fresh id, so dense reads miss it.
+  Before this change neither would ever be re-embedded: the moved row carried B's non-null
+  `vectors_updated_at`, which `pending_embeddings` reads as current. The merge now sets
+  `vectors_updated_at = NULL` on BOTH ids of every move, so the next `rmx embed` re-embeds them;
+  the window until then is what `re_embed` names. {#green-remedy-r2-vectors}
+- **M1-r2.** `watch.is_relevant` is True for every `BUILTIN_INCLUDES` path under the root
+  (`ingest.is_builtin_include_path`), whatever the file holds or whether it exists; `_sync_one`
+  decides include or purge. {#green-remedy-r2-m1}
+- **M2-r2.** `audit_via_writer` is keyword-only after the connection again (`*,`); red-216's
+  r1 test calls it with keywords. {#green-remedy-r2-m2}
+
+Runs (logs in `workflow/review-output/bug216/`): (1) `test_bug216_remedy_r2.py` 11 passed
+(`remedy-r2-iter1.log`); (2) r1 + L86: 21 passed (`remedy-r2-step2-r1-l86.log`); (3) bug178 + the
+three merge files: 75 passed (`remedy-r2-step3-merge.log`); (4) the bug-216 family (as before,
+plus partition_merge and bug178): **709 passed** (`remedy-r2-step4-family.log`); (5) full suite at
+`ec38f84`: **4 failed, 4467 passed, 1 skipped** (`remedy-r2-step5-full.log`). Every failure has
+release-0.82.0's E line: `test_brief_real_daemon` (DuckDB lock conflict),
+`test_task21_1_agent_usage_report` ×2, and `test_gmd_lint_requires_version` (bug-155's memdir half
+in a clone). bug-228 (`ac2b_live`) did not fail this run. `lint-gmd.sh` exit 0 on a copy named
+`refmatrix` (`lint-gmd-remedy-r2.log`). {#green-remedy-r2-results}
+
+Mutations, each alone in a throwaway clone of `ec38f84` (not this tree), restored with
+`git checkout -- src` in its own command, `__pycache__` cleared; suite = `test_bug216_remedy_r2.py`:
+
+| mutation | result | log |
+|---|---|---|
+| B1-r2: the r1 fallback (target / nearest `.refmatrix/`) returns | 3 failed | `mut-r2-B1r2.log` |
+| B2a: step 7b keys on the raw id again | 1 failed | `mut-r2-B2a.log` |
+| B2b: B-only fragment rows copied without the remap | 1 failed | `mut-r2-B2b.log` |
+| B2e: the entity UPDATE excludes only the fresh moves | 1 failed | `mut-r2-B2e.log` |
+| M1-r2: `is_relevant` no longer forwards a built-in path | 2 failed | `mut-r2-M1r2.log` |
+
+{#green-remedy-r2-mutations}
+
 ## AC-6 (live) {#ac6}
 
 (lead, after deploy and R4)
