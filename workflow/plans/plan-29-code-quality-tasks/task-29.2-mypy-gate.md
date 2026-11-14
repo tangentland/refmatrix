@@ -25,6 +25,7 @@ metadata:
 > Revision round 2 (ruling L105, on ch-bsd spec review r1): [[#rev-round-2]].
 > Revision round 3 (ruling L108, on ch-bsd spec review r2): [[#rev-round-3]].
 > Revision round 4 (ruling L110, on ch-bsd spec review r3): [[#rev-round-4]].
+> After ch-bsd spec review r4 (GO, MEH-only), ruling L111: [[#rev-l111]].
 > Decided: `plan-29 D27` = (a), re-derive the affected passes as deploy B's closing step (lead, ruling L109; [[#d27]]).
 
 rel: part-of -> [[plan-29-code-quality]]
@@ -384,6 +385,28 @@ adding or removing a field changes the hash; turning `x = 5` into `x: int = 5` c
 changed field type changes it too (the safe side). An annotation on a local variable inside a
 function stays neutral everywhere.
 
+**A file the normal form cannot be trusted on is refused** (ch-bsd spec review r4 M3; ruling
+L111). The normal form assumes annotations and docstrings do nothing at run time, and that it
+recognises every class whose annotations are fields. A pass file is REFUSED when it: {#r7-refuse}
+
+- reads annotations at run time: an `__annotations__` attribute, or a call to
+  `typing.get_type_hints` or `inspect.get_annotations`;
+- reads docstrings or source at run time: a `__doc__` attribute, or a call to `inspect.getdoc`,
+  `inspect.getsource` or `inspect.getsourcelines`;
+- uses a field-defining class the normal form does not recognise: `dataclass` imported or
+  bound under another name, or an attrs-style class (`attr.s`, `attrs.define` and their
+  siblings; any import of `attr` or `attrs`).
+
+A refused file is never normalised. Its `normal` digest is taken over its raw bytes, so every
+edit to it, a comment included, reads as a change (the behaviour of `f3709d2` for that file),
+and the refusal is reported: `derive_status` names each refused file and the trigger, and
+`rmx derive status` prints it. Calling `ast.get_docstring` on a tree parsed from another file is
+not a trigger; `ingest.py` does that twice, to the files it ingests.
+
+None exists today: `census/census_normaliser_refusals.py` at `f3709d2` finds 0 triggers in the
+seven pass files, and 6 field-defining classes, all of a recognised kind (log
+`census-normaliser-refusals-f3709d2.log`). The rule is there for the day one appears.
+
 **The stamp value carries two digests and a tag.** {#r7-value}
 
 - `raw`: the digest of the files' bytes, computed exactly as the `p1` scheme computes it today.
@@ -538,7 +561,18 @@ stamp, marked `kind: rehash` and carrying the old and the new value.
 - The mark is a `kind` field inside the row's existing `counts` JSON. There is no new column: a
   column would be a schema change on every store and one more table-shape for every table-copy
   path to carry ([[#k9]]).
-- A rehash row never prunes a derive row and does not count toward the per-pass history cap.
+- A rehash row never prunes a derive row and does not count toward the per-pass history cap of
+  derive rows (50 at `f3709d2`).
+- **Rehash rows have a cap and a pruning rule of their own** (ch-bsd spec review r4 M4; ruling
+  L111): at most 20 per partition and pass. Writing the 21st deletes the oldest REHASH row of
+  that partition and pass, and only a rehash row. {#r8-history-cap}
+  - Why a cap: the checklist runs a rehash after every deploy that touches a pass file, so
+    without one the table gains a row per stamp per such deploy for ever.
+  - Why 20: a rehash row records only a hash value changing with nothing derived, so an old one
+    explains nothing a derive row does not; 20 is enough to follow a stamp's value back through
+    any scheme or interpreter change being debugged, and is under half the derive cap.
+  - Nothing else is lost: the stamp's `version` and `derived_at`, and every derive row, are
+    untouched by the pruning.
 - Every reader of the history knows the mark: `rmx derive log` prints the row as a rehash;
   `rmx derive diff`, and anything else that takes "the last derive", skips it.
 
@@ -662,6 +696,8 @@ Each AC is a test that is RED at the task's start commit, unless marked (charact
   | a field removed from a `@dataclass`; a field's type changed | different |
   | in a `@dataclass`, a class-level `x = 5` turned into `x: int = 5` | different |
   | a field added to a `NamedTuple` class and to a `TypedDict` class | different |
+  | **a refused file** ([[#r7-refuse]]): a copy given one trigger (in turn: `x.__annotations__`; `typing.get_type_hints(f)`; `f.__doc__`; `inspect.getsource(f)`; `from dataclasses import dataclass as dc`; `import attrs`), then a comment added | different, and `derive_status` names the file and the trigger |
+  | a copy that calls `ast.get_docstring` on a parsed tree, then a comment added | equal (not a trigger) |
 
   RED at the start commit for every "equal" row (the raw-bytes hash differs).
 - **AC-21: an older stamp is judged by `raw`, at BOTH comparison sites** ([[#r7-compare]]).
@@ -714,8 +750,11 @@ Each AC is a test that is RED at the task's start commit, unless marked (charact
 - **AC-25: history says rehash.** After AC-24's first row there is one history row per rehashed
   stamp, each with `kind` rehash and the old and new values; a refreshed stamp gets the same
   kind of row; the count of derive rows per pass is what it was; with the history at its cap, a
-  rehash prunes nothing; `rmx derive log` labels the rows; `rmx derive diff` compares the same
-  two derive rows as before the rehash.
+  rehash prunes no derive row; `rmx derive log` labels the rows; `rmx derive diff` compares the
+  same two derive rows as before the rehash.
+  - **The rehash cap** ([[#r8-history-cap]]): after 25 refreshes of one stamp there are exactly
+    20 rehash rows for that partition and pass, they are the 20 newest, the derive rows of that
+    pass are the same rows as before, and another pass's rehash rows are untouched.
 - **AC-26: the default writes nothing and counts the same.** With no `--apply`, the store's stamp
   and history tables are equal row for row before and after, the counts equal the applied run's
   (as `would_rehash`, `would_refresh`), and the first output line says nothing was written.
@@ -787,6 +826,8 @@ RED first, by `@ch-test-engineer`, recorded to `workflow/review-output/`; GREEN 
   | the normal form drops default values too | AC-20 ("a default value changed") |
   | the dataclass / `NamedTuple` / `TypedDict` exception dropped | AC-20 (the four class rows that must differ) |
   | the exception applied to every class body | AC-20 (the plain-class row) |
+  | a refused file normalised anyway | AC-20 (the refused-file row, each trigger) |
+  | a refusal not reported | AC-20 (the refused-file row: the file is not named) |
   | the scheme tag left at `p1` | AC-21 |
   | a non-current tag compared as if current | AC-21 (reads behind) |
   | `_memory_compile_status` keeps its own comparison | AC-21 (compile scopes; "one function") |
@@ -800,6 +841,8 @@ RED first, by `@ch-test-engineer`, recorded to `workflow/review-output/`; GREEN 
   | the rehash converts a stamp with no hash | AC-24 (`unknown` row) |
   | the history row written without the rehash mark | AC-25 |
   | a rehash row counted toward the cap | AC-25 (prunes a derive row) |
+  | rehash rows never pruned | AC-25 (the cap: 25 rows remain) |
+  | the rehash cap prunes the oldest row of ANY kind | AC-25 (a derive row disappears) |
   | `derive diff` takes a rehash row as the last derive | AC-25 |
   | the default run writes | AC-26, AC-27 |
   | the MCP tool defaults to apply while the CLI defaults to dry | AC-27 |
@@ -1326,6 +1369,15 @@ Answers ch-bsd spec review r3 (`bsd-plan29-spec-r3`, master) under ruling L110
 | M4: the closing step named one of the two bugs it depends on | bug-241 beside bug-096; the step checks every re-derived pass's stamp time moved | [[#r7-release]] step 4, [[#d27]] |
 | M5: the rehash was an MCP write tool with writes on | CLI and MCP tool default to a dry run; writing needs `--apply` / `apply: true`; no `--dry-run` flag; AC-26, AC-27 | [[#r8-apply]] |
 | M3 (29.5's): what happens to a stamp under an unmapped pass name | unchanged here and now said: R8 counts it `unknown` and leaves it for a re-derive | [[#r8-rule]] |
+
+### After r4: ruling L111 {#rev-l111}
+
+ch-bsd spec review r4 was GO with MEH findings only. Two are folded here.
+
+| finding | change | anchor |
+|---|---|---|
+| M3: the normal form assumed no pass file reads annotations or docstrings at run time | such a file, and one with an aliased dataclass or an attrs-style class, is refused: hashed raw and reported, never normalised; AC-20 rows; two mutations; a census that finds none at `f3709d2` | [[#r7-refuse]], AC-20 |
+| M4: rehash history rows had no cap | 20 per partition and pass, oldest rehash row pruned, never a derive row; an AC-25 case; two mutations | [[#r8-history-cap]], AC-25 |
 
 ## Out of scope {#out-of-scope}
 
