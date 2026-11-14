@@ -68,10 +68,10 @@ labelled and 6 R12 uses. Chosen: names-only (Q13), applied to non-human turns to
 | h8 | Item key `(scope, entity_id)`, else `(scope, kind, name)`: ONE function, `telemetry.item_key`. It is BUILT by 25.1b, whose `pack` calls it ([[task-25.1b-hook-output-ladder-and-spill]]; bsd-spec-t3ab r3 S5, lead ruling). 10.2's state and `HeldSet`, scan-prompt's filter and 10.5's replay call the same function, so `covers` and the pack always agree on keys | two code symbols with one name in two files are two items; 441 hook deliveries on the 2026-11-13 windows carry no `entity_id` |
 | h9 | No new candidates are pulled in: `k`, the retrieval and the rank order are unchanged; freed bytes are not re-spent. Under 25.1b's ladder this means **tier-pinned**. The pack computes the tiers the `full` run gives, with the ladder over every retrieved row at the channel budget. It then replaces each held row's rendering with its name on the line. A non-held row keeps its `full`-run tier and rendering byte-for-byte, and is never promoted into the freed bytes (rev-round 6) | Q13; the replay's 4+3 lost a use exactly by re-spending freed budget on candidates never delivered at baseline; v1/v2/v3 score the tier-pinned form (names-only at 0.469-0.470 of baseline block bytes means nothing was re-spent); promotion would also make the A/B's byte figure partly a ladder effect |
 | h10 | The line, its cap of 15, its overflow and its spill page are 25.1b's (L15). 10.2 supplies only held members, and their bytes are inside the reservation 25.1b makes for the line, so the line is never cut. On scan-prompt, which has no ladder, the line holds held members only and is reserved in scan's own `fit_blocks` call | one owner per line (contra-b CB-1): two lines with one label, or one label with two meanings, is what L15 removes; a line dropped by the fitter would be removal by rule |
-| h11 | The live A/B lives HERE, not in 10.4 R7 | the arm switches THIS task's mechanism (`dedupe` vs `full`), and 10.4 ships before 10.2 |
+| h11 | The A/B lives HERE, not in 10.4 R7 (read from plan-28's paired series since L83) | the arm switches THIS task's mechanism (`dedupe` vs `full`), and 10.4 ships before 10.2 |
 | h12 | `session_start`, `precompact` and explicit pulls (`rmx context`, interactive and MCP recall) never dedupe; `session_start` RECORDS its full deliveries (h1); `precompact` and explicit pulls record nothing | a boundary payload is what the window starts from; an explicit pull is the agent asking for the body, often because it lost it |
 | h13 | Order of operations on the recall channel (the same order as 25.1b [[task-25.1b-hook-output-ladder-and-spill#k3]], converged with spec-t3a; [[#open-held-order]]): (1) retrieval, the four-source merge and the exclusions, unchanged; (2) 25.1b's ladder over EVERY row, with the line reserved; (3) each held row leaves its tier and becomes a HELD member of 25.1b's `still in play` line; (4) the line renders its held and over-budget members as 25.1b defines; (5) 25.1b R12's clamp, the safety net. A held row whose `full`-run tier was already the line keeps its place and is marked held | contra-b CB-1 asks for the order of held removal and the ladder to be stated; the order follows from h9, and steps 2 and 3 cannot swap without re-spending |
-| h14 | The live A/B's outcome counts only R12 explicit uses plus `cited_in_answer`, never 21.5's unbuilt legs | L27, L18's rule: 21.5's matcher measures proximity, not use (R12 pilot: 7% CAUSED) and is frozen until the experiment reports (D-Q3, D-Q4) |
+| h14 | The A/B's outcome counts only R12 explicit uses plus `cited_in_answer`, never 21.5's unbuilt legs | L27, L18's rule: 21.5's matcher measures proximity, not use (R12 pilot: 7% CAUSED) and is frozen until the experiment reports (D-Q3, D-Q4) |
 | h15 | **Tier-aware held (lead ruling, 2026-11-13, on [[#open-held-tier]] (a)).** An item is held for a call only when the tier it was shown at is the same as, or richer than, the tier the `full` run gives it now. Full shown → held at every tier. Excerpt shown → held at excerpt, pointer and names, not at full. Pointer shown → held at pointer and names. A held state with several deliveries keeps the RICHEST tier shown since the marker. Cross-block tiers: a recall or `session_start` row records its 25.1b tier (`full` / `excerpt` / `pointer`). A scan-prompt anchor block (anchor line, tldr, body) records `full`, and a scan group entry (one line: name, kind, location) records `pointer`. 25.1b's tier shapes are: tier 1 = hook line + full body; tier 2 = hook line + excerpt; tier 3 = hook line (which carries its `(rmx memory get …)` fetch pointer) (25.1b R13's string, verbatim, r3 m1); tier 4 = the name on the line (bsd-spec-t3ab S1, lead ruling). Rank for `covers`: `full` > `excerpt` > `pointer` > `names` > `overflow`. `overflow` ranks LOWEST (lead ruling, 2026-11-13, bsd-spec-t3ab m4): an overflow row was never rendered, so it never makes an item held, and `covers` never treats it as shown. `names` and `overflow` are never recorded (h4), so a held state is always `full`, `excerpt` or `pointer` | the agent never loses content it was never shown; (b) would name an item whose body it never saw, and (c) would almost never dedupe `prompt_recall`, which is mostly pointers at 4,000 B (25.1 d3). The scan mapping is the nearest 25.1b tier by content, derived to apply the ruling across blocks, and is called out for review |
 | h16 | **Held names are marked (lead ruling, 2026-11-13, on [[#open-held-mark]] (a)).** Each held member on the line carries the suffix `·held`. 10.2 supplies the held flag per member, and 25.1b's one line renderer prints the marker ([[task-25.1b-hook-output-ladder-and-spill#k2]] adopts h16; bsd-spec-t3ab B1, lead ruling), counted inside the line's bytes. The line is the LAST block of the payload (S2). Over-budget members carry no marker. Members keep one rank order across both kinds (10.6 p2). On scan-prompt every member is held and marked | a held member's content is already in the window, while an over-budget member's is only on the spill page; the marker tells the agent which names to fetch |
 
@@ -195,11 +195,12 @@ bytes. That is decision h16, and AC-1 and AC-14 test it. {#open-held-mark-lead}
        - any other value → one `Error: RMX_HANDHOLD_CELL …` stderr line, `arm_error` on the call's
          row, and `A+dedupe`. A hook never crashes on it.
 
-     The verb and scan-prompt call `arms.cell()` once per call: `A+full` → `held` is the empty
-     set; `A+dedupe` → dedupe. 10.2 passes `B` and `C` through unchanged; their push-off and
-     bare behaviour is plan-28's (28.1 `push_on`, the bare profile). The call's row records `arm`
-     only when `RMX_HANDHOLD_CELL` is set. That is distinct from 21.1's per-prompt `arm`, so it is
-     written as `handhold_cell`. 28.1 adds `paired_override()` (run id, as-of) on top of
+     The verb and scan-prompt call `arms.cell()` once per call. **Only `A+full` turns dedupe
+     off** (`held` is the empty set). `A+dedupe`, `B` and `C` all dedupe, the same as
+     `A+dedupe` (r-L83 m2). Push-off (`B`) and the bare profile (`C`) are plan-28's (28.1
+     `push_on`, the bare profile), and 10.2 does not branch on them. When `RMX_HANDHOLD_CELL` is
+     set, the call's row records the cell as `handhold_cell`, which is distinct from 21.1's
+     per-prompt `arm`. 28.1 adds `paired_override()` (run id, as-of) on top of
      `arms.cell()`, so `arms.cell()` stays the ONE reader of `RMX_HANDHOLD_CELL`.
    - **Outcomes, counts only (L27, h14), per paired run of the series:** injected bytes per
      human prompt (all per-prompt bytes of the run, non-human turns included, divided by its
@@ -313,7 +314,9 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
       GENERATED UserPromptSubmit commands.
     - With `A+full` exported into the hook's environment, the payloads equal the no-dedupe render
       on the same fixture, and the rows carry `handhold_cell: "A+full"`.
-    - With `A+dedupe`, they equal the dedupe render.
+    - With `A+dedupe`, they equal the dedupe render. With `B` and with `C`, the verb's and
+      scan-prompt's held handling equals `A+dedupe`'s on the same fixture (10.2 does not branch on
+      push-off or bare), and the rows carry `handhold_cell: "B"` / `"C"`.
     - With a value outside `CELLS`, there is one `Error:` stderr line, `arm_error` on the row,
       exit 0 and the `A+dedupe` render.
     - The generated SessionStart entries write no arm file and no arm row, and nothing under
@@ -333,7 +336,8 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
     fitter (AC-6); `(+N)` items given `delivered` events (AC-6); `session_start` naming (AC-8); `rmx
     context` deduped (AC-8); an unreadable state file read as "all held" (AC-10); the scan filter
     keyed by name instead of `telemetry.item_key` (a same-name pair in two files, AC-2);
-    a live session assigned a cell (any SessionStart write of an arm, or `arms.cell()` returning
+    `B` or `C` treated as `A+full` (AC-11, the B/C leg); a live session assigned a cell (any
+    SessionStart write of an arm, or `arms.cell()` returning
     anything but `A+dedupe` with the variable unset) (AC-11); `RMX_HANDHOLD_CELL` read outside
     `arms.cell` (AC-11, the structural test); an invalid cell crashing the hook or silently
     taken as `A+full` (AC-11); a non-held row promoted into freed bytes (AC-2,
@@ -379,8 +383,9 @@ envelope on stdin). Unit tables over `pack`, the scan render and `held_items` ar
 - RED run recorded, GREEN run recorded, mutation table in the implementation summary.
 - Implementation summary at `workflow/implementation_summaries/task-10.2-plan-10-injection-dedup.md`.
 - The `arms.py` deferral row is in `workflow/deferral_registry.md` at merge (S8).
-- R8's parity against v3 at GREEN; R7's live verdict after the experiment's period, each band
-  named, or "underpowered, no verdict" (L79, L83), read from plan-28's paired series.
+- R8's parity against v3 at GREEN; R7's verdict, read from plan-28's paired series once its
+  frozen n is reached or the user pauses it, each band named, or "underpowered, no verdict"
+  (L83).
 - Committed on branch `task-10.2-plan-10-injection-dedup`; merged `--no-ff` to `master`.
 
 ## Revision round 6 (2026-11-13, spec wave, spec-t3b) {#rev-round-6}
@@ -478,3 +483,8 @@ rel: supersedes -> [[#rev-round-7]]
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
 rel: depends-on -> [[task-28.2-paired-reentry-runner]]
 rel: depends-on -> [[task-28.4-preregistration-freeze]]
+
+**L83 confirm-lite MEHs folded (2026-11-14).** m1: the leftover live and period wording is removed
+from `#done`, plan-10's task table and execution contract, and 10.4 n10. m2: only `A+full` turns
+dedupe off; `B` and `C` dedupe as `A+dedupe`, with an AC-11 leg and an AC-13 mutation.
+{#rev-round-8-mehs}

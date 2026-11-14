@@ -214,7 +214,7 @@ but never dedupes; PreCompact and explicit pulls neither.
 | 10.3 | **Compaction marker** — 19.6 R8a's writer; the only reset of the held set | `master` |
 | 10.5 | **Precondition** — the design replay (PASSED, v1/v2; v3 on 25.1b's pack to run) and a 50-probe read-back test (to run) | dd-10r's replay (done); 25.1b merged (v3, the probe's line) |
 | 10.6 | **Injection presentation** — kind labels on every item at every 25.1b tier, kind-labelled headers, rank order kept; the STM composite sends `rev N unchanged` only if R0's Table A says GO | 25.1 merged; 25.1b merged; 10.3 |
-| 10.2 | **Names-only dedupe** (held members on 25.1b's line, tier-pinned) + the live A/B nested in the handhold experiment | 25.1b merged; 10.3; 10.4; 10.6; 10.5 GO (v3 and the probe) |
+| 10.2 | **Names-only dedupe** (held members on 25.1b's line, tier-pinned) + the dedupe-vs-full A/B, read from plan-28's paired series (L83) | 25.1b merged; 10.3; 10.4; 10.6; 10.5 GO (v3 and the probe) |
 
 **Order (L30, plan-review queue items 4 and 6):** only 10.3 builds early. It follows the revival
 branch's merge (L23) in item 4, ahead of 25.1b and 25.3, which read its marker. Everything else
@@ -239,8 +239,9 @@ TDD per [[tdd-governance]]. Plan-specific gates:
 - **The saving is re-measured live** after the fleet has been busy
   ([[impression_bsd_cost_measured_idle]]), plus an offline parity run of the replay through the
   GREEN functions.
-- **Measurement switches are temporary.** The A/B's arm switch exists only for its period and is
-  then deleted; correctness never depends on it.
+- **Measurement switches are temporary.** The A/B's arm switch (`arms.cell()`, set only by the
+  paired runner) exists only for plan-28's paired series and is deleted at its close-out (28.5
+  R8). Correctness never depends on it.
 - **Counts only.** Measurements read transcripts, rings and logs read-only and report counts,
   bytes and harness prefixes; user decisions are cited by id ([[open-questions]]), never quoted
   ([[feedback_no_raw_prompts_in_public_repo]]).
