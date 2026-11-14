@@ -1,0 +1,35 @@
+_DaemonWriter defined in cli.py; Store defined in store.py
+_store(...) writer call expressions in src: 46
+_DaemonWriter explicit public methods: 18; has __getattr__: True
+Store public methods: 127
+explicit proxy methods with no Store method of that name: 1: ['ingest_path']
+same-name methods whose parameter lists differ: 5
+  with_partition: proxy pos=['partition'] kwonly=[] | store pos=['name'] kwonly=[]
+  forget_memory: proxy pos=['target'] kwonly=[] | store pos=['name_or_id'] kwonly=[]
+  bulk_forget_memories: proxy pos=['ids', 'names', 'mtypes', 'dry_run'] kwonly=[] | store pos=[] kwonly=['ids', 'names', 'mtypes', 'dry_run']
+  prune_noise: proxy pos=['namespaces', 'min_df', 'max_df_ratio', 'drop'] kwonly=[] | store pos=[] kwonly=['namespaces', 'min_df', 'max_df_ratio', 'drop']
+  link_cross_doc_coref: proxy pos=[] kwonly=['min_shared'] | store pos=[] kwonly=['min_shared', 'max_sentences']
+attribute uses on a writer-bound expression: 57 (36 distinct attributes)
+  routed by an explicit proxy method: 22 uses, 16 attributes
+  FALL-THROUGH to the reader via __getattr__: 35 uses, 20 attributes
+    _connect                        6  Store private method: AttributeError under a daemon
+    log_path                        5  Store method
+    get_entity_by_id                4  Store method
+    dump_catalog_to_log             3  Store method
+    merge_partition                 2  Store method
+    db_path                         1  Store attribute
+    explain_entity                  1  Store method
+    get_memory                      1  Store method
+    link_many                       1  Store method
+    link_part_of                    1  Store method
+    partition_name                  1  Store method
+    rebuild_entities_indexes        1  Store method
+    reinforcement_components        1  Store method
+    reinforcement_scores            1  Store method
+    rename_partition                1  Store method
+    repair_entity_links_index       1  Store method
+    repair_fragments                1  Store method
+    resolve_concept_ids             1  Store method
+    retag_memory                    1  Store method
+    upsert_subject                  1  Store method
+explicit proxy methods this scan never sees used on a writer-bound expression: ['bulk_forget_memories', 'ingest_path']

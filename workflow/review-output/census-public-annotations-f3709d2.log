@@ -1,0 +1,31 @@
+  verbs.py:78 SaveStateIncompleteError.__init__
+  verbs.py:665 mt_excluded
+  verbs.py:806 recent_rows
+  verbs.py:1127 recall_rows_filter
+  verbs.py:1195 memory_recall
+verbs.py: public=76 fully_annotated=71 missing=5
+  query.py:175 QueryEngine.__init__
+query.py: public=7 fully_annotated=6 missing=1
+  store.py:1280 Store.__init__
+  store.py:2002 Store.merge_partition
+  store.py:2345 Store.with_partition
+  store.py:3924 Store.upsert_vector
+  store.py:3957 Store.ann_search
+  store.py:3982 Store.read_vectors
+  store.py:4076 Store.drop_vectors
+  store.py:5021 Store.transaction
+  store.py:5064 Store.deferred_links
+  store.py:7097 Store.find_entity_ids
+  store.py:7132 Store.set_entity_flag
+  store.py:7159 Store.set_flag_by_selector
+  store.py:7167 Store.forget_by_selector
+  store.py:7904 Store.save_coref
+  store.py:7935 Store.load_coref
+store.py: public=141 fully_annotated=126 missing=15
+  handoff.py:539 compose_save_state
+  handoff.py:636 finalize_save_state
+  handoff.py:801 compose_recall_state
+handoff.py: public=7 fully_annotated=4 missing=3
+  mcp.py:225 handle_message
+mcp.py: public=2 fully_annotated=1 missing=1
+TOTAL: public=233 fully_annotated=208 missing=25

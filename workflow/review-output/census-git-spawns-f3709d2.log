@@ -1,0 +1,19 @@
+git spawns: 9 in 6 modules (cli.py=4  handoff.py=1  store.py=1  sync.py=1  upgrade.py=1  verbs.py=1)
+  no timeout: 2   raises CalledProcessError on a non-zero exit: 1   enclosing try catches Exception (any failure reads as empty): 3
+  cli.py:2021 _git_diff_summary  timeout  returns-rc  try-catches=[Exception]
+  cli.py:2052 _git_commit_rationale  timeout  returns-rc  try-catches=[Exception]
+  cli.py:2073 _git_added_comments  timeout  returns-rc  try-catches=[Exception]
+  cli.py:5614 context  NO-TIMEOUT  raises-on-nonzero  try-catches=[none]
+  handoff.py:89 _ss_git_run  timeout  returns-rc  try-catches=[(OSError, subprocess.SubprocessError)]
+  store.py:100 _run_git_check  timeout  returns-rc  try-catches=[subprocess.TimeoutExpired]
+  sync.py:163 changed_since  timeout  returns-rc  try-catches=[subprocess.TimeoutExpired]
+  upgrade.py:33 _git  NO-TIMEOUT  returns-rc  try-catches=[none]
+  verbs.py:2757 _timeline_git_leg  timeout  returns-rc  try-catches=[(OSError, subprocess.SubprocessError)]
+git argv handed to a non-subprocess helper: 3
+  cli.py:14194 save_state -> _ss_sh(...)
+  cli.py:14196 save_state -> _ss_sh(...)
+  handoff.py:210 _ss_git_facts -> _ss_sh(...)
+wrappers (git arguments come from the caller): 3
+  upgrade.py:_git  call sites: 8 ({'upgrade.py': 8})
+  store.py:_run_git_check  call sites: 2 ({'store.py': 2})
+  handoff.py:_ss_git_run  call sites: 3 ({'handoff.py': 3})
