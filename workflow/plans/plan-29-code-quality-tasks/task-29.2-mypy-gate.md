@@ -23,6 +23,8 @@ metadata:
 > `plan-review-fable-2026-11-14-store#plan29-converge-candidates` ([[#fold]]).
 > Decided: `plan-29 D4` = (c), a normalised-AST derive hash (user, ruling L106; [[#d4]], [[#r7]]).
 > Revision round 2 (ruling L105, on ch-bsd spec review r1): [[#rev-round-2]].
+> Revision round 3 (ruling L108, on ch-bsd spec review r2): [[#rev-round-3]].
+> Open for the user: `plan-29 D24` ([[#d24]]).
 
 rel: part-of -> [[plan-29-code-quality]]
 rel: implements -> [[tdd-governance]]
@@ -46,6 +48,9 @@ rel: realizes -> [[constitution#project-1]]
 6. `store.derive_code_hash` hashes a normalised form of each module, so an annotation-only or
    comment-only edit no longer marks any store `behind_code` ([[#r7]]; `plan-29 D4`). This lands
    first.
+7. `rmx derive rehash`: moves a stamp to the new hash scheme only when it can prove the pass's
+   files have not changed since the stamp was written, and changes nothing else about the stamp
+   ([[#r8]]).
 
 ## Measured at `f3709d2` (before the 29.5 split) {#measured}
 
@@ -355,49 +360,147 @@ Decided by the user (ruling L106, [[plan-review-2026-11-13#lead]]). This require
 BEFORE any annotation this task adds and before any comment 29.3 adds to a derive-hash file
 ([[#seam]] step 0).
 
-- **What is hashed.** For each file `derive_pass_modules` names, `derive_code_hash` hashes a
-  normalised form of its parsed source instead of its bytes. The normal form drops:
-  - comments and formatting (they are not in the syntax tree; positions are left out of the
-    dump);
-  - docstrings (a string statement that opens a module, class or function);
-  - annotations: on parameters, on returns, and on variables (an annotated assignment with a
-    value becomes a plain assignment; one with no value is removed);
-  - `if TYPE_CHECKING:` blocks, and import statements from `typing` and `typing_extensions`
-    (an annotation edit usually adds one of these).
-  Everything else stays: a changed statement, constant, default value, decorator, name or
-  import from any other module changes the hash.
-- **A new scheme tag.** `_DERIVE_HASH_SCHEME` changes from `p1`, and the tag carries the Python
-  `major.minor` that produced the tree, because a syntax tree's dump is not stable across
-  interpreter versions. A stamp written under another tag (every `p1` stamp on the fleet; a
-  stamp from another Python) is NOT comparable.
-- **A non-comparable stamp reads `code_unknown`, never `behind_code`.** That is the rule the
-  comparison in `derive_status` already has for an untagged stamp; it is extended to "any tag
-  other than the current one", and such a stamp is labelled by its own tag, not `legacy-union`.
-  A stamp with no hash at all still counts as behind, as today.
-- **A file that does not parse is never "unchanged".** Its raw bytes are hashed under a marker
-  that cannot equal any normal-form hash, so it reads as changed. `derive_code_hash` raises
-  nothing from a status read.
-- **Cost.** Parsing is paid once per process per file state: the existing cache, keyed on each
-  file's stat, is kept. Measured once on the dev machine at `f3709d2` (parse plus dump, one
-  run): `store.py` 73 ms, `ingest.py` 29 ms, `ingest_gmd.py` 20 ms, each other file under
-  10 ms; about 122 ms cold for the union, against about 1 ms for reading bytes. The task lists
-  every caller at its start commit (four call sites in the store module at `f3709d2`) and shows
-  that no hook-run command computes a hash it does not use.
-- **Existing tests that prove a flip with a comment.** At `f3709d2` the helper `_edit` in
-  `tests/test_derive_pass_identity.py` appends a comment (5 uses), and
-  `tests/test_plan12_remedy.py` (5 places) and `tests/test_derive_stamp.py` (1) use comment-only
-  stand-in modules. Under this requirement a comment is no change, so `@ch-test-engineer`
-  re-points each to a statement edit in the RED commit and lists them; the comment form becomes
-  the "stays equal" case of AC-20. No assertion in them is weakened.
-- **What the fleet shows, and the re-stamp.** After the release that carries this requirement
-  every existing stamp reads `code_unknown` until its pass is next derived or re-stamped.
-  - **This release carries its own announced, user-gated re-stamp under the new tag** (ruling
-    L107). A derive-hash change is a store-changing release, outside the standing go (L106).
-    The evidence is AC-18's equal digest and AC-20.
-  - 29.5's release carries its own announced re-stamp, after its split, for its module-list
-    change. The two are not merged into one deferred re-stamp: the window between them would
-    show `behind_code`, then `code_unknown`, on every store's `derive status`.
-  - The lead runs both. No agent re-stamps or re-derives a live store.
+**What is hashed.** For each file `derive_pass_modules` names, the hash is taken over a
+normalised form of its parsed source instead of its bytes. The normal form drops:
+
+- comments and formatting (they are not in the syntax tree; positions are left out);
+- docstrings (a string statement that opens a module, class or function);
+- annotations on parameters and returns;
+- annotations on variables: an annotated assignment with a value becomes a plain assignment, and
+  one with no value is removed, EXCEPT in the class bodies named below;
+- `if TYPE_CHECKING:` blocks, and import statements from `typing` and `typing_extensions` (an
+  annotation edit usually adds one of these).
+
+Everything else stays: a changed statement, constant, default value, decorator, name or import
+from any other module changes the hash.
+
+**Where an annotation is behaviour, it is kept** (ch-bsd spec review r2 NS2). In the body of a
+class that is decorated `@dataclass` (`dataclass`, `dataclasses.dataclass`, with or without
+arguments) or that derives from `NamedTuple` or `TypedDict`, every annotated assignment is kept
+whole, annotation included: there the annotation IS the field. At `f3709d2` the pass files hold
+six such classes (five in `ingest_gmd.py`, one in `session_ingest.py`). So in those bodies:
+adding or removing a field changes the hash; turning `x = 5` into `x: int = 5` changes it; a
+changed field type changes it too (the safe side). An annotation on a local variable inside a
+function stays neutral everywhere.
+
+**The stamp value carries two digests and a tag.** {#r7-value}
+
+- `raw`: the digest of the files' bytes, computed exactly as the `p1` scheme computes it today.
+  It does not depend on the interpreter.
+- `normal`: the digest of the normal form.
+- The tag is new (not `p1`) and carries the Python `major.minor` that produced `normal`, because
+  a syntax tree's dump is not stable across interpreter versions.
+- `raw` is the witness [[#r8]] verifies against: it lets a stamp written under `p1`, or under
+  another Python, be proven unchanged without recomputing a normal form that the running
+  interpreter cannot reproduce.
+
+**One comparison function, used by both comparison sites** (NS3). At `f3709d2` a stamp is judged
+in two places: `derive_status` (the per-pass rows, which already has a tag rule) and
+`_memory_compile_status` (the two compile scopes, which compares hashes with no tag rule and
+would read every compile scope as behind once the tag changes). Both call one function, and its
+rule is: {#r7-compare}
+
+| stored stamp | verdict |
+|---|---|
+| current tag, `normal` equal | current |
+| current tag, `normal` different | `behind_code` |
+| any other tag (`p1`, another Python), or untagged | `code_unknown`, labelled with its own tag (an untagged stamp keeps the label `legacy-union`) |
+| no hash at all | `behind_code`, as today |
+
+For a compile scope, `code_unknown` does NOT set `needs_compile`: the line must not send a
+reader to a re-compile (a write that changes subjects) for a stamp nobody has judged.
+
+**A file that does not parse is never "unchanged".** Its raw bytes are hashed under a marker that
+cannot equal any normal-form digest, so it reads as changed. `derive_code_hash` raises nothing
+from a status read.
+
+**Cost of computing it.** Parsing is paid once per process per file state: the existing cache,
+keyed on each file's stat, is kept. Measured once on the dev machine at `f3709d2` (parse plus
+dump, one run): `store.py` 73 ms, `ingest.py` 29 ms, `ingest_gmd.py` 20 ms, each other file
+under 10 ms. The task lists every caller at its start commit (four call sites in the store
+module at `f3709d2`) and shows that no hook-run command computes a hash it does not use.
+
+**Standing cost of the Python version in the tag** (ch-bsd spec review r2 M9). Every upgrade of
+the deploy venv's Python `major.minor` turns every stamp on the fleet `code_unknown`. With
+[[#r8]] that costs one `rmx derive rehash` per store, verified by `raw`, and no re-derive,
+provided the upgrade is deployed with no change to any pass file in the same deploy. That
+proviso and the command go into the deploy checklist ([[#files]]).
+
+**Existing tests that prove a flip with a comment.** At `f3709d2` the helper `_edit` in
+`tests/test_derive_pass_identity.py` appends a comment (5 uses), and
+`tests/test_plan12_remedy.py` (5 places) and `tests/test_derive_stamp.py` (1) use comment-only
+stand-in modules. Under this requirement a comment is no change, so `@ch-test-engineer` re-points
+each to a statement edit in the RED commit and lists them; the comment form becomes the "stays
+equal" case of AC-20. No assertion in them is weakened.
+
+**What the fleet shows, and in what order things are deployed.** {#r7-release}
+
+- After the deploy that carries this requirement, every existing stamp reads `code_unknown`
+  (its tag is `p1`) until it is rehashed or its pass is next derived.
+- [[#r8]] clears that, stamp by stamp, but only for a stamp whose pass files are byte-identical
+  to what the stamp recorded. A pass file edited in the same deploy, even by one comment, makes
+  that pass's stamps unprovable, and they are left `code_unknown`.
+- So R7's release is ONE announced, user-gated window (ruling L107; a derive-hash change is a
+  store-changing release, outside the standing go of L106) with TWO deploys in this order:
+  1. **Deploy A:** this requirement and [[#r8]], and no edit to any file `_DERIVE_PASS_MODULES`
+     names. Then the lead runs `rmx derive rehash` on every store and reads its counts.
+  2. **Deploy B:** every edit either task makes to a pass file ([[#derive-hash]]).
+- After deploy B a neutral edit shows nothing. A REAL edit to a pass file makes that pass read
+  `behind_code` on every store, because the code that derives did change. What clears that is
+  `plan-29 D24` ([[#d24]]).
+- 29.5's release is not part of this: its module-list change alters no stamped pass's hash
+  ([[#derive-hash]]).
+- No agent rehashes, re-stamps or re-derives a live store.
+
+### R8: `rmx derive rehash` (ch-bsd spec review r2 NB2; ruling L108) {#r8}
+
+**Why.** The only path that writes a stamp today is `Store.stamp_derive`, reached through the
+daemon op `derive_stamp`. It writes the running version and the current time and appends a
+history row for a derive. Used as a "re-stamp", it would erase which version built the store,
+record a derive that never ran, and mark every pass fresh whether or not its stamp was behind.
+Nothing in this plan re-stamps through `stamp_derive`.
+
+**The capability is a verb first.** `rmx_derive_rehash` in the verbs module; the daemon op
+`derive_rehash`; the CLI `rmx derive rehash [-p PARTITION | --all-partitions] [--dry-run]`; and
+the MCP tool the verb-parity test requires. It routes like every write verb: through the daemon
+when one answers, refused when it is busy, in-process through the one checked no-daemon writer
+only when no daemon exists.
+
+**What it does, for every row of `derive_stamps` in the chosen partitions, the two compile
+scopes' rows included:** {#r8-rule}
+
+| the stored stamp | action | counted as |
+|---|---|---|
+| current tag, `normal` equal to the current files' | none | `current` |
+| an older scheme that can be verified: tag `p1`, or this scheme's tag with another Python | compute that scheme's interpreter-independent hash of the CURRENT files (the `raw` digest). **Only if it equals the stored one**, write the current-scheme value. | `rehashed` |
+| the same, and the digests differ | none: the pass's files changed after the stamp, so the stamp is behind or cannot be proven | `left` |
+| current tag, `normal` different | none: it is behind | `left` |
+| untagged (`legacy-union`), no hash, or a pass name this rmx has no module set for | none | `unknown` |
+
+**A rehash changes one thing.** It rewrites the stamp's hash value. `version` and `derived_at`
+are not touched. The write and its history row are one transaction per partition, under the
+store lock.
+
+**History says "rehash", never "derive".** One `derive_history` row per rehashed stamp, marked
+as a rehash and carrying the old and the new value.
+
+- The mark is a `kind` field inside the row's existing `counts` JSON. There is no new column: a
+  column would be a schema change on every store and one more table-shape for every table-copy
+  path to carry ([[#k9]]).
+- A rehash row never prunes a derive row and does not count toward the per-pass history cap.
+- Every reader of the history knows the mark: `rmx derive log` prints the row as a rehash;
+  `rmx derive diff`, and anything else that takes "the last derive", skips it.
+
+**Output.** Per partition and in total: `rehashed`, `left`, `unknown`, `current`, and for every
+stamp that is `left` or `unknown`, its pass name and why. The verb's result carries the same.
+The command exits 0 when it ran, whatever the counts; non-zero only when it could not run or a
+write failed, and then it says which partition.
+
+**`--dry-run` does the same work and writes nothing** ([[feedback_dry_run_match_real_cost]]): the
+same reads, the same digests, the same counts, with `would_rehash` in place of `rehashed`.
+
+**Who runs it.** The lead, in R7's announced window and after a Python upgrade
+([[#r7-release]]). It is safe to run twice: a second run finds every rehashed stamp `current`.
 
 ## Acceptance criteria {#acceptance}
 
@@ -478,34 +581,73 @@ Each AC is a test that is RED at the task's start commit, unless marked (charact
   method is made to join the Protocol.
 - **AC-18:** see [[#derive-digest]].
 - **AC-20: neutral edits leave the hash equal; real edits change it.** On real COPIES of the
-  derive files (the existing `_DERIVE_SRC_DIR` fixture; no monkeypatched hash), per pass:
+  derive files (the existing `_DERIVE_SRC_DIR` fixture; no monkeypatched hash), per pass. "Hash"
+  here is the `normal` digest; the `raw` digest differs on every row.
 
-  | edit to a copy | hash |
+  | edit to a copy | `normal` |
   |---|---|
   | a comment added; a `# noqa: BLE001 — reason` added to an `except` line | equal |
   | a docstring changed | equal |
-  | a parameter and a return annotation added; a variable annotated | equal |
+  | a parameter and a return annotation added | equal |
+  | a local variable inside a function annotated | equal |
+  | a module-level `x = 5` annotated, outside any class | equal |
+  | in a plain class (no `@dataclass`, no such base), `x = 5` turned into `x: int = 5` | equal |
   | `from typing import Any` added; an `if TYPE_CHECKING:` import added | equal |
   | the file reformatted (blank lines, line breaks) | equal |
   | a statement added; a constant changed; a default value changed | different |
   | `except Exception:` narrowed to `except KeyError:` | different |
   | an import from a non-typing module added | different |
+  | a field added to a `@dataclass` (for example `imports: list[str]` on `GmdDoc`) | different |
+  | a field removed from a `@dataclass`; a field's type changed | different |
+  | in a `@dataclass`, a class-level `x = 5` turned into `x: int = 5` | different |
+  | a field added to a `NamedTuple` class and to a `TypedDict` class | different |
 
   RED at the start commit for every "equal" row (the raw-bytes hash differs).
-- **AC-21: a stamp under another tag is unknown, not behind.** A stamp carrying a `p1:` hash, and
-  one carrying the new scheme with another Python version, each read `code_unknown` with their
-  own tag as the label, and `behind_code` is false for them; a stamp with no hash reads behind;
-  a stamp under the current tag with a different hash reads behind. RED at the start commit for
-  the label (a `p1:` stamp is `p1` today, and after the tag changes it would be mislabelled
-  `legacy-union`).
+- **AC-21: a stamp under another tag is unknown, not behind, at BOTH comparison sites.** Through
+  `derive_status`: a stamp carrying a `p1:` hash, and one with the new scheme and another Python
+  version, each read `code_unknown` with their own tag as the label, and `behind_code` is false;
+  a stamp with no hash reads behind; a stamp under the current tag with a different `normal`
+  reads behind.
+  - **The compile scopes:** with a `p1:` stamp on `memory-compile` and on
+    `memory-compile:pattern`, `_memory_compile_status` reports each scope `code_unknown`,
+    `behind_code` false and `needs_compile` false, and the top-level memory fields agree. RED at
+    the start commit once the tag changes (each scope reads behind and `needs_compile` true).
+  - **One function:** both sites call the same comparison function (AST: the two methods each
+    contain a call to it and no hash comparison of their own).
 - **AC-22: an unparsable file reads as changed and raises nothing.** A copy with a syntax error
   gives a hash different from the file's last good hash and from the empty hash;
   `derive_status` returns.
 - **AC-23: parsed once.** With a counter on the parse step, two `derive_status` calls in one
   process parse each file once; touching a file's content makes it parse again.
-- **AC-19: the pin and the gate agree.** A test reads the `dev` extra's mypy specifier and the
-  baseline's recorded version: the specifier admits that `major.minor` and no other. Widening
-  the specifier to `>=2.4` fails it.
+- **AC-24: a rehash converts only what it can prove** ([[#r8-rule]]). On a throwaway store whose
+  stamps carry `p1` values (computed by the old function, kept in the test for this purpose),
+  and copies of the pass files:
+
+  | set-up | after `derive rehash` |
+  |---|---|
+  | files byte-identical to the stamped ones | every stamp `rehashed`; `derive_status` reads current; `version` and `derived_at` of every stamp equal their values before |
+  | one pass file given a comment after the stamp | that pass's stamps `left`, value untouched, still `code_unknown`; the other passes `rehashed` |
+  | one pass file given a real edit after the stamp | the same: `left`, untouched |
+  | a stamp with no hash; an untagged stamp | `unknown`, untouched |
+  | a stamp under the current scheme with another Python version, files identical | `rehashed` (verified by `raw`) |
+  | the two compile-scope stamps, `consolidate.py` identical | both `rehashed`; `_memory_compile_status` reads current |
+  | a second run | everything `current`; no row written |
+
+- **AC-25: history says rehash.** After AC-24's first row there is one history row per rehashed
+  stamp, each with `kind` rehash and the old and new values; the count of derive rows per pass
+  is what it was; with the history at its cap, a rehash prunes nothing; `rmx derive log` labels
+  the rows; `rmx derive diff` compares the same two derive rows as before the rehash.
+- **AC-26: `--dry-run` writes nothing and counts the same.** The store's stamp and history
+  tables are equal row for row before and after a dry run, and its counts equal the real run's.
+- **AC-27: verb, CLI, MCP, daemon.** The verb-parity test is green with the new verb; the CLI
+  prints the per-partition counts and the reason for every `left` and `unknown`; under a test
+  daemon the op runs through the daemon; with a daemon that holds its lock the command is
+  refused as busy and writes nothing; `--all-partitions` covers a memory and a sessions
+  partition.
+- **AC-28: nothing re-stamps through `stamp_derive`.** The set of functions that call
+  `stamp_derive` is the set recorded at the start commit (the derive passes and the
+  `derive_stamp` op); the rehash path is not in it and writes neither `version` nor
+  `derived_at` (AST on its write statement, and AC-24's column check).
 - **AC-17: no mixin hides its host.** No strict module contains a `self` parameter annotated
   `Any`, and the count of `# type: ignore` in the store module family is 0. `Store.__mro__`
   (class names, in order) equals the list recorded at the start commit, and
@@ -519,7 +661,7 @@ Each AC is a test that is RED at the task's start commit, unless marked (charact
 RED first, by `@ch-test-engineer`, recorded to `workflow/review-output/`; GREEN by
 `@ch-implementer`, who writes no tests ([[tdd-governance#pipeline]]).
 
-- **R7 goes first**, as its own RED → GREEN → ch-bsd round, before any annotation edit. Its
+- **R7 and R8 go first**, as their own RED → GREEN → ch-bsd round, before any annotation edit. Its
   tests use real copies of the derive files, as the existing derive tests do.
 - **Order of RED.** AC-1, AC-2 and AC-12 are RED because the script and the scanner do not exist;
   record the collection or import error as the red run. AC-6 is RED on behaviour. AC-7 is characterization. AC-9
@@ -561,10 +703,24 @@ RED first, by `@ch-test-engineer`, recorded to `workflow/review-output/`; GREEN 
   | the digest test skips a leg whose pass has no stamp | AC-18 ("every pass ran") |
   | `derive_code_hash` hashes the raw text again | AC-20 (every "equal" row) |
   | the normal form drops default values too | AC-20 ("a default value changed") |
+  | the dataclass / `NamedTuple` / `TypedDict` exception dropped | AC-20 (the four class rows that must differ) |
+  | the exception applied to every class body | AC-20 (the plain-class row) |
   | the scheme tag left at `p1` | AC-21 |
   | a non-current tag compared as if current | AC-21 (reads behind) |
+  | `_memory_compile_status` keeps its own comparison | AC-21 (compile scopes; "one function") |
+  | `code_unknown` sets `needs_compile` | AC-21 (compile scopes) |
   | an unparsable file hashed as empty | AC-22 |
   | the cache keyed on nothing | AC-23 |
+  | the rehash writes on a mismatch | AC-24 (the comment row and the real-edit row) |
+  | the rehash overwrites `version` | AC-24 (first row) |
+  | the rehash overwrites `derived_at` | AC-24 (first row) |
+  | the rehash skips the compile scopes | AC-24 (compile row) |
+  | the rehash converts a stamp with no hash | AC-24 (`unknown` row) |
+  | the history row written without the rehash mark | AC-25 |
+  | a rehash row counted toward the cap | AC-25 (prunes a derive row) |
+  | `derive diff` takes a rehash row as the last derive | AC-25 |
+  | `--dry-run` writes | AC-26 |
+  | the rehash implemented by calling `stamp_derive` | AC-28, AC-24 |
 
 - **The helper's own promises are mutated before the sites**
   ([[bsd-impressions#imp-convergence-tests-sites-not-helper]]): the gate's exit-code table and
@@ -587,8 +743,11 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 | `src/refmatrix/typing_store.py` | create: `StoreWriter`, `StoreHost`; declarations only |
 | the CLI module that holds `_DaemonWriter`, `_store`, `_store_rw`, `_ingest` (expected: `refmatrix/cli/__init__.py`) | Protocol return; no `__getattr__`; the daemon-absent accessor |
 | the `cli/<group>_cmds.py` modules of the 35 fall-through sites | reader member or the accessor |
-| the module that holds `derive_code_hash`, `_DERIVE_HASH_SCHEME` and `derive_status` (the store derive mixin after 29.5) | R7: the normal form, the new tag, the non-comparable rule |
+| the module that holds `derive_code_hash`, `_DERIVE_HASH_SCHEME`, `derive_status` and `_memory_compile_status` (the store derive mixin after 29.5) | R7: the normal form, the two-digest value, the new tag, the one comparison function |
 | `tests/test_derive_hash_normalised.py`; `tests/test_derive_pass_identity.py`, `tests/test_plan12_remedy.py`, `tests/test_derive_stamp.py` | create: AC-20 to AC-23; the three existing files get their comment-only edits re-pointed (test engineer) |
+| the verbs module, the daemon op registry, the CLI `derive` group, the store derive module (`derive_history` and its readers) | R8: `rmx_derive_rehash`, `derive_rehash`, `rmx derive rehash`; the rehash mark and the readers that skip it |
+| `tests/test_derive_rehash.py` | create: AC-24 to AC-28 |
+| `.claude/PROJECT_PROFILE.md` (`#commands`, the Deploy line), `docs/SYSTEM.md` (the derive section), the generated CLI tree | the deploy checklist: R7's two deploys; `rmx derive rehash` after a Python upgrade, with no pass-file change in that deploy |
 | `tests/test_type_gate.py`, `tests/fixtures/type_gate/` | create: AC-1 to AC-5, AC-13 |
 | `tests/test_bug235_pql_count.py` | create: AC-6 to AC-8 |
 | `tests/test_store_writer_protocol.py` | create: AC-9 to AC-12, AC-16, AC-17 |
@@ -630,6 +789,16 @@ M11).
    upgrade would mark the whole fleet `behind_code`, the false positive the user's decision
    removes. Reading a non-current tag as unknown is the rule the comparison already applies to
    untagged stamps. {#k8}
+9. **A rehash is marked inside the history row's `counts` JSON, not in a new column**. A column
+   changes the schema of every store and has to be carried by every table-copy path (the class
+   of bug-124). The history table's readers are few and all in this task's reach. {#k9}
+10. **The stamp keeps a raw-bytes digest beside the normal-form one**. The rehash needs a hash
+    it can recompute to prove a stamp's files are unchanged. For a `p1` stamp that is the `p1`
+    hash itself. For a stamp from another Python it cannot be the normal form, which the running
+    interpreter cannot reproduce; the raw digest can always be recomputed. Without it, "an
+    interpreter upgrade is a rehash, not a re-derive" (L108, M9) would not be true. {#k10}
+11. **R7's release is two deploys** ([[#r7-release]]). The rehash ruled in L108 proves a stamp
+    against the current files, so the files must not change in the deploy it runs after. {#k11}
 
 ## How this adapts to the 29.5 split {#split}
 
@@ -705,7 +874,8 @@ branch `spec-plan29a` at `321954b` (2026-11-14); the confirming anchor is given 
    `scripts/derive-digest.py`, both corpora and the test in its phase 0, from that section, and
    its test engineer commits the golden on the `pre-split-29.5` tree before any move
    (`task-29.5-split-giant-modules#r5-digest`, `#ac-16`); its gate G11 checks the four legs after
-   every store-move commit. 29.3 slice K re-records it on the post-29.5 tree. So
+   every store-move commit (evidence that the moves left derived state alone; no re-stamp
+   depends on it after ruling L108). 29.3 slice K re-records it on the post-29.5 tree. So
    [[#derive-digest]] is the specification 29.5 builds from: what the tool must do is all in that
    section.
 5. **The three handoff helpers and `telemetry`'s read of `cli.main`** are 29.5's two declared
@@ -720,7 +890,7 @@ Both tasks edit the query module and `handoff`. They are not parallel there
 
 | step | task | what | why in this place |
 |---|---|---|---|
-| 0 | 29.3 (K), then 29.2 [[#r7]] | the census kit and the derive digest golden; then the normalised derive hash | the golden precedes every `src/` edit; the hash change precedes every annotation and comment edit (L106) |
+| 0 | 29.3 (K), then 29.2 [[#r7]] and [[#r8]] | the census kit and the derive digest golden; then the normalised derive hash and the rehash, deployed and run on the fleet (deploy A) | the golden precedes every `src/` edit; the hash change and the rehash precede every edit to a pass file ([[#r7-release]]) |
 | 1 | 29.3 (a) | `run_git` adopted in `handoff`, `sync`, `store`, `upgrade`, the CLI | removes git wrappers before they would be annotated |
 | 2 | 29.3 (b) | term resolution, PQL argument kinds, the evaluator's value type | the query half first: its behaviour changes are settled before the module is frozen under strict flags |
 | 3 | 29.2 [[#r4]] | the `run_pql` result union, on the value type step 2 defined | closes bug-235 on the final evaluator |
@@ -755,37 +925,43 @@ from the tables, not from prose: `census/census_derive_modules.py`, log
 | `consolidate.py` | the memory compile, both scopes | no | 1 |
 | `store.py` | none | yes | 25 |
 
-- The union (`_DERIVE_CODE_MODULES`) answers the no-argument caller and EVERY pass that has no
-  entry in `_DERIVE_PASS_MODULES`.
-- Under the raw-bytes hash of `f3709d2`, an annotation added to one of these files, or a comment
-  added by 29.3(c), changes a hash with nothing about what is derived changed, and every fleet
-  store then reads `behind_code` for the passes that file feeds. [[#r7]] removes that for
-  comments, docstrings and annotations.
-- 29.5 changes the union (`task-29.5-split-giant-modules#r5` item 4: each store move adds its
-  mixin module; the pass table is not changed). [[#r7]] does not help there: moving methods
-  between files changes each file's tree. What the fleet shows on a union flip is written down
-  by 29.5's `#r0-derive`.
+**Which hash a stamp is compared with.** Every stamp the code writes carries a pass name that
+is a key of `_DERIVE_PASS_MODULES`, and each comparison uses that pass's own file set. The
+no-argument union (`_DERIVE_CODE_MODULES`) is compared with no stamp: it is only copied into an
+output field. So:
 
-Rules for this task, with [[#r7]] in place:
+- an edit to `store.py`, or to any module 29.5 splits out of it, changes no stamped pass's hash
+  (the suite pins this:
+  `tests/test_derive_pass_identity.py::test_editing_store_py_does_not_make_any_pass_stale`);
+- 29.5's change to the union's file list changes no stamped pass's hash either. An earlier
+  round of this spec said it would show in `derive status`; that was wrong (ch-bsd spec review
+  r2, its correction to r1 S2; ruling L108). 29.5 needs a re-stamp only if its R0 finds a stamp
+  under a pass name that has no entry in the pass table, and that is 29.5's to count;
+- the seven files of the table that feed a pass are the ones that matter. Under the raw-bytes
+  hash of `f3709d2`, a comment or an annotation in one of them marks every fleet store
+  `behind_code` for its passes. [[#r7]] removes that for comments, docstrings and annotations.
+
+Rules for this task:
 
 - **The list is re-read at the start commit** with the script above, and the summary carries the
   table: file, passes, and every edit this task and 29.3 made to it, each marked NEUTRAL (the
-  normal form is unchanged) or REAL (it is not).
-- **Neutral edits** are this task's annotations and 29.3(c)'s `justified` comments. They change
-  no hash. AC-20 is what makes that true, so no neutral edit to a derive file lands before
-  [[#r7]] does.
-- **Real edits still change a hash, as they should.** In this task: the `isinstance` narrowing
-  and `ingest_path` in the store modules (union only). In 29.3: `run_git` in the store module
-  (union only), and every handler in a pass file that slice c surfaces or narrows rather than
-  justifies ([[task-29.3-converge-shapes#c-r7]]).
-- **One release carries [[#r7]] and every real edit both tasks make to a derive file.** In that
-  release the tag changes, so every existing stamp reads `code_unknown`; the real edits ride
-  inside that one-time state and are cleared by that release's re-stamp ([[#r7]]).
-- **A real edit to a pass file never ships outside such a release** (ruling L107). It does not
-  ship before [[#r7]]. One that is not ready for [[#r7]]'s release waits: it ships only in a
-  later release that carries its own announced, user-gated re-stamp. No release lets a pass read
-  `behind_code` fleet-wide without its own go.
-- No agent re-stamps or re-derives a live store.
+  `normal` digest is unchanged) or REAL (it is not).
+- **No edit of any kind to a pass file ships before [[#r7]] and [[#r8]] are deployed and the
+  fleet is rehashed** ([[#r7-release]], deploy A). Before that, even a comment makes the pass's
+  stamps unprovable.
+- **Neutral edits** are this task's annotations and 29.3(c)'s `justified` comments. They ship in
+  deploy B and show nothing; AC-20 is what makes that true.
+- **Real edits to a pass file** ship in deploy B too (ruling L107: with R7's release, never in
+  an ordinary later one). They are: every handler slice c surfaces or narrows rather than
+  justifies ([[task-29.3-converge-shapes#c-r7]]), and the edits 29.5's phase 3 declares instead
+  of making (a private name of a pass module that another module uses; 29.5's spec holds those
+  rows with an owner, and their edits ship here). After deploy B those passes read `behind_code`
+  on every store: `plan-29 D24` ([[#d24]]).
+- One that is not ready for deploy B waits for a release with its own announced, user-gated go.
+  No release lets a pass read `behind_code` fleet-wide without one.
+- This task's own real edits (the `isinstance` narrowing, `ingest_path`, the declared host) are
+  in the store modules and change no stamped pass's hash.
+- No agent rehashes, re-stamps or re-derives a live store.
 
 ### AC-18: the derived state did not move, and the check can fail {#derive-digest}
 
@@ -796,13 +972,41 @@ shared by 29.2 and 29.3.
   (`tests/fixtures/derive_digest/corpus/`: Python, GMD docs, a memory dir, one session file),
   through the production ingest path, with every pass of the table above run. Four legs:
 
-  | leg | passes | content, keyed by names and relative paths, never by ids |
+  | leg | passes | compared |
   |---|---|---|
-  | graph | `ingest`, `semantic`, `gmd`, `sessions` | entities, concepts, each linkage's (concept → entities), evidence rows; compared exactly |
-  | vectors | `embed` | per entity: the text handed to the embedder (exact) and the stored vector (rounded to 1e-5) |
-  | prior | `pagerank` | the PageRank prior per entity (rounded to 1e-9) |
-  | compile | the memory compile, both scopes | subjects and their part-of edges; compared exactly |
+  | graph | `ingest`, `semantic`, `gmd`, `sessions` | exactly |
+  | vectors | `embed` | text exactly; vector rounded to 1e-5 |
+  | prior | `pagerank` | score rounded to 1e-9 |
+  | compile | the memory compile, both scopes | exactly |
 
+- **Fields, leg by leg** (ch-bsd spec review r2 M10). An entity is always written as its key
+  `(partition name, kind, name)`; a linkage as its name; a file as its path relative to the
+  corpus root. Integer ids are never written: they are allocation order. {#derive-digest-fields}
+
+  | leg | table | included | excluded, and why |
+  |---|---|---|---|
+  | graph | `entities` | key; `path` (relative); `tldr`; `meta` (parsed, keys sorted, absolute paths made relative); `protected`; `noise`; `canonical_name` | `id`, `partition_id` (allocation); `created_at`, `updated_at`, `vectors_updated_at` (clock) |
+  | graph | `concepts` | concept key; `description` | `id` |
+  | graph | `memory_content` | entity key; `content`; `mtype`; `tags` (sorted); `metadata` (parsed, keys sorted) | `entity_id`; `created_at`, `updated_at`; any metadata key whose value is a clock time, named in the tool's list |
+  | graph | `linkage_types` | `name`; `directed`; inverse linkage's name; `description` | `id` |
+  | graph | `entity_links` | entity key; linkage; concept key; `weight` | the three ids |
+  | graph | `bitmap_fragments` | per linkage, per concept key: the sorted member entity keys, decoded from the blob | the blob's bytes (they encode ids); `partition_id` |
+  | graph | `linkage_evidence` | entity key; linkage; concept key; `file` (relative); `line`; `span_end`; `detail` | the three ids |
+  | graph | `pending_refs` | source entity key; `linkage`; `target_name`; `ref`; `file` (relative); `line`; `weight`; `detail` | `source_id`, `partition_id`; `created_at` |
+  | graph | `tracked_files` | `path` (relative) | `mtime`, `last_synced` (clock); `partition_id` |
+  | vectors | (computed) | per entity key: the text `embedder.extract_text_for_entity` returns for it. It is not stored anywhere, so the tool calls that function, the one the embed pass calls, on the derived store | nothing |
+  | vectors | the Lance vector table | entity key; the vector; its dimension; the table's model id | the row id; every timestamp column |
+  | prior | `pagerank` | entity key; `score` | `entity_id`, `partition_id`; `computed_at` |
+  | compile | `entities` + `memory_content` where `mtype` is `subject` | subject name; `content` (the label); `metadata` (parsed, keys sorted) | ids; timestamps |
+  | compile | `part-of` rows of `entity_links` and of the fragment | leaf entity key → subject name | ids |
+
+  Not digested, and why: `derive_stamps` and `derive_history` (they hold the hashes, versions
+  and times these edits are about); `pair_index`, `coref_resolutions` and `saved_queries` (no
+  pass of the table writes them); `partitions` beyond the name.
+- **A column the tool does not know stops it.** The included and excluded lists are in the
+  tool, and `scripts/derive-digest.py fields` prints them. If a digested table has a column in
+  neither list, `record` and `check` exit 2 and name it. A new column is then a decision, never
+  a silent omission.
 - **Every pass is shown to have run.** The test asserts a derive stamp exists for each pass of
   the table before it digests. A pass that did not run fails the test by name; it never
   contributes an empty leg.
@@ -818,8 +1022,8 @@ shared by 29.2 and 29.3.
     equal for a leg it did not compute.
   - `record` refuses (exit 2, golden untouched) when a pass left no stamp.
   - **First recorded at 29.5's R0**, on the pre-split tree, by `@ch-test-engineer`, and **checked
-    after 29.5's last store move**. That check is what backs 29.5's announced re-stamp. 29.5's
-    spec carries the requirement and cites this script path.
+    after 29.5's store moves** (its gate G11). That check is 29.5's evidence that its moves left
+    the derived state alone. 29.5's spec carries the requirement and cites this script path.
   - **Re-recorded by 29.3 slice K on the post-29.5 tree**
     ([[task-29.3-converge-shapes#k-r6]]), before any `src/` edit of 29.2 or 29.3. The
     re-recorded legs must EQUAL the R0 golden's; a difference is a finding, reported before
@@ -838,34 +1042,60 @@ shared by 29.2 and 29.3.
 - **And on code that must fail.** Four mutations, each planted and seen red, one per leg (table
   in [[#test-strategy]]).
 - **AC-18 itself:** at this task's end commit, and at 29.3's, the four legs equal the golden.
-  That is the evidence for [[#r7]]'s re-stamp: the real edits of [[#derive-hash]] left the
-  derived state alone. The same digest, recorded at 29.5's R0 and checked after its last store
-  move, is the evidence for 29.5's re-stamp.
+  That is the evidence that the edits of [[#derive-hash]], the real ones included, left the
+  derived state alone on the fixture. It is NOT what moves a stamp: [[#r8]] moves a stamp only
+  on its own proof, and `plan-29 D24` decides what is done for a pass with a real edit.
 
-## `plan-29 D4`: decided {#open-decisions}
+## Decisions: `plan-29 D4` decided, `plan-29 D24` open {#open-decisions}
 
 **plan-29 D4 = (c): the derive hash is computed over a normalised syntax tree.** Decided by the
 user, 2026-11-14 (ruling L106, [[plan-review-2026-11-13#lead]]). The lead registers it in
 `plan-29-code-quality#decisions` at the merge that lands these specs (L105, M11). {#d4}
 
-- **What it is:** [[#r7]], in this task, before the annotations.
+- **What it is:** [[#r7]], with [[#r8]] as the way existing stamps move to it.
 - **The question it answered:** annotation- and comment-only edits to derive-hash files marked
   every fleet store `behind_code` with nothing derived differently. The other options were to
   re-derive every store (a), or to re-stamp every store by hand with an equal-digest test as
   evidence (b). This spec had recommended (b).
 - **What it does not remove.**
-  1. 29.5's release still changes the union (its module list and each file's tree). L106: that
-     needs one announced re-stamp, with the equal digest of [[#derive-digest]] as evidence.
-  2. The release that carries [[#r7]] changes the hash tag, so every existing stamp reads
-     `code_unknown` once ([[#r7]], "What the fleet shows").
-  3. Real edits to a pass file change that pass's hash ([[#derive-hash]]); they ship inside the
-     release of item 2.
-- **Re-stamps (ruling L107):** each of the two releases carries its own announced, user-gated
-  re-stamp: 29.5's after its split, and [[#r7]]'s under the new tag. There is no single deferred
-  re-stamp.
-- **Cited for reference, decided in the same ruling:** `plan-review-fable D4` (a standing go,
-  except for store-changing releases; both releases above are of that kind) and
-  `plan-review-fable-store D5` (duckdb 1.5.3 in the dev venv before baselines).
+  1. The deploy that carries [[#r7]] changes the hash tag, so every existing stamp reads
+     `code_unknown` until [[#r8]] rehashes it ([[#r7-release]]).
+  2. A real edit to a pass file changes that pass's hash: `plan-29 D24`.
+- 29.5's module-list change is not on this list: it changes no stamped pass's hash
+  ([[#derive-hash]]; ruling L108, which supersedes the 29.5 half of L107's re-stamp rule).
+- **Cited for reference, decided in L106:** `plan-review-fable D4` (a standing go, except for
+  store-changing releases; R7's release is one) and `plan-review-fable-store D5` (duckdb 1.5.3
+  in the dev venv before baselines).
+
+**plan-29 D24 (open, for the user): what clears `behind_code` for a pass whose file got a real
+edit.** {#d24}
+
+- **Why it exists.** Ruling L107 has the real edits to pass files ship in R7's release, and
+  ruling L108 has that release use the rehash. The rehash, as ruled, converts a stamp only when
+  the old scheme's hash of the current files equals the stored one. A pass file with a real edit
+  never satisfies that, in whichever deploy the edit ships. So after deploy B of
+  [[#r7-release]], each pass with a real edit reads `behind_code` on every store, correctly: the
+  code that derives it changed.
+- **Which passes.** Known at the start commit from the NEUTRAL / REAL table of
+  [[#derive-hash]]. Candidates at `f3709d2`: `pagerank` (12 silent handlers), `ingest` and
+  `semantic` (8), `gmd` and `sessions` (5), the memory compile (1), plus the pass files 29.5's
+  phase 3 declares rows for (`ingest.py`, `ingest_gmd.py`, `pagerank.py`, `consolidate.py`). A
+  pass all of whose handlers end up justified, and that has no declared row, is not affected.
+- **Options.**
+  - (a) Re-derive the affected passes on every store, announced. It is what a stamp means, and
+    it needs no new mechanism. Cost per store is not measured here.
+  - (b) An "accept" form of the rehash: it would convert a stamp whose stored hash equals the
+    hash of the files as they were BEFORE the edit (named explicitly by the operator), keeping
+    `version` and `derived_at`, with a history row of its own kind that carries the evidence
+    (AC-18's equal digest). It does not exist and is not specified here; it would be a new
+    requirement with its own tests.
+  - (c) Make no real edit to a pass file in plan-29: slice c would have to justify every handler
+    there, which conflicts with `CLAUDE.md#no-silent-failures` on the ingest paths, and 29.5's
+    declared rows would stay declared.
+- **Recommended:** (a).
+- **What the specs do meanwhile.** They are complete without the answer: deploy B is gated on
+  the user's go, and that go is where D24 is answered. Nothing in 29.2 or 29.3 changes under
+  (a) or (c); (b) would add a requirement to [[#r8]].
 
 ## Review findings folded on 2026-11-14 {#fold}
 
@@ -921,6 +1151,33 @@ here decides them.
 
 Nothing in this spec is waiting on another author after round 2b: 29.5's author confirmed all
 of [[#seams-295]] at `spec-plan29a` `321954b`, and that section now cites the confirming anchors.
+
+Round 3 supersedes two rows of this table: 29.5's release needs no re-stamp for its module-list
+change, and "re-stamp" for R7's release means [[#r8]]'s rehash ([[#rev-round-3]]).
+
+## Revision round 3 (2026-11-14) {#rev-round-3}
+
+Answers ch-bsd spec review r2 (`bsd-plan29-spec-r2`, master, which read this spec at `cbb4ff8`)
+under ruling L108 ([[plan-review-2026-11-13#lead]]).
+
+| finding | change | anchor |
+|---|---|---|
+| NB2: the re-stamps had no safe mechanism | new requirement R8: a `derive_rehash` op, `rmx derive rehash` and a verb with MCP parity; a stamp is converted only on proof, `version` and `derived_at` are kept, history is marked rehash, compile scopes included, counts printed; AC-24 to AC-28; ten mutations | [[#r8]], [[#r8-rule]] |
+| NB2: nothing may re-stamp through `stamp_derive` | stated; held by AC-28 | [[#r8]] |
+| NS1, this spec's half: the claim that 29.5's union change shows in `derive status` | removed from `#derive-hash` and from the D4 section; the section now says which hash a stamp is compared with | [[#derive-hash]], [[#d4]] |
+| NS1: 29.5's phase-3 edits to pass modules | named as real edits that ship in deploy B; 29.5's anchor for the declared rows is asked of its author and not yet cited | [[#derive-hash]] |
+| NS2: the normal form erased dataclass fields | annotated assignments are kept in `@dataclass`, `NamedTuple` and `TypedDict` bodies; five AC-20 rows; two mutations | [[#r7]], AC-20 |
+| NS3: the compile-scope comparison had no tag rule | one comparison function for both sites; `code_unknown` does not set `needs_compile`; AC-21's compile case | [[#r7-compare]], AC-21 |
+| M9: the Python version in the tag has a standing cost | stated in R7 and put in the deploy checklist; the stamp keeps a raw-bytes digest so the rehash can prove a stamp across interpreters | [[#r7]], [[#r7-value]], [[#k10]], [[#files]] |
+| M10: the digest legs did not list their fields | one row per table: included, excluded and why; an unknown column stops the tool | [[#derive-digest-fields]] |
+
+**What this round found while folding NB2, and could not fold into the rulings as they stand.**
+The rehash proves a stamp against the current files. Rulings L107 (real edits ship in R7's
+release) and L108 (R7's release uses the rehash) therefore cannot both clear a pass whose file
+changes in that release. This spec resolves the part it can: R7's release is two deploys, with
+the rehash between them ([[#r7-release]], [[#k11]]), so every neutral edit is covered. The part
+it cannot resolve is a real edit to a pass file, which is put to the user as `plan-29 D24`
+([[#d24]]).
 
 ## Out of scope {#out-of-scope}
 

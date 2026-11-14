@@ -22,6 +22,8 @@ metadata:
 > `plan-review-fable-2026-11-14-queue#p29-4`, `plan-review-fable-2026-11-14-queue#dup-2`
 > ([[#fold]]). Decided: `plan-29 D4` = (c) (user, ruling L106; [[task-29.2-mypy-gate#d4]]).
 > Revision round 2 (ruling L105, on ch-bsd spec review r1): [[#rev-round-2]].
+> Revision round 3 (ruling L108, on ch-bsd spec review r2): [[#rev-round-3]].
+> Open for the user: `plan-29 D24` ([[task-29.2-mypy-gate#d24]]).
 
 rel: part-of -> [[plan-29-code-quality]]
 rel: implements -> [[tdd-governance]]
@@ -294,6 +296,8 @@ repository only when no `.git` exists at or above the directory" (bug-212 r4) mo
 | `verbs._timeline_git_leg` | its own spawn | `run_git`; the `warnings` texts unchanged |
 | the STM capture: `_git_diff_summary`, `_git_commit_rationale`, `_git_added_comments` | `except Exception` returns empty; the repo is the hook's cwd | `run_git` in the resolved repository (a-R5) |
 | `scripts/check-bug-registry.py` (created by 29.1, its R4; not in the tree at `f3709d2`) | its own git spawn | `run_git`; it already runs under the dev interpreter, which imports `refmatrix` |
+| `scripts/ptest.py` (created by 29.4: `--family <base-rev>` diffs `base..HEAD`, `--merge-gate` reads `HEAD..MERGE_HEAD`, the summary records the sha) | its own git spawns | `run_git`, each call with its bound |
+| `scripts/derive-digest.py` (created by 29.5 at its R0: it records the commit the golden was taken at) | its own git spawn | `run_git` |
 
 `hooks.py` has no Python git call: the generated shell hooks reach git through
 `rmx sync --since`, which is `sync.changed_since`. The census covers `hooks.py` so a future
@@ -323,8 +327,11 @@ this slice the changed-path list is resolved BEFORE the lock is taken and passed
 `run_git` caller's lock state is listed in the summary; none calls it under `_store_lock`. Task
 16.4's git use, when it is built, goes through `run_git` and the census holds it to that. {#a-r7}
 
-**a-R6: the census.** It walks `src/refmatrix` and `scripts/*.py`. No git command list reaches
-`subprocess` or any other callable outside `gitrun`. Families the scanner must find: a direct spawn; an aliased `subprocess` import; a list
+**a-R6: the census.** It walks `src/refmatrix` and `scripts/*.py`. No existing `scripts/*.py`
+spawns git at `f3709d2`; the three scripts in the table above arrive with 29.1, 29.4 and 29.5,
+before this slice, and are adopted by it. The list of scripts is re-read at the start commit: a
+script that spawns git and is not in the table is adopted by the same rule, not allow-listed.
+No git command list reaches `subprocess` or any other callable outside `gitrun`. Families the scanner must find: a direct spawn; an aliased `subprocess` import; a list
 bound to a name first; a list handed to a helper; a `shell=True` string that starts with `git `.
 The allowlist is empty when the slice lands. {#a-r6}
 
@@ -375,7 +382,8 @@ The allowlist is empty when the slice lands. {#a-r6}
 - **AC-a8 (characterization):** the bug-225 and bug-212 suites pass unchanged; their texts are
   the goldens for a-R2 and a-R3.
 - **AC-a9 (census):** the scanner finds all 12 sites on `f3709d2` (AC-K1), every family in the
-  synthetic module, and nothing on the tree after the slice. A planted
+  synthetic module, the git spawns of the three scripts of a-R4 at this slice's start commit,
+  and nothing under `src/refmatrix` or `scripts/` after the slice. A planted
   `subprocess.run(["git", "status"])` in a temp copy of any module fails the test and names the
   site.
 - **AC-a10:** bug-233 is `fixed` with a sha reachable from `master`.
@@ -608,15 +616,20 @@ names, rides 0.83.1.) {#c-r6}
     the code that derives did change.
 - The choice between justify, surface and narrow is made by c-R2 and c-R3 on what the handler
   swallows. It is never made to keep a hash still; a handler on an ingest path is surfaced.
+- **No edit to a pass file, of either kind, ships before 29.2's R7 and R8 are deployed and the
+  fleet is rehashed** ([[task-29.2-mypy-gate#r7-release]], deploy A). The rehash proves a stamp
+  against the current files, so until it has run even a comment makes a pass's stamps
+  unprovable.
 - All of this slice's edits to these files land in ONE commit group, and that group ships in
-  the SAME release as [[task-29.2-mypy-gate#r7]] (ruling L107). In that release every stamp
-  reads `code_unknown` once because the hash tag changes; the real edits ride inside that state
-  and are cleared by that release's announced re-stamp.
-- A real edit to a pass file does not ship before [[task-29.2-mypy-gate#r7]]. One that is not
-  ready for that release WAITS: it is not merged into an ordinary later release, and ships only
-  in a release that carries its own announced, user-gated re-stamp. No release lets a pass read
-  `behind_code` fleet-wide without its own go. The slice's other groups do not wait for it; the
-  ratchet of c-R4 keeps the waiting handlers counted.
+  deploy B of R7's release (rulings L107 and L108).
+  - Its neutral edits (justifications) show nothing on the fleet.
+  - Its real edits (surfaced or narrowed handlers) make each pass they touch read `behind_code`
+    on every store. What clears that is `plan-29 D24` ([[task-29.2-mypy-gate#d24]]), open for
+    the user; this slice does not depend on the answer.
+- An edit that is not ready for deploy B WAITS: it is not merged into an ordinary later release,
+  and ships only in a release with its own announced, user-gated go. No release lets a pass read
+  `behind_code` fleet-wide without one. The slice's other groups do not wait for it; the ratchet
+  of c-R4 keeps the waiting handlers counted.
 - The summary lists, per derive file, each handler edited and whether the edit is neutral or
   real.
 - They are covered by [[task-29.2-mypy-gate#derive-digest]] (AC-18): the graph, vector,
@@ -1008,6 +1021,19 @@ here ([[task-29.2-mypy-gate#d4]]).
 | the digest golden: recorded at 29.5's R0, re-recorded by slice K | K-R6 re-records with `scripts/derive-digest.py record` and requires equality with the R0 golden | [[#k-r6]] |
 | `feature-bound` admits `knob: arg:<parameter>` | AC-a1's timeout leg names `knob: arg:timeout` | [[#a-ac]] |
 
+
+## Revision round 3 (2026-11-14) {#rev-round-3}
+
+Answers ch-bsd spec review r2 (`bsd-plan29-spec-r2`, master, which read this spec at `cbb4ff8`)
+under ruling L108 ([[plan-review-2026-11-13#lead]]).
+
+| finding | change | anchor |
+|---|---|---|
+| M6: 29.4's runner would turn the git census red | `scripts/ptest.py` and `scripts/derive-digest.py` are rows of the adoption table; the script list is re-read at the start commit and anything that spawns git is adopted, not allow-listed | [[#a-r4]], [[#a-r6]], AC-a9 |
+| NB2 and NS1, as they reach this spec | c-R7 follows 29.2's two-deploy release: no pass-file edit before the fleet is rehashed; this slice's group ships in deploy B; its real edits lead to `plan-29 D24` | [[#c-r7]]; [[task-29.2-mypy-gate#r7-release]], [[task-29.2-mypy-gate#d24]] |
+
+The other round-3 items (NB2's rehash, NS2, NS3, M9, M10) are in 29.2
+([[task-29.2-mypy-gate#rev-round-3]]).
 
 ## Out of scope {#out-of-scope}
 
