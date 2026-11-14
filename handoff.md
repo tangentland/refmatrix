@@ -9,91 +9,79 @@ metadata:
 
 # Session Handoff for refmatrix {#root}
 
-Date: 2026-11-14 (session a9b75923). Every 0.83.0 candidate is merged on dev master and the
-release commit is `af83867` (version 0.83.0). Deployed is still **0.82.0** (daemon pid 54024).
-The user said "go ahead with the deploy when the suite passes"; the full suite on `af83867` was
-running at save time (`workflow/review-output/release-0.83.0-full.log`). Prior handoff archived at
-`workflow/past_handoffs/021-0830-candidates-in-review_2026-11-14.md`.
+Date: 2026-11-14 evening (session a9b75923). **0.83.0 is deployed** (deploy tree `2aab81a`,
+daemons + hub on 0.83.0). **PAUSED by the user** ("pause after you finish reacting to the
+recommendation answer, then save-state"): no new dispatches; three agents were mid-work in their
+own clones and were left to finish. Prior handoff archived at
+`workflow/past_handoffs/022-0830-merged-bumped_2026-11-14.md`.
 
-rel: supersedes -> [[handoff-021-0830-candidates-in-review]]
+rel: supersedes -> [[handoff-022-0830-merged-bumped]]
 rel: depends-on -> [[open-questions]]
 rel: depends-on -> [[plan-review-2026-11-13]]
+rel: depends-on -> [[agent-briefs-inflight-2026-11-14b]]
 
 ## Active goal {#active-goal}
 
-No active goal. Delegated user gates (L77, L78) still stand: the 0.83.0 fleet deploy with
-`install-hooks --apply --force` over the 8-repo roster runs without asking (and the user has
-explicitly authorised the deploy behind the suite), plan-27's memdir migration and plan-28's
-start each run when their spec's preconditions hold, with the user told at the start.
+No active goal. The standing gates: plan-29's releases have a standing deploy go when the suite
+equals the baseline by E line, the user told first — EXCEPT a release that changes the store on
+disk (29.5's merge, a derive-hash flip), which needs its own go (L106).
 
-**Agents at save time:** none in flight. Every agent of this session is idle with its work
-committed on its branch and merged. `workflow/agents/inflight-2026-11-14.md` is historical.
+**Agents at save time** — full briefs in `workflow/agents/inflight-2026-11-14b.md`:
+
+| agent · type (model) | clone (`/Volumes/littlebig/…`) · branch | tip at save | expected artifact |
+|---|---|---|---|
+| `green-216` · ch-implementer | `refmatrix-bug241` · `task-bug241-rule-docs-gmd-on-reingest` | `7145c19` + uncommitted src | bug-241 + bug-240 GREEN, summary |
+| `spec-29a` · ch-architect (Fable) | `refmatrix-spec-plan29a` · `spec-plan29a` | `bdd9cd8` + uncommitted | 29.1/29.4/29.5 r2 + new 29.6 |
+| `spec-29b` · ch-architect (Fable) | `refmatrix-spec-plan29b` · `spec-plan29b` | `11e9f9f` + uncommitted | 29.2/29.3 r2 |
 
 ## What this session did {#did}
 
-- **Merged to master** (each through RED → GREEN → ch-bsd until GO; rulings in
-  `workflow/plan-review-2026-11-13.md#lead`):
-  - 25.1 recall-hook byte budget `d44e359`, then its r9 MEHs `d1be40a` (bsd r10 CLEAN).
-  - bug-225 handoff trunk from `refs/remotes/origin/HEAD` `3e37fb3` (L82, L96, L100; bsd r3 GO).
-  - bug-216 + bug-227 `7aed8df` (L94, L97, L99, L101, L103; bsd r6 + diff check GO).
-  - bug-230 `f9d1c91` (found on the merged dev tree; bsd r1 GO, M1/M2 fixed).
-  - bug-212 `cc061f4` (L95, L98, L102; bsd r7 GO).
-- **bug-155 fixed** (`988e96d` + `44d1a34`): clones lint like the dev tree.
-- **Release commit** `af83867` (0.83.0) with release notes.
-- **Live store edit:** bug-216 R4 applied to `.refmatrix/.refmatrix_ignore` before the bug-216
-  merge (backup `~/.refmatrix/backups/refmatrix_ignore.refmatrix.20261114-085623`); the forced
-  re-ingest has not run.
-- **Leaked test daemon** (pid 89734, 20 h, throwaway store `/private/tmp/r1-hcn81cf7`) stopped;
-  bug-229.
-- **Bugs logged:** bug-227 (fixed), bug-228 (ac2b timing), bug-229 (test daemon leak), bug-230
-  (fixed), bug-231 (graceful-stop bound under load), bug-232 (per-caller refusal remedies),
-  bug-233 (STM git milestones: wrong repo's diffstat, wrong labels).
-- **Ledger:** every report of this session has its INDEX / last_run / IMPRESSIONS lines
-  (`be4a553`; bug-225's came with its merge). IMPRESSIONS.md is over its 50-bullet cap: fold due.
+- **0.83.0 released and deployed** (`af83867`): 25.1 (+ r9 MEHs `d1be40a`), bug-225 (`3e37fb3`),
+  bug-216 + bug-227 (`7aed8df`), bug-230 (`f9d1c91`), bug-212 (`cc061f4`). Release suite: 13
+  failures = the 0.82.0 baseline by E line (bug-168 ×9, bug-170, brief lock, ac6 ×2) + bug-231.
+- **Deploy:** ff, daemon restart, `relaunch-fleet`, hub stop + one launchctl kickstart (pid
+  21506); user-level commands copied (backups `~/.refmatrix/backups/commands-0.83.0-*`); fleet
+  `install-hooks --apply --force` on the 8 roster repos (backups `hooks-0.83.0/`, `.git/hooks`
+  byte-equal, `--check` 8/8); R4 ignore edit + forced reingest (backup
+  `refmatrix-reingest-0.83.0-20261114-112859`); Q2: CLAUDE.md line removed in cliquedb,
+  viascope, cliquet, atldb (backups `q2-claude-md-ignore-*`), synced with `rmx sync -f`.
+- **bug-241 found live:** AC-6 fails (`claude` 234 / `project-profile` 38 unresolved); cause
+  measured — a forced reingest never GMD-parses markdown when a `.tldr` cache answers. 0.83.1
+  (bug-241 + bug-240) is in GREEN.
+- **Plan-29 (code quality)** written and placed first (L104, Q19-Q21); five specs on Fable;
+  ch-bsd r1 DIRTY 3B/8S/12M (L105); revision round 2 in flight.
+- **Three Fable plan reviews** of the post-0.83.0 queue on master
+  (`plan-review-fable-2026-11-14-{queue,memory,store}.md`); the user took all twelve
+  recommendations (L106).
+- **Bugs logged:** bug-227 (fixed), bug-228..bug-241; bug-229 (a leaked test daemon) was stopped.
+- **Memories:** `feedback_review_clones_cannot_see_dev_tree_failures`,
+  `feedback_planning_runs_on_fable`, `feedback_plan_d_labels_are_valid_ids`,
+  `project_0830_release_ready`, `project_0831_plan29_state`.
 
-## Deploy (next action) {#deploy}
+## Next {#next}
 
-When the suite finishes, compare its failures with the known set BY E LINE: brief_real_daemon
-lock, task21_1 ac6 ×2, `test_repo_hooks_in_sync` (bug-170, sandbox HOME; NOT cleared by a re-install) and the 9 `test_search_hooks` rewriter cases (bug-168),
-possibly bug-228 / bug-231 timing. Anything else stops the deploy. Then, in order (full detail in
-memory `project_0830_release_ready`):
-
-1. `git -C ~/refmatrix pull --ff-only origin master` (deploy tree clean at `6863c84`), `rmx daemon
-   restart --relaunch`, `rmx version -v` (no `[DEV TREE]`), `rmx hub relaunch-fleet`; a STALE
-   hub gets `rmx hub stop` + ONE `launchctl kickstart gui/$(id -u)/com.refmatrix.hub`.
-2. Back up `~/.claude/commands/{save,recall}-state.md`, then COPY the new ones from
-   `~/refmatrix/src/refmatrix/templates/commands/` (user's choice; not `rmx init --force`).
-3. `rmx install-hooks --apply --force` in the 8 roster repos (memory `project_fleet_roster_1114`)
-   behind backups of `~/.claude/hooks`, `~/.claude/settings*.json`, each repo's
-   `.claude/settings.json`, `.claude/rmx-hooks.json` and `.git/hooks`; diff hook entries after;
-   byte-compare `.git/hooks` with the generator (bug-209).
-4. bug-216 R4: back up `catalog.read.duckdb`, `facts.log`, `active`, then `rmx reingest --force
-   --no-sessions` (announced); add the bug-216 → bug-185 order edge in the registry.
-5. Q2: drop the `CLAUDE.md` line from every other fleet store's `.refmatrix_ignore` (each backed
-   up, announced); report each store's recount (`scripts/check-rel-landing.py`).
-6. Then `rmx save-state` again so the handoff records the deploy.
+1. Collect the three agents (ListAgents; else re-dispatch from the briefs file).
+2. **0.83.1:** ch-bsd over the bug-241 branch → merge → release → deploy → re-run R4's reingest
+   (backup first) → recount until AC-6 = 0. Then `.venv-eval` duckdb → 1.5.3 (L106).
+3. **Plan-29:** ch-bsd spec r2 over both branches → merge (wikilinks, T0 amends, plan file
+   fixes) → `approved` → 29.1 → 29.4 (T0 as its body) → 29.5 (ADR 0006 first; a user-gated
+   store event at its merge) → 29.3 ∥ 29.2 → 29.6.
+4. Unowned items from L106: a `legs_ms` task before 29.5, a cross-partition `rel:` probe, the
+   linked-store usage measurement.
+5. Later: merge the seven frozen spec branches (T3b needs T3a + T3c in one window; T56 before
+   T3c), each needing the freshness revision the Fable store review lists.
 
 ## Open {#open}
 
-- **Questions:** none open (next id Q22 in `workflow/open-questions.md`; Q19-Q21 answered: plan-29
-  first, mypy, ~3,000-line modules).
-- **plan-29 (code quality, L104) runs first after the deploy + spec merges:** write its task
-  specs and ch-bsd them, then 29.1 → 29.4 → 29.5 → 29.2 ∥ 29.3; queue item 2 waits for it.
-- **After the deploy:** merge the 7 frozen spec branches (T0 `fa1227d`, T2 `0fd8a2f`, T3a
-  `8e8e307`, T3b `5559d20`, T3c `01c1f63`, T4 `b409d98`, T56 `fa1af7d`; T56 before T3a, expect an
-  ADR-0004 conflict) → G27 bookkeeping and the POP rewrite → the goal text for the user.
-- **Follow-ups logged:** bug-229 (session reaper for test daemons), bug-231 (measure the stop,
-  not the seconds), bug-232, bug-233; IMPRESSIONS fold; `spec-t3ab-r3` report's ledger lines
-  come with the spec-branch merges.
-- **Throwaway clones left on `/Volumes/littlebig`:** `refmatrix-bug212-mut4`, `bsd216-r3`..`r6`,
-  `bsd230-r1`, plus the five task clones; remove when no longer wanted (look before deleting).
-- **Not pushed:** dev master is ~300 commits ahead of `origin/main` (the user pushes).
-- **Uninvestigated:** `~/.claude` holds unstaged deletions (231 at last count).
+- **Questions:** none open (next id Q23). No plan decision is open (L106 settled all twelve).
+- **Not pushed:** dev master is ~340 commits ahead of `origin/main` (the user pushes).
+- **Throwaway clones on `/Volumes/littlebig`:** `refmatrix-bug212-mut4`, `bsd216-r3`..`r6`,
+  `bsd230-r1`, finished task clones; remove when no longer wanted (look first).
+- **IMPRESSIONS.md** is over its 50-bullet cap: fold due.
 
 ## Resume {#resume}
 
-1. `/recall-state`; read this file and memory `project_0830_release_ready`.
-2. Read the suite log's tail; if it finished, do `#deploy`. If it did not, rerun it once
-   (`.venv-eval/bin/python -m pytest -q -p no:cacheprovider > workflow/review-output/release-0.83.0-full.log 2>&1`).
-3. Never run the dev-venv `rmx` against the live store before the deploy: the dev tree is
-   already 0.83.0.
+1. `/recall-state`; read this file, `workflow/agents/inflight-2026-11-14b.md`, memory
+   `project_0831_plan29_state`.
+2. `ListAgents`; collect or re-dispatch.
+3. Never run the dev-venv `rmx` against the live store with a bumped version.
