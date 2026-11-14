@@ -12803,13 +12803,20 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
                 # Its warnings (an unreadable curated-hooks index) go to stderr like the
                 # verb's (bsd-251 s-2, 2026-11-14: this call passed no list and the failure
                 # was dropped).
+                # This step runs INSIDE the busy/absent handler, so the sibling
+                # `except VerbError` below cannot see a VerbError it raises (a budget
+                # VerbArgsError, a curated-hooks failure): it becomes the same ONE `Error:`
+                # line here, never a traceback (bsd-251 r9 m-b, 2026-11-14).
                 _pack_ws: list[str] = []
-                packed = {"memories": rows, **_verbs.pack_recall(
-                    _root(), rows, k=k, query=None, max_bytes=pack_bytes,
-                    channel=rec_channel, since=since, subject=subject,
-                    mode=("subject" if subject else
-                          "session-start" if session_start else "recent"),
-                    warnings=_pack_ws)}
+                try:
+                    packed = {"memories": rows, **_verbs.pack_recall(
+                        _root(), rows, k=k, query=None, max_bytes=pack_bytes,
+                        channel=rec_channel, since=since, subject=subject,
+                        mode=("subject" if subject else
+                              "session-start" if session_start else "recent"),
+                        warnings=_pack_ws)}
+                except _verbs.VerbError as pe:
+                    raise click.ClickException(str(pe)) from pe
                 for w in _pack_ws:
                     _warn(w)
             else:
