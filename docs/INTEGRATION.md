@@ -224,12 +224,38 @@ Precedence, first match wins (bug-216 R1 + R11):
 So `.claude` + `!.claude/PROJECT_PROFILE.md` ingests the profile and nothing else under
 `.claude/`; a `CLAUDE.md` line keeps excluding CLAUDE.md (the fleet's files carry one until it
 is removed) and `!CLAUDE.md` beats it. A `!dir` line re-includes NOTHING — list each file — and
-is reported once on stderr when the spec loads. `rmx ingest-gmd <subdir>` reads the spec from
-the project root (the nearest `.refmatrix/` above the target) and names every path it excluded
-in its report. `scripts/check-gmd-parity.py`, run by `scripts/lint-gmd.sh`, fails when a GMD
-doc in the lint scope is excluded by these rules, naming the file and the rule (R3).
+is reported once on stderr when the spec loads. `scripts/check-gmd-parity.py`, run by
+`scripts/lint-gmd.sh`, fails when a GMD doc in the lint scope is excluded by these rules, naming
+the file and the rule (R3).
+
+**Which root a path is judged against.** The spec is read from, and the segment rules (1 and 5)
+apply BELOW, the PROJECT root — never the ingest target (bug-216 R2-base + remedy B1):
+
+- `rmx ingest <dir>` and MCP `rmx_ingest`: the project the store belongs to (the parent of its
+  `.refmatrix/`) when `<dir>` lies inside it, else the nearest `.refmatrix/` above `<dir>`, else
+  `<dir>`. So `rmx ingest <proj>/.claude/projects/x/memory` or `rmx ingest <proj>/.claude`
+  stores nothing but a built-in-included GMD `.claude/PROJECT_PROFILE.md` — memories go through
+  `ingest-gmd --as-memory`, never as `kind=doc`.
+- the watcher and `sync`: the watch root / project root, so a project under `<x>/.hidden/` or
+  `<x>/build/` syncs, while a `build/` INSIDE the project stays out.
+- `rmx ingest-gmd <dir>`: the spec from the project root (the nearest `.refmatrix/` above
+  `<dir>`); the segment rules below `<dir>` itself — a directory handed in explicitly is taken as
+  given (`rmx session ingest` indexes cards under `.refmatrix/sessions/` this way). Every path it
+  excluded is named in its report, prestage's included.
+
+A deleted file at a built-in-include path stays in scope, so its delete event reaches `sync`,
+which purges it.
+
+**Changing the ignore file on a live store.** An edit to `.refmatrix_ignore` is not a file event
+the daemon acts on, and docs ingested before the edit are not re-judged. Re-including a doc that
+others already cite (R4: the rule docs) is: back up the file, edit it, then run `rmx reingest
+--force --no-sessions` through the daemon. The forced pass clears the mtime stamps AND the GMD
+content hashes, so every citer is re-processed and its pending `rel:` lines bind; a plain `rmx
+ingest .` skips a citer whose GMD content hash still matches. Then measure with
+`scripts/check-rel-landing.py` on a copy of the catalog.
 
 rel: specified-by -> [[task-bug216-rule-docs-in-graph#r1]]
+rel: specified-by -> [[task-bug216-rule-docs-in-graph#r4]]
 rel: specified-by -> [[task-bug216-rule-docs-in-graph#r11]]
 rel: specified-by -> [[task-bug216-rule-docs-in-graph#r12]]
 

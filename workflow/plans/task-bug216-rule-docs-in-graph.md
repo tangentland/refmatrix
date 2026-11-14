@@ -8,7 +8,7 @@ metadata:
   status: approved
   created: 2026-11-13
   updated: 2026-11-13
-  revision: 4
+  revision: 6
 ---
 
 # Task bug-216: the rule docs reach the graph {#root}
@@ -74,8 +74,11 @@ stays out. {#why-consistent}
    ([[feedback_clean_corpus_hides_a_dead_gate]]). {#r3}
 4. **R4 This store's configuration.** In this repo's `.refmatrix/.refmatrix_ignore` (runtime state,
    not committed): remove the `CLAUDE.md` line; keep `.claude`; add `!.claude/PROJECT_PROFILE.md`.
-   Applied by the lead after merge + deploy, announced first, with a backup of the file; the
-   daemon's normal sync ingests the two docs. {#r4}
+   Applied by the lead after merge + deploy, announced first, with a backup of the file, THEN
+   `rmx reingest --force --no-sessions` through the daemon (ruling L81 S1 / L86): the edit makes no
+   file event, and the citers old code ingested carry no pending rows and a matching GMD content
+   hash, so only a forced pass (mtime stamps AND GMD content hashes cleared) re-processes them and
+   binds their lines; `rmx ingest .` hash-skips a citer that only a GMD doc holds. {#r4}
 5. **R5 A committed recount.** `scripts/check-rel-landing.py <catalog> <roots…>` prints the
    evidence-based recount (authored wikilink `rel:` lines vs `linkage_evidence` rows at the same
    file and line; categories: landed, landed at another line, file not ingested, target
@@ -102,7 +105,7 @@ stays out. {#why-consistent}
    this repo after R4's config is mirrored into the fixture. {#ac-4}
 5. **AC-5 (R5).** The recount script on a fixture catalog reproduces hand-computed categories
    exactly. {#ac-5}
-6. **AC-6 (live, after deploy + R4).** `check-rel-landing.py` on a fresh read-only copy of this
+6. **AC-6 (live, after deploy + R4 + the forced reingest of #r4).** `check-rel-landing.py` on a fresh read-only copy of this
    store: the `claude` and `project-profile` unresolved groups fall from 209 / 38 to 0 (anchors that
    no longer exist in the docs are listed, not counted as fixed). Recorded in the implementation
    summary. {#ac-6}
