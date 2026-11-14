@@ -131,6 +131,14 @@ def test_bridge_runs_its_own_ingest_after_a_job_on_another_target(live, monkeypa
 
 
 def test_bridge_reports_a_wait_that_ran_out(live, monkeypatch):
+    """plan-5 5.2 first pinned a wait that ran out (the other ingest job still running past
+    RMX_BRIDGE_WAIT_S) as a bridge FAILURE in `out["error"]`. bug-212 r6, ruling L98 m-2
+    (2026-11-14), reversed that: the wait running out is a DEFERRAL -- the other job holds the
+    single-active-ingest slot and is still working, nothing was refused, and the next
+    save-state / SessionStart bridges the dir, so it self-heals; it is printed on every run
+    (a stderr warning naming the job), so it stays visible without failing the save. Pinned
+    as a typed `out["deferred"] = {job, reason}` with `out["error"]` empty -- the save-state
+    failure rule reads `sync.error`, so a deferral that also set `error` would fail the save."""
     base, root = live
     memdir = _big_dir(base, "memory", 350)
     part = verbs.memory_partition(root)
@@ -140,7 +148,10 @@ def test_bridge_reports_a_wait_that_ran_out(live, monkeypatch):
     monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "0.2")
     out = cli_mod._sync_memory_dir(memdir)
     assert out["waited"] is True
-    assert out["error"] and "still running" in out["error"] and resp["result"]["job_id"] in out["error"]
+    deferred = out.get("deferred") or {}
+    assert not out["error"], f"a wait that ran out is still reported as an error: {out}"
+    assert deferred.get("job") == resp["result"]["job_id"], out
+    assert "still running" in (deferred.get("reason") or ""), out
 
 
 # ---- 5.3 finalize on a real store --------------------------------------------

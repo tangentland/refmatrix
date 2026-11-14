@@ -1,0 +1,38 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug212/src/refmatrix as checked-hash (bug-037)
+......................                                                   [100%]
+22 passed in 261.14s (0:04:21)
+pyc-guard: recompiled 20 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b212-c854bad/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________________ test_bridge_reports_a_wait_that_ran_out ____________________
+
+live = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-01wlwxjm'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-01wlwxjm/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1064008a0>
+
+    def test_bridge_reports_a_wait_that_ran_out(live, monkeypatch):
+        """plan-5 5.2 first pinned a wait that ran out (the other ingest job still running past
+        RMX_BRIDGE_WAIT_S) as a bridge FAILURE in `out["error"]`. bug-212 r6, ruling L98 m-2
+        (2026-11-14), reversed that: the wait running out is a DEFERRAL -- the other job holds the
+        single-active-ingest slot and is still working, nothing was refused, and the next
+        save-state / SessionStart bridges the dir, so it self-heals; it is printed on every run
+        (a stderr warning naming the job), so it stays visible without failing the save. Pinned
+        as a typed `out["deferred"] = {job, reason}` with `out["error"]` empty -- the save-state
+        failure rule reads `sync.error`, so a deferral that also set `error` would fail the save."""
+        base, root = live
+        memdir = _big_dir(base, "memory", 350)
+        part = verbs.memory_partition(root)
+        resp = dm.call(root, "ingest_gmd_start", {"targets": [str(memdir)], "as_memory": True,
+                                                  "memory_mtype": "curated", "partition": part}, timeout=30)
+        assert resp.get("ok"), resp
+        monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "0.2")
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["waited"] is True
+        deferred = out.get("deferred") or {}
+>       assert not out["error"], f"a wait that ran out is still reported as an error: {out}"
+E       AssertionError: a wait that ran out is still reported as an error: {'memdir': '/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-01wlwxjm/memory', 'report': None, 'error': 'ingest job 326ea5fb34d8 still running after 0.2s (6/350 files); the memory dir will be bridged by the next save-state / SessionStart, or run `rmx ingest-gmd --as-memory /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-01wlwxjm/memory`', 'skipped_non_gmd': 0, 'skipped_unparseable': [], 'skipped_index': [], 'skipped': 0, 'skipped_paths': [], 'waited': True, 'waited_job': '326ea5fb34d8', 'partition': 'proj', 'embed': None, 'moved': 0, 'stale_before': 0, 'forced': 0, 'moved_legacy': 0, 'skipped_unchanged': 0, 'duplicate_ids': []}
+E       assert not 'ingest job 326ea5fb34d8 still running after 0.2s (6/350 files); the memory dir will be bridged by the next save-state...essionStart, or run `rmx ingest-gmd --as-memory /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-01wlwxjm/memory`'
+
+tests/test_memory_bridge.py:152: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_memory_bridge.py::test_bridge_reports_a_wait_that_ran_out
+1 failed in 17.10s
