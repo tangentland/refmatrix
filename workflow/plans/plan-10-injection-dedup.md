@@ -343,3 +343,11 @@ rel: derives-from -> [[agent-brief-spec-wave]]
 | The L79 revision (plan-28's 3-calendar-day period; 40 sessions per cell per store is 10.2's minimum n, below it "underpowered, no verdict" = INCONCLUSIVE) is approved by the lead on the user's pattern (d9co) after a CLEAN ch-bsd confirm-lite | `workflow/bullshit/2026-11-14-0155-spec-t3b-l79-ca4b9a7.md` (CLEAN, over `spec-wave-t3b` `5233db4..ca4b9a7`) | status unchanged |
 
 rel: derives-from -> [[bsd-spec-t3b-l79-ca4b9a7]]
+
+## Approval of the L83 amendment (2026-11-14, d9co) {#approval-l83-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The L83 revision (no live A/B; the paired runner sets each run's cell through `arms.cell()`; only A+full turns dedupe off; 10.2's nested reading comes from plan-28's paired series) is approved by the lead on the user's pattern (d9co) after the L83 confirm-lite MEH-only (0B/0S/2M), folded at `c494391` per L84 with no further round. The 10.2 R7 ↔ 28.1 `#ownership` link is re-checked in plan-28's L83 confirm-lite | `workflow/bullshit/2026-11-14-0210-spec-t3b-l83-dad35ca.md` (over `spec-wave-t3b` `5023620..dad35ca`) | status unchanged |
+
+rel: derives-from -> [[bsd-spec-t3b-l83-dad35ca]]

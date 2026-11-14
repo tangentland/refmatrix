@@ -488,3 +488,11 @@ rel: depends-on -> [[task-28.4-preregistration-freeze]]
 from `#done`, plan-10's task table and execution contract, and 10.4 n10. m2: only `A+full` turns
 dedupe off; `B` and `C` dedupe as `A+dedupe`, with an AC-11 leg and an AC-13 mutation.
 {#rev-round-8-mehs}
+
+## Approval of the L83 amendment (2026-11-14, d9co) {#approval-l83-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The L83 revision (no live A/B; the paired runner sets each run's cell through `arms.cell()`; only A+full turns dedupe off; 10.2's nested reading comes from plan-28's paired series) is approved by the lead on the user's pattern (d9co) after the L83 confirm-lite MEH-only (0B/0S/2M), folded at `c494391` per L84 with no further round. The 10.2 R7 ↔ 28.1 `#ownership` link is re-checked in plan-28's L83 confirm-lite | `workflow/bullshit/2026-11-14-0210-spec-t3b-l83-dad35ca.md` (over `spec-wave-t3b` `5023620..dad35ca`) | status unchanged |
+
+rel: derives-from -> [[bsd-spec-t3b-l83-dad35ca]]
