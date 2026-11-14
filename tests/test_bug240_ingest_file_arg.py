@@ -1,4 +1,4 @@
-"""bug-240 RED: `rmx ingest <FILE>` must ingest the file or refuse it -- never a quiet 0.
+"""bug-240 RED: `rmx ingest <FILE>` is refused, naming `rmx sync -f` -- never a quiet 0.
 
 WHY (bug-240, 2026-11-14). At the 0.83.0 deploy, re-including `CLAUDE.md` in four fleet stores
 (cliquedb, viascope, cliquet, atldb), `rmx ingest CLAUDE.md` exited 0 printing `ingested 0
@@ -7,11 +7,11 @@ DIRECTORY, `click.Path(exists=True)` accepts a file, and a file walks no tree. A
 asked for became a quiet success (CLAUDE.md #no-silent-failures). `rmx sync -f CLAUDE.md` then
 synced it.
 
-Either fix passes (the registry row proposes both):
-  ingest  exit 0 and the file owns an entity afterwards (any row whose path is the file:
-          the GMD doc row `<id>` or a relpath doc row)
-  refuse  a non-zero exit with exactly one `Error:` line, and that line names `rmx sync -f`
-Exit 0 with no row for the file fails, which is HEAD's behaviour.
+Lead ruling (2026-11-14): REFUSE, in the shared ingest path so CLI and MCP agree (the MCP half
+is `test_bug240_ingest_file_arg_mcp.py`). `ingest` is a tree verb whose options (`--source`,
+the tldr / graphify caches) mean nothing for one file; `sync -f` is the single-file path. The
+verdict: a non-zero exit, exactly one `Error:` line, that line names `rmx sync -f`, and the
+file is NOT ingested by the refused call.
 
 Real CLI, real daemon (spawned by the dev `rmx`, this checkout's code via PYTHONPATH), throwaway
 store under a SHORT `/tmp` mkdtemp root (macOS `sun_path`). The daemon-down route (the CLI's
@@ -112,24 +112,22 @@ def _rows_for(c, path: Path) -> list[tuple]:
 
 def _verdict(c, r: subprocess.CompletedProcess, target: Path) -> None:
     out = r.stdout + r.stderr
-    if r.returncode == 0:
-        _stop(c)
-        rows = _rows_for(c, target)
-        assert rows, (f"`rmx ingest {target.name}` exited 0 and ingested nothing "
-                      f"(no entity has path {target}); output:\n{out}")
-    else:
-        errs = [ln for ln in out.splitlines() if ln.startswith("Error:")]
-        assert len(errs) == 1, f"a refusal prints exactly one Error: line; got {errs}\n{out}"
-        assert "rmx sync -f" in errs[0], f"the refusal must name `rmx sync -f`: {errs[0]!r}"
+    assert r.returncode != 0, (f"`rmx ingest {target.name}` exited 0 (a file must be refused); "
+                               f"output:\n{out}")
+    errs = [ln for ln in out.splitlines() if ln.startswith("Error:")]
+    assert len(errs) == 1, f"a refusal prints exactly one Error: line; got {errs}\n{out}"
+    assert "rmx sync -f" in errs[0], f"the refusal must name `rmx sync -f`: {errs[0]!r}"
+    _stop(c)
+    assert not _rows_for(c, target), f"a refused ingest wrote rows for {target}"
 
 
 @pytest.mark.parametrize("rel", ["CLAUDE.md", "docs/notes.md"])
-def test_ingest_of_a_file_by_absolute_path_ingests_it_or_refuses(proj, rel):
+def test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync(proj, rel):
     target = proj["proj"] / rel
     _verdict(proj, _rmx(proj["env"], "ingest", str(target)), target)
 
 
-def test_ingest_of_a_file_by_relative_path_ingests_it_or_refuses(proj):
+def test_ingest_of_a_file_by_relative_path_is_refused_naming_sync(proj):
     """The live form: `rmx ingest CLAUDE.md` from the project root."""
     target = proj["proj"] / "CLAUDE.md"
     _verdict(proj, _rmx(proj["env"], "ingest", "CLAUDE.md", cwd=proj["proj"]), target)

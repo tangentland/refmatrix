@@ -1,0 +1,56 @@
+pyc-guard: recompiled 21 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b240/c2/src/refmatrix as checked-hash (bug-037)
+..........FF.F....                                                       [100%]
+=================================== FAILURES ===================================
+_____ test_the_mcp_tool_refuses_a_file_naming_sync[daemon_down-CLAUDE.md] ______
+
+store = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ath('/private/tmp/b240m.4eufrjvm/proj'), 'root': PosixPath('/private/tmp/b240m.4eufrjvm/proj/.refmatrix'), 'up': False}
+rel = 'CLAUDE.md'
+
+    @pytest.mark.parametrize("rel", ["CLAUDE.md", "docs/notes.md"])
+    def test_the_mcp_tool_refuses_a_file_naming_sync(store, rel):
+        res = _mcp(store, "rmx_ingest", {"path": str(store["proj"] / rel)})
+        assert res.get("isError") is True, (
+            f"rmx_ingest(path=<file>) answered success: {_text(res)}")
+>       assert NAMED in _text(res), f"the refusal must name `{NAMED}`: {_text(res)}"
+E       AssertionError: the refusal must name `rmx sync -f`: {"error": "daemon not running for /private/tmp/b240m.4eufrjvm/proj/.refmatrix"}
+E       assert 'rmx sync -f' in '{"error": "daemon not running for /private/tmp/b240m.4eufrjvm/proj/.refmatrix"}'
+E        +  where '{"error": "daemon not running for /private/tmp/b240m.4eufrjvm/proj/.refmatrix"}' = _text({'content': [{'text': '{"error": "daemon not running for /private/tmp/b240m.4eufrjvm/proj/.refmatrix"}', 'type': 'text'}], 'isError': True})
+
+tests/test_bug240_ingest_file_arg_mcp.py:133: AssertionError
+___ test_the_mcp_tool_refuses_a_file_naming_sync[daemon_down-docs/notes.md] ____
+
+store = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ath('/private/tmp/b240m.dnfm6jts/proj'), 'root': PosixPath('/private/tmp/b240m.dnfm6jts/proj/.refmatrix'), 'up': False}
+rel = 'docs/notes.md'
+
+    @pytest.mark.parametrize("rel", ["CLAUDE.md", "docs/notes.md"])
+    def test_the_mcp_tool_refuses_a_file_naming_sync(store, rel):
+        res = _mcp(store, "rmx_ingest", {"path": str(store["proj"] / rel)})
+        assert res.get("isError") is True, (
+            f"rmx_ingest(path=<file>) answered success: {_text(res)}")
+>       assert NAMED in _text(res), f"the refusal must name `{NAMED}`: {_text(res)}"
+E       AssertionError: the refusal must name `rmx sync -f`: {"error": "daemon not running for /private/tmp/b240m.dnfm6jts/proj/.refmatrix"}
+E       assert 'rmx sync -f' in '{"error": "daemon not running for /private/tmp/b240m.dnfm6jts/proj/.refmatrix"}'
+E        +  where '{"error": "daemon not running for /private/tmp/b240m.dnfm6jts/proj/.refmatrix"}' = _text({'content': [{'text': '{"error": "daemon not running for /private/tmp/b240m.dnfm6jts/proj/.refmatrix"}', 'type': 'text'}], 'isError': True})
+
+tests/test_bug240_ingest_file_arg_mcp.py:133: AssertionError
+____________ test_the_verb_refuses_a_file_naming_sync[daemon_down] _____________
+
+store = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ath('/private/tmp/b240m.qhq25jg7/proj'), 'root': PosixPath('/private/tmp/b240m.qhq25jg7/proj/.refmatrix'), 'up': False}
+
+    def test_the_verb_refuses_a_file_naming_sync(store):
+        from refmatrix.verbs import VERBS, VerbError
+        with pytest.raises(VerbError) as ei:
+            out = VERBS["rmx_ingest"].run(store["root"], {"path": str(store["proj"] / "CLAUDE.md")})
+            raise AssertionError(f"verb rmx_ingest(path=<file>) returned {out}")
+>       assert NAMED in str(ei.value), f"the VerbError must name `{NAMED}`: {ei.value}"
+E       AssertionError: the VerbError must name `rmx sync -f`: daemon not running for /private/tmp/b240m.qhq25jg7/proj/.refmatrix
+E       assert 'rmx sync -f' in 'daemon not running for /private/tmp/b240m.qhq25jg7/proj/.refmatrix'
+E        +  where 'daemon not running for /private/tmp/b240m.qhq25jg7/proj/.refmatrix' = str(VerbAbsentError('daemon not running for /private/tmp/b240m.qhq25jg7/proj/.refmatrix'))
+E        +    where VerbAbsentError('daemon not running for /private/tmp/b240m.qhq25jg7/proj/.refmatrix') = <ExceptionInfo VerbAbsentError('daemon not running for /private/tmp/b240m.qhq25jg7/proj/.refmatrix') tblen=5>.value
+
+tests/test_bug240_ingest_file_arg_mcp.py:141: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug240_ingest_file_arg_mcp.py::test_the_mcp_tool_refuses_a_file_naming_sync[daemon_down-CLAUDE.md]
+FAILED tests/test_bug240_ingest_file_arg_mcp.py::test_the_mcp_tool_refuses_a_file_naming_sync[daemon_down-docs/notes.md]
+FAILED tests/test_bug240_ingest_file_arg_mcp.py::test_the_verb_refuses_a_file_naming_sync[daemon_down]
+3 failed, 15 passed in 66.61s (0:01:06)
