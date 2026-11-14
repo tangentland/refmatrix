@@ -32,6 +32,7 @@ Next id: **Q14**.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q12 | 2026-11-14 | atlftpd and bdep/thiquet carry only old refmatrix git hooks and no Claude hook layer: does 0.83.0's `install-hooks --apply --force` give them the full Claude hook layer too? | atlftpd b (git + Claude hooks; it now has a daemon), bdep/thiquet a (git hooks only); or both a; or both b | open |
 
 ### Answered {#answered-37b7498f}
 
