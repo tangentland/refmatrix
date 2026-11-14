@@ -52,6 +52,17 @@ class VerbArgsError(VerbError, ValueError):
     exceptions (the MCP dispatcher's isError path) sees it as one."""
 
 
+class VerbUnknownProjectError(VerbArgsError):
+    """An MCP caller named a `project` that resolves to no registered store (task 25.1 R10,
+    bug-181, user decision 2026-11-09).
+
+    It is a caller mistake, so it is a `VerbArgsError` (the dispatcher answers `isError`). It
+    is NOT `VerbAbsentError`: absent is the one condition that licenses a bootstrap fallback
+    (`mcp._t_memory_add`'s in-process `Store` open), and an unknown name says nothing about any
+    daemon. Before it, `mcp._resolve_root` fell through to `$REFMATRIX_ROOT` and then the cwd
+    store, so a typo in `project=` quietly read -- and wrote -- another store."""
+
+
 # ---- registry + schema generation -----------------------------------------
 
 
@@ -153,7 +164,10 @@ _TRANSPORT_PROPS = {
              "description": "Store root (path to a project or its .refmatrix); "
                             "default: the server's project"},
     "project": {"type": "string",
-                "description": "Target another project by NAME (any live store)"},
+                "description": "Target another project by the NAME of a registered "
+                               "refmatrix store; an unknown name is an error "
+                               "(VerbUnknownProjectError), never a fallback to the "
+                               "server's own store"},
 }
 
 
@@ -1021,8 +1035,16 @@ _RECALL_DESCRIPTIONS = {
     "session_start": "recent with a 7d default window, widened to newest-k when "
                      "empty (the SessionStart hook mode)",
     "exclude_mtype": "mtype globs to drop (fnmatch); default ['session/*'] hides "
-                     "save-state handoffs + STM digests — pass [] for none",
+                     "save-state handoffs + STM digests — pass [] for none (subject rows "
+                     "follow include_subjects either way)",
     "include_session": "Opt back into session/* cards (same as exclude_mtype=[])",
+    "include_subjects": "Opt back into live subject rows (hidden by default: a subject is a "
+                        "compile artefact whose members are the hits); a stale subject "
+                        "stays hidden",
+    "pack": "Add `text`: the pointer-first pack (one `- name — hook  (fetch)` line per "
+            "hit, whole bodies while they fit, a `+N more` trailer) under max_bytes",
+    "max_bytes": "UTF-8 byte budget of the pack's `text`; default the channel's "
+                 "hook_budget entry (RMX_HOOK_BUDGET_BYTES overrides)",
     "subject": "Recall the leaves filed under a subject (id, subject_<slug>, or "
                "bare label), newest first",
     "degree": ">0 attaches a context bundle (body + one-hop neighbours) per row",
@@ -1032,15 +1054,110 @@ _RECALL_DESCRIPTIONS = {
 }
 
 
+# The words of the one no-daemon, no-worker refusal (task 25.1 R5, d8): the hook modes record it
+# through the existing degrade recorder (`outcome: "error"`, `error: "VerbAbsentError: …"`) and
+# exit 0; interactive / MCP callers reach it only when even `shared_embedder` had no replica.
+RECALL_ABSENT_MSG = ("memory recall needs the daemon up (dense embedder lives there) "
+                     "or a replica + shared model workers")
+
+# The line `_dense_legs` adds to `warnings` naming the HEALTHY leg that served (R5: the hub
+# worker's replica, or the daemon RPC). It rides the warnings list so an MCP caller sees it, but
+# it reports, it does not warn: the CLI prints it only under `memory recall --verbose` (task
+# 25.1 rev 7 F6, 2026-11-13). The no-daemon leg is a degrade and stays a real warning.
+RECALL_LEG_PREFIX = "recall leg: "
+
+
+def is_recall_leg_line(w: str) -> bool:
+    return str(w).startswith(RECALL_LEG_PREFIX)
+
+
+def recall_patterns(exclude_mtype: "list[str] | None", *, include_session: bool,
+                    include_subjects: bool) -> "list[str]":
+    """THE recall exclusion globs (task 25.1 R2, 19.1 R2): `exclude_mtype` when given, else
+    `session/*` unless `include_session`; `subject` is added unless `include_subjects`. A
+    subject row is a compile artefact (its members are the hits), and the fixture's five
+    subjects took the per-prompt top slots at HEAD."""
+    base = (list(exclude_mtype) if exclude_mtype is not None
+            else ([] if include_session else ["session/*"]))
+    if not include_subjects and "subject" not in base:
+        base.append("subject")
+    return base
+
+
+def is_stale_subject(row: dict) -> bool:
+    """19.4 R5's mark: a subject whose compile found it stale (`metadata.stale = true`) is never a
+    recall hit, not even with `include_subjects` (task 25.1 AC-6)."""
+    return (row.get("mtype") == "subject"
+            and bool((row.get("metadata") or {}).get("stale")))
+
+
+def recall_rows_filter(rows: "list[dict]", patterns) -> "list[dict]":
+    """The exclusion every recall source gets, in one place: the mtype globs, then the stale
+    subjects."""
+    return [r for r in rows
+            if not mt_excluded(r.get("mtype"), patterns) and not is_stale_subject(r)]
+
+
+# The channel each recall mode packs for when the caller names none (an MCP `pack=true`).
+_PACK_CHANNEL_OF_MODE = {"session-start": "session_start", "recent": "precompact",
+                         "subject": "prompt_recall", "dense": "prompt_recall"}
+
+
+def pack_recall(root: Path, rows: "list[dict]", *, mode: str, query: "str | None", k: int,
+                max_bytes: "int | None", channel: "str | None" = None,
+                since: "str | None" = None, subject: "str | None" = None,
+                warnings: "list[str] | None" = None) -> dict:
+    """`recall_pack.pack` over a recall's FINAL rows (task 25.1 R4: once, after the merge and
+    the exclusion), with the curated hooks built here: `memory_index.load_hooks` of the
+    project's memdir, UNCHANGED (its keys are relative paths and, since 26.1, ids too). Global
+    rows get no project hook -- there is no registered global curated-memory dir, so they fall
+    back to their first sentence (a same-named project hook would be another row's pointer).
+
+    The budget is `max_bytes` when given, else `hook_budget.budget(<channel>)` (the env
+    override included; a non-integer `RMX_HOOK_BUDGET_BYTES` raises `VerbArgsError` naming it).
+    Returns the pack fields: `text`, `spans`, `named`, `more`, `payload_bytes`.
+
+    An unreadable curated-hooks index is SAID, never dropped (bsd-251 s-2, ruling L68,
+    2026-11-14; CLAUDE.md #no-silent-failures): with a `warnings` list it is appended there and
+    the pack falls back to each memory's first sentence; with none -- a caller that has nowhere
+    to say it -- it raises `VerbError` naming the cause. The CLI's busy fall-through used to pass
+    no list, so a broken MEMORY.md silently degraded every hook line."""
+    from refmatrix import handoff, hook_budget, memory_index, recall_pack
+    label = channel or _PACK_CHANNEL_OF_MODE.get(mode, "prompt_recall")
+    key = label if label in hook_budget.CHANNEL_BUDGET_BYTES else \
+        _PACK_CHANNEL_OF_MODE.get(mode, "prompt_recall")
+    try:
+        n = hook_budget.resolve(key, max_bytes)
+    except ValueError as e:
+        raise VerbArgsError(str(e)) from e
+    memdir = handoff.default_memory_dir(Path(root).parent)
+    hooks: dict = {}
+    if memdir.is_dir():
+        try:
+            hooks = memory_index.load_hooks(memdir)
+        except Exception as e:  # noqa: BLE001 -- said (warnings) or raised, never dropped
+            msg = f"curated hooks unreadable ({type(e).__name__}: {e})"
+            if warnings is None:
+                raise VerbError(f"{msg}; pass a warnings list to pack with first "
+                                f"sentences instead") from e
+            warnings.append(f"{msg}; hook lines use each memory's first sentence")
+    p = recall_pack.pack(rows, hooks=hooks, global_hooks={}, max_bytes=n, channel=label,
+                         query=query, mode=mode, k_more=k, since=since, subject=subject)
+    return {"text": p.text, "spans": p.spans, "named": list(p.named), "more": p.more,
+            "payload_bytes": p.payload_bytes}
+
+
 @verb("rmx_memory_recall",
       "Recall memories. Modes: query (dense ANN), recent=true (newest-first, "
       "since=30m|1h|7d), session_start=true (recent, 7d window, widened to "
       "newest-k when empty), subject=<slug> (leaves filed under a subject). "
       "session/* cards (save-state handoffs, STM digests) are hidden unless "
-      "include_session=true or exclude_mtype=[]. scope=both adds the global "
-      "behavior store. Pass `project` (name) or `root` to target another store. "
-      "`warnings` lists degraded legs (global store unreachable, a context "
-      "bundle that failed) — never a silent partial answer.",
+      "include_session=true or exclude_mtype=[]; subject rows are hidden unless "
+      "include_subjects=true (a stale subject never shows). scope=both adds the global "
+      "behavior store. pack=true adds `text`: one pointer line per hit under a "
+      "max_bytes UTF-8 budget. Pass `project` (name) or `root` to target another store. "
+      "`warnings` names the leg that served (replica snapshot or daemon RPC, and which "
+      "embedder) and any degraded leg — never a silent partial answer.",
       descriptions=_RECALL_DESCRIPTIONS)
 def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
                   scope: typing.Literal["project", "global", "both"] = "project",
@@ -1051,20 +1168,30 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
                   recent: bool = False, session_start: bool = False,
                   exclude_mtype: list[str] | None = None,
                   include_session: bool = False,
+                  include_subjects: bool = False,
                   subject: str | None = None, degree: int = 0,
                   partition: str | None = None,
+                  pack: bool = False, max_bytes: int | None = None,
                   timeout: float | None = 30.0, **internal) -> dict:
-    """The recall verb. Called with `trace=<list>` (the CLI, which owns its call's row and
-    events), it only answers and appends what it retrieved to the list. Called bare — the
-    MCP `rmx_memory_recall` / `rmx_memory recall` route — it is its call's emission site
-    (task 21.1 R3/R11): ONE `kind=recall` query.log row (classified unbudgeted by design:
-    `_call` wraps every transport failure as VerbBusyError, and an MCP call carries no hook
-    budget, round-11 #m11-6) and ONE emission of `recall`-channel events over the payload
-    the MCP server writes (`json.dumps(result, default=str)`)."""
+    """The recall verb: ONE which-rows computation for the hooks, the interactive CLI and MCP
+    (task 25.1 R5, d6).
+
+    Called with `trace=<list>` (the CLI, which owns its call's row and events), it only answers
+    and appends what it retrieved to the list. Called bare -- the MCP `rmx_memory_recall` /
+    `rmx_memory recall` route -- it is its call's emission site (task 21.1 R3/R11): ONE
+    `kind=recall` query.log row and ONE emission of `recall`-channel events over the payload the
+    MCP server writes (`json.dumps(result, default=str)`).
+
+    `**internal` (never in the MCP schema; `Verb.run` drops any MCP argument of these names):
+    `trace`, `embedder_policy` ("shared" default, "hub_only" for the hook modes, d10 / r4 #n2)
+    and `channel` (the 21.1 channel the CLI is serving, the pack header's name)."""
     params = {k: v for k, v in locals().items() if k not in ("root", "internal")}
+    policy = internal.get("embedder_policy", "shared")
+    channel = internal.get("channel")
     trace = internal.get("trace")
     if trace is not None:
-        return _memory_recall_rows(root, trace=trace, **params)
+        return _memory_recall_rows(root, trace=trace, embedder_policy=policy,
+                                   channel=channel, **params)
     import json as _json
     from refmatrix import context as context_mod, telemetry as tel
     inv = tel.invocation_source()
@@ -1075,17 +1202,18 @@ def memory_recall(root: Path, *, query: str | None = None, k: int = 10,
                        recent=bool(recent or session_start))
         session = tel.resolve_event_session(root)
         t.session = session
-        res = _memory_recall_rows(root, trace=trace, **params)
+        res = _memory_recall_rows(root, trace=trace, embedder_policy=policy,
+                                  channel=channel, **params)
     payload = _json.dumps(res, default=str).encode("utf-8")
-    channel = tel.recall_channel(session_start=bool(session_start), stdin_json=False,
-                                 recent=bool(recent or session_start), invocation=inv)
+    ev_channel = tel.recall_channel(session_start=bool(session_start), stdin_json=False,
+                                    recent=bool(recent or session_start), invocation=inv)
     rows = res.get("memories") or []
-    tel.emit_call(root, channel=channel, invocation=inv, session=session,
+    tel.emit_call(root, channel=ev_channel, invocation=inv, session=session,
                   query_id=t.query_id,
                   retrieved=[tel.recall_item(r, rank=i) for i, r in enumerate(trace, 1)],
                   delivered=context_mod.name_spans(
                       payload, [tel.recall_item(r, rank=i) for i, r in enumerate(rows, 1)]),
-                  payload=payload, block_id=tel.RECALL_BLOCK_IDS[channel],
+                  payload=payload, block_id=tel.RECALL_BLOCK_IDS[ev_channel],
                   turn=_live_turn(root, session))
     return res
 
@@ -1095,29 +1223,164 @@ def _live_turn(root: Path, session: "str | None") -> "int | None":
     return stm_mod.live_turn(root, session)
 
 
+def _dense_legs(root: Path, *, query: str, k: int, kinds: "list[str] | None", fuse: bool,
+                rerank: "bool | None", partition: str, left: Callable[[float], float],
+                retries: int, warnings: "list[str]", embedder_policy: str
+                ) -> "tuple[list[dict], Callable[[int], dict | None]]":
+    """The dense recall's three legs, in THE order (task 25.1 R5, r4 #n1, d10):
+
+    1. the replica leg with the HUB's shared worker only (skipped under
+       `RMX_RECALL_REPLICA_FIRST=0`, read in this process): lock-free, never waits on the writer;
+    2. otherwise the daemon RPC (its warm embedder, its rerank default);
+    3. only when step 2 raises `VerbAbsentError` (no daemon), and only under
+       `embedder_policy="shared"`: the replica leg again, embedding through
+       `recall.shared_embedder(root)` (private worker, else the cached in-process model).
+       Under "hub_only" (the hook modes: a spawn or a model load is 6-33 s against a 5 s
+       budget) the absent daemon raises `VerbAbsentError(RECALL_ABSENT_MSG)`.
+
+    So a live daemon always answers before any caller spawns a worker or loads a model.
+    Returns `(hits, fetch)`: hits best-first in the RPC shape, and the row resolver of the leg
+    that served (a replica hit is fetched from the same replica, a daemon hit from the
+    daemon). `warnings` gains the leg (and embedder) that served."""
+    from refmatrix import recall as recall_mod
+    if embedder_policy not in recall_mod.EMBEDDER_POLICIES:
+        raise VerbArgsError(f"embedder_policy must be one of {recall_mod.EMBEDDER_POLICIES}, "
+                            f"got {embedder_policy!r}")
+    if recall_mod.replica_first_enabled():
+        r = recall_mod.replica_memory_recall(
+            root, partition=partition, query=query, k=k, kinds=kinds, fuse=fuse,
+            rerank=rerank, left=left, warnings=warnings, embedder_policy="hub_only")
+        if r is not None:
+            warnings.append(f"{RECALL_LEG_PREFIX}replica snapshot (embedder: {r['embedder']}; "
+                            f"rerank default resolved in this process)")
+            return r["hits"], r["fetch"]
+    try:
+        res = _call(root, "memory_recall",
+                    payload_memory_recall(query, k=k, kinds=kinds, fuse=fuse, rerank=rerank,
+                                          partition=partition),
+                    timeout=left(180.0), retries=retries)
+    except VerbAbsentError as e:
+        # `from e`, never `from None` (2026-11-13): a refused connect AFTER a good ping is a
+        # transport fact (ConnectionRefusedError under the classifier's VerbAbsentError), and
+        # the hook's recorder types its row by that raw cause (task 21.1 R4), not by these words.
+        if embedder_policy != "shared":
+            raise VerbAbsentError(RECALL_ABSENT_MSG) from e
+        r = recall_mod.replica_memory_recall(
+            root, partition=partition, query=query, k=k, kinds=kinds, fuse=fuse,
+            rerank=rerank, left=left, warnings=warnings, embedder_policy="shared")
+        if r is None:
+            raise VerbAbsentError(RECALL_ABSENT_MSG) from e
+        # A DEGRADED leg, so a real warning, not a `recall leg:` report (rev 7 F6, 2026-11-13):
+        # no daemon answered and this process embedded the query itself (a private worker or
+        # an in-process model, 6-33 s) -- the CLI says it on every run, as AC-4 (g) requires.
+        warnings.append(f"no daemon: recall served from the replica snapshot "
+                        f"(embedder: {r['embedder']})")
+        return r["hits"], r["fetch"]
+    # An unreranked answer says so (ch-bsd r7 #s-1).
+    warnings.extend(res.get("warnings") or [])
+    warnings.append(f"{RECALL_LEG_PREFIX}daemon RPC (the daemon's embedder and rerank default)")
+
+    def fetch(eid: int) -> "dict | None":
+        # Typed and one attempt under the deadline (bsd-plan3-r4 #s-3).
+        m = _call(root, "memory_get", {"id": eid, "partition": partition},
+                  timeout=left(30.0), retries=retries).get("memory")
+        if m is None and kinds and "doc" in kinds:
+            # A `kind=doc` hit (the CLI's old doc leg, task 25.1 R5): its entity and file body,
+            # read from the verb-layer snapshot (never the writer slot under a live daemon).
+            m = snapshot_read(root, lambda s: {"row": recall_mod.entity_row(s, eid, kinds)},
+                              partition=partition)["row"]
+        return m
+    return list(res.get("hits", [])), fetch
+
+
+def _hit_id(h: dict) -> "int | None":
+    eid = h.get("id") or h.get("entity_id")
+    return None if eid is None else int(eid)
+
+
+def _rank_order(hits: "list[dict]") -> "list[dict]":
+    """Best first: an L2 `distance` ascending, else a `score` (RRF or cross-encoder logit)
+    descending -- the order every dense leg's hits are read in."""
+    return sorted(hits, key=lambda h: (
+        h["distance"] if h.get("distance") is not None else -(h.get("score") or 0.0)))
+
+
+def _dense_rows(hits: "list[dict]", fetch: Callable[[int], "dict | None"], patterns,
+                k: int, fetched: "dict[int, dict | None]") -> "list[dict]":
+    """The first `k` hits, in order, whose rows pass the recall exclusion, each annotated with
+    its hit's ranking fields. `fetched` caches rows by id across calls, so the rerank-exempt
+    pass (two orders over one pool) does not fetch a row twice."""
+    rows: list[dict] = []
+    for h in hits:
+        if len(rows) >= k:
+            break
+        eid = _hit_id(h)
+        if eid is None:
+            continue
+        if eid not in fetched:
+            fetched[eid] = fetch(eid)
+        m = fetched[eid]
+        if m and recall_rows_filter([m], patterns):
+            rows.append(annotate_hit(dict(m), h))
+    return rows
+
+
+# Rows a cross-encoder must not reorder (task 25.1 rev 7 J3): a subject is a compile label whose
+# members are the hits; scored against a prompt it sinks to the bottom of every rerank.
+RERANK_EXEMPT_MTYPES = frozenset({"subject"})
+
+
+def place_rerank_exempt(pre: "list[dict]", ranked: "list[dict]", k: int) -> "list[dict]":
+    """Merge two orders of ONE recall (task 25.1 rev 7 J3/J4, 2026-11-13): `pre` is the
+    unreranked answer with the exempt rows in it, `ranked` the reranked answer without them.
+    Each exempt row of `pre` keeps its index; every other slot takes the next `ranked` row, so
+    the non-exempt rows read exactly as the reranked answer does. An exempt row is marked
+    `rerank_exempt` (its `score` is the unreranked one, not a cross-encoder logit). When
+    `ranked` runs out before `pre` does, the remaining exempt rows follow in `pre` order."""
+    out: list[dict] = []
+    rest = iter(ranked)
+    for row in pre:
+        if len(out) >= k:
+            break
+        if row.get("mtype") in RERANK_EXEMPT_MTYPES:
+            row["rerank_exempt"] = True
+            out.append(row)
+            continue
+        nxt = next(rest, None)
+        if nxt is not None:
+            out.append(nxt)
+    for row in rest:
+        if len(out) >= k:
+            break
+        out.append(row)
+    return out
+
+
 def _memory_recall_rows(root: Path, *, query: str | None = None, k: int = 10,
                         scope: str = "project", kinds: list[str] | None = None,
                         fuse: bool = False, rerank: bool | None = None,
                         since_seconds: float | None = None, since: str | None = None,
                         recent: bool = False, session_start: bool = False,
                         exclude_mtype: list[str] | None = None,
-                        include_session: bool = False, subject: str | None = None,
+                        include_session: bool = False, include_subjects: bool = False,
+                        subject: str | None = None,
                         degree: int = 0, partition: str | None = None,
-                        timeout: float | None = 30.0, trace: "list | None" = None) -> dict:
-    """ONE implementation of "which memories come back" for the CLI hook
-    modes and the MCP tool (2026-09-14: the session-start default window,
-    the widen-when-empty rule and the session/* exclusion lived only in
-    cli.py, so agents calling the tool got different answers than the hook).
+                        pack: bool = False, max_bytes: int | None = None,
+                        timeout: float | None = 30.0, trace: "list | None" = None,
+                        embedder_policy: str = "shared",
+                        channel: "str | None" = None) -> dict:
+    """ONE implementation of "which memories come back" for the CLI (hook and interactive) and
+    the MCP tool (2026-09-14: the session-start default window, the widen-when-empty rule and
+    the session/* exclusion lived only in cli.py; task 25.1 R5, 2026-11-11: so did the
+    replica-first dense leg and the `kind=doc` leg).
 
     Returns {"memories": rows, "mode": "session-start|recent|subject|dense",
-    "widened": bool, "since_seconds": float|None, "warnings": [str]}.
-    Daemon-routed; raises VerbError when the project store's daemon is down
-    (a surface with a lock-free replica may degrade on its own via
-    `recent_rows`). Dense rows carry `score`/`distance`/`fused`
-    (`annotate_hit`)."""
+    "widened": bool, "since_seconds": float|None, "warnings": [str]} and, when `pack`, the
+    pack fields `text`, `spans`, `named`, `more`, `payload_bytes` (R4: packed ONCE, here, on
+    the final rows). Dense rows carry `score`/`distance`/`fused` (`annotate_hit`)."""
     import time as _time
-    patterns = (list(exclude_mtype) if exclude_mtype is not None
-                else ([] if include_session else ["session/*"]))
+    patterns = recall_patterns(exclude_mtype, include_session=include_session,
+                               include_subjects=include_subjects)
     warnings: list[str] = []
     widened = False
     since_defaulted = False
@@ -1168,18 +1431,19 @@ def _memory_recall_rows(root: Path, *, query: str | None = None, k: int = 10,
         if want_project:
             r = _call(root, "subject_leaves", {"subject": subject, "partition": partition},
                       timeout=_left(60.0), retries=_retries)
-            project_rows = [row for row in r.get("rows", [])
-                            if not mt_excluded(row.get("mtype"), patterns)][:k]
+            project_rows = recall_rows_filter(r.get("rows", []), patterns)[:k]
             if trace is not None:
                 trace.extend(project_rows)
       elif recent:
         mode = "session-start" if session_start else "recent"
         if want_project:
             def _fetch(since_s, limit):
-                return _call(root, "memory_recent", {"since_seconds": since_s,
-                                                     "limit": limit,
-                                                     "partition": partition},
-                             timeout=_left(60.0), retries=_retries).get("rows", [])
+                # A stale subject never comes back, include_subjects or not (AC-6).
+                return recall_rows_filter(
+                    _call(root, "memory_recent", {"since_seconds": since_s,
+                                                  "limit": limit,
+                                                  "partition": partition},
+                          timeout=_left(60.0), retries=_retries).get("rows", []), [])
             project_rows, widened = recent_rows(
                 _fetch, k=k, patterns=patterns, since_seconds=since_seconds,
                 widen_if_empty=since_defaulted)
@@ -1189,55 +1453,77 @@ def _memory_recall_rows(root: Path, *, query: str | None = None, k: int = 10,
                 since_seconds = None
       else:
         if want_project:
-            ann_k = k * 3 if patterns else k
-            r = _call(root, "memory_recall",
-                      payload_memory_recall(query, k=ann_k, kinds=kinds, fuse=fuse,
-                                            rerank=rerank, partition=partition),
-                      timeout=_left(180.0), retries=_retries)
-            # An unreranked answer says so (ch-bsd r7 #s-1).
-            warnings.extend(r.get("warnings") or [])
-            hits = sorted(r.get("hits", []), key=lambda h: (
-                h["distance"] if h.get("distance") is not None
-                else -(h.get("score") or 0.0)))
+            # Over-fetch when rows will be filtered out. Under `include_subjects` the reranked
+            # pass below filters the subjects out, and it must fetch the pool the call without
+            # the opt-in fetches, or its rows would not be that call's (rev 7 J3).
+            ann_k = k * 3 if (patterns or include_subjects) else k
+
+            def _dense(rr: "bool | None", ws: "list[str]"):
+                hs, fe = _dense_legs(root, query=query, k=ann_k, kinds=kinds, fuse=fuse,
+                                     rerank=rr, partition=partition, left=_left,
+                                     retries=_retries, warnings=ws,
+                                     embedder_policy=embedder_policy)
+                return _rank_order(hs), fe
+
+            hits, fetch = _dense(rerank, warnings)
             if trace is not None:
                 trace.extend(hits)       # every hit is retrieved, filtered or not (R11)
-            for h in hits:
-                if len(project_rows) >= k:
-                    break
-                eid = h.get("id") or h.get("entity_id")
-                if eid is None:
-                    continue
-                # Typed and one attempt under the deadline (bsd-plan3-r4
-                # #s-3): a bare call here leaked a raw TimeoutError out of
-                # the MCP tool.
-                m = _call(root, "memory_get", {"id": eid, "partition": partition},
-                          timeout=_left(30.0), retries=_retries).get("memory")
-                if m and not mt_excluded(m.get("mtype"), patterns):
-                    project_rows.append(annotate_hit(m, h))
+            fetched: "dict[int, dict | None]" = {}
+            if include_subjects and any(h.get("reranked") for h in hits):
+                # Rev 7 J3 (2026-11-13, spec #j3-subjects-exempt): a subject row is a LABEL a
+                # cross-encoder cannot score against a prompt -- the daemon's default rerank
+                # put the 4 live subjects of the fixture at ranks 32-35 of 36, so the opt-in
+                # never showed one. Subjects are exempt: the non-subject rows are the reranked
+                # answer's (exactly what the call without the opt-in returns), and each subject
+                # keeps the index it has in the unreranked answer. Only when a rerank ran.
+                pre_ws: list[str] = []
+                pre_hits, pre_fetch = _dense(False, pre_ws)
+                warnings.extend(w for w in pre_ws if w not in warnings)
+                if trace is not None:
+                    seen = {_hit_id(h) for h in hits}
+                    trace.extend(h for h in pre_hits if _hit_id(h) not in seen)
+                ranked = _dense_rows(hits, fetch, [*patterns, *sorted(RERANK_EXEMPT_MTYPES)],
+                                     k, fetched)
+                pre = _dense_rows(pre_hits, pre_fetch, patterns, k, fetched)
+                project_rows = place_rerank_exempt(pre, ranked, k)
+            else:
+                project_rows = _dense_rows(hits, fetch, patterns, k, fetched)
       for r in project_rows:
         r["scope"] = "project"
 
       rows = project_rows
       if scope != "project":
         gk = k * 10 if patterns else k
-        # The caller's budget is checked OUTSIDE the global leg's handler: a spent
-        # budget is this call's busy and propagates. Inside, every VerbError is the
+        # The caller's budget is checked OUTSIDE the global leg's handler (a spent budget is
+        # this call's, not the global store's: see below). Inside, every VerbError is the
         # GLOBAL store's — since task 3.7 R53 typed it, a held global daemon is a
         # VerbBusyError too, and on scope=both it is a warning beside the project
         # rows, never a reason to throw them away (as the CLI twin's leg does).
-        g_timeout = _left(30.0)
+        # Task 25.1 R5 (2026-11-13): every CLI caller now reaches this leg (the CLI's own
+        # global leg is gone), so the CLI's rule for a budget spent BEFORE this leg moves
+        # here: on scope=both the project rows already answered within the budget and come
+        # back with "global rows omitted" (the live 2026-09-15 hook incident that
+        # tests/test_plan2_remedy_r6.py pins); on scope=global there is nothing else: busy.
+        grows: list[dict] = []
         try:
-            grows = [row for row in global_recall_rows(
-                query or None, k=gk, recent=bool(recent) and not subject,
-                since_s=since_seconds, timeout=g_timeout, retries=_retries)
-                if not mt_excluded(row.get("mtype"), patterns)]
-            if trace is not None:
-                trace.extend(grows)
-        except VerbError as e:
+            g_timeout = _left(30.0)
+        except VerbBusyError as e:
             if scope == "global":
                 raise
             warnings.append(f"global rows omitted: {e}")
-            grows = []
+            g_timeout = None
+        if g_timeout is not None:
+            try:
+                grows = recall_rows_filter(global_recall_rows(
+                    query or None, k=gk, recent=bool(recent) and not subject,
+                    since_s=since_seconds, timeout=g_timeout, retries=_retries), patterns)
+                if trace is not None:
+                    trace.extend(grows)
+            except VerbError as e:
+                if scope == "global":
+                    raise
+                warnings.append(f"global rows omitted: {e}")
+                grows = []
         rows = merge_scope(project_rows, grows, k, scope)
       rows = attach_context(root, rows, degree, partition, warnings,
                             timeout=_left(120.0) if degree > 0 else 120.0)
@@ -1247,8 +1533,13 @@ def _memory_recall_rows(root: Path, *, query: str | None = None, k: int = 10,
                 f"recall not confirmed within {timeout:g}s ({e}) — daemon busy; "
                 f"the hook skipped this turn") from e
         raise
-    return {"memories": rows, "mode": mode, "widened": widened,
-            "since_seconds": since_seconds, "warnings": warnings}
+    out = {"memories": rows, "mode": mode, "widened": widened,
+           "since_seconds": since_seconds, "warnings": warnings}
+    if pack:
+        out.update(pack_recall(root, rows, mode=mode, query=query, k=k, max_bytes=max_bytes,
+                               channel=channel, since=since if not widened else None,
+                               subject=subject, warnings=warnings))
+    return out
 
 
 @verb("rmx_ingest",
@@ -1650,20 +1941,45 @@ def ingest_status(root: Path, *, job_id: str | None = None,
 
 @verb("rmx_recall_state", "Recall session state — pull the prior handoff and orient (read-only). Returns: the latest save-state handoff (prior git/focus/tasks/recent-memory links), the live session's STM focus digest (top symbols, topics, milestones, intent arc), recent memories, current git state, daemon health, and anomalies (dirty tree, unmerged/undeployed commits, stale daemon). Mirror of rmx_save_state.")
 def recall_state(root: Path, *, session: str | None = None,
-                 memory_dir: str | None = None) -> dict:
+                 memory_dir: str | None = None, max_bytes: int | None = None) -> dict:
+    """The resume report. With `max_bytes` (task 25.1 R11: the SessionStart `compact|clear`
+    hook runs `rmx recall-state --max-bytes N`), it also carries `text` -- the report rendered
+    by `handoff.recall_state_blocks` and fitted, whole blocks only, to N UTF-8 bytes, with a
+    trailer naming `rmx recall-state` when anything was cut -- and `payload_bytes`.
+
+    A memdir that exists but cannot be read is a `VerbError` with one line of words (the user's
+    2026-11-10 rule: a failure fails loudly on the console, never as a traceback); no daemon is
+    NOT a failure -- the file-based blocks (handoff, git) still render and the daemon block
+    says it is not running."""
+    import os as _os
     from refmatrix import handoff, stm as stm_mod
     repo = Path(root).parent
+    memdir = (Path(memory_dir).resolve() if memory_dir
+              else handoff.default_memory_dir(repo))
+    if memdir.exists() and not _os.access(memdir, _os.R_OK | _os.X_OK):
+        raise VerbError(f"recall-state: the memory dir {memdir} is not readable")
     # The pointer-error clauses are read BEFORE this call resolves its session: a read that
     # misses records a row, and the report is about the rows that were there (task 21.1 D6).
     pointer_clauses = handoff.session_pointer_anomalies(root)
     sess, source = resolve_session_source(root, session, purpose="read")
     s = stm_mod.Stm(root, sess)
-    memdir = (Path(memory_dir).resolve() if memory_dir
-              else handoff.default_memory_dir(repo))
-    rep = handoff.compose_recall_state(s, root, repo=repo, memdir=memdir,
-                                       pointer_anomalies=pointer_clauses)
+    try:
+        rep = handoff.compose_recall_state(s, root, repo=repo, memdir=memdir,
+                                           pointer_anomalies=pointer_clauses)
+    except OSError as e:
+        raise VerbError(f"recall-state: {type(e).__name__}: {e}") from e
     rep.setdefault("session", sess)
     rep.setdefault("session_source", source)
+    if max_bytes is not None:
+        from refmatrix import hook_budget
+        try:
+            n = hook_budget.resolve("recall_state", max_bytes)
+        except ValueError as e:
+            raise VerbArgsError(str(e)) from e
+        text, dropped = handoff.fit_recall_state(rep, n)
+        rep["text"] = text
+        rep["payload_bytes"] = hook_budget.nbytes(text)
+        rep["blocks_dropped"] = dropped
     return rep
 
 
@@ -1760,9 +2076,11 @@ _RECALL_FORWARD = ("query", "k", "scope", "since", "since_seconds", "recent",
 _MEMORY_DESCRIPTIONS = {
     # bug-198 (2026-11-10): the two scope keys are two vocabularies, so each
     # says which action reads it and what its values mean.
-    "scope": "recall only — project: this store; global: the shared behavior "
-             "store; both: round-robin merge. Refused by brief (its compile "
-             "scope is `compile_scope`); ignored by every other action",
+    "scope": "recall — project: this store; global: the shared behavior "
+             "store; both: round-robin merge. get — project (default) or global: "
+             "global reads the shared behavior store, never a same-named project "
+             "row. Refused by brief (its compile scope is `compile_scope`); ignored "
+             "by every other action",
     "compile_scope": "brief only — the memory-compile scope whose corpus all four "
                      "detectors read: memory (default; every memory except "
                      "impressions and `tag: pattern` docs) or pattern (impressions "
@@ -1854,6 +2172,8 @@ def memory(root: Path, action: typing.Literal[
         if rem <= 0:
             raise VerbBusyError(f"memory {action} not confirmed within {budget:g}s — daemon busy")
         return min(default, rem)
+    if action == "get" and scope not in (None, "project"):
+        return _memory_get_global(root, name=name, id=id, scope=scope, left=_left)
     part = partition or memory_partition(root, timeout=_left(10.0) if budgeted else None)
     require_daemon(root, retries=0 if budgeted else 2)  # busy is typed, never "not running"
     if action == "promote":
@@ -1902,6 +2222,37 @@ def memory(root: Path, action: typing.Literal[
         if warns:
             res = {**res, "tag_warnings": warns}
     return res
+
+
+def _memory_get_global(root: Path, *, name: "str | None", id: "int | None", scope: str,
+                       left: Callable[[float], float]) -> dict:
+    """`memory get --scope global` (task 25.1 R6, 19.1 R6): the row from the GLOBAL store,
+    through its daemon, never a same-named project row -- the fetch pointer a packed global hit
+    prints. One attempt under the read budget; the transport failure is typed by THE
+    classifier, as on the recall's global leg."""
+    from refmatrix import hub as hub_mod
+    if scope != "global":
+        raise VerbArgsError(f"memory get: scope must be project or global, got {scope!r}")
+    if id is None and not name:
+        raise VerbArgsError("memory get requires 'id' or 'name'")
+    key = {"id": int(id)} if id is not None else {"name": name}
+    groot = hub_mod.global_store_root()
+    if not groot.exists():
+        raise VerbAbsentError(f"no global store at {groot}")
+    t = left(MEMORY_READ_BUDGET_S)
+    try:
+        resp = hub_mod.global_call("memory_get", key, timeout=t, retries=0)
+    except Exception as e:  # noqa: BLE001 -- transport-level; typed by THE classifier
+        c = classify_transport_error(e, op="memory_get", root=groot, timeout=t)
+        raise type(c)(f"global store: {c}") from e
+    if not resp.get("ok"):
+        raise VerbError(f"global store memory_get failed: {resp.get('error')}")
+    m = (resp.get("result") or {}).get("memory")
+    if m is not None:
+        m["scope"] = "global"
+        if id is None and name:
+            emit_memory_get_used(root, name, scope="global")
+    return {"memory": m}
 
 
 # A compile reads the memory vector matrix and holds the writer for the plan AND
@@ -2031,15 +2382,23 @@ def _hub_rpc(op: str, args: "dict | None" = None) -> dict:
     return resp.get("result", {})
 
 
-@verb("rmx_bus_pub", "Publish a message to the agent bus (proj:<name>:<topic> or global:<topic>). `from` defaults to this server's project; pass `reply_to` (a prior message id) to thread a reply.", aliases={"from": "sender"})
+@verb("rmx_bus_pub", "Publish a message to the agent bus (proj:<name>:<topic> or global:<topic>). `from` defaults to this server's project; pass `reply_to` (a prior message id) to thread a reply. `about` tags the message with the project it concerns (default: the <name> of a proj:<name>: channel); it is a tag, never a store lookup. `project` is the transport target like on every tool: publish FROM that registered store.", aliases={"from": "sender"},
+      descriptions={"about": "The project this message is about: a free tag stored on the "
+                             "message (the hub row's `project`), never resolved to a store. "
+                             "Default: the <name> of a proj:<name>:<topic> channel."})
 def bus_pub(root: Path, channel: str, body: str, *, type: str = "announce",
-            sender: str | None = None, project: str | None = None,
+            sender: str | None = None, about: str | None = None,
             reply_to: str | None = None) -> dict:
-    if project is None and channel.startswith("proj:"):
+    """Why `about` (task 25.1 #r10-bus, user decision 2026-11-10, built rev 7 F1 2026-11-13):
+    `project` was both the MCP transport target and this verb's message tag, and the transport
+    reads the key first -- so tagging a message about a project with no store raised under
+    R10, and a known name both moved the sender AND tagged the row. The tag is `about`;
+    `project` is only the transport's (`mcp._resolve_root`)."""
+    if about is None and channel.startswith("proj:"):
         parts = channel.split(":")
-        project = parts[1] if len(parts) > 1 else None
+        about = parts[1] if len(parts) > 1 else None
     return _hub_rpc("bus_pub", {"channel": channel, "body": body, "type": type,
-                                "from": _bus_sender(root, sender), "project": project,
+                                "from": _bus_sender(root, sender), "project": about,
                                 "reply_to": reply_to})
 
 

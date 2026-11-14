@@ -56,15 +56,20 @@ def test_drain_behind_an_oversized_head_file_reports_what_it_kept_on_stderr(root
     assert r.exit_code == 0, r.output
     after = sorted(p.name for p in gmd_curator.curator_spool_dir(root).glob("*.jsonl"))
     assert after == before == sorted([head, *newer]), "data safety (R-B1) regressed"
-    assert "curator-queue: 15" in r.stdout and "+5 more" in r.stdout, r.stdout
+    # Task 25.1 R0b (2026-11-13 contract update): the line is fitted to
+    # budget("curator_status") (500 B), so the trailer reads `+N more path(s) not shown within
+    # 500 B` with N >= the 5 past `--limit`; the keep notice below still names `--limit`.
+    m = re.search(r"\+(\d+) more", r.stdout)
+    assert "curator-queue: 15" in r.stdout and m and int(m.group(1)) >= 5, r.stdout
     assert "kept" not in r.stdout, f"the keep notice belongs on stderr: {r.stdout!r}"
     err = r.stderr or ""
     assert re.search(r"\bkept 1 spool file", err) and "--limit" in err, (
         "status --drain kept the oversized head spool file without saying so "
         f"(uncounted skip); stderr={err!r}")
-    # Control: once --limit covers the head file, everything shown is drained and the
-    # keep notice is silent.
-    r2 = CliRunner().invoke(cli_mod.main, ["curator", "status", "--drain", "--limit", "100"])
+    # Control: once --limit (and, since 25.1 R0b, `--max-bytes`) covers the head file,
+    # everything shown is drained and the keep notice is silent.
+    r2 = CliRunner().invoke(cli_mod.main, ["curator", "status", "--drain", "--limit", "100",
+                                           "--max-bytes", "100000"])
     assert r2.exit_code == 0, r2.output
     assert "kept" not in (r2.stderr or ""), r2.stderr
 

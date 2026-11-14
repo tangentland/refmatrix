@@ -1,0 +1,36 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+.F
+=================================== FAILURES ===================================
+____ test_ac9_pack_hook_lines_first_whole_bodies_arithmetic_and_bytes[4000] ____
+
+n = 4000
+
+    @pytest.mark.parametrize("n", [2000, 4000, 9000])
+    def test_ac9_pack_hook_lines_first_whole_bodies_arithmetic_and_bytes(n):
+        """R3/R8 on a multibyte fixture: hook lines for ALL named hits before any body; bodies are
+        whole and ⊆ named; a body is never a second named hit; named + trailer N = hits given;
+        ≤ N UTF-8 bytes; payload_bytes is the byte length (AC-2, AC-9, AC-14)."""
+        rows = [_urow(i, body=300 + 120 * i) for i in range(20)]
+        p = _pack_unit(rows, max_bytes=n)
+        raw = p.text.encode("utf-8")
+        assert len(raw) <= n and p.payload_bytes == len(raw)
+        pk = s.Pack(raw)
+        assert pk.named == list(p.named) and len(set(pk.named)) == len(pk.named)
+        assert len(pk.named) + pk.more == len(rows) and p.more == pk.more
+        assert set(pk.bodied) <= set(pk.named)
+        last_hook = max(p.text.index(m.group(0)) for m in pk.hook_lines)
+        for b in pk.bodied:
+            content = next(r["content"] for r in rows if r["name"] == b)
+            assert content in p.text, f"body of {b} is cut"
+>           assert p.text.index(content) > last_hook, f"body of {b} precedes a hook line"
+E           AssertionError: body of u_mem_00 precedes a hook line
+E           assert 67 > 2841
+E            +  where 67 = <built-in method index of str object at 0x1463a6600>('# Unit title 0 {#root}\n\nFirst sentence of u_mem_00 — → — → unit.\n\nBODYMARK u_mem_00 — the body → whole.\nbody lin... →\nbody line — → — →\nbody line — → — →\nbody line — → — →\nbody line — → — →\nbody line — → — →\nbody line — → — →\n')
+E            +    where <built-in method index of str object at 0x1463a6600> = '# rmx recall · session_start · 20 hits · budget 4000 B\n## u_mem_00\n# Unit title 0 {#root}\n\nFirst sentence of u_me...mem_18)\n- u_mem_19 — Unit title 19 — row → 19 — HOOK-u_mem_19 — curated → pointer → 9019  (rmx memory get u_mem_19)\n'.index
+E            +      where '# rmx recall · session_start · 20 hits · budget 4000 B\n## u_mem_00\n# Unit title 0 {#root}\n\nFirst sentence of u_me...mem_18)\n- u_mem_19 — Unit title 19 — row → 19 — HOOK-u_mem_19 — curated → pointer → 9019  (rmx memory get u_mem_19)\n' = Packed(text='# rmx recall · session_start · 20 hits · budget 4000 B\n## u_mem_00\n# Unit title 0 {#root}\n\nFirst sent...m_12', 'u_mem_13', 'u_mem_14', 'u_mem_15', 'u_mem_16', 'u_mem_17', 'u_mem_18', 'u_mem_19'], more=0, payload_bytes=3488).text
+
+tests/test_task25_1_recall_budget.py:265: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_pack_hook_lines_first_whole_bodies_arithmetic_and_bytes[4000]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 1 passed in 0.23s

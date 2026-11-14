@@ -874,6 +874,7 @@ def scan_prompt(
     degree: int = 0,
     rerank_timeout: float = 5.0,
     trace: "dict | None" = None,
+    max_bytes: "int | None" = None,
 ) -> str:
     """Emit context bundles for a prompt's symbols.
 
@@ -885,11 +886,18 @@ def scan_prompt(
     topic-composite subgraph of the session's current focus — a running
     aggregate of every prompt+result — budgeted SEPARATELY by
     `composite_max_tokens`, independent of `max_tokens`. Text mode only; JSON
-    output is unchanged."""
+    output is unchanged.
 
-    def _compose(sym_text: str) -> str:
+    `max_bytes` (task 25.1 R0b, 2026-11-11): the TEXT render is fitted to at most that many
+    UTF-8 bytes by `hook_budget.fit_blocks`, in its existing render order (content block,
+    per-symbol bundles, the composite), whole blocks only, with a one-line
+    `# [+N block(s) omitted …]` trailer; `delivered` then names only what the kept blocks
+    carry. scan-prompt reached 11,555 B on its own live (`--max-tokens` is a token estimate,
+    not a byte cap), and Claude Code previews any hook output over 10,000 UTF-16 units."""
+
+    def _composite_text() -> str:
         if not composite or composite_root is None or fmt == "json":
-            return sym_text
+            return ""
         try:
             from .composite import build_topic_composite
             comp = build_topic_composite(
@@ -898,9 +906,7 @@ def scan_prompt(
                 every=composite_every, intra_edges=composite_intra_edges)
         except Exception:
             comp = ""
-        if not comp:
-            return sym_text
-        return (sym_text + "\n\n" + comp) if sym_text else comp
+        return comp or ""
 
     cands = extract_candidates(prompt)
     matches = match_concepts(
@@ -998,8 +1004,22 @@ def scan_prompt(
             it["rank"] = rank
         trace["delivered"] = delivered
 
-    def _finish(text: str) -> str:
-        """Resolve each rendered section's spans to offsets in the joined text."""
+    def _finish() -> str:
+        """Join the rendered sections (+ the composite), fit them to `max_bytes` when set,
+        and resolve each KEPT section's spans to offsets in the joined text."""
+        comp = _composite_text()
+        blocks = [p + "\n" for p in parts[:-1]] + parts[-1:]
+        if comp:
+            blocks.append(("\n\n" + comp) if "".join(blocks) else comp)
+        kept = len(blocks)
+        if max_bytes is not None:
+            from refmatrix.hook_budget import fit_blocks
+            f = fit_blocks(blocks, int(max_bytes),
+                           trailer=lambda n: f"# [+{n} block(s) omitted by --max-bytes "
+                                             f"{int(max_bytes)}]")
+            text, kept = f.text, f.kept
+        else:
+            text = "".join(blocks)
         if trace is None:
             return text
         _set_retrieved()
@@ -1009,6 +1029,8 @@ def scan_prompt(
             pos += len(p.encode("utf-8")) + 1
         delivered = []
         for idx, items in marks:
+            if idx >= kept:
+                continue                  # a block the budget dropped delivers nothing
             for it in items:
                 it = dict(it)
                 it["offset_bytes"] += offs[idx]
@@ -1057,7 +1079,7 @@ def scan_prompt(
             for e in entries:
                 shown.add(_render_key(e.entity.name))
     if not matches:
-        return _compose(_finish("\n".join(parts)))
+        return _finish()
     parts.append("")
     parts.append(
         f"# refmatrix context for prompt-mentioned symbols: {', '.join(matches)}")
@@ -1090,4 +1112,4 @@ def scan_prompt(
         for entries in b.groups.values():
             for e in entries:
                 shown.add(_render_key(e.entity.name))
-    return _compose(_finish("\n".join(parts)))
+    return _finish()

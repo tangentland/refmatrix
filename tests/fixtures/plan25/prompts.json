@@ -1,0 +1,5 @@
+{
+ "question": "how does the quasar ledger reconcile flux batches across zorbulate shards",
+ "ack": "yes next",
+ "symbol": "zorbulate_shard_merge"
+}

@@ -1,0 +1,31 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+_________ test_ac4g_interactive_no_daemon_no_hub_uses_shared_embedder __________
+
+offline = {'a': <tests.task25_1_support.Fixture object at 0x113d742d0>, 'b': <tests.task25_1_support.Fixture object at 0x111f415...('/private/tmp/rmx-jmdlyohe/p25o-x6yc2_3x'), 'home': PosixPath('/private/tmp/rmx-jmdlyohe/p25o-x6yc2_3x/g/.refmatrix')}
+
+    def test_ac4g_interactive_no_daemon_no_hub_uses_shared_embedder(offline):
+        """AC-4 (g): no daemon, no hub worker, INTERACTIVE: `rmx memory recall "q" --json` answers
+        from the replica with the query embedded by `recall.shared_embedder` (a private worker in
+        the sandbox), exit 0, and the warnings name the private worker. HEAD: exit 1 "needs the
+        daemon up …"."""
+        b = offline["b"]
+        r = s.rmx(b, "memory", "recall", QUESTION, "--json", "--k", "6",
+                  RMX_HOME=str(offline["home"]), RMX_MODEL_SOCK=str(offline["base"] / "none.sock"))
+        assert r.returncode == 0, f"AC-4 (g): exit {r.returncode}: {r.stderr[-600:]}"
+        names = {m["name"] for m in json.loads(r.stdout)}
+        assert names and names <= _named_b(offline), names
+>       assert "private" in r.stderr.lower(), f"AC-4 (g): no warning names the private worker: " \
+                                              f"{r.stderr[-600:]}"
+E       AssertionError: AC-4 (g): no warning names the private worker: # rmx: warning: rerank skipped: shared worker unavailable; hits unreranked
+E         
+E       assert 'private' in '# rmx: warning: rerank skipped: shared worker unavailable; hits unreranked\n'
+E        +  where '# rmx: warning: rerank skipped: shared worker unavailable; hits unreranked\n' = <built-in method lower of str object at 0x113dfc930>()
+E        +    where <built-in method lower of str object at 0x113dfc930> = '# rmx: warning: rerank skipped: shared worker unavailable; hits unreranked\n'.lower
+E        +      where '# rmx: warning: rerank skipped: shared worker unavailable; hits unreranked\n' = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', 'how does the q...  "scope": "project"\n  }\n]\n', stderr='# rmx: warning: rerank skipped: shared worker unavailable; hits unreranked\n').stderr
+
+tests/test_task25_1_recall_budget.py:843: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac4g_interactive_no_daemon_no_hub_uses_shared_embedder
+1 failed, 1 passed in 30.54s

@@ -1,0 +1,69 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+___ test_ac6_include_subjects_brings_live_subjects_back_never_the_stale_one ____
+
+fx = <tests.task25_1_support.Fixture object at 0x107a7ecf0>
+
+    def test_ac6_include_subjects_brings_live_subjects_back_never_the_stale_one(fx):
+        """AC-6 on the per-prompt argv: with `--include-subjects`, live subjects are named and the
+        stale one never is.
+    
+        Rev 7 J3 (2026-11-13, spec #j3-subjects-exempt, a PRODUCT fix): a subject row is a label a
+        cross-encoder cannot score against a prompt (the daemon's default rerank put the 4 live
+        subjects at ranks 32-35 of 36, so the opt-in never showed one). With `include_subjects`
+        subjects are EXEMPT from the rerank; non-subject rows rerank AS TODAY. So the fix cannot
+        be "turn the rerank off": the project non-subject hits of the opt-in run are a prefix of
+        the default run's (which excludes subjects and is reranked), the subjects only taking
+        slots. The rerank is per (query, doc) pair, so the order among non-subjects cannot depend
+        on whether subjects ride along."""
+        p = _pack(_q(fx, append=" --include-subjects"), "per-prompt argv --include-subjects")
+>       assert set(p.named) & set(s.LIVE_SUBJECTS), p.named
+E       AssertionError: ['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...]
+E       assert ({'fx_dup_x', 'fx_mem_00', 'fx_mem_03', 'fx_mem_10', 'fx_mem_20', 'fx_mem_23', ...} & {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'})
+E        +  where {'fx_dup_x', 'fx_mem_00', 'fx_mem_03', 'fx_mem_10', 'fx_mem_20', 'fx_mem_23', ...} = set(['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...])
+E        +    where ['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...] = <tests.task25_1_support.Pack object at 0x107a7fe00>.named
+E        +  and   {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'} = set(['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'])
+E        +    where ['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'] = s.LIVE_SUBJECTS
+
+tests/test_task25_1_recall_budget.py:1058: AssertionError
+_____ test_ac6_verb_hides_subjects_and_the_stale_one_even_with_the_opt_in ______
+
+fx = <tests.task25_1_support.Fixture object at 0x107a7ecf0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107c92b10>
+
+    def test_ac6_verb_hides_subjects_and_the_stale_one_even_with_the_opt_in(fx, monkeypatch):
+        """AC-6 on the verb: no subject by default; with `include_subjects` the live subjects come
+        back and the stale one never does.
+    
+        Rev 7 J4 (2026-11-13, spec #j3-subjects-exempt): subjects are EXEMPT from the cross-encoder
+        rerank and keep their PRE-rerank rank; non-subject rows rerank as today. Asserted three
+        ways, so neither "rerank off" nor "subjects appended at the end" passes:
+        - pre-check: on this fixture the rerank does reorder the non-subject rows (else the next
+          assertion could not tell a disabled rerank from a working one);
+        - the opt-in's non-subject rows are a prefix of the default (reranked) run's;
+        - each subject sits at the rank it has with `rerank=False` (its pre-rerank rank)."""
+        from refmatrix import verbs
+        monkeypatch.setenv("RMX_HOME", str(fx.home))
+    
+        def names(**kw) -> list[str]:
+            return [m["name"] for m in verbs.memory_recall(fx.root, query=QUESTION, k=12,
+                                                           **kw)["memories"]]
+        base = names()
+        assert not set(base) & set(s.SUBJECTS), base
+        plain = [n for n in names(rerank=False) if n not in s.SUBJECTS]
+        assert plain != base, ("fixture pre-check: the rerank does not reorder the non-subject "
+                               "rows, so a disabled rerank would pass", base)
+        inc = names(include_subjects=True)
+>       assert set(inc) & set(s.LIVE_SUBJECTS), inc
+E       AssertionError: ['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_03', 'fx_mem_23', ...]
+E       assert ({'fx_mem_00', 'fx_mem_01', 'fx_mem_03', 'fx_mem_06', 'fx_mem_10', 'fx_mem_13', ...} & {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'})
+E        +  where {'fx_mem_00', 'fx_mem_01', 'fx_mem_03', 'fx_mem_06', 'fx_mem_10', 'fx_mem_13', ...} = set(['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_03', 'fx_mem_23', ...])
+E        +  and   {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'} = set(['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'])
+E        +    where ['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'] = s.LIVE_SUBJECTS
+
+tests/test_task25_1_recall_budget.py:1101: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac6_include_subjects_brings_live_subjects_back_never_the_stale_one
+FAILED tests/test_task25_1_recall_budget.py::test_ac6_verb_hides_subjects_and_the_stale_one_even_with_the_opt_in
+2 failed in 19.65s

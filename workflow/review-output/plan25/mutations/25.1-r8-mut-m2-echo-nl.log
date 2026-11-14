@@ -1,0 +1,96 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /private/tmp/claude-501/m25-0jSW/r/src/refmatrix as checked-hash (bug-037)
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+__ test_s1_max_bytes_is_n_bytes_on_the_wire_newline_counted[prompt_recall-20] __
+
+fx = <tests.task25_1_support.Fixture object at 0x1149b6900>
+producer = 'prompt_recall', n = 20
+
+    @pytest.mark.parametrize("n", _EDGE_N)
+    @pytest.mark.parametrize("producer", ["prompt_recall", "scan_prompt", "curator_status"])
+    def test_s1_max_bytes_is_n_bytes_on_the_wire_newline_counted(fx, producer, n):
+        """R8 "never over N" on what the agent RECEIVES, at the one place it can fail: a payload of
+        exactly N bytes. Three writers hold back the newline they print -- `_echo_pack`'s
+        `nl=False`, and `cap - 1` handed to `fit_blocks` by `curator status` and `scan-prompt` --
+        and a fixture that never lands on N cannot see any of them go (bsd-251 m2/m3/m4 survived
+        AC-2, AC-7 and AC-12). Each producer runs as the GENERATED hook argv, `--max-bytes N`
+        appended; stdout is taken whole (no rstrip). The second assertion is the fixture's: the
+        payload IS N bytes, so the first one tests the edge and not the interior."""
+        if producer == "prompt_recall":
+            r = _q(fx, append=f" --max-bytes {n}")
+        elif producer == "scan_prompt":
+            cmd = s.scan_prompt_part(fx.root).replace(" 2>/dev/null || true", "")
+            r = s.run_cmd(fx, cmd + f" --max-bytes {n}", env_in=s.envelope(QUESTION))
+        else:
+            r = s.run_cmd(fx, s.HOOK_ENV + f"rmx curator status --max-bytes {n}")
+        _ok(r, f"{producer} --max-bytes {n}")
+>       assert len(r.stdout) <= n, (f"s-1: {producer} put {len(r.stdout)} B on the wire > "
+                                    f"--max-bytes {n}: {r.stdout!r}")
+E       AssertionError: s-1: prompt_recall put 21 B on the wire > --max-bytes 20: b'# rmx recall \xc2\xb7 prom\n'
+E       assert 21 <= 20
+E        +  where 21 = len(b'# rmx recall \xc2\xb7 prom\n')
+E        +    where b'# rmx recall \xc2\xb7 prom\n' = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ... 12 --scope both --pack --timeout 5 --max-bytes 20'], returncode=0, stdout=b'# rmx recall \xc2\xb7 prom\n', stderr=b'').stdout
+
+tests/test_task25_1_recall_budget.py:546: AssertionError
+__ test_s1_max_bytes_is_n_bytes_on_the_wire_newline_counted[prompt_recall-30] __
+
+fx = <tests.task25_1_support.Fixture object at 0x1149b6900>
+producer = 'prompt_recall', n = 30
+
+    @pytest.mark.parametrize("n", _EDGE_N)
+    @pytest.mark.parametrize("producer", ["prompt_recall", "scan_prompt", "curator_status"])
+    def test_s1_max_bytes_is_n_bytes_on_the_wire_newline_counted(fx, producer, n):
+        """R8 "never over N" on what the agent RECEIVES, at the one place it can fail: a payload of
+        exactly N bytes. Three writers hold back the newline they print -- `_echo_pack`'s
+        `nl=False`, and `cap - 1` handed to `fit_blocks` by `curator status` and `scan-prompt` --
+        and a fixture that never lands on N cannot see any of them go (bsd-251 m2/m3/m4 survived
+        AC-2, AC-7 and AC-12). Each producer runs as the GENERATED hook argv, `--max-bytes N`
+        appended; stdout is taken whole (no rstrip). The second assertion is the fixture's: the
+        payload IS N bytes, so the first one tests the edge and not the interior."""
+        if producer == "prompt_recall":
+            r = _q(fx, append=f" --max-bytes {n}")
+        elif producer == "scan_prompt":
+            cmd = s.scan_prompt_part(fx.root).replace(" 2>/dev/null || true", "")
+            r = s.run_cmd(fx, cmd + f" --max-bytes {n}", env_in=s.envelope(QUESTION))
+        else:
+            r = s.run_cmd(fx, s.HOOK_ENV + f"rmx curator status --max-bytes {n}")
+        _ok(r, f"{producer} --max-bytes {n}")
+>       assert len(r.stdout) <= n, (f"s-1: {producer} put {len(r.stdout)} B on the wire > "
+                                    f"--max-bytes {n}: {r.stdout!r}")
+E       AssertionError: s-1: prompt_recall put 31 B on the wire > --max-bytes 30: b'# rmx recall \xc2\xb7 prompt_recall \n'
+E       assert 31 <= 30
+E        +  where 31 = len(b'# rmx recall \xc2\xb7 prompt_recall \n')
+E        +    where b'# rmx recall \xc2\xb7 prompt_recall \n' = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...e both --pack --timeout 5 --max-bytes 30'], returncode=0, stdout=b'# rmx recall \xc2\xb7 prompt_recall \n', stderr=b'').stdout
+
+tests/test_task25_1_recall_budget.py:546: AssertionError
+_______________ test_ac7_cli_prints_the_verbs_text_byte_for_byte _______________
+
+fx = <tests.task25_1_support.Fixture object at 0x1149b6900>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1148b6450>
+
+    def test_ac7_cli_prints_the_verbs_text_byte_for_byte(fx, monkeypatch):
+        """AC-7: the verb's `text` (query, k=12, scope=both, pack=True) equals the per-prompt argv's
+        stdout byte for byte. Replica leg OFF (no worker); the ON leg is AC-4 (d)'s parity.
+    
+        bsd-251 s-1 (2026-11-14): no newline is tolerated any more. The pack carries and counts its
+        own final newline and the CLI writes the text `nl=False`; the RED's `rstrip(b"\n")` on both
+        sides was exactly the byte a regressed `nl=True` brings back (bsd-251 mutation m2 survived
+        it)."""
+        from refmatrix import verbs
+        r = _q(fx)
+        _ok(r, "per-prompt argv")
+        monkeypatch.setenv("RMX_HOME", str(fx.home))
+        res = verbs.memory_recall(fx.root, query=QUESTION, k=12, scope="both", pack=True)
+        assert "text" in res, f"AC-7: pack=True returned no `text`: keys {sorted(res)}"
+>       assert r.stdout == res["text"].encode("utf-8"), (len(r.stdout), res["payload_bytes"])
+E       AssertionError: (2483, 2482)
+E       assert b'# rmx recal...e global)\n\n' == b'# rmx recal...ope global)\n'
+E         
+E         Use -v to get more diff
+
+tests/test_task25_1_recall_budget.py:1289: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_s1_max_bytes_is_n_bytes_on_the_wire_newline_counted[prompt_recall-20]
+FAILED tests/test_task25_1_recall_budget.py::test_s1_max_bytes_is_n_bytes_on_the_wire_newline_counted[prompt_recall-30]
+FAILED tests/test_task25_1_recall_budget.py::test_ac7_cli_prints_the_verbs_text_byte_for_byte
+3 failed, 134 deselected in 18.51s

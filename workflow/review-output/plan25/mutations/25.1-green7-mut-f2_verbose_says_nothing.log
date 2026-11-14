@@ -1,0 +1,40 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________ test_f6_recall_leg_line_only_under_verbose_never_a_warning __________
+
+fx = <tests.task25_1_support.Fixture object at 0x105a7ecf0>
+
+    def test_f6_recall_leg_line_only_under_verbose_never_a_warning(fx):
+        """Rev 7 F6 (2026-11-13, spec #f6-leg-line): the `recall leg: …` line stays in the verb's
+        `warnings` (R5; AC-4 (i) reads it there), but the CLI prints leg-served lines only with
+        `--verbose`, and never under the `warning:` prefix; real warnings are unchanged
+        (tests/test_rerank_warning_routes.py::test_cli_recall_daemon_branch_prints_the_warnings).
+    
+        HEAD (measured 2026-11-13): every recall -- interactive and the per-prompt hook -- prints
+        `# rmx: warning: recall leg: daemon RPC (the daemon's embedder and rerank default)` on
+        stderr, and `memory recall` has no `--verbose`."""
+        none_sock = str(fx.base / "none.sock")
+        plain = s.rmx(fx, "memory", "recall", QUESTION, "--json", "--k", "4",
+                      RMX_MODEL_SOCK=none_sock)
+        assert plain.returncode == 0, plain.stderr[-800:]
+        assert "recall leg" not in plain.stderr, (
+            f"F6: a normal interactive recall printed the leg line: {plain.stderr[-600:]!r}")
+        hook = _q(fx, RMX_MODEL_SOCK=none_sock)
+        _ok(hook, "per-prompt argv")
+        assert b"recall leg" not in hook.stderr, (
+            f"F6: the per-prompt hook printed the leg line: {hook.stderr[-600:]!r}")
+        v = s.rmx(fx, "memory", "recall", QUESTION, "--json", "--k", "4", "--verbose",
+                  RMX_MODEL_SOCK=none_sock)
+        assert v.returncode == 0, f"F6: --verbose exit {v.returncode}: {v.stderr[-600:]}"
+        legs = [ln for ln in v.stderr.splitlines() if "recall leg:" in ln]
+>       assert any("daemon RPC" in ln for ln in legs), (
+            f"F6: --verbose did not say which leg served: {v.stderr[-600:]!r}")
+E       AssertionError: F6: --verbose did not say which leg served: ''
+E       assert False
+E        +  where False = any(<generator object test_f6_recall_leg_line_only_under_verbose_never_a_warning.<locals>.<genexpr> at 0x108797100>)
+
+tests/test_task25_1_recall_budget.py:1177: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_f6_recall_leg_line_only_under_verbose_never_a_warning
+1 failed in 18.21s

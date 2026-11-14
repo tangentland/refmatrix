@@ -1,0 +1,163 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+FF...F....F.                                                             [100%]
+=================================== FAILURES ===================================
+___________ test_s2_pack_recall_never_drops_a_curated_hooks_failure ____________
+
+    def test_s2_pack_recall_never_drops_a_curated_hooks_failure():
+        """bsd-251 s-2 / L68 (2026-11-14): `verbs.pack_recall` with NO warnings list and a
+        `load_hooks` that fails must surface the failure -- it raises, or the result carries a
+        warning naming it. CLAUDE.md #no-silent-failures: every hook line silently fell back to
+        its first sentence. HEAD: the `except` appends only `if warnings is not None`, so nothing
+        reaches the caller. A caller that passes a list keeps getting the warning (a guard)."""
+        from refmatrix import verbs
+        root, idx = _unreadable_index_memdir("p25h")
+        rows = [_urow(i) for i in range(3)]
+        try:
+            try:
+                res = verbs.pack_recall(root, rows, mode="dense", query=QUESTION, k=12,
+                                        max_bytes=4000, channel="prompt_recall")
+            except Exception as e:  # noqa: BLE001 -- raising is one of the two allowed outcomes
+                assert "PermissionError" in f"{type(e).__name__}: {e}" or "hook" in str(e).lower(), (
+                    f"s-2: raised, but not about the curated hooks: {type(e).__name__}: {e}")
+            else:
+                said = [w for w in res.get("warnings") or [] if "curated hooks unreadable" in w]
+>               assert said, (f"s-2: pack_recall swallowed a load_hooks failure (no warnings list "
+                              f"passed, no raise, result keys {sorted(res)})")
+E                             AssertionError: s-2: pack_recall swallowed a load_hooks failure (no warnings list passed, no raise, result keys ['more', 'named', 'payload_bytes', 'spans', 'text'])
+E                             assert []
+
+tests/test_task25_1_recall_budget.py:346: AssertionError
+____________ test_s2_busy_fall_through_says_a_curated_hooks_failure ____________
+
+offline = {'a': <tests.task25_1_support.Fixture object at 0x1114cbd90>, 'b': <tests.task25_1_support.Fixture object at 0x1152981...('/private/tmp/rmx-l9y6rkng/p25o-rich_vo6'), 'home': PosixPath('/private/tmp/rmx-l9y6rkng/p25o-rich_vo6/g/.refmatrix')}
+
+    def test_s2_busy_fall_through_says_a_curated_hooks_failure(offline):
+        """bsd-251 s-2 / L68: the SessionStart argv's busy/absent fall-through (`cli.py`, the
+        lock-free replica serves `--session-start` and packs through `verbs.pack_recall`) SAYS a
+        `load_hooks` failure on stderr. Store B of `offline` (replica on disk, no daemon), its
+        MEMORY.md made unreadable. HEAD: the fall-through passes no warnings list, the pack falls
+        back to first sentences, and nothing names why."""
+        b = offline["b"]
+        idx = b.memdir / "MEMORY.md"
+        mode = idx.stat().st_mode
+        os.chmod(idx, 0)
+        try:
+            r = s.run_cmd(b, s.recall_cmd(b.root, "SessionStart"),
+                          env_in=s.envelope("", event="SessionStart", source="resume"),
+                          RMX_HOME=str(offline["home"]),
+                          RMX_MODEL_SOCK=str(offline["base"] / "none.sock"))
+        finally:
+            os.chmod(idx, mode)
+        err = r.stderr.decode("utf-8", "replace")
+        _ok(r, "SessionStart argv (fall-through)")
+        assert "reading the replica" in err, f"fixture: the fall-through did not serve: {err[-600:]}"
+        p = _pack(r, "SessionStart argv (fall-through)")
+        assert p.named, "fixture: the fall-through named no hit"
+>       assert "curated hooks unreadable" in err, (
+            f"s-2: the fall-through dropped a load_hooks failure silently: {err[-800:]!r}")
+E       AssertionError: s-2: the fall-through dropped a load_hooks failure silently: '# rmx: daemon not running for /private/tmp/rmx-l9y6rkng/p25b-zryvkvld/fxb/.refmatrix; reading the replica\n# rmx: warning: global rows omitted: global store: daemon not running for /private/tmp/rmx-l9y6rkng/p25o-rich_vo6/g/.refmatrix: memory_recent found no listening socket (FileNotFoundError)\n'
+E       assert 'curated hooks unreadable' in '# rmx: daemon not running for /private/tmp/rmx-l9y6rkng/p25b-zryvkvld/fxb/.refmatrix; reading the replica\n# rmx: war...or /private/tmp/rmx-l9y6rkng/p25o-rich_vo6/g/.refmatrix: memory_recent found no listening socket (FileNotFoundError)\n'
+
+tests/test_task25_1_recall_budget.py:378: AssertionError
+___ test_s1_max_bytes_is_n_bytes_on_the_wire_newline_counted[scan_prompt-60] ___
+
+fx = <tests.task25_1_support.Fixture object at 0x1153e4410>
+producer = 'scan_prompt', n = 60
+
+    @pytest.mark.parametrize("n", _EDGE_N)
+    @pytest.mark.parametrize("producer", ["prompt_recall", "scan_prompt", "curator_status"])
+    def test_s1_max_bytes_is_n_bytes_on_the_wire_newline_counted(fx, producer, n):
+        """R8 "never over N" on what the agent RECEIVES, at the one place it can fail: a payload of
+        exactly N bytes. Three writers hold back the newline they print -- `_echo_pack`'s
+        `nl=False`, and `cap - 1` handed to `fit_blocks` by `curator status` and `scan-prompt` --
+        and a fixture that never lands on N cannot see any of them go (bsd-251 m2/m3/m4 survived
+        AC-2, AC-7 and AC-12). Each producer runs as the GENERATED hook argv, `--max-bytes N`
+        appended; stdout is taken whole (no rstrip). The second assertion is the fixture's: the
+        payload IS N bytes, so the first one tests the edge and not the interior."""
+        if producer == "prompt_recall":
+            r = _q(fx, append=f" --max-bytes {n}")
+        elif producer == "scan_prompt":
+            cmd = s.scan_prompt_part(fx.root).replace(" 2>/dev/null || true", "")
+            r = s.run_cmd(fx, cmd + f" --max-bytes {n}", env_in=s.envelope(QUESTION))
+        else:
+            r = s.run_cmd(fx, s.HOOK_ENV + f"rmx curator status --max-bytes {n}")
+        _ok(r, f"{producer} --max-bytes {n}")
+        assert len(r.stdout) <= n, (f"s-1: {producer} put {len(r.stdout)} B on the wire > "
+                                    f"--max-bytes {n}: {r.stdout!r}")
+>       assert len(r.stdout) == n, (f"s-1 fixture: {producer} at --max-bytes {n} printed "
+                                    f"{len(r.stdout)} B, not the edge: {r.stdout!r}")
+E       AssertionError: s-1 fixture: scan_prompt at --max-bytes 60 printed 43 B, not the edge: b'# [+14 block(s) omitted by --max-bytes 59]\n'
+E       assert 43 == 60
+E        +  where 43 = len(b'# [+14 block(s) omitted by --max-bytes 59]\n')
+E        +    where b'# [+14 block(s) omitted by --max-bytes 59]\n' = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...ns 2000 --timeout 5 --max-bytes 60'], returncode=0, stdout=b'# [+14 block(s) omitted by --max-bytes 59]\n', stderr=b'').stdout
+
+tests/test_task25_1_recall_budget.py:546: AssertionError
+__________ test_ac15h_any_failure_is_one_error_line_never_a_traceback __________
+
+    def test_ac15h_any_failure_is_one_error_line_never_a_traceback():
+        """bsd-251 m-5 / L68 (2026-11-14): R11 -- "a real failure exits non-zero with ONE clean
+        `Error:` line and no traceback" -- for ANY exception, not only the `VerbError`s the verb
+        converts (an unreadable memdir, an `OSError` from `compose_recall_state`). The forced
+        failure is real and not an OSError: the newest save-state holds bytes that are not UTF-8,
+        so reading it raises `UnicodeDecodeError` (a ValueError). Run through the GENERATED
+        compact|clear entry. HEAD: a traceback, `UnicodeDecodeError` uncaught. The `Error:` line
+        names the exception type, so the cause is said."""
+        base = s.short_base("p25e")
+        home = base / "g" / ".refmatrix"
+        s._init_store(home, partition="global")
+        proj = base / "fxe"
+        fx = s.Fixture(base, proj, home)
+        s._init_store(fx.root)
+        md = fx.memdir
+        md.mkdir(parents=True, exist_ok=True)
+        (md / "savestate_bad01.md").write_bytes(
+            b"---\ngmd: \"0.1\"\nid: savestate_bad01\ntitle: \"bad bytes\"\nmetadata:\n"
+            b"  type: session/recall-state\n  updated: 2026-11-14\n---\n\n# bad {#root}\n\n"
+            b"resume \xff\xfe\xfd here\n")
+        try:
+            _m, cmd = _rs_entry(fx.root)
+            r = s.run_cmd(fx, cmd, env_in=s.envelope("", event="SessionStart", source="compact"))
+            err = r.stderr.decode("utf-8", "replace")
+            assert r.returncode != 0, f"m-5: exit 0 on an unreadable save-state: {r.stdout[:300]!r}"
+>           assert "Traceback" not in err, f"m-5: a traceback, not one Error: line: {err[-1500:]}"
+E           AssertionError: m-5: a traceback, not one Error: line: ^
+E               File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E                 return ctx.invoke(self.callback, **ctx.params)
+E                        ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E                 return callback(*args, **kwargs)
+E               File "/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/cli.py", line 14011, in recall_state
+E                 rep = _verbs.recall_state(root, session=session,
+E                                           memory_dir=str(memory_dir) if memory_dir else None,
+E                                           max_bytes=max_bytes)
+E               File "/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/verbs.py", line 1959, in recall_state
+E                 rep = handoff.compose_recall_state(s, root, repo=repo, memdir=memdir,
+E                                                    pointer_anomalies=pointer_clauses)
+E               File "/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/handoff.py", line 678, in compose_recall_state
+E                 savestate = _latest_savestate(memdir)
+E               File "/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/handoff.py", line 601, in _latest_savestate
+E                 txt = p.read_text()
+E               File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 788, in read_text
+E                 return f.read()
+E                        ~~~~~~^^
+E               File "<frozen codecs>", line 325, in decode
+E             UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 142: invalid start byte
+E             
+E           assert 'Traceback' not in 'Traceback (...start byte\n'
+E             
+E             'Traceback' is contained here:
+E               Traceback (most recent call last):
+E             ? +++++++++
+E                 File "/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx", line 6, in <module>
+E                   sys.exit(cli_entry())
+E                            ~~~~~~~~~^^...
+E             
+E             ...Full output truncated (32 lines hidden), use '-vv' to show
+
+tests/test_task25_1_recall_budget.py:1844: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_s2_pack_recall_never_drops_a_curated_hooks_failure
+FAILED tests/test_task25_1_recall_budget.py::test_s2_busy_fall_through_says_a_curated_hooks_failure
+FAILED tests/test_task25_1_recall_budget.py::test_s1_max_bytes_is_n_bytes_on_the_wire_newline_counted[scan_prompt-60]
+FAILED tests/test_task25_1_recall_budget.py::test_ac15h_any_failure_is_one_error_line_never_a_traceback
+4 failed, 8 passed, 125 deselected in 54.06s

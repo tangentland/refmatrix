@@ -1,0 +1,1595 @@
+...................................FF................................... [  1%]
+....................................................................F... [  3%]
+........................................................................ [  4%]
+........................................................................ [  6%]
+........................................................................ [  8%]
+........................................................................ [  9%]
+........................................................................ [ 11%]
+........................................................................ [ 13%]
+........................................................................ [ 14%]
+........................................................................ [ 16%]
+........................................................................ [ 17%]
+........................................................................ [ 19%]
+...........F...F........................................................ [ 21%]
+........................................................................ [ 22%]
+..............................................................F......... [ 24%]
+........................................................................ [ 26%]
+........................................................................ [ 27%]
+........................................................................ [ 29%]
+........................................................................ [ 31%]
+........................................................................ [ 32%]
+........................................................................ [ 34%]
+........................................................................ [ 35%]
+........................................................................ [ 37%]
+........................................................................ [ 39%]
+........................................................................ [ 40%]
+........................................................................ [ 42%]
+........................................................................ [ 44%]
+........................................................................ [ 45%]
+........................................................................ [ 47%]
+........................................................................ [ 49%]
+........................................................................ [ 50%]
+........................................................................ [ 52%]
+.........................................FF.F..........F.F..F........... [ 53%]
+........................................................................ [ 55%]
+........................................................................ [ 57%]
+........................................................................ [ 58%]
+.........................................................s.............. [ 60%]
+.....................................FF.....................FF.......... [ 62%]
+........................................................................ [ 63%]
+........................................................................ [ 65%]
+........................................................................ [ 67%]
+........................................................................ [ 68%]
+........................................................................ [ 70%]
+........................................................................ [ 71%]
+........................................................................ [ 73%]
+........................................................................ [ 75%]
+...FF..F.............................F.................................. [ 76%]
+................................................................F.FF.... [ 78%]
+FFFFFF.FFF..............F............................................... [ 80%]
+...........................F...F.F.F.......FF........................... [ 81%]
+........................................................................ [ 83%]
+........................................................................ [ 85%]
+........................................................................ [ 86%]
+...........................................F..........................F. [ 88%]
+........................................................................ [ 89%]
+........................................................................ [ 91%]
+........................................................................ [ 93%]
+........................................................................ [ 94%]
+........................................................................ [ 96%]
+........................................................................ [ 98%]
+........................................................................ [ 99%]
+..........                                                               [100%]SkipGate: 1 skip(s) not in the pinned list (tests/conftest.py ALLOWED_SKIPS); a skip is a test that stopped running:
+  SKIPPED-UNPINNED tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated: Skipped: hooks belong to another checkout of this commit
+
+=================================== FAILURES ===================================
+_____________________ test_replica_recall_env_kill_switch ______________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x124382ba0>
+
+    def test_replica_recall_env_kill_switch(monkeypatch):
+>       from refmatrix.cli import _replica_memory_recall
+E       ImportError: cannot import name '_replica_memory_recall' from 'refmatrix.cli' (/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/cli.py)
+
+tests/test_bigop_nonblocking.py:213: ImportError
+_______________ test_replica_recall_none_without_shared_workers ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x124382e40>
+
+    def test_replica_recall_none_without_shared_workers(monkeypatch):
+        from refmatrix import modelsrv
+>       from refmatrix.cli import _replica_memory_recall
+E       ImportError: cannot import name '_replica_memory_recall' from 'refmatrix.cli' (/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/cli.py)
+
+tests/test_bigop_nonblocking.py:221: ImportError
+____________ test_an_unknown_class_fails_loudly_through_the_daemon _____________
+
+daemon_root = (PosixPath('/tmp/bd.dhy4btlr/.refmatrix'), {'AI_AGENT': 'claude-code_2-1-319_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_DEPRECATION_WARNING': '1', 'CLAUDECODE': '1', ...})
+
+    def test_an_unknown_class_fails_loudly_through_the_daemon(daemon_root):
+        """#m-17: the MCP schema has no enum, so this path is reachable."""
+        root, env = daemon_root
+        # click.Choice already rejects this, so exit!=0 proved nothing about the
+        # ValueError (ch-bsd r2). Assert the LIBRARY raises, where MCP reaches it.
+        from refmatrix import brief as brief_mod
+        from refmatrix.store import Store
+        s = Store(root)
+>       with s.with_partition(root.parent.name):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_brief_real_daemon.py:146: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+src/refmatrix/store.py:2100: in _scope
+    self._connect()
+src/refmatrix/store.py:1374: in _connect
+    con = self._backend.connect(self.db_path)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:788: in connect
+    return DuckDBConnection(open_duckdb(db_path, read_only=read_only))
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:371: in open_duckdb
+    return _open_write(p, key)
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+p = '/private/tmp/bd.dhy4btlr/.refmatrix/catalog.A.duckdb'
+key = '/private/tmp/bd.dhy4btlr/.refmatrix/catalog.A.duckdb'
+
+    def _open_write(p: str, key: str):
+        import time as _time
+        for _ in range(_OPEN_RETRIES):
+            closed = _close_stale_holders(key, p)
+            before = _file_id(key)
+            deadline = _time.monotonic() + (_CONFLICT_WAIT_S if closed else 0.0)
+            while True:
+                try:
+>                   con = duckdb.connect(p)
+                          ^^^^^^^^^^^^^^^^^
+E                   _duckdb.IOException: IO Error: Could not set lock on file "/private/tmp/bd.dhy4btlr/.refmatrix/catalog.A.duckdb": Conflicting lock is held in /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python (PID 61117) by user tholley. See also https://duckdb.org/docs/stable/connect/concurrency
+
+src/refmatrix/backend.py:337: IOException
+__________________ test_hooks_table_section_equals_its_render __________________
+
+    def test_hooks_table_section_equals_its_render():
+        gen = _load()
+>       assert gen.extract(README.read_text(), "hooks-table") == gen.render_hooks_table()
+E       assert 'Generated by...heckpoint"` |' == 'Generated by...heckpoint"` |'
+E         
+E         Skipping 1236 identical leading characters in diff, use -v to show
+E         - start --k 30 --scope both --pack --timeout 10` |
+E         ?           ^                 ^^^^
+E         + start --k 10 --scope both --json --timeout 10` |
+E         ?           ^                 ^^^^
+E           | `SessionStart` | `startup\|resume\|clear` | `rmx ingest-gmd --as-memory --detach '~/.claude/projects/<slug>/memory'` |...
+E         
+E         ...Full output truncated (15 lines hidden), use '-vv' to show
+
+tests/test_docs_generated.py:35: AssertionError
+_______________ test_check_mode_reports_drift_and_apply_fixes_it _______________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-876/test_check_mode_reports_drift_0')
+
+    def test_check_mode_reports_drift_and_apply_fixes_it(tmp_path):
+        gen = _load()
+        arch = tmp_path / "ARCHITECTURE.md"
+        readme = tmp_path / "README.md"
+        shutil.copy(ARCH, arch)
+        shutil.copy(README, readme)
+        targets = {"cli-tree": arch, "hooks-table": readme}
+>       assert gen.check(targets) == []
+E       assert ['--- README....eckpoint"` |'] == []
+E         
+E         Left contains one more item: '--- README.md:hooks-table (on disk)\n+++ README.md:hooks-table (rendered)\n@@ -11,13 +11,14 @@\n | `SessionStart` | `...ack --timeout 30` |\n | `PreCompact` | — | `rmx save-state --no-promote --no-sync -m "auto: pre-compact checkpoint"` |'
+E         Use -v to get more diff
+
+tests/test_docs_generated.py:111: AssertionError
+_____________ test_the_repo_scope_is_clean_under_the_stricter_gate _____________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-876/test_the_repo_scope_is_clean_u0')
+
+    def test_the_repo_scope_is_clean_under_the_stricter_gate(tmp_path):
+        """The gate is only worth having if the tree it guards passes it. Runs the
+        real `scripts/lint-gmd.sh`, which is what the commit gate invokes."""
+        root = Path(__file__).resolve().parents[1]
+        # 23.0 R6: the script adds `$HOME/.claude/projects/<slug>/memory` to its scope (the ledger
+        # cites memory ids). The child gets a DECOY home holding a COPY of exactly that one memory
+        # dir -- never the real `HOME` (ch-bsd r1 m3, 2026-10-15: handing the child the real home
+        # was a documented way out of the sandbox). No memory dir for this checkout's slug (a
+        # clone) -> none is copied, and the refs surface as dangling-doc, as the script intends.
+        import shutil
+        slug = str(root).replace("/", "-").replace("_", "-")
+        real_mem = (Path(os.environ["RMX_SANDBOX_REAL_HOME"]) / ".claude" / "projects" / slug
+                    / "memory")
+        home = tmp_path / "home"
+        home.mkdir()
+        if real_mem.is_dir():
+            shutil.copytree(real_mem, home / ".claude" / "projects" / slug / "memory")
+        env = dict(os.environ, HOME=str(home))
+        assert Path(env["HOME"]).resolve() != Path(os.environ["RMX_SANDBOX_REAL_HOME"]).resolve()
+        r = subprocess.run(["./scripts/lint-gmd.sh"], cwd=str(root),
+                           capture_output=True, text=True, env=env)
+        out = r.stdout + r.stderr
+        # bug-179 audit s1 (2026-11-09): the gate exits 2 on a missing precondition (no linter, no
+        # parity script, no `.venv-eval` dev interpreter) BEFORE lint runs, printing no ": error"
+        # line -- so a test that only counted error lines passed in 0.13 s while nothing was linted.
+        # Exit 2 is the script's and lint's usage/precondition code, never a lint verdict (0/1), so
+        # it means the gate did not run. Assert that FIRST: a gate that did not run is a failure with
+        # its own message, never a clean tree.
+        missing = [l for l in out.splitlines() if "not found at" in l]
+        assert r.returncode != 2 and not missing, (
+            f"scripts/lint-gmd.sh did not run its checks (exit {r.returncode}); a missing "
+            "precondition is a failure, not a clean tree:\n" + out[-2000:])
+        errors = [l for l in out.splitlines() if ": error" in l]
+>       assert not errors, "in-scope GMD errors:\n" + "\n".join(errors[:20])
+E       AssertionError: in-scope GMD errors:
+E         docs/INDEX.md:31: error: [dangling-doc] [[adr-0000-adr-overview]] — no doc with id `adr-0000-adr-overview` in scanned set
+E         docs/INDEX.md:33: error: [dangling-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set
+E         docs/INDEX.md:34: error: [dangling-doc] [[adr-0003-canonical-partition-layout]] — no doc with id `adr-0003-canonical-partition-layout` in scanned set
+E         docs/INDEX.md:35: error: [dangling-doc] [[adr-0004-unified-location-space-index]] — no doc with id `adr-0004-unified-location-space-index` in scanned set
+E         docs/INDEX.md:40: error: [dangling-doc] [[adr-0000-adr-overview]] — no doc with id `adr-0000-adr-overview` in scanned set
+E         docs/INDEX.md:42: error: [dangling-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set
+E         docs/INDEX.md:43: error: [dangling-doc] [[adr-0003-canonical-partition-layout]] — no doc with id `adr-0003-canonical-partition-layout` in scanned set
+E         docs/INDEX.md:44: error: [dangling-doc] [[adr-0004-unified-location-space-index]] — no doc with id `adr-0004-unified-location-space-index` in scanned set
+E         docs/INDEX.md:97: error: [dangling-doc] [[architecture-readme]] — no doc with id `architecture-readme` in scanned set
+E         docs/INDEX.md:99: error: [dangling-doc] [[architecture-todo]] — no doc with id `architecture-todo` in scanned set
+E         docs/INDEX.md:104: error: [dangling-doc] [[architecture-readme]] — no doc with id `architecture-readme` in scanned set
+E         docs/INDEX.md:106: error: [dangling-doc] [[architecture-todo]] — no doc with id `architecture-todo` in scanned set
+E         docs/adr/0000-adr-overview.md:20: error: [dangling-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set
+E         docs/adr/0000-adr-overview.md:21: error: [dangling-doc] [[adr-0003-canonical-partition-layout]] — no doc with id `adr-0003-canonical-partition-layout` in scanned set
+E         docs/adr/0000-adr-overview.md:22: error: [dangling-doc] [[adr-0004-unified-location-space-index]] — no doc with id `adr-0004-unified-location-space-index` in scanned set
+E         docs/adr/0000-adr-overview.md:57: error: [dangling-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set
+E         docs/adr/0000-adr-overview.md:58: error: [dangling-doc] [[adr-0003-canonical-partition-layout]] — no doc with id `adr-0003-canonical-partition-layout` in scanned set
+E         docs/adr/0000-adr-overview.md:59: error: [dangling-doc] [[adr-0004-unified-location-space-index]] — no doc with id `adr-0004-unified-location-space-index` in scanned set
+E         docs/adr/0001-intuition-lance-integration.md:10: error: [dangling-doc] [[adr-0000-adr-overview]] — no doc with id `adr-0000-adr-overview` in scanned set
+E         docs/adr/0001-intuition-lance-integration.md:47: error: [dangling-doc] [[project-queued-work]] — no doc with id `project-queued-work` in scanned set
+E       assert not ['docs/INDEX.md:31: error: [dangling-doc] [[adr-0000-adr-overview]] — no doc with id `adr-0000-adr-overview` in scanne...g-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set', ...]
+
+tests/test_gmd_lint_requires_version.py:148: AssertionError
+___________ test_rerank_is_skipped_and_said_when_the_budget_is_short ___________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-876/test_rerank_is_skipped_and_sai0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x3f4ff1240>
+
+    def test_rerank_is_skipped_and_said_when_the_budget_is_short(tmp_path, monkeypatch):
+        root, s, ids = _replica_store_with_rows(tmp_path)
+        monkeypatch.setattr(cli_mod, "_root", lambda: root)
+        monkeypatch.setattr(cli_mod, "_reader_store", lambda: s)
+        monkeypatch.setattr(cli_mod, "_resolve_partition", lambda: s.partition_name)
+        from refmatrix import modelsrv, recall, reranker
+        monkeypatch.setattr(modelsrv, "shared_enabled", lambda: True)
+        monkeypatch.setattr(modelsrv, "shared_available", lambda timeout=0.5: True)
+        monkeypatch.setattr(modelsrv, "SharedWorkerClient", lambda role, **kw: object())
+        monkeypatch.setattr(recall, "dense_recall", lambda st, emb, q, k, kinds: [(i, 0.1) for i in ids][:k])
+        rr = _SlowReranker(3.0)
+        monkeypatch.setattr(reranker, "shared_reranker", lambda log=None, **kw: rr)
+        monkeypatch.setattr(reranker, "rerank_enabled", lambda: True)
+        ws: list[str] = []
+        t0 = time.monotonic()
+>       hits = cli_mod._replica_memory_recall("hello", k=3, kinds=["memory"], fuse=False, rerank=True,
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                              left=lambda d: min(d, 0.8), warnings=ws)
+E       AttributeError: module 'refmatrix.cli' has no attribute '_replica_memory_recall'
+
+tests/test_plan2_remedy_r6.py:221: AttributeError
+__________________ test_rerank_timeout_is_said_not_swallowed ___________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-876/test_rerank_timeout_is_said_no0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x3f4fcd9b0>
+
+    def test_rerank_timeout_is_said_not_swallowed(tmp_path, monkeypatch):
+        root, s, ids = _replica_store_with_rows(tmp_path)
+        monkeypatch.setattr(cli_mod, "_root", lambda: root)
+        monkeypatch.setattr(cli_mod, "_reader_store", lambda: s)
+        monkeypatch.setattr(cli_mod, "_resolve_partition", lambda: s.partition_name)
+        from refmatrix import modelsrv, recall, reranker
+        monkeypatch.setattr(modelsrv, "shared_enabled", lambda: True)
+        monkeypatch.setattr(modelsrv, "shared_available", lambda timeout=0.5: True)
+        monkeypatch.setattr(modelsrv, "SharedWorkerClient", lambda role, **kw: object())
+        monkeypatch.setattr(recall, "dense_recall", lambda st, emb, q, k, kinds: [(i, 0.1) for i in ids][:k])
+    
+        class _Timing:
+            model_name = "fake"
+    
+            def score(self, query, docs):
+                raise TimeoutError("timed out")
+        monkeypatch.setattr(reranker, "shared_reranker", lambda log=None, **kw: _Timing())
+        monkeypatch.setattr(reranker, "rerank_enabled", lambda: True)
+        ws: list[str] = []
+>       hits = cli_mod._replica_memory_recall("hello", k=3, kinds=["memory"], fuse=False, rerank=True,
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                              left=lambda d: min(d, 30.0), warnings=ws)
+E       AttributeError: module 'refmatrix.cli' has no attribute '_replica_memory_recall'
+
+tests/test_plan2_remedy_r6.py:249: AttributeError
+________ test_budget_spent_before_the_global_leg_keeps_the_project_rows ________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-876/test_budget_spent_before_the_g0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x3f4fcc830>
+
+    def test_budget_spent_before_the_global_leg_keeps_the_project_rows(tmp_path, monkeypatch):
+        """Live 2026-09-15 after the r7 deploy: the rerank probe ate the budget,
+        `_left()` raised at the global leg and the hook exited 1 with a
+        traceback. The project rows must come back and the omission be said."""
+        monkeypatch.setattr("refmatrix.discovery.daemon_status", lambda r, **kw: {"up": True, "busy": False, "pid": 1})
+        monkeypatch.setattr("refmatrix.discovery.store_name", lambda r: "p")
+        monkeypatch.setattr(dm, "ping", lambda r, **kw: True)
+        monkeypatch.setattr(hub_mod, "global_store_root", lambda: tmp_path)
+        monkeypatch.setattr(hub_mod, "ensure_global_daemon", lambda: None)
+        root = tmp_path / ".refmatrix"; root.mkdir()
+        monkeypatch.setattr(cli_mod, "_root", lambda: root)
+        monkeypatch.setenv("RMX_RECALL_REPLICA_FIRST", "0")
+    
+        def call(r, op, args=None, timeout=60.0, retries=2, **kw):
+            if op == "partition_list":
+                return {"ok": True, "result": {"rows": []}}
+            if op == "memory_recall":
+                time.sleep(0.5)
+                return {"ok": True, "result": {"hits": [{"id": 7, "distance": 0.1}]}}
+            if op == "memory_get":
+                time.sleep(0.6)                      # the budget is gone AFTER this leg
+                return {"ok": True, "result": {"memory": {"id": 7, "name": "m", "content": "c",
+                                                           "mtype": "note", "tags": [], "metadata": {}}}}
+            return {"ok": True, "result": {}}
+        monkeypatch.setattr(dm, "call", call)
+        r, elapsed = _invoke(["memory", "recall", "hello", "--k", "3", "--scope", "both", "--json",
+                              "--timeout", "1"])
+>       assert r.exit_code == 0, r.output
+E       AssertionError: Error: recall not confirmed within 0.999603s (recall not confirmed within 0.999603s — daemon busy; the hook skipped this turn) — daemon busy; the hook skipped this turn
+E         
+E       assert 1 == 0
+E        +  where 1 = <Result SystemExit(1)>.exit_code
+
+tests/test_plan2_remedy_r6.py:305: AssertionError
+______________ test_json_recall_with_no_hits_prints_an_empty_list ______________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-876/test_json_recall_with_no_hits_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x3f4ff2120>
+
+    def test_json_recall_with_no_hits_prints_an_empty_list(tmp_path, monkeypatch):
+        """The empty-hits branch printed prose under --json (the hook's JSON
+        consumer choked on it)."""
+        import json
+        from click.testing import CliRunner
+        root = tmp_path / ".refmatrix"
+        from refmatrix.store import Store
+        Store(root).init()
+        monkeypatch.setattr(cli_mod, "_root", lambda: root)
+>       monkeypatch.setattr(cli_mod, "_replica_memory_recall", lambda *a, **kw: [])
+E       AttributeError: <module 'refmatrix.cli' from '/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/cli.py'> has no attribute '_replica_memory_recall'
+
+tests/test_plan2_remedy_r7.py:253: AttributeError
+_________ test_replica_recall_leg_sends_a_capped_pool_to_the_reranker __________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-876/test_replica_recall_leg_sends_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x3f4ff0590>
+
+    def test_replica_recall_leg_sends_a_capped_pool_to_the_reranker(tmp_path, monkeypatch):
+        """The hook's replica leg passes `RERANK_DOC_CHARS` (≤ 768: the measured
+        fit) into the pool it sends to the shared worker."""
+        from refmatrix import modelsrv, recall as _recall, reranker as rr
+        from refmatrix.store import Store
+        assert cli_mod.RERANK_DOC_CHARS <= 768
+        root = tmp_path / ".refmatrix"
+        s = Store(root); s.init()
+        with s.with_partition("p"):
+            eid = s.add_memory(name="m", content="HEAD " + "body " * 2000, mtype="note")
+        monkeypatch.setattr(cli_mod, "_reader_store", lambda: s)
+        monkeypatch.setattr(cli_mod, "_resolve_partition", lambda: "p")
+        monkeypatch.setattr(modelsrv, "shared_enabled", lambda: True)
+        monkeypatch.setattr(modelsrv, "shared_available", lambda timeout=0.5: True)
+        monkeypatch.setattr(modelsrv, "SharedWorkerClient", lambda role, **kw: object())
+        monkeypatch.setattr(_recall, "dense_recall", lambda *a, **kw: [(eid, 0.1)])
+        monkeypatch.setattr(rr, "rerank_enabled", lambda: True)
+        sent = {}
+    
+        class _RR:
+            def score(self, query, docs):
+                sent["docs"] = list(docs); return [1.0] * len(docs)
+        monkeypatch.setattr(rr, "shared_reranker", lambda log=None, **kw: _RR())
+        ws = []
+        try:
+>           hits = cli_mod._replica_memory_recall("q", k=5, kinds=["memory"], fuse=False, rerank=True,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                                  left=lambda d: min(d, 30.0), warnings=ws)
+E                                                 AttributeError: module 'refmatrix.cli' has no attribute '_replica_memory_recall'
+
+tests/test_plan2_remedy_r7.py:305: AttributeError
+__________________ test_verb_dense_rows_carry_the_annotation ___________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x3f4fce270>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-876/test_verb_dense_rows_carry_the0')
+
+    def test_verb_dense_rows_carry_the_annotation(monkeypatch, tmp_path):
+        monkeypatch.setattr(daemon_mod, "ping", lambda root, **kw: True)
+    
+        def call(root, op, args=None, **kw):
+            if op == "partition_list":
+                return {"ok": True, "result": {"rows": []}}
+            if op == "memory_recall":
+                return {"ok": True, "result": {"hits": [{"id": 1, "distance": 0.0}]}}
+            if op == "memory_get":
+                return {"ok": True, "result": {"memory": {"id": 1, "name": "m", "mtype": "note"}}}
+            return {"ok": False, "error": op}
+        monkeypatch.setattr(daemon_mod, "call", call)
+        monkeypatch.setattr("refmatrix.discovery.store_name", lambda root: "p")
+        out = verbs.memory_recall(tmp_path, query="q")
+        assert out["memories"][0]["score"] == pytest.approx(1.0)
+>       assert out["memories"][0]["fused"] is False and out["warnings"] == []
+E       assert (False is False and ['recall leg:...ank default)'] == []
+E         
+E         Left contains one more item: "recall leg: daemon RPC (the daemon's embedder and rerank default)"
+E         Use -v to get more diff)
+
+tests/test_plan3_remedy.py:65: AssertionError
+----------------------------- Captured stderr call -----------------------------
+rmx: recall events: partition_unresolved=2 item(s) (no partition or no name) not logged
+____________ test_the_replica_recall_leg_skips_and_says_the_numbers ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x42608baf0>
+
+    def test_the_replica_recall_leg_skips_and_says_the_numbers(monkeypatch):
+        from refmatrix import cli as cli_mod
+    
+        client = _wire_replica_leg(monkeypatch, cost=0.42, queue=2)
+        ws: list[str] = []
+>       rows = cli_mod._replica_memory_recall(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            "why did the daemon restart", k=5, kinds=["memory"], fuse=False,
+            rerank=True, left=lambda default: 3.8, warnings=ws)
+E       AttributeError: module 'refmatrix.cli' has no attribute '_replica_memory_recall'
+
+tests/test_rerank_cost_budget.py:382: AttributeError
+________ test_the_replica_recall_leg_reranks_when_the_budget_covers_it _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x426089860>
+
+    def test_the_replica_recall_leg_reranks_when_the_budget_covers_it(monkeypatch):
+        from refmatrix import cli as cli_mod
+    
+        client = _wire_replica_leg(monkeypatch, cost=0.05, queue=0)
+        ws: list[str] = []
+>       rows = cli_mod._replica_memory_recall(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            "why did the daemon restart", k=5, kinds=["memory"], fuse=False,
+            rerank=True, left=lambda default: 30.0, warnings=ws)
+E       AttributeError: module 'refmatrix.cli' has no attribute '_replica_memory_recall'
+
+tests/test_rerank_cost_budget.py:397: AttributeError
+_____________________ test_replica_recall_names_the_cause ______________________
+
+mem_store = <refmatrix.store.Store object at 0x38bf9b770>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x3c268dd30>
+
+    def test_replica_recall_names_the_cause(mem_store, monkeypatch):
+        from refmatrix import cli as cli_mod
+        from refmatrix import embedder, modelsrv, reranker
+    
+        monkeypatch.setattr(modelsrv, "shared_enabled", lambda: True)
+        monkeypatch.setattr(modelsrv, "shared_available", lambda timeout=None: True)
+        monkeypatch.setattr(modelsrv, "SharedWorkerClient", lambda *a, **k: object())
+        monkeypatch.setattr(embedder, "RemoteEmbedder", lambda client: _Emb())
+        monkeypatch.setattr(cli_mod, "_reader_store", lambda: mem_store)
+        monkeypatch.setattr(cli_mod, "_resolve_partition", lambda: mem_store._partition_name)
+    
+        def failing_shared(log=None, timeout=None, probe_timeout=None, why=None):
+            if why is not None:
+                why.append("ModelNotCached: model 'x/y' is not in the local Hugging Face cache")
+            return None
+    
+        monkeypatch.setattr(reranker, "shared_reranker", failing_shared)
+        ws: list[str] = []
+>       hits = cli_mod._replica_memory_recall("daemon jetsam", k=2, kinds=["memory"],
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                              fuse=False, rerank=True, warnings=ws)
+E       AttributeError: module 'refmatrix.cli' has no attribute '_replica_memory_recall'
+
+tests/test_rerank_warning_routes.py:212: AttributeError
+______________ test_cli_recall_daemon_branch_prints_the_warnings _______________
+
+mem_store = <refmatrix.store.Store object at 0x38bf9b0e0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x3c268f770>
+
+    def test_cli_recall_daemon_branch_prints_the_warnings(mem_store, monkeypatch):
+        from click.testing import CliRunner
+    
+        from refmatrix import cli as cli_mod
+        from refmatrix import verbs
+    
+        monkeypatch.setenv("RMX_RECALL_REPLICA_FIRST", "0")
+        monkeypatch.setattr(cli_mod, "_root", lambda: mem_store.root)
+        monkeypatch.setattr(cli_mod, "_resolve_partition", lambda: mem_store._partition_name)
+        monkeypatch.setattr(verbs, "require_daemon", lambda *a, **k: {"running": True})
+        monkeypatch.setattr(cli_mod, "_memory_daemon_call", lambda op, args, **k: {
+            "ok": True, "result": {"hits": [], "warnings": ["rerank skipped (X); hits unreranked"]}})
+    
+        r = CliRunner().invoke(cli_mod.main, ["memory", "recall", "daemon jetsam"])
+>       assert "rerank skipped (X); hits unreranked" in r.stderr, (r.exit_code, r.output, r.stderr)
+E       AssertionError: (1, '# rmx: warning: memory-partition probe failed (cannot dial the daemon for /private/var/folders/js/71d0ymjj56b2mbf...socket path is too long for AF_UNIX (macOS limit ~104 bytes); memory_recall was not sent — use a shorter store root
+E         ')
+E       assert 'rerank skipped (X); hits unreranked' in '# rmx: warning: memory-partition probe failed (cannot dial the daemon for /private/var/folders/js/71d0ymjj56b2mbf40rv... socket path is too long for AF_UNIX (macOS limit ~104 bytes); memory_recall was not sent — use a shorter store root\n'
+E        +  where '# rmx: warning: memory-partition probe failed (cannot dial the daemon for /private/var/folders/js/71d0ymjj56b2mbf40rv... socket path is too long for AF_UNIX (macOS limit ~104 bytes); memory_recall was not sent — use a shorter store root\n' = <Result SystemExit(1)>.stderr
+
+tests/test_rerank_warning_routes.py:234: AssertionError
+_______________ test_ac6_frozen_fixture_prints_the_exact_counts ________________
+
+R = PosixPath('/private/tmp/rmx-29ay6oyg/r/3315/.refmatrix')
+
+    def test_ac6_frozen_fixture_prints_the_exact_counts(R):
+        """AC-6. The fixture (cut by the user 2026-10-19 with `tools/cut_agent_usage_fixture.py`,
+        trimmed by its `--from-fixture` re-cut, spec round 14): `--since 2026-09-23 --until
+        2026-10-07T11:06:35` prints EXACTLY 3 context calls (context-replica), 1,121 grep-replica
+        greps, 34 memory recalls (R11 channel `recall`: the agent's own `memory recall`, not the
+        hooks' 210; not 68: phase=start excluded) and `excluded_test_rows=0 legacy_fixture_rows=0
+        legacy_unattributed=<L>` (L from the manifest). Count lines matched tolerantly (the spec
+        fixes no per-route format): a line naming the surface and holding the number as a word.
+    
+        1,121, not plan-21's 1,119 (round 14, measured on the fixture): 1,119 was counted with the
+        upper bound `2026-10-07T11:06` (minute precision; bsd 3104a81 "to 2026-10-07T11:06", 837
+        dropin + 21 index), which drops the two grep-replica rows at 11:06:04. This AC's own window
+        ends at 11:06:35 and holds them (839 dropin + 21 index). Same rows, a different cut."""
+        manifest = FIXTURE / "manifest.json"
+        assert manifest.is_file(), (
+            "AC-6 BLOCKED: the redacted fixture is not committed; run "
+            "`python3 tools/cut_agent_usage_fixture.py` (reads this project's .refmatrix logs, "
+            "writes tests/fixtures/agent_usage/)")
+        L = json.loads(manifest.read_text())["L"]
+        for name in ("query.log", "cli.log"):
+            (R / name).write_bytes((FIXTURE / name).read_bytes())
+        code, out = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+        assert f"excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed={L}" in out, out
+        assert [ln for ln in _line_with(out, "context-replica") if re.search(r"\b3\b", ln)], out
+        assert [ln for ln in _line_with(out, "grep-replica")
+                if re.search(r"\b1,?121\b", ln)], out
+        rec = [ln for ln in out.splitlines() if "recall" in ln.lower()]
+>       assert [ln for ln in rec if re.search(r"\b34\b", ln)], out
+E       AssertionError: agent usage · window 2026-09-23 .. 2026-10-07T11:06:35 (since inclusive, until exclusive)
+E         excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed=4709
+E         query.log: counted=4709 unparseable=0 internal_excluded=0
+E         totals:
+E           context context-replica: 3
+E           grep grep-replica: 1121
+E           grep grep-stdin: 3330
+E           memory_recall rows: 0
+E           recall_unflagged=0
+E         by invocation:
+E           invocation=unknown
+E             context context-replica: 3 p50=792ms p95=808ms
+E             grep grep-replica: 1121 p50=8ms p95=48ms
+E             grep grep-replica answered_by=dropin: 839 p50=9ms p95=26ms
+E             grep grep-replica answered_by=floor: 4 p50=64ms p95=71ms
+E             grep grep-replica answered_by=index: 21 p50=55ms p95=267ms
+E             grep grep-replica answered_by=none: 5 p50=16ms p95=105ms
+E             grep grep-replica answered_by=unknown: 252 p50=6ms p95=89ms
+E             grep grep-stdin: 3330 p50=0ms p95=0ms
+E             grep grep-stdin answered_by=stdin: 3330 p50=0ms p95=0ms
+E         outcomes:
+E           context: ok=3 skipped_budget=0 error=0
+E         expired_reads: unavailable (daemon down)
+E         used_lookup_cap_hits=0 used_no_session=0
+E         cli.log: memory recall commands=244 excluded_test_rows=0 unparseable=0
+E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_rows=0
+E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
+E         
+E       assert []
+
+tests/test_task21_1_agent_usage_report.py:392: AssertionError
+________________ test_ac6_cli_log_recalls_are_split_per_channel ________________
+
+R = PosixPath('/private/tmp/rmx-29ay6oyg/r/3316/.refmatrix')
+
+    def test_ac6_cli_log_recalls_are_split_per_channel(R):
+        """AC-6 / R7 (round 14, RED at 246efb8): R7 prints recall "per invocation" and "per recall
+        channel (R11's `recall_channel`, recomputed from the row)". A pre-21.1 store has no
+        `kind=recall` query.log rows, so its recalls exist only in cli.log; the report lumps them
+        into ONE `cli.log: memory recall commands=<n>` line, so the frozen fixture prints 244
+        (201 prompt_recall + 6 session_start + 3 precompact hook calls + 34 agent calls) and the 34
+        AC-6 pins is printed nowhere. The channel is recomputable from a cli.log row: the flag NAMES
+        survive redaction (`--session-start`, `--stdin-json`, `--recent`) and `source` is the
+        invocation (`hook` / `unknown`). Here: 5 prompt_recall, 2 session_start, 3 precompact
+        (hook `--recent`), 4 recall (3 agent queries + 1 agent `--recent`, which R11 files as
+        `recall`, not `precompact`), each with its phase=start row (never counted)."""
+        def pair(ts, argv, source):
+            return [_cli_row(ts, argv, phase="start", source=source), _cli_row(ts, argv, source=source)]
+        cli = []
+        for i in range(5):
+            cli += pair(f"2026-10-01T10:0{i}:00",
+                        ["memory", "recall", "--stdin-json", "--k", "sha256:" + "a" * 64,
+                         "--scope", "sha256:" + "b" * 64, "--json"], "hook")
+        for i in range(2):
+            cli += pair(f"2026-10-02T10:0{i}:00",
+                        ["memory", "recall", "--session-start", "--json"], "hook")
+        for i in range(3):
+            cli += pair(f"2026-10-03T10:0{i}:00",
+                        ["memory", "recall", "--recent", "--scope", "sha256:" + "c" * 64], "hook")
+        for i in range(3):
+            cli += pair(f"2026-10-04T10:0{i}:00",
+                        ["memory", "recall", "sha256:" + "d" * 64, "--k", "sha256:" + "e" * 64],
+                        "unknown")
+        cli += pair("2026-10-05T10:00:00", ["memory", "recall", "--recent"], "unknown")
+        _write_jsonl(R / "query.log", [])
+        _write_jsonl(R / "cli.log", cli)
+        code, out = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+        assert code == 0, out
+    
+        def chan(name: str, n: int) -> list:
+            word = re.compile(rf"(?<![\w-]){name}(?![\w-])")
+            return [ln for ln in out.splitlines() if word.search(ln) and re.search(rf"\b{n}\b", ln)]
+>       assert chan("prompt_recall", 5), out
+E       AssertionError: agent usage · window 2026-09-23 .. 2026-10-07T11:06:35 (since inclusive, until exclusive)
+E         excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed=0
+E         query.log: counted=0 unparseable=0 internal_excluded=0
+E         totals:
+E           memory_recall rows: 0
+E           recall_unflagged=0
+E         by invocation:
+E         outcomes:
+E         expired_reads: unavailable (daemon down)
+E         used_lookup_cap_hits=0 used_no_session=0
+E         cli.log: memory recall commands=14 excluded_test_rows=0 unparseable=0
+E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_rows=0
+E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
+E         
+E       assert []
+E        +  where [] = <function test_ac6_cli_log_recalls_are_split_per_channel.<locals>.chan at 0x3aadae560>('prompt_recall', 5)
+
+tests/test_task21_1_agent_usage_report.py:434: AssertionError
+_________ test_ac8_prompt_recall_retrieves_10_delivers_3_in_intuition __________
+
+store = PosixPath('/private/tmp/rmx-29ay6oyg/r/3318/.refmatrix')
+
+    def test_ac8_prompt_recall_retrieves_10_delivers_3_in_intuition(store):
+        """AC-8 (prompt_recall leg): `rmx memory recall --stdin-json` through the generated
+        UserPromptSubmit command: exactly 10 `retrieved` and 3 `delivered` (the payload carries 3 of
+        10; the 7 `session/digest` rows are retrieved but hook mode keeps them out of the payload),
+        every event in partition `intuition`, kind `memory`, the envelope's session, one query_id
+        equal to the kind=recall query.log row's."""
+        root = store
+        before_ev = h.line_count(_ev_path(root))
+        before_rows = h.line_count(root / "query.log")
+        r = _run_prompt_recall(root)
+        evs = _require_events(_new_events(_ev_path(root), before_ev), "prompt_recall",
+                              "AC-8 prompt recall")
+        retrieved, delivered = _check_common(evs, root=root, stdout=r.stdout,
+                                             channel="prompt_recall", block_id="prompt-recall")
+>       payload = json.loads(r.stdout)
+                  ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_task21_1_emitters.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x100adaf90>
+s = '# rmx recall · prompt_recall · 3 hits · budget 4000 B\n- mem_quasar_0 — quasar ledger rule 0: always reconcile — the ... mem_quasar_1)\n- mem_quasar_2 — quasar ledger rule 2: always reconcile — the books  (rmx memory get mem_quasar_2)\n\n'
+idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:363: JSONDecodeError
+_ test_ac10_global_hit_goes_to_the_global_file_project_hit_to_the_project_file _
+
+store = PosixPath('/private/tmp/rmx-29ay6oyg/r/3318/.refmatrix')
+global_daemon = PosixPath('/private/tmp/rmx-29ay6oyg/h/.refmatrix')
+
+    def test_ac10_global_hit_goes_to_the_global_file_project_hit_to_the_project_file(
+            store, global_daemon):
+        """AC-10: a recall returning one project and one global memory appends the global hit to the
+        GLOBAL root's recall-events.jsonl with scope=global and `name` set, and the project hit to
+        the project file -- never the other way round."""
+        root, groot = store, global_daemon
+        before_p = h.line_count(_ev_path(root))
+        before_g = h.line_count(_ev_path(groot))
+        r = _run_prompt_recall(root, "quasar ledger reconcile")
+>       payload = json.loads(r.stdout or b"[]")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_task21_1_emitters.py:965: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x100adaf90>
+s = '# rmx recall · prompt_recall · 4 hits · budget 4000 B\n- mem_quasar_1 — quasar ledger rule 1: always reconcile — the ... mem_quasar_2)\n- mem_quasar_0 — quasar ledger rule 0: always reconcile — the books  (rmx memory get mem_quasar_0)\n\n'
+idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:363: JSONDecodeError
+_______ test_ac2b_busy_daemon_skip_writes_one_skipped_budget_recall_row ________
+
+root = PosixPath('/private/tmp/rmx-29ay6oyg/r/3486/.refmatrix')
+busy_daemon = <Popen: returncode: None args: ['/Users/tholley/claude_tools/refmatrix/.venv...>
+
+    def test_ac2b_busy_daemon_skip_writes_one_skipped_budget_recall_row(root, busy_daemon):
+        """AC-2b busy leg: `require_daemon`'s VerbBusyError under `budgeted=True` is
+        `skipped_budget`. The generated per-prompt recall command exits 0 with `[]`, and the store's
+        query.log gains exactly ONE kind=recall row with outcome=skipped_budget, budget_s=5 and the
+        envelope's session; recall-events.jsonl gains no event."""
+        from refmatrix import discovery
+        assert discovery.daemon_status(root, retries=0)["busy"] is True, (
+            "busy precondition: the leg must reach require_daemon's busy classification")
+        before_rows = len(_recall_rows(root))
+        before_events = h.line_count(root / "recall-events.jsonl")
+    
+        r = h.run_hook(_recall_cmd(root), root=root, envelope=_envelope(), timeout=120)
+    
+        rows = _recall_rows(root)[before_rows:]
+        assert len(rows) == 1, (
+            f"R3/R4: a skipped recall must still write exactly one kind=recall query.log row; "
+            f"got {len(rows)}: {rows}\nstderr={r.stderr[-800:]}")
+        row = rows[0]
+        assert row["outcome"] == "skipped_budget", row
+        assert row["budget_s"] == 5, row
+        assert row["session"] == SESSION, row
+        assert row.get("query_id"), row
+        assert h.line_count(root / "recall-events.jsonl") == before_events, (
+            "a skipped call writes NO recall events")
+        assert r.returncode == 0, r.stderr
+>       assert _stdout_is_empty_json(r.stdout), r.stdout
+E       AssertionError: 
+E       assert False
+E        +  where False = _stdout_is_empty_json('')
+E        +    where '' = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...starting, rebuilding an index, or holding the store lock); retry shortly) — daemon busy; the hook skipped this turn\n').stdout
+
+tests/test_task21_1_recall_skip.py:174: AssertionError
+________________ test_ac2b_non_budget_refused_connect_is_error _________________
+
+root = PosixPath('/private/tmp/rmx-29ay6oyg/r/3488/.refmatrix')
+
+    def test_ac2b_non_budget_refused_connect_is_error(root):
+        """AC-2b non-budget leg (round-9 #m9-5, round-10 #s10-2, round-11 #s11-1, round-12
+        #m12-1). The dispatcher answers `ping` and `partition_list`; on the SECOND `ping` it reads
+        the request, closes its LISTENING socket (the socket file stays), and only then replies
+        `{"ok": true}` on the accepted connection, so the `memory_recall` connect raises
+        ConnectionRefusedError (an OSError: `error` under R4, never `skipped_budget`).
+        Asserts: ops == [ping, partition_list, ping]; exactly one kind=recall row, outcome=error,
+        `error` starting "ConnectionRefusedError"; no recall event; exit 0 and `[]`."""
+    
+        def on_op(op, n, conn, server):
+            if op == "ping" and n == 2:
+                server.close_listener()                     # close BEFORE replying
+                conn.sendall(b'{"ok": true}\n')
+                conn.close()
+                return True
+            return False
+    
+        _bootstrap_window(root)
+        before_rows = len(_recall_rows(root))
+        before_events = h.line_count(root / "recall-events.jsonl")
+        with h.OpDispatcher(root, on_op=on_op) as peer:
+            r = h.run_hook(_recall_cmd(root), root=root, envelope=_envelope(), timeout=120)
+            ops = list(peer.ops)
+    
+        assert ops == ["ping", "partition_list", "ping"], (
+            f"op sequence drifted (round-11 #s11-1): the leg must reach the recall op's connect; "
+            f"got {ops}\nstderr={r.stderr[-800:]}")
+        rows = _recall_rows(root)[before_rows:]
+        assert len(rows) == 1, (
+            f"R3/R4: a degraded recall still writes exactly one kind=recall row; got {len(rows)}: "
+            f"{rows}\nstderr={r.stderr[-800:]}")
+        assert rows[0]["outcome"] == "error", rows[0]
+>       assert str(rows[0].get("error") or "").startswith("ConnectionRefusedError"), rows[0]
+E       AssertionError: {'body': 'which parser handles the widget tokens', 'budget_s': 5.0, 'cardinality': None, 'cwd': '/private/tmp/rmx-29ay6oyg/r/3488', ...}
+E       assert False
+E        +  where False = <built-in method startswith of str object at 0x16a1c2010>('ConnectionRefusedError')
+E        +    where <built-in method startswith of str object at 0x16a1c2010> = 'VerbAbsentError: memory recall needs the daemon up (dense embedder lives there) or a replica + shared model workers'.startswith
+E        +      where 'VerbAbsentError: memory recall needs the daemon up (dense embedder lives there) or a replica + shared model workers' = str(('VerbAbsentError: memory recall needs the daemon up (dense embedder lives there) or a replica + shared model workers'))
+E        +        where 'VerbAbsentError: memory recall needs the daemon up (dense embedder lives there) or a replica + shared model workers' = <built-in method get of dict object at 0x425f4b540>('error')
+E        +          where <built-in method get of dict object at 0x425f4b540> = {'body': 'which parser handles the widget tokens', 'budget_s': 5.0, 'cardinality': None, 'cwd': '/private/tmp/rmx-29ay6oyg/r/3488', ...}.get
+
+tests/test_task21_1_recall_skip.py:244: AssertionError
+______________ test_ac2b_mid_answer_close_is_error_not_traceback _______________
+
+root = PosixPath('/private/tmp/rmx-29ay6oyg/r/3489/.refmatrix')
+
+    def test_ac2b_mid_answer_close_is_error_not_traceback(root):
+        """AC-2b mid-answer leg (round-10 #s10-2, round-11 #s11-1). On `memory_recall` the
+        dispatcher reads the full request line, then closes without replying, so the client's recv
+        sees EOF and `json.loads(b"")` raises JSONDecodeError -- outside HEAD's degrade tuple, so
+        the hook dies with a traceback today. Asserts: ops == [ping, partition_list, ping,
+        memory_recall]; one kind=recall row, outcome=error, `error` starting "JSONDecodeError";
+        exit 0, `[]`, and no traceback on stderr."""
+    
+        def on_op(op, n, conn, server):
+            if op == "memory_recall":
+                conn.close()                                 # request already read; no reply
+                return True
+            return False
+    
+        _bootstrap_window(root)
+        before_rows = len(_recall_rows(root))
+        before_events = h.line_count(root / "recall-events.jsonl")
+        with h.OpDispatcher(root, on_op=on_op) as peer:
+            r = h.run_hook(_recall_cmd(root), root=root, envelope=_envelope(), timeout=120)
+            ops = list(peer.ops)
+    
+        assert ops == ["ping", "partition_list", "ping", "memory_recall"], (
+            f"op sequence drifted (round-11 #s11-1); got {ops}\nstderr={r.stderr[-800:]}")
+        rows = _recall_rows(root)[before_rows:]
+        assert len(rows) == 1, (
+            f"R3/R4: a mid-answer close still writes exactly one kind=recall row; got "
+            f"{len(rows)}: {rows}\nstderr={r.stderr[-800:]}")
+>       assert rows[0]["outcome"] == "error", rows[0]
+E       AssertionError: {'body': 'which parser handles the widget tokens', 'budget_s': 5.0, 'cardinality': None, 'cwd': '/private/tmp/rmx-29ay6oyg/r/3489', ...}
+E       assert 'skipped_budget' == 'error'
+E         
+E         - error
+E         + skipped_budget
+
+tests/test_task21_1_recall_skip.py:279: AssertionError
+_ test_ac11a_memory_get_by_name_emits_one_used_and_only_for_the_agent_by_name_in_session _
+
+root = PosixPath('/private/tmp/rmx-29ay6oyg/r/3494/.refmatrix')
+
+    def test_ac11a_memory_get_by_name_emits_one_used_and_only_for_the_agent_by_name_in_session(root):
+        """AC-11a memory_get_by_name (CLI, both the verb path and -- by the same command -- the
+        replica fall-through's emission site). Sequence, `used` delta per call:
+          prompt_recall in S (its internal per-hit `memory_get` reads)      -> 0
+          `memory get feedback_alpha_rule` with RMX_INVOCATION_SOURCE=hook -> 0
+          `memory get <id>` by id (agent, S)                               -> 0
+          `memory get feedback_alpha_rule` in session S2 (agent)            -> 0
+          `memory get feedback_alpha_rule` in S (agent, CLAUDECODE=1)       -> 1
+        The one event: evidence=memory_get_by_name, ref_query_id = the delivering prompt_recall's
+        query_id, kind=memory, scope=project, in the PROJECT file (none in the global file)."""
+        ids = _seed(root)
+        g = _seed_global()
+        S, S2 = _sid("S"), _sid("S2")
+        cum = []          # cumulative used events of S and S2 after each call
+    
+        def _n():
+            return len(_all_used(root, g, S)) + len(_all_used(root, g, S2))
+        with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
+>           rows = _prompt_recall_delivering(root, S, ALPHA, daemons=(gd, pd))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_task21_1_used_events.py:274: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_task21_1_used_events.py:220: in _prompt_recall_delivering
+    rows = _prompt_recall(root, session, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_task21_1_used_events.py:145: in _prompt_recall
+    rows = json.loads(r.stdout or "[]")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x100adaf90>
+s = '# rmx recall · prompt_recall · 3 hits · budget 4000 B\n- feedback_alpha_rule — Always apply the alpha rule before mer...e_beta_ref --scope global)\n- unrelated_soup_note — cooking recipes for soup  (rmx memory get unrelated_soup_note)\n\n'
+idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:363: JSONDecodeError
+___________ test_ac11a_mcp_rmx_memory_get_action_by_name_emits_used ____________
+
+root = PosixPath('/private/tmp/rmx-29ay6oyg/r/3495/.refmatrix')
+
+    def test_ac11a_mcp_rmx_memory_get_action_by_name_emits_used(root):
+        """AC-11a, MCP leg: the `rmx_memory` `get` action (`verbs.memory`, verbs.py:1157) through
+        the real stdio server, session S via the server's env (`RMX_SESSION`; no pointer exists, so
+        the long-lived order falls to it). By id -> 0; by name -> 1, ref_query_id = the recall's."""
+        ids = _seed(root)
+        g = _seed_global()
+        S = _sid("S")
+        with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
+>           _prompt_recall_delivering(root, S, ALPHA, daemons=(gd, pd))
+
+tests/test_task21_1_used_events.py:308: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_task21_1_used_events.py:220: in _prompt_recall_delivering
+    rows = _prompt_recall(root, session, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_task21_1_used_events.py:145: in _prompt_recall
+    rows = json.loads(r.stdout or "[]")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x100adaf90>
+s = '# rmx recall · prompt_recall · 3 hits · budget 4000 B\n- feedback_alpha_rule — Always apply the alpha rule before mer...e_beta_ref --scope global)\n- unrelated_soup_note — cooking recipes for soup  (rmx memory get unrelated_soup_note)\n\n'
+idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:363: JSONDecodeError
+________ test_ac11b_context_by_name_on_the_memory_anchor_emits_one_used ________
+
+root = PosixPath('/private/tmp/rmx-29ay6oyg/r/3496/.refmatrix')
+
+    def test_ac11b_context_by_name_on_the_memory_anchor_emits_one_used(root):
+        """AC-11b: `rmx context feedback_alpha_rule` whose anchor resolves to the memory (no concept
+        or code of that name in the store) emits ONE `used`, evidence=context_by_name, kind=memory,
+        pointing at the prompt_recall delivery. Also through the MCP `rmx_context` route
+        (`verbs.context`) in a second session S3: one `used` there too."""
+        _seed(root)
+        g = _seed_global()
+        S, S3 = _sid("S"), _sid("S3")
+        with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
+>           _prompt_recall_delivering(root, S, ALPHA, daemons=(gd, pd))
+
+tests/test_task21_1_used_events.py:334: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_task21_1_used_events.py:220: in _prompt_recall_delivering
+    rows = _prompt_recall(root, session, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_task21_1_used_events.py:145: in _prompt_recall
+    rows = json.loads(r.stdout or "[]")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x100adaf90>
+s = '# rmx recall · prompt_recall · 3 hits · budget 4000 B\n- feedback_alpha_rule — Always apply the alpha rule before mer...e_beta_ref --scope global)\n- unrelated_soup_note — cooking recipes for soup  (rmx memory get unrelated_soup_note)\n\n'
+idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:363: JSONDecodeError
+_ test_ac11b_code_symbol_sharing_a_memory_name_is_a_code_use_not_a_memory_use __
+
+root = PosixPath('/private/tmp/rmx-29ay6oyg/r/3497/.refmatrix')
+
+    def test_ac11b_code_symbol_sharing_a_memory_name_is_a_code_use_not_a_memory_use(root):
+        """AC-11b, the kind check: in S a prompt_recall delivers MEMORY feedback_alpha_rule and a
+        scan_prompt delivers CODE symbol feedback_alpha_rule. The memory is then forgotten, so
+        `rmx context feedback_alpha_rule` anchors on the code symbol and attaches NO memory body:
+        exactly one `used` with kind=code, NONE with kind=memory (a matcher without the kind check
+        also fires on the delivered memory key)."""
+        _seed(root, code=[("alpha_rules", ALPHA)])
+        g = _seed_global()
+        S = _sid("S")
+        with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
+>           _prompt_recall_delivering(root, S, ALPHA, daemons=(gd, pd))
+
+tests/test_task21_1_used_events.py:365: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_task21_1_used_events.py:220: in _prompt_recall_delivering
+    rows = _prompt_recall(root, session, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_task21_1_used_events.py:145: in _prompt_recall
+    rows = json.loads(r.stdout or "[]")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x100adaf90>
+s = '# rmx recall · prompt_recall · 3 hits · budget 4000 B\n- feedback_alpha_rule — Always apply the alpha rule before mer...e_beta_ref --scope global)\n- unrelated_soup_note — cooking recipes for soup  (rmx memory get unrelated_soup_note)\n\n'
+idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:363: JSONDecodeError
+_ test_ac11c_focus_note_emits_one_used_per_distinct_name_global_to_global_file _
+
+root = PosixPath('/private/tmp/rmx-29ay6oyg/r/3498/.refmatrix')
+
+    def test_ac11c_focus_note_emits_one_used_per_distinct_name_global_to_global_file(root):
+        """AC-11c: in S, prompt_recall delivers project memory feedback_alpha_rule and GLOBAL memory
+        reference_beta_ref; scan_prompt delivers code item `run` (below the matchable length). The
+        note `applied feedback_alpha_rule, then feedback_alpha_rule again; see
+        [[reference_beta_ref#why]]` emits EXACTLY two `used` (one per distinct name, not per
+        occurrence): feedback_alpha_rule in the PROJECT file, reference_beta_ref (via the wikilink)
+        in the GLOBAL file with scope=global. A second note `see feedback_alpha_rules and run it`
+        emits none (a longer token; `run` is too short to match)."""
+        _seed(root, code=[("runner_loop", "run")])
+        g = _seed_global()
+        S = _sid("S")
+        note1 = (f"applied {ALPHA}, then {ALPHA} again; see [[{BETA}#why]]")
+        with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
+>           rows = _prompt_recall_delivering(root, S, (ALPHA, BETA), daemons=(gd, pd))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_task21_1_used_events.py:400: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_task21_1_used_events.py:220: in _prompt_recall_delivering
+    rows = _prompt_recall(root, session, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_task21_1_used_events.py:145: in _prompt_recall
+    rows = json.loads(r.stdout or "[]")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x100adaf90>
+s = '# rmx recall · prompt_recall · 3 hits · budget 4000 B\n- feedback_alpha_rule — Always apply the alpha rule before mer...e_beta_ref --scope global)\n- unrelated_soup_note — cooking recipes for soup  (rmx memory get unrelated_soup_note)\n\n'
+idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:363: JSONDecodeError
+__________ test_ac11d_lookup_reads_at_most_4mb_and_counts_the_cap_hit __________
+
+root = PosixPath('/private/tmp/rmx-29ay6oyg/r/3499/.refmatrix')
+
+    def test_ac11d_lookup_reads_at_most_4mb_and_counts_the_cap_hit(root):
+        """AC-11d: with 6 MB of other sessions' events appended after S's delivery of
+        feedback_alpha_rule, the agent's `memory get feedback_alpha_rule` in S emits NO `used` (the
+        delivery lies beyond the 4 MB backward read) and `rmx telemetry --agent-usage` reports
+        `used_lookup_cap_hits` >= 1 (format not fixed by the spec: matched as the name and a
+        number on one line)."""
+        _seed(root)
+        g = _seed_global()
+        S = _sid("S")
+        with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
+>           _prompt_recall_delivering(root, S, ALPHA, daemons=(gd, pd))
+
+tests/test_task21_1_used_events.py:449: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_task21_1_used_events.py:220: in _prompt_recall_delivering
+    rows = _prompt_recall(root, session, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_task21_1_used_events.py:145: in _prompt_recall
+    rows = json.loads(r.stdout or "[]")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x100adaf90>
+s = '# rmx recall · prompt_recall · 3 hits · budget 4000 B\n- feedback_alpha_rule — Always apply the alpha rule before mer...e_beta_ref --scope global)\n- unrelated_soup_note — cooking recipes for soup  (rmx memory get unrelated_soup_note)\n\n'
+idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:363: JSONDecodeError
+_____________ test_ac11e_concept_anchor_with_attached_memory_body ______________
+
+root = PosixPath('/private/tmp/rmx-29ay6oyg/r/3501/.refmatrix')
+
+    def test_ac11e_concept_anchor_with_attached_memory_body(root):
+        """AC-11e: memory feedback_gamma_rule in partition `intuition` AND a same-named concept in
+        the PROJECT partition (the bridge's shape). `rmx context feedback_gamma_rule` anchors on the
+        concept and attaches the memory body; its events are one `delivered` kind=concept (project
+        partition) and one `delivered` kind=memory (partition intuition, body span set).
+        After a prompt_recall delivered that memory in S, the agent's same context call emits
+        exactly one `used`, kind=memory, evidence=context_by_name. With the memory deleted (concept
+        only, no body), the call emits no kind=memory `used`.
+    
+        The recall hook runs with RMX_PARTITION=intuition so its dense leg reads the partition the
+        memory lives in (the generated command reads the project partition by default)."""
+        _seed(root, alpha_memory=False, memories_in_intuition=[(GAMMA, GAMMA_BODY)],
+              concepts=[GAMMA])
+        g = _seed_global()
+        from refmatrix.discovery import store_name
+        project_partition = store_name(root)
+        S0, S = _sid("S0"), _sid("S")
+        with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
+            c0 = _agent(root, ["context", GAMMA], S0)
+>           rows = _prompt_recall_delivering(root, S, GAMMA, prompt="the gamma rule",
+                                             daemons=(gd, pd), RMX_PARTITION="intuition")
+
+tests/test_task21_1_used_events.py:510: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_task21_1_used_events.py:220: in _prompt_recall_delivering
+    rows = _prompt_recall(root, session, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_task21_1_used_events.py:145: in _prompt_recall
+    rows = json.loads(r.stdout or "[]")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x100adaf90>
+s = '# rmx recall · prompt_recall · 1 hits · budget 4000 B\n- feedback_gamma_rule — The gamma rule: never merge on red.  (rmx memory get feedback_gamma_rule)\n\n'
+idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:363: JSONDecodeError
+________ test_ac11f_focus_note_sentence_final_name_and_one_used_per_key ________
+
+root = PosixPath('/private/tmp/rmx-29ay6oyg/r/3502/.refmatrix')
+
+    def test_ac11f_focus_note_sentence_final_name_and_one_used_per_key(root):
+        """AC-11f: in S with feedback_alpha_rule delivered as a MEMORY (prompt_recall):
+          note `applied feedback_alpha_rule.` -> none (`.` is a token character; under-count stated);
+        then with a CODE symbol feedback_alpha_rule ALSO delivered by scan_prompt:
+          note `applied feedback_alpha_rule now` -> two `used`, one per key (memory, code)."""
+        _seed(root, code=[("alpha_rules", ALPHA)])
+        g = _seed_global()
+        S = _sid("S")
+        with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
+>           _prompt_recall_delivering(root, S, ALPHA, daemons=(gd, pd))
+
+tests/test_task21_1_used_events.py:561: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_task21_1_used_events.py:220: in _prompt_recall_delivering
+    rows = _prompt_recall(root, session, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_task21_1_used_events.py:145: in _prompt_recall
+    rows = json.loads(r.stdout or "[]")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x100adaf90>
+s = '# rmx recall · prompt_recall · 3 hits · budget 4000 B\n- feedback_alpha_rule — Always apply the alpha rule before mer...e_beta_ref --scope global)\n- unrelated_soup_note — cooking recipes for soup  (rmx memory get unrelated_soup_note)\n\n'
+idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:363: JSONDecodeError
+__________________ test_r12_no_resolved_session_emits_no_used __________________
+
+root = PosixPath('/private/tmp/rmx-29ay6oyg/r/3503/.refmatrix')
+
+    def test_r12_no_resolved_session_emits_no_used(root):
+        """R12 'Whose session': an agent call that resolves NO session (no RMX_SESSION, no envelope,
+        no pointer for its owner) emits no `used` -- the newest ring is never used; the same call
+        with S resolved emits one. Deltas [0, 1]."""
+        _seed(root)
+        g = _seed_global()
+        S = _sid("S")
+        with h.SandboxDaemon(g, RMX_PARTITION="global") as gd, h.SandboxDaemon(root) as pd:
+>           _prompt_recall_delivering(root, S, ALPHA, daemons=(gd, pd))
+
+tests/test_task21_1_used_events.py:588: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_task21_1_used_events.py:220: in _prompt_recall_delivering
+    rows = _prompt_recall(root, session, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_task21_1_used_events.py:145: in _prompt_recall
+    rows = json.loads(r.stdout or "[]")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x100adaf90>
+s = '# rmx recall · prompt_recall · 3 hits · budget 4000 B\n- feedback_alpha_rule — Always apply the alpha rule before mer...e_beta_ref --scope global)\n- unrelated_soup_note — cooking recipes for soup  (rmx memory get unrelated_soup_note)\n\n'
+idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:363: JSONDecodeError
+________________ test_ac9_pack_trailer_quotes_a_multiline_query ________________
+
+    def test_ac9_pack_trailer_quotes_a_multiline_query():
+        """R3(d): `+N more: rmx memory recall <q> --k M`, the query collapsed to one line, ≤ 120
+        chars, shlex-quoted (a shell metacharacter cannot escape the pointer)."""
+        q = "line one of the question\nline two; rm -rf $HOME `x` " + "pad " * 40
+        rows = [_urow(i, body=2000) for i in range(12)]
+        p = _pack_unit(rows, max_bytes=2000, channel="prompt_recall", query=q, mode="dense",
+                       k_more=24)
+        pk = s.Pack(p.text.encode())
+>       assert pk.trailer is not None and pk.more == 12 - len(pk.named) > 0
+E       assert (None is not None)
+E        +  where None = <tests.task25_1_support.Pack object at 0x38c2575c0>.trailer
+
+tests/test_task25_1_recall_budget.py:290: AssertionError
+______ test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc _______
+
+fx = <tests.task25_1_support.Fixture object at 0x3c266f230>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x426226970>
+
+    def test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc(fx, monkeypatch):
+        """AC-4 (f): `rmx memory recall "q"` (table) and `--json` name the same hits as the verb
+        for the same query, including a `kind=doc` row (the CLI-only doc leg moves into the verb)."""
+        from refmatrix import verbs
+        r = s.rmx(fx, "memory", "recall", QUESTION, "--json", "-K", "memory,doc", "--k", "8")
+        assert r.returncode == 0, r.stderr[-800:]
+        cli_rows = json.loads(r.stdout)
+        monkeypatch.setenv("RMX_HOME", str(fx.home))
+        vres = verbs.memory_recall(fx.root, query=QUESTION, k=8, kinds=["memory", "doc"])
+        vnames = [m["name"] for m in vres["memories"]]
+        assert [m["name"] for m in cli_rows] == vnames, ([m["name"] for m in cli_rows], vnames)
+>       assert any((m.get("kind") == "doc") for m in vres["memories"]), (
+            f"AC-4 (f): the verb returns no kind=doc row for -K memory,doc: {vnames}")
+E       AssertionError: AC-4 (f): the verb returns no kind=doc row for -K memory,doc: ['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_03', 'fx_mem_23', 'fx_mem_13', 'fx_mem_06']
+E       assert False
+E        +  where False = any(<generator object test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc.<locals>.<genexpr> at 0x38cba3e60>)
+
+tests/test_task25_1_recall_budget.py:808: AssertionError
+___________ test_ac5_mistyped_savestate_not_named_on_the_packed_argv ___________
+
+fx = <tests.task25_1_support.Fixture object at 0x3c266f230>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x426201be0>
+
+    def test_ac5_mistyped_savestate_not_named_on_the_packed_argv(fx, monkeypatch):
+        """AC-5 (R2b): `savestate_fx01.md` (metadata.type: project, the best body for the question)
+        is not named by the packed per-prompt argv and the trailer does not count it. After 26.4
+        merges this is a regression guard (the bridge types it session/recall-state); at HEAD it is
+        RED twice over: no --pack, and HEAD's JSON names it first (bug-164's 7c4e19d2a8f3 shape)."""
+        p = _pack(_q(fx), "per-prompt argv")
+>       assert s.SAVESTATE not in p.named
+E       AssertionError: assert 'savestate_fx01' not in ['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...]
+E        +  where 'savestate_fx01' = s.SAVESTATE
+E        +  and   ['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...] = <tests.task25_1_support.Pack object at 0x3f7560c00>.named
+
+tests/test_task25_1_recall_budget.py:901: AssertionError
+___ test_ac6_include_subjects_brings_live_subjects_back_never_the_stale_one ____
+
+fx = <tests.task25_1_support.Fixture object at 0x3c266f230>
+
+    def test_ac6_include_subjects_brings_live_subjects_back_never_the_stale_one(fx):
+        r = _q(fx, append=" --include-subjects")
+        p = _pack(r, "per-prompt argv --include-subjects")
+>       assert set(p.named) & set(s.LIVE_SUBJECTS), p.named
+E       AssertionError: ['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...]
+E       assert ({'fx_dup_x', 'fx_mem_00', 'fx_mem_03', 'fx_mem_10', 'fx_mem_20', 'fx_mem_23', ...} & {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'})
+E        +  where {'fx_dup_x', 'fx_mem_00', 'fx_mem_03', 'fx_mem_10', 'fx_mem_20', 'fx_mem_23', ...} = set(['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...])
+E        +    where ['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...] = <tests.task25_1_support.Pack object at 0x3f754ceb0>.named
+E        +  and   {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'} = set(['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'])
+E        +    where ['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'] = s.LIVE_SUBJECTS
+
+tests/test_task25_1_recall_budget.py:935: AssertionError
+_____ test_ac6_verb_hides_subjects_and_the_stale_one_even_with_the_opt_in ______
+
+fx = <tests.task25_1_support.Fixture object at 0x3c266f230>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x3f7536510>
+
+    def test_ac6_verb_hides_subjects_and_the_stale_one_even_with_the_opt_in(fx, monkeypatch):
+        from refmatrix import verbs
+        monkeypatch.setenv("RMX_HOME", str(fx.home))
+        names = [m["name"] for m in verbs.memory_recall(fx.root, query=QUESTION, k=12)["memories"]]
+        assert not set(names) & set(s.SUBJECTS), names
+        names = [m["name"] for m in verbs.memory_recall(fx.root, query=QUESTION, k=12,
+                                                         include_subjects=True)["memories"]]
+>       assert set(names) & set(s.LIVE_SUBJECTS), names
+E       AssertionError: ['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_03', 'fx_mem_23', ...]
+E       assert ({'fx_mem_00', 'fx_mem_01', 'fx_mem_03', 'fx_mem_06', 'fx_mem_10', 'fx_mem_13', ...} & {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'})
+E        +  where {'fx_mem_00', 'fx_mem_01', 'fx_mem_03', 'fx_mem_06', 'fx_mem_10', 'fx_mem_13', ...} = set(['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_03', 'fx_mem_23', ...])
+E        +  and   {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'} = set(['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'])
+E        +    where ['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'] = s.LIVE_SUBJECTS
+
+tests/test_task25_1_recall_budget.py:958: AssertionError
+__________ test_ac9_session_start_carries_bodies_after_all_hook_lines __________
+
+fx = <tests.task25_1_support.Fixture object at 0x3c266f230>
+
+    def test_ac9_session_start_carries_bodies_after_all_hook_lines(fx):
+        p = _pack(_ss(fx), "SessionStart argv")
+>       assert len(p.bodied) >= 2, f"AC-9: {len(p.bodied)} bodied hits on session_start"
+E       AssertionError: AC-9: 0 bodied hits on session_start
+E       assert 0 >= 2
+E        +  where 0 = len([])
+E        +    where [] = <tests.task25_1_support.Pack object at 0x3f754e670>.bodied
+
+tests/test_task25_1_recall_budget.py:1041: AssertionError
+____________ test_ac10_delivered_events_slice_the_payload_by_bytes _____________
+
+fx = <tests.task25_1_support.Fixture object at 0x3c266f230>
+
+    def test_ac10_delivered_events_slice_the_payload_by_bytes(fx):
+        """AC-10 (R9): on the SessionStart argv, one `delivered` event per NAMED hit (none for a
+        trimmed hit), one query_id with the `retrieved` events; each span slices exactly its hook
+        line / body out of the payload BYTES; unbodied hits carry null body fields; a global hit's
+        event is in the tmp global root's file with scope=global. The fixed 7-of-12/3-bodied shape
+        of 19.1 AC-6 is not forced here (R0 sets the budget the shape depends on)."""
+        pe, ge = fx.root / "recall-events.jsonl", fx.home / "recall-events.jsonl"
+        n_p, n_g = len(h.jsonl(pe)), len(h.jsonl(ge))
+        r = _ss(fx)
+        p = _pack(r, "SessionStart argv")
+        # This module runs one hook at a time, so the lines appended since n_p/n_g are this call's
+        # (`--session-start` reads no envelope, so the event's session is not the test's to pick).
+        new_g = [e for e in h.jsonl(ge)[n_g:] if e.get("channel") == "session_start"]
+        evs = [e for e in h.jsonl(pe)[n_p:] if e.get("channel") == "session_start"] + new_g
+        qids = {e.get("query_id") for e in evs}
+        assert len(qids) == 1 and None not in qids, qids
+        deliv = [e for e in evs if e.get("stage") == "delivered"]
+        assert sorted(e["name"] for e in deliv) == sorted(p.named), (
+            [e["name"] for e in deliv], p.named)
+        raw = r.stdout
+        for e in deliv:
+            line = raw[e["offset_bytes"]:e["offset_bytes"] + e["bytes"]]
+            assert line == (p.hook_line_of(e["name"]) + "\n").encode("utf-8"), (e["name"], line)
+            if e["name"] in p.bodied:
+                body = raw[e["body_offset_bytes"]:e["body_offset_bytes"] + e["body_bytes"]]
+                assert f"BODYMARK {e['name']}".encode() in body
+                assert raw[:e["body_offset_bytes"]].decode().count("—") >= 3
+            else:
+>               assert e.get("body_offset_bytes") is None and e.get("body_bytes") is None, e
+E               AssertionError: {'arm': 'fixed', 'block_id': 'session-start', 'block_sha': 'f7c3e44621d7995f9f1d77529eba5c60769a9087f18223373d69e453a2098e21', 'body_bytes': 126, ...}
+E               assert (6031 is None)
+E                +  where 6031 = <built-in method get of dict object at 0x3b8ad8b00>('body_offset_bytes')
+E                +    where <built-in method get of dict object at 0x3b8ad8b00> = {'arm': 'fixed', 'block_id': 'session-start', 'block_sha': 'f7c3e44621d7995f9f1d77529eba5c60769a9087f18223373d69e453a2098e21', 'body_bytes': 126, ...}.get
+
+tests/test_task25_1_recall_budget.py:1080: AssertionError
+________ test_cli_drain_that_printed_more_leaves_the_rest_in_the_spool _________
+
+root = PosixPath('/tmp/r37r-8x79v6ae/proj/.refmatrix')
+
+    def test_cli_drain_that_printed_more_leaves_the_rest_in_the_spool(root):
+        """The ledger's probe: 15 paths, the line shows 10 and "+5 more" — the 5 were never
+        shown, so they must survive."""
+        gmd_curator.write_spool(root, [str(root.parent / f"PLAN-{i}.md") for i in range(15)])
+        r = CliRunner().invoke(cli_mod.main, ["curator", "status", "--drain"])
+        assert r.exit_code == 0, r.output
+>       assert "+5 more" in r.output, r.output
+E       AssertionError: curator-queue: 15 curator-relevant file change(s) since last drain. Spawn `gmd-curator` (ingest mode) to cross-link, surface drift, and crystallize. Paths: /tmp/r37r-8x79v6ae/proj/PLAN-0.md, /tmp/r37r-8x79v6ae/proj/PLAN-1.md, /tmp/r37r-8x79v6ae/proj/PLAN-10.md, /tmp/r37r-8x79v6ae/proj/PLAN-11.md, /tmp/r37r-8x79v6ae/proj/PLAN-12.md, /tmp/r37r-8x79v6ae/proj/PLAN-13.md, /tmp/r37r-8x79v6ae/proj/PLAN-14.md
+E         +8 more path(s) not shown within 500 B; `rmx curator status --json` lists all
+E         rmx curator: kept 1 spool file(s) not fully shown within --limit 10; raise --limit or drain with `rmx curator drain --token @<status.json>`
+E         
+E       assert '+5 more' in 'curator-queue: 15 curator-relevant file change(s) since last drain. Spawn `gmd-curator` (ingest mode) to cross-link, ...ol file(s) not fully shown within --limit 10; raise --limit or drain with `rmx curator drain --token @<status.json>`\n'
+E        +  where 'curator-queue: 15 curator-relevant file change(s) since last drain. Spawn `gmd-curator` (ingest mode) to cross-link, ...ol file(s) not fully shown within --limit 10; raise --limit or drain with `rmx curator drain --token @<status.json>`\n' = <Result okay>.output
+
+tests/test_task3_7_remedy_r1.py:85: AssertionError
+___ test_drain_behind_an_oversized_head_file_reports_what_it_kept_on_stderr ____
+
+root = PosixPath('/tmp/r37m-r3nxoltz/proj/.refmatrix')
+
+    def test_drain_behind_an_oversized_head_file_reports_what_it_kept_on_stderr(root):
+        head = gmd_curator.write_spool(root, [str(root.parent / f"BIG-{i}.md") for i in range(15)])
+        newer = [gmd_curator.write_spool(root, [str(root.parent / f"N{i}{j}.md") for j in "ab"])
+                 for i in range(3)]
+        before = sorted(p.name for p in gmd_curator.curator_spool_dir(root).glob("*.jsonl"))
+        r = CliRunner().invoke(cli_mod.main, ["curator", "status", "--drain"])
+        assert r.exit_code == 0, r.output
+        after = sorted(p.name for p in gmd_curator.curator_spool_dir(root).glob("*.jsonl"))
+        assert after == before == sorted([head, *newer]), "data safety (R-B1) regressed"
+>       assert "curator-queue: 15" in r.stdout and "+5 more" in r.stdout, r.stdout
+E       AssertionError: curator-queue: 15 curator-relevant file change(s) since last drain. Spawn `gmd-curator` (ingest mode) to cross-link, surface drift, and crystallize. Paths: /tmp/r37m-r3nxoltz/proj/BIG-0.md, /tmp/r37m-r3nxoltz/proj/BIG-1.md, /tmp/r37m-r3nxoltz/proj/BIG-10.md, /tmp/r37m-r3nxoltz/proj/BIG-11.md, /tmp/r37m-r3nxoltz/proj/BIG-12.md, /tmp/r37m-r3nxoltz/proj/BIG-13.md
+E         +9 more path(s) not shown within 500 B (3 more spool file(s) not read yet); `rmx curator status --json` lists all
+E         
+E       assert ('curator-queue: 15' in 'curator-queue: 15 curator-relevant file change(s) since last drain. Spawn `gmd-curator` (ingest mode) to cross-link, ...d\n+9 more path(s) not shown within 500 B (3 more spool file(s) not read yet); `rmx curator status --json` lists all\n' and '+5 more' in 'curator-queue: 15 curator-relevant file change(s) since last drain. Spawn `gmd-curator` (ingest mode) to cross-link, ...d\n+9 more path(s) not shown within 500 B (3 more spool file(s) not read yet); `rmx curator status --json` lists all\n')
+E        +  where 'curator-queue: 15 curator-relevant file change(s) since last drain. Spawn `gmd-curator` (ingest mode) to cross-link, ...d\n+9 more path(s) not shown within 500 B (3 more spool file(s) not read yet); `rmx curator status --json` lists all\n' = <Result okay>.stdout
+E        +  and   'curator-queue: 15 curator-relevant file change(s) since last drain. Spawn `gmd-curator` (ingest mode) to cross-link, ...d\n+9 more path(s) not shown within 500 B (3 more spool file(s) not read yet); `rmx curator status --json` lists all\n' = <Result okay>.stdout
+
+tests/test_task3_7_remedy_r2_meh.py:59: AssertionError
+=============================== warnings summary ===============================
+tests/test_cctree_web.py:17
+  /Volumes/littlebig/refmatrix-plan25-1/tests/test_cctree_web.py:17: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient  # noqa: E402
+
+tests/test_grep_stdin_dialect.py:11
+  /Volumes/littlebig/refmatrix-plan25-1/tests/test_grep_stdin_dialect.py:11: SyntaxWarning: "\|" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\|"? A raw string is also an option.
+    present, and GNU BRE escapes (`a\|b`) fail loud (exit 2 → wrapper falls back
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/lance/__init__.py:298: UserWarning: lance is not fork-safe. If you are using multiprocessing, use spawn or forkserver instead.
+    warnings.warn(
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Volumes/littlebig/refmatrix-plan25-1/tests/test_bug129_hub_pidfile.py:227: DeprecationWarning: This process (pid=56070) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    pid = os.fork()
+
+tests/test_rerank_budget_real_clients.py::test_a_header_that_eats_the_budget_sends_no_rerank
+  /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-369 (one)
+  
+  Traceback (most recent call last):
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Volumes/littlebig/refmatrix-plan25-1/tests/test_rerank_budget_real_clients.py", line 361, in one
+      send_frame(rw, {"ok": True, "model": "stub/ce",
+      ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      "cost_s_per_doc": None, "queue_depth": 0})
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/subproc.py", line 126, in send_frame
+      fh.flush()
+      ~~~~~~~~^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 747, in write
+      return self._sock.send(b)
+             ~~~~~~~~~~~~~~~^^^
+  BrokenPipeError: [Errno 32] Broken pipe
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_bigop_nonblocking.py::test_replica_recall_env_kill_switch
+FAILED tests/test_bigop_nonblocking.py::test_replica_recall_none_without_shared_workers
+FAILED tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon
+FAILED tests/test_docs_generated.py::test_hooks_table_section_equals_its_render
+FAILED tests/test_docs_generated.py::test_check_mode_reports_drift_and_apply_fixes_it
+FAILED tests/test_gmd_lint_requires_version.py::test_the_repo_scope_is_clean_under_the_stricter_gate
+FAILED tests/test_plan2_remedy_r6.py::test_rerank_is_skipped_and_said_when_the_budget_is_short
+FAILED tests/test_plan2_remedy_r6.py::test_rerank_timeout_is_said_not_swallowed
+FAILED tests/test_plan2_remedy_r6.py::test_budget_spent_before_the_global_leg_keeps_the_project_rows
+FAILED tests/test_plan2_remedy_r7.py::test_json_recall_with_no_hits_prints_an_empty_list
+FAILED tests/test_plan2_remedy_r7.py::test_replica_recall_leg_sends_a_capped_pool_to_the_reranker
+FAILED tests/test_plan3_remedy.py::test_verb_dense_rows_carry_the_annotation
+FAILED tests/test_rerank_cost_budget.py::test_the_replica_recall_leg_skips_and_says_the_numbers
+FAILED tests/test_rerank_cost_budget.py::test_the_replica_recall_leg_reranks_when_the_budget_covers_it
+FAILED tests/test_rerank_warning_routes.py::test_replica_recall_names_the_cause
+FAILED tests/test_rerank_warning_routes.py::test_cli_recall_daemon_branch_prints_the_warnings
+FAILED tests/test_task21_1_agent_usage_report.py::test_ac6_frozen_fixture_prints_the_exact_counts
+FAILED tests/test_task21_1_agent_usage_report.py::test_ac6_cli_log_recalls_are_split_per_channel
+FAILED tests/test_task21_1_emitters.py::test_ac8_prompt_recall_retrieves_10_delivers_3_in_intuition
+FAILED tests/test_task21_1_emitters.py::test_ac10_global_hit_goes_to_the_global_file_project_hit_to_the_project_file
+FAILED tests/test_task21_1_recall_skip.py::test_ac2b_busy_daemon_skip_writes_one_skipped_budget_recall_row
+FAILED tests/test_task21_1_recall_skip.py::test_ac2b_non_budget_refused_connect_is_error
+FAILED tests/test_task21_1_recall_skip.py::test_ac2b_mid_answer_close_is_error_not_traceback
+FAILED tests/test_task21_1_used_events.py::test_ac11a_memory_get_by_name_emits_one_used_and_only_for_the_agent_by_name_in_session
+FAILED tests/test_task21_1_used_events.py::test_ac11a_mcp_rmx_memory_get_action_by_name_emits_used
+FAILED tests/test_task21_1_used_events.py::test_ac11b_context_by_name_on_the_memory_anchor_emits_one_used
+FAILED tests/test_task21_1_used_events.py::test_ac11b_code_symbol_sharing_a_memory_name_is_a_code_use_not_a_memory_use
+FAILED tests/test_task21_1_used_events.py::test_ac11c_focus_note_emits_one_used_per_distinct_name_global_to_global_file
+FAILED tests/test_task21_1_used_events.py::test_ac11d_lookup_reads_at_most_4mb_and_counts_the_cap_hit
+FAILED tests/test_task21_1_used_events.py::test_ac11e_concept_anchor_with_attached_memory_body
+FAILED tests/test_task21_1_used_events.py::test_ac11f_focus_note_sentence_final_name_and_one_used_per_key
+FAILED tests/test_task21_1_used_events.py::test_r12_no_resolved_session_emits_no_used
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_pack_trailer_quotes_a_multiline_query
+FAILED tests/test_task25_1_recall_budget.py::test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc
+FAILED tests/test_task25_1_recall_budget.py::test_ac5_mistyped_savestate_not_named_on_the_packed_argv
+FAILED tests/test_task25_1_recall_budget.py::test_ac6_include_subjects_brings_live_subjects_back_never_the_stale_one
+FAILED tests/test_task25_1_recall_budget.py::test_ac6_verb_hides_subjects_and_the_stale_one_even_with_the_opt_in
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_session_start_carries_bodies_after_all_hook_lines
+FAILED tests/test_task25_1_recall_budget.py::test_ac10_delivered_events_slice_the_payload_by_bytes
+FAILED tests/test_task3_7_remedy_r1.py::test_cli_drain_that_printed_more_leaves_the_rest_in_the_spool
+FAILED tests/test_task3_7_remedy_r2_meh.py::test_drain_behind_an_oversized_head_file_reports_what_it_kept_on_stderr
+41 failed, 4360 passed, 1 skipped, 5 warnings in 2676.44s (0:44:36)

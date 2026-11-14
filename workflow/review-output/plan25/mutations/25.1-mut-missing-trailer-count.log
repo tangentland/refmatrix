@@ -1,0 +1,30 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+____ test_ac9_pack_hook_lines_first_whole_bodies_arithmetic_and_bytes[2000] ____
+
+n = 2000
+
+    @pytest.mark.parametrize("n", [2000, 4000, 9000])
+    def test_ac9_pack_hook_lines_first_whole_bodies_arithmetic_and_bytes(n):
+        """R3/R8 on a multibyte fixture: hook lines for ALL named hits before any body; bodies are
+        whole and ⊆ named; a body is never a second named hit; named + trailer N = hits given;
+        ≤ N UTF-8 bytes; payload_bytes is the byte length (AC-2, AC-9, AC-14)."""
+        rows = [_urow(i, body=300 + 120 * i) for i in range(20)]
+        p = _pack_unit(rows, max_bytes=n)
+        raw = p.text.encode("utf-8")
+        assert len(raw) <= n and p.payload_bytes == len(raw)
+        pk = s.Pack(raw)
+        assert pk.named == list(p.named) and len(set(pk.named)) == len(pk.named)
+>       assert len(pk.named) + pk.more == len(rows) and p.more == pk.more
+E       AssertionError: assert ((15 + 0) == 20)
+E        +  where 15 = len(['u_mem_00', 'u_mem_01', 'u_mem_02', 'u_mem_03', 'u_mem_04', 'u_mem_05', ...])
+E        +    where ['u_mem_00', 'u_mem_01', 'u_mem_02', 'u_mem_03', 'u_mem_04', 'u_mem_05', ...] = <tests.task25_1_support.Pack object at 0x1209c7cb0>.named
+E        +  and   0 = <tests.task25_1_support.Pack object at 0x1209c7cb0>.more
+E        +  and   20 = len([{'content': '# Unit title 0 {#root}\n\nFirst sentence of u_mem_00 — → — → unit.\n\nBODYMARK u_mem_00 — the body → who...kind': 'memory', 'metadata': {'source_path': '/unit/memory/u_mem_05.md', 'title': 'Unit title 5 — row → 5'}, ...}, ...])
+
+tests/test_task25_1_recall_budget.py:259: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_pack_hook_lines_first_whole_bodies_arithmetic_and_bytes[2000]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.19s

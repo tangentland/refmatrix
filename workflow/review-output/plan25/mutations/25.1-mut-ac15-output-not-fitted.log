@@ -1,0 +1,31 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+.F
+=================================== FAILURES ===================================
+_____ test_ac15c_recall_state_over_n_keeps_whole_blocks_head_and_a_trailer _____
+
+rs = <tests.task25_1_support.Fixture object at 0x106008980>
+
+    def test_ac15c_recall_state_over_n_keeps_whole_blocks_head_and_a_trailer(rs):
+        """AC-15 (c): a recall-state larger than N: whole blocks only, the head kept, a trailer
+        naming `rmx recall-state`. N is forced below the full size by appending a smaller
+        `--max-bytes` (click keeps the last); the full size is measured first."""
+        full = s.run_cmd(rs, s.HOOK_ENV + "rmx recall-state")
+        _ok(full, "rmx recall-state (full)")
+        n = 700
+        assert len(full.stdout) > n, f"fixture: full recall-state is only {len(full.stdout)} B"
+        _m, cmd = _rs_entry(rs.root)
+        r = s.run_cmd(rs, cmd + f" --max-bytes {n}",
+                      env_in=s.envelope("", event="SessionStart", source="compact"))
+        _ok(r, f"recall-state --max-bytes {n}")
+        out = r.stdout.decode("utf-8")
+>       assert 0 < len(r.stdout) <= n, len(r.stdout)
+E       AssertionError: 4507
+E       assert 4507 <= 700
+E        +  where 4507 = len(b"recall-state \xc2\xb7 session sess-p25-fx (newest ring; not resolved) (26 STM events)\nhandoff savestate_sessp25fx /...cile pass 0\n- last: work on quasar_ledger_component_11 and zorbulate_shard_module_11 \xe2\x80\x94 reconcile pass 11\n")
+E        +    where b"recall-state \xc2\xb7 session sess-p25-fx (newest ring; not resolved) (26 STM events)\nhandoff savestate_sessp25fx /...cile pass 0\n- last: work on quasar_ledger_component_11 and zorbulate_shard_module_11 \xe2\x80\x94 reconcile pass 11\n" = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...- last: work on quasar_ledger_component_11 and zorbulate_shard_module_11 \xe2\x80\x94 reconcile pass 11\n", stderr=b'').stdout
+
+tests/test_task25_1_recall_budget.py:1297: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac15c_recall_state_over_n_keeps_whole_blocks_head_and_a_trailer
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 1 passed in 1.68s

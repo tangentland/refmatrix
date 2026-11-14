@@ -1,0 +1,99 @@
+pyc-guard: recompiled 3 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+PART fxproj RERANK None SOCK None
+KINDS ['memory'] [('savestate_fx01', 'memory', 9.485, True), ('fx_mem_00', 'memory', 8.143, True), ('fx_mem_10', 'memory', 8.122, True), ('fx_mem_20', 'memory', 8.115, True), ('fx_mem_03', 'memory', 7.954, True), ('fx_mem_23', 'memory', 7.943, True), ('fx_mem_13', 'memory', 7.935, True), ('fx_mem_06', 'memory', 7.931, True), ('fx_mem_16', 'memory', 7.882, True), ('fx_mem_26', 'memory', 7.878, True), ('fx_mem_24', 'memory', 7.83, True), ('fx_mem_01', 'memory', 7.818, True), ('fx_mem_14', 'memory', 7.788, True), ('fx_mem_18', 'memory', 7.78, True), ('fx_mem_08', 'memory', 7.77, True), ('fx_mem_04', 'memory', 7.767, True), ('fx_mem_09', 'memory', 7.749, True), ('fx_mem_21', 'memory', 7.747, True), ('fx_mem_11', 'memory', 7.745, True), ('fx_mem_28', 'memory', 7.744, True), ('fx_mem_05', 'memory', 7.728, True), ('fx_mem_12', 'memory', 7.726, True), ('fx_mem_19', 'memory', 7.693, True), ('fx_mem_22', 'memory', 7.684, True), ('fx_mem_15', 'memory', 7.679, True), ('fx_mem_27', 'memory', 7.676, True), ('fx_mem_02', 'memory', 7.667, True), ('fx_mem_29', 'memory', 7.661, True), ('fx_mem_17', 'memory', 7.661, True), ('fx_mem_25', 'memory', 7.645, True), ('fx_mem_07', 'memory', 7.644, True), ('subject_quasar_ledger_0', 'memory', 7.538, True), ('subject_quasar_ledger_1', 'memory', 7.538, True), ('subject_quasar_ledger_2', 'memory', 7.191, True), ('subject_quasar_ledger_4', 'memory', 7.177, True), ('subject_quasar_ledger_3', 'memory', 7.175, True)]
+NORERANK ['memory'] [('subject_quasar_ledger_0', 'memory', 0.041), ('subject_quasar_ledger_1', 'memory', 0.041), ('subject_quasar_ledger_2', 'memory', 0.056), ('subject_quasar_ledger_3', 'memory', 0.06), ('subject_quasar_ledger_4', 'memory', 0.06), ('savestate_fx01', 'memory', 0.237), ('fx_mem_06', 'memory', 0.29), ('fx_mem_01', 'memory', 0.296), ('fx_mem_10', 'memory', 0.296), ('fx_mem_16', 'memory', 0.296), ('fx_mem_26', 'memory', 0.297), ('fx_mem_20', 'memory', 0.298), ('fx_mem_04', 'memory', 0.298), ('fx_mem_00', 'memory', 0.299), ('fx_mem_29', 'memory', 0.301), ('fx_mem_19', 'memory', 0.306), ('fx_mem_24', 'memory', 0.307), ('fx_mem_14', 'memory', 0.308), ('fx_mem_13', 'memory', 0.308), ('fx_mem_21', 'memory', 0.311), ('fx_mem_11', 'memory', 0.313), ('fx_mem_09', 'memory', 0.317), ('fx_mem_28', 'memory', 0.318), ('fx_mem_18', 'memory', 0.32), ('fx_mem_22', 'memory', 0.321), ('fx_mem_23', 'memory', 0.326), ('fx_mem_03', 'memory', 0.328), ('fx_mem_12', 'memory', 0.33), ('fx_mem_07', 'memory', 0.332), ('fx_mem_25', 'memory', 0.332), ('fx_mem_08', 'memory', 0.333), ('fx_mem_15', 'memory', 0.336), ('fx_mem_05', 'memory', 0.338), ('fx_mem_27', 'memory', 0.346), ('fx_mem_02', 'memory', 0.346), ('fx_mem_17', 'memory', 0.354)]
+KINDS ['memory', 'doc'] [('savestate_fx01', 'memory', 9.485, True), ('fx_mem_00', 'memory', 8.143, True), ('fx_mem_10', 'memory', 8.122, True), ('fx_mem_20', 'memory', 8.115, True), ('fx_mem_03', 'memory', 7.954, True), ('fx_mem_23', 'memory', 7.943, True), ('fx_mem_13', 'memory', 7.935, True), ('fx_mem_06', 'memory', 7.931, True), ('fx_mem_16', 'memory', 7.882, True), ('fx_mem_26', 'memory', 7.878, True), ('fx_mem_24', 'memory', 7.83, True), ('fx_mem_01', 'memory', 7.818, True), ('fx_mem_14', 'memory', 7.788, True), ('fx_mem_18', 'memory', 7.78, True), ('fx_mem_08', 'memory', 7.77, True), ('fx_mem_04', 'memory', 7.767, True), ('fx_mem_09', 'memory', 7.749, True), ('fx_mem_21', 'memory', 7.747, True), ('fx_mem_11', 'memory', 7.745, True), ('fx_mem_28', 'memory', 7.744, True), ('fx_mem_05', 'memory', 7.728, True), ('fx_mem_12', 'memory', 7.726, True), ('fx_mem_19', 'memory', 7.693, True), ('fx_mem_22', 'memory', 7.684, True), ('fx_mem_15', 'memory', 7.679, True), ('fx_mem_27', 'memory', 7.676, True), ('fx_mem_02', 'memory', 7.667, True), ('fx_mem_29', 'memory', 7.661, True), ('fx_mem_17', 'memory', 7.661, True), ('fx_mem_25', 'memory', 7.645, True), ('fx_mem_07', 'memory', 7.644, True), ('subject_quasar_ledger_0', 'memory', 7.538, True), ('subject_quasar_ledger_1', 'memory', 7.538, True), ('subject_quasar_ledger_2', 'memory', 7.191, True), ('subject_quasar_ledger_4', 'memory', 7.177, True), ('subject_quasar_ledger_3', 'memory', 7.175, True)]
+NORERANK ['memory', 'doc'] [('subject_quasar_ledger_0', 'memory', 0.041), ('subject_quasar_ledger_1', 'memory', 0.041), ('subject_quasar_ledger_2', 'memory', 0.056), ('subject_quasar_ledger_3', 'memory', 0.06), ('subject_quasar_ledger_4', 'memory', 0.06), ('savestate_fx01', 'memory', 0.237), ('fx_mem_06', 'memory', 0.29), ('fx_mem_01', 'memory', 0.296), ('fx_mem_10', 'memory', 0.296), ('fx_mem_16', 'memory', 0.296), ('fx_mem_26', 'memory', 0.297), ('fx_mem_20', 'memory', 0.298), ('fx_mem_04', 'memory', 0.298), ('fx_mem_00', 'memory', 0.299), ('fx_mem_29', 'memory', 0.301), ('fx_mem_19', 'memory', 0.306), ('fx_mem_24', 'memory', 0.307), ('fx_mem_14', 'memory', 0.308), ('fx_mem_13', 'memory', 0.308), ('fx_mem_21', 'memory', 0.311), ('fx_mem_11', 'memory', 0.313), ('fx_mem_09', 'memory', 0.317), ('fx_mem_28', 'memory', 0.318), ('fx_mem_18', 'memory', 0.32), ('fx_mem_22', 'memory', 0.321), ('fx_mem_23', 'memory', 0.326), ('fx_mem_03', 'memory', 0.328), ('fx_mem_12', 'memory', 0.33), ('fx_mem_07', 'memory', 0.332), ('fx_mem_25', 'memory', 0.332), ('fx_mem_08', 'memory', 0.333), ('fx_mem_15', 'memory', 0.336), ('fx_mem_05', 'memory', 0.338), ('fx_mem_27', 'memory', 0.346), ('fx_mem_02', 'memory', 0.346), ('fx_mem_17', 'memory', 0.354)]
+SS 8610 # rmx recall · session_start · 30 hits · budget 9000 B
+- savestate_fx01 — Save-state fx01 — handoff → next — SAVESTATE-fx01 — handoff → next → reconcile.  (rmx memory get savestate_fx01)
+- fx_dup_x — GLOBAL-COPY fx_dup_x — the global row → how does the quasar ledger reconcile flux batches across zorbulate shards — →  (rmx memory get fx_dup_x --scope global)
+- fx_mem_29 — Quasar ledger note 29 — replay → shard 29 — HOOK-fx_mem_29 — curated: reconcile replay → ledger → shard 29 — owner note  (rmx memory get fx_mem_29)
+- gx_mem_9 — GLOBAL-COPY gx_mem_9 — cross-project rule 9 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 9.  (rmx memory get gx_mem_9 --scope global)
+- fx_mem_28 — Quasar ledger note 28 — drift check → shard 28 — HOOK-fx_mem_28 — curated: reconcile drift check → ledger → shard 28 — owner note  (rmx memory get fx_mem_28)
+- gx_mem_8 — GLOBAL-COPY gx_mem_8 — cross-project rule 8 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 8.  (rmx memory get gx_mem_8 --scope global)
+- fx_mem_27 — Quasar ledger note 27 — settlement window → shard 27 — HOOK-fx_mem_27 — curated: reconcile settlement window → ledger → shard 27 — owner note  (rmx memory get fx_mem_27)
+- gx_mem_7 — GLOBAL-COPY gx_mem_7 — cross-project rule 7 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 7.  (rmx memory get gx_mem_7 --scope global)
+- fx_mem_26 — Quasar ledger note 26 — zorbulate split → shard 26 — HOOK-fx_mem_26 — curated: reconcile zorbulate split → ledger → shard 26 — owner note  (rmx memory get fx_mem_26)
+- gx_mem_6 — GLOBAL-COPY gx_mem_6 — cross-project rule 6 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 6.  (rmx memory get gx_mem_6 --scope global)
+- fx_mem_25 — Quasar ledger note 25 — batch fence → shard 25 — HOOK-fx_mem_25 — curated: reconcile batch fence → ledger → shard 25 — owner note  (rmx memory get fx_mem_25)
+- gx_mem_5 — GLOBAL-COPY gx_mem_5 — cross-project rule 5 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 5.  (rmx memory get gx_mem_5 --scope global)
+- fx_mem_24 — Quasar ledger note 24 — quasar audit → shard 24 — HOOK-fx_mem_24 — curated: reconcile quasar audit → ledger → shard 24 — owner note  (rmx memory get fx_mem_24)
+- gx_mem_4 — GLOBAL-COPY gx_mem_4 — cross-project rule 4 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 4.  (rmx memory get gx_mem_4 --scope global)
+- fx_mem_23 — Quasar ledger note 23 — reconcile pass → shard 23 — HOOK-fx_mem_23 — curated: reconcile reconcile pass → ledger → shard 23 — owner note  (rmx memory get fx_mem_23)
+- gx_mem_3 — GLOBAL-COPY gx_mem_3 — cross-project rule 3 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 3.  (rmx memory get gx_mem_3 --scope global)
+- fx_mem_22 — Quasar ledger note 22 — ledger close → shard 22 — HOOK-fx_mem_22 — curated: reconcile ledger close → ledger → shard 22 — owner note  (rmx memory get fx_mem_22)
+- gx_mem_2 — GLOBAL-COPY gx_mem_2 — cross-project rule 2 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 2.  (rmx memory get gx_mem_2 --scope global)
+- fx_mem_21 — Quasar ledger note 21 — shard merge → shard 21 — HOOK-fx_mem_21 — curated: reconcile shard merge → ledger → shard 21 — owner note  (rmx memory get fx_mem_21)
+- gx_mem_1 — GLOBAL-COPY gx_mem_1 — cross-project rule 1 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 1.  (rmx memory get gx_mem_1 --scope global)
+- fx_mem_20 — Quasar ledger note 20 — flux batch → shard 20 — HOOK-fx_mem_20 — curated: reconcile flux batch → ledger → shard 20 — owner note  (rmx memory get fx_mem_20)
+- gx_mem_0 — GLOBAL-COPY gx_mem_0 — cross-project rule 0 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 0.  (rmx memory get gx_mem_0 --scope global)
+- fx_mem_19 — Quasar ledger note 19 — replay → shard 19 — HOOK-fx_mem_19 — curated: reconcile replay → ledger → shard 19 — owner note  (rmx memory get fx_mem_19)
+- fx_mem_18 — Quasar ledger note 18 — drift check → shard 18 — HOOK-fx_mem_18 — curated: reconcile drift check → ledger → shard 18 — owner note  (rmx memory get fx_mem_18)
+- fx_mem_17 — Quasar ledger note 17 — settlement window → shard 17 — HOOK-fx_mem_17 — curated: reconcile settlement window → ledger → shard 17 — owner note  (rmx memory get fx_mem_17)
+- fx_mem_16 — Quasar ledger note 16 — zorbulate split → shard 16 — HOOK-fx_mem_16 — curated: reconcile zorbulate split → ledger → shard 16 — owner note  (rmx memory get fx_mem_16)
+- fx_mem_15 — Quasar ledger note 15 — batch fence → shard 15 — HOOK-fx_mem_15 — curated: reconcile batch fence → ledger → shard 15 — owner note  (rmx memory get fx_mem_15)
+- fx_mem_14 — Quasar ledger note 14 — quasar audit → shard 14 — HOOK-fx_mem_14 — curated: reconcile quasar audit → ledger → shard 14 — owner note  (rmx memory get fx_mem_14)
+- fx_mem_13 — Quasar ledger note 13 — reconcile pass → shard 13 — HOOK-fx_mem_13 — curated: reconcile reconcile pass → ledger → shard 13 — owner note  (rmx memory get fx_mem_13)
+- fx_mem_12 — Quasar ledger note 12 — ledger close → shard 12 — HOOK-fx_mem_12 — curated: reconcile ledger close → ledger → shard 12 — owner note  (rmx memory get fx_mem_12)
+## fx_dup_x
+GLOBAL-COPY fx_dup_x — the global row → how does the quasar ledger reconcile flux batches across zorbulate shards — →
+## gx_mem_9
+GLOBAL-COPY gx_mem_9 — cross-project rule 9 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 9.
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail lin
+SSERR 
+UPS 3799 # rmx recall · prompt_recall · 12 hits · budget 4000 B
+- savestate_fx01 — Save-state fx01 — handoff → next — SAVESTATE-fx01 — handoff → next → reconcile.  (rmx memory get savestate_fx01)
+- fx_dup_x — GLOBAL-COPY fx_dup_x — the global row → how does the quasar ledger reconcile flux batches across zorbulate shards — →  (rmx memory get fx_dup_x --scope global)
+- fx_mem_00 — Quasar ledger note 00 — flux batch → shard 0 — HOOK-fx_mem_00 — curated: reconcile flux batch → ledger → shard 0 — owner note  (rmx memory get fx_mem_00)
+- gx_mem_9 — GLOBAL-COPY gx_mem_9 — cross-project rule 9 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 9.  (rmx memory get gx_mem_9 --scope global)
+- fx_mem_10 — Quasar ledger note 10 — flux batch → shard 10 — HOOK-fx_mem_10 — curated: reconcile flux batch → ledger → shard 10 — owner note  (rmx memory get fx_mem_10)
+- gx_mem_8 — GLOBAL-COPY gx_mem_8 — cross-project rule 8 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 8.  (rmx memory get gx_mem_8 --scope global)
+- fx_mem_20 — Quasar ledger note 20 — flux batch → shard 20 — HOOK-fx_mem_20 — curated: reconcile flux batch → ledger → shard 20 — owner note  (rmx memory get fx_mem_20)
+- gx_mem_7 — GLOBAL-COPY gx_mem_7 — cross-project rule 7 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 7.  (rmx memory get gx_mem_7 --scope global)
+- fx_mem_03 — Quasar ledger note 03 — reconcile pass → shard 3 — HOOK-fx_mem_03 — curated: reconcile reconcile pass → ledger → shard 3 — owner note  (rmx memory get fx_mem_03)
+- gx_mem_6 — GLOBAL-COPY gx_mem_6 — cross-project rule 6 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 6.  (rmx memory get gx_mem_6 --scope global)
+- fx_mem_23 — Quasar ledger note 23 — reconcile pass → shard 23 — HOOK-fx_mem_23 — curated: reconcile reconcile pass → ledger → shard 23 — owner note  (rmx memory get fx_mem_23)
+- gx_mem_5 — GLOBAL-COPY gx_mem_5 — cross-project rule 5 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 5.  (rmx memory get gx_mem_5 --scope global)
+## fx_dup_x
+GLOBAL-COPY fx_dup_x — the global row → how does the quasar ledger reconcile flux batches across zorbulate shards — →
+## gx_mem_9
+GLOBAL-COPY gx_mem_9 — cross-project rule 9 → how does the quasar ledger reconcile flux batches across zorbulate shards → always fence the batch — owner 9.
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+global detail line — → — →
+
+
+UPSERR # rmx: warning: recall leg: daemon RPC (the daemon's embedder and rerank default)
+
+.
+1 passed in 16.40s

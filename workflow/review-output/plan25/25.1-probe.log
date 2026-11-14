@@ -1,0 +1,27 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+
+PROBE UserPromptSubmit 'how does the quasar ': rc=0 18880 B 1.0s names=['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10'] stderr=b''
+RECEIVED []
+
+PROBE UserPromptSubmit 'yes next': rc=0 34393 B 1.0s names=['savestate_fx01', 'fx_mem_01', 'fx_mem_21', 'fx_mem_11', 'fx_mem_22'] stderr=b''
+RECEIVED []
+
+PROBE SessionStart '': rc=0 10003 B 0.2s names=['subject_quasar_ledger_4', 'fx_dup_x', 'subject_quasar_ledger_3', 'gx_mem_9', 'subject_quasar_ledger_2', 'gx_mem_8', 'subject_quasar_ledger_1', 'gx_mem_7', 'subject_quasar_ledger_0', 'gx_mem_6'] stderr=b''
+RECEIVED ['fx_dup_x', 'gx_mem_9']
+
+PROBE PreCompact '': rc=0 67055 B 0.2s names=['subject_quasar_ledger_4', 'fx_dup_x', 'subject_quasar_ledger_3', 'gx_mem_9', 'subject_quasar_ledger_2', 'gx_mem_8', 'subject_quasar_ledger_1', 'gx_mem_7', 'subject_quasar_ledger_0', 'gx_mem_6', 'savestate_fx01', 'gx_mem_5', 'fx_mem_29', 'gx_mem_4', 'fx_mem_28', 'gx_mem_3', 'fx_mem_27', 'gx_mem_2', 'fx_mem_26', 'gx_mem_1'] stderr=b''
+RECEIVED ['fx_dup_x', 'gx_mem_9']
+
+PROBE scan-prompt rc=0 6720 B
+PROBE scan_cmd rc=0 8605 B
+PROBE curator rc=0 1885 B
+PROBE focus context rc=0 3319 B err=b''
+PROBE get 0 fx_dup_x  id=205  mtype=project
+  tags: project, plan25-fixture
+  meta: {'source': 'ingest_gmd_as_memory', 'source_path': 
+'/private/tmp/rmx-2xjkp5z7/h/.claude/projects/-private-tmp-rmx-2xjkp5z7-p25probe
+-p3iup523-fxproj/memory/fx_dup_x.md', 'gmd_version': '0.1', 'title': 'Duplicate 
+name — project 
+PARTITION fxproj
+.
+1 passed in 20.12s

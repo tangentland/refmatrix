@@ -1,0 +1,21 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+______ test_r1_non_rmx_reserve_is_per_event_and_covers_the_measured_hooks ______
+
+    def test_r1_non_rmx_reserve_is_per_event_and_covers_the_measured_hooks():
+        """R0/R1: the reserve is keyed by event and rounded up to 512 B from what R0 read
+        (caveman tracker ~250 B on UserPromptSubmit; caveman-activate ~1.2 KB + nudge on
+        SessionStart). Kills the AC-14 mutation "a single NON_RMX_RESERVE_BYTES for both events"."""
+        hb = s.hook_budget_mod()
+        assert hb is not None, "R1: refmatrix.hook_budget is not built"
+        r = hb.NON_RMX_RESERVE_BYTES
+>       assert r["UserPromptSubmit"] >= 250 and r["SessionStart"] >= 1200, r
+E       AssertionError: {'SessionStart': 512, 'UserPromptSubmit': 512}
+E       assert (512 >= 250 and 512 >= 1200)
+
+tests/test_task25_1_recall_budget.py:166: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_r1_non_rmx_reserve_is_per_event_and_covers_the_measured_hooks
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.17s

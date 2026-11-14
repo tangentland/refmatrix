@@ -209,17 +209,29 @@ def test_dry_run_never_goes_async(store):
 # --- 4. replica-first recall degrades to None -------------------------------
 
 
-def test_replica_recall_env_kill_switch(monkeypatch):
-    from refmatrix.cli import _replica_memory_recall
+# Task 25.1 R5 (2026-11-13 contract update): the leg moved from `cli._replica_memory_recall`
+# (which read the CWD's store through CLI globals) to `recall.replica_memory_recall(root, *,
+# partition, ...)`, root- and partition-explicit, with the A/B switch moved WITH it. The two
+# degrade-to-None guarantees below are unchanged; only the call names its store.
+
+
+def test_replica_recall_env_kill_switch(monkeypatch, tmp_path):
+    from refmatrix.recall import replica_memory_recall
     monkeypatch.setenv("RMX_RECALL_REPLICA_FIRST", "0")
-    assert _replica_memory_recall(
-        "q", k=5, kinds=["memory"], fuse=True, rerank=None) is None
+    assert replica_memory_recall(
+        tmp_path / ".refmatrix", partition="p", query="q", k=5, kinds=["memory"], fuse=True,
+        rerank=None) is None
+    # the switch is read in the CALLING process: "shared" (the no-daemon step) is off too
+    assert replica_memory_recall(
+        tmp_path / ".refmatrix", partition="p", query="q", k=5, kinds=["memory"], fuse=True,
+        rerank=None, embedder_policy="shared") is None
 
 
-def test_replica_recall_none_without_shared_workers(monkeypatch):
+def test_replica_recall_none_without_shared_workers(monkeypatch, tmp_path):
     from refmatrix import modelsrv
-    from refmatrix.cli import _replica_memory_recall
+    from refmatrix.recall import replica_memory_recall
     monkeypatch.delenv("RMX_RECALL_REPLICA_FIRST", raising=False)
     monkeypatch.setattr(modelsrv, "shared_available", lambda *a, **k: False)
-    assert _replica_memory_recall(
-        "q", k=5, kinds=["memory"], fuse=True, rerank=None) is None
+    assert replica_memory_recall(
+        tmp_path / ".refmatrix", partition="p", query="q", k=5, kinds=["memory"], fuse=True,
+        rerank=None) is None

@@ -250,7 +250,14 @@ def test_json_recall_with_no_hits_prints_an_empty_list(tmp_path, monkeypatch):
     from refmatrix.store import Store
     Store(root).init()
     monkeypatch.setattr(cli_mod, "_root", lambda: root)
-    monkeypatch.setattr(cli_mod, "_replica_memory_recall", lambda *a, **kw: [])
+    # Task 25.1 R5 (2026-11-13 contract update): the CLI renders the VERB's rows; the replica
+    # leg it used to run itself (`cli._replica_memory_recall`) moved to
+    # `recall.replica_memory_recall`, which the verb calls first. The canned leg answers with
+    # zero hits (served, not missing: a dict, where None would mean "next leg").
+    from refmatrix import recall as _recall
+    monkeypatch.setattr(_recall, "replica_memory_recall",
+                        lambda *a, **kw: {"hits": [], "fetch": lambda eid: None,
+                                          "embedder": "hub shared worker"})
     r = CliRunner().invoke(cli_mod.main, ["memory", "recall", "nothing here", "--json", "--timeout", "5"])
     assert r.exit_code == 0, r.output
     assert json.loads(r.stdout) == []
@@ -282,13 +289,26 @@ def test_replica_recall_leg_sends_a_capped_pool_to_the_reranker(tmp_path, monkey
     fit) into the pool it sends to the shared worker."""
     from refmatrix import modelsrv, recall as _recall, reranker as rr
     from refmatrix.store import Store
-    assert cli_mod.RERANK_DOC_CHARS <= 768
+    assert cli_mod.RERANK_DOC_CHARS <= 768 and _recall.RERANK_DOC_CHARS <= 768
     root = tmp_path / ".refmatrix"
     s = Store(root); s.init()
     with s.with_partition("p"):
         eid = s.add_memory(name="m", content="HEAD " + "body " * 2000, mtype="note")
-    monkeypatch.setattr(cli_mod, "_reader_store", lambda: s)
-    monkeypatch.setattr(cli_mod, "_resolve_partition", lambda: "p")
+    # Task 25.1 R5 (2026-11-13 contract update): the leg is `recall.replica_memory_recall(root,
+    # *, partition, ...)` over `search.cached_replica(root)` (was `cli._reader_store()` /
+    # `cli._resolve_partition()`); it embeds the query before the replica lock, so the
+    # stand-in embedder yields a vector (`dense_recall` is canned, the value is never read).
+    from refmatrix import embedder as _embedder, search as _search
+    import numpy as _np
+
+    class _QEmb:
+        dim = 4
+        model_name = "stub-embedder"
+
+        def embed_texts(self, texts):
+            return _np.zeros((len(texts), 4), dtype="float32")
+    monkeypatch.setattr(_search, "cached_replica", lambda r: (s, threading.Lock()))
+    monkeypatch.setattr(_embedder, "RemoteEmbedder", lambda client: _QEmb())
     monkeypatch.setattr(modelsrv, "shared_enabled", lambda: True)
     monkeypatch.setattr(modelsrv, "shared_available", lambda timeout=0.5: True)
     monkeypatch.setattr(modelsrv, "SharedWorkerClient", lambda role, **kw: object())
@@ -302,10 +322,14 @@ def test_replica_recall_leg_sends_a_capped_pool_to_the_reranker(tmp_path, monkey
     monkeypatch.setattr(rr, "shared_reranker", lambda log=None, **kw: _RR())
     ws = []
     try:
-        hits = cli_mod._replica_memory_recall("q", k=5, kinds=["memory"], fuse=False, rerank=True,
-                                              left=lambda d: min(d, 30.0), warnings=ws)
+        out = _recall.replica_memory_recall(root, partition="p", query="q", k=5,
+                                            kinds=["memory"], fuse=False, rerank=True,
+                                            left=lambda d: min(d, 30.0), warnings=ws)
     finally:
         s.close()
-    assert hits and hits[0].get("reranked"), (hits, ws)
-    assert sent["docs"] and max(len(d) for d in sent["docs"]) <= cli_mod.RERANK_DOC_CHARS, \
+    hits = (out or {}).get("hits")
+    assert hits and hits[0].get("reranked"), (out, ws)
+    # the cap the moved leg sends is the one `cli` re-exports (one constant, two names)
+    assert _recall.RERANK_DOC_CHARS == cli_mod.RERANK_DOC_CHARS
+    assert sent["docs"] and max(len(d) for d in sent["docs"]) <= _recall.RERANK_DOC_CHARS, \
         [len(d) for d in sent["docs"]]

@@ -59,9 +59,12 @@ def _recall_rows(root: Path) -> list[dict]:
     return [r for r in h.query_rows(root) if r.get("kind") == "recall"]
 
 
-def _stdout_is_empty_json(out: str) -> bool:
-    lines = [l for l in out.splitlines() if l.strip()]
-    return lines == ["[]"]
+def _stdout_is_empty(out: str) -> bool:
+    """Task 25.1 (2026-11-13 contract update): the generated recall hook is `--pack` (R7), and a
+    degraded `--pack` hook "prints NOTHING to stdout" (R5 d8) -- the hook injects no context.
+    HEAD's `--json` hook printed `[]`; the intent (a skip injects no rows and no prose) holds,
+    and is now stricter: zero bytes, not an empty list."""
+    return out == ""
 
 
 def _bootstrap_window(root: Path) -> None:
@@ -148,9 +151,10 @@ def busy_daemon(root):
 
 def test_ac2b_busy_daemon_skip_writes_one_skipped_budget_recall_row(root, busy_daemon):
     """AC-2b busy leg: `require_daemon`'s VerbBusyError under `budgeted=True` is
-    `skipped_budget`. The generated per-prompt recall command exits 0 with `[]`, and the store's
-    query.log gains exactly ONE kind=recall row with outcome=skipped_budget, budget_s=5 and the
-    envelope's session; recall-events.jsonl gains no event."""
+    `skipped_budget`. The generated per-prompt recall command exits 0 with an empty stdout
+    (`--pack`, 25.1 d8), and the store's query.log gains exactly ONE kind=recall row with
+    outcome=skipped_budget, budget_s=5 and the envelope's session; recall-events.jsonl gains
+    no event."""
     from refmatrix import discovery
     assert discovery.daemon_status(root, retries=0)["busy"] is True, (
         "busy precondition: the leg must reach require_daemon's busy classification")
@@ -171,7 +175,7 @@ def test_ac2b_busy_daemon_skip_writes_one_skipped_budget_recall_row(root, busy_d
     assert h.line_count(root / "recall-events.jsonl") == before_events, (
         "a skipped call writes NO recall events")
     assert r.returncode == 0, r.stderr
-    assert _stdout_is_empty_json(r.stdout), r.stdout
+    assert _stdout_is_empty(r.stdout), r.stdout
 
 
 # ---- ok leg: a live sandbox daemon ------------------------------------------------------------
@@ -216,7 +220,8 @@ def test_ac2b_non_budget_refused_connect_is_error(root):
     `{"ok": true}` on the accepted connection, so the `memory_recall` connect raises
     ConnectionRefusedError (an OSError: `error` under R4, never `skipped_budget`).
     Asserts: ops == [ping, partition_list, ping]; exactly one kind=recall row, outcome=error,
-    `error` starting "ConnectionRefusedError"; no recall event; exit 0 and `[]`."""
+    `error` starting "ConnectionRefusedError"; no recall event; exit 0 and an empty stdout
+    (`--pack`, 25.1 d8)."""
 
     def on_op(op, n, conn, server):
         if op == "ping" and n == 2:
@@ -244,7 +249,7 @@ def test_ac2b_non_budget_refused_connect_is_error(root):
     assert str(rows[0].get("error") or "").startswith("ConnectionRefusedError"), rows[0]
     assert h.line_count(root / "recall-events.jsonl") == before_events
     assert r.returncode == 0, r.stderr
-    assert _stdout_is_empty_json(r.stdout), r.stdout
+    assert _stdout_is_empty(r.stdout), r.stdout
 
 
 # ---- mid-answer leg: a peer that closes mid-answer is `error`, never a traceback -------------
@@ -255,7 +260,7 @@ def test_ac2b_mid_answer_close_is_error_not_traceback(root):
     sees EOF and `json.loads(b"")` raises JSONDecodeError -- outside HEAD's degrade tuple, so
     the hook dies with a traceback today. Asserts: ops == [ping, partition_list, ping,
     memory_recall]; one kind=recall row, outcome=error, `error` starting "JSONDecodeError";
-    exit 0, `[]`, and no traceback on stderr."""
+    exit 0, an empty stdout (`--pack`, 25.1 d8), and no traceback on stderr."""
 
     def on_op(op, n, conn, server):
         if op == "memory_recall":
@@ -281,7 +286,7 @@ def test_ac2b_mid_answer_close_is_error_not_traceback(root):
     assert h.line_count(root / "recall-events.jsonl") == before_events
     assert "Traceback" not in r.stderr, r.stderr[-1500:]
     assert r.returncode == 0, r.stderr
-    assert _stdout_is_empty_json(r.stdout), r.stdout
+    assert _stdout_is_empty(r.stdout), r.stdout
 
 
 # ---- report legs ------------------------------------------------------------------------------

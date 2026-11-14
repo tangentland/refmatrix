@@ -1,0 +1,23 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+_______ test_ac6_session_start_argv_has_no_subject_and_no_stale_subject ________
+
+fx = <tests.task25_1_support.Fixture object at 0x10fd3aa50>
+
+    def test_ac6_session_start_argv_has_no_subject_and_no_stale_subject(fx):
+        """AC-6 on the SessionStart argv (HEAD names all 5 seeded subjects: they are the newest)."""
+        for append in ("", " --include-subjects"):
+            r = _ss(fx, append=append)
+            _ok(r, f"SessionStart argv{append}")
+            named = s.names_in_payload(r.stdout)
+>           assert s.STALE_SUBJECT not in named, (append, named)
+E           AssertionError: (' --include-subjects', ['subject_quasar_ledger_4', 'fx_dup_x', 'subject_quasar_ledger_3', 'gx_mem_9', 'subject_quasar_ledger_2', 'gx_mem_8', ...])
+E           assert 'subject_quasar_ledger_4' not in ['subject_quasar_ledger_4', 'fx_dup_x', 'subject_quasar_ledger_3', 'gx_mem_9', 'subject_quasar_ledger_2', 'gx_mem_8', ...]
+E            +  where 'subject_quasar_ledger_4' = s.STALE_SUBJECT
+
+tests/test_task25_1_recall_budget.py:945: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac6_session_start_argv_has_no_subject_and_no_stale_subject
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 16.72s

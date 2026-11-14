@@ -1,0 +1,30 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+______ test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc _______
+
+fx = <tests.task25_1_support.Fixture object at 0x10813aa50>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ac342b0>
+
+    def test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc(fx, monkeypatch):
+        """AC-4 (f): `rmx memory recall "q"` (table) and `--json` name the same hits as the verb
+        for the same query, including a `kind=doc` row (the CLI-only doc leg moves into the verb)."""
+        from refmatrix import verbs
+        r = s.rmx(fx, "memory", "recall", QUESTION, "--json", "-K", "memory,doc", "--k", "8")
+        assert r.returncode == 0, r.stderr[-800:]
+        cli_rows = json.loads(r.stdout)
+        monkeypatch.setenv("RMX_HOME", str(fx.home))
+        vres = verbs.memory_recall(fx.root, query=QUESTION, k=8, kinds=["memory", "doc"])
+        vnames = [m["name"] for m in vres["memories"]]
+>       assert [m["name"] for m in cli_rows] == vnames, ([m["name"] for m in cli_rows], vnames)
+E       AssertionError: (['savestate_fx01', 'fx_mem_06', 'fx_mem_01', 'fx_mem_10', 'fx_mem_16', 'fx_mem_26', ...], ['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_03', 'fx_mem_23', ...])
+E       assert ['savestate_f..._mem_26', ...] == ['savestate_f..._mem_23', ...]
+E         
+E         At index 1 diff: 'fx_mem_06' != 'fx_mem_00'
+E         Use -v to get more diff
+
+tests/test_task25_1_recall_budget.py:807: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 16.66s

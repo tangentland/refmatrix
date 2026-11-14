@@ -229,6 +229,36 @@ def generated_entry(root: Path, event: str, needle: str) -> tuple[str | None, st
     return hits[0]
 
 
+# ---- the recall hooks' --pack payload --------------------------------------------------------
+#
+# Task 25.1 R7 (2026-11-13): the generator emits `--pack` in place of `--json` on the three recall
+# commands, so a recall hook's stdout is the pointer-first text of 19.1 R3, never a JSON list:
+#   # rmx recall · <channel> · <N> hits · budget <B> B
+#   - <name> — <title> — <hook>  (rmx memory get <name>[ --scope global])
+# The ONE parser of that hook line for the 21.1 and 25.1 harnesses (tests/task25_1_support.py's
+# `Pack` reads the same pattern).
+
+import re as _re  # noqa: E402
+
+PACK_HOOK_LINE = _re.compile(
+    r"^- (?P<name>[^\s]+) — (?P<rest>.*)\((?P<fetch>rmx memory get [^()]*)\)\s*$")
+
+
+def pack_rows(raw: "bytes | str") -> list[dict]:
+    """The hits a `--pack` payload NAMES, in order: `{"name", "scope", "fetch"}`. `scope` is
+    read from the fetch pointer (R6: a global hit's pointer reads `--scope global`). An empty
+    payload (a degraded hook prints nothing, d8) is no hits."""
+    text = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw or "")
+    out = []
+    for ln in text.splitlines():
+        m = PACK_HOOK_LINE.match(ln)
+        if m:
+            fetch = m.group("fetch")
+            out.append({"name": m.group("name"), "fetch": fetch,
+                        "scope": "global" if "--scope global" in fetch else "project"})
+    return out
+
+
 # ---- log readers ----------------------------------------------------------------------------
 
 def jsonl(path: Path) -> list[dict]:

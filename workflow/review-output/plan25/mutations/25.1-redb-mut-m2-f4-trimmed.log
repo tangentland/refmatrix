@@ -1,0 +1,55 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+__ test_ac10_trimmed_hits_get_no_delivered_event_and_global_hits_stay_global ___
+
+fx = <tests.task25_1_support.Fixture object at 0x113d8aba0>
+
+    def test_ac10_trimmed_hits_get_no_delivered_event_and_global_hits_stay_global(fx):
+        """F4 (rev 7, 2026-11-13): a SessionStart payload with a NON-ZERO trailer, so two AC-14
+        mutations are decidable -- "a `delivered` event for a trimmed hit" (an extra delivered
+        event, or one per retrieved row) and "a global hit's `delivered` event in the project file".
+        The default SessionStart pack names every hit (trailer 0), so it could kill neither.
+        `--k F4_K --max-bytes F4_BYTES` are appended (click keeps the last), fixing the shape whatever
+        the generator's `--k`; preconditions: some hit trimmed, some GLOBAL hit named."""
+        r, p, new_p, new_g = _ss_events(fx, append=f" --k {F4_K} --max-bytes {F4_BYTES}")
+        assert p.more > 0, f"F4 fixture: nothing trimmed ({len(p.named)} named, trailer 0)"
+        assert any("--scope global" in m.group("fetch") for m in p.hook_lines), (
+            f"F4 fixture: no global hit named: {p.named}")
+>       _assert_delivered_spans(r.stdout, p, new_p + new_g)
+
+tests/test_task25_1_recall_budget.py:1355: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = b'# rmx recall \xc2\xb7 session_start \xc2\xb7 12 hits \xc2\xb7 budget 2000 B\n- savestate_fx01 \xe2\x80\x94 Save-stat... \xe2\x80\x94 owner note  (rmx memory get fx_mem_26)\n+3 more: rmx memory recall --session-start --k 12 --scope both\n'
+p = <tests.task25_1_support.Pack object at 0x115b0b390>
+evs = [{'arm': 'fixed', 'block_id': 'session-start', 'block_sha': '474a9536f88e757463708a873f0ac312eae9db26c1ce6ebb1735f4cfe...start', 'block_sha': '474a9536f88e757463708a873f0ac312eae9db26c1ce6ebb1735f4cfe62273c2', 'body_bytes': None, ...}, ...]
+
+    def _assert_delivered_spans(raw: bytes, p: "s.Pack", evs: list) -> list:
+        """AC-10 / R9 over one payload: one `delivered` event per NAMED hit and none for any other
+        (a trimmed hit has none), one query_id with the `retrieved` events, each hook-line span
+        slicing exactly its line (newline included) out of the payload BYTES.
+    
+        A body is identified by its SPAN (rev 7 J6, 2026-11-13), never by a marker string: global
+        bodies carry no `BODYMARK`, and the RED detector read a real global body as "no body". An
+        event with body offsets must slice exactly the text the pack printed under `## <name>`
+        (a whole block: it ends at the next block, the trailer, or the end), naming its row, with
+        ≥ 3 `—` in front of it (the AC-10 character-vs-byte pre-check); an event without them must
+        have no `## <name>` block in the payload. Returns the delivered events."""
+        qids = {e.get("query_id") for e in evs}
+        assert len(qids) == 1 and None not in qids, qids
+        deliv = [e for e in evs if e.get("stage") == "delivered"]
+>       assert sorted(e["name"] for e in deliv) == sorted(p.named), (
+            "AC-10: delivered events != named hits (a trimmed hit must have none)",
+            sorted(e["name"] for e in deliv), sorted(p.named))
+E       AssertionError: ('AC-10: delivered events != named hits (a trimmed hit must have none)', ['fx_dup_x', 'fx_mem_25', 'fx_mem_26', 'fx_mem_27', 'fx_mem_28', 'fx_mem_29', ...], ['fx_dup_x', 'fx_mem_26', 'fx_mem_27', 'fx_mem_28', 'fx_mem_29', 'gx_mem_7', ...])
+E       assert ['fx_dup_x', ..._mem_29', ...] == ['fx_dup_x', ...x_mem_7', ...]
+E         
+E         At index 1 diff: 'fx_mem_25' != 'fx_mem_26'
+E         Left contains 3 more items, first extra item: 'gx_mem_8'
+E         Use -v to get more diff
+
+tests/test_task25_1_recall_budget.py:1277: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac10_trimmed_hits_get_no_delivered_event_and_global_hits_stay_global
+1 failed, 1 passed in 15.30s

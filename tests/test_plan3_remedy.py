@@ -62,7 +62,11 @@ def test_verb_dense_rows_carry_the_annotation(monkeypatch, tmp_path):
     monkeypatch.setattr("refmatrix.discovery.store_name", lambda root: "p")
     out = verbs.memory_recall(tmp_path, query="q")
     assert out["memories"][0]["score"] == pytest.approx(1.0)
-    assert out["memories"][0]["fused"] is False and out["warnings"] == []
+    # Task 25.1 R5 (2026-11-13 contract update): "the verb's `warnings` name which leg and
+    # which embedder served". A clean daemon answer carries exactly that one line and no
+    # degrade warning (the original intent of `== []`).
+    assert out["memories"][0]["fused"] is False and out["warnings"] == [
+        "recall leg: daemon RPC (the daemon's embedder and rerank default)"], out["warnings"]
 
 
 def test_cli_dense_path_builds_its_payload_through_the_verb_helper(monkeypatch, tmp_path):

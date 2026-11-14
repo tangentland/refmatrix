@@ -1,0 +1,57 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_ac2_hook_mode_recall_hides_the_hand_typed_savestate_and_include_session_keeps_it _
+
+daemon = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-y7un2e6m'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-y7un2e6m/proj/.refmatrix'))
+
+    @pytest.mark.timeout(900)
+    def test_ac2_hook_mode_recall_hides_the_hand_typed_savestate_and_include_session_keeps_it(
+            daemon):
+        """After AC-1 the per-prompt hook's recall (`--stdin-json`, `RMX_INVOCATION_SOURCE=hook`)
+        no longer returns the hand-typed save-state; `--include-session` still does. A curated
+        note answering the same prompt is the control: the recall worked and was not a degraded
+        `[]`. RED: the save-state is in the hook-mode answer (its row reads `project`)."""
+        base, root = daemon
+        memdir = base / "memory"
+        memdir.mkdir()
+        phrase = "quillwort barometer tessellation"
+        savestate(memdir, "savestate_cq_0707.md", mtype="project", created="2026-07-07",
+                  updated="2026-07-08", mtime=at(2026, 7, 8),
+                  body=f"resume the {phrase} handoff")
+        note(memdir, "feedback_control.md", mtype="feedback", body=f"the {phrase} control note")
+        out = cli_mod._sync_memory_dir(memdir)
+        assert out["error"] is None, out
+        assert out["embed"] and out["embed"].get("error") is None, out["embed"]
+        # warm the models through the daemon's own recall op (the same one the CLI dials)
+        warm = dm.call(root, "memory_recall", {"query": phrase, "k": 5,
+                                               "partition": verbs.memory_partition(root)},
+                       timeout=300)
+        assert warm.get("ok"), warm
+        argv = _hook_recall_argv(root, "120")
+        env = {"RMX_INVOCATION_SOURCE": "hook"}
+        envelope = json.dumps({"prompt": f"where were we on the {phrase}?",
+                               "session_id": "sess-264", "hook_event_name": "UserPromptSubmit"})
+    
+        def names(extra):
+            # Task 25.1 R7 (2026-11-13 contract update, red-251b g7-8): the generated per-prompt
+            # hook prints `--pack` text, not a `--json` list, so the hits it carries are the ones
+            # its hook lines NAME (the one parser, `task21_1_support.pack_rows`). A degraded hook
+            # prints nothing, which the control-note assertion below still catches.
+            from tests import task21_1_support as h
+            r = _invoke(argv + extra, input=envelope, env=env)
+            assert "recall skipped" not in (r.stderr or ""), r.stderr
+            assert r.stdout.startswith("# rmx recall · "), r.stdout[:200]      # a --pack payload
+            return [row["name"] for row in h.pack_rows(r.stdout)]
+    
+        hooked = names([])
+        assert "feedback_control" in hooked, f"control note missing: the recall did not run {hooked}"
+>       assert "savestate_cq_0707" not in hooked, \
+            f"hook-mode recall returned the hand-typed save-state: {hooked}"
+E       AssertionError: hook-mode recall returned the hand-typed save-state: ['savestate_cq_0707', 'feedback_control']
+E       assert 'savestate_cq_0707' not in ['savestate_cq_0707', 'feedback_control']
+
+tests/test_savestate_mtype.py:416: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_savestate_mtype.py::test_ac2_hook_mode_recall_hides_the_hand_typed_savestate_and_include_session_keeps_it
+1 failed in 7.74s

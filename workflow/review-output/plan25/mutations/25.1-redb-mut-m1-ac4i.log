@@ -1,0 +1,43 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_ac4i_daemon_up_hub_down_daemon_serves_and_nothing_spawns _________
+
+fx = <tests.task25_1_support.Fixture object at 0x10933c050>
+
+    def test_ac4i_daemon_up_hub_down_daemon_serves_and_nothing_spawns(fx):
+        """AC-4 (i) (r4 #n1; F3, rev 7, 2026-11-13): a sandbox daemon is up, no `models.sock`
+        worker. `rmx memory recall "q" --json` and MCP `rmx_memory_recall` are served by the
+        daemon RPC (the verb's `warnings` name the daemon leg), and the calling process spawns no
+        model worker and imports no `sentence_transformers` (the same two facts as AC-4 (c), here
+        observed by an audit hook).
+    
+        A GUARD, not RED at HEAD (the spec says so: HEAD's leg order already asks the daemon
+        first); killed by AC-14's mutation "`shared_embedder` tried before the daemon", which
+        spawns the private worker this test sees. Before this test that mutation was killed only
+        indirectly, through AC-4 (d)/AC-7 parity (green-251b F3)."""
+        none_sock = str(fx.base / "none.sock")
+        r, audit = _audited(fx, "cli", "memory", "recall", QUESTION, "--json", "--k", "6",
+                            RMX_MODEL_SOCK=none_sock)
+        assert r.returncode == 0, r.stderr[-1500:]
+        names = [m["name"] for m in json.loads(r.stdout)]
+        assert names, "AC-4 (i): the interactive recall returned no rows"
+>       _assert_nothing_spawned_or_loaded(audit, "interactive CLI")
+
+tests/test_task25_1_recall_budget.py:984: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+audit = {'imported': [], 'spawned': [['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '-m', 'refmatrix.embed_worker', '--role', 'embed'], ['ps', '-A', '-o', 'pid=,ppid=,comm=']]}
+what = 'interactive CLI'
+
+    def _assert_nothing_spawned_or_loaded(audit: dict, what: str) -> None:
+        workers = [a for a in audit["spawned"]
+                   if any("embed_worker" in x or "modelsrv" in x or "rerank" in x for x in a)
+                   or a[:1] in (["os.fork"], ["os.forkpty"])]
+>       assert not workers, f"AC-4 (i) {what}: the caller spawned a model worker: {workers}"
+E       AssertionError: AC-4 (i) interactive CLI: the caller spawned a model worker: [['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '-m', 'refmatrix.embed_worker', '--role', 'embed']]
+E       assert not [['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '-m', 'refmatrix.embed_worker', '--role', 'embed']]
+
+tests/test_task25_1_recall_budget.py:963: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac4i_daemon_up_hub_down_daemon_serves_and_nothing_spawns
+1 failed in 19.76s

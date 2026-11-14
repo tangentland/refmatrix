@@ -1,0 +1,27 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+______ test_ac9_fit_blocks_whole_blocks_in_order_bytes_and_trailer[2000] _______
+
+n = 2000
+
+    @pytest.mark.parametrize("n", [2000, 4000, 9000])
+    def test_ac9_fit_blocks_whole_blocks_in_order_bytes_and_trailer(n):
+        """`hook_budget.fit_blocks`: whole blocks only, in the given order, ≤ N UTF-8 BYTES (each
+        block is `—`/`→`-dense: a chars-counting fitter overflows), a one-line omitted trailer
+        naming the dropped count (R0b)."""
+        hb = s.hook_budget_mod()
+        assert hb is not None, "R0b: refmatrix.hook_budget.fit_blocks is not built"
+        blocks = [f"block {i:02d} — " + "→ — " * (40 + 7 * i) + "\n" for i in range(25)]
+        assert sum(len(b) for b in blocks) > 9000       # every N drops something
+        f = hb.fit_blocks(blocks, n, trailer=lambda k: f"+{k} blocks omitted")
+        raw = f.text.encode("utf-8")
+>       assert len(raw) <= n and f.payload_bytes == len(raw)
+E       AssertionError: assert (3532 <= 2000)
+E        +  where 3532 = len(b'block 00 \xe2\x80\x94 \xe2\x86\x92 \xe2\x80\x94 \xe2\x86\x92 \xe2\x80\x94 \xe2\x86\x92 \xe2\x80\x94 \xe2\x86\x92 \xe...86\x92 \xe2\x80\x94 \xe2\x86\x92 \xe2\x80\x94 \xe2\x86\x92 \xe2\x80\x94 \xe2\x86\x92 \xe2\x80\x94 \n+18 blocks omitted')
+
+tests/test_task25_1_recall_budget.py:200: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_fit_blocks_whole_blocks_in_order_bytes_and_trailer[2000]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.18s

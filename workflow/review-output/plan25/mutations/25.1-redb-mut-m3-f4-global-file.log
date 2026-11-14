@@ -1,0 +1,87 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+____________ test_ac10_delivered_events_slice_the_payload_by_bytes _____________
+
+fx = <tests.task25_1_support.Fixture object at 0x111d3aba0>
+
+    def test_ac10_delivered_events_slice_the_payload_by_bytes(fx):
+        """AC-10 (R9): on the SessionStart argv, one `delivered` event per NAMED hit, one query_id
+        with the `retrieved` events; each span slices exactly its hook line / body out of the
+        payload BYTES; unbodied hits carry null body fields; a global hit's event is in the tmp
+        global root's file with scope=global. The fixed 7-of-12/3-bodied shape of 19.1 AC-6 is not
+        forced here (R0 sets the budget the shape depends on)."""
+        r, p, new_p, new_g = _ss_events(fx)
+        deliv = _assert_delivered_spans(r.stdout, p, new_p + new_g)
+        assert any(e.get("body_offset_bytes") is not None for e in deliv), (
+            "AC-10: the SessionStart payload carries no body; the body spans are untested")
+>       _assert_global_events_in_the_global_file(p, new_p, new_g)
+
+tests/test_task25_1_recall_budget.py:1334: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+p = <tests.task25_1_support.Pack object at 0x111d3bcb0>
+new_p = [{'arm': 'fixed', 'block_id': 'session-start', 'block_sha': 'f45d4d9ef85ff35a63e5e941f238169da3f39fe700d519ac016cadcc8...start', 'block_sha': 'f45d4d9ef85ff35a63e5e941f238169da3f39fe700d519ac016cadcc8a4c7ca3', 'body_bytes': None, ...}, ...]
+new_g = [{'arm': 'fixed', 'block_id': 'session-start', 'block_sha': 'f45d4d9ef85ff35a63e5e941f238169da3f39fe700d519ac016cadcc8...start', 'block_sha': 'f45d4d9ef85ff35a63e5e941f238169da3f39fe700d519ac016cadcc8a4c7ca3', 'body_bytes': None, ...}, ...]
+
+    def _assert_global_events_in_the_global_file(p: "s.Pack", new_p: list, new_g: list) -> None:
+        """19.1 AC-6's global leg: a NAMED global hit's events are in the tmp global root's file with
+        scope=global; the project file carries no global-scope event."""
+        named_global = [m.group("name") for m in p.hook_lines
+                        if "--scope global" in m.group("fetch")]
+        g_deliv = [e for e in new_g if e.get("stage") == "delivered"]
+        assert all(e.get("scope") == "global" for e in new_g), new_g[:3]
+>       assert sorted(e["name"] for e in g_deliv) == sorted(named_global), (
+            [e["name"] for e in g_deliv], named_global)
+E       AssertionError: ([], ['fx_dup_x', 'gx_mem_9', 'gx_mem_8', 'gx_mem_7', 'gx_mem_6', 'gx_mem_5', ...])
+E       assert [] == ['fx_dup_x', ...x_mem_4', ...]
+E         
+E         Right contains 11 more items, first extra item: 'fx_dup_x'
+E         Use -v to get more diff
+
+tests/test_task25_1_recall_budget.py:1317: AssertionError
+__ test_ac10_trimmed_hits_get_no_delivered_event_and_global_hits_stay_global ___
+
+fx = <tests.task25_1_support.Fixture object at 0x111d3aba0>
+
+    def test_ac10_trimmed_hits_get_no_delivered_event_and_global_hits_stay_global(fx):
+        """F4 (rev 7, 2026-11-13): a SessionStart payload with a NON-ZERO trailer, so two AC-14
+        mutations are decidable -- "a `delivered` event for a trimmed hit" (an extra delivered
+        event, or one per retrieved row) and "a global hit's `delivered` event in the project file".
+        The default SessionStart pack names every hit (trailer 0), so it could kill neither.
+        `--k F4_K --max-bytes F4_BYTES` are appended (click keeps the last), fixing the shape whatever
+        the generator's `--k`; preconditions: some hit trimmed, some GLOBAL hit named."""
+        r, p, new_p, new_g = _ss_events(fx, append=f" --k {F4_K} --max-bytes {F4_BYTES}")
+        assert p.more > 0, f"F4 fixture: nothing trimmed ({len(p.named)} named, trailer 0)"
+        assert any("--scope global" in m.group("fetch") for m in p.hook_lines), (
+            f"F4 fixture: no global hit named: {p.named}")
+        _assert_delivered_spans(r.stdout, p, new_p + new_g)
+>       _assert_global_events_in_the_global_file(p, new_p, new_g)
+
+tests/test_task25_1_recall_budget.py:1356: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+p = <tests.task25_1_support.Pack object at 0x114b57d90>
+new_p = [{'arm': 'fixed', 'block_id': 'session-start', 'block_sha': '474a9536f88e757463708a873f0ac312eae9db26c1ce6ebb1735f4cfe...start', 'block_sha': '474a9536f88e757463708a873f0ac312eae9db26c1ce6ebb1735f4cfe62273c2', 'body_bytes': None, ...}, ...]
+new_g = [{'arm': 'fixed', 'block_id': 'session-start', 'block_sha': '474a9536f88e757463708a873f0ac312eae9db26c1ce6ebb1735f4cfe...start', 'block_sha': '474a9536f88e757463708a873f0ac312eae9db26c1ce6ebb1735f4cfe62273c2', 'body_bytes': None, ...}, ...]
+
+    def _assert_global_events_in_the_global_file(p: "s.Pack", new_p: list, new_g: list) -> None:
+        """19.1 AC-6's global leg: a NAMED global hit's events are in the tmp global root's file with
+        scope=global; the project file carries no global-scope event."""
+        named_global = [m.group("name") for m in p.hook_lines
+                        if "--scope global" in m.group("fetch")]
+        g_deliv = [e for e in new_g if e.get("stage") == "delivered"]
+        assert all(e.get("scope") == "global" for e in new_g), new_g[:3]
+>       assert sorted(e["name"] for e in g_deliv) == sorted(named_global), (
+            [e["name"] for e in g_deliv], named_global)
+E       AssertionError: ([], ['fx_dup_x', 'gx_mem_9', 'gx_mem_8', 'gx_mem_7'])
+E       assert [] == ['fx_dup_x', ...', 'gx_mem_9']
+E         
+E         Right contains 4 more items, first extra item: 'fx_dup_x'
+E         Use -v to get more diff
+
+tests/test_task25_1_recall_budget.py:1317: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac10_delivered_events_slice_the_payload_by_bytes
+FAILED tests/test_task25_1_recall_budget.py::test_ac10_trimmed_hits_get_no_delivered_event_and_global_hits_stay_global
+2 failed in 15.15s

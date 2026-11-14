@@ -1,0 +1,30 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+__________________ test_ac10_pack_spans_are_utf8_byte_ranges ___________________
+
+    def test_ac10_pack_spans_are_utf8_byte_ranges():
+        """R9: per named hit, `offset_bytes`/`bytes` slice its hook line (newline included) and
+        `body_offset_bytes`/`body_bytes` its body, in BYTES; ≥ 3 `—` precede the last hook line
+        and every body, so character offsets miss (AC-10 pre-check, built into the rows)."""
+        rows = [_urow(i, body=300) for i in range(8)]
+        p = _pack_unit(rows, max_bytes=4000)
+        raw = p.text.encode("utf-8")
+        by = {sp["name"]: sp for sp in p.spans}
+        assert set(by) == set(p.named) and p.named
+        pk = s.Pack(raw)
+        bodied = set(pk.bodied)
+        assert bodied, "the 4,000 B unit pack carries no body"
+        for name, sp in by.items():
+            line = raw[sp["offset_bytes"]:sp["offset_bytes"] + sp["bytes"]]
+>           assert line == (pk.hook_line_of(name) + "\n").encode("utf-8"), (name, line)
+E           AssertionError: ('u_mem_00', b'- u_mem_00 \xe2\x80\x94 Unit title 0 \xe2\x80\x94 row \xe2\x86\x92 0 \xe2\x80\x94 HOOK-u_mem_00 \xe2\x80\x94 curated \xe2\x86\x92 pointer \xe2\x86\x92 9000  (rmx memory ')
+E           assert b'- u_mem_00 ... (rmx memory ' == b'- u_mem_00 ...t u_mem_00)\n'
+E             
+E             Use -v to get more diff
+
+tests/test_task25_1_recall_budget.py:325: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac10_pack_spans_are_utf8_byte_ranges
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.19s

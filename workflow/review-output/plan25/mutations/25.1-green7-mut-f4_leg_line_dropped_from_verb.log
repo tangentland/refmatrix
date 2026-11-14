@@ -1,0 +1,113 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+__________ test_f6_recall_leg_line_only_under_verbose_never_a_warning __________
+
+fx = <tests.task25_1_support.Fixture object at 0x114f83380>
+
+    def test_f6_recall_leg_line_only_under_verbose_never_a_warning(fx):
+        """Rev 7 F6 (2026-11-13, spec #f6-leg-line): the `recall leg: …` line stays in the verb's
+        `warnings` (R5; AC-4 (i) reads it there), but the CLI prints leg-served lines only with
+        `--verbose`, and never under the `warning:` prefix; real warnings are unchanged
+        (tests/test_rerank_warning_routes.py::test_cli_recall_daemon_branch_prints_the_warnings).
+    
+        HEAD (measured 2026-11-13): every recall -- interactive and the per-prompt hook -- prints
+        `# rmx: warning: recall leg: daemon RPC (the daemon's embedder and rerank default)` on
+        stderr, and `memory recall` has no `--verbose`."""
+        none_sock = str(fx.base / "none.sock")
+        plain = s.rmx(fx, "memory", "recall", QUESTION, "--json", "--k", "4",
+                      RMX_MODEL_SOCK=none_sock)
+        assert plain.returncode == 0, plain.stderr[-800:]
+        assert "recall leg" not in plain.stderr, (
+            f"F6: a normal interactive recall printed the leg line: {plain.stderr[-600:]!r}")
+        hook = _q(fx, RMX_MODEL_SOCK=none_sock)
+        _ok(hook, "per-prompt argv")
+        assert b"recall leg" not in hook.stderr, (
+            f"F6: the per-prompt hook printed the leg line: {hook.stderr[-600:]!r}")
+        v = s.rmx(fx, "memory", "recall", QUESTION, "--json", "--k", "4", "--verbose",
+                  RMX_MODEL_SOCK=none_sock)
+        assert v.returncode == 0, f"F6: --verbose exit {v.returncode}: {v.stderr[-600:]}"
+        legs = [ln for ln in v.stderr.splitlines() if "recall leg:" in ln]
+>       assert any("daemon RPC" in ln for ln in legs), (
+            f"F6: --verbose did not say which leg served: {v.stderr[-600:]!r}")
+E       AssertionError: F6: --verbose did not say which leg served: ''
+E       assert False
+E        +  where False = any(<generator object test_f6_recall_leg_line_only_under_verbose_never_a_warning.<locals>.<genexpr> at 0x1155cef60>)
+
+tests/test_task25_1_recall_budget.py:1177: AssertionError
+________ test_ac4i_daemon_up_hub_down_daemon_serves_and_nothing_spawns _________
+
+fx = <tests.task25_1_support.Fixture object at 0x114f83380>
+
+    def test_ac4i_daemon_up_hub_down_daemon_serves_and_nothing_spawns(fx):
+        """AC-4 (i) (r4 #n1; F3, rev 7, 2026-11-13): a sandbox daemon is up, no `models.sock`
+        worker. `rmx memory recall "q" --json` and MCP `rmx_memory_recall` are served by the
+        daemon RPC (the verb's `warnings` name the daemon leg), and the calling process spawns no
+        model worker and imports no `sentence_transformers` (the same two facts as AC-4 (c), here
+        observed by an audit hook).
+    
+        A GUARD, not RED at HEAD (the spec says so: HEAD's leg order already asks the daemon
+        first); killed by AC-14's mutation "`shared_embedder` tried before the daemon", which
+        spawns the private worker this test sees. Before this test that mutation was killed only
+        indirectly, through AC-4 (d)/AC-7 parity (green-251b F3)."""
+        none_sock = str(fx.base / "none.sock")
+        r, audit = _audited(fx, "cli", "memory", "recall", QUESTION, "--json", "--k", "6",
+                            RMX_MODEL_SOCK=none_sock)
+        assert r.returncode == 0, r.stderr[-1500:]
+        names = [m["name"] for m in json.loads(r.stdout)]
+        assert names, "AC-4 (i): the interactive recall returned no rows"
+        _assert_nothing_spawned_or_loaded(audit, "interactive CLI")
+        r, audit = _audited(fx, "mcp", json.dumps({"query": QUESTION, "k": 6}),
+                            RMX_MODEL_SOCK=none_sock)
+        assert r.returncode == 0, r.stderr[-1500:]
+        res = json.loads(r.stdout.strip().splitlines()[-1])["result"]
+        text = "".join(c.get("text", "") for c in res.get("content") or [])
+        assert not res.get("isError"), text[:600]
+        body = json.loads(text)
+        assert body["memories"], body
+>       assert any(w.startswith("recall leg: daemon RPC") for w in body.get("warnings") or []), (
+            body.get("warnings"))
+E       AssertionError: []
+E       assert False
+E        +  where False = any(<generator object test_ac4i_daemon_up_hub_down_daemon_serves_and_nothing_spawns.<locals>.<genexpr> at 0x113096c00>)
+
+tests/test_task25_1_recall_budget.py:993: AssertionError
+__________________ test_verb_dense_rows_carry_the_annotation ___________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1130628d0>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1070/test_verb_dense_rows_carry_the0')
+
+    def test_verb_dense_rows_carry_the_annotation(monkeypatch, tmp_path):
+        monkeypatch.setattr(daemon_mod, "ping", lambda root, **kw: True)
+    
+        def call(root, op, args=None, **kw):
+            if op == "partition_list":
+                return {"ok": True, "result": {"rows": []}}
+            if op == "memory_recall":
+                return {"ok": True, "result": {"hits": [{"id": 1, "distance": 0.0}]}}
+            if op == "memory_get":
+                return {"ok": True, "result": {"memory": {"id": 1, "name": "m", "mtype": "note"}}}
+            return {"ok": False, "error": op}
+        monkeypatch.setattr(daemon_mod, "call", call)
+        monkeypatch.setattr("refmatrix.discovery.store_name", lambda root: "p")
+        out = verbs.memory_recall(tmp_path, query="q")
+        assert out["memories"][0]["score"] == pytest.approx(1.0)
+        # Task 25.1 R5 (2026-11-13 contract update): "the verb's `warnings` name which leg and
+        # which embedder served". A clean daemon answer carries exactly that one line and no
+        # degrade warning (the original intent of `== []`).
+>       assert out["memories"][0]["fused"] is False and out["warnings"] == [
+            "recall leg: daemon RPC (the daemon's embedder and rerank default)"], out["warnings"]
+E       AssertionError: []
+E       assert (False is False and [] == ['recall leg:...ank default)']
+E         
+E         Right contains one more item: "recall leg: daemon RPC (the daemon's embedder and rerank default)"
+E         Use -v to get more diff)
+
+tests/test_plan3_remedy.py:68: AssertionError
+----------------------------- Captured stderr call -----------------------------
+rmx: recall events: partition_unresolved=2 item(s) (no partition or no name) not logged
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_f6_recall_leg_line_only_under_verbose_never_a_warning
+FAILED tests/test_task25_1_recall_budget.py::test_ac4i_daemon_up_hub_down_daemon_serves_and_nothing_spawns
+FAILED tests/test_plan3_remedy.py::test_verb_dense_rows_carry_the_annotation
+3 failed in 21.25s

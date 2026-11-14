@@ -373,6 +373,26 @@ mutation is carried (AC-14 maps them) unless a row below says otherwise.
     - Not touched: the channel bridge's `_resolve_root({})` (`mcp.py:259`, no project) and the
       CLI's own resolver (`cli._hub_resolve_root`, `cli.py:2705`). {#r10-scope}
 
+12. **R11 Recall-state after compaction and `/clear`** (user, 2026-11-11, [[#rev-round-6]]). Today
+    nothing re-orients a session after compaction: only `rmx focus hook --event session-start`
+    listens on SessionStart `compact`, and `rmx recall-state` runs on no source. The generator
+    emits ONE new SessionStart entry, matcher `compact|clear`, as its OWN hook command (per-hook
+    cap, R0 outcome (A)): `rmx recall-state --max-bytes N`, N = `hook_budget.budget("recall_state")`
+    (≤ 9,000 B, a `CHANNEL_BUDGET_BYTES` entry like every other producer). Rules:
+    - the `max_bytes` parameter lives on the `recall_state` VERB (CLI and MCP both expose it; verb
+      parity), and the rendered text is fitted by `hook_budget.fit_blocks`, whole blocks only, in
+      this order: handoff head, anomalies, git, daemon, recent memories, STM digest; a trailer
+      names `rmx recall-state` for the full output when anything was cut;
+    - never chained into another SessionStart command, so a failure cannot suppress the other
+      entries' stdout (the 26.2 r2 lesson); `startup|resume` keep their entries unchanged, and on
+      `clear` it runs beside `memory recall --session-start`;
+    - PreCompact's `save-state --no-promote` checkpoint is written before compaction, so the
+      compact-time recall-state resumes from that fresh checkpoint (the ADR-0005 #newest order);
+    - hook mode with no daemon still prints the file-based blocks (handoff, git) and counts the
+      missing daemon leg (d8's spirit); a real failure exits non-zero with ONE clean `Error:` line
+      and no traceback (the user's 2026-11-10 rule: "fail loudly on the commandline or console");
+    - counted as producer `recall_state` in `rmx telemetry --context`. {#r11}
+
 ## Acceptance criteria {#acceptance}
 
 All ACs run in 23.0's sandbox on the frozen fixture ([[#fixture]]) through the GENERATED hook
@@ -533,6 +553,21 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
     `$REFMATRIX_ROOT` / the cwd store when `project` resolves nothing: AC-4 (e) R10 legs (1)-(3)
     fail, (2) by returning A's rows).
 
+15. **AC-15 Recall-state on compact and clear (R11).** (a) The generated config has exactly one
+    SessionStart entry whose matcher covers `compact` and `clear` and whose command is
+    `rmx recall-state --max-bytes N`, N = `hook_budget.budget("recall_state")` ≤ 9,000, in its own
+    entry (not chained); `rmx install-hooks --check` is clean after `--apply`. (b) Run through
+    `bash -c` with a SessionStart `{"source": "compact"}` stdin on a fixture store whose newest
+    save-state is an `auto: pre-compact checkpoint`: stdout ≤ N bytes, it names that checkpoint
+    as the handoff, exit 0. (c) A fixture whose full recall-state exceeds N: whole blocks only,
+    the handoff head kept, a trailer naming `rmx recall-state`. (d) No daemon: exit 0, the
+    file-based blocks printed, the daemon leg counted. (e) A forced failure (an unreadable
+    memdir): exit != 0, one `Error:` line, no `Traceback`. (f) `--max-bytes` is a parameter of
+    the `recall_state` verb (MCP schema carries it; verb parity). Mutations that must FAIL a test:
+    the entry chained into another SessionStart command (a); the matcher dropping `compact` (a);
+    output not fitted or no `--max-bytes` (b, c); a traceback on failure (e); the CLI flag not on
+    the verb (f). RED at HEAD: no such entry and no `--max-bytes`. {#ac-15}
+
 ## Fixture and measurement {#fixture}
 
 - `tests/fixtures/plan25/memory/`: 30 synthetic GMD memory files, bodies sized to cliquedb's
@@ -687,3 +722,101 @@ rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720#n5]]
 | mutation | HEAD's silent fallback restored fails AC-4 (e) R10 legs (1)-(3) | AC-14 |
 | d12 | closed as decided by the user | [[#open-decisions]] |
 | files | `mcp.py` resolver, `verbs.py` error class + transport description, the routing test, bug-181's registry row closes at merge | [[#files-to-modify]] |
+
+## Revision round 6 (2026-11-11) {#rev-round-6}
+
+The user, 2026-11-11, asked whether a post-compaction event calls recall-state ("is there a
+post-compaction action/event that would call recall-state?") and, on learning none does, said "yes
+add it" to this task. SessionStart fires with source `compact` after compaction and `clear` after
+`/clear`; this task already owns the SessionStart producers and their byte budgets (R0, R1, d11).
+
+| change | anchor |
+|---|---|
+| R11: a SessionStart `compact|clear` entry runs `rmx recall-state --max-bytes N` as its own command, fitted to `hook_budget.budget("recall_state")` | [[#r11]] |
+| AC-15: the generated entry, the fitted output, the no-daemon and failure paths, verb parity; mutations | [[#ac-15]] |
+| R0's measured cap (`d748196`, outcome (A), 10,000 UTF-16 units per hook) sets N ≤ 9,000 B | [[#r0]] |
+
+## Revision round 7 (2026-11-13, lead decisions on the GREEN's open items) {#rev-round-7}
+
+`green-251b` committed the GREEN (`16ace00`, `#green` in `273050b`) with six non-AC-5 failures for
+the lead to judge and seven flags. The user's standing direction (2026-11-13: the user other steps proceed) covers these; each is decided as the user would, with the reason. Measurements are in
+the implementation summary's `#lead-judge-table`.
+
+| item | decision | owner |
+|---|---|---|
+| J1 `test_ac9_pack_trailer_quotes_a_multiline_query` | TEST fixture: 19.1 R3(d) prints a trailer only when a hit is not named; the fixture must carry more rows than fit (≥ 20 rows at 2,000 B). Spec unchanged | test engineer |
+| J2 `test_ac4f_…_including_a_doc` | FIXTURE artefact: AC-4 (f) is parity (CLI and verb name the same hits) plus reachability of the `kind=doc` leg (`kinds=[doc]` returns docs); it does not require a doc in the top 8 of a mixed recall. The test asserts those two, not a rank | test engineer |
+| J3/J4 `test_ac6_include_subjects_…` (argv and verb) | **PRODUCT fix:** a subject row is a label, which a cross-encoder cannot score against a prompt (rerank put the 4 live subjects at ranks 32-35 of 36; with `rerank=False`, ranks 1-4). With `include_subjects`, subject rows are EXEMPT from cross-encoder rerank and keep their pre-rerank rank; non-subject rows rerank as today; a stale subject stays hidden. {#j3-subjects-exempt} | implementer (tests already RED) |
+| J5 `test_ac9_session_start_carries_bodies_after_all_hook_lines` | SPEC tension resolved: R3's "every hook line before any body" with R7's SessionStart `--k 30` leaves ~3 KB for bodies at 9,000 B (30 lines = 5,961 B), so no project body (2.0-8.7 KB) fits. **R7 amended: SessionStart `--k 12`** (as per-prompt); the `+N more` trailer still points at the rest. PreCompact stays 30 (R0 may drop it). {#j5-session-start-k} | implementer (generator) + test engineer (AC-13 argv expectation) |
+| J6 `test_ac10_delivered_events_slice_the_payload_by_bytes` | TEST detector: a body is identified by its span offsets, not by a `BODYMARK` string (global bodies carry none). Spec unchanged | test engineer |
+| F1 `#r10-bus` (`rmx_bus_pub` `about` field) | tests first (RED), then build — in this task | test engineer → implementer |
+| F2 R11 last bullet (recall-state counted as producer `recall_state` in `rmx telemetry --context`) | tests first, then build — in this task | test engineer → implementer |
+| F3 AC-4 (i) has no test | write it: no `modelsrv` child and no `sentence_transformers` import when the daemon RPC leg serves | test engineer |
+| F4 two AC-14 mutations undecidable | add a SessionStart payload with a non-zero trailer (a trimmed hit) so "delivered event for a trimmed hit" and "global hit's event in the project file" can be killed | test engineer |
+| F5 hooks-by-id-only mutation survives | accepted as an equivalent (lead a4, `load_hooks` aliases path keys to ids) | — |
+| F6 `recall leg: …` printed on every recall under a `warning:` prefix | the line stays in the verb's `warnings` (R5); the CLI prints leg-served lines only with `--verbose`, never under `warning:` on a normal run; real warnings unchanged. {#f6-leg-line} | test engineer (RED) → implementer |
+| F7 routing-file mock row not graduated | graduate it per `#mocks-registry` | test engineer |
+| 27 contract-change failures (`#green-triage-table`) | update each test to the contract its spec line now states (replica leg in `recall.py`, `--pack` text not JSON, empty stdout on skip, 500 B curator cap, leg-named warnings); no `src/` change | test engineer |
+
+rel: amends -> [[task-25.1-recall-hook-byte-budget#r7]]
+rel: amends -> [[task-25.1-recall-hook-byte-budget#r2]]
+
+**Rev 7 follow-up (2026-11-13, lead, on `red-251b`'s `#red-rev7-ambiguities`).** a-j5: accepted —
+at `--k 12` the SessionStart pack carries whole bodies greedily in rank order, and on the fixture
+those are global (project bodies ≥ 4.9 KB do not fit after them); AC-9 counts bodies of any scope.
+Whether SessionStart should prefer PROJECT bodies is an orientation question for the handhold
+outcome experiment and 19.6, not 25.1 scope. a-f1, a-f2 (producer count shape), a-f3 (AC-4 (i) a
+guard), a-f4, a-f6 (`--verbose`), a-j3, a-j4 (subject index = its `rerank=False` index): accepted
+as written. {#rev-round-7-followup}
+
+## Revision round 8 (2026-11-13, user: a hard limit on hook output) {#rev-round-8}
+
+User: hard limit of 9.5k on outputs. Every generated hook command's stdout is clamped by ONE shared
+emitter at `hook_budget.HOOK_HARD_CAP_BYTES = 9_500` (UTF-8 bytes; a UTF-8 byte count is never
+below the UTF-16 unit count Claude Code measures against its 10,000 cap, so bytes are the safe
+unit). The cap is absolute and applies to every hook command the generator emits — SessionStart,
+UserPromptSubmit (scan + curator), PreCompact, Stop, the recall-state entry and any future one —
+on top of, never instead of, the per-channel budgets (which already sum to ≤ 9,000 per command).
+{#r12-hard-cap}
+
+13. **R12 Hard output cap.** The clamp cuts at whole-block boundaries (never mid-line), appends one
+    line `+N more (output capped at 9,500 B): <fetch cmd>`, still never exceeds 9,500 B including
+    that line, records `capped: true` and the dropped byte count in the call's telemetry row, and
+    exits 0. A hook command whose producers already fit is byte-identical before and after. No
+    environment variable or flag raises it. {#r12}
+
+- **AC-16 (R12).** A test enumerates EVERY hook command the generator emits and, with each producer
+  forced to emit 20 KB, asserts stdout ≤ 9,500 B, ends on a whole line, carries the `+N more` line
+  and a `capped` telemetry row; a fitting command is unchanged byte-for-byte. Mutations: clamp
+  mid-line; the cap read from an env var; one hook command bypassing the shared emitter. {#ac-16}
+
+Sequenced after the rev-7 GREEN (`green-251c`): RED then GREEN as its own round.
+
+**Rev 8 decided (user, Q14 = a): degrade ladder + spill to pull; the clamp is the counted safety
+net.** {#rev-round-8-q14}
+
+14. **R13 Degrade ladder inside the pack.** When a payload does not fit its channel budget, items
+    are degraded in rank order instead of dropped: tier 1 full body; tier 2 a short excerpt (the
+    item's first lines — the `lead` text, at most ~3 lines / 300 B); tier 3 a one-line pointer
+    (name, kind, scope-correct fetch command); tier 4 the single names line (`still in play` /
+    `+N more` names, cap 15). The pack fills top-down: as many tier-1 items as fit while leaving room
+    for every remaining item at a lower tier, then tier 2, and so on; every retrieved item stays
+    visible in some tier unless the names cap is reached. Kind labels (10.6) apply at every tier.
+    {#r13}
+15. **R14 Spill to pull.** Items that fall past the names cap, and the bodies of degraded items, are
+    written to a per-session spill page (one file per hook call under STM session state, one writer,
+    removed at compaction) and fetched with `rmx recall --page <n>` (verb parameter `page`, MCP and
+    CLI); the names line ends with that command. A missing or unreadable page is one clean `Error:`
+    line. {#r14}
+16. **R12 restated:** the 9,500 B clamp stays, but as a safety net: it fires only if the ladder
+    still overflows (a bug), and a firing is counted (`capped: true`, dropped bytes) and surfaced
+    on the console by `rmx telemetry --context`. {#r12-safety-net}
+
+- **AC-17 (R13).** With 40 retrieved items at 20 KB total and a 9,000 B budget: every item is visible
+  in some tier, tiers are monotone in rank, the payload is ≤ budget, and tier-1 count is maximal for
+  the room left. Mutations: drop instead of degrade; excerpt longer than its cap; tiers out of rank
+  order. {#ac-17}
+- **AC-18 (R14).** The names line's `rmx recall --page N` returns exactly the spilled items with
+  their bodies; the page is gone after a compaction marker; verb/CLI/MCP parity. {#ac-18}
+- **AC-16 amended:** with the ladder on, the clamp does not fire on the AC-17 fixture; with the ladder
+  disabled by mutation it fires and is counted. {#ac-16-amended}

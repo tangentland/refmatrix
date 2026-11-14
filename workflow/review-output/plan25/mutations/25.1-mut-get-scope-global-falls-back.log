@@ -1,0 +1,28 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+___________ test_ac11_memory_get_scope_global_returns_the_global_row ___________
+
+fx = <tests.task25_1_support.Fixture object at 0x112abea50>
+
+    def test_ac11_memory_get_scope_global_returns_the_global_row(fx):
+        """AC-11 (R6): a project row and a global row both named fx_dup_x: `rmx memory get fx_dup_x
+        --scope global` returns the GLOBAL row; no scope returns the project row. HEAD: no --scope."""
+        g = s.rmx(fx, "memory", "get", "fx_dup_x", "--scope", "global")
+        assert g.returncode == 0, f"AC-11: exit {g.returncode}: {g.stderr[-400:]}"
+>       assert "GLOBAL-COPY fx_dup_x" in g.stdout and "PROJECT-COPY" not in g.stdout, g.stdout[:400]
+E       AssertionError: fx_dup_x  id=205  mtype=project
+E           tags: project, plan25-fixture
+E           meta: {'source': 'ingest_gmd_as_memory', 'source_path': 
+E         '/private/tmp/rmx-db8ekxw9/h/.claude/projects/-private-tmp-rmx-db8ekxw9-p25-z2sc
+E         uax6-fxproj/memory/fx_dup_x.md', 'gmd_version': '0.1', 'title': 'Duplicate name 
+E         — project copy → AC-11', 'node_type': 'memory', 'type': 'project', 'created': 
+E         '2026-11-01', 'updated': '2026-11-01
+E       assert ('GLOBAL-COPY fx_dup_x' in "fx_dup_x  id=205  mtype=project\n  tags: project, plan25-fixture\n  meta: {'source': 'ingest_gmd_as_memory', 'source_... {#root}\n\nPROJECT-COPY fx_dup_x — the project's row of a name the global store also holds → quasar ledger → shard.\n")
+E        +  where "fx_dup_x  id=205  mtype=project\n  tags: project, plan25-fixture\n  meta: {'source': 'ingest_gmd_as_memory', 'source_... {#root}\n\nPROJECT-COPY fx_dup_x — the project's row of a name the global store also holds → quasar ledger → shard.\n" = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'get', 'fx_dup_x', '--sco...PROJECT-COPY fx_dup_x — the project's row of a name the global store also holds → quasar ledger → shard.\n", stderr='').stdout
+
+tests/test_task25_1_recall_budget.py:1096: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac11_memory_get_scope_global_returns_the_global_row
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 15.85s

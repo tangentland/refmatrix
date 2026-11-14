@@ -1,0 +1,47 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F.F.....                                                                 [100%]
+=================================== FAILURES ===================================
+________________ test_recall_uses_dense_op_on_memory_partition _________________
+
+at_home = {'home': PosixPath('/private/tmp/rmx-nbmav1ab/rtg-6r71yyz0/g/.refmatrix'), 'legacy': PosixPath('/private/tmp/rmx-nbmav1ab/rtg-6r71yyz0/legacy/.refmatrix'), 'merged': PosixPath('/private/tmp/rmx-nbmav1ab/rtg-6r71yyz0/merged/.refmatrix')}
+
+    def test_recall_uses_dense_op_on_memory_partition(at_home):
+        """Legacy `memory-<p>` partition present: a natural-language query (a substring of no
+        memory) returns ranked rows from THAT partition -- dense, not the lexical op -- with the
+        ranking fields the CLI shows (plan-3 r1 #sk-4)."""
+        out = mcp._t_memory_recall({"query": NL_QUERY, "k": 3, "scope": "project",
+                                    "root": str(at_home["legacy"])})
+        rows = out["memories"]
+>       assert rows, f"dense recall on the legacy memory partition returned nothing: {out}"
+E       AssertionError: dense recall on the legacy memory partition returned nothing: {'memories': [], 'mode': 'dense', 'widened': False, 'since_seconds': None, 'warnings': ["recall leg: daemon RPC (the daemon's embedder and rerank default)"]}
+E       assert []
+
+tests/test_mcp_memory_recall_routing.py:115: AssertionError
+----------------------------- Captured stderr call -----------------------------
+rmx: pointer-error row not recorded (pointer-unresolved): /private/tmp/rmx-nbmav1ab/rtg-6r71yyz0/g/.refmatrix/by-pid/_errors.jsonl is unwritable or the global store root is absent
+_______________ test_empty_query_uses_recent_on_memory_partition _______________
+
+at_home = {'home': PosixPath('/private/tmp/rmx-nbmav1ab/rtg-6r71yyz0/g/.refmatrix'), 'legacy': PosixPath('/private/tmp/rmx-nbmav1ab/rtg-6r71yyz0/legacy/.refmatrix'), 'merged': PosixPath('/private/tmp/rmx-nbmav1ab/rtg-6r71yyz0/merged/.refmatrix')}
+
+    def test_empty_query_uses_recent_on_memory_partition(at_home):
+        """An empty query means "what is recent" (MCP contract since 0.21), on the memory
+        partition: every legacy-partition row comes back, newest first."""
+        out = mcp._t_memory_recall({"scope": "project", "root": str(at_home["legacy"])})
+        assert out["mode"] == "recent", out
+>       assert {r["name"] for r in out["memories"]} == set(BODIES), out
+E       AssertionError: {'memories': [], 'mode': 'recent', 'since_seconds': None, 'warnings': [], ...}
+E       assert set() == {'m_route_a',..., 'm_route_c'}
+E         
+E         Extra items in the right set:
+E         'm_route_c'
+E         'm_route_a'
+E         'm_route_b'
+E         Use -v to get more diff
+
+tests/test_mcp_memory_recall_routing.py:136: AssertionError
+----------------------------- Captured stderr call -----------------------------
+rmx: pointer-error row not recorded (pointer-unresolved): /private/tmp/rmx-nbmav1ab/rtg-6r71yyz0/g/.refmatrix/by-pid/_errors.jsonl is unwritable or the global store root is absent
+=========================== short test summary info ============================
+FAILED tests/test_mcp_memory_recall_routing.py::test_recall_uses_dense_op_on_memory_partition
+FAILED tests/test_mcp_memory_recall_routing.py::test_empty_query_uses_recent_on_memory_partition
+2 failed, 6 passed in 10.03s

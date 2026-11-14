@@ -1,0 +1,36 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+__________________ test_ac12b_focus_context_within_its_budget __________________
+
+fx = <tests.task25_1_support.Fixture object at 0x11a5d2a50>
+
+    def test_ac12b_focus_context_within_its_budget(fx):
+        """AC-12b (R0b): the generated resume `rmx focus context --top N` (STM ring sized > 3,000 B
+        at HEAD: 3,319 B) ≤ budget("focus_context")."""
+        cmds = [c for _e, m, c in h.hook_entries(fx.root, "SessionStart") if "focus context" in c]
+        assert len(cmds) == 1, cmds
+        r = s.run_cmd(fx, cmds[0], env_in=s.envelope("", event="SessionStart", source="resume"))
+        _ok(r, "focus context")
+        assert r.stdout, "fixture: focus context printed nothing"
+>       s.assert_within(len(r.stdout), "focus_context", "AC-12b focus context")
+
+tests/test_task25_1_recall_budget.py:1161: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+n = 3297, channel = 'focus_context', what = 'AC-12b focus context'
+
+    def assert_within(n: int, channel: str, what: str) -> int:
+        """`n` bytes ≤ `hook_budget.budget(channel)`; RED names the measured bytes."""
+        b = budget_or_none(channel)
+        assert b is not None, (f"{what}: printed {n} B; R1 `refmatrix.hook_budget` is not built, "
+                               f"so budget({channel!r}) does not exist")
+>       assert n <= b, f"{what}: printed {n} B > budget({channel!r}) = {b} B"
+               ^^^^^^
+E       AssertionError: AC-12b focus context: printed 3297 B > budget('focus_context') = 1500 B
+
+tests/task25_1_support.py:90: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac12b_focus_context_within_its_budget
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 14.51s

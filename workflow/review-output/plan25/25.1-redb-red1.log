@@ -1,0 +1,347 @@
+........................................................................ [ 53%]
+..................FF.F.F...F....F.........F......FFF.F........           [100%]
+=================================== FAILURES ===================================
+________ test_ac4i_daemon_up_hub_down_daemon_serves_and_nothing_spawns _________
+
+fx = <tests.task25_1_support.Fixture object at 0x103d19fd0>
+
+    def test_ac4i_daemon_up_hub_down_daemon_serves_and_nothing_spawns(fx):
+        """AC-4 (i) (r4 #n1; F3, rev 7, 2026-11-13): a sandbox daemon is up, no `models.sock`
+        worker. `rmx memory recall "q" --json` and MCP `rmx_memory_recall` are served by the
+        daemon RPC (the verb's `warnings` name the daemon leg), and the calling process spawns no
+        model worker and imports no `sentence_transformers` (the same two facts as AC-4 (c), here
+        observed by an audit hook).
+    
+        A GUARD, not RED at HEAD (the spec says so: HEAD's leg order already asks the daemon
+        first); killed by AC-14's mutation "`shared_embedder` tried before the daemon", which
+        spawns the private worker this test sees. Before this test that mutation was killed only
+        indirectly, through AC-4 (d)/AC-7 parity (green-251b F3)."""
+        none_sock = str(fx.base / "none.sock")
+>       r, audit = _audited(fx, "cli", "memory", "recall", QUESTION, "--json", "--k", "6",
+                            RMX_MODEL_SOCK=none_sock)
+
+tests/test_task25_1_recall_budget.py:975: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fx = <tests.task25_1_support.Fixture object at 0x103d19fd0>, mode = 'cli'
+args = ('memory', 'recall', 'how does the quasar ledger reconcile flux batches across zorbulate shards', '--json', '--k', '6')
+extra = {'RMX_MODEL_SOCK': '/private/tmp/rmx-k2gapyrf/p25-7iclcuq9/none.sock'}
+env = {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_DEPRECATION_WARNING': '1', 'CLAUDE_CODE_CHILD_SESSION': '1', ...}
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '-c', '\nimport atexit, json, sy...OS/Python: can't open file '/private/tmp/rmx-k2gapyrf/p25-7iclcuq9/fxproj/rmx': [Errno 2] No such file or directory\n")
+line = None
+@py_format1 = "the audited child wrote no AUDIT line (rc=2): /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/...'t open file '/private/tmp/rmx-k2gapyrf/p25-7iclcuq9/fxproj/rmx': [Errno 2] No such file or directory\n~\n>assert None"
+
+    def _audited(fx, mode: str, *args, **extra) -> "tuple[subprocess.CompletedProcess, dict]":
+        env = h.rmx_env(fx.root, RMX_HOME=str(fx.home), **extra)
+        r = subprocess.run([sys.executable, "-c", _AUDIT_RUN, mode, *map(str, args)], env=env,
+                           cwd=str(fx.proj), capture_output=True, text=True, timeout=300)
+        line = next((ln for ln in r.stderr.splitlines() if ln.startswith("AUDIT ")), None)
+>       assert line, f"the audited child wrote no AUDIT line (rc={r.returncode}): {r.stderr[-1500:]}"
+E       AssertionError: the audited child wrote no AUDIT line (rc=2): /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python: can't open file '/private/tmp/rmx-k2gapyrf/p25-7iclcuq9/fxproj/rmx': [Errno 2] No such file or directory
+E         
+E       assert None
+
+tests/test_task25_1_recall_budget.py:951: AssertionError
+___________ test_ac5_mistyped_savestate_not_named_on_the_packed_argv ___________
+
+fx = <tests.task25_1_support.Fixture object at 0x103d19fd0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10caac3d0>
+
+    def test_ac5_mistyped_savestate_not_named_on_the_packed_argv(fx, monkeypatch):
+        """AC-5 (R2b): `savestate_fx01.md` (metadata.type: project, the best body for the question)
+        is not named by the packed per-prompt argv and the trailer does not count it. After 26.4
+        merges this is a regression guard (the bridge types it session/recall-state); at HEAD it is
+        RED twice over: no --pack, and HEAD's JSON names it first (bug-164's 7c4e19d2a8f3 shape)."""
+        p = _pack(_q(fx), "per-prompt argv")
+>       assert s.SAVESTATE not in p.named
+E       AssertionError: assert 'savestate_fx01' not in ['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...]
+E        +  where 'savestate_fx01' = s.SAVESTATE
+E        +  and   ['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...] = <tests.task25_1_support.Pack object at 0x10ca5b960>.named
+
+tests/test_task25_1_recall_budget.py:1003: AssertionError
+___ test_ac6_include_subjects_brings_live_subjects_back_never_the_stale_one ____
+
+fx = <tests.task25_1_support.Fixture object at 0x103d19fd0>
+
+    def test_ac6_include_subjects_brings_live_subjects_back_never_the_stale_one(fx):
+        """AC-6 on the per-prompt argv: with `--include-subjects`, live subjects are named and the
+        stale one never is.
+    
+        Rev 7 J3 (2026-11-13, spec #j3-subjects-exempt, a PRODUCT fix): a subject row is a label a
+        cross-encoder cannot score against a prompt (the daemon's default rerank put the 4 live
+        subjects at ranks 32-35 of 36, so the opt-in never showed one). With `include_subjects`
+        subjects are EXEMPT from the rerank; non-subject rows rerank AS TODAY. So the fix cannot
+        be "turn the rerank off": the project non-subject hits of the opt-in run are a prefix of
+        the default run's (which excludes subjects and is reranked), the subjects only taking
+        slots. The rerank is per (query, doc) pair, so the order among non-subjects cannot depend
+        on whether subjects ride along."""
+        p = _pack(_q(fx, append=" --include-subjects"), "per-prompt argv --include-subjects")
+>       assert set(p.named) & set(s.LIVE_SUBJECTS), p.named
+E       AssertionError: ['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...]
+E       assert ({'fx_dup_x', 'fx_mem_00', 'fx_mem_03', 'fx_mem_10', 'fx_mem_20', 'fx_mem_23', ...} & {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'})
+E        +  where {'fx_dup_x', 'fx_mem_00', 'fx_mem_03', 'fx_mem_10', 'fx_mem_20', 'fx_mem_23', ...} = set(['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...])
+E        +    where ['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...] = <tests.task25_1_support.Pack object at 0x10ca581b0>.named
+E        +  and   {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'} = set(['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'])
+E        +    where ['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'] = s.LIVE_SUBJECTS
+
+tests/test_task25_1_recall_budget.py:1054: AssertionError
+_____ test_ac6_verb_hides_subjects_and_the_stale_one_even_with_the_opt_in ______
+
+fx = <tests.task25_1_support.Fixture object at 0x103d19fd0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10caac750>
+
+    def test_ac6_verb_hides_subjects_and_the_stale_one_even_with_the_opt_in(fx, monkeypatch):
+        """AC-6 on the verb: no subject by default; with `include_subjects` the live subjects come
+        back and the stale one never does.
+    
+        Rev 7 J4 (2026-11-13, spec #j3-subjects-exempt): subjects are EXEMPT from the cross-encoder
+        rerank and keep their PRE-rerank rank; non-subject rows rerank as today. Asserted three
+        ways, so neither "rerank off" nor "subjects appended at the end" passes:
+        - pre-check: on this fixture the rerank does reorder the non-subject rows (else the next
+          assertion could not tell a disabled rerank from a working one);
+        - the opt-in's non-subject rows are a prefix of the default (reranked) run's;
+        - each subject sits at the rank it has with `rerank=False` (its pre-rerank rank)."""
+        from refmatrix import verbs
+        monkeypatch.setenv("RMX_HOME", str(fx.home))
+    
+        def names(**kw) -> list[str]:
+            return [m["name"] for m in verbs.memory_recall(fx.root, query=QUESTION, k=12,
+                                                           **kw)["memories"]]
+        base = names()
+        assert not set(base) & set(s.SUBJECTS), base
+        plain = [n for n in names(rerank=False) if n not in s.SUBJECTS]
+        assert plain != base, ("fixture pre-check: the rerank does not reorder the non-subject "
+                               "rows, so a disabled rerank would pass", base)
+        inc = names(include_subjects=True)
+>       assert set(inc) & set(s.LIVE_SUBJECTS), inc
+E       AssertionError: ['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_03', 'fx_mem_23', ...]
+E       assert ({'fx_mem_00', 'fx_mem_01', 'fx_mem_03', 'fx_mem_06', 'fx_mem_10', 'fx_mem_13', ...} & {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'})
+E        +  where {'fx_mem_00', 'fx_mem_01', 'fx_mem_03', 'fx_mem_06', 'fx_mem_10', 'fx_mem_13', ...} = set(['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_03', 'fx_mem_23', ...])
+E        +  and   {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'} = set(['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'])
+E        +    where ['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'] = s.LIVE_SUBJECTS
+
+tests/test_task25_1_recall_budget.py:1097: AssertionError
+__________ test_f6_recall_leg_line_only_under_verbose_never_a_warning __________
+
+fx = <tests.task25_1_support.Fixture object at 0x103d19fd0>
+
+    def test_f6_recall_leg_line_only_under_verbose_never_a_warning(fx):
+        """Rev 7 F6 (2026-11-13, spec #f6-leg-line): the `recall leg: …` line stays in the verb's
+        `warnings` (R5; AC-4 (i) reads it there), but the CLI prints leg-served lines only with
+        `--verbose`, and never under the `warning:` prefix; real warnings are unchanged
+        (tests/test_rerank_warning_routes.py::test_cli_recall_daemon_branch_prints_the_warnings).
+    
+        HEAD (measured 2026-11-13): every recall -- interactive and the per-prompt hook -- prints
+        `# rmx: warning: recall leg: daemon RPC (the daemon's embedder and rerank default)` on
+        stderr, and `memory recall` has no `--verbose`."""
+        none_sock = str(fx.base / "none.sock")
+        plain = s.rmx(fx, "memory", "recall", QUESTION, "--json", "--k", "4",
+                      RMX_MODEL_SOCK=none_sock)
+        assert plain.returncode == 0, plain.stderr[-800:]
+>       assert "recall leg" not in plain.stderr, (
+            f"F6: a normal interactive recall printed the leg line: {plain.stderr[-600:]!r}")
+E       AssertionError: F6: a normal interactive recall printed the leg line: "# rmx: warning: recall leg: daemon RPC (the daemon's embedder and rerank default)\n"
+E       assert 'recall leg' not in '# rmx: warn...k default)\n'
+E         
+E         'recall leg' is contained here:
+E           # rmx: warning: recall leg: daemon RPC (the daemon's embedder and rerank default)
+E         ?                 ++++++++++
+
+tests/test_task25_1_recall_budget.py:1163: AssertionError
+__________ test_ac9_session_start_carries_bodies_after_all_hook_lines __________
+
+fx = <tests.task25_1_support.Fixture object at 0x103d19fd0>
+
+    def test_ac9_session_start_carries_bodies_after_all_hook_lines(fx):
+        """AC-9 / d3: the SessionStart argv carries ≥ 2 bodied hits, every body after every hook
+        line and each a NAMED hit, and named + trailer N = the generated `--k`.
+    
+        Rev 7 J5 (2026-11-13, R7 amended, spec #j5-session-start-k): SessionStart `--k 12`, not 30
+        (30 hook lines took 5,961 of the 9,000 B). The count the test checks against is 12.
+        Rev 7 J6's rule applies here too: a body is the `## <name>` block the pack printed after
+        its hook lines, any scope; the RED counted only `BODYMARK` (project) bodies. Measured on
+        the fixture before GREEN (`--k 12` appended, 2026-11-13): 12 named, 6 bodies, all GLOBAL
+        rows (`fx_dup_x`, `gx_mem_9` … `gx_mem_5`) -- no project body (4.9-8.7 KB) fits after
+        the globals in rank order (see the implementation summary's #red-rev7 a-j5)."""
+        p = _pack(_ss(fx), "SessionStart argv")
+        assert len(p.body_blocks) >= 2, f"AC-9: {p.body_blocks} bodied hits on session_start"
+        assert set(p.body_blocks) <= set(p.named)
+        last_hook = max(p.text.index(m.group(0)) for m in p.hook_lines)
+        first_body = min(p.text.index(f"## {b}\n") for b in p.body_blocks)
+        assert first_body > last_hook
+>       assert len(p.named) + p.more == 12, (len(p.named), p.more)
+E       AssertionError: (30, 0)
+E       assert (30 + 0) == 12
+E        +  where 30 = len(['savestate_fx01', 'fx_dup_x', 'fx_mem_29', 'gx_mem_9', 'fx_mem_28', 'gx_mem_8', ...])
+E        +    where ['savestate_fx01', 'fx_dup_x', 'fx_mem_29', 'gx_mem_9', 'fx_mem_28', 'gx_mem_8', ...] = <tests.task25_1_support.Pack object at 0x10caba410>.named
+E        +  and   0 = <tests.task25_1_support.Pack object at 0x10caba410>.more
+
+tests/test_task25_1_recall_budget.py:1236: AssertionError
+___________ test_ac13_generator_emits_pack_raised_k_and_no_variable ____________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-984/test_ac13_generator_emits_pack0')
+
+    def test_ac13_generator_emits_pack_raised_k_and_no_variable(tmp_path):
+        """AC-13 / R7: the three recall commands carry `--pack`, no `--json`, no `$` after HOOK_ENV
+        (no interpolated budget variable), and `--k` SessionStart 12, per-prompt 12, PreCompact 30
+        (PreCompact absent only if R0 dropped it); then `rmx install-hooks --apply` → `--check` is
+        clean in the sandbox.
+    
+        Rev 7 J5 (2026-11-13, R7 amended, spec #j5-session-start-k): SessionStart `--k 12`, not 30.
+        R3 puts every hook line before any body; 30 lines took 5,961 of the 9,000 B, so no project
+        body (2.0-8.7 KB) could ever follow them."""
+        root = tmp_path / "proj" / ".refmatrix"
+        root.mkdir(parents=True)
+        (root.parent / ".git").mkdir()
+        want = {"UserPromptSubmit": ("memory recall --stdin-json", 12),
+                "SessionStart": ("memory recall --session-start", 12),
+                "PreCompact": ("memory recall --recent", 30)}
+        for ev, (needle, k) in want.items():
+            hits = [c for e, _m, c in h.hook_entries(root, ev) if needle in c]
+            if ev == "PreCompact" and not hits:
+                continue
+            assert len(hits) == 1, (ev, hits)
+            tail = s.after_env(hits[0])
+            assert "--pack" in tail and "--json" not in tail, (ev, tail)
+            assert "$" not in tail, (ev, tail)
+>           assert f"--k {k} " in tail + " ", (ev, tail)
+E           AssertionError: ('SessionStart', 'rmx memory recall --session-start --k 30 --scope both --pack --timeout 10')
+E           assert '--k 12 ' in ('rmx memory recall --session-start --k 30 --scope both --pack --timeout 10' + ' ')
+
+tests/test_task25_1_recall_budget.py:1476: AssertionError
+_________ test_ac15g_recall_state_is_counted_as_producer_recall_state __________
+
+rs = <tests.task25_1_support.Fixture object at 0x10c99f490>
+
+    def test_ac15g_recall_state_is_counted_as_producer_recall_state(rs):
+        """R11's last bullet (F2, rev 7, 2026-11-13): the compact|clear recall-state is "counted as
+        producer `recall_state` in `rmx telemetry --context`".
+    
+        The contract this test pins (red-251b's reading; the spec names the producer, not the
+        shape -- see the summary's #red-rev7): `rmx telemetry --context --format json` carries
+        `by_producer`, keyed by `hook_budget.CHANNEL_BUDGET_BYTES` names, whose `recall_state`
+        entry counts the HOOK-invoked `rmx recall-state` runs in `cli.log` (`source == "hook"`,
+        `out_bytes` recorded) as `n`, `total_bytes`, `max_bytes`, with `budget` =
+        `budget("recall_state")` beside them; an interactive `rmx recall-state` is not a producer
+        run. The text form names `recall_state`.
+    
+        HEAD (measured 2026-11-13): the run IS in `by_command` as `recall-state` (n 1, 4,946 B),
+        but nothing names the producer or reads it against its budget; there is no
+        `by_producer`."""
+        _m, cmd = _rs_entry(rs.root)
+        r = s.run_cmd(rs, cmd, env_in=s.envelope("", event="SessionStart", source="compact"))
+        _ok(r, "recall-state entry (compact)")
+        i = s.rmx(rs, "recall-state")                       # interactive: not a producer run
+        assert i.returncode == 0, i.stderr[-600:]
+        rows = [x for x in h.jsonl(rs.root / "cli.log")
+                if x.get("phase") != "start" and (x.get("argv") or [None])[0] == "recall-state"
+                and isinstance(x.get("out_bytes"), int)]
+        hook_rows = [x for x in rows if x.get("source") == "hook"]
+        assert hook_rows and len(hook_rows) < len(rows), (
+            "fixture: cli.log must hold hook AND interactive recall-state rows",
+            [(x.get("source"), x.get("out_bytes")) for x in rows])
+        assert len(r.stdout) in [x["out_bytes"] for x in hook_rows]
+        j = s.rmx(rs, "telemetry", "--context", "--format", "json")
+        assert j.returncode == 0, j.stderr[-600:]
+        data = json.loads(j.stdout)
+>       assert "by_producer" in data, f"F2: no producer view in telemetry --context: {sorted(data)}"
+E       AssertionError: F2: no producer view in telemetry --context: ['by_command', 'counted', 'hook_budget', 'total_bytes', 'total_tokens_est', 'uncounted']
+E       assert 'by_producer' in {'by_command': {'recall-state': {'max_bytes': 4507, 'mean_bytes': 3220, 'n': 7, 'p50_bytes': 4507, ...}, 'save-state':...e prompt's hook fan-out; windows with no prompt command are excluded", 'max_bytes': 0, ...}, 'total_bytes': 22715, ...}
+
+tests/test_task25_1_recall_budget.py:1642: AssertionError
+________ test_r10_bus_pub_about_tags_the_message_and_is_never_a_lookup _________
+
+bus = {'alpha': PosixPath('/private/tmp/rmx-k2gapyrf/r10-6f31xeag/alpha/.refmatrix'), 'base': PosixPath('/private/tmp/rmx-k2...-k2gapyrf/r10-6f31xeag/bravo/.refmatrix'), 'home': PosixPath('/private/tmp/rmx-k2gapyrf/r10-6f31xeag/home/.refmatrix')}
+
+    def test_r10_bus_pub_about_tags_the_message_and_is_never_a_lookup(bus):
+        """#r10-bus (user decision 2026-11-10; F1, rev 7): the message field is `about`. With no
+        store named Y, `about="Y"` publishes and the hub row's `project` is `Y` -- on the verb and
+        through MCP. Kills the spec's mutation "`about` ignored (row `project` empty)": MCP's
+        `Verb.call` drops an argument the verb does not name, which is HEAD's behaviour."""
+        from refmatrix import verbs
+        alpha = bus["alpha"]
+        try:
+>           verbs.bus_pub(alpha, "global:t1", "b", about="Y")
+E           TypeError: bus_pub() got an unexpected keyword argument 'about'
+
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1700: TypeError
+
+During handling of the above exception, another exception occurred:
+
+bus = {'alpha': PosixPath('/private/tmp/rmx-k2gapyrf/r10-6f31xeag/alpha/.refmatrix'), 'base': PosixPath('/private/tmp/rmx-k2...-k2gapyrf/r10-6f31xeag/bravo/.refmatrix'), 'home': PosixPath('/private/tmp/rmx-k2gapyrf/r10-6f31xeag/home/.refmatrix')}
+
+    def test_r10_bus_pub_about_tags_the_message_and_is_never_a_lookup(bus):
+        """#r10-bus (user decision 2026-11-10; F1, rev 7): the message field is `about`. With no
+        store named Y, `about="Y"` publishes and the hub row's `project` is `Y` -- on the verb and
+        through MCP. Kills the spec's mutation "`about` ignored (row `project` empty)": MCP's
+        `Verb.call` drops an argument the verb does not name, which is HEAD's behaviour."""
+        from refmatrix import verbs
+        alpha = bus["alpha"]
+        try:
+            verbs.bus_pub(alpha, "global:t1", "b", about="Y")
+        except TypeError as e:
+>           pytest.fail(f"#r10-bus: verbs.bus_pub has no `about` parameter ({e})")
+E           Failed: #r10-bus: verbs.bus_pub has no `about` parameter (bus_pub() got an unexpected keyword argument 'about')
+
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1702: Failed
+____________ test_r10_bus_pub_project_is_the_transport_target_only _____________
+
+bus = {'alpha': PosixPath('/private/tmp/rmx-k2gapyrf/r10-6f31xeag/alpha/.refmatrix'), 'base': PosixPath('/private/tmp/rmx-k2...-k2gapyrf/r10-6f31xeag/bravo/.refmatrix'), 'home': PosixPath('/private/tmp/rmx-k2gapyrf/r10-6f31xeag/home/.refmatrix')}
+
+    def test_r10_bus_pub_project_is_the_transport_target_only(bus):
+        """#r10-bus: `project` on `rmx_bus_pub` is the MCP TRANSPORT target, under R10 like every
+        tool: an unknown name raises `VerbUnknownProjectError` (a guard: R10 already holds at
+        HEAD); a KNOWN name publishes from that store -- its name is the default sender -- and is
+        never the message's `project` tag (HEAD: the same key filled both, so the row read
+        `project: bravo`). The verb has an `about` parameter and no `project` parameter of its
+        own (the schema's `project` is the transport property)."""
+        import inspect
+        from refmatrix import mcp, verbs
+        alpha = bus["alpha"]
+        err, text = _mcp_tool("rmx_bus_pub", {"channel": "global:t3", "body": "b", "project": "Y"})
+        assert err and text.startswith("VerbUnknownProjectError:"), text[:400]
+        err, text = _mcp_tool("rmx_bus_pub", {"channel": "global:t4", "body": "b",
+                                              "project": "bravo"})
+        assert not err, text[:400]
+        row = _last_on(alpha, "global:t4")
+        assert row["from"] == "bravo", row
+>       assert row["project"] is None, (
+            "#r10-bus: the transport target leaked into the message's project tag", row)
+E       AssertionError: ("#r10-bus: the transport target leaked into the message's project tag", {'body': 'b', 'channel': 'global:t4', 'from': 'bravo', 'id': 'dedc6c890c87', ...})
+E       assert 'bravo' is None
+
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1727: AssertionError
+______________________ test_r10_bus_pub_cli_about_option _______________________
+
+bus = {'alpha': PosixPath('/private/tmp/rmx-k2gapyrf/r10-6f31xeag/alpha/.refmatrix'), 'base': PosixPath('/private/tmp/rmx-k2...-k2gapyrf/r10-6f31xeag/bravo/.refmatrix'), 'home': PosixPath('/private/tmp/rmx-k2gapyrf/r10-6f31xeag/home/.refmatrix')}
+
+    def test_r10_bus_pub_cli_about_option(bus):
+        """#r10-bus: `rmx bus pub` gains `--about` (verb parity: the verb's `about` has its CLI
+        twin). HEAD: no such option (exit 2)."""
+        from click.testing import CliRunner
+        from refmatrix import cli
+        alpha = bus["alpha"]
+        r = CliRunner().invoke(cli.main, ["bus", "pub", "global:t6", "hello", "--about", "Y"])
+>       assert r.exit_code == 0, (r.exit_code, r.output)
+E       AssertionError: (2, "Usage: main bus pub [OPTIONS] CHANNEL MESSAGE
+E         Try 'main bus pub -h' for help.
+E         
+E         Error: No such option: --about
+E         ")
+E       assert 2 == 0
+E        +  where 2 = <Result SystemExit(2)>.exit_code
+
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1752: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac4i_daemon_up_hub_down_daemon_serves_and_nothing_spawns
+FAILED tests/test_task25_1_recall_budget.py::test_ac5_mistyped_savestate_not_named_on_the_packed_argv
+FAILED tests/test_task25_1_recall_budget.py::test_ac6_include_subjects_brings_live_subjects_back_never_the_stale_one
+FAILED tests/test_task25_1_recall_budget.py::test_ac6_verb_hides_subjects_and_the_stale_one_even_with_the_opt_in
+FAILED tests/test_task25_1_recall_budget.py::test_f6_recall_leg_line_only_under_verbose_never_a_warning
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_session_start_carries_bodies_after_all_hook_lines
+FAILED tests/test_task25_1_recall_budget.py::test_ac13_generator_emits_pack_raised_k_and_no_variable
+FAILED tests/test_task25_1_recall_budget.py::test_ac15g_recall_state_is_counted_as_producer_recall_state
+FAILED tests/test_task25_1_recall_budget.py::test_r10_bus_pub_about_tags_the_message_and_is_never_a_lookup
+FAILED tests/test_task25_1_recall_budget.py::test_r10_bus_pub_project_is_the_transport_target_only
+FAILED tests/test_task25_1_recall_budget.py::test_r10_bus_pub_cli_about_option
+11 failed, 123 passed in 124.80s (0:02:04)

@@ -1,0 +1,33 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+______ test_ac4c_hook_mode_no_daemon_no_worker_exits_0_silent_and_counted ______
+
+offline = {'a': <tests.task25_1_support.Fixture object at 0x10644f750>, 'b': <tests.task25_1_support.Fixture object at 0x1062d12...('/private/tmp/rmx-2axbbuw4/p25o-urrjqfpd'), 'home': PosixPath('/private/tmp/rmx-2axbbuw4/p25o-urrjqfpd/g/.refmatrix')}
+
+    def test_ac4c_hook_mode_no_daemon_no_worker_exits_0_silent_and_counted(offline):
+        """AC-4 (c) / d8: no daemon, no hub worker, HOOK mode: the per-prompt argv prints NOTHING,
+        exits 0, loads no model and spawns no worker (no `sentence_transformers` import; within the
+        5 s hook budget), and its recall row reads outcome "error", error "VerbAbsentError: …".
+        HEAD: exit 1, "needs the daemon up …"."""
+        b = offline["b"]
+        before = len(s.recall_rows(b.root))
+        cmd = s.recall_cmd(b.root, "UserPromptSubmit")
+        t0 = time.monotonic()
+        r = s.run_cmd(b, cmd, env_in=s.envelope(QUESTION), RMX_HOME=str(offline["home"]),
+                      RMX_MODEL_SOCK=str(offline["base"] / "none.sock"), PYTHONPROFILEIMPORTTIME="1")
+        took = time.monotonic() - t0
+        err = r.stderr.decode("utf-8", "replace")
+        said = "\n".join(ln for ln in err.splitlines() if not ln.startswith("import time:"))
+        assert r.returncode == 0, f"AC-4 (c): exit {r.returncode}: {said[-600:]}"
+>       assert r.stdout == b"", f"AC-4 (c): stdout not empty: {r.stdout[:200]!r}"
+E       AssertionError: AC-4 (c): stdout not empty: b'# rmx recall \xc2\xb7 prompt_recall \xc2\xb7 8 hits \xc2\xb7 budget 4000 B\n- fx_mem_10 \xe2\x80\x94 Quasar ledger note 10 \xe2\x80\x94 flux batch \xe2\x86\x92 shard 10 \xe2\x80\x94 HOOK-fx_mem_10 \xe2\x80\x94 curated: reconcile flux batch \xe2\x86\x92 ledger \xe2\x86\x92 shard 10 '
+E       assert b'# rmx recal... fx_mem_17)\n' == b''
+E         
+E         Use -v to get more diff
+
+tests/test_task25_1_recall_budget.py:528: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac4c_hook_mode_no_daemon_no_worker_exits_0_silent_and_counted
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 25.57s
