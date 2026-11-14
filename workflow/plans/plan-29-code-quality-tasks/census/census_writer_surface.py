@@ -3,8 +3,9 @@ commit it names. Read-only AST; imports nothing from refmatrix.
 
 Usage: python3 census_writer_surface.py <src/refmatrix> [--list]
 
-Finds the classes by NAME (`_DaemonWriter`, `Store`) in whichever module defines them, so it
-gives the same answer after 29.5 moves them.
+Finds the classes by NAME (`_DaemonWriter`, `Store`) in whichever module defines them, and reads
+`Store`'s methods through its base classes, so it gives the same answer after 29.5 moves them
+and composes `Store` from mixin classes in sibling modules.
 
 EXPLICIT PROXY METHOD: a public method defined on `_DaemonWriter` (a daemon op).
 FALL-THROUGH: an attribute used on a WRITER-BOUND expression that `_DaemonWriter` does not
@@ -32,8 +33,28 @@ def find_class(src: pathlib.Path, name: str) -> tuple[str, ast.ClassDef]:
     raise SystemExit(f"class {name} not found under {src}")
 
 
-def methods(c: ast.ClassDef) -> dict[str, ast.FunctionDef]:
-    return {m.name: m for m in c.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))}
+_CLASSES: dict[str, ast.ClassDef] = {}
+
+
+def index_classes(src: pathlib.Path) -> None:
+    """Every top-level class under `src` by name (first definition wins), so a class composed
+    from mixins in sibling modules (29.5's `Store`) is read through its bases."""
+    for p in sorted(src.rglob("*.py")):
+        for n in ast.parse(p.read_text()).body:
+            if isinstance(n, ast.ClassDef):
+                _CLASSES.setdefault(n.name, n)
+
+
+def methods(c: ast.ClassDef, _seen: frozenset[str] = frozenset()) -> dict[str, ast.FunctionDef]:
+    """Methods of `c` and of every base class found by name under src (own definitions win,
+    then bases left to right: an approximation of the MRO that is exact for plain mixins)."""
+    out: dict[str, ast.FunctionDef] = {}
+    for base in reversed(c.bases):
+        nm = base.id if isinstance(base, ast.Name) else (base.attr if isinstance(base, ast.Attribute) else "")
+        if nm in _CLASSES and nm not in _seen:
+            out.update(methods(_CLASSES[nm], _seen | {c.name}))
+    out.update({m.name: m for m in c.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))})
+    return out
 
 
 def sig(f: ast.FunctionDef) -> tuple[list[str], list[str], bool, bool]:
@@ -56,6 +77,7 @@ def is_writer_call(n: ast.AST) -> bool:
 def main(argv: list[str]) -> int:
     src = pathlib.Path(argv[1])
     show = "--list" in argv
+    index_classes(src)
     dw_mod, dw_cls = find_class(src, "_DaemonWriter")
     st_mod, st_cls = find_class(src, "Store")
     dw, st = methods(dw_cls), methods(st_cls)

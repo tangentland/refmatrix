@@ -16,8 +16,11 @@ metadata:
 > Plan: [[plan-29-code-quality]] ([[plan-29-code-quality#t3]])
 > Status: Pending
 > Depends on: 29.4 (the healed suite) and 29.5 (the module split), per
-> [[plan-29-code-quality#order]]. Runs beside [[task-29.2-mypy-gate]]; the shared files are
-> ordered in [[task-29.2-mypy-gate#seam]].
+> [[plan-29-code-quality#order]]. Its git and query slices land BEFORE [[task-29.2-mypy-gate]];
+> the shared files are ordered in [[task-29.2-mypy-gate#seam]].
+> Review input folded 2026-11-14: `plan-review-fable-2026-11-14-store#plan29-converge-candidates`,
+> `plan-review-fable-2026-11-14-queue#p29-4`, `plan-review-fable-2026-11-14-queue#dup-2`
+> ([[#fold]]). Open for the user: `plan-29 D4` ([[task-29.2-mypy-gate#d4]]).
 
 rel: part-of -> [[plan-29-code-quality]]
 rel: implements -> [[tdd-governance]]
@@ -37,20 +40,21 @@ rel: derives-from -> [[bsd-pattern-prereg-check-unrun-census]]
 
 For each finding class the review ledger has recorded more than twice: ONE helper that owns the
 shape, every call site moved onto it, and a census test that fails when a new site bypasses it.
-Six slices, each on its own branch, in this order:
+Eight slices, each on its own branch, in this order:
 
 | slice | helper | closes |
 |---|---|---|
-| K | the census kit under `tests/census/` | (used by every slice) |
+| K | the census kit under `tests/census/`: bug-212's scanner, extracted | (used by every slice, and by later tasks) |
 | a | `run_git` in a new module `refmatrix/gitrun.py` | bug-233; the bug-225 r3 rule in one place |
-| b | one term resolver in the query engine; typed PQL arguments | bug-234, bug-236, bug-238 |
-| c | one classifier for broad `except` handlers | the plan's three counts; 192 silent handlers |
+| b | one term resolver in the query engine; typed PQL arguments | bug-234, bug-236, bug-238; bug-237's `NOT` half |
+| c | one classifier for broad `except` handlers | the plan's three counts; the unowned silent handlers; bug-096 |
 | d | the typed daemon classifier, already in `verbs`, as the only route gate | the bare `ping` gates |
 | e | one `Deadline`; explicit `timeout` and `retries` on every daemon call | the four `_left` copies |
 | f | the tracked-catalog refusal takes the caller's remedy | bug-232 |
+| g | one function for a daemon op's partition default | the 20 copies of one expression |
 
-Slices a, b and c are the plan's "first three". Slices d, e and f are the other classes that
-qualify under the plan's rule ([[#classes]]).
+Slices a, b and c are the plan's "first three". Slices d to g are the other classes that qualify
+under the plan's rule ([[#classes]]).
 
 ## The finding classes, counted {#classes}
 
@@ -71,6 +75,7 @@ sightings: {#classes-method}
 | S | one check or message is shared by callers with different needs | 5 | registry bug-232 with [[bsd-impressions#imp-shared-check-caller-remedy]]; [[bsd-impressions#imp-test-the-advice-in-the-error]], [[bsd-impressions#imp-aim-the-guard-at-the-destination]], [[bsd-impressions#imp-ask-about-the-file-not-the-names]], [[bsd-impressions#imp-shared-probe-placement]] | the refusal's `remedy` parameter; rule [[#r0]] | f |
 | C | "every X passes through here" is claimed with no census of X | 7 | [[bsd-pattern-control-point-claim-without-census]] (4 runs); [[bsd-impressions#imp-loudness-is-a-census]], [[bsd-impressions#imp-collision-column-census]], [[bsd-impressions#imp-scanner-needs-synthetic-positives]] | the census kit | K |
 | R | a correct fix reaches one of its two outputs | 10 | [[bsd-pattern-sibling-render-path#sightings]] (7); [[bsd-impressions#imp-precedence-names-siblings]], [[bsd-impressions#imp-mirror-the-extension]]; registry bug-048 | none of its own | see below |
+| P | an operation's partition is chosen in many places | 10 | registry tag `partition` (9 rows: bug-098, bug-105, bug-111, bug-128, bug-140, bug-145, bug-148, bug-153, bug-158); [[bsd-impressions#imp-scope-vs-every-table]] | one partition-default function (the expression only; plan-23 owns the binding contract) | g |
 | V | a gate or guard that did not run, or cannot fire, reads as clean | 8 | [[bsd-pattern-guard-cannot-fire#sightings]] (4); registry bug-021, bug-068, bug-230; [[bsd-impressions#imp-gate-precondition-vacuous-pass]] | `assert_gate_ran_clean` (exists) | rule [[#r0]] |
 
 **Classes that get no `src/` helper, and why.** {#classes-no-helper}
@@ -85,11 +90,20 @@ sightings: {#classes-method}
   [[bsd-pattern-handoff-without-sibling-ac]] (5 runs). This spec applies them to itself: every
   count below names its script and commit, and every item it hands to 29.2 or 29.5 names the AC
   that receives it.
-- "A key missing a dimension" (the partition; registry tag `partition`, 9 rows; bug-098,
-  bug-105) is counted more than twice and is NOT taken here: plan-23 owns the binding contract
-  (the bug-105 row: "23.1 adopts the contract with AC-3d").
+- Class P's binding contract (which partition a writer is bound to, and when) is plan-23's
+  (the bug-105 row: "23.1 adopts the contract with AC-3d"). Slice g converges only the one
+  expression that picks an op's default partition, and changes no behaviour.
 - bug-240 (`rmx ingest <file>` ingests nothing, exit 0) is a sighting of class Q that the term
-  resolver does not fix. It stays with 29.1's triage; this task does not close it.
+  resolver does not fix. `plan-review-fable-2026-11-14-queue#dup-2` puts it on the bug-241
+  hotfix branch (0.83.1). If that release has not closed it when slice c starts, slice c does
+  ([[#c-r6]]).
+- **Numeric env knobs (bug-188)** are a candidate the queue review names for this task. The
+  ledger has two sightings (the bug-188 row and [[bsd-impressions#imp-pin-the-run-end]]), which
+  is not "more than twice", so it is not a slice here. Measured for whoever takes it:
+  82 bare `float(…)` / `int(…)` reads of the environment in 20 modules outside `envknob`
+  (`census/census_env_knobs.py`, log `census-env-knobs-f3709d2.log`), against 23 `env_float`
+  calls. It stays with 29.1's triage.
+- bug-201 (rich drops a literal `[daemon]`) is one site and one shape; not taken.
 
 ## Measured at `f3709d2` (before the 29.5 split) {#measured}
 
@@ -107,6 +121,7 @@ start commit and records the new numbers ([[plan-29-code-quality#baseline-rule]]
 | daemon RPC bounds | same | 66 calls with a constant op: 31 pass `timeout` and `retries`; 29 pass `timeout` only; 6 pass neither. `daemon.call` defaults to `retries=2`, so 35 calls can take 3 × their timeout |
 | term resolution | read from `query.py` | 4 `resolve_concept_ids` sites (`_term_bitmap`, `_row`, `neighbors`, `co_occurrence`), each returning empty for an unresolved name; 6 `load_bitmap` sites that take a linkage name unchecked; 6 `QueryEngine(...)` constructions (cli 2, graphread 2, daemon 1, verbs 1) |
 | deadline closures | `grep "def _left"` | 4 copies (cli 2, verbs 2) |
+| partition default | `grep -c 'args.get("partition") or d._st()._partition_name'` | 20 copies in `daemon.py` |
 | tracked-catalog refusal | `grep refuse_tracked_catalog_open(` | 4 callers: `_store_rw`, `compact`, `migrate-to-duckdb`, `verbs.local_write` |
 
 **How good the handler rule is.** The classifier ran on all 401 handlers; it is a census, not a
@@ -148,16 +163,46 @@ These come from the ledger's record of how convergences fail.
 
 ## Slice K: the census kit {#slice-k}
 
-- `tests/census/kit.py`: walk `src/refmatrix`, yield sites as `module:qualname` with a line and a
-  family; resolve import aliases (`import x as y`, `from x import a as b`, `y = x.a`); run a
-  scanner over a synthetic source string.
-- `tests/census/report.py <rule> [--list]`: prints the same tables the spec scripts print.
-- The scripts under `workflow/plans/plan-29-code-quality-tasks/census/` are the measured
-  prototypes. Each rule in the kit starts from the matching script and must reproduce its
-  `f3709d2` numbers on a checkout of `f3709d2` before it is changed.
-- **AC-K1:** for each rule, the kit's count on `f3709d2` equals the committed log.
-- **AC-K2:** the alias resolver is pinned by a synthetic module of its own; returning only the
-  literal name fails it.
+**The kit is bug-212's scanner, extracted; it is not a new AST walker**
+(`plan-review-fable-2026-11-14-store#plan29-converge-candidates`). The catalog-opener census in
+`tests/test_bug212_r4_red.py` already has the parts every census needs: alias handling
+(`_store_aliases`, `_module_aliases`), a per-module scan that yields `module:qualname`, line and
+family (`_scan_source`), the tree walk (`_census`), caller lookup (`_functions_calling`,
+`_sites_calling`, `_calls_in`), the synthetic self-test, and "the allowlist names no dead site".
+
+- **K-R1.** Those functions move to `tests/census/kit.py`, generalised only as far as a second
+  family needs: a FAMILY is a name, a predicate over AST nodes, and (where the guarded thing is a
+  resource) a text pattern for it. The walk uses `rglob`, so packages are covered.
+- **K-R2.** `tests/test_bug212_r4_red.py` imports the kit and keeps its allowlists, its catalog
+  pattern and its tests. Its census is RE-PROVEN after the move: its synthetic-module test passes,
+  and a planted read-write `Store(` open in a temp copy of a module outside the allowlist fails
+  `test_no_read_write_store_open_outside_the_allowlist`, naming the site.
+- **K-R3.** Slices a to g each add one family module under `tests/census/`. None writes its own
+  walk, alias resolution or allowlist checks.
+- **K-R4.** `tests/census/report.py <family> [--list]` prints the tables the spec scripts print.
+  The scripts under `workflow/plans/plan-29-code-quality-tasks/census/` are the measured
+  prototypes: each family must reproduce its `f3709d2` numbers on a checkout of `f3709d2`
+  before its rule is changed.
+- **K-R5: the kit is built for the families that are waiting.** Named by the store review, and
+  NOT built here: removal sites (22.6), CHECKPOINT and catalog holds (18.2, 18.3), out-of-daemon
+  Lance reads (17.1), merge-table coverage (bug-124; 16.6, 23.1), the corpus predicate (16.1
+  AC-5d), `_cli_read` (23.5 R7), the one writer installer (23.1). The kit's README lists them and
+  shows the three things a new family supplies (predicate, allowlist with reasons, synthetic
+  module). Those tasks add their family; this task does not.
+
+Acceptance:
+
+- **AC-K1:** for each family, the kit's count on `f3709d2` equals the committed log.
+- **AC-K2 (the extraction changed nothing):** the bug-212 census reports the same
+  `(site, line, family)` set before and after the move, recorded at the start commit.
+- **AC-K3 (re-proven on its bypass):** K-R2's planted open fails the bug-212 test; and the
+  mutation the ledger recorded ([[bsd-impressions#imp-scanner-needs-synthetic-positives]]:
+  `_store_aliases` returning only `{"Store"}`) fails the synthetic-module test.
+- **AC-K4:** the alias resolver has a synthetic module of its own; returning only the literal
+  name fails it.
+- **AC-K5:** no test file other than the kit defines an AST walk over `src/refmatrix` for a
+  census (a census of the censuses: `ast.walk` with `rglob` in `tests/` outside `tests/census/`
+  is allowlisted by file, with a reason).
 
 ## Slice a: one git runner {#slice-a}
 
@@ -222,6 +267,13 @@ Python git call there is caught. The generated bash is outside a Python scan and
 - A git call that fails here does not block the hook: the event is recorded without the stat,
   and the handler says why in the gate's form of [[#slice-c]].
 
+**a-R7: git runs outside the store lock.** The daemon op `_op_sync_since` calls
+`sync.sync_since`, which runs `changed_since`'s `git diff` while the op holds `_store_lock`
+(`plan-review-fable-2026-11-14-store#plan29-converge-candidates`; rule 6 of [[#r0]]). After
+this slice the changed-path list is resolved BEFORE the lock is taken and passed in. Every other
+`run_git` caller's lock state is listed in the summary; none calls it under `_store_lock`. Task
+16.4's git use, when it is built, goes through `run_git` and the census holds it to that. {#a-r7}
+
 **a-R6: the census.** No git command list reaches `subprocess` or any other callable outside
 `gitrun`. Families the scanner must find: a direct spawn; an aliased `subprocess` import; a list
 bound to a name first; a list handed to a helper; a `shell=True` string that starts with `git `.
@@ -260,6 +312,10 @@ The allowlist is empty when the slice lands. {#a-r6}
   `subprocess.run(["git", "status"])` in a temp copy of any module fails the test and names the
   site.
 - **AC-a10:** bug-233 is `fixed` with a sha reachable from `master`.
+- **AC-a11 (lock placement):** in the sandbox, with a git shim that blocks until released, a
+  `sync --since` through the daemon is in flight and a second op that needs `_store_lock`
+  answers before the shim is released. RED at the start commit (the second op waits). The check
+  is the order of the two events, not a duration.
 
 ### Mutations that must fail {#a-mut}
 
@@ -274,6 +330,7 @@ The allowlist is empty when the slice lands. {#a-r6}
 | the stat uses the hook's cwd | AC-a7 (first two) |
 | the label takes the first output line | AC-a7 (third) |
 | the scanner matches only `subprocess.run` | AC-a9 (synthetic) |
+| `changed_since` called inside the lock again | AC-a11 |
 
 ## Slice b: query term resolution and PQL argument types {#slice-b}
 
@@ -305,9 +362,9 @@ DSL's bare term and `linkage:concept` term, `neighbors`, `co_occurrence`, and PQ
 
 **b-R3: n-ary set functions (bug-236).** `Difference` and `Xor` fold every argument left to
 right, as `Intersect` and `Union` do. A set function with no argument is a `PQL:` error, not a
-raw `StopIteration` or `IndexError`. The DSL's `diff` and `xor` evaluator branches and the `Op`
-comment that lists them are removed: the parser builds neither. The bug-237 row gets a note that
-its `A AND NOT B` rewrite re-adds one WITH a parser path. {#b-r3}
+raw `StopIteration` or `IndexError`. In the DSL, the `xor` evaluator branch and its mention in
+the `Op` comment are removed: the parser cannot build it. The `diff` branch stays and gains a
+parser path through b-R6. {#b-r3}
 
 **b-R4: argument kinds (bug-238).** Each PQL function declares the kind of each argument, and a
 wrong kind is a `ValueError` reading
@@ -321,10 +378,11 @@ wrong kind is a `ValueError` reading
 | `TopN` | a bitmap, then an optional integer |
 | `Count` | a bitmap or a weighted list |
 
-A bare identifier and a quoted string are both names. The top-level bare identifier is closed by
-[[task-29.2-mypy-gate#r4]] (its AC-7); this slice keeps that test as a regression and does not
-re-implement it. The kinds are written against the evaluator value type 29.2 defines; if this
-slice lands first it defines that type and 29.2 adopts it.
+A bare identifier and a quoted string are both names. A top-level bare identifier is
+a `PQL:` error naming it. This slice lands before 29.2's query work
+([[task-29.2-mypy-gate#seam]]), so it defines the evaluator's value type (bitmap, weighted list,
+count, name, integer) and 29.2 builds `run_pql`'s result union on it
+([[task-29.2-mypy-gate#r4]], whose AC-7 holds the top-level case).
 
 **b-R5: the census.** In the module that holds the query engine, `resolve_concept_ids`,
 `resolve_concept_ids_many`, `load_bitmap` and `get_linkage_id` are called only inside the two
@@ -332,6 +390,24 @@ resolver functions and `topn` (which iterates registered linkages, known by cons
 11 `resolve_concept_ids` calls in 8 other modules (context, scan, recall, graphread, …) resolve
 prompt tokens, where a miss is the normal case; they are listed in the summary and not
 converged. {#b-r5}
+
+**b-R6: `A AND NOT B` is a difference (the `NOT` half of bug-237).** {#b-r6}
+
+- The parser builds the `diff` op for `X AND NOT Y`, so no partition-wide id set is built for it.
+- The universe is built only for a `NOT` that is not the right side of an `AND`, at most once
+  per run.
+- The universe comes from a public `Store` method (the row names `partition_entity_ids`), not
+  from the store's private `_connect()`.
+- Results are unchanged for every expression.
+- bug-237's other half, `topn` loading every bitmap of every linkage, is NOT changed here: the
+  row asks for a measurement on a real store first. The registry row is split so that this half
+  can be closed: the `topn` cost gets its own row.
+
+**b-R7: what this changes for measurements.** After b-R2 a query with a typo no longer looks like
+a valid empty or over-full answer. Any frozen query set measured across this slice compares two
+different things: G22's BEFORE and AFTER, and 21.2 / 21.4's sets, are both taken after this slice
+is deployed (`plan-review-fable-2026-11-14-queue#p29-4`). This is a constraint on those tasks'
+schedule; the summary repeats it. {#b-r7}
 
 ### Acceptance {#b-ac}
 
@@ -360,7 +436,12 @@ All RED at the start commit unless marked.
 - **AC-b9 (census):** on `f3709d2` the scanner finds the 4 + 6 sites of [[#measured]]; after the
   slice only the allowlisted functions call the store's resolution methods; a planted method
   that calls `self.s.resolve_concept_ids` directly fails the test.
-- **AC-b10:** bug-234, bug-236 and bug-238 are `fixed` with shas reachable from `master`.
+- **AC-b10:** bug-234, bug-236 and bug-238 are `fixed` with shas reachable from `master`;
+  bug-237 is split, its `NOT` half `fixed`, its `topn` half a new open row.
+- **AC-b11 (b-R6):** with a store whose universe method counts its calls: `A AND NOT B` makes 0
+  calls; `NOT A` makes 1; `NOT A OR NOT B` makes 1. The row sets equal those recorded at the
+  start commit. No call to `_connect` remains in the query module. RED at the start commit for
+  the first count (it is 1).
 
 ### Mutations that must fail {#b-mut}
 
@@ -374,6 +455,8 @@ All RED at the start commit unless marked.
 | the CLI prints the warning on one route only | AC-b1, parametrized over the three routes |
 | `Difference` stops at two arguments | AC-b6 |
 | `Count` accepts a name | AC-b7 |
+| `AND NOT` evaluated through the universe again | AC-b11 |
+| the universe rebuilt per `NOT` | AC-b11 (third case) |
 
 ## Slice c: broad `except` handlers {#slice-c}
 
@@ -391,8 +474,8 @@ for word: {#c-r1}
 | justified | none of the above, and the `except` line carries `# noqa: BLE001 — <reason of at least three words>` |
 | silent | none of the above |
 
-**c-R2: silent ends at zero.** Each of the 192 silent handlers ([[#measured]]) is moved into one
-of the three classes: {#c-r2}
+**c-R2: unowned silent handlers end at zero.** Each of the 192 silent handlers ([[#measured]])
+is either OWNED by another approved task (c-R2a) or moved into one of the three classes: {#c-r2}
 
 - a handler around a release (`close`, `unlink`, `ROLLBACK`, a flush) is justified, and the
   reason names what is released;
@@ -402,6 +485,22 @@ of the three classes: {#c-r2}
 - a handler on a sync, ingest, memory or hook path is surfaced: counted, and said where that
   path already says things;
 - nothing else about the handler's control flow changes without a test.
+
+**c-R2a: a site another approved spec owns is listed, not pulled in**
+(`plan-review-fable-2026-11-14-queue#p29-4`). The test holds a list `module:qualname → owning
+task id`. A silent handler on that list is allowed while its owner is open. {#c-r2a}
+
+- Known at `f3709d2`: `Store.content_rank`'s reinforcement leg (bug-223, owned by bug-218's
+  spec); `Store.rebuild_entities_indexes`' swallowed CHECKPOINT (bug-123, owned by 18.3 R8).
+- Named by the store review as touched by T4-T6 specs, owner to be read from each spec when the
+  list is written: the GMD fallback handler in `ingest`'s tree pass, `Scheduler._loop`,
+  `Store.close` and `Store.transaction` (23.1 R1.6, R7).
+- An entry must name a task whose spec file exists and which says it changes that handler. A
+  site with no such owner is not listable: it is fixed here.
+- An entry whose handler is no longer silent fails the test until it is removed, so the list
+  cannot outlive its sites.
+- bug-119's handler (`except json.JSONDecodeError: continue` in the log replay) is typed, so this
+  census does not see it. It stays with 17.4 R6.
 
 **c-R3: memory paths get no quiet justification.** In the memory-path modules (at `f3709d2`:
 `ingest_gmd`, `handoff`, `recall`, `promote`, `memory_index`, `memory_layout`, `stm`, `embedder`,
@@ -415,12 +514,27 @@ checkable. {#c-r3}
 memory-path modules first. From its first commit a per-module count of silent handlers is
 recorded in `tests/census/broad_except_baseline.json`; the test fails when a module's count
 rises (a NEW silent handler) and when it falls without the file being lowered. When the last
-group lands the file is deleted and the test fails on ANY silent handler. {#c-r4}
+group lands the file is deleted and the test fails on ANY silent handler that is not on the
+owned list of c-R2a. {#c-r4}
 
 **c-R5: the three counts are recorded.** The summary has the table re-raised / surfaced /
 justified / silent, per module, at the start commit and at the end, produced by
 `tests/census/report.py broad-except`, and says how many of the 192 went to each class and how
 many were narrowed. {#c-r5}
+
+**c-R6: the two unowned registry rows of this class.** {#c-r6}
+
+- bug-096: `rmx reingest` exits 1 when any step failed and names the failed steps on stderr.
+- bug-240: only if the 0.83.1 hotfix has not closed it: a file argument to `rmx ingest` is
+  refused with the `rmx sync -f <file>` remedy, or routed to the single-file sync; never
+  `ingested 0 entities`, exit 0.
+
+**c-R7: edits to the derive modules are batched.** A comment or a narrowed handler in `ingest.py`,
+`ingest_gmd.py` or `session_ingest.py` changes `store.derive_code_hash` and flips every fleet
+store to `behind_code` ([[task-29.2-mypy-gate#derive-hash]]). This slice's edits to those three
+files (13 silent handlers at `f3709d2`: ingest 8, ingest_gmd 5) land in ONE commit group, in the
+same release as 29.2's edits to them, and are covered by 29.2's AC-18 (equal graph digest). What
+is done on live stores is `plan-29 D4` ([[task-29.2-mypy-gate#d4]]). {#c-r7}
 
 ### Acceptance {#c-ac}
 
@@ -438,8 +552,14 @@ many were narrowed. {#c-r5}
 - **AC-c5 (each surfaced site on a sync / ingest / memory / hook path):** a test drives the
   failure and asserts the count or the message; deleting the report line fails it
   ([[bsd-impressions#imp-nonfatal-needs-its-report-pinned]]).
-- **AC-c6 (end state):** silent is 0; `broad_except_baseline.json` does not exist; the summary
-  carries the c-R5 table.
+- **AC-c6 (end state):** unowned silent is 0; `broad_except_baseline.json` does not exist; every
+  entry of the owned list names an existing spec that names the handler; the summary carries the
+  c-R5 table with the owned sites as their own column.
+- **AC-c8 (owned list):** an entry with a task id whose spec file does not exist fails; an entry
+  whose handler now re-raises fails as stale; a silent handler planted beside an owned one, in
+  the same function, still fails.
+- **AC-c9 (bug-096):** a `reingest` whose embed step fails (a stand-in step that raises) exits 1
+  and names the step on stderr. RED at the start commit (exit 0).
 - **AC-c7 (no regression):** the full suite is equal by E line before and after each group.
 
 ### Mutations that must fail {#c-mut}
@@ -453,6 +573,9 @@ many were narrowed. {#c-r5}
 | the memory-path list check removed | AC-c3 |
 | a narrowed handler widened back | AC-c4 |
 | a surfaced handler's report line removed | AC-c5 |
+| the owned list accepts any task id string | AC-c8 |
+| the owned list matches by module only | AC-c8 (third case) |
+| `reingest` returns 0 after a failed step | AC-c9 |
 
 ## Slice d: busy is not absent {#slice-d}
 
@@ -518,6 +641,34 @@ many were narrowed. {#c-r5}
 - **Mutations:** a default `remedy` restored (AC-f3); `compact` passing `_store_rw`'s text
   (AC-f1).
 
+**Overlap** (`plan-review-fable-2026-11-14-queue#dup-2`): `task-linked-readonly-store` R2 adds
+another caller class to this same check, and its R1 rests on bug-125's path comparison. This
+slice is the mechanism: the refusal has no text of its own after it. The linked-store task adds
+its caller with its own `remedy` and its own row in AC-f1 and AC-f2; it does not add a second
+message path. bug-125 is not taken here. Which task closes bug-232 is this slice ([[#k7]]),
+because plan-29 runs first (L104); if the linked-store task is built first instead, it does
+f-R1 to f-R3 and this slice is dropped. {#f-overlap}
+
+## Slice g: one partition default for daemon ops {#slice-g}
+
+- **g-R1.** The expression `args.get("partition") or d._st()._partition_name` appears 20 times in
+  the daemon's op handlers. One function takes `(d, args)` and returns the name; every op calls
+  it.
+- **g-R2.** No behaviour changes. In particular, WHERE each op evaluates it (before or inside
+  `_store_lock`) stays as it is; the summary lists that per op, because a default read outside
+  the lock is a question for plan-23's binding contract, not for this slice
+  (`plan-review-fable-2026-11-14-store#plan29-converge-candidates`).
+- **g-R3: the census.** A read of `"partition"` from an op's `args` combined with a fallback to
+  the store's partition name, outside the one function, fails. Families: the `or` form, a
+  conditional expression, `args.get("partition", <store name>)`.
+- **AC-g1:** the scanner finds the 20 on `f3709d2` and each family in a synthetic module.
+- **AC-g2 (characterization):** for each of the 20 ops, a call with and without `partition`
+  resolves to the same partition before and after (goldens at the start commit, against a
+  throwaway two-partition store).
+- **AC-g3:** a planted copy of the expression in a new op fails the test.
+- **Mutations:** the function ignoring `args` (AC-g2); the scanner matching only the `or` form
+  (AC-g1).
+
 ## Test strategy {#test-strategy}
 
 - RED first by `@ch-test-engineer`, recorded per slice to `workflow/review-output/`; GREEN by
@@ -541,7 +692,11 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 
 | file | change |
 |---|---|
-| `tests/census/kit.py`, `tests/census/report.py`, one rule module per slice | create |
+| `tests/census/kit.py` (extracted from `tests/test_bug212_r4_red.py`), `tests/census/report.py`, `tests/census/README.md`, one family module per slice | create |
+| `tests/test_bug212_r4_red.py` | import the kit; scanner functions removed from the file; tests and allowlists stay |
+| the module that holds `_op_sync_since` and `sync.sync_since` | the changed-path list resolved before the lock (a-R7) |
+| the module that holds the daemon op handlers | slice g |
+| the module that holds the CLI `reingest` command | bug-096 (c-R6) |
 | `src/refmatrix/gitrun.py` | create: `run_git`, the result type, the two rules |
 | the modules that hold the 12 git sites (`handoff`, `store`, `sync`, `upgrade`, `verbs`, the CLI `save-state`, `context` and focus-hook modules) | adopt `run_git`; delete `_ss_git_run`, the git uses of `_ss_sh`, the four `shutil.which("git")` pre-checks |
 | the module that holds `QueryEngine` and `_PQLEvaluator` | the resolver; the record; n-ary folds; argument kinds; dead branches removed |
@@ -558,8 +713,9 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 
 ## Key decisions {#decisions}
 
-None needs the user; each records the choice and why. A reviewer who disagrees raises it as
-`plan-29 D<n>`.
+None of these needs the user; each records the choice and why. The one open decision that
+touches this task is `plan-29 D4` ([[task-29.2-mypy-gate#d4]]). A reviewer who disagrees with one
+below raises it as a new `plan-29 D<n>` (D7 to D19 are taken by the 29.1 / 29.4 / 29.5 specs).
 
 1. **`run_git` returns a result for "git did not run" instead of raising**. This is the
    contract ruling L96 and L100 tested (`_ss_git_run`), and its callers already print such a
@@ -570,9 +726,10 @@ None needs the user; each records the choice and why. A reviewer who disagrees r
    search asks stores that legitimately lack a linkage another has. {#k2}
 3. **`Difference` and `Xor` fold**, as `Intersect` and `Union` do. Refusing a third
    argument would be the other valid fix; folding matches the sibling functions. {#k3}
-4. **Silent handlers end at zero repo-wide, not only on memory paths**. The plan says
+4. **Unowned silent handlers end at zero repo-wide, not only on memory paths**. The plan says
    every site ends in one of three classes. The ratchet holds the line while the groups land, and
-   deleting it at the end makes the rule absolute. {#k4}
+   deleting it at the end makes the rule absolute. A site another approved spec owns is listed
+   with that task's id and left to it. {#k4}
 5. **Slice c adds no runtime "swallowed error" helper**. The 172 surfaced handlers report
    through what their process already has (the daemon log, CLI stderr, a verb's `warnings`); a
    new shared sink would be a feature ([[plan-29-code-quality#non-goals]]). The ONE thing
@@ -580,30 +737,68 @@ None needs the user; each records the choice and why. A reviewer who disagrees r
 6. **Slices d and e change no behaviour except at ROUTE gates**. Making 35 retry counts
    explicit writes down today's values; choosing better ones is per-op work for the registry. {#k6}
 7. **bug-232 is taken here**. It is the newest sighting of class S and a four-caller
-   change. 29.1's triage row for bug-232 should name this task. {#k7}
+   change. 29.1's triage row for bug-232 should name this task. The queue review would merge it
+   into `task-linked-readonly-store`; that task becomes a fifth caller instead ([[#f-overlap]]).
+   {#k7}
+8. **The query slice takes bug-237's `NOT` half and not its `topn` half**. The `NOT` rewrite
+   is the parser path that b-R3's `diff` branch needs, so doing it later would touch the same
+   lines twice. `topn` waits for its measurement. {#k8}
+9. **The kit is an extraction of bug-212's scanner**, and the bug-212 test file becomes its
+   first user. Seven families from other tasks are waiting for it; none is built here. {#k9}
+10. **The git and query slices land before 29.2's query and strict work**
+    ([[task-29.2-mypy-gate#seam]]). {#k10}
 
 ## How this adapts to the 29.5 split {#split}
 
 - Every site is a symbol. File names, line-free, are those of `f3709d2` and are for tracing.
-- The census scripts and the kit find sites by walking `src/refmatrix`; allowlists are keyed
-  `module:qualname`, written at the task's start commit from the kit's own output.
+- The census scripts and the kit find sites by walking `src/refmatrix` with `rglob`; allowlists
+  are keyed `module:qualname`, written at the task's start commit from the kit's own output.
+- The layout 29.5 produces: `refmatrix/cli/` (shared helpers in `cli/__init__.py`, commands in
+  `cli/<group>_cmds.py`) and `store.py` plus `store_<concern>.py` mixin modules, with `Store`
+  keeping its name and import path. A `module:qualname` key for a `Store` method then names the
+  mixin class and its module; the kit resolves a method to the class that defines it.
 - **First step of each slice:** run its report at the start commit and put the table in the
   summary. Counts should equal this spec's; a difference that moved code does not explain is a
   finding, reported before any edit.
 - 29.5 re-keys the existing catalog-opener census (`tests/test_bug212_r4_red.py`) to the new
-  module names; slice f relies on that test and does not re-key it.
+  module names and re-proves it on its synthetic bypass
+  (`plan-review-fable-2026-11-14-queue#b1`, and its `#b2`). Slice K extracts the scanner from
+  the re-keyed file and re-proves it again (AC-K3); slice f relies on that test.
 - The memory-path module list of c-R3 is re-derived from 29.5's moved-symbol table
   ([[task-29.2-mypy-gate#needs-295]] asks 29.5 for it).
 
+## Review findings folded on 2026-11-14 {#fold}
+
+The review documents are `workflow/plan-review-fable-2026-11-14-queue.md` (master `3551894`) and
+`workflow/plan-review-fable-2026-11-14-store.md` (master `ec3e0e8`). They landed on master after
+this branch's base (`f3709d2`), so they are cited here as `doc-id#anchor` code spans; a wikilink
+to a document this branch does not hold fails the repo lint. Turn them into wikilinks in the
+merge commit. {#fold-cites}
+
+| finding | change here |
+|---|---|
+| `plan-review-fable-2026-11-14-store#plan29-converge-candidates`: extract bug-212's scanner; do not write new AST walks | [[#slice-k]] rewritten as the extraction (K-R1 to K-R5, AC-K2, AC-K3, AC-K5); [[#k9]] |
+| same: `run_git` for `_op_sync_since`, which runs git inside `_store_lock`; and for 16.4 | [[#a-r7]], AC-a11 |
+| same: the partition default at 20 daemon sites | [[#slice-g]] |
+| same: except-census hits those specs create or touch | [[#c-r2a]] |
+| `plan-review-fable-2026-11-14-queue#p29-4`: the except census will flag sites approved specs own (bug-223, bug-123, bug-119); fix only the unowned (bug-096, bug-240) | [[#c-r2a]], [[#c-r6]], AC-c8, AC-c9 |
+| same: bug-234's fix changes what G22 and 21.2 / 21.4 measure | [[#b-r7]] |
+| same: not parallel on the query module; 29.3's query half first | [[task-29.2-mypy-gate#seam]], b-R4, [[#k10]] |
+| `plan-review-fable-2026-11-14-queue#dup-2`: bug-232 and bug-125 overlap `task-linked-readonly-store`; bug-240 goes with bug-241 | [[#f-overlap]]; [[#c-r6]] makes bug-240 conditional |
+| the queue review's `#dup-3` (29.1 input): bug-237, bug-096, bug-188, bug-201 | bug-237's `NOT` half in [[#b-r6]]; bug-096 in [[#c-r6]]; bug-188 and bug-201 not taken, with the measured count ([[#classes-no-helper]]) |
+| 29.5's author: `derive_code_hash` hashes file content | [[#c-r7]]; `plan-29 D4` |
+
 ## Out of scope {#out-of-scope}
 
-- bug-237 (query cost: the universe scan on `NOT`, `topn` loading every bitmap) and bug-240
-  (`rmx ingest <file>`): they stay in the registry under 29.1's triage.
+- bug-237's `topn` half (it needs a measurement first), bug-188 (env knobs) and bug-201: they
+  stay in the registry under 29.1's triage ([[#classes-no-helper]]).
+- The seven census families other tasks will add to the kit (K-R5).
+- Silent handlers another approved spec owns (c-R2a).
 - The 11 `resolve_concept_ids` call sites outside the query engine (b-R5).
 - git run by the generated shell hooks.
 - Better retry values for daemon calls (e-R2), and any change to `daemon.call`'s default.
 - A shared runtime sink for swallowed errors ([[#k5]]).
-- The partition-binding class (plan-23), and the three process PATTERNs
+- The partition-binding contract (plan-23), and the three process PATTERNs
   ([[#classes-no-helper]]).
 - `rmx save-state --commit`'s use of `git add -A`
   ([[feedback_save_state_commit_adds_all]]): slice a changes how its failure is reported, not
