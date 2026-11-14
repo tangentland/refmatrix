@@ -1295,3 +1295,60 @@ the copy and in the clone afterwards. Batch log: `bug212/green-r5-mutations.log`
   `VerbBusyError`), so the MCP and CLI paths keep their classification.
 - The throwaway clone `/Volumes/littlebig/refmatrix-bug212-mut4` is still in place (r4's
   safety-check block on removing a top-level littlebig path). It is clean at `a1bde19`.
+
+## RED r6 (ch-bsd r5 at 355eb1f: s-1, m-1..m-3; ruling L98) {#red-r6}
+
+The test commit is `96c1dbe`. It adds the new file `tests/test_bug212_r6_red.py` and puts the
+copy family into the census in `tests/test_bug212_r4_red.py`. At `c854bad` (src as `355eb1f`),
+the r4, r5 and r6 files together give **6 failed, 66 passed** (`bug212/red-r6.log`). The 6
+failures are the r6 REDs, and each fails for the reason it names.
+
+rel: derives-from -> [[bsd-bug212-r5-355eb1f]]
+rel: amends -> [[#red-r5]]
+
+### RED at c854bad {#red-r6-red}
+
+| item | test | E line at c854bad |
+|------|------|-------------------|
+| s-1 (a) | `test_migrate_out_into_another_repos_tracked_catalog_is_refused` (ignored store A, `--out <repo B>/.refmatrix/catalog.duckdb --overwrite`) | `` `--out` into repo B's tracked catalog rewrote it ['catalog.duckdb'] (exit 0) `` |
+| s-1 (b) | `test_migrate_out_to_an_untracked_path_from_a_tracked_store_is_allowed` | `` `migrate-to-duckdb --out <untracked path>` from a tracked store was refused or failed ``; stderr: `Error: refusing to open …/x.duckdb read-write in-process: git tracks this store's catalog (catalog.duckdb, catalog.db)…` |
+| m-1 | `test_mcp_save_state_error_reply_carries_the_result` (`busy_store`) | `the isError reply dropped ['lint', 'promoted', 'remove_failed', 'target'] of the result: '{"error": "save-state wrote … VerbBusyError: daemon busy …"}'` |
+| m-2 verb | `test_a_deferred_bridge_is_not_a_failed_save_state_verb` | `Failed: a bridge only deferred behind running job <id> failed the save: … ingest job <id> still running after 0.2s …` |
+| m-2 CLI | `test_a_deferred_bridge_is_a_stderr_warning_and_exit_0` | `a bridge deferred behind running job <id> failed the save` (exit 1, `Error: … its memory bridge failed: ingest job <id> still running after 0.2s …`) |
+| m-2 MCP | `test_a_deferred_bridge_is_not_an_mcp_error` | `a bridge deferred behind running job <id> replied isError` |
+
+- **m-2 setup.** The ingest job is REAL: `ingest_gmd_start` runs over 1500 as-memory docs on the
+  `live` daemon from `tests/test_memory_bridge.py`. The bridge wait is shortened through the
+  existing `RMX_BRIDGE_WAIT_S=0.2`, so nothing is patched and no mock is added.
+- **m-2 contracts.** The verb must return `sync.deferred == {"job": <id>, "reason": <contains
+  "running">}` with `sync.error` empty. The CLI must exit 0, print the job id on stderr, and
+  print no `Error:` line. MCP must reply without `isError` and carry `sync.deferred.job`.
+- **GUARD** `test_a_refused_bridge_still_fails_the_save_verb_and_mcp[slots, legacy]` passes at
+  `c854bad`. A bridge refused on a tracked catalog still raises `SaveStateIncompleteError`
+  ("memory bridge failed", with no `deferred`), and MCP still replies `isError`. The CLI
+  exit 1 for the same case is the r5 s-1 test.
+  - It catches a fix that reads every bridge error as a deferral. There is no deferral code at
+    `c854bad` to mutate, so GREEN's mutation batch should kill it.
+- **s-1 (c).** The default destination from a tracked store is still refused. The r5 test
+  `test_migrate_to_duckdb_overwrite_refuses_a_git_tracked_catalog` already pins this; it is
+  unchanged and passes.
+
+### m-3: the census copy family (test code, no src) {#red-r6-census}
+
+- **New family `copy`.** It flags `shutil.copy` / `copy2` / `copyfile` / `copyfileobj` keyed on
+  the DESTINATION argument, and `<catalog path>.write_bytes(`. `os` and `shutil` now count under
+  any import alias (`import shutil as _shutil`), for the move family too.
+- **Synthetic test** `test_the_census_scanner_finds_the_copy_family_on_the_destination`:
+  - positives: `copy2` onto a slot, `copy` onto a slot f-string, aliased `copyfile`,
+    `copyfileobj` into `open(catalog.db, "wb")`, `write_bytes`, and aliased `move` /
+    `os.replace`;
+  - negatives: a copy FROM a catalog, a copy onto `catalog.read.duckdb`, and `write_bytes`
+    elsewhere.
+- **Sees guard** `test_the_census_sees_the_daemons_slot_copies` covers `_op_replica_merge`
+  (daemon.py:5912) and `Daemon._bootstrap_rotation_if_needed` (:3066-3067). Their allowlist
+  reasons now name the copies.
+- **RED, then green.** Against the old scanner both tests fail: the scanner missed every
+  positive, and the census did not see `('daemon:_op_replica_merge', 'copy')`
+  (`bug212/red-r6-census-old-scanner.log`). With the extended scanner all 9 census tests pass,
+  and the real tree has no stray site (`bug212/red-r6-census-new-scanner.log`).
+- **GREEN has nothing to build for m-3.**
