@@ -208,7 +208,7 @@ beside this plan's result. They are recorded; nothing here reads them as a band.
 
 | task | what | builds | depends on |
 |---|---|---|---|
-| [[task-28.1-session-arms-and-push-switch]] | the paired-run override (cell, run, as-of) read by `arms.session_cell`; the as-of memory filter; arm B's push-off switch; the paired rows' `session_arm` fields. No SessionStart draw (L83) | `src/` | 10.2 |
+| [[task-28.1-session-arms-and-push-switch]] | the paired-run override (run, as-of; the cell from 10.2's `arms.cell()`); the as-of memory filter; arm B's push-off switch; the paired rows' `session_arm` fields. No SessionStart draw (L83) | `src/` | 10.2 |
 | [[task-28.2-paired-reentry-runner]] | R0 probe; the paired task set; the runner (clones cut at the start sha, stores, memory snapshots, env pinning of all four cells, triggers, archive, teardown, leak control); arm C's generated bare profile | `eval/production/handhold/` | 28.1 |
 | [[task-28.3-outcome-scorer]] | the ONE scorer for outcomes 1-7 over the paired runs, blinding, blind labeller agents, `cited_in_answer`, and the ONE reading module | `eval/production/handhold/` | 28.1 |
 | [[task-28.4-preregistration-freeze]] | the calibration, the minimum n of paired tasks per cell for every reading (with a power note), every P-item value, and the frozen pre-registration with its sha | measurement file | 28.1-28.3, G32, 21.5 phase M, bug-216 live |
@@ -229,15 +229,17 @@ beside this plan's result. They are recorded; nothing here reads them as a band.
 
 ## Cross-plan effects {#cross-plan}
 
-- **10.2 R7 (L83; the shape is proposed to spec-t3b, see [[#rev-l83]]).** 10.2 creates
-  `arms.py`: the cell enum (`A+dedupe`, `A+full`, `B`, `C`) and `session_cell(session_id, *,
-  root)`, which returns `A+dedupe` as shipped. Its verb and scan-prompt read the dedupe factor
-  from `session_cell`. There is no draw, no period record, no salt, no scope and no arm file
-  (L83: no SessionStart draw). 28.1 extends `session_cell` to return the paired override's
-  cell, and adds `push_on`, `paired_override` and the as-of filter. Plan-28 owns the start (the
-  orchestrator's under L78), arm B's push-off, the scorer and the deletion
-  ([[task-28.1-session-arms-and-push-switch#ownership]]). 10.2's outcome follows L27, and its
-  nested reading is read from the paired series.
+- **10.2 R7 (L83; the shape set by spec-t3b, 2026-11-14).** 10.2 creates `arms.py` with
+  `CELLS = ("A+dedupe", "A+full", "B", "C")` (no weights) and `arms.cell()`. `arms.cell()`
+  runs in the client process only and is the ONE reader of `RMX_HANDHOLD_CELL`: unset gives
+  `A+dedupe`; a value outside `CELLS` gives an `Error:` line, `arm_error` and `A+dedupe`. Its
+  verb and scan-prompt read the dedupe factor from `arms.cell()`. There is no draw, period
+  record, salt, scope, arm file, `session_cell` or `session_arm` row in 10.2 (L83). 28.1 adds
+  `paired_override` (run, as-of), `push_on` (reads `arms.cell()`), the as-of filter and the
+  paired rows. Plan-28 owns the start (the orchestrator's under L78), arm B's push-off, the
+  scorer and the deletion ([[task-28.1-session-arms-and-push-switch#ownership]]). 10.2's
+  outcome follows L27. Its nested reading is read from the paired series against 28.4's
+  frozen minimum n of paired tasks per cell, which 10.2 cites.
 - **25.1 R8 (unchanged; r1 #m1).** "Never empty" holds on every call that packs. In cell `B`,
   SessionStart and PreCompact still pack; the per-prompt hooks do not pack.
 - **19.6 `cited_in_answer`.** 28.3 implements 19.6's clause once, and 19.6's `score_readback.py`
@@ -418,5 +420,5 @@ status stays `approved` pending a confirm-lite ch-bsd round.
 | KEPT: the L78/L80 start rule, applied to the paired series; pausing and G18 stay user-gated; the series ends when its frozen n is reached or the user pauses or stops it | header, [[#ordering]] |
 | the paired cells are now all four (`A+dedupe`, `A+full`, `B`, `C`); P-1 and P-6 are superseded, P-12 is restated | [[#arms]], [[#open]] |
 | deploys of the treatment modules land only while the series is paused; every run records its deployed `rmx` sha | [[#ordering]] |
-| `arms` shape for 10.2: the enum plus a default-only `session_cell`, with no draw, period, salt, scope or arm file. 28.1 extends `session_cell` with the paired override. Proposed to spec-t3b; the lead rules if they differ | [[#cross-plan]], [[task-28.1-session-arms-and-push-switch#ownership]] |
+| `arms` shape for 10.2, as set by spec-t3b (2026-11-14): `CELLS` plus `arms.cell()`, the one reader of `RMX_HANDHOLD_CELL`; no draw, period, salt, scope, arm file, `session_cell` or `session_arm` row. 28.1 adds `paired_override` (run, as-of), `push_on`, the as-of filter and the paired rows. 10.2's nested minimum n is frozen in 28.4, and 10.2 cites it | [[#cross-plan]], [[task-28.1-session-arms-and-push-switch#ownership]], [[task-28.4-preregistration-freeze#r2]] |
 | 28.1-28.5 and the exploration doc follow | each task's `#rev-l83` |

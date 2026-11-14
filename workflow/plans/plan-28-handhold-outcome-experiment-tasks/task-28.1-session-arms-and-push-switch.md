@@ -16,11 +16,17 @@ metadata:
 > Plan: [[plan-28-handhold-outcome-experiment]]
 > Status: Pending: approved to build (2026-11-14, [[#approval]]; spec wave 2026-11-13, G17);
 > amended by L83 ([[#rev-l83]], pending a confirm-lite).
-> Depends on: [[task-10.2-plan-10-injection-dedup]] merged. Its R7 CREATES `arms.py` with the
-> cell enum (`A+dedupe`, `A+full`, `B`, `C`) and `arms.session_cell`, which returns `A+dedupe`
-> as shipped, and the `dedupe` / `full` branch that the A cells use. Under L83 there is no
-> SessionStart draw, so 10.2 builds no draw, period record, salt, scope or arm file. This shape
-> is proposed to spec-t3b ([[#ownership]]).
+> Depends on: [[task-10.2-plan-10-injection-dedup]] merged. Its R7 CREATES `arms.py` with
+> `CELLS = ("A+dedupe", "A+full", "B", "C")` (no weights) and `arms.cell() -> str`. `arms.cell()`
+> runs in the client process only and is the ONE reader of `RMX_HANDHOLD_CELL`:
+> - unset gives `A+dedupe`;
+> - a value outside `CELLS` gives one `Error:` stderr line, `arm_error` on the call's row, and
+>   `A+dedupe`.
+>
+> 10.2 also builds the `dedupe` / `full` branch that the A cells use. Under L83 there is no
+> SessionStart draw, so 10.2 builds no draw, period record, salt, scope, arm file,
+> `session_cell` or `session_arm` row. This shape was set by spec-t3b on 2026-11-14
+> ([[#ownership]]).
 
 rel: part-of -> [[plan-28-handhold-outcome-experiment]]
 rel: depends-on -> [[task-10.2-plan-10-injection-dedup]]
@@ -46,11 +52,10 @@ the global one included.
 
 | piece | owner |
 |---|---|
-| `src/refmatrix/arms.py` created, with: the ONE cell enum (`A+dedupe`, `A+full`, `B`, `C`); `session_cell(session_id, *, root) -> str`, returning `A+dedupe` as shipped; the verb and scan-prompt reading the dedupe factor from `session_cell` only | 10.2 R7 (built before the experiment, L20). No draw, period record, salt, scope or arm file (L83) |
-| `session_cell` extended to return `paired_override().cell` when set (else `A+dedupe`) | this task (R2) |
-| the paired-run override (`arms.parse_paired`, `arms.paired_override`: cell, run id, as-of) and the as-of memory filter | this task (R3, R4) |
+| `src/refmatrix/arms.py` created, with: `CELLS` (no weights); `arms.cell()`, the ONE reader of `RMX_HANDHOLD_CELL` (unset → `A+dedupe`; invalid → `Error:` line, `arm_error`, `A+dedupe`); the verb and scan-prompt reading the dedupe factor from `arms.cell()` (`A+full` → held is empty; `A+dedupe` → dedupe) | 10.2 R7 (built before the experiment, L20). No draw, period record, salt, scope, arm file, `session_cell` or `session_arm` row (L83; spec-t3b, 2026-11-14) |
+| the paired-run override (`arms.parse_paired`, `arms.paired_override`): run id and as-of, with the cell taken from `arms.cell()`; the as-of memory filter | this task (R3, R4) |
 | `arms.push_on` and arm B's push-off in the two per-prompt hooks | this task (R5) |
-| the SessionStart `session_arm` row and the per-prompt `session_arm` field, written ONLY for a paired run | this task (R2, R6) |
+| the SessionStart `session_arm` row and the per-prompt `session_arm` field, written ONLY for a paired run | this task (R2, R6; 10.2 writes no row under L83) |
 | deleting the measurement branches of `arms.py`, the override and the filter after the series | plan-28's close-out, 28.5 R8, under 10.2's deferral row widened by R7 |
 | the `cited_in_answer` scorer that the readings use | [[task-28.3-outcome-scorer#r7]] |
 {#ownership-table}
@@ -59,36 +64,36 @@ the global one included.
 
 | # | decision | reason |
 |---|---|---|
-| a1 | ONE cell source, `arms.session_cell`. It returns the paired override's cell when one is set, and `A+dedupe` otherwise. Nothing is drawn | L83: the user's own sessions are never assigned to an arm; every reading comes from the paired series |
+| a1 | ONE cell source, 10.2's `arms.cell()`. It returns the runner's `RMX_HANDHOLD_CELL` when one is set, and `A+dedupe` otherwise. Nothing is drawn | L83: the user's own sessions are never assigned to an arm; every reading comes from the paired series |
 | a2 | The cell is fixed for the whole run, because the override is an env value the runner exports into the `claude` process. It survives `/clear` and any new session id | r1 #m2's concern (a mid-session flip) cannot arise without a draw |
-| a3 | ONE predicate, `arms.push_on(session_id, *, root) -> bool`, is false only when `session_cell` is `B`. Both per-prompt hooks call it BEFORE retrieval | one decision point, so the two hooks cannot disagree; no retrieval in B, so outcome (5) measures B's real cost |
+| a3 | ONE predicate, `arms.push_on() -> bool`, is false only when `arms.cell()` is `B` or `C`. Both per-prompt hooks call it BEFORE retrieval | one decision point, so the two hooks cannot disagree; no retrieval in B, so outcome (5) measures B's real cost. C has no hooks; false for C is the safe direction should a C value ever reach a hook |
 | a4 | B suppresses the per-prompt payloads only. SessionStart recall and PreCompact recall still run their `--pack` in B, and recall-state, `rmx context`, interactive and MCP recall, and `memory get` behave as in A | the arms table: B keeps boundary and pull (r1 #m1) |
 | a5 | Cell `C` is set through the runner's bare profile (no rmx hook), not through `RMX_HANDHOLD_CELL` | C has no hooks to read a cell |
-| a6 | **The runner sets the cell explicitly** (r1 #s2, L83). It exports `RMX_HANDHOLD_CELL` (`A+dedupe`, `A+full` or `B`), `RMX_HANDHOLD_RUN` (its run id) and `RMX_HANDHOLD_AS_OF` (the task's start time) into the `claude` process, which passes them to every hook, the MCP server and every Bash call. `arms.paired_override()` is the ONE reader of the three | an env value set by the runner needs no record, no clone-root scope and no draw |
+| a6 | **The runner sets the cell explicitly** (r1 #s2, L83). It exports `RMX_HANDHOLD_CELL` (`A+dedupe`, `A+full` or `B`; C goes through the bare profile), `RMX_HANDHOLD_RUN` (its run id) and `RMX_HANDHOLD_AS_OF` (the task's start time) into the `claude` process, which passes them to every hook, the MCP server and every Bash call. ONE environment reader per name: `arms.cell()` (10.2's) for `CELL`, and `arms.paired_override()` for `RUN` and `AS_OF` | an env value set by the runner needs no record, no clone-root scope and no draw |
 | a7 | **The as-of filter is carried as an argument, never read from env by a store process** (r1 #s1, r2-s1). Only the CLIENT process reads `RMX_HANDHOLD_AS_OF`, through `paired_override`: the hook, CLI or MCP process the `claude` session spawned. It passes `as_of` as an explicit argument on every recall, context and scan verb call. The project daemon's op and the hub's global read honour that argument and never read env. A row is admitted only if its `created` and `updated` are both earlier than `as_of`. A row missing either stamp is not admitted, and every refusal is counted | the global store holds rows written after the task started, and `--scope both` would leak them to A and B but not to C. The hub runs under launchd and the clone's daemon may predate the session, so neither process ever sees the session's env; only an argument reaches them |
-| a8 | **Outside a paired run nothing changes and nothing is written** (L83). With no override, `session_cell` is `A+dedupe`, `push_on` is true, and no `session_arm` row or field is written | the fleet's sessions are not part of the experiment |
+| a8 | **Outside a paired run nothing changes and nothing is written** (L83). With no `RMX_HANDHOLD_*` env, `arms.cell()` is `A+dedupe`, `push_on` is true, and no `session_arm` row or field is written | the fleet's sessions are not part of the experiment |
 
 ## Requirements {#requirements}
 
 1. **R1 No SessionStart draw (L83).** This task adds no period record and no draw. It reads no
    salt, scope, `start` or `end`. The user's own sessions, in any store, always get
-   `A+dedupe` from `session_cell`. {#r1}
-2. **R2 The session cell: 10.2 builds it, and this task extends it.** 10.2 R7 builds
-   `arms.session_cell(session_id, *, root)`, returning `A+dedupe`, and the verb and scan-prompt
-   read the dedupe factor from it, never from anything else. This task extends it:
-   - **The paired override.** `session_cell` returns `paired_override().cell` when that is set,
-     and otherwise `A+dedupe`. An override error gives `A+dedupe` and `arm_error` (R3).
-   - **The rows, for paired runs only.** When `paired_override()` is set, the SessionStart
-     focus hook writes one `session_arm` row on `cli.log` with `cell`, `arm_source: paired`
-     and `arm_run`. Otherwise it writes nothing.
-   - **`push_on` reads `session_cell`.**
+   `A+dedupe` from `arms.cell()`. {#r1}
+2. **R2 The cell is 10.2's `arms.cell()`; this task adds the paired rows and `push_on`.** 10.2
+   R7 builds `arms.cell()`, and the verb and scan-prompt read the dedupe factor from it, never
+   from anything else. This task changes nothing in `arms.cell()`. It adds:
+   - **The rows, for paired runs only.** When `paired_override()` is set (a run id is
+     present), the SessionStart focus hook writes one `session_arm` row on `cli.log` with
+     `cell` (from `arms.cell()`), `arm_source: paired` and `arm_run`. Otherwise it writes
+     nothing.
+   - **`push_on` reads `arms.cell()`.**
 
    A `/clear` that mints a new session id runs SessionStart again, and the override gives the
    same cell and the same `run` (a2). {#r2}
 3. **R3 The paired-run override.** `arms.paired_override() -> PairedRun | None` reads
-   `RMX_HANDHOLD_CELL`, `RMX_HANDHOLD_RUN` and `RMX_HANDHOLD_AS_OF`, in the client process
-   only. It is the only code that reads them. `PairedRun` has three fields, `cell`, `run` and
-   `as_of`, each of which may be absent: {#r3}
+   `RMX_HANDHOLD_RUN` and `RMX_HANDHOLD_AS_OF`, in the client process only, and takes `cell`
+   from 10.2's `arms.cell()`, the one reader of `RMX_HANDHOLD_CELL` (spec-t3b's L83 shape). It
+   is the only code that reads `RUN` and `AS_OF`. It returns None when neither is set.
+   `PairedRun` has three fields, `cell`, `run` and `as_of`, each of which may be absent: {#r3}
    - **`RUN` + `AS_OF`, no `CELL` (arm C's exact env, r2-s1).** This is valid. `cell` is None,
      so no cell is recorded and the per-prompt hooks are not reached anyway, because C has no
      hooks. `as_of` is set, so the as-of filter is ON for every pull call (R4).
@@ -96,10 +101,13 @@ the global one included.
      the filter is on.
    - **Invalid values.** A cell outside `{A+dedupe, A+full, B}`, a run id that does not match
      `^[a-z0-9-]{8,64}$`, or an unparseable time each give `arm_error` and one stderr line. A
-     bad cell or run falls back to `A+dedupe`, and a bad as-of turns the filter on at the
-     earliest representable time, which admits nothing, so the error can never leak a row.
+     bad cell falls back to `A+dedupe` (through `arms.cell()`, 10.2's rule). A bad run id leaves
+     the cell alone, but its `arm_error` excludes the run (28.2 R2). A bad as-of turns the
+     filter on at the earliest representable time, which admits nothing, so the error can never
+     leak a row.
    - **One parser (r3 m1).** The parsing is ONE pure function,
-     `arms.parse_paired(env: Mapping[str, str]) -> PairedRun`, which raises `PairedRunError`
+     `arms.parse_paired(env: Mapping[str, str]) -> PairedRun` (it checks a cell against 10.2's
+     `CELLS`, admitting `A+dedupe`, `A+full` and `B`), which raises `PairedRunError`
      on any invalid value. `paired_override()` calls it on `os.environ` and turns the error into
      the `arm_error` fallback above. 28.2's runner calls it on the env it is about to export,
      before launch.
@@ -143,7 +151,7 @@ the global one included.
    - SessionStart and PreCompact recall run their `--pack` in B as in A, so 25.1 R8's "never
      empty" holds on every call that packs. The per-prompt hooks do not pack in B.
 6. **R6 Rows carry the cell, in paired runs only.** When `paired_override()` is set, every
-   per-prompt `query.log` row carries `session_arm` and `arm_run`, read through `session_cell`
+   per-prompt `query.log` row carries `session_arm` and `arm_run`, read through `arms.cell()`
    and the override. `rmx telemetry --context` and the hook-cost report split per channel by
    cell. Without an override, rows are unchanged. {#r6}
 7. **R7 Deletion.** 10.2's deferral row (`arms.py`'s measurement branches are deleted after the
@@ -160,7 +168,7 @@ mutation that must fail it. {#acceptance-lead}
 
 1. **AC-1 No draw, no assignment outside a paired run (L83).**
    - With no `RMX_HANDHOLD_*` in the environment, 200 synthetic sessions in two fixture stores
-     all get `A+dedupe` from `session_cell`. Their per-prompt hooks print their payloads, and no
+     all get `A+dedupe` from `arms.cell()`. Their per-prompt hooks print their payloads, and no
      `session_arm` row or field is written.
    - An AST scan of `arms.py` finds no draw: no read of a salt, scope, `start` or `end`, and no
      hash of a session id.
@@ -189,27 +197,29 @@ mutation that must fail it. {#acceptance-lead}
      fixture.
    - With `RMX_HANDHOLD_CELL=A+full`, they equal the no-dedupe render.
 
-   **Mutation:** the dedupe factor read from the default instead of `session_cell`; the
-   `A+full` run dedupes. {#ac-4}
+   **Mutation:** the dedupe factor read from a constant instead of `arms.cell()`; the `A+full`
+   run dedupes. {#ac-4}
 5. **AC-5 `push_on` follows the session cell.**
-   - `push_on` is false only under `RMX_HANDHOLD_CELL=B`. It is true under `A+dedupe`, under
-     `A+full`, and with no env.
+   - `push_on` is false under `RMX_HANDHOLD_CELL=B` (and `C`). It is true under `A+dedupe`,
+     under `A+full`, and with no env.
 
    **Mutation:** `push_on` ignoring the override; the `B` run prints its payloads. {#ac-5}
 6. **AC-6 The paired override (r1 #s2).**
    - With `RMX_HANDHOLD_CELL=B` and `RMX_HANDHOLD_RUN=r-000001`, the SessionStart row says
      `B`, `arm_source: paired`, run `r-000001`, and the per-prompt hooks print nothing.
-   - **The run id's length bound (r2-s2).** The same env with the 6-character `r-0001` gives
-     `A+dedupe`, `arm_error` and one stderr line, and the per-prompt hooks print their payloads.
+   - **The run id's length bound (r2-s2).** The same env with the 6-character `r-0001` puts
+     `arm_error` and one stderr line on the row (the cell stays `arms.cell()`'s), and 28.2's
+     runner both refuses such an env before launch and excludes any run carrying `arm_error`.
    - A second SessionStart under a new session id, the `/clear` case, records the same cell and
      run.
    - An invalid cell value gives `A+dedupe`, `arm_error` and one stderr line.
 
    **Mutations:**
    - the override ignored, so the cell is `A+dedupe`;
-   - the env read in a second place: an AST scan finds exactly one reader of each of the three
-     names, `paired_override`;
-   - the length bound dropped from the run-id check, so `r-0001` is accepted and the second leg
+   - the env read in a second place: an AST scan finds exactly one `os.environ` reader per
+     name (`arms.cell` for `RMX_HANDHOLD_CELL`, `paired_override` for `RUN` and `AS_OF`);
+   - the length bound dropped from the run-id check, so `r-0001` gets no `arm_error` and the
+     second leg
      fails.
    {#ac-6}
 7. **AC-7 The as-of filter on every read path (r1 #s1).**
@@ -266,7 +276,7 @@ mutation that must fail it. {#acceptance-lead}
 
 | file | change |
 |---|---|
-| `src/refmatrix/arms.py` (created by 10.2, with the enum and a default-only `session_cell`) | `session_cell` reads the override; `parse_paired`, `paired_override`, `as_of_admit`, `push_on` |
+| `src/refmatrix/arms.py` (created by 10.2, with `CELLS` and `arms.cell()`) | `parse_paired`, `paired_override`, `as_of_admit`, `push_on` |
 | `src/refmatrix/cli.py` (`scan-prompt`, `_memory_recall_impl` stdin-json path, `focus hook --event session-start`) | `push_on` before retrieval; the suppressed row; the paired SessionStart row |
 | `src/refmatrix/verbs.py` (the verbs that return memory rows) and the CLI / MCP adapters | the client side: read `paired_override().as_of` and pass `as_of=` on every such call (R4) |
 | the project daemon's memory op and the hub's global read (sites named before GREEN, R4) | the store side: accept `as_of` as an op argument and apply `as_of_admit`; return `as_of_excluded`; never read env |
@@ -348,7 +358,7 @@ The status stays `pending` pending a confirm-lite.
 | change | where |
 |---|---|
 | no SessionStart draw: R1 (formerly the session-leg record) now states that no record, salt, scope or draw exists; the user's sessions always get `A+dedupe` | [[#r1]], a1, a8, [[#ac-1]] |
-| `session_cell` (10.2's, default-only) is extended to return the paired override's cell; the arm file and the period fields (`arm_period`, `source: draw`) are gone | [[#r2]], [[#ownership]] |
+| the cell comes from 10.2's `arms.cell()`, the one reader of `RMX_HANDHOLD_CELL` (spec-t3b's L83 shape, 2026-11-14); `session_cell`, the arm file and the period fields (`arm_period`, `source: draw`) are gone; `paired_override` reads `RUN` and `AS_OF` | [[#r2]], [[#r3]], [[#ownership]] |
 | the override admits `A+full` too, because 10.2's nested reading now comes from the paired series | a6, [[#r3]], [[#ac-4]] |
 | rows are written only in paired runs | a8, [[#r6]], [[#ac-8]] |
 | AC-1 (the draw) is replaced by "no draw, no assignment"; AC-4's and AC-5's straddling cases are replaced by override cases | [[#acceptance]] |

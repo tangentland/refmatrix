@@ -77,8 +77,10 @@ plan-28 leaves open (P-1 to P-10) must be fixed before any outcome is seen. {#wh
      and counted after the `leak_suspect` and `arm_error` exclusions:
      - the primary (`B`, `C`): R1's n per cell per trigger;
      - the push reading (`A+dedupe`, `B`);
-     - 10.2's nested reading (`A+dedupe`, `A+full`), whose minimum is restated in paired tasks
-       per cell by 10.2's owner and copied from 10.2.
+     - 10.2's nested reading (`A+dedupe`, `A+full`): its minimum n of paired tasks per cell is
+       FROZEN HERE, and 10.2 R7 cites it (spec-t3b, 2026-11-14: 10.2 no longer states "40
+       sessions per cell per store" and defers the number to 28.4). It is computed like the
+       others, from R1's `A+dedupe` vs `A+full` calibration;
 
      Any reading below its minimum is "underpowered, no verdict": neither pass nor fail, and no
      default changes. The report states the n reached per cell. **A power note** records, from
@@ -204,6 +206,6 @@ The status stays `pending` pending a confirm-lite.
 | change | where |
 |---|---|
 | calibration runs all four cells, and reports n for the push and nested pairs beside the primary | [[#r1]] |
-| a minimum n of paired tasks per cell for every reading (10.2's restated by its owner), with a power note in runs and agent time | [[#r2]] |
+| a minimum n of paired tasks per cell for every reading (10.2's nested minimum frozen here and cited by 10.2), with a power note in runs and agent time | [[#r2]] |
 | the period, its 72-hour end and the record-based pause are removed; the series ends at its minimum n, at the cap, or by the user; the pause is restated for the series | [[#r2]] |
 | the push test is a paired bootstrap over tasks; the limits are restated for an agent-only experiment | [[#r2]] |
