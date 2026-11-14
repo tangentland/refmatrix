@@ -3944,8 +3944,14 @@ def _op_ingest_path_start(d: Daemon, args: dict) -> dict:
     body `_op_ingest_path` runs onto bg_pool, return the job_id immediately.
     Poll completion via `ingest_gmd_status` (generic over all ingest jobs).
     The single-active guard in `_register_ingest_job` rejects a second start
-    while one is running."""
+    while one is running.
+
+    A file target is refused HERE, before a job exists (bug-240): the job body's own check in
+    `ingest_path` would only flip the job to `error` after this op had already answered
+    `{job_id, status: running}` -- a success for a write that will never happen."""
+    from refmatrix.ingest import refuse_file_target
     _refuse_filesystem_ingest(d, "ingest")
+    refuse_file_target(args["path"])
     job_id = _register_ingest_job(d, files_total=0, args=args)
     d._bg_pool.submit(lambda: _run_detached_job(d, job_id, lambda: _op_ingest_path(d, args)))
     return {"job_id": job_id, "status": "running",

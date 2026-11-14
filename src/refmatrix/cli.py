@@ -8386,7 +8386,14 @@ def ingest(path, source, semantic):
     resolved = Path(path).resolve()
     # Uniform write path: routes the whole ingest through the daemon (single
     # op) when one owns the store, else runs in-process. Single-owner lock.
-    n = _ingest(_store(write=True), resolved, source=source, semantic=semantic)
+    # A file is refused by `ingest.refuse_file_target` inside the shared path (bug-240): the
+    # daemon route returns it as `Error:` through `_DaemonWriter._call`; the in-process route
+    # raises it here, rendered as the same single `Error:` line (no second check).
+    from refmatrix.ingest import IngestFileTargetError
+    try:
+        n = _ingest(_store(write=True), resolved, source=source, semantic=semantic)
+    except IngestFileTargetError as e:
+        raise click.ClickException(str(e)) from e
     console.print(f"[green]ingested[/] {n} entities from {path}")
 
 

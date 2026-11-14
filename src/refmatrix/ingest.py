@@ -357,6 +357,31 @@ def should_ignore(p: Path, root: Path | None = None, *,
     return ignore_reason(p, root, base=base) is not None
 
 
+class IngestFileTargetError(ValueError):
+    """`ingest` was handed a file. A caller mistake, not a runtime condition (bug-240)."""
+
+
+def refuse_file_target(path: "Path | str") -> None:
+    """Refuse a file as the target of a whole-tree ingest, naming the single-file path.
+
+    WHY (bug-240, 2026-11-14): at the 0.83.0 deploy `rmx ingest CLAUDE.md` exited 0 with
+    `ingested 0 entities` and wrote nothing -- `ingest` walks a DIRECTORY, a file walks no
+    tree, and a write the user asked for became a quiet success. The MCP tool did the same by
+    another road (`{job_id, status: running}`, the job ending `done` with 0). Lead ruling:
+    REFUSE, one message on every route. `rmx sync -f` is the single-file path.
+
+    THE one check. Its call sites are the entry points a file can arrive through, each of
+    which must answer before it does anything else: the `rmx_ingest` verb (before
+    `require_daemon`, or a daemon-down agent hears "not running" and retries the same wrong
+    call), the daemon's `ingest_path_start` (before a job is registered), and `ingest_path`
+    itself (the blocking op and the CLI's in-process route). A path that does not exist is
+    left to the caller's own existence check (the CLI's `click.Path(exists=True)`)."""
+    p = Path(path)
+    if p.exists() and not p.is_dir():
+        raise IngestFileTargetError(
+            f"rmx ingest takes a directory; for one file use rmx sync -f {path}")
+
+
 def ingest_path(
     s: Store, path: Path, source: str = "auto", semantic: bool = False,
     *, yield_lock=None, yield_every: int = 200, progress_cb=None,
@@ -385,6 +410,7 @@ def ingest_path(
       single-commit batching for bounded lock-hold.
     """
     from refmatrix.store import is_memory_only_root
+    refuse_file_target(path)
     if is_memory_only_root(s.root):
         raise RuntimeError(
             f"ingest refused: {s.root} is the memory-only global store and "
