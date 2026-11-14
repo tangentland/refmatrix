@@ -26,12 +26,13 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session 37b7498f (2026-11-13) {#session-37b7498f}
 
-Next id: **Q18**.
+Next id: **Q19**.
 
 ### Open {#open-37b7498f}
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q18 | 2026-11-14 (session a9b75923) | bug-155 cause 2: `scripts/lint-gmd.sh:43` builds the memory dir from the checkout's folder path, so a littlebig clone finds none and every `[[feedback_…]]` / `[[impression_…]]` / `[[project_…]]` link dangles; `test_the_repo_scope_is_clean_under_the_stricter_gate` still fails in every clone after cause 1's `988e96d`. Fix it? | (a) yes: when the checkout's own slug has no memory dir, the gate uses the canonical checkout's (the clone's local-path `origin`); a few lines in `lint-gmd.sh` + the clone test run green (recommended). (b) a `memory_dir` key in `.gmd/config.yml` instead. (c) leave it; the test keeps failing in clones and is not counted against branches | open — the user's repeated "apply the config fix" was read as cause 1 only; not interpreted as covering this |
 
 ### Answered {#answered-37b7498f}
 
