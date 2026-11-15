@@ -744,14 +744,34 @@ def test_a_packed_recall_writes_one_block_per_hit(recall_store):
 # ---- AC-0.8 -----------------------------------------------------------------------------------
 
 
+def _canary_lines_outside_header(blk: dict) -> "list[str]":
+    """Lines of a block's text that carry the canary where the render's header does not.
+
+    The header is the `# refmatrix ...` section line and, for a block of kind `content` only,
+    its FIRST `=== context for `<candidate bag>` ===` line: the content bundle's anchor is the
+    prompt's candidate words, stored as rendered (R0.1). Ruling L155 (2026-11-15): the first
+    reading allowed only the `# refmatrix` line and failed on green-315's faithful render."""
+    bad: list[str] = []
+    anchor_seen = False
+    for ln in blk["text"].splitlines():
+        is_anchor = ln.startswith("=== context for `")
+        if CANARY in ln and not ln.startswith("# refmatrix ") and not (
+                is_anchor and not anchor_seen and blk.get("kind") == "content"):
+            bad.append(ln)
+        anchor_seen = anchor_seen or is_anchor
+    return bad
+
+
 def test_prompt_text_appears_only_inside_block_text(store, calib):
     """AC-0.8 (RED): the record's keys are exactly the schema's; `prompt_sha256` is the
     prompt's hash; a canary prompt term appears in no field but `blocks[*].text`, there only
-    where the printed payload carried it (a delivered block) or in a dropped block's header;
-    a prompt that produces nothing writes a record with no blocks and no canary.
+    where the printed payload carried it (a delivered block) or in a dropped block's header
+    (the `# refmatrix` line, and for the content block its first `=== context for` anchor,
+    which is the prompt's candidate words; L155); a prompt that produces nothing writes a
+    record with no blocks and no canary.
 
-    The canary is a prompt term the store does not hold, so the only place a render carries it
-    is the content block's header (its first eight terms). Call 1 delivers that block; call 2
+    The canary is a prompt term the store does not hold, so the only block a render carries it
+    in is the content block (its header's first eight terms and its candidate-bag anchor). Call 1 delivers that block; call 2
     (the same prompt, tier 1 tripping the token stop) drops it, so the canary is only in the
     uncapped render of a dropped block; call 3 is the canary alone, which produces nothing."""
     p_a = f"{CANARY} {PROMPT}"
@@ -779,8 +799,7 @@ def test_prompt_text_appears_only_inside_block_text(store, calib):
         assert delivered.count(CANARY) == out.count(CANARY)
         for blk in r["blocks"]:
             if blk.get("state") != "delivered" and blk.get("text"):
-                bad = [ln for ln in blk["text"].splitlines()
-                       if CANARY in ln and not ln.startswith("# refmatrix ")]
+                bad = _canary_lines_outside_header(blk)
                 assert not bad, f"the canary outside a dropped block's header: {bad}"
     held = [blk for blk in rec2["blocks"] if CANARY in (blk.get("text") or "")]
     assert [(blk["kind"], blk["state"]) for blk in held] == [("content", "dropped_tokens")], (
