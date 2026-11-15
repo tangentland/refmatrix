@@ -5,7 +5,7 @@ title: "The workflow the lead actually runs (sessions a9b75923, 070141d0) vs CLA
 tags: [workflow, governance, orchestration, proposal]
 metadata:
   node_type: proposal
-  status: proposed
+  status: applied
   created: 2026-11-15
 ---
 
@@ -15,7 +15,8 @@ The user, 2026-11-15: "summarize the workflow steps you've been using. They seem
 well, but they diverge from what is specified in CLAUDE.md. Let's review them and amend the
 instructions where need be." This file records the practice as run in the 0.83.0 / 0.83.1 /
 plan-29 / plan-30 work, where it departs from the written instructions, and the amendments
-proposed. Nothing here is applied until the user answers Q23-Q26.
+proposed. **Applied 2026-11-15:** the user answered Q23-Q26 = a; A1-A6 are in
+[[orchestration]], CLAUDE.md, [[tdd-governance]] and [[PLANNING_WORKFLOW]].
 
 rel: amends -> [[claude]]
 rel: amends -> [[tdd-governance]]

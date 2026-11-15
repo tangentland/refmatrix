@@ -37,7 +37,8 @@ acceptance contract (ATDD) + mutation testing**, with red-green TDD as the inner
 
 One unit of work at a time, fully, before the next:
 
-0. **Alignment refresh** — run `ch-alignment` over the slice's tasks FIRST: ensure the
+0. **Alignment refresh (conditional)** — only where `pseudocode/` or an Accepted ADR governs the
+   slice (Q25 = a, 2026-11-15; this repo has no `pseudocode/` today). Then run `ch-alignment` over the slice's tasks FIRST: ensure the
    ground-truth reference (`pseudocode/` where used, the Accepted ADRs, `workflow/CONSTITUTION.md`)
    is current. Tests and implementation must both match ground truth; stale ground truth means
    tests encode the wrong behavior. Fix drift before anything else.
@@ -47,7 +48,9 @@ One unit of work at a time, fully, before the next:
    tests (separation of duties: no self-tested code).
 3. **Mutation + adversarial gate** — mutate the implementation; every surviving mutant is an
    untested behavior. Kill or justify each.
-4. **Review** — `/ch-review` + `@ch-bsd` (runtime-integration audit).
+4. **Review** — `@ch-bsd` (runtime-integration audit) → lead ruling → fold → confirm-lite to
+   MEH-only GO ([[orchestration#task]]). `/ch-review` is optional: large `src/` changes or on
+   request (Q23 = a, 2026-11-15).
 
 **Dispatch order is mandatory: test-engineer (RED) BEFORE implementer (GREEN).** Dispatching the
 implementer first violates this contract.
@@ -58,6 +61,9 @@ implementer first violates this contract.
 - Mocks only in `tests/`, classified in `test_mock_registry` ([[test_mock_registry#classification]]);
   `src/` stays concrete (constitution I).
 - New auth-protected endpoints get a real-auth test; new UI-facing shapes get a contract test.
-- All tests run in the project's canonical environment (Docker where applicable) — none skipped.
+- All tests run in the project's canonical environment (the host venv `.venv-eval`; throwaway
+  stores under a short `mkdtemp()` root) — none skipped.
+- RED is proven by reading the E lines at base (the intended reason), and mutations are recorded
+  ([[orchestration#task]]).
 - A criterion whose stated signature/return type diverges from the live implementation is stale
   ground truth — reconcile before writing the test.

@@ -96,6 +96,16 @@ in the exploration document before creating the proposed plan.
 4. Update `workflow/plan-of-plans.md` with the exploration → proposal link
 5. Follow the Planning Mode Workflow below
 
+## Default planning path (2026-11-15) {#default-planning-path}
+
+Plans, task specs and spec revisions follow [[orchestration#planning]] by default (the user, Q26 =
+a): ch-architect on Fable drafts the plan and every task spec in a littlebig clone → ch-bsd spec
+review r1 → lead ruling `L<n>` → revision on Fable → confirm-lite to MEH-only GO → only then the
+plan's `Dk` decisions go to the user → merge `--no-ff`, wikilinks, `status: approved`. The SDD chain
+(`/ch-specify` → `/ch-implement`) stays available when the user asks for it.
+
+rel: depends-on -> [[orchestration]]
+
 ## Planning Mode Workflow (CRITICAL) {#planning-mode-workflow}
 
 **All proposed plans MUST be written to disk BEFORE presenting questions to the user.**
