@@ -2,33 +2,43 @@
 gmd: "0.1"
 id: task-t0-suite-trust-sweep
 title: "Task T0: the suite-trust sweep: nine instrument bugs and the plan-6/7/8/15 closure gates (W2-a, W2-b, W2-c, W1-e)"
-tags: [task, t0, tests, instrument, skipgate, flaky, plan-6, plan-7, plan-8, plan-15, bug-215, bug-170, bug-168, bug-155, bug-127, bug-130, bug-190, bug-091, bug-196]
+tags: [task, t0, tests, instrument, skipgate, flaky, plan-6, plan-7, plan-8, plan-15, plan-29, task-29.4, bug-215, bug-170, bug-168, bug-155, bug-127, bug-130, bug-190, bug-091, bug-196, bug-228, bug-229, bug-231, bug-253]
 metadata:
   node_type: task
   status: approved
   created: 2026-11-13
-  updated: 2026-11-13
+  updated: 2026-11-15
 ---
 
 # Task T0: suite-trust sweep {#root}
 
-> Plan: the consolidated queue, track **T0 Instrument trust** ([[plan-review-2026-11-13#p1]]),
-> queue item 2, run in parallel with 26.5 ([[plan-review-2026-11-13#queue-body]]). Spec gap G5
-> ([[plan-review-2026-11-13#spec-gaps]]).
+> Plan: the consolidated queue, track **T0 Instrument trust** ([[plan-review-2026-11-13#p1]],
+> [[plan-review-2026-11-13#queue-body]]). Spec gap G5 ([[plan-review-2026-11-13#spec-gaps]]).
+> **Since 2026-11-14 T0 is the body of [[task-29.4-suite-health]]**
+> ([[task-29.4-suite-health#fold]]). It runs inside plan-29, in 29.4's stages, with the ten
+> amendments of [[#amends-29-4]]. It no longer runs as queue item 2 beside 26.5.
 > Status: **Approved** (2026-11-13) by the lead on the user's pattern (the d9co route,
 > [[plan-review-2026-11-13#goal-horizon]]) after ch-bsd r3 came back MEH-only; the MEH is folded
 > ([[#decision-approved]]). The lead's rulings on the first draft's choices and on each review
-> round are in [[#rulings]], [[#rev-r1]], [[#rev-r2]] and [[#rev-r3]].
-> Depends on: queue item 1 merged to `master` (bug-212, bug-216, 25.1 rev 7). Their branches
-> edit `src/refmatrix/store.py` and `src/refmatrix/hooks.py`, which T0.4 also edits. Every T0
-> branch starts from the `master` sha that holds those merges.
-> Closes: bug-215, 170, 168, 155, 127, 130, 190, 091 and 196 ([[#ruling-o1]]).
+> round are in [[#rulings]], [[#rev-r1]], [[#rev-r2]] and [[#rev-r3]]. Revised 2026-11-15 for
+> freshness and the 29.4 fold ([[#rev-note-fresh]]).
+> Depends on: what 29.4 depends on ([[task-29.4-suite-health#root]]), and 29.4's stage 0, which
+> is done ([[task-29.4-r0-durations]]). Queue item 1 is on `master`: bug-212 (`cc061f4`),
+> bug-216 (`7aed8df`), 25.1 rev 7 (`d44e359`, `d1be40a`). Every T0 branch starts from the
+> `master` sha that holds the stage before it ([[#amend-2]], [[#amend-3]]).
+> Closes: bug-215, 170, 168, 127, 130, 190, 091 and 196 ([[#ruling-o1]]), and bug-155's
+> residual ([[#amend-1]]). bug-228, bug-231 and bug-229 are closed by 29.4's text, on T0.3's
+> harness and on T0.2's branch ([[#amend-4]], [[#amend-5]]).
 > It also closes the recorded closure gates of plans 6, 7, 8 and 15 (D-Q6).
 > User gates: none of T0's own. No step opens a live store, starts a fleet daemon, or needs a
 > hook install window ([[#rules]] R0.7). But T0 can be **held** by one: a hook-drift stop at R7.4
 > ([[#r7-4]]) is cleared only by a G31 install window, which is user-gated. A gate-drift stop
 > (master's GMD gate red) is cleared by whoever owns the failing file.
 
+rel: part-of -> [[task-29.4-suite-health#fold]]
+rel: depends-on -> [[task-29.4-r0-durations]]
+rel: depends-on -> [[orchestration]]
+rel: derives-from -> [[plan-review-fable-2026-11-14-queue#b3]]
 rel: derives-from -> [[plan-review-2026-11-13#d-q6]]
 rel: derives-from -> [[plan-review-2026-11-13#f8]]
 rel: derives-from -> [[plan-review-2026-11-13#spec-gaps]]
@@ -57,44 +67,175 @@ ended **14 failed, 4265 passed**. None of the 14 failures was a regression:
 - bug-155's test: 1. Its E line that day was bug-211, which is now fixed;
 - bug-196: 2 (now [[#t0-8]], per [[#ruling-o1]]).
 
-In a littlebig clone every run exits 1 on a skip the gate cannot place (bug-215), and the
-repo-scope GMD gate fails on about 1,080 dangling ids, for two reasons (bug-155,
-[[#t0-1-bug155-cause]]). Three tests fail only under load (bug-130,
+In a littlebig clone with a symlinked `.venv-eval` every run exits 1 on a skip the gate cannot
+place (bug-215). On 2026-11-13 the repo-scope GMD gate failed in every clone on about 1,080
+dangling ids, for two reasons (bug-155, [[#t0-1-bug155-cause]]); both were fixed the next day and
+a residual is left ([[#amend-1]]). Three tests fail only under load (bug-130,
 190, 091). Readers have learned to diff E lines by hand and call the rest "pre-existing". That is
 the habit this task removes. {#why-instrument}
 
+**Re-read on 2026-11-15.** The picture has moved, and it has not got cleaner:
+- The 0.84.0 release suite in the dev tree (`workflow/review-output/release-0.84.0-full.log`; the
+  directory is git-ignored and that log is not committed) ended **13 failed, 5,028 passed**:
+  bug-168 9, bug-170 1, bug-127 1, bug-196 2. bug-155's test passes there since `988e96d` and
+  `44d1a34`. The 0.83.0 suite had a fourteenth failure, bug-231 (9.02 s against 8.0).
+- A clone with no `.venv-eval` sees a different set. 29.4's stage-0 run at `4c6a0c6` exited 1
+  with 4 failed and 127 errors: bug-196's two, and 129 nodes of one new cause, bug-253
+  ([[task-29.4-r0-durations#digest]]). Its 19 skips were all pinned.
+
+So no checkout runs clean today, and the two kinds of checkout do not fail the same tests.
+{#why-now}
+
 Four legacy plans cannot close for the same reason. Each carries a recorded "may NOT flip" gate
 that the 2026-10-19 fold made a wave item. Neither a decision nor a host has moved them since
-(contra-e Ce-9, `workflow/review-output/pop-2026-11-13/contra-e.md`). D-Q6 keeps the gates and
+(Ce-9 in [[pop-2026-11-13-contra-e]]). D-Q6 keeps the gates and
 schedules them here:
 - W2-a, plan-6 ch-bsd r1 at `e0b7df6`;
 - W2-b, plan-8 ch-bsd r5;
 - W2-c, the plan-7 task 7.4 dense/fused re-run;
 - W1-e, the plan-15 clean suite plus r13 #s-1/#m-1/#m-2. {#why-gates}
 
+## Amendments from task 29.4 (2026-11-15) {#amends-29-4}
+
+T0 was approved on 2026-11-13, before plan-29 existed. [[task-29.4-suite-health#fold-deltas]]
+lists ten changes to its text. Each one is a subsection here, with an edge to what it amends, and
+each is also written in place at the site it names, marked with a link back to its subsection.
+The text at the site is what a sub-task builds from. T0's requirements, ACs and mutations are
+otherwise built as written. {#amends-29-4-lead}
+
+rel: derives-from -> [[task-29.4-suite-health#fold-deltas]]
+
+### A1 (row 1): T0.1 becomes T0.1' {#amend-1}
+
+R1.3 shipped verbatim (`988e96d`) and is dropped as a requirement. R1.4 shipped as bash in
+`scripts/lint-gmd.sh` (`44d1a34`) that tests only that the own-slug directory exists, so an empty
+`memory/` defeats the fallback. R1.4 becomes: converge the shipped fallback onto one resolver,
+with the populated-directory check and canonicalisation. AC-1.5's RED is the empty-directory
+case, and M1.3 and M1.4 are restated against it. The bug-155 row gains the residual
+([[#rev-note-fresh-bug155]]).
+
+rel: amends -> [[#r1-3]]
+rel: amends -> [[#r1-4]]
+rel: amends -> [[#ac-1-5]]
+rel: amends -> [[#t0-1-mutations]]
+rel: derives-from -> [[plan-review-fable-2026-11-14-queue#st-8]]
+
+### A2 (row 2): plan-29 runs first, and 26.5 is not in flight {#amend-2}
+
+The header's "Depends on queue item 1" and "in parallel with 26.5" are replaced. plan-29 runs
+first (ruling L104, [[plan-review-2026-11-13#lead]]), T0 runs inside it as 29.4's body, and 26.5
+does not run during this task.
+
+rel: amends -> [[#root]]
+rel: amends -> [[#merge-265]]
+
+### A3 (row 3): the merge order is 29.4's stages {#amend-3}
+
+T0.2 ∥ T0.3 ∥ T0.4 ∥ T0.6 ∥ T0.8 becomes the stages of [[task-29.4-suite-health#fold-stages]]:
+T0.4 → T0.5 run after stage 2, not beside it.
+
+rel: amends -> [[#scope]]
+rel: amends -> [[#merge-order]]
+rel: derives-from -> [[plan-review-fable-2026-11-14-queue#b3]]
+
+### A4 (row 4): bug-228 and bug-231 join T0.3's harness {#amend-4}
+
+T0.3 covers bug-130, 190 and 091, plus bug-228 and bug-231 on the same harness with the same
+bands ([[#t0-3-bands]]). What is built for the two is 29.4's text
+([[task-29.4-suite-health#r3]]).
+
+rel: amends -> [[#t0-3]]
+rel: derives-from -> [[plan-review-fable-2026-11-14-queue#b3]]
+
+### A5 (row 5): bug-229's reaper and root rule join T0.2 {#amend-5}
+
+T0.2 covers bug-170, 168 and 127, plus bug-229 through [[task-29.4-suite-health#r4]] and
+[[task-29.4-suite-health#r5]], on one branch with 29.4b.
+
+rel: amends -> [[#t0-2]]
+rel: derives-from -> [[plan-review-fable-2026-11-14-queue#b3]]
+
+### A6 (row 6): `open / diagnosed-loud` is written in 29.1's grammar {#amend-6}
+
+Wherever T0 sets the status `open / diagnosed-loud` ([[#t0-3-attempts]], [[#t0-3-band-none]],
+[[#r3-1]], and the places that read it: [[#r7-6]], [[#done]]), the row reads
+`deferred: diagnosed-loud, <trial counts>; review <date>`.
+
+rel: amends -> [[#t0-3-attempts]]
+rel: amends -> [[#t0-3-band-none]]
+rel: amends -> [[#r3-1]]
+rel: derives-from -> [[task-29.1-registry-triage#r1-other-writers]]
+
+### A7 (row 7): the clean runs go through 29.4's runner {#amend-7}
+
+R7.4 and R7.5 named one `pytest -rA --junitxml` process of about 45 minutes. They become
+`scripts/ptest.sh --tier all`, in the main tree (run tier (c) included) and in the clone twin,
+with `-rA` and one junit file per shard. "Clean" keeps T0's definition word for word.
+
+rel: amends -> [[#r7-4]]
+rel: amends -> [[#r7-5]]
+rel: derives-from -> [[task-29.4-suite-health#ac-7]]
+
+### A8 (row 8): the four plan-7 deferral rows get no phantom owner {#amend-8}
+
+R7.8 re-owned four plan-7 deferral rows to "plan-20 evals". Plan-20's three tasks hold none of
+them. The owner becomes "no host plan; backlog (L33)".
+
+rel: amends -> [[#r7-8]]
+rel: amends -> [[#ac-6-3]]
+rel: derives-from -> [[plan-review-fable-2026-11-14-queue#dup-2]]
+
+### A9 (row 9): ruling O7's re-run is the only re-run {#amend-9}
+
+Ruling O7's "immediate isolated re-run" is unchanged. It is the only re-run 29.4 allows
+([[task-29.4-suite-health#decisions]], plan-29 D14): the runner has no retry flag.
+
+rel: amends -> [[#ruling-o7]]
+
+### A10 (row 10): R0.1 to R0.8 bind 29.4's additions too {#amend-10}
+
+The rules of [[#rules]] apply to everything 29.4 adds, as they do to T0's sub-tasks
+([[task-29.4-suite-health#r10]]).
+
+rel: amends -> [[#rules]]
+rel: derives-from -> [[plan-review-fable-2026-11-14-queue#ord-6]]
+
 ## Scope and order {#scope}
 
-| sub-task | closes | branch | merges |
+| sub-task | closes | branch | stage ([[task-29.4-suite-health#fold-stages]]) |
 |---|---|---|---|
-| [[#t0-1]] Skip gate and checkout identity | bug-215, bug-155 | `task-t0.1-skip-gate-checkout-identity` | first |
-| [[#t0-2]] Dev-tree-only tests stop reading the real HOME and cwd ancestry | bug-170, bug-168, bug-127 | `task-t0.2-dev-tree-test-isolation` | any order after T0.1 |
-| [[#t0-3]] Load-dependent flakes | bug-130, bug-190, bug-091 | `task-t0.3-load-flakes` | any order after T0.1 |
-| [[#t0-4]] W2-a: the plan-6 remedy | plan-6 r1 #b-1, #b-2, #s-1, #s-2, #s-3, #m-1..#m-5; todo G7/G8 | `task-t0.4-plan6-remedy` | any order after T0.1 |
-| [[#t0-5]] W2-b: the plan-8 remedy | plan-8 r5 #b-2, #b-3, #s-4, #m-10; #s-9 and #s-6's 8.3 half confirmed closed | `task-t0.5-plan8-remedy` | after T0.4 (both edit `cli.py`; T0.4's registry lint lands first) |
-| [[#t0-6]] W2-c: the plan-7 dense/fused re-run | task 7.4's missing rows; REPORT.md completed | `task-t0.6-plan7-dense-rerun` | any time after T0.1; long-running |
-| [[#t0-8]] bug-196: the cli.log recall leg split per channel | bug-196 ([[#ruling-o1]]) | `task-t0.8-bug196-recall-channels` | any order after T0.1 |
-| [[#t0-7]] W1-e: plan-15 r13 remedy + the clean full suite | plan-15 r13 #s-1, #m-1, #m-2; the clean-suite gate for plans 15, and the trust proof for T0 | `task-t0.7-plan15-close-clean-suite` | **last** |
+| [[#t0-1]] **T0.1'** Skip gate and checkout identity | bug-215, bug-155's residual ([[#amend-1]]) | `task-t0.1-skip-gate-checkout-identity` | 1 |
+| [[#t0-2]] Dev-tree-only tests stop reading the real HOME and cwd ancestry | bug-170, bug-168, bug-127; with 29.4b on the same branch: bug-229 ([[#amend-5]]), and bug-253 by L121 ([[#t0-2-bug253]]) | `task-t0.2-dev-tree-test-isolation` | 2 |
+| [[#t0-3]] Load-dependent flakes | bug-130, bug-190, bug-091; with 29.4c on the same branch: bug-228, bug-231 ([[#amend-4]]) | `task-t0.3-load-flakes` | 2 |
+| [[#t0-8]] bug-196: the cli.log recall leg split per channel | bug-196 ([[#ruling-o1]]) | `task-t0.8-bug196-recall-channels` | 2 |
+| [[#t0-6]] W2-c: the plan-7 dense/fused re-run | task 7.4's missing rows; REPORT.md completed | `task-t0.6-plan7-dense-rerun` | lane: any time after stage 1; long-running |
+| [[#t0-4]] W2-a: the plan-6 remedy | plan-6 r1 #b-1, #b-2, #s-1, #s-2, #s-3, #m-1..#m-5; todo G7/G8 | `task-t0.4-plan6-remedy` | 3, first |
+| [[#t0-5]] W2-b: the plan-8 remedy | plan-8 r5 #b-2, #b-3, #s-4, #m-10; #s-9 and #s-6's 8.3 half confirmed closed | `task-t0.5-plan8-remedy` | 3, after T0.4 (both edit `cli.py`; T0.4's registry lint lands first) |
+| [[#t0-7]] W1-e: plan-15 r13 remedy + the clean full suite | plan-15 r13 #s-1, #m-1, #m-2; the clean-suite gate for plans 15, and the trust proof for T0 | `task-t0.7-plan15-close-clean-suite` (with 29.4d) | 5, **last** |
 
-T0.1 goes first because until it lands, every clone run exits 1 and no sub-task can quote a
-clean exit code. T0.2 to T0.6 and T0.8 are independent of each other, apart from the T0.4 → T0.5
-order.
-They may run in parallel littlebig clones (each in its own `/Volumes/littlebig/refmatrix-t0-<n>`).
-T0.7 runs the closing suite, so it merges last. {#scope-order}
+The order is 29.4's ([[#amend-3]]; [[task-29.4-suite-health#order]]):
+- **Stage 0** is the durations run, T0.3's R0. It is done ([[#t0-3-r0]]).
+- **Stage 1, T0.1'**, goes first because until it lands, every symlinked-clone run exits 1 and no
+  sub-task can quote a clean exit code.
+- **Stage 2** is T0.2, T0.3 and T0.8. They are independent of each other. T0.2 and T0.3 each
+  share a branch and a ch-bsd range with a part of 29.4 ([[task-29.4-suite-health#order-pairs]]).
+- **T0.6 is a lane**: it builds no `src/` and may start any time after stage 1.
+- **Stage 3** is T0.4, then T0.5, after stage 2. They delete dead code before 29.5 moves it.
+- **Stage 4** is 29.4's runner and holds no T0 sub-task.
+- **Stage 5, T0.7**, runs the closing suite through that runner, so it merges last.
+
+Sub-tasks of one stage may be written in parallel littlebig clones (each in its own
+`/Volumes/littlebig/refmatrix-t0-<n>`). Their test runs are not parallel: the machine runs one
+test process at a time ([[orchestration#one-suite]]), and the lead orders them. T0.3's load
+harness is several pytest processes by design; while it is up it is that one run.
+{#scope-order}
 
 ## Rules for every sub-task {#rules}
 
 - **R0.1 Re-verify before fixing.** Every finding cited here is 2 to 7 weeks old, and the code
-  has moved: for example `store.py:717` is now `:1159`, and r13 #m-1's wording no longer greps.
+  has moved: for example `store.py:717` was `:1159` when this spec was approved and is `:1372`
+  at `f45b9a3`, and r13 #m-1's wording no longer greps. The line numbers in this spec were
+  re-read on 2026-11-15 at `f45b9a3` ([[#rev-note-fresh]]); 29.5 will move them again.
   Each sub-task opens with an R0 that re-reads every cited site at the branch's base sha. The
   result is a table in the implementation summary with one row per finding: `holds` (with the
   current `path:line`), `closed` (the commit or evidence that closed it), or `changed` (what it
@@ -126,6 +267,16 @@ T0.7 runs the closing suite, so it merges last. {#scope-order}
 - **R0.8 One ch-bsd round per sub-task range**, remedied and re-reviewed until CLEAN or MEH-only.
   This is the plans' own contract for T0.4 to T0.7 (CLEAN is required wherever a plan's
   `#execution` says CLEAN). {#r0-8}
+- **R0.1 to R0.8 also bind what 29.4 adds** ([[#amend-10]]; [[task-29.4-suite-health#r10]]).
+  {#r0-also-29-4}
+- **The operating procedure binds every sub-task** ([[orchestration]], adopted 2026-11-15, after
+  this spec). Two of its rules change how T0 runs, and neither changes a requirement:
+  - no branch full suite ([[orchestration#task]] step 4). A sub-task verifies with its own
+    files, their family and every test that imports a changed module. T0's full runs are stage
+    0's, which is done, and T0.7's two (R7.4, R7.5), which run at a `master` sha;
+  - one test run at a time on the machine ([[orchestration#one-suite]]).
+
+  {#r0-orchestration}
 
 ## T0.1 Skip gate and checkout identity (bug-215, bug-155) {#t0-1}
 
@@ -134,7 +285,8 @@ SkipGate UNPINNED skip (ch-bsd bug-212 r1 #m-4, carried as flag 8 of GREEN r2), 
 review's separate "SkipGate UNPINNED row" is the same defect (lead ruling, 2026-11-13). Closing
 bug-215 closes it. {#t0-1-identity}
 
-**bug-155 has two causes (probe 2026-11-13; second cause found by the r1 spec review).**
+**bug-155 had two causes (probe 2026-11-13; second cause found by the r1 spec review). Both
+have shipped fixes since; what T0.1' builds is the residual, below.**
 1. **Namespace.** `tools/gmd/lint.py` `project_name()` takes the repo directory's basename as the
    id namespace when `.gmd/config.yml` has no `project:` key. The ADRs carry ids like
    `refmatrix/adr-0000-adr-overview`, so in any checkout not named `refmatrix`,
@@ -142,10 +294,11 @@ bug-215 closes it. {#t0-1-identity}
    main memory dir supplied): a dir named `refmatrix` 1 `dangling-doc`; `refmatrix-clone` 33;
    `refmatrix-clone` + `project: refmatrix` 1. The remaining 1 was `[[agent-brief-bsd-pop-r1]]`,
    fixed by the lead at `35e1e0d` ([[#ruling-o4]]).
-2. **Memory dir.** A clone has no memory dir under its own slug.
-   - `scripts/lint-gmd.sh` adds `$HOME/.claude/projects/<slug>/memory` only if it exists.
-   - `test_the_repo_scope_is_clean_under_the_stricter_gate` copies that same slug's dir into a
-     decoy HOME, and copies nothing when it is missing.
+2. **Memory dir.** A clone has no memory dir under its own slug. As probed on 2026-11-13,
+   before `44d1a34`:
+   - `scripts/lint-gmd.sh` added `$HOME/.claude/projects/<slug>/memory` only if it existed.
+   - `test_the_repo_scope_is_clean_under_the_stricter_gate` copied that same slug's dir into a
+     decoy HOME, and copied nothing when it was missing.
    - No `~/.claude/projects/-Volumes-littlebig-refmatrix*/memory` exists. Over the script's scope
      in this clone with no memory dir, lint gives 1,084 errors (1,079 `dangling-doc`): every
      memory-id ref dangles. `project: refmatrix` alone removes only 32 of them.
@@ -155,7 +308,52 @@ bug-215 closes it. {#t0-1-identity}
 
 {#t0-1-bug155-cause}
 
-**The pinned skips and their actual reasons (read at `1cf3b9f`).** `_CLONE_ONLY_SKIPS`
+**What shipped on 2026-11-14, and what is left (re-read at `f45b9a3`; [[#amend-1]]).**
+- **Cause 1 is fixed.** `.gmd/config.yml` declares `project: refmatrix` (`988e96d`). That is
+  R1.3, verbatim.
+- **Cause 2 is fixed for the case it was reported in, an absent own-slug dir.**
+  `scripts/lint-gmd.sh:49-64` falls back to the origin checkout's memory dir and says so on
+  stderr (`44d1a34`, Q18 a). `tests/test_gmd_lint_requires_version.py:125-140` repeats the slug
+  and origin logic in Python to fill its decoy home.
+- **The residual.** Both copies test only that a directory exists (the script's `-d` test, the
+  test's `is_dir()`). An own-slug `memory/` that exists and is empty is taken as the memory dir.
+  No fallback is tried, and every memory-id ref dangles again. This is the case r2 s-1 named
+  ([[#rev-r2]]).
+- **The two copies also differ**, from each other and from R1.4. The script accepts only an
+  absolute origin that holds a `.git` directory and keeps the logical path (`cd … && pwd`); the
+  test `resolve()`s it. Neither takes a relative origin or a `<path>/.git` origin, and neither
+  checks that the origin's dir is populated.
+- **It is not live on the dev machine today.** No `~/.claude/projects/-Volumes-littlebig-refmatrix*`
+  directory exists (2026-11-15), so no clone has an empty own-slug dir yet. A test has to plant
+  one, and it plants it in a decoy home.
+
+{#t0-1-residual}
+
+**Two clone layouts, and bug-253 (2026-11-15; ruling L121, [[plan-review-2026-11-13#lead]]).**
+Both layouts are in use on littlebig: a clone whose `.venv-eval` is a symlink to the main tree's,
+and a clone with none, run with the main tree's interpreter and `PYTHONPATH=<clone>/src`.
+- **bug-215 belongs to the symlinked layout.** `is_dir()` is true there, the pins are dropped,
+  and every run exits 1 (AC-1.1).
+- **In the no-venv layout the 19 pins hold** (stage 0: 19 skips, all pinned,
+  [[task-29.4-r0-durations#run]]), and a different defect shows: **bug-253**. Six test files need
+  `<checkout>/.venv-eval/bin/rmx` and `scripts/lint-gmd.sh` needs `…/bin/python`
+  ([[#t0-2-bug253]] lists them). They **error or fail** when it is missing: 127 setup errors and
+  2 failures in stage 0 ([[task-29.4-r0-durations#digest]]). Those are not skips. The allowed-skip set does not cover
+  them and must not (R0.5).
+- **Owner.** L121 gives bug-253's fix, and `lint-gmd.sh`'s dev-interpreter lookup with it, to
+  the stage-2 branch ([[#t0-2-bug253]]), "or the next RED touching those files". T0.1' is the
+  first branch after that ruling to edit `scripts/lint-gmd.sh`. It does not take the lookup
+  unless the lead says so: its own ACs run where the script already reaches lint (the symlinked
+  clone), and AC-1.4 runs only the seven pinned files.
+- **Until bug-253's fix merges**, a no-venv clone run carries its E lines:
+  `AssertionError: dev rmx missing at <clone>/.venv-eval/bin/rmx`, a `FileNotFoundError` on the
+  same path, and `scripts/lint-gmd.sh did not run its checks (exit 2)`. They are bug-253,
+  matched by E line (R0.2), not new findings.
+
+{#t0-1-bug253}
+
+**The pinned skips and their actual reasons (read at `1cf3b9f`; re-read at `f45b9a3`,
+unchanged).** `_CLONE_ONLY_SKIPS`
 (`tests/conftest.py`) pins 19 nodeids: 18 under `_CLONE_NO_VENV` and 1 under `_CLONE_HOOKS`. The
 pinned strings ("clone-only: the dev venv rmx (<checkout>/.venv-eval/bin/rmx) is not built",
 "clone-only: the installed hooks belong to another checkout of this commit") match none of the
@@ -192,16 +390,21 @@ reasons the tests actually skip with. Those are:
    is **equal** to the pinned value. A pinned nodeid that skips for any other reason is reported
    `SKIPPED-UNPINNED`, with both reasons. A test whose `reason=` text changes must update its
    pin in the same commit. {#r1-2}
-3. **R1.3 The GMD id namespace does not depend on the checkout's directory name.**
-   `.gmd/config.yml` declares `project: refmatrix`. `tools/gmd/lint.py` is not changed: the config
-   key already exists for this purpose (`project_name()` docstring). {#r1-3}
-4. **R1.4 A clone lints against its origin's memory dir ([[#ruling-o6]], r2 s-1/m-2).**
+3. **R1.3 (shipped; dropped as a requirement, [[#amend-1]]).** The GMD id namespace does not
+   depend on the checkout's directory name: `.gmd/config.yml` declares `project: refmatrix` since
+   `988e96d`, and `tools/gmd/lint.py` was not changed. T0.1' builds nothing for it. M1.3 keeps
+   it pinned. {#r1-3}
+4. **R1.4 One resolver replaces the shipped fallback ([[#ruling-o6]], r2 s-1/m-2;
+   [[#amend-1]]).** The bash fallback in `scripts/lint-gmd.sh` (`44d1a34`; lines 49-64 at
+   `f45b9a3`) and the copy of its logic in `tests/test_gmd_lint_requires_version.py` (lines
+   125-140) are both removed. One resolver decides for both, with the populated-directory check
+   and the canonicalisation that neither copy has ([[#t0-1-residual]]):
    - **One resolver.** A stdlib-only Python helper, `resolve_memdir(root, home)`, in a new
      `scripts/gmd_memdir.py`, takes the checkout root AND the home dir as explicit arguments and
      returns the chosen dir (or none) plus the one-line note to print. `scripts/lint-gmd.sh`
-     calls it with its own `$HOME`. The repo-scope test imports it and calls it **in-process**
-     with `RMX_SANDBOX_REAL_HOME` (a read-only existence check). No child process is ever given
-     the real `HOME`.
+     calls it with its own `$HOME` and keeps no slug or origin logic of its own. The repo-scope
+     test imports it and calls it **in-process** with `RMX_SANDBOX_REAL_HOME` (a read-only
+     existence check). No child process is ever given the real `HOME`.
    - **"Present" means populated.** The own-slug dir `<home>/.claude/projects/<own slug>/memory`
      counts only if it holds at least one `*.md` file. Claude Code creates an empty `memory/` for
      any session whose cwd was the checkout, so an empty dir is not a memory dir.
@@ -219,13 +422,15 @@ reasons the tests actually skip with. Those are:
      slug, why it was skipped (`absent` or `empty`), the canonical origin path, and the dir used:
      for example `own memory dir <path> is empty; using origin <path>`. If no dir qualifies (no
      origin, a non-local origin, or an absent or empty dir under the origin's slug), it prints one
-     stderr line saying so and that memory-id refs will surface as `dangling-doc`.
+     stderr line saying so and that memory-id refs will surface as `dangling-doc`. The shipped
+     lines (`lint-gmd: no memory dir for <root>; using its origin's …`) carry no reason word, and
+     no test pins their wording at `f45b9a3`.
    - **The test copies what the resolver names.** It copies exactly that dir into its decoy HOME,
      under the slug the child's own resolution will reach there (the own slug if that was
      chosen, else the origin's slug), so the child, running with the decoy HOME, resolves the same
      content. {#r1-4}
-5. **R1.5 Exit codes are part of every recorded run.** `workflow/TDD_GOVERNANCE.md`
-   `#rules` gains one bullet: "A recorded run (RED, GREEN, suite) quotes the pytest exit code and
+5. **R1.5 Exit codes are part of every recorded run.** [[tdd-governance#rules]]
+   (`workflow/TDD_GOVERNANCE.md`) gains one bullet: "A recorded run (RED, GREEN, suite) quotes the pytest exit code and
    the collected count; counts without the exit code are not a record." This is the second half
    of bug-215's fix column. {#r1-5}
 
@@ -250,17 +455,29 @@ reasons the tests actually skip with. Those are:
   `SKIPPED-UNPINNED`. (In the main tree, `test_the_tool_itself_is_the_one_that_scrambles` would
   also skip if `rg` were missing; there its venv condition is false, so that skip stays unpinned
   and fails the session, which is correct.) {#ac-1-4}
-- **AC-1.5 (bug-155, clone).** In the T0.1 clone (not named `refmatrix`, no memory dir under its
-  own slug, origin = the main tree):
-  - `test_the_repo_scope_is_clean_under_the_stricter_gate` is RED at base. Its E line holds the
-    32 namespace errors plus the memory-id `dangling-doc` errors (about 1,046), which R0.2 quotes
-    by count and first lines.
-  - After R1.3 and R1.4, `./scripts/lint-gmd.sh` prints the fallback stderr line, and its error
-    count and E lines **equal the main tree's at the same sha**. The test passes when the main
-    tree's gate exits 0 at that sha, which is the same precondition R7.4 states. Dev master's gate
-    was green at `35e1e0d` ([[#ruling-o4]]), red again on two forward-linked anchors, and green at
-    `b816a08`. If the main tree is red at the T0.1 base, equality is still asserted, the failing
-    E lines are reported as gate drift, and they are not T0.1's.
+- **AC-1.5 (bug-155's residual, clone; [[#amend-1]]).** The RED is the **empty own-slug
+  directory**. A new test in `tests/test_lint_gmd_memdir_fallback.py` runs the real
+  `./scripts/lint-gmd.sh` on the checkout with a decoy `HOME`. The decoy holds an empty `memory/`
+  under the checkout's own slug and, under the origin's slug, a copy of the origin's memory dir
+  (read through `RMX_SANDBOX_REAL_HOME`, as the repo-scope test reads it). Nothing is written to
+  the real home. In the T0.1 clone (the symlinked-`.venv-eval` clone of AC-1.1: not named
+  `refmatrix`, origin = the main tree; the script needs `<checkout>/.venv-eval/bin/python` to
+  reach lint at all, [[#t0-1-bug253]]):
+  - **RED at base.** The script takes no fallback, because its `-d` test is satisfied by the
+    empty dir, and exits 1. Its E lines are the memory-id `dangling-doc` errors, which R0.2
+    quotes by count and first lines. Stderr carries no fallback line.
+  - **After R1.4**, `./scripts/lint-gmd.sh` prints the fallback stderr line with `empty`, and its
+    error count and E lines **equal the main tree's at the same sha**. The test passes when the
+    main tree's gate exits 0 at that sha, which is the same precondition R7.4 states. Dev master's
+    gate was green at `35e1e0d` ([[#ruling-o4]]), red again on two forward-linked anchors, and
+    green at `b816a08`. If the main tree is red at the T0.1 base, equality is still asserted, the
+    failing E lines are reported as gate drift, and they are not T0.1's.
+  - **The absent case is a characterization check, not a RED.**
+    `test_the_repo_scope_is_clean_under_the_stricter_gate` passes in that clone at base, through
+    the shipped fallback, and passes after R1.4, through the resolver.
+  - **In a checkout with no usable origin** (the main tree: its origin is not a local path) the
+    same new test asserts the other branch, which is AC-1.6's last case through the script: the
+    "no memory dir" line, and exit 1 on `dangling-doc`. It does not skip (R0.5).
   - Any other E line is a new finding, not an assumed residue.
 
   {#ac-1-5}
@@ -280,8 +497,12 @@ reasons the tests actually skip with. Those are:
 - **Mutations (each FAILS):**
   - M1.1: restore the single `is_dir()` switch (AC-1.1 and AC-1.2 red);
   - M1.2: match by nodeid only, or by substring (AC-1.3 red);
-  - M1.3: delete `project:` from `.gmd/config.yml` (AC-1.5 red with the 32 namespace errors);
-  - M1.4: drop the origin fallback (AC-1.5 red with the memory-id errors);
+  - M1.3 (restated, [[#amend-1]]): delete `project:` from `.gmd/config.yml`, the shipped R1.3.
+    In the clone, AC-1.5's empty-directory run goes red on the namespace `dangling-doc` errors,
+    which R0.2 quotes by count. The mutation now pins a shipped fix; it is not T0.1's own RED;
+  - M1.4 (restated, [[#amend-1]]): drop the origin fallback from the resolver. AC-1.5's
+    empty-directory run goes red with the memory-id errors and the "no memory dir" line, and so
+    does the absent-case repo-scope test;
   - M1.5: silence the fallback's stderr line (AC-1.6 red);
   - M1.6: treat an existing own-slug dir as present whatever it holds (AC-1.6's empty case red);
   - M1.7: skip origin canonicalisation (AC-1.6's relative and `.git` cases red).
@@ -291,11 +512,13 @@ reasons the tests actually skip with. Those are:
 
 `tests/conftest.py`, `tests/sandbox_site/rmx_sandbox.py` (`SkipGate`), a new
 `tests/test_t0_skip_gate.py`, the seven test files in [[#t0-1-skip-reasons]] (only if a
-`reason=` must change; the pins follow the tests, not the reverse), `.gmd/config.yml`,
-`scripts/lint-gmd.sh`, a new `scripts/gmd_memdir.py`, `tests/test_gmd_lint_requires_version.py`,
+`reason=` must change; the pins follow the tests, not the reverse),
+`scripts/lint-gmd.sh` (the fallback block only; the `DEVPY` lookup is bug-253's,
+[[#t0-1-bug253]]), a new `scripts/gmd_memdir.py`, `tests/test_gmd_lint_requires_version.py`,
 a new `tests/test_lint_gmd_memdir_fallback.py`, `workflow/TDD_GOVERNANCE.md`,
-`workflow/bug_registry.md` (rows bug-215, bug-155),
-`workflow/implementation_summaries/task-t0.1-skip-gate-checkout-identity.md`.
+`workflow/bug_registry.md` (rows bug-215, bug-155; the lead writes them). `.gmd/config.yml` is
+no longer edited: R1.3 shipped, and only mutation M1.3 touches the file, and restores it. The
+summary is `workflow/implementation_summaries/task-t0.1-skip-gate-checkout-identity.md`.
 
 ## T0.2 Dev-tree-only tests stop reading the real HOME and cwd ancestry (bug-170, bug-168, bug-127) {#t0-2}
 
@@ -309,6 +532,33 @@ That is why no release suite run in a clone saw all three (bug-170's row: "the s
 as bug-168"). After T0.1 merges, every symlinked-clone full run hits bug-127 until T0.2 merges
 ([[#merge-order]]). They are proven post-merge, in the main tree, by T0.7's run. Pre-merge, each
 AC below names how the clone reproduces the main-tree condition. {#t0-2-lead}
+
+**Added by 29.4 (stage 2; [[#amend-5]]).** T0.2 shares its branch and its ch-bsd range with
+29.4b, which closes bug-229: the reaper that fails the session ([[task-29.4-suite-health#r4]])
+and the rule that test roots live under the sandbox root ([[task-29.4-suite-health#r5]]). Their
+requirements, acceptance and mutations are 29.4's ([[task-29.4-suite-health#ac-5]]). Both parts
+edit `tests/conftest.py` and `tests/sandbox_site/rmx_sandbox.py`, which is why they are one
+branch ([[task-29.4-suite-health#order-pairs]]). T0.2's own requirements R2.1 to R2.3 stay about
+bug-170, 168 and 127. {#t0-2-reaper}
+
+**bug-253 lands here (ruling L121, contradiction 1; [[plan-review-2026-11-13#lead]]).** Stage 0
+showed that a clone with no `.venv-eval` errors in 127 tests and fails 2 more for one cause
+([[#t0-1-bug253]]). L121 fixes it at the root and not with a new run-tier signal, and names the
+owner: this stage-2 branch (T0.2 + 29.4b), or the next RED that touches those files.
+- **What is owned.** The fix is the bug-253 row's own text: the fixtures resolve the dev `rmx`
+  from the bin directory of `sys.executable`, with the checkout's `src` on `PYTHONPATH` for the
+  child, through one helper the files share. `scripts/lint-gmd.sh`'s dev-interpreter lookup
+  (`DEVPY`, line 23 at `f45b9a3`) is in the same bug and has the same owner.
+- **The files.** `tests/test_bug240_ingest_file_arg.py`, `tests/test_bug240_ingest_file_arg_mcp.py`,
+  `tests/test_bug241_r2_l112.py` and `tests/test_bug241_rule_docs_reingest.py` name the path;
+  `tests/test_bug241_r3_l114.py` errors through the fixtures it imports from
+  `test_bug241_r2_l112`; `tests/test_scanorder_r2_l120.py` fails on the same path.
+- **This spec adds no requirement to it.** The row and L121 are the text.
+- **Afterwards** the five errored files have real durations for the first time. Stage 0's
+  weights understate them ([[task-29.4-r0-durations#weights-gaps]]), and L121 asks for the
+  re-weighting after this fix.
+
+{#t0-2-bug253}
 
 ### Requirements {#t0-2-requirements}
 
@@ -366,19 +616,56 @@ AC below names how the clone reproduces the main-tree condition. {#t0-2-lead}
 `workflow/bug_registry.md` (rows 170, 168, 127),
 `workflow/implementation_summaries/task-t0.2-dev-tree-test-isolation.md`.
 
+On the same branch, not by this spec's requirements: 29.4b's files
+([[task-29.4-suite-health#files]]: conftest, `rmx_sandbox.py`, `tests/test_daemon_reaper.py`,
+`tests/test_tmp_root_census.py`, the 28 files that call `spawn_daemon_subprocess`), and
+bug-253's ([[#t0-2-bug253]]: the six test files, their shared helper, and the `DEVPY` lookup in
+`scripts/lint-gmd.sh`). {#t0-2-files-shared}
+
 ## T0.3 Load-dependent flakes (bug-130, bug-190, bug-091) {#t0-3}
 
 All three pass alone and fail under suite load, and none is root-caused. A flake fix with no
 reproducer cannot be told apart from luck. So the bands below are fixed before any fix is
 written ([[feedback_go_no_go_ranges_not_predrop]]). {#t0-3-lead}
 
+**Two more rows (stage 2; [[#amend-4]]).** bug-228 and bug-231 fail under load in the same way,
+and they run on this harness with these bands. What is built for them is 29.4's text
+([[task-29.4-suite-health#r3-bug228]], [[task-29.4-suite-health#r3-bug231]]); 29.4c, which holds
+it, shares T0.3's branch and ch-bsd range ([[task-29.4-suite-health#order-pairs]]). T0.3's own
+requirements R3.1 to R3.4 and mutations M3.1 to M3.4 stay about bug-130, 190 and 091. AC-3.1's
+record is kept for all five rows ([[task-29.4-suite-health#ac-6]]), and the trial bounds of
+[[#t0-3-bound]] apply to each of the five. {#t0-3-two-more}
+
+**The bug-228 leg breakdown comes from this harness (ruling L121, contradiction 3;
+[[plan-review-2026-11-13#lead]]).** [[task-29.4-suite-health#r3-bug228]] asks R0 to measure one
+failing bug-228 run and say which leg spent the time. Stage 0 had no failing run: bug-228 passed
+(call 5.28 s), and so did bug-231 (5.21 s against 8.0)
+([[task-29.4-r0-durations#digest-bug228-231]]). So the measurement is taken from bug-228's base
+trials here. The first failing trial is the run that is broken down by leg, and the breakdown
+goes in the summary before any fix is written. If no trial fails at any level, there is no
+failing run to break down. Neither spec says which branch of `#r3-bug228` is then built
+([[#rev-note-fresh-proposals]], P3). {#t0-3-bug228-legs}
+
 ### The load harness and bands (pre-registered) {#t0-3-bands}
 
-- **R0 builds the harness.** No committed full-suite log carries durations (the 0.82.0 log has
-  none). So T0.3's first step is one full-suite run in its clone with `--durations=0` (every
-  setup, call and teardown phase), logged per R0.3. The phases are summed by file, and the 25
-  files with the largest totals, each with its total, are written into the summary before trial
-  1 and do not change afterwards. {#t0-3-r0}
+- **R0 builds the harness's list. Done, as 29.4's stage 0** ([[task-29.4-suite-health#r0]]).
+  No committed full-suite log carried durations (the 0.82.0 log has none). So the first step
+  was one full-suite run in a clone with `--durations=0` (every setup, call and teardown phase),
+  logged per R0.3. It ran on 2026-11-14 at `4c6a0c6` in `/Volumes/littlebig/refmatrix-r0`:
+  `workflow/review-output/task-29.4/r0-serial.log`, exit 1, 5,041 collected, 4,891 passed / 4
+  failed / 127 errors / 19 skipped, all 19 pinned ([[task-29.4-r0-durations#run]]). The phases
+  are summed by file, and the 25 files with the largest totals, each with its total, are
+  [[task-29.4-r0-durations#top25]]. That is the harness's list, written before trial 1, and it
+  does not change afterwards. T0.3 does not run the suite again for it.
+  - The re-weighting L121 asks for after bug-253 feeds `tests/shard_weights.json` for 29.4's
+    runner. It does not reopen this list. None of the five files stage 0 understated is among
+    the 25.
+  - Every file a trial's cap needs has a stage-0 weight: the 25, and the five target files
+    (`test_catalog_measure.py` 35.68 s, `test_rerank_budget_real_clients.py` 45.35 s,
+    `test_watch.py` 3.28 s, `test_plan4_remedy.py` 37.25 s, `test_task21_1_recall_skip.py`
+    8.71 s; `tests/shard_weights.json`).
+
+  {#t0-3-r0}
 - **Harness.** The target test runs in the clone while 3 concurrent `pytest` processes run those
   files. Each process is sandboxed as usual. One harness run gives one trial. {#t0-3-harness}
 - **Per-trial wall cap.** Every trial runs under a cap derived from R0: `max(3 × T, 300 s)`, where
@@ -409,11 +696,13 @@ written ([[feedback_go_no_go_ranges_not_predrop]]). {#t0-3-lead}
 - **At most two fix attempts.** Each attempt gets its own fresh run of 45. If the first attempt
   fails, one second attempt is allowed. If the second also fails, T0.3 keeps only R3.4's
   diagnostic for that test, reverts the rest of both attempts (the revert commit names them), and
-  sets the row to `open / diagnosed-loud` with both runs' counts. No third attempt is made inside
-  T0. {#t0-3-attempts}
+  sets the row to `deferred: diagnosed-loud, <both runs' counts>; review <date>`, in 29.1's
+  grammar ([[#amend-6]]; [[task-29.1-registry-triage#r1-other-writers]]). No third attempt is
+  made inside T0. {#t0-3-attempts}
 - **Not reproduced:** fewer than 3 failures in 10 at every level. The test gains only R3.4's
-  diagnostic. The row stays `open` with status `diagnosed-loud`, with the trial counts. It does
-  not count as closed. In T0.7's suite it is handled by [[#ruling-o7]]. {#t0-3-band-none}
+  diagnostic. The row reads `deferred: diagnosed-loud, <trial counts>; review <date>`
+  ([[#amend-6]]). It does not count as closed. In T0.7's suite it is handled by
+  [[#ruling-o7]]. {#t0-3-band-none}
 - **Bounded by count and by time.** Per bug, at most 30 base trials (3 levels × 10) and 90
   post-fix trials (2 attempts × 45), plus the one shared R0 durations run, each trial under its
   wall cap. The summary records each trial's wall time and outcome (pass, fail, hang).
@@ -421,7 +710,8 @@ written ([[feedback_go_no_go_ranges_not_predrop]]). {#t0-3-lead}
 - **Live-socket exposure.** Concurrent suites multiply the suite's reach to live rmx sockets
   (bug-088, deferred by the user). T0.3 adds no mitigation. It records the conftest live-socket
   recorder's count for the R0 run and for one trial at each load level, so the multiplication is
-  measured, not assumed. {#t0-3-sockets}
+  measured, not assumed. Stage 0's summary carries no such count for the R0 run
+  ([[#rev-note-fresh-proposals]], P4). {#t0-3-sockets}
 
 ### Requirements {#t0-3-requirements}
 
@@ -432,8 +722,9 @@ written ([[feedback_go_no_go_ranges_not_predrop]]). {#t0-3-lead}
    - a harness defect in `eval/catalog_maint/measure_catalogs.py` is fixed there, under the
      45-pass band;
    - a product defect gets its own registry row with the error. Its fix is NOT absorbed into T0
-     ([[#ruling-o5]]). bug-130's row then reads `open / diagnosed-loud`, linked to the new row,
-     so a firing in T0.7's suite is handled by [[#ruling-o7]]. {#r3-1}
+     ([[#ruling-o5]]). bug-130's row then reads
+     `deferred: diagnosed-loud, <trial counts>; review <date>` ([[#amend-6]]), linked to the new
+     row, so a firing in T0.7's suite is handled by [[#ruling-o7]]. {#r3-1}
 2. **R3.2 bug-190.** For
    `tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning`,
    the reproducer records the stack of every spawn. The route follows that evidence:
@@ -469,18 +760,26 @@ product-side; the path is named in the summary), `tests/test_watch.py`,
 `workflow/bug_registry.md` (rows 130, 190, 091; any new row R3.1 opens),
 `workflow/implementation_summaries/task-t0.3-load-flakes.md`.
 
+On the same branch, not by this spec's requirements: 29.4c's files
+([[task-29.4-suite-health#files]]: `tests/timing.py`, `tests/test_plan4_remedy.py`,
+`tests/test_task21_1_recall_skip.py`, the wall-clock census and its allow list, and the files
+[[task-29.4-suite-health#r3-scope]] selects). {#t0-3-files-shared}
+
 ## T0.4 W2-a: the plan-6 remedy {#t0-4}
 
-Source: [[bsd-plan6-deferrals-docs-benchmark-r1-e0b7df6]] (DIRTY, "may NOT flip"). R0
-(2026-11-13, at `1cf3b9f`) found:
+Source: [[bsd-plan6-deferrals-docs-benchmark-r1-e0b7df6]] (DIRTY, "may NOT flip"). T0.4 is
+stage 3 ([[#amend-3]]): it starts from the `master` that holds stage 2. R0
+(2026-11-13, at `1cf3b9f`) found what follows. Every row was re-read on 2026-11-15 at `f45b9a3`
+and still holds; the line numbers are that sha's:
 - `duckdb_view.py`, both of its tests and `RMX_READ_VIA_DUCKDB` are still present
-  (`store.py:1155-1159`);
-- `wrapper_paths()` is still present (`search_hooks.py:405`);
-- the session-ingest "Phase A" docstring, `vectors.py:14` "for now" and `cli.py:6028` "for now"
-  are still present;
-- the `_op_embed` cancel return still drops `degraded` (`daemon.py:6149`);
-- "Called after the SQLite commit" is still present (`store.py:1241`);
-- `BANNED` is still guarded by `len(BANNED) >= 4`;
+  (`store.py:1368-1376`; the `_read()` branch is `:2517-2531`, the close is `:2546-2552`);
+- `wrapper_paths()` is still present (`search_hooks.py:405`; `render_scripts(wrappers=)` is
+  `:418`, and `hooks.py:617` still records `wrappers=`);
+- the session-ingest "Phase A" docstring (`session_ingest.py:3-5`), `vectors.py:14` "for now" and
+  `cli.py:6199` "for now" are still present;
+- the `_op_embed` cancel return still drops `degraded` (`daemon.py:6277`);
+- "Called after the SQLite commit" is still present (`store.py:1454`);
+- `BANNED` is still guarded by `len(BANNED) >= 4` (`tests/test_deferrals_clean.py:70`);
 - #m-3 is closed: the test loops over all four figures;
 - #s-2 is closed: task-6.4's summary exists, landed by W1-d `c40006b`. R0 checks its content;
 - #m-1 is closed: `855940f` and W1-d;
@@ -538,6 +837,22 @@ The implementer re-takes this table at the branch base (R0.1). {#t0-4-lead}
    id. It keeps an explicit allow-list of reviewed exceptions, each with a reason. The meta-test
    asserts the phrase set, not `len(BANNED)`. G7's five named docstrings (`ingest_gmd`, `store`,
    `duckdb_view`, `embedder`, `sync`) are re-checked, and the todo row is updated. {#r4-5}
+
+   **Open conflict with 29.4, found 2026-11-15 and not ruled.** Two of the three sites are
+   derive pass modules: `session_ingest.py` (pass `sessions`) and `vectors.py` (pass `embed`)
+   (`_DERIVE_PASS_MODULES`, `store.py:889`).
+   - [[task-29.4-suite-health#files-src-note]] says no commit of 29.4 edits a pass module, and
+     [[task-29.4-suite-health#ac-15]] checks that the seven are byte-identical from the task's
+     base to stage 5. Its one stated exception is R4.1's `store.py` deletion.
+   - Under today's raw-bytes derive hash a docstring edit to either file flips its pass on every
+     fleet store.
+   - So this requirement and 29.4's rule cannot both be built. G7's re-check of the `ingest_gmd`
+     and `embedder` docstrings meets the same rule if it finds an edit to make. A scan of the
+     seven pass modules for the phrase families at `f45b9a3` finds only these two lines.
+   - **Until the lead rules, T0.4 does not edit `session_ingest.py` or `vectors.py`.** The
+     proposal is [[#rev-note-fresh-proposals]], P1.
+
+   {#r4-5-derive-hold}
 6. **R4.6 #m-2.** `_op_embed`'s shutdown-cancel return carries `"degraded": degraded`, as the
    `skipped_empty` return already does. {#r4-6}
 7. **R4.7 #m-4.** `store._log_event` says "after the catalog commit". {#r4-7}
@@ -594,15 +909,20 @@ The implementer re-takes this table at the branch base (R0.1). {#t0-4-lead}
 
 Source: [[bsd-plan8-9-10-r5-e0b7df6]], whose verdict on plan-8 is "NO" for #b-2 and #b-3: those
 are its own `#execution` and `#proposed-approach` gates. #b-1 is plan-10's (T3, not here). #s-5,
-#s-6 (9.2/9.3) and #m-11 are plan-9's, and they closed with 21.1 (Ce-8). R0 at `1cf3b9f`
-found:
+#s-6 (9.2/9.3) and #m-11 are plan-9's, and they closed with 21.1 (Ce-8). T0.5 is stage 3, after
+T0.4 ([[#amend-3]]). R0 at `1cf3b9f` found what follows; every row was re-read on 2026-11-15 at
+`f45b9a3` and still holds, at the same lines:
 - `brief.parse_gmd` and the dead `_parse_evidence(…, ids_by_name)` are still present
   (`brief.py:654`, `:683`);
 - 8.3's summary now exists (W1-d), so #s-6's plan-8 half is closed;
 - #s-9 is closed by `a170ce9` (26.6 r1 remedy): it rewrote
   `tests/test_plan7_10_remedy_r4.py`'s test onto a real throwaway store, and the file's
   `monkeypatch.setattr` calls now target only `telemetry` and `verbs`. R0 confirms;
-- r5's `_fake_plan()` helper does not exist in `tests/` (no match at `1cf3b9f`).
+- r5's `_fake_plan()` helper does not exist in `tests/` (no match at `1cf3b9f`, none at
+  `f45b9a3`);
+- (2026-11-15) the `memory` verb carries `plan=` and `compile_scope=` and no `compile`
+  (`verbs.py:2163-2186`), and the CLI still builds the plan itself behind `--compile`
+  (`cli.py:13839`). R5.3 is unbuilt.
 
 {#t0-5-lead}
 
@@ -681,8 +1001,9 @@ found:
 Task 7.4 shipped the symbolic rows only (`status: complete (symbolic only; dense blocked on
 bug-030)`). bug-030 was fixed in `464485d` (2026-09-16). Nothing has shown that the embed now
 completes on the LongMemEval store. [[longmemeval-report#embed]] still says the re-run is W2-c.
-The persisted store is at `/Volumes/littlebig/longmemeval/.refmatrix` (present 2026-11-13). It
-was built by 0.69.1. {#t0-6-lead}
+The persisted store is at `/Volumes/littlebig/longmemeval/.refmatrix` (present 2026-11-13 and
+2026-11-15). It was built by 0.69.1. T0.6 is a lane in 29.4's order: it builds no `src/` and may
+start any time after stage 1 ([[#amend-3]]). {#t0-6-lead}
 
 ### Requirements {#t0-6-requirements}
 
@@ -708,7 +1029,8 @@ was built by 0.69.1. {#t0-6-lead}
    `--at 1,5,10,20`, in both modes, with ceilings printed. A dense row is labelled saturated
    exactly as the symbolic rows are when it hits its ceiling ([[longmemeval-report#next]] item 1:
    the depth-200 re-run is not part of W2-c). {#r6-3}
-4. **R6.4 Every number carries its provenance** (task 7.4 `#requirements`, plan-7 `#execution`):
+4. **R6.4 Every number carries its provenance** ([[task-7.4-plan-7-longmemeval#requirements]],
+   [[plan-7-longmemeval#execution]]):
    the harness command, corpus size, scoring mode, rmx version and date. Per [[#ruling-o3]] the
    symbolic rows (`context`, `scan`) are re-taken on the same build in the same run, so one table
    holds one build. The 0.69.1 rows move to a dated history section with their own provenance;
@@ -742,8 +1064,8 @@ was built by 0.69.1. {#t0-6-lead}
   or PERFORMANCE cites a figure with no artifact) and green after. Mutation M6.1: edit one cited
   dense figure in README, and the test goes red. {#ac-6-2}
 - **AC-6.3.** task-7.4's frontmatter status drops "(symbolic only …)". Plan-7 closes when the T0.6
-  ch-bsd round is CLEAN and its four deferral rows carry the plan-20-evals owner that L33 assigns,
-  an edit T0.7 makes ([[#r7-8]]). {#ac-6-3}
+  ch-bsd round is CLEAN and its four deferral rows carry the owner "no host plan; backlog (L33)"
+  ([[#amend-8]]), an edit T0.7 makes ([[#r7-8]]). {#ac-6-3}
 - **AC-6.4.** The summary carries R6.2's backup path and size and R6.7's daemon and worker record.
   {#ac-6-4}
 
@@ -764,6 +1086,11 @@ Source: [[bsd-r1-remedy-r13-dcf7115]] (DIRTY 3: 1 SKETCHY, 2 MEH), plus plan-15'
 - `REFILL_TIMEOUT_S` is still present (`subproc.py:153`, `:435`);
 - r13 #m-1's warning text no longer greps.
 
+All three were re-read on 2026-11-15 at `f45b9a3` and hold at the same lines. Two registry
+facts for R7.3's R0 to confirm: bug-095 is a row for the adoption leak and names `4fb5000`, and
+the mock registry's `_FakePrivate` row reads graduated (2026-10-07). T0.7 is stage 5, on one
+branch with 29.4d, and its two runs go through 29.4's runner ([[#amend-7]]).
+
 {#t0-7-lead}
 
 ### Requirements {#t0-7-requirements}
@@ -783,7 +1110,8 @@ Source: [[bsd-r1-remedy-r13-dcf7115]] (DIRTY 3: 1 SKETCHY, 2 MEH), plus plan-15'
      `rerank_available` fake is registered for its file. {#r7-3}
 4. **R7.4 The clean full suite (plan-15's gate).** This is one run of the full suite, in the
    **main tree** (`~/claude_tools/refmatrix`) at a committed `master` sha that holds T0.1 to T0.6,
-   T0.8 and T0.7's own merge. Preconditions:
+   T0.8 and T0.7's own merge, and with them every stage of 29.4 up to stage 5
+   ([[task-29.4-suite-health#ac-7]]). Preconditions:
    - **GMD gate green.** `./scripts/lint-gmd.sh` exits 0 at the run sha, in the main tree, before
      the run. If it does not, the failing E lines are reported to the lead as **gate drift** (a
      file that is not T0's, such as a report forward-linking an unmerged anchor), and R7.4 does not
@@ -800,14 +1128,21 @@ Source: [[bsd-r1-remedy-r13-dcf7115]] (DIRTY 3: 1 SKETCHY, 2 MEH), plus plan-15'
      .claude/PROJECT_PROFILE.md`, both at start and at end. If the end check fails, or HEAD moved,
      the run is **void**: its log is kept as void, and the run is repeated;
    - HEAD is unchanged across the run;
-   - the lead is told before the run starts that the main tree is under a suite run (for about
-     45 min), so no one writes those paths during it;
+   - the lead is told before the run starts that the main tree is under a suite run, and for
+     how long, so no one writes those paths during it. The length is the runner's: 17.3 min is
+     projected for run tiers (a), (b) and (d) at 8 shards ([[task-29.4-r0-durations#bands]]),
+     run tier (c) comes on top, and stage 4's first sharded run gives the measured number;
    - no branch switch: the main tree is shared ([[feedback_shared_tree_no_branch_switch]]).
 
-   **Command.** `.venv-eval/bin/python -m pytest -p no:cacheprovider -rA
-   --junitxml=workflow/review-output/t0/clean-suite-<sha>.xml 2>&1 | tee
-   workflow/review-output/t0/clean-suite-<sha>.log`, then `echo "exit ${PIPESTATUS[0]}"` into
-   the log. `-rA` puts every PASSED nodeid in the log for AC-7.4.
+   **Command ([[#amend-7]]).** `scripts/ptest.sh --tier all --name t0-clean-suite-<sha>`,
+   29.4's runner ([[task-29.4-suite-health#r2]]). In the main tree it runs run tier (c) as well.
+   Every shard is a pytest process run with `-rA` and its own `--junitxml`, so every PASSED
+   nodeid is in a shard log for AC-7.4. The run is the directory
+   `workflow/review-output/t0-clean-suite-<sha>/`: one log and one junit file per shard,
+   `failures.jsonl`, `outcomes.jsonl`, and `summary.txt` with each shard's command, exit code
+   and counts, the sha and the load average. This replaces the single
+   `pytest -rA --junitxml … | tee` process, and its echoed exit code, that this requirement
+   named at approval.
 
    **Clean** means all of:
    - pytest exit code 0;
@@ -815,22 +1150,37 @@ Source: [[bsd-r1-remedy-r13-dcf7115]] (DIRTY 3: 1 SKETCHY, 2 MEH), plus plan-15'
    - no SkipGate line;
    - collected = passed + pinned skips (0 in the main tree).
 
-   The log, the junit XML and a `.sha` file are committed as
-   `workflow/review-output/t0/clean-suite-<sha>.{log,xml,sha}`. [[#ruling-o7]] is the only
-   exception to "exit 0" ([[#r7-6]]). {#r7-4}
-5. **R7.5 The clone twin (T0's trust proof).** The same sha runs the full suite in a littlebig
-   clone, with the same command. It exits 0 (or meets [[#ruling-o7]]), and its only skips are the
-   pinned clone-only set, each reported as pinned. Its GMD gate takes R1.4's origin fallback (the
-   stderr line is in the log), and `./scripts/lint-gmd.sh`'s error count in the clone **equals the
-   main tree's** at the same sha. This is where releases run, so it is the run bug-215 and bug-155
-   were invisible to. {#r7-5}
+   Through the runner, "exit code 0" is every shard's and the runner's own, and the counts are
+   the totals in `summary.txt`. 29.4 adds one line to the list for its own acceptance: no reaper
+   line ([[task-29.4-suite-health#ac-7]]).
+
+   The run directory is committed (`workflow/review-output/` is git-ignored, so it is added
+   with `git add -f`). [[#ruling-o7]] is the only exception to "exit 0" ([[#r7-6]]). {#r7-4}
+5. **R7.5 The clone twin (T0's trust proof; [[#amend-7]]).** The same sha runs the same
+   command in a littlebig clone, as `--name t0-clean-twin-<sha>`. It exits 0 (or meets
+   [[#ruling-o7]]), and its only skips are the pinned clone-only set, each reported as pinned.
+   Its GMD gate takes R1.4's origin fallback (the stderr line is in the log), and
+   `./scripts/lint-gmd.sh`'s error count in the clone **equals the main tree's** at the same sha.
+   A clone is where every branch run and review round happens, so it is the checkout bug-215 and
+   bug-155 failed in.
+   - **What the runner changes here.** In a clone the runner does not run run tier (c), and says
+     so ([[task-29.4-suite-health#r2]], [[task-29.4-suite-health#ac-7]]). The seven pinned files
+     and `tests/test_gmd_lint_requires_version.py` are tier (c) by 29.4's rule
+     ([[task-29.4-suite-health#r1]]). So in this run the pinned set may be empty, and the gate's
+     fallback line comes from running `./scripts/lint-gmd.sh` directly in the clone, which this
+     requirement already asks for. The pins' own proof in a clone is AC-1.4, and the repo-scope
+     test's is AC-1.5 ([[#rev-note-fresh-proposals]], P5).
+
+   {#r7-5}
 6. **R7.6 A failure in R7.4 or R7.5 does not get explained away.** Every failing E line is matched
    to a row by E line (R0.2).
    - **A `diagnosed-loud` flake ([[#ruling-o7]]).** The gate still passes if EVERY failure in the
-     run matches a T0.3 row whose status is `open / diagnosed-loud`, and each of those nodeids
+     run matches a T0.3 row whose status is `deferred: diagnosed-loud, …` ([[#amend-6]]; the two
+     rows of [[#amend-4]] count as T0.3 rows), and each of those nodeids
      passes on an immediate isolated re-run (`pytest <nodeid>` alone, same sha, same tree,
      logged). The summary records each such nodeid with both outcomes, and the row's band counts
-     gain the firing.
+     gain the firing. This is the only re-run 29.4 allows; its runner has no retry flag
+     ([[#amend-9]]).
    - **A match to any other T0 row** means that sub-task's fix did not hold. It reopens and takes
      the O5 path below.
    - **Anything else**, including a `diagnosed-loud` nodeid that fails its isolated re-run, a
@@ -846,16 +1196,18 @@ Source: [[bsd-r1-remedy-r13-dcf7115]] (DIRTY 3: 1 SKETCHY, 2 MEH), plus plan-15'
    agree (Cc-9, CD-9). {#r7-7}
 8. **R7.8 T0.7 owns the deferral-registry edits the flips need.** T0.7 edits
    `workflow/deferral_registry.md` itself, identifying rows by their title, not line number:
-   - owner "plan 7" → "plan-20 evals (L33; W4-a)" on "LongMemEval Layer B (answer model + LLM
-     judge)", "`longmemeval_m` variant (500 sessions/question)", "CLI candidate-set prefilter for
-     recall (`ann_search(candidate_ids=...)` has no flag)", and "Re-measure big-store query
-     latency on a SETTLED store";
+   - owner "plan 7" → "no host plan; backlog (L33)" ([[#amend-8]]: plan-20's three tasks hold
+     none of them, so "plan-20 evals" would be a phantom owner) on "LongMemEval Layer B (answer
+     model + LLM judge)", "`longmemeval_m` variant (500 sessions/question)", "CLI candidate-set
+     prefilter for recall (`ann_search(candidate_ids=...)` has no flag)", and "Re-measure
+     big-store query latency on a SETTLED store";
    - owner "plan 8" → "T3, held with the frozen 19.2 (D-Q3 hold; [[#ruling-o3]])" on
      "Answer-usefulness as the retrieval-miss signal (vs `cardinality == 0`)" and "`brief/stale`
      detector".
 
    R0 first re-reads the registry at the branch base. If another branch has already made either
-   edit, it is recorded as done, not repeated. {#r7-8}
+   edit, it is recorded as done, not repeated. At `f45b9a3` all six rows are present under these
+   titles, and still name "plan 7" or "plan 8". {#r7-8}
 
 ### Acceptance {#t0-7-acceptance}
 
@@ -865,12 +1217,12 @@ Source: [[bsd-r1-remedy-r13-dcf7115]] (DIRTY 3: 1 SKETCHY, 2 MEH), plus plan-15'
 - **AC-7.2.** The R7.2 wording test covers every cause branch R0 found. The R7.3 registry rows
   exist. Mutation M7.2: revert one cause's wording to the old single message, and the test goes
   red. {#ac-7-2}
-- **AC-7.3.** The committed R7.4 log shows exit 0, with the collected count equal to passed. The
-  committed R7.5 log shows exit 0, with only pinned skips. The summary quotes both exit codes and
-  both counts. {#ac-7-3}
+- **AC-7.3.** The committed R7.4 run (its `summary.txt`) shows exit 0 for every shard, with the
+  collected count equal to passed. The committed R7.5 run shows exit 0 for every shard, with
+  only pinned skips. The summary quotes both runs' exit codes and both counts. {#ac-7-3}
 - **AC-7.4.** At least one previously failing test from each of bug-170, 168 and 127 appears as
-  `PASSED` in the R7.4 log's `-rA` summary and in its junit XML. This is T0.2's main-tree proof.
-  {#ac-7-4}
+  `PASSED` in its shard's `-rA` summary in the R7.4 run and in that shard's junit XML. This is
+  T0.2's main-tree proof. {#ac-7-4}
 - **AC-7.5.** After R7.8, none of the six deferral rows names "plan 7" or "plan 8" as its owner.
   {#ac-7-5}
 
@@ -878,8 +1230,8 @@ Source: [[bsd-r1-remedy-r13-dcf7115]] (DIRTY 3: 1 SKETCHY, 2 MEH), plus plan-15'
 
 `tests/test_rerank_budget_real_clients.py`, `src/refmatrix/daemon.py` (only R7.2's wording),
 `workflow/bug_registry.md`, `workflow/test_mock_registry.md`, `workflow/deferral_registry.md`
-(R7.8), `workflow/review-output/t0/clean-suite-<sha>.{log,xml,sha}`, the clone-twin log and XML,
-and the plan
+(R7.8), the run directories `workflow/review-output/t0-clean-suite-<sha>/` and
+`workflow/review-output/t0-clean-twin-<sha>/`, and the plan
 frontmatter and body status lines for plans 6, 7, 8 and 15. The summaries are
 `workflow/implementation_summaries/task-t0.7-plan15-close-clean-suite.md` and
 `workflow/implementation_summaries/task-t0-suite-trust-sweep.md` (the T0 roll-up: each sub-task,
@@ -891,7 +1243,9 @@ Added by [[#ruling-o1]]: without it R7.4 cannot be clean. In the 0.82.0 release 
 both RED tests failed: `test_ac6_frozen_fixture_prints_the_exact_counts` (the report prints
 `cli.log: memory recall commands=244`, and no line holds the fixture's 34 agent recalls) and
 `test_ac6_cli_log_recalls_are_split_per_channel` (`assert []` from its `chan('prompt_recall', 5)`
-lookup). The bug-196 row names the cause and the fix. {#t0-8-lead}
+lookup). The bug-196 row names the cause and the fix. Both tests still fail, on the same E
+line, in the 0.84.0 release suite and in 29.4's stage-0 clone run
+([[task-29.4-r0-durations#digest]]). T0.8 is stage 2 ([[#amend-3]]). {#t0-8-lead}
 
 rel: derives-from -> [[bug_registry]] {bug: "bug-196"}
 
@@ -900,7 +1254,8 @@ rel: derives-from -> [[bug_registry]] {bug: "bug-196"}
 1. **R8.1 One line per channel.** `telemetry.agent_usage_report`'s cli.log leg counts each
    `memory recall` end row under its channel. The channel comes from
    `recall_channel(session_start=, stdin_json=, recent=, invocation=source)`
-   (`telemetry.py:1246`), fed from the row's argv flag names (they survive redaction) and its
+   (`telemetry.py:1313` at `f45b9a3`; `agent_usage_report` is `:1866`), fed from the row's argv
+   flag names (they survive redaction) and its
    `source`. It replaces the single total. This applies 21.1 R7's per-invocation, per-R11-channel
    rule to the cli.log leg as well as to `kind=recall` query.log rows. {#r8-1}
 2. **R8.2 No double count.** When a store has both 21.1 `kind=recall` query.log rows and cli.log
@@ -927,22 +1282,33 @@ test), `workflow/bug_registry.md` (row 196),
 
 ## Merge order {#merge-order}
 
-queue item 1 (bug-212, bug-216, 25.1 rev 7) → **T0.1** → T0.2 ∥ T0.3 ∥ T0.4 ∥ T0.6 ∥ T0.8 →
-T0.5 (after T0.4) → **T0.7** (last; R7.4 runs on the sha after its merge). Each sub-task merges
-`--no-ff` from its own branch. {#merge-order-body}
+The order is 29.4's stages ([[#amend-3]]; [[task-29.4-suite-health#fold-stages]],
+[[task-29.4-suite-health#order]]):
+
+stage 0 (the durations run; done) → stage 1 **T0.1'** → stage 2 T0.2 (+ 29.4b) ∥ T0.3 (+ 29.4c)
+∥ T0.8 → stage 3 T0.4 → T0.5 → stage 4 (29.4a, the runner; no T0 sub-task) → stage 5 **T0.7**
+(+ 29.4d; last; R7.4 runs on the sha after its merge). T0.6 is a lane, any time after stage 1.
+Each sub-task merges `--no-ff` from its own branch, cut from the `master` that holds the stage
+before.
+
+At approval the order was: queue item 1 (bug-212, bug-216, 25.1 rev 7) → T0.1 → T0.2 ∥ T0.3 ∥
+T0.4 ∥ T0.6 ∥ T0.8 → T0.5 (after T0.4) → T0.7. Queue item 1 has merged. {#merge-order-body}
 
 - **Interim bug-127.** Once T0.1 merges, a symlinked clone no longer skips
   `test_brief_real_daemon.py`, so every symlinked-clone full run between T0.1's merge and T0.2's
   fails `test_an_unknown_class_fails_loudly_through_the_daemon` on bug-127's `Conflicting lock`
   E line. That failure is bug-127, matched by E line (R0.2), not a new finding. {#merge-interim-127}
-- **26.5 in parallel.** T0 runs alongside 26.5 (queue item 2). T0.4 and T0.5 touch `cli.py`,
-  `verbs.py` and `mcp.py` (T0.5 also the verb-parity pairing), and so does 26.5. The order does
-  not change: whichever of them merges later rebases on the earlier one and re-runs its own
-  tests and `test_verb_parity` before its merge. 26.5's merges may land between T0 merges. R7.4
-  runs on whatever `master` holds at that point and is clean only if 26.5's tests are too.
+- **Interim bug-253.** A no-venv clone run carries bug-253's E lines until the stage-2 branch
+  merges its fix ([[#t0-1-bug253]]). {#merge-interim-253}
+- **26.5 is not in flight ([[#amend-2]]).** At approval T0 ran alongside 26.5 (queue item 2),
+  and this paragraph ordered their merges in `cli.py`, `verbs.py` and `mcp.py`. plan-29 now runs
+  first (ruling L104, [[plan-review-2026-11-13#lead]]), and 26.5 does not run during 29.4. So
+  T0.4 and T0.5 meet no 26.5 merge, and R7.4's `master` holds none. What they must leave quiet
+  instead is 29.5's ground: they land in stage 3, before the module split.
   {#merge-265}
 - **Release.** T0 needs no hook install window (R0.7). T0.5 changes an MCP tool, so it rides the
-  next release with a `/mcp` reconnect. {#merge-release}
+  next release with a `/mcp` reconnect. 29.4 has one release point, after stage 5
+  ([[task-29.4-suite-health#r10]]). {#merge-release}
 
 ## Lead rulings, 2026-11-13 {#rulings}
 
@@ -1037,11 +1403,182 @@ rel: derives-from -> [[bsd-spec-t0-r3-efe618c]]
 
 {#rev-r3-body}
 
+## Revision note (2026-11-15, freshness + 29.4 fold) {#rev-note-fresh}
+
+This revision makes the approved spec ready to merge to `master`. It was approved on
+2026-11-13 on branch `spec-wave-t0` (`fa1227d`) and never merged; plan-29 and task 29.4 were
+written after it. Two things were done: the ten rows of [[task-29.4-suite-health#fold-deltas]]
+were applied ([[#amends-29-4]]), and every file, function, line, test name and sha the spec cites
+was re-read at `master` `f45b9a3` (the code under the merge of `spec-wave-t0` with `master`). No
+test was run for it, and no `src/` or test file was edited. No requirement was added; what a
+gap would need is listed as a proposal ([[#rev-note-fresh-proposals]]). {#rev-note-fresh-lead}
+
+rel: derives-from -> [[task-29.4-suite-health#fold-deltas]]
+rel: derives-from -> [[task-29.4-r0-durations]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]] {ruling: "L121"}
+rel: depends-on -> [[orchestration#planning]]
+
+### The ten rows of 29.4's fold {#rev-note-fresh-fold}
+
+| row | what changed in T0 | where |
+|---|---|---|
+| 1 | T0.1 is T0.1'. R1.3 marked shipped (`988e96d`) and dropped. R1.4 is now the convergence of the shipped bash fallback (`44d1a34`) and the test's copy of it onto one resolver. AC-1.5's RED is the empty own-slug `memory/` run; the absent case is a characterization check. M1.3 and M1.4 restated. `.gmd/config.yml` leaves the files list. The residual and both layouts of clone are written down | [[#amend-1]], [[#t0-1-residual]], [[#r1-3]], [[#r1-4]], [[#ac-1-5]], [[#t0-1-mutations]], [[#t0-1-files]] |
+| 2 | Header: T0 is 29.4's body inside plan-29; queue item 1 is merged (shas named); 26.5 is not in flight | [[#amend-2]], [[#root]], [[#merge-265]] |
+| 3 | Scope table and merge order follow 29.4's stages: T0.4 → T0.5 are stage 3, after stage 2 | [[#amend-3]], [[#scope]], [[#scope-order]], [[#merge-order-body]] |
+| 4 | bug-228 and bug-231 are two more rows on T0.3's harness and bands; what is built for them stays 29.4's text | [[#amend-4]], [[#t0-3-two-more]], [[#t0-3-files-shared]] |
+| 5 | bug-229's reaper and root rule share T0.2's branch (29.4b) | [[#amend-5]], [[#t0-2-reaper]], [[#t0-2-files-shared]] |
+| 6 | `open / diagnosed-loud` reads `deferred: diagnosed-loud, <trial counts>; review <date>` at the three sites that set it and the two that read it | [[#amend-6]], [[#t0-3-attempts]], [[#t0-3-band-none]], [[#r3-1]], [[#r7-6]], [[#done]] |
+| 7 | R7.4 and R7.5 run `scripts/ptest.sh --tier all`; `-rA` and a junit file per shard; a run is a directory; "clean" keeps its four lines unchanged | [[#amend-7]], [[#r7-4]], [[#r7-5]], [[#ac-7-3]], [[#ac-7-4]], [[#t0-7-files]] |
+| 8 | The four plan-7 deferral rows go to "no host plan; backlog (L33)" | [[#amend-8]], [[#r7-8]], [[#ac-6-3]] |
+| 9 | Ruling O7's re-run is unchanged and is named as the only re-run 29.4 allows | [[#amend-9]], [[#r7-6]] |
+| 10 | R0.1 to R0.8 bind 29.4's additions | [[#amend-10]], [[#r0-also-29-4]] |
+
+{#rev-note-fresh-fold-table}
+
+### Freshness: what was re-read, and what moved {#rev-note-fresh-cites}
+
+Everything not listed here was re-read and holds as written: the 19 pins and the eight skip
+reasons of [[#t0-1-skip-reasons]], `conftest.py:286`, every test name, every sha, the six
+deferral-row titles, the plan and task-spec paths, and the three ch-bsd spec reports.
+
+| cited | at `f45b9a3` | change |
+|---|---|---|
+| "every clone run exits 1" (bug-215) | true only for a clone with a symlinked `.venv-eval`; both layouts are in use | [[#why-instrument]], [[#t0-1-bug253]] |
+| the gate fails in a clone on about 1,080 dangling ids (bug-155) | fixed for the absent case by `988e96d` and `44d1a34`; residual: the empty dir, and two copies of the logic | [[#why-instrument]], [[#t0-1-residual]] |
+| 0.82.0 suite: 14 failed | 0.84.0: 13 failed, 5,028 passed (bug-168 9, 170 1, 127 1, 196 2); stage 0 in a no-venv clone: 4 failed, 127 errors | new [[#why-now]] |
+| `store.py:717` "is now `:1159`" (R0.1's example) | `:1372` | [[#r0-1]] |
+| `store.py:1155-1159` (`RMX_READ_VIA_DUCKDB`) | `store.py:1368-1376`; `_read()` at `:2517-2531` | [[#t0-4-lead]] |
+| `cli.py:6028` "for now" | `cli.py:6199` | [[#t0-4-lead]] |
+| `daemon.py:6149` (the `_op_embed` cancel return) | `daemon.py:6277` | [[#t0-4-lead]] |
+| `store.py:1241` ("Called after the SQLite commit") | `store.py:1454` | [[#t0-4-lead]] |
+| `telemetry.py:1246` (`recall_channel`) | `telemetry.py:1313` | [[#r8-1]] |
+| T0.3's R0 durations run "is T0.3's first step" | done as 29.4 stage 0 at `4c6a0c6`; the 25-file list is [[task-29.4-r0-durations#top25]] | [[#t0-3-r0]] |
+| R7.5 "this is where releases run" | releases gate on merged `master` in the dev tree ([[orchestration#release]]); a clone is where branch runs and reviews happen | [[#r7-5]] |
+| the R7.4 log "committed as `workflow/review-output/t0/…`" | `workflow/review-output/` is git-ignored; a run directory is added with `git add -f` | [[#r7-4]] |
+| `workflow/TDD_GOVERNANCE.md` `#rules`; task 7.4 `#requirements`; plan-7 `#execution`; `contra-e.md` (code spans) | links | [[#r1-5]], [[#r6-4]], [[#why-gates]] |
+| T0.5's R0 list | holds at the same lines; one fact added: the verb has `plan=` and `compile_scope=`, no `compile` | [[#t0-5-lead]] |
+| T0.7's R0 list | holds at the same lines; bug-095 and the graduated `_FakePrivate` row named for R7.3's R0 | [[#t0-7-lead]] |
+
+{#rev-note-fresh-cites-table}
+
+### Owners from ruling L121 {#rev-note-fresh-owners}
+
+| L121 | owner | written at |
+|---|---|---|
+| contradiction 1: bug-253's fixture fix, and `lint-gmd.sh`'s dev-interpreter lookup | the stage-2 branch (T0.2 + 29.4b), or the next RED touching those files | [[#t0-2-bug253]]; what it means for T0.1', which edits `lint-gmd.sh` first: [[#t0-1-bug253]] |
+| contradiction 3: no failing bug-228 run in stage 0 | T0.3's harness gives the leg breakdown | [[#t0-3-bug228-legs]] |
+| re-weight after bug-253 | after the stage-2 fix; for the runner's weights, not T0.3's list | [[#t0-2-bug253]], [[#t0-3-r0]] |
+| contradictions 2, 4, 5 and 6 | stage 4 (29.4a): not T0's | none |
+
+{#rev-note-fresh-owners-table}
+
+### Where the documents disagreed, and what was chosen {#rev-note-fresh-choices}
+
+1. **T0.1' and `lint-gmd.sh`'s interpreter lookup.** L121's "or the next RED touching those
+   files" would make T0.1' the owner, because it is the first branch to edit that script. Chosen:
+   the lookup stays with stage 2 unless the lead moves it, and T0.1's ACs name the
+   symlinked-venv clone, where the script reaches lint. {#choice-1}
+2. **`diagnosed-loud` for bug-130's product route.** 29.4's row 6 names `#r3-1` and gives
+   `deferred: diagnosed-loud, …`. 29.1 also offers `scheduled → <target>` when T0.3 opens a
+   product row. Chosen: row 6, because ruling O7 matches a failing node to a row by the words
+   `diagnosed-loud`, and R3.1 relies on that. The new product row takes its own status in 29.1's
+   grammar. {#choice-2}
+3. **The 25-file list.** T0 freezes it before trial 1. L121 asks for a re-weighting after
+   bug-253. Chosen: the list stays frozen as stage 0 measured it; the re-weighting is for
+   `tests/shard_weights.json`. {#choice-3}
+4. **Parallel sub-tasks.** T0 let sub-tasks run in parallel clones, and T0.3's harness starts 3
+   to 8 pytest processes. The operating procedure allows one test run at a time. Chosen: the
+   procedure. Sub-tasks are written in parallel and run one at a time; the harness counts as the
+   one run while it is up. {#choice-4}
+5. **The clone twin.** T0's R7.5 has the pinned skips reported in the twin run. 29.4's runner
+   does not run run tier (c) in a clone, and the seven pinned files are tier (c). Chosen: 29.4's
+   runner, as row 7 says; R7.5 states that the pinned set may be empty there (P5 below).
+   {#choice-5}
+6. **Pass modules.** Not chosen: T0.4's R4.5 and 29.4's derive-file rule cannot both be built.
+   The site is marked held ([[#r4-5-derive-hold]]), and the proposal is P1. {#choice-6}
+
+### The bug-155 row: proposed text {#rev-note-fresh-bug155}
+
+The lead writes registry rows. Proposed addition to the row's fix cell:
+
+> RESIDUAL (queue review `#st-8`; T0.1', 29.4 stage 1). The shipped fallback
+> (`scripts/lint-gmd.sh:49-64`) and the test's copy of it
+> (`tests/test_gmd_lint_requires_version.py:125-140`) test only that the own-slug directory
+> exists. An own-slug `memory/` that exists and holds no `*.md` is used as the memory dir, no
+> origin fallback is taken, and every memory-id ref dangles again. Claude Code creates that
+> directory for a session whose cwd is the checkout. The two copies also differ on the origin:
+> the script keeps `cd && pwd`, the test `resolve()`s; neither takes a relative or
+> `<path>/.git` origin; neither checks that the origin's dir is populated. Not live on the dev
+> machine on 2026-11-15 (no `~/.claude/projects/-Volumes-littlebig-refmatrix*` exists). Fix:
+> T0.1' R1.4, one stdlib resolver `resolve_memdir(root, home)` in `scripts/gmd_memdir.py`, used
+> by the script and by the test, with the populated check on both dirs, the origin
+> canonicalised, and the reason (`absent` or `empty`) on stderr. RED: AC-1.5's empty-directory
+> run.
+
+Proposed status cell, in 29.1's grammar:
+`scheduled → task-t0-suite-trust-sweep (T0); causes 1 and 2 fixed 988e96d + 44d1a34, residual: empty own-slug memory dir`.
+Tags gain `residual`. `Seen` stays 4. {#rev-note-fresh-bug155-status}
+
+### Proposals for the lead {#rev-note-fresh-proposals}
+
+None of these is in the spec's requirements. Each needs a ruling.
+
+- **P1 (blocks stage 3): R4.5 against 29.4's derive-file rule.** `session_ingest.py` and
+  `vectors.py` are pass modules ([[#r4-5-derive-hold]]). Proposed, by the rule 29.4 already
+  applies to a clock in a derive file: T0.4 leaves both docstrings alone, lists the two lines in
+  `test_deferrals_clean.py`'s allow-list with the reason "pass module; routed to 29.2 R7's
+  release", and 29.2's release, whose hash ignores docstrings, makes the two edits and removes
+  the entries. Plan-6's #s-3 would then close on the widened guard plus two named exceptions,
+  which the lead has to accept or refuse. R4.7's one-line `store.py` docstring edit and R4.1's
+  "stale mentions" in `store.py` are outside 29.4's stated exception too, but `store.py` is in
+  no pass's set, so they flip nothing; the exception's wording could name them. {#p1}
+- **P2: a bypass mutation for the convergence.** R1.4 is now "two copies become one". No
+  mutation checks that the script stays on the resolver. Proposed M1.8: `scripts/lint-gmd.sh`
+  goes back to its own `-d` test and bash fallback; AC-1.5's empty-directory run goes red with
+  no fallback line ([[feedback_converge_repeated_shapes]]). {#p2}
+- **P3: bug-228 with no failing trial.** [[task-29.4-suite-health#r3-bug228]] picks its branch
+  from a failing run's leg breakdown. If T0.3's 30 base trials never fail, neither branch is
+  selected. Proposed: the not-reproduced band applies, and the "otherwise" branch (split the
+  test) is built, since it does not depend on where the time went. {#p3}
+- **P4: the R0-run live-socket count.** [[#t0-3-sockets]] asks for the recorder's count for the
+  R0 run. Stage 0's summary has none. Proposed: accept the per-level counts alone and say so in
+  T0.3's summary, or read the count from the stage-0 clone's
+  `workflow/review-output/live-socket-touches.log` if it is still there. {#p4}
+- **P5: the clone twin proves less than R7.5 meant.** With run tier (c) not run in a clone, the
+  twin run shows no pinned skip and does not run the repo-scope lint test
+  ([[#choice-5]]). Proposed: the twin also runs the eight tier-(c) files named in R7.5 directly
+  (`scripts/ptest.sh --files …`), so the stage-5 clone evidence still includes the pins and the
+  gate test. {#p5}
+- **P6: `-rA` and the per-shard junit file have one source.** Row 7 is the only text that asks
+  for them; [[task-29.4-suite-health#r2]] names no flag and no AC for them. AC-7.4 depends on
+  them. Proposed: 29.4a's R2 says the runner passes both to every shard, with a line in its
+  runner test; or AC-7.4 reads `outcomes.jsonl`, which R2 already writes. {#p6}
+- **P7: bug-253's helper and the seven pinned files.** The seven files of
+  [[#t0-1-skip-reasons]] look up the same `<checkout>/.venv-eval/bin/rmx`, and skip where the
+  six bug-253 files error. If bug-253's helper is used there too, those 18 tests run in a
+  no-venv clone and their pins go (R1.2: the pins follow the tests). The row names five files
+  only. {#p7}
+- **P8: AC-2.1's `home=` route.** `hooks.check(project_root)` has no `home` parameter at
+  `f45b9a3`, and T0.2's files list holds no `src/` file. The route through
+  `RMX_CLAUDE_HOOKS_DIR`, or restoring `HOME` for the one render, needs none. Proposed: say so,
+  or add `src/refmatrix/hooks.py` to T0.2's files. {#p8}
+
+### Lint run for this revision {#rev-note-fresh-lint}
+
+`./scripts/lint-gmd.sh` does not run in the revision's clone: it has no `.venv-eval`, and the
+script exits 2 (bug-253). Run by hand, over the script's own scope with the origin's memory dir,
+which is what the shipped fallback would pass: `python3 tools/gmd/lint.py CLAUDE.md docs/
+workflow/ eval/ .claude/PROJECT_PROFILE.md <origin memory dir>`, and the anchor-parity step with
+the main tree's interpreter and `PYTHONPATH=<clone>/src`. Both exited 0: lint 0 errors; parity
+0 divergent docs, 0 parse failures, 0 docs outside the ingest scope. The same lint exited 0 at
+the merged base before the revision. {#rev-note-fresh-lint-body}
+
 ## Decision {#decision}
 
 | date | decision | by | basis |
 |---|---|---|---|
 | 2026-11-13 | `metadata.status: approved` | the lead | Approved by the lead on the user's pattern (d9co route) after ch-bsd r3 MEH-only, `bsd-spec-t0-r3-efe618c`, MEH folded ([[#rev-r3]]) |
+| 2026-11-15 | `approved` stands; the text is revised for freshness and the 29.4 fold ([[#rev-note-fresh]]) | ch-architect, on the lead's brief | [[task-29.4-suite-health#fold-deltas]], ruling L121. A ch-bsd confirm-lite on the revision's diff comes before the merge; P1 to P8 are open for the lead |
 
 {#decision-approved}
 
@@ -1059,7 +1596,8 @@ store, so live `brief` counts would shift. No T0 acceptance criterion asserts a 
   section, and the roll-up `workflow/implementation_summaries/task-t0-suite-trust-sweep.md`
   exists.
 - Rows 215, 170, 168, 155, 127, 130, 190, 091 and 196 read `fixed <sha>` with evidence, or (T0.3
-  only) `open / diagnosed-loud` with the band counts.
+  only) `deferred: diagnosed-loud, <trial counts>; review <date>` ([[#amend-6]]). Row 155's
+  `fixed` covers its residual ([[#amend-1]]).
 - R7.4 and R7.5 are committed and meet the gate: exit 0, or the [[#ruling-o7]] flake clause
   with each re-run recorded.
 - Plans 6, 7, 8 and 15 are `completed` in frontmatter and body, or still `in-progress` with the
@@ -1068,3 +1606,5 @@ store, so live `brief` counts would shift. No T0 acceptance criterion asserts a 
 - Every sub-task's ch-bsd round is CLEAN, or MEH-only where its plan allows.
 - GMD lint shows 0 errors on every touched `.md`.
 - Each branch is merged `--no-ff` to `master`.
+- This spec's frontmatter flips to `completed` in stage 5's closing commit, with 29.4's
+  ([[task-29.4-suite-health#ac-14]]).
