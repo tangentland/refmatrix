@@ -100,7 +100,7 @@ last column. {#queue-releases-lead}
 
 | release | holds | fixed by |
 |---|---|---|
-| R1 | 29.4 stages 2-5 (T0.2 to T0.8), with plan-31's early items: 31.5 step 0, 31.3, 31.4, 31.1, 31.6 | 29.4 has one release point, after stage 5 ([[task-29.4-suite-health#r10]]). 31.5's capture count starts at this deploy |
+| R1 | 29.4 stages 2-5 (T0.2 to T0.8), with plan-31's early items: 31.5 step 0, 31.3, 31.4, 31.1, 31.6; **the Stop-hook promote bound 5 s → 8 s** (`e2c26ee`, already on master; the user: "the timeout change can ship with r1"), which changes a hook command, so the deploy re-installs hooks across the fleet (`rmx install-hooks --apply` per repo, then `--check`) | 29.4 has one release point, after stage 5 ([[task-29.4-suite-health#r10]]). 31.5's capture count starts at this deploy |
 | R2 | 29.5, alone | L105: released alone; its merge is a store event |
 | R3 | 29.3, 29.2 (deploy A, then deploy B), 29.4f; 29.6 is docs | L107, L109: one announced window, two deploys; the pass-file edits ship with 29.2 R7 |
 | R4 | plan-30 release A (30.5), with 31.2 | [[plan-30-materialisation#releases]]; 31.2's store write (plan-31 D14) runs after the deploy, on its own go |
