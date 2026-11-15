@@ -6,14 +6,17 @@ tags: [workflow, governance, orchestration, process]
 metadata:
   node_type: governance
   created: 2026-11-15
+  updated: 2026-11-15
 ---
 
 # Operating procedure {#root}
 
-How work actually moves through this repo: who does what, in which order, and what gates each
-step. Adopted 2026-11-15 from the practice of the 0.83.0 / 0.83.1 / plan-29 / plan-30 cycle (the
-user: Q23-Q26 = a; [[workflow-practice-review-2026-11-15]]). CLAUDE.md
-`#task-completion-workflow` summarises this file; this file is the procedure.
+How work moves through this repo. **Rewritten lean on 2026-11-15 (L165)** after the user asked
+why development had slowed to a crawl. Measured over 11-13..15: 731 commits, 40 touching `src/`;
++5.1k `src` lines against +63.6k lines of plans, specs and reviews; specs reviewed 5-9 rounds
+before any code; 50 ch-bsd reports in one day. The rule now: **ceremony scales with risk**, and
+code, not prose, is the output. Where [[tdd-governance]] or [[PLANNING_WORKFLOW]] say more, this
+file wins.
 
 rel: derives-from -> [[workflow-practice-review-2026-11-15]]
 rel: amends -> [[tdd-governance]]
@@ -22,155 +25,90 @@ rel: depends-on -> [[plan-of-plans#ledgers]]
 
 ## 1. Roles {#roles}
 
-- **The lead** (the main session) orchestrates. It writes no `src/` and no tests. It dispatches
-  agents, rules on findings, allocates registry ids, commits by pathspec on `master`, merges,
-  releases, deploys, and does every write to a live store, announced and backed up first.
-  {#roles-lead}
-- **Agents** work in their own clone, `/Volumes/littlebig/<project>-<worker>` (never the dev
-  tree, never a git worktree). They are **read-only against every live store**; lookups go
-  through `scripts/rmx-master` read verbs or the read-only MCP tools; test suites use throwaway
-  stores under a short `mkdtemp()` root; `REFMATRIX_ROOT` is never exported. {#roles-agents}
-  - Two agents on one branch (RED and GREEN) share it by
-    `git fetch <other clone> <branch> && git merge --ff-only FETCH_HEAD`.
-  - A reviewer gets its own clone, and never works in a clone where another agent's suite runs.
-  - Agents allocate no registry ids; they report defects and the lead numbers them on `master`.
-- **Models.** Planning authors (plans, task specs, ADRs, spec revisions) run on Fable
-  (`model: fable`); RED, GREEN, reviews and measurements keep their agent's default model.
+- **The lead** (the main session) dispatches, decides, merges, releases, deploys and does every
+  write to a live store (announced, backed up first). It writes no `src/` or tests beyond a
+  one-line literal or config change, which it may make itself on a task branch. {#roles-lead}
+- **Agents** work in their own clone, `/Volumes/littlebig/<project>-<worker>`, and are
+  **read-only against every live store**: lookups via `scripts/rmx-master` read verbs or the
+  read-only MCP tools; tests on throwaway stores under a short `mkdtemp()` root; never export
+  `REFMATRIX_ROOT`. Agents allocate no registry ids. {#roles-agents}
+- **Models.** Plans and specs on Fable (`model: fable`); everything else on the agent default.
   {#roles-models}
-- **Briefs.** Each dispatch names the clone, branch and base sha, the evidence to read, the hard
-  rules above, the expected artifact, and the reply shape. Agents in flight at a save-state get
-  their brief written to `workflow/agents/inflight-<date>.md`. {#roles-briefs}
-
-## ch-bsd is the gate {#bsd-gate}
-
-ch-bsd carries the review weight (the user, 2026-11-15: "bsd really carries the weight"). In the
-0.83.1 / plan-29 / plan-30 cycle it found every finding that changed what shipped: a 17-minute
-store-lock hold, a failure reported only to a log, a 15 s residual lock gap, a stale-forever
-publish sequence, and the evidence that settled plan-30 D12; it also corrected its own earlier
-round (L108). What makes it work, and so what every bsd brief carries: {#bsd-gate-body}
-
-- **It runs things.** Its own clone, probes and timings on throwaway stores or read-only snapshot
-  copies, and it re-runs the claimed mutations itself. A finding states what was measured.
-- **The brief names the questions.** Each dispatch lists the specific claims to test (the
-  production route, the lock discipline, the loud-failure path, the cost under load), not "review
-  this".
-- **It is iterated to clean before the user sees a decision** (r1 full depth, then confirm-lite
-  rounds to MEH-only GO).
-- **Its ledger compounds.** IMPRESSIONS bullets carry its lessons across runs; the lead persists
-  them whole.
+- **Briefs** name the clone, branch, base sha, what to read, the expected artifact, and the
+  hard rules above. Agents in flight at a save-state are listed in the handoff. Every ruling an
+  agent needs is sent to it, not only written to the POP. {#roles-briefs}
 
 ## 2. Planning path {#planning}
 
-The default for plans, task specs and spec revisions. The SDD chain (`/ch-specify` →
-`/ch-implement`) stays available when the user asks for it. {#planning-default}
-
-1. **Draft.** ch-architect (Fable) writes the plan and every task spec, `metadata.status:
-   drafting`, on a branch in a clone. Each AC names the test that proves it and whether it is RED
-   at base, characterization, a gate or a measurement; each spec lists must-fail mutations, the
-   caller census, files and risks.
-2. **Spec review r1.** ch-bsd, full depth, in its own clone; the report is written in that clone
-   or returned as text.
-3. **Ruling.** The lead persists the report ([[#reports]]) and writes `L<n>` in
-   [[plan-of-plans#rulings]] (L125 on; L1-L124 in [[plan-review-2026-11-13#lead]]): each finding folded, deferred (with an owner) or overruled,
-   with the reason.
-4. **Revision** by the same author on Fable, with a fold table per spec.
-5. **Confirm-lite r2..rN** until MEH-only GO; the MEHs fold before the merge.
-6. **User decisions only now.** The plan's `plan-N Dk` decisions go to the user, each with a
-   recommendation (AskUserQuestion). A measurement that removes a decision's premise means the
-   decision is re-asked with the number in hand.
-7. **Merge** `--no-ff` to `master`; code-span citations become wikilinks; `status: approved`;
-   plan-of-plans row; registries. A review report that links docs not yet on `master` travels on
-   the plan branch until its merge.
+1. **Spec just in time:** a task is specced when it is next in the queue, not earlier.
+2. **One page.** ch-architect writes the goal, the acceptance criteria (each with the test that
+   proves it), the files, and the risks. No fold tables, no revision history in the spec.
+3. **One architect read**, no ch-bsd round on a spec. Open decisions go to the user with a
+   recommendation.
+4. **Merge** and set `status: approved` in the POP row.
 
 ## 3. Task and bug path {#task}
 
-1. **RED** (ch-test-engineer) — failing tests from the criteria, proven RED at base **by reading
-   the E lines** (the intended reason, not just "failed"). Real inputs before patches; a patch of
-   a dependency (never the unit under test) is registered in `test_mock_registry`.
-2. **GREEN** (ch-implementer) — production code only, no tests authored.
-3. **Mutations** — commit the fix first; one mutation at a time, restored in its own command;
-   clear `__pycache__` after the batch; confirm the fix is present after the restore. Each
-   mutation must make a test FAIL, not hang. The table goes in the summary. **Only `src/` changes are
-   mutated**; a test-only change gets no mutation table (L164).
-4. **Verify** — the task's files + the family + every test that imports a changed module
-   (until 29.4 R6 derives families, list them by grep and say how). **No branch full suite**:
-   the full suite runs once per major release, on merged `master`; a minor release gates on the
-   narrower set ([[#release]]); failures compared **by
-   E line** with the last release's full-suite log, never by test name. (The user, 2026-11-15:
-   "it's taken most of the day to get one patch release out" — 0.83.1 ran four full suites;
-   Q29 = a.)
-5. **Review** — ch-bsd over the commit range, in its own clone. The lead persists the report and
-   rules (`L<n>`). Findings fold as a new RED → GREEN round, then a confirm-lite until MEH-only
-   GO. For small MEH folds the lead may check the RED → GREEN pair and the mutation table itself
-   instead of another bsd round, and says so in the ruling. `/ch-review` (four-phase) is optional:
-   for large `src/` changes or on request (Q23).
-6. **Record** — implementation summary on the branch (`workflow/implementation_summaries/`);
-   registry rows by the lead.
-7. **Merge** `--no-ff` to `master`.
+**Small** (one module, a test-side fix, or under ~100 `src` lines, no change to a shared path):
+one agent writes the test and the fix, shows the test failing before the fix by its E line,
+runs the verify set below, and reports. The lead reads the diff and merges. No mutations, no
+ch-bsd. {#task-small}
+
+**Large** (a shared path: ingest, the store, daemon ops, hook output, the CLI contract; or
+several modules):
+
+1. **RED** (ch-test-engineer): failing tests, proven RED at base by their E lines.
+2. **GREEN** (ch-implementer): `src/` only.
+3. **Mutations** on the `src/` change only; one at a time, each must FAIL a test, not hang.
+4. **Verify** (below).
+5. **Review: one ch-bsd pass** over the range, in its own clone, with named questions.
+   BULLSHIT → fold, then one confirm-lite. SKETCHY → the implementer folds and the lead checks
+   the diff; no new round. MEH → noted or folded in the same commit; no round.
+6. **Summary** (short, on the branch), **merge** `--no-ff`.
+
+**Verify set** (both sizes): the task's tests, plus every test file importing a changed module
+(listed by grep). Never a branch full suite. Failures compared by E line with the last
+release's full-suite log. {#task-verify}
+
+**Tests stay lean.** A fold adds to the feature's existing test file; no new
+`test_*_r<n>.py` / `*_remedy_*` file per review round. Test behaviour, not source text: a test
+that greps `src/` is allowed only as a guard on a stated rule. {#task-tests}
 
 ## 4. Release and deploy path {#release}
 
-1. **Release commit** on `master`: bump `pyproject.toml` and `src/refmatrix/__init__.py` only.
-   **Pick the version by scope** (the user, 2026-11-15): a change that alters behaviour on a
-   shared path — ingest, the store, the daemon ops, a hook's output, the CLI's contract — or
-   whose changed modules are imported by most of the suite is a **major** release (`0.N.0`); a
-   fix confined to a few modules with no such change is a **minor** release (`0.N.x`). When unsure,
-   it is major. (The user's terms, L119 and 2026-11-15: "targeted testing for minor releases and
-   full testing for majors".)
-2. **The gate on merged `master`, by release kind:**
-   - **major (`0.N.0`): the full suite**, compared by E line with the previous release's log.
-     A clone cannot see failures that need the dev tree's live `.refmatrix/`, so a green branch
-     run is evidence, not the gate.
-   - **minor (`0.N.x`): the targeted set** — the task's tests, its family, and every test that
-     imports a changed module (until 29.4 R6 derives families, listed by grep and named in the
-     release commit), run on merged `master`, compared by E line.
-   - Never a branch full suite ([[#task]]).
-3. **Deploy:** `git -C ~/refmatrix pull --ff-only origin master`; `rmx daemon restart --relaunch`;
-   `rmx version -v` (no `[DEV TREE]`); `rmx hub relaunch-fleet`; a STALE hub gets `rmx hub stop`
-   plus ONE `launchctl kickstart`; `rmx install-hooks --check`, re-installing only when out of sync.
-4. **Live verification** of the release's claim, after backing up `catalog.read.duckdb`,
-   `facts.log` and `active`. A release that changes the store on disk (a derive flip, a fleet
-   re-derive, a slot surgery) needs its own user go.
+1. **Release commit** on `master` bumps `pyproject.toml` and `src/refmatrix/__init__.py`. A
+   change to a shared path is **major** (`0.N.0`); a fix confined to a few modules is **minor**
+   (`0.N.x`); when unsure, major.
+2. **Gate on merged `master`:** major → the full suite; minor → the verify set. Compared by E
+   line with the previous release's log.
+3. **Deploy:** `git -C ~/refmatrix pull --ff-only origin master`; `rmx daemon restart
+   --relaunch`; `rmx version -v` (no `[DEV TREE]`); `rmx hub relaunch-fleet` (a stale hub:
+   `rmx hub stop` + one `launchctl kickstart`); `rmx install-hooks --check`, re-install only
+   when out of sync.
+4. **Live check** of the release's claim, after backing up `catalog.read.duckdb`, `facts.log`
+   and `active`. A store-changing release needs its own user go.
 
 ## 5. Lead discipline {#discipline}
 
-- **The POP is the source of truth** (the user, 2026-11-15; consolidation finding F1). Every
-  commit that changes state updates [[plan-of-plans]] in the same commit: a ruling that changes
-  order or scope, an admission or a move to post-mod, a merge, a release, a status flip. Review
-  docs, `L<n>` rows and triage files are evidence the POP row links to; they never hold state the
-  POP lacks. A plan or task file's `metadata.status` follows the POP, not the other way. **Every
-  `L<n>`, `plan-N D<n>` and `Q<n>` is entered in [[plan-of-plans#ledgers]] first, then amended
-  into a plan** (the user, 2026-11-15). **The POP is a living doc:** it holds current state only.
-  A finished item (done, applied, answered, superseded) is appended whole to [[pop-finished]],
-  then deleted from the POP in the same commit. {#pop-truth}
-- **Measure before deciding**, read-only: copy `.refmatrix/catalog.read.duckdb` to the
-  scratchpad and open the copy with duckdb `read_only=True` under `.venv-eval`; never `Store()`
-  on a live slot. State go/no-go bands before measuring. {#measure}
-- **Ledgers.** Every ruling is an `L<n>` row, every plan decision a `plan-N D<n>` row, every
-  question to the user a `Q<n>` row, all in [[plan-of-plans#ledgers]], entered there before any
-  plan is amended; each reply that asks anything ends with the ids still open. An `L<n>` row is for a real
-  decision (scope, order, what is built, a user answer); relaying a ruling, bookkeeping and
-  confirming an agent did what was ruled get no row (L164). {#ledgers}
-- **Proportionate process** (the user, 2026-11-15: "this all seems excessive"). Proof, review
-  rounds and ledger entries scale with the risk of the change: a test-side fix is proven by one
-  confirm run, not a statistical band; one review pass unless it finds BULLSHIT or SKETCHY.
-  {#proportionate}
-- **Registry at once.** Every defect anyone finds gets a `workflow/bug_registry.md` row from the
-  lead in the same turn, even when its fix is out of scope. {#registry}
-- **Reports** ([[#reports]]): the lead persists every review. {#reports-rule}
-- **Watch long runs.** After an agent's long run should have ended, tail its log and check the
-  process; never assume the agent noticed. {#watch}
-- **One suite at a time on this machine.** Never start a test run while a full suite runs; a
-  concurrent family run slowed the 0.83.1 gate to 17% in 35 minutes. Batch fixes waiting on a
-  gate into one release and one gate. {#one-suite}
-- **Commits.** Own paths by pathspec; merge messages through a file (`git merge -F <file>`;
-  `-F -` fails); never commit to `release`; the user pushes. {#commits}
+- **The POP is the source of truth** for order, scope and status: a merge, release, admission
+  or scope change updates [[plan-of-plans]] in the same commit. Finished items move to
+  [[pop-finished]]. {#pop-truth}
+- **Ledgers, minimal.** A `Q<n>` for every question to the user (open ids listed at the end of
+  the reply); an `L<n>` only for a decision that changes scope, order or what is built. No rows
+  for relays, bookkeeping or "the agent did what was ruled". {#ledgers}
+- **Proportionate process.** Before running a band, a round or a table, say what it buys in
+  this case; propose the lighter path first. {#proportionate}
+- **Measure before deciding**, read-only, on a copy of `catalog.read.duckdb`. {#measure}
+- **Registry:** every defect found gets a `workflow/bug_registry.md` row. {#registry}
+- **Watch long runs:** tail an agent's log after its expected duration. {#watch}
+- **One test process at a time on this machine** (`lockf
+  /private/tmp/claude-501/rmx-test-lane.lock`); batch fixes waiting on a gate into one release.
+  {#one-suite}
+- **Commits:** own paths by pathspec; batch doc edits (each commit re-ingests the large GMD files
+  and holds the store writer, bug-177); never commit to `release`. {#commits}
 
 ## 6. Persisting a review report {#reports}
 
-1. Copy the report into `workflow/bullshit/<UTC-stamp>-<subject>-r<n>-<sha>.md`; its `last_run`
-   line names that file and a UTC timestamp.
-2. Add its INDEX row to `workflow/bullshit/INDEX.md` and its line to `last_run.log`.
-3. Copy its IMPRESSIONS bullets into `workflow/bullshit/IMPRESSIONS.md` as whole blocks, each
-   ending in exactly one `{#id}` (bug-242).
-4. `./scripts/lint-gmd.sh` → 0 errors before the commit.
+Copy a ch-bsd report to `workflow/bullshit/<UTC-stamp>-<subject>-r<n>-<sha>.md`, add its
+`INDEX.md` row and `last_run.log` line, and copy any new IMPRESSIONS bullet whole. Lint
+(`./scripts/lint-gmd.sh`, 0 errors) before the commit.

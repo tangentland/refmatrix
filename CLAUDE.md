@@ -189,22 +189,20 @@ Commands: SDD chain `/ch-constitution → /ch-specify → /ch-clarify → /ch-cr
 
 ## Task Completion Workflow {#task-completion-workflow}
 
-Continuous Implementation Mode. **The procedure is `workflow/ORCHESTRATION.md`** (roles, the
-planning / task / release paths, lead discipline); TDD per `workflow/TDD_GOVERNANCE.md`. In short:
+Continuous Implementation Mode. **The procedure is `workflow/ORCHESTRATION.md`** (lean since
+2026-11-15, L165: ceremony scales with risk). In short:
 
-1. **The lead orchestrates** — writes no `src/` or tests; agents work in their own
-   `/Volumes/littlebig/<project>-<worker>` clones, read-only against every live store.
-2. **Identify next task** — `workflow/plan-of-plans.md` → the task spec; gaps named, not worked around.
-3. **RED** (ch-test-engineer) — proven RED at base by its E lines.
-4. **GREEN** (ch-implementer) — concrete `src/`; no tests authored.
-5. **Mutations** — committed first, restored one at a time; each must FAIL a test.
-6. **Verify** — family + one branch full suite, failures compared by E line to the last release log.
-7. **Review** — `@ch-bsd` over the range → lead ruling `L<n>` → fold (RED → GREEN) → confirm-lite
-   to MEH-only GO. `/ch-review` is optional (large `src/` changes or on request).
-8. **Record** — implementation summary (MANDATORY), registries (lead allocates ids), docs/indexes.
-9. **Merge `--no-ff`; release** — version bump, gating full suite on merged `master`, deploy, live
-   verification with backups first.
-10. **Handoff** — `handoff.md` + in-flight agent briefs; `rmx save-state` at session end.
+1. **The lead orchestrates** — agents work in their own `/Volumes/littlebig/<project>-<worker>`
+   clones, read-only against every live store.
+2. **Next task** from `workflow/plan-of-plans.md`; specced just in time, one page.
+3. **Small fix** (one module / test-side / < ~100 `src` lines, no shared path): one agent writes
+   test + fix, test shown failing first; the lead reads the diff and merges.
+4. **Large change** (shared path or several modules): RED → GREEN in separate hands, mutations on
+   the `src/` change, one ch-bsd pass (only BULLSHIT earns a second round).
+5. **Verify:** the task's tests + every importer of a changed module; E lines vs the last release.
+6. **Merge `--no-ff`; release** (major → full suite on merged `master`; minor → verify set),
+   deploy, live check with backups first.
+7. **Handoff** — `handoff.md`; `rmx save-state` at session end.
 
 ### Implementation Plans Must Be Pre-Written (CRITICAL) {#plans-pre-written}
 
@@ -221,17 +219,13 @@ After each plan: triage `docs/architecture/todo.md`, graduate mocks in
 
 ### Before Commit (ALL required) {#before-commit}
 
-- [ ] Implementation summary written
 - [ ] `src/` fully concrete; no new silent failure on a memory path
-- [ ] Tests pass (all), log captured; new tests proven RED first by their E lines
-- [ ] Mutation table recorded; every mutation made a test fail
-- [ ] Failures compared by E line to the last release's full-suite log; a release's gating suite
-      runs on merged `master`
+- [ ] Verify set passes (log captured); a new test was seen failing before its fix
+- [ ] Large changes only: mutations on the `src/` change each fail a test; one ch-bsd pass with
+      no unaddressed BULLSHIT
 - [ ] GMD lint zero errors (`./scripts/lint-gmd.sh`, memory files via `tools/gmd/lint.py`)
-- [ ] `@ch-bsd` MEH-only GO (no unaddressed BULLSHIT or SKETCHY), ruling recorded as `L<n>`
-- [ ] `rmx install-hooks --check` clean (installed hooks == generated hooks)
-- [ ] Verb parity test green (every MCP tool is a verb)
-- [ ] Registries + indexes current; `handoff.md` updated
+- [ ] `rmx install-hooks --check` clean; verb parity test green
+- [ ] POP row current for a merge, release or scope change
 
 ## Handoff Rotation {#handoff-rotation}
 
