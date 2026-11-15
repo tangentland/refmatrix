@@ -440,14 +440,18 @@ class _DaemonWriter:
     def rebuild_index_from_log(self):
         return self._call("rebuild_index", {}, timeout=600.0).get("result", {})
 
-    def ingest_path(self, path, source="auto", semantic=False) -> dict:
+    def ingest_path(self, path, source="auto", semantic=False) -> int:
         """Whole-path ingest as ONE op (not per-entity), so a big ingest is
-        a single RPC, not thousands. Returns the op's whole result: `entities`
-        plus the GMD pass's failure count `gmd_pass_failed` (ch-bsd r1 #s2)."""
+        a single RPC, not thousands. Returns the entity count, the same shape
+        as `ingest.ingest_path`; the op's whole result -- with the GMD pass's
+        failure count `gmd_pass_failed` (ch-bsd r1 #s2) -- is kept on
+        `self.last_ingest_result` for `_ingest` to read."""
         from refmatrix.verbs import payload_ingest
-        return self._call("ingest_path",
-                          payload_ingest(str(path), source=source, semantic=semantic),
-                          timeout=24 * 3600.0)
+        res = self._call("ingest_path",
+                         payload_ingest(str(path), source=source, semantic=semantic),
+                         timeout=24 * 3600.0)
+        self.last_ingest_result = res
+        return res.get("entities", 0)
 
 
 
@@ -598,8 +602,8 @@ def _ingest(writer: "Store | _DaemonWriter", path, *,
         # Blocking RPC — stream the daemon's per-pass progress so the user sees
         # movement instead of a frozen prompt for minutes.
         with _stream_ingest_progress(writer._root):
-            res = writer.ingest_path(path, source=source, semantic=semantic)
-        n = int(res.get("entities", 0))
+            n = writer.ingest_path(path, source=source, semantic=semantic)
+        res = writer.last_ingest_result
         failed = int(res.get("gmd_pass_failed") or 0)
         err = res.get("gmd_pass_error")
     else:
