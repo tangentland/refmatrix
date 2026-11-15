@@ -203,6 +203,7 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 
 | D | plan | decision | options (recommendation first) | state | amended into |
 |---|---|---|---|---|---|
+| plan-31 D14 | plan-31 (31.2) | What happens to the existing orphaned learned evidence rows (28,164 on the refmatrix store, 26%, `measurement-learned-rows-cli-store-2026-11-14`)? | — | **decided by the user, 2026-11-15:** "migrate them if they can be resolved, if not, delete them". Resolvable rows are re-attached to their current entity; the rest are deleted through the audited removal path with a manifest (never a silent drop; `feedback_decay_never_loses_knowledge`). The store write is the lead's, announced and backed up | to be amended into `task-31.2` by arch-31b |
 {#decisions-table}
 
 ### Questions to the user {#questions}
