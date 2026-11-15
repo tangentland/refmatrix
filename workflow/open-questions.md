@@ -26,7 +26,7 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session 070141d0 (2026-11-14/15) {#session-070141d0}
 
-Next id: **Q31**. None open. Proposal: [[workflow-practice-review-2026-11-15]].
+Next id: **Q32**. Open: Q31. Proposal: [[workflow-practice-review-2026-11-15]].
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
@@ -38,6 +38,7 @@ Next id: **Q31**. None open. Proposal: [[workflow-practice-review-2026-11-15]].
 | Q28 | 2026-11-15 | The freeze line omitted L106 queue steps 6-15: which stay before the mod? | (a) the triage in [[freeze-triage-2026-11-15]]; (b) all of L106 stays; (c) the freeze as written (6-15 post-mod) | "Q28 a" (user, 2026-11-15): applied to [[plan-of-plans#freeze]] |
 | Q29 | 2026-11-15 | Test coverage: adopt the process rules and pull 29.4's runner ahead of 29.1? | (a) both; (b) process only; (c) neither | "Q29 a" (user, 2026-11-15): applied, L118, [[orchestration#one-suite]] |
 | Q30 | 2026-11-15 | bug-251 (lint resolves `[[doc]]` by id, filename stem and case/dash-folded id; ingest binds the exact id only; 37 rel: lines lint clean and land nowhere): admit under the freeze? | (a) admit as plan-31 task 31.6: one resolver shared by lint and ingest (recommended: graph correctness, and the lint is the gate that hides it); (b) post-mod list; (c) fix the 37 links by hand now, defer the resolver | "Q30 a" (user, 2026-11-15): admitted as [[plan-31-pre-mod-loose-ends#t6]] |
+| Q31 | 2026-11-15 | Plans 2-15 and 21-25 the freeze line did not name ([[freeze-triage-2-2026-11-15]]); plan-24 depends on task 3.7, which the freeze omitted: apply the triage? | (a) the table as proposed: admit 3.7, 25.4, 25.5; post-mod plan-13, 21.3, 21.7; close plans 2, 8, 9 and 25.1 now, 6/7/15 at their named events (recommended); (b) admit 3.7 only, everything else as (a) but 25.4/25.5 post-mod; (c) other | open |
 
 ## Session 37b7498f (2026-11-13) {#session-37b7498f}
 
