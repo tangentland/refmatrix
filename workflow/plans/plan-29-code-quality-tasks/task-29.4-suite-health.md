@@ -8,14 +8,14 @@ metadata:
   status: pending
   plan: plan-29-code-quality
   created: 2026-11-14
-  updated: 2026-11-14
+  updated: 2026-11-15
 ---
 
 # Task 29.4: heal the test suite {#root}
 
 > Plan: [[plan-29-code-quality]] ([[plan-29-code-quality#t4]])
 > Status: Pending
-> **The T0 suite-trust sweep is this task's body.** T0 (`task-t0-suite-trust-sweep`, approved on
+> **The T0 suite-trust sweep is this task's body.** T0 ([[task-t0-suite-trust-sweep]], approved on
 > branch `spec-wave-t0` at `fa1227d`; track T0 in [[plan-review-2026-11-13#p1]]) and 29.4 were
 > one job split in two with a circular closure (queue review `#b3`, lead-accepted 2026-11-14).
 > T0's sub-tasks keep their ids (T0.1 to T0.8) and their text. This spec orders them, adds to
@@ -31,7 +31,8 @@ metadata:
 > `plan-review-fable D3` = (a), sharding only after any live touch fails the session, which is
 > stage 4's gate; `plan-review-fable-store D5`, duckdb 1.5.3 before baselines;
 > `plan-review-fable D4`, a standing go that covers this task's release.
-> User gates: none of its own. T0 can be held by a hook-drift stop at its `#r7-4`.
+> User gates: none of its own. T0 can be held by a hook-drift stop at
+> [[task-t0-suite-trust-sweep#r7-4]].
 
 rel: part-of -> [[plan-29-code-quality]]
 rel: implements -> [[plan-29-code-quality#t4]]
@@ -47,11 +48,12 @@ rel: reinforces -> [[feedback_clean_corpus_hides_a_dead_gate]]
 rel: reinforces -> [[feedback_compare_failures_by_error_not_name]]
 rel: reinforces -> [[feedback_mutation_must_fail_not_hang]]
 
-**How other documents are cited here.** Three documents this spec leans on are not on the
+**How other documents are cited here.** Three documents this spec leans on were not on the
 branch it was written on, and a link to a document the branch does not hold fails the repo
-lint gate. They are written as code, and become links when the branches meet:
-- **T0** = `task-t0-suite-trust-sweep` (branch `spec-wave-t0`, `fa1227d`); its anchors are
-  written `T0#r7-4`.
+lint gate. They were written as code, to become links when the branches meet:
+- **T0** = [[task-t0-suite-trust-sweep]]. Its branch met this one on 2026-11-15, in T0's freshness revision
+  ([[task-t0-suite-trust-sweep#rev-note-fresh]]). Its anchors were written `T0#<anchor>` until then,
+  and are links now ([[#rev-note-6]]).
 - **queue review** = [[plan-review-fable-2026-11-14-queue]] (dev `master`, `3551894`);
   **store review** = [[plan-review-fable-2026-11-14-store]] (`ec3e0e8`); **memory review** =
   [[plan-review-fable-2026-11-14-memory]] (`0254373`). Their user decisions are labelled
@@ -99,7 +101,7 @@ scripts that made them are in `workflow/measurements/plan-29-spec-census/`
 | largest files by test count | `test_verb_parity.py` 167, `test_task25_1_recall_budget.py` 143, `test_memory_index_layout.py` 96 |
 | last full serial run (0.83.0 release, `release-0.83.0-full.log`) | 14 failed, 4,869 passed, 3,517 s (58:37), load 5.6-7.6 |
 | machine | 16 cores (12 performance), 128 GB |
-| per-file durations | **not known**: no committed full-suite log carries them (the T0 sweep's `#t0-3-r0` found the same) |
+| per-file durations | **not known**: no committed full-suite log carries them (the T0 sweep's [[task-t0-suite-trust-sweep#t0-3-r0]] found the same) |
 | `scripts/ptest.sh` | exists, 24 lines: shards by `NR % N`, writes each shard to a `mktemp` dir and deletes it, prints only grep'd summary lines |
 | `pytest-xdist` / `pytest-timeout` in `.venv-eval` | absent / present (not declared in `pyproject.toml`'s `dev` extra) |
 | pytest configuration | none (`pyproject.toml` has no `[tool.pytest.ini_options]`; no `pytest.ini`) |
@@ -181,13 +183,13 @@ files 29.5 needs quiet. So they are one task, in stages. {#fold-why}
 
 | Stage | T0 sub-tasks (their text, by id) | What this spec adds | Why here |
 |---|---|---|---|
-| 0 | T0.3's R0 durations run (`T0#t0-3-r0`) | [[#r0]]: the same run, with this task's bands | one serial run serves both |
+| 0 | T0.3's R0 durations run ([[task-t0-suite-trust-sweep#t0-3-r0]]) | [[#r0]]: the same run, with this task's bands | one serial run serves both |
 | 1 | **T0.1'** (T0.1 as amended, [[#fold-deltas]] row 1) | nothing | until it lands, every clone run exits 1 and no stage can quote a clean exit code |
 | 2, in parallel | **T0.2** ∥ **T0.3** ∥ **T0.8** | T0.2 gains the reaper and the root rule ([[#r4]], [[#r5]]). T0.3 gains bug-228 and bug-231 as two more rows on its harness and bands, and the wall-clock census ([[#r3]]) | the reaper and the dev-tree isolation are both conftest and sandbox work; the wall-clock rows are load flakes like T0.3's three |
 | lane | T0.6 (the plan-7 dense re-run) | nothing | long-running, builds no `src/`; any time after stage 1 |
 | 3 | **T0.4 → T0.5** | nothing | they delete `duckdb_view.py`, the `_read_via_duckdb` state in `store.py` and `brief.parse_gmd`, and edit `cli.py`, `verbs.py`, `mcp.py`: dead code is deleted before 29.5 moves it |
 | 4 | none | run tiers and the runner ([[#r1]], [[#r2]]) | its first AC is the live-touch proof ([[#ac-12]]; `plan-review-fable D3` = (a)); needs stage 2's reaper, because shards multiply daemons |
-| 5 | **T0.7** | its clean runs (`T0#r7-4`, `T0#r7-5`) go through the runner; [[#ac-7]] | T0.7's clean run on the sharded runner **is 29.5's baseline** |
+| 5 | **T0.7** | its clean runs ([[task-t0-suite-trust-sweep#r7-4]], [[task-t0-suite-trust-sweep#r7-5]]) go through the runner; [[#ac-7]] | T0.7's clean run on the sharded runner **is 29.5's baseline** |
 | after 29.5 | none | derived families ([[#r6]]) | measured useless before the split, precise after (queue review `#p29-4`) |
 {#fold-stages}
 
@@ -195,18 +197,19 @@ files 29.5 needs quiet. So they are one task, in stages. {#fold-why}
 
 T0 was approved on 2026-11-13, before plan-29 existed. Each row is one amends line in T0 when
 its branch merges (the queue review's step 1), or this task's first commit if that has not
-happened. T0's requirements, ACs and mutations are otherwise built as written.
+happened. They were made on 2026-11-15, one subsection per row: [[task-t0-suite-trust-sweep#amends-29-4]]. T0's
+requirements, ACs and mutations are otherwise built as written.
 
 | # | T0 text | Becomes | Source |
 |---|---|---|---|
 | 1 | T0.1 "Closes bug-155" by R1.3 and R1.4 | **T0.1'**: R1.3 shipped verbatim (`988e96d`) and is dropped. R1.4 shipped as bash in `scripts/lint-gmd.sh` (`44d1a34`) and tests only that the directory exists, so an empty own-slug `memory/` defeats the fallback. R1.4 becomes "converge the shipped fallback onto one resolver, with the populated check and canonicalisation"; AC-1.5's RED is the empty-directory case; M1.3 and M1.4 are re-stated against it; the bug-155 row gains that residual | queue review `#st-8` |
-| 2 | "Depends on queue item 1"; "26.5 in parallel" (`T0#merge-265`) | plan-29 runs first (L104). 26.5 is not in flight during this task | L104 |
-| 3 | `T0#merge-order`: T0.2 ∥ T0.3 ∥ T0.4 ∥ T0.6 ∥ T0.8 | the stages above: T0.4 → T0.5 after stage 2 | queue review `#b3` |
-| 4 | T0.3 covers bug-130, 190, 091 | plus bug-228 and bug-231, on the same harness, with the same bands (`T0#t0-3-bands`) | queue review `#b3` |
+| 2 | "Depends on queue item 1"; "26.5 in parallel" ([[task-t0-suite-trust-sweep#merge-265]]) | plan-29 runs first (L104). 26.5 is not in flight during this task | L104 |
+| 3 | [[task-t0-suite-trust-sweep#merge-order]]: T0.2 ∥ T0.3 ∥ T0.4 ∥ T0.6 ∥ T0.8 | the stages above: T0.4 → T0.5 after stage 2 | queue review `#b3` |
+| 4 | T0.3 covers bug-130, 190, 091 | plus bug-228 and bug-231, on the same harness, with the same bands ([[task-t0-suite-trust-sweep#t0-3-bands]]) | queue review `#b3` |
 | 5 | T0.2 covers bug-170, 168, 127 | plus bug-229: [[#r4]] and [[#r5]] | queue review `#b3` |
-| 6 | status `open / diagnosed-loud` (`T0#t0-3-attempts`, `#t0-3-band-none`, `#r3-1`) | `deferred: diagnosed-loud, <trial counts>; review <date>` | [[task-29.1-registry-triage#r1-other-writers]] |
-| 7 | `T0#r7-4`, `#r7-5`: one `pytest -rA --junitxml` process, about 45 min, in the main tree | `scripts/ptest.sh --tier all` in the main tree (tier (c) included) and in the clone twin; `-rA` and one junit file per shard; "clean" keeps T0's definition word for word | queue review `#b3` |
-| 8 | `T0#r7-8`: four plan-7 deferral rows re-owned to "plan-20 evals" | "no host plan; backlog (L33)". Plan-20's three tasks hold none of them | queue review `#dup-2` |
+| 6 | status `open / diagnosed-loud` ([[task-t0-suite-trust-sweep#t0-3-attempts]], [[task-t0-suite-trust-sweep#t0-3-band-none]], [[task-t0-suite-trust-sweep#r3-1]]) | `deferred: diagnosed-loud, <trial counts>; review <date>` | [[task-29.1-registry-triage#r1-other-writers]] |
+| 7 | [[task-t0-suite-trust-sweep#r7-4]], [[task-t0-suite-trust-sweep#r7-5]]: one `pytest -rA --junitxml` process, about 45 min, in the main tree | `scripts/ptest.sh --tier all` in the main tree (tier (c) included) and in the clone twin; `-rA` and one junit file per shard; "clean" keeps T0's definition word for word | queue review `#b3` |
+| 8 | [[task-t0-suite-trust-sweep#r7-8]]: four plan-7 deferral rows re-owned to "plan-20 evals" | "no host plan; backlog (L33)". Plan-20's three tasks hold none of them | queue review `#dup-2` |
 | 9 | Ruling O7's "immediate isolated re-run" | unchanged, and it is the **only** re-run this task allows ([[#decisions]] plan-29 D14) | this spec |
 | 10 | R0.1 to R0.8 apply to T0's sub-tasks | they apply to everything in this spec too ([[#r10]]) | queue review `#ord-6` |
 {#fold-deltas-table}
@@ -223,7 +226,7 @@ of test files. To keep them apart, this spec says **run tier (a)-(d)** for its o
 
 ### R0: measure first, and write the bands down before the numbers {#r0}
 
-1. **One serial full run with durations.** This is T0.3's R0 (`T0#t0-3-r0`): the documented
+1. **One serial full run with durations.** This is T0.3's R0 ([[task-t0-suite-trust-sweep#t0-3-r0]]): the documented
    command plus `--durations=0`, in a fresh littlebig clone at stage 0's base sha, teed to
    `workflow/review-output/task-29.4/r0-serial.log`, with `uptime` before and after. It is the
    only full serial run the task needs. Its failures, by E line, are the **R0 digest**.
@@ -389,7 +392,7 @@ fail, error at teardown, skip unpinned or leak a daemon on purpose. There is no 
 - **No reruns.** The runner has no retry flag. A test that fails only when sharded is a finding:
   it gets a wall-clock replacement ([[#r3]]), a place in the serial group with a reason, or a
   registry row. It is never run again until it passes. The one re-run this task knows is T0's
-  ruling O7 (`T0#r7-6`): a `diagnosed-loud` row's node id, re-run once, alone, with both
+  ruling O7 ([[task-t0-suite-trust-sweep#r7-6]]): a `diagnosed-loud` row's node id, re-run once, alone, with both
   outcomes recorded. That is a recorded diagnostic on a named row, not a retry.
 - **Stage 4's gate: no sharding until a live touch fails the session** (`plan-review-fable D3`,
   decided (a), L106). Four shards are four processes that can each reach a live socket
@@ -549,7 +552,7 @@ here:
   section is the rule they are revised against.
   {#r3-freshness}
 - **bug-228 and bug-231 are rows of T0.3.** They run on T0.3's harness with its bands
-  (`T0#t0-3-bands`): a reproducer is ≥ 3 failures in 10 trials at base, at 3, then 5, then 8
+  ([[task-t0-suite-trust-sweep#t0-3-bands]]): a reproducer is ≥ 3 failures in 10 trials at base, at 3, then 5, then 8
   concurrent processes; a fix is proven by 45 consecutive passes at the reproducer's level; at
   most two fix attempts; a row that does not reproduce gains its diagnostic and its mechanism
   test and reads `deferred: diagnosed-loud, …`. The replacements above are the fix attempts.
@@ -733,7 +736,7 @@ to rework the sandbox, so it settles them:
 ### R10: rules for every stage {#r10}
 
 - **T0's R0.1 to R0.8 apply to this spec's additions as they do to T0's sub-tasks**
-  (`T0#rules`): re-verify every cited site at the branch base; compare failures by E line; every
+  ([[task-t0-suite-trust-sweep#rules]]): re-verify every cited site at the branch base; compare failures by E line; every
   run is a log that states its exit code; RED first, and a mutation fails and does not hang; no
   skip is added and no test is weakened; sandbox discipline; one ch-bsd round per sub-task
   range.
@@ -812,7 +815,7 @@ to rework the sandbox, so it settles them:
   test, by name, before the session ends.
   {#ac-5}
 - **AC-6: bug-228, bug-229 and bug-231 are closed with evidence, on T0.3's bands.**
-  - **228 and 231:** the summary records, per row, what `T0#ac-3-1` asks of T0.3's own rows: the
+  - **228 and 231:** the summary records, per row, what [[task-t0-suite-trust-sweep#ac-3-1]] asks of T0.3's own rows: the
     reproducer level and the base failure count out of 10 with E lines; each fix attempt's run of
     45; and the outcome (fixed, or `deferred: diagnosed-loud` with the counts). The mechanism
     tests of [[#r3-bug231]] and [[#r3-bug228]] are green either way, and neither test holds an
@@ -822,12 +825,12 @@ to rework the sandbox, so it settles them:
     `git merge-base --is-ancestor <sha> master` succeeds.
   {#ac-6}
 - **AC-7: T0.7's clean run, through the runner, in at most 20 minutes.**
-  - **Clean, by T0's definition** (`T0#r7-4`): in the main tree, `scripts/ptest.sh --tier all`
+  - **Clean, by T0's definition** ([[task-t0-suite-trust-sweep#r7-4]]): in the main tree, `scripts/ptest.sh --tier all`
     (tier (c) included) at a committed `master` sha that holds every stage: every shard exits 0;
     0 failed and 0 errors; no SkipGate line; no reaper line; collected = passed + pinned skips.
     T0's preconditions hold as written (GMD gate green, hooks in sync, a clean and unmoved tree,
     the lead told first). Ruling O7 is the only exception to "exit 0".
-  - **The clone twin** (`T0#r7-5`): the same sha, the same command, in a littlebig clone; tier (c)
+  - **The clone twin** ([[task-t0-suite-trust-sweep#r7-5]]): the same sha, the same command, in a littlebig clone; tier (c)
     is reported as not run there; its only skips are the pinned clone-only set.
   - **The time:** three consecutive clone runs of tiers (a) + (b) + (d), each started at a
     1-minute load average ≤ 8.0 on the 16-core dev machine, each ≤ 20:00 by the runner's own
@@ -950,14 +953,14 @@ holds the stage before, with RED → GREEN → ch-bsd.
 | Stage | Sub-task | Holds | Parallel with |
 |---|---|---|---|
 | 0 | 29.4-r0 | [[#r0]] (= T0.3's R0), after the dev venv is on duckdb 1.5.3 | — |
-| 1 | T0.1' | T0's `#t0-1` as amended | — |
-| 2 | T0.2 + 29.4b | T0's `#t0-2`; [[#r4]], [[#r5]] | T0.3, T0.8 |
-| 2 | T0.3 + 29.4c | T0's `#t0-3`; [[#r3]] with bug-228 and bug-231 | T0.2, T0.8 |
-| 2 | T0.8 | T0's `#t0-8` (bug-196) | T0.2, T0.3 |
-| lane | T0.6 | T0's `#t0-6` | anything after stage 1 |
-| 3 | T0.4, then T0.5 | T0's `#t0-4`, `#t0-5` | — |
+| 1 | T0.1' | [[task-t0-suite-trust-sweep#t0-1]] as amended | — |
+| 2 | T0.2 + 29.4b | [[task-t0-suite-trust-sweep#t0-2]]; [[#r4]], [[#r5]] | T0.3, T0.8 |
+| 2 | T0.3 + 29.4c | [[task-t0-suite-trust-sweep#t0-3]]; [[#r3]] with bug-228 and bug-231 | T0.2, T0.8 |
+| 2 | T0.8 | [[task-t0-suite-trust-sweep#t0-8]] (bug-196) | T0.2, T0.3 |
+| lane | T0.6 | [[task-t0-suite-trust-sweep#t0-6]] | anything after stage 1 |
+| 3 | T0.4, then T0.5 | [[task-t0-suite-trust-sweep#t0-4]], [[task-t0-suite-trust-sweep#t0-5]] | — |
 | 4 | 29.4a | [[#ac-12]] first, then [[#r1]], [[#r2]], [[#r7]] | — |
-| 5 | T0.7 + 29.4d | T0's `#t0-7` through the runner; [[#r8]], [[#r9]]; [[#ac-7]] | — |
+| 5 | T0.7 + 29.4d | [[task-t0-suite-trust-sweep#t0-7]] through the runner; [[#r8]], [[#r9]]; [[#ac-7]] | — |
 | after 29.5 | 29.4f | [[#r6]] | 29.2, 29.3 |
 {#order-table}
 
@@ -967,7 +970,7 @@ that two branches do not meet in one file. {#order-pairs}
 
 ## Files {#files}
 
-T0's sub-tasks touch the files T0 lists for them (`T0#t0-1-files` to `T0#t0-8-files`). This
+T0's sub-tasks touch the files T0 lists for them ([[task-t0-suite-trust-sweep#t0-1-files]] to [[task-t0-suite-trust-sweep#t0-8-files]]). This
 table is what this spec adds.
 
 | File | Change |
@@ -1131,3 +1134,18 @@ computed from failure sets alone. {#rev-note-4-body}
 M1: `--expect` names the phase (`<node id>:<phase>:<from>-><to>`); [[#r2-outcomes]] states how
 the recorded outcome is derived from pytest's report, and a strict XPASS is `failed`;
 [[#ac-3]] has a fixture row that pins it, and two mutations. {#rev-note-5-body}
+
+## Revision note 6 (2026-11-15, T0's branch met this one) {#rev-note-6}
+
+No requirement, AC or mutation changed. T0's freshness revision ([[task-t0-suite-trust-sweep#rev-note-fresh]]) merged
+`spec-wave-t0` with `master`, so the two specs are on one branch:
+- every `T0#<anchor>` code span here is now a link to [[task-t0-suite-trust-sweep]], as [[#citing]]
+  promised;
+- the ten rows of [[#fold-deltas]] are amends subsections in T0 ([[task-t0-suite-trust-sweep#amends-29-4]]);
+- that revision lists where T0 and this spec disagree, and eight proposals for the lead
+  ([[task-t0-suite-trust-sweep#rev-note-fresh-choices]], [[task-t0-suite-trust-sweep#rev-note-fresh-proposals]]). Three touch this spec's
+  text: P1 ([[#files-src-note]] against T0.4's R4.5), P5 (the clone twin of [[#ac-7]] runs no
+  tier (c)), and P6 (`-rA` and the per-shard junit file are asked for only in row 7).
+
+The anchors of the queue, store and memory reviews are still written as code.
+{#rev-note-6-body}
