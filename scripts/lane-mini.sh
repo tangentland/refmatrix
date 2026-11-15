@@ -41,7 +41,11 @@ mkdir -p ~/lane/runs ~/lane/logs
   ln -sfn ~/.venv-lane "\$WT/.venv-eval"
   cd "\$WT"
   LOG=~/lane/logs/$NAME.log
-  { echo "# mini-lane slot=\$(whoami) sha=$SHA host=\$(hostname) macOS \$(sw_vers -productVersion) py=\$(~/.venv-lane/bin/python -V 2>&1) start=\$(date "+%F %T") load=\$(sysctl -n vm.loadavg)"
+  # The mini login gets launchd maxfiles soft=256 (hard unlimited); a 163-file verify set
+  # hit EMFILE at ~65% and pytest died in sessionfinish with no summary (green-315,
+  # 2026-11-15, bug-279). Raise the soft limit to match this workstation; fail loudly if refused.
+  ulimit -n 65536 || { echo "mini-lane: cannot raise open-file limit (soft \$(ulimit -n))"; exit 2; }
+  { echo "# mini-lane slot=\$(whoami) sha=$SHA host=\$(hostname) macOS \$(sw_vers -productVersion) py=\$(~/.venv-lane/bin/python -V 2>&1) start=\$(date "+%F %T") load=\$(sysctl -n vm.loadavg) nofile=\$(ulimit -n)"
     HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONPATH="\$WT/src" ~/.venv-lane/bin/python -m pytest -q -p no:cacheprovider $ARGS
     echo "exit \$?"; } > "\$LOG" 2>&1
   RC=\$(tail -1 "\$LOG" | awk "{print \\\$2}")
