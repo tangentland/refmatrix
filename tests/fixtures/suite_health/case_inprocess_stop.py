@@ -7,13 +7,11 @@ with exit 0 before its summary: green-t02's registry reaper measured exactly tha
 Three tests, in order: a stop through the `stop` op, a stop through the `_stop` flag, and a
 DELIBERATE failure, so the session's own status (1) is distinguishable from `os._exit(0)`.
 
-`serve_forever` installs SIGTERM/SIGINT handlers, which Python allows only on the main thread;
-the case lets the serve thread skip them (registered in workflow/test_mock_registry.md with
-case_inprocess_daemon.py)."""
+Nothing is replaced: since bug-267's fix (L169) `serve_forever` off the main thread installs no
+signal handlers (the host owns its signals), so the real daemon serves on a plain thread."""
 import json
 import os
 import shutil
-import signal
 import threading
 import time
 from pathlib import Path
@@ -33,17 +31,9 @@ def _note_base(base: Path) -> None:
     p.write_text(json.dumps(d))
 
 
-def _serve(prefix: str, monkeypatch):
+def _serve(prefix: str):
     base, root = store_root(prefix)
     _note_base(base)
-    real = signal.signal
-
-    def _main_thread_only(sig, handler):
-        if threading.current_thread() is threading.main_thread():
-            return real(sig, handler)
-        return None
-
-    monkeypatch.setattr(signal, "signal", _main_thread_only)
     d = dm.Daemon(root)
     t = threading.Thread(target=d.serve_forever, name=f"case-{prefix}serve", daemon=True)
     t.start()
@@ -54,8 +44,8 @@ def _serve(prefix: str, monkeypatch):
     return base, root, d, t
 
 
-def test_the_stop_op_ends_the_serve_thread_not_the_process(monkeypatch):
-    base, root, d, t = _serve("s67o-", monkeypatch)
+def test_the_stop_op_ends_the_serve_thread_not_the_process():
+    base, root, d, t = _serve("s67o-")
     r = dm.call(root, "stop", {}, retries=0)
     assert r.get("ok", True), r
     t.join(_STOP_WAIT_S)
@@ -64,8 +54,8 @@ def test_the_stop_op_ends_the_serve_thread_not_the_process(monkeypatch):
     shutil.rmtree(base)
 
 
-def test_the_stop_flag_ends_the_serve_thread_not_the_process(monkeypatch):
-    base, root, d, t = _serve("s67f-", monkeypatch)
+def test_the_stop_flag_ends_the_serve_thread_not_the_process():
+    base, root, d, t = _serve("s67f-")
     d._stop = True
     t.join(_STOP_WAIT_S)
     assert not t.is_alive(), "the serve thread did not end after `_stop = True`"

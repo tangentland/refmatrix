@@ -3,11 +3,10 @@
 `Daemon` instances (task-29.4 `#r4` item 6), reported `LEAKED IN-PROCESS DAEMON`, stopped, and
 must fail the session.
 
-`serve_forever` installs SIGTERM/SIGINT handlers, which Python allows only on the main thread;
-the case lets the serve thread skip them (`signal.signal` is a no-op off the main thread, the
-real one on it) and nothing else. The serve thread is a daemon thread so a session whose
-reaper does nothing still exits (the outer test reads that as RED, not as a hang)."""
-import signal
+Nothing is replaced: since bug-267's fix (L169) `serve_forever` off the main thread leaves the
+host's signals alone, so the real daemon serves on a plain thread. The serve thread is a daemon
+thread so a session whose reaper does nothing still exits (the outer test reads that as RED, not
+as a hang)."""
 import threading
 import time
 
@@ -17,16 +16,8 @@ from suite_health_support import report, store_root
 _PING_WAIT_S = 120.0     # hang guard for the boot, not a bound under test
 
 
-def test_leaves_an_in_process_daemon_serving(monkeypatch):
+def test_leaves_an_in_process_daemon_serving():
     base, root = store_root("shi-")
-    real = signal.signal
-
-    def _main_thread_only(sig, handler):
-        if threading.current_thread() is threading.main_thread():
-            return real(sig, handler)
-        return None
-
-    monkeypatch.setattr(signal, "signal", _main_thread_only)
     d = dm.Daemon(root)
     t = threading.Thread(target=d.serve_forever, name="case-inproc-serve", daemon=True)
     t.start()

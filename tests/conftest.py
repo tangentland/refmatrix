@@ -100,31 +100,60 @@ def _serve_thread(d) -> "int | None":
     return None
 
 
+def _socket_bound(d) -> bool:
+    """`d.root`'s socket is bound and listening in THIS process: its `rmxd.pid` names this
+    process and a connect succeeds (a listening socket accepts into its backlog even when no
+    serve loop calls `accept`). The case a frame check misses (ch-bsd r1 B1, L169): a serve
+    thread that died after binding leaves the socket bound with no `serve_forever` frame."""
+    import socket as _socket
+    if _dm.read_pid(d.root) != os.getpid():
+        return False
+    s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    s.settimeout(0.5)
+    try:
+        s.connect(str(_dm.socket_path(d.root)))
+    except OSError:
+        return False
+    finally:
+        s.close()
+    return True
+
+
+def _in_process_serving(d) -> bool:
+    """#r4 item 6, "still serving (its socket is bound, or its serve thread is alive)". A root
+    whose serve loop belongs to ANOTHER tracked instance is that instance's, not this one's."""
+    if _serve_thread(d) is not None:
+        return True
+    root = getattr(d, "root", None)
+    if any(o is not d and getattr(o, "root", None) == root and _serve_thread(o) is not None
+           for o in list(rmx_sandbox._INPROC.keys())):
+        return False
+    return root is not None and _socket_bound(d)
+
+
 def _stop_in_process(d, emit) -> bool:
     """Stop an in-process daemon through the registry (ruling L142: never a signal, never its
     pid file, which names this process): the `stop` op the socket would dispatch
     (`OPS["stop"]`, the flag the accept loop polls each second), then wait for its serve thread
-    to run its shutdown. Since bug-267's fix (L151, 2026-11-15) `serve_forever` off the main
-    thread returns after joining its pool workers instead of ending the host with
-    `os._exit(0)`, so this session survives the stop and keeps its own exit status."""
+    to run its shutdown, bounded by the daemon's own stop grace (`_StopDeadline` spends no more,
+    bug-051). Since bug-267's fix (L151, L169, 2026-11-15) `serve_forever` off the main thread
+    returns instead of ending the host with `os._exit(0)`, so this session survives the stop and
+    keeps its own exit status."""
     import threading
     tid = _serve_thread(d)
     _dm.OPS["stop"](d, {})
     emit("  stop op sent through the Daemon registry (no signal)")
     t = {th.ident: th for th in threading.enumerate()}.get(tid)
     if t is not None:
-        t.join(_dm.stop_grace_s() + _INPROC_STOP_SLACK_S)
-    ok = _serve_thread(d) is None
-    emit("  serve loop ended" if ok else "  serve loop STILL RUNNING after its stop grace")
+        t.join(_dm.stop_grace_s())
+    ok = not _in_process_serving(d)
+    emit("  serve loop ended" if ok else
+         "  serve loop STILL RUNNING (or its socket still bound) after its stop grace")
     return ok
 
 
-# Beyond the daemon's own stop grace: the in-host pool join after it (bug-267).
-_INPROC_STOP_SLACK_S = 30.0
-
-
 _track_daemon_instances()
-rmx_sandbox.set_inprocess_ops(lambda d: _serve_thread(d) is not None, _stop_in_process)
+rmx_sandbox.set_inprocess_ops(_in_process_serving, _stop_in_process)
 
 
 def _pyc_guard():
