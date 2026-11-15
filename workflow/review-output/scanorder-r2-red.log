@@ -1,0 +1,362 @@
+F.FFFF....FFFF                                                           [100%]
+=================================== FAILURES ===================================
+______________ test_s1_long_plain_words_are_not_placed_in_tier_1 _______________
+
+env = {'proj': PosixPath('/private/tmp/sco.dmino3v6/proj'), 'root': PosixPath('/private/tmp/sco.dmino3v6/proj/.refmatrix'), 's': <refmatrix.store.Store object at 0x105c8c830>}
+
+    def test_s1_long_plain_words_are_not_placed_in_tier_1(env):
+        out = scan_prompt(env["s"], P_LONG, composite=False, max_concepts=10)
+        tier1 = _tier1(out)
+        assert "widget_registry" in tier1, f"fixture: widget_registry not in tier 1: {tier1}\n{out}"
+        plain = [w for w in LONG_WORDS if w in tier1]
+>       assert not plain, (f"plain long words placed in tier 1 ahead of the content matches: "
+                           f"{plain} (tier 1: {tier1})")
+E       AssertionError: plain long words placed in tier 1 ahead of the content matches: ['implementation', 'architecture', 'measurements', 'relationships'] (tier 1: ['architecture', 'implementation', 'relationships', 'measurements', 'widget_registry'])
+E       assert not ['implementation', 'architecture', 'measurements', 'relationships']
+
+tests/test_scanorder_r2_l120.py:140: AssertionError
+_ test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted[long+e.g] _
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1747/test_s1_a_topic_grounded_only_0')
+refs = ['implementation', 'e.g', 'architecture']
+
+    @pytest.mark.parametrize("refs", [
+        ["implementation", "e.g", "architecture"],
+        ["measurements", "t.repla", "relationships"],
+        ["implementation", "architecture", "relationships"],
+        ["p.read", "e.g", "measurements"],
+    ], ids=["long+e.g", "long+t.repla", "long-only", "dotted-fragments"])
+    def test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted(tmp_path, refs):
+        root = tmp_path / ".refmatrix"
+        _ring(root, refs)
+        out = build_topic_composite(None, root, expand=False, session="sess")
+>       assert out == "", f"topic {refs} was emitted as grounded:\n{out}"
+E       AssertionError: topic ['implementation', 'e.g', 'architecture'] was emitted as grounded:
+E         # STM topic composite — current focus (GMD subgraph)
+E         ```gmd
+E         ---
+E         gmd: "0.1"
+E         id: stm-topic-composite
+E         title: "STM topic composite"
+E         tags: [stm, composite, focus]
+E         metadata: {turn: 1}
+E         ---
+E         # Current focus {#root}
+E         
+E         ## Topic 1: implementation {#topic-1}
+E         Members: implementation, e.g, architecture
+E         ```
+E       assert '# STM topic ...itecture\n```' == ''
+E         
+E         + # STM topic composite — current focus (GMD subgraph)
+E         + ```gmd
+E         + ---
+E         + gmd: "0.1"
+E         + id: stm-topic-composite
+E         + title: "STM topic composite"...
+E         
+E         ...Full output truncated (8 lines hidden), use '-vv' to show
+
+tests/test_scanorder_r2_l120.py:167: AssertionError
+_ test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted[long+t.repla] _
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1747/test_s1_a_topic_grounded_only_1')
+refs = ['measurements', 't.repla', 'relationships']
+
+    @pytest.mark.parametrize("refs", [
+        ["implementation", "e.g", "architecture"],
+        ["measurements", "t.repla", "relationships"],
+        ["implementation", "architecture", "relationships"],
+        ["p.read", "e.g", "measurements"],
+    ], ids=["long+e.g", "long+t.repla", "long-only", "dotted-fragments"])
+    def test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted(tmp_path, refs):
+        root = tmp_path / ".refmatrix"
+        _ring(root, refs)
+        out = build_topic_composite(None, root, expand=False, session="sess")
+>       assert out == "", f"topic {refs} was emitted as grounded:\n{out}"
+E       AssertionError: topic ['measurements', 't.repla', 'relationships'] was emitted as grounded:
+E         # STM topic composite — current focus (GMD subgraph)
+E         ```gmd
+E         ---
+E         gmd: "0.1"
+E         id: stm-topic-composite
+E         title: "STM topic composite"
+E         tags: [stm, composite, focus]
+E         metadata: {turn: 1}
+E         ---
+E         # Current focus {#root}
+E         
+E         ## Topic 1: measurements {#topic-1}
+E         Members: measurements, t.repla, relationships
+E         ```
+E       assert '# STM topic ...ionships\n```' == ''
+E         
+E         + # STM topic composite — current focus (GMD subgraph)
+E         + ```gmd
+E         + ---
+E         + gmd: "0.1"
+E         + id: stm-topic-composite
+E         + title: "STM topic composite"...
+E         
+E         ...Full output truncated (8 lines hidden), use '-vv' to show
+
+tests/test_scanorder_r2_l120.py:167: AssertionError
+_ test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted[long-only] _
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1747/test_s1_a_topic_grounded_only_2')
+refs = ['implementation', 'architecture', 'relationships']
+
+    @pytest.mark.parametrize("refs", [
+        ["implementation", "e.g", "architecture"],
+        ["measurements", "t.repla", "relationships"],
+        ["implementation", "architecture", "relationships"],
+        ["p.read", "e.g", "measurements"],
+    ], ids=["long+e.g", "long+t.repla", "long-only", "dotted-fragments"])
+    def test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted(tmp_path, refs):
+        root = tmp_path / ".refmatrix"
+        _ring(root, refs)
+        out = build_topic_composite(None, root, expand=False, session="sess")
+>       assert out == "", f"topic {refs} was emitted as grounded:\n{out}"
+E       AssertionError: topic ['implementation', 'architecture', 'relationships'] was emitted as grounded:
+E         # STM topic composite — current focus (GMD subgraph)
+E         ```gmd
+E         ---
+E         gmd: "0.1"
+E         id: stm-topic-composite
+E         title: "STM topic composite"
+E         tags: [stm, composite, focus]
+E         metadata: {turn: 1}
+E         ---
+E         # Current focus {#root}
+E         
+E         ## Topic 1: implementation {#topic-1}
+E         Members: implementation, architecture, relationships
+E         ```
+E       assert '# STM topic ...ionships\n```' == ''
+E         
+E         + # STM topic composite — current focus (GMD subgraph)
+E         + ```gmd
+E         + ---
+E         + gmd: "0.1"
+E         + id: stm-topic-composite
+E         + title: "STM topic composite"...
+E         
+E         ...Full output truncated (8 lines hidden), use '-vv' to show
+
+tests/test_scanorder_r2_l120.py:167: AssertionError
+_ test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted[dotted-fragments] _
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1747/test_s1_a_topic_grounded_only_3')
+refs = ['p.read', 'e.g', 'measurements']
+
+    @pytest.mark.parametrize("refs", [
+        ["implementation", "e.g", "architecture"],
+        ["measurements", "t.repla", "relationships"],
+        ["implementation", "architecture", "relationships"],
+        ["p.read", "e.g", "measurements"],
+    ], ids=["long+e.g", "long+t.repla", "long-only", "dotted-fragments"])
+    def test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted(tmp_path, refs):
+        root = tmp_path / ".refmatrix"
+        _ring(root, refs)
+        out = build_topic_composite(None, root, expand=False, session="sess")
+>       assert out == "", f"topic {refs} was emitted as grounded:\n{out}"
+E       AssertionError: topic ['p.read', 'e.g', 'measurements'] was emitted as grounded:
+E         # STM topic composite — current focus (GMD subgraph)
+E         ```gmd
+E         ---
+E         gmd: "0.1"
+E         id: stm-topic-composite
+E         title: "STM topic composite"
+E         tags: [stm, composite, focus]
+E         metadata: {turn: 1}
+E         ---
+E         # Current focus {#root}
+E         
+E         ## Topic 1: p.read {#topic-1}
+E         Members: p.read, e.g, measurements
+E         ```
+E       assert '# STM topic ...urements\n```' == ''
+E         
+E         + # STM topic composite — current focus (GMD subgraph)
+E         + ```gmd
+E         + ---
+E         + gmd: "0.1"
+E         + id: stm-topic-composite
+E         + title: "STM topic composite"...
+E         
+E         ...Full output truncated (8 lines hidden), use '-vv' to show
+
+tests/test_scanorder_r2_l120.py:167: AssertionError
+_ test_s2_a_named_identifier_survives_the_ppr_cut_and_comes_first[scan-prompt] _
+
+env = {'proj': PosixPath('/private/tmp/sco.v43fswow/proj'), 'root': PosixPath('/private/tmp/sco.v43fswow/proj/.refmatrix'), 's': <refmatrix.store.Store object at 0x119454050>}
+prompt = 'check scan-prompt against the implementation architecture measurements relationships daemon'
+ident = 'scan-prompt'
+
+    @pytest.mark.parametrize("prompt,ident", [(P_HYPHEN, "scan-prompt"), (P_LONG, "widget_registry")],
+                             ids=["scan-prompt", "widget_registry"])
+    def test_s2_a_named_identifier_survives_the_ppr_cut_and_comes_first(env, prompt, ident):
+        out = scan_prompt(env["s"], prompt, composite=False)          # max_concepts=5
+        # A name with a space is the content bundle (its ref is the candidate bag), not a concept.
+        bundles = [b.lower() for b in _BUNDLE.findall(out) if " " not in b]
+>       assert ident.lower() in bundles, (
+            f"the named identifier {ident!r} was cut before ordering; bundles: {bundles}\n"
+            f"headers: {_SYM_HDR.findall(out)}")
+E       AssertionError: the named identifier 'scan-prompt' was cut before ordering; bundles: ['architecture', 'relationships']
+E         headers: ['architecture, implementation, relationships, measurements']
+E       assert 'scan-prompt' in ['architecture', 'relationships']
+E        +  where 'scan-prompt' = <built-in method lower of str object at 0x103c6bcf0>()
+E        +    where <built-in method lower of str object at 0x103c6bcf0> = 'scan-prompt'.lower
+
+tests/test_scanorder_r2_l120.py:187: AssertionError
+_ test_s2_a_named_identifier_survives_the_ppr_cut_and_comes_first[widget_registry] _
+
+env = {'proj': PosixPath('/private/tmp/sco.q5jz097t/proj'), 'root': PosixPath('/private/tmp/sco.q5jz097t/proj/.refmatrix'), 's': <refmatrix.store.Store object at 0x119454ad0>}
+prompt = 'Please review the implementation and architecture of widget_registry; follow-up on daemon measurements and relationships'
+ident = 'widget_registry'
+
+    @pytest.mark.parametrize("prompt,ident", [(P_HYPHEN, "scan-prompt"), (P_LONG, "widget_registry")],
+                             ids=["scan-prompt", "widget_registry"])
+    def test_s2_a_named_identifier_survives_the_ppr_cut_and_comes_first(env, prompt, ident):
+        out = scan_prompt(env["s"], prompt, composite=False)          # max_concepts=5
+        # A name with a space is the content bundle (its ref is the candidate bag), not a concept.
+        bundles = [b.lower() for b in _BUNDLE.findall(out) if " " not in b]
+>       assert ident.lower() in bundles, (
+            f"the named identifier {ident!r} was cut before ordering; bundles: {bundles}\n"
+            f"headers: {_SYM_HDR.findall(out)}")
+E       AssertionError: the named identifier 'widget_registry' was cut before ordering; bundles: ['architecture', 'relationships']
+E         headers: ['architecture, implementation, relationships, measurements']
+E       assert 'widget_registry' in ['architecture', 'relationships']
+E        +  where 'widget_registry' = <built-in method lower of str object at 0x103c6bcb0>()
+E        +    where <built-in method lower of str object at 0x103c6bcb0> = 'widget_registry'.lower
+
+tests/test_scanorder_r2_l120.py:187: AssertionError
+_____ test_s3_a_composite_the_cap_dropped_is_delivered_when_there_is_room ______
+
+env = {'proj': PosixPath('/private/tmp/sco.t79sgqaw/proj'), 'root': PosixPath('/private/tmp/sco.t79sgqaw/proj/.refmatrix'), 's': <refmatrix.store.Store object at 0x119454d70>}
+
+    def test_s3_a_composite_the_cap_dropped_is_delivered_when_there_is_room(env):
+        _ring(env["root"], GROUNDED)
+        sections = scan_prompt(env["s"], SCAN_PROMPT, composite=False)
+        assert sections, "fixture: no sections"
+        cap = len(sections.encode("utf-8")) + 80          # sections + trailer, not the composite
+        capped = _scan(env, max_bytes=cap)
+        assert COMP_MARK not in capped, f"fixture: the cap did not drop the composite:\n{capped}"
+        again = _scan(env)
+>       assert COMP_MARK in again, (
+            "the composite dropped by the byte cap was marked sent and is suppressed as "
+            f"unchanged on the next prompt with room:\n{again[-1500:]}")
+E       AssertionError: the composite dropped by the byte cap was marked sent and is suppressed as unchanged on the next prompt with room:
+E         /sco.t79sgqaw/proj/docs/doc-4.md
+E             # D4 {#root} More «implementation», architecture, measurements,…
+E         
+E         LEAD (lead):
+E           doc-0#root  [concept]  (w=1)
+E             /private/tmp/sco.t79sgqaw/proj/docs/doc-0.md
+E             D0
+E         
+E         The widget_registry implementation keeps every widget; architecture notes.
+E           doc-1#root  [concept]  (w=1)
+E             /private/tmp/sco.t79sgqaw/proj/docs/doc-1.md
+E             D1
+E         
+E         Implementation architecture measurements relationships daemon overview.
+E           doc-2#root  [concept]  (w=1)
+E             /private/tmp/sco.t79sgqaw/proj/docs/doc-2.md
+E             D2
+E         
+E         Daemon measurements and relationships across the implementation architecture.
+E           doc-3#root  [concept]  (w=1)
+E             /private/tmp/sco.t79sgqaw/proj/docs/doc-3.md
+E             D3
+E         
+E         Architecture relationships implementation measurements daemon daemon.
+E           doc-4#root  [concept]  (w=1)
+E             /private/tmp/sco.t79sgqaw/proj/docs/doc-4.md
+E             D4
+E         
+E         More implementation, architecture, measurements, relationships and the daemon.
+E         
+E         [truncated by budget]
+E         
+E         [~408 tokens, 10 neighbors, degree=0]
+E         
+E         # refmatrix context for prompt-mentioned symbols: daemon, doc-1#root, doc-2#root, doc-4#root
+E         
+E         === context for `daemon` ===
+E         anchor: daemon  [concept]
+E         
+E         GREP (unindexed — floor) (grep):
+E           docs/doc-1.md  [doc]  (w=1)
+E             docs/doc-1.md:11
+E             Implementation architecture measurements relationships «daemon» overview.
+E           docs/doc-2.md  [doc]  (w=1)
+E             docs/doc-2.md:11
+E             «Daemon» measurements and relationships across the implementation architecture.
+E         
+E         [truncated by budget]
+E         
+E         [~371 tokens, 2 neighbors, degree=0]
+E       assert '# STM topic composite' in '# refmatrix context for prompt-mentioned symbols: implementation\n\n=== context for `implementation` ===\nanchor: imp...relationships across the implementation architecture.\n\n[truncated by budget]\n\n[~371 tokens, 2 neighbors, degree=0]'
+
+tests/test_scanorder_r2_l120.py:217: AssertionError
+______ test_m1_an_unchanged_composite_is_delivered_again_after_compaction ______
+
+env = {'proj': PosixPath('/private/tmp/sco.pg6xta3g/proj'), 'root': PosixPath('/private/tmp/sco.pg6xta3g/proj/.refmatrix'), 's': None}
+
+    def test_m1_an_unchanged_composite_is_delivered_again_after_compaction(env):
+        home = Path(os.environ["HOME"])
+        for shadow in (home / "bin" / "rmx", home / ".local" / "bin" / "rmx"):
+            assert not shadow.exists(), f"{shadow} would shadow the dev rmx in the hook PATH"
+        _ring(env["root"], GROUNDED)
+        env["s"].close()
+        env["s"] = None
+        run_env = {**os.environ, "REFMATRIX_ROOT": str(env["root"]),
+                   "RMX_INVOCATION_SOURCE": "eval", "PYTHONPATH": str(REPO / "src"),
+                   # The session the envelope names; a live hook resolves it from its pid pointer.
+                   "RMX_SESSION": "sess",
+                   "PATH": f"{DEV_BIN}:{os.environ.get('PATH', '')}"}
+        r = subprocess.run([str(DEV_BIN / "rmx"), "daemon", "start", "--no-watch"],
+                           capture_output=True, text=True, env=run_env, timeout=180)
+        assert r.returncode == 0, r.stdout + r.stderr
+        try:
+            for _ in range(120):
+                if list(env["root"].glob("*.sock")):
+                    break
+                time.sleep(0.5)
+            first = _cli_scan(run_env, env["proj"])
+            assert COMP_MARK in first, f"fixture: no composite on the first call:\n{first}"
+            assert COMP_MARK not in _cli_scan(run_env, env["proj"]), (
+                "fixture: an unchanged composite was re-sent")
+            cmds = _event_commands()
+            assert any(e == "PreCompact" for e, _, _ in cmds), cmds
+            assert any(e == "SessionStart" for e, _, _ in cmds), cmds
+            ran = []
+            for event, envelope, cmd in cmds:
+                payload = {"session_id": "sess", "cwd": str(env["proj"]),
+                           "transcript_path": str(env["proj"] / "t.jsonl"), **envelope}
+                h = subprocess.run(["bash", "-c", cmd], input=json.dumps(payload), text=True,
+                                   capture_output=True, cwd=env["proj"], env=run_env, timeout=180)
+                ran.append((event, cmd.split("; ")[-1], h.returncode, h.stderr[-200:]))
+            again = _cli_scan(run_env, env["proj"])
+        finally:
+            subprocess.run([str(DEV_BIN / "rmx"), "daemon", "stop"], capture_output=True,
+                           text=True, env=run_env, timeout=120)
+>       assert COMP_MARK in again, (
+            "after PreCompact + SessionStart compact the unchanged composite is still "
+            f"suppressed; hook commands run (event, command, rc, stderr tail): {ran}")
+E       AssertionError: after PreCompact + SessionStart compact the unchanged composite is still suppressed; hook commands run (event, command, rc, stderr tail): [('PreCompact', 'rmx focus summarize --promote --timeout 30', 0, ''), ('PreCompact', 'rmx memory recall --recent --since 1h --k 30 --scope both --pack --timeout 30', 0, '# rmx: warning: global rows omitted: global store: daemon not running for /private/tmp/rmx-pp8c2crc/h/.refmatrix: memory_recent found no listening socket (FileNotFoundError)\n'), ('PreCompact', 'rmx save-state --no-promote --no-sync -m "auto: pre-compact checkpoint"', 0, 'MEMORY.md: 1 -> 1 lines, 118 chars (caps 200 lines / 24000 chars; 1 memories on disk)\n'), ('SessionStart', 'rmx focus hook --event session-start', 0, ''), ('SessionStart', 'rmx recall-state --max-bytes 9000', 0, '')]
+E       assert '# STM topic composite' in '# refmatrix context for prompt-mentioned symbols: implementation\n\n=== context for `implementation` ===\nanchor: imp...lationships across the implementation architecture.\n\n[truncated by budget]\n\n[~371 tokens, 2 neighbors, degree=0]\n'
+
+tests/test_scanorder_r2_l120.py:291: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_scanorder_r2_l120.py::test_s1_long_plain_words_are_not_placed_in_tier_1
+FAILED tests/test_scanorder_r2_l120.py::test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted[long+e.g]
+FAILED tests/test_scanorder_r2_l120.py::test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted[long+t.repla]
+FAILED tests/test_scanorder_r2_l120.py::test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted[long-only]
+FAILED tests/test_scanorder_r2_l120.py::test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted[dotted-fragments]
+FAILED tests/test_scanorder_r2_l120.py::test_s2_a_named_identifier_survives_the_ppr_cut_and_comes_first[scan-prompt]
+FAILED tests/test_scanorder_r2_l120.py::test_s2_a_named_identifier_survives_the_ppr_cut_and_comes_first[widget_registry]
+FAILED tests/test_scanorder_r2_l120.py::test_s3_a_composite_the_cap_dropped_is_delivered_when_there_is_room
+FAILED tests/test_scanorder_r2_l120.py::test_m1_an_unchanged_composite_is_delivered_again_after_compaction
+9 failed, 5 passed in 10.37s
