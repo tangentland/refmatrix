@@ -26,7 +26,9 @@ metadata:
 > ([[#s0b]]), **S1** per-block bands ([[#s1]]), **S2** cut and tighten ([[#s2]]), **S3**
 > ablation, conditional ([[#s3]]).
 > Two releases: **release A** carries S0, one composite fix ([[#r2-0]]) and bug-256
-> ([[#r0-7]]); **release B** carries S2. The measurement window runs between them.
+> ([[#r0-7]]); **release B** carries S2. The measurement window runs between them. In the
+> POP's release plan ([[plan-of-plans#queue-releases]], ruling L135) release A is part of
+> **R1** and release B is part of **R8**; the capture's count starts at R1's deploy.
 > Queue: S0 is row 5 of [[plan-of-plans#queue]]; S0b to S3 are row 14. Plan-10's dedupe (10.5,
 > 10.6, 10.4, 10.2) is post-mod (ruling L128); 10.3 stays pre-mod. Nothing here waits on either.
 > Feeds 21.5 phase M and plan-30's 30.6 ([[#handoff]]).
@@ -934,7 +936,10 @@ base.
 {#files-table}
 
 Both releases change a hook's output or the store's logs, so each is a major release (`0.N.0`)
-gated by the full suite on merged `master` ([[orchestration#release]]). {#files-release}
+gated by the full suite on merged `master` ([[orchestration#release]]). Neither is a release of
+its own: release A ships in R1 and release B in R8 of [[plan-of-plans#queue-releases]]. The
+cheaper-path follow-up of [[#ac-0-17]] (A.1), if it is needed, is a ninth gate that plan does
+not hold; the lead schedules it. {#files-release}
 
 ## Risks {#risks}
 
