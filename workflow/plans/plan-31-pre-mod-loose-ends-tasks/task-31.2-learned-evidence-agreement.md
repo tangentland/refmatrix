@@ -14,7 +14,7 @@ metadata:
 # Task 31.2: learned evidence agreement {#root}
 
 > Plan: [[plan-31-pre-mod-loose-ends]] ([[plan-31-pre-mod-loose-ends#t2]])
-> Status: drafting (ch-architect on Fable, 2026-11-15; ch-bsd spec review next)
+> Status: drafting (revision 1 after ch-bsd r1, ruling L139; fold table at [[#rev-r1]])
 > Depends on: 29.5 released ([[task-29.5-split-giant-modules]]): the purge code is then in
 > `store_removal.py` and the replay in `store_replay.py`. Written against that layout
 > ([[#layout]]).
@@ -24,9 +24,10 @@ metadata:
 > 16.6's sidecar ([[#r3-source]]), and the learned-row halves of 22.6 R3 and R5 that
 > [[plan-31-pre-mod-loose-ends#t2]] names ([[#scope-22-6]]).
 > Decision: `plan-31 D14`, decided by the user in [[plan-of-plans#decisions]] ([[#r7]]).
-> Open with the user: Q38 (what "resolved" means in D14, [[#r7-line]]) and Q39 (bug-203 into
-> this task, [[#r3-invalidate]]), both in [[plan-of-plans#questions]]. The text that depends on
-> either is marked conditional.
+> Takes bug-203 (ruling L136 (2): this task routes `rmx sync -i` to the writer; Q39 is
+> withdrawn).
+> Open with the user: Q38 (what "resolved" means in D14, [[#r7-line]]), in
+> [[plan-of-plans#questions]]. The text that depends on it is marked conditional.
 > Grep learning stays off (`~/.refmatrix/learn.off`) until this is deployed; turning it on is
 > not this task.
 > Base for every measurement here: `f3a508f`, and a copy of the dev store's read snapshot
@@ -169,6 +170,24 @@ in place, each with a learned row: learned evidence 2 → 0, both `mentions` lin
 then brought the changed file's purged row back (3 rows where the live store had 2):
 bug-247. This task's RED reuses that fixture. {#baseline-probe-body}
 
+### The "legacy" relpath row is made again by every sync {#baseline-relpath}
+
+ch-bsd r1 S6, probed there and again here (`sync_refusal_probe.py`,
+`workflow/review-output/spec31b-sync-refusal-probe.log`):
+
+- Every sync of a GMD file runs the markdown semantic pass over it, which upserts a `doc`
+  row named by the file's **relpath** and stamps `tracked_files`. So the row
+  `_sync_one`'s guard looks for (`sync.py:269-271`) exists after the first sync of any GMD
+  doc, whether or not anything was ever learned on it. It is not legacy. {#fact-relpath-remade}
+- On the next edit the guard therefore fires and `purge_path` takes the whole path: the
+  doc-id row and every anchor get new ids (`adoc` 1 → 14, `adoc#sec` 3 → 16 here), and the
+  inbound `rel:` edges of the anchors are deleted with them. The citing doc is unchanged, so
+  nothing writes them back: in the probe `b`'s two edges to `adoc#sec` go to 0 on a plain
+  edit of `a`. This happens today on every edit of every synced GMD doc, with learning off.
+  {#fact-inbound-lost}
+- 22.6 R4 called the row legacy and built its guard on a `tracked_files` clause that is
+  always true. [[#r3-gmd]] states the rule against what the code does. {#fact-guard-premise}
+
 ### Cost of the deletes {#baseline-cost}
 
 On a writable scratch copy, each inside a transaction that was rolled back (statement time
@@ -205,9 +224,12 @@ At the task's base (after 29.5): run `orphan_census.py` and `resolvable_split.py
 read-only copy; run the
 order probe's fixture; time [[#r5]]'s step 3 and [[#r7]]'s re-attach end to end, **with
 commit**, on a writable scratch copy of the dev store's snapshot, and record the store-lock
-hold it implies. Bands, stated now: under 30 s, as specified; 30 to 120 s, the step runs only
-in the announced store event and the summary says so; over 120 s, step 3 is chunked by file
-with lock yields and the spec returns to the lead. Re-read 29.5's landed module map and
+hold it implies. **Then time it again under load** (ch-bsd r1 M6): a second process runs a
+sync or flush loop against the same scratch store through its daemon while `vacuum` runs,
+and the summary records how long that writer waited; `_op_vacuum` holds the store lock for
+the whole call. The bands are judged on the loaded number. Bands, stated now: under 30 s, as
+specified; 30 to 120 s, the step runs only in the announced store event and the summary says
+so; over 120 s, step 3 is chunked by file with lock yields and the spec returns to the lead. Re-read 29.5's landed module map and
 correct [[#layout]]'s file names in the summary. {#r0-body}
 
 ### R1: one definition of "learned" {#r1}
@@ -241,8 +263,7 @@ written for it. The kept rows are not re-verified: the read path judges them
 |---|---|
 | `sync.py:281`, non-GMD edit | `purge_path(abs, keep_learned=True)`; the `upsert_entity` that follows finds the kept row (it only ratchets `protected` upward) |
 | `sync.py:253`, split | missing → [[#r4]]; exists with an unsupported extension → `keep_learned=True` |
-| `sync.py:271` and `ingest.py:1509`, GMD legacy purge | **never `purge_path`.** `Store.purge_legacy_relpath_doc(rel, abs)` touches only the relpath-named `doc` row: its non-learned links and evidence go (logged); the row itself is purged only if no learned row is left on it. The doc-id row, its anchors and the inbound `rel:` edges are not touched |
-| the guard of those two sites | fires only when the relpath-named row has at least one non-learned row (a link, an evidence row, or a `tracked_files` row at its path); a row that is all learned does not fire it |
+| `sync.py:271` and `ingest.py:1509`, the GMD dispatch's purge | **never `purge_path`**; `Store.purge_legacy_relpath_doc(rel, abs)` instead ([[#r3-gmd]]) |
 | `rmx sync --invalidate P` (`cli.py:9014`, and whatever route R0 finds for a live daemon) | an existing path: `keep_learned=True`; a missing path: [[#r4]] |
 {#r3-sites}
 
@@ -261,17 +282,27 @@ changing this one. {#r3-source}
   raise, leaving the path untouched and writing no manifest); the learned keep or the
   [[#r4]] manifest; the purge of the rest. A memory-owned anchor is never purged and never
   written to a manifest. {#r3-memory}
-- **`rmx sync -i` runs on the writer (bug-203). Conditional on Q39**
-  ([[plan-of-plans#questions]], open with the user; the lead recommends admitting it). If
-  Q39 is (b), this bullet, [[#ac-14]] and mutation 21 are struck and the `-i` row of
-  [[#r3-sites]] applies to the in-process route only. bug-203 is then not unowned: the POP's
-  queue says T4's bounded-write step adopts it ([[plan-of-plans#queue]] step 13, after this
-  task's step 9), so the question is which of the two steps routes `-i`, and the later one
-  must not rewrite what the earlier built. With a daemon up, `-i` reaches a store proxy
-  that has no `purge_path` and falls through to the read replica. This requirement rewrites
-  what `-i` does, so it also routes it: through the daemon's sync op family when a daemon
-  answers, in-process otherwise, never the replica. The store review homed bug-203 on 22.6
-  R4. {#r3-invalidate}
+- **The GMD dispatch (ch-bsd r1 S6).** The relpath-named `doc` row is the semantic pass's own
+  row for the file, made again by every sync ([[#fact-relpath-remade]]); 22.6's name for the
+  method is kept, the word "legacy" is not a premise. `purge_legacy_relpath_doc(rel, abs)`:
+  - touches only that one row: its non-learned links are unlinked and its non-learned
+    evidence deleted (logged, with `evidence_clear`), so the semantic pass that follows
+    writes this version's and none is doubled;
+  - purges the row itself only when no learned row is on it; the semantic pass then makes it
+    again. A row with a learned row keeps its id, its learned rows, its `query/` links and
+    its `protected` flag;
+  - never touches the doc-id row, its anchors or their inbound `rel:` edges;
+  - never deletes the `tracked_files` row and logs no `untrack`: the path is the doc-id
+    row's path too.
+
+  The guard fires when the relpath row has at least one non-learned link or evidence row.
+  22.6's third clause, "or a `tracked_files` row at its path", is dropped: it is always true.
+  {#r3-gmd}
+- **`rmx sync -i` runs on the writer (bug-203; ruling L136 (2)).** With a daemon up, `-i`
+  reaches a store proxy that has no `purge_path` and falls through to the read replica. This
+  requirement rewrites what `-i` does, so it also routes it: through the daemon's sync op
+  family when a daemon answers, in-process otherwise, never the replica. T4's adopt list
+  drops bug-203. {#r3-invalidate}
 
 ### R4: a deleted or ignored file's learned rows leave through a manifest {#r4}
 
@@ -279,6 +310,18 @@ changing this one. {#r3-source}
 (`sync.py:249`, the missing half of `:253`, `vacuum` step 2, a missing `--invalidate` path):
 when the path holds learned rows, a cleanup manifest is written and synced to disk **before**
 anything is deleted; then the purge runs as today, with [[#r2]]. {#r4-body}
+
+- **One manifest per batch, not per path** (ch-bsd r1 B2). `_sync_paths`, `vacuum`, a
+  `sync -i` call and the code+docs markdown pass each open one manifest scope; every purge
+  inside it that removes learned rows appends its records to that one file, and the file is
+  created only when the first such record is written. A purge outside any scope opens its
+  own. So a branch switch over many learned files writes one file, and a batch that removes
+  no learned row writes none. {#r4-scope}
+- **Retention.** No code deletes a manifest: it is the record of what was removed, and
+  plan-22's manifests have no retention rule either. The file count is bounded by the
+  number of batches that removed learned rows. A retention rule for `.refmatrix/removal/`
+  is not built here; the lead opens a registry row for it, marked post-mod, and
+  [[#risk-manifests]] points at it. {#r4-retention}
 
 - **The manifest** is `.refmatrix/removal/<id>.cleanup.jsonl`, the path and the record form
   22.6 R2 and 22.2 R4 give a cleanup manifest ([[task-22.6-removal-entry-points#r2]],
@@ -316,7 +359,9 @@ After [[#r2]] no new orphan is made, so this step only ever meets rows the old c
 
 - **Ingest-derived orphans** (1,238,430 here) are deleted. Before the delete a manifest
   records them **as counts** per `(file, linkage, kind of row)`, not row by row: each row
-  points at nothing and is re-derived by the next ingest of its file. {#r5-derived}
+  points at nothing and is re-derived by the next ingest of its file. The counts manifest
+  is written and synced before the delete, and it fails closed like every other: if it
+  cannot be written, step 3 deletes nothing and reports it (ch-bsd r1 M7). {#r5-derived}
 - **Learned orphans** follow `plan-31 D14` as decided ([[#r7]]). {#r5-learned}
 - **Result and output.** `vacuum()` returns, and `rmx vacuum` prints,
   `evidence_dropped: {derived, rel, learned}`, `learned_reattached`, and the manifest path.
@@ -344,6 +389,15 @@ After [[#r2]] no new orphan is made, so this step only ever meets rows the old c
 same way; its `tombstone` already calls `purge_entity`, which now takes the evidence
 ([[#r2]]). `dump_catalog_to_log` is unchanged: with I1 there is no orphan for it to leave
 out. {#r6-consumers}
+
+**The two clears the replica never applied** (bug-260 and its sibling; ch-bsd r1 S4).
+`_apply_event_body` has no case for `rel_evidence_clear` or for `pending_refs_clear`; both
+are counted as `skipped_unresolved`. Reproduced by ch-bsd: after a `rel:` line is
+re-targeted the writer holds 2 `rel:` evidence rows and a replica that applied the delta
+holds 4 (`bsd31b-r1-bug260-probe.log`); a full rebuild agrees with the writer. Both events
+get a case in `_apply_event_body`, each with the predicate `rebuild_index_from_log` uses for
+it. `pending_refs_clear` is a second defect and gets its own registry row; the lead
+allocates the id. {#r6-replica-clears}
 
 ### R7: the rows already orphaned (`plan-31 D14`, decided) {#r7}
 
@@ -413,7 +467,13 @@ that could not be written is reported per [[#r4-fail]]. {#r8-body}
 ### R9: the store event {#r9}
 
 The code changes no row until a `vacuum` runs. The store write is the lead's, announced and
-backed up, never an agent's. For the dev store, in the release: copy the snapshot and run
+backed up, never an agent's. **`vacuum` comes before any rebuild** (ch-bsd r1 M9): under the
+new `tombstone` rule a rebuild from the log does not bring back a learned row that an old
+purge orphaned, so a rebuild run first would lose the rows D14 keeps. `rmx rebuild
+--from-log`, and the daemon op that calls `rebuild_index_from_log`, therefore count the
+learned orphans of the current catalog first and refuse while there are any, naming
+`rmx vacuum`; `--force` overrides, and when the catalog cannot be read the count is reported
+as unknown and only `--force` proceeds. For the dev store, in the release: copy the snapshot and run
 `orphan_census.py` and `resolvable_split.py`; `rmx vacuum --dry-run`, whose counts must equal
 the split's; back up `catalog.read.duckdb`, `facts.log` and `active`; `rmx vacuum`; the
 census again on a fresh copy and a read of the manifest ([[#ac-9]]). D14 is the user's go
@@ -463,10 +523,15 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
 - **AC-2: a GMD edit keeps the doc graph.** Two GMD docs, A and B; B has a `rel:` line to an
   anchor of A; A also has a learned row on its relpath-named `doc` row. A is edited and
   synced: A's doc-id row and anchors keep their ids; B's edge to A's anchor is still live;
-  the learned row is kept. The same through `rmx ingest` (the twin). With a relpath row that
-  is all learned, the guard does not fire (no purge call, asserted by the row's id and an
-  unchanged `facts.log` tombstone count). **RED** at base (E lines: the anchor has a new id;
-  B's edge is gone). {#ac-2}
+  the learned row is kept. **Then A is edited and synced a second time**, through the real
+  `_sync_paths` with its semantic pass (the relpath row exists after the first sync whatever
+  the fixture did): the ids are still the first ones, B's edge is still live, the relpath
+  row's semantic links are this version's and none is doubled, and the `tracked_files` row
+  was never deleted (no `untrack` event in `facts.log`). The same through `rmx ingest` (the
+  twin). The first draft's last leg, "a relpath row that is all learned does not fire the
+  guard", is dropped: that state cannot be reached through a sync
+  ([[#fact-relpath-remade]]). **RED** at base (E lines: the anchor has a new id; B's edge is
+  gone), which is [[#fact-inbound-lost]]. {#ac-2}
 - **AC-3: a deleted file's learned rows are in a manifest before they go.** The fixture's
   deleted file, and a file that became ignored: a cleanup manifest exists whose `intent` record
   holds the entity, the link and the evidence row by name, with a `commit` record after it
@@ -480,13 +545,18 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
   driven once on a store with ingest evidence and learned evidence (sync edit, sync delete,
   `untrack`, `forget`, `prune-noise --drop`, `vacuum` steps 1 and 2, the doc → memory
   conversion), the count of evidence rows with either end gone is 0. Parametrised by caller.
-  **RED** at base for every caller (E line: the orphan count). {#ac-5}
+  Every fixture carries evidence whose **`concept_id`** is the purged entity (a `rel:` row's
+  concept is the citing doc, so purging the citer makes one): at base `vacuum`'s own step 3
+  deletes entity-side orphans in the same call, and a `vacuum` leg with entity-side evidence
+  only would pass at base (ch-bsd r1 M8). **RED** at base for every caller (E line: the
+  orphan count). {#ac-5}
 - **AC-6: `vacuum` reports and logs.** A store seeded with orphans of the three kinds (by
   deleting entity rows directly, the state the old code left): `vacuum(dry_run=True)` returns
   the counts and changes nothing; `vacuum()` returns the same counts, the counts manifest
   exists, one `vacuum_evidence_drop` event is logged, and `rmx vacuum` prints the line. Rows
-  whose **concept** is gone are dropped too. **RED** at base (E lines: no such keys; the
-  concept-side rows remain). {#ac-6}
+  whose **concept** is gone are dropped too. With `.refmatrix/removal` unwritable, `vacuum`
+  deletes no orphan of any kind and reports the failure. **RED** at base (E lines: no such
+  keys; the concept-side rows remain). {#ac-6}
 - **AC-7: resolvable rows are re-attached; the rest are in the manifest before they go
   (`plan-31 D14`).** On that seeded store, with one learned orphan of each class of
   [[#r7-rule]] (resolvable; concept gone; no entity of the learner's kind; file not on disk)
@@ -528,23 +598,38 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
   (`daemon.py:4581` and `:4610` hold the literal). {#ac-11}
 - **AC-12: the incremental consumer.** A replica that applies the log delta of AC-1's and
   AC-3's scenarios through `apply_log_delta` holds the same evidence as the writer. **RED**
-  at base (E line: the replica keeps the purged entity's evidence, or lacks the op). The same
-  test carries bug-260's leg: a writer re-derives a doc's `rel:` lines
-  (`rel_evidence_clear`), and the replica must hold the writer's `rel:` evidence. The RED
-  **probes that first**: bug-260 was read, not run. If the replica already agrees, the leg is
-  kept as characterization and bug-260 is closed as not reproduced; if not, `_apply_event_body`
-  applies `rel_evidence_clear` as the rebuild does. {#ac-12}
+  at base (E line: the replica keeps the purged entity's evidence, or lacks the op). Two
+  more legs, for [[#r6-replica-clears]]: (i) the writer re-targets a doc's `rel:` line; the
+  replica holds the writer's `rel:` evidence rows and no others. **RED** at base (E line: 4
+  rows against the writer's 2, as ch-bsd's probe). (ii) the writer re-ingests a doc whose
+  pending `rel:` line is gone; the replica's `pending_refs` equal the writer's. **RED** at
+  base (E line: the cleared pending row is still on the replica). The replica lives under a
+  project directory of the same name as the writer's: a copy under another name re-scopes
+  the events to another partition and fakes the result (ch-bsd r1, Q5). {#ac-12}
 - **AC-13: the memory-anchor keep still wins.** A path that holds a memory-owned anchor and a
   learned row: the anchor survives a purge with and without `keep_learned` and is in no
   manifest; with the memory's metadata made unreadable, `purge_path` raises
   `MemoryOwnershipError`, nothing at the path changes and no manifest is written.
   **Characterization** for the anchor, **RED** for "no manifest" (no manifest exists at
   base). {#ac-13}
-- **AC-14: `rmx sync -i` reaches the writer (bug-203). Conditional on Q39 = admit.** With a
-  throwaway daemon up,
+- **AC-14: `rmx sync -i` reaches the writer (bug-203; ruling L136 (2)).** With a throwaway
+  daemon up,
   `rmx sync -i <existing file>` keeps the file's learned rows and re-derives its ingest rows
   on the writer store, and `-i <missing file>` writes the [[#r4]] manifest. **RED** at base
   (E line: the purge goes to the replica, or the learned rows are gone). {#ac-14}
+- **AC-15: a manifest can be re-applied** (ch-bsd r1 M7, condition 1). A test reads the
+  cleanup manifest AC-3 wrote and the one AC-7 wrote and re-applies each with store methods
+  that exist today (`upsert_entity`, `link`, `add_evidence`, `set_entity_flag`): the
+  learned evidence rows, the `query/` links and the `protected` flags it restores equal, as
+  a multiset by name, what was there before the removal. This is what "complete, by name"
+  means, proved by a test; it is not a restore command. **RED** at base (no manifest
+  exists). {#ac-15}
+- **AC-16: no rebuild before the vacuum** (ch-bsd r1 M9). On a store with one resolvable
+  learned orphan, `rmx rebuild --from-log --yes` exits non-zero naming `rmx vacuum` and the
+  count, and the catalog is untouched; with `--force` it rebuilds; after `rmx vacuum` it
+  rebuilds without `--force` and the re-attached row is in the rebuilt catalog. The daemon
+  op that calls `rebuild_index_from_log` refuses the same way. **RED** at base (E line: the
+  rebuild runs). {#ac-16}
 
 ## Must-fail mutations {#mutations}
 
@@ -554,7 +639,7 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
 | 2 | `keep_learned` keeps the entity but drops its `query/` links | AC-1 |
 | 3 | `keep_learned` keeps the entity's ingest evidence too | AC-1 (ingest evidence is the new version's), AC-8 |
 | 4 | the GMD site calls `purge_path(…, keep_learned=True)` instead of `purge_legacy_relpath_doc` | AC-2 (anchor ids, B's edge) |
-| 5 | the guard fires on an all-learned relpath row | AC-2's last leg |
+| 5 | the GMD site's guard fires on the `tracked_files` row alone | AC-2 (a doc with no semantic links is purged and its events logged on every sync; asserted by an unchanged tombstone count) |
 | 6 | the manifest is written after the delete | AC-3 with a write that fails: AC-4 |
 | 7 | drop the evidence `DELETE` from `purge_entity` | AC-5 (the `purge_entity` callers), AC-8 |
 | 8 | drop it from `_bulk_purge_ids` | AC-5 (`untrack`, `forget`, `vacuum`) |
@@ -570,7 +655,15 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
 | 18 | condition E matches any `code` / `doc` entity of that name, not the learner's kind | AC-7, with a `doc` entity named like a `.py` file |
 | 19 | the delete of the non-resolvable rows runs before the manifest write | AC-7's failing-delete leg |
 | 20 | the learned keep runs before the memory-anchor keep | AC-13's unreadable-metadata leg (a manifest is written) |
-| 21 | `-i` calls `purge_path` on whatever store it is handed (only if Q39 admits bug-203) | AC-14 |
+| 21 | `-i` calls `purge_path` on whatever store it is handed | AC-14 |
+| 22 | `_apply_event_body` ignores `rel_evidence_clear` | AC-12 (i) |
+| 23 | `_apply_event_body` ignores `pending_refs_clear` | AC-12 (ii) |
+| 24 | `purge_legacy_relpath_doc` deletes the `tracked_files` row | AC-2 (an `untrack` event appears) |
+| 25 | `purge_legacy_relpath_doc` keeps the row's non-learned links | AC-2's second edit (the semantic links are doubled or stale) |
+| 26 | each purge opens its own manifest inside a sync batch | AC-3, with two deleted learned files in one batch (two files where one is asserted) |
+| 27 | the counts manifest is written after step 3's delete | AC-6's unwritable leg |
+| 28 | the manifest omits the `query/` links | AC-15 |
+| 29 | the rebuild does not count learned orphans | AC-16 |
 {#mutations-table}
 
 ## Caller census {#census}
@@ -625,9 +718,13 @@ freshness revision from [[#scope-22-6-table]]; this task does not edit 22.6. {#f
   verification or removal is 16.6 and 22.1, post-mod. {#risk-stale-lines}
 - **Protection widens the keep.** A file entity a user protected by hand is kept across
   edits like a learned one. None exists in the dev store today. {#risk-protected}
-- **Manifests accumulate** under `.refmatrix/removal/`, one per purge that held learned rows.
-  A branch switch over many learned files writes many small files. Nothing prunes them here.
-  {#risk-manifests}
+- **Manifests accumulate** under `.refmatrix/removal/`: one per batch that removed learned
+  rows ([[#r4-scope]]), none otherwise. No code prunes them; the retention rule is the
+  registry row the lead opens, marked post-mod ([[#r4-retention]]). {#risk-manifests}
+- **The rebuild guard reads the catalog it is about to wipe.** If that catalog is damaged
+  the count is unknown and the rebuild needs `--force` ([[#r9]]). The daemon's repair path
+  must pass it deliberately; R0 lists that caller and the summary says what it does.
+  {#risk-rebuild-guard}
 - **29.5's names.** See [[#layout]]. {#risk-layout}
 
 ## Out of scope {#out-of-scope}
@@ -640,6 +737,26 @@ freshness revision from [[#scope-22-6-table]]; this task does not edit 22.6. {#f
 - Re-keying learned rows to new lines or new files (task 29.7, dropped by ruling L115).
 - Any store but the dev store.
 {#out-of-scope-list}
+
+## Revision 1: fold of ch-bsd r1 (ruling L139) and of L136 {#rev-r1}
+
+The review read `a4d245a`; D14, the manifest form and bug-260's leg had already changed at
+`d788602` and `da184bd`.
+
+| Finding | Fold | Where |
+|---|---|---|
+| B2 manifest retention is a deferral with no anchor | one manifest per batch, none when nothing learned is removed; retention named, with a registry row for the lead | [[#r4-scope]], [[#r4-retention]], [[#risk-manifests]], mutation 26 |
+| S4 bug-260 folded by L132 but not in the spec | both replica clears get a case; AC-12 has both legs, RED by bsd's probe; two mutations; the sibling's own registry row | [[#r6-replica-clears]], [[#ac-12]], mutations 22, 23 |
+| S5 D14 not written as decided; the rule not exact | decided (at `d788602`): the key is `file` = entity `name`, the learner's kind, the concept's partition, exactly one; the duplicate rule; the 11 are inside the 53. The line stays conditional on Q38 (L139) | [[#r7-rule]], [[#r7-reattach]], [[#r7-line]], [[#ac-7]], mutations 17, 18 |
+| S6 the GMD-site guard assumes the relpath row is legacy | the row is re-made by every sync; the `tracked_files` clause is dropped; no untrack; AC-2 runs two real syncs and loses its unreachable leg | [[#baseline-relpath]], [[#r3-gmd]], [[#ac-2]], mutations 5, 24, 25 |
+| M6 the lock hold is not timed under load | a second timing with a concurrent writer; the bands are judged on it | [[#r0]] |
+| M7 "no restore command", two conditions | a test re-applies a manifest with existing store APIs; `vacuum`'s manifests fail closed, the counts manifest included | [[#ac-15]], [[#r5-derived]], [[#r7-delete]], [[#ac-6]], [[#ac-7]], mutations 27, 28 |
+| M8 AC-5's vacuum legs pass at base without concept-side evidence | every fixture carries evidence whose `concept_id` is the purged entity | [[#ac-5]] |
+| M9 "vacuum before any rebuild" is only a release note | the rebuild counts learned orphans and refuses without `--force` | [[#r9]], [[#ac-16]], mutation 29, [[#risk-rebuild-guard]] |
+| M1 decisions not written as decided | D14 cited as decided; closures updated | header, [[#d14]] |
+| L136 (2) | bug-203 unconditional | [[#r3-invalidate]], [[#ac-14]], mutation 21 |
+| L134 (2), (4), (5) | folded at `da184bd` | [[#scope-22-6-body]], [[#r7-why]], [[#r4-vectors]] |
+{#rev-r1-table}
 
 ## Decisions {#decisions}
 
@@ -656,8 +773,10 @@ cites them and records none of its own. {#decisions-rule}
   the pattern: 12,645 re-attached and 17,486 deleted (the question quotes 13,067 and 17,064,
   taken before the line count was split by resolvable row). Both are written at
   [[#r7-line-table]]. {#q38}
-- **Q39, open with the user:** admitting bug-203. Written as conditional at
-  [[#r3-invalidate]], [[#ac-14]] and mutation 21. {#q39}
+- **Ruling L136 (2):** Q39 is withdrawn. This task routes `rmx sync -i` to the writer
+  (bug-203), unconditionally ([[#r3-invalidate]], [[#ac-14]], mutation 21). {#l136}
+- **Ruling L139:** all of ch-bsd r1 folds ([[#rev-r1]]); "no restore command" is accepted on
+  its two conditions ([[#ac-15]]; [[#r5-derived]] and [[#ac-6]]'s unwritable leg). {#l139}
 - **Ruling L132:** two departures from approved text go to ch-bsd to judge: ingest-derived
   orphans are recorded in the manifest as counts, not rows ([[#r5-derived]]; 22.6 R5 asked for
   every row, 834,201 then and 1.24 million now, and a row that points at nothing is

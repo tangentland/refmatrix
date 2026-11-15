@@ -1,0 +1,27 @@
+linkages with a rel: evidence row, minus the no-evidence ingest linkages: 17 ['amended-by', 'amends', 'catalogs', 'contradicts', 'depends-on', 'derives-from', 'evidence-for', 'example-of', 'implements', 'motivates', 'realizes', 'reinforces', 'related-to', 'specified-by', 'specifies', 'superseded-by', 'supersedes']
+edges on those verbs: 8628
+...with no evidence row: 136
+by (source kind, source has path, target kind, target has path, target named after a doc/memory):
+   ('concept', True, 'concept', False, True, 76)
+   ('memory', False, 'concept', False, True, 38)
+   ('concept', True, 'memory', False, False, 7)
+   ('concept', False, 'doc', True, False, 7)
+   ('memory', False, 'memory', False, False, 3)
+   ('concept', True, 'concept', False, False, 3)
+   ('memory', False, 'concept', False, False, 2)
+by verb, for target = path-less concept named after a doc/memory:
+   ('related-to', 'concept', 49)
+   ('related-to', 'memory', 14)
+   ('amends', 'concept', 10)
+   ('reinforces', 'concept', 9)
+   ('reinforces', 'memory', 9)
+   ('amends', 'memory', 8)
+   ('depends-on', 'memory', 4)
+   ('realizes', 'concept', 4)
+   ('depends-on', 'concept', 3)
+   ('realizes', 'memory', 2)
+   ('supersedes', 'concept', 1)
+   ('supersedes', 'memory', 1)
+denotes linkage id: [(20281,)]
+of the class: source also has a LIVE evidence-backed edge of the same verb to the doc/memory the concept is named after: 112
+partitions: [('refmatrix', 136)]

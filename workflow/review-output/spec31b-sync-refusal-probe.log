@@ -1,0 +1,18 @@
+== arm A: R1 only (first draft; ch-bsd's B1)
+sync 1 (a, b)                ids={'adoc': 1, 'adoc#sec': 3, 'docs/a.md': 12} b->adoc#sec edges=2 tracked==disk mtime: True
+                             flush: {'paths': 2, 'touched': 2, 'gmd_refused': 'n/a', 'queue_after': []}
+sync 2 (a edited)            ids={'adoc': 14, 'adoc#sec': 16, 'docs/a.md': 22} b->adoc#sec edges=0 tracked==disk mtime: True
+                             flush: {'paths': 1, 'touched': 1, 'gmd_refused': 'n/a', 'queue_after': []}
+flush 1 (a -> list title)    ids={'docs/a.md': 23} b->adoc#sec edges=0 tracked==disk mtime: True
+                             flush: {'paths': 1, 'touched': 1, 'gmd_refused': 'n/a', 'queue_after': []}
+flush 2 (no change)          ids={'docs/a.md': 23} b->adoc#sec edges=0 tracked==disk mtime: True
+                             flush: {'paths': 0, 'touched': 0, 'gmd_refused': 'n/a', 'queue_after': []}
+== arm B: R1 + the B1 fold
+sync 1 (a, b)                ids={'adoc': 1, 'adoc#sec': 3, 'docs/a.md': 12} b->adoc#sec edges=2 tracked==disk mtime: True
+                             flush: {'paths': 2, 'touched': 2, 'gmd_refused': [], 'queue_after': []}
+sync 2 (a edited)            ids={'adoc': 14, 'adoc#sec': 16, 'docs/a.md': 22} b->adoc#sec edges=0 tracked==disk mtime: True
+                             flush: {'paths': 1, 'touched': 1, 'gmd_refused': [], 'queue_after': []}
+flush 1 (a -> list title)    ids={'adoc': 14, 'adoc#sec': 16, 'docs/a.md': 22} b->adoc#sec edges=0 tracked==disk mtime: False
+                             flush: {'paths': 1, 'touched': 0, 'gmd_refused': [['a.md', 'GmdFrontmatterError']], 'queue_after': ['a.md']}
+flush 2 (no change)          ids={'adoc': 14, 'adoc#sec': 16, 'docs/a.md': 22} b->adoc#sec edges=0 tracked==disk mtime: False
+                             flush: {'paths': 1, 'touched': 0, 'gmd_refused': [['a.md', 'GmdFrontmatterError']], 'queue_after': ['a.md']}

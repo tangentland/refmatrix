@@ -15,13 +15,14 @@ metadata:
 
 > Plan: [[plan-31-pre-mod-loose-ends]] ([[plan-31-pre-mod-loose-ends#t6]]); admitted by the
 > user, Q30 = a, 2026-11-15.
-> Status: drafting (ch-architect on Fable, 2026-11-15; ch-bsd spec review next)
+> Status: drafting (revision 1 after ch-bsd r1, ruling L139; fold table at [[#rev-r1]])
 > Depends on: [[task-31.1-frontmatter-type-refusal]] merged first (both edit
-> `ingest_gmd.py`). Not on 29.5: it touches `tools/gmd/`, `ingest_gmd.py`, two scripts and one
-> method beside `clear_rel_evidence`.
-> Closes: bug-251 ([[bug_registry#registry]]). [[#r5]] is the fix bug-185 R10 already
-> specifies for bug-221, which bug-257 repeats; which task builds it is the lead's to rule
-> ([[#r5-whose]]).
+> `ingest_gmd.py`). Order, fixed by ruling L139 ([[plan-of-plans#rulings]]): 31.3 → 31.4 →
+> 31.1 → **31.6**, never two in flight; it needs 31.3's gate-tree helper and makes its
+> upstream lint commit on top of 31.4's and 31.1's ([[#r7]]). Not on 29.5.
+> Closes: bug-251 and bug-221 ([[bug_registry#registry]]); bug-257 is bug-221's duplicate.
+> By ruling L136 it builds bug-185 R10's rule ([[#r5]]) and owns the one-time cleanup of the
+> evidence-less edges in the dev store ([[#r10]]).
 > Decision: `plan-31 D12`, decided in [[plan-of-plans#decisions]] ([[#d12]]).
 > Base for every measurement here: `f3a508f`, and a copy of the dev store's read snapshot
 > taken 2026-11-15 02:34.
@@ -102,11 +103,29 @@ rules, on the store copy. Output `workflow/review-output/spec31b-resolver-landin
 ### An edge outlives the line that made it {#baseline-stale-edges}
 
 Re-ingesting a doc clears its `rel:` evidence (`clear_rel_evidence`) and writes the new edges.
-It never unlinks an old one. On the store copy: 8,619 edges on the 17 `rel:` verbs; 136 have
-no evidence row; 114 of those point at a path-less concept named after an ingested doc or
-memory (28 concepts). Those are what bug-216's re-bind left when 0.84.0's reingest moved its
-lines to the docs. Re-binding the 62 lines here would leave 62 more, plus their root
-mirrors. {#fact-stale-edges}
+It never unlinks an old one. On the store copy (`rel_residue_census.py`, output
+`workflow/review-output/spec31b-rel-residue-refmatrix.log`): 18 linkages carry `rel:`
+evidence. Seventeen of them hold 8,628 edges, of which 136 have no evidence row. The
+eighteenth is `part-of`, which the first draft left out (ch-bsd r1 S1): 16,357 edges, 15,898
+with no evidence by design (heading containment, and organise's `subject_*` edges), 459 with
+`rel:` evidence, and 14 `rel: part-of` edges on the same pair as a same-file containment
+edge. {#fact-stale-edges}
+
+| The 136 evidence-less edges on the 17 verbs, by shape (source → target) | Edges |
+|---|---|
+| GMD node → path-less concept named after a doc or memory | 76 |
+| memory → path-less concept named after a doc or memory | 38 |
+| **the misbinding's shape, total** | **114** (on 28 concepts; 18 are `reinforces`, 9 of them from a memory; 112 have the right twin: the same source and verb to the doc or memory the concept is named after) |
+| GMD node → memory | 7 |
+| path-less concept → doc | 7 |
+| GMD node → path-less concept not named after a doc | 3 |
+| memory → memory | 3 |
+| memory → path-less concept not named after a doc | 2 |
+{#fact-residue-table}
+
+The 114 are what bug-216's re-bind left when 0.84.0's reingest moved its lines to the docs.
+Re-binding the 62 lines here would leave 62 more, plus their root mirrors, without
+[[#r5]]. {#fact-residue}
 
 ### The two corpora {#baseline-corpora}
 
@@ -239,9 +258,21 @@ link loop of pass 2, and `resolve_pending_refs`. {#r4-body}
   already holds in the active partition: `doc` rows whose `meta.gmd_version` is set and is
   not `lenient`, and `memory` rows. A row's stem is its `path`'s stem; a memory row has no
   `path`, and its name is its stem (the memory-file rule). Plain markdown read leniently is
-  not in the index: the lint does not resolve to it either. Built on the first miss of an
+  not in the index: the lint does not resolve to it either. Built on the first miss of the
   exact lookup, once per `ingest_gmd_paths` call, so a batch whose links all resolve by `id`
   reads nothing extra. {#r4-index}
+- **The index equals the disk corpus by construction** (ch-bsd r1 S2). A store row counts
+  only when a file stands behind it: a `memory` row only when its `meta` carries
+  `gmd_content_hash` (a bridged file has it; a `subject_*` row minted by organise and a
+  `focus_*` row do not: 162 of 570 memory rows on the copy have no file); a `doc` row only
+  when its `path` exists on disk (10 GMD doc rows on the copy point at files that are gone).
+  So what the ingester resolves against is what [[#r8]]'s gate walks, and a row that exists
+  only in the store can neither make a stem ambiguous nor take a link. {#r4-index-corpus}
+- **The exact lookup is a doc or memory id, never a concept** (ch-bsd r1 M4). The order is:
+  a doc or memory whose id is exactly the target; then the resolver's `project` and `stem`
+  forms, with an ambiguous stem refused; and only when no doc is found by any form, today's
+  fall-through. A path-less concept that carries the target's text as its name is reached
+  only in that last step, so it cannot win over a doc or over a refusal. {#r4-order}
 - **The project** is `resolve.project_name` of the citing file: the same function, so the same
   answer, as the lint's. {#r4-project}
 - **A hit by `project` or `stem`** rewrites the target name (`<id>` or `<id>#<anchor>`), and
@@ -285,12 +316,16 @@ Ruling L132 keeps this requirement. {#r5-body}
   unlinked as stale. {#r5-producers}
 - **The write.** Each unlink is the ordinary `Store.unlink`, logged, so a replay agrees. The
   batched `Store.bulk_unlink` is bug-185's, with the rest of its bulk path. {#r5-write}
-- **Whose it is: for the lead.** Proposed: this task builds the rule as one function on
-  today's per-row pass 2, with R10's own acceptance legs ([[#ac-5]]); bug-185 then finds it
-  built and changes only the write to `bulk_unlink`; bug-185's spec says so in a note by its
-  owner; bug-257 is closed as a duplicate of bug-221. The other way round (31.6 waits for
-  bug-185) leaves the 62 edges in place after this task's reingest. Neither spec says which
-  today. {#r5-whose}
+- **"Stated" is every link write of the pass** (ch-bsd r1 S1; R10's own rule). The new write
+  set is the `rel:` edges, the heading hierarchy's `part-of` edges, `imports`, mentions and
+  every other link the pass writes for the doc. A pair the doc's own structure writes is
+  never unlinked: deleting `rel: part-of -> [[#root]]` under a heading whose containment
+  edge is that same pair keeps the edge (14 such pairs on the copy). R0's census names
+  `part-of`'s two producers, the hierarchy and organise's `subject_*` edges. {#r5-stated}
+- **Whose it is: ruled.** Ruling L136 (1): this task builds the rule, as one function on
+  today's per-row pass 2, with R10's own acceptance legs ([[#ac-5]]). bug-185 later finds it
+  built and changes only the write to `bulk_unlink`; a note goes into bug-185's spec at its
+  build. bug-257 is closed as a duplicate of bug-221. {#r5-whose}
 
 ### R6: the corpus is fixed in the same change {#r6}
 
@@ -301,11 +336,32 @@ the summary) and any ambiguous link R0 finds. `./scripts/lint-gmd.sh` is 0 error
 
 ### R7: one upstream lint, three tasks {#r7}
 
-The lint's error for a list-valued `id:` or `title:` (bug-255) is
-[[task-31.1-frontmatter-type-refusal#r3]]'s, not this task's; 31.1 lands first. This task's
-upstream commit is made on top of 31.1's (and 31.4's, if it has landed), and the re-vendor
-takes all of them. `[ref-parity]` ([[#r8]]) is added beside 31.1's `[frontmatter-parity]`
-in the same script. {#r7-body}
+The order is fixed by ruling L139: **31.4 → 31.1 → 31.6**, never two in flight, each upstream
+commit on top of the previous, each re-vendor from the sha that holds the earlier ones.
+{#r7-body}
+
+- **31.4's change** (read from `task-31.4-retire-standing-warnings` on `spec-plan31a` at
+  `3225a16`; L133 M8): an opt-in `--strict` flag (any warning makes the exit 1, the summary
+  line ends `(strict: warnings fail)`), passed by `scripts/lint-gmd.sh`, and
+  `session/recall-state` added to `KNOWN_MEMORY_TYPES`. This task's re-vendor keeps both.
+  {#r7-31-4}
+- **31.4's nine stem links.** 31.4 rewrites its nine `ambiguous-stem` links (`INDEX` ×3,
+  `adr-template` ×6) to the full frontmatter id of the doc each sentence is about, while
+  they still warn. A full id is an exact-id hit under [[#r1-table]], so this task inherits
+  none of them. Had this task gone first, project-before-stem would have bound all nine
+  without a warning, perhaps to the wrong `INDEX`; the order exists to prevent that
+  (ch-bsd r1 S3). {#r7-nine}
+- **`ambiguous-stem` leaves the warning classes.** Here it becomes an error ([[#r3]]), so it
+  is no longer one of the classes `--strict` exists for. 31.4's
+  `test_every_warn_class_has_a_must_fail_fixture` reads the list of warn classes: this task
+  updates that list and moves the class's must-fail fixture to the error tests, in the same
+  commit. {#r7-warn-class}
+- **31.1's change.** The lint's error for a list-valued `id:` or `title:` (bug-255) is
+  [[task-31.1-frontmatter-type-refusal#r3]]'s. `[ref-parity]` ([[#r8]]) is added beside
+  31.1's `[frontmatter-parity]` in the same script. {#r7-31-1}
+- **The gate file.** This task adds one line to `scripts/lint-gmd.sh`,
+  `# gate-file: tools/gmd/resolve.py`, so 31.3's helper places the new module in every test
+  tree ([[#tests-helper]]). {#r7-gate-file}
 
 ### R8: the gate compares the two corpora {#r8}
 
@@ -326,19 +382,59 @@ links stay bound as they are. {#r9-body}
   `rmx reingest --force --no-sessions` (it clears the stamps; it purges nothing). On the dev
   store that run took about 63 minutes at 0.84.0 (bug-252). It is a store event of the
   release: backups first, announced, its own user go ([[orchestration#release]] step 4).
-  {#r9-reingest}
+  When it runs is Q40's ([[plan-of-plans#questions]], open: one reingest window for 31.1,
+  31.6 and 26.5, or one each); this spec needs only that [[#r10]] and [[#ac-9]] follow it in
+  the same window. {#r9-reingest}
 - **The recount is the proof**, on the dev store after that run ([[#ac-9]]). {#r9-recount}
 - **Every other store is a separate user go**, per store. Until a store is re-derived its
   stem, project and folded links stay as they are today; nothing gets worse. The fleet's
   counts in [[#baseline-fleet-table]] are the size of what a re-derive would re-bind.
   {#r9-fleet}
 - **Residue the reingest does not remove:** the 114 evidence-less edges of
-  [[#fact-stale-edges]]. They have no evidence row to attribute them to a file, so R5 cannot
-  find them; bug-185 R10 puts the same class out of its scope, with plan-22's dangling
-  classes. Counted before and after in the summary; their removal is not this task
-  ([[#out-of-scope]]) and has no owner today. bug-218's freshness revision measured that 9
-  of the 114 are `reinforces` rows that its reader fix would count twice, and has asked the
-  lead for an owner. {#r9-residue}
+  [[#fact-residue-table]]. They have no evidence row to attribute them to a file, so
+  [[#r5]] cannot find them. [[#r10]] removes them. {#r9-residue}
+
+### R10: the one-time cleanup of the misbinding's residue (ruling L136) {#r10}
+
+Ruling L136 (3) gives the 114 edges to this task's store step: a one-time cleanup with a
+manifest, in the same user-gated window as the reingest. {#r10-body}
+
+- **The class.** An `entity_links` row is residue when all of these hold:
+  1. no `linkage_evidence` row exists for its `(linkage, concept, entity)`;
+  2. its linkage carries at least one `rel:` evidence row in the store, and is not `part-of`
+     or another linkage the ingest writes without evidence ([[#fact-stale-edges]]);
+  3. its target (the `entity_id` side) is a path-less concept whose name is the name of a
+     `doc` or `memory` row of the same partition;
+  4. its source (the `concept_id` side) is a doc, a memory, or a GMD node (a concept with a
+     `path`);
+  5. it matches no `UNOWNED_REL_PRODUCERS` signature ([[#r5-producers]]).
+  {#r10-class}
+- **Why that class and not all 136.** Conditions 3 and 4 are the shape only the misbinding
+  made: a `rel:` line whose bare target bound a same-named concept instead of the doc. The
+  other 22 evidence-less edges ([[#fact-residue-table]]) have other shapes and other
+  possible writers (a hand `memory link` has no evidence row until bug-218); they are left
+  alone and printed as counts by shape. {#r10-not-all}
+- **After the reingest, never before.** The reingest gives every `rel:` line that is stated
+  today its evidence row, so condition 1 then means "no line states this edge". Run before
+  it, the cleanup would also take the 62 misbound edges whose evidence [[#r5]] is about to
+  move. The op refuses to apply while the store's `gmd` derive stamp is older than this
+  task's code, and says so. {#r10-order}
+- **The op.** `rmx repair-index --rel-residue` (a verb, a daemon op and the CLI flag, beside
+  `--entities` and `--fragments`). With `--dry-run` it prints the count of the class, the
+  count that has the right twin, the `reinforces` count, and the other evidence-less edges
+  by shape, and writes nothing. Without it: the manifest first, then one `Store.unlink` per
+  edge (logged, so a replay agrees), then the `commit` record. {#r10-op}
+- **The manifest** is `.refmatrix/removal/<id>.cleanup.jsonl`, one record per edge in 22.2
+  R4's link form ([[task-22.2-repair-then-remove#r4]]): the linkage, both ends by partition,
+  kind and name with their ids, the weight, the reason `rel-edge-without-evidence`, and the
+  twin doc or memory when there is one. It is written and synced before the first unlink; if
+  it cannot be written nothing is unlinked. {#r10-manifest}
+- **The 18 `reinforces` edges** are in the class by the same rule. The 9 from a memory are
+  the rows bug-218's reader fix would count beside the direct edge to the memory the concept
+  `denotes`; removing them here removes the double count before that reader exists.
+  {#r10-reinforces}
+- **Every other store** has its own residue; the dry run counts it, and its cleanup rides
+  that store's own reingest go. {#r10-fleet}
 
 ## Acceptance criteria {#acceptance}
 
@@ -359,7 +455,9 @@ New tests live in `tests/test_bug251_one_resolver.py` unless said otherwise.
   **RED** at base for the folded link (E line: lint exits 0); **characterization** for the
   three. {#ac-2}
 - **AC-3: an ambiguous stem is refused on both sides.** Two docs with the stem `README` and
-  ids `a/readme-one`, `b/readme-two`; a citer with `rel: … -> [[README]]`. The lint:
+  ids `a/readme-one`, `b/readme-two`; a citer with `rel: … -> [[README]]`; and a path-less
+  concept named `README` already in the store, which must not win over the refusal (ch-bsd
+  r1 M4). The lint:
   `ambiguous-stem` error naming both, exit 1. The ingest: no edge, no pending row, the link
   in the report with both candidates. With a third doc whose id is `<project>/README`, the
   link resolves to it on both sides. **RED** at base (E lines: lint exits 0 with a warning;
@@ -387,26 +485,55 @@ New tests live in `tests/test_bug251_one_resolver.py` unless said otherwise.
   per-row path. **RED** at base (E line: the old edge is still there). {#ac-5}
 - **AC-6: the parity census.** `check-gmd-parity`'s `[ref-parity]` on (i) the repo scope: 0
   findings; (ii) a fixture where a doc outside the lint scope takes the stem of a linted doc:
-  one finding naming the link and both answers. `tests/test_bug179_anchor_parity.py`'s
-  sibling test calls the same function as the script. **RED** at base (E line: the function
+  one finding naming the link and both answers; (iii) on a throwaway store, a `memory` row
+  with no `gmd_content_hash` (the shape of a `subject_*` row) and a `doc` row whose file is
+  gone each take the stem of a linked doc: the ingest binds the link exactly as before, and
+  reports no ambiguity (ch-bsd r1 S2). `tests/test_bug179_anchor_parity.py`'s sibling test
+  calls the same function as the script. **RED** at base (E line: the function
   does not exist); the must-fail fixture is what proves the gate can fail
   ([[feedback_clean_corpus_hides_a_dead_gate]]). {#ac-6}
 - **AC-7: one text.** The test reads `tools/gmd/resolve.py` and
   `src/refmatrix/gmd_resolve.py` and fails on any byte of difference; the summary records the
-  upstream sha both were taken from and `diff` against the upstream file. **RED** at base
-  (the files do not exist). {#ac-7}
+  upstream sha both were taken from. Upstream == vendored is gated too (ch-bsd r1 M3):
+  `resolve.py` joins `lint.py` and `slice.py` in the parametrize of
+  `tests/test_bug179_anchor_parity.py::test_ac8_vendored_tool_is_a_committed_upstream_blob`,
+  so all three copies are checked by a test and none by hand. **RED** at base (the files do
+  not exist). {#ac-7}
 - **AC-8: the upstream gate test.** `scripts/test-lint-gates.py` in the upstream repo gains
   AC-2's and AC-3's cases and passes there; the re-vendored `tools/gmd/lint.py` and
   `tools/gmd/resolve.py` are byte-identical to the upstream files at the recorded sha, and
   31.1's `bad-frontmatter-type` cases still pass. **Gate.** {#ac-8}
-- **AC-9: the recount, all three classes (ruling L132).** After the dev store's forced reingest, `scripts/check-rel-landing.py`
-  over the lint scope: `target_unresolved` 0, `other_concept` 0 and `stale` 0 (37, 62 and 8
-  at base), and `resolver_landing.py` on a fresh copy classes every line the lint resolves
-  by stem or project as `doc_or_memory` or `anchor_node`. **Measurement**, on the live
-  store's copy, after the user's go. If a line stays in `other_concept` whose target the
-  lint does not resolve to a doc, it is listed and is not this task's. {#ac-9}
+- **AC-9: the recount, all three classes, by identity (rulings L132, L139; ch-bsd r1 M5).**
+  Right after the dev store's forced reingest, with the dev tree at the reingest's sha:
+  `resolver_landing.py` on a fresh copy classes **each of the lines the lint resolves by
+  stem or project** (107 at base, listed by file and line in the R0 output) as
+  `doc_or_memory` or `anchor_node`: none in `target_unresolved`, `other_concept` or `stale`
+  (37, 62 and 8 at base). `scripts/check-rel-landing.py`'s totals are recorded beside it. A
+  stale or unresolved line that is not one of those lines is listed and is not this task's:
+  the tree moves (on the copy of 02:34 read against a later tree, `stale` was 340 and
+  `target_unresolved` 355), and until 31.2 lands an edit of a doc drops the inbound edges of
+  its anchors ([[task-31.1-frontmatter-type-refusal#fact-inbound-edges]]). **Measurement**,
+  on the live store's copy, after the user's go. {#ac-9}
 - **AC-10: the repo is clean under the new lint.** `./scripts/lint-gmd.sh` exits 0 after
-  [[#r6]]'s docs commit. **Gate.** {#ac-10}
+  [[#r6]]'s docs commit. Its precondition is the lead's edit of the 35 folded links in the
+  memory dir, which the gate scans; the summary names the commit or the date of that edit.
+  **Gate.** {#ac-10}
+- **AC-12: the residue cleanup removes the class and nothing else.** A throwaway store
+  seeded with one edge of each row of [[#fact-residue-table]] (written directly, with no
+  evidence), one residue-shaped edge that **has** an evidence row, one evidence-less
+  `part-of` edge, and one edge matching an `UNOWNED_REL_PRODUCERS` signature.
+  `repair-index --rel-residue --dry-run` prints the class count 2 (node source, memory
+  source) and the other shapes, and changes nothing. The apply unlinks exactly those two,
+  logs an `unlink` for each, and leaves every other edge; the manifest holds two records by
+  name and a `commit`; with the unlink made to fail after the write, the manifest has the
+  records and no `commit` and both edges are still there; with `.refmatrix/removal`
+  unwritable, nothing is unlinked; a rebuild from the log agrees; with a stale `gmd` derive
+  stamp the apply refuses. **RED** at base (the flag does not exist). {#ac-12}
+- **AC-13: the dev store's residue.** In the reingest window, after the reingest:
+  the dry run's class count equals `rel_residue_census.py`'s on a copy taken just before
+  (114 on the copy of 2026-11-15 02:34, 18 of them `reinforces`; the count is taken again
+  then); after the apply the class count is 0, the manifest holds one record per edge, and
+  the other shapes' counts are unchanged. **Measurement**, on the lead's run. {#ac-13}
 - **AC-11: no extra read when ids resolve.** A batch whose links all resolve by `id` runs no
   index query (asserted by counting the statement, or by a store double that fails on it).
   **RED** only if the index is built eagerly; written as a guard. {#ac-11}
@@ -430,6 +557,14 @@ New tests live in `tests/test_bug251_one_resolver.py` unless said otherwise.
 | 10 | edit one byte of `src/refmatrix/gmd_resolve.py` | AC-7, and `[ref-parity]`'s identity check |
 | 11 | `[ref-parity]` resolves the ingest side against the lint's docs | AC-6 (ii) |
 | 12 | swap the order to stem before project | AC-3's third-doc leg (ambiguous instead of resolved) |
+| 13 | the ingest tries today's lookup (concept last) before the resolver | AC-3 (the `README` concept is bound) |
+| 14 | the index takes every `memory` row, with or without `gmd_content_hash` | AC-6 (iii) |
+| 15 | the index takes a `doc` row whose file is gone | AC-6 (iii) |
+| 16 | the cleanup drops condition 3 (any evidence-less edge on a `rel:` verb) | AC-12 (the other shapes are unlinked) |
+| 17 | the cleanup counts `part-of` as a `rel:` verb | AC-12 (the containment edge is unlinked) |
+| 18 | the cleanup unlinks before it writes the manifest | AC-12's failing-unlink leg |
+| 19 | the cleanup ignores the derive stamp | AC-12's last leg |
+| 20 | drop the `# gate-file:` line for `resolve.py` | every test that builds a gate tree (the lint's import fails) |
 {#mutations-table}
 
 ## Caller census {#census}
@@ -461,16 +596,18 @@ no folding); `gmd-migration-guide.md` (folded links, ambiguous stems, per repo).
 This repo: `tools/gmd/lint.py` and `tools/gmd/resolve.py` (re-vendored);
 `src/refmatrix/gmd_resolve.py` (the copy); `src/refmatrix/ingest_gmd.py` (R4, R5);
 `src/refmatrix/store.py` or, after 29.5, `store_links.py` (one read beside
-`clear_rel_evidence`); `scripts/check-gmd-parity.py` (R8); `docs/gmd/SPEC.md`; the docs commit
-of [[#r6]]; new `tests/test_bug251_one_resolver.py`; `workflow/bug_registry.md` (bug-251; bug-221 and
-bug-257 by the lead's ruling on [[#r5-whose]]); the implementation summary. {#files-list}
+`clear_rel_evidence`); `scripts/check-gmd-parity.py` (R8); `scripts/lint-gmd.sh` (one `# gate-file:` line);
+the `repair-index --rel-residue` verb, daemon op and CLI flag (R10; `verbs.py`, `daemon.py`,
+the `cli` module that holds `repair_index`, and the removal module for the selection);
+`tests/test_bug179_anchor_parity.py` (the blob test's parametrize); `docs/gmd/SPEC.md`; the docs commit
+of [[#r6]]; new `tests/test_bug251_one_resolver.py`; `workflow/bug_registry.md` (bug-251, bug-221); the implementation summary. {#files-list}
 
 ## Risks {#risks}
 
-- **The upstream file is shared.** 31.1, 31.4 and this task each change
-  `~/claude_tools/gmd/lint.py`. They land in the plan's order and each re-vendor is taken
-  from the sha that holds the earlier ones; a re-vendor from an older sha would drop a fix,
-  the bug-068 shape. AC-8 pins it. {#risk-upstream-order}
+- **The upstream file is shared.** 31.4, 31.1 and this task each change
+  `~/claude_tools/gmd/lint.py`, in that fixed order ([[#r7]]); a re-vendor from a sha that
+  lacks an earlier commit would drop a fix, the bug-068 shape. AC-7's blob test and AC-8 pin
+  it. {#risk-upstream-order}
 - **Three copies of one file.** The identity check is the only thing keeping them one text; it
   runs in the docs gate and in the suite. A change made in the package copy fails both. A
   change made upstream reaches this repo only at a re-vendor, as `lint.py` does. {#risk-copies}
@@ -478,7 +615,9 @@ bug-257 by the lead's ruling on [[#r5-whose]]); the implementation summary. {#fi
   and no link through an ambiguous stem, so nothing new fails there; its own lint scope was
   not measured, and the upstream commit is run against it before it lands. cliquedb (110
   folded links) and cliquet (3) fail only when they re-vendor; the migration guide lists the
-  fix. This task edits no other repo. {#risk-fleet-lint}
+  fix. A repo that vendors `lint.py` without `resolve.py` gets an `ImportError` at its next
+  re-vendor (cliquedb, cliquet); the migration guide says the two files travel together
+  (ch-bsd r1 M3). This task edits no other repo. {#risk-fleet-lint}
 - **The reingest is long** (63 minutes here, bug-252 unexplained) and holds the store busy.
   If bug-252's cause is found first, it runs faster; this task does not wait for it. {#risk-reingest}
 - **The index read on a miss.** A single-file sync whose doc has one link that is not an id
@@ -492,19 +631,51 @@ bug-257 by the lead's ruling on [[#r5-whose]]); the implementation summary. {#fi
   named, that the new text does not state, and that no evidence row of any kind supports;
   each unlink is logged. An edge another producer wrote on the same key with no evidence row
   is what R10's census and unowned list exist for ([[#r5-producers]]). {#risk-r5}
-- **One rule in two specs.** Until the lead rules ([[#r5-whose]]), bug-185 R10 and this R5
-  both claim the build. If both were built separately the unlink would run twice per doc and
-  the two could drift. {#risk-r5-twice}
+- **The cleanup removes edges nothing can re-derive.** A residue edge has no evidence, so
+  nothing says which line made it. The class is narrow on purpose ([[#r10-not-all]]), the
+  manifest holds every edge by name, and 112 of the 114 have the right edge beside them.
+  The two without a twin are listed in the dry run for the lead to read before the apply.
+  {#risk-r10}
 
 ## Out of scope {#out-of-scope}
 
-- Removing the 114 evidence-less edges already in the dev store, and their like elsewhere.
+- The 22 evidence-less edges outside [[#r10-class]], and any store's residue but the dev
+  store's.
 - Branch-aware lint, generated anchors, a before/after node check
   ([[plan-of-plans#post-mod]]).
 - `imports:` resolution; cross-partition `rel:` binding; a doc id declared by two files in
   the ingest scope (the lint's `duplicate-doc-id` covers its own scope).
 - Re-deriving any store but the dev store.
 {#out-of-scope-list}
+
+## Test trees {#tests-helper}
+
+Every test here that needs the gate's scripts in a throwaway tree (AC-2, AC-3's lint side,
+AC-6, AC-7) builds it with 31.3's shared helper, `tests/gmd_gate_tree.py`, which copies
+exactly the files `scripts/lint-gmd.sh` declares on its `# gate-file:` lines and takes
+per-file text overrides (`task-31.3-ledger-anchor-guard` `#r6` on `spec-plan31a` at
+`3225a16`; rulings L133 B2 and L139). This task adds the one line
+`# gate-file: tools/gmd/resolve.py` ([[#r7-gate-file]]) and no helper of its own: a fourth
+hand-built tree would fail 31.3's bypass check. {#tests-helper-body}
+
+## Revision 1: fold of ch-bsd r1 (ruling L139) and of L133, L136 {#rev-r1}
+
+The review read `a4d245a`; R5 had already been rewritten as bug-185 R10's rule at `f2664e6`.
+
+| Finding | Fold | Where |
+|---|---|---|
+| S1 R5 can unlink another producer's edge on a shared verb; `part-of` left out of the count | "stated" is every link write of the pass; a pair the doc's structure writes is never unlinked; the count is redone with `part-of`; R10's producer census | [[#r5-stated]], [[#r5-producers]], [[#ac-5]] (the `part-of` leg), mutations 8b, 8c, [[#fact-stale-edges]] |
+| S2 `[ref-parity]` does not compare the corpus the ingester reads | the index counts a store row only when a file stands behind it | [[#r4-index-corpus]], [[#ac-6]] (iii), mutations 14, 15 |
+| S3 no agreed order with 31.4; its nine links | 31.4 → 31.1 → 31.6; 31.4's change named; the nine are 31.4's, by intent; the warn-class list | header, [[#r7]] |
+| M1 decisions and closures | D12 cited as decided (at `d788602`); closes bug-251 and bug-221, bug-257 a duplicate; bug-255 is 31.1's | header, [[#d12]] |
+| M3 upstream == vendored not gated for `resolve.py` | joins the existing blob test; the `ImportError` risk | [[#ac-7]], [[#risk-fleet-lint]] |
+| M4 the exact lookup could reach a concept first | the order is stated; a `README` concept in AC-3 | [[#r4-order]], [[#ac-3]], mutation 13 |
+| M5 AC-9 needs a pinned tree and the 107 by identity | by identity, right after the reingest, at its sha; the memory-link edits as AC-10's precondition | [[#ac-9]], [[#ac-10]] |
+| L133 M8 | 31.4's linter change named | [[#r7-31-4]] |
+| L133 B2 | the shared helper and one `# gate-file:` line | [[#tests-helper]], [[#r7-gate-file]], mutation 20 |
+| L136 (1) | this task builds R10's rule; bug-257 a duplicate of bug-221 | [[#r5-whose]], header |
+| L136 (3) | the residue cleanup, with a class, a dry run, a manifest and two ACs | [[#r10]], [[#ac-12]], [[#ac-13]], mutations 16-19 |
+{#rev-r1-table}
 
 ## Decisions {#decisions}
 
@@ -517,6 +688,9 @@ cites them and records none of its own. {#decisions-rule}
   (11 in repo files, fixed in this task; 35 in memory files, the lead's edit), 110 in cliquedb
   and 3 in cliquet at their next re-vendor. The option not taken was folding as a fourth
   form on both sides. {#d12}
+- **Ruling L136:** (1) this task builds bug-185 R10's rule ([[#r5-whose]]); (3) it owns the
+  cleanup of the misbinding's residue ([[#r10]]). {#l136}
+- **Ruling L139:** all of ch-bsd r1 folds ([[#rev-r1]]); the linter order ([[#r7]]). {#l139}
 - **Ruling L132:** [[#r5]] stays; the recount AC is all three classes at 0
   ([[#ac-9]]); 31.1 lands before this task; the re-bind reingest of each store is its own
   user go ([[#r9]], and L125: a decision that changes a store on disk goes to the user).
@@ -528,10 +702,10 @@ sides, never bound and never pending ([[#r1-ambiguous]], [[#r4-ambiguous]]); `na
 an id source ([[#r1-name]]); one text in three files, held together by an identity check,
 with upstream first ([[#r2]]); the ingest index holds authored GMD docs and memories only
 ([[#r4-index]]); the gate compares the two corpora ([[#r8]]); the resolver's ingest-side function has a
-public name ([[#r4-public]]); R5 is bug-185 R10's rule, built here first ([[#r5-whose]]).
-{#decisions-proposed}
+public name ([[#r4-public]]); the cleanup's class is the misbinding's shape, 114 of the 136
+([[#r10-class]]), and the op is a `repair-index` flag ([[#r10-op]]). {#decisions-proposed}
 
 **Registered from this spec's measurements:** bug-251's extent is 107 lines
-([[#fact-107]]); bug-257 ([[#fact-stale-edges]]), which repeats bug-221, already owned by
-bug-185 R10 ([[#r5-whose]]); bug-255, taken by 31.1.
+([[#fact-107]]); bug-257 ([[#fact-stale-edges]]), closed as a duplicate of bug-221 by L136;
+bug-255, taken by 31.1.
 {#decisions-findings}

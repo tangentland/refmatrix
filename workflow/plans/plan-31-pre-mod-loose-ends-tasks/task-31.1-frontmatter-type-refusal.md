@@ -14,10 +14,11 @@ metadata:
 # Task 31.1: frontmatter type refusal {#root}
 
 > Plan: [[plan-31-pre-mod-loose-ends]] ([[plan-31-pre-mod-loose-ends#t1]])
-> Status: drafting (ch-architect on Fable, 2026-11-15; ch-bsd spec review next)
+> Status: drafting (revision 1 after ch-bsd r1, ruling L139; fold table at [[#rev-r1]])
 > Depends on: 0.83.1 / 0.84.0 deployed (it changes the raising input of 0.83.1's S2 and M2
-> tests). Lands before [[task-31.6-one-wikilink-resolver]]: both edit `ingest_gmd.py` and the
-> upstream lint (ruling L132, [[plan-of-plans#rulings]]).
+> tests). Order, fixed by ruling L139 ([[plan-of-plans#rulings]]): 31.3 → 31.4 → **31.1** →
+> 31.6. It needs 31.3's shared gate-tree helper and lands its upstream lint commit on top of
+> 31.4's ([[#r3-upstream]]); it is never in flight together with 31.4 or 31.6.
 > Closes: bug-244 (the ingest side), bug-255 (the lint side) and bug-258 (the skip that two
 > routes drop), all in [[bug_registry#registry]].
 > Decision: `plan-31 D11`, decided in [[plan-of-plans#decisions]] ([[#d11]]).
@@ -95,6 +96,27 @@ route the batch call is not inside a `try` at all: a list `id:` in one edited fi
 of `_sync_paths` and rolls back the whole batch's transaction. Registered as bug-258.
 {#fact-silent-routes}
 
+### What the sync route does with a refused file {#baseline-b1}
+
+`sync_refusal_probe.py` ([[plan-31b-spec-census]]; output
+`workflow/review-output/spec31b-sync-refusal-probe.log`), a throwaway store, `src/` untouched,
+both designs simulated at run time. Doc `a` (id `adoc`, anchor `sec`) is synced, edited, then
+given a list `title:`; doc `b` cites `adoc#sec`.
+
+| Step | Arm A: R1 only (this spec's first draft) | Arm B: R1 and [[#r2-sync-order]] |
+|---|---|---|
+| flush 1, `a` now has a list title | `adoc` and `adoc#sec` are **gone**; only a fresh relpath row is left; nothing reports a refusal; tracked mtime == disk mtime | `adoc` 14 and `adoc#sec` 16 **unchanged**; `gmd_refused` names `a.md`; tracked mtime != disk mtime; `a.md` is back on the queue |
+| flush 2, nothing changed | 0 paths, 0 touched: the file is skipped and the refusal is silent | 1 path, **refused again**; ids unchanged; still queued |
+{#baseline-b1-table}
+
+This is ch-bsd r1's B1, reproduced (arm A) and its fold shown to hold on the second flush
+(arm B), as ruling L139 asks. {#fact-b1-probe}
+
+The same probe shows something that is not this task's: in both arms the plain edit of `a`
+(sync 2) drops `b`'s `rel:` edge to `adoc#sec` (2 edges before, 0 after), because the guard's
+`purge_path` takes the anchors with their inbound edges and `b` is not re-processed. That is
+the purge [[task-31.2-learned-evidence-agreement#r3]] replaces. {#fact-inbound-edges}
+
 ### How many files have the shape {#baseline-fleet}
 
 `frontmatter_census.py`, reading each file with the ingester's own `_parse_frontmatter`. Repos
@@ -137,8 +159,12 @@ frontmatter `id` or `title` is a **non-empty list**. The message names the key a
 `frontmatter `id` must be a string, got a list: ['a', 'b']`. From then on `GmdDoc.doc_id` and
 `GmdDoc.title` are always `str`. {#r1-body}
 
-- The check sits in `parse_gmd`, after `_parse_frontmatter` and before the `gmd`-key test, so
-  it covers strict, lenient and `memory_ids` parses, and a plain file read leniently.
+- The check is one function, `ingest_gmd.frontmatter_refusal(path)`: the reason a file is
+  refused before it is parsed (it cannot be read as UTF-8; its `id` or `title` is a non-empty
+  list), or nothing. `parse_gmd` calls it after `_parse_frontmatter` and before the
+  `gmd`-key test, and raises on a list; the sync route calls the same function before it
+  purges anything ([[#r2-sync]]). So the rule has one text, and it covers strict, lenient and
+  `memory_ids` parses, and a plain file read leniently.
   `_parse_frontmatter` is unchanged: it also feeds `tags:` and `imports:`, which are lists by
   design, and the memory body split at `ingest_gmd.py:1500`. {#r1-where}
 - An empty value (`id:`, `id: []`, `title:`) stays what it is today, absent: the fallback id
@@ -163,18 +189,36 @@ fails naming the files. {#r2-body}
   GMD-parsed. Fix the file(s) and re-run.` The CLI raises it as its `Error:` line (exit 1), and
   the `ingest_path_start` job records it as its top-level `error`, exactly as for a failed
   pass. {#r2-ingest}
-- **`rmx sync`, the watcher, the async flush.** `_sync_paths` reads
-  `gmd_stats.skipped_unparseable` into a new report key `gmd_refused` (`[path, error]` rows,
-  the form of `memory_ownership_errors`). One accessor in `sync.py` returns both lists, and
-  the five readers of `memory_ownership_errors` use it (`sync.py:209` and `:230`,
-  `daemon.py:3211` and `:3526`, `cli.py:9062`): `refusal_summary`, `raise_if_refused`, the
-  recorded sync error of the watch and async-flush routes, and the queue's re-enqueue. A
-  refused GMD file is re-queued like a refused memory path, so the recorded error stays until
-  the file is fixed. {#r2-sync}
-- **The stored row.** The refused file's previous doc and anchor rows are kept as they were
-  (the GMD pass writes nothing for a file it does not parse). On the code+docs route the
-  legacy relpath row is purged before the batch call as today; the refused file is then
-  absent until it is fixed, and the `Error:` line says so. {#r2-row}
+- **`rmx sync`, the watcher, the async flush.** A new report key `gmd_refused` holds
+  `[path, error]` rows, the form of `memory_ownership_errors`. One accessor in `sync.py`
+  returns both lists, and the five readers of `memory_ownership_errors` use it (`sync.py:209`
+  and `:230`, `daemon.py:3211` and `:3526`, `cli.py:9062`): `refusal_summary`,
+  `raise_if_refused`, the recorded sync error of the watch and async-flush routes, and the
+  queue's re-enqueue. {#r2-sync}
+- **The refusal comes before the purge, and the refused file is not "touched"** (ch-bsd r1
+  B1). Two passes of `_sync_paths` undo a refusal that is only reported:
+  `_sync_one`'s GMD dispatch purges the whole path when a relpath-named `doc` row exists
+  (`sync.py:269-271`), and the semantic pass re-creates that row on every sync, so the purge
+  runs on every edit, before the GMD pass can refuse; and the semantic pass then stamps the
+  file's mtime (`mark_tracked`), so the next sync skips the file and the next clean flush
+  clears the recorded error. Probed: [[#fact-b1-probe]]. So:
+  1. `_sync_one` calls `frontmatter_refusal` for a GMD file **before** the guard. A refused
+     path returns as refused: nothing at the path is purged, it is not put on `gmd_paths`,
+     and so it is not in `touched_existing` (no semantic pass, no `mark_tracked`). Its
+     previous doc row and anchors stay, with their ids.
+  2. A path the GMD pass itself skips for another reason (`skipped_unparseable` after the
+     batch call) is added to `gmd_refused` and **removed from `touched_existing`** before the
+     semantic passes run. For such a path the purge has already run: it is absent until it
+     is fixed, and the `Error:` line says so.
+  3. Because the mtime is never stamped for a refused path, every later sync of it reaches
+     `_sync_one` again and refuses again; `flush_queue` puts it back on the dirty queue; the
+     watch and async-flush routes record the error on every flush and never see the clean
+     flush that would clear it.
+  {#r2-sync-order}
+- **The stored row.** On the sync route the refused file's previous doc and anchor rows are
+  kept as they were, by step 1 above. On the code+docs route (`rmx ingest`) the relpath row
+  is purged before the batch call as today; the refused file is then absent until it is
+  fixed, and the `Error:` line says so. {#r2-row}
 - **Routes that already print it** keep their report and their exit status. {#r2-unchanged}
 
 That the two routes exit non-zero is `plan-31 D11`, decided ([[#d11]]). {#r2-decision}
@@ -199,6 +243,13 @@ crashes today never sees a list. {#r3-body}
   [[task-bug179-lint-ingest-anchor-parity#d4]]): the change and its cases in
   `scripts/test-lint-gates.py` land upstream, then the file is re-vendored from that sha.
   {#r3-upstream}
+- **On top of 31.4's commit** (ruling L139; L133 M8). 31.4 lands first and changes the same
+  upstream file: an opt-in `--strict` flag (any warning makes the exit 1, and the summary
+  line ends `(strict: warnings fail)`), passed by `scripts/lint-gmd.sh`, and
+  `session/recall-state` added to `KNOWN_MEMORY_TYPES` (read from
+  `task-31.4-retire-standing-warnings` on `spec-plan31a` at `3225a16`). This task's upstream
+  commit is made on that one, its re-vendor keeps both, and `bad-frontmatter-type` is an
+  error with or without `--strict`. 31.6's commit then goes on top of this one. {#r3-order}
 
 ### R4: the S2 and M2 tests get a registered patch {#r4}
 
@@ -262,13 +313,27 @@ unless said otherwise. {#acceptance-intro}
 - **AC-4: `rmx sync` names the file and keeps the rest.** A project with two changed GMD docs
   and one changed doc whose `title:` is now a list, through `_sync_paths`, through `rmx sync
   -f` in-process and through a real daemon: the two good docs are updated; the bad doc's
-  previous doc row and anchors are unchanged; the report's `gmd_refused` names it; the CLI
-  prints the `refusal_summary` line and exits 1; the daemon's watch route records a sync error that
-  `rmx daemon status` prints; the path is back on the dirty queue after a `flush_queue`.
-  **RED** at base (E line: the `TypeError` out of `_sync_paths`). {#ac-4}
+  previous doc row and anchors are unchanged, **ids included**, and a `rel:` edge from another
+  doc to one of its anchors is still live; the report's `gmd_refused` names it; the CLI
+  prints the `refusal_summary` line and exits 1; the daemon's watch route records a sync
+  error that `rmx daemon status` prints; the path is back on the dirty queue after a
+  `flush_queue`. The bad doc was synced once before, so its relpath row exists and the guard
+  would fire. **Then a second `flush_queue` with nothing changed:** it refuses the same path
+  again, the ids are still unchanged, the file's tracked mtime is still not its disk mtime,
+  the recorded error is still there and `rmx daemon status` still prints it. Fixing the file
+  and flushing again clears the error and updates the doc. **RED** at base (E line: the
+  `TypeError` out of `_sync_paths`); with R1 alone the second-flush leg is RED (E line: 0
+  paths touched, no refusal), which is [[#fact-b1-probe]]'s arm A. {#ac-4}
 - **AC-5: a file the guard already skipped is no longer silent.** The non-UTF-8 file of
-  [[#fact-other-shapes]] through AC-3's and AC-4's routes: named the same way. **RED** at base
-  (E line: no `gmd_files_skipped` / `gmd_refused`; the command says nothing). {#ac-5}
+  [[#fact-other-shapes]] through AC-3's and AC-4's routes, the second flush included: named
+  the same way, and on the sync route its previous rows are kept. The fixture carries `---`
+  and `gmd:` as ASCII in its first 512 bytes and the bad bytes after them: `is_gmd_file`
+  sniffs only that head (`ingest.py:84`), and a file that does not sniff as GMD goes down the
+  plain-doc route and is never refused (ch-bsd r1 M2). A second leg makes the GMD pass skip a
+  file for a reason the pre-check does not know (a patched `parse_gmd` that raises for one
+  path, registered like [[#r4-patch]]): it is in `gmd_refused`, is not stamped, and is
+  refused again on the second flush ([[#r2-sync-order]] step 2). **RED** at base (E line: no
+  `gmd_files_skipped` / `gmd_refused`; the command says nothing). {#ac-5}
 - **AC-6: the fallback chain still works.** The four tests of [[#r4-tests]], re-pointed at the
   registered patch in the RED phase, pass at base and after GREEN, and their two guards (clean
   tree, unpatched) pass. **Characterization.** The summary also records the old `BAD_MD`
@@ -291,8 +356,9 @@ unless said otherwise. {#acceptance-intro}
   for a list `id:` the lint crashes). {#ac-9}
 - **AC-10: the gate fails when the two sides differ.** `check-gmd-parity.scan()` on (i) a
   scratch dir with a list-`title` doc: no parity finding (both refuse; the lint's error is
-  the report); (ii) the same dir with the lint's check disabled (a lint module loaded from a
-  fixture copy of `lint.py` without it): one `[frontmatter-parity]` finding naming the file
+  the report); (ii) the same dir with the lint's check disabled (a gate tree built by 31.3's
+  shared helper with a text override of `tools/gmd/lint.py` that lacks it,
+  [[#tests-helper]]): one `[frontmatter-parity]` finding naming the file
   and "ingester only"; (iii) the repo scope: 0 findings. **RED** at base (E line: no such
   finding kind; (ii) returns nothing). (ii) is the must-fail input that proves the check can
   fail ([[feedback_clean_corpus_hides_a_dead_gate]]). {#ac-10}
@@ -317,6 +383,10 @@ Committed first, restored one at a time; each must make a test **fail**, not han
 | 12 | the lint also errors on an empty `title:` | AC-7's empty leg, AC-9 |
 | 13 | `scan()` compares only files the lint treats as GMD | AC-10, with a plain file whose `id:` is a list |
 | 14 | `scan()` reports nothing when one side refuses | AC-10 (ii) |
+| 15 | `_sync_one` asks `frontmatter_refusal` after the guard's purge | AC-4 (the ids change; the inbound edge is gone) |
+| 16 | a refused path stays in `touched_existing` | AC-4's second flush (0 paths touched, the error cleared) |
+| 17 | `flush_queue` does not put a GMD-refused path back | AC-4's second flush on the queue route |
+| 18 | step 2 of [[#r2-sync-order]] dropped (a path the pass skipped is still stamped) | AC-5's second leg |
 {#mutations-table}
 
 ## Caller census {#census}
@@ -350,6 +420,7 @@ named in the summary ([[orchestration#task]] step 4). {#census-result}
   `raise_if_refused`, `flush_queue`).
 - `src/refmatrix/cli.py` (`_ingest`'s in-process result; the sync refusal line). If 29.5 has
   split `cli.py`, these are the modules its map gives `_ingest` and `_sync_in_process`.
+- `tests/gmd_gate_tree.py` is used, not copied ([[#tests-helper]]).
 - New `tests/test_bug244_frontmatter_refusal.py`; new `tests/fixtures/rmx_gmd_pass_raises.py`;
   `tests/test_bug241_r2_l112.py` and `tests/test_bug241_r3_l114.py` (R4).
 - `workflow/test_mock_registry.md` (the R4 row), `workflow/bug_registry.md` (bug-244), the
@@ -364,14 +435,20 @@ named in the summary ([[orchestration#task]] step 4). {#census-result}
 ## Risks {#risks}
 
 - **The upstream lint.** The lint change lands in `~/claude_tools/gmd` and is re-vendored.
-  31.4 and 31.6 change the same upstream file (31.4 by `plan-31 D10`); each re-vendors from
-  its own sha, in the plan's order, and a later task re-vendors on top of the earlier one.
+  31.4 and 31.6 change the same upstream file; the order is fixed, 31.4 → 31.1 → 31.6, never
+  two in flight, each upstream commit on top of the previous ([[#r3-order]]). A re-vendor
+  from a sha that lacks an earlier task's commit would drop its fix (the bug-068 shape);
+  `test_ac8_vendored_tool_is_a_committed_upstream_blob` and 31.4's `--strict` case catch it.
   viascope runs the upstream lint directly: no file there has the shape
   ([[#baseline-fleet-table]]), so nothing new fails. {#risk-upstream}
 - **A louder sync.** A file that was silently skipped (non-UTF-8) now fails `rmx sync` and the
   post-commit hook's background sync records an error until the file is fixed or ignored.
-  That is the intent of [[feedback_errors_fail_loudly_on_the_console]]; the count in the fleet
-  is not measured for non-UTF-8 files and R0 adds it to the census. {#risk-louder}
+  That is the intent of [[feedback_errors_fail_loudly_on_the_console]]. The census already
+  counts such files as `unreadable`: 0 in all eight repos and all 30 memory dirs, re-run by
+  ch-bsd, so no command starts failing at the deploy for this either. {#risk-louder}
+- **A doc that stays refused holds a stale row.** On the sync route the refused file keeps
+  the rows of its last good version until it is fixed. The recorded error names it for as
+  long as that lasts. {#risk-stale-row}
 - **The exception type.** `raise_if_refused` raises `MemoryOwnershipError`, whose name is wrong
   for a GMD refusal. The CLI catches that class to print a clean line. The implementer either
   raises a shared parent that the two CLI handlers catch, or keeps one class and says so; the
@@ -392,6 +469,31 @@ named in the summary ([[orchestration#task]] step 4). {#census-result}
 - Per-doc isolation of store-level failures inside the GMD pass. After this task no measured
   file shape fails the batch; the batch `except` stays as the backstop the R4 patch tests.
 {#out-of-scope-list}
+
+## Test trees {#tests-helper}
+
+Every test here that needs the gate's scripts in a throwaway tree (AC-7, AC-9, AC-10) builds
+it with 31.3's shared helper, `tests/gmd_gate_tree.py`, which copies exactly the files
+`scripts/lint-gmd.sh` declares on its `# gate-file:` lines and takes per-file text overrides
+(`task-31.3-ledger-anchor-guard` `#r6` on `spec-plan31a` at `3225a16`; rulings L133 B2 and
+L139). AC-10 (ii)'s lint without the check is such an override. No test here copies
+`lint-gmd.sh` or `lint.py` into a tree by hand; 31.3's bypass check would fail it. This task
+adds no `# gate-file:` line: it adds no file to the gate. {#tests-helper-body}
+
+## Revision 1: fold of ch-bsd r1 (ruling L139) {#rev-r1}
+
+The review read `a4d245a`; some findings were already folded at `d788602`.
+
+| Finding | Fold | Where |
+|---|---|---|
+| B1 the sync route loses the refused file's rows and the refusal goes quiet | the check runs before the guard's purge; a refused path is not touched or stamped; the second flush refuses again. Probe, both arms | [[#r2-sync-order]], [[#r2-row]], [[#r1-where]], [[#ac-4]], [[#ac-5]], mutations 15-18, [[#baseline-b1]] |
+| M1 decisions and closures not written as decided | D11 cited as decided (L125); the header closes bug-244, bug-255, bug-258 (at `d788602`) | header, [[#d11]], [[#ac-3]] |
+| M2 the non-UTF-8 count is measured; AC-5's fixture must sniff as GMD | the risk cites `unreadable` 0; the fixture's head is stated | [[#risk-louder]], [[#ac-5]] |
+| S3 / L139 the linter order | 31.4 → 31.1 → 31.6, each upstream commit on the previous | header, [[#r3-order]], [[#risk-upstream]] |
+| L133 M8 name 31.4's linter change | `--strict` and the `session/recall-state` enum line | [[#r3-order]] |
+| L133 B2 the shared gate-tree helper | `tests/gmd_gate_tree.py`; no fourth copy | [[#tests-helper]], [[#ac-10]] |
+| bug-255, bug-258 (the lead; L132) | folded at `d788602` | [[#r3]], [[#r5]], [[#ac-7]], [[#ac-9]], [[#ac-10]] |
+{#rev-r1-table}
 
 ## Decisions {#decisions}
 
