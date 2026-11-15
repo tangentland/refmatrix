@@ -1,0 +1,39 @@
+pyc-guard: recompiled 26 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t08-green/src/refmatrix as checked-hash (bug-037)
+..................................                                       [100%]
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_report_counts_b_c_e_and_prints_the_three_exclusion_counts
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_the_five_rows_classify_as_the_spec_lists
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_d9g_shape_is_exact_string_equality[alpha]
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_d9g_shape_is_exact_string_equality[alpha|GAMMA]
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_d9g_shape_is_exact_string_equality[alpha.beta]
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_d9g_shape_is_exact_string_equality[alpha|beta ]
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_d9g_shape_needs_kind_grep
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_another_sandbox_is_a_test_artifact_for_R_and_for_a_live_reader
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_own_sandbox_row_is_attributed_for_R
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_a_sibling_store_in_R_s_own_sandbox_is_attributed
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_two_test_bases_keyed_on_root_not_cwd
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_cwd_is_the_key_only_without_root
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_a_live_tree_row_is_never_a_test_artifact
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_is_test_artifact_row_default_call_is_23_0_s_call
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_malformed_is_only_for_events
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_event_leg_classes
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_event_missing_a_required_field_is_malformed[v]
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_event_missing_a_required_field_is_malformed[stage]
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_event_missing_a_required_field_is_malformed[name]
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_event_missing_a_required_field_is_malformed[channel]
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_event_missing_a_required_field_is_malformed[cwd]
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_event_missing_a_required_field_is_malformed[root]
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_event_missing_a_required_field_is_malformed[ts]
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_event_wrong_version_channel_or_ts_form_is_malformed[bad0]
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_event_wrong_version_channel_or_ts_form_is_malformed[bad1]
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_event_wrong_version_channel_or_ts_form_is_malformed[bad2]
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_event_wrong_version_channel_or_ts_form_is_malformed[bad3]
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_event_reader_prints_malformed_and_unparseable
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_every_reader_imports_row_provenance_and_owns_no_predicate
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac7_the_bypass_check_can_fail
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac6_frozen_fixture_prints_the_exact_counts
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac6_cli_log_recalls_are_split_per_channel
+PASSED tests/test_task21_1_agent_usage_report.py::test_ac6_synthetic_mechanisms_window_phase_start_and_legacy_counts
+PASSED tests/test_task21_1_agent_usage_report.py::test_t0_8_a_call_in_cli_log_and_query_log_is_counted_once
+34 passed in 1.77s

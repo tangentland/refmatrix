@@ -1,0 +1,8 @@
+  memory_recall rows: 0
+  recall_unflagged=0
+cli.log: memory_recall end_rows=244 paired_with_query_log=0 counted=244 ts_unparseable=0 query_ts_unparseable=0 internal_excluded=0 excluded_test_rows=0 unparseable=0
+  cli.log memory_recall precompact: 3 invocation hook=3
+  cli.log memory_recall prompt_recall: 201 invocation hook=201
+  cli.log memory_recall recall: 34 invocation unknown=34
+  cli.log memory_recall session_start: 6 invocation hook=6
+recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_rows=0
