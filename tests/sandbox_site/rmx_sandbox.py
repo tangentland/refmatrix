@@ -1139,7 +1139,15 @@ class SkipGate:
     none, and nothing noticed. A skip is a test that stopped running, so each one is named.
 
     Per session (an instance per config), so an in-process `pytester` inner session's skips
-    never reach the outer gate."""
+    never reach the outer gate.
+
+    bug-215 (T0.1' R1.2, 2026-11-15): a skip is pinned only when its nodeid is allowed AND its
+    reason, after pytest's `Skipped: ` prefix, is EQUAL to the pinned value (the test's own
+    `reason=`). Matching by nodeid alone let a pinned test that began skipping for a new reason
+    pass unseen; a substring or case-folded match would do the same for a reworded one. A pinned
+    nodeid that skips for any other reason is reported `SKIPPED-UNPINNED` with both reasons."""
+
+    _PREFIX = "Skipped: "
 
     def __init__(self, allowed: dict):
         self.allowed = dict(allowed)
@@ -1157,16 +1165,30 @@ class SkipGate:
     def pytest_collectreport(self, report):
         self._note(report)
 
+    @classmethod
+    def reason(cls, why: str) -> str:
+        """The skip's own reason: `why` with the one `Skipped: ` prefix pytest adds removed."""
+        return why[len(cls._PREFIX):] if why.startswith(cls._PREFIX) else why
+
     def unexpected(self) -> dict:
-        return {k: v for k, v in self.skipped.items() if k not in self.allowed}
+        """`nodeid -> report line` for every skip that is not pinned: an unknown nodeid, or a
+        pinned nodeid whose reason is not exactly its pin (the line then names both)."""
+        bad = {}
+        for k, v in self.skipped.items():
+            if k not in self.allowed:
+                bad[k] = v
+            elif self.reason(v) != self.allowed[k]:
+                bad[k] = f"{v} (pinned reason: {self.allowed[k]!r}; actual: {self.reason(v)!r})"
+        return bad
 
     def pytest_sessionfinish(self, session, exitstatus):
         bad = self.unexpected()
         if not bad:
             return
         tw = session.config.get_terminal_writer()
-        tw.line(f"SkipGate: {len(bad)} skip(s) not in the pinned list (tests/conftest.py "
-                f"ALLOWED_SKIPS); a skip is a test that stopped running:", red=True)
+        tw.line(f"SkipGate: {len(bad)} skip(s) not pinned with their exact reason "
+                f"(tests/conftest.py ALLOWED_SKIPS); a skip is a test that stopped running:",
+                red=True)
         for k, v in sorted(bad.items()):
             tw.line(f"  SKIPPED-UNPINNED {k}: {v}", red=True)
         import pytest

@@ -1,0 +1,5 @@
+# sha 9a5a98a872431c03df199e894c8353f270f393d6 cwd /Volumes/littlebig/refmatrix-t01 origin=/Users/tholley/claude_tools/refmatrix layout=symlinked .venv-eval (characterization, not a RED)
+pyc-guard: recompiled 5 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t01/src/refmatrix as checked-hash (bug-037)
+.                                                                        [100%]
+1 passed in 2.01s
+EXIT=0

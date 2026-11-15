@@ -210,7 +210,7 @@ rel: derives-from -> [[plan-review-fable-2026-11-14-queue#ord-6]]
 
 | sub-task | closes | branch | stage ([[task-29.4-suite-health#fold-stages]]) |
 |---|---|---|---|
-| [[#t0-1]] **T0.1'** Skip gate and checkout identity | bug-215, bug-155's residual ([[#amend-1]]) | `task-t0.1-skip-gate-checkout-identity` | 1 |
+| [[#t0-1]] **T0.1'** Skip gate and checkout identity | bug-215, bug-155's residual ([[#amend-1]]) | `task-t0.1-skip-gate-memdir` | 1 |
 | [[#t0-2]] Dev-tree-only tests stop reading the real HOME and cwd ancestry | bug-170, bug-168, bug-127; with 29.4b on the same branch: bug-229 ([[#amend-5]]), and bug-253 by L121 and L122, which retires the 18 venv pins ([[#t0-2-bug253]]) | `task-t0.2-dev-tree-test-isolation` | 2 |
 | [[#t0-3]] Load-dependent flakes | bug-130, bug-190, bug-091; with 29.4c on the same branch: bug-228, bug-231 ([[#amend-4]]) | `task-t0.3-load-flakes` | 2 |
 | [[#t0-8]] bug-196: the cli.log recall leg split per channel | bug-196 ([[#ruling-o1]]) | `task-t0.8-bug196-recall-channels` | 2 |
@@ -612,7 +612,7 @@ reasons the tests actually skip with. Those are:
 a new `tests/test_lint_gmd_memdir_fallback.py`, `workflow/TDD_GOVERNANCE.md`,
 `workflow/bug_registry.md` (rows bug-215, bug-155; the lead writes them). `.gmd/config.yml` is
 no longer edited: R1.3 shipped, and only mutation M1.3 touches the file, and restores it. The
-summary is `workflow/implementation_summaries/task-t0.1-skip-gate-checkout-identity.md`.
+summary is `workflow/implementation_summaries/task-t0.1-skip-gate-memdir.md`.
 
 ### Verify set {#t0-1-verify}
 

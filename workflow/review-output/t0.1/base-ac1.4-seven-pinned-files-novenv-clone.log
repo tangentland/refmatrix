@@ -1,0 +1,25 @@
+# sha 9a5a98a872431c03df199e894c8353f270f393d6 cwd /Volumes/littlebig/refmatrix-t01-novenv layout=NO .venv-eval (main tree interpreter, PYTHONPATH=<clone>/src)
+pyc-guard: recompiled 21 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t01-novenv/src/refmatrix as checked-hash (bug-037)
+sssss.ssssssssss..........s............s.....ss                          [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_brief_real_daemon.py:80: dev rmx not built
+SKIPPED [1] tests/test_brief_real_daemon.py:97: dev rmx not built
+SKIPPED [1] tests/test_brief_real_daemon.py:114: dev rmx not built
+SKIPPED [1] tests/test_brief_real_daemon.py:138: dev rmx not built
+SKIPPED [1] tests/test_grep_argv_order_e2e.py:86: dev venv rmx not built
+SKIPPED [1] tests/test_grep_argv_order_e2e.py:117: needs rmx + rg
+SKIPPED [1] tests/test_grep_argv_order_e2e.py:174: dev venv rmx not built
+SKIPPED [1] tests/test_grep_argv_order_e2e.py:204: dev venv rmx not built
+SKIPPED [1] tests/test_grep_count_rows_e2e.py:60: dev venv rmx or /usr/bin/grep missing
+SKIPPED [1] tests/test_grep_count_rows_e2e.py:68: dev venv rmx or /usr/bin/grep missing
+SKIPPED [1] tests/test_grep_count_rows_e2e.py:74: dev venv rmx or /usr/bin/grep missing
+SKIPPED [1] tests/test_grep_count_rows_e2e.py:88: dev venv rmx or /usr/bin/grep missing
+SKIPPED [1] tests/test_grep_count_rows_e2e.py:94: dev venv rmx or /usr/bin/grep missing
+SKIPPED [1] tests/test_grep_count_rows_e2e.py:109: dev venv rmx or /usr/bin/grep missing
+SKIPPED [1] tests/test_grep_count_rows_e2e.py:122: dev venv rmx or /usr/bin/grep missing
+SKIPPED [1] tests/test_grep_evidence_verified.py:148: dev venv rmx not built
+SKIPPED [1] tests/test_grep_learning_replay.py:66: needs the dev venv's rmx console script
+SKIPPED [1] tests/test_grep_no_flag_bundle.py:68: dev venv rmx not built
+SKIPPED [1] tests/test_repo_hooks_in_sync.py:22: hooks belong to another checkout of this commit
+28 passed, 19 skipped in 2.35s
+EXIT=0

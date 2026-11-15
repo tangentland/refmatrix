@@ -1,0 +1,602 @@
+# base sha 9a5a98a872431c03df199e894c8353f270f393d6 + uncommitted RED tests (final); cwd /Volumes/littlebig/refmatrix-t01 origin=/Users/tholley/claude_tools/refmatrix layout=symlinked .venv-eval
+pyc-guard: recompiled 21 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t01/src/refmatrix as checked-hash (bug-037)
+FFFFFFFFFFFFFFFFFF                                                       [100%]
+=================================== FAILURES ===================================
+___________ test_a_populated_own_dir_is_chosen_with_no_fallback_line ___________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_a_populated_own_dir_is_ch0')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_a_populated_own_dir_is_ch0/home')
+
+    def test_a_populated_own_dir_is_chosen_with_no_fallback_line(tmp_path, home):
+>       gm = load_gmd_memdir()
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_lint_gmd_memdir_fallback.py:133: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+________ test_an_empty_own_dir_falls_back_to_the_origin_and_says_empty _________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_an_empty_own_dir_falls_ba0')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_an_empty_own_dir_falls_ba0/home')
+
+    def test_an_empty_own_dir_falls_back_to_the_origin_and_says_empty(tmp_path, home):
+>       gm = load_gmd_memdir()
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_lint_gmd_memdir_fallback.py:142: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+_______ test_an_absent_own_dir_falls_back_to_the_origin_and_says_absent ________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_an_absent_own_dir_falls_b0')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_an_absent_own_dir_falls_b0/home')
+
+    def test_an_absent_own_dir_falls_back_to_the_origin_and_says_absent(tmp_path, home):
+>       gm = load_gmd_memdir()
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_lint_gmd_memdir_fallback.py:157: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+__________ test_origin_spellings_canonicalise_to_one_origin_and_slug ___________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_origin_spellings_canonica0')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_origin_spellings_canonica0/home')
+
+    def test_origin_spellings_canonicalise_to_one_origin_and_slug(tmp_path, home):
+        """Relative, trailing `/`, `<path>/.git`, a `.git` suffix and a symlinked path all name the
+        same checkout: one canonical origin, one slug, one chosen dir (R1.4; mutation M1.7)."""
+>       gm = load_gmd_memdir()
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_lint_gmd_memdir_fallback.py:171: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+___________ test_a_non_local_origin_stops_the_walk_with_no_dir[scp] ____________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_a_non_local_origin_stops_0')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_a_non_local_origin_stops_0/home')
+kind = 'scp'
+
+    @pytest.mark.parametrize("kind", ["scp", "https", "file"])
+    def test_a_non_local_origin_stops_the_walk_with_no_dir(tmp_path, home, kind):
+        """`git@host:repo`, `https://…` and `file://…` are non-local: no fallback, the "no memory dir"
+        line, which says memory-id refs will surface as `dangling-doc`. The `file://` URL names a
+        checkout whose dir IS populated, so only the non-local rule can refuse it."""
+>       gm = load_gmd_memdir()
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_lint_gmd_memdir_fallback.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+__________ test_a_non_local_origin_stops_the_walk_with_no_dir[https] ___________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_a_non_local_origin_stops_1')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_a_non_local_origin_stops_1/home')
+kind = 'https'
+
+    @pytest.mark.parametrize("kind", ["scp", "https", "file"])
+    def test_a_non_local_origin_stops_the_walk_with_no_dir(tmp_path, home, kind):
+        """`git@host:repo`, `https://…` and `file://…` are non-local: no fallback, the "no memory dir"
+        line, which says memory-id refs will surface as `dangling-doc`. The `file://` URL names a
+        checkout whose dir IS populated, so only the non-local rule can refuse it."""
+>       gm = load_gmd_memdir()
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_lint_gmd_memdir_fallback.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+___________ test_a_non_local_origin_stops_the_walk_with_no_dir[file] ___________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_a_non_local_origin_stops_2')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_a_non_local_origin_stops_2/home')
+kind = 'file'
+
+    @pytest.mark.parametrize("kind", ["scp", "https", "file"])
+    def test_a_non_local_origin_stops_the_walk_with_no_dir(tmp_path, home, kind):
+        """`git@host:repo`, `https://…` and `file://…` are non-local: no fallback, the "no memory dir"
+        line, which says memory-id refs will surface as `dangling-doc`. The `file://` URL names a
+        checkout whose dir IS populated, so only the non-local rule can refuse it."""
+>       gm = load_gmd_memdir()
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_lint_gmd_memdir_fallback.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+_________ test_a_chain_of_clones_is_walked_to_the_first_populated_dir __________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_a_chain_of_clones_is_walk0')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_a_chain_of_clones_is_walk0/home')
+
+    def test_a_chain_of_clones_is_walked_to_the_first_populated_dir(tmp_path, home):
+        """checkout -> clone A -> clone B, only B populated: B's dir, and the line names A as `absent`
+        and then B (ch-bsd r1 S1; mutation M1.9 follows one hop and stops at A)."""
+>       gm = load_gmd_memdir()
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_lint_gmd_memdir_fallback.py:215: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+____________ test_a_chain_names_an_empty_intermediate_dir_as_empty _____________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_a_chain_names_an_empty_in0')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_a_chain_names_an_empty_in0/home')
+
+    def test_a_chain_names_an_empty_intermediate_dir_as_empty(tmp_path, home):
+>       gm = load_gmd_memdir()
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_lint_gmd_memdir_fallback.py:230: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+____________ test_a_cycle_of_origins_returns_no_dir_and_says_cycle _____________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_a_cycle_of_origins_return0')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_a_cycle_of_origins_return0/home')
+
+    def test_a_cycle_of_origins_returns_no_dir_and_says_cycle(tmp_path, home):
+        """clone A's origin is clone B and B's is A; no slug populated. The resolver returns, with no
+        dir, and the line says `cycle`. Run in a child under a wall deadline with the bound intact:
+        mutation M1.10 (no visited-path guard) ends on `bound of 5` and fails on the message; a
+        broken guard plus a broken bound fails on the deadline, never hangs (R0.4)."""
+>       gm = load_gmd_memdir()
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_lint_gmd_memdir_fallback.py:258: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+_______________ test_the_walk_stops_at_the_bound_of_five_origins _______________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_the_walk_stops_at_the_bou0')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_the_walk_stops_at_the_bou0/home')
+
+    def test_the_walk_stops_at_the_bound_of_five_origins(tmp_path, home):
+        """A chain of 6 local origins where only the sixth is populated: no dir, `bound of 5`
+        (mutation M1.11 drops or raises the bound, and the sixth is chosen)."""
+>       gm = load_gmd_memdir()
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_lint_gmd_memdir_fallback.py:291: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+__________________ test_the_fifth_origin_is_inside_the_bound ___________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_the_fifth_origin_is_insid0')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_the_fifth_origin_is_insid0/home')
+
+    def test_the_fifth_origin_is_inside_the_bound(tmp_path, home):
+>       gm = load_gmd_memdir()
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_lint_gmd_memdir_fallback.py:303: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+_______________ test_a_checkout_with_no_origin_stops_with_no_dir _______________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_a_checkout_with_no_origin0')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_a_checkout_with_no_origin0/home')
+
+    def test_a_checkout_with_no_origin_stops_with_no_dir(tmp_path, home):
+>       gm = load_gmd_memdir()
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_lint_gmd_memdir_fallback.py:314: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+___________ test_an_origin_that_is_not_a_checkout_stops_with_no_dir ____________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_an_origin_that_is_not_a_c0')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_an_origin_that_is_not_a_c0/home')
+
+    def test_an_origin_that_is_not_a_checkout_stops_with_no_dir(tmp_path, home):
+>       gm = load_gmd_memdir()
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_lint_gmd_memdir_fallback.py:323: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+_____ test_an_empty_own_slug_memory_dir_falls_back_through_the_real_script _____
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1793/test_an_empty_own_slug_memory_0')
+
+    def test_an_empty_own_slug_memory_dir_falls_back_through_the_real_script(tmp_path):
+        """The decoy home gets an EMPTY `memory/` under this checkout's own slug, plus a copy of the
+        populated dir the resolver names for this checkout (read through `RMX_SANDBOX_REAL_HOME`, as
+        the repo-scope test reads it) under that checkout's slug. Then the real
+        `./scripts/lint-gmd.sh` runs with that HOME.
+    
+        - In a clone (the resolver's dir for it is an origin's): the script must print ONE memory-dir
+          line saying `empty`, and its errors and exit must equal the main tree's at this sha, which
+          is a clean gate (exit 0) when the main tree's gate is green.
+        - In a checkout with no usable origin (the main tree: origin is not a local path): the line
+          says `empty`, the walk stops on the non-local origin with the "no memory dir" line, and the
+          gate exits 1 on `dangling-doc`. It does not skip (R0.5).
+    
+        At T0.1's base the shipped script's `-d` test took the empty dir, printed no line, and exited
+        1 on 1,235 memory-id `dangling-doc` errors (base-ac1.5-case2-shipped-script-empty-own-dir.log).
+        Mutation M1.6 (any existing own dir counts) must reproduce exactly that here."""
+        root = REPO
+>       gm = load_gmd_memdir()
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_lint_gmd_memdir_fallback.py:352: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+_______________ test_the_script_calls_the_resolver_under_python3 _______________
+
+    def test_the_script_calls_the_resolver_under_python3():
+        """R1.4 / ch-bsd r1 M1: the script runs `scripts/gmd_memdir.py` under `python3`, as it runs
+        the linter, never under `$DEVPY` (the resolver must not inherit bug-253). The path may be
+        named inline or through a variable (`X=".../gmd_memdir.py"`, then `python3 "$X"`)."""
+        code = _code_lines()
+        names = {m.group(1) for l in code
+                 for m in [re.match(r"\s*(?:local\s+|readonly\s+)?(\w+)=.*gmd_memdir\.py", l)] if m}
+        refs = ["gmd_memdir.py"] + [f"${n}" for n in names] + [f"${{{n}}}" for n in names]
+        calls = [l for l in code if any(r in l for r in refs)
+                 and not re.match(r"\s*(?:local\s+|readonly\s+)?\w+=[\"']?[^\s\"']*"
+                                  r"gmd_memdir\.py[\"']?\s*$", l)]
+>       assert calls, ("scripts/lint-gmd.sh does not invoke scripts/gmd_memdir.py: the memory dir is "
+                       "still chosen by the script's own bash (T0.1' R1.4, AC-1.7)")
+E       AssertionError: scripts/lint-gmd.sh does not invoke scripts/gmd_memdir.py: the memory dir is still chosen by the script's own bash (T0.1' R1.4, AC-1.7)
+E       assert []
+
+tests/test_lint_gmd_memdir_fallback.py:412: AssertionError
+___________________ test_the_script_holds_no_slug_derivation ___________________
+
+    def test_the_script_holds_no_slug_derivation():
+        """AC-1.7 (ch-bsd r1 M2; mutation M1.8): no `tr '/_'`, no other rewrite of a path into a
+        slug, and no `~/.claude/projects/<slug>` path built in bash."""
+        code = "\n".join(_code_lines())
+        found = []
+        for pat, what in [
+            (r"\btr\s+(-\w+\s+)?['\"]?[^'\"\s]*[/_]", "a `tr` over `/` or `_`"),
+            (r"\$\{[^}]*//[^}]*\}", "a `${var//pat/rep}` rewrite"),
+            (r"\bsed\b[^\n]*['\"]?[sy]([^\w\s])\\?/", "a `sed` rewrite of `/`"),
+            (r"\.claude/projects", "a `.claude/projects/<slug>` path built in bash"),
+        ]:
+            for m in re.finditer(pat, code):
+                found.append(f"{what}: {code[max(0, m.start() - 20):m.end() + 20]!r}")
+>       assert not found, ("scripts/lint-gmd.sh still derives a slug itself; the resolver is the "
+                           "one copy (T0.1' R1.4, AC-1.7):\n" + "\n".join(found))
+E       AssertionError: scripts/lint-gmd.sh still derives a slug itself; the resolver is the one copy (T0.1' R1.4, AC-1.7):
+E         a `tr` over `/` or `_`: 'intf \'%s\' "$ROOT" | tr \'/_\' \'--\')"\nMEMDIR="$HO'
+E         a `tr` over `/` or `_`: 's\' "$ORIGIN_ROOT" | tr \'/_\' \'--\')"\n    ORIGIN_'
+E         a `.claude/projects/<slug>` path built in bash: '--\')"\nMEMDIR="$HOME/.claude/projects/$SLUG/memory"\nif [['
+E         a `.claude/projects/<slug>` path built in bash: 'RIGIN_MEMDIR="$HOME/.claude/projects/$ORIGIN_SLUG/memory'
+E       assert not ['a `tr` over `/` or `_`: \'intf \\\'%s\\\' "$ROOT" | tr \\\'/_\\\' \\\'--\\\')"\\nMEMDIR="$HO\'', 'a `tr` over `/` or... [[\'', 'a `.claude/projects/<slug>` path built in bash: \'RIGIN_MEMDIR="$HOME/.claude/projects/$ORIGIN_SLUG/memory\'']
+
+tests/test_lint_gmd_memdir_fallback.py:433: AssertionError
+_______________________ test_the_script_reads_no_origin ________________________
+
+    def test_the_script_reads_no_origin():
+        """AC-1.7: no `remote.origin.url`, no `remote get-url`: the origin walk is the resolver's."""
+        code = "\n".join(_code_lines())
+        found = [w for w in ("remote.origin.url", "remote get-url", "config --get remote")
+                 if w in code]
+>       assert not found, ("scripts/lint-gmd.sh still reads the origin itself; the resolver is the "
+                           f"one copy (T0.1' R1.4, AC-1.7): {found!r}")
+E       AssertionError: scripts/lint-gmd.sh still reads the origin itself; the resolver is the one copy (T0.1' R1.4, AC-1.7): ['remote.origin.url', 'config --get remote']
+E       assert not ['remote.origin.url', 'config --get remote']
+
+tests/test_lint_gmd_memdir_fallback.py:442: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_a_populated_own_dir_is_chosen_with_no_fallback_line
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_an_empty_own_dir_falls_back_to_the_origin_and_says_empty
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_an_absent_own_dir_falls_back_to_the_origin_and_says_absent
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_origin_spellings_canonicalise_to_one_origin_and_slug
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_a_non_local_origin_stops_the_walk_with_no_dir[scp]
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_a_non_local_origin_stops_the_walk_with_no_dir[https]
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_a_non_local_origin_stops_the_walk_with_no_dir[file]
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_a_chain_of_clones_is_walked_to_the_first_populated_dir
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_a_chain_names_an_empty_intermediate_dir_as_empty
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_a_cycle_of_origins_returns_no_dir_and_says_cycle
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_the_walk_stops_at_the_bound_of_five_origins
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_the_fifth_origin_is_inside_the_bound
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_a_checkout_with_no_origin_stops_with_no_dir
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_an_origin_that_is_not_a_checkout_stops_with_no_dir
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_an_empty_own_slug_memory_dir_falls_back_through_the_real_script
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_the_script_calls_the_resolver_under_python3
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_the_script_holds_no_slug_derivation
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_the_script_reads_no_origin
+18 failed in 0.90s
+EXIT=1

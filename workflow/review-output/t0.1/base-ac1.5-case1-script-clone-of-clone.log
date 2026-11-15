@@ -1,0 +1,21 @@
+# sha 9a5a98a872431c03df199e894c8353f270f393d6 cwd /Volumes/littlebig/refmatrix-t01-cofc origin=/Volumes/littlebig/refmatrix-t01 decoy HOME=/tmp/t01h.Ckvg/home (empty: the shipped test copies nothing here, both slugs absent)
+EXIT=1
+--- stderr (non-error lines)
+lint-gmd: no memory dir for /Volumes/littlebig/refmatrix-t01-cofc or its origin /Volumes/littlebig/refmatrix-t01; memory-id refs will dangle
+
+gmd lint: 744 files, 742 GMD docs, 1235 errors, 37 warnings [phase 2 cross-doc]
+lint-gmd: lint exit 1, anchor parity exit 0
+--- counts
+error lines: 1235
+dangling-doc: 1235
+--- first 3 error lines
+docs/adr/0001-intuition-lance-integration.md:47: error: [dangling-doc] [[project-queued-work]] — no doc with id `project-queued-work` in scanned set
+docs/adr/0001-intuition-lance-integration.md:47: error: [dangling-doc] [[project-daemon-arch]] — no doc with id `project-daemon-arch` in scanned set
+docs/adr/0001-intuition-lance-integration.md:116: error: [dangling-doc] [[project-partitions-canon]] — no doc with id `project-partitions-canon` in scanned set
+--- tail
+workflow/plans/task-t0-suite-trust-sweep.md:1317: error: [dangling-doc] [[feedback_shared_tree_no_branch_switch]] — no doc with id `feedback_shared_tree_no_branch_switch` in scanned set
+workflow/plans/task-t0-suite-trust-sweep.md:1744: error: [dangling-doc] [[feedback_converge_repeated_shapes]] — no doc with id `feedback_converge_repeated_shapes` in scanned set
+gmd parity: 0 divergent doc(s), 0 parse failure(s), 0 doc(s) outside the ingest scope
+
+gmd lint: 744 files, 742 GMD docs, 1235 errors, 37 warnings [phase 2 cross-doc]
+lint-gmd: lint exit 1, anchor parity exit 0

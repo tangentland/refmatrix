@@ -1,0 +1,12 @@
+# PREVIEW, not a RED: the four AC-5/5b/6 nodes with _scope_paths replaced (probe plugin, scratchpad) by the gate's scope in this clone = fixed roots + <real home>/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory (read-only)
+
+PREVIEW test_ac5_real_corpus_has_parity_over_the_gate_scope: memory dirs ['/Users/tholley/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory'] (*.md = 326)
+.
+PREVIEW test_ac5b_no_rel_line_in_the_corpus_carries_an_anchor: memory dirs ['/Users/tholley/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory'] (*.md = 326)
+.
+PREVIEW test_ac5b_lint_reports_no_multi_anchor_or_anchor_on_rel_over_the_scope: memory dirs ['/Users/tholley/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory'] (*.md = 326)
+.
+PREVIEW test_ac6_lint_adds_no_error_text_over_the_base_linter: memory dirs ['/Users/tholley/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory'] (*.md = 326)
+.
+4 passed, 41 deselected in 2.74s
+EXIT=0

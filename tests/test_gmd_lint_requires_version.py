@@ -112,37 +112,130 @@ def test_memory_index_keeps_its_by_name_exemption(tmp_path):
 
 # ---- the repo's own tree must satisfy the gate it ships -------------------
 
+GMD_MEMDIR = Path(__file__).resolve().parents[1] / "scripts" / "gmd_memdir.py"
+
+
+def load_gmd_memdir():
+    """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+    (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+    exercise this tree's copy. Interface the tests pin:
+
+    - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+      one stderr line the script prints (falsy when the own-slug dir is the one used);
+    - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+      keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+    """
+    assert GMD_MEMDIR.is_file(), (
+        f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+        "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+        "(T0.1' R1.4)")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("gmd_memdir", GMD_MEMDIR)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def reason_text(line: str) -> str:
+    """`line` with every absolute path removed, so a reason word (`empty`, `absent`, `cycle`, …)
+    is read from the words the resolver wrote, never from a path that happens to hold it (a
+    pytest tmp dir is named after its test: `test_an_empty_…0`, `test_a_cycle_…0`)."""
+    import re
+    return re.sub(r"/[^\s;,()'\"]+", " ", line)
+
+
+def gate_note_lines(r: "subprocess.CompletedProcess", root: Path, slug: str) -> list:
+    """The memory-dir lines of one `scripts/lint-gmd.sh` run: stderr lines that are not a lint
+    finding and name this checkout (its path, or its slug inside its own memory-dir path) with
+    one of R1.4's reason words. R1.4: whenever the own-slug dir is not the one used, the script
+    prints ONE such line, naming every checkout tried, in order, each `absent` or `empty`."""
+    out = []
+    for line in r.stderr.splitlines():
+        if ": error" in line or ": warning" in line:
+            continue
+        words = reason_text(line)
+        if (str(root) in line or slug in line) and ("absent" in words or "empty" in words):
+            out.append(line)
+    return out
+
+
+def dangling_summary(r: "subprocess.CompletedProcess") -> str:
+    """Count and first lines of the run's `dangling-doc` errors, for a failure message (R0.2:
+    a failure is quoted by its E lines, here by count and first lines)."""
+    lines = [l for l in (r.stdout + r.stderr).splitlines() if "error: [dangling-doc]" in l]
+    return (f"exit {r.returncode}; {len(lines)} dangling-doc error(s); first:\n"
+            + "\n".join(lines[:5]))
+
+
 def test_the_repo_scope_is_clean_under_the_stricter_gate(tmp_path):
     """The gate is only worth having if the tree it guards passes it. Runs the
     real `scripts/lint-gmd.sh`, which is what the commit gate invokes."""
     root = Path(__file__).resolve().parents[1]
-    # 23.0 R6: the script adds `$HOME/.claude/projects/<slug>/memory` to its scope (the ledger
-    # cites memory ids). The child gets a DECOY home holding a COPY of exactly that one memory
-    # dir -- never the real `HOME` (ch-bsd r1 m3, 2026-10-15: handing the child the real home
-    # was a documented way out of the sandbox). No memory dir for this checkout's slug (a
-    # clone) -> none is copied, and the refs surface as dangling-doc, as the script intends.
+    # 23.0 R6: the script adds a curated memory dir to its scope (the ledger cites memory ids).
+    # The child gets a DECOY home holding a COPY of exactly that one memory dir -- never the real
+    # `HOME` (ch-bsd r1 m3, 2026-10-15: handing the child the real home was a documented way out
+    # of the sandbox).
+    # T0.1' R1.4 (bug-155's residual): WHICH dir is decided by the one resolver the script also
+    # calls, read in-process against the real home (a read-only existence check). This test kept
+    # its own copy of the slug + one-hop origin logic, and so did the script; in a clone of a
+    # clone both stopped at the first origin and every memory id dangled (1,235 dangling-doc,
+    # workflow/review-output/t0.1/base-ac1.5-case1-script-clone-of-clone.log). The decoy gets the
+    # chosen dir under the slug of the checkout that owns it; the child walks the same origins,
+    # finds nothing at the slugs before it, and resolves the same content.
     import shutil
-    slug = str(root).replace("/", "-").replace("_", "-")
-    real_mem = (Path(os.environ["RMX_SANDBOX_REAL_HOME"]) / ".claude" / "projects" / slug
-                / "memory")
-    # bug-155 cause 2 (Q18): in a clone with no memory dir of its own the script falls back to its
-    # local-path `origin`'s; the decoy home gets a copy of THAT one dir, at the origin's slug.
-    if not real_mem.is_dir():
-        url = subprocess.run(["git", "-C", str(root), "config", "--get", "remote.origin.url"],
-                             capture_output=True, text=True).stdout.strip()
-        if url.startswith("/") and (Path(url) / ".git").is_dir():
-            slug = str(Path(url).resolve()).replace("/", "-").replace("_", "-")
-            real_mem = (Path(os.environ["RMX_SANDBOX_REAL_HOME"]) / ".claude" / "projects" / slug
-                        / "memory")
+    gm = load_gmd_memdir()
+    real_home = Path(os.environ["RMX_SANDBOX_REAL_HOME"])
+    chosen, _note = gm.resolve_memdir(root, real_home)
+    own = gm.slug(root)
     home = tmp_path / "home"
     home.mkdir()
-    if real_mem.is_dir():
-        shutil.copytree(real_mem, home / ".claude" / "projects" / slug / "memory")
+    if chosen is not None:
+        chosen = Path(chosen)
+        shutil.copytree(chosen, home / ".claude" / "projects" / chosen.parent.name / "memory")
     env = dict(os.environ, HOME=str(home))
     assert Path(env["HOME"]).resolve() != Path(os.environ["RMX_SANDBOX_REAL_HOME"]).resolve()
     r = subprocess.run(["./scripts/lint-gmd.sh"], cwd=str(root),
                        capture_output=True, text=True, env=env)
+    assert_gate_ran(r)
+    if chosen is not None and chosen.parent.name != own:
+        # The fallback was taken: the script says so on ONE line that names the chain -- this
+        # checkout's direct origin, and the checkout whose dir was used (AC-1.5 case 1: "the
+        # fallback line names both hops"; in a clone of a clone they differ).
+        lines = gate_note_lines(r, root, own)
+        assert len(lines) == 1, (
+            f"the resolver chose {chosen} (not this checkout's own slug), so the script must "
+            f"print exactly one memory-dir line naming the chain; got {lines!r}\n"
+            + dangling_summary(r))
+        line = lines[0]
+        url = subprocess.run(["git", "-C", str(root), "remote", "get-url", "origin"],
+                             capture_output=True, text=True).stdout.strip()
+        if url.startswith("/"):
+            direct = Path(url).resolve()
+            assert str(direct) in line, (
+                f"the memory-dir line does not name this checkout's origin {direct}: {line!r}")
+        named = [t for t in _path_tokens(line)
+                 if gm.slug(Path(t)) == chosen.parent.name
+                 or Path(t).parent.name == chosen.parent.name]
+        assert named, (f"the memory-dir line does not name the checkout whose dir was used "
+                       f"(slug {chosen.parent.name}): {line!r}")
     assert_gate_ran_clean(r)
+
+
+def _path_tokens(line: str) -> list:
+    import re
+    return [t.rstrip(".,;:)") for t in re.findall(r"/[^\s;,()'\"]+", line)]
+
+
+def assert_gate_ran(r: "subprocess.CompletedProcess") -> None:
+    """First clause of `assert_gate_ran_clean`, on its own: the gate RAN (it did not stop on a
+    missing precondition with exit 2). T0.1' AC-1.5 (ch-bsd r1 M1): every test that runs the
+    script asserts this BEFORE anything else, so a no-venv clone fails on this message (bug-253's
+    E line) and never on a later, unlisted one."""
+    out = r.stdout + r.stderr
+    missing = [l for l in out.splitlines() if "not found at" in l]
+    assert r.returncode != 2 and not missing, (
+        f"scripts/lint-gmd.sh did not run its checks (exit {r.returncode}); a missing "
+        "precondition is a failure, not a clean tree:\n" + out[-2000:])
 
 
 def assert_gate_ran_clean(r: "subprocess.CompletedProcess") -> None:
@@ -159,10 +252,7 @@ def assert_gate_ran_clean(r: "subprocess.CompletedProcess") -> None:
     bug-230 (2026-11-14): exit 0 is the ONLY clean verdict. Rejecting exit 2 alone let a gate
     whose parity step was killed (the sandbox's exit 86, no `: error` line) pass as clean."""
     out = r.stdout + r.stderr
-    missing = [l for l in out.splitlines() if "not found at" in l]
-    assert r.returncode != 2 and not missing, (
-        f"scripts/lint-gmd.sh did not run its checks (exit {r.returncode}); a missing "
-        "precondition is a failure, not a clean tree:\n" + out[-2000:])
+    assert_gate_ran(r)
     errors = [l for l in out.splitlines() if ": error" in l]
     assert not errors, "in-scope GMD errors:\n" + "\n".join(errors[:20])
     assert r.returncode == 0, (

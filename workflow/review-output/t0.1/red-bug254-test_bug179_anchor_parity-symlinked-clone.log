@@ -1,0 +1,230 @@
+# base: no scripts/gmd_memdir.py (src/scripts at 9a5a98a), RED tests at 0d97bed + uncommitted bug-254 edit; cwd /Volumes/littlebig/refmatrix-t01 layout=symlinked .venv-eval
+pyc-guard: recompiled 21 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t01/src/refmatrix as checked-hash (bug-037)
+......................FFFFF.F................                            [100%]
+=================================== FAILURES ===================================
+_____________ test_ac5_real_corpus_has_parity_over_the_gate_scope ______________
+
+    def test_ac5_real_corpus_has_parity_over_the_gate_scope():
+        """At HEAD this is exactly the two plan-14 rel:-line anchors (spec
+        #f-rel-anchor); GREEN after R2."""
+>       paths, mem = _scope_paths()
+                     ^^^^^^^^^^^^^^
+
+tests/test_bug179_anchor_parity.py:350: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_bug179_anchor_parity.py:137: in _scope_paths
+    gm = load_gmd_memdir()
+         ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+_________ test_bug254_the_scope_carries_the_memory_dir_the_gate_scans __________
+
+    def test_bug254_the_scope_carries_the_memory_dir_the_gate_scans():
+        """bug-254: the scope the AC-5/5b/6 tests lint includes exactly the memory dir the gate's
+        resolver names for this checkout under the real home. At the base the old `_memdir` read the
+        sandbox's decoy `Path.home()` and returned no dir, in every checkout."""
+        from tests.test_gmd_lint_requires_version import load_gmd_memdir
+>       gm = load_gmd_memdir()
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_bug179_anchor_parity.py:362: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+_____________ test_bug254_a_scope_with_no_memory_dir_fails_loudly ______________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1796/test_bug254_a_scope_with_no_me0')
+
+    def test_bug254_a_scope_with_no_memory_dir_fails_loudly(tmp_path):
+        """bug-254: when the resolver finds no memory dir (here: a home with none at any slug on
+        this checkout's origin chain), building the scope FAILS with the resolver's line; it is
+        never a scope quietly linted without the memory dir."""
+        empty_home = tmp_path / "home"
+        (empty_home / ".claude" / "projects").mkdir(parents=True)
+        with pytest.raises(pytest.fail.Exception) as ei:
+>           _scope_paths(home=empty_home)
+
+tests/test_bug179_anchor_parity.py:378: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_bug179_anchor_parity.py:137: in _scope_paths
+    gm = load_gmd_memdir()
+         ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+____________ test_ac5b_no_rel_line_in_the_corpus_carries_an_anchor _____________
+
+    def test_ac5b_no_rel_line_in_the_corpus_carries_an_anchor():
+        """Data check, independent of the linter: R4 moves the 2 plan-14 ids."""
+>       paths, mem = _scope_paths()
+                     ^^^^^^^^^^^^^^
+
+tests/test_bug179_anchor_parity.py:398: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_bug179_anchor_parity.py:137: in _scope_paths
+    gm = load_gmd_memdir()
+         ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+____ test_ac5b_lint_reports_no_multi_anchor_or_anchor_on_rel_over_the_scope ____
+
+    def test_ac5b_lint_reports_no_multi_anchor_or_anchor_on_rel_over_the_scope():
+>       paths, mem = _scope_paths()
+                     ^^^^^^^^^^^^^^
+
+tests/test_bug179_anchor_parity.py:413: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_bug179_anchor_parity.py:137: in _scope_paths
+    gm = load_gmd_memdir()
+         ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+____________ test_ac6_lint_adds_no_error_text_over_the_base_linter _____________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1796/test_ac6_lint_adds_no_error_te0')
+
+    def test_ac6_lint_adds_no_error_text_over_the_base_linter(tmp_path):
+        """Same corpus, base linter vs current linter: the current error-text set
+        is a subset (compared by text, not count — the base set is not fixed)."""
+        p = subprocess.run(["git", "-C", str(REPO), "show", f"{BASE_SHA}:tools/gmd/lint.py"],
+                           capture_output=True, text=True)
+        assert p.returncode == 0, p.stderr
+        base_lint = tmp_path / "lint.py"
+        base_lint.write_text(p.stdout)
+>       paths, mem = _scope_paths()
+                     ^^^^^^^^^^^^^^
+
+tests/test_bug179_anchor_parity.py:437: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_bug179_anchor_parity.py:137: in _scope_paths
+    gm = load_gmd_memdir()
+         ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug179_anchor_parity.py::test_ac5_real_corpus_has_parity_over_the_gate_scope
+FAILED tests/test_bug179_anchor_parity.py::test_bug254_the_scope_carries_the_memory_dir_the_gate_scans
+FAILED tests/test_bug179_anchor_parity.py::test_bug254_a_scope_with_no_memory_dir_fails_loudly
+FAILED tests/test_bug179_anchor_parity.py::test_ac5b_no_rel_line_in_the_corpus_carries_an_anchor
+FAILED tests/test_bug179_anchor_parity.py::test_ac5b_lint_reports_no_multi_anchor_or_anchor_on_rel_over_the_scope
+FAILED tests/test_bug179_anchor_parity.py::test_ac6_lint_adds_no_error_text_over_the_base_linter
+6 failed, 39 passed in 4.85s
+EXIT=1

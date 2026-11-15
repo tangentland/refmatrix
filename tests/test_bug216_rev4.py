@@ -289,6 +289,9 @@ def _gate_root() -> Path:
     (root / "scripts").mkdir()
     for f in ("check-gmd-parity.py", "lint-gmd.sh"):
         shutil.copy2(REPO / "scripts" / f, root / "scripts" / f)
+    # T0.1' R1.4: lint-gmd.sh asks scripts/gmd_memdir.py for its memory dir; a gate root that
+    # copies the script copies its resolver.
+    shutil.copy2(REPO / "scripts" / "gmd_memdir.py", root / "scripts" / "gmd_memdir.py")
     (root / "tools" / "gmd").mkdir(parents=True)
     shutil.copy2(REPO / "tools" / "gmd" / "lint.py", root / "tools" / "gmd" / "lint.py")
     (root / "src").symlink_to(REPO / "src")
