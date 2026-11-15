@@ -1390,7 +1390,15 @@ def _log_ts_seconds(ts: "str | None") -> "float | None":
 # The widest `ts` gap between one call's query.log row and its cli.log end row
 # (ruling L130, 2026-11-15). Both are stamped at second precision when they are
 # written, and `log_query.__exit__` runs inside `main()` BEFORE `cli_entry`'s
-# `finally` stamps the end row, so the end row lands 0 or 1 s after the query row.
+# `finally` stamps the end row, so the end row is never EARLIER than the query
+# row. That ordering proves the sign only, not the 1 s bound: between the two
+# stamps `memory_recall` runs `rec.emit()` (STM ring read, name spans, the
+# recall-events write), then `cli_entry` runs `render_phase_report` and
+# `_root()`, and under load that can pass 1 s, which loses the pair (a double
+# count). The bound is measured, not derived (ch-bsd T0.8 r1 #m1, 2026-11-15):
+# over a copy of the live logs, 613 query-to-end gaps were 610 at 0 s and 3 at
+# 1 s, and widening the window to 2, 3, 5, 10 or 30 s paired no further row,
+# while recall latency reached p95 3.6 s and max 10.8 s.
 CLI_QUERY_PAIR_WINDOW_S = 1
 
 
@@ -1414,7 +1422,10 @@ def pair_cli_recalls_with_query_log(cli_rows: "list[dict]", query_rows: "list[di
     and a post-21.1 call whose query row was never written stays counted.
 
     `query_rows` are the query.log recall rows the report already counts (in
-    window, attributed, flagged). Returns (unpaired cli rows, paired count,
+    window, attributed, and FLAGGED: the precondition is `channel_of_row(q) is
+    not None` for every row, which the report's `rec` filter guarantees; an
+    unflagged row is a writer defect the report prints as `recall_unflagged`,
+    and its call's end row is then counted on the cli.log leg). Returns (unpaired cli rows, paired count,
     cli rows whose `ts` did not parse, query rows whose `ts` did not parse).
     Neither kind of row can be paired: an end row is kept among the unpaired
     (its call is counted once, on the cli.log leg), and a query row cannot
@@ -1424,8 +1435,6 @@ def pair_cli_recalls_with_query_log(cli_rows: "list[dict]", query_rows: "list[di
     q_bad_ts = 0
     for q in query_rows:
         ch = channel_of_row(q)
-        if ch is None:
-            continue
         t = _log_ts_seconds(q.get("ts"))
         if t is None:
             q_bad_ts += 1
