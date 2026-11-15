@@ -1,0 +1,37 @@
+# sha 63b97b0 (base src/tests-infra c4b44d0 + RED tests), clone /Volumes/littlebig/refmatrix-t02 (symlinked .venv-eval)
+# cmd: PYTHONPATH=/Volumes/littlebig/refmatrix-t02/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_lint_gmd_memdir_fallback.py -p no:cacheprovider -rA --timeout 900
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 19 items
+
+tests/test_lint_gmd_memdir_fallback.py ...................               [100%]
+
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_populated_own_dir_is_chosen_with_no_fallback_line
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_an_empty_own_dir_falls_back_to_the_origin_and_says_empty
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_an_absent_own_dir_falls_back_to_the_origin_and_says_absent
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_origin_spellings_canonicalise_to_one_origin_and_slug
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_non_local_origin_stops_the_walk_with_no_dir[scp]
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_non_local_origin_stops_the_walk_with_no_dir[https]
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_non_local_origin_stops_the_walk_with_no_dir[file]
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_chain_of_clones_is_walked_to_the_first_populated_dir
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_chain_names_an_empty_intermediate_dir_as_empty
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_chain_resolves_under_an_exported_git_dir_of_an_unrelated_repo
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_cycle_of_origins_returns_no_dir_and_says_cycle
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_the_walk_stops_at_the_bound_of_five_origins
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_the_fifth_origin_is_inside_the_bound
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_checkout_with_no_origin_stops_with_no_dir
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_an_origin_that_is_not_a_checkout_stops_with_no_dir
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_an_empty_own_slug_memory_dir_falls_back_through_the_real_script
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_the_script_calls_the_resolver_under_python3
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_the_script_holds_no_slug_derivation
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_the_script_reads_no_origin
+============================== 19 passed in 5.27s ==============================
+# exit 0

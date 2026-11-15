@@ -1,0 +1,120 @@
+# sha 63b97b0 (base src/tests-infra c4b44d0 + RED tests), clone /Volumes/littlebig/refmatrix-t02-novenv (NO .venv-eval; origin /Volumes/littlebig/refmatrix-t02)
+# cmd: cd /Volumes/littlebig/refmatrix-t02-novenv && PYTHONPATH=/Volumes/littlebig/refmatrix-t02-novenv/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_bug179_anchor_parity.py -p no:cacheprovider -rA --timeout 900
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02-novenv
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 47 items
+
+tests/test_bug179_anchor_parity.py ..................................... [ 78%]
+...FF.....                                                               [100%]
+
+=================================== FAILURES ===================================
+_ test_bug253_a_named_dev_interpreter_runs_the_gate_in_a_checkout_with_no_venv _
+
+gate_roots = [PosixPath('/tmp/b1796le1eu3m')]
+
+    def test_bug253_a_named_dev_interpreter_runs_the_gate_in_a_checkout_with_no_venv(gate_roots):
+        """bug-253 (task-t0-suite-trust-sweep `#t0-2-bug253`; L121 names `lint-gmd.sh`'s `DEVPY`
+        lookup as the same bug): a littlebig clone has no `.venv-eval` of its own; it runs with the
+        dev tree's interpreter. The caller names that interpreter in `RMX_DEV_PYTHON` (a test passes
+        `sys.executable`, as tests/devbin.py does for the dev `rmx`), and the gate runs both steps
+        under it. At c4b44d0 the gate exited 2, `dev interpreter not found at
+        <checkout>/.venv-eval/bin/python`, before lint ran (the stage-0 E line for
+        `test_the_repo_scope_is_clean_under_the_stricter_gate`)."""
+        root = _gate_root(lint_src=None, doc=PLANTED_FIXED, venv=False)
+        gate_roots.append(root)
+        code, out = _run_gate(root, RMX_DEV_PYTHON=sys.executable)
+>       assert "not found at" not in out and code != 2, (
+            f"the gate did not run with RMX_DEV_PYTHON={sys.executable} and no .venv-eval "
+            f"(exit {code}):\n{out}")
+E       AssertionError: the gate did not run with RMX_DEV_PYTHON=/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python and no .venv-eval (exit 2):
+E         dev interpreter not found at /tmp/b1796le1eu3m/.venv-eval/bin/python
+E         The anchor-parity step needs the .venv-eval dev venv (it imports refmatrix); create
+E         .venv-eval/ — this gate does not skip the step without it.
+E         
+E       assert ('not found at' not in 'dev interpr...ithout it.\n'
+E         
+E         'not found at' is contained here:
+E           dev interpreter not found at /tmp/b1796le1eu3m/.venv-eval/bin/python
+E         ?                 ++++++++++++
+E           The anchor-parity step needs the .venv-eval dev venv (it imports refmatrix); create
+E           .venv-eval/ — this gate does not skip the step without it.)
+
+tests/test_bug179_anchor_parity.py:663: AssertionError
+___ test_bug253_a_named_dev_interpreter_that_is_missing_exits_2_and_names_it ___
+
+gate_roots = [PosixPath('/tmp/b179jke29vcn')]
+
+    def test_bug253_a_named_dev_interpreter_that_is_missing_exits_2_and_names_it(gate_roots):
+        """The named interpreter is a precondition like the venv's: one that does not exist stops
+        the gate with exit 2 and names the path it was given, never a narrower gate."""
+        root = _gate_root(lint_src=None, doc=PLANTED_FIXED, venv=False)
+        gate_roots.append(root)
+        missing = str(root / "no-such-python")
+        code, out = _run_gate(root, RMX_DEV_PYTHON=missing)
+        assert code == 2, f"exit {code}:\n{out}"
+>       assert missing in out, f"the gate did not name RMX_DEV_PYTHON={missing}:\n{out}"
+E       AssertionError: the gate did not name RMX_DEV_PYTHON=/tmp/b179jke29vcn/no-such-python:
+E         dev interpreter not found at /tmp/b179jke29vcn/.venv-eval/bin/python
+E         The anchor-parity step needs the .venv-eval dev venv (it imports refmatrix); create
+E         .venv-eval/ — this gate does not skip the step without it.
+E         
+E       assert '/tmp/b179jke29vcn/no-such-python' in 'dev interpreter not found at /tmp/b179jke29vcn/.venv-eval/bin/python\nThe anchor-parity step needs the .venv-eval dev venv (it imports refmatrix); create\n.venv-eval/ — this gate does not skip the step without it.\n'
+
+tests/test_bug179_anchor_parity.py:677: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_bug179_anchor_parity.py::test_ac1_two_ids_on_a_body_line_is_a_lint_error
+PASSED tests/test_bug179_anchor_parity.py::test_ac1_only_the_first_body_id_registers_in_lint
+PASSED tests/test_bug179_anchor_parity.py::test_ac1_two_ids_on_a_heading_is_a_lint_error
+PASSED tests/test_bug179_anchor_parity.py::test_ac1_a_link_to_the_second_id_dangles
+PASSED tests/test_bug179_anchor_parity.py::test_ac1_multi_anchor_lines_register_the_same_id_in_both_tools
+PASSED tests/test_bug179_anchor_parity.py::test_ac2_an_id_on_a_rel_line_is_a_lint_error_and_not_registered
+PASSED tests/test_bug179_anchor_parity.py::test_ac2_an_id_on_a_malformed_rel_line_registers_in_neither_tool
+PASSED tests/test_bug179_anchor_parity.py::test_ac2_a_rel_attribute_block_is_not_an_anchor
+PASSED tests/test_bug179_anchor_parity.py::test_ac3_ingester_reads_the_heading_anchor_past_inline_code
+PASSED tests/test_bug179_anchor_parity.py::test_ac3_ingester_heading_title_keeps_the_quoted_span
+PASSED tests/test_bug179_anchor_parity.py::test_ac3_slice_gives_the_same_id_and_title
+PASSED tests/test_bug179_anchor_parity.py::test_ac3_lint_agrees_on_the_quoted_heading
+PASSED tests/test_bug179_anchor_parity.py::test_ac3b_lint_registers_only_the_real_anchor
+PASSED tests/test_bug179_anchor_parity.py::test_ac3b_ingester_registers_only_the_real_anchor
+PASSED tests/test_bug179_anchor_parity.py::test_ac3b_slice_reads_past_a_double_backtick_heading_span
+PASSED tests/test_bug179_anchor_parity.py::test_ac3b_double_backtick_heading_parity
+PASSED tests/test_bug179_anchor_parity.py::test_ac3b_triple_backtick_run_is_code_in_both_tools
+PASSED tests/test_bug179_anchor_parity.py::test_ac3b_a_wikilink_quoted_in_double_backticks_is_not_a_link
+PASSED tests/test_bug179_anchor_parity.py::test_ac4_the_incident_blob_fails_lint_with_twelve_multi_anchor_errors
+PASSED tests/test_bug179_anchor_parity.py::test_ac5_parity_script_exposes_find_divergences
+PASSED tests/test_bug179_anchor_parity.py::test_ac5_synthetic_fixture_with_every_shape_has_parity
+PASSED tests/test_bug179_anchor_parity.py::test_ac5_synthetic_fixture_registers_the_spec_set_in_both_tools
+PASSED tests/test_bug179_anchor_parity.py::test_ac5_real_corpus_has_parity_over_the_gate_scope
+PASSED tests/test_bug179_anchor_parity.py::test_bug254_the_scope_carries_the_memory_dir_the_gate_scans
+PASSED tests/test_bug179_anchor_parity.py::test_bug254_a_scope_with_no_memory_dir_fails_loudly
+PASSED tests/test_bug179_anchor_parity.py::test_ac5b_no_rel_line_in_the_corpus_carries_an_anchor
+PASSED tests/test_bug179_anchor_parity.py::test_ac5b_lint_reports_no_multi_anchor_or_anchor_on_rel_over_the_scope
+PASSED tests/test_bug179_anchor_parity.py::test_ac6_bold_lead_mid_line_anchor_lints_clean_and_agrees
+PASSED tests/test_bug179_anchor_parity.py::test_ac6_lint_adds_no_error_text_over_the_base_linter
+PASSED tests/test_bug179_anchor_parity.py::test_ac8_vendored_tool_is_a_committed_upstream_blob[lint.py]
+PASSED tests/test_bug179_anchor_parity.py::test_ac8_vendored_tool_is_a_committed_upstream_blob[slice.py]
+PASSED tests/test_bug179_anchor_parity.py::test_ac8_upstream_gate_test_passes_with_the_bug179_cases
+PASSED tests/test_bug179_anchor_parity.py::test_ac8_spec_carries_the_two_rule_lines_upstream_and_here
+PASSED tests/test_bug179_anchor_parity.py::test_ac8_spec_differs_from_upstream_only_in_its_id_line
+PASSED tests/test_bug179_anchor_parity.py::test_ac11_upstream_migration_guide_names_the_vendoring_consumer_lines
+PASSED tests/test_bug179_anchor_parity.py::test_ac10_the_gate_catches_a_divergence_lint_alone_misses
+PASSED tests/test_bug179_anchor_parity.py::test_ac10_the_gate_passes_when_the_planted_id_is_on_its_paragraph
+PASSED tests/test_bug179_anchor_parity.py::test_ac10_the_unmutated_gate_passes_a_clean_root
+PASSED tests/test_bug179_anchor_parity.py::test_ac10_lint_and_parity_both_run_when_both_fail
+PASSED tests/test_bug179_anchor_parity.py::test_ac10_a_missing_dev_interpreter_exits_2_and_names_it
+PASSED tests/test_bug179_anchor_parity.py::test_s3_a_non_utf8_gmd_doc_fails_the_parity_script
+PASSED tests/test_bug179_anchor_parity.py::test_s3_find_divergences_raises_on_a_parse_failure
+PASSED tests/test_bug179_anchor_parity.py::test_m5_a_clean_memory_dir_has_parity_through_the_script
+PASSED tests/test_bug179_anchor_parity.py::test_m5_memory_files_are_parsed_the_way_the_bridge_parses_them
+PASSED tests/test_bug179_anchor_parity.py::test_m5_a_lint_ingester_disagreement_in_a_memory_dir_fails_the_script
+FAILED tests/test_bug179_anchor_parity.py::test_bug253_a_named_dev_interpreter_runs_the_gate_in_a_checkout_with_no_venv
+FAILED tests/test_bug179_anchor_parity.py::test_bug253_a_named_dev_interpreter_that_is_missing_exits_2_and_names_it
+========================= 2 failed, 45 passed in 8.04s =========================
+# exit 1

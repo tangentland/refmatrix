@@ -1,0 +1,91 @@
+# sha 63b97b0 (base src/tests-infra c4b44d0 + RED tests), clone /Volumes/littlebig/refmatrix-t02 (symlinked .venv-eval)
+# cmd: PYTHONPATH=/Volumes/littlebig/refmatrix-t02/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_repo_hooks_in_sync.py -p no:cacheprovider -rA --timeout 900
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 4 items
+
+tests/test_repo_hooks_in_sync.py sFF.                                    [100%]
+
+=================================== FAILURES ===================================
+_ test_bug170_the_comparison_renders_with_the_home_the_hooks_were_installed_with _
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1904/test_bug170_the_comparison_ren0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x103ed8e90>
+
+    def test_bug170_the_comparison_renders_with_the_home_the_hooks_were_installed_with(
+            tmp_path, monkeypatch):
+        """R2.1: hooks installed under the real home compare clean. At c4b44d0 the render ran under
+        the sandbox home: `- PostToolUse/Grep: …<real home>/.claude/hooks/grep-tool-teach.sh` /
+        `+ …/private/tmp/rmx-…/h/.claude/hooks/…`, the same for `grep-rewrite-guard.sh` and the
+        SessionStart memory dir, plus `script … differs` x3 (bug-170's E lines)."""
+        proj, hooks_dir, _ = _install_under_real_home(tmp_path, monkeypatch)
+        ok, diff = installed_hooks_diff(proj, hooks_dir)
+>       assert ok and not _drift(diff), (
+            "hooks installed under the real home do not compare clean; the render is not using "
+            "the home they were installed with (bug-170):\n" + diff)
+E       AssertionError: hooks installed under the real home do not compare clean; the render is not using the home they were installed with (bug-170):
+E         + PostToolUse/Grep: {"command": "/private/tmp/rmx-3h3dxj8i/h/.claude/hooks/grep-tool-teach.sh", "timeout": 5000, "type": "command"}
+E         - PostToolUse/Grep: {"command": "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1904/test_bug170_the_comparison_ren0/installed-hooks/grep-tool-teach.sh", "timeout": 5000, "type": "command"}
+E         + PreToolUse/Bash: {"command": "/private/tmp/rmx-3h3dxj8i/h/.claude/hooks/grep-rewrite-guard.sh", "type": "command"}
+E         - PreToolUse/Bash: {"command": "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1904/test_bug170_the_comparison_ren0/installed-hooks/grep-rewrite-guard.sh", "type": "command"}
+E         - SessionStart/startup|resume|clear: {"command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx ingest-gmd --as-memory --detach '/Users/tholley/.claude/projects/-private-var-folders-js-71d0ymjj56b2mbf40rvwk84r0000gn-T-pytest-of-tholley-pytest-1904-test-bug170-the-comparison-ren0-proj/memory'", "type": "command"}
+E         + SessionStart/startup|resume|clear: {"command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx ingest-gmd --as-memory --detach '/private/tmp/rmx-3h3dxj8i/h/.claude/projects/-private-var-folders-js-71d0ymjj56b2mbf40rvwk84r0000gn-T-pytest-of-tholley-pytest-1904-test-bug170-the-comparison-ren0-proj/memory'", "type": "command"}
+E         - script grep-rewrite-guard.sh differs from the generator's render (rmx install-hooks --apply --force)
+E         - script rmxgrep-rewrite.py differs from the generator's render (rmx install-hooks --apply --force)
+E         - script grep-tool-teach.sh differs from the generator's render (rmx install-hooks --apply --force)
+E       assert (False)
+
+tests/test_repo_hooks_in_sync.py:109: AssertionError
+__________ test_bug170_ac21_one_changed_script_byte_is_the_only_drift __________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1904/test_bug170_ac21_one_changed_s0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x103db8950>
+
+    def test_bug170_ac21_one_changed_script_byte_is_the_only_drift(tmp_path, monkeypatch):
+        """AC-2.1: with the scripts dir a copy of the installed one with ONE byte of one script
+        changed, the comparison reports that script `differs`, and nothing else: it looks at real
+        content, and the HOME-derived entries match. (Mutation M2.2, the comparison skips the
+        scripts: this goes green, so the test is red.)"""
+        proj, hooks_dir, scripts = _install_under_real_home(tmp_path, monkeypatch)
+        name = sorted(scripts)[0]
+        f = hooks_dir / name
+        data = bytearray(f.read_bytes())
+        i = data.index(b"#") if b"#" in data else 0
+        data[i] = ord("@") if data[i] != ord("@") else ord("#")
+        f.write_bytes(bytes(data))
+        ok, diff = installed_hooks_diff(proj, hooks_dir)
+        assert not ok, f"a changed byte in {name} was not reported:\n{diff}"
+>       assert _drift(diff) == [f"- script {name} differs from the generator's render "
+                                "(rmx install-hooks --apply --force)"], (
+            f"expected exactly one drift line, for {name}; got:\n{diff}")
+E       AssertionError: expected exactly one drift line, for grep-rewrite-guard.sh; got:
+E         + PostToolUse/Grep: {"command": "/private/tmp/rmx-3h3dxj8i/h/.claude/hooks/grep-tool-teach.sh", "timeout": 5000, "type": "command"}
+E         - PostToolUse/Grep: {"command": "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1904/test_bug170_ac21_one_changed_s0/installed-hooks/grep-tool-teach.sh", "timeout": 5000, "type": "command"}
+E         + PreToolUse/Bash: {"command": "/private/tmp/rmx-3h3dxj8i/h/.claude/hooks/grep-rewrite-guard.sh", "type": "command"}
+E         - PreToolUse/Bash: {"command": "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1904/test_bug170_ac21_one_changed_s0/installed-hooks/grep-rewrite-guard.sh", "type": "command"}
+E         - SessionStart/startup|resume|clear: {"command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx ingest-gmd --as-memory --detach '/Users/tholley/.claude/projects/-private-var-folders-js-71d0ymjj56b2mbf40rvwk84r0000gn-T-pytest-of-tholley-pytest-1904-test-bug170-ac21-one-changed-s0-proj/memory'", "type": "command"}
+E         + SessionStart/startup|resume|clear: {"command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx ingest-gmd --as-memory --detach '/private/tmp/rmx-3h3dxj8i/h/.claude/projects/-private-var-folders-js-71d0ymjj56b2mbf40rvwk84r0000gn-T-pytest-of-tholley-pytest-1904-test-bug170-ac21-one-changed-s0-proj/memory'", "type": "command"}
+E         - script grep-rewrite-guard.sh differs from the generator's render (rmx install-hooks --apply --force)
+E         - script rmxgrep-rewrite.py differs from the generator's render (rmx install-hooks --apply --force)
+E         - script grep-tool-teach.sh differs from the generator's render (rmx install-hooks --apply --force)
+E       assert ['+ PostToolU...mmand"}', ...] == ['- script gr...ply --force)']
+E         
+E         At index 0 diff: '+ PostToolUse/Grep: {"command": "/private/tmp/rmx-3h3dxj8i/h/.claude/hooks/grep-tool-teach.sh", "timeout": 5000, "type": "command"}' != "- script grep-rewrite-guard.sh differs from the generator's render (rmx install-hooks --apply --force)"
+E         Left contains 8 more items, first extra item: '- PostToolUse/Grep: {"command": "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1904/test_bug170_ac21_one_changed_s0/installed-hooks/grep-tool-teach.sh", "timeout": 5000, "type": "command"}'
+E         Use -v to get more diff
+
+tests/test_repo_hooks_in_sync.py:128: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_repo_hooks_in_sync.py::test_bug170_the_comparison_restores_the_sandbox_and_writes_nothing
+SKIPPED [1] tests/test_repo_hooks_in_sync.py:59: hooks belong to another checkout of this commit
+FAILED tests/test_repo_hooks_in_sync.py::test_bug170_the_comparison_renders_with_the_home_the_hooks_were_installed_with
+FAILED tests/test_repo_hooks_in_sync.py::test_bug170_ac21_one_changed_script_byte_is_the_only_drift
+==================== 2 failed, 1 passed, 1 skipped in 0.18s ====================
+# exit 1

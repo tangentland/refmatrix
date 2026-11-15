@@ -1,0 +1,420 @@
+# sha 14c825c (base src/tests-infra c4b44d0 + RED tests), clone /Volumes/littlebig/refmatrix-t02 (symlinked .venv-eval)
+# cmd: cd /Volumes/littlebig/refmatrix-t02 && PYTHONPATH=/Volumes/littlebig/refmatrix-t02/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_bug253_dev_bin.py -p no:cacheprovider -rA --timeout 900
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 29 items
+
+tests/test_bug253_dev_bin.py FFFF.......FFFFFFFFFFFFFFFFFF               [100%]
+
+=================================== FAILURES ===================================
+_____ test_the_dev_rmx_is_the_bin_dir_of_the_interpreter_running_the_suite _____
+
+    def test_the_dev_rmx_is_the_bin_dir_of_the_interpreter_running_the_suite():
+        """The interpreter running the suite IS the dev interpreter (in the main tree that is
+        `.venv-eval/bin/python`; in a clone it is the same file, found through `sys.executable`,
+        never through the clone's own `.venv-eval`)."""
+>       db = _helper()
+             ^^^^^^^^^
+
+tests/test_bug253_dev_bin.py:122: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _helper():
+>       assert HELPER.is_file(), (
+            f"no {HELPER.relative_to(_REPO)}: the dev rmx is still looked up by each file on its "
+            "own (bug-253; task-t0-suite-trust-sweep #t0-2-bug253)")
+E       AssertionError: no tests/devbin.py: the dev rmx is still looked up by each file on its own (bug-253; task-t0-suite-trust-sweep #t0-2-bug253)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t02/tests/devbin.py').is_file
+
+tests/test_bug253_dev_bin.py:109: AssertionError
+____ test_dev_env_puts_this_checkouts_src_first_and_keeps_absolute_entries _____
+
+    def test_dev_env_puts_this_checkouts_src_first_and_keeps_absolute_entries():
+>       db = _helper()
+             ^^^^^^^^^
+
+tests/test_bug253_dev_bin.py:132: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _helper():
+>       assert HELPER.is_file(), (
+            f"no {HELPER.relative_to(_REPO)}: the dev rmx is still looked up by each file on its "
+            "own (bug-253; task-t0-suite-trust-sweep #t0-2-bug253)")
+E       AssertionError: no tests/devbin.py: the dev rmx is still looked up by each file on its own (bug-253; task-t0-suite-trust-sweep #t0-2-bug253)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t02/tests/devbin.py').is_file
+
+tests/test_bug253_dev_bin.py:109: AssertionError
+_________ test_a_child_run_through_the_helper_runs_this_checkouts_code _________
+
+    def test_a_child_run_through_the_helper_runs_this_checkouts_code():
+        """The point of the pair: `dev_rmx()` under `dev_env()` imports THIS checkout's
+        `refmatrix` (in a clone, not the editable install's tree)."""
+>       db = _helper()
+             ^^^^^^^^^
+
+tests/test_bug253_dev_bin.py:149: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _helper():
+>       assert HELPER.is_file(), (
+            f"no {HELPER.relative_to(_REPO)}: the dev rmx is still looked up by each file on its "
+            "own (bug-253; task-t0-suite-trust-sweep #t0-2-bug253)")
+E       AssertionError: no tests/devbin.py: the dev rmx is still looked up by each file on its own (bug-253; task-t0-suite-trust-sweep #t0-2-bug253)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t02/tests/devbin.py').is_file
+
+tests/test_bug253_dev_bin.py:109: AssertionError
+________ test_no_test_file_but_the_helper_looks_up_a_checkout_venv_bin _________
+
+    def test_no_test_file_but_the_helper_looks_up_a_checkout_venv_bin():
+        """One definition left, not two ([[feedback_converge_repeated_shapes]])."""
+        found = []
+        for f in sorted(_TESTS.rglob("*.py")):
+            if "__pycache__" in f.parts or f == HELPER or f.name in NOT_A_LOOKUP:
+                continue
+            lines = f.read_text().splitlines()
+            for n in venv_bin_lookups(f.read_text()):
+                found.append(f"{f.relative_to(_REPO)}:{n}: {lines[n - 1].strip()}")
+>       assert not found, ("files that still build `<checkout>/.venv-eval/bin` themselves; they "
+                           "use tests/devbin.py (bug-253):\n  " + "\n  ".join(found))
+E       AssertionError: files that still build `<checkout>/.venv-eval/bin` themselves; they use tests/devbin.py (bug-253):
+E           tests/conftest.py:310: if not (checkout / ".venv-eval" / "bin" / "rmx").exists():
+E           tests/test_brief_real_daemon.py:23: RMX = Path(__file__).resolve().parents[1] / ".venv-eval" / "bin" / "rmx"
+E           tests/test_bug240_ingest_file_arg.py:33: RMX = REPO / ".venv-eval" / "bin" / "rmx"
+E           tests/test_bug240_ingest_file_arg_mcp.py:38: RMX = REPO / ".venv-eval" / "bin" / "rmx"
+E           tests/test_bug241_r2_l112.py:46: RMX = REPO / ".venv-eval" / "bin" / "rmx"
+E           tests/test_bug241_rule_docs_reingest.py:46: RMX = REPO / ".venv-eval" / "bin" / "rmx"
+E           tests/test_grep_argv_order_e2e.py:48: RMX = Path(__file__).resolve().parents[1] / ".venv-eval" / "bin" / "rmx"
+E           tests/test_grep_count_rows_e2e.py:27: RMX = Path(__file__).resolve().parents[1] / ".venv-eval" / "bin" / "rmx"
+E           tests/test_grep_evidence_verified.py:39: RMX = Path(__file__).resolve().parents[1] / ".venv-eval" / "bin" / "rmx"
+E           tests/test_grep_learning_replay.py:66: @pytest.mark.skipif(not (Path(__file__).resolve().parents[1] / ".venv-eval" / "bin" / "rmx").exists(),
+E           tests/test_grep_no_flag_bundle.py:65: RMX = Path(__file__).resolve().parents[1] / ".venv-eval" / "bin" / "rmx"
+E           tests/test_scanorder_r2_l120.py:57: DEV_BIN = REPO / ".venv-eval" / "bin"
+E       assert not ['tests/conftest.py:310: if not (checkout / ".venv-eval" / "bin" / "rmx").exists():', 'tests/test_brief_real_daemon.py...v-eval" / "bin" / "rmx"', 'tests/test_bug241_rule_docs_reingest.py:46: RMX = REPO / ".venv-eval" / "bin" / "rmx"', ...]
+
+tests/test_bug253_dev_bin.py:169: AssertionError
+___ test_each_of_the_eleven_uses_the_helper[test_bug240_ingest_file_arg.py] ____
+
+name = 'test_bug240_ingest_file_arg.py'
+
+    @pytest.mark.parametrize("name", ELEVEN)
+    def test_each_of_the_eleven_uses_the_helper(name):
+        src = (_TESTS / name).read_text()
+>       assert _imports_devbin(src), (
+            f"tests/{name} does not import tests/devbin.py; it looked up the dev rmx itself "
+            "(bug-253, #t0-2-bug253)")
+E       AssertionError: tests/test_bug240_ingest_file_arg.py does not import tests/devbin.py; it looked up the dev rmx itself (bug-253, #t0-2-bug253)
+E       assert False
+E        +  where False = _imports_devbin('"""bug-240 RED: `rmx ingest <FILE>` is refused, naming `rmx sync -f` -- never a quiet 0.\n\nWHY (bug-240, 2026-11-14)...  for rel in FILES:\n        assert _rows_for(proj, proj["proj"] / rel), f"directory ingest lost {rel}\\n{r.stdout}"\n')
+
+tests/test_bug253_dev_bin.py:202: AssertionError
+_ test_each_of_the_eleven_uses_the_helper[test_bug240_ingest_file_arg_mcp.py] __
+
+name = 'test_bug240_ingest_file_arg_mcp.py'
+
+    @pytest.mark.parametrize("name", ELEVEN)
+    def test_each_of_the_eleven_uses_the_helper(name):
+        src = (_TESTS / name).read_text()
+>       assert _imports_devbin(src), (
+            f"tests/{name} does not import tests/devbin.py; it looked up the dev rmx itself "
+            "(bug-253, #t0-2-bug253)")
+E       AssertionError: tests/test_bug240_ingest_file_arg_mcp.py does not import tests/devbin.py; it looked up the dev rmx itself (bug-253, #t0-2-bug253)
+E       assert False
+E        +  where False = _imports_devbin('"""bug-240 RED, the agent routes: `rmx_ingest(path=<FILE>)` is refused, naming `rmx sync -f`.\n\nWHY (bug-240, lead r...n    for rel in FILES:\n        assert _rows_for(store["root"], store["proj"] / rel), f"directory ingest lost {rel}"\n')
+
+tests/test_bug253_dev_bin.py:202: AssertionError
+_______ test_each_of_the_eleven_uses_the_helper[test_bug241_r2_l112.py] ________
+
+name = 'test_bug241_r2_l112.py'
+
+    @pytest.mark.parametrize("name", ELEVEN)
+    def test_each_of_the_eleven_uses_the_helper(name):
+        src = (_TESTS / name).read_text()
+>       assert _imports_devbin(src), (
+            f"tests/{name} does not import tests/devbin.py; it looked up the dev rmx itself "
+            "(bug-253, #t0-2-bug253)")
+E       AssertionError: tests/test_bug241_r2_l112.py does not import tests/devbin.py; it looked up the dev rmx itself (bug-253, #t0-2-bug253)
+E       assert False
+E        +  where False = _imports_devbin('"""0.83.1 ch-bsd r1 fold (ruling L112): REDs for S1, S2 and M1.\n\nReport: `workflow/bullshit/2026-11-14-2324-bug241-...usal: {errs}\\n{out}")\n    assert "busy" not in errs[0], f"the busy message won over the file refusal: {errs[0]!r}"\n')
+
+tests/test_bug253_dev_bin.py:202: AssertionError
+__ test_each_of_the_eleven_uses_the_helper[test_bug241_rule_docs_reingest.py] __
+
+name = 'test_bug241_rule_docs_reingest.py'
+
+    @pytest.mark.parametrize("name", ELEVEN)
+    def test_each_of_the_eleven_uses_the_helper(name):
+        src = (_TESTS / name).read_text()
+>       assert _imports_devbin(src), (
+            f"tests/{name} does not import tests/devbin.py; it looked up the dev rmx itself "
+            "(bug-253, #t0-2-bug253)")
+E       AssertionError: tests/test_bug241_rule_docs_reingest.py does not import tests/devbin.py; it looked up the dev rmx itself (bug-253, #t0-2-bug253)
+E       assert False
+E        +  where False = _imports_devbin('"""bug-241 RED: `rmx reingest --force --no-sessions` must land the GMD rule docs as GMD.\n\nWHY (bug-241, 2026-11-14)...ead and hide from `by_doc`).\n    assert (res["authored"], res["landed"]) == (2, 2), f"recount: {res}" + _says(case)\n')
+
+tests/test_bug253_dev_bin.py:202: AssertionError
+______ test_each_of_the_eleven_uses_the_helper[test_scanorder_r2_l120.py] ______
+
+name = 'test_scanorder_r2_l120.py'
+
+    @pytest.mark.parametrize("name", ELEVEN)
+    def test_each_of_the_eleven_uses_the_helper(name):
+        src = (_TESTS / name).read_text()
+>       assert _imports_devbin(src), (
+            f"tests/{name} does not import tests/devbin.py; it looked up the dev rmx itself "
+            "(bug-253, #t0-2-bug253)")
+E       AssertionError: tests/test_scanorder_r2_l120.py does not import tests/devbin.py; it looked up the dev rmx itself (bug-253, #t0-2-bug253)
+E       assert False
+E        +  where False = _imports_devbin('"""scan-prompt order fix, ch-bsd r1 fold (ruling L120): REDs for S1, S2, S3 and M1.\n\nReport: `workflow/bullshit/202...e unchanged composite is still "\n        f"suppressed; hook commands run (event, command, rc, stderr tail): {ran}")\n')
+
+tests/test_bug253_dev_bin.py:202: AssertionError
+______ test_each_of_the_eleven_uses_the_helper[test_brief_real_daemon.py] ______
+
+name = 'test_brief_real_daemon.py'
+
+    @pytest.mark.parametrize("name", ELEVEN)
+    def test_each_of_the_eleven_uses_the_helper(name):
+        src = (_TESTS / name).read_text()
+>       assert _imports_devbin(src), (
+            f"tests/{name} does not import tests/devbin.py; it looked up the dev rmx itself "
+            "(bug-253, #t0-2-bug253)")
+E       AssertionError: tests/test_brief_real_daemon.py does not import tests/devbin.py; it looked up the dev rmx itself (bug-253, #t0-2-bug253)
+E       assert False
+E        +  where False = _imports_devbin('"""`memory_brief` against a REAL spawned daemon — the test ch-bsd r1 #b-8 asked for.\n\nEvery other daemon-op test in...atalog their own daemon holds (bug-127); "\n                      f"reach it through the daemon op instead: {hits}")\n')
+
+tests/test_bug253_dev_bin.py:202: AssertionError
+_____ test_each_of_the_eleven_uses_the_helper[test_grep_argv_order_e2e.py] _____
+
+name = 'test_grep_argv_order_e2e.py'
+
+    @pytest.mark.parametrize("name", ELEVEN)
+    def test_each_of_the_eleven_uses_the_helper(name):
+        src = (_TESTS / name).read_text()
+>       assert _imports_devbin(src), (
+            f"tests/{name} does not import tests/devbin.py; it looked up the dev rmx itself "
+            "(bug-253, #t0-2-bug253)")
+E       AssertionError: tests/test_grep_argv_order_e2e.py does not import tests/devbin.py; it looked up the dev rmx itself (bug-253, #t0-2-bug253)
+E       assert False
+E        +  where False = _imports_devbin('"""ch-bsd r1 #b-2, the ORDER half: a gate with measured power.\n\n`rmx grep`\'s floor inherits `rg`\'s PARALLEL fan-o... and seen[0] == "deep.txt", seen\n    assert seen[-1] == argv_names[0], seen\n    assert _groups_are_contiguous(out)\n')
+
+tests/test_bug253_dev_bin.py:202: AssertionError
+_____ test_each_of_the_eleven_uses_the_helper[test_grep_count_rows_e2e.py] _____
+
+name = 'test_grep_count_rows_e2e.py'
+
+    @pytest.mark.parametrize("name", ELEVEN)
+    def test_each_of_the_eleven_uses_the_helper(name):
+        src = (_TESTS / name).read_text()
+>       assert _imports_devbin(src), (
+            f"tests/{name} does not import tests/devbin.py; it looked up the dev rmx itself "
+            "(bug-253, #t0-2-bug253)")
+E       AssertionError: tests/test_grep_count_rows_e2e.py does not import tests/devbin.py; it looked up the dev rmx itself (bug-253, #t0-2-bug253)
+E       assert False
+E        +  where False = _imports_devbin('"""ch-bsd r3 #b-4: the `-c` rows for directories, missing files and two\nspellings of one file, against `/usr/bin/gre...\n    assert rout == gout, (rout, gout)\n    assert rcode == 2, (rcode, rerr)\n    assert "nosuch.txt" in rerr, rerr\n')
+
+tests/test_bug253_dev_bin.py:202: AssertionError
+___ test_each_of_the_eleven_uses_the_helper[test_grep_evidence_verified.py] ____
+
+name = 'test_grep_evidence_verified.py'
+
+    @pytest.mark.parametrize("name", ELEVEN)
+    def test_each_of_the_eleven_uses_the_helper(name):
+        src = (_TESTS / name).read_text()
+>       assert _imports_devbin(src), (
+            f"tests/{name} does not import tests/devbin.py; it looked up the dev rmx itself "
+            "(bug-253, #t0-2-bug253)")
+E       AssertionError: tests/test_grep_evidence_verified.py does not import tests/devbin.py; it looked up the dev rmx itself (bug-253, #t0-2-bug253)
+E       assert False
+E        +  where False = _imports_devbin('"""bug-074 / bug-073: an index row must hold the pattern on the line it names.\n\nAn index row is `(path, line)` from...tore.grep_evidence("roaring bitmap", word=True) == [], \\\n        "-w kept a bridged spelling inside a longer word"\n')
+
+tests/test_bug253_dev_bin.py:202: AssertionError
+____ test_each_of_the_eleven_uses_the_helper[test_grep_learning_replay.py] _____
+
+name = 'test_grep_learning_replay.py'
+
+    @pytest.mark.parametrize("name", ELEVEN)
+    def test_each_of_the_eleven_uses_the_helper(name):
+        src = (_TESTS / name).read_text()
+>       assert _imports_devbin(src), (
+            f"tests/{name} does not import tests/devbin.py; it looked up the dev rmx itself "
+            "(bug-253, #t0-2-bug253)")
+E       AssertionError: tests/test_grep_learning_replay.py does not import tests/devbin.py; it looked up the dev rmx itself (bug-253, #t0-2-bug253)
+E       assert False
+E        +  where False = _imports_devbin('"""Smoke test for the two-arm replay harness (task 14.4).\n\nThe harness produces a MEASUREMENT, and a measurement is..., str(Path.home()))) / "refmatrix"\n    assert deploy not in Path(glr.RMX).parents, f"{glr.RMX} is the deployed rmx"\n')
+
+tests/test_bug253_dev_bin.py:202: AssertionError
+_____ test_each_of_the_eleven_uses_the_helper[test_grep_no_flag_bundle.py] _____
+
+name = 'test_grep_no_flag_bundle.py'
+
+    @pytest.mark.parametrize("name", ELEVEN)
+    def test_each_of_the_eleven_uses_the_helper(name):
+        src = (_TESTS / name).read_text()
+>       assert _imports_devbin(src), (
+            f"tests/{name} does not import tests/devbin.py; it looked up the dev rmx itself "
+            "(bug-253, #t0-2-bug253)")
+E       AssertionError: tests/test_grep_no_flag_bundle.py does not import tests/devbin.py; it looked up the dev rmx itself (bug-253, #t0-2-bug253)
+E       assert False
+E        +  where False = _imports_devbin('"""`rmx grep` has no `-f/--flags` bundle (user, 2026-10-07: "change the grep to\nnot use -flags").\n\nThe bundle pred...                env=dict(os.environ, RMX_GREP_NOTE="0"))\n\n    assert r.stdout.strip() == "2", (r.stdout, r.stderr)\n')
+
+tests/test_bug253_dev_bin.py:202: AssertionError
+_ test_the_six_no_longer_skip_on_a_missing_dev_rmx[test_brief_real_daemon.py] __
+
+name = 'test_brief_real_daemon.py'
+
+    @pytest.mark.parametrize("name", SKIPPING)
+    def test_the_six_no_longer_skip_on_a_missing_dev_rmx(name):
+        """`#t0-2-bug253`: a pinned file that uses the helper no longer skips for a missing
+        checkout venv, so its `skipif` goes with its pin (R1.2: the pins follow the tests).
+        `test_the_tool_itself_is_the_one_that_scrambles` keeps a skip for a missing `rg` only."""
+        bad = [r for r in _skip_reasons((_TESTS / name).read_text())
+               if re.search(r"\brmx\b|venv", r)]
+>       assert not bad, f"tests/{name} still skips on the dev rmx: {bad!r}"
+E       AssertionError: tests/test_brief_real_daemon.py still skips on the dev rmx: ['dev rmx not built']
+E       assert not ['dev rmx not built']
+
+tests/test_bug253_dev_bin.py:233: AssertionError
+_ test_the_six_no_longer_skip_on_a_missing_dev_rmx[test_grep_argv_order_e2e.py] _
+
+name = 'test_grep_argv_order_e2e.py'
+
+    @pytest.mark.parametrize("name", SKIPPING)
+    def test_the_six_no_longer_skip_on_a_missing_dev_rmx(name):
+        """`#t0-2-bug253`: a pinned file that uses the helper no longer skips for a missing
+        checkout venv, so its `skipif` goes with its pin (R1.2: the pins follow the tests).
+        `test_the_tool_itself_is_the_one_that_scrambles` keeps a skip for a missing `rg` only."""
+        bad = [r for r in _skip_reasons((_TESTS / name).read_text())
+               if re.search(r"\brmx\b|venv", r)]
+>       assert not bad, f"tests/{name} still skips on the dev rmx: {bad!r}"
+E       AssertionError: tests/test_grep_argv_order_e2e.py still skips on the dev rmx: ['dev venv rmx not built', 'needs rmx + rg', 'dev venv rmx not built', 'dev venv rmx not built']
+E       assert not ['dev venv rmx not built', 'needs rmx + rg', 'dev venv rmx not built', 'dev venv rmx not built']
+
+tests/test_bug253_dev_bin.py:233: AssertionError
+_ test_the_six_no_longer_skip_on_a_missing_dev_rmx[test_grep_count_rows_e2e.py] _
+
+name = 'test_grep_count_rows_e2e.py'
+
+    @pytest.mark.parametrize("name", SKIPPING)
+    def test_the_six_no_longer_skip_on_a_missing_dev_rmx(name):
+        """`#t0-2-bug253`: a pinned file that uses the helper no longer skips for a missing
+        checkout venv, so its `skipif` goes with its pin (R1.2: the pins follow the tests).
+        `test_the_tool_itself_is_the_one_that_scrambles` keeps a skip for a missing `rg` only."""
+        bad = [r for r in _skip_reasons((_TESTS / name).read_text())
+               if re.search(r"\brmx\b|venv", r)]
+>       assert not bad, f"tests/{name} still skips on the dev rmx: {bad!r}"
+E       AssertionError: tests/test_grep_count_rows_e2e.py still skips on the dev rmx: ['dev venv rmx or /usr/bin/grep missing']
+E       assert not ['dev venv rmx or /usr/bin/grep missing']
+
+tests/test_bug253_dev_bin.py:233: AssertionError
+_ test_the_six_no_longer_skip_on_a_missing_dev_rmx[test_grep_evidence_verified.py] _
+
+name = 'test_grep_evidence_verified.py'
+
+    @pytest.mark.parametrize("name", SKIPPING)
+    def test_the_six_no_longer_skip_on_a_missing_dev_rmx(name):
+        """`#t0-2-bug253`: a pinned file that uses the helper no longer skips for a missing
+        checkout venv, so its `skipif` goes with its pin (R1.2: the pins follow the tests).
+        `test_the_tool_itself_is_the_one_that_scrambles` keeps a skip for a missing `rg` only."""
+        bad = [r for r in _skip_reasons((_TESTS / name).read_text())
+               if re.search(r"\brmx\b|venv", r)]
+>       assert not bad, f"tests/{name} still skips on the dev rmx: {bad!r}"
+E       AssertionError: tests/test_grep_evidence_verified.py still skips on the dev rmx: ['dev venv rmx not built']
+E       assert not ['dev venv rmx not built']
+
+tests/test_bug253_dev_bin.py:233: AssertionError
+_ test_the_six_no_longer_skip_on_a_missing_dev_rmx[test_grep_learning_replay.py] _
+
+name = 'test_grep_learning_replay.py'
+
+    @pytest.mark.parametrize("name", SKIPPING)
+    def test_the_six_no_longer_skip_on_a_missing_dev_rmx(name):
+        """`#t0-2-bug253`: a pinned file that uses the helper no longer skips for a missing
+        checkout venv, so its `skipif` goes with its pin (R1.2: the pins follow the tests).
+        `test_the_tool_itself_is_the_one_that_scrambles` keeps a skip for a missing `rg` only."""
+        bad = [r for r in _skip_reasons((_TESTS / name).read_text())
+               if re.search(r"\brmx\b|venv", r)]
+>       assert not bad, f"tests/{name} still skips on the dev rmx: {bad!r}"
+E       AssertionError: tests/test_grep_learning_replay.py still skips on the dev rmx: ["needs the dev venv's rmx console script"]
+E       assert not ["needs the dev venv's rmx console script"]
+
+tests/test_bug253_dev_bin.py:233: AssertionError
+_ test_the_six_no_longer_skip_on_a_missing_dev_rmx[test_grep_no_flag_bundle.py] _
+
+name = 'test_grep_no_flag_bundle.py'
+
+    @pytest.mark.parametrize("name", SKIPPING)
+    def test_the_six_no_longer_skip_on_a_missing_dev_rmx(name):
+        """`#t0-2-bug253`: a pinned file that uses the helper no longer skips for a missing
+        checkout venv, so its `skipif` goes with its pin (R1.2: the pins follow the tests).
+        `test_the_tool_itself_is_the_one_that_scrambles` keeps a skip for a missing `rg` only."""
+        bad = [r for r in _skip_reasons((_TESTS / name).read_text())
+               if re.search(r"\brmx\b|venv", r)]
+>       assert not bad, f"tests/{name} still skips on the dev rmx: {bad!r}"
+E       AssertionError: tests/test_grep_no_flag_bundle.py still skips on the dev rmx: ['dev venv rmx not built']
+E       assert not ['dev venv rmx not built']
+
+tests/test_bug253_dev_bin.py:233: AssertionError
+________ test_the_conftest_pins_no_venv_skip_and_tests_no_checkout_venv ________
+
+    def test_the_conftest_pins_no_venv_skip_and_tests_no_checkout_venv():
+        """`#t0-2-bug253`: `_CLONE_ONLY_SKIPS` holds one entry, the hooks test, under R1.1's hooks
+        condition; R1.1's venv condition guards nothing and is deleted."""
+        src = (_TESTS / "conftest.py").read_text()
+>       assert "_VENV_RMX_PINS" not in src, "tests/conftest.py still carries the 18 venv pins"
+E       AssertionError: tests/conftest.py still carries the 18 venv pins
+E       assert '_VENV_RMX_PINS' not in 'import impo...STS_FAILED\n'
+E         
+E         '_VENV_RMX_PINS' is contained here:
+E           e2e.py::"
+E           _VENV_RMX_PINS = {
+E               _BRIEF + "test_an_unknown_class_fails_loudly_through_the_daemon": "dev rmx not built",
+E               _BRIEF + "test_brief_runs_end_to_end_through_a_real_daemon": "dev rmx not built",
+E               _BRIEF + "test_saved_briefs_do_not_grow_the_corpus_on_rerun": "dev rmx not built",...
+E         
+E         ...Full output truncated (130 lines hidden), use '-vv' to show
+
+tests/test_bug253_dev_bin.py:240: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_bug253_dev_bin.py::test_the_lookup_scan_sees_each_spelling[div-chain]
+PASSED tests/test_bug253_dev_bin.py::test_the_lookup_scan_sees_each_spelling[div-chain-dir]
+PASSED tests/test_bug253_dev_bin.py::test_the_lookup_scan_sees_each_spelling[parts-tuple]
+PASSED tests/test_bug253_dev_bin.py::test_the_lookup_scan_sees_each_spelling[string]
+PASSED tests/test_bug253_dev_bin.py::test_the_lookup_scan_sees_each_spelling[symlink-fixture]
+PASSED tests/test_bug253_dev_bin.py::test_the_lookup_scan_sees_each_spelling[docstring]
+PASSED tests/test_bug253_dev_bin.py::test_the_lookup_scan_sees_each_spelling[comment]
+FAILED tests/test_bug253_dev_bin.py::test_the_dev_rmx_is_the_bin_dir_of_the_interpreter_running_the_suite
+FAILED tests/test_bug253_dev_bin.py::test_dev_env_puts_this_checkouts_src_first_and_keeps_absolute_entries
+FAILED tests/test_bug253_dev_bin.py::test_a_child_run_through_the_helper_runs_this_checkouts_code
+FAILED tests/test_bug253_dev_bin.py::test_no_test_file_but_the_helper_looks_up_a_checkout_venv_bin
+FAILED tests/test_bug253_dev_bin.py::test_each_of_the_eleven_uses_the_helper[test_bug240_ingest_file_arg.py]
+FAILED tests/test_bug253_dev_bin.py::test_each_of_the_eleven_uses_the_helper[test_bug240_ingest_file_arg_mcp.py]
+FAILED tests/test_bug253_dev_bin.py::test_each_of_the_eleven_uses_the_helper[test_bug241_r2_l112.py]
+FAILED tests/test_bug253_dev_bin.py::test_each_of_the_eleven_uses_the_helper[test_bug241_rule_docs_reingest.py]
+FAILED tests/test_bug253_dev_bin.py::test_each_of_the_eleven_uses_the_helper[test_scanorder_r2_l120.py]
+FAILED tests/test_bug253_dev_bin.py::test_each_of_the_eleven_uses_the_helper[test_brief_real_daemon.py]
+FAILED tests/test_bug253_dev_bin.py::test_each_of_the_eleven_uses_the_helper[test_grep_argv_order_e2e.py]
+FAILED tests/test_bug253_dev_bin.py::test_each_of_the_eleven_uses_the_helper[test_grep_count_rows_e2e.py]
+FAILED tests/test_bug253_dev_bin.py::test_each_of_the_eleven_uses_the_helper[test_grep_evidence_verified.py]
+FAILED tests/test_bug253_dev_bin.py::test_each_of_the_eleven_uses_the_helper[test_grep_learning_replay.py]
+FAILED tests/test_bug253_dev_bin.py::test_each_of_the_eleven_uses_the_helper[test_grep_no_flag_bundle.py]
+FAILED tests/test_bug253_dev_bin.py::test_the_six_no_longer_skip_on_a_missing_dev_rmx[test_brief_real_daemon.py]
+FAILED tests/test_bug253_dev_bin.py::test_the_six_no_longer_skip_on_a_missing_dev_rmx[test_grep_argv_order_e2e.py]
+FAILED tests/test_bug253_dev_bin.py::test_the_six_no_longer_skip_on_a_missing_dev_rmx[test_grep_count_rows_e2e.py]
+FAILED tests/test_bug253_dev_bin.py::test_the_six_no_longer_skip_on_a_missing_dev_rmx[test_grep_evidence_verified.py]
+FAILED tests/test_bug253_dev_bin.py::test_the_six_no_longer_skip_on_a_missing_dev_rmx[test_grep_learning_replay.py]
+FAILED tests/test_bug253_dev_bin.py::test_the_six_no_longer_skip_on_a_missing_dev_rmx[test_grep_no_flag_bundle.py]
+FAILED tests/test_bug253_dev_bin.py::test_the_conftest_pins_no_venv_skip_and_tests_no_checkout_venv
+========================= 22 failed, 7 passed in 2.43s =========================
+# exit 1

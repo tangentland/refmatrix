@@ -1,0 +1,50 @@
+# sha 63b97b0 (base src/tests-infra c4b44d0 + RED tests), clone /Volumes/littlebig/refmatrix-t02 (symlinked .venv-eval)
+# cmd: PYTHONPATH=/Volumes/littlebig/refmatrix-t02/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_grep_learning_replay.py -p no:cacheprovider -rA --timeout 900
+pyc-guard: recompiled 3 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 5 items
+
+tests/test_grep_learning_replay.py ....F                                 [100%]
+
+=================================== FAILURES ===================================
+_________ test_the_harness_uses_the_dev_venv_rmx_not_the_deployed_one __________
+
+    def test_the_harness_uses_the_dev_venv_rmx_not_the_deployed_one():
+        """The deployed `rmx` on PATH runs ~/refmatrix. A harness verifying dev code
+        with it would measure the wrong tree (feedback_rmx_binary_is_deploy), and a
+        dev-version rmx pointed at the live store trips the hub version handshake.
+    
+        bug-253 (task-t0-suite-trust-sweep `#t0-2-bug253`): "the dev venv's rmx" is the bin dir of
+        the interpreter running the suite, as `tests/devbin.py` defines it for the test files. It
+        was `<checkout>/.venv-eval/bin/rmx`, which a littlebig clone does not have (it runs the
+        dev tree's interpreter with `PYTHONPATH=<clone>/src`), so the replay node could only skip
+        there."""
+        import os
+>       assert Path(glr.RMX) == Path(sys.executable).parent / "rmx", (
+            f"the harness's dev rmx is {glr.RMX}, not the running interpreter's "
+            f"{Path(sys.executable).parent / 'rmx'}")
+E       AssertionError: the harness's dev rmx is /Volumes/littlebig/refmatrix-t02/.venv-eval/bin/rmx, not the running interpreter's /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx
+E       assert PosixPath('/Volumes/littlebig/refmatrix-t02/.venv-eval/bin/rmx') == (PosixPath('/Users/tholley/claude_tools/refmatrix/.venv-eval/bin') / 'rmx')
+E        +  where PosixPath('/Volumes/littlebig/refmatrix-t02/.venv-eval/bin/rmx') = Path(PosixPath('/Volumes/littlebig/refmatrix-t02/.venv-eval/bin/rmx'))
+E        +    where PosixPath('/Volumes/littlebig/refmatrix-t02/.venv-eval/bin/rmx') = glr.RMX
+E        +  and   PosixPath('/Users/tholley/claude_tools/refmatrix/.venv-eval/bin') = PosixPath('/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python').parent
+E        +    where PosixPath('/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python') = Path('/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python')
+E        +      where '/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python' = sys.executable
+
+tests/test_grep_learning_replay.py:135: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_grep_learning_replay.py::test_the_workload_is_grep_rows_in_timestamp_order
+PASSED tests/test_grep_learning_replay.py::test_repeated_only_keeps_the_patterns_that_can_ever_pay_off
+PASSED tests/test_grep_learning_replay.py::test_arm_a_learns_and_arm_b_learns_exactly_nothing
+PASSED tests/test_grep_learning_replay.py::test_the_harness_never_points_at_the_live_store
+FAILED tests/test_grep_learning_replay.py::test_the_harness_uses_the_dev_venv_rmx_not_the_deployed_one
+========================= 1 failed, 4 passed in 3.40s ==========================
+# exit 1

@@ -1,0 +1,89 @@
+# sha 63b97b0 (base src/tests-infra c4b44d0 + RED tests), clone /Volumes/littlebig/refmatrix-t02 (symlinked .venv-eval)
+# cmd: PYTHONPATH=/Volumes/littlebig/refmatrix-t02/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_search_hooks.py -p no:cacheprovider -rA --timeout 900
+pyc-guard: recompiled 3 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 27 items
+
+tests/test_search_hooks.py ..................FF.......                   [100%]
+
+=================================== FAILURES ===================================
+__________ test_bug168_rewriting_does_not_depend_on_the_cwds_ancestry __________
+
+env_hooks = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1906/test_bug168_rewriting_does_not0/hooks')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1073b5fd0>
+
+    def test_bug168_rewriting_does_not_depend_on_the_cwds_ancestry(env_hooks, monkeypatch):
+        """AC-2.2 in any checkout: run from a cwd whose ancestor holds `.refmatrix/learn.off` (the
+        main tree's condition), `_rewrite()` still rewrites. At c4b44d0 it returns ''."""
+        base = _planted_learn_off()
+        try:
+            monkeypatch.chdir(base / "a" / "b")
+            out = _rewrite(env_hooks, "grep -rn pat src/")
+>           assert "rmxgrep" in out, ("grep -rn pat src/", out)
+E           AssertionError: ('grep -rn pat src/', '')
+E           assert 'rmxgrep' in ''
+
+/Volumes/littlebig/refmatrix-t02/tests/test_search_hooks.py:141: AssertionError
+--------------------------- Captured stderr teardown ---------------------------
+rmx sandbox: 1 path(s) under /private/tmp/rmx-vrslytk4/r/19 not removed; first: (PosixPath('/private/tmp/rmx-vrslytk4/r/19'), OSError(66, 'Directory not empty'))
+_______ test_bug168_rewriting_does_not_depend_on_the_homes_learn_switch ________
+
+env_hooks = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1906/test_bug168_rewriting_does_not1/hooks')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107573050>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1906/test_bug168_rewriting_does_not1')
+
+    def test_bug168_rewriting_does_not_depend_on_the_homes_learn_switch(env_hooks, monkeypatch,
+                                                                         tmp_path):
+        """R2.2: `~/.refmatrix/learn.off` is a file outside the test's tmp root too (the sandbox
+        home is shared by every test in the session; one `rmx learn off` there would stand down
+        every rewriter test after it). `_rewrite()` still rewrites."""
+        _rewrite(env_hooks, "true")                     # render the script under the sandbox home
+        home = tmp_path / "home"
+        (home / ".refmatrix").mkdir(parents=True)
+        (home / ".refmatrix" / "learn.off").write_text("")
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.chdir(tmp_path)
+        out = _rewrite(env_hooks, "grep -rn pat src/")
+>       assert "rmxgrep" in out, ("grep -rn pat src/", out)
+E       AssertionError: ('grep -rn pat src/', '')
+E       assert 'rmxgrep' in ''
+
+/Volumes/littlebig/refmatrix-t02/tests/test_search_hooks.py:158: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_search_hooks.py::test_render_bakes_absolute_paths
+PASSED tests/test_search_hooks.py::test_install_writes_scripts_and_settings
+PASSED tests/test_search_hooks.py::test_reinstall_is_idempotent
+PASSED tests/test_search_hooks.py::test_user_scope_prints_snippet_only
+PASSED tests/test_search_hooks.py::test_rewriter_catches_dodges[grep -rn pat src/-rmxgrep]
+PASSED tests/test_search_hooks.py::test_rewriter_catches_dodges[/usr/bin/grep -n foo bar.py-rmxgrep]
+PASSED tests/test_search_hooks.py::test_rewriter_catches_dodges[lint | /opt/local/bin/rg -c error-rmxrg]
+PASSED tests/test_search_hooks.py::test_rewriter_catches_dodges[command grep -c error f.txt-rmxgrep]
+PASSED tests/test_search_hooks.py::test_rewriter_catches_dodges[command -p grep foo-rmxgrep]
+PASSED tests/test_search_hooks.py::test_rewriter_catches_dodges[env HF_HUB_OFFLINE=1 grep -n pat f.py-rmxgrep]
+PASSED tests/test_search_hooks.py::test_rewriter_catches_dodges[env A=1 B=2 rg TODO-rmxrg]
+PASSED tests/test_search_hooks.py::test_rewriter_catches_dodges[command /usr/bin/grep -n foo-rmxgrep]
+PASSED tests/test_search_hooks.py::test_rewriter_leaves_non_searches_alone[command -v grep]
+PASSED tests/test_search_hooks.py::test_rewriter_leaves_non_searches_alone[ugrep -n foo bar]
+PASSED tests/test_search_hooks.py::test_rewriter_leaves_non_searches_alone[/usr/local/bin/ugrep -n foo bar]
+PASSED tests/test_search_hooks.py::test_rewriter_leaves_non_searches_alone[echo "/usr/bin/grep in a string"]
+PASSED tests/test_search_hooks.py::test_rewriter_leaves_non_searches_alone[cat <<EOF\ngrep inside heredoc\nEOF]
+PASSED tests/test_search_hooks.py::test_env_assignments_survive_in_place
+PASSED tests/test_search_hooks.py::test_bug168_the_rewriter_stands_down_under_a_planted_learn_off
+PASSED tests/test_search_hooks.py::test_rewriter_bakes_no_tree_path
+PASSED tests/test_search_hooks.py::test_rewriter_renders_identically_from_any_tree
+PASSED tests/test_search_hooks.py::test_rewriter_resolves_its_wrappers_at_runtime
+PASSED tests/test_search_hooks.py::test_install_refuses_user_global_dir_from_a_foreign_tree
+PASSED tests/test_search_hooks.py::test_install_allows_the_owning_tree
+PASSED tests/test_search_hooks.py::test_install_allows_a_redirected_hooks_dir_from_any_tree
+FAILED tests/test_search_hooks.py::test_bug168_rewriting_does_not_depend_on_the_cwds_ancestry
+FAILED tests/test_search_hooks.py::test_bug168_rewriting_does_not_depend_on_the_homes_learn_switch
+========================= 2 failed, 25 passed in 2.12s =========================
+# exit 1

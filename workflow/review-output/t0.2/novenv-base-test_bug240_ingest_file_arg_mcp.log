@@ -1,0 +1,297 @@
+# sha 63b97b0 (base src/tests-infra c4b44d0 + RED tests), clone /Volumes/littlebig/refmatrix-t02-novenv (NO .venv-eval; origin /Volumes/littlebig/refmatrix-t02)
+# cmd: cd /Volumes/littlebig/refmatrix-t02-novenv && PYTHONPATH=/Volumes/littlebig/refmatrix-t02-novenv/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_bug240_ingest_file_arg_mcp.py -p no:cacheprovider -rA --timeout 900
+pyc-guard: recompiled 3 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02-novenv/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02-novenv
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 10 items
+
+tests/test_bug240_ingest_file_arg_mcp.py EEEEEEEEEE                      [100%]
+
+==================================== ERRORS ====================================
+_ ERROR at setup of test_the_mcp_tool_refuses_a_file_naming_sync[daemon_up-CLAUDE.md] _
+
+request = <SubRequest 'store' for <Function test_the_mcp_tool_refuses_a_file_naming_sync[daemon_up-CLAUDE.md]>>
+
+    @pytest.fixture(params=["up", "down"], ids=["daemon_up", "daemon_down"])
+    def store(request):
+>       with _make_store(request.param == "up") as c:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_bug240_ingest_file_arg_mcp.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+up = True
+
+    @contextlib.contextmanager
+    def _make_store(up: bool):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg_mcp.py:67: AssertionError
+_ ERROR at setup of test_the_mcp_tool_refuses_a_file_naming_sync[daemon_up-docs/notes.md] _
+
+request = <SubRequest 'store' for <Function test_the_mcp_tool_refuses_a_file_naming_sync[daemon_up-docs/notes.md]>>
+
+    @pytest.fixture(params=["up", "down"], ids=["daemon_up", "daemon_down"])
+    def store(request):
+>       with _make_store(request.param == "up") as c:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_bug240_ingest_file_arg_mcp.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+up = True
+
+    @contextlib.contextmanager
+    def _make_store(up: bool):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg_mcp.py:67: AssertionError
+_ ERROR at setup of test_the_mcp_tool_refuses_a_file_naming_sync[daemon_down-CLAUDE.md] _
+
+request = <SubRequest 'store' for <Function test_the_mcp_tool_refuses_a_file_naming_sync[daemon_down-CLAUDE.md]>>
+
+    @pytest.fixture(params=["up", "down"], ids=["daemon_up", "daemon_down"])
+    def store(request):
+>       with _make_store(request.param == "up") as c:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_bug240_ingest_file_arg_mcp.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+up = False
+
+    @contextlib.contextmanager
+    def _make_store(up: bool):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg_mcp.py:67: AssertionError
+_ ERROR at setup of test_the_mcp_tool_refuses_a_file_naming_sync[daemon_down-docs/notes.md] _
+
+request = <SubRequest 'store' for <Function test_the_mcp_tool_refuses_a_file_naming_sync[daemon_down-docs/notes.md]>>
+
+    @pytest.fixture(params=["up", "down"], ids=["daemon_up", "daemon_down"])
+    def store(request):
+>       with _make_store(request.param == "up") as c:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_bug240_ingest_file_arg_mcp.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+up = False
+
+    @contextlib.contextmanager
+    def _make_store(up: bool):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg_mcp.py:67: AssertionError
+____ ERROR at setup of test_the_verb_refuses_a_file_naming_sync[daemon_up] _____
+
+request = <SubRequest 'store' for <Function test_the_verb_refuses_a_file_naming_sync[daemon_up]>>
+
+    @pytest.fixture(params=["up", "down"], ids=["daemon_up", "daemon_down"])
+    def store(request):
+>       with _make_store(request.param == "up") as c:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_bug240_ingest_file_arg_mcp.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+up = True
+
+    @contextlib.contextmanager
+    def _make_store(up: bool):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg_mcp.py:67: AssertionError
+___ ERROR at setup of test_the_verb_refuses_a_file_naming_sync[daemon_down] ____
+
+request = <SubRequest 'store' for <Function test_the_verb_refuses_a_file_naming_sync[daemon_down]>>
+
+    @pytest.fixture(params=["up", "down"], ids=["daemon_up", "daemon_down"])
+    def store(request):
+>       with _make_store(request.param == "up") as c:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_bug240_ingest_file_arg_mcp.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+up = False
+
+    @contextlib.contextmanager
+    def _make_store(up: bool):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg_mcp.py:67: AssertionError
+_ ERROR at setup of test_the_daemon_op_refuses_a_file_naming_sync[ingest_path] _
+
+    @pytest.fixture
+    def up_store():
+        """The op routes dial the daemon socket, so they run with a daemon only."""
+>       with _make_store(True) as c:
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_bug240_ingest_file_arg_mcp.py:101: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+up = True
+
+    @contextlib.contextmanager
+    def _make_store(up: bool):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg_mcp.py:67: AssertionError
+_ ERROR at setup of test_the_daemon_op_refuses_a_file_naming_sync[ingest_path_start] _
+
+    @pytest.fixture
+    def up_store():
+        """The op routes dial the daemon socket, so they run with a daemon only."""
+>       with _make_store(True) as c:
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_bug240_ingest_file_arg_mcp.py:101: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+up = True
+
+    @contextlib.contextmanager
+    def _make_store(up: bool):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg_mcp.py:67: AssertionError
+_ ERROR at setup of test_guard_the_mcp_tool_still_ingests_a_directory[daemon_up] _
+
+request = <SubRequest 'store' for <Function test_guard_the_mcp_tool_still_ingests_a_directory[daemon_up]>>
+
+    @pytest.fixture(params=["up", "down"], ids=["daemon_up", "daemon_down"])
+    def store(request):
+>       with _make_store(request.param == "up") as c:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_bug240_ingest_file_arg_mcp.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+up = True
+
+    @contextlib.contextmanager
+    def _make_store(up: bool):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg_mcp.py:67: AssertionError
+_ ERROR at setup of test_guard_the_mcp_tool_still_ingests_a_directory[daemon_down] _
+
+request = <SubRequest 'store' for <Function test_guard_the_mcp_tool_still_ingests_a_directory[daemon_down]>>
+
+    @pytest.fixture(params=["up", "down"], ids=["daemon_up", "daemon_down"])
+    def store(request):
+>       with _make_store(request.param == "up") as c:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_bug240_ingest_file_arg_mcp.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+up = False
+
+    @contextlib.contextmanager
+    def _make_store(up: bool):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg_mcp.py:67: AssertionError
+=========================== short test summary info ============================
+ERROR tests/test_bug240_ingest_file_arg_mcp.py::test_the_mcp_tool_refuses_a_file_naming_sync[daemon_up-CLAUDE.md]
+ERROR tests/test_bug240_ingest_file_arg_mcp.py::test_the_mcp_tool_refuses_a_file_naming_sync[daemon_up-docs/notes.md]
+ERROR tests/test_bug240_ingest_file_arg_mcp.py::test_the_mcp_tool_refuses_a_file_naming_sync[daemon_down-CLAUDE.md]
+ERROR tests/test_bug240_ingest_file_arg_mcp.py::test_the_mcp_tool_refuses_a_file_naming_sync[daemon_down-docs/notes.md]
+ERROR tests/test_bug240_ingest_file_arg_mcp.py::test_the_verb_refuses_a_file_naming_sync[daemon_up]
+ERROR tests/test_bug240_ingest_file_arg_mcp.py::test_the_verb_refuses_a_file_naming_sync[daemon_down]
+ERROR tests/test_bug240_ingest_file_arg_mcp.py::test_the_daemon_op_refuses_a_file_naming_sync[ingest_path]
+ERROR tests/test_bug240_ingest_file_arg_mcp.py::test_the_daemon_op_refuses_a_file_naming_sync[ingest_path_start]
+ERROR tests/test_bug240_ingest_file_arg_mcp.py::test_guard_the_mcp_tool_still_ingests_a_directory[daemon_up]
+ERROR tests/test_bug240_ingest_file_arg_mcp.py::test_guard_the_mcp_tool_still_ingests_a_directory[daemon_down]
+============================== 10 errors in 0.51s ==============================
+# exit 1

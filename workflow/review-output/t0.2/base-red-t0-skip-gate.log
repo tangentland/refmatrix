@@ -1,0 +1,314 @@
+# sha 63b97b0 (base src/tests-infra c4b44d0 + RED tests), clone /Volumes/littlebig/refmatrix-t02 (symlinked .venv-eval)
+# cmd: PYTHONPATH=/Volumes/littlebig/refmatrix-t02/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_t0_skip_gate.py -p no:cacheprovider -rA --timeout 900
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 16 items
+
+tests/test_t0_skip_gate.py F.F..F.FF.F.....                              [100%]
+
+=================================== FAILURES ===================================
+________ test_the_allowed_set_follows_each_skips_own_condition[no-venv] ________
+
+pytestconfig = <_pytest.config.Config object at 0x104da0440>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1898/test_the_allowed_set_follows_e0')
+venv = 'none', hooks = 'self', expected = {}
+
+    @pytest.mark.parametrize("venv,hooks,expected", [l[1:] for l in _LAYOUTS],
+                             ids=[l[0] for l in _LAYOUTS])
+    def test_the_allowed_set_follows_each_skips_own_condition(pytestconfig, tmp_path, venv, hooks,
+                                                              expected):
+        """AC-1.2: the exact allowed set for each checkout layout. Stage 2 (`#t0-2-bug253`): the
+        checkout's venv decides nothing, so a builder that still adds the 18 venv pins for a
+        missing `bin/rmx` fails the no-venv, half-built and symlinked-without-rmx layouts."""
+        build = _builder(pytestconfig)
+        checkout = _layout(tmp_path, venv, hooks)
+        got = dict(build(checkout))
+>       assert got == dict(expected), (
+            f"layout venv={venv} hooks={hooks}: allowed set differs.\n"
+            f"  missing: {sorted(set(expected) - set(got))}\n"
+            f"  extra:   {sorted(set(got) - set(expected))}\n"
+            f"  wrong reason: "
+            f"{ {k: (got[k], expected[k]) for k in set(got) & set(expected) if got[k] != expected[k]} }")
+E       AssertionError: layout venv=none hooks=self: allowed set differs.
+E           missing: []
+E           extra:   ['tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon', 'tests/test_brief_real_daemon.py::test_brief_runs_end_to_end_through_a_real_daemon', 'tests/test_brief_real_daemon.py::test_saved_briefs_do_not_grow_the_corpus_on_rerun', 'tests/test_brief_real_daemon.py::test_the_gmd_flag_does_not_crash_through_a_real_daemon', 'tests/test_grep_argv_order_e2e.py::test_a_directory_walk_keeps_its_files_GROUPED', 'tests/test_grep_argv_order_e2e.py::test_a_named_file_still_wins_its_argv_slot_against_a_walk', 'tests/test_grep_argv_order_e2e.py::test_named_paths_come_back_in_argument_order_not_fanout_order', 'tests/test_grep_argv_order_e2e.py::test_the_tool_itself_is_the_one_that_scrambles', 'tests/test_grep_count_rows_e2e.py::test_a_directory_with_no_match_gets_a_zero_row_per_file', 'tests/test_grep_count_rows_e2e.py::test_a_directory_with_some_matches_keeps_its_zero_rows', 'tests/test_grep_count_rows_e2e.py::test_a_missing_file_beside_a_directory_is_not_a_bare_zero', 'tests/test_grep_count_rows_e2e.py::test_a_missing_file_beside_a_match_still_exits_2', 'tests/test_grep_count_rows_e2e.py::test_a_missing_file_exits_2_and_says_so', 'tests/test_grep_count_rows_e2e.py::test_two_spellings_keep_their_own_prefix_on_n', 'tests/test_grep_count_rows_e2e.py::test_two_spellings_of_one_file_are_two_rows', 'tests/test_grep_evidence_verified.py::test_a_fully_filtered_answer_falls_through_to_the_floor', 'tests/test_grep_learning_replay.py::test_arm_a_learns_and_arm_b_learns_exactly_nothing', 'tests/test_grep_no_flag_bundle.py::test_the_documented_pipe_count_works_with_a_bare_flag']
+E           wrong reason: {}
+E       assert {'tests/test_...t built', ...} == {}
+E         
+E         Left contains 18 more items:
+E         {'tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon': 'dev '
+E                                                                                                    'rmx '
+E                                                                                                    'not '
+E                                                                                                    'built',
+E          'tests/test_brief_real_daemon.py::test_brief_runs_end_to_end_through_a_real_daemon': 'dev '...
+E         
+E         ...Full output truncated (90 lines hidden), use '-vv' to show
+
+tests/test_t0_skip_gate.py:149: AssertionError
+__ test_the_allowed_set_follows_each_skips_own_condition[half-built-venv-dir] __
+
+pytestconfig = <_pytest.config.Config object at 0x104da0440>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1898/test_the_allowed_set_follows_e2')
+venv = 'half-built', hooks = 'self', expected = {}
+
+    @pytest.mark.parametrize("venv,hooks,expected", [l[1:] for l in _LAYOUTS],
+                             ids=[l[0] for l in _LAYOUTS])
+    def test_the_allowed_set_follows_each_skips_own_condition(pytestconfig, tmp_path, venv, hooks,
+                                                              expected):
+        """AC-1.2: the exact allowed set for each checkout layout. Stage 2 (`#t0-2-bug253`): the
+        checkout's venv decides nothing, so a builder that still adds the 18 venv pins for a
+        missing `bin/rmx` fails the no-venv, half-built and symlinked-without-rmx layouts."""
+        build = _builder(pytestconfig)
+        checkout = _layout(tmp_path, venv, hooks)
+        got = dict(build(checkout))
+>       assert got == dict(expected), (
+            f"layout venv={venv} hooks={hooks}: allowed set differs.\n"
+            f"  missing: {sorted(set(expected) - set(got))}\n"
+            f"  extra:   {sorted(set(got) - set(expected))}\n"
+            f"  wrong reason: "
+            f"{ {k: (got[k], expected[k]) for k in set(got) & set(expected) if got[k] != expected[k]} }")
+E       AssertionError: layout venv=half-built hooks=self: allowed set differs.
+E           missing: []
+E           extra:   ['tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon', 'tests/test_brief_real_daemon.py::test_brief_runs_end_to_end_through_a_real_daemon', 'tests/test_brief_real_daemon.py::test_saved_briefs_do_not_grow_the_corpus_on_rerun', 'tests/test_brief_real_daemon.py::test_the_gmd_flag_does_not_crash_through_a_real_daemon', 'tests/test_grep_argv_order_e2e.py::test_a_directory_walk_keeps_its_files_GROUPED', 'tests/test_grep_argv_order_e2e.py::test_a_named_file_still_wins_its_argv_slot_against_a_walk', 'tests/test_grep_argv_order_e2e.py::test_named_paths_come_back_in_argument_order_not_fanout_order', 'tests/test_grep_argv_order_e2e.py::test_the_tool_itself_is_the_one_that_scrambles', 'tests/test_grep_count_rows_e2e.py::test_a_directory_with_no_match_gets_a_zero_row_per_file', 'tests/test_grep_count_rows_e2e.py::test_a_directory_with_some_matches_keeps_its_zero_rows', 'tests/test_grep_count_rows_e2e.py::test_a_missing_file_beside_a_directory_is_not_a_bare_zero', 'tests/test_grep_count_rows_e2e.py::test_a_missing_file_beside_a_match_still_exits_2', 'tests/test_grep_count_rows_e2e.py::test_a_missing_file_exits_2_and_says_so', 'tests/test_grep_count_rows_e2e.py::test_two_spellings_keep_their_own_prefix_on_n', 'tests/test_grep_count_rows_e2e.py::test_two_spellings_of_one_file_are_two_rows', 'tests/test_grep_evidence_verified.py::test_a_fully_filtered_answer_falls_through_to_the_floor', 'tests/test_grep_learning_replay.py::test_arm_a_learns_and_arm_b_learns_exactly_nothing', 'tests/test_grep_no_flag_bundle.py::test_the_documented_pipe_count_works_with_a_bare_flag']
+E           wrong reason: {}
+E       assert {'tests/test_...t built', ...} == {}
+E         
+E         Left contains 18 more items:
+E         {'tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon': 'dev '
+E                                                                                                    'rmx '
+E                                                                                                    'not '
+E                                                                                                    'built',
+E          'tests/test_brief_real_daemon.py::test_brief_runs_end_to_end_through_a_real_daemon': 'dev '...
+E         
+E         ...Full output truncated (90 lines hidden), use '-vv' to show
+
+tests/test_t0_skip_gate.py:149: AssertionError
+_ test_the_allowed_set_follows_each_skips_own_condition[symlinked-venv-without-rmx] _
+
+pytestconfig = <_pytest.config.Config object at 0x104da0440>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1898/test_the_allowed_set_follows_e5')
+venv = 'symlink-empty', hooks = 'self', expected = {}
+
+    @pytest.mark.parametrize("venv,hooks,expected", [l[1:] for l in _LAYOUTS],
+                             ids=[l[0] for l in _LAYOUTS])
+    def test_the_allowed_set_follows_each_skips_own_condition(pytestconfig, tmp_path, venv, hooks,
+                                                              expected):
+        """AC-1.2: the exact allowed set for each checkout layout. Stage 2 (`#t0-2-bug253`): the
+        checkout's venv decides nothing, so a builder that still adds the 18 venv pins for a
+        missing `bin/rmx` fails the no-venv, half-built and symlinked-without-rmx layouts."""
+        build = _builder(pytestconfig)
+        checkout = _layout(tmp_path, venv, hooks)
+        got = dict(build(checkout))
+>       assert got == dict(expected), (
+            f"layout venv={venv} hooks={hooks}: allowed set differs.\n"
+            f"  missing: {sorted(set(expected) - set(got))}\n"
+            f"  extra:   {sorted(set(got) - set(expected))}\n"
+            f"  wrong reason: "
+            f"{ {k: (got[k], expected[k]) for k in set(got) & set(expected) if got[k] != expected[k]} }")
+E       AssertionError: layout venv=symlink-empty hooks=self: allowed set differs.
+E           missing: []
+E           extra:   ['tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon', 'tests/test_brief_real_daemon.py::test_brief_runs_end_to_end_through_a_real_daemon', 'tests/test_brief_real_daemon.py::test_saved_briefs_do_not_grow_the_corpus_on_rerun', 'tests/test_brief_real_daemon.py::test_the_gmd_flag_does_not_crash_through_a_real_daemon', 'tests/test_grep_argv_order_e2e.py::test_a_directory_walk_keeps_its_files_GROUPED', 'tests/test_grep_argv_order_e2e.py::test_a_named_file_still_wins_its_argv_slot_against_a_walk', 'tests/test_grep_argv_order_e2e.py::test_named_paths_come_back_in_argument_order_not_fanout_order', 'tests/test_grep_argv_order_e2e.py::test_the_tool_itself_is_the_one_that_scrambles', 'tests/test_grep_count_rows_e2e.py::test_a_directory_with_no_match_gets_a_zero_row_per_file', 'tests/test_grep_count_rows_e2e.py::test_a_directory_with_some_matches_keeps_its_zero_rows', 'tests/test_grep_count_rows_e2e.py::test_a_missing_file_beside_a_directory_is_not_a_bare_zero', 'tests/test_grep_count_rows_e2e.py::test_a_missing_file_beside_a_match_still_exits_2', 'tests/test_grep_count_rows_e2e.py::test_a_missing_file_exits_2_and_says_so', 'tests/test_grep_count_rows_e2e.py::test_two_spellings_keep_their_own_prefix_on_n', 'tests/test_grep_count_rows_e2e.py::test_two_spellings_of_one_file_are_two_rows', 'tests/test_grep_evidence_verified.py::test_a_fully_filtered_answer_falls_through_to_the_floor', 'tests/test_grep_learning_replay.py::test_arm_a_learns_and_arm_b_learns_exactly_nothing', 'tests/test_grep_no_flag_bundle.py::test_the_documented_pipe_count_works_with_a_bare_flag']
+E           wrong reason: {}
+E       assert {'tests/test_...t built', ...} == {}
+E         
+E         Left contains 18 more items:
+E         {'tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon': 'dev '
+E                                                                                                    'rmx '
+E                                                                                                    'not '
+E                                                                                                    'built',
+E          'tests/test_brief_real_daemon.py::test_brief_runs_end_to_end_through_a_real_daemon': 'dev '...
+E         
+E         ...Full output truncated (90 lines hidden), use '-vv' to show
+
+tests/test_t0_skip_gate.py:149: AssertionError
+_ test_the_allowed_set_follows_each_skips_own_condition[foreign-hooks-no-venv] _
+
+pytestconfig = <_pytest.config.Config object at 0x104da0440>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1898/test_the_allowed_set_follows_e7')
+venv = 'none', hooks = 'foreign'
+expected = {'tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated': 'hooks belong to another checkout of this commit'}
+
+    @pytest.mark.parametrize("venv,hooks,expected", [l[1:] for l in _LAYOUTS],
+                             ids=[l[0] for l in _LAYOUTS])
+    def test_the_allowed_set_follows_each_skips_own_condition(pytestconfig, tmp_path, venv, hooks,
+                                                              expected):
+        """AC-1.2: the exact allowed set for each checkout layout. Stage 2 (`#t0-2-bug253`): the
+        checkout's venv decides nothing, so a builder that still adds the 18 venv pins for a
+        missing `bin/rmx` fails the no-venv, half-built and symlinked-without-rmx layouts."""
+        build = _builder(pytestconfig)
+        checkout = _layout(tmp_path, venv, hooks)
+        got = dict(build(checkout))
+>       assert got == dict(expected), (
+            f"layout venv={venv} hooks={hooks}: allowed set differs.\n"
+            f"  missing: {sorted(set(expected) - set(got))}\n"
+            f"  extra:   {sorted(set(got) - set(expected))}\n"
+            f"  wrong reason: "
+            f"{ {k: (got[k], expected[k]) for k in set(got) & set(expected) if got[k] != expected[k]} }")
+E       AssertionError: layout venv=none hooks=foreign: allowed set differs.
+E           missing: []
+E           extra:   ['tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon', 'tests/test_brief_real_daemon.py::test_brief_runs_end_to_end_through_a_real_daemon', 'tests/test_brief_real_daemon.py::test_saved_briefs_do_not_grow_the_corpus_on_rerun', 'tests/test_brief_real_daemon.py::test_the_gmd_flag_does_not_crash_through_a_real_daemon', 'tests/test_grep_argv_order_e2e.py::test_a_directory_walk_keeps_its_files_GROUPED', 'tests/test_grep_argv_order_e2e.py::test_a_named_file_still_wins_its_argv_slot_against_a_walk', 'tests/test_grep_argv_order_e2e.py::test_named_paths_come_back_in_argument_order_not_fanout_order', 'tests/test_grep_argv_order_e2e.py::test_the_tool_itself_is_the_one_that_scrambles', 'tests/test_grep_count_rows_e2e.py::test_a_directory_with_no_match_gets_a_zero_row_per_file', 'tests/test_grep_count_rows_e2e.py::test_a_directory_with_some_matches_keeps_its_zero_rows', 'tests/test_grep_count_rows_e2e.py::test_a_missing_file_beside_a_directory_is_not_a_bare_zero', 'tests/test_grep_count_rows_e2e.py::test_a_missing_file_beside_a_match_still_exits_2', 'tests/test_grep_count_rows_e2e.py::test_a_missing_file_exits_2_and_says_so', 'tests/test_grep_count_rows_e2e.py::test_two_spellings_keep_their_own_prefix_on_n', 'tests/test_grep_count_rows_e2e.py::test_two_spellings_of_one_file_are_two_rows', 'tests/test_grep_evidence_verified.py::test_a_fully_filtered_answer_falls_through_to_the_floor', 'tests/test_grep_learning_replay.py::test_arm_a_learns_and_arm_b_learns_exactly_nothing', 'tests/test_grep_no_flag_bundle.py::test_the_documented_pipe_count_works_with_a_bare_flag']
+E           wrong reason: {}
+E       assert {'tests/test_...t built', ...} == {'tests/test_... this commit'}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Left contains 18 more items:
+E         {'tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon': 'dev '
+E                                                                                                    'rmx '
+E                                                                                                    'not '
+E                                                                                                    'built',...
+E         
+E         ...Full output truncated (91 lines hidden), use '-vv' to show
+
+tests/test_t0_skip_gate.py:149: AssertionError
+_ test_the_allowed_set_follows_each_skips_own_condition[no-hooks-file-no-venv] _
+
+pytestconfig = <_pytest.config.Config object at 0x104da0440>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1898/test_the_allowed_set_follows_e8')
+venv = 'none', hooks = 'none', expected = {}
+
+    @pytest.mark.parametrize("venv,hooks,expected", [l[1:] for l in _LAYOUTS],
+                             ids=[l[0] for l in _LAYOUTS])
+    def test_the_allowed_set_follows_each_skips_own_condition(pytestconfig, tmp_path, venv, hooks,
+                                                              expected):
+        """AC-1.2: the exact allowed set for each checkout layout. Stage 2 (`#t0-2-bug253`): the
+        checkout's venv decides nothing, so a builder that still adds the 18 venv pins for a
+        missing `bin/rmx` fails the no-venv, half-built and symlinked-without-rmx layouts."""
+        build = _builder(pytestconfig)
+        checkout = _layout(tmp_path, venv, hooks)
+        got = dict(build(checkout))
+>       assert got == dict(expected), (
+            f"layout venv={venv} hooks={hooks}: allowed set differs.\n"
+            f"  missing: {sorted(set(expected) - set(got))}\n"
+            f"  extra:   {sorted(set(got) - set(expected))}\n"
+            f"  wrong reason: "
+            f"{ {k: (got[k], expected[k]) for k in set(got) & set(expected) if got[k] != expected[k]} }")
+E       AssertionError: layout venv=none hooks=none: allowed set differs.
+E           missing: []
+E           extra:   ['tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon', 'tests/test_brief_real_daemon.py::test_brief_runs_end_to_end_through_a_real_daemon', 'tests/test_brief_real_daemon.py::test_saved_briefs_do_not_grow_the_corpus_on_rerun', 'tests/test_brief_real_daemon.py::test_the_gmd_flag_does_not_crash_through_a_real_daemon', 'tests/test_grep_argv_order_e2e.py::test_a_directory_walk_keeps_its_files_GROUPED', 'tests/test_grep_argv_order_e2e.py::test_a_named_file_still_wins_its_argv_slot_against_a_walk', 'tests/test_grep_argv_order_e2e.py::test_named_paths_come_back_in_argument_order_not_fanout_order', 'tests/test_grep_argv_order_e2e.py::test_the_tool_itself_is_the_one_that_scrambles', 'tests/test_grep_count_rows_e2e.py::test_a_directory_with_no_match_gets_a_zero_row_per_file', 'tests/test_grep_count_rows_e2e.py::test_a_directory_with_some_matches_keeps_its_zero_rows', 'tests/test_grep_count_rows_e2e.py::test_a_missing_file_beside_a_directory_is_not_a_bare_zero', 'tests/test_grep_count_rows_e2e.py::test_a_missing_file_beside_a_match_still_exits_2', 'tests/test_grep_count_rows_e2e.py::test_a_missing_file_exits_2_and_says_so', 'tests/test_grep_count_rows_e2e.py::test_two_spellings_keep_their_own_prefix_on_n', 'tests/test_grep_count_rows_e2e.py::test_two_spellings_of_one_file_are_two_rows', 'tests/test_grep_evidence_verified.py::test_a_fully_filtered_answer_falls_through_to_the_floor', 'tests/test_grep_learning_replay.py::test_arm_a_learns_and_arm_b_learns_exactly_nothing', 'tests/test_grep_no_flag_bundle.py::test_the_documented_pipe_count_works_with_a_bare_flag']
+E           wrong reason: {}
+E       assert {'tests/test_...t built', ...} == {}
+E         
+E         Left contains 18 more items:
+E         {'tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon': 'dev '
+E                                                                                                    'rmx '
+E                                                                                                    'not '
+E                                                                                                    'built',
+E          'tests/test_brief_real_daemon.py::test_brief_runs_end_to_end_through_a_real_daemon': 'dev '...
+E         
+E         ...Full output truncated (90 lines hidden), use '-vv' to show
+
+tests/test_t0_skip_gate.py:149: AssertionError
+_______________ test_every_pin_is_its_tests_own_reason_verbatim ________________
+
+pytestconfig = <_pytest.config.Config object at 0x104da0440>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1898/test_every_pin_is_its_tests_ow0')
+
+    def test_every_pin_is_its_tests_own_reason_verbatim(pytestconfig, tmp_path):
+        """R1.2: with every condition true, the builder pins exactly the hooks nodeid (stage 2
+        retired the 18 venv pins, `#t0-2-bug253`), and its value is a `reason="…"` string literal
+        in that test's own file. A test whose reason changes must
+        change its pin in the same commit; this goes red when only one of them moved."""
+        build = _builder(pytestconfig)
+        got = dict(build(_layout(tmp_path, "none", "foreign")))
+>       assert got == HOOKS_PINS, got
+E       AssertionError: {'tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon': 'dev rmx not built', 'tests...', 'tests/test_brief_real_daemon.py::test_the_gmd_flag_does_not_crash_through_a_real_daemon': 'dev rmx not built', ...}
+E       assert {'tests/test_...t built', ...} == {'tests/test_... this commit'}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Left contains 18 more items:
+E         {'tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon': 'dev '
+E                                                                                                    'rmx '
+E                                                                                                    'not '
+E                                                                                                    'built',...
+E         
+E         ...Full output truncated (91 lines hidden), use '-vv' to show
+
+tests/test_t0_skip_gate.py:174: AssertionError
+==================================== PASSES ====================================
+______ test_a_pinned_nodeid_skipping_for_another_reason_fails_the_session ______
+----------------------------- Captured stdout call -----------------------------
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1898/test_a_pinned_nodeid_skipping_for_another_reason_fails_the_session0
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 5 items
+
+test_inner_reason.py ssss.                                               [100%]SkipGate: 2 skip(s) not pinned with their exact reason (tests/conftest.py ALLOWED_SKIPS); a skip is a test that stopped running:
+  SKIPPED-UNPINNED test_inner_reason.py::test_mark_other_reason: Skipped: a new condition turned true (pinned reason: 'the pinned reason'; actual: 'a new condition turned true')
+  SKIPPED-UNPINNED test_inner_reason.py::test_other_reason: Skipped: a different reason (pinned reason: 'the pinned reason'; actual: 'a different reason')
+
+
+========================= 1 passed, 4 skipped in 0.00s =========================
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1898/test_a_pinned_nodeid_skipping_for_another_reason_fails_the_session0
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 5 items
+
+test_inner_reason.py ssss.                                               [100%]
+
+========================= 1 passed, 4 skipped in 0.00s =========================
+_ test_a_substring_or_near_match_is_not_a_pinned_reason[test_pin_inside_the_reason-rmx not built] _
+----------------------------- Captured stdout call -----------------------------
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1898/test_a_substring_or_near_match_is_not_a_pinned_reason0
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 3 items
+
+test_inner_sub.py sss                                                    [100%]SkipGate: 1 skip(s) not pinned with their exact reason (tests/conftest.py ALLOWED_SKIPS); a skip is a test that stopped running:
+  SKIPPED-UNPINNED test_inner_sub.py::test_pin_inside_the_reason: Skipped: dev venv rmx not built (pinned reason: 'rmx not built'; actual: 'dev venv rmx not built')
+
+
+============================== 3 skipped in 0.00s ==============================
+_ test_a_substring_or_near_match_is_not_a_pinned_reason[test_reason_inside_the_pin-dev rmx not built yet] _
+----------------------------- Captured stdout call -----------------------------
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1898/test_a_substring_or_near_match_is_not_a_pinned_reason1
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 3 items
+
+test_inner_sub.py sss                                                    [100%]SkipGate: 1 skip(s) not pinned with their exact reason (tests/conftest.py ALLOWED_SKIPS); a skip is a test that stopped running:
+  SKIPPED-UNPINNED test_inner_sub.py::test_reason_inside_the_pin: Skipped: dev rmx not built (pinned reason: 'dev rmx not built yet'; actual: 'dev rmx not built')
+
+
+============================== 3 skipped in 0.00s ==============================
+_ test_a_substring_or_near_match_is_not_a_pinned_reason[test_case_differs-dev rmx not built] _
+----------------------------- Captured stdout call -----------------------------
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1898/test_a_substring_or_near_match_is_not_a_pinned_reason2
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 3 items
+
+test_inner_sub.py sss                                                    [100%]SkipGate: 1 skip(s) not pinned with their exact reason (tests/conftest.py ALLOWED_SKIPS); a skip is a test that stopped running:
+  SKIPPED-UNPINNED test_inner_sub.py::test_case_differs: Skipped: Dev Rmx Not Built (pinned reason: 'dev rmx not built'; actual: 'Dev Rmx Not Built')
+
+
+============================== 3 skipped in 0.00s ==============================
+=========================== short test summary info ============================
+PASSED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[real-venv]
+PASSED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[symlinked-venv-foreign-hooks]
+PASSED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[symlinked-venv-own-hooks]
+PASSED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[foreign-hooks-real-venv]
+PASSED tests/test_t0_skip_gate.py::test_the_hooks_pin_is_decided_the_way_the_hooks_test_decides_it
+PASSED tests/test_t0_skip_gate.py::test_this_sessions_allowed_set_is_the_builder_on_this_checkout
+PASSED tests/test_t0_skip_gate.py::test_a_pinned_nodeid_skipping_for_another_reason_fails_the_session
+PASSED tests/test_t0_skip_gate.py::test_a_substring_or_near_match_is_not_a_pinned_reason[test_pin_inside_the_reason-rmx not built]
+PASSED tests/test_t0_skip_gate.py::test_a_substring_or_near_match_is_not_a_pinned_reason[test_reason_inside_the_pin-dev rmx not built yet]
+PASSED tests/test_t0_skip_gate.py::test_a_substring_or_near_match_is_not_a_pinned_reason[test_case_differs-dev rmx not built]
+FAILED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[no-venv]
+FAILED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[half-built-venv-dir]
+FAILED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[symlinked-venv-without-rmx]
+FAILED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[foreign-hooks-no-venv]
+FAILED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[no-hooks-file-no-venv]
+FAILED tests/test_t0_skip_gate.py::test_every_pin_is_its_tests_own_reason_verbatim
+========================= 6 failed, 10 passed in 0.84s =========================
+# exit 1

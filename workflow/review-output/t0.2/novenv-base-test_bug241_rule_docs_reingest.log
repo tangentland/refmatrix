@@ -1,0 +1,1459 @@
+# sha 63b97b0 (base src/tests-infra c4b44d0 + RED tests), clone /Volumes/littlebig/refmatrix-t02-novenv (NO .venv-eval; origin /Volumes/littlebig/refmatrix-t02)
+# cmd: cd /Volumes/littlebig/refmatrix-t02-novenv && PYTHONPATH=/Volumes/littlebig/refmatrix-t02-novenv/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_bug241_rule_docs_reingest.py -p no:cacheprovider -rA --timeout 900
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02-novenv
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 96 items
+
+tests/test_bug241_rule_docs_reingest.py EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE [ 33%]
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE         [100%]
+
+==================================== ERRORS ====================================
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-fresh-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-fresh-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-fresh-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rest_of_dot_claude_stays_out[reingest-tldr_none-fresh] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_none-fresh] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-plain_row-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-plain_row-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-plain_row-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rest_of_dot_claude_stays_out[reingest-tldr_none-plain_row] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_none-plain_row] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-fresh-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-fresh-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-fresh-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rest_of_dot_claude_stays_out[reingest-tldr_metadata-fresh] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_metadata-fresh] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-plain_row-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-plain_row-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-plain_row-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rest_of_dot_claude_stays_out[reingest-tldr_metadata-plain_row] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_metadata-plain_row] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-fresh-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-fresh-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-fresh-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rest_of_dot_claude_stays_out[reingest-tldr_call_graph-fresh] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_call_graph-fresh] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-plain_row-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-plain_row-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-plain_row-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rest_of_dot_claude_stays_out[reingest-tldr_call_graph-plain_row] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_call_graph-plain_row] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-fresh-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-fresh-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-fresh-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_none-fresh-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_none-fresh-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_none-fresh-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rest_of_dot_claude_stays_out[sync-tldr_none-fresh] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_check_rel_landing_shows_no_unresolved_rule_doc_citation[sync-tldr_none-fresh] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-plain_row-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-plain_row-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-plain_row-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_none-plain_row-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_none-plain_row-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_none-plain_row-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rest_of_dot_claude_stays_out[sync-tldr_none-plain_row] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_check_rel_landing_shows_no_unresolved_rule_doc_citation[sync-tldr_none-plain_row] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-fresh-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-fresh-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-fresh-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_metadata-fresh-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_metadata-fresh-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_metadata-fresh-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rest_of_dot_claude_stays_out[sync-tldr_metadata-fresh] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_check_rel_landing_shows_no_unresolved_rule_doc_citation[sync-tldr_metadata-fresh] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-plain_row-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-plain_row-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-plain_row-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_metadata-plain_row-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_metadata-plain_row-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_metadata-plain_row-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rest_of_dot_claude_stays_out[sync-tldr_metadata-plain_row] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_check_rel_landing_shows_no_unresolved_rule_doc_citation[sync-tldr_metadata-plain_row] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-fresh-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-fresh-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-fresh-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_call_graph-fresh-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_call_graph-fresh-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_call_graph-fresh-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rest_of_dot_claude_stays_out[sync-tldr_call_graph-fresh] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_check_rel_landing_shows_no_unresolved_rule_doc_citation[sync-tldr_call_graph-fresh] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-fresh-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-plain_row-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-plain_row-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-plain_row-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_call_graph-plain_row-claude-x] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_call_graph-plain_row-project-profile-y] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rule_doc_has_its_anchor_node[sync-tldr_call_graph-plain_row-cite-cites] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_the_rest_of_dot_claude_stays_out[sync-tldr_call_graph-plain_row] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+_ ERROR at setup of test_check_rel_landing_shows_no_unresolved_rule_doc_citation[sync-tldr_call_graph-plain_row] _
+
+request = <SubRequest 'case' for <Function test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-plain_row-claude-x]>>
+
+    @pytest.fixture(scope="module", params=CASES, ids=[f"{r}-tldr_{t}-{p}" for t, p, r in CASES])
+    def case(request):
+        tldr, prior, route = request.param
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_rule_docs_reingest.py:132: AssertionError
+=========================== short test summary info ============================
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-fresh-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-fresh-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-fresh-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[reingest-tldr_none-fresh]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_none-fresh]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-plain_row-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-plain_row-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-plain_row-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[reingest-tldr_none-plain_row]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_none-plain_row]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-fresh-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-fresh-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-fresh-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[reingest-tldr_metadata-fresh]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_metadata-fresh]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-plain_row-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-plain_row-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-plain_row-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[reingest-tldr_metadata-plain_row]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_metadata-plain_row]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-fresh-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-fresh-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-fresh-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[reingest-tldr_call_graph-fresh]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_call_graph-fresh]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-plain_row-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-plain_row-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-plain_row-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[reingest-tldr_call_graph-plain_row]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_call_graph-plain_row]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-fresh-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-fresh-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-fresh-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_none-fresh-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_none-fresh-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_none-fresh-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[sync-tldr_none-fresh]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[sync-tldr_none-fresh]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-plain_row-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-plain_row-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_none-plain_row-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_none-plain_row-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_none-plain_row-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_none-plain_row-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[sync-tldr_none-plain_row]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[sync-tldr_none-plain_row]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-fresh-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-fresh-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-fresh-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_metadata-fresh-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_metadata-fresh-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_metadata-fresh-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[sync-tldr_metadata-fresh]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[sync-tldr_metadata-fresh]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-plain_row-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-plain_row-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_metadata-plain_row-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_metadata-plain_row-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_metadata-plain_row-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_metadata-plain_row-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[sync-tldr_metadata-plain_row]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[sync-tldr_metadata-plain_row]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-fresh-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-fresh-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-fresh-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_call_graph-fresh-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_call_graph-fresh-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_call_graph-fresh-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[sync-tldr_call_graph-fresh]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[sync-tldr_call_graph-fresh]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-plain_row-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-plain_row-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[sync-tldr_call_graph-plain_row-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_call_graph-plain_row-claude-x]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_call_graph-plain_row-project-profile-y]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[sync-tldr_call_graph-plain_row-cite-cites]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[sync-tldr_call_graph-plain_row]
+ERROR tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[sync-tldr_call_graph-plain_row]
+============================== 96 errors in 0.28s ==============================
+# exit 1
