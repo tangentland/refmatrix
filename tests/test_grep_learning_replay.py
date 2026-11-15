@@ -22,10 +22,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "eval" / "production"))
 
-import grep_learning_replay as glr  # noqa: E402
-# bug-253: the harness's `RMX` and child env are tests/devbin.py's (it loads that file by path);
-# this file's own lookup was its skip on the checkout venv, retired with the pin.
-from devbin import dev_rmx  # noqa: E402,F401
+import grep_learning_replay as glr  # noqa: E402  (bug-253: it loads tests/devbin.py by path)
 
 
 @pytest.fixture

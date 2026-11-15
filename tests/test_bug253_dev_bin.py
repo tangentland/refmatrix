@@ -196,10 +196,44 @@ def _imports_devbin(src: str) -> bool:
     return False
 
 
+# A test file that reaches the helper THROUGH the harness it drives (ch-bsd r1 MEH-3, ruling
+# L169): `test_grep_learning_replay.py` imports `eval/production/grep_learning_replay.py`, which
+# loads tests/devbin.py by path (ruling L142 (1)); it has no lookup of its own to convert.
+VIA_HARNESS = {"test_grep_learning_replay.py":
+               ("grep_learning_replay", _REPO / "eval" / "production" / "grep_learning_replay.py")}
+
+
+def _imports_module(src: str, module: str) -> bool:
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Import) and any(a.name == module for a in node.names):
+            return True
+        if isinstance(node, ast.ImportFrom) and node.module == module:
+            return True
+    return False
+
+
+def _loads_devbin_by_path(src: str) -> bool:
+    """The source loads tests/devbin.py by path: it names `"devbin.py"` in its code and calls
+    `importlib.util.spec_from_file_location`."""
+    tree = ast.parse(src)
+    names = any(isinstance(n, ast.Constant) and n.value == "devbin.py" for n in ast.walk(tree))
+    loads = any(isinstance(n, ast.Call) and getattr(n.func, "attr", getattr(n.func, "id", ""))
+                == "spec_from_file_location" for n in ast.walk(tree))
+    return names and loads
+
+
+def _uses_devbin(name: str, src: str) -> bool:
+    if _imports_devbin(src):
+        return True
+    via = VIA_HARNESS.get(name)
+    return via is not None and _imports_module(src, via[0]) and \
+        _loads_devbin_by_path(via[1].read_text())
+
+
 @pytest.mark.parametrize("name", ELEVEN)
 def test_each_of_the_eleven_uses_the_helper(name):
     src = (_TESTS / name).read_text()
-    assert _imports_devbin(src), (
+    assert _uses_devbin(name, src), (
         f"tests/{name} does not import tests/devbin.py; it looked up the dev rmx itself "
         "(bug-253, #t0-2-bug253)")
 
