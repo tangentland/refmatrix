@@ -1,0 +1,83 @@
+# sha be7ddb2; mutation X4 on src/refmatrix/daemon.py
+applied X4: 'in_host = threading.current_thread() is not threading.main_thread()' -> 'in_host = True'
+pyc-guard: recompiled 26 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02-green/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rmx sandbox: 0 orphan process(es) swept from killed runs
+rootdir: /Volumes/littlebig/refmatrix-t02-green
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 5 items
+
+tests/test_bug267_inprocess_stop.py F..                                  [ 60%]
+tests/test_daemon_reaper.py ..                                           [100%]
+
+=================================== FAILURES ===================================
+_ test_bug267_stopping_an_in_process_daemon_leaves_the_session_its_own_status __
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2476/test_bug267_stopping_an_in_pro0')
+
+    def test_bug267_stopping_an_in_process_daemon_leaves_the_session_its_own_status(tmp_path):
+        tree = _inner_tree(tmp_path, "case_inprocess_stop")
+        info = tmp_path / "case-info.json"
+        try:
+            try:
+                r = subprocess.run(_inner_cmd(), cwd=str(tree), env=_inner_env(info),
+                                   capture_output=True, text=True, timeout=_CHILD_HANG_GUARD_S)
+            except subprocess.TimeoutExpired as e:
+                out = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) \
+                    else (e.stdout or "")
+                pytest.fail(f"the child session did not finish within {_CHILD_HANG_GUARD_S} s "
+                            "after its in-process daemons were stopped (a hang at interpreter "
+                            "shutdown: leaked pool workers joined by atexit?)\n" + out[-3000:])
+            out = (r.stdout or "") + (r.stderr or "")
+            # ch-bsd T0.2 r1 B1 (L169): the child serves REAL daemons with no `signal.signal`
+            # double; a serve thread that fails is named by its own E line, first.
+            failed = [ln.strip() for ln in out.splitlines()
+                      if ln.startswith("E ") and "deliberate" not in ln
+                      and ("Error" in ln or "assert" in ln.lower())]
+>           assert not failed, (
+                f"the child's in-process daemon tests failed (exit {r.returncode}): {failed[0]}\n"
+                + out[-3000:])
+E               AssertionError: the child's in-process daemon tests failed (exit 1): E       assert False
+E                 pyc-guard: recompiled 3 timestamp pyc(s) under /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2476/test_bug267_stopping_an_in_pro0/inner/src/refmatrix as checked-hash (bug-037)
+E                 ============================= test session starts ==============================
+E                 platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E                 rmx sandbox: 0 orphan process(es) swept from killed runs
+E                 rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2476/test_bug267_stopping_an_in_pro0/inner
+E                 configfile: pyproject.toml
+E                 plugins: timeout-2.4.0, anyio-4.13.0
+E                 collected 3 items
+E                 
+E                 tests/test_case.py ..F                                                   [100%]
+E                 
+E                 =================================== FAILURES ===================================
+E                 ___________________ test_zz_the_session_keeps_its_own_status ___________________
+E                 
+E                     def test_zz_the_session_keeps_its_own_status():
+E                 >       assert False, "deliberate: the session must end with pytest's own status (1), not exit 0"
+E                 E       AssertionError: deliberate: the session must end with pytest's own status (1), not exit 0
+E                 E       assert False
+E                 
+E                 tests/test_case.py:84: AssertionError
+E                 ==================================== PASSES ====================================
+E                 ____________ test_the_stop_op_ends_the_serve_thread_not_the_process ____________
+E                 ----------------------------- Captured stderr call -----------------------------
+E                 === 2026-11-15T12:33:44 daemon starting pid=1116 ===
+E                 ___________ test_the_stop_flag_ends_the_serve_thread_not_the_process ___________
+E                 ----------------------------- Captured stderr call -----------------------------
+E                 === 2026-11-15T12:33:49 daemon starting pid=1116 ===
+E                 =========================== short test summary info ============================
+E                 PASSED tests/test_case.py::test_the_stop_op_ends_the_serve_thread_not_the_process
+E                 PASSED tests/test_case.py::test_the_stop_flag_ends_the_serve_thread_not_the_process
+E                 FAILED tests/test_case.py::test_zz_the_session_keeps_its_own_status - Asserti...
+E                 ========================= 1 failed, 2 passed in 10.34s =========================
+E                 
+E               assert not ['E       assert False']
+
+tests/test_bug267_inprocess_stop.py:83: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug267_inprocess_stop.py::test_bug267_stopping_an_in_process_daemon_leaves_the_session_its_own_status
+========================= 1 failed, 4 passed in 32.91s =========================
+exit 1
+restored clean

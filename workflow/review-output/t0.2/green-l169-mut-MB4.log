@@ -1,0 +1,254 @@
+# sha be7ddb2; mutation MB4 on src/refmatrix/daemon.py
+applied MB4: 'in_host = threading.current_thread() is not threading.main_thread()' -> 'in_host = threading.current_thread() is threading.main_thread()'
+pyc-guard: recompiled 26 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02-green/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rmx sandbox: 0 orphan process(es) swept from killed runs
+rootdir: /Volumes/littlebig/refmatrix-t02-green
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 5 items
+
+tests/test_bug267_inprocess_stop.py F..                                  [ 60%]
+tests/test_daemon_reaper.py FF                                           [100%]
+
+=================================== FAILURES ===================================
+_ test_bug267_stopping_an_in_process_daemon_leaves_the_session_its_own_status __
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2480/test_bug267_stopping_an_in_pro0')
+
+    def test_bug267_stopping_an_in_process_daemon_leaves_the_session_its_own_status(tmp_path):
+        tree = _inner_tree(tmp_path, "case_inprocess_stop")
+        info = tmp_path / "case-info.json"
+        try:
+            try:
+                r = subprocess.run(_inner_cmd(), cwd=str(tree), env=_inner_env(info),
+                                   capture_output=True, text=True, timeout=_CHILD_HANG_GUARD_S)
+            except subprocess.TimeoutExpired as e:
+                out = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) \
+                    else (e.stdout or "")
+                pytest.fail(f"the child session did not finish within {_CHILD_HANG_GUARD_S} s "
+                            "after its in-process daemons were stopped (a hang at interpreter "
+                            "shutdown: leaked pool workers joined by atexit?)\n" + out[-3000:])
+            out = (r.stdout or "") + (r.stderr or "")
+            # ch-bsd T0.2 r1 B1 (L169): the child serves REAL daemons with no `signal.signal`
+            # double; a serve thread that fails is named by its own E line, first.
+            failed = [ln.strip() for ln in out.splitlines()
+                      if ln.startswith("E ") and "deliberate" not in ln
+                      and ("Error" in ln or "assert" in ln.lower())]
+>           assert not failed, (
+                f"the child's in-process daemon tests failed (exit {r.returncode}): {failed[0]}\n"
+                + out[-3000:])
+E               AssertionError: the child's in-process daemon tests failed (exit 1): E       AssertionError: serve_forever off the main thread raised ValueError: signal only works in main thread of the main interpreter
+E                 000gn/T/pytest-of-tholley/pytest-2480/test_bug267_stopping_an_in_pro0/inner/tests/test_case.py", line 48, in _run
+E                       d.serve_forever()
+E                       ~~~~~~~~~~~~~~~^^
+E                     File "/Volumes/littlebig/refmatrix-t02-green/src/refmatrix/daemon.py", line 1988, in serve_forever
+E                       signal.signal(signal.SIGTERM, _shutdown)
+E                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                     File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/signal.py", line 58, in signal
+E                       handler = _signal.signal(_enum_to_int(signalnum), _enum_to_int(handler))
+E                   ValueError: signal only works in main thread of the main interpreter
+E                   
+E                   Enable tracemalloc to get traceback where the object was allocated.
+E                   See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+E                     warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+E                 
+E                 tests/test_case.py::test_the_stop_flag_ends_the_serve_thread_not_the_process
+E                   /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread case-s67f-serve
+E                   
+E                   Traceback (most recent call last):
+E                     File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+E                       self._context.run(self.run)
+E                       ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+E                     File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+E                       self._target(*self._args, **self._kwargs)
+E                       ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                     File "/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2480/test_bug267_stopping_an_in_pro0/inner/tests/test_case.py", line 48, in _run
+E                       d.serve_forever()
+E                       ~~~~~~~~~~~~~~~^^
+E                     File "/Volumes/littlebig/refmatrix-t02-green/src/refmatrix/daemon.py", line 1988, in serve_forever
+E                       signal.signal(signal.SIGTERM, _shutdown)
+E                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                     File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/signal.py", line 58, in signal
+E                       handler = _signal.signal(_enum_to_int(signalnum), _enum_to_int(handler))
+E                   ValueError: signal only works in main thread of the main interpreter
+E                   
+E                   Enable tracemalloc to get traceback where the object was allocated.
+E                   See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+E                     warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+E                 
+E                 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+E                 =========================== short test summary info ============================
+E                 FAILED tests/test_case.py::test_the_stop_op_ends_the_serve_thread_not_the_process
+E                 FAILED tests/test_case.py::test_the_stop_flag_ends_the_serve_thread_not_the_process
+E                 FAILED tests/test_case.py::test_zz_the_session_keeps_its_own_status - Asserti...
+E                 ======================== 3 failed, 2 warnings in 1.66s =========================
+E                 
+E               assert not ['E       AssertionError: serve_forever off the main thread raised ValueError: signal only works in main thread of the... "E       assert not [ValueError('signal only works in main thread of the main interpreter')]", 'E       assert False']
+
+tests/test_bug267_inprocess_stop.py:83: AssertionError
+_________ test_ac5_an_in_process_daemon_left_serving_fails_the_session _________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2480/test_ac5_an_in_process_daemon_0')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2480/test_ac5_an_in_process_daemon_0/case-info.json')
+
+    def test_ac5_an_in_process_daemon_left_serving_fails_the_session(tmp_path, case_info):
+        """AC-5 fixture 5: a `Daemon` built and served INSIDE the pytest process is not in the
+        spawn ledger. conftest's weak registry of `Daemon` instances finds it still serving; it is
+        printed `LEAKED IN-PROCESS DAEMON root=<…> built in <test id>`, stopped, and the session
+        fails. Kills mutation 16 (the `Daemon.__init__` wrapper records nothing)."""
+        tree = _inner_tree(tmp_path, "case_inprocess_daemon")
+        r = _run_inner(tree, case_info)
+        out = _out(r)
+        d = _info(case_info)
+        root = d["root"]
+>       assert "1 passed" in out, f"the fixture test itself must pass:\n{out[-3000:]}"
+E       AssertionError: the fixture test itself must pass:
+E                                                [100%]
+E         
+E         =================================== FAILURES ===================================
+E         ___________________ test_leaves_an_in_process_daemon_serving ___________________
+E         
+E             def test_leaves_an_in_process_daemon_serving():
+E                 base, root = store_root("shi-")
+E                 d = dm.Daemon(root)
+E                 t = threading.Thread(target=d.serve_forever, name="case-inproc-serve", daemon=True)
+E                 t.start()
+E                 deadline = time.monotonic() + _PING_WAIT_S
+E                 while not dm.ping(root, retries=0) and time.monotonic() < deadline and t.is_alive():
+E                     time.sleep(0.2)
+E                 report(root=str(d.root), base=str(base))
+E         >       assert dm.ping(root, retries=0), "the in-process daemon never answered ping"
+E         E       AssertionError: the in-process daemon never answered ping
+E         E       assert False
+E         E        +  where False = <function ping at 0x105c4f950>(PosixPath('/private/tmp/shi-iz3e30s9/proj/.refmatrix'), retries=0)
+E         E        +    where <function ping at 0x105c4f950> = dm.ping
+E         
+E         tests/test_case.py:28: AssertionError
+E         ----------------------------- Captured stderr call -----------------------------
+E         === 2026-11-15T12:34:31 daemon starting pid=1382 ===
+E         =============================== warnings summary ===============================
+E         tests/test_case.py::test_leaves_an_in_process_daemon_serving
+E           /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread case-inproc-serve
+E           
+E           Traceback (most recent call last):
+E             File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+E               self._context.run(self.run)
+E               ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+E             File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+E               self._target(*self._args, **self._kwargs)
+E               ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E             File "/Volumes/littlebig/refmatrix-t02-green/src/refmatrix/daemon.py", line 1988, in serve_forever
+E               signal.signal(signal.SIGTERM, _shutdown)
+E               ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E             File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/signal.py", line 58, in signal
+E               handler = _signal.signal(_enum_to_int(signalnum), _enum_to_int(handler))
+E           ValueError: signal only works in main thread of the main interpreter
+E           
+E           Enable tracemalloc to get traceback where the object was allocated.
+E           See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+E             warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+E         
+E         -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+E         =========================== short test summary info ============================
+E         FAILED tests/test_case.py::test_leaves_an_in_process_daemon_serving - Asserti...
+E         ========================= 1 failed, 1 warning in 1.34s =========================
+E         
+E       assert '1 passed' in 'pyc-guard: recompiled 6 timestamp pyc(s) under /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tho...rocess_daemon_serving - Asserti...\n========================= 1 failed, 1 warning in 1.34s =========================\n'
+
+tests/test_daemon_reaper.py:388: AssertionError
+_ test_l142_an_in_process_daemon_is_stopped_without_signalling_its_own_session _
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2480/test_l142_an_in_process_daemon0')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2480/test_l142_an_in_process_daemon0/case-info.json')
+
+    def test_l142_an_in_process_daemon_is_stopped_without_signalling_its_own_session(tmp_path,
+                                                                                   case_info):
+        """Ruling L142 (2): the reaper never signals its own pid or an ancestor. An in-process
+        `Daemon`'s `rmxd.pid` names the PYTEST process (the case reports it, so the hazard is
+        shown, not assumed); stopping it the way a spawned daemon is stopped (`stop_daemon(root)`,
+        which ends in a signal to the pid file's pid) SIGTERMs the session. Stopped through the
+        weak `Daemon` registry instead, the session reports it, finishes its own summary, and exits
+        with pytest's "tests failed" status -- never by a signal.
+    
+        At base there is no reaper, so nothing can signal the session: the not-signalled half
+        holds and the node is RED on the other half (exit 0, nothing reported). Its own claim is
+        proved by a mutation after GREEN: stop the in-process daemon by `stop_daemon(root)` or by
+        its pid file -> the inner exits -15 / 143 and this node fails on the signal assertion."""
+        tree = _inner_tree(tmp_path, "case_inprocess_daemon_own_pid")
+        r = _run_inner(tree, case_info)
+        out = _out(r)
+        d = _info(case_info)
+        assert d.get("pidfile") == d.get("inner_pid"), (
+            f"precondition: the in-process daemon's rmxd.pid ({d.get('pidfile')}) should name the "
+            f"inner pytest ({d.get('inner_pid')}): {d!r}")
+        assert r.returncode >= 0 and r.returncode != 128 + signal.SIGTERM, (
+            f"the inner session was killed by a signal (exit {r.returncode}): the reaper signalled "
+            f"its own pid {d.get('inner_pid')}, named by the in-process daemon's rmxd.pid\n"
+            + out[-3000:])
+        assert r.returncode == pytest.ExitCode.TESTS_FAILED, (
+            f"the in-process daemon (pid file -> the session itself) was left serving and the "
+            f"session exited {r.returncode}: nothing reported or stopped it\n{out[-3000:]}")
+        leak = out.find("LEAKED IN-PROCESS DAEMON")
+        final = [m.start() for m in re.finditer(r"^=+ .*\b(passed|failed)\b.* =+$", out, re.M)]
+>       assert leak >= 0 and final, out[-3000:]
+E       AssertionError: ession ______
+E         
+E             def test_leaves_an_in_process_daemon_whose_pid_file_names_this_session():
+E                 base, root = store_root("sho-")
+E                 d = dm.Daemon(root)
+E                 t = threading.Thread(target=d.serve_forever, name="case-inproc-own-pid", daemon=True)
+E                 t.start()
+E                 deadline = time.monotonic() + _PING_WAIT_S
+E                 while not dm.ping(root, retries=0) and time.monotonic() < deadline and t.is_alive():
+E                     time.sleep(0.2)
+E                 pidfile = dm.pid_path(d.root)
+E                 report(root=str(d.root), base=str(base),
+E                        pidfile=int(pidfile.read_text().strip()) if pidfile.is_file() else None)
+E         >       assert dm.ping(root, retries=0), "the in-process daemon never answered ping"
+E         E       AssertionError: the in-process daemon never answered ping
+E         E       assert False
+E         E        +  where False = <function ping at 0x10322b950>(PosixPath('/private/tmp/sho-1ovu0w5_/proj/.refmatrix'), retries=0)
+E         E        +    where <function ping at 0x10322b950> = dm.ping
+E         
+E         tests/test_case.py:31: AssertionError
+E         ----------------------------- Captured stderr call -----------------------------
+E         === 2026-11-15T12:34:33 daemon starting pid=1388 ===
+E         =============================== warnings summary ===============================
+E         tests/test_case.py::test_leaves_an_in_process_daemon_whose_pid_file_names_this_session
+E           /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread case-inproc-own-pid
+E           
+E           Traceback (most recent call last):
+E             File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+E               self._context.run(self.run)
+E               ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+E             File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+E               self._target(*self._args, **self._kwargs)
+E               ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E             File "/Volumes/littlebig/refmatrix-t02-green/src/refmatrix/daemon.py", line 1988, in serve_forever
+E               signal.signal(signal.SIGTERM, _shutdown)
+E               ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E             File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/signal.py", line 58, in signal
+E               handler = _signal.signal(_enum_to_int(signalnum), _enum_to_int(handler))
+E           ValueError: signal only works in main thread of the main interpreter
+E           
+E           Enable tracemalloc to get traceback where the object was allocated.
+E           See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+E             warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+E         
+E         -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+E         =========================== short test summary info ============================
+E         FAILED tests/test_case.py::test_leaves_an_in_process_daemon_whose_pid_file_names_this_session
+E         ========================= 1 failed, 1 warning in 1.33s =========================
+E         
+E       assert (-1 >= 0)
+
+tests/test_daemon_reaper.py:430: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug267_inprocess_stop.py::test_bug267_stopping_an_in_process_daemon_leaves_the_session_its_own_status
+FAILED tests/test_daemon_reaper.py::test_ac5_an_in_process_daemon_left_serving_fails_the_session
+FAILED tests/test_daemon_reaper.py::test_l142_an_in_process_daemon_is_stopped_without_signalling_its_own_session
+========================= 3 failed, 2 passed in 16.62s =========================
+exit 1
+restored clean
