@@ -281,3 +281,10 @@ their row; plan-24's and 26.5's wait).
 {#pending-status-lead-2026-11-15-table}
 
 Applied: `.claude/PROJECT_PROFILE.md` `#corpus` now states the read-only MCP tools are offered to spawned agents (verified 2026-11-14, L85).
+
+### Question withdrawn (Q39) {#q39}
+
+| id | asked | question | options (lead's recommendation first) | status |
+|---|---|---|---|---|
+| Q39 | 2026-11-15 | bug-203 (`rmx sync -i` reaches the read replica when a daemon is up) is not on the freeze line; 31.2 rewrites what `sync -i` does, and arch-31b wrote the routing fix in (AC-14). Admit it into 31.2? | (a) admit it into 31.2 (recommended: the same lines are rewritten anyway; leaving it means re-opening them after the mod); (b) cut it from 31.2, bug-203 stays post-mod | **withdrawn** by the lead (L136): bug-203 is already pre-mod via T4 (queue step 13); which step routes `sync -i` is sequencing, ruled: 31.2 |
+{#q39-table}
