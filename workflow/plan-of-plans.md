@@ -63,8 +63,10 @@ plan's remaining work is scheduled in the folded wave list [[plan-review-2026-10
 4. **Plan-31** pre-mod loose ends ([[plan-31-pre-mod-loose-ends]]): 31.1 bug-244, 31.2 bug-107 +
    bug-247, 31.3 the bug-242 ledger-anchor guard, 31.4 retire the standing lint warnings, 31.5 the
    scan-prompt injection measured per block, then cut and tightened (Q27 = b).
-5. **Pending Q28:** which steps 6-15 of the L106 queue stay before the mod
-   ([[freeze-triage-2026-11-15]]); until answered they keep their L106 order.
+5. **From the L106 queue** (the user, Q28 = a, 2026-11-15; [[freeze-triage-2026-11-15]]):
+   T2 memory organisation (26.5 → 26.7 → 26.6 R3 → 26.8 → 26.9 ∥ plan-27); bug-218; 25.2, 25.3,
+   10.3; T4 bounded writes (bug-185 → 23.2 → 23.1 → 23.3 ∥ 23.5); T3 injection dedup (10.5 → 10.6
+   → 10.4 → 10.2; 21.2 → 21.4), after 31.5; 21.5 phase M; 22.6 R4 folded into 31.2.
 
 **The rule.** Nothing else is admitted before the mod except a bug that breaks something live
 (a crash, data loss, a wrong answer on the production path, a wedge). Everything else — new ideas,
@@ -95,6 +97,10 @@ Admitted after the mod transition, not before (each with why it waits):
 - **bug-250** (a missing path is not refused on the verb/op ingest routes) — validation; the
   daemon's ingest errors on a missing path anyway.
 - **Pre-split rows / filter bitmaps** — already deferred with a trigger ([[plan-30-materialisation#deferred]]).
+- **From the L106 queue (Q28 = a):** compaction-as-handoff, agent-start context, 25.1b (new hook
+  features; the mod replaces the hook surface); plan-28 (paired series); 23.4, the 16.6 slice and
+  plan-17 (nightly maintenance); plan-22 except 22.6 R4; plan-16 (grep shim; learning stays off
+  until 31.2); plan-18 (duckdb maintenance).
 
 ## Sequence rationale {#sequence}
 

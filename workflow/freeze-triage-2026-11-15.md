@@ -5,7 +5,7 @@ title: "Pre-mod freeze: triage of the L106 queue steps the freeze line did not n
 tags: [workflow, freeze, queue, triage, proposal]
 metadata:
   node_type: proposal
-  status: proposed
+  status: applied
   created: 2026-11-15
 ---
 
@@ -16,7 +16,7 @@ and plan-31, and did not say what happens to steps 6-15 of the queue the user ap
 2026-11-14 (L106, [[plan-review-fable-2026-11-14-queue#recommended-queue]]). That was the lead's
 omission. This file proposes a disposition per step against the freeze's goal: the core
 concept/graph representation more useful, context succinct and relevant, performance improved,
-busywork removed, loose ends tied up. The user decides (Q28).
+busywork removed, loose ends tied up. **Applied:** the user answered Q28 = a on 2026-11-15; the freeze line now carries it.
 
 rel: amends -> [[plan-of-plans#freeze]]
 rel: depends-on -> [[plan-review-fable-2026-11-14-queue#recommended-queue]]
