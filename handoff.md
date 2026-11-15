@@ -9,79 +9,77 @@ metadata:
 
 # Session Handoff for refmatrix {#root}
 
-Date: 2026-11-15 early (session 070141d0, "refmatrix-08"). **0.83.0 is deployed** (deploy tree
-`2aab81a`, daemon pid 21151, hub pid 21506, fleet on 0.83.0). **0.83.1 is in its last fold**
-(L114) and ships when green-216 reports (the user's standing order). **Plan-29 and plan-30 are
-both approved.** Prior handoff archived at
-`workflow/past_handoffs/023-0830-deployed-paused_2026-11-14.md`.
+Date: 2026-11-15, late morning (session 817dd0e8, "refmatrix-08", resumed after `/clear`).
+**0.84.0 is deployed** fleet-wide (daemon pid 78480, hub pid 78825, all 7 hub-registered
+stores on v0.84.0, 0 restarts). Nothing deploys until R1's major release gate (one full suite on
+merged `master`). Prior handoff archived at
+`workflow/past_handoffs/024-0831-last-fold-plan30-approved_2026-11-15.md`.
 
-rel: supersedes -> [[handoff-023-0830-deployed-paused]]
-rel: depends-on -> [[plan-review-2026-11-13]]
-rel: depends-on -> [[agent-briefs-inflight-2026-11-15]]
-rel: depends-on -> [[plan-29-code-quality]]
-rel: depends-on -> [[plan-30-materialisation]]
+rel: supersedes -> [[handoff-024-0831-last-fold-plan30-approved]]
+rel: depends-on -> [[plan-of-plans#queue]]
+rel: depends-on -> [[plan-of-plans#ledgers]]
+rel: depends-on -> [[agent-briefs-inflight-2026-11-15b]]
+rel: depends-on -> [[orchestration]]
 
 ## Active goal {#active-goal}
 
-No active `/goal`. Standing user order: **"ship 0.83.1 when green-216 reports"** (merge →
-release → deploy → backup → forced reingest → AC-6 recount). The live forced reingest runs only on
-the deploy carrying L112 S1 (else a ~17 min store-lock hold).
+No active `/goal`. No question open (next id Q42). The work is POP queue row 1 (29.4 stage 2:
+T0.2 ∥ T0.3; T0.8 merged `e997154`) and row 5 (31.5 release A), both shipping in R1.
 
-**Agents at save time** — full brief in `workflow/agents/inflight-2026-11-15.md`:
+**Agents at save time** — base brief [[agent-briefs-inflight-2026-11-15b]]; the state below
+supersedes its "doing" column:
 
-| agent · type | clone (`/Volumes/littlebig/…`) · branch | base · tip at save | expected artifact |
-|---|---|---|---|
-| `green-216` · ch-implementer | `refmatrix-bug241` · `task-bug241-rule-docs-gmd-on-reingest` | `78c0c11` · `bba7313` (+ uncommitted summary; branch full suite running, `bug241-l112-full.log` ~58% at 18:17 PST) | suite E lines vs baseline; L114 GREEN on red-216's `111e4b0`; mutations; report |
+| agent · type | clone (`/Volumes/littlebig/…`) · branch | tip | doing | next |
+|---|---|---|---|---|
+| `green-t03` · ch-implementer | `refmatrix-t03-green` · `task-t0.3-load-flakes-wallclock` | `83c2711` (+ uncommitted summary) | verify run on the lane (census + timing tests); then merge red-t03 `9270f58` (bug-269 RED, L161) and write the fix | ch-bsd review, merge |
+| `red-t03` · ch-test-engineer | `refmatrix-t03` · same | `9270f58` | done: bug-269 RED committed | idle |
+| `green-t02` · ch-implementer | `refmatrix-t02-green` · `task-t0.2-reaper-roots-bug253` | `1121b4e` | done: verify own 435 passed/1 skipped; tier-(b) 2 failed = the two AC-6 nodes, E lines identical to `release-0.84.0-full.log` (fixed on master by T0.8) | idle until bsd-t02 reports |
+| `bsd-t02` · ch-bsd | own clone `refmatrix-bsdt02-r1` | range `c4b44d0..1121b4e` | r1 code review + mutation record (incl. R4.6b) | lead ruling L163, fold or merge |
+| `red-315` · ch-test-engineer | `refmatrix-315` · `task-31.5-s0-capture` | `30ac2f6` (+ uncommitted L156 work) | told to finish the AC-0.8 re-proof on `c3e04d3` and commit | green-315 merges |
+| `green-315` · ch-implementer | `refmatrix-315-green` · same | `c3e04d3` | waiting for red-315's commit | merge, re-run the 3 files, ch-bsd review |
+{#agents}
 
-Idle and done (addressable, nothing owed): red-216 (L114 RED `111e4b0` in `refmatrix-bug241-r2`),
-bsd-216 (0.83.1 r1/r2), spec-30 + bsd-plan29 (plan-30), spec-29-7 (stopped, 29.7 dropped),
-perf-bitmap. green-216 may miss its own run ending — tail the log
-(`feedback_check_the_log_when_an_agent_idles_on_a_background_run`).
+Kept idle for later rounds: `red-t02`, `bsd-t0`, `arch-t2`, `arch-t56`, `bsd-spec-t2`,
+`bsd-spec-t56` (the two held specs, bug-218 `spec-t56-fresh` `b2e2451` and T2 `spec-t2-fresh`
+`3a4d430`, await a ch-bsd confirm-lite before their RED, Q41 = a). 63 idle agents from finished
+work were stopped this session. {#agents-kept}
 
-## What this session did {#did}
+## Failures carried {#failures}
 
-- **IMPRESSIONS fold** (`e7f1c8e`), bug-242 (truncated ledger bullets), bug-130 seen 2.
-- **Plan-29 approved** (`b12724d`, L107-L111): specs 29.1-29.6 merged after ch-bsd r2-r4. User:
-  **D19 confirmed** (store stays a module, L113); **D23 = (a) accept the recorded loss** (L115)
-  after a read-only count: 3 attached learned rows + 1 protected entity on `cli.py`/`store.py`;
-  15,965 already orphaned by bug-107 (`workflow/measurements/learned-rows-cli-store-2026-11-14.md`).
-  Task 29.7 (re-key op) specced then dropped; branch `spec-29-7-learned-rekey` @ `a63d120` unmerged.
-- **Bitmap materialisation measured** (perf-bitmap, read-only copy; `0a9ee08`,
-  `workflow/measurements/bitmap-materialisation-2026-11-14/`).
-- **Plan-30 approved** (`df75516` merge, `ce8141e`, L116-L117): adjacency + bitmap
-  materialisation, 30.0-30.5, three releases (A 30.5; B 30.1-30.3, re-derives pagerank fleet-wide;
-  C 30.4 daemon-held adjacency + `ppr_rank` op). User: D1 bounded-behind, D2 go, D3 move-not-delete.
-  29.1's `sched-track` rule now accepts `P<n>`.
-- **0.83.1 reviews:** ch-bsd r1 DIRTY 0B/2S/2M (L112 folded: GMD pass yields, failed GMD pass
-  counted + `Error:`, file refusal before `_store`, `--source` docs); r2 MEH-only GO (L114: per-doc
-  yield cadence, MCP job `error`). Branch full suite at `13ffd77`: 3 failed = baseline by E line.
-- **Bugs logged:** bug-243 (hook PPR rebuilds adjacency per prompt → 30.4), bug-244 (list-valued
-  frontmatter `id:` fails the whole GMD batch), bug-245 (self-caught GREEN regression), bug-246
-  (`BitMap64` `len()` as emptiness guard → 30.5), bug-247 (log rebuild resurrects purged evidence),
-  bug-248 (transaction rollback leaves log events + bitmap bits).
-- **Memories:** `project_0831_ship_plan30_state`,
-  `feedback_check_the_log_when_an_agent_idles_on_a_background_run`.
+`release-0.84.0-full.log`: 13 failed, 5028 passed. Every one is owned by stage 2:
+bug-168 (9 in `test_search_hooks.py`), bug-170 (`test_installed_hooks_match_generated`),
+bug-127 (`test_brief_real_daemon.py`) → T0.2; bug-196 (2 AC-6 nodes in
+`test_task21_1_agent_usage_report.py`) → T0.8, merged. Load-dependent flakes (bug-130, 190, 091,
+228, 231, 269) → T0.3. R1's gate is expected at 0 failed once T0.2 and T0.3 merge; no full suite
+has run on master since T0.8 merged. {#failures-body}
 
-## Next {#next}
+## This session {#did}
 
-**The queue lives in the POP only:** [[plan-of-plans#queue]]. Ledgers: [[plan-of-plans#ledgers]]
-(L125-L162 this session). Procedure: [[orchestration]]. 0.84.0 is deployed; nothing deploys
-until R1's major release gate.
+- `/recall-state` orientation; this handoff rewritten (the prior one still described 0.83.0).
+- **littlebig cleanup:** 51 finished `refmatrix-*` clones removed (~6 GB). Kept: the six active
+  clones above, `refmatrix-t2-fresh`, `refmatrix-t56-fresh`, and `refmatrix-spike-hypertree`
+  (data cited by `docs/measurements/hypertree-spike-2026-10-20.md`). Branches that existed only in
+  removed clones were fetched into dev first: `spec-29-7-learned-rekey` `a63d120`, `triage-3`
+  `b817f62`, `bsd-264r1-mergesim` `f84c9dc`. Uncommitted work from `refmatrix-t01-oracle`,
+  `refmatrix-bsdt0-r1` and `refmatrix-bug105-probe` saved under
+  `/Volumes/littlebig/refmatrix-archive-2026-11-15/`.
+- **bug-261, atlftpd:** `.refmatrix/` appended to `~/github/atollogy/bdep/atlftpd/.gitignore`
+  (`git check-ignore` confirms). Left uncommitted: the repo is on the user's
+  `fix-forwarder-lock` branch.
 
 ## Open {#open}
 
-- **Agents in flight:** [[agent-briefs-inflight-2026-11-15b]] (green-t02, red-t03, green-t03,
-  red-315, green-315). Check each one's queued test log yourself.
-- **Questions:** none open (next id Q42).
-- **Not pushed:** dev master is far ahead of `origin/main` (the user pushes).
-- **Throwaway clones on `/Volumes/littlebig`:** many `refmatrix-*` clones from 2026-11-13..15;
-  remove when no longer wanted (look first). Scratch store copies:
-  `refmatrix-spec31b-scratch/`, `refmatrix-t56-fresh/.scratch/`.
-- **User action pending (bug-261):** add `.refmatrix/` to atlftpd's `.gitignore`; merge the
-  ignore branches in cliquet, atldb, prep_prolific.
+- **Not pushed:** dev master is ~690 commits ahead of `origin/main` (the user pushes).
+- **bug-261 remainder (user's repos):** commit atlftpd's ignore line on its default branch; merge
+  the ignore branches in cliquet, atldb, prep_prolific.
+- daemon stderr carries a `SyntaxWarning: "\|" is an invalid escape sequence` at startup
+  (unlogged; source not yet located).
 
 ## Resume {#resume}
 
-1. `/recall-state`; read [[plan-of-plans#queue]] and [[plan-of-plans#ledgers]] (the state), then [[agent-briefs-inflight-2026-11-15b]].
-2. `ListAgents`; collect agents in flight or re-dispatch from `workflow/agents/`.
-3. Never run the dev-venv `rmx` against the live store with a bumped version.
+1. `/recall-state`; read [[plan-of-plans#queue]] and [[plan-of-plans#ledgers]] (the state), then
+   [[#agents]].
+2. `ListAgents`; collect the agents above or re-dispatch from their rows.
+3. Check every queued test run's log yourself; the lane is
+   `lockf /private/tmp/claude-501/rmx-test-lane.lock`.
+4. Never run the dev-venv `rmx` against the live store with a bumped version.
