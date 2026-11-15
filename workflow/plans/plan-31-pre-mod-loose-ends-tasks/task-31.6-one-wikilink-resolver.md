@@ -803,6 +803,7 @@ cites them and records none of its own. {#decisions-rule}
   form on both sides. {#d12}
 - **Ruling L136:** (1) this task builds bug-185 R10's rule ([[#r5-whose]]); (3) it owns the
   cleanup of the misbinding's residue ([[#r10]]). {#l136}
+- **Ruling L148 (3):** the `reingest-force` marker of [[#r10-marker]] is accepted. {#l148}
 - **Ruling L147:** ch-bsd r2's three findings here fold ([[#rev-r2]]). {#l147}
 - **Ruling L139:** all of ch-bsd r1 folds ([[#rev-r1]]); the linter order ([[#r7]]). {#l139}
 - **Ruling L132:** [[#r5]] stays; the recount AC is all three classes at 0

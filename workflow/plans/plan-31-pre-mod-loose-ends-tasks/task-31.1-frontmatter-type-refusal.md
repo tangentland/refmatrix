@@ -2,7 +2,7 @@
 gmd: "0.1"
 id: task-31.1-frontmatter-type-refusal
 title: "Task 31.1: a non-string frontmatter id or title is refused per file by lint and ingest alike, named on every route, and no longer fails the GMD batch (bug-244, bug-255, bug-258)"
-tags: [task, plan-31, gmd, ingest, sync, lint, parity, frontmatter, batch-failure, bug-244, bug-255, bug-258, bug-264]
+tags: [task, plan-31, gmd, ingest, sync, bridge, lint, parity, frontmatter, batch-failure, bug-244, bug-255, bug-258, bug-264, bug-206]
 metadata:
   node_type: task
   status: drafting
@@ -21,8 +21,10 @@ metadata:
 > 31.6. It needs 31.3's shared gate-tree helper and lands its upstream lint commit on top of
 > 31.4's ([[#r3-upstream]]); it is never in flight together with 31.4 or 31.6.
 > Closes: bug-244 (the ingest side), bug-255 (the lint side), bug-258 (the skip that two
-> routes drop) and **bug-264** (a plain edit of a synced GMD doc drops its anchors' inbound
-> edges; live, moved here from 31.2 by ruling L144), all in [[bug_registry#registry]].
+> routes drop), **bug-264** (a plain edit of a synced GMD doc drops its anchors' inbound
+> edges; live, moved here from 31.2 by ruling L144) and **bug-206** (a memory keeps the
+> anchor of a heading deleted in place; closed here by ruling L148, [[#r6-removed-scope]]),
+> all in [[bug_registry#registry]].
 > Decision: `plan-31 D11`, decided in [[plan-of-plans#decisions]] ([[#d11]]).
 > Base for every measurement here: `f3a508f` (2026-11-15).
 
@@ -332,13 +334,20 @@ inbound edges (8 links in ch-bsd's probe, `bsd31b-r2-stale-anchor-probe.log`). T
 bug-206's class, on every synced doc. So the GMD pass removes what the new text no longer
 names: {#r6-removed}
 
-- **Which rows.** When `ingest_gmd_paths` re-derives a doc on a non-memory route, after
-  pass 1 has written the new parse: every GMD row at the file's path (literal or resolved)
-  that the new parse did not produce. That is each anchor concept (`meta.gmd_node`) whose
-  name is not one of the new parse's node names, and a `doc` row at the path whose name is
-  neither the new doc id nor the relpath (the row a changed `id:` leaves behind). An anchor
-  a memory owns ([[task-31.2-learned-evidence-agreement#r3-memory]]'s keep, 26.2) is never
-  selected. {#r6-removed-rows}
+- **Which rows.** When `ingest_gmd_paths` re-derives a file, on any route, after pass 1 has
+  written the new parse: every GMD row at the file's path (literal or resolved) that the new
+  parse did not produce. That is each anchor concept (`meta.gmd_node`) whose name is not
+  one of the new parse's node names, and, on a non-memory route, a `doc` row at the path
+  whose name is neither the new doc id nor the relpath (the row a changed `id:` leaves
+  behind). {#r6-removed-rows}
+- **On the bridge** (`as_memory=True`) the file is a memory and the anchors judged are that
+  memory's own `<id>#…` concepts. 26.2's keep in `purge_path` protects exactly those rows
+  from a purge of the path, which is why a heading deleted in place left its anchor for as
+  long as the memory lived (bug-206). This rule does not go through `purge_path`: the
+  memory's own re-derive decides, from its own new text, which of its anchors still exist.
+  The `memory` row itself is never removed here, whatever the file's `id:` now says:
+  forgetting a memory is `forget_memory`'s. On a non-memory route an anchor that a memory
+  owns is never selected. {#r6-removed-bridge}
 - **How.** One `purge_entity` per row, so every link at either end goes and each is logged.
   Counted on `IngestStats.anchors_removed`, with the names, and printed in the report and
   on the routes of [[#r2]] when non-zero. The doc row and every anchor the new parse still
@@ -357,10 +366,12 @@ names: {#r6-removed}
   this rule removes it with the anchor. An outgoing edge of the removed anchor itself goes
   with the anchor here, and R5 then finds that key already gone. The removal runs first
   (after pass 1), R5 after the doc's pass-2 writes. {#r6-removed-r5}
-- **Scope.** The non-memory routes: sync, the code+docs pass and `ingest-gmd` on docs. The
-  bridge never had the whole-path purge, so this task changes nothing there; a memory's
-  removed anchor is bug-206, still open, and the same function can serve it. Whether bug-206
-  closes here is the lead's to rule. {#r6-removed-scope}
+- **Scope: every route, one function** (ruling L148). Sync, the code+docs pass, `ingest-gmd`
+  on docs, and the bridge. The bridge never had the whole-path purge, so there the defect is
+  older than this task: it is bug-206, a stale anchor concept on a memory, and it closes
+  here. The inbound-edge rule of [[#r6-removed-inbound]] is the same on the bridge: a
+  memory's `rel:` line to another memory's removed anchor becomes a pending row.
+  {#r6-removed-scope}
 
 ## Acceptance criteria {#acceptance}
 
@@ -463,11 +474,17 @@ unless said otherwise. {#acceptance-intro}
   under the new id exist. All of it also through `rmx ingest` (the twin). **RED** at base
   only together with R6's narrow purge: at base the whole-path purge removes the anchor and
   everything else with it, so this leg is written against the R6 tree and its RED run is
-  recorded there (E line: `adoc#sec` still exists with 8 links, as ch-bsd's probe). A guard
-  leg on the bridge: a memory file with a heading removed is re-bridged and its anchors are
-  what they are at base (the stale one stays; that is bug-206, not changed here). If the
-  lead rules that bug-206 closes in this task, this leg flips to assert the removal
-  ([[#r6-removed-scope]]). {#ac-11}
+  recorded there (E line: `adoc#sec` still exists with 8 links, as ch-bsd's probe). **The
+  bridge leg (bug-206, ruling L148):** memories `m` (headings `{#sec}` and `{#keep}`) and
+  `n` (a `rel:` line to `m#sec`) are bridged with `ingest-gmd --as-memory`; `m`'s `sec`
+  heading is deleted in place and the dir is bridged again. Asserted: no entity named
+  `m#sec` exists and no link has its old id at either end; the `memory` row `m` and `m#keep`
+  keep their ids and `m`'s content is the new text; `n`'s line has a pending row; the
+  bridge's report prints `anchors_removed: 1` with the name; a `purge_path` of `m`'s file
+  afterwards still keeps `m#keep` (26.2's keep is unchanged). Then the heading is put back
+  and the dir bridged: `n`'s edge to `m#sec` is live again though `n` was not touched.
+  **RED** at base (E line: `m#sec` still exists after the second bridge), which is bug-206
+  as registered. {#ac-11}
 
 ## Must-fail mutations {#mutations}
 
@@ -499,7 +516,9 @@ Committed first, restored one at a time; each must make a test **fail**, not han
 | 25 | the removed-anchor step purges every anchor at the path, kept ones too | AC-11 (`adoc#keep` has a new id) |
 | 26 | an inbound `rel:` edge to a removed anchor leaves no pending row | AC-11's put-back step (`b`'s edge does not return) |
 | 27 | the stale `doc` row of a changed `id:` is kept | AC-11's second variant |
-| 28 | the removed-anchor step also runs on the bridge route | a guard leg: a memory's anchors are as before this task (bug-206 is not changed here) |
+| 28 | the removed-anchor step is skipped on the bridge route (`as_memory`) | AC-11's bridge leg (`m#sec` still exists) |
+| 29 | on the bridge the step selects through `purge_path`'s memory-anchor keep | AC-11's bridge leg (the keep protects the stale anchor: bug-206 again) |
+| 30 | on the bridge the step also removes the `memory` row of an id the file no longer carries | AC-11's bridge leg, with `m`'s `id:` changed: the old memory row is still there |
 | 16 | a refused path stays in `touched_existing` | AC-4's second flush (0 paths touched, the error cleared) |
 | 17 | `flush_queue` does not put a GMD-refused path back | AC-4's second flush on the queue route |
 | 18 | step 2 of [[#r2-sync-order]] dropped (a path the pass skipped is still stamped) | AC-5's second leg |
@@ -619,11 +638,12 @@ The review read `a4d245a`; some findings were already folded at `d788602`.
 
 | Finding | Fold | Where |
 |---|---|---|
-| S1 the narrow purge no longer drops an anchor the edit deleted | the GMD pass removes the rows at the path that the new parse no longer names (anchors, and the `doc` row of a changed id); inbound `rel:` edges go with the anchor and their lines become pending; the interplay with 31.6's unlink rule is stated; a removed-heading leg and five mutations | [[#r6-removed]], [[#r6-removed-rows]], [[#r6-removed-inbound]], [[#r6-removed-r5]], [[#ac-11]], mutations 24-28 |
+| S1 the narrow purge no longer drops an anchor the edit deleted | the GMD pass removes the rows at the path that the new parse no longer names (anchors, and the `doc` row of a changed id); inbound `rel:` edges go with the anchor and their lines become pending; the interplay with 31.6's unlink rule is stated; a removed-heading leg and five mutations | [[#r6-removed]], [[#r6-removed-rows]], [[#r6-removed-inbound]], [[#r6-removed-r5]], [[#r6-removed-bridge]], [[#ac-11]], mutations 24-30 |
 {#rev-r2-table}
 
-For the lead: whether bug-206 (the same class on the memory bridge) closes here or stays
-open ([[#r6-removed-scope]]). {#rev-r2-open}
+Ruled since (L148): bug-206 closes here, so the removed-anchor rule serves the bridge too
+([[#r6-removed-bridge]], [[#r6-removed-scope]], AC-11's bridge leg, mutations 28-30); the
+pending-row conversion stays ([[#r6-removed-inbound]]). {#rev-r2-l148}
 
 ## Decisions {#decisions}
 
@@ -636,6 +656,8 @@ cites them and records none of its own. {#decisions-rule}
   for a failed GMD pass (L112 S2) and a refused memory path (26.2). Amended into
   [[#r2-ingest]], [[#r2-sync]], [[#ac-3]] and [[#ac-4]]. The option not taken was a line on
   stderr and exit 0, as `rmx ingest-gmd`'s report does. {#d11}
+- **Ruling L148:** bug-206 closes here (the bridge route, one function); the pending-row
+  conversion of [[#r6-removed-inbound]] stays. {#l148}
 - **Ruling L147:** ch-bsd r2's finding on [[#r6]] folds ([[#rev-r2]]). {#l147}
 - **Ruling L144:** bug-264 is live and is fixed here ([[#r6]]); 31.2 keeps the learned-row
   halves of its R3. {#l144}
