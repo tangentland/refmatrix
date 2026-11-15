@@ -5,7 +5,7 @@ title: "Task 31.1: a non-string frontmatter id or title is refused per file by l
 tags: [task, plan-31, gmd, ingest, sync, bridge, lint, parity, frontmatter, batch-failure, bug-244, bug-255, bug-258, bug-264, bug-206]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   plan: plan-31-pre-mod-loose-ends
   created: 2026-11-15
   updated: 2026-11-15
@@ -14,8 +14,8 @@ metadata:
 # Task 31.1: frontmatter type refusal {#root}
 
 > Plan: [[plan-31-pre-mod-loose-ends]] ([[plan-31-pre-mod-loose-ends#t1]])
-> Status: drafting (revision 2 after ch-bsd r2, ruling L147; fold tables at [[#rev-r1]] and
-> [[#rev-r2]])
+> Status: **approved** by ruling L149 ([[plan-of-plans#rulings]]) on ch-bsd r3's MEH-only GO, its
+> four MEHs folded ([[#rev-r3]]); earlier folds at [[#rev-r1]] and [[#rev-r2]].
 > Depends on: 0.83.1 / 0.84.0 deployed (it changes the raising input of 0.83.1's S2 and M2
 > tests). Order, fixed by ruling L139 ([[plan-of-plans#rulings]]): 31.3 → 31.4 → **31.1** →
 > 31.6. It needs 31.3's shared gate-tree helper and lands its upstream lint commit on top of
@@ -355,11 +355,29 @@ names: {#r6-removed}
 - **Inbound `rel:` edges from other docs go with the anchor, as stale; their lines become
   pending.** A citing doc's line to the removed anchor now points at nothing. Its edge is
   removed by the purge. For each such edge that has a `rel:` evidence row, that evidence row
-  is deleted and a pending row is written for the citer (`add_pending_ref`, with the row's
-  file, line and link as written), so that the line is counted as unresolved by the recount,
-  the lint's `dangling-anchor` names it at the gate, and it binds again with no edit to the
-  citer if the anchor comes back (bug-216 R10's rule, applied at the moment the target
-  disappears). {#r6-removed-inbound}
+  is deleted and a pending row is written for the citer (`add_pending_ref`), so that the
+  line is counted as unresolved by the recount, the lint's `dangling-anchor` names it at the
+  gate, and it binds again with no edit to the citer if the anchor comes back (bug-216
+  R10's rule, applied at the moment the target disappears). {#r6-removed-inbound}
+- **The pending row's fields** (ch-bsd r3 M1), one row per evidence row, so a root-level
+  line gets two, its own and its root mirror's:
+  - source: the citing entity of the evidence row (its `concept_id` side);
+  - `linkage`: the evidence row's;
+  - `target_name`: **the removed row's own entity name** (`adoc#sec`), never the link as
+    written. `resolve_pending_refs` retries only rows whose `target_name` is a name the
+    batch registers, and once 31.6 lets `[[A#sec]]` bind `adoc#sec` the written form and the
+    name differ; a row keyed by the written form would never re-bind;
+  - `ref`: the link as written, read from the evidence `detail` after `-> `, with a trailing
+    ` (root-mirror)` stripped;
+  - `file`, `line`: the evidence row's;
+  - `weight`: the edge's weight, read before the purge;
+  - `detail`: the evidence row's own, so the root-mirror marker survives.
+  {#r6-removed-fields}
+- **A removed `doc` row is converted the same way** (ch-bsd r3 M2). When a changed `id:`
+  leaves the old `doc` row to be removed, the lines of other docs that cite the old id lose
+  their edges with it. Each gets a pending row by the same fields, `target_name` the old doc
+  id, so the citer is named as unresolved and binds again if the old id returns.
+  {#r6-removed-doc-row}
 - **With 31.6's unlink rule.** [[task-31.6-one-wikilink-resolver#r5]] unlinks the re-derived
   doc's own outgoing `rel:` edges that its new text no longer states, by that doc's evidence
   keys. An inbound edge from another doc is never one of those keys, so R5 does not see it;
@@ -470,8 +488,12 @@ unless said otherwise. {#acceptance-intro}
   keep their ids; `b`'s line has a pending row and no `rel:` evidence row;
   `anchors_removed` is 1 and names it. Then `{#sec}` is put back and `a` synced: `b`'s edge
   to the new `adoc#sec` is live again though `b` was never touched. A second variant
-  changes `a`'s `id:`: the `doc` row under the old id and its anchors are gone, the rows
-  under the new id exist. All of it also through `rmx ingest` (the twin). **RED** at base
+  changes `a`'s `id:`, with a doc `c` that cites the old id bare (`[[adoc]]`): the `doc` row
+  under the old id and its anchors are gone, the rows under the new id exist, and `c`'s
+  line has a pending row whose `target_name` is `adoc`; changing the `id:` back re-binds `c`
+  untouched. In every put-back step the test also reads the pending row before the
+  put-back and asserts its `target_name` is the removed row's entity name and its `detail`
+  is the evidence row's. All of it also through `rmx ingest` (the twin). **RED** at base
   only together with R6's narrow purge: at base the whole-path purge removes the anchor and
   everything else with it, so this leg is written against the R6 tree and its RED run is
   recorded there (E line: `adoc#sec` still exists with 8 links, as ch-bsd's probe). **The
@@ -519,6 +541,9 @@ Committed first, restored one at a time; each must make a test **fail**, not han
 | 28 | the removed-anchor step is skipped on the bridge route (`as_memory`) | AC-11's bridge leg (`m#sec` still exists) |
 | 29 | on the bridge the step selects through `purge_path`'s memory-anchor keep | AC-11's bridge leg (the keep protects the stale anchor: bug-206 again) |
 | 30 | on the bridge the step also removes the `memory` row of an id the file no longer carries | AC-11's bridge leg, with `m`'s `id:` changed: the old memory row is still there |
+| 31 | the pending row's `target_name` is the link as written | AC-11's field assertion; and [[task-31.6-one-wikilink-resolver#ac-4]]'s put-back with a stem-written link, where the two forms differ |
+| 32 | a removed `doc` row's citers get no pending row | AC-11's second variant (`c` does not re-bind) |
+| 33 | the root-mirror evidence row gets no pending row of its own | AC-11's put-back (one of `b`'s two edges does not return) |
 | 16 | a refused path stays in `touched_existing` | AC-4's second flush (0 paths touched, the error cleared) |
 | 17 | `flush_queue` does not put a GMD-refused path back | AC-4's second flush on the queue route |
 | 18 | step 2 of [[#r2-sync-order]] dropped (a path the pass skipped is still stamped) | AC-5's second leg |
@@ -645,6 +670,14 @@ Ruled since (L148): bug-206 closes here, so the removed-anchor rule serves the b
 ([[#r6-removed-bridge]], [[#r6-removed-scope]], AC-11's bridge leg, mutations 28-30); the
 pending-row conversion stays ([[#r6-removed-inbound]]). {#rev-r2-l148}
 
+## Revision 3: fold of ch-bsd r3's MEHs (ruling L149) {#rev-r3}
+
+| Finding | Fold | Where |
+|---|---|---|
+| M1 the converted pending row's fields are not all named | every field is named; `target_name` is the removed row's own entity name | [[#r6-removed-fields]], [[#ac-11]], mutations 31, 33 |
+| M2 a removed `doc` row's citers get no pending rows | the same conversion for the old `doc` row of a changed `id:`; a citer in AC-11's second variant | [[#r6-removed-doc-row]], [[#ac-11]], mutation 32 |
+{#rev-r3-table}
+
 ## Decisions {#decisions}
 
 Decisions live in [[plan-of-plans#decisions]] and [[plan-of-plans#rulings]]; this section
@@ -656,6 +689,8 @@ cites them and records none of its own. {#decisions-rule}
   for a failed GMD pass (L112 S2) and a refused memory path (26.2). Amended into
   [[#r2-ingest]], [[#r2-sync]], [[#ac-3]] and [[#ac-4]]. The option not taken was a line on
   stderr and exit 0, as `rmx ingest-gmd`'s report does. {#d11}
+- **Ruling L149:** approved on ch-bsd r3's MEH-only GO; its two MEHs here are folded
+  ([[#rev-r3]]). {#l149}
 - **Ruling L148:** bug-206 closes here (the bridge route, one function); the pending-row
   conversion of [[#r6-removed-inbound]] stays. {#l148}
 - **Ruling L147:** ch-bsd r2's finding on [[#r6]] folds ([[#rev-r2]]). {#l147}

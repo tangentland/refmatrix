@@ -5,7 +5,7 @@ title: "Task 31.6: lint and ingest resolve a wikilink's doc through one resolver
 tags: [task, plan-31, gmd, lint, ingest, wikilink, resolver, graph-correctness, bug-251]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   plan: plan-31-pre-mod-loose-ends
   created: 2026-11-15
   updated: 2026-11-15
@@ -15,8 +15,8 @@ metadata:
 
 > Plan: [[plan-31-pre-mod-loose-ends]] ([[plan-31-pre-mod-loose-ends#t6]]); admitted by the
 > user, Q30 = a, 2026-11-15.
-> Status: drafting (revision 2 after ch-bsd r2, ruling L147; fold tables at [[#rev-r1]] and
-> [[#rev-r2]])
+> Status: **approved** by ruling L149 ([[plan-of-plans#rulings]]) on ch-bsd r3's MEH-only GO, its
+> four MEHs folded ([[#rev-r3]]); earlier folds at [[#rev-r1]] and [[#rev-r2]].
 > Depends on: [[task-31.1-frontmatter-type-refusal]] merged first (both edit
 > `ingest_gmd.py`). Order, fixed by ruling L139 ([[plan-of-plans#rulings]]): 31.3 → 31.4 →
 > 31.1 → **31.6**, never two in flight; it needs 31.3's gate-tree helper and makes its
@@ -486,6 +486,16 @@ manifest, in the same user-gated window as the reingest. {#r10-body}
   row carries the running code's `gmd` hash and a skipped count of 0; otherwise it refuses
   and names `rmx reingest --force --no-sessions`. The dry run prints the marker it found.
   Nothing else writes that pass name. {#r10-marker}
+- **The marker's writer is not `stamp_derive`** (ch-bsd r3 M3). `stamp_derive` would upsert a
+  `derive_stamps` row for a pass `_DERIVE_PASS_MODULES` does not map, hash the union of all
+  modules (an unmapped pass reads as maximally stale), and fill `counts` from the
+  partition's shape. The marker is one `INSERT` into `derive_history`, made by a store
+  method of its own (`Store.mark_forced_reingest`), with `pass_name` `reingest-force`,
+  `code_hash = derive_code_hash("gmd")`, the running version, and `counts` exactly
+  `{"gmd_docs_reprocessed": N, "gmd_docs_skipped_unchanged": K}`. It writes no
+  `derive_stamps` row and adds no pass to `_DERIVE_PASS_MODULES`, so `rmx derive`'s status
+  (which reads the stamps) does not list it, and `rmx derive log` shows it as a history row.
+  {#r10-marker-writer}
 - **The op.** `rmx repair-index --rel-residue` (a verb, a daemon op and the CLI flag, beside
   `--entities` and `--fragments`). With `--dry-run` it prints the count of the class, the
   count that has the right twin, the `reinforces` count, and the other evidence-less edges
@@ -531,7 +541,11 @@ New tests live in `tests/test_bug251_one_resolver.py` unless said otherwise.
   the ingest binds or leaves a pending row). {#ac-3}
 - **AC-4: a late target.** The citer is ingested before its stem-addressed target exists;
   the target is ingested in a later call; the pending row resolves to the doc. **RED** at
-  base (E line: the row stays pending). {#ac-4}
+  base (E line: the row stays pending). A second leg, for 31.1's removed-anchor rule: the
+  citer's link is written by stem (`[[A#sec]]` for a doc whose id is `adoc`); the heading is
+  removed and then put back; the citer's edge returns, because the pending row 31.1 wrote
+  is keyed by the anchor's entity name and not by the link as written
+  ([[task-31.1-frontmatter-type-refusal#r6-removed-fields]]). {#ac-4}
 - **AC-5: re-binding replaces, by bug-185 R10's legs.** A store holding the misbinding (the
   citer's line bound to the path-less concept; built in the test by writing that edge and its
   evidence row). The citer is re-processed:
@@ -618,7 +632,9 @@ New tests live in `tests/test_bug251_one_resolver.py` unless said otherwise.
   unwritable, nothing is unlinked; a rebuild from the log agrees. The marker: with no
   `reingest-force` row the apply refuses; after a one-file sync (which refreshes the `gmd`
   stamp) it still refuses; after `rmx reingest --force` on the throwaway store it applies; a
-  marker row whose code hash is not the running code's refuses. **RED** at base (the flag does not exist). {#ac-12}
+  marker row whose code hash is not the running code's refuses. The marker row's `code_hash`
+  equals `derive_code_hash("gmd")`, its `counts` holds the two stated keys, and no
+  `derive_stamps` row is named `reingest-force`. **RED** at base (the flag does not exist). {#ac-12}
 - **AC-13: the dev store's residue.** In the reingest window, after the reingest:
   the dry run's class count equals `rel_residue_census.py`'s on a copy taken just before
   (114 on the copy of 2026-11-15 02:34, 18 of them `reinforces`; the count is taken again
@@ -661,6 +677,7 @@ New tests live in `tests/test_bug251_one_resolver.py` unless said otherwise.
 | 18 | the cleanup unlinks before it writes the manifest | AC-12's failing-unlink leg |
 | 19 | the cleanup accepts the `gmd` derive stamp as proof of the reingest | AC-12's marker leg (it applies after a one-file sync) |
 | 19a | `rmx reingest` without `--force`, or with a failed step, writes the marker | AC-12's marker leg, with those two runs added |
+| 19c | the marker is written through `stamp_derive` | AC-12's marker leg (the union hash is not the `gmd` hash, so the apply refuses after `reingest --force`; and a `derive_stamps` row named `reingest-force` exists where none is asserted) |
 | 19b | the op's excluded set differs from `NO_EVIDENCE_LINKAGES` (drops `part-of`) | AC-12 (the containment edge is unlinked) |
 | 20 | drop the `# gate-file:` line for `resolve.py` | every test that builds a gate tree (the lint's import fails) |
 {#mutations-table}
@@ -790,6 +807,14 @@ The review read `a4d245a`; R5 had already been rewritten as bug-185 R10's rule a
 | S1 (31.1's) a removed anchor | cross-reference: 31.1 removes it with its edges before this task's unlink rule runs | [[#r5-removed-anchor]] |
 {#rev-r2-table}
 
+## Revision 3: fold of ch-bsd r3's MEHs (ruling L149) {#rev-r3}
+
+| Finding | Fold | Where |
+|---|---|---|
+| M3 name the writer of the `reingest-force` row | one `derive_history` insert by its own store method, with the `gmd` code hash and the two stated counts; no stamp row, no new pass | [[#r10-marker-writer]], [[#ac-12]], mutation 19c |
+| M1 (31.1's) the pending row is keyed by the anchor's name | a put-back leg with a stem-written link, where the written form and the name differ | [[#ac-4]] |
+{#rev-r3-table}
+
 ## Decisions {#decisions}
 
 Decisions live in [[plan-of-plans#decisions]] and [[plan-of-plans#rulings]]; this section
@@ -803,6 +828,8 @@ cites them and records none of its own. {#decisions-rule}
   form on both sides. {#d12}
 - **Ruling L136:** (1) this task builds bug-185 R10's rule ([[#r5-whose]]); (3) it owns the
   cleanup of the misbinding's residue ([[#r10]]). {#l136}
+- **Ruling L149:** approved on ch-bsd r3's MEH-only GO; its MEH here is folded
+  ([[#rev-r3]]). {#l149}
 - **Ruling L148 (3):** the `reingest-force` marker of [[#r10-marker]] is accepted. {#l148}
 - **Ruling L147:** ch-bsd r2's three findings here fold ([[#rev-r2]]). {#l147}
 - **Ruling L139:** all of ch-bsd r1 folds ([[#rev-r1]]); the linter order ([[#r7]]). {#l139}

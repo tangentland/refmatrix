@@ -5,7 +5,7 @@ title: "Task 31.2: purge, vacuum, compaction and replay agree about evidence; an
 tags: [task, plan-31, learned-rows, evidence, purge, vacuum, replay, facts-log, bug-107, bug-247]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   plan: plan-31-pre-mod-loose-ends
   created: 2026-11-15
   updated: 2026-11-15
@@ -14,8 +14,8 @@ metadata:
 # Task 31.2: learned evidence agreement {#root}
 
 > Plan: [[plan-31-pre-mod-loose-ends]] ([[plan-31-pre-mod-loose-ends#t2]])
-> Status: drafting (revision 2 after ch-bsd r2, ruling L147; fold tables at [[#rev-r1]] and
-> [[#rev-r2]])
+> Status: **approved** by ruling L149 ([[plan-of-plans#rulings]]) on ch-bsd r3's MEH-only GO, its
+> four MEHs folded ([[#rev-r3]]); earlier folds at [[#rev-r1]] and [[#rev-r2]].
 > Depends on: 29.5 released ([[task-29.5-split-giant-modules]]): the purge code is then in
 > `store_removal.py` and the replay in `store_replay.py`. Written against that layout
 > ([[#layout]]).
@@ -665,8 +665,13 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
   through the daemon and in-process: `adoc` and `adoc#sec` keep their ids, `b`'s edges to
   `adoc#sec` are live, `a`'s content-hash stamp is rewritten (the pass ran in spite of the
   unchanged file), and a learned row on `a`'s relpath row is kept. **RED** at base
-  (E line: the purge goes to the replica, or the learned rows are gone; for the GMD leg, the
-  anchor has a new id and `b`'s edges are 0). {#ac-14}
+  (E line: the purge goes to the replica, or the learned rows are gone). For the GMD leg the
+  E line at base is exact (ch-bsd r3 M4): in-process, `rmx sync -i a` with no `-f`,
+  `--since` or `--flush-queue` runs `purge_path` and stops, so nothing re-derives `a` in
+  that command: **`adoc#sec` is absent** (it would get a new id only at a later sync) and
+  `b`'s edges are 0; through a daemon the purge reaches the replica (bug-203) and nothing
+  changes on the writer. A run that shows the anchor present with a new id is not this RED.
+  {#ac-14}
 - **AC-15: a manifest can be re-applied** (ch-bsd r1 M7, condition 1). A test reads the
   cleanup manifest AC-3 wrote and the one AC-7 wrote and re-applies each with store methods
   that exist today (`upsert_entity`, `link`, `add_evidence`, `set_entity_flag`): the
@@ -826,6 +831,16 @@ The review read `a4d245a`; D14, the manifest form and bug-260's leg had already 
 | M4 `rmx sync -i` on an existing GMD file is still bug-264's shape | it takes the GMD dispatch (31.1's narrow purge with this task's learned keep, then a forced re-derive with the removed-anchor rule); a GMD leg on AC-14; two mutations | [[#r3-sites]], [[#r3-invalidate-gmd]], [[#ac-14]], mutations 33, 34 |
 {#rev-r2-table}
 
+## Revision 3: fold of ch-bsd r3's MEH (ruling L149) {#rev-r3}
+
+| Finding | Fold | Where |
+|---|---|---|
+| M4 AC-14's GMD-leg RED line is not what happens at base | at base `-i` purges and stops: the anchor is absent, not re-numbered; on the daemon route it reaches the replica | [[#ac-14]] |
+{#rev-r3-table}
+
+Approved with one point still open in the text: `plan-31 D14`'s reading of "resolved" stays
+conditional on Q38 ([[#r7-line]]); the task builds after 29.5. {#rev-r3-open}
+
 ## Decisions {#decisions}
 
 Decisions live in [[plan-of-plans#decisions]] and [[plan-of-plans#rulings]]; this section
@@ -843,6 +858,8 @@ cites them and records none of its own. {#decisions-rule}
   [[#r7-line-table]]. {#q38}
 - **Ruling L136 (2):** Q39 is withdrawn. This task routes `rmx sync -i` to the writer
   (bug-203), unconditionally ([[#r3-invalidate]], [[#ac-14]], mutation 21). {#l136}
+- **Ruling L149:** approved on ch-bsd r3's MEH-only GO; its MEH here is folded
+  ([[#rev-r3]]). D14's reading stays conditional on Q38. {#l149}
 - **Ruling L147:** ch-bsd r2's finding here folds ([[#rev-r2]]). {#l147}
 - **Ruling L144:** bug-264 is fixed in 31.1; this task keeps the learned-row halves of R3;
   bug-262 is fixed here; bug-263 is post-mod. {#l144}
