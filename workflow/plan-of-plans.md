@@ -434,12 +434,13 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 
 ### Questions to the user {#questions}
 
-Next id: **Q41**. Open: Q38, Q40. Each reply that asks anything ends with the ids still open.
+Next id: **Q42**. Open: Q38, Q40, Q41. Each reply that asks anything ends with the ids still open.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
 | Q38 | 2026-11-15 | plan-31 D14 says "migrate them if they can be resolved, if not, delete them". What does "resolved" mean for the 30,131 orphaned learned rows? (Split re-measured by arch-31b after the 2026-11-15 archive commit `903f7f5`, which moved two review docs that 254 orphans name; the dry run at the store event binds, since the split follows the tree.) | (a) **matched to the current entity** (concept is a `query/` concept, exactly one same-named entity of the learner's kind, file on disk): **29,824 re-attached, 307 deleted** with a manifest (11 concept gone, 42 no entity, 254 file gone); at read time only rows whose recorded line still holds the pattern are served (recommended: a learned row is a query-to-file association; a moved line is a serve-time question the line check already answers); (b) **the recorded line still holds the pattern**: **12,645 re-attached** (9,634 literal, 3,011 regex only), **17,486 deleted**. Under either reading, a file that is archived or moved takes its learned rows to the manifest | open |
 | Q40 | 2026-11-15 | Three admitted tasks edit `ingest_gmd.py` / `ingest.py` (pass files): 31.1, 31.6 and 26.5. Each release flips derive verdicts fleet-wide, and each store then needs a forced reingest (refmatrix ≈ 63 min at 0.84.0, bug-252), a store-on-disk change needing your go. How should the reingests be windowed? | (a) **one window**: land 31.1, 31.6 and 26.5 first, then one forced reingest per store — refmatrix at 26.8, the rest in their plan-27 windows (recommended: one reingest per store instead of up to three; 31.6's re-bind and the 114-edge cleanup ride the same window); (b) a reingest after each release; (c) decide per release when it ships | open |
+| Q41 | 2026-11-15 | The two freshness revisions that ran past the lead's stop found the frozen specs not fully actionable: about ten T2 ACs cannot be built as written on master (green at base, unreachable, a forbidden tree walk, 176 dangling links), and bug-218 holds ten traps for a RED author ([[agent-brief-t2-red-notes]], [[agent-brief-bug218-red-notes]]). t4, t3a and t3b are likely the same. How should a frozen track be readied? | (a) **just in time**: when a track reaches the head of the queue, an architect re-read plus a ch-bsd confirm-lite right before its RED (about an hour per track, only when it is next) (recommended); (b) build as they stand, the RED author reconciling as it goes (the user's 2026-11-15 call) | open |
 {#questions-table}
 
 ## Pending bookkeeping (2026-11-15) {#pending-bookkeeping}
