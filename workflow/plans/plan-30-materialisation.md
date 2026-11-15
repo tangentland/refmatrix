@@ -12,7 +12,7 @@ metadata:
 
 # Plan 30: adjacency and bitmap materialisation {#root}
 
-**Date:** 2026-11-14, revised 2026-11-15. **Status:** drafting: the plan and six task specs under
+**Date:** 2026-11-14, revised 2026-11-15. **Status:** approved (2026-11-15): the plan and six task specs under
 `workflow/plans/plan-30-materialisation-tasks/`, written by ch-architect on Fable 5.2. ch-bsd's
 spec review r1 was DIRTY (0 BULLSHIT, 3 SKETCHY, 5 MEH; [[bsd-plan30-spec-r1]]); ruling L116
 folded all eight, and [[#rev-note-2]] says where. The confirm-lite r2 was MEH-only (0 BULLSHIT, 0 SKETCHY, 4 MEH), GO
@@ -142,7 +142,7 @@ the derive digest's prior leg is equal. Spec: [[task-30.2-vectorised-adjacency-b
 ### 30.3 The disk tier's fate {#t3}
 
 Applies 30.0's verdict to `cached_adjacency`, in the same release as 30.2. If the verdict is
-drop, the tier's code is removed and the two files are deleted from each store by an announced
+drop, the tier's code is removed and the two files are moved out of each store by an announced
 step. Spec: [[task-30.3-disk-tier-fate]]. {#t3-summary}
 
 ### 30.4 The daemon keeps the adjacency; the hook asks for the ranking {#t4}
@@ -171,7 +171,7 @@ runs RED → GREEN → mutation → ch-bsd. {#order-list}
 | Release | Holds | Edits a derive-pass file? | Store event |
 |---|---|---|---|
 | **A** | 30.5 | no (`store_fragments.py` is in no pass's set) | none |
-| **B** | 30.1 + 30.2 + 30.3: every `pagerank.py` edit of the plan | yes: `pagerank.py` | the `pagerank` pass is re-derived on every partition of every fleet store, in one announced window ([[#decisions]] D2); the tier's files are deleted if the verdict is drop (D3) |
+| **B** | 30.1 + 30.2 + 30.3: every `pagerank.py` edit of the plan | yes: `pagerank.py` | the `pagerank` pass is re-derived on every partition of every fleet store, in one announced window, backups first ([[#decisions]] D2); the tier's files are moved out to a backup directory if the verdict is drop (D3) |
 | **C** | 30.4 | no: 30.4 has an AC that its diff touches no file `_DERIVE_PASS_MODULES` names | none on disk; daemons restart as in any deploy |
 {#releases-table}
 
@@ -217,8 +217,21 @@ memory** (report recommendations 4 and 5) are not built by this plan. {#deferred
 
 ## Decisions {#decisions}
 
-**Decided by the user, 2026-11-15** (ruling L117): D1 (a), D2 go, D3 yes with the files MOVED to a backup
-directory, not deleted. {#decisions-user}
+**Decided by the user, 2026-11-15** (ruling L117, written on `master` at the plan-30 merge). Each
+was decided as recommended; the options are kept below as the record of what was asked.
+
+- **plan-30 D1 = (a): yes, bounded.** `ppr_rank` waits up to 0.25 s for a build in flight, then
+  serves a graph at most 10 s behind with the lag stated; otherwise the hook ranks in-process.
+  A failed build or publish is warned as `build-failed`, never answered as "behind".
+- **plan-30 D2 = go.** One announced window after release B deploys, run by the lead, with
+  backups of every fleet store first; the `pagerank` pass is then re-derived on every partition
+  and checked.
+- **plan-30 D3 = yes, moved, not deleted.** On a drop verdict, 30.3's announced step moves
+  `adjacency.cache.npz` and `adjacency.cache.json` out of each fleet store into a backup
+  directory.
+{#decisions-user-decided}
+
+**As asked.** {#decisions-user}
 
 1. **plan-30 D1: may the daemon answer `ppr_rank` from a graph that is one or more publishes
    behind?** A rebuild takes about 0.5 s after a write batch that changed the key's inputs.
@@ -269,7 +282,7 @@ directory, not deleted. {#decisions-user}
     `net`'s order among equal-support nodes becomes deterministic
     ([[task-30.2-vectorised-adjacency-build#decisions]]).
 11. **plan-30 D11:** the disk tier's fate follows 30.0's bands with no further question, except
-    D3's deletion ([[task-30.0-disk-tier-probe#bands]]).
+    D3's move of the files ([[task-30.0-disk-tier-probe#bands]]).
 12. **plan-30 D12 (round 2):** a key is rebuilt only when its own inputs changed, decided by
     reading those inputs from the snapshot with the build's own read step, not by per-partition
     marks set on the write path ([[task-30.4-daemon-adjacency-ppr-op#r3-why-not-marks]]). Ruling
@@ -360,5 +373,6 @@ or publish is never answered as "behind". {#rev-note-2-decisions}
 | M4: AC-4's leg answered `building` | 30.4 | the entry is built first ([[task-30.4-daemon-adjacency-ppr-op#ac-4]]) |
 {#rev-note-3-table}
 
-plan-30 D12 is accepted (ch-bsd r2; lead, ruling L117). plan-30 D1, D2 and D3 are open, with the
-user. {#rev-note-3-decisions}
+plan-30 D12 is accepted (ch-bsd r2; lead, ruling L117). plan-30 D1, D2 and D3 were then decided
+by the user as recommended ([[#decisions-user-decided]]), and the plan is approved.
+{#rev-note-3-decisions}

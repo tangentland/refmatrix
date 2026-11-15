@@ -21,7 +21,8 @@ metadata:
 > ([[plan-30-materialisation#releases]]).
 > **Exactly one of [[#drop]], [[#rekey]], [[#keep]] is built.** At the task's start the lead
 > records 30.0's verdict here and strikes the other two sections in a spec revision commit.
-> User gates: plan-30 D3, if the verdict is drop (moving the files out of live stores).
+> User gates: plan-30 D3, if the verdict is drop: decided yes by the user on 2026-11-15. The
+> files are moved into a backup directory, not deleted, by an announced step ([[#drop]] D-R3).
 
 rel: part-of -> [[plan-30-materialisation]]
 rel: implements -> [[plan-30-materialisation#t3]]
