@@ -24,6 +24,17 @@ rel: related-to -> [[plan-of-plans]]
 
 The session handoff (`handoff.md` `#open`) points here instead of keeping its own question list.
 
+## Session 070141d0 (2026-11-14/15) {#session-070141d0}
+
+Next id: **Q27**. Proposal: [[workflow-practice-review-2026-11-15]].
+
+| id | asked | question | options (lead's recommendation first) | status |
+|---|---|---|---|---|
+| Q23 | 2026-11-15 | Review gate: drop `/ch-review` as a mandatory step (ch-bsd + L-ruling + confirm-lite is the gate)? | (a) optional, on large src changes or request; (b) keep mandatory | open |
+| Q24 | 2026-11-15 | Where the operating procedure lives | (a) new `workflow/ORCHESTRATION.md` + short CLAUDE.md summary; (b) all inline in CLAUDE.md | open |
+| Q25 | 2026-11-15 | TDD step 0 (`ch-alignment` over `pseudocode/`, which does not exist) and the Docker wording | (a) conditional step 0, host-venv wording; (b) keep as written | open |
+| Q26 | 2026-11-15 | Planning default path | (a) Fable architect → bsd spec rounds → rulings → user Dk → merge; SDD chain kept as available; (b) keep the SDD chain as default | open |
+
 ## Session 37b7498f (2026-11-13) {#session-37b7498f}
 
 Next id: **Q19**.
