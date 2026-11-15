@@ -1,0 +1,53 @@
+pyc-guard: recompiled 21 timestamp pyc(s) under /Volumes/littlebig/refmatrix-scanorder/src/refmatrix as checked-hash (bug-037)
+F.F..                                                                    [100%]
+=================================== FAILURES ===================================
+_________________ test_a_plain_word_only_topic_is_not_emitted __________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1732/test_a_plain_word_only_topic_i0')
+
+    def test_a_plain_word_only_topic_is_not_emitted(tmp_path):
+        root = tmp_path / ".refmatrix"
+        s = stm_mod.Stm(root, "sess")
+        s.record("input", "keep the mechanism relevant", refs=["mechanism", "relevant", "keep"])
+        s.record("input", "mechanism relevant again", refs=["mechanism", "relevant", "keep"])
+>       assert build_topic_composite(None, root, expand=False, session="sess") == ""
+E       assert '# STM topic ...nt, keep\n```' == ''
+E         
+E         + # STM topic composite — current focus (GMD subgraph)
+E         + ```gmd
+E         + ---
+E         + gmd: "0.1"
+E         + id: stm-topic-composite
+E         + title: "STM topic composite"...
+E         
+E         ...Full output truncated (8 lines hidden), use '-vv' to show
+
+tests/test_stm_composite_injection.py:22: AssertionError
+________________ test_an_unchanged_composite_is_not_sent_twice _________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1732/test_an_unchanged_composite_is0')
+
+    def test_an_unchanged_composite_is_not_sent_twice(tmp_path):
+        root = tmp_path / ".refmatrix"
+        s = stm_mod.Stm(root, "sess")
+        s.record("input", "parser and lexer", refs=["parser.py", "lexer"])
+        s.record("tool", "edit parser", refs=["parser.py", "lexer", "tokens"])
+        first = build_topic_composite(None, root, expand=False, session="sess")
+        assert first
+>       assert build_topic_composite(None, root, expand=False, session="sess") == ""
+E       assert '# STM topic ..., tokens\n```' == ''
+E         
+E         + # STM topic composite — current focus (GMD subgraph)
+E         + ```gmd
+E         + ---
+E         + gmd: "0.1"
+E         + id: stm-topic-composite
+E         + title: "STM topic composite"...
+E         
+E         ...Full output truncated (8 lines hidden), use '-vv' to show
+
+tests/test_stm_composite_injection.py:41: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_stm_composite_injection.py::test_a_plain_word_only_topic_is_not_emitted
+FAILED tests/test_stm_composite_injection.py::test_an_unchanged_composite_is_not_sent_twice
+2 failed, 3 passed in 0.24s
