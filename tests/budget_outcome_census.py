@@ -35,8 +35,8 @@ REAL_DAEMON_HELPERS = frozenset({"SandboxDaemon", "spawn_daemon_subprocess"})
 # waits on one before the hook runs has taken the pre-op leg (boot, model warm-up), which held
 # >= 90% of bug-228's overrun, off the budget. A third control form beside `with_budget`,
 # ruled by L159 (2026-11-15) as a deviation from 29.4 #r3-budget-census's two forms. Matched
-# only as a DIRECT call in the test function, on a line before its first run call: a call
-# after the run, or one hidden in a helper, does not count.
+# only as a call that certainly runs before the hook, on the daemon itself
+# (`_waits_ready_before_the_run`; ch-bsd t03 r1 S3, L177).
 READINESS_CALLS = frozenset({"wait_models_warm"})
 OUTCOME_FIELDS = frozenset({"outcome"})
 RUN_CALLS = frozenset({"run_hook", "run_cmd"})
@@ -196,18 +196,58 @@ def _controls_budget(fn: ast.AST, tree: ast.Module) -> bool:
     return _waits_ready_before_the_run(fn)
 
 
+def _call_name(c: ast.Call):
+    f = c.func
+    return f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
+
+
+def _is_daemon_ctor(e: ast.AST) -> bool:
+    return isinstance(e, ast.Call) and _call_name(e) in REAL_DAEMON_HELPERS
+
+
+def _straight_line(stmts: list, daemons: set):
+    """The function's statements that CERTAINLY run, in order: its top-level statements and,
+    recursively, `with` bodies. `if`, `try`, loops, nested `def`s and lambdas are not entered,
+    because a call there may not run (ch-bsd t03 r1 S3, ruling L177). Yields `(node, exprs)`,
+    `exprs` being what that step evaluates itself (a `with` header's context expressions, or a
+    whole simple statement). Names bound to a real daemon (`with SandboxDaemon(...) as d`,
+    `d = SandboxDaemon(...)`) are added to `daemons` as they are bound."""
+    for st in stmts:
+        if isinstance(st, (ast.With, ast.AsyncWith)):
+            yield st, [item.context_expr for item in st.items]
+            for item in st.items:
+                if (isinstance(item.optional_vars, ast.Name)
+                        and _is_daemon_ctor(item.context_expr)):
+                    daemons.add(item.optional_vars.id)
+            yield from _straight_line(st.body, daemons)
+        else:
+            if (isinstance(st, ast.Assign) and _is_daemon_ctor(st.value)
+                    and len(st.targets) == 1 and isinstance(st.targets[0], ast.Name)):
+                daemons.add(st.targets[0].id)
+            yield st, [st]
+
+
 def _waits_ready_before_the_run(fn: ast.AST) -> bool:
-    """A readiness call (`READINESS_CALLS`) on a line before the first call that runs the hook
-    or CLI child (`run_hook`, `run_cmd`): waiting AFTER the run decides nothing."""
-    calls = [n for n in ast.walk(fn) if isinstance(n, ast.Call)]
-
-    def name(c: ast.Call):
-        f = c.func
-        return f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
-
-    ready = [c.lineno for c in calls if name(c) in READINESS_CALLS]
-    runs = [c.lineno for c in calls if name(c) in RUN_CALLS]
-    return bool(ready and runs and min(ready) < min(runs))
+    """L159's form, read so that only a readiness call that CERTAINLY runs first counts (ch-bsd
+    t03 r1 S3, ruling L177, 2026-11-15): an expression statement `d.wait_models_warm(...)` on the
+    function's straight-line path, its receiver `d` a name bound to a real daemon, before the
+    first step that runs the hook or CLI child (`RUN_CALLS`). Not counted: a call after the run,
+    one in a helper (`_ready(d)`), a lambda or nested `def`, one under `if` / `try` / a loop, or
+    one on another receiver (a fixture argument the census cannot tie to the daemon)."""
+    daemons: set = set()
+    ready = False
+    for node, exprs in _straight_line(fn.body, daemons):
+        runs = any(isinstance(c, ast.Call) and _call_name(c) in RUN_CALLS
+                   for e in exprs for c in ast.walk(e))
+        if runs:
+            return ready
+        if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Attribute)
+                and node.value.func.attr in READINESS_CALLS
+                and isinstance(node.value.func.value, ast.Name)
+                and node.value.func.value.id in daemons):
+            ready = True
+    return False
 
 
 def _hits(source: str, relpath: str, extra: frozenset = frozenset()) -> list:

@@ -978,7 +978,22 @@ class Daemon:
             from refmatrix.recall import new_model_client
             client = new_model_client(role, log=self._log, stderr=self.log_fh)
             setattr(self, attr, client)
-            return client
+        if self._stop_began():
+            # bug-272 (ch-bsd t03 r1 M1, ruling L177, 2026-11-15): serve_forever sets
+            # `_shutdown_event` BEFORE `_close_workers` reads these slots, and
+            # `new_model_client` can take up to PROBE_TIMEOUT_S on a mute hub. So either
+            # `_close_workers` read the slot after this assignment and retires the client,
+            # or the event was already set when this check ran: no client built across a
+            # stop serves. Retired (not closed), it refuses every call, so none can spawn
+            # a model process into the stopping daemon; the slot keeps it so later callers
+            # get the same refusal instead of another hub probe.
+            retire = getattr(client, "retire", None)
+            if retire is not None:
+                retire(timeout=2.0, abandon_in_flight=True)
+            else:
+                client.close(timeout=2.0)
+            raise RuntimeError(f"daemon stopping: no new {role} model client")
+        return client
 
     def _maybe_adopt_shared(self, *, now: "float | None" = None) -> list[str]:
         """Re-probe the hub's shared model socket for any role still holding a

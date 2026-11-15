@@ -755,11 +755,16 @@ def shared_embedder(root, *, remote: "Callable[[], object] | None" = None,
             # An interpreter the child cannot reach, a sandbox that forbids spawn, a pipe
             # the OS will not give: not a dense problem. Degrade to the in-process model
             # and say so loudly (it carries the model's RSS).
+            #
+            # `on_fallback` runs FIRST (ch-bsd t03 r1 M4, ruling L177, 2026-11-15): the
+            # daemon's refuses the fallback once its stop began (bug-269) by raising, and
+            # the warning below claimed a load that then never happened. A refusal now
+            # leaves no "falling back" line; the caller logs the refusal instead.
+            if on_fallback is not None:
+                on_fallback()
             warn(f"subprocess embedder unavailable ({exc!r}); falling back to in-process "
                  "model -- this process now carries the model's RSS. Set "
                  "RMX_EMBED_SUBPROC=0 to silence this, or investigate the spawn failure.")
-            if on_fallback is not None:
-                on_fallback()
             if remote is None:
                 e = _load_process_inproc_standin(client, say)
                 say(f"embedder loaded model={e.model_name} dim={e.dim}")

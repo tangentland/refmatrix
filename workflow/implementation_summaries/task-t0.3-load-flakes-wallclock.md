@@ -274,17 +274,18 @@ neither, and `test_bug228_and_bug231_tests_hold_no_entry` forbids an entry, so t
 a third form: `READINESS_CALLS = {"wait_models_warm"}` in `tests/budget_outcome_census.py`,
 one table entry beside `with_budget`.
 
-**How the census tells before from after, and direct from hidden**
-(`_waits_ready_before_the_run`): it collects every `ast.Call` in the test function whose callee
-name (the attribute name, or the bare name) is in `READINESS_CALLS`, and every call whose name is
-in `RUN_CALLS = {"run_hook", "run_cmd"}`, and accepts only when both exist and the smallest
-line number of a readiness call is smaller than the smallest line number of a run call. A
-readiness call after the hook has a larger line number, so it fails. A call hidden in a helper
-(`_ready(d)` whose body calls `wait_models_warm`) is a call named `_ready`, not in the table, so
-it fails too: only the test function's own syntax tree is read for this form. RED's L159 nodes
-(`cdc9c88`: two pass cases, the after-the-hook and the helper must-fails) and the earlier
-must-fails (the frozen base copy, `str.replace`, `with_budget(cmd, budget)`) all pass in
-`green-bug269-fix.log`.
+**How the census tells before from after, and direct from hidden** (`_waits_ready_before_the_run`,
+rewritten in the L177 fold after ch-bsd t03 r1 S3 fooled the first version 5 of 5). It walks only
+the test function's straight-line path: its top-level statements and, recursively, `with`
+bodies; `if`, `try`, loops, nested `def`s and lambdas are not entered. Names bound to a real
+daemon (`with SandboxDaemon(...) as d`, `d = SandboxDaemon(...)`) are tracked as it goes. The form
+counts only when an expression statement `d.wait_models_warm(...)`, with `d` such a name, comes
+on that path before the first step that evaluates a `run_hook` / `run_cmd` call. After the hook:
+the run step comes first, fails. A helper `_ready(d)`: not a `wait_models_warm` call, fails. An
+uncalled lambda, a nested `def`, `try`/`except`, `if False:`, or another receiver (a fixture
+argument): not on the path or not a daemon name, fail (RED's five S3 cases, `e3e131c`). RED's
+L159 pass cases and every earlier must-fail (the frozen base copy, `str.replace`,
+`with_budget(cmd, budget)`) are in the fold's verify run.
 
 **Product row (for the lead's id):** "live recall over its 5 s budget at load 3: the embedder's
 cold load (5.6-9.1 s from daemon start) spent the budget; the recall op waited and never ran"
@@ -358,8 +359,9 @@ assemble a Daemon without `__init__` and drive the warm-up alone
 An earlier draft also made `_model_client` refuse after the stop and took `_worker_lock` in
 `_close_workers`. Both were dropped before commit: the refusal routed `_embedder` into the
 in-process fallback, and the lock broke a unit test whose Daemon has no `_worker_lock`.
-What remains is the narrow race the code already had: a reranker client created in the instant
-between the warm thread's `_stop_began()` check and `_close_workers` reading the attribute.
+The race first named here (a client built across the stop) is bug-272, filed and
+fixed in the L177 fold: `_model_client` retires and refuses a client assigned after the stop
+began ([[#sa-6]])
 
 Not charged to `_StopDeadline`: the worker stage is bounded by its own 2.0 s lock wait plus the
 kill instead (the bound in the Self-audit, Q4).
@@ -488,30 +490,43 @@ recorder calls the real `_spawn`. The T0.3 tests replaced in [[#sites]] keep the
 (CLI via `CliRunner`, verbs, daemon ops, real daemons).
 {#sa-2}
 
-3 **census**: `grep -n 'retire(' src/refmatrix/*.py` and the `getattr(w, "retire", w.close)`
-form: `daemon.py:1174` `_close_workers` (shutdown; passes `abandon_in_flight=True`),
-`daemon.py:1046` `_maybe_adopt_shared` and `recall.py:644` the embed swap (adoption; default,
-waits, so an in-flight ingest batch finishes: deliberate). `_stop_began()`: `daemon.py:938`
-(`_embedder` fallback) and `:1250` (warm-up's reranker step). Left: the hub's shared clients
-(`modelsrv`) close without `retire` and hold no warm lock in the daemon; `_fast_exit`
-(`os._exit(2)` on a lost writer) skips `_close_workers` entirely, unchanged; the narrow race in
-[[#bug269-fix]] (a reranker client made between `_stop_began()` and `_close_workers` reading the
-attribute) is pre-existing and stays.
-{#sa-3}
+3 **census** (corrected in the L177 fold; ch-bsd t03 r1 B1/M1). The worker stage iterates
+over two client classes, both built by `recall.new_model_client` (`recall.py:287-320`):
+`subproc.WorkerClient` (private) and `modelsrv.SharedWorkerClient` (hub-shared, the normal
+state when the hub is up). Callers of `retire`: `daemon.py:1189` `_close_workers` (shutdown,
+`abandon_in_flight=True`, private class only), `daemon.py:992` `_model_client`'s bug-272 refusal
+(same form), `daemon.py:1061` `_maybe_adopt_shared` and `recall.py:644` the embed swap (adoption;
+default, waits, so an in-flight ingest batch finishes: deliberate). `_stop_began()`:
+`daemon.py:938` (`_embedder` fallback), `:981` (`_model_client`, bug-272), `:1265` (warm-up's
+reranker step). Left, and why: (1) `SharedWorkerClient` has no `retire`; `_close_workers` calls
+its `close()`, which ignores its timeout and waits on the client's own `_lock` held by an
+in-flight `call()` (B1 / bug-278, held for the user's answer to Q51; r1's reason "holds no warm
+lock" was wrong). (2) `_fast_exit` (`os._exit(2)` on a lost writer) skips `_close_workers`
+entirely, unchanged.
 
-4 **bound**, stop op to exit. Caller (`daemon.graceful_stop`): `ping` 0.5 s, retries 0; `call
-stop` 2.0 s, retries 0; then polls the pid for `grace`. Daemon: `_op_stop` sets `_stop`; the
-accept loop wakes within `srv.settimeout(1.0)`; `shutdown.started` touch; `_StopDeadline(
-stop_grace_s())` = 45 s − 2 s margin starts here. `_close_workers`, per private worker: lock wait
-≤ 2.0 s, then either `close(2.0)` (EOF wait 2.0 + terminate wait 2.0 + kill wait 2.0) or SIGKILL
-+ wait ≤ 2.0 s: ≤ 8 s per worker, ≤ 16 s for two (before: the remaining cold loads, unbounded;
-measured 22.4 s here). Then watcher join `budget(3.0)`, three pool drains `budget(10)` each,
-flush/repair/replica joins `budget(3.0)` each, `_final_flush` capped by what is left, store close
-`budget(5.0)`: every one of these asks the same deadline, so they shrink by what the workers
-spent. The worker stage itself is not charged to the deadline, so the worst case is max(16 s +
-5 s store close, 43 s) = 43 s at the default grace. No `daemon.call` with default retries is on
-the path.
-{#sa-4}
+
+4 **bound**, stop op to exit (corrected in the L177 fold: per class, by name). Caller
+(`daemon.graceful_stop`): `ping` 0.5 s, retries 0; `call stop` 2.0 s, retries 0; then polls the
+pid for `grace`. Daemon: `_op_stop` sets `_stop`; the accept loop wakes within
+`srv.settimeout(1.0)`; `shutdown.started` touch; `_StopDeadline(stop_grace_s())` = 45 s − 2 s
+margin starts here. `_close_workers`, per client by class:
+- `subproc.WorkerClient` (private): lock wait ≤ 2.0 s, then either `close(2.0)` (EOF wait 2.0 +
+  terminate wait 2.0 + kill wait 2.0) or SIGKILL + wait ≤ 2.0 s: ≤ 8 s each, ≤ 16 s for two
+  (before the fix: the remaining cold loads, unbounded; 22.4 s measured).
+- `modelsrv.SharedWorkerClient` (hub-shared): `close()` waits on the client's `_lock` for as long
+  as an in-flight `call()` holds it, up to that call's socket timeout `SHARED_OP_TIMEOUT_S`
+  (45 s default) per role: ≤ 45 s each, ≤ 90 s for two. **Not bounded by this branch** (B1 /
+  bug-278, held on Q51; ch-bsd measured 5.50 s on a 6 s in-flight call against a mute hub).
+- a client `_model_client` builds after the stop began: retired by the bug-272 check, same bound
+  as its class's retire.
+Then watcher join `budget(3.0)`, three pool drains `budget(10)` each, flush/repair/replica joins
+`budget(3.0)` each, `_final_flush` capped by what is left, store close `budget(5.0)`: every one
+asks the same deadline, so they shrink by what the workers spent. The worker stage is not
+charged to the deadline. Worst case: private clients max(16 s + 5 s, 43 s) = 43 s; with
+hub-shared clients and an op in flight on a slow or mute hub, 90 s + 5 s = 95 s, past the 45 s
+grace and launchd's ExitTimeOut, until B1 lands. No `daemon.call` with default retries is on the
+path.
+
 
 5 **busy**: worker busy (a held cold load) → the lock wait times out at 2.0 s, the process is
 killed, the holder fails with `WorkerError` (the RED node; log above). Worker idle → the lock is
@@ -532,10 +547,16 @@ not reached by any test. bug-190's guard (a spawn on the caller's thread) fires 
 RED child (`_t03_forced_spawn`), `test_r3_4_bug190_a_spawn_on_the_skip_path_names_its_stack`.
 The old `spawns == 0` read cannot be made to fail on demand without injecting a delay: it lost
 only when the background warm's stub recorded its pid before the read (0 of 26 base trials).
-The remaining race no guard covers: the warm thread passes `_stop_began()` just before
-`serve_forever` sets `_shutdown_event`, then creates a reranker client after `_close_workers`
-has read `_rerank_worker` as None; that client's process is then stopped only by the daemon's
-exit (stdin EOF). Pre-existing, narrow, not filed.
+The race r1 left (the warm thread, or any op, assigns a client after `_close_workers` read the
+slot; `new_model_client`'s shared probe can take `PROBE_TIMEOUT_S` = 45 s, and both roles were
+exposed) is **bug-272, filed and fixed** in the L177 fold: (f) `_model_client` checks
+`_stop_began()` AFTER the slot assignment and retires and refuses the client (`RuntimeError:
+daemon stopping: no new <role> model client`). The event is set before `_close_workers` reads the
+slots, so either the stage sees the client or this check sees the event. Test:
+`test_daemon_shutdown.py::test_a_model_client_built_after_the_worker_stage_cannot_serve[embed|rerank]`
+(RED at `041e3ab`). (g) M4: `recall.shared_embedder` runs `on_fallback` before its "falling back to
+in-process model" warning, so a stop's refusal no longer leaves a line claiming a load. Still
+open: B1 / bug-278 (Q51).
 {#sa-6}
 
 7 **loud**: forced bug-269 at the pre-fix tree → pytest exit 1, `E AssertionError: bug-269: the
