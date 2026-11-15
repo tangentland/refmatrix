@@ -530,6 +530,12 @@ client. (b) `_stop_began()` in the warm-up and (c) the `_embedder` fallback refu
 lines above). (d) the "no live process" branch and (e) the post-SIGKILL "still alive" log are
 not reached by any test. bug-190's guard (a spawn on the caller's thread) fires on the forced
 RED child (`_t03_forced_spawn`), `test_r3_4_bug190_a_spawn_on_the_skip_path_names_its_stack`.
+The old `spawns == 0` read cannot be made to fail on demand without injecting a delay: it lost
+only when the background warm's stub recorded its pid before the read (0 of 26 base trials).
+The remaining race no guard covers: the warm thread passes `_stop_began()` just before
+`serve_forever` sets `_shutdown_event`, then creates a reranker client after `_close_workers`
+has read `_rerank_worker` as None; that client's process is then stopped only by the daemon's
+exit (stdin EOF). Pre-existing, narrow, not filed.
 {#sa-6}
 
 7 **loud**: forced bug-269 at the pre-fix tree → pytest exit 1, `E AssertionError: bug-269: the
