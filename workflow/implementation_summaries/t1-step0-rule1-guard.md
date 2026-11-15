@@ -1,4 +1,14 @@
-# T1 step 0: guard for test-discipline rule 1
+---
+gmd: "0.1"
+id: impl-t1-step0-rule1-guard
+title: "T1 step 0: guard test for test-discipline rule 1 (shrink-only allowlist, 90 files)"
+tags: [implementation-summary, t1, tests, test-discipline]
+metadata:
+  node_type: implementation-summary
+  created: 2026-11-15
+---
+
+# T1 step 0: guard for test-discipline rule 1 {#root}
 
 `tests/test_suite_discipline.py` fails when `tests/` (recursive) holds a `.py` file whose stem
 has `_r<digits>` or `_red` as a name component, contains `remedy`, or starts `test_bug<digits>`,
@@ -14,7 +24,7 @@ to `tests/`, sorted (a second test checks sorted and unique).
 - Rule 5: `test_guard_reports_a_new_round_file_and_a_stale_entry` runs the same `check()` over a
   tmp tree with new `_r7`, `remedy`, `test_bug123` and `_red` files and a stale entry; no patching.
 
-## Self-audit
+## Self-audit {#self-audit}
 1 real:     `pytest -q tests/test_suite_discipline.py` → 3 passed; before seeding 1 failed (E line above). No rmx command changed.
 2 wiring:   N/A, a test-only guard with no entry point; it scans the real `tests/` tree.
 3 census:   N/A, no production code changed; the only other copy of the patterns is the prose in CLAUDE.md rule 1 and the T1 row. Count mismatch (90 vs 111) stated above.
