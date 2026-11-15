@@ -1,0 +1,87 @@
+pyc-guard: recompiled 3 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t03/src/refmatrix as checked-hash (bug-037)
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+________________________ test_ac4_a_listed_bound_passes ________________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2291/test_ac4_a_listed_bound_passes0')
+
+    def test_ac4_a_listed_bound_passes(tmp_path):
+>       (key,) = _keys(CLOCKDIFF)
+                 ^^^^^^^^^^^^^^^^
+
+tests/test_wallclock_census.py:240: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_wallclock_census.py:113: in _keys
+    return [b.key for b in _census().find_bounds(textwrap.dedent(source), relpath)]
+                           ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _census():
+>       from tests import wallclock_census
+E       ImportError: cannot import name 'wallclock_census' from 'tests' (unknown location)
+
+tests/test_wallclock_census.py:75: ImportError
+_____ test_ac4_fixture_suite_health_is_exempt_by_path_and_nothing_else_is ______
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2291/test_ac4_fixture_suite_health_0')
+
+    def test_ac4_fixture_suite_health_is_exempt_by_path_and_nothing_else_is(tmp_path):
+>       ok = _run(tmp_path / "a", {"fixtures/suite_health/case_slow.py": CLOCKDIFF}, [])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_wallclock_census.py:258: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_wallclock_census.py:106: in _run
+    wc = _census()
+         ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _census():
+>       from tests import wallclock_census
+E       ImportError: cannot import name 'wallclock_census' from 'tests' (unknown location)
+
+tests/test_wallclock_census.py:75: ImportError
+__________________ test_bug228_and_bug231_tests_hold_no_entry __________________
+
+    def test_bug228_and_bug231_tests_hold_no_entry():
+        """AC-4 / AC-6: the two rows are replaced, not allow-listed, in either kind. Only bug-231's
+        own test is matched: its sibling `test_graceful_stop_signals_first_then_waits_the_grace`
+        holds a legitimate class-B entry (L160)."""
+>       hits = [e["key"] for e in _entries()
+                                  ^^^^^^^^^^
+                if (e["key"].startswith("test_plan4_remedy.py::")
+                    and "graceful_stop_on_a_live_daemon" in e["key"])
+                or (e["key"].startswith("test_task21_1_recall_skip.py::")
+                    and "live_daemon_recall" in e["key"])]
+
+tests/test_wallclock_census.py:479: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_wallclock_census.py:455: in _entries
+    return json.loads(ALLOW.read_text())["entries"]
+                      ^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py:787: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/Volumes/littlebig/refmatrix-t03/tests/wallclock_allow.json')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/littlebig/refmatrix-t03/tests/wallclock_allow.json'
+
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py:771: FileNotFoundError
+=========================== short test summary info ============================
+FAILED tests/test_wallclock_census.py::test_ac4_a_listed_bound_passes - Impor...
+FAILED tests/test_wallclock_census.py::test_ac4_fixture_suite_health_is_exempt_by_path_and_nothing_else_is
+FAILED tests/test_wallclock_census.py::test_bug228_and_bug231_tests_hold_no_entry
+3 failed in 0.19s
