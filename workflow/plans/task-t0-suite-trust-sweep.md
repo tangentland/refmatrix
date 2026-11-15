@@ -857,6 +857,16 @@ M7; ruling L122; the sentence is in 29.4). {#t0-3-bug228-legs}
   sets the row to `deferred: diagnosed-loud, <both runs' counts>; review <date>`, in 29.1's
   grammar ([[#amend-6]]; [[task-29.1-registry-triage#r1-other-writers]]). No third attempt is
   made inside T0. {#t0-3-attempts}
+
+**Amended 2026-11-15 by L164 (Q42 = c; the user: "this all seems excessive").** The fix proof
+for a reproduced row is **one confirm trial** at the reproducer's level on the committed fix,
+not the 45-pass band above and not a shorter band. The fixes are structural (a wall-clock bound
+replaced by an outcome check; bug-269's `src` fix with its own RED), so repeated trials add
+little. A row whose confirm trial passes closes `fixed`; one that fails gets one more attempt
+and then the `deferred: diagnosed-loud` route of [[#t0-3-attempts]]. bug-190 takes R3.2's
+test-side route now (assert no spawn on the caller's thread; end with `wc.retire()`), although
+it did not reproduce. Mutations cover the `src` change only (bug-269).
+{#t0-3-amend-l164}
 - **Not reproduced:** fewer than 3 failures in 10 at every level. The test gains only R3.4's
   diagnostic. The row reads `deferred: diagnosed-loud, <trial counts>; review <date>`
   ([[#amend-6]]). It does not count as closed. In T0.7's suite it is handled by

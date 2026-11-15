@@ -90,7 +90,8 @@ The default for plans, task specs and spec revisions. The SDD chain (`/ch-specif
 2. **GREEN** (ch-implementer) — production code only, no tests authored.
 3. **Mutations** — commit the fix first; one mutation at a time, restored in its own command;
    clear `__pycache__` after the batch; confirm the fix is present after the restore. Each
-   mutation must make a test FAIL, not hang. The table goes in the summary.
+   mutation must make a test FAIL, not hang. The table goes in the summary. **Only `src/` changes are
+   mutated**; a test-only change gets no mutation table (L164).
 4. **Verify** — the task's files + the family + every test that imports a changed module
    (until 29.4 R6 derives families, list them by grep and say how). **No branch full suite**:
    the full suite runs once per major release, on merged `master`; a minor release gates on the
@@ -147,7 +148,13 @@ The default for plans, task specs and spec revisions. The SDD chain (`/ch-specif
   on a live slot. State go/no-go bands before measuring. {#measure}
 - **Ledgers.** Every ruling is an `L<n>` row, every plan decision a `plan-N D<n>` row, every
   question to the user a `Q<n>` row, all in [[plan-of-plans#ledgers]], entered there before any
-  plan is amended; each reply that asks anything ends with the ids still open. {#ledgers}
+  plan is amended; each reply that asks anything ends with the ids still open. An `L<n>` row is for a real
+  decision (scope, order, what is built, a user answer); relaying a ruling, bookkeeping and
+  confirming an agent did what was ruled get no row (L164). {#ledgers}
+- **Proportionate process** (the user, 2026-11-15: "this all seems excessive"). Proof, review
+  rounds and ledger entries scale with the risk of the change: a test-side fix is proven by one
+  confirm run, not a statistical band; one review pass unless it finds BULLSHIT or SKETCHY.
+  {#proportionate}
 - **Registry at once.** Every defect anyone finds gets a `workflow/bug_registry.md` row from the
   lead in the same turn, even when its fix is out of scope. {#registry}
 - **Reports** ([[#reports]]): the lead persists every review. {#reports-rule}
