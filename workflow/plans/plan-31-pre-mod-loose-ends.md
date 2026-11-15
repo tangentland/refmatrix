@@ -71,6 +71,19 @@ The user, 2026-11-15: reduce the scan-prompt injection before the dedup (plan-10
 what it injects, do not remove it, and "evaluate the STM impact — if it really doesn't provide
 value, it's worth considering taking action." {#t5-ask}
 
+0. **Capture the full payload first; past data measured a truncated one.** The user, 2026-11-15:
+   "the injections have been truncated for so long that it's hard to say how effective they have
+   been." Session 070141d0's own transcript: of ~56 scan-prompt outputs, nearly every one ended
+   `[+N block(s) omitted by --max-bytes 4499]` (N = 1-7, mostly 4-5), and the omitted blocks were
+   the per-symbol context blocks, while the content-match and STM-composite blocks that led the
+   output survived. The 2026-11-13 pilot therefore measured what got through, not what the hooks
+   produce. So, before any cut: for about a week of normal use, every scan-prompt and recall call
+   logs its **full** uncapped payload by block, and which blocks were delivered and which dropped
+   (logged only, not delivered: no extra context cost). Use is then measured against both: were
+   delivered blocks used, and would dropped blocks have been (a later tool call or the reply
+   touches an item that was only in a dropped block)? That separates "the content is useless"
+   from "the useful content was the part being cut". The capture must not log raw prompt text
+   into the repo ([[feedback_no_raw_prompts_in_public_repo]]).
 1. **Measure per block kind** (STM topic composite, content matches, symbol context, memory
    recall), from what is already logged: bytes per prompt, repetition across consecutive prompts
    (ch-bsd measured the composite at 59% of scan-prompt bytes and 100% repeated), and **use** by
