@@ -19,8 +19,9 @@ metadata:
 > Depends on: [[task-31.1-frontmatter-type-refusal]] merged first (both edit
 > `ingest_gmd.py`). Not on 29.5: it touches `tools/gmd/`, `ingest_gmd.py`, two scripts and one
 > method beside `clear_rel_evidence`.
-> Closes: bug-251 and bug-257 ([[bug_registry#registry]]; bug-257 folded into [[#r5]] by
-> ruling L132, [[plan-of-plans#rulings]]).
+> Closes: bug-251 ([[bug_registry#registry]]). [[#r5]] is the fix bug-185 R10 already
+> specifies for bug-221, which bug-257 repeats; which task builds it is the lead's to rule
+> ([[#r5-whose]]).
 > Decision: `plan-31 D12`, decided in [[plan-of-plans#decisions]] ([[#d12]]).
 > Base for every measurement here: `f3a508f`, and a copy of the dev store's read snapshot
 > taken 2026-11-15 02:34.
@@ -34,6 +35,8 @@ rel: depends-on -> [[task-bug179-lint-ingest-anchor-parity]]
 rel: derives-from -> [[task-bug216-rule-docs-in-graph]]
 rel: depends-on -> [[orchestration#release]]
 rel: depends-on -> [[plan-of-plans#decisions]]
+rel: derives-from -> [[task-bug185-bulk-gmd-ingest#r10]]
+rel: related-to -> [[task-bug218-reinforcement-edge-direction#r2b]]
 rel: depends-on -> [[plan-31b-spec-census]]
 rel: reinforces -> [[feedback_clean_corpus_hides_a_dead_gate]]
 rel: reinforces -> [[feedback_converge_repeated_shapes]]
@@ -224,6 +227,14 @@ Before a target is looked up, its doc part is replaced by the id the resolver re
 function in `ingest_gmd.py` does it, and three sites call it: the `rel:` loop and the body
 link loop of pass 2, and `resolve_pending_refs`. {#r4-body}
 
+- **A public name.** The function is `ingest_gmd.resolve_link_target(store, ref, *, project,
+  batch=None)`: the entity the ingester would bind for a link written as `ref` in a doc of
+  that project, or the ambiguous candidates, or nothing. It is not underscore-private, so a
+  reader that must find "what the ingester bound for this name" calls it instead of
+  repeating the order. bug-218's `reinforcement.resolve_targets`
+  ([[task-bug218-reinforcement-edge-direction#r2b]]) is the first such reader (asked for by
+  its freshness revision); this task does not edit it. {#r4-public}
+
 - **The index.** This call's parsed docs, plus the authored GMD docs and memories the store
   already holds in the active partition: `doc` rows whose `meta.gmd_version` is set and is
   not `lenient`, and `memory` rows. A row's stem is its `path`'s stem; a memory row has no
@@ -245,16 +256,41 @@ link loop of pass 2, and `resolve_pending_refs`. {#r4-body}
 - **A pending row** stores the link as written. `resolve_pending_refs` resolves it with the
   project of the row's `file`. {#r4-pending}
 
-### R5: re-binding replaces the edge {#r5}
+### R5: re-binding replaces the edge (bug-185 R10's rule) {#r5}
 
-When pass 2 re-derives a doc, each `rel:` edge that doc's previous evidence supported and the
-new pass does not write again is unlinked, unless an evidence row from another file or line
-still supports it. The set is read from the evidence rows before `clear_rel_evidence` deletes
-them; the unlink is the ordinary `Store.unlink`, so it is logged and a replay agrees. Without
-this, re-binding the 62 misbound lines leaves each old edge in place beside the new one
-([[#fact-stale-edges]]). It also removes the edge of a `rel:` line an author deleted, which
-nothing removes today (bug-257). Ruling L132 keeps this requirement although it is beyond
-the plan's wording. {#r5-body}
+Re-binding must replace the old edge, not add a second one beside it: the 62 misbound lines
+would otherwise each keep their edge to the path-less concept ([[#fact-stale-edges]]).
+Ruling L132 keeps this requirement. {#r5-body}
+
+- **The rule already has a spec.** [[task-bug185-bulk-gmd-ingest#r10]] (approved, on
+  `master`, queue step 13) specifies exactly this for bug-221, which bug-257 repeats. This
+  task runs at step 5 and its own store event needs the rule. So R5 **is** R10's rule, taken
+  whole, and no second rule is written here. Where this section is shorter than R10, R10's
+  text governs. {#r5-same}
+- **Which edges.** The `(verb, source, target)` keys of the `rel:` evidence rows the clear
+  removes for the file: the doc's direct lines, its root-mirror rows, and the rows its
+  pending refs resolved. Keyed by evidence, never by "every edge whose source is a node of
+  this doc". {#r5-keys}
+- **When one is unlinked.** After the doc's whole new write set is in, an old key is
+  unlinked only when both hold: the new write set does not state it; and **no
+  `linkage_evidence` row supports it**, whichever file or producer wrote that row, and
+  whether or not the row has a file and a line. bug-218 R1's `memory link:` evidence row
+  has neither, on the same key as a memory's `rel:` line; it must count, or a user's hand
+  link is unlinked when the GMD line is dropped
+  ([[task-bug218-reinforcement-edge-direction#ac-11]]). {#r5-support}
+- **Producers with no evidence.** R10's producer rule comes with it: the census of other
+  producers of a `rel:`-verb edge, the `UNOWNED_REL_PRODUCERS` list with its one shipped
+  entry for `memory_link` (owned by bug-218), and `IngestStats.rel_unlink_skipped_unowned`,
+  printed when non-zero. Without it, `memory_link`'s evidence-less edge of today would be
+  unlinked as stale. {#r5-producers}
+- **The write.** Each unlink is the ordinary `Store.unlink`, logged, so a replay agrees. The
+  batched `Store.bulk_unlink` is bug-185's, with the rest of its bulk path. {#r5-write}
+- **Whose it is: for the lead.** Proposed: this task builds the rule as one function on
+  today's per-row pass 2, with R10's own acceptance legs ([[#ac-5]]); bug-185 then finds it
+  built and changes only the write to `bulk_unlink`; bug-185's spec says so in a note by its
+  owner; bug-257 is closed as a duplicate of bug-221. The other way round (31.6 waits for
+  bug-185) leaves the 62 edges in place after this task's reingest. Neither spec says which
+  today. {#r5-whose}
 
 ### R6: the corpus is fixed in the same change {#r6}
 
@@ -298,8 +334,11 @@ links stay bound as they are. {#r9-body}
   {#r9-fleet}
 - **Residue the reingest does not remove:** the 114 evidence-less edges of
   [[#fact-stale-edges]]. They have no evidence row to attribute them to a file, so R5 cannot
-  find them. Counted before and after in the summary; their removal is not this task
-  ([[#out-of-scope]]). {#r9-residue}
+  find them; bug-185 R10 puts the same class out of its scope, with plan-22's dangling
+  classes. Counted before and after in the summary; their removal is not this task
+  ([[#out-of-scope]]) and has no owner today. bug-218's freshness revision measured that 9
+  of the 114 are `reinforces` rows that its reader fix would count twice, and has asked the
+  lead for an owner. {#r9-residue}
 
 ## Acceptance criteria {#acceptance}
 
@@ -328,12 +367,24 @@ New tests live in `tests/test_bug251_one_resolver.py` unless said otherwise.
 - **AC-4: a late target.** The citer is ingested before its stem-addressed target exists;
   the target is ingested in a later call; the pending row resolves to the doc. **RED** at
   base (E line: the row stays pending). {#ac-4}
-- **AC-5: re-binding replaces.** A store holding the misbinding (the citer ingested at base
-  code, its line bound to the path-less concept; built in the test by writing that edge and
-  its evidence row). The citer is re-processed: the edge to the doc exists, the edge to the
-  concept is gone, and an `unlink` event for it is in `facts.log`. A second citer whose own
-  evidence supports the same edge keeps it. A doc whose `rel:` line is deleted loses that
-  edge. **RED** at base (E line: the old edge is still there). {#ac-5}
+- **AC-5: re-binding replaces, by bug-185 R10's legs.** A store holding the misbinding (the
+  citer's line bound to the path-less concept; built in the test by writing that edge and its
+  evidence row). The citer is re-processed:
+  - the edge to the doc exists, the edge to the concept is gone, and an `unlink` event for it
+    is in `facts.log`; a rebuild from the log agrees;
+  - a second citer whose own `rel:` evidence supports the same edge keeps it;
+  - an evidence row on the same key with **no file and no line** (the shape of bug-218 R1's
+    `memory link:` row, written by the test) keeps the edge;
+  - an edge matching a listed `UNOWNED_REL_PRODUCERS` signature, with no evidence, is kept
+    and `rel_unlink_skipped_unowned` is 1; the same edge with an unlisted signature is
+    unlinked;
+  - a dropped `rel: part-of` line whose key the heading hierarchy writes again keeps its
+    edge;
+  - a doc whose `rel:` line is deleted loses that edge.
+
+  These are [[task-bug185-bulk-gmd-ingest#ac-11]]'s bug-221 half and
+  [[task-bug185-bulk-gmd-ingest#ac-14]] and [[task-bug185-bulk-gmd-ingest#ac-15]], run on the
+  per-row path. **RED** at base (E line: the old edge is still there). {#ac-5}
 - **AC-6: the parity census.** `check-gmd-parity`'s `[ref-parity]` on (i) the repo scope: 0
   findings; (ii) a fixture where a doc outside the lint scope takes the stem of a linted doc:
   one finding naming the link and both answers. `tests/test_bug179_anchor_parity.py`'s
@@ -372,6 +423,9 @@ New tests live in `tests/test_bug251_one_resolver.py` unless said otherwise.
 | 6 | `resolve_pending_refs` skips the resolver | AC-4 |
 | 7 | drop R5's unlink | AC-5 |
 | 8 | R5 unlinks without checking other evidence | AC-5's second citer |
+| 8a | the support check counts only evidence rows that have a file | AC-5's no-file leg |
+| 8b | the unowned-signature check removed | AC-5's unowned leg (the listed edge is unlinked) |
+| 8c | "stated" ignores the hierarchy's writes | AC-5's `part-of` leg |
 | 9 | the ingest index takes lenient plain docs too | AC-3's variant with a plain `README.md` beside one GMD `README` (the link must bind the GMD doc) |
 | 10 | edit one byte of `src/refmatrix/gmd_resolve.py` | AC-7, and `[ref-parity]`'s identity check |
 | 11 | `[ref-parity]` resolves the ingest side against the lint's docs | AC-6 (ii) |
@@ -408,8 +462,8 @@ This repo: `tools/gmd/lint.py` and `tools/gmd/resolve.py` (re-vendored);
 `src/refmatrix/gmd_resolve.py` (the copy); `src/refmatrix/ingest_gmd.py` (R4, R5);
 `src/refmatrix/store.py` or, after 29.5, `store_links.py` (one read beside
 `clear_rel_evidence`); `scripts/check-gmd-parity.py` (R8); `docs/gmd/SPEC.md`; the docs commit
-of [[#r6]]; new `tests/test_bug251_one_resolver.py`; `workflow/bug_registry.md` (bug-251, and
-bug-257); the implementation summary. {#files-list}
+of [[#r6]]; new `tests/test_bug251_one_resolver.py`; `workflow/bug_registry.md` (bug-251; bug-221 and
+bug-257 by the lead's ruling on [[#r5-whose]]); the implementation summary. {#files-list}
 
 ## Risks {#risks}
 
@@ -434,11 +488,13 @@ bug-257); the implementation summary. {#files-list}
 - **Cross-partition targets** are looked up in the active partition only, as today. A link
   from a project doc to a memory in another partition is not made better or worse.
   {#risk-partition}
-- **R5 removes edges.** It removes only an edge whose every supporting evidence row came from
-  the doc being re-derived, and logs each unlink. An edge another producer wrote on the same
-  verb, with no evidence row of its own, between the same two entities would go with it; R0
-  lists the producers of the 17 verbs (bug-218's reinforcement edges among them) and the
-  summary says whether any shares a verb and a pair with a `rel:` line. {#risk-r5}
+- **R5 removes edges.** It removes only an edge that this doc's own cleared `rel:` evidence
+  named, that the new text does not state, and that no evidence row of any kind supports;
+  each unlink is logged. An edge another producer wrote on the same key with no evidence row
+  is what R10's census and unowned list exist for ([[#r5-producers]]). {#risk-r5}
+- **One rule in two specs.** Until the lead rules ([[#r5-whose]]), bug-185 R10 and this R5
+  both claim the build. If both were built separately the unlink would run twice per doc and
+  the two could drift. {#risk-r5-twice}
 
 ## Out of scope {#out-of-scope}
 
@@ -461,7 +517,7 @@ cites them and records none of its own. {#decisions-rule}
   (11 in repo files, fixed in this task; 35 in memory files, the lead's edit), 110 in cliquedb
   and 3 in cliquet at their next re-vendor. The option not taken was folding as a fourth
   form on both sides. {#d12}
-- **Ruling L132:** [[#r5]] stays (bug-257); the recount AC is all three classes at 0
+- **Ruling L132:** [[#r5]] stays; the recount AC is all three classes at 0
   ([[#ac-9]]); 31.1 lands before this task; the re-bind reingest of each store is its own
   user go ([[#r9]], and L125: a decision that changes a store on disk goes to the user).
   {#l132}
@@ -471,8 +527,11 @@ their order ([[#r1-table]], [[#r1-order]]); an ambiguous stem is refused as an e
 sides, never bound and never pending ([[#r1-ambiguous]], [[#r4-ambiguous]]); `name:` is not
 an id source ([[#r1-name]]); one text in three files, held together by an identity check,
 with upstream first ([[#r2]]); the ingest index holds authored GMD docs and memories only
-([[#r4-index]]); the gate compares the two corpora ([[#r8]]). {#decisions-proposed}
+([[#r4-index]]); the gate compares the two corpora ([[#r8]]); the resolver's ingest-side function has a
+public name ([[#r4-public]]); R5 is bug-185 R10's rule, built here first ([[#r5-whose]]).
+{#decisions-proposed}
 
 **Registered from this spec's measurements:** bug-251's extent is 107 lines
-([[#fact-107]]); bug-257 ([[#fact-stale-edges]]); bug-255, taken by 31.1.
+([[#fact-107]]); bug-257 ([[#fact-stale-edges]]), which repeats bug-221, already owned by
+bug-185 R10 ([[#r5-whose]]); bug-255, taken by 31.1.
 {#decisions-findings}

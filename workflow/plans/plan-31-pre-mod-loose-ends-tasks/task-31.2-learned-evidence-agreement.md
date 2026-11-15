@@ -263,8 +263,11 @@ changing this one. {#r3-source}
   written to a manifest. {#r3-memory}
 - **`rmx sync -i` runs on the writer (bug-203). Conditional on Q39**
   ([[plan-of-plans#questions]], open with the user; the lead recommends admitting it). If
-  Q39 is (b), this bullet, [[#ac-14]] and mutation 21 are struck, bug-203 stays post-mod, and
-  the `-i` row of [[#r3-sites]] applies to the in-process route only. With a daemon up, `-i` reaches a store proxy
+  Q39 is (b), this bullet, [[#ac-14]] and mutation 21 are struck and the `-i` row of
+  [[#r3-sites]] applies to the in-process route only. bug-203 is then not unowned: the POP's
+  queue says T4's bounded-write step adopts it ([[plan-of-plans#queue]] step 13, after this
+  task's step 9), so the question is which of the two steps routes `-i`, and the later one
+  must not rewrite what the earlier built. With a daemon up, `-i` reaches a store proxy
   that has no `purge_path` and falls through to the read replica. This requirement rewrites
   what `-i` does, so it also routes it: through the daemon's sync op family when a daemon
   answers, in-process otherwise, never the replica. The store review homed bug-203 on 22.6
