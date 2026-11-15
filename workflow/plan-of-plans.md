@@ -466,10 +466,11 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 
 ### Questions to the user {#questions}
 
-Next id: **Q42**. None open. Each reply that asks anything ends with the ids still open.
+Next id: **Q43**. Open: Q42. Each reply that asks anything ends with the ids still open.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q42 | 2026-11-15 | T0.3's spec proves a flake fix only by **45 consecutive passes** on the harness at the reproducer's level ([[task-t0-suite-trust-sweep#t0-3-band-fixed]]). green-t03 was briefed to run one confirm trial per row instead, and its summary flags the 45-pass bands for bug-228 and bug-231 as not run. At ~77 s a trial, that is ~1 h of serial lane time per row per attempt (~2 h for both, up to ~4 h if a second attempt is needed). Run them before T0.3 merges? | (a) **run both bands after ch-bsd's review, before the merge**, as the spec says; the rows close `fixed` only on 45/45 (recommended); (b) merge on the one confirm trial each, rows set `deferred: diagnosed-loud` until the bands run later; (c) amend the spec to one confirm trial | open |
 {#questions-table}
 
 ## Pending bookkeeping (2026-11-15) {#pending-bookkeeping}
