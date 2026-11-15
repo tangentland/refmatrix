@@ -283,3 +283,45 @@ the record schema: the class and message, else null. AC-0.8's exact key set incl
 AC-0.1 asserts it is null on a healthy call. On the `capture:` line it is read like
 `composite_error`. When the composite's own build also fails on the same file (the `[]`
 shape), `composite_error` is set as well. The tests do not forbid that. {#defect-reading}
+
+## L178 fold RED (bsd-315 r1) {#l178}
+
+The RED half of the fold in ruling L178. The source is unchanged from GREEN's `51bbdfb`. Commits:
+`dfbfdc3` adds the tests, and `7a4a94b` fixes AC-0.16's setup and sets the M1 floor at a quarter
+build. Every run went through `scripts/lane-mini.sh`, with logs in `workflow/review-output/`.
+The run at `7a4a94b` (`315-l178-red-at-51bbdfb.log`) ended exit 1: 25 failed, 43 passed. Every
+failure is the intended E line. {#l178-run}
+
+rel: depends-on -> [[bsd-315-r1-51bbdfb]]
+
+| Item | Node | At 51bbdfb |
+|---|---|---|
+| S1 / bug-276 | `test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-surrogate, scan_prompt-dir-0o300, prompt_recall-surrogate, session_start-dir-0o300]` | RED: `bug-276: <route> with <fault> exited 1` (UnicodeEncodeError on the lone surrogate; PermissionError from `os.listdir` in the pruner) |
+| S2 / bug-277 | `test_a_composite_whose_printed_members_did_not_change_is_suppressed` | RED: `bug-277: a composite whose printed members did not change: [... ('composite', 'delivered')]` |
+| S3 | `test_stm_composite_members.py`: the store holds `the` | green (the fixture is stronger, the behaviour is right); M2-1a KILLED (`315-l178-mut-m2-1a.log`: 3 failed, `printed members [..., 'the', ...]`) |
+| S4 / bug-268 | `test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[int-node, list, nameless-node]` | RED: `bug-268: the composite raised on the corrupt graph: "AttributeError …" / "KeyError: 'name'"` |
+| S4 / bug-268 | `test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-hook-*, focus-context-*, pin-*]` (12) | RED: `focus hook --event input exited 1`, `focus context exited 1` or `said it 0 times`, `pin said the corrupt graph 0 times` or a `pin` AttributeError |
+| S4 / bug-268, non-finite turn | `…scan_prompt[nonfinite-turn]`, `…recall[nonfinite-turn-prompt_recall, nonfinite-turn-session_start]`, `…a_reader[*-nonfinite-turn]` | RED: exit 1, `OverflowError: cannot convert float infinity to integer` (`{"turn": Infinity}` passes `focus_graph_problem`; kept by the lead's ruling) |
+| S4, AC-0.16 re-pointed | `test_a_raising_composite_build_is_recorded_and_counted` | green: re-pointed to a child-process patch of `composite.topic_composites` (registered). M0-11 KILLED (`315-l178-mut-m0-11.log`: `bug-256: the composite failure said on stderr: []`) |
+| M1 | `test_bundles_past_the_token_stop_are_built_and_stored_as_dropped_tokens`, capture_ms floor | green; X-1 KILLED (`315-l178-mut-x-1.log`: `capture_ms 0.5 does not cover 2 built bundle(s)`) |
+| M2 (X-3) | `test_a_day_file_the_pruner_cannot_remove_is_counted_and_kept` (P4) | green; X-3 KILLED (`315-l178-mut-x-3.log`: `errors.jsonl: [] == ['prune_failed']`) |
+| M2 (X-2) | `test_a_capped_errors_file_is_named_on_the_capture_line` | RED: `a capped errors.jsonl is not named: 'capture: …'` |
+| M3 | `test_the_coverage_window_starts_at_the_first_capture_record` | RED: `… 1 captured of 4 hook calls …` |
+{#l178-table}
+
+**These could not fail first:** S3, M1, the P4 node and the re-pointed AC-0.16. Each pins
+behaviour that `51bbdfb` already gets right, so its proof is the mutation it kills. The kills are
+M2-1a, X-1, X-3 and M0-11, each from a scratch commit (`efc80e8`, `e096f76`, `b53c7af`,
+`d13649c` on `scratch-l178-*` branches, never merged). X-2 has a RED node and has not been run
+as a mutation: it is re-run after GREEN. {#l178-not-first}
+
+**Setup error fixed:** the first run's AC-0.16 child exited 2 (`can't open file '…/rmx'`).
+`cli_entry` re-execs `sys.argv` unless `OBJC_DISABLE_INITIALIZE_FORK_SAFETY` is set. {#l178-setup}
+
+**Contracts pinned:**
+- a corrupt graph is said in one stderr line containing `focus graph` and `corrupt` (GREEN's
+  bug-268 wording), once per process;
+- the `capture:` line names a capped errors file with the token `errors_capped`;
+- with no capture record at all, every hook row counts in the coverage, so a capture that never
+  wrote reads 0 of N (AC-0.10's existing node keeps that).
+{#l178-contracts}
