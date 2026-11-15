@@ -472,10 +472,11 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 
 ### Questions to the user {#questions}
 
-Next id: **Q44**. Open: Q43. Each reply that asks anything ends with the ids still open.
+Next id: **Q45**. Open: Q43, Q44. Each reply that asks anything ends with the ids still open.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q44 | 2026-11-15 | The user: "can we drop the per-round tests" (111 files, 1,439 tests, 1,927 s = 59% of the runtime; the audit found them mostly distinct code paths, 2 confirmed duplicates) | (a) **drop by measurement, after T0.2/T0.3 merge:** one per-test coverage run (`--cov-context=test`, ~70 min on the lane); drop every per-round test that covers no line or branch another test does not, unless it is the only test a registry row names; move the survivors into feature-named files (recommended); (b) drop all 111 files now (about half the runtime, loses the only regression test for real incidents); (c) rename/merge only, drop nothing | open |
 | Q43 | 2026-11-15 | Act on [[test-suite-audit-2026-11-15]]? | (a) **after T0.2 and T0.3 merge (they edit the same test files), two small-fix agents:** one deletes the 7 detail-pinning source-text tests and the 2 confirmed duplicates and trims 3 assertions; one makes the waits cheap (short test-daemon shutdown, test-sized budgets keeping one real-default test each, gated small ingest job instead of 350 docs, modelsrv probe), ~60 → ~45 min release suite (recommended); (b) deletions only; (c) neither now | open |
 {#questions-table}
 
