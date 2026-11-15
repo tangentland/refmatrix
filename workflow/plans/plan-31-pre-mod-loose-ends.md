@@ -89,13 +89,21 @@ value, it's worth considering taking action." {#t5-ask}
    From the transcripts, every discovery call after a prompt — the Grep and Glob tools, Read,
    and Bash `grep` / `rg` / `find` / `sed -n` / `cat` / `rmx grep` / `rmx context` — with its
    target (pattern, symbol, path), classified against that prompt's injection:
-   - **redundant** — the target was in the DELIVERED payload: shown, not used or not trusted;
+   - **ignored** — the target, and the answer the call went looking for, was in the DELIVERED
+     payload, and the agent searched anyway. **Its own class of finding, against the agent, not
+     the injection** (the user, 2026-11-15: "you ignoring input should be its own class of
+     finding"): the content was relevant; the remedy is presentation (placement, labels, a
+     `path:line` the agent can act on without re-checking) or the agent's instructions, never
+     retrieval. Sub-cases recorded: read-and-re-verified (the agent checked a shown fact), unread
+     (no sign the block was looked at), and distrusted-stale (the shown fact was out of date — that
+     one IS an injection defect and moves to `uncovered`);
    - **avoidable** — the target was only in a DROPPED block (step 0's capture): the cap's cost;
    - **uncovered** — in neither: a relevance or coverage gap (input to 30.6);
    - and the outcome, **discovery calls per prompt**, compared before and after 0.84.0's
      ordering fix (a natural experiment on its deploy date), by prompt kind, and by an on/off
      alternation only if the before/after is confounded. A block earns its bytes when it moves
-     calls out of `avoidable` and `uncovered` without growing `redundant`.
+     calls out of `avoidable` and `uncovered`; `ignored` is scored separately, against the agent,
+     and is reported per session as its own finding count.
 1. **Measure per block kind** (STM topic composite, content matches, symbol context, memory
    recall), from what is already logged: bytes per prompt, repetition across consecutive prompts
    (ch-bsd measured the composite at 59% of scan-prompt bytes and 100% repeated), and **use** by
