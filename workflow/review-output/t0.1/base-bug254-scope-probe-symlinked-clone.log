@@ -1,0 +1,33 @@
+# sha 0d97bed3aae598a1aa904fd13ecf70085535b4e5 (test_bug179 _scope_paths/_memdir = base code) cwd /Volumes/littlebig/refmatrix-t01 layout=symlinked .venv-eval; read-only probe plugin (scratchpad, not committed) prints each test's scope at setup
+pyc-guard: recompiled 9 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t01/src/refmatrix as checked-hash (bug-037)
+
+PROBE test_ac5_real_corpus_has_parity_over_the_gate_scope
+  Path.home() (what _memdir reads) = /private/tmp/rmx-eu8_lzyy/h
+  _memdir(REPO) = /private/tmp/rmx-eu8_lzyy/h/.claude/projects/-Volumes-littlebig-refmatrix-t01/memory  exists=False
+  linted scope = ['CLAUDE.md', 'docs', 'workflow', 'eval', '.claude/PROJECT_PROFILE.md'] + memory dirs []
+  real home own-slug dir /Users/tholley/.claude/projects/-Volumes-littlebig-refmatrix-t01/memory: *.md = None
+  origin /Users/tholley/claude_tools/refmatrix; the shipped gate (real HOME) would add /Users/tholley/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory: *.md = 326
+.
+PROBE test_ac5b_no_rel_line_in_the_corpus_carries_an_anchor
+  Path.home() (what _memdir reads) = /private/tmp/rmx-eu8_lzyy/h
+  _memdir(REPO) = /private/tmp/rmx-eu8_lzyy/h/.claude/projects/-Volumes-littlebig-refmatrix-t01/memory  exists=False
+  linted scope = ['CLAUDE.md', 'docs', 'workflow', 'eval', '.claude/PROJECT_PROFILE.md'] + memory dirs []
+  real home own-slug dir /Users/tholley/.claude/projects/-Volumes-littlebig-refmatrix-t01/memory: *.md = None
+  origin /Users/tholley/claude_tools/refmatrix; the shipped gate (real HOME) would add /Users/tholley/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory: *.md = 326
+.
+PROBE test_ac5b_lint_reports_no_multi_anchor_or_anchor_on_rel_over_the_scope
+  Path.home() (what _memdir reads) = /private/tmp/rmx-eu8_lzyy/h
+  _memdir(REPO) = /private/tmp/rmx-eu8_lzyy/h/.claude/projects/-Volumes-littlebig-refmatrix-t01/memory  exists=False
+  linted scope = ['CLAUDE.md', 'docs', 'workflow', 'eval', '.claude/PROJECT_PROFILE.md'] + memory dirs []
+  real home own-slug dir /Users/tholley/.claude/projects/-Volumes-littlebig-refmatrix-t01/memory: *.md = None
+  origin /Users/tholley/claude_tools/refmatrix; the shipped gate (real HOME) would add /Users/tholley/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory: *.md = 326
+.
+PROBE test_ac6_lint_adds_no_error_text_over_the_base_linter
+  Path.home() (what _memdir reads) = /private/tmp/rmx-eu8_lzyy/h
+  _memdir(REPO) = /private/tmp/rmx-eu8_lzyy/h/.claude/projects/-Volumes-littlebig-refmatrix-t01/memory  exists=False
+  linted scope = ['CLAUDE.md', 'docs', 'workflow', 'eval', '.claude/PROJECT_PROFILE.md'] + memory dirs []
+  real home own-slug dir /Users/tholley/.claude/projects/-Volumes-littlebig-refmatrix-t01/memory: *.md = None
+  origin /Users/tholley/claude_tools/refmatrix; the shipped gate (real HOME) would add /Users/tholley/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory: *.md = 326
+.
+4 passed, 39 deselected in 2.55s
+EXIT=0
