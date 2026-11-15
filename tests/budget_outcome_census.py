@@ -12,8 +12,8 @@ a helper function of its file, or through a fixture, conftest fixtures included)
 comparison of an outcome field (`OUTCOME_FIELDS`) with a string. A hit passes only when, in the
 same function, it builds the command it runs with `tests.timing.with_budget(command, seconds)`,
 `seconds` a literal or `HANG_GUARD_S` imported from `tests.timing` (ruling L141: `with_budget` and
-reasoned entries only; the knob forms are not read), or (provisional, pending the lead's ruling)
-it waits on a harness readiness signal before it runs the hook. Otherwise it fails, or holds a
+reasoned entries only; the knob forms are not read), or (L159) it calls a harness readiness
+signal directly before it runs the hook. Otherwise it fails, or holds a
 `budget-outcome` entry with a non-empty `reason` in `tests/wallclock_allow.json`.
 
 What this census cannot see is an outcome asserted through another shape (an exit code, a row
@@ -31,10 +31,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 REAL_DAEMON_HELPERS = frozenset({"SandboxDaemon", "spawn_daemon_subprocess"})
-# The harness readiness signals (29.4 #r3-bug228's readiness branch, ruled by L157 (1)): a test
-# that waits on one before the hook runs has taken the pre-op leg (boot, model warm-up), which
-# held >= 90% of bug-228's overrun, off the budget. PROVISIONAL pending the lead's ruling on the
-# census form (29.4 #r3-budget-census names only `with_budget` and the knob forms).
+# The harness readiness signals (29.4 #r3-bug228's readiness branch, L157 (1)): a test that
+# waits on one before the hook runs has taken the pre-op leg (boot, model warm-up), which held
+# >= 90% of bug-228's overrun, off the budget. A third control form beside `with_budget`,
+# ruled by L159 (2026-11-15) as a deviation from 29.4 #r3-budget-census's two forms. Matched
+# only as a DIRECT call in the test function, on a line before its first run call: a call
+# after the run, or one hidden in a helper, does not count.
 READINESS_CALLS = frozenset({"wait_models_warm"})
 OUTCOME_FIELDS = frozenset({"outcome"})
 RUN_CALLS = frozenset({"run_hook", "run_cmd"})
